@@ -10,6 +10,7 @@ import {
   resolveDocumentCapability,
   type ResolvedDocumentCapability,
 } from "@/lib/store";
+import { isUuid } from "@/lib/permissions";
 
 export type CollabRequestAccess = {
   role: CollabRole | null;
@@ -41,8 +42,8 @@ export async function getCollabRequestAccess(
   // the caller was refused means the item is in Trash rather than forbidden.
   // Telling someone holding it open the wrong one leaves them wondering what
   // they did.
-  const live = role ? null : await getPostStoreContext(postId);
-  const trashed = !role && !live;
+  const live = role || !isUuid(postId) ? null : await getPostStoreContext(postId);
+  const trashed = !role && isUuid(postId) && !live;
 
   const userName =
     user?.name?.trim() ||

@@ -27,7 +27,16 @@ type GeneratedDesign = {
   template: TemplateDefinition;
 };
 
-type NewFieldType = "text" | "date" | "number" | "boolean" | "enum";
+type NewFieldType =
+  | "text"
+  | "richtext"
+  | "image"
+  | "url"
+  | "date"
+  | "number"
+  | "boolean"
+  | "enum"
+  | "rows";
 
 function copyBlueprint(blueprint: ItemTypeBlueprint): ItemTypeBlueprint {
   return itemTypeBlueprintSchema.parse(structuredClone(blueprint));
@@ -76,7 +85,14 @@ function collectionPreviewDocuments(
   blueprint: ItemTypeBlueprint,
 ) {
   const base = previewDocument(template);
-  const titles = ["Plan the launch", "Draft the brief", "Publish the update"];
+  const titles =
+    blueprint.item.shape === "article"
+      ? ["The quiet craft of better work", "Notes from the edge", "What changed this week"]
+      : blueprint.item.shape === "note"
+        ? ["Books to remember", "Ideas for Saturday", "A thought for later"]
+        : blueprint.item.shape === "reference"
+          ? ["Design systems", "Research archive", "Useful patterns"]
+          : ["Plan the launch", "Draft the brief", "Publish the update"];
   return titles.map((title, index) => {
     const fields = { ...base.content.fields };
     for (const field of blueprint.fields) {
@@ -154,6 +170,7 @@ function ArrowIcon() {
 export function ItemTypeStudio({
   blogId,
   folders,
+  generateWithConnectedAgent,
   handle,
   initialFolderPath = "",
   onClose,
@@ -161,6 +178,11 @@ export function ItemTypeStudio({
 }: {
   blogId: string;
   folders: readonly StudioFolder[];
+  generateWithConnectedAgent?: (input: {
+    current?: ItemTypeBlueprint;
+    folderName?: string;
+    request: string;
+  }) => Promise<ItemTypeBlueprint>;
   handle: string;
   initialFolderPath?: string;
   onClose: () => void;
@@ -222,6 +244,19 @@ export function ItemTypeStudio({
     setError(null);
     try {
       const folder = folders.find((candidate) => candidate.path === folderPath);
+      if (generateWithConnectedAgent) {
+        const blueprint = itemTypeBlueprintSchema.parse(
+          await generateWithConnectedAgent({
+            current,
+            folderName: folder?.name,
+            request: clean,
+          }),
+        );
+        setDesign(compiled(blueprint));
+        if (!current) setPreviewMode("item");
+        setFollowUp("");
+        return;
+      }
       const response = await fetch("/api/ai/item-type", {
         method: "POST",
         credentials: "same-origin",
@@ -240,6 +275,7 @@ export function ItemTypeStudio({
       }
       const blueprint = itemTypeBlueprintSchema.parse(payload?.blueprint);
       setDesign(compiled(blueprint));
+      if (!current) setPreviewMode("item");
       setFollowUp("");
     } catch (generationError) {
       setError(
@@ -284,6 +320,39 @@ export function ItemTypeStudio({
     if (!design || !newFieldLabel.trim()) return;
     const current = copyBlueprint(design.blueprint);
     const id = fieldId(newFieldLabel, current.fields);
+    if (newFieldType === "rows") {
+      current.fields.push({
+        id,
+        label: newFieldLabel.trim(),
+        type: "rows",
+        required: false,
+        display: "checklist",
+        fields: [
+          {
+            id: "done",
+            label: "Done",
+            type: "boolean",
+            required: false,
+            multiple: false,
+            format: "plain",
+            target: "document",
+          },
+          {
+            id: "text",
+            label: "Item",
+            type: "text",
+            required: false,
+            multiple: false,
+            format: "plain",
+            target: "document",
+          },
+        ],
+        maxRows: 200,
+      });
+      setBlueprint(current);
+      setNewFieldLabel("");
+      return;
+    }
     const common = {
       id,
       label: newFieldLabel.trim(),
@@ -305,8 +374,25 @@ export function ItemTypeStudio({
           }
         : newFieldType === "number"
           ? { ...common, type: "number", multiple: false, format: "plain", target: "document" }
-          : newFieldType === "text"
-            ? { ...common, type: "text", multiple: false, format: "plain", target: "document" }
+          : newFieldType === "text" ||
+              newFieldType === "richtext" ||
+              newFieldType === "image" ||
+              newFieldType === "url"
+            ? {
+                ...common,
+                type: newFieldType,
+                display:
+                  newFieldType === "image"
+                    ? ("cover" as const)
+                    : newFieldType === "richtext"
+                      ? ("section" as const)
+                      : newFieldType === "url"
+                        ? ("fact" as const)
+                        : ("auto" as const),
+                multiple: false,
+                format: "plain" as const,
+                target: "document" as const,
+              }
             : newFieldType === "date"
               ? { ...common, type: "date", multiple: false, format: "plain", target: "document" }
               : { ...common, type: "boolean", multiple: false, format: "plain", target: "document" };
@@ -457,6 +543,7 @@ export function ItemTypeStudio({
                   type="button"
                   onClick={() => {
                     setDesign(compiled(copyBlueprint(starter.blueprint)));
+                    setPreviewMode("item");
                     setError(null);
                   }}
                 >
@@ -533,10 +620,14 @@ export function ItemTypeStudio({
                 />
                 <select value={newFieldType} onChange={(event) => setNewFieldType(event.currentTarget.value as NewFieldType)}>
                   <option value="text">Text</option>
+                  <option value="richtext">Text block</option>
+                  <option value="image">Image</option>
+                  <option value="url">URL</option>
                   <option value="date">Date</option>
                   <option value="number">Number</option>
                   <option value="boolean">Checkbox</option>
                   <option value="enum">Select</option>
+                  <option value="rows">Checklist</option>
                 </select>
                 <button type="button" disabled={!newFieldLabel.trim()} onClick={addField}>Add</button>
               </div>
@@ -555,6 +646,8 @@ export function ItemTypeStudio({
                   <option value="calendar">Calendar</option>
                   <option value="timeline">Timeline</option>
                   <option value="index">Index</option>
+                  <option value="single">Single focus</option>
+                  <option value="heatmap">Heatmap</option>
                 </select>
               </label>
               <label>

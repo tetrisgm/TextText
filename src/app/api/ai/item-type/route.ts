@@ -1,4 +1,4 @@
-import { generateObject } from "ai";
+import { generateText } from "ai";
 import { getCurrentUser } from "@/lib/session";
 import { getOwnedBlog } from "@/lib/store";
 import { workspaceLanguageModel } from "@/lib/ai/provider-model.server";
@@ -8,6 +8,12 @@ import {
   itemTypeBlueprintSchema,
   type ItemTypeBlueprint,
 } from "@/lib/presentation/item-type-blueprint";
+import {
+  ITEM_TYPE_BLUEPRINT_FORMAT,
+  honorNamedStyleReference,
+  itemTypeBlueprintRepairPrompt,
+  parseItemTypeBlueprintText,
+} from "@/lib/ai/item-type-generation";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -46,7 +52,9 @@ Rules:
 - Use rows only when one item genuinely contains a repeated list, such as checklist steps or recipe ingredients.
 - Choose publishable only when the request is clearly for public reading.
 - Product copy uses sentence case and never uses an em dash.
-- The result must feel ready to use, not like a schema exercise.`;
+- The result must feel ready to use, not like a schema exercise.
+
+${ITEM_TYPE_BLUEPRINT_FORMAT}`;
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -96,24 +104,53 @@ export async function POST(request: Request) {
     .join("\n\n");
 
   try {
-    const result = await generateObject({
-      model: workspaceLanguageModel(config),
-      schema: itemTypeBlueprintSchema,
-      schemaName: "TextTextItemType",
-      schemaDescription:
-        "A complete reusable item type with item-page and collection-page behavior.",
+    const model = workspaceLanguageModel(config);
+    const result = await generateText({
+      model,
       system: SYSTEM,
       prompt: designPrompt,
     });
-    const blueprint: ItemTypeBlueprint = itemTypeBlueprintSchema.parse(
-      result.object,
-    );
+    let blueprint: ItemTypeBlueprint;
+    try {
+      blueprint = parseItemTypeBlueprintText(result.text);
+    } catch (validationError) {
+      const repaired = await generateText({
+        model,
+        system: SYSTEM,
+        prompt: itemTypeBlueprintRepairPrompt({
+          error: validationError,
+          generated: result.text,
+          request: designPrompt,
+        }),
+      });
+      blueprint = parseItemTypeBlueprintText(repaired.text);
+    }
+    blueprint = honorNamedStyleReference(blueprint, prompt);
     const template = compileItemTypeBlueprint(blueprint, {
       id: "preview.item-type",
     });
     return Response.json({ blueprint, template });
-  } catch {
-    console.error("item type generation failed");
+  } catch (error) {
+    const failure =
+      error && typeof error === "object"
+        ? {
+            name:
+              "name" in error && typeof error.name === "string"
+                ? error.name
+                : "Error",
+            statusCode:
+              "statusCode" in error && typeof error.statusCode === "number"
+                ? error.statusCode
+                : null,
+            providerError:
+              "responseBody" in error && typeof error.responseBody === "string"
+                ? error.responseBody
+                    .replace(/sk-[A-Za-z0-9_-]+/g, "[redacted]")
+                    .slice(0, 1_000)
+                : null,
+          }
+        : { name: "Error", statusCode: null, providerError: null };
+    console.error("item type generation failed", failure);
     return Response.json(
       { error: "The assistant could not finish that design. Try a shorter description." },
       { status: 502 },

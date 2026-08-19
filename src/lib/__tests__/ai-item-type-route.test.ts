@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  generateObject: vi.fn(),
+  generateText: vi.fn(),
   getCurrentUser: vi.fn(),
   getOwnedBlog: vi.fn(),
   getWorkspaceAiConfigForOwner: vi.fn(),
   workspaceLanguageModel: vi.fn(() => "language-model"),
 }));
 
-vi.mock("ai", () => ({ generateObject: mocks.generateObject }));
+vi.mock("ai", () => ({ generateText: mocks.generateText }));
 vi.mock("@/lib/session", () => ({ getCurrentUser: mocks.getCurrentUser }));
 vi.mock("@/lib/store", () => ({ getOwnedBlog: mocks.getOwnedBlog }));
 vi.mock("@/lib/ai/workspace-ai-config.server", () => ({
@@ -66,7 +66,7 @@ describe("/api/ai/item-type", () => {
       model: "claude-sonnet-5",
       apiKey: "secret",
     });
-    mocks.generateObject.mockResolvedValue({ object: blueprint });
+    mocks.generateText.mockResolvedValue({ text: JSON.stringify(blueprint) });
   });
 
   it("turns one description into a validated blueprint and real template", async () => {
@@ -90,7 +90,7 @@ describe("/api/ai/item-type", () => {
         groupBy: "content.fields.status",
       },
     });
-    const call = mocks.generateObject.mock.calls[0][0];
+    const call = mocks.generateText.mock.calls[0][0];
     expect(call.model).toBe("language-model");
     expect(call.prompt).toContain("Destination folder: Projects");
     expect(call.prompt).toContain("Writer request:");
@@ -98,8 +98,21 @@ describe("/api/ai/item-type", () => {
 
   it("passes the current validated design into a refinement", async () => {
     await POST(request({ prompt: "Add priority", current: blueprint }));
-    expect(mocks.generateObject.mock.calls[0][0].prompt).toContain(
+    expect(mocks.generateText.mock.calls[0][0].prompt).toContain(
       "Current design to revise:",
+    );
+  });
+
+  it("repairs invalid model JSON once before failing the request", async () => {
+    mocks.generateText
+      .mockResolvedValueOnce({ text: "{}" })
+      .mockResolvedValueOnce({ text: JSON.stringify(blueprint) });
+
+    const response = await POST(request({ prompt: "A task board" }));
+    expect(response.status).toBe(200);
+    expect(mocks.generateText).toHaveBeenCalledTimes(2);
+    expect(mocks.generateText.mock.calls[1][0].prompt).toContain(
+      "Correct the generated JSON",
     );
   });
 
@@ -121,11 +134,11 @@ describe("/api/ai/item-type", () => {
       apiKey: "secret",
     });
     expect((await POST(request({ prompt: "" }))).status).toBe(400);
-    expect(mocks.generateObject).not.toHaveBeenCalled();
+    expect(mocks.generateText).not.toHaveBeenCalled();
   });
 
   it("maps provider failures to a safe error", async () => {
-    mocks.generateObject.mockRejectedValue(new Error("provider request id secret"));
+    mocks.generateText.mockRejectedValue(new Error("provider request id secret"));
     const response = await POST(request({ prompt: "A board" }));
     expect(response.status).toBe(502);
     expect((await response.json()).error).not.toContain("request id");

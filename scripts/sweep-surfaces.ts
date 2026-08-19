@@ -61,12 +61,13 @@ async function openSidebar(page: Page, label: string) {
 async function openItemTypeStudio(
   page: Page,
   surface: "prompt" | "item" | "folder",
+  starter: RegExp = /Project board/,
 ) {
   await page.goto(`${BASE}/start?to=home`, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(1400);
   await page.locator(".workspace-build-type-button").click();
   if (surface === "prompt") return;
-  await page.getByRole("button", { name: /Project board/ }).click();
+  await page.getByRole("button", { name: starter }).click();
   if (surface === "folder") {
     await page.getByRole("tab", { name: "Folder" }).click();
   }
@@ -133,6 +134,22 @@ const surfaces: Surface[] = [
   {
     name: "item-type-folder",
     go: async (page) => openItemTypeStudio(page, "folder"),
+  },
+  {
+    name: "item-type-editorial-item",
+    go: async (page) => openItemTypeStudio(page, "item", /Editorial publication/),
+  },
+  {
+    name: "item-type-editorial-folder",
+    go: async (page) => openItemTypeStudio(page, "folder", /Editorial publication/),
+  },
+  {
+    name: "item-type-notes-item",
+    go: async (page) => openItemTypeStudio(page, "item", /Quick notes/),
+  },
+  {
+    name: "item-type-notes-folder",
+    go: async (page) => openItemTypeStudio(page, "folder", /Quick notes/),
   },
   {
     name: "item-type-controls",

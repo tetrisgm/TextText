@@ -8,6 +8,7 @@
 // edits its generated fields, and watches the item move on the rendered board.
 
 import { chromium, type Page } from "playwright";
+import { ITEM_TYPE_STARTERS } from "../src/lib/presentation/item-type-blueprint";
 
 const BASE = process.env.TEXTTEXT_BASE_URL ?? "http://localhost:3000";
 const WHO = { email: "item-type-live-aug19@example.com", name: "Item type" };
@@ -36,13 +37,69 @@ async function signIn(page: Page) {
     await page.waitForTimeout(1200);
     if ((await page.locator(".workspace-library-header").count()) > 0) return;
   }
-  throw new Error(`Workspace never loaded (last url ${page.url()})`);
+  const body = await page.locator("body").innerText().catch(() => "");
+  throw new Error(
+    `Workspace never loaded (last url ${page.url()}; body ${body.slice(0, 500)})`,
+  );
 }
 
 async function main() {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 940 } });
+  const connectedAgentBlueprint = {
+    ...structuredClone(ITEM_TYPE_STARTERS[0]!.blueprint),
+    name: "AI reading list",
+    description: "A reading list designed by the connected TextText Agent.",
+  };
+  await context.addInitScript(`(() => {
+    const blueprint = ${JSON.stringify(connectedAgentBlueprint)};
+    const state = { prompts: [], registeredTools: [] };
+    const emit = (detail) => window.dispatchEvent(
+      new CustomEvent("texttext:assistant", { detail })
+    );
+    Object.assign(window, {
+      __TEXTTEXT_APP__: true,
+      __TEXTTEXT_NATIVE_ITEM_TYPE_EVAL__: state,
+      webkit: {
+        messageHandlers: {
+          textTextApp: {
+            postMessage(message) {
+              const body = message || {};
+              if (body.action === "assistantTools") {
+                state.registeredTools = (body.tools || []).map((tool) => tool.name || "");
+              } else if (body.action === "assistantStatus") {
+                queueMicrotask(() => emit({
+                  type: "status",
+                  state: "ready",
+                  kind: "native-codex",
+                  providerLabel: "Codex with ChatGPT",
+                  embeddedChatSupported: true
+                }));
+              } else if (body.action === "assistantTurn") {
+                state.prompts.push(body.prompt || "");
+                setTimeout(() => emit({
+                  type: "tool-call",
+                  callId: "item-type-preview",
+                  tool: "preview_item_type",
+                  arguments: { blueprint_json: JSON.stringify(blueprint) }
+                }), 10);
+              } else if (
+                body.action === "assistantToolResult" &&
+                body.callId === "item-type-preview"
+              ) {
+                setTimeout(() => emit({ type: "turn-completed" }), 10);
+              }
+            }
+          }
+        }
+      }
+    });
+  })()`);
   const page = await context.newPage();
+  page.on("pageerror", (error) => console.error("browser page error", error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") console.error("browser console error", message.text());
+  });
   const itemTitle = `Launch checklist ${Date.now().toString(36)}`;
 
   try {
@@ -56,6 +113,42 @@ async function main() {
       "complete starters are available without a provider round trip",
       (await page.getByRole("button", { name: /Project board/ }).count()) === 1,
     );
+
+    await page
+      .getByPlaceholder(/A reading list with author/)
+      .fill("A Medium-like reading list with author, status, and rating");
+    await page.getByRole("button", { name: "Build this item type" }).click();
+    await page
+      .getByRole("textbox", { name: "Name", exact: true })
+      .waitFor({ timeout: 20_000 });
+    check(
+      "the focused builder uses the connected Codex or ChatGPT agent without an API key",
+      (await page
+        .getByRole("textbox", { name: "Name", exact: true })
+        .inputValue()) ===
+        "AI reading list",
+    );
+    const nativeProof = await page.evaluate(() => {
+      const state = (
+        window as Window & {
+          __TEXTTEXT_NATIVE_ITEM_TYPE_EVAL__?: {
+            prompts: string[];
+            registeredTools: string[];
+          };
+        }
+      ).__TEXTTEXT_NATIVE_ITEM_TYPE_EVAL__;
+      return state ?? { prompts: [], registeredTools: [] };
+    });
+    check(
+      "the native agent receives a preview-only tool and no direct save instruction",
+      nativeProof.registeredTools.includes("preview_item_type") &&
+        nativeProof.prompts.some(
+          (prompt) =>
+            prompt.includes("preview_item_type exactly once") &&
+            prompt.includes("Do not call any other tool"),
+        ),
+    );
+    await page.getByRole("button", { name: "Back", exact: true }).click();
 
     await page.getByRole("button", { name: /Project board/ }).click();
     check(

@@ -35,6 +35,24 @@ export type WorkspaceAiConfigStatus = {
   model: string | null;
 };
 
+export function developmentWorkspaceAiConfig(): WorkspaceAiConfig | null {
+  if (
+    process.env.NODE_ENV === "production" ||
+    !process.env.TEXTTEXT_DEV_AI_KEY ||
+    !isCloudAiProvider(process.env.TEXTTEXT_DEV_AI_PROVIDER)
+  ) {
+    return null;
+  }
+  const provider = process.env.TEXTTEXT_DEV_AI_PROVIDER;
+  return {
+    provider,
+    model: defaultCloudAiModel(provider),
+    // workspaceLanguageModel reads the real value directly from the process.
+    // Keeping it out of this object prevents accidental logging by callers.
+    apiKey: "keychain-development-override",
+  };
+}
+
 export { isCloudAiProvider };
 
 export function cloudProviderLabel(
@@ -97,6 +115,14 @@ export async function validateWorkspaceAiConnection(
 export async function getWorkspaceAiConfigStatus(
   blogId: string,
 ): Promise<WorkspaceAiConfigStatus> {
+  const development = developmentWorkspaceAiConfig();
+  if (development) {
+    return {
+      configured: true,
+      provider: development.provider,
+      model: development.model,
+    };
+  }
   if (!db) return { configured: false, provider: null, model: null };
   const [row] = await db
     .select({
@@ -121,6 +147,14 @@ export async function getWorkspaceAiConfigStatus(
 export async function getWorkspaceAiConfigStatusForOwner(
   sub: string,
 ): Promise<WorkspaceAiConfigStatus> {
+  const development = developmentWorkspaceAiConfig();
+  if (development) {
+    return {
+      configured: true,
+      provider: development.provider,
+      model: development.model,
+    };
+  }
   if (!db) return { configured: false, provider: null, model: null };
   const [row] = await db
     .select({
@@ -173,6 +207,8 @@ export async function removeWorkspaceAiConfig(blogId: string): Promise<void> {
 export async function getWorkspaceAiConfigForOwner(
   sub: string,
 ): Promise<WorkspaceAiConfig | null> {
+  const development = developmentWorkspaceAiConfig();
+  if (development) return development;
   if (!db) return null;
   const [row] = await db
     .select({

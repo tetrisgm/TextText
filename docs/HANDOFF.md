@@ -462,6 +462,10 @@ Two traps worth keeping:
   `createItemTypeForWorkspace()` as the single persistence path. Saving can
   set a folder default and can explicitly restyle existing folder items. New
   items inherit the folder type.
+- The focused studio prefers the native Codex with ChatGPT connection for
+  custom prompts. It registers a preview-only `preview_item_type` dynamic
+  tool, validates the returned blueprint, and saves nothing until Done. A
+  direct provider API key remains a fallback, not a requirement for this path.
 - `npm run eval:item-type` drives the real browser flow through creation,
   inheritance, editing generated properties, board movement, and reuse from
   the Look gallery. `npm run eval:features` checks the documented entry,
@@ -472,6 +476,11 @@ Two traps worth keeping:
   2026-08-19 every listed surface painted with no horizontal overflow. The
   item-type prompt, item preview, folder preview, controls, and guide were
   also inspected as pixels at desktop, tablet, and phone sizes.
+- Real Keychain-backed Anthropic prompts were exercised for Medium-like
+  essays, a Notion-like task board with a checklist, and Apple Notes-like
+  notes. Provider generation uses validated JSON rather than the provider's
+  constrained grammar because the complete blueprint exceeds Anthropic's
+  optional-property limit. One bounded repair pass handles invalid model JSON.
 
 ## Resolved episodes (one line each, dates in git log)
 

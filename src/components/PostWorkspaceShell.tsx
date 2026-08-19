@@ -3732,7 +3732,8 @@ function WorkspacePostReader({
     postId: poolPost.id,
     query: "",
   });
-  const readerPeers = usePresence(poolPost.id);
+  const optimistic = isOptimisticPostId(poolPost.id);
+  const readerPeers = usePresence(optimistic ? null : poolPost.id);
   const findQuery = findState.postId === poolPost.id ? findState.query : "";
   const setFindQuery = useCallback(
     (query: string) => setFindState({ postId: poolPost.id, query }),
@@ -3839,7 +3840,7 @@ function WorkspacePostReader({
         <LoadingBody />
       )}
       <ReaderFindHighlights query={findQuery} />
-      {canCommentPost && post.id && entry.status === "ready" && (
+      {canCommentPost && post.id && !optimistic && entry.status === "ready" && (
         <ReaderComments
           key={post.id}
           canResolve={canManagePost}
@@ -6826,6 +6827,11 @@ function LocalWorkspaceShell({
         <ItemTypeStudio
           blogId={displayPool.blogId}
           folders={displayPool.folders}
+          generateWithConnectedAgent={
+            assistant.nativeConnection?.state === "ready"
+              ? assistant.generateItemTypeBlueprint
+              : undefined
+          }
           handle={displayPool.blog.handle}
           initialFolderPath={itemTypeStudioFolderPath}
           onClose={() => setItemTypeStudioFolderPath(null)}

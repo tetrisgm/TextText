@@ -36,8 +36,8 @@ export default function ItemTypesDocsPage() {
           <p className="connect-body">
             Editorial publication, Project board, and Quick notes are complete
             starters. They work immediately and remain fully editable. A
-            provider is needed only when you ask TextText to invent or refine a
-            custom type from a prompt.
+            connected agent is used when you ask TextText to invent or refine a
+            custom type from a prompt. An API key is only a fallback.
           </p>
         </section>
 
@@ -58,8 +58,10 @@ export default function ItemTypesDocsPage() {
         <section className="connect-section">
           <h2 className="connect-section-title">Build through your agent</h2>
           <p className="connect-body">
-            Claude, Codex, ChatGPT, and other connected agents can create the
-            same complete item types through TextText tools. Tell the agent the
+            Codex with ChatGPT can design the preview inside the focused builder
+            using the subscription you already connected. Claude, Codex,
+            ChatGPT, and other connected agents can also create the same
+            complete item types through TextText tools. Tell the agent the
             destination folder and whether existing items should change. The
             saved type appears in the Look gallery like one made in the app.
           </p>

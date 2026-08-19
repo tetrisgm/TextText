@@ -71,7 +71,14 @@ import {
   submitNativeAssistantToolResult,
   submitNativeAssistantTurn,
 } from "@/lib/ai/native-client";
+import {
+  NATIVE_ITEM_TYPE_PREVIEW_TOOL,
+  NATIVE_ITEM_TYPE_PREVIEW_TOOL_NAME,
+  nativeItemTypeDesignPrompt,
+  parseNativeItemTypePreviewArguments,
+} from "@/lib/ai/native-item-type";
 import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
+import type { ItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
 
 export type { AssistantViewSnapshot } from "./context";
 
@@ -386,6 +393,14 @@ export function useNativeAssistant({
     useState<AiConnectionSnapshot | null>(null);
   const nativeJobRef = useRef<string | null>(null);
   const nativeMessageRef = useRef<string | null>(null);
+  const nativeItemTypeDesignRef = useRef<{
+    blueprint: ItemTypeBlueprint | null;
+    lastError: string | null;
+    reject: (error: Error) => void;
+    resolve: (blueprint: ItemTypeBlueprint) => void;
+    request: string;
+    timeout: ReturnType<typeof setTimeout>;
+  } | null>(null);
   const getPoolRef = useRef(getPool);
   const getViewRef = useRef(getView);
   const readItemTextRef = useRef(readItemText);
@@ -482,6 +497,7 @@ export function useNativeAssistant({
       // fetching 127.0.0.1 reaches itself, so a local design tool is only ever
       // reachable from here.
       registerNativeAssistantTools([
+        NATIVE_ITEM_TYPE_PREVIEW_TOOL,
         ...tools.toolDefinitions.map((tool) => ({
           name: tool.name,
           description: tool.description,
@@ -505,6 +521,7 @@ export function useNativeAssistant({
           recoveryAction: event.recoveryAction ?? current?.recoveryAction ?? null,
         }));
       } else if (event.type === "text-delta") {
+        if (nativeItemTypeDesignRef.current) return;
         if (nativeMessageRef.current) {
           updateThreadMessage(threadKey, nativeMessageRef.current, (message) => ({
             ...message,
@@ -520,6 +537,50 @@ export function useNativeAssistant({
           );
         }
       } else if (event.type === "tool-call") {
+        if (
+          nativeItemTypeDesignRef.current &&
+          event.tool !== NATIVE_ITEM_TYPE_PREVIEW_TOOL_NAME
+        ) {
+          submitNativeAssistantToolResult(
+            event.callId,
+            {
+              error:
+                "This turn is preview-only. Return the design with preview_item_type.",
+            },
+            true,
+          );
+          return;
+        }
+        if (event.tool === NATIVE_ITEM_TYPE_PREVIEW_TOOL_NAME) {
+          const pending = nativeItemTypeDesignRef.current;
+          if (!pending) {
+            submitNativeAssistantToolResult(
+              event.callId,
+              { error: "No item-type preview is waiting for a design." },
+              true,
+            );
+            return;
+          }
+          try {
+            pending.blueprint = parseNativeItemTypePreviewArguments(
+              event.arguments,
+              pending.request,
+            );
+            pending.lastError = null;
+            submitNativeAssistantToolResult(event.callId, {
+              accepted: true,
+              message: "The preview is ready. Finish the turn without calling another tool.",
+            });
+          } catch (error) {
+            pending.lastError = assistantAgentError(error);
+            submitNativeAssistantToolResult(
+              event.callId,
+              { error: pending.lastError },
+              true,
+            );
+          }
+          return;
+        }
         void (async () => {
           try {
             const args = typeof event.arguments === "string" ? JSON.parse(event.arguments) : event.arguments;
@@ -538,11 +599,36 @@ export function useNativeAssistant({
           }
         })();
       } else if (event.type === "turn-completed") {
+        const itemTypeDesign = nativeItemTypeDesignRef.current;
+        if (itemTypeDesign) {
+          clearTimeout(itemTypeDesign.timeout);
+          nativeItemTypeDesignRef.current = null;
+          setThreadBusy(threadKey, false);
+          if (itemTypeDesign.blueprint) {
+            itemTypeDesign.resolve(itemTypeDesign.blueprint);
+          } else {
+            itemTypeDesign.reject(
+              new Error(
+                itemTypeDesign.lastError ||
+                  "The connected agent finished without a usable item-type design.",
+              ),
+            );
+          }
+          return;
+        }
         if (nativeJobRef.current) updateAssistantJob(nativeJobRef.current, { status: "done" });
         nativeJobRef.current = null;
         nativeMessageRef.current = null;
         setThreadBusy(threadKey, false);
       } else if (event.type === "error") {
+        const itemTypeDesign = nativeItemTypeDesignRef.current;
+        if (itemTypeDesign) {
+          clearTimeout(itemTypeDesign.timeout);
+          nativeItemTypeDesignRef.current = null;
+          setThreadBusy(threadKey, false);
+          itemTypeDesign.reject(new Error(assistantAgentError(event.message)));
+          return;
+        }
         appendToThread(threadKey, "error", assistantAgentError(event.message));
         if (nativeJobRef.current) updateAssistantJob(nativeJobRef.current, { status: "error" });
         nativeJobRef.current = null;
@@ -553,6 +639,56 @@ export function useNativeAssistant({
     if (nativeAssistantAvailable()) requestNativeAssistant("assistantStatus");
     return unsubscribe;
   }, [threadKey, tools, localToolsVersion]);
+
+  const generateItemTypeBlueprint = useCallback(
+    ({
+      current,
+      folderName,
+      request,
+    }: {
+      current?: ItemTypeBlueprint;
+      folderName?: string;
+      request: string;
+    }) => {
+      if (nativeConnection?.state !== "ready") {
+        return Promise.reject(
+          new Error("Connect the TextText Agent before building with it."),
+        );
+      }
+      if (busyThreads.has(threadKey) || nativeItemTypeDesignRef.current) {
+        return Promise.reject(
+          new Error("The connected agent is already working. Try again in a moment."),
+        );
+      }
+      return new Promise<ItemTypeBlueprint>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          if (!nativeItemTypeDesignRef.current) return;
+          nativeItemTypeDesignRef.current = null;
+          setThreadBusy(threadKey, false);
+          reject(new Error("The connected agent took too long to design that item type."));
+        }, 120_000);
+        nativeItemTypeDesignRef.current = {
+          blueprint: null,
+          lastError: null,
+          reject,
+          resolve,
+          request,
+          timeout,
+        };
+        setThreadBusy(threadKey, true);
+        const started = submitNativeAssistantTurn(
+          nativeItemTypeDesignPrompt({ current, folderName, request }),
+        );
+        if (!started) {
+          clearTimeout(timeout);
+          nativeItemTypeDesignRef.current = null;
+          setThreadBusy(threadKey, false);
+          reject(new Error("The connected agent could not start that design."));
+        }
+      });
+    },
+    [nativeConnection?.state, threadKey],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -939,6 +1075,7 @@ export function useNativeAssistant({
     nativeConnection,
     connectNativeAssistant: () => requestNativeAssistant("assistantConnect"),
     jobs,
+    generateItemTypeBlueprint,
     messages,
     quickActions,
     runQuickAction,

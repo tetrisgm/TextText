@@ -168,19 +168,22 @@ export const ITEM_TYPE_STARTERS: ReadonlyArray<{
       styleReference: "Medium",
       audience: "publishable",
       fields: [
+        { id: "coverImage", label: "Cover image", type: "image", display: "cover" },
+        { id: "author", label: "Author", type: "text", display: "fact" },
         { id: "category", label: "Category", type: "enum", options: [
           { value: "ideas", label: "Ideas" },
           { value: "culture", label: "Culture" },
           { value: "work", label: "Work" },
         ], display: "badge" },
         { id: "dek", label: "Dek", type: "text", display: "section" },
+        { id: "readingTime", label: "Reading time", type: "number", format: "minutes", display: "fact" },
         { id: "publishedOn", label: "Published", type: "date", display: "fact" },
       ],
       item: { shape: "article", icon: "✦", showBody: true, showMetadata: true, showTags: true },
       collection: {
         layout: "cards",
         columns: 2,
-        summaryFields: ["category", "publishedOn"],
+        summaryFields: ["category", "author", "publishedOn"],
         sortBy: "publishedOn",
         sortDirection: "desc",
       },
@@ -304,6 +307,21 @@ function styleDefaults(reference: string | undefined): ThemeTokens {
 
 function optionValues(field: { options?: Array<{ value: string }> }) {
   return field.options;
+}
+
+function exampleTitle(blueprint: ItemTypeBlueprint): string {
+  switch (blueprint.item.shape) {
+    case "article":
+      return "A story worth sharing";
+    case "note":
+      return "A quick note";
+    case "task":
+      return "Plan the launch";
+    case "reference":
+      return "A useful reference";
+    case "page":
+      return `${blueprint.name} overview`;
+  }
 }
 
 function scalarDefinition(
@@ -482,7 +500,7 @@ function fieldNodes(blueprint: ItemTypeBlueprint): RenderNode[] {
       });
     } else if (field.type === "enum" || field.display === "badge") {
       nodes.push({ type: "badge", bind: binding(field.id), variant: "pill", showIcon: true });
-    } else if (field.type === "boolean" || field.display === "toggle") {
+    } else if (field.type === "boolean" && field.display === "toggle") {
       nodes.push({ type: "toggle", bind: binding(field.id), variant: "circle" });
     } else {
       facts.push({ bind: binding(field.id), label: field.label });
@@ -582,7 +600,7 @@ function summaryNodes(blueprint: ItemTypeBlueprint): RenderNode[] {
     if (field.type === "rows" || field.type === "richtext" || field.type === "image") continue;
     if (field.type === "enum") {
       nodes.push({ type: "badge", bind: binding(field.id), variant: "pill", showIcon: true });
-    } else if (field.type === "boolean") {
+    } else if (field.type === "boolean" && field.display === "toggle") {
       nodes.push({
         type: "toggle",
         bind: binding(field.id),
@@ -611,7 +629,9 @@ function collectionItemTree(blueprint: ItemTypeBlueprint): RenderNode {
       fit: "cover",
     });
   }
-  const doneField = blueprint.fields.find((field) => field.type === "boolean");
+  const doneField = blueprint.fields.find(
+    (field) => field.type === "boolean" && field.display === "toggle",
+  );
   if (blueprint.item.shape === "task" && doneField && doneField.type !== "rows") {
     children.push({
       type: "stack",
@@ -780,7 +800,7 @@ export function compileItemTypeBlueprint(
       item: collectionItemTree(blueprint),
     },
     example: {
-      title: blueprint.item.shape === "task" ? "Plan the launch" : `A ${blueprint.name.toLowerCase()} example`,
+      title: exampleTitle(blueprint),
       subtitle: blueprint.description ?? `An example of ${blueprint.name.toLowerCase()}.`,
       body: blueprint.item.showBody
         ? "Start writing here. The page and its collection view share one reusable look."
