@@ -66,7 +66,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     private var codexRequestCounter = 0
     private var codexThreadID: String?
     private var codexDynamicTools: [[String: Any]] = []
-    private var codexPendingToolCalls: [String: String] = [:]
+    private var codexPendingToolCalls: [String: AnyHashable] = [:]
     private var codexToolDeadlines: [String: DispatchWorkItem] = [:]
     private var codexPendingRequests: [String: CodexRequestKind] = [:]
     private var codexAccount: CodexAccountSummary?
@@ -705,7 +705,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
 
     private func startCodexToolDeadline(
         callID: String,
-        requestID: String,
+        requestID: AnyHashable,
         toolName: String
     ) {
         codexToolDeadlines.removeValue(forKey: callID)?.cancel()
@@ -927,17 +927,17 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         if message.method == "item/tool/call" {
             let params = message.rawParams ?? [:]
             let callId = (params["callId"] as? String) ?? (params["id"] as? String) ?? UUID().uuidString
-            if codexTurnTimedOut, let requestId = message.id {
+            if codexTurnTimedOut, let requestId = message.jsonRPCID {
                 try? codexServer?.respond(
                     id: requestId,
                     result: CodexAppServerRequests.dynamicToolResult(
                         text: "The TextText Agent turn timed out.", success: false))
                 return
             }
-            if let requestId = message.id { codexPendingToolCalls[callId] = requestId }
+            if let requestId = message.jsonRPCID { codexPendingToolCalls[callId] = requestId }
             let toolName = (params["tool"] as? String) ?? (params["name"] as? String) ?? ""
             Self.codexLog.info("tool requested: \(toolName, privacy: .public)")
-            if let requestID = message.id {
+            if let requestID = message.jsonRPCID {
                 startCodexToolDeadline(
                     callID: callId,
                     requestID: requestID,

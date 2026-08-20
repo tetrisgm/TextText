@@ -18,6 +18,8 @@ final class CodexAppServerTests: XCTestCase {
     func testPreservesDynamicToolCallNameAndArguments() throws {
         let message = try CodexAppServerMessage(data: Data(#"{"id":0,"method":"item/tool/call","params":{"callId":"exec-1","tool":"qa_echo","arguments":{"text":"hello"}}}"#.utf8))
         XCTAssertEqual(message.method, "item/tool/call")
+        XCTAssertEqual(message.jsonRPCID, AnyHashable(0))
+        XCTAssertNotEqual(message.jsonRPCID, AnyHashable("0"))
         XCTAssertEqual(message.rawParams?["tool"] as? String, "qa_echo")
         XCTAssertEqual((message.rawParams?["arguments"] as? [String: Any])?["text"] as? String, "hello")
     }
@@ -125,6 +127,20 @@ final class CodexAppServerTests: XCTestCase {
         XCTAssertEqual(
             ((success["contentItems"] as? [[String: Any]])?.first)?["type"] as? String,
             "inputText")
+    }
+
+    func testDynamicToolResponsePreservesNumericJSONRPCID() throws {
+        let envelope = CodexAppServerRequests.responseEnvelope(
+            id: try XCTUnwrap(CodexAppServerMessage(
+                data: Data(#"{"id":0,"method":"item/tool/call","params":{}}"#.utf8)
+            ).jsonRPCID),
+            result: CodexAppServerRequests.dynamicToolResult(text: "ok", success: true))
+        let encoded = try JSONSerialization.data(withJSONObject: envelope)
+        let decoded = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+
+        XCTAssertEqual(decoded["id"] as? Int, 0)
+        XCTAssertNil(decoded["id"] as? String)
     }
 
     func testTurnCompletionDoesNotTreatFailuresAsSuccess() throws {

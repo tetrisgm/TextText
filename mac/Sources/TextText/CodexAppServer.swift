@@ -75,9 +75,9 @@ final class CodexAppServerController {
         input.fileHandleForWriting.write(Data([0x0a]))
     }
 
-    func respond(id: String, result: [String: Any]) throws {
+    func respond(id: AnyHashable, result: [String: Any]) throws {
         guard isRunning else { throw CodexAppServerError.notRunning }
-        let object: [String: Any] = ["jsonrpc": "2.0", "id": id, "result": result]
+        let object = CodexAppServerRequests.responseEnvelope(id: id, result: result)
         let data = try JSONSerialization.data(withJSONObject: object)
         input.fileHandleForWriting.write(data)
         input.fileHandleForWriting.write(Data([0x0a]))

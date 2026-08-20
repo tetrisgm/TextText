@@ -5,6 +5,10 @@ import Foundation
 /// App Server is deliberately kept behind this type. The web view receives
 /// status and streamed events, never the account token or process environment.
 public struct CodexAppServerMessage: Equatable {
+    /// The original JSON-RPC id, preserving whether the peer used a string or
+    /// a number. App Server uses numeric ids for dynamic tool calls, and a
+    /// response with the stringified id is a different JSON-RPC response.
+    public let jsonRPCID: AnyHashable?
     public let id: String?
     public let method: String?
     public let params: [String: AnyHashable]?
@@ -18,7 +22,8 @@ public struct CodexAppServerMessage: Equatable {
         guard let dictionary = object as? [String: Any] else {
             throw CodexAppServerError.invalidMessage
         }
-        id = dictionary["id"].map { String(describing: $0) }
+        jsonRPCID = dictionary["id"] as? AnyHashable
+        id = jsonRPCID.map { String(describing: $0.base) }
         method = dictionary["method"] as? String
         params = dictionary["params"] as? [String: AnyHashable]
         result = dictionary["result"] as? [String: AnyHashable]
@@ -33,7 +38,7 @@ public struct CodexAppServerMessage: Equatable {
     }
 
     public static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.id == rhs.id && lhs.method == rhs.method && lhs.errorMessage == rhs.errorMessage
+        lhs.jsonRPCID == rhs.jsonRPCID && lhs.method == rhs.method && lhs.errorMessage == rhs.errorMessage
     }
 }
 
@@ -188,6 +193,13 @@ public enum CodexAppServerRequests {
             "contentItems": [["type": "inputText", "text": text]],
             "success": success,
         ]
+    }
+
+    public static func responseEnvelope(
+        id: AnyHashable,
+        result: [String: Any]
+    ) -> [String: Any] {
+        ["jsonrpc": "2.0", "id": id.base, "result": result]
     }
 }
 
