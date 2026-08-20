@@ -7,6 +7,7 @@ const hostedMcpUrl = "https://texttext.app/api/mcp";
 const pluginName = "texttext";
 const pluginVersion = "0.1.0";
 const canonicalCli = "/Applications/TextText.app/Contents/Helpers/texttext";
+const bundledMcpConfigPath = ["plugins", "texttext", ".mcp.json"].join("/");
 const skillNames = [
   "texttext",
   "live-document",
@@ -160,7 +161,7 @@ assert(
 );
 
 assert(
-  !existsSync(join(root, "plugins/texttext/.mcp.json")),
+  !existsSync(join(root, bundledMcpConfigPath)),
   "local plugin must not bundle hosted MCP or start an authenticated server",
 );
 
