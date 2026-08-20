@@ -52,6 +52,8 @@ final class CodexAppServerTests: XCTestCase {
         XCTAssertTrue(instructions?.contains("Use only the dynamic tools") == true)
         XCTAssertTrue(instructions?.contains("Never use installed skills") == true)
         XCTAssertTrue(instructions?.contains("Do not retry through another integration") == true)
+        XCTAssertTrue(instructions?.contains("never call search or read_item") == true)
+        XCTAssertTrue(instructions?.contains("Make at most four dynamic tool calls") == true)
     }
 
     func testTurnInterruptUsesExactThreadAndTurn() {

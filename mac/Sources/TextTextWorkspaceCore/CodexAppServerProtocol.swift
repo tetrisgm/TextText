@@ -134,6 +134,7 @@ public enum CodexAppServerRequests {
     If a required TextText dynamic tool is missing or fails, report one concise error and stop.
     Do not retry through another integration or narrate provider fallback attempts.
     For read-only requests, do not change workspace content.
+    For a workspace-wide catch-up or recent-work summary, never call search or read_item. Call list_folders once, then list_items only for the relevant folders, and answer from the returned titles, dates, kinds, and statuses. Make at most four dynamic tool calls for that request.
     Keep any progress update to one short sentence, then provide the useful answer.
     """
 

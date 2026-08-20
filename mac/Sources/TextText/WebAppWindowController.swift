@@ -1,6 +1,7 @@
 import AppKit
 import WebKit
 import TextTextWorkspaceCore
+import os
 
 // WKUserContentController retains its message handler STRONGLY; adding the
 // controller directly would cycle (controller -> webView -> config -> ucc ->
@@ -66,6 +67,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     private var codexThreadID: String?
     private var codexDynamicTools: [[String: Any]] = []
     private var codexPendingToolCalls: [String: String] = [:]
+    private var codexToolDeadlines: [String: DispatchWorkItem] = [:]
     private var codexPendingRequests: [String: CodexRequestKind] = [:]
     private var codexAccount: CodexAccountSummary?
     private var codexLoginInFlight = false
@@ -77,6 +79,10 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     private var codexAgentMessagePhases: [String: CodexAgentMessage.Phase] = [:]
 
     private static let codexTurnTimeoutSeconds: TimeInterval = 30
+    private static let codexToolTimeoutSeconds: TimeInterval = 8
+    private static let codexLog = Logger(
+        subsystem: "app.texttext.mac",
+        category: "native-assistant")
 
     static let cacheWebView = true
 
@@ -503,6 +509,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                 self.codexAccountKnownSignedOut = false
                 self.codexPendingRequests.removeAll()
                 self.codexPendingToolCalls.removeAll()
+                for deadline in self.codexToolDeadlines.values { deadline.cancel() }
+                self.codexToolDeadlines.removeAll()
                 self.codexTurnDeadline?.cancel()
                 self.codexTurnDeadline = nil
                 self.codexActiveTurnID = nil
@@ -666,6 +674,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         codexTurnTimedOut = false
         let deadline = DispatchWorkItem { [weak self] in
             guard let self else { return }
+            Self.codexLog.error(
+                "turn timed out with \(self.codexPendingToolCalls.count, privacy: .public) pending tool calls")
             self.codexTurnTimedOut = true
             self.emitCodexEvent([
                 "type": "error",
@@ -691,6 +701,31 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         codexActiveTurnID = nil
         codexTurnTimedOut = false
         codexAgentMessagePhases.removeAll()
+    }
+
+    private func startCodexToolDeadline(
+        callID: String,
+        requestID: String,
+        toolName: String
+    ) {
+        codexToolDeadlines.removeValue(forKey: callID)?.cancel()
+        let deadline = DispatchWorkItem { [weak self] in
+            guard let self,
+                  self.codexPendingToolCalls.removeValue(forKey: callID) != nil
+            else { return }
+            self.codexToolDeadlines.removeValue(forKey: callID)
+            Self.codexLog.error(
+                "tool \(toolName, privacy: .public) did not return within \(Self.codexToolTimeoutSeconds, privacy: .public) seconds")
+            try? self.codexServer?.respond(
+                id: requestID,
+                result: CodexAppServerRequests.dynamicToolResult(
+                    text: "The in-app \(toolName) tool did not return in time.",
+                    success: false))
+        }
+        codexToolDeadlines[callID] = deadline
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.codexToolTimeoutSeconds,
+            execute: deadline)
     }
 
     private func handleCodexMessage(_ message: CodexAppServerMessage) {
@@ -901,6 +936,13 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             }
             if let requestId = message.id { codexPendingToolCalls[callId] = requestId }
             let toolName = (params["tool"] as? String) ?? (params["name"] as? String) ?? ""
+            Self.codexLog.info("tool requested: \(toolName, privacy: .public)")
+            if let requestID = message.id {
+                startCodexToolDeadline(
+                    callID: callId,
+                    requestID: requestID,
+                    toolName: toolName)
+            }
             emitCodexEvent(["type": "tool-call", "callId": callId, "tool": toolName, "arguments": params["arguments"] ?? [:]])
             return
         }
@@ -967,6 +1009,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             codexDynamicTools = tools.map { tool in
                 ["type": "function", "name": tool["name"] ?? "", "description": tool["description"] ?? "", "inputSchema": tool["inputSchema"] ?? [:]]
             }
+            Self.codexLog.info(
+                "registered \(self.codexDynamicTools.count, privacy: .public) in-app tools")
             return
         }
         // Outbound MCP to a server on this Mac. The web view cannot make this
@@ -1005,8 +1049,11 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         if body["action"] as? String == "assistantToolResult",
            let callId = body["callId"] as? String,
            let requestId = codexPendingToolCalls.removeValue(forKey: callId) {
+            codexToolDeadlines.removeValue(forKey: callId)?.cancel()
             let output = body["output"] ?? NSNull()
             let success = !(body["isError"] as? Bool ?? false)
+            Self.codexLog.info(
+                "tool returned success=\(success, privacy: .public)")
             let text: String
             if let data = try? JSONSerialization.data(withJSONObject: output), let encoded = String(data: data, encoding: .utf8) { text = encoded } else { text = String(describing: output) }
             try? codexServer?.respond(
