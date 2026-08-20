@@ -289,13 +289,12 @@ Two traps worth keeping:
 - Compare states when diagnosing this, they are distinct and the wording is
   the diagnosis: Synology reads "temporarily disconnected", Write reads
   "extension not found", TextText read "user-disabled".
-- The app CANNOT detect this on macOS. `NSFileProviderDomain.userEnabled` is
-  `FILEPROVIDER_API_AVAILABILITY_V3_IOS`, iOS only; macOS exposes only
-  `isDisconnected` and `isHidden`. An attempt to surface it was written and
-  reverted because it does not compile. So a disabled mount is indistinguishable
-  from a working one from inside the app, and the only tell is that
-  `fileproviderctl dump` line. Worth knowing before anyone spends another day
-  on it.
+- The app can read `NSFileProviderDomain.userEnabled` on macOS. The current
+  SDK declares it available on macOS 11 and later, and the implementation is
+  covered by the Mac build and health tests. A linked domain that the user
+  disabled reports a runtime warning but does not invalidate an otherwise
+  healthy release build. A missing, enabled-but-unusable, or broken domain
+  still fails health. The app does not toggle the setting on the user's behalf.
 - App Store record 1.0 vs shipped 0.175: submission-time only.
 
 ## Workflow and dev loop
@@ -463,9 +462,10 @@ Two traps worth keeping:
   app.texttext.mac.fileprovider` showed the provider and mount xattrs without an
   active `domain:` section. That state is not a successful Finder proof. If it
   persists, the owner must enable TextText in **System Settings > General >
-  Login Items & Extensions > File Providers** and reopen TextText. macOS does
-  not expose `NSFileProviderDomain.userEnabled` to macOS apps, so code cannot
-  toggle or reliably detect this setting.
+  Login Items & Extensions > File Providers** and reopen TextText. The app can
+  detect a registered domain that the user disabled, but it cannot toggle that
+  system preference. An absent domain and an enabled domain that cannot expose
+  a workspace remain health failures.
 
 ## Public URLs (live since 0.175)
 
@@ -589,11 +589,33 @@ Two traps worth keeping:
 - Store builds use a manifest that excludes Sparkle. `build-store.sh` now
   restores the standalone `Package.resolved` on every exit so TestFlight
   preparation cannot remove the standalone Sparkle pin or dirty the checkout.
-- The final native Codex dynamic-tool evaluation is implemented but the live
-  account is currently quota-blocked until 20:31 local time. Rerun
-  `npm run eval:native-codex` after that time. Deterministic protocol tests and
-  the earlier real read-only account/thread turn are green; do not claim the
-  final live dynamic-tool proof until this command passes.
+- The native Codex dynamic-tool evaluation is green against the owner's
+  existing ChatGPT Pro session. It starts an ephemeral read-only thread with
+  approvals disabled, disables four inherited MCP servers, completes exactly
+  one fixed safe tool call, and requires the exact final response. The eval
+  accepts numeric JSON-RPC request id zero and reads the authoritative final
+  agent item rather than combining commentary with the answer.
+
+## Source-only App Store and AI verification (2026-08-20)
+
+- No TestFlight build, package, upload, install, App Store Connect change, or
+  release record was performed in this pass.
+- Store compilation reaches `TextTextWorkspaceCore` and compiles the local
+  Codex executable locator out under `TEXTTEXT_STORE`. The Store binary scan is
+  clean for local Codex paths, the bundled CLI, Sparkle, updater/appcast code,
+  relocation helpers, and non-system dynamic libraries. The standalone edition
+  retains its local Codex and CLI capabilities.
+- Full verification passed: 147 web test files with 929 tests, 461 Swift tests,
+  the production Next build with 42 static pages, both agent integration
+  verifiers, and the real native Codex evaluation described above.
+- The API-key and external MCP paths lead the Store-safe connection UX. The
+  standalone edition conditionally offers the local ChatGPT/Codex connection.
+  Assistant, settings, and connect surfaces were photographed at 1440, 768,
+  and 375 pixels in both themes. The narrow assistant now uses a viewport
+  overlay, and the 375-pixel settings cards no longer clip horizontally.
+- A disposable `npm run try` build loaded the signed-in workspace in the native
+  WKWebView, rendered the Library and assistant, and reached the ready
+  "Chat with Codex" state. It did not replace `/Applications/TextText.app`.
 
 ## Resolved episodes (one line each, dates in git log)
 
