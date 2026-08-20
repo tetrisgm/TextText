@@ -2478,6 +2478,19 @@ body:has(.reader):not(:has(.post-editor-shell)) {
 .post-editor-shell.has-assistant-pinned {
   --workspace-rail-inset: var(--workspace-assistant-width, 360px);
 }
+
+/* Below a comfortable two-column width, the assistant module becomes a
+   viewport overlay. Do not keep reserving its desktop grid track or fixed
+   chrome inset after it leaves document flow. */
+@media (max-width: 900px) {
+  .post-editor-shell.has-assistant-pinned .workspace-document-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .post-editor-shell.has-assistant-pinned {
+    --workspace-rail-inset: 0px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .post-editor-content {
     transition: none;

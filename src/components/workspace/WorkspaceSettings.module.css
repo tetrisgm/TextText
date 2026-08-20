@@ -1,4 +1,7 @@
 .page {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   min-height: 100dvh;
   padding: 64px 40px 80px;
   background: var(--bg);
@@ -8,6 +11,7 @@
 
 .inner {
   width: min(100%, 760px);
+  min-width: 0;
   display: grid;
   gap: 0;
   margin: 0 auto;
@@ -48,6 +52,7 @@
 }
 
 .section {
+  min-width: 0;
   display: grid;
   gap: 14px;
   padding: 24px 0 28px;

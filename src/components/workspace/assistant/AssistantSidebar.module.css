@@ -592,6 +592,35 @@
   }
 }
 
+/* A narrow workspace has no room for a document and a docked inspector.
+   Treat every assistant state as a viewport-anchored overlay instead. Keeping
+   the hidden launcher inside the document grid put it at the bottom of a long
+   Library page; opening it scrolled the page there, while the panel's centered
+   connection UI remained far above the viewport. */
+@media (max-width: 900px) {
+  .root[data-layout="auto"][data-state] {
+    position: fixed;
+    inset: 0 0 0 auto;
+    z-index: 520;
+    width: min(var(--assistant-sidebar-width), 100vw);
+    max-width: 100vw;
+    height: 100dvh;
+    min-height: 100dvh;
+  }
+
+  .root[data-layout="auto"][data-state] .panel {
+    height: 100dvh;
+  }
+}
+
+@media (max-width: 560px) {
+  .root[data-layout="auto"][data-state] {
+    inset: 0;
+    width: auto;
+    max-width: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .launcher:hover,
   .launcher:active {

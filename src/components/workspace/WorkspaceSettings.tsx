@@ -260,7 +260,9 @@ export function WorkspaceSettings({
               </div>
             </div>
             <AiConnectionSettings />
-            <h3 className={styles.subsectionTitle}>API key connections</h3>
+            <h3 className={styles.subsectionTitle} id="api-key-connections">
+              API key connections
+            </h3>
             <p className={styles.aiNotConfigured}>
               These advanced connections use your provider API account. Keys are encrypted and scoped to this workspace.
             </p>

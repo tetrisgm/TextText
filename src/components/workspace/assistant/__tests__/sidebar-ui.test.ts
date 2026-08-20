@@ -209,7 +209,7 @@ describe("assistant sidebar UI", () => {
     expect(html).toContain("Codex");
     expect(html).toContain("ChatGPT");
     expect(html).toContain('aria-expanded="false"');
-    expect(html).toContain("API key");
+    expect(html).toContain("Set up the in-app assistant");
     expect(html).not.toMatch(/Good (morning|afternoon|evening)/);
     expect(html).not.toContain('aria-label="Prompt starters"');
     expect(html).not.toContain("Catch me up");
@@ -234,12 +234,14 @@ describe("assistant sidebar UI", () => {
           recoveryAction: "open-settings",
         },
         onConnectNative: () => {},
+        aiSettingsHref: "/@writer?view=settings#api-key-connections",
       }),
     );
 
-    expect(html).toContain("This TestFlight build cannot run the built-in ChatGPT agent.");
+    expect(html).toContain("Use an API key for the in-app assistant");
     expect(html).not.toContain("Continue with ChatGPT");
     expect(html).toContain('aria-label="Ways to connect"');
+    expect(html).toContain('href="/@writer?view=settings#api-key-connections"');
   });
 
   it("explains selected-text context and unavailable attachments", () => {

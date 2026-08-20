@@ -195,6 +195,8 @@ export function AssistantConversation({
   nativeConnection,
   onConnectNative,
   onBuildItemType,
+  aiSettingsHref,
+  onOpenAiSettings,
 }: {
   activeCloudProvider?: CloudAssistantProviderLabel | null;
   cloudProvider?: CloudAssistantProviderLabel | null;
@@ -217,6 +219,10 @@ export function AssistantConversation({
   nativeConnection?: AiConnectionSnapshot | null;
   onConnectNative?: () => void;
   onBuildItemType?: () => void;
+  /** Direct route to the workspace's API-key setup. */
+  aiSettingsHref?: string;
+  /** Closes the assistant before its settings route replaces the workspace. */
+  onOpenAiSettings?: () => void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -291,7 +297,7 @@ export function AssistantConversation({
               {connected
                 ? "Ask about what you are looking at, or start with one of these."
                 : nativeConnection?.state === "unavailable"
-                  ? "This TestFlight build cannot run the built-in ChatGPT agent. Connect another AI app or add an API key to work here."
+                  ? "Use an API key for the in-app assistant, or connect another AI app to work here."
                 : nativeConnection?.state === "runtime-missing"
                   ? "The built-in agent needs the Codex runtime on this Mac. Connect another AI app or add an API key to work here."
                   : "Connect the AI you already use once, and it works right here, beside your documents."}
@@ -314,7 +320,13 @@ export function AssistantConversation({
                   row-with-a-copy-icon version failed exactly that way. */}
               <ConnectPaths />
               <p className={styles.connectAlt}>
-                Prefer a key? <a href="/docs/ai#api-key">Add an Anthropic or OpenAI API key</a>
+                Prefer to stay here?{" "}
+                <a
+                  href={aiSettingsHref ?? "/docs/ai#api-key"}
+                  onClick={onOpenAiSettings}
+                >
+                  Set up the in-app assistant
+                </a>
               </p>
             </div>
           )}

@@ -259,6 +259,65 @@ const surfaces: Surface[] = [
     },
   },
   {
+    name: "home-assistant-store-unavailable",
+    go: async (page) => {
+      await page.addInitScript(() => {
+        Object.defineProperty(window, "__TEXTTEXT_APP__", {
+          configurable: true,
+          value: true,
+        });
+        Object.defineProperty(window, "__TEXTTEXT_EMBEDDED_AGENT__", {
+          configurable: true,
+          value: false,
+        });
+        Object.defineProperty(window, "webkit", {
+          configurable: true,
+          value: {
+            messageHandlers: {
+              textTextApp: {
+                postMessage(message: { action?: string }) {
+                  if (message?.action !== "assistantStatus") return;
+                  queueMicrotask(() => {
+                    window.dispatchEvent(
+                      new CustomEvent("texttext:assistant", {
+                        detail: {
+                          type: "status",
+                          state: "unavailable",
+                          kind: "native-codex",
+                          providerLabel: "Codex with ChatGPT",
+                          embeddedChatSupported: false,
+                          recoveryAction: null,
+                        },
+                      }),
+                    );
+                  });
+                },
+              },
+            },
+          },
+        });
+      });
+      await page.goto(`${BASE}/start?to=home`, { waitUntil: "domcontentloaded" });
+      await page.waitForTimeout(1200);
+      const launcher = page.getByRole("button", { name: "Open assistant" });
+      if (await launcher.isVisible().catch(() => false)) await launcher.click();
+      const unavailable = page.getByText("Use an API key for the in-app assistant", {
+        exact: false,
+      });
+      await unavailable.waitFor({ state: "visible", timeout: 10000 });
+      if (await page.getByRole("button", { name: "Continue with ChatGPT" }).count()) {
+        throw new Error("Store-unavailable state offered native ChatGPT sign-in");
+      }
+      const assistantTitle = page.getByText("Write with your AI", { exact: true });
+      const titleBox = await assistantTitle.boundingBox();
+      if (!titleBox || titleBox.y < 0 || titleBox.y >= 940) {
+        throw new Error("Assistant onboarding rendered outside the viewport");
+      }
+      const scrollY = await page.evaluate(() => window.scrollY);
+      if (scrollY > 2) throw new Error(`Opening the assistant scrolled the page to ${scrollY}`);
+    },
+  },
+  {
     name: "landing-full",
     anonymous: true,
     fullPage: true,

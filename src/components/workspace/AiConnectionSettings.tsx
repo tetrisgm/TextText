@@ -33,7 +33,6 @@ export function AiConnectionSettings() {
     return unsubscribe;
   }, []);
 
-  const isMac = nativeAssistantAvailable();
   const embeddedAgent = nativeEmbeddedAssistantAvailable();
   const ready = connection?.state === "ready";
   return (
@@ -41,15 +40,13 @@ export function AiConnectionSettings() {
       <article className={styles.card}>
         <div>
           <p className={styles.kicker}>Inside TextText</p>
-          <h3>TextText Agent</h3>
+          <h3>{embeddedAgent ? "TextText Agent" : "In-app assistant"}</h3>
           <p>
-            {ready
-              ? `Connected${connection?.accountEmail ? ` as ${connection.accountEmail}` : ""}. Use your ChatGPT plan directly in the assistant.`
-              : embeddedAgent
-                ? "Use your eligible ChatGPT or Codex plan directly inside TextText. No API credits are required."
-                : isMac
-                  ? "This TestFlight build cannot launch a local Codex runtime. Connect another AI app or use an API key instead."
-                : "The embedded agent is available in the TextText Mac app."}
+            {embeddedAgent
+              ? ready
+                ? `Connected${connection?.accountEmail ? ` as ${connection.accountEmail}` : ""}. Use your ChatGPT plan directly in the assistant.`
+                : "Use your eligible ChatGPT or Codex plan directly inside TextText. No API credits are required."
+              : "Add an Anthropic or OpenAI API key to write with AI directly beside your documents."}
           </p>
         </div>
         {embeddedAgent ? (
@@ -57,7 +54,9 @@ export function AiConnectionSettings() {
             {ready ? "Connected" : "Continue with ChatGPT"}
           </button>
         ) : (
-          <a className={styles.secondary} href="/connect">Choose another connection</a>
+          <a className={styles.secondary} href="#api-key-connections">
+            Set up in-app AI
+          </a>
         )}
       </article>
       <article className={styles.card}>
@@ -73,7 +72,7 @@ export function AiConnectionSettings() {
           it, always visible: a control that hid nothing and could not be the
           way in. The API key section says the same thing where the keys are. */}
       <p className={styles.footnote}>
-        <a href="/docs">Read the AI documentation</a>
+        <a href="/docs/ai">Read the AI documentation</a>
       </p>
     </div>
   );

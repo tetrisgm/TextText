@@ -6808,6 +6808,8 @@ function LocalWorkspaceShell({
           cloudProvider={assistant.cloudProvider}
           nativeConnection={assistant.nativeConnection}
           onConnectNative={assistant.connectNativeAssistant}
+          aiSettingsHref={`${workspaceSettingsHref(homePath)}#api-key-connections`}
+          onOpenAiSettings={() => changeAssistantState("hidden")}
           jobs={assistant.jobs}
           messages={assistant.messages}
           starterContext={starterContextFromChip(assistantContext)}

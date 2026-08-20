@@ -270,11 +270,10 @@ export function ConnectPanel({
           In-app assistant
         </h2>
         <p className="connect-body">
-          In the standalone TextText Mac app, an eligible ChatGPT or Codex
-          account can power the local Codex agent without provider API credits.
-          The sandboxed TestFlight app and the browser cannot launch that local
-          runtime. In those channels, add a workspace-owned Anthropic or OpenAI
-          API key in Workspace Settings, or work from an external MCP app.
+          App Store and browser versions use a workspace-owned Anthropic or
+          OpenAI API key for the in-app assistant, or an external MCP app. The
+          standalone Mac edition can also use an eligible ChatGPT or Codex
+          account through its local agent.
         </p>
       </section>
 
@@ -291,9 +290,9 @@ export function ConnectPanel({
           The standalone Mac app includes a <code>texttext</code> command for
           Codex, Claude, and other local coding agents. Run
           {" "}<code>texttext install</code> once to add it to your PATH, then
-          check it with the command below. The TestFlight app intentionally
+          check it with the command below. The App Store edition intentionally
           excludes this shell command; use the hosted plugin or MCP connection
-          with that channel.
+          with that edition.
         </p>
         <CodeRecipe
           copyKey="cli-check"
