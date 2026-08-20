@@ -4,6 +4,11 @@ import { spawn } from "node:child_process";
 import { access } from "node:fs/promises";
 import { constants } from "node:fs";
 import { createInterface } from "node:readline";
+import {
+  completedFinalAgentMessage,
+  decodeDynamicToolArguments,
+  hasJSONRPCID,
+} from "./eval-native-codex-protocol.mjs";
 
 const candidates = [
   process.env.TEXTTEXT_CODEX_RUNTIME,
@@ -11,7 +16,8 @@ const candidates = [
   "/opt/homebrew/bin/codex",
   "/usr/local/bin/codex",
 ].filter(Boolean);
-const probeModel = process.env.TEXTTEXT_CODEX_EVAL_MODEL ?? "gpt-5.4-mini";
+const requestedModel = process.env.TEXTTEXT_CODEX_EVAL_MODEL?.trim() || null;
+const timeoutMS = Number(process.env.TEXTTEXT_CODEX_EVAL_TIMEOUT_MS ?? 180_000);
 
 let runtime = null;
 for (const candidate of candidates) {
@@ -42,10 +48,13 @@ const child = spawn(runtime, ["app-server", "--stdio"], {
 let requestID = 0;
 const pending = new Map();
 const notifications = new Map();
+const observedMethods = new Map();
+const finalAgentMessages = [];
 let dynamicToolCalls = 0;
 let unexpectedServerRequest = null;
+let stage = "starting";
 
-function withTimeout(promise, label, timeout = 180_000) {
+function withTimeout(promise, label, timeout = timeoutMS) {
   let timer;
   return Promise.race([
     promise,
@@ -94,16 +103,24 @@ createInterface({ input: child.stdout }).on("line", (line) => {
   } catch {
     return;
   }
-  if (message.id && message.method) {
+  if (message.method) {
+    observedMethods.set(message.method, (observedMethods.get(message.method) ?? 0) + 1);
+  }
+  const finalAgentMessage = completedFinalAgentMessage(message);
+  if (finalAgentMessage !== null) finalAgentMessages.push(finalAgentMessage);
+  if (hasJSONRPCID(message) && message.method) {
     if (message.method === "item/tool/call") {
       const params = message.params ?? {};
-      const argumentsValue = params.arguments ?? {};
+      const argumentsValue = decodeDynamicToolArguments(params.arguments);
       if (
         params.tool !== "texttext_runtime_probe" ||
         argumentsValue.nonce !== "safe" ||
         dynamicToolCalls !== 0
       ) {
-        unexpectedServerRequest = `unexpected dynamic tool call: ${params.tool ?? "unknown"}`;
+        unexpectedServerRequest =
+          `unexpected dynamic tool call` +
+          ` (expectedTool=${params.tool === "texttext_runtime_probe"},` +
+          ` safeNonce=${argumentsValue.nonce === "safe"}, callIndex=${dynamicToolCalls})`;
         child.stdin.write(`${JSON.stringify({
           jsonrpc: "2.0",
           id: message.id,
@@ -133,7 +150,7 @@ createInterface({ input: child.stdout }).on("line", (line) => {
     })}\n`);
     return;
   }
-  if (message.id && !message.method) {
+  if (hasJSONRPCID(message) && !message.method) {
     const waiting = pending.get(String(message.id));
     if (!waiting) return;
     pending.delete(String(message.id));
@@ -151,17 +168,20 @@ createInterface({ input: child.stderr }).on("line", (line) => {
 });
 
 try {
+  stage = "initialize";
   await request("initialize", {
     clientInfo: { name: "texttext-runtime-eval", title: "TextText runtime eval", version: "1" },
     capabilities: { experimentalApi: true },
   });
   notify("initialized");
 
+  stage = "account/read";
   const account = await request("account/read");
   if (!account?.account) {
     throw new Error("Codex runtime is signed out; owner interaction is required");
   }
 
+  stage = "config/read";
   const effectiveConfig = await request("config/read");
   const configuredMCPServers = effectiveConfig?.config?.mcp_servers;
   if (!configuredMCPServers || typeof configuredMCPServers !== "object" || Array.isArray(configuredMCPServers)) {
@@ -173,11 +193,10 @@ try {
   );
 
   const startedNotification = nextNotification("thread/started");
-  const threadStart = await request("thread/start", {
+  const threadStartParams = {
     approvalPolicy: "never",
     sandbox: "read-only",
     ephemeral: true,
-    model: probeModel,
     config: { mcp_servers: disabledMCPServers },
     dynamicTools: [
       {
@@ -192,7 +211,10 @@ try {
         },
       },
     ],
-  });
+  };
+  if (requestedModel) threadStartParams.model = requestedModel;
+  stage = "thread/start";
+  const threadStart = await request("thread/start", threadStartParams);
   if (threadStart?.sandbox?.type !== "readOnly") {
     throw new Error(`effective sandbox is ${threadStart?.sandbox?.type ?? "unknown"}, not readOnly`);
   }
@@ -202,8 +224,8 @@ try {
     throw new Error("thread/started did not confirm the thread/start response");
   }
 
-  let answer = "";
   const completedNotification = nextNotification("turn/completed");
+  stage = "turn/start";
   await request("turn/start", {
     threadId: threadID,
     input: [
@@ -214,16 +236,15 @@ try {
     ],
     approvalPolicy: "never",
   });
+  stage = "turn/completed";
   const completed = await completedNotification;
   if (completed?.turn?.status !== "completed") {
     throw new Error(
       `turn ended with ${completed?.turn?.status ?? "unknown"}: ${completed?.turn?.error?.message ?? "no reason supplied"}`,
     );
   }
-  while (!answer.includes("TEXTTEXT RUNTIME PROBE OK")) {
-    const delta = await nextNotification("item/agentMessage/delta");
-    answer += delta?.delta ?? "";
-  }
+  stage = "agent response";
+  const answer = finalAgentMessages.at(-1) ?? "";
   if (answer.trim() !== "TEXTTEXT RUNTIME PROBE OK") {
     throw new Error("turn completed without the exact probe response");
   }
@@ -237,7 +258,7 @@ try {
   console.log(JSON.stringify({
     accountType: account.account.type ?? "unknown",
     planType: account.account.planType ?? "unknown",
-    model: probeModel,
+    model: threadStart.model ?? requestedModel ?? "account-default",
     effectiveSandbox: threadStart.sandbox.type,
     threadStartedObserved: true,
     turnStatus: completed.turn.status,
@@ -246,7 +267,14 @@ try {
     dynamicToolCalls,
   }));
 } catch (error) {
-  console.error(`native-codex-eval: ${error instanceof Error ? error.message : String(error)}`);
+  const eventSummary = Array.from(observedMethods.entries())
+    .map(([method, count]) => `${method}:${count}`)
+    .join(",") || "none";
+  console.error(
+    `native-codex-eval: ${error instanceof Error ? error.message : String(error)}` +
+    `; stage=${stage}; events=${eventSummary}; dynamicToolCalls=${dynamicToolCalls}` +
+    (unexpectedServerRequest ? `; ${unexpectedServerRequest}` : ""),
+  );
   process.exitCode = 1;
 } finally {
   child.kill("SIGTERM");
