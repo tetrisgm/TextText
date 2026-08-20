@@ -7049,17 +7049,18 @@ body:has(.reader):not(:has(.post-editor-shell)) {
 
 /* Library surfaces share one quiet, collection-first hierarchy. */
 .workspace-root-page {
-  padding: 82px 42px 72px;
+  padding: 68px 42px 64px;
 }
 .workspace-root-inner {
-  width: min(100%, 1240px);
-  gap: 18px;
+  width: min(100%, 1120px);
+  gap: 14px;
 }
 /* One ruled row on the library: the title floats above the composer and the
    list toolbar carries the only hairline. */
 .workspace-library-header {
   display: flex;
   align-items: baseline;
+  margin-bottom: 2px;
 }
 .post-folder-page-count {
   margin: 0;
@@ -7083,7 +7084,7 @@ body:has(.reader):not(:has(.post-editor-shell)) {
 }
 .workspace-root-create {
   display: block;
-  margin: 0 0 4px;
+  margin: 0 0 2px;
 }
 .workspace-agent-provider-grid {
   display: grid;
