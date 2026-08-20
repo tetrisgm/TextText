@@ -53,7 +53,8 @@ let package = Package(
     targets: [
         .target(
             name: "TextTextWorkspaceCore",
-            path: "Sources/TextTextWorkspaceCore"
+            path: "Sources/TextTextWorkspaceCore",
+            swiftSettings: editionSwiftSettings
         ),
         .target(
             name: "TextTextShareCore",

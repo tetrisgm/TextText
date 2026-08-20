@@ -122,6 +122,9 @@ const source = (path: string) =>
 
 const packageManifest = source("mac/Package.swift");
 const buildApp = source("mac/scripts/build-app.sh");
+const codexProtocol = source(
+  "mac/Sources/TextTextWorkspaceCore/CodexAppServerProtocol.swift",
+);
 const cliMain = source("mac/Sources/TextTextCLI/main.swift");
 const cliStore = source("mac/Sources/TextTextCLICore/DocumentStore.swift");
 const cliPresence = source("mac/Sources/TextTextCLICore/AgentPresence.swift");
@@ -149,6 +152,21 @@ assert(
     buildApp,
   ),
   "The Store edition must not ship the texttext CLI",
+);
+assert(
+  /name: "TextTextWorkspaceCore",\s*path: "Sources\/TextTextWorkspaceCore",\s*swiftSettings: editionSwiftSettings/.test(
+    packageManifest,
+  ),
+  "Store compilation must reach the workspace core that locates native runtimes",
+);
+const storeRuntimeGuard = codexProtocol.indexOf("#if !TEXTTEXT_STORE");
+const runtimeLocator = codexProtocol.indexOf("public struct CodexRuntimeLocator");
+const storeRuntimeGuardEnd = codexProtocol.indexOf("#endif", runtimeLocator);
+assert(
+  storeRuntimeGuard !== -1 &&
+    storeRuntimeGuard < runtimeLocator &&
+    runtimeLocator < storeRuntimeGuardEnd,
+  "The Store binary must compile out local Codex executable discovery",
 );
 assert(
   cliStore.includes("TextTextTextBundlePackage") &&

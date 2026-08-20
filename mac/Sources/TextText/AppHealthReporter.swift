@@ -240,6 +240,7 @@ private final class HealthSubmissionResult: @unchecked Sendable {
 /// deliberately independent from the web view and never reloads product UI.
 final class AppHealthReporter {
     typealias FinderStatusProvider = () -> FileProviderStatusSnapshot
+    typealias FileProviderDomainEnabledProvider = () -> Bool?
 
     private struct FinderMountProbe {
         let resolved: Bool
@@ -252,6 +253,7 @@ final class AppHealthReporter {
     private let healthStore: TextTextHealthStore
     private let syncRootProvider: () -> URL?
     private let finderStatusProvider: FinderStatusProvider
+    private let fileProviderDomainEnabledProvider: FileProviderDomainEnabledProvider
     private let finderReadinessProbe: FileProviderReadinessProbe
     private let bundle: Bundle
     private let clock: () -> Date
@@ -267,6 +269,7 @@ final class AppHealthReporter {
         stateStore: StateStore,
         syncRootProvider: @escaping () -> URL?,
         finderStatusProvider: @escaping FinderStatusProvider,
+        fileProviderDomainEnabledProvider: @escaping FileProviderDomainEnabledProvider = { nil },
         finderReadinessProbe: FileProviderReadinessProbe = FileProviderReadinessProbe(),
         bundle: Bundle = .main,
         clock: @escaping () -> Date = Date.init
@@ -276,6 +279,7 @@ final class AppHealthReporter {
             root: stateStore.baseDir.appendingPathComponent("health", isDirectory: true))
         self.syncRootProvider = syncRootProvider
         self.finderStatusProvider = finderStatusProvider
+        self.fileProviderDomainEnabledProvider = fileProviderDomainEnabledProvider
         self.finderReadinessProbe = finderReadinessProbe
         self.bundle = bundle
         self.clock = clock
@@ -442,7 +446,9 @@ final class AppHealthReporter {
             timedCheck(id: "state.persistence", operation: checkStatePersistence),
             timedCheck(id: "sync.index", operation: checkSyncIndex),
             timedCheck(id: "workspace.storage", operation: checkWorkspaceStorage),
-            timedCheck(id: "finder.provider", operation: checkFinderProvider),
+            timedCheck(id: "finder.provider") {
+                checkFinderProvider(trigger: trigger)
+            },
         ]
         let status: TextTextHealthStatus = checks.contains(where: { $0.status == .fail })
             ? .fail
@@ -866,25 +872,36 @@ final class AppHealthReporter {
         ])
     }
 
-    private func checkFinderProvider() -> (TextTextHealthStatus, [String: Double]) {
+    private func checkFinderProvider(
+        trigger: TextTextHealthTrigger
+    ) -> (TextTextHealthStatus, [String: Double]) {
         let readiness = finderReadinessProbe.run(
             statusProvider: finderStatusProvider)
         let snapshot = readiness.snapshot
         let linked = stateStore.loadCredentials() != nil
         let mount = finderMountProbe()
+        let domainEnabled = fileProviderDomainEnabledProvider()
+        let userDisabled = linked && domainEnabled == false
         let linkedMountUsable = !linked || (mount.enumerated && mount.workspaceVisible)
         let status: TextTextHealthStatus
-        switch snapshot.severity {
-        case .healthy:
-            // A provider can report no pending errors while its domain is
-            // disabled or absent. For a linked account, require a real Finder
-            // enumeration that exposes at least one workspace before calling
-            // the provider usable.
-            status = linkedMountUsable ? .pass : .fail
-        case .working, .neutral:
-            status = .warning
-        case .warning:
-            status = .fail
+        if userDisabled {
+            // Disabling a File Provider domain is a user preference, not a
+            // defective app binary. Keep the runtime report honest without
+            // rolling back an otherwise valid App Store-compatible update.
+            status = trigger == .releaseVerification ? .pass : .warning
+        } else {
+            switch snapshot.severity {
+            case .healthy:
+                // A provider can report no pending errors while its domain is
+                // absent. For a linked account whose domain is enabled or
+                // unknown, require a real Finder enumeration that exposes at
+                // least one workspace before calling the provider usable.
+                status = linkedMountUsable ? .pass : .fail
+            case .working, .neutral:
+                status = .warning
+            case .warning:
+                status = .fail
+            }
         }
         return (status, [
             "healthy": snapshot.severity == .healthy ? 1 : 0,
@@ -895,6 +912,9 @@ final class AppHealthReporter {
             "became_healthy": readiness.becameHealthy ? 1 : 0,
             "working_exhausted": readiness.exhausted ? 1 : 0,
             "linked": linked ? 1 : 0,
+            "domain_enabled_known": domainEnabled == nil ? 0 : 1,
+            "domain_enabled": domainEnabled == true ? 1 : 0,
+            "user_disabled": userDisabled ? 1 : 0,
             "mount_resolved": mount.resolved ? 1 : 0,
             "mount_enumerated": mount.enumerated ? 1 : 0,
             "workspace_visible": mount.workspaceVisible ? 1 : 0,
@@ -997,11 +1017,12 @@ enum AppHealthCLI {
         // registered domain's user-visible root (blocking is fine in the CLI).
         // nil on a machine with no domain (signed out / isolated CI), which
         // workspace.storage reports as mount_resolved = 0 rather than failing.
-        let mountRoot = Self.resolveMountRoot()
+        let providerState = Self.resolveFileProviderState()
         let reporter = AppHealthReporter(
             stateStore: stateStore,
-            syncRootProvider: { mountRoot },
-            finderStatusProvider: { .make(pendingCount: 0) })
+            syncRootProvider: { providerState.mountRoot },
+            finderStatusProvider: { .make(pendingCount: 0) },
+            fileProviderDomainEnabledProvider: { providerState.userEnabled })
         let report = reporter.run(trigger: .releaseVerification)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -1012,12 +1033,20 @@ enum AppHealthCLI {
         return report.status == .pass ? 0 : 1
     }
 
-    private static func resolveMountRoot() -> URL? {
+    private static func resolveFileProviderState() -> (
+        mountRoot: URL?, userEnabled: Bool?
+    ) {
         let semaphore = DispatchSemaphore(value: 0)
         var resolved: URL?
+        var userEnabled: Bool?
         NSFileProviderManager.getDomainsWithCompletionHandler { domains, _ in
-            guard let domain = domains.first(where: { $0.identifier.rawValue == "texttext" }),
-                  let manager = NSFileProviderManager(for: domain) else {
+            guard let domain = domains.first(where: { $0.identifier.rawValue == "texttext" })
+            else {
+                semaphore.signal()
+                return
+            }
+            userEnabled = domain.userEnabled
+            guard let manager = NSFileProviderManager(for: domain) else {
                 semaphore.signal()
                 return
             }
@@ -1027,7 +1056,7 @@ enum AppHealthCLI {
             }
         }
         _ = semaphore.wait(timeout: .now() + 10)
-        return resolved
+        return (resolved, userEnabled)
     }
 }
 

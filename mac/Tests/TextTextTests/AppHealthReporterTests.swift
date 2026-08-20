@@ -278,6 +278,47 @@ final class AppHealthReporterTests: XCTestCase {
         XCTAssertEqual(visibleCheck.metrics["mount_entry_count"], 2)
     }
 
+    func testUserDisabledFinderDomainDoesNotInvalidateARelease() throws {
+        let root = try temporaryDirectory(name: "workspace-user-disabled")
+        let state = try temporaryDirectory(name: "state-user-disabled")
+        let bundle = try releaseBundle()
+        let previous = ProcessInfo.processInfo.environment["TEXTTEXT_STATE_DIR"]
+        setenv("TEXTTEXT_STATE_DIR", state.path, 1)
+        defer {
+            if let previous {
+                setenv("TEXTTEXT_STATE_DIR", previous, 1)
+            } else {
+                unsetenv("TEXTTEXT_STATE_DIR")
+            }
+        }
+        let store = StateStore()
+        store.saveCredentials(Credentials(
+            token: "wsk_health_fixture",
+            serverOrigin: "https://texttext.example",
+            tokenName: "Health fixture",
+            linkedAt: Date(timeIntervalSince1970: 0)))
+        let reporter = AppHealthReporter(
+            stateStore: store,
+            syncRootProvider: { root },
+            finderStatusProvider: { .healthyFixture },
+            fileProviderDomainEnabledProvider: { false },
+            bundle: bundle)
+
+        let manual = reporter.run(trigger: .manual)
+        let manualCheck = try XCTUnwrap(
+            manual.checks.first(where: { $0.id == "finder.provider" }))
+        XCTAssertEqual(manualCheck.status, .warning)
+        XCTAssertEqual(manualCheck.metrics["domain_enabled_known"], 1)
+        XCTAssertEqual(manualCheck.metrics["domain_enabled"], 0)
+        XCTAssertEqual(manualCheck.metrics["user_disabled"], 1)
+
+        let release = reporter.run(trigger: .releaseVerification)
+        let releaseCheck = try XCTUnwrap(
+            release.checks.first(where: { $0.id == "finder.provider" }))
+        XCTAssertEqual(releaseCheck.status, .pass)
+        XCTAssertEqual(release.status, .pass)
+    }
+
     private func temporaryDirectory(name: String) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("texttext-health-\(name)-\(UUID().uuidString)", isDirectory: true)

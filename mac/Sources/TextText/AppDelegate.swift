@@ -241,6 +241,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 return DispatchQueue.main.sync {
                     self.fileProviderStatusMonitor.snapshot
                 }
+            },
+            fileProviderDomainEnabledProvider: { [weak self] in
+                guard let self else { return nil }
+                if Thread.isMainThread {
+                    return self.registeredFileProviderDomain?.userEnabled
+                }
+                return DispatchQueue.main.sync {
+                    self.registeredFileProviderDomain?.userEnabled
+                }
             })
         healthReporter?.start()
 

@@ -137,6 +137,13 @@ public enum CodexAppServerRequests {
     }
 }
 
+#if !TEXTTEXT_STORE
+
+/// Locates a standalone Codex runtime for the Developer ID edition.
+///
+/// This type, including its external executable paths, is omitted from the
+/// Store binary. The sandboxed edition uses cloud providers and hosted MCP
+/// connections and must remain self-contained for App Review.
 public struct CodexRuntimeLocator {
     public let executableURL: URL?
 
@@ -153,3 +160,5 @@ public struct CodexRuntimeLocator {
 
     public var isAvailable: Bool { executableURL != nil }
 }
+
+#endif
