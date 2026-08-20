@@ -453,19 +453,21 @@ Two traps worth keeping:
   missing legacy index is a passing transition state. A surviving index must
   still decode or health fails.
 - A File Provider status with zero pending errors is not proof that Finder is
-  usable. For a linked account, `finder.provider` now passes only after the real
-  CloudStorage root enumerates and exposes at least one workspace folder. The
-  root-level attachment `Data` directory does not count as a workspace.
+  usable. For a linked account whose domain is enabled or unknown,
+  `finder.provider` passes only after the real CloudStorage root enumerates and
+  exposes at least one workspace folder. The root-level attachment `Data`
+  directory does not count as a workspace.
 - On 2026-08-19 the installed mount existed at
   `~/Library/CloudStorage/TextText-TextText`, but shell enumeration returned
   `Operation not permitted`, and `fileproviderctl dump
   app.texttext.mac.fileprovider` showed the provider and mount xattrs without an
   active `domain:` section. That state is not a successful Finder proof. If it
-  persists, the owner must enable TextText in **System Settings > General >
-  Login Items & Extensions > File Providers** and reopen TextText. The app can
-  detect a registered domain that the user disabled, but it cannot toggle that
-  system preference. An absent domain and an enabled domain that cannot expose
-  a workspace remain health failures.
+  persists and Finder access is wanted, the owner can enable TextText in
+  **System Settings > General > Login Items & Extensions > File Providers** and
+  reopen TextText. Finder access is optional. A registered domain that the user
+  disabled is a healthy app state and is recorded only in numeric health
+  metrics. An absent domain for a linked account and an enabled domain that
+  cannot expose a workspace remain health failures.
 
 ## Public URLs (live since 0.175)
 
@@ -574,11 +576,21 @@ Two traps worth keeping:
   2026-08-19 promotion attempts left production on
   `write-nkrmtve2w-shoku-s-projects.vercel.app` and restored the canonical local
   app to 0.181 (184).
-- The 0.181 (185) Developer ID app reached the final installed runtime gate and
-  failed only `finder.provider`. The transactional installer rejected it and
-  restored 0.181 (184). Do not weaken that health check. Enable TextText in the
-  macOS File Providers settings, reopen the app, prove the mount enumerates a
-  real workspace, and rerun `npm run promote:local`.
+- The 0.181 (185), (187), and (188) Developer ID candidates were rejected by
+  the transactional installer and automatically restored 0.181 (184). Those
+  runs exposed an overly strict assumption that a user-disabled optional File
+  Provider domain made the entire app unhealthy. The two storage checks now
+  record that state without degrading app health, while an absent or enabled
+  but unusable linked domain still fails.
+- On 2026-08-20 the production-origin Developer ID app 0.181 (189) passed the
+  complete release-quality gate, staged 19-check health verification, and live
+  installed health. The installer replaced the canonical app at
+  `/Applications/TextText.app`; exactly one matching bundle and one process
+  remained. Its `TextTextServerOrigin` is `https://texttext.app`. The gate
+  passed 929 web tests, 461 Swift tests, authenticated MCP isolation and token
+  revocation, 17 sharing workflows, 17 sync workflows, four-client
+  collaboration, and 48 Apple checks. No deployment, TestFlight upload, App
+  Store Connect change, or release record was made.
 - A signed, sandboxed 0.181 (186) TestFlight installer package was prepared at
   `/Users/shokunin/Downloads/TextText-0.181-186-TestFlight.pkg`. It contains the
   arm64 app and all three signed extensions, uses the Apple Distribution app
