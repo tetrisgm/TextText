@@ -445,7 +445,9 @@ final class AppHealthReporter {
             },
             timedCheck(id: "state.persistence", operation: checkStatePersistence),
             timedCheck(id: "sync.index", operation: checkSyncIndex),
-            timedCheck(id: "workspace.storage", operation: checkWorkspaceStorage),
+            timedCheck(id: "workspace.storage") {
+                checkWorkspaceStorage(trigger: trigger)
+            },
             timedCheck(id: "finder.provider") {
                 checkFinderProvider(trigger: trigger)
             },
@@ -842,15 +844,26 @@ final class AppHealthReporter {
         ])
     }
 
-    private func checkWorkspaceStorage() -> (TextTextHealthStatus, [String: Double]) {
+    private func checkWorkspaceStorage(
+        trigger: TextTextHealthTrigger
+    ) -> (TextTextHealthStatus, [String: Double]) {
         // The workspace's on-disk home is the File Provider mount (the legacy
         // mirror is retired). A nil root means the mount is not resolved here
         // (signed out, domain still registering, or an isolated CI run): there
         // is nothing local to verify and finder.provider carries the live
         // signal, so report pass with mount_resolved = 0 instead of failing on
         // a path that no longer exists by design.
+        let linked = stateStore.loadCredentials() != nil
+        let domainEnabled = fileProviderDomainEnabledProvider()
+        let userDisabled = linked && domainEnabled == false
         guard let root = syncRootProvider() else {
-            return (.pass, ["mount_resolved": 0])
+            return (.pass, [
+                "mount_resolved": 0,
+                "linked": linked ? 1 : 0,
+                "domain_enabled_known": domainEnabled == nil ? 0 : 1,
+                "domain_enabled": domainEnabled == true ? 1 : 0,
+                "user_disabled": userDisabled ? 1 : 0,
+            ])
         }
         let fileManager = FileManager.default
         var isDirectory: ObjCBool = false
@@ -862,13 +875,27 @@ final class AppHealthReporter {
             includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles])) != nil
         let valid = exists && isDirectory.boolValue && readable && writable && enumerated
-        return (valid ? .pass : .fail, [
+        let status: TextTextHealthStatus
+        if userDisabled {
+            // Finder access is an optional user-controlled File Provider
+            // feature. Its disabled mount can exist and remain writable while
+            // enumeration is denied by macOS. That does not make the signed
+            // app or its private workspace storage defective.
+            status = trigger == .releaseVerification ? .pass : .warning
+        } else {
+            status = valid ? .pass : .fail
+        }
+        return (status, [
             "mount_resolved": 1,
             "present": exists ? 1 : 0,
             "directory": isDirectory.boolValue ? 1 : 0,
             "readable": readable ? 1 : 0,
             "writable": writable ? 1 : 0,
             "enumerated": enumerated ? 1 : 0,
+            "linked": linked ? 1 : 0,
+            "domain_enabled_known": domainEnabled == nil ? 0 : 1,
+            "domain_enabled": domainEnabled == true ? 1 : 0,
+            "user_disabled": userDisabled ? 1 : 0,
         ])
     }
 

@@ -305,16 +305,25 @@ final class AppHealthReporterTests: XCTestCase {
             bundle: bundle)
 
         let manual = reporter.run(trigger: .manual)
+        let manualStorageCheck = try XCTUnwrap(
+            manual.checks.first(where: { $0.id == "workspace.storage" }))
         let manualCheck = try XCTUnwrap(
             manual.checks.first(where: { $0.id == "finder.provider" }))
+        XCTAssertEqual(manualStorageCheck.status, .warning)
+        XCTAssertEqual(manualStorageCheck.metrics["domain_enabled_known"], 1)
+        XCTAssertEqual(manualStorageCheck.metrics["domain_enabled"], 0)
+        XCTAssertEqual(manualStorageCheck.metrics["user_disabled"], 1)
         XCTAssertEqual(manualCheck.status, .warning)
         XCTAssertEqual(manualCheck.metrics["domain_enabled_known"], 1)
         XCTAssertEqual(manualCheck.metrics["domain_enabled"], 0)
         XCTAssertEqual(manualCheck.metrics["user_disabled"], 1)
 
         let release = reporter.run(trigger: .releaseVerification)
+        let releaseStorageCheck = try XCTUnwrap(
+            release.checks.first(where: { $0.id == "workspace.storage" }))
         let releaseCheck = try XCTUnwrap(
             release.checks.first(where: { $0.id == "finder.provider" }))
+        XCTAssertEqual(releaseStorageCheck.status, .pass)
         XCTAssertEqual(releaseCheck.status, .pass)
         XCTAssertEqual(release.status, .pass)
     }
