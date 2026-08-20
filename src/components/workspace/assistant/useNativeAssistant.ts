@@ -79,7 +79,10 @@ import {
 } from "@/lib/ai/native-item-type";
 import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
 import type { ItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
-import { nativeAssistantTurnPrompt } from "@/lib/ai/native-turn";
+import {
+  nativeAssistantTurnPrompt,
+  nativeWorkspaceIndex,
+} from "@/lib/ai/native-turn";
 
 export type { AssistantViewSnapshot } from "./context";
 
@@ -539,6 +542,22 @@ export function useNativeAssistant({
             "OpenAI",
           );
         }
+      } else if (event.type === "final-text") {
+        if (nativeItemTypeDesignRef.current) return;
+        if (nativeMessageRef.current) {
+          updateThreadMessage(threadKey, nativeMessageRef.current, (message) => ({
+            ...message,
+            text: event.text,
+          }));
+        } else {
+          nativeMessageRef.current = appendToThread(
+            threadKey,
+            "assistant",
+            event.text,
+            undefined,
+            "OpenAI",
+          );
+        }
       } else if (event.type === "tool-call") {
         if (
           nativeItemTypeDesignRef.current &&
@@ -767,6 +786,7 @@ export function useNativeAssistant({
               : null,
             request: prompt,
             selection: openSelection,
+            workspaceIndex: open ? null : nativeWorkspaceIndex(getPoolRef.current()),
           });
           if (submitNativeAssistantTurn(nativePrompt)) {
             appendToThread(thread, "progress", "Working with the TextText Agent");

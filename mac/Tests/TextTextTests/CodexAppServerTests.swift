@@ -39,12 +39,27 @@ final class CodexAppServerTests: XCTestCase {
 
     func testThreadStartUsesTheCurrentReadOnlySandboxField() {
         let params = CodexAppServerRequests.threadStart(
-            dynamicTools: [], disabledMCPServers: [])
+            dynamicTools: [],
+            disabledMCPServers: [],
+            workingDirectory: "/tmp/texttext-agent")
 
         XCTAssertEqual(params["sandbox"] as? String, "read-only")
         XCTAssertNil(params["sandboxPolicy"])
         XCTAssertEqual(params["approvalPolicy"] as? String, "never")
         XCTAssertEqual(params["ephemeral"] as? Bool, true)
+        XCTAssertEqual(params["cwd"] as? String, "/tmp/texttext-agent")
+        let instructions = params["developerInstructions"] as? String
+        XCTAssertTrue(instructions?.contains("Use only the dynamic tools") == true)
+        XCTAssertTrue(instructions?.contains("Never use installed skills") == true)
+        XCTAssertTrue(instructions?.contains("Do not retry through another integration") == true)
+    }
+
+    func testTurnInterruptUsesExactThreadAndTurn() {
+        let params = CodexAppServerRequests.turnInterrupt(
+            threadID: "thread-1", turnID: "turn-2")
+
+        XCTAssertEqual(params["threadId"] as? String, "thread-1")
+        XCTAssertEqual(params["turnId"] as? String, "turn-2")
     }
 
     func testThreadStartDisablesEveryEffectiveMCPWithoutCopyingConfiguration() throws {
@@ -118,5 +133,21 @@ final class CodexAppServerTests: XCTestCase {
 
         XCTAssertEqual(CodexTurnOutcome(params: completed.rawParams), .completed)
         XCTAssertEqual(CodexTurnOutcome(params: failed.rawParams), .failed("provider unavailable"))
+    }
+
+    func testAgentMessagesKeepCommentarySeparateFromFinalAnswers() throws {
+        let commentary = try CodexAppServerMessage(data: Data(#"{"method":"item/started","params":{"threadId":"thread-1","turnId":"turn-1","item":{"id":"item-1","type":"agentMessage","text":"I am checking the workspace.","phase":"commentary"}}}"#.utf8))
+        let final = try CodexAppServerMessage(data: Data(#"{"method":"item/completed","params":{"threadId":"thread-1","turnId":"turn-1","item":{"id":"item-2","type":"agentMessage","text":"Recent work centers on native AI reliability.","phase":"final_answer"}}}"#.utf8))
+
+        XCTAssertEqual(
+            CodexAgentMessage(params: commentary.rawParams),
+            CodexAgentMessage(
+                id: "item-1", phase: .commentary,
+                text: "I am checking the workspace."))
+        XCTAssertEqual(
+            CodexAgentMessage(params: final.rawParams),
+            CodexAgentMessage(
+                id: "item-2", phase: .finalAnswer,
+                text: "Recent work centers on native AI reliability."))
     }
 }

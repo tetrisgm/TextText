@@ -113,14 +113,13 @@ createInterface({ input: child.stdout }).on("line", (line) => {
       const params = message.params ?? {};
       const argumentsValue = decodeDynamicToolArguments(params.arguments);
       if (
-        params.tool !== "texttext_runtime_probe" ||
-        argumentsValue.nonce !== "safe" ||
+        params.tool !== "list_items" ||
+        Object.keys(argumentsValue).some((key) => !["folder_path", "limit"].includes(key)) ||
         dynamicToolCalls !== 0
       ) {
         unexpectedServerRequest =
           `unexpected dynamic tool call` +
-          ` (expectedTool=${params.tool === "texttext_runtime_probe"},` +
-          ` safeNonce=${argumentsValue.nonce === "safe"}, callIndex=${dynamicToolCalls})`;
+          ` (expectedTool=${params.tool === "list_items"}, callIndex=${dynamicToolCalls})`;
         child.stdin.write(`${JSON.stringify({
           jsonrpc: "2.0",
           id: message.id,
@@ -136,7 +135,15 @@ createInterface({ input: child.stdout }).on("line", (line) => {
         jsonrpc: "2.0",
         id: message.id,
         result: {
-          contentItems: [{ type: "inputText", text: "TEXTTEXT DYNAMIC TOOL PROBE OK" }],
+          contentItems: [{
+            type: "inputText",
+            text: JSON.stringify({
+              items: [
+                { id: "writing", title: "Agentic writing research", excerpt: "A simpler agent workflow for writing." },
+                { id: "native", title: "Native AI reliability", excerpt: "Fast in-app tools with bounded failure." },
+              ],
+            }),
+          }],
           success: true,
         },
       })}\n`);
@@ -197,16 +204,21 @@ try {
     approvalPolicy: "never",
     sandbox: "read-only",
     ephemeral: true,
+    cwd: process.env.TMPDIR ?? "/tmp",
+    developerInstructions:
+      "You are the embedded TextText Agent. Use only dynamic tools supplied on this thread for TextText workspace work. Never use installed skills, shell commands, the texttext CLI, a local provider, hosted MCP, or the filesystem. If a dynamic tool fails, report one concise error and stop. Do not retry another integration.",
     config: { mcp_servers: disabledMCPServers },
     dynamicTools: [
       {
         type: "function",
-        name: "texttext_runtime_probe",
-        description: "Returns a fixed harmless response for TextText runtime verification.",
+        name: "list_items",
+        description: "Lists recent TextText workspace items for an in-app summary.",
         inputSchema: {
           type: "object",
-          properties: { nonce: { type: "string" } },
-          required: ["nonce"],
+          properties: {
+            folder_path: { type: "string" },
+            limit: { type: "number" },
+          },
           additionalProperties: false,
         },
       },
@@ -231,7 +243,7 @@ try {
     input: [
       {
         type: "text",
-        text: "Do not inspect files or make changes. Call texttext_runtime_probe exactly once with nonce set to safe. After its successful result, reply with exactly: TEXTTEXT RUNTIME PROBE OK",
+        text: "Summarize what I have been working on recently. Use only the in-app list_items tool and call it exactly once. Do not inspect files or use a skill, CLI, MCP server, or shell. After the tool succeeds, reply with exactly: Recent work centers on agentic writing research and native AI reliability.",
       },
     ],
     approvalPolicy: "never",
@@ -245,8 +257,8 @@ try {
   }
   stage = "agent response";
   const answer = finalAgentMessages.at(-1) ?? "";
-  if (answer.trim() !== "TEXTTEXT RUNTIME PROBE OK") {
-    throw new Error("turn completed without the exact probe response");
+  if (answer.trim() !== "Recent work centers on agentic writing research and native AI reliability.") {
+    throw new Error("turn completed without the exact workspace summary");
   }
   if (unexpectedServerRequest) {
     throw new Error(unexpectedServerRequest);

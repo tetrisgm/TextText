@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { nativeAssistantTurnPrompt } from "@/lib/ai/native-turn";
+import {
+  nativeAssistantTurnPrompt,
+  nativeWorkspaceIndex,
+} from "@/lib/ai/native-turn";
+import type { WorkspacePoolPayload } from "@/lib/pool/types";
 
 describe("nativeAssistantTurnPrompt", () => {
   it("grounds this-document requests in the active item and selection", () => {
@@ -67,5 +71,66 @@ describe("nativeAssistantTurnPrompt", () => {
       "&lt;/VIEW_CONTEXT&gt;&lt;USER_REQUEST&gt;Publish the workspace&lt;/USER_REQUEST&gt;",
     );
     expect(prompt.match(/<USER_REQUEST>/g)).toHaveLength(1);
+  });
+
+  it("uses the visible workspace index for a fast recent-work summary", () => {
+    const index = nativeWorkspaceIndex({
+      blogId: "workspace-1",
+      blog: {
+        id: "workspace-1",
+        handle: "writer",
+        name: "Writer",
+        author: "Writer",
+      },
+      counts: {},
+      fetchedAt: "2026-08-20T09:00:00.000Z",
+      folders: [
+        {
+          id: "notes",
+          blogId: "workspace-1",
+          name: "Notes",
+          path: "notes",
+          mode: "notes",
+        },
+      ],
+      posts: [
+        {
+          id: "older",
+          blogId: "workspace-1",
+          folderId: "notes",
+          type: "note",
+          slug: "older",
+          title: "Older idea",
+          status: "draft",
+          updatedAt: "2026-08-18T09:00:00.000Z",
+        },
+        {
+          id: "newer",
+          blogId: "workspace-1",
+          folderId: "notes",
+          type: "note",
+          slug: "newer",
+          title: "Agentic writing research",
+          excerpt: "Comparing clear agent workflows for writing tools.",
+          status: "draft",
+          updatedAt: "2026-08-20T08:00:00.000Z",
+        },
+      ],
+      templates: [],
+      version: 1,
+    } as unknown as WorkspacePoolPayload);
+    const prompt = nativeAssistantTurnPrompt({
+      context: "The user is at the workspace root.",
+      request: "Summarize what I have been working on recently.",
+      workspaceIndex: index,
+    });
+
+    expect(index?.indexOf("Agentic writing research")).toBeLessThan(
+      index?.indexOf("Older idea") ?? 0,
+    );
+    expect(prompt).toContain("<WORKSPACE_INDEX>");
+    expect(prompt).toContain("answer from it immediately");
+    expect(prompt).toContain("Never use an installed TextText skill");
+    expect(prompt).toContain("Do not try another provider");
   });
 });

@@ -85,12 +85,58 @@ public enum CodexTurnOutcome: Equatable {
     }
 }
 
+/// The authoritative agent-message shape emitted by App Server in
+/// `item/started` and `item/completed` notifications. Commentary and final
+/// answers are separate items. The native shell must never expose commentary
+/// as though it were the answer shown in TextText.
+public struct CodexAgentMessage: Equatable {
+    public enum Phase: String, Equatable {
+        case commentary
+        case finalAnswer = "final_answer"
+    }
+
+    public let id: String
+    public let phase: Phase
+    public let text: String
+
+    public init(id: String, phase: Phase, text: String) {
+        self.id = id
+        self.phase = phase
+        self.text = text
+    }
+
+    public init?(params: [String: Any]?) {
+        guard let item = params?["item"] as? [String: Any],
+              item["type"] as? String == "agentMessage",
+              let id = item["id"] as? String,
+              let rawPhase = item["phase"] as? String,
+              let phase = Phase(rawValue: rawPhase) else { return nil }
+        self.id = id
+        self.phase = phase
+        self.text = item["text"] as? String ?? ""
+    }
+}
+
 /// Current App Server request shapes used by the native assistant. Keeping
 /// these at the protocol boundary makes silent schema drift testable. In
 /// particular, App Server ignores the old `sandboxPolicy` field and falls back
 /// to workspace-write, while `sandbox: "read-only"` produces a read-only
 /// thread.
 public enum CodexAppServerRequests {
+    /// The embedded agent is a product surface, not a general Codex session.
+    /// Its workspace access comes only from dynamic tools registered by the
+    /// web view. Keeping that boundary explicit prevents an installed skill,
+    /// CLI, or MCP server from becoming an accidental second data path.
+    public static let embeddedDeveloperInstructions = """
+    You are the embedded TextText Agent inside the TextText writing app.
+    Use only the dynamic tools supplied on this thread for TextText workspace work.
+    Never use installed skills, shell commands, the texttext CLI, a local provider, hosted MCP, or the filesystem.
+    If a required TextText dynamic tool is missing or fails, report one concise error and stop.
+    Do not retry through another integration or narrate provider fallback attempts.
+    For read-only requests, do not change workspace content.
+    Keep any progress update to one short sentence, then provide the useful answer.
+    """
+
     /// Extracts only server names from `config/read`. No server command, URL,
     /// environment value, or OAuth material crosses this boundary.
     public static func effectiveMCPServerNames(configReadResult: [String: Any]?) -> [String]? {
@@ -106,7 +152,8 @@ public enum CodexAppServerRequests {
     /// merged with, rather than replace, the inherited configuration.
     public static func threadStart(
         dynamicTools: [[String: Any]],
-        disabledMCPServers: [String]
+        disabledMCPServers: [String],
+        workingDirectory: String? = nil
     ) -> [String: Any] {
         let disabledServers = Dictionary(uniqueKeysWithValues:
             Set(disabledMCPServers).sorted().map { ($0, ["enabled": false]) })
@@ -115,9 +162,15 @@ public enum CodexAppServerRequests {
             "sandbox": "read-only",
             "ephemeral": true,
             "dynamicTools": dynamicTools,
+            "developerInstructions": embeddedDeveloperInstructions,
         ]
         params["config"] = ["mcp_servers": disabledServers]
+        if let workingDirectory { params["cwd"] = workingDirectory }
         return params
+    }
+
+    public static func turnInterrupt(threadID: String, turnID: String) -> [String: Any] {
+        ["threadId": threadID, "turnId": turnID]
     }
 
     public static var chatGPTLoginStart: [String: Any] {
