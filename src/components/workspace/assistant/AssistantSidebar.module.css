@@ -1,5 +1,5 @@
 .root {
-  --assistant-sidebar-width: 360px;
+  --assistant-sidebar-width: 332px;
   --assistant-sidebar-min-width: 280px;
   --assistant-sidebar-max-width: 600px;
   --assistant-sidebar-rail-width: 44px;
@@ -220,7 +220,8 @@
   flex: 0 0 auto;
   display: grid;
   gap: 8px;
-  padding: 10px 12px 6px;
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid var(--ac-hairline, rgba(0, 0, 0, 0.12));
 }
 
 .titleRow {
@@ -361,6 +362,7 @@
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+  padding: 0 2px;
 }
 
 /* The composer floats at the bottom of the panel as its own rounded card;

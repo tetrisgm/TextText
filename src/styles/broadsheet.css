@@ -2484,7 +2484,94 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   --workspace-rail-inset: 0px;
 }
 .post-editor-shell.has-assistant-pinned {
-  --workspace-rail-inset: var(--workspace-assistant-width, 360px);
+  --workspace-rail-inset: var(--workspace-assistant-width, 332px);
+}
+
+/* TextText workspace chrome: a quiet three-pane editor. The rails own their
+   viewport and only the center surface scrolls, matching the document-first
+   behavior people expect from a serious writing app. */
+@media (min-width: 901px) {
+  .post-editor-shell {
+    --workspace-sidebar-width: 248px;
+  }
+
+  .post-editor-sidebar,
+  .post-workspace-sidebar-region {
+    width: var(--workspace-sidebar-width, 248px);
+  }
+
+  .post-editor-sidebar {
+    border-right: 1px solid var(--hairline);
+    background: var(--bg);
+  }
+
+  .post-editor-sidebar-top {
+    min-height: 52px;
+    padding: 10px 12px 6px;
+  }
+
+  .post-editor-home-link {
+    padding: 8px 9px;
+    background: transparent;
+  }
+
+  .post-editor-folder-nav {
+    gap: 1px;
+    padding-inline: 10px;
+  }
+
+  .post-editor-folder-main {
+    min-height: 32px;
+    padding: 6px 7px;
+    border-radius: 7px;
+  }
+
+  .post-editor-home-row,
+  .post-editor-special-row {
+    padding-left: 22px;
+  }
+
+  .post-editor-folder-row.is-active .post-editor-folder-main,
+  .post-editor-home-row.is-active .post-editor-folder-main,
+  .post-editor-special-row.is-active .post-editor-folder-main {
+    background: color-mix(in srgb, var(--ink) 8%, transparent);
+  }
+
+  .post-editor-sidebar-activity {
+    padding: 8px 14px 18px;
+  }
+
+  .post-editor-shell.has-sidebar .post-editor-content {
+    margin-left: var(--workspace-sidebar-width, 248px);
+  }
+
+  .post-editor-shell.has-sidebar .post-back-action-bar.is-read {
+    left: calc(var(--workspace-sidebar-width, 248px) + 8px);
+  }
+
+  .post-editor-content {
+    scrollbar-gutter: stable;
+  }
+
+  .post-folder-page {
+    padding: 76px clamp(28px, 5vw, 72px) 72px;
+  }
+
+  .post-folder-page-items,
+  .post-folder-page-header {
+    max-width: 1040px;
+  }
+
+  .post-folder-page-header h1,
+  .post-folder-title-input {
+    font-size: 32px;
+    letter-spacing: -0.02em;
+  }
+
+  .universal-item-composer {
+    max-width: 1040px;
+    background: var(--bg);
+  }
 }
 
 /* Below a comfortable two-column width, the assistant module becomes a

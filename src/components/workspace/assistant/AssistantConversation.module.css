@@ -9,21 +9,21 @@
   min-height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 16px;
+  padding: 18px 16px 14px;
   color: var(--ac-label-2);
 }
 
 .emptyCenter {
   display: grid;
   gap: 18px;
-  margin: auto 0;
-  padding-bottom: 24px;
+  margin: 12px 0 0;
+  padding-bottom: 12px;
 }
 
 .emptyLede {
   display: grid;
   gap: 6px;
-  text-align: center;
+  text-align: left;
 }
 
 .emptyTitle {
@@ -34,8 +34,8 @@
 }
 
 .emptyBody {
-  margin: 0 auto;
-  max-width: 30ch;
+  margin: 0;
+  max-width: 34ch;
   font: 400 var(--ac-fs-footnote) / 1.45 var(--ac-font-text);
   letter-spacing: 0;
 }
@@ -43,7 +43,7 @@
 .connect {
   display: grid;
   gap: 8px;
-  justify-items: center;
+  justify-items: stretch;
 }
 
 .connectPrimary {
