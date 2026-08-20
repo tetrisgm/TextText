@@ -25,7 +25,9 @@ describe("greeting", () => {
 
   it("uses the first name only", () => {
     const afternoon = new Date(2026, 7, 11, 14, 0, 0);
-    expect(greeting("Ramine Darabiha", afternoon)).toBe("Good afternoon, Ramine");
+    expect(greeting("Ramine Darabiha", afternoon)).toBe(
+      "Good afternoon, Ramine",
+    );
   });
 
   it("drops the comma rather than greeting nobody", () => {
@@ -37,7 +39,13 @@ describe("greeting", () => {
 });
 
 describe("starters", () => {
-  const levels: StarterContextLevel[] = ["item", "folder", "trash", "shared", "root"];
+  const levels: StarterContextLevel[] = [
+    "item",
+    "folder",
+    "trash",
+    "shared",
+    "root",
+  ];
 
   it("offers something everywhere, and never more than three", () => {
     for (const level of levels) {
@@ -52,12 +60,16 @@ describe("starters", () => {
   });
 
   it("names the document it is looking at", () => {
-    const [first] = startersFor({ level: "item", label: "The Invisible Hand of Super Metroid" });
+    const [first] = startersFor({
+      level: "item",
+      label: "The Invisible Hand of Super Metroid",
+    });
     expect(first.label).toContain("Super Metroid");
   });
 
   it("stays a single line when the title is a paragraph", () => {
-    const title = "A very long title that somebody pasted in whole and never trimmed down at all";
+    const title =
+      "A very long title that somebody pasted in whole and never trimmed down at all";
     const [first] = startersFor({ level: "item", label: title });
     expect(first.label.length).toBeLessThan(80);
     expect(first.label).toContain("…");
@@ -74,21 +86,57 @@ describe("starters", () => {
     const [first] = startersFor({ level: "folder", label: "Bookmarks" });
     expect(first.label).toBe("What is in Bookmarks?");
   });
+
+  it("makes the flagship grounded-writing loop one click away", () => {
+    const root = startersFor({ level: "root" });
+    expect(root[0]).toMatchObject({
+      label: "Turn recent notes into a sourced brief",
+      prompt: expect.stringContaining("visible source ledger"),
+    });
+    const folder = startersFor({ level: "folder", label: "Research" });
+    expect(folder[2]).toMatchObject({
+      label: "Create a sourced brief",
+      prompt: expect.stringContaining("evidence-backed claims"),
+    });
+    const brief = startersFor({
+      level: "item",
+      label: "Launch brief",
+      templateId: "texttext.brief",
+    });
+    expect(brief.map((starter) => starter.label)).toEqual([
+      "Check what changed in my sources",
+      "Refresh affected claims",
+      "Create a publication draft",
+    ]);
+    expect(brief[2]?.prompt).toContain("only supported claims");
+    expect(brief[2]?.prompt).toContain("publication writing rules");
+  });
 });
 
 describe("mapping the composer's context chip", () => {
   it("treats an item as an item and keeps its title", async () => {
     const { starterContextFromChip } = await import("../starters");
-    expect(starterContextFromChip({ kind: "item", label: "Super Metroid" })).toEqual({
+    expect(
+      starterContextFromChip({
+        kind: "item",
+        label: "Super Metroid",
+        templateId: "texttext.article",
+      }),
+    ).toEqual({
       level: "item",
       label: "Super Metroid",
+      templateId: "texttext.article",
     });
   });
 
   it("does not offer to sharpen the writing in Trash", async () => {
     const { starterContextFromChip } = await import("../starters");
-    expect(starterContextFromChip({ kind: "folder", label: "Trash" })).toEqual({ level: "trash" });
-    expect(starterContextFromChip({ kind: "folder", label: "Shared with me" })).toEqual({
+    expect(starterContextFromChip({ kind: "folder", label: "Trash" })).toEqual({
+      level: "trash",
+    });
+    expect(
+      starterContextFromChip({ kind: "folder", label: "Shared with me" }),
+    ).toEqual({
       level: "shared",
     });
   });

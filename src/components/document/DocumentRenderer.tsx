@@ -433,6 +433,16 @@ function CellValue({
   if (definition?.type === "boolean") {
     return value === true ? <span className="tt-cell-check" aria-hidden="true">✓</span> : null;
   }
+  if (definition?.type === "url") {
+    const href = scalarText(value).trim();
+    if (isSafeLinkHref(href)) {
+      return (
+        <a className="tt-cell-link" href={href}>
+          {href.replace(/^https?:\/\//i, "").replace(/\/$/, "")}
+        </a>
+      );
+    }
+  }
   return formatFieldValue(value, definition);
 }
 

@@ -98,7 +98,8 @@ const timeline = {
   ...article,
   id: "texttext.timeline",
   name: "Timeline",
-  description: "Articles as a dated run, newest first, with the date and reading time under each title.",
+  description:
+    "Articles as a dated run, newest first, with the date and reading time under each title.",
   collection: {
     ...article.collection,
     layout: "timeline",
@@ -2237,6 +2238,303 @@ const project = {
   },
 } as const;
 
+const brief = {
+  schemaVersion: 1,
+  engineVersion: 1,
+  id: "texttext.brief",
+  version: 1,
+  name: "Living brief",
+  description:
+    "A grounded brief with visible sources, claims, and writing rules.",
+  fields: [
+    { id: "audience", label: "Audience", type: "text" },
+    {
+      id: "purpose",
+      label: "Purpose",
+      type: "enum",
+      options: [
+        { value: "decision", label: "Decision", tone: "info" },
+        { value: "alignment", label: "Alignment", tone: "neutral" },
+        { value: "publication", label: "Publication", tone: "success" },
+        { value: "research", label: "Research", tone: "accent" },
+      ],
+    },
+    { id: "lastReviewed", label: "Last reviewed", type: "date" },
+    {
+      id: "sources",
+      label: "Sources",
+      type: "rows",
+      maxRows: 200,
+      fields: [
+        {
+          id: "sourceId",
+          label: "Source id",
+          type: "text",
+          required: true,
+          visibility: "hidden",
+        },
+        {
+          id: "itemId",
+          label: "Workspace item",
+          type: "reference",
+          target: "document",
+          visibility: "hidden",
+        },
+        { id: "title", label: "Source", type: "text", required: true },
+        {
+          id: "kind",
+          label: "Kind",
+          type: "enum",
+          visibility: "editor",
+          options: [
+            { value: "workspace", label: "Workspace", tone: "info" },
+            { value: "web", label: "Web", tone: "neutral" },
+          ],
+        },
+        { id: "url", label: "Link", type: "url" },
+        {
+          id: "capturedHash",
+          label: "Captured version",
+          type: "text",
+          visibility: "hidden",
+        },
+        {
+          id: "status",
+          label: "Status",
+          type: "enum",
+          options: [
+            { value: "current", label: "Current", tone: "success" },
+            { value: "changed", label: "Changed", tone: "warning" },
+            { value: "missing", label: "Missing", tone: "danger" },
+            { value: "unverified", label: "Unverified", tone: "neutral" },
+          ],
+        },
+        { id: "note", label: "Used for", type: "text" },
+      ],
+    },
+    {
+      id: "claims",
+      label: "Claims",
+      type: "rows",
+      maxRows: 300,
+      fields: [
+        {
+          id: "claimId",
+          label: "Claim id",
+          type: "text",
+          required: true,
+          visibility: "hidden",
+        },
+        { id: "claim", label: "Claim", type: "text", required: true },
+        {
+          id: "sourceId",
+          label: "Source",
+          type: "text",
+          required: true,
+        },
+        { id: "evidence", label: "Evidence", type: "text" },
+        {
+          id: "status",
+          label: "Status",
+          type: "enum",
+          options: [
+            { value: "supported", label: "Supported", tone: "success" },
+            { value: "review", label: "Review", tone: "warning" },
+            { value: "unsupported", label: "Unsupported", tone: "danger" },
+          ],
+        },
+      ],
+    },
+    {
+      id: "writingRules",
+      label: "Writing rules",
+      type: "rows",
+      maxRows: 100,
+      fields: [
+        {
+          id: "instruction",
+          label: "Rule",
+          type: "text",
+          required: true,
+        },
+        {
+          id: "scope",
+          label: "Scope",
+          type: "enum",
+          options: [
+            { value: "document", label: "Document", tone: "neutral" },
+            { value: "selection", label: "Selection", tone: "info" },
+            { value: "publication", label: "Publication", tone: "success" },
+          ],
+        },
+        { id: "enabled", label: "Enabled", type: "boolean" },
+      ],
+    },
+    {
+      id: "claimsHeading",
+      label: "Claims heading",
+      type: "text",
+      visibility: "hidden",
+    },
+    {
+      id: "sourcesHeading",
+      label: "Sources heading",
+      type: "text",
+      visibility: "hidden",
+    },
+    {
+      id: "rulesHeading",
+      label: "Writing rules heading",
+      type: "text",
+      visibility: "hidden",
+    },
+  ],
+  capabilities: ["collaboration", "comments", "publish", "search"],
+  theme: {
+    accent: "#0A66C2",
+    typography: "system",
+    measure: "wide",
+    alignment: "start",
+    density: "comfortable",
+    corners: "subtle",
+    surface: "paper",
+    titleScale: "standard",
+    bodyScale: "standard",
+  },
+  item: {
+    type: "stack",
+    gap: "lg",
+    children: [
+      {
+        type: "masthead",
+        gap: "sm",
+        children: [
+          {
+            type: "text",
+            bind: "content.title",
+            role: "title",
+            fallback: "Untitled brief",
+          },
+          {
+            type: "text",
+            bind: "content.subtitle",
+            role: "subtitle",
+            showWhen: "content.subtitle",
+          },
+          {
+            type: "facts",
+            variant: "strip",
+            entries: [
+              { bind: "content.fields.audience", label: "Audience" },
+              { bind: "content.fields.purpose", label: "Purpose" },
+              {
+                bind: "content.fields.lastReviewed",
+                label: "Reviewed",
+                format: "date",
+              },
+            ],
+          },
+        ],
+      },
+      { type: "prose", bind: "content.body", showWhen: "content.body" },
+      {
+        type: "text",
+        id: "claims-heading",
+        bind: "content.fields.claimsHeading",
+        role: "heading",
+        fallback: "Claims",
+        showWhen: "content.fields.claims",
+      },
+      {
+        type: "rows",
+        id: "claims-ledger",
+        bind: "content.fields.claims",
+        variant: "table",
+        columns: [
+          { bind: "row.claimId", label: "ID" },
+          { bind: "row.claim", label: "Claim" },
+          { bind: "row.status", label: "Status" },
+          { bind: "row.sourceId", label: "Source" },
+          { bind: "row.evidence", label: "Evidence" },
+        ],
+        showWhen: "content.fields.claims",
+      },
+      {
+        type: "text",
+        id: "sources-heading",
+        bind: "content.fields.sourcesHeading",
+        role: "heading",
+        fallback: "Sources",
+        showWhen: "content.fields.sources",
+      },
+      {
+        type: "rows",
+        id: "sources-ledger",
+        bind: "content.fields.sources",
+        variant: "table",
+        columns: [
+          { bind: "row.sourceId", label: "ID" },
+          { bind: "row.title", label: "Source" },
+          { bind: "row.status", label: "Status" },
+          { bind: "row.url", label: "Link" },
+          { bind: "row.note", label: "Used for" },
+        ],
+        showWhen: "content.fields.sources",
+      },
+      {
+        type: "text",
+        id: "rules-heading",
+        bind: "content.fields.rulesHeading",
+        role: "heading",
+        fallback: "Writing rules",
+        showWhen: "content.fields.writingRules",
+      },
+      {
+        type: "checklist",
+        id: "writing-rules",
+        bind: "content.fields.writingRules",
+        doneBind: "row.enabled",
+        labelBind: "row.instruction",
+        meta: ["row.scope"],
+        mode: "document",
+        sortCheckedLast: false,
+        rollup: false,
+        showWhen: "content.fields.writingRules",
+      },
+    ],
+  },
+  collection: {
+    layout: "list",
+    columns: 1,
+    gap: "sm",
+    sort: [{ field: "updatedAt", direction: "desc" }],
+    item: {
+      type: "stack",
+      gap: "xs",
+      children: [
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Untitled brief",
+        },
+        {
+          type: "facts",
+          variant: "strip",
+          entries: [
+            { bind: "content.fields.purpose", label: "Purpose" },
+            {
+              bind: "content.fields.sources",
+              label: "Sources",
+              derive: { op: "count" },
+            },
+          ],
+        },
+      ],
+    },
+  },
+} as const;
+
 const goals = {
   schemaVersion: 1,
   engineVersion: 1,
@@ -3362,6 +3660,7 @@ const activeDefinitions = [
   page,
   todo,
   project,
+  brief,
 ].map((entry) => validateTemplateDefinition(entry));
 
 const legacyDefinitions = [
@@ -3439,6 +3738,7 @@ export const TEMPLATE_CATALOG: readonly {
   { id: "texttext.casestudy", category: "Publish" },
   { id: "texttext.todo", category: "Plan" },
   { id: "texttext.project", category: "Plan" },
+  { id: "texttext.brief", category: "Text" },
   { id: "texttext.bookmark", category: "Collect" },
   { id: "texttext.gallery", category: "Collect" },
   { id: "texttext.talk", category: "Publish" },

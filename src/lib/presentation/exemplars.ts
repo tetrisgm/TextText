@@ -432,6 +432,83 @@ export const EXEMPLARS: Exemplar[] = [
     },
   },
   {
+    template: "texttext.brief",
+    title: "Agentic writing launch brief",
+    body: `## Decision
+
+Launch around one clear promise: TextText turns scattered source material into writing that stays grounded as the source material changes.
+
+## What the product must prove
+
+The first session starts with real notes, produces a cited brief, and keeps the source-to-claim relationship visible. A writer can revise one claim or passage without asking the agent to regenerate the document.
+
+## Release position
+
+Lead with the living brief workflow. Keep provider setup, tool inventories, and advanced automation behind the successful first edit.`,
+    fields: {
+      audience: "Writers and product teams evaluating agentic text tools",
+      purpose: "decision",
+      lastReviewed: "2026-08-20",
+      sources: [
+        {
+          sourceId: "S1",
+          itemId: "workspace-research-notes",
+          title: "Agentic writing research notes",
+          kind: "workspace",
+          capturedHash: "sha256:research-v3",
+          status: "current",
+          note: "First-session friction and workflow expectations",
+        },
+        {
+          sourceId: "S2",
+          title: "Paper MCP documentation",
+          kind: "web",
+          url: "https://paper.design/docs/mcp",
+          status: "unverified",
+          note: "Visible verification and task-recipe pattern",
+        },
+      ],
+      claims: [
+        {
+          claimId: "C1",
+          claim:
+            "The first useful result must appear before integration details.",
+          sourceId: "S1",
+          evidence:
+            "Testing repeatedly stalled when setup architecture led the flow.",
+          status: "supported",
+        },
+        {
+          claimId: "C2",
+          claim:
+            "A visible verification task makes an agent connection understandable.",
+          sourceId: "S2",
+          evidence:
+            "The documentation verifies setup with one concrete canvas action.",
+          status: "supported",
+        },
+      ],
+      writingRules: [
+        {
+          instruction: "Lead with the user outcome, not provider architecture.",
+          scope: "document",
+          enabled: true,
+        },
+        {
+          instruction:
+            "Keep every factual claim traceable to a visible source.",
+          scope: "publication",
+          enabled: true,
+        },
+        {
+          instruction: "Use plain language and short paragraphs.",
+          scope: "selection",
+          enabled: true,
+        },
+      ],
+    },
+  },
+  {
     template: "texttext.goals",
     title: "Q3 goals",
     body: `Three goals, deliberately few. The quarter is won on the first one.`,

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { validateLivingBriefDocument } from "@/lib/documents/grounding";
+import { validateDocumentSnapshot } from "@/lib/documents/model";
 import { exemplarFor } from "@/lib/presentation/exemplars";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
 import {
@@ -46,7 +48,7 @@ describe("built-in templates", () => {
   });
 
   it("offers only the focused catalog at version 1", () => {
-    expect(BUILTIN_TEMPLATES).toHaveLength(10);
+    expect(BUILTIN_TEMPLATES).toHaveLength(11);
     expect(BUILTIN_TEMPLATES.map((template) => template.name)).toEqual([
       "Article",
       "Note",
@@ -63,6 +65,7 @@ describe("built-in templates", () => {
       "Page",
       "Tasks",
       "Project",
+      "Living brief",
     ]);
     // A look is named for the document it makes, never for another product.
     const borrowed =
@@ -100,6 +103,31 @@ describe("built-in templates", () => {
     expect(
       exemplar?.assets?.every((asset) => (asset.alt ?? "").length > 12),
     ).toBe(true);
+  });
+
+  it("ships one addressable, grounded Living brief example", () => {
+    const template = requireBuiltinTemplate("texttext.brief", 1);
+    const serialized = JSON.stringify(template);
+    expect(serialized).toContain("row.claimId");
+    expect(serialized).toContain("row.sourceId");
+
+    const exemplar = exemplarFor("texttext.brief");
+    expect(exemplar).not.toBeNull();
+    const document = validateDocumentSnapshot({
+      schemaVersion: 1,
+      content: {
+        title: exemplar!.title,
+        body: exemplar!.body,
+        fields: exemplar!.fields,
+        tags: exemplar!.tags ?? [],
+        assets: exemplar!.assets ?? [],
+      },
+      presentation: {
+        template: { id: "texttext.brief", version: 1 },
+        theme: {},
+      },
+    });
+    expect(() => validateLivingBriefDocument(document)).not.toThrow();
   });
 
   it("catalogs every template exactly once with a known category", () => {

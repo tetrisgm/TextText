@@ -35,7 +35,18 @@ import {
 import type { WorkspaceToolInput, WorkspaceToolName } from "@/lib/ai/tools";
 import type { Blog, Folder, Post } from "@/lib/content";
 import { NO_COVER_VALUE } from "@/lib/cover";
-import { requireDocumentSnapshot } from "@/lib/documents/model";
+import {
+  emptyDocumentSnapshot,
+  requireDocumentSnapshot,
+  validateDocumentSnapshot,
+} from "@/lib/documents/model";
+import {
+  isLivingBrief,
+  parseLivingBrief,
+  reviewLivingBriefSources,
+  validateLivingBriefDocument,
+  type CurrentBriefSource,
+} from "@/lib/documents/grounding";
 import {
   attachItemAsset,
   importItemAssetFromUrl,
@@ -1278,6 +1289,43 @@ export async function executeMcpTool(
       });
     }
 
+    case "review_brief_sources": {
+      const input = args as WorkspaceToolInput<"review_brief_sources">;
+      const resolved = await requirePost(extra, input.id);
+      if (isToolResult(resolved)) return resolved;
+      const document = requireDocumentSnapshot(
+        resolved.post.document,
+        `Persisted item ${resolved.post.id ?? resolved.post.slug}`,
+      );
+      if (!isLivingBrief(document)) {
+        return errorResult(
+          "This item is not a Living brief. Apply the Living brief template or review its sources manually.",
+        );
+      }
+      const brief = parseLivingBrief(document);
+      const currentSources: CurrentBriefSource[] = [];
+      for (const source of brief.sources) {
+        if (!source.itemId || !UUID_RE.test(source.itemId)) continue;
+        const sourcePost = await getPostById(
+          resolved.blog.handle,
+          source.itemId,
+        );
+        if (!sourcePost) continue;
+        const sourceAccess = await resolveItemAccess({
+          handle: resolved.blog.handle,
+          postId: source.itemId,
+          user: accessUser(extra),
+        });
+        if (!sourceAccess.canView) continue;
+        currentSources.push({
+          itemId: source.itemId,
+          title: sourcePost.title || sourcePost.slug,
+          hash: renderItemFile(resolved.blog, sourcePost).hash,
+        });
+      }
+      return jsonResult(reviewLivingBriefSources(brief, currentSources));
+    }
+
     case "open_item": {
       const input = args as WorkspaceToolInput<"open_item">;
       const resolved = await requirePost(extra, input.id);
@@ -1382,6 +1430,25 @@ export async function executeMcpTool(
         return errorResult("Only the owner can create items in this folder.");
       }
 
+      let selectedTemplate: { id: string; version: number } | undefined;
+      if (input.template_id) {
+        if (!folderAccess.blogId) return errorResult("Workspace not found.");
+        let version = input.template_version;
+        if (version === undefined) {
+          const available = await listDocumentTemplates(folderAccess.blogId);
+          version = available.find(
+            (candidate) => candidate.id === input.template_id,
+          )?.version;
+        }
+        if (version === undefined) return errorResult("Template not found.");
+        const definition = await getDocumentTemplate(folderAccess.blogId, {
+          id: input.template_id,
+          version,
+        });
+        if (!definition) return errorResult("Template not found.");
+        selectedTemplate = { id: input.template_id, version };
+      }
+
       let parsed: ReturnType<typeof parsePostMarkdownFile>;
       try {
         parsed = input.markdown
@@ -1454,6 +1521,8 @@ export async function executeMcpTool(
         }
       }
       let created: Post;
+      let grounding:
+        { sources: number; claims: number; writingRules: number } | undefined;
       const createAudit = mcpAuditEntry(
         extra,
         "mcp.create_item",
@@ -1462,9 +1531,77 @@ export async function executeMcpTool(
         parsed.fields.title ?? "New item",
       );
       try {
+        let document = selectedTemplate
+          ? validateDocumentSnapshot({
+              ...emptyDocumentSnapshot({
+                id: selectedTemplate.id,
+                version: selectedTemplate.version,
+              }),
+              content: {
+                title: parsed.fields.title ?? "",
+                subtitle: parsed.fields.excerpt ?? undefined,
+                body: parsed.body,
+                fields: input.fields ?? {},
+                tags: normalizeTags(parsed.fields.tags),
+                assets: [],
+              },
+            })
+          : undefined;
+        if (document && isLivingBrief(document)) {
+          document = validateLivingBriefDocument(document);
+          const brief = parseLivingBrief(document);
+          for (const source of brief.sources) {
+            if (!source.itemId) {
+              if (source.status !== "unverified") {
+                return errorResult(
+                  `External source ${source.sourceId} must stay unverified until a person or connected research tool verifies it.`,
+                );
+              }
+              continue;
+            }
+            if (!UUID_RE.test(source.itemId)) {
+              return errorResult(
+                `Workspace source ${source.sourceId} has an invalid item id. Read the source item and use its exact id.`,
+              );
+            }
+            const sourcePost = await getPostById(blog.handle, source.itemId);
+            const sourceAccess = sourcePost
+              ? await resolveItemAccess({
+                  handle: blog.handle,
+                  postId: source.itemId,
+                  user: accessUser(extra),
+                })
+              : null;
+            if (!sourcePost || !sourceAccess?.canView) {
+              return errorResult(
+                `Workspace source ${source.sourceId} is unavailable. Read an accessible source before creating the brief.`,
+              );
+            }
+            const currentHash = renderItemFile(blog, sourcePost).hash;
+            if (source.capturedHash !== currentHash) {
+              return errorResult(
+                `Workspace source ${source.sourceId} changed or was not read exactly. Read it again and use content hash ${currentHash}.`,
+              );
+            }
+            if (source.status !== "current") {
+              return errorResult(
+                `Workspace source ${source.sourceId} matches its captured version and must start with status current.`,
+              );
+            }
+          }
+          grounding = {
+            sources: brief.sources.length,
+            claims: brief.claims.length,
+            writingRules: brief.writingRules.length,
+          };
+        }
         created = await createDraftInFolder(blog.handle, folder.id, {
           audit: createAudit,
           idempotencyKey: retryKey ?? undefined,
+          template: selectedTemplate
+            ? { id: selectedTemplate.id, version: selectedTemplate.version }
+            : undefined,
+          document,
           initial: {
             ...parsed.fields,
             type,
@@ -1484,6 +1621,7 @@ export async function executeMcpTool(
       revalidateBlogPaths(blog, [created.slug]);
       return jsonResult({
         item: await mcpItemEntry(extra, blog, created),
+        grounding,
         replayed: false,
       });
     }

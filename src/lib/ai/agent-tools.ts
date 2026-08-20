@@ -75,6 +75,7 @@ type WorkspaceAgentView = {
 const ITEM_AGENT_TOOL_NAMES = new Set<WorkspaceToolName>([
   "get_workspace",
   "read_item",
+  "review_brief_sources",
   "open_item",
   "search",
   "list_comments",
@@ -161,6 +162,17 @@ const PROMPT_TOOL_GROUPS: Array<{
   {
     pattern: /\b(search|find)\b/i,
     tools: ["search"],
+  },
+  {
+    pattern:
+      /\b(source|sources|evidence|claim|claims|citation|cited|grounded|fact.check)\b/i,
+    tools: [
+      "list_items",
+      "search",
+      "read_item",
+      "review_brief_sources",
+      "create_item",
+    ],
   },
 ];
 
@@ -985,8 +997,13 @@ export function createWorkspaceAgentTools(
         await signalActivity(post.id, { kind: "edit", field: "body" }, actor);
         const body = (await currentText(post)).body;
         // Either spelling, same as the MCP rung.
-        const fragment = (input.markdown ?? input.markdown_fragment ?? "").trim();
-        if (!fragment) throw new Error("Pass the text to append as `markdown`.");
+        const fragment = (
+          input.markdown ??
+          input.markdown_fragment ??
+          ""
+        ).trim();
+        if (!fragment)
+          throw new Error("Pass the text to append as `markdown`.");
         const joined = body.trim()
           ? `${body.replace(/\s+$/, "")}\n\n${fragment}`
           : fragment;

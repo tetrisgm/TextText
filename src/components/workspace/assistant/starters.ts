@@ -15,6 +15,7 @@ export type StarterContext = {
   level: StarterContextLevel;
   /** The item title or folder name, when there is one. */
   label?: string | null;
+  templateId?: string | null;
 };
 
 /**
@@ -25,11 +26,12 @@ export type StarterContext = {
 export function starterContextFromChip(chip: {
   kind?: "workspace" | "folder" | "item";
   label?: string;
+  templateId?: string;
 }): StarterContext {
   const label = chip.label ?? null;
   switch (chip.kind) {
     case "item":
-      return { level: "item", label };
+      return { level: "item", label, templateId: chip.templateId };
     case "folder":
       // Trash and Shared with me arrive as folders but read as places, and
       // asking to "sharpen your writing" in Trash is nonsense.
@@ -86,6 +88,25 @@ export function startersFor(context: StarterContext): Starter[] {
 
   switch (context.level) {
     case "item":
+      if (context.templateId === "texttext.brief") {
+        return [
+          {
+            label: "Check what changed in my sources",
+            prompt:
+              "Review this Living brief's sources. Name the sources that changed or disappeared, identify the exact claims affected, and do not revise anything yet.",
+          },
+          {
+            label: "Refresh affected claims",
+            prompt:
+              "Review this Living brief's sources, reread only the sources that changed, and update only the affected claims and evidence. Keep unrelated claims stable.",
+          },
+          {
+            label: "Create a publication draft",
+            prompt:
+              "Create a new publication draft from this Living brief. Use only supported claims, obey the enabled publication writing rules, keep source references visible, and do not publish it.",
+          },
+        ];
+      }
       return [
         {
           label: named ? `Sharpen my writing on ${named}` : "Sharpen my writing here",
@@ -109,7 +130,11 @@ export function startersFor(context: StarterContext): Starter[] {
           prompt:
             "Look across this collection for items that overlap, contradict each other, or are missing an obvious companion.",
         },
-        { label: "Draft something new here", prompt: "Suggest three items worth writing in this collection." },
+        {
+          label: "Create a sourced brief",
+          prompt:
+            "Read the useful items in this collection and create a Living brief here with a visible source ledger and evidence-backed claims.",
+        },
       ];
     case "trash":
       return [
@@ -128,8 +153,9 @@ export function startersFor(context: StarterContext): Starter[] {
     default:
       return [
         {
-          label: "Draft from my recent notes",
-          prompt: "Find the strongest thread in my recent notes and draft a short outline from it.",
+          label: "Turn recent notes into a sourced brief",
+          prompt:
+            "Read my recent notes and create a Living brief with a visible source ledger, evidence-backed claims, and clear writing rules.",
         },
         {
           label: "Find related writing",

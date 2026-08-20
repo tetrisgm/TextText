@@ -110,6 +110,7 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-rows-table th{text-align:left;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#6e6e73);padding:.45rem .75rem .45rem 0;border-bottom:1px solid color-mix(in srgb,var(--ink,#1d1d1f) 16%,transparent)}
 .tt-rows-table td{padding:.55rem .75rem .55rem 0;border-bottom:1px solid color-mix(in srgb,var(--ink,#1d1d1f) 8%,transparent);vertical-align:top}
 .tt-rows-table th[data-kind="number"],.tt-rows-table td[data-kind="number"]{text-align:right}
+.tt-cell-link{color:var(--tt-accent);text-decoration:none;text-underline-offset:.16em;overflow-wrap:anywhere}.tt-cell-link:hover{text-decoration:underline}
 .tt-rows-steps{list-style:none;margin-block:0;padding:0;counter-reset:tt-step;display:flex;flex-direction:column;gap:1rem}
 .tt-rows-step{counter-increment:tt-step;display:flex;gap:1rem;align-items:flex-start}
 .tt-rows-step::before{content:counter(tt-step);font-size:1.6rem;font-weight:750;line-height:1.1;min-width:2rem;color:color-mix(in srgb,var(--tt-accent) 60%,var(--ink,#1d1d1f))}
@@ -352,6 +353,26 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document.tt-collection-item[data-template="texttext.project"] .tt-text-title{font-size:1.45rem}
 .tt-document.tt-collection-item[data-template="texttext.project"] .tt-facts{font-size:.8rem}
 
+/* Living brief - the prose remains the document. Grounding is a quiet ledger
+   beneath it, not a dashboard wrapped around it. */
+.tt-document[data-template="texttext.brief"]{--tt-accent:#0a66c2;--tt-measure:52rem}
+.tt-document:not(.tt-collection-item)[data-template="texttext.brief"]>.tt-stack{gap:1.45rem;padding:clamp(2rem,5vw,4rem) 0 5rem}
+.tt-document[data-template="texttext.brief"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;font-size:clamp(2rem,3.6vw,3rem);font-weight:720;line-height:1.08;letter-spacing:-.026em}
+.tt-document[data-template="texttext.brief"] .tt-text-subtitle{font-size:1.08rem;line-height:1.5}
+.tt-document[data-template="texttext.brief"] .tt-prose{font-size:1.04rem;line-height:1.7}
+.tt-document[data-template="texttext.brief"] .tt-prose h2{margin:1.7em 0 .35em;font-size:1.08rem;letter-spacing:-.01em}
+.tt-document[data-template="texttext.brief"] [data-tt-node$="-heading"]{margin-top:.6rem;padding-top:1.15rem;border-top:1px solid color-mix(in srgb,var(--ink,#1d1d1f) 12%,transparent)}
+.tt-document[data-template="texttext.brief"] [data-tt-node$="-heading"] .tt-text-heading{font-size:.78rem;font-weight:680;text-transform:uppercase;letter-spacing:.075em;color:var(--muted,#6e6e73)}
+.tt-document[data-template="texttext.brief"] .tt-rows-table{font-size:.88rem}
+.tt-document[data-template="texttext.brief"] .tt-rows-table th{font-size:.68rem;font-weight:650;letter-spacing:.055em}
+.tt-document[data-template="texttext.brief"] .tt-rows-table td{padding-block:.72rem;line-height:1.42}
+.tt-document[data-template="texttext.brief"] [data-tt-node="claims-ledger"] .tt-rows-table td:first-child{min-width:15rem;font-weight:550;color:var(--ink,#1d1d1f)}
+.tt-document[data-template="texttext.brief"] [data-tt-node="claims-ledger"] .tt-rows-table td:last-child{min-width:15rem;color:var(--muted,#6e6e73)}
+.tt-document[data-template="texttext.brief"] [data-tt-node="sources-ledger"] .tt-rows-table td:first-child{min-width:11rem;font-weight:550;color:var(--ink,#1d1d1f)}
+.tt-document[data-template="texttext.brief"] [data-tt-node="writing-rules"]{padding:0;border:0;border-radius:0}
+.tt-document[data-template="texttext.brief"] [data-tt-node="writing-rules"] .tt-checklist-item{padding-inline:0}
+.tt-document.tt-collection-item[data-template="texttext.brief"] .tt-text-heading{font-size:1.08rem;letter-spacing:-.01em}
+
 /* Newsletter */
 .tt-document[data-template="texttext.newsletter"]{--tt-accent:#ff6719;--tt-measure:42rem}
 .tt-document:not(.tt-collection-item)[data-template="texttext.newsletter"]>.tt-stack{gap:2rem;padding:clamp(2.5rem,7vw,6rem) 0 5rem}
@@ -365,7 +386,7 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document[data-template="texttext.newsletter"] .tt-rows-tile-value{font-family:Georgia,"Iowan Old Style",serif;font-size:1.2rem}
 .tt-document.tt-collection-item[data-template="texttext.newsletter"] .tt-text-title{font-size:1.5rem}
 
-@media(max-width:720px){.tt-stack[data-direction="horizontal"]{flex-direction:column}.tt-text-title{font-size:clamp(2.3rem,13vw,4rem)}.tt-height-large{height:38vh}.tt-document[data-template="texttext.gallery"] [data-tt-node="gallery-media"]{grid-template-columns:repeat(2,minmax(0,1fr))}.tt-document[data-template="texttext.article"] .tt-prose,.tt-document[data-template="texttext.bookmark"] .tt-prose,.tt-document[data-template="texttext.newsletter"] .tt-prose{font-size:1.08rem}.tt-document[data-template="texttext.todo"] .tt-checklist{border-radius:0}}
+@media(max-width:720px){.tt-stack[data-direction="horizontal"]{flex-direction:column}.tt-text-title{font-size:clamp(2.3rem,13vw,4rem)}.tt-height-large{height:38vh}.tt-document[data-template="texttext.gallery"] [data-tt-node="gallery-media"]{grid-template-columns:repeat(2,minmax(0,1fr))}.tt-document[data-template="texttext.article"] .tt-prose,.tt-document[data-template="texttext.bookmark"] .tt-prose,.tt-document[data-template="texttext.newsletter"] .tt-prose{font-size:1.08rem}.tt-document[data-template="texttext.todo"] .tt-checklist{border-radius:0}.tt-document[data-template="texttext.brief"]{--tt-measure:100%}.tt-document[data-template="texttext.brief"] .tt-rows-table{min-width:42rem}}
 @media(prefers-color-scheme:dark){
   .tt-document{--ink:#f5f5f7;--paper:#1c1c1e;--muted:#a1a1a6;--tt-tone-neutral:#98989d;--tt-tone-info:#409cff;--tt-tone-success:#30d158;--tt-tone-warning:#ffd60a;--tt-tone-danger:#ff453a}
   /* Neutral, not the warm brown a cream paper turns into when it is darkened.

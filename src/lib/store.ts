@@ -2314,6 +2314,9 @@ export function defaultPostTypeForFolderMode(mode: FolderMode): PostType {
 type CreateDraftOptions = {
   representation?: FileRepresentation;
   template?: { id: string; version: number };
+  /** A complete canonical document for structured creation. The store still
+   * owns validation, projection, audit, and the atomic insert. */
+  document?: DocumentSnapshot;
   audit?: AuditEntry;
   /**
    * A claim already created by claimIdempotencyKey. When supplied, resolving
@@ -2409,11 +2412,11 @@ export async function createDraftInFolder(
     template,
     visibility: "private",
   };
-  const legacyDocument = documentFromLegacyPost(seed);
+  const sourceDocument = options.document ?? documentFromLegacyPost(seed);
   const document = validateDocumentSnapshot({
-    ...legacyDocument,
+    ...sourceDocument,
     presentation: {
-      ...legacyDocument.presentation,
+      ...sourceDocument.presentation,
       template,
     },
   });
@@ -3973,7 +3976,9 @@ export async function createItemComment(
   const [inserted] = await db
     .select()
     .from(itemComments)
-    .where(and(eq(itemComments.id, insertedId), eq(itemComments.postId, itemId)))
+    .where(
+      and(eq(itemComments.id, insertedId), eq(itemComments.postId, itemId)),
+    )
     .limit(1);
   if (!inserted) throw new Error("The created comment is unavailable");
   return mapItemComment(inserted);

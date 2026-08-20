@@ -201,6 +201,37 @@ describe("native workspace tool adapter", () => {
     expect(itemTools).toEqual(["update_item", "append_to_item"]);
   });
 
+  it("offers grounding tools for a sourced brief without widening every turn", () => {
+    expect(
+      workspaceAgentToolNamesForView(
+        { level: "workspace" },
+        "Turn the recent notes into a cited brief with supported claims",
+      ),
+    ).toEqual([
+      "get_workspace",
+      "list_folders",
+      "list_items",
+      "read_item",
+      "review_brief_sources",
+      "search",
+      "create_item_type",
+      "create_item",
+    ]);
+
+    expect(
+      workspaceAgentToolNamesForView(
+        { level: "post", folderPath: "blog", postId: "post-1" },
+        "Check this brief's sources and unsupported claims",
+      ),
+    ).toEqual([
+      "read_item",
+      "review_brief_sources",
+      "search",
+      "update_item",
+      "append_to_item",
+    ]);
+  });
+
   it("normalizes the current native bridge's folder alias before validation", async () => {
     const tools = createWorkspaceAgentTools({
       handle: "local",

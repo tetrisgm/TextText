@@ -1,4 +1,5 @@
 import type { AuthInfo, CallToolResult } from "@/lib/mcp/types";
+import type { Post } from "@/lib/content";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -16,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   getAccessibleFolders: vi.fn(),
   getAccessibleAllPostFiles: vi.fn(),
   getBlog: vi.fn(),
+  getDocumentTemplate: vi.fn(),
   getOwnedBlog: vi.fn(),
   getPostById: vi.fn(),
   getPostStoreContext: vi.fn(),
@@ -26,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   inviteScopeShare: vi.fn(),
   listItemAssetReferences: vi.fn(),
   listItemComments: vi.fn(),
+  listDocumentTemplates: vi.fn(),
   listScopeShares: vi.fn(),
   markCollabMaterialized: vi.fn(),
   markCapturePending: vi.fn(),
@@ -92,12 +95,14 @@ vi.mock("@/lib/store", () => ({
   getAccessibleFolderPostFiles: vi.fn(),
   getAccessibleFolders: mocks.getAccessibleFolders,
   getBlog: mocks.getBlog,
+  getDocumentTemplate: mocks.getDocumentTemplate,
   getOwnedBlog: mocks.getOwnedBlog,
   getPostById: mocks.getPostById,
   getPostStoreContext: mocks.getPostStoreContext,
   getTrashedFolders: mocks.getTrashedFolders,
   getTrashedPosts: mocks.getTrashedPosts,
   listItemComments: mocks.listItemComments,
+  listDocumentTemplates: mocks.listDocumentTemplates,
   markCapturePending: mocks.markCapturePending,
   movePostFile: vi.fn(),
   renameFolder: vi.fn(),
@@ -123,6 +128,7 @@ import {
   resolveMcpScopeAccess,
   runWorkspaceToolForSession,
 } from "@/lib/mcp/tools";
+import { renderItemFile } from "@/lib/mcp/items";
 import { listTools } from "@/lib/mcp/registry";
 
 type Registration = {
@@ -201,6 +207,8 @@ describe("MCP workspace tool adapter", () => {
     mocks.getTrashedPosts.mockResolvedValue([]);
     mocks.listItemAssetReferences.mockReturnValue([]);
     mocks.listItemComments.mockResolvedValue([]);
+    mocks.listDocumentTemplates.mockResolvedValue([]);
+    mocks.getDocumentTemplate.mockResolvedValue(null);
     mocks.listScopeShares.mockResolvedValue([]);
     mocks.recordAction.mockResolvedValue(undefined);
     mocks.signalWorkspaceChange.mockResolvedValue(undefined);
@@ -1239,6 +1247,284 @@ describe("MCP workspace tool adapter", () => {
     expect(mocks.savePost).toHaveBeenCalledTimes(1);
   });
 
+  it("creates a validated Living brief as one canonical structured item", async () => {
+    const folder = {
+      id: "blog",
+      name: "Blog",
+      path: "blog",
+      mode: "blog",
+    };
+    const sourceId = "11111111-1111-4111-8111-111111111111";
+    const sourcePost: Post = {
+      id: sourceId,
+      folderId: "notes",
+      type: "note",
+      slug: "research-notes",
+      title: "Research notes",
+      excerpt: "",
+      body: "People lost confidence when setup preceded useful work.",
+      status: "draft",
+      tags: [],
+      pinned: false,
+      revision: 1,
+    };
+    const sourceHash = renderItemFile(
+      {
+        handle: "local",
+        name: "Local Workspace",
+        author: "Writer",
+        homeLayout: "grid",
+      },
+      sourcePost,
+    ).hash;
+    const saved = {
+      id: "22222222-2222-4222-8222-222222222222",
+      folderId: "blog",
+      type: "article",
+      slug: "launch-brief",
+      title: "Launch brief",
+      excerpt: "A grounded decision brief.",
+      body: "Choose the smallest complete writing loop.",
+      status: "draft",
+      pinned: false,
+      revision: 1,
+    };
+    mocks.getAccessibleFolders.mockResolvedValue([folder]);
+    mocks.listDocumentTemplates.mockResolvedValue([
+      { id: "texttext.brief", version: 1 },
+    ]);
+    mocks.getDocumentTemplate.mockResolvedValue({
+      id: "texttext.brief",
+      version: 1,
+    });
+    mocks.getPostById.mockResolvedValue(sourcePost);
+    mocks.createDraftInFolder.mockResolvedValue(saved);
+
+    const createItem = registrations().find(
+      (entry) => entry.name === "create_item",
+    )!;
+    const result = await createItem.callback(
+      {
+        folder_path: "blog",
+        title: "Launch brief",
+        excerpt: "A grounded decision brief.",
+        body: "Choose the smallest complete writing loop.",
+        template_id: "texttext.brief",
+        fields: {
+          audience: "Product and engineering",
+          purpose: "decision",
+          sources: [
+            {
+              sourceId: "research",
+              title: "Research notes",
+              itemId: sourceId,
+              capturedHash: sourceHash,
+              status: "current",
+            },
+          ],
+          claims: [
+            {
+              claimId: "claim-loop",
+              claim: "The product needs one complete writing loop.",
+              sourceId: "research",
+              evidence:
+                "People lost confidence when setup preceded useful work.",
+              status: "supported",
+            },
+          ],
+          writingRules: [
+            {
+              instruction: "Use plain language.",
+              scope: "document",
+              enabled: true,
+            },
+          ],
+        },
+      },
+      auth(["sync"], "Claude"),
+    );
+
+    expect(result.isError).not.toBe(true);
+    expect(JSON.parse(toolText(result))).toMatchObject({
+      grounding: { sources: 1, claims: 1, writingRules: 1 },
+      replayed: false,
+    });
+    expect(mocks.createDraftInFolder).toHaveBeenCalledWith(
+      "local",
+      "blog",
+      expect.objectContaining({
+        template: { id: "texttext.brief", version: 1 },
+        document: expect.objectContaining({
+          content: expect.objectContaining({
+            title: "Launch brief",
+            fields: expect.objectContaining({
+              sources: [expect.objectContaining({ sourceId: "research" })],
+              claims: [expect.objectContaining({ claimId: "claim-loop" })],
+            }),
+          }),
+          presentation: expect.objectContaining({
+            template: { id: "texttext.brief", version: 1 },
+          }),
+        }),
+        audit: expect.objectContaining({
+          actionName: "mcp.create_item",
+          actorType: "external_agent",
+          inputSummary: expect.stringContaining("Agent: Claude"),
+        }),
+      }),
+    );
+  });
+
+  it("rejects a Living brief whose claimed source version was not read", async () => {
+    const sourceId = "11111111-1111-4111-8111-111111111111";
+    mocks.getAccessibleFolders.mockResolvedValue([
+      { id: "blog", name: "Blog", path: "blog", mode: "blog" },
+    ]);
+    mocks.listDocumentTemplates.mockResolvedValue([
+      { id: "texttext.brief", version: 1 },
+    ]);
+    mocks.getDocumentTemplate.mockResolvedValue({
+      id: "texttext.brief",
+      version: 1,
+    });
+    mocks.getPostById.mockResolvedValue({
+      id: sourceId,
+      folderId: "notes",
+      type: "note",
+      slug: "research-notes",
+      title: "Research notes",
+      excerpt: "",
+      body: "The real source body.",
+      status: "draft",
+      tags: [],
+      pinned: false,
+      revision: 1,
+    });
+
+    const createItem = registrations().find(
+      (entry) => entry.name === "create_item",
+    )!;
+    const result = await createItem.callback(
+      {
+        folder_path: "blog",
+        title: "Unverified brief",
+        body: "A decision.",
+        template_id: "texttext.brief",
+        fields: {
+          sources: [
+            {
+              sourceId: "research",
+              title: "Research notes",
+              itemId: sourceId,
+              capturedHash: "fabricated-hash",
+              status: "current",
+            },
+          ],
+          claims: [
+            {
+              claimId: "claim-one",
+              claim: "A claim.",
+              sourceId: "research",
+              evidence: "A passage.",
+              status: "supported",
+            },
+          ],
+        },
+      },
+      auth(["sync"], "Claude"),
+    );
+
+    expect(result.isError).toBe(true);
+    expect(toolText(result)).toMatch(/changed or was not read exactly/i);
+    expect(mocks.createDraftInFolder).not.toHaveBeenCalled();
+  });
+
+  it("reports exactly which brief claims are affected by changed sources", async () => {
+    const briefId = "33333333-3333-4333-8333-333333333333";
+    const sourceId = "44444444-4444-4444-8444-444444444444";
+    const briefPost = {
+      id: briefId,
+      folderId: "blog",
+      type: "article",
+      slug: "launch-brief",
+      title: "Launch brief",
+      excerpt: "A grounded decision brief.",
+      body: "The decision.",
+      tags: [],
+      status: "draft",
+      pinned: false,
+      revision: 3,
+      document: {
+        schemaVersion: 1,
+        content: {
+          title: "Launch brief",
+          body: "The decision.",
+          fields: {
+            sources: [
+              {
+                sourceId: "research",
+                title: "Research notes",
+                itemId: sourceId,
+                capturedHash: "sha256:old",
+                status: "current",
+              },
+            ],
+            claims: [
+              {
+                claimId: "claim-loop",
+                claim: "The product needs one complete writing loop.",
+                sourceId: "research",
+                evidence: "Setup came before value.",
+                status: "supported",
+              },
+            ],
+            writingRules: [],
+          },
+          tags: [],
+          assets: [],
+        },
+        presentation: {
+          template: { id: "texttext.brief", version: 1 },
+          theme: {},
+        },
+      },
+    } as const;
+    const sourcePost = {
+      id: sourceId,
+      folderId: "notes",
+      type: "note",
+      slug: "research-notes",
+      title: "Research notes, revised",
+      excerpt: "",
+      body: "The useful workflow changed after the latest interviews.",
+      tags: [],
+      status: "draft",
+      pinned: false,
+      revision: 8,
+    } as const;
+    mocks.getPostById.mockImplementation(async (_handle, id) =>
+      id === briefId ? briefPost : id === sourceId ? sourcePost : null,
+    );
+
+    const review = registrations().find(
+      (entry) => entry.name === "review_brief_sources",
+    )!;
+    const result = await review.callback({ id: briefId }, auth(["read"]));
+
+    expect(result.isError).not.toBe(true);
+    expect(JSON.parse(toolText(result))).toMatchObject({
+      summary: { changed: 1, affectedClaims: 1 },
+      sources: [
+        {
+          sourceId: "research",
+          status: "changed",
+          affectedClaimIds: ["claim-loop"],
+        },
+      ],
+      affectedClaims: [{ claimId: "claim-loop" }],
+    });
+  });
+
   it("creates an item once when an agent retries with the same key", async () => {
     const id = "99999999-9999-4999-8999-999999999999";
     const folder = {
@@ -1475,9 +1761,7 @@ describe("MCP workspace tool adapter", () => {
       visibility: "public",
       revision: 15,
     });
-    const setStatus = entries.find(
-      (entry) => entry.name === "set_item_status",
-    );
+    const setStatus = entries.find((entry) => entry.name === "set_item_status");
     const published = await setStatus!.callback(
       { id, status: "published" },
       auth(["sync"], "Claude"),

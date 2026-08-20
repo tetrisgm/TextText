@@ -4,10 +4,7 @@ import {
   type WorkspaceItemTextSelection,
   type WorkspaceItemTextSnapshot,
 } from "@/lib/ai/workspace-item-draft";
-import {
-  findPoolPostById,
-  folderPathForPoolPost,
-} from "@/lib/pool/selectors";
+import { findPoolPostById, folderPathForPoolPost } from "@/lib/pool/selectors";
 
 export type AssistantContextKind = "workspace" | "folder" | "item";
 
@@ -15,6 +12,7 @@ export type AssistantContext = {
   label: string;
   detail?: string;
   kind?: AssistantContextKind;
+  templateId?: string;
 };
 
 export type AssistantViewSnapshot = {
@@ -110,6 +108,8 @@ export function resolveWorkspaceAssistantContext({
       chip: {
         kind: "item",
         label: item.title.trim() || "Untitled",
+        templateId:
+          item.document?.presentation.template.id ?? item.template?.id,
         detail:
           view.level === "edit"
             ? "Editing"

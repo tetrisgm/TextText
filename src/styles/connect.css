@@ -781,6 +781,22 @@
   font: 400 var(--ac-fs-footnote)/1.45 var(--ac-font-text);
 }
 
+.docs-recipe-live-proof iframe {
+  display: block;
+  width: 100%;
+  height: min(44rem, 68vw);
+  min-height: 30rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--paper);
+}
+
+.docs-recipe-next {
+  margin: 16px 0 0;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
 .docs-prompt-copy {
   width: max-content;
   border: 0;
@@ -937,6 +953,11 @@
   .docs-recipe-proof-pair {
     grid-template-columns: 1fr;
   }
+
+  .docs-recipe-live-proof iframe {
+    height: 34rem;
+    min-height: 0;
+  }
 }
 
 @media (max-width: 760px) {
@@ -955,6 +976,10 @@
     border-bottom: 1px solid var(--ac-separator);
     overflow-x: auto;
     overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .docs-navigation::-webkit-scrollbar {
+    display: none;
   }
   .docs-navigation-home small,
   .docs-navigation-group p,

@@ -6,10 +6,21 @@ import { PromptCopyButton } from "@/components/docs/PromptCopyButton";
 export const metadata: Metadata = {
   title: "TextText writing recipes",
   description:
-    "Six exact prompts for useful, visible agentic writing workflows.",
+    "Seven exact prompts for useful, visible agentic writing workflows.",
 };
 
 const recipes = [
+  {
+    title: "Turn notes into a Living brief",
+    prerequisite:
+      "Put the source notes in one folder, open that folder, and connect an agent.",
+    prompt:
+      "Read the notes in this folder and create a Living brief. State the audience and purpose. Give every source an ID and captured version, give every factual claim an ID and supporting evidence, and keep the source-to-claim relationship visible. Add three concise writing rules. Do not invent evidence or publish anything.",
+    success:
+      "A Living brief appears with readable prose, an addressable claims ledger, a source ledger, and writing rules.",
+    recovery:
+      "Open the brief and choose Check what changed in my sources. Refresh only the claims TextText marks as affected.",
+  },
   {
     title: "Draft from notes",
     prerequisite:
@@ -123,6 +134,29 @@ export default function WritingRecipesPage() {
                   </div>
                 </dl>
                 {index === 0 ? (
+                  <figure className="docs-recipe-proof docs-recipe-live-proof">
+                    <iframe
+                      src="/templates/brief"
+                      title="Live TextText Living brief example"
+                      loading="lazy"
+                    />
+                    <figcaption>
+                      This is the real Living brief renderer, not a diagram.
+                      Open the example to inspect its claims, sources, evidence,
+                      and writing rules.
+                    </figcaption>
+                  </figure>
+                ) : null}
+                {index === 0 ? (
+                  <p className="docs-recipe-next">
+                    Next, open the brief and choose{" "}
+                    <strong>Create a publication draft</strong>. The agent uses
+                    only supported claims and enabled publication rules, keeps
+                    the source references visible, and leaves the result
+                    private.
+                  </p>
+                ) : null}
+                {index === 1 ? (
                   <figure className="docs-recipe-proof">
                     <div className="docs-recipe-proof-pair">
                       <Image
@@ -145,7 +179,7 @@ export default function WritingRecipesPage() {
                     </figcaption>
                   </figure>
                 ) : null}
-                {index === 1 ? (
+                {index === 2 ? (
                   <figure className="docs-recipe-proof">
                     <div className="docs-recipe-proof-pair">
                       <Image

@@ -12,6 +12,7 @@ const EXPECTED_NAMES = [
   "list_folders",
   "list_items",
   "read_item",
+  "review_brief_sources",
   "open_item",
   "search",
   "list_trash",
@@ -142,6 +143,44 @@ describe("workspace tool contract", () => {
         body: "# Draft from body\n\nComplete text.",
       }),
     ).toEqual({ body: "# Draft from body\n\nComplete text." });
+    expect(
+      parseWorkspaceToolInput("create_item", {
+        title: "Grounded launch brief",
+        template_id: "texttext.brief",
+        fields: {
+          sources: [
+            {
+              sourceId: "research",
+              title: "Research notes",
+              itemId: "item-research",
+              capturedHash: "sha256:research",
+              status: "current",
+            },
+          ],
+          claims: [
+            {
+              claimId: "claim-setup",
+              claim: "Setup is the main source of friction.",
+              sourceId: "research",
+              evidence: "Four sessions stalled before the first edit.",
+              status: "supported",
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({
+      template_id: "texttext.brief",
+      fields: {
+        sources: [{ sourceId: "research" }],
+        claims: [{ claimId: "claim-setup" }],
+      },
+    });
+    expect(() =>
+      parseWorkspaceToolInput("create_item", {
+        markdown: "# Brief",
+        template_id: "texttext.brief",
+      }),
+    ).toThrow();
     expect(() =>
       parseWorkspaceToolInput("create_item", {
         folder_path: "blog",

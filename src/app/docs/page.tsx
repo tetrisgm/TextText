@@ -10,11 +10,11 @@ export const metadata: Metadata = {
 const nextSteps = [
   {
     number: "01",
-    title: "Write with the in-app agent",
+    title: "Turn notes into a Living brief",
     description:
-      "Select one sentence, choose Rewrite, then review, apply, or undo the proposed replacement.",
+      "Give the agent a source folder. Get a readable brief with addressable claims, visible evidence, and source versions.",
     href: "/docs/getting-started",
-    label: "Start the two-minute guide",
+    label: "Build the flagship workflow",
   },
   {
     number: "02",
@@ -42,7 +42,8 @@ export default function DocsIndexPage() {
         <h1 className="connect-title">Write with agents. Keep the document.</h1>
         <p className="connect-lede">
           TextText is a shared writing surface for you, other people, and the AI
-          you already use. Start with one visible edit. Learn the connection
+          you already use. Start with source material and leave with grounded
+          writing you can inspect, revise, and keep current. Learn connection
           details only when you need them.
         </p>
         <div className="docs-start-path" aria-label="Start here">

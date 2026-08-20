@@ -214,6 +214,18 @@ const createItemInput = z
     body: z.string().max(1_000_000).optional(),
     excerpt: z.string().max(2_000).nullable().optional(),
     kind: itemKind.optional(),
+    template_id: templateId
+      .optional()
+      .describe(
+        "Create the item with this document template. Omit to inherit the folder look.",
+      ),
+    template_version: templateVersion.optional(),
+    fields: z
+      .lazy(() => fieldValues)
+      .optional()
+      .describe(
+        "Structured values for the selected template, including rows such as sources and claims.",
+      ),
     markdown: z
       .string()
       .min(1)
@@ -229,7 +241,10 @@ const createItemInput = z
       value.title !== undefined ||
       value.body !== undefined ||
       value.excerpt !== undefined ||
-      value.kind !== undefined;
+      value.kind !== undefined ||
+      value.template_id !== undefined ||
+      value.template_version !== undefined ||
+      value.fields !== undefined;
     if (!value.markdown && !value.title && !value.body?.trim()) {
       context.addIssue({
         code: "custom",
@@ -240,6 +255,16 @@ const createItemInput = z
       context.addIssue({
         code: "custom",
         message: "Pass markdown or structured item fields, not both.",
+      });
+    }
+    if (
+      value.template_version !== undefined &&
+      value.template_id === undefined
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["template_version"],
+        message: "template_version requires template_id.",
       });
     }
   });
@@ -480,6 +505,12 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     title: "Read item",
     description:
       "Read one item's markdown, metadata, tags, outbound links, backlinks, and assets by id.",
+    inputSchema: z.object({ id }).strict(),
+  }),
+  review_brief_sources: defineTool("review_brief_sources", {
+    title: "Review brief sources",
+    description:
+      "Compare a Living brief's captured workspace-source versions with the current documents. Return changed or missing sources and the exact claim ids that need review. Read-only.",
     inputSchema: z.object({ id }).strict(),
   }),
   open_item: defineTool("open_item", {

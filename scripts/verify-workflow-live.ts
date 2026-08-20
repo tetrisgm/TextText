@@ -201,6 +201,136 @@ async function main() {
     const articleId = (article.data?.item as { id?: string })?.id ?? "";
     check("create_item produced an article", article.ok && !!articleId, articleId);
 
+    // ---- Flagship workflow: notes -> grounded Living brief -> source drift ----
+    const sourceOne = await tool("create_item", {
+      folder_path: "notes",
+      kind: "note",
+      title: `Interview evidence ${STAMP}`,
+      body: "Three writers said they trusted the agent only after they could inspect its exact evidence and undo a narrow change.",
+    });
+    const sourceTwo = await tool("create_item", {
+      folder_path: "notes",
+      kind: "note",
+      title: `Workflow decision ${STAMP}`,
+      body: "The launch workflow is source notes, a grounded brief, review of affected claims, then a private publication draft.",
+    });
+    const sourceOneId = (sourceOne.data?.item as { id?: string })?.id ?? "";
+    const sourceTwoId = (sourceTwo.data?.item as { id?: string })?.id ?? "";
+    const readSourceOne = await tool("read_item", { id: sourceOneId });
+    const readSourceTwo = await tool("read_item", { id: sourceTwoId });
+    const sourceOneHash =
+      (readSourceOne.data?.item as { hash?: string })?.hash ?? "";
+    const sourceTwoHash =
+      (readSourceTwo.data?.item as { hash?: string })?.hash ?? "";
+    check(
+      "Living brief sources expose exact captured versions",
+      sourceOne.ok && sourceTwo.ok && !!sourceOneHash && !!sourceTwoHash,
+      `first=${sourceOneHash ? "hashed" : "missing"} second=${sourceTwoHash ? "hashed" : "missing"}`,
+    );
+
+    const brief = await tool("create_item", {
+      folder_path: "blog",
+      kind: "article",
+      title: `Agentic writing launch brief ${STAMP}`,
+      excerpt: "A source-grounded launch decision.",
+      body: "Ship one visible writing loop: evidence becomes addressable claims, source changes identify affected claims, and supported claims become a private publication draft.",
+      template_id: "texttext.brief",
+      template_version: 1,
+      fields: {
+        audience: "Product and engineering",
+        purpose: "Approve the smallest complete agentic writing loop",
+        sources: [
+          {
+            sourceId: "interviews",
+            title: `Interview evidence ${STAMP}`,
+            itemId: sourceOneId,
+            capturedHash: sourceOneHash,
+            status: "current",
+          },
+          {
+            sourceId: "decision",
+            title: `Workflow decision ${STAMP}`,
+            itemId: sourceTwoId,
+            capturedHash: sourceTwoHash,
+            status: "current",
+          },
+        ],
+        claims: [
+          {
+            claimId: "trust-requires-proof",
+            claim: "Visible evidence and narrow recovery increase trust.",
+            sourceId: "interviews",
+            evidence:
+              "Writers trusted the agent after they could inspect evidence and undo a narrow change.",
+            status: "supported",
+          },
+          {
+            claimId: "workflow-order",
+            claim: "The complete workflow ends in a private publication draft.",
+            sourceId: "decision",
+            evidence:
+              "Source notes lead to a brief, affected-claim review, and a private publication draft.",
+            status: "supported",
+          },
+        ],
+        writingRules: [
+          {
+            instruction: "Use plain language and name the evidence.",
+            scope: "document",
+            enabled: true,
+          },
+          {
+            instruction: "Use only supported claims.",
+            scope: "publication",
+            enabled: true,
+          },
+        ],
+      },
+    });
+    const briefId = (brief.data?.item as { id?: string })?.id ?? "";
+    const grounding = brief.data?.grounding as
+      { sources?: number; claims?: number; writingRules?: number } | undefined;
+    const [briefRow] = briefId
+      ? await db.select().from(posts).where(eq(posts.id, briefId))
+      : [];
+    check(
+      "notes become one validated, addressable Living brief",
+      brief.ok &&
+        !!briefId &&
+        grounding?.sources === 2 &&
+        grounding?.claims === 2 &&
+        grounding?.writingRules === 2 &&
+        briefRow?.document?.presentation.template.id === "texttext.brief",
+      `sources=${grounding?.sources ?? 0} claims=${grounding?.claims ?? 0} rules=${grounding?.writingRules ?? 0}`,
+    );
+    check(
+      "Living brief creation leaves one attributed audit",
+      (await auditRows("mcp.create_item", briefId)).length === 1,
+    );
+
+    const changedSource = await tool("update_item", {
+      id: sourceOneId,
+      body: "Five writers said they trusted the agent only after they could inspect exact evidence, see the affected claim, and undo a narrow change.",
+      if_match_hash: sourceOneHash,
+    });
+    const reviewBrief = await tool("review_brief_sources", { id: briefId });
+    const reviewSummary = reviewBrief.data?.summary as
+      { changed?: number; affectedClaims?: number } | undefined;
+    const affectedClaimIds = (
+      (reviewBrief.data?.affectedClaims ?? []) as Array<{
+        claimId?: string;
+      }>
+    ).map((claim) => claim.claimId);
+    check(
+      "a changed source identifies only its affected claim",
+      changedSource.ok &&
+        reviewBrief.ok &&
+        reviewSummary?.changed === 1 &&
+        reviewSummary?.affectedClaims === 1 &&
+        affectedClaimIds.join(",") === "trust-requires-proof",
+      `changed=${reviewSummary?.changed ?? 0} claims=${affectedClaimIds.join(",") || "none"}`,
+    );
+
     // ---- Workflow: comments ----
     const commented = await tool("add_comment", { id: articleId, body: "A probe comment." });
     const commentId = (commented.data?.comment as { id?: string })?.id ?? "";

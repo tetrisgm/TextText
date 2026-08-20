@@ -82,6 +82,7 @@ import {
   nativeAssistantTurnPrompt,
   nativeWorkspaceIndex,
 } from "@/lib/ai/native-turn";
+import { workspaceToolProgress } from "./tool-progress";
 
 export type { AssistantViewSnapshot } from "./context";
 
@@ -611,6 +612,18 @@ export function useNativeAssistant({
         void (async () => {
           try {
             const args = typeof event.arguments === "string" ? JSON.parse(event.arguments) : event.arguments;
+            const progress = workspaceToolProgress(
+              event.tool,
+              (args ?? {}) as Record<string, unknown>,
+            );
+            if (progress) {
+              appendToThread(threadKey, "progress", progress);
+              if (nativeJobRef.current) {
+                updateAssistantJob(nativeJobRef.current, {
+                  activity: progress,
+                });
+              }
+            }
             // A namespaced name belongs to a connected server, not the
             // workspace, and runs through the local bridge instead.
             const local = localToolsRef.current.run(
