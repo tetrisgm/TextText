@@ -75,11 +75,14 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     private var codexAccountKnownSignedOut = false
     private var codexActiveTurnID: String?
     private var codexTurnDeadline: DispatchWorkItem?
+    private var codexTimeoutRecoveryDeadline: DispatchWorkItem?
     private var codexTurnTimedOut = false
+    private var codexTurnInterruptSent = false
     private var codexAgentMessagePhases: [String: CodexAgentMessage.Phase] = [:]
 
     private static let codexTurnTimeoutSeconds: TimeInterval = 30
     private static let codexToolTimeoutSeconds: TimeInterval = 8
+    private static let codexTimeoutRecoverySeconds: TimeInterval = 2
     private static let codexLog = Logger(
         subsystem: "app.texttext.mac",
         category: "native-assistant")
@@ -513,8 +516,11 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                 self.codexToolDeadlines.removeAll()
                 self.codexTurnDeadline?.cancel()
                 self.codexTurnDeadline = nil
+                self.codexTimeoutRecoveryDeadline?.cancel()
+                self.codexTimeoutRecoveryDeadline = nil
                 self.codexActiveTurnID = nil
                 self.codexTurnTimedOut = false
+                self.codexTurnInterruptSent = false
                 self.codexAgentMessagePhases.removeAll()
                 self.emitCodexEvent([
                     "type": "status",
@@ -672,6 +678,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     private func startCodexTurnDeadline(threadID: String) {
         codexTurnDeadline?.cancel()
         codexTurnTimedOut = false
+        codexTurnInterruptSent = false
         let deadline = DispatchWorkItem { [weak self] in
             guard let self else { return }
             Self.codexLog.error(
@@ -681,13 +688,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                 "type": "error",
                 "message": "The TextText Agent took too long. Try the request again.",
             ])
-            guard let turnID = self.codexActiveTurnID else { return }
-            _ = try? self.sendCodexRequest(
-                .turnInterrupt,
-                method: "turn/interrupt",
-                params: CodexAppServerRequests.turnInterrupt(
-                    threadID: threadID,
-                    turnID: turnID))
+            self.interruptTimedOutCodexTurnIfPossible(threadID: threadID)
+            self.scheduleCodexTimeoutRecovery()
         }
         codexTurnDeadline = deadline
         DispatchQueue.main.asyncAfter(
@@ -698,9 +700,51 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     private func finishCodexTurn() {
         codexTurnDeadline?.cancel()
         codexTurnDeadline = nil
+        codexTimeoutRecoveryDeadline?.cancel()
+        codexTimeoutRecoveryDeadline = nil
+        for deadline in codexToolDeadlines.values { deadline.cancel() }
+        codexToolDeadlines.removeAll()
+        codexPendingToolCalls.removeAll()
         codexActiveTurnID = nil
         codexTurnTimedOut = false
+        codexTurnInterruptSent = false
         codexAgentMessagePhases.removeAll()
+    }
+
+    /// A provider can accept `turn/start` but delay its response beyond the
+    /// user-facing deadline. In that state there is no turn id to interrupt,
+    /// and the old implementation left the composer blocked forever. Give a
+    /// late response a brief chance to provide the id, then restart the owned
+    /// child process so Retry always has a clean path forward.
+    private func scheduleCodexTimeoutRecovery() {
+        codexTimeoutRecoveryDeadline?.cancel()
+        let recovery = DispatchWorkItem { [weak self] in
+            guard let self, self.codexTurnTimedOut else { return }
+            Self.codexLog.error("restarting native assistant after timed-out turn")
+            self.codexServer?.stop()
+        }
+        codexTimeoutRecoveryDeadline = recovery
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.codexTimeoutRecoverySeconds,
+            execute: recovery)
+    }
+
+    private func interruptTimedOutCodexTurnIfPossible(threadID: String) {
+        guard codexTurnTimedOut,
+              !codexTurnInterruptSent,
+              !threadID.isEmpty,
+              let turnID = codexActiveTurnID else { return }
+        do {
+            try sendCodexRequest(
+                .turnInterrupt,
+                method: "turn/interrupt",
+                params: CodexAppServerRequests.turnInterrupt(
+                    threadID: threadID,
+                    turnID: turnID))
+            codexTurnInterruptSent = true
+        } catch {
+            // The forced process recovery below remains the bounded fallback.
+        }
     }
 
     private func startCodexToolDeadline(
@@ -860,6 +904,9 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                 if let turn = message.rawResult?["turn"] as? [String: Any],
                    let turnID = turn["id"] as? String {
                     codexActiveTurnID = turnID
+                    if codexTurnTimedOut {
+                        interruptTimedOutCodexTurnIfPossible(threadID: codexThreadID ?? "")
+                    }
                 }
             case .turnInterrupt:
                 break
@@ -899,6 +946,9 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
            let turn = message.rawParams?["turn"] as? [String: Any],
            let turnID = turn["id"] as? String {
             codexActiveTurnID = turnID
+            if codexTurnTimedOut {
+                interruptTimedOutCodexTurnIfPossible(threadID: codexThreadID ?? "")
+            }
             return
         }
         if message.method == "item/started",

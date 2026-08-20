@@ -1,7 +1,51 @@
 import XCTest
+@testable import TextTextApp
 @testable import TextTextWorkspaceCore
 
 final class CodexAppServerTests: XCTestCase {
+    func testControllerAnswersNumericToolRequestWithoutChangingItsType() throws {
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent("texttext-codex-pipe-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+
+        let responseURL = temporary.appendingPathComponent("response.json")
+        let serverURL = temporary.appendingPathComponent("fake-app-server")
+        let script = """
+        #!/bin/sh
+        printf '%s\\n' '{"jsonrpc":"2.0","id":0,"method":"item/tool/call","params":{"callId":"call-1","tool":"list_folders","arguments":{}}}'
+        IFS= read -r response
+        printf '%s' "$response" > '\(responseURL.path)'
+        """
+        try Data(script.utf8).write(to: serverURL)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755], ofItemAtPath: serverURL.path)
+
+        let exited = expectation(description: "fake App Server captured the response")
+        let controller = CodexAppServerController(executableURL: serverURL)
+        controller.onEvent = { message in
+            guard message.method == "item/tool/call", let requestID = message.jsonRPCID else {
+                return
+            }
+            try? controller.respond(
+                id: requestID,
+                result: CodexAppServerRequests.dynamicToolResult(
+                    text: #"{"folders":[]}"#, success: true))
+        }
+        controller.onExit = { status in
+            XCTAssertEqual(status, 0)
+            exited.fulfill()
+        }
+        try controller.start()
+        wait(for: [exited], timeout: 5)
+
+        let captured = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: responseURL)) as? [String: Any]
+        XCTAssertEqual(captured?["id"] as? Int, 0)
+        XCTAssertNil(captured?["id"] as? String)
+        XCTAssertEqual((captured?["result"] as? [String: Any])?["success"] as? Bool, true)
+    }
+
     func testParsesNotificationsWithoutExposingSecrets() throws {
         let message = try CodexAppServerMessage(data: Data(#"{"method":"account/rateLimits/updated","params":{"rateLimits":{"planType":"pro"}}}"#.utf8))
         XCTAssertEqual(message.method, "account/rateLimits/updated")
