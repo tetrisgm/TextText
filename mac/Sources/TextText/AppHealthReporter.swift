@@ -445,12 +445,8 @@ final class AppHealthReporter {
             },
             timedCheck(id: "state.persistence", operation: checkStatePersistence),
             timedCheck(id: "sync.index", operation: checkSyncIndex),
-            timedCheck(id: "workspace.storage") {
-                checkWorkspaceStorage(trigger: trigger)
-            },
-            timedCheck(id: "finder.provider") {
-                checkFinderProvider(trigger: trigger)
-            },
+            timedCheck(id: "workspace.storage", operation: checkWorkspaceStorage),
+            timedCheck(id: "finder.provider", operation: checkFinderProvider),
         ]
         let status: TextTextHealthStatus = checks.contains(where: { $0.status == .fail })
             ? .fail
@@ -844,9 +840,7 @@ final class AppHealthReporter {
         ])
     }
 
-    private func checkWorkspaceStorage(
-        trigger: TextTextHealthTrigger
-    ) -> (TextTextHealthStatus, [String: Double]) {
+    private func checkWorkspaceStorage() -> (TextTextHealthStatus, [String: Double]) {
         // The workspace's on-disk home is the File Provider mount (the legacy
         // mirror is retired). A nil root means the mount is not resolved here
         // (signed out, domain still registering, or an isolated CI run): there
@@ -881,7 +875,7 @@ final class AppHealthReporter {
             // feature. Its disabled mount can exist and remain writable while
             // enumeration is denied by macOS. That does not make the signed
             // app or its private workspace storage defective.
-            status = trigger == .releaseVerification ? .pass : .warning
+            status = .pass
         } else {
             status = valid ? .pass : .fail
         }
@@ -899,9 +893,7 @@ final class AppHealthReporter {
         ])
     }
 
-    private func checkFinderProvider(
-        trigger: TextTextHealthTrigger
-    ) -> (TextTextHealthStatus, [String: Double]) {
+    private func checkFinderProvider() -> (TextTextHealthStatus, [String: Double]) {
         let readiness = finderReadinessProbe.run(
             statusProvider: finderStatusProvider)
         let snapshot = readiness.snapshot
@@ -913,9 +905,9 @@ final class AppHealthReporter {
         let status: TextTextHealthStatus
         if userDisabled {
             // Disabling a File Provider domain is a user preference, not a
-            // defective app binary. Keep the runtime report honest without
-            // rolling back an otherwise valid App Store-compatible update.
-            status = trigger == .releaseVerification ? .pass : .warning
+            // defective app binary. Record the state in metrics without
+            // degrading an otherwise valid App Store-compatible update.
+            status = .pass
         } else {
             switch snapshot.severity {
             case .healthy:

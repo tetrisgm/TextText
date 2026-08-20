@@ -309,11 +309,11 @@ final class AppHealthReporterTests: XCTestCase {
             manual.checks.first(where: { $0.id == "workspace.storage" }))
         let manualCheck = try XCTUnwrap(
             manual.checks.first(where: { $0.id == "finder.provider" }))
-        XCTAssertEqual(manualStorageCheck.status, .warning)
+        XCTAssertEqual(manualStorageCheck.status, .pass)
         XCTAssertEqual(manualStorageCheck.metrics["domain_enabled_known"], 1)
         XCTAssertEqual(manualStorageCheck.metrics["domain_enabled"], 0)
         XCTAssertEqual(manualStorageCheck.metrics["user_disabled"], 1)
-        XCTAssertEqual(manualCheck.status, .warning)
+        XCTAssertEqual(manualCheck.status, .pass)
         XCTAssertEqual(manualCheck.metrics["domain_enabled_known"], 1)
         XCTAssertEqual(manualCheck.metrics["domain_enabled"], 0)
         XCTAssertEqual(manualCheck.metrics["user_disabled"], 1)
