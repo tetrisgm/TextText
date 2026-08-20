@@ -2404,7 +2404,9 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   --bg: var(--ac-bg);
   --bg-soft: var(--ac-bg-2);
   --bg-soft-2: color-mix(in srgb, var(--ac-bg-2) 86%, var(--ac-bg));
-  min-height: 100dvh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
   position: relative;
   background: var(--bg);
   color: var(--ink);
@@ -2422,7 +2424,12 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   color-scheme: normal;
 }
 .post-editor-content {
+  height: 100%;
+  min-height: 0;
   min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   transition:
     margin-left 0.18s var(--ease),
     margin-right 0.18s var(--ease);
@@ -2438,8 +2445,10 @@ body:has(.reader):not(:has(.post-editor-shell)) {
 .workspace-document-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  height: 100%;
   min-width: 0;
-  min-height: 100%;
+  min-height: 0;
+  overflow: hidden;
   align-items: stretch;
 }
 .workspace-document-layout > .post-editor-content {
@@ -2454,10 +2463,9 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   > .workspace-assistant-shell {
   grid-column: 2;
   grid-row: 1;
-}
-.post-editor-shell {
-  position: relative;
-  min-height: 100dvh;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 .post-editor-content:focus {
   outline: none;
@@ -2527,9 +2535,12 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   inset: 0 auto 0 0;
   z-index: 197;
   width: var(--workspace-sidebar-width, 280px);
+  height: 100dvh;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  overflow: hidden;
   border-right: 0;
   background: color-mix(in srgb, var(--bg-soft) 92%, var(--bg));
   transition:
@@ -2898,6 +2909,9 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   inset: 0 auto 0 0;
   z-index: 202;
   width: var(--workspace-sidebar-width, 280px);
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
   pointer-events: none;
 }
 .post-workspace-sidebar-region:not(.is-collapsed),

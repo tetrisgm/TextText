@@ -58,6 +58,76 @@ async function openSidebar(page: Page, label: string) {
   await page.waitForTimeout(500);
 }
 
+async function verifyWorkspaceScrollOwnership(page: Page) {
+  const result = await page.evaluate(async () => {
+    const center = document.querySelector<HTMLElement>(".post-editor-content");
+    const left = document.querySelector<HTMLElement>(".post-editor-sidebar");
+    const assistant = document.querySelector<HTMLElement>(
+      '.workspace-assistant-shell[data-state="pinned"]',
+    );
+    if (!center || !left)
+      throw new Error("Workspace scroll regions did not render");
+
+    window.scrollTo(0, 0);
+    center.scrollTop = 0;
+    let probe: HTMLElement | null = null;
+    if (center.scrollHeight - center.clientHeight < 200) {
+      probe = document.createElement("div");
+      probe.dataset.scrollOwnershipProbe = "";
+      probe.style.height = "1200px";
+      probe.style.pointerEvents = "none";
+      probe.setAttribute("aria-hidden", "true");
+      center.append(probe);
+    }
+    const before = {
+      left: left.getBoundingClientRect().toJSON(),
+      assistant: assistant?.getBoundingClientRect().toJSON() ?? null,
+    };
+    center.scrollTop = Math.min(900, center.scrollHeight - center.clientHeight);
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+    const after = {
+      left: left.getBoundingClientRect().toJSON(),
+      assistant: assistant?.getBoundingClientRect().toJSON() ?? null,
+    };
+    const measurement = {
+      before,
+      after,
+      centerScrollTop: center.scrollTop,
+      windowScrollY: window.scrollY,
+      viewportHeight: window.innerHeight,
+    };
+    center.scrollTop = 0;
+    probe?.remove();
+    return measurement;
+  });
+
+  if (result.centerScrollTop < 100) {
+    throw new Error(`Center pane did not scroll (${result.centerScrollTop}px)`);
+  }
+  if (result.windowScrollY !== 0) {
+    throw new Error(`Workspace window scrolled ${result.windowScrollY}px`);
+  }
+  for (const rail of ["left", "assistant"] as const) {
+    const before = result.before[rail];
+    const after = result.after[rail];
+    if (!before || !after) continue;
+    if (
+      Math.abs(before.top - after.top) > 1 ||
+      Math.abs(before.bottom - after.bottom) > 1
+    ) {
+      throw new Error(`${rail} rail moved while the center pane scrolled`);
+    }
+    if (
+      Math.abs(after.top) > 1 ||
+      Math.abs(after.bottom - result.viewportHeight) > 1
+    ) {
+      throw new Error(`${rail} rail is not pinned to the viewport`);
+    }
+  }
+}
+
 async function openItemTypeStudio(
   page: Page,
   surface: "prompt" | "item" | "folder",
@@ -109,13 +179,19 @@ const surfaces: Surface[] = [
   {
     name: "home",
     go: async (page) => {
-      await page.goto(`${BASE}/start?to=home`, { waitUntil: "domcontentloaded" });
+      await page.goto(`${BASE}/start?to=home`, {
+        waitUntil: "domcontentloaded",
+      });
+      await page.waitForTimeout(1200);
+      await verifyWorkspaceScrollOwnership(page);
     },
   },
   {
     name: "home-cards",
     go: async (page) => {
-      await page.goto(`${BASE}/start?to=home`, { waitUntil: "domcontentloaded" });
+      await page.goto(`${BASE}/start?to=home`, {
+        waitUntil: "domcontentloaded",
+      });
       await page.waitForTimeout(1200);
       await page
         .locator('.workspace-view-segmented button[aria-label="Cards"]')
@@ -137,11 +213,13 @@ const surfaces: Surface[] = [
   },
   {
     name: "item-type-editorial-item",
-    go: async (page) => openItemTypeStudio(page, "item", /Editorial publication/),
+    go: async (page) =>
+      openItemTypeStudio(page, "item", /Editorial publication/),
   },
   {
     name: "item-type-editorial-folder",
-    go: async (page) => openItemTypeStudio(page, "folder", /Editorial publication/),
+    go: async (page) =>
+      openItemTypeStudio(page, "folder", /Editorial publication/),
   },
   {
     name: "item-type-notes-item",
@@ -155,9 +233,11 @@ const surfaces: Surface[] = [
     name: "item-type-controls",
     go: async (page) => {
       await openItemTypeStudio(page, "item");
-      await page.getByRole("region", { name: "Item type settings" }).evaluate((controls) => {
-        controls.scrollTop = controls.scrollHeight;
-      });
+      await page
+        .getByRole("region", { name: "Item type settings" })
+        .evaluate((controls) => {
+          controls.scrollTop = controls.scrollHeight;
+        });
     },
   },
   {
@@ -173,7 +253,9 @@ const surfaces: Surface[] = [
     name: "item-type-stress-phone",
     go: async (page) => {
       await openItemTypeStudio(page, "item");
-      await page.getByRole("combobox", { name: "Preview content" }).selectOption("stress");
+      await page
+        .getByRole("combobox", { name: "Preview content" })
+        .selectOption("stress");
       await page.getByRole("button", { name: "Phone" }).click();
     },
   },
@@ -181,15 +263,22 @@ const surfaces: Surface[] = [
     name: "item-type-folder-content",
     go: async (page) => {
       await openItemTypeStudio(page, "folder");
-      await page.getByRole("combobox", { name: "Use in folder" }).selectOption({ label: "Notes" });
-      await page.getByRole("combobox", { name: "Preview content" }).selectOption("folder");
+      await page
+        .getByRole("combobox", { name: "Use in folder" })
+        .selectOption({ label: "Notes" });
+      await page
+        .getByRole("combobox", { name: "Preview content" })
+        .selectOption("folder");
     },
   },
   {
     name: "item-type-preflight",
     go: async (page) => {
       await openItemTypeStudio(page, "item");
-      await page.locator("details").filter({ hasText: /Ready|suggestion|attention/ }).click();
+      await page
+        .locator("details")
+        .filter({ hasText: /Ready|suggestion|attention/ })
+        .click();
     },
   },
   {
@@ -238,9 +327,13 @@ const surfaces: Surface[] = [
   {
     name: "look-gallery",
     go: async (page) => {
-      await page.goto(`${BASE}/start?to=home`, { waitUntil: "domcontentloaded" });
+      await page.goto(`${BASE}/start?to=home`, {
+        waitUntil: "domcontentloaded",
+      });
       await page.waitForTimeout(1400);
-      const options = page.locator('button[aria-label="Folder options for Blog"]');
+      const options = page.locator(
+        'button[aria-label="Folder options for Blog"]',
+      );
       await options.waitFor({ state: "attached", timeout: 20000 });
       await options.evaluate((button) => (button as HTMLButtonElement).click());
       await page.waitForTimeout(400);
@@ -297,24 +390,40 @@ const surfaces: Surface[] = [
           },
         });
       });
-      await page.goto(`${BASE}/start?to=home`, { waitUntil: "domcontentloaded" });
+      await page.goto(`${BASE}/start?to=home`, {
+        waitUntil: "domcontentloaded",
+      });
       await page.waitForTimeout(1200);
       const launcher = page.getByRole("button", { name: "Open assistant" });
       if (await launcher.isVisible().catch(() => false)) await launcher.click();
-      const unavailable = page.getByText("Use an API key for the in-app assistant", {
-        exact: false,
-      });
+      const unavailable = page.getByText(
+        "Use an API key for the in-app assistant",
+        {
+          exact: false,
+        },
+      );
       await unavailable.waitFor({ state: "visible", timeout: 10000 });
-      if (await page.getByRole("button", { name: "Continue with ChatGPT" }).count()) {
-        throw new Error("Store-unavailable state offered native ChatGPT sign-in");
+      if (
+        await page
+          .getByRole("button", { name: "Continue with ChatGPT" })
+          .count()
+      ) {
+        throw new Error(
+          "Store-unavailable state offered native ChatGPT sign-in",
+        );
       }
-      const assistantTitle = page.getByText("Write with your AI", { exact: true });
+      const assistantTitle = page.getByText("Write with your AI", {
+        exact: true,
+      });
       const titleBox = await assistantTitle.boundingBox();
       if (!titleBox || titleBox.y < 0 || titleBox.y >= 940) {
         throw new Error("Assistant onboarding rendered outside the viewport");
       }
       const scrollY = await page.evaluate(() => window.scrollY);
-      if (scrollY > 2) throw new Error(`Opening the assistant scrolled the page to ${scrollY}`);
+      if (scrollY > 2)
+        throw new Error(
+          `Opening the assistant scrolled the page to ${scrollY}`,
+        );
     },
   },
   {
@@ -363,9 +472,12 @@ async function devSignIn(page: Page): Promise<string> {
       .fill(WHO.name)
       .catch(() => undefined);
     const callback = page
-      .waitForResponse((response) => response.url().includes("/api/auth/callback/dev-login"), {
-        timeout: 4000,
-      })
+      .waitForResponse(
+        (response) => response.url().includes("/api/auth/callback/dev-login"),
+        {
+          timeout: 4000,
+        },
+      )
       .catch(() => null);
     await form.locator('button[type="submit"]').click();
     if (await callback) {
@@ -378,7 +490,10 @@ async function devSignIn(page: Page): Promise<string> {
     await page.goto(`${BASE}/start?to=home`, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(1200);
     const match = /\/@([^/?#]+)/.exec(page.url());
-    if (match && (await page.locator(".workspace-library-header").count()) > 0) {
+    if (
+      match &&
+      (await page.locator(".workspace-library-header").count()) > 0
+    ) {
       return match[1];
     }
   }
@@ -431,7 +546,9 @@ async function main() {
             `  ${surface.name} ${theme}${painted ? "" : "   BLANK"}${spills ? "   OVERFLOW" : ""} (${Math.round(shot.length / 1024)}kb)`,
           );
         } catch (error) {
-          console.log(`  FAILED ${surface.name} ${theme}: ${String(error).slice(0, 120)}`);
+          console.log(
+            `  FAILED ${surface.name} ${theme}: ${String(error).slice(0, 120)}`,
+          );
         }
       }
     }
