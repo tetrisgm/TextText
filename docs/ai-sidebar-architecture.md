@@ -34,7 +34,6 @@ server.
   but no permanent delete.
 
 <!-- generated:tool-contract -->
-
 ## Shared 34-tool contract
 
 The 10 read-scope tools are:
@@ -76,7 +75,6 @@ The 24 sync-scope tools are:
 22. `restore_folder`
 23. `set_access`
 24. `revoke_access`
-
 <!-- /generated:tool-contract -->
 
 `list_access` is read-only but requires `sync` because membership information is
