@@ -620,6 +620,31 @@ Two traps worth keeping:
   Apple/Google account consent remain owner-run gates and were not performed in
   this source pass.
 
+## Agentic writing promotion (2026-08-20)
+
+- Source commit `9889818dca14b5e33b55664b17aae73ac269f0e8` was promoted through
+  the deliberate production and canonical-local lane as TextText 0.181 build
+  194. Production deployment `dpl_G5N6z6xfJWGp7wPqJYDBi1XvUVSY` is ready at
+  `write-n5tzam0pm-shoku-s-projects.vercel.app`, and `texttext.app` points to
+  that exact deployment. The prior immutable deployment was recorded before
+  the alias changed.
+- The production migration set and canonical document audit passed with 953
+  documents, 919 live items, 34 trashed items, and all 953 using TextPack. The
+  authenticated production smoke passed all 17 folder, item, comment, cover,
+  sharing, access, capture, audit, and cleanup checks.
+- The transactional installer replaced the single canonical app at
+  `/Applications/TextText.app`, launched it, and passed fresh runtime health.
+  Independent verification found one matching bundle, one app process, the
+  production server origin, a strict valid Developer ID signature, and the
+  arm64 app plus three signed extensions.
+- The installed app was inspected and exercised directly. The center library
+  scrolls while both sidebars remain pinned. A real recent-work request showed
+  visible progress in about one second, completed successfully, and returned a
+  grounded summary of the workspace without fallback or waiting prose.
+- `/Applications/TextText.app/Contents/Helpers/texttext ls` succeeds against
+  the signed-in workspace without a File Provider mount. No TestFlight,
+  App Store Connect, Sparkle publication, or release-record action occurred.
+
 ## Local promotion and TestFlight state (2026-08-19)
 
 - The complete promotion gate now passes 926 web tests, 460 Swift tests, 17
