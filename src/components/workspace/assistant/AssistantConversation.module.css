@@ -72,165 +72,50 @@
   box-shadow: var(--ac-focus);
 }
 
-/* A macOS grouped inset list: one rounded group, hairline-separated rows,
-   disclosure chevrons that turn when open. The applecms tokens carry both
-   themes; nothing here invents a color. */
-.connectPaths {
-  display: grid;
+/* Two clear destinations are easier to scan than an integration catalog in a
+   360px rail. Detailed provider instructions live on the destination pages. */
+.connectChoice {
   width: 100%;
-  overflow: hidden;
-  border-radius: 10px;
-  background: var(--ac-fill-4, rgba(116, 116, 128, 0.08));
-  text-align: left;
-}
-
-.connectPath + .connectPath {
-  border-top: 1px solid var(--ac-hairline, rgba(0, 0, 0, 0.1));
-}
-
-.connectPathHeader {
-  width: 100%;
-  min-height: 44px;
+  min-height: 52px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  border: 0;
-  padding: 7px 12px;
-  background: transparent;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--ac-fill-4);
   color: var(--ac-label);
   text-align: left;
-  cursor: pointer;
-  transition: background-color 120ms ease;
+  text-decoration: none;
 }
 
-.connectPathHeader:active {
-  background: var(--ac-fill-3, rgba(118, 118, 128, 0.12));
+.connectChoice:hover {
+  background: var(--ac-fill-3);
 }
 
-.connectPathHeader:focus-visible {
+.connectChoice:focus-visible {
   outline: none;
-  box-shadow: inset var(--ac-focus, 0 0 0 3px rgba(0, 122, 255, 0.45));
+  box-shadow: var(--ac-focus);
 }
 
-.connectPathMark {
-  width: 24px;
-  height: 24px;
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  border-radius: 6px;
-  background: var(--ac-bg, #fff);
-  box-shadow: 0 0 0 0.5px var(--ac-hairline, rgba(0, 0, 0, 0.1));
-  color: var(--ac-label);
-  font: 650 11px/1 var(--ac-font-text);
-}
-
-.connectPathCopy {
+.connectChoice > span:first-child {
   min-width: 0;
   display: grid;
-  flex: 1 1 auto;
-  gap: 1px;
+  gap: 2px;
 }
 
-.connectPathName {
-  color: var(--ac-label);
-  font: 590 var(--ac-fs-footnote, 13px) / 1.25 var(--ac-font-text);
-  letter-spacing: 0;
+.connectChoice strong {
+  font: 600 var(--ac-fs-footnote) / 1.25 var(--ac-font-text);
 }
 
-.connectPathHint {
-  overflow: hidden;
+.connectChoice small {
   color: var(--ac-label-2);
-  font: 400 var(--ac-fs-caption1, 11px) / 1.3 var(--ac-font-text);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font: 400 var(--ac-fs-caption1) / 1.3 var(--ac-font-text);
 }
 
-.connectPathChevron {
+.connectChoice > span:last-child {
   flex: 0 0 auto;
-  color: var(--ac-label-3, rgba(60, 60, 67, 0.3));
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1;
-  transform: rotate(0deg);
-  transition: transform 160ms var(--ease, ease);
-}
-
-.connectPath[data-open] .connectPathChevron {
-  transform: rotate(90deg);
-}
-
-.connectPathSteps {
-  padding: 4px 12px 12px 12px;
-}
-
-.connectPathSteps ol {
-  margin: 0;
-  padding-left: 16px;
-  display: grid;
-  gap: 8px;
-  color: var(--ac-label);
-  font: 400 var(--ac-fs-footnote, 13px) / 1.45 var(--ac-font-text);
-}
-
-.connectPathSteps li::marker {
-  color: var(--ac-label-2);
-  font-weight: 500;
-}
-
-/* A macOS push button: neutral surface, hairline edge, the faintest lift.
-   Accent belongs to the one default action per view, and that is Continue
-   with ChatGPT above, not every copy button. */
-.connectStepAction {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 8px;
-  min-height: 22px;
-  border: 0;
-  border-radius: var(--ac-radius-control, 6px);
-  padding: 2px 9px;
-  background: var(--ac-bg, #fff);
-  box-shadow:
-    0 0 0 0.5px var(--ac-hairline, rgba(0, 0, 0, 0.12)),
-    0 0.5px 1.5px rgba(0, 0, 0, 0.12);
-  color: var(--ac-label);
-  font: 500 var(--ac-fs-caption1, 12px) / 1 var(--ac-font-text);
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.connectStepAction:active {
-  background: var(--ac-fill-4, rgba(116, 116, 128, 0.08));
-}
-
-.connectStepAction:focus-visible {
-  outline: none;
-  box-shadow: var(--ac-focus, 0 0 0 3px rgba(0, 122, 255, 0.45));
-}
-
-.connectPathOutcome {
-  margin: 10px 0 0;
-  color: var(--ac-label-2);
-  font: 400 var(--ac-fs-caption1, 11px) / 1.45 var(--ac-font-text);
-}
-
-.connectAlt {
-  margin: 0;
-  color: var(--ac-label-2);
-  font: 400 var(--ac-fs-caption1) / 1.4 var(--ac-font-text);
-  letter-spacing: 0;
-  text-align: center;
-}
-
-.connectAlt a {
-  color: inherit;
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
-  text-underline-offset: 3px;
-}
-
-.connectAlt a:hover {
-  color: var(--ac-label);
+  color: var(--ac-label-3);
 }
 
 .modelStatus {
@@ -314,26 +199,6 @@
 .examples {
   display: grid;
   gap: 6px;
-}
-
-.buildType {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  width: 100%;
-  min-height: 36px;
-  margin: 12px 0 0;
-  border: 1px solid var(--ac-hairline);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--ac-label);
-  font: 650 13px/1 var(--ac-font-text);
-  cursor: pointer;
-}
-
-.buildType:hover {
-  background: var(--ac-fill-1);
 }
 
 .examples button,

@@ -10,6 +10,112 @@
   color: var(--ac-label);
 }
 
+/* Documentation is one small product manual, not a set of unrelated landing
+   pages. The navigation stays visible while the article owns the scroll. */
+.docs-frame {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  background: var(--ac-bg);
+  color: var(--ac-label);
+}
+
+.docs-frame-content {
+  min-width: 0;
+}
+
+.docs-frame .connect-shell {
+  min-height: 100%;
+  background: transparent;
+}
+
+.docs-navigation {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 22px 18px;
+  border-right: 1px solid var(--ac-separator);
+  background: var(--ac-bg-2);
+  overflow-y: auto;
+}
+
+.docs-navigation-home {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ac-label) !important;
+  text-decoration: none !important;
+}
+
+.docs-navigation-home > span:last-child {
+  display: grid;
+  gap: 1px;
+}
+
+.docs-navigation-home strong {
+  font: 650 var(--ac-fs-subheadline)/1.2 var(--ac-font-text);
+}
+
+.docs-navigation-home small {
+  color: var(--ac-label-2);
+  font: 400 var(--ac-fs-caption1)/1.2 var(--ac-font-text);
+}
+
+.docs-navigation-mark {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--ac-label);
+  color: var(--ac-bg);
+  font: 700 14px/1 var(--ac-font-text);
+}
+
+.docs-navigation-groups {
+  display: grid;
+  gap: 20px;
+}
+
+.docs-navigation-group {
+  display: grid;
+  gap: 3px;
+}
+
+.docs-navigation-group p {
+  margin: 0 0 4px;
+  padding: 0 8px;
+  color: var(--ac-label-3);
+  font: 600 var(--ac-fs-caption1)/1.2 var(--ac-font-text);
+}
+
+.docs-navigation-group a,
+.docs-navigation-connect {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  border-radius: 7px;
+  padding: 5px 8px;
+  color: var(--ac-label-2) !important;
+  font: 500 var(--ac-fs-footnote)/1.25 var(--ac-font-text);
+  text-decoration: none !important;
+}
+
+.docs-navigation-group a:hover,
+.docs-navigation-connect:hover {
+  background: var(--ac-fill-4);
+  color: var(--ac-label) !important;
+}
+
+.docs-navigation-connect {
+  margin-top: auto;
+  color: var(--ac-accent) !important;
+}
+
 .connect-main {
   max-width: 1080px;
   margin: 0 auto;
@@ -416,6 +522,105 @@
   line-height: 1.5;
 }
 
+.docs-start-path {
+  display: grid;
+  margin-top: 44px;
+  border-top: 1px solid var(--ac-separator);
+}
+
+.docs-start-step {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 16px;
+  padding: 24px 0;
+  border-bottom: 1px solid var(--ac-separator);
+}
+
+.docs-start-step > span {
+  padding-top: 3px;
+  color: var(--ac-label-3);
+  font: 600 var(--ac-fs-caption1)/1 var(--ac-font-text);
+}
+
+.docs-start-step h2,
+.docs-start-step p { margin: 0; }
+
+.docs-start-step h2 {
+  color: var(--ac-label);
+  font: 600 var(--ac-fs-title3)/1.25 var(--ac-font-text);
+}
+
+.docs-start-step p {
+  max-width: 62ch;
+  padding: 7px 0 10px;
+  color: var(--ac-label-2);
+  font: 400 var(--ac-fs-callout)/1.55 var(--ac-font-text);
+}
+
+.docs-start-step a {
+  font: 550 var(--ac-fs-subheadline)/1.3 var(--ac-font-text);
+}
+
+.docs-prompt {
+  max-width: 62ch;
+  margin: 16px 0;
+  padding: 16px 18px;
+  border-left: 3px solid var(--ac-accent);
+  border-radius: 0 8px 8px 0;
+  background: var(--ac-fill-4);
+  color: var(--ac-label);
+  font: 500 var(--ac-fs-callout)/1.55 var(--ac-font-text);
+}
+
+.docs-agent-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.docs-agent {
+  border: 1px solid var(--ac-separator);
+  border-radius: 10px;
+  background: var(--ac-bg);
+}
+
+.docs-agent summary {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.docs-agent summary::-webkit-details-marker { display: none; }
+
+.docs-agent summary > span:last-child {
+  display: grid;
+  gap: 2px;
+}
+
+.docs-agent summary strong {
+  color: var(--ac-label);
+  font: 600 var(--ac-fs-subheadline)/1.2 var(--ac-font-text);
+}
+
+.docs-agent summary small {
+  color: var(--ac-label-2);
+  font: 400 var(--ac-fs-footnote)/1.2 var(--ac-font-text);
+}
+
+.docs-agent > :is(ol, p) { margin-inline: 66px 18px; }
+.docs-agent > ol { padding: 0 0 4px 18px; }
+
+.docs-agent > p {
+  padding-bottom: 16px;
+  color: var(--ac-label-2);
+}
+
+.docs-agent .connect-code { margin-top: 8px; }
+
 /* --- example prompts --- */
 
 .connect-prompts {
@@ -527,9 +732,42 @@
   .connect-form { flex-direction: column; }
   .connect-integration-actions { align-items: stretch; }
   .connect-integration-actions .ac-btn { justify-content: center; }
+  .docs-agent > :is(ol, p) { margin-inline: 18px; }
 }
 
 @media (max-width: 760px) {
+  .docs-frame {
+    display: block;
+  }
+  .docs-navigation {
+    position: sticky;
+    z-index: 20;
+    height: auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--ac-separator);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .docs-navigation-home small,
+  .docs-navigation-group p,
+  .docs-navigation-connect {
+    display: none;
+  }
+  .docs-navigation-groups {
+    display: flex;
+    gap: 3px;
+  }
+  .docs-navigation-group {
+    display: contents;
+  }
+  .docs-navigation-group a {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
   .connect-integration-grid,
   .connect-workflow-grid {
     grid-template-columns: 1fr;

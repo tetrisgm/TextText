@@ -6831,17 +6831,6 @@ function LocalWorkspaceShell({
           onUsePrompt={assistantComposer.setText}
           onQuickAction={assistant.runQuickAction}
           onUndoProposal={assistant.undoProposal}
-          onBuildItemType={() => {
-            const activeFolder = localViewActiveFolder(view);
-            setItemTypeStudioFolderPath(
-              activeFolder &&
-                activeFolder !== TRASH_FOLDER_PATH &&
-                activeFolder !== SHARED_FOLDER_PATH &&
-                activeFolder !== STARRED_FOLDER_PATH
-                ? activeFolder
-                : "",
-            );
-          }}
         />
       </AssistantSidebar>
       </div>

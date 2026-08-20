@@ -57,7 +57,7 @@ export function greetingPhrase(hour: number): string {
   return "Good evening";
 }
 
-/** "Good afternoon, Ramine" — or just the phrase when we have no name. */
+/** "Good afternoon, Ramine", or just the phrase when we have no name. */
 export function greeting(name: string | null | undefined, at: Date): string {
   const phrase = greetingPhrase(at.getHours());
   const first = (name ?? "").trim().split(/\s+/)[0] ?? "";
@@ -127,12 +127,18 @@ export function startersFor(context: StarterContext): Starter[] {
     case "root":
     default:
       return [
-        { label: "Catch me up", prompt: "Summarize what I have been working on recently." },
         {
-          label: "Find something I started",
-          prompt: "Find items that look unfinished or abandoned, and say what each one needs.",
+          label: "Draft from my recent notes",
+          prompt: "Find the strongest thread in my recent notes and draft a short outline from it.",
         },
-        { label: "Start something new", prompt: "Suggest three things worth writing about, based on my recent work." },
+        {
+          label: "Find related writing",
+          prompt: "Find documents that cover related ideas and explain how they connect.",
+        },
+        {
+          label: "Continue an unfinished draft",
+          prompt: "Find one unfinished draft, tell me what it needs, and suggest the next paragraph.",
+        },
       ];
   }
 }

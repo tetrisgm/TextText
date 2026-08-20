@@ -1,14 +1,65 @@
 import type { Metadata } from "next";
-import "@/styles/connect.css";
+import Link from "next/link";
 
-export const metadata: Metadata = { title: "TextText AI troubleshooting" };
+export const metadata: Metadata = { title: "TextText agent troubleshooting" };
 
 export default function TroubleshootingPage() {
-  return <div className="applecms connect-shell"><main className="connect-main connect-doc">
-    <p className="connect-provider-kicker">Troubleshooting</p><h1 className="connect-title">When AI is not working</h1>
-    <section className="connect-section"><h2 className="connect-section-title">The native option is unavailable</h2><p className="connect-body">The embedded agent requires the TextText Mac app and an executable Codex runtime. Update or install Codex, restart TextText, and use AI Settings to retry. Browser sessions should use external MCP or API-key mode.</p></section>
-    <section className="connect-section"><h2 className="connect-section-title">The account is not connected</h2><p className="connect-body">Choose Connect again, finish the browser authorization, then wait for the account and plan status to appear. If the account is rate-limited, wait for the displayed reset time or use another configured provider.</p></section>
-    <section className="connect-section"><h2 className="connect-section-title">The client has no tools</h2><p className="connect-body">Restart the client after installing the plugin. Confirm that it is using the TextText MCP URL and a token that has not been revoked. Create a fresh token at Connect if in doubt.</p></section>
-    <section className="connect-section"><h2 className="connect-section-title">A write failed</h2><p className="connect-body">Ask the agent to read the latest document and retry. TextText rejects stale writes to protect newer edits. For a destructive action, explicitly confirm it in the app.</p></section>
-  </main></div>;
+  return (
+    <div className="connect-shell">
+      <main className="connect-main connect-doc">
+        <p className="connect-provider-kicker">Troubleshooting</p>
+        <h1 className="connect-title">Find the broken step</h1>
+        <p className="connect-lede">
+          Check context, authentication, and one visible edit in that order.
+          Avoid rebuilding a connection that is already working.
+        </p>
+        <section className="connect-section">
+          <h2 className="connect-section-title">The agent sees the wrong document</h2>
+          <p>
+            Open the intended item and check the context chip above the assistant
+            composer. For an external agent, ask it to name the current TextText
+            item before writing. If it names a folder or workspace instead, open
+            the item and repeat the request.
+          </p>
+        </section>
+        <section className="connect-section">
+          <h2 className="connect-section-title">TextText Agent is unavailable</h2>
+          <p>
+            App Store and browser builds use an OpenAI or Anthropic API key in
+            Workspace Settings. The standalone Mac edition can also use an eligible
+            local Codex account. Choose the path shown for your edition rather than
+            trying to install a local runtime into the App Store build.
+          </p>
+        </section>
+        <section className="connect-section">
+          <h2 className="connect-section-title">An external client has no TextText tools</h2>
+          <p>
+            Restart the client after installing the plugin. Confirm the token is
+            set in the environment that launched the client and has not been
+            revoked at <Link href="/connect">Connect</Link>. In Claude or Codex,
+            open the client&apos;s MCP status and look for TextText.
+          </p>
+        </section>
+        <section className="connect-section">
+          <h2 className="connect-section-title">A write was rejected</h2>
+          <p>
+            The document may have changed after the agent read it. Ask the agent
+            to read the latest version, merge only the intended edit, and retry.
+            Publishing, access changes, and destructive actions may also wait for
+            confirmation in TextText.
+          </p>
+        </section>
+        <section className="connect-section">
+          <h2 className="connect-section-title">The connection works, but the result is poor</h2>
+          <p>
+            Narrow the request to one document and one outcome. Name what must not
+            change. Ask for a visible edit before asking the agent to reorganize a
+            folder or publish anything. The{" "}
+            <Link href="/docs/getting-started">first-edit guide</Link> provides a
+            known-good request.
+          </p>
+        </section>
+      </main>
+    </div>
+  );
 }

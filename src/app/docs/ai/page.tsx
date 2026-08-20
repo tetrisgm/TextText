@@ -1,348 +1,116 @@
-// /docs/ai: the canonical provider-first setup and tool reference for TextText.
-
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
   AGENT_INTEGRATIONS,
-  AGENT_WORKFLOWS,
-  CLAUDE_PLUGIN_INSTALL_COMMAND,
-  CODEX_PLUGIN_INSTALL_COMMAND,
   TEXTTEXT_HOSTED_MCP_URL,
   TEXTTEXT_TOKEN_PROMPT_COMMAND,
 } from "@/lib/agent-integrations";
-import {
-  WORKSPACE_TOOL_DEFINITIONS,
-  WORKSPACE_TOOL_NAMES,
-} from "@/lib/ai/tools";
-import "@/styles/connect.css";
-
-const READ_TOOLS = WORKSPACE_TOOL_NAMES.filter(
-  (name) => WORKSPACE_TOOL_DEFINITIONS[name].mutability === "read",
-);
-const TEXTTEXT_TOOLS = WORKSPACE_TOOL_NAMES.filter(
-  (name) => WORKSPACE_TOOL_DEFINITIONS[name].mutability === "write",
-);
 
 export const metadata: Metadata = {
-  title: "Add TextText to your AI",
-  description:
-    "Install TextText in Claude and Codex, connect ChatGPT, or use any MCP client.",
+  title: "Connect your AI to TextText",
+  description: "Use TextText Agent or connect Claude, Codex, ChatGPT, and other MCP clients.",
 };
 
-function ToolTable({ names }: { names: typeof WORKSPACE_TOOL_NAMES }) {
-  return (
-    <div className="connect-table-wrap">
-      <table className="connect-table">
-        <thead>
-          <tr>
-            <th>Tool</th>
-            <th>Description</th>
-          </tr>
-        </thead>
-        <tbody>
-          {names.map((name) => (
-            <tr key={name}>
-              <td>
-                <code className="connect-inline-code">{name}</code>
-              </td>
-              <td>{WORKSPACE_TOOL_DEFINITIONS[name].description}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function InstallCommand({
-  children,
-  command,
-}: {
-  children: React.ReactNode;
-  command: string;
-}) {
-  return (
-    <div className="connect-code-wrap">
-      <p className="connect-code-label">{children}</p>
-      <pre className="connect-code">{command}</pre>
-    </div>
-  );
-}
-
 export default function AiDocsPage() {
-  const tokenConfig = `{
-  "mcpServers": {
-    "texttext": {
-      "url": "${TEXTTEXT_HOSTED_MCP_URL}",
-      "headers": { "Authorization": "Bearer wsk_..." }
-    }
-  }
-}`;
-
   return (
-    <div className="applecms connect-shell">
+    <div className="connect-shell">
       <main className="connect-main connect-doc">
-        <p className="connect-provider-kicker">Agents and integrations</p>
-        <h1 className="connect-title">Add TextText to your AI</h1>
+        <p className="connect-provider-kicker">Connect</p>
+        <h1 className="connect-title">Choose where the conversation lives</h1>
         <p className="connect-lede">
-          TextText becomes the durable document workspace for Claude, Codex,
-          ChatGPT, and other agents. Your AI keeps its own account and model.
-          TextText supplies the documents, permissions, collaboration, and
-          publishing tools.
+          The document always lives in TextText. Choose whether the conversation
+          lives beside it in the TextText sidebar or in the AI app you already use.
         </p>
-
         <section className="connect-section" id="embedded-agent">
-          <h2 className="connect-section-title">Use an agent inside TextText</h2>
-          <p className="connect-body">
-            In the standalone TextText Mac app, Continue with ChatGPT starts a
-            Codex-powered agent directly in the assistant sidebar. Your existing
-            eligible ChatGPT or Codex plan supplies the model, so TextText does
-            not ask you for API credits. The conversation, approvals, and
-            document work stay in TextText.
+          <h2 className="connect-section-title">TextText Agent</h2>
+          <p>
+            Best when you want to stay inside TextText. Open Workspace Settings,
+            choose AI, add an OpenAI or Anthropic API key, then return to the
+            document and open the right sidebar.
           </p>
-          <ol className="connect-steps">
-            <li>Open TextText on your Mac and open a workspace.</li>
-            <li>Choose Continue with ChatGPT in the Library card, Assistant, or AI Settings.</li>
-            <li>Complete the browser sign-in if TextText asks you to connect.</li>
-            <li>Wait for the account and tool check to show Connected.</li>
-            <li>Ask: <em>&quot;What folders are in my TextText workspace?&quot;</em></li>
-          </ol>
-          <p className="connect-body">
-            The embedded connection is available only in the standalone Mac
-            app, which can launch the local Codex runtime. Apple&apos;s sandbox stops
-            the TestFlight edition from launching it. In TestFlight or a
-            browser, use an external MCP connection or the API-key path below.
+          <p>
+            Provider API usage is billed separately. The standalone Mac edition
+            may also offer Continue with ChatGPT when an eligible local Codex
+            account is available. App Store and browser builds do not launch
+            software from your home directory, so they use the API-key or
+            external-app paths.
           </p>
+          <p><Link href="/connect">Open connection setup</Link>.</p>
         </section>
-
-        <section className="connect-section">
-          <h2 className="connect-section-title">Choose your AI</h2>
-          <div className="connect-integration-grid">
+        <section className="connect-section" id="external-agent">
+          <h2 className="connect-section-title">Your AI app</h2>
+          <p>
+            Best when you already work in Claude, Codex, ChatGPT, or another MCP
+            client. Create one workspace token at Connect, install the recommended
+            plugin where available, and start the AI from the same Terminal session.
+          </p>
+          <div className="docs-agent-list">
             {AGENT_INTEGRATIONS.map((integration) => (
-              <article
-                className="connect-integration-card"
+              <details
+                className="docs-agent"
                 key={integration.id}
+                id={integration.id === "chatgpt" ? "chatgpt-external" : undefined}
               >
-                <div className="connect-integration-heading">
+                <summary>
                   <span
                     className={`connect-integration-mark is-${integration.id}`}
                     aria-hidden="true"
                   >
                     {integration.monogram}
                   </span>
-                  <div>
-                    <p className="connect-provider-kicker">
-                      {integration.company}
-                    </p>
-                    <h3>{integration.name}</h3>
-                  </div>
-                </div>
-                <p className="connect-integration-description">
-                  {integration.description}
-                </p>
-                <p className="connect-integration-environment">
-                  {integration.environment}
-                </p>
-              </article>
+                  <span>
+                    <strong>{integration.name}</strong>
+                    <small>{integration.environment}</small>
+                  </span>
+                </summary>
+                <ol>
+                  {integration.steps.map((step) => (
+                    <li key={step.text}>
+                      {step.text}
+                      {step.copy ? <pre className="connect-code">{step.copy.value}</pre> : null}
+                    </li>
+                  ))}
+                </ol>
+                <p>{integration.outcome}</p>
+              </details>
             ))}
           </div>
         </section>
-
-        <section className="connect-section">
-          <h2 className="connect-section-title">Claude</h2>
-          <p className="connect-body">
-            The TextText plugin gives Claude Code the MCP connection and the
-            skills for conversation capture, project changelogs, publishing,
-            and collaboration. Install it once:
-          </p>
-          <InstallCommand command={CLAUDE_PLUGIN_INSTALL_COMMAND}>
-            Claude Code
-          </InstallCommand>
-          <InstallCommand command={TEXTTEXT_TOKEN_PROMPT_COMMAND}>
-            Secure token prompt
-          </InstallCommand>
-          <p className="connect-body">
-            Create a workspace token at Connect, then launch Claude from a
-            Terminal where the token is set with the hidden setup prompt. In
-            Claude.ai or Claude Desktop, first confirm the custom connector
-            permits a person-supplied bearer credential, then paste{" "}
-            <code className="connect-inline-code">
-              {TEXTTEXT_HOSTED_MCP_URL}
-            </code>
-            , then use the same kind of token as its bearer credential. An
-            OAuth-only connector cannot use TextText&apos;s current endpoint.
-          </p>
-        </section>
-
-        <section className="connect-section">
-          <h2 className="connect-section-title">Codex</h2>
-          <p className="connect-body">
-            The TextText plugin gives the Codex app and CLI the same connection
-            and reusable skills:
-          </p>
-          <InstallCommand command={CODEX_PLUGIN_INSTALL_COMMAND}>
-            Codex app or CLI
-          </InstallCommand>
-          <InstallCommand command={TEXTTEXT_TOKEN_PROMPT_COMMAND}>
-            Secure token prompt
-          </InstallCommand>
-          <p className="connect-body">
-            Create a workspace token at Connect, then launch Codex from a
-            Terminal where the token is set with the hidden setup prompt. The
-            plugin stays installed. Set the token again in each new Terminal
-            session before starting Codex.
-          </p>
-        </section>
-
-        <section className="connect-section" id="chatgpt-external">
-          <h2 className="connect-section-title">ChatGPT</h2>
-          <ol className="connect-steps">
-            <li>Confirm your plan, role, and workspace policy allow a custom MCP app.</li>
-            <li>Open ChatGPT Apps settings, enable developer mode, then choose Create.</li>
-            <li>
-              Paste{" "}
-              <code className="connect-inline-code">
-                {TEXTTEXT_HOSTED_MCP_URL}
-              </code>{" "}
-              and scan the tools.
-            </li>
-            <li>Choose bearer-token authentication if your workspace offers it.</li>
-            <li>Create a workspace token at Connect and use it as the app&apos;s credential.</li>
-          </ol>
-          <p className="connect-body">
-            ChatGPT supplies the model and billing. TextText never needs your
-            ChatGPT password or API key. TextText does not provide OAuth today,
-            so a ChatGPT surface that requires OAuth cannot use this path yet.
-          </p>
-        </section>
-
         <section className="connect-section" id="api-key">
-          <h2 className="connect-section-title">Use an API key</h2>
-          <p className="connect-body">
-            API keys are an advanced fallback for users who want TextText to
-            call Anthropic or OpenAI directly. Provider API usage is billed
-            separately from ChatGPT and Claude subscriptions. Add or remove a
-            key in Workspace Settings. TextText never displays a saved key.
+          <h2 className="connect-section-title">A secure token handoff</h2>
+          <p>
+            Claude and Codex plugin installers do not collect generic bearer
+            tokens. Create the token at <Link href="/connect">Connect</Link>, then
+            use this hidden prompt before starting the client from the same Terminal:
+          </p>
+          <pre className="connect-code">{TEXTTEXT_TOKEN_PROMPT_COMMAND}</pre>
+          <p>
+            Manual clients use{" "}
+            <code className="connect-inline-code">{TEXTTEXT_HOSTED_MCP_URL}</code>
+            {" "}with the token as a bearer credential. Revoke it from Connect at any time.
           </p>
         </section>
-
         <section className="connect-section">
-          <h2 className="connect-section-title">Ready-made skills</h2>
-          <p className="connect-body">
-            Claude and Codex install these workflows with the plugin. ChatGPT
-            and other MCP clients can run the same workflows from the prompts.
+          <h2 className="connect-section-title">Verify with the document, not a status light</h2>
+          <p>Open a scratch note in TextText, then ask your agent:</p>
+          <blockquote className="docs-prompt">
+            In the open TextText note, add a heading called Connection verified
+            and one sentence beneath it. Do not change anything else.
+          </blockquote>
+          <p>
+            The result should appear in that note, with the agent identified as
+            a collaborator. Undo the change to finish the test.
           </p>
-          <div className="connect-workflow-grid">
-            {AGENT_WORKFLOWS.map((workflow) => (
-              <article className="connect-workflow" key={workflow.id}>
-                <h3>{workflow.title}</h3>
-                <p>{workflow.description}</p>
-                <blockquote>{workflow.prompt}</blockquote>
-              </article>
-            ))}
-          </div>
         </section>
-
         <section className="connect-section">
-          <h2 className="connect-section-title">What agents can do</h2>
-          <div className="connect-capability-strip">
-            <span>{WORKSPACE_TOOL_NAMES.length} document tools</span>
-            <span>Revocable tokens</span>
-            <span>Audited mutations</span>
-            <span>Conflict-safe edits</span>
-          </div>
-          <ul className="connect-feature-list">
-            <li>Create notes, articles, bookmarks, folders, and assets.</li>
-            <li>Create reusable item types that define both item and folder layouts.</li>
-            <li>Find, read, append to, reshape, move, and organize documents.</li>
-            <li>Maintain one project changelog without duplicate retry entries.</li>
-            <li>Publish articles and manage collaborators after confirmation.</li>
-            <li>Comment, restore from Trash, and recapture bookmarks.</li>
-          </ul>
-        </section>
-
-        <section className="connect-section">
-          <h2 className="connect-section-title">Build a reusable item type</h2>
-          <p className="connect-body">
-            Ask your agent for the fields, item layout, folder layout, visual
-            reference, and destination folder in one request. TextText saves
-            the result as one versioned type and makes it available in the Look
-            gallery. <Link href="/docs/item-types">See prompts and the in-app flow</Link>.
+          <h2 className="connect-section-title">What the connection enables</h2>
+          <p>
+            Agents can find and create documents, edit and organize them, comment,
+            publish after confirmation, manage collaborators, and maintain durable
+            project records. For exact commands and schemas, use the
+            <Link href="/docs/mcp"> MCP reference</Link>.
           </p>
         </section>
-
-        <section className="connect-section">
-          <h2 className="connect-section-title">Verify the connection</h2>
-          <p className="connect-body">
-            Ask: <em>&quot;What folders are in my TextText workspace?&quot;</em>{" "}
-            The agent should request approval if needed, then list your folders.
-          </p>
-          <p className="connect-body">
-            Then ask:{" "}
-            <em>
-              &quot;Create a draft note in TextText titled MCP test and read it
-              back to verify it.&quot;
-            </em>
-          </p>
-        </section>
-
-        <details className="connect-section connect-advanced">
-          <summary className="connect-section-title">
-            Advanced and manual connections
-          </summary>
-          <p className="connect-body">
-            Use these for clients that cannot install the plugin.
-          </p>
-          <h3>Agents on the same Mac</h3>
-          <p className="connect-body">
-            No MCP connection is needed. The Mac app installs a{" "}
-            <code className="connect-inline-code">texttext</code> command, and
-            agents use it to read and edit documents as files. Presence is
-            automatic: an agent shows up in the document with its own name and
-            cursor while it works.
-          </p>
-          <h3>Hosted MCP</h3>
-          <p className="connect-body">
-            Any standards-compatible MCP client can connect to{" "}
-            <code className="connect-inline-code">
-              {TEXTTEXT_HOSTED_MCP_URL}
-            </code>{" "}
-            with a workspace token. Create and revoke one at{" "}
-            <Link href="/connect">Connect</Link>.
-          </p>
-          <div className="connect-code-wrap">
-            <pre className="connect-code">{tokenConfig}</pre>
-          </div>
-        </details>
-
-        <section className="connect-section">
-          <h2 className="connect-section-title">Troubleshooting</h2>
-          <h3>The client shows no TextText tools</h3>
-          <p className="connect-body">
-            Restart the AI client after installing the plugin. If the token was
-            not accepted, revoke it at Connect, create another, and replace the
-            credential in the client.
-          </p>
-          <h3>A write was rejected as a conflict</h3>
-          <p className="connect-body">
-            The document changed after the agent read it. Ask the agent to read
-            the latest version, merge the intended edit, and retry.
-          </p>
-          <h3>Manage or revoke access</h3>
-          <p className="connect-body">
-            Open <Link href="/connect">Connect</Link> to see every approved app
-            and revoke one without changing your Claude, Codex, or ChatGPT
-            account.
-          </p>
-        </section>
-
-        <details className="connect-section connect-advanced">
-          <summary className="connect-section-title">Tool reference</summary>
-          <h3>Read tools ({READ_TOOLS.length})</h3>
-          <ToolTable names={READ_TOOLS} />
-          <h3>Mutation tools ({TEXTTEXT_TOOLS.length})</h3>
-          <ToolTable names={TEXTTEXT_TOOLS} />
-        </details>
       </main>
     </div>
   );

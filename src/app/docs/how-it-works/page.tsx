@@ -1,15 +1,70 @@
 import type { Metadata } from "next";
-import "@/styles/connect.css";
+import Link from "next/link";
 
-export const metadata: Metadata = { title: "How TextText AI works" };
+export const metadata: Metadata = { title: "How agents work in TextText" };
 
 export default function HowItWorksPage() {
-  return <div className="applecms connect-shell"><main className="connect-main connect-doc">
-    <p className="connect-provider-kicker">Architecture</p><h1 className="connect-title">How AI works in TextText</h1>
-    <p className="connect-lede">TextText is the workspace and tool surface. Your chosen AI provider supplies the model. The app never pretends those are the same account.</p>
-    <section className="connect-section"><h2 className="connect-section-title">Native Mac agent</h2><p className="connect-body">The standalone Mac app starts a local Codex App Server process and communicates over a private JSON-RPC pipe. The assistant UI receives streamed messages directly. Workspace actions are registered as dynamic tools and execute through TextText’s canonical command surface.</p><p className="connect-body">The sandboxed TestFlight app cannot launch a runtime from the person&apos;s home directory. In that channel, use an API key or an external MCP app. TextText does not run its own MCP endpoint for the native path, and it does not stream the conversation through a second visible application.</p></section>
-    <section className="connect-section"><h2 className="connect-section-title">External MCP agents</h2><p className="connect-body">Claude, ChatGPT, Codex, and compatible clients connect to TextText’s hosted MCP endpoint. A revocable bearer token authorizes the workspace. The external client owns the conversation; TextText owns documents, permissions, audit records, and conflict checks.</p></section>
-    <section className="connect-section" id="billing"><h2 className="connect-section-title">Subscriptions and billing</h2><p className="connect-body">A ChatGPT, Codex, or Claude subscription and an API account are different billing surfaces. The standalone Mac app can use the account available to its local Codex runtime. The sandboxed TestFlight app and the browser cannot launch that runtime. Direct API-key mode uses provider API billing. TextText does not convert a consumer subscription into API credits and does not ask for a provider password.</p></section>
-    <section className="connect-section"><h2 className="connect-section-title">Safety boundary</h2><ul className="connect-feature-list"><li>Every request is scoped to the current workspace.</li><li>Mutations use the same command and validation layer as the app.</li><li>Destructive and publishing actions can require confirmation.</li><li>Document writes use conflict checks rather than blindly overwriting newer content.</li><li>Notes and bookmarks remain unlisted and access-controlled.</li></ul></section>
-  </main></div>;
+  return (
+    <div className="connect-shell">
+      <main className="connect-main connect-doc">
+        <p className="connect-provider-kicker">The working model</p>
+        <h1 className="connect-title">The document is the canvas</h1>
+        <p className="connect-lede">
+          TextText does for writing what agentic design tools do for a canvas:
+          the work stays visible while you and the agent act on the same source.
+        </p>
+        <section className="connect-section">
+          <h2 className="connect-section-title">Open context, not hidden context</h2>
+          <p>
+            The context chip above the composer names the document, folder, or
+            workspace the agent is working with. Open a document to make it the
+            focus. Select text to give the agent a precise passage.
+          </p>
+        </section>
+        <section className="connect-section">
+          <h2 className="connect-section-title">One command surface</h2>
+          <p>
+            TextText Agent, the app UI, and external MCP agents use the same
+            document commands. Permissions, validation, audit records, and
+            conflict checks do not change based on which agent made the request.
+          </p>
+        </section>
+        <section className="connect-section">
+          <h2 className="connect-section-title">Changes remain legible</h2>
+          <ul>
+            <li>The agent appears as a collaborator while it works.</li>
+            <li>Writing happens in the document, not in a second copy.</li>
+            <li>Guarded changes show what will happen before they are applied.</li>
+            <li>Undo returns the document to the previous version.</li>
+          </ul>
+        </section>
+        <section className="connect-section">
+          <h2 className="connect-section-title">Two ways to bring an agent</h2>
+          <h3>TextText Agent</h3>
+          <p>
+            The assistant lives inside the right sidebar. App Store and browser
+            builds use a workspace OpenAI or Anthropic API key. The standalone
+            Mac edition can also use an eligible local ChatGPT or Codex account.
+          </p>
+          <h3>Your AI app</h3>
+          <p>
+            Claude, Codex, eligible ChatGPT workspaces, and other MCP clients
+            connect to the hosted TextText tool surface with a revocable
+            workspace token. The conversation stays in that AI app while the
+            document stays in TextText.
+          </p>
+          <p><Link href="/docs/ai">Choose a connection path</Link>.</p>
+        </section>
+        <section className="connect-section" id="billing">
+          <h2 className="connect-section-title">Accounts and billing stay honest</h2>
+          <p>
+            Consumer subscriptions and provider API accounts are different.
+            TextText does not turn a ChatGPT or Claude subscription into API
+            credits, and it never asks for a provider password. The setup page
+            tells you which account supplies each connection.
+          </p>
+        </section>
+      </main>
+    </div>
+  );
 }

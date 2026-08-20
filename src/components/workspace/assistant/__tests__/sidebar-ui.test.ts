@@ -190,7 +190,7 @@ describe("assistant sidebar UI", () => {
     expect(html).toContain("Challenge my thinking");
   });
 
-  it("leads with one connect action when no AI is wired up", () => {
+  it("offers two clear destinations when no AI is wired up", () => {
     const html = renderToStaticMarkup(
       React.createElement(AssistantConversation, {
         cloudProvider: null,
@@ -201,15 +201,16 @@ describe("assistant sidebar UI", () => {
       }),
     );
 
-    // Every service is a row that opens into its numbered steps; the closed
-    // row states the service and where it runs, never a bare glyph.
+    // Provider-specific setup stays out of the narrow rail. The user chooses
+    // between an in-app agent and the external AI app they already use.
     expect(html).toContain("Write with your AI");
-    expect(html).toContain('aria-label="Ways to connect"');
+    expect(html).toContain('aria-label="Connect an AI"');
+    expect(html).toContain("Set up TextText Agent");
+    expect(html).toContain("Connect your AI app");
     expect(html).toContain("Claude");
     expect(html).toContain("Codex");
     expect(html).toContain("ChatGPT");
-    expect(html).toContain('aria-expanded="false"');
-    expect(html).toContain("Set up the in-app assistant");
+    expect(html).not.toContain('aria-expanded="false"');
     expect(html).not.toMatch(/Good (morning|afternoon|evening)/);
     expect(html).not.toContain('aria-label="Prompt starters"');
     expect(html).not.toContain("Catch me up");
@@ -240,7 +241,7 @@ describe("assistant sidebar UI", () => {
 
     expect(html).toContain("Use an API key for the in-app assistant");
     expect(html).not.toContain("Continue with ChatGPT");
-    expect(html).toContain('aria-label="Ways to connect"');
+    expect(html).toContain('aria-label="Connect an AI"');
     expect(html).toContain('href="/@writer?view=settings#api-key-connections"');
   });
 

@@ -1,136 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import type { AssistantMessage } from "./useNativeAssistant";
 import type { AssistantJob } from "@/lib/ai/jobs";
 import type { NativeQuickActionId } from "@/lib/ai/quick-actions";
 import type { CloudAssistantProviderLabel } from "@/lib/ai/cloud-client";
 import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
 import { greeting, startersFor, type StarterContext } from "./starters";
-import { AGENT_INTEGRATIONS } from "@/lib/agent-integrations";
 import styles from "./AssistantConversation.module.css";
 
 const FALLBACK_STARTER_CONTEXT: StarterContext = { level: "root" };
 
 function displayedMessageText(message: AssistantMessage): string {
   return message.text;
-}
-
-/**
- * The ways in, as a macOS grouped inset list: one group, hairline-separated
- * rows, a disclosure chevron, and at most one service open at a time. The
- * open service shows its numbered steps with exactly one labeled action per
- * step that needs one; copy actions resolve in place with a Copied beat and
- * run execCommand synchronously inside the click's activation (the
- * async-first order spends the activation and goes mute).
- */
-function ConnectPaths() {
-  const [openId, setOpenId] = useState<string | null>(null);
-  return (
-    <div className={styles.connectPaths} aria-label="Ways to connect">
-      {AGENT_INTEGRATIONS.map((integration) => (
-        <ConnectPathRow
-          key={integration.id}
-          integration={integration}
-          open={openId === integration.id}
-          onToggle={() =>
-            setOpenId((value) => (value === integration.id ? null : integration.id))
-          }
-        />
-      ))}
-    </div>
-  );
-}
-
-function ConnectPathRow({
-  integration,
-  open,
-  onToggle,
-}: {
-  integration: (typeof AGENT_INTEGRATIONS)[number];
-  open: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <div className={styles.connectPath} data-open={open || undefined}>
-      <button
-        type="button"
-        className={styles.connectPathHeader}
-        aria-expanded={open}
-        onClick={onToggle}
-      >
-        <span className={styles.connectPathMark} aria-hidden="true">
-          {integration.monogram}
-        </span>
-        <span className={styles.connectPathCopy}>
-          <span className={styles.connectPathName}>{integration.name}</span>
-          <span className={styles.connectPathHint}>{integration.environment}</span>
-        </span>
-        <span className={styles.connectPathChevron} aria-hidden="true">
-          ›
-        </span>
-      </button>
-      {open && (
-        <div className={styles.connectPathSteps}>
-          <ol>
-            {integration.steps.map((step) => (
-              <li key={step.text}>
-                {step.text}
-                {step.copy && <CopyStepButton copy={step.copy} />}
-                {!step.copy &&
-                  integration.action.kind === "link" &&
-                  step.text.includes("button below") && (
-                    <a
-                      className={styles.connectStepAction}
-                      href={integration.action.href}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {integration.action.label}
-                    </a>
-                  )}
-              </li>
-            ))}
-          </ol>
-          <p className={styles.connectPathOutcome}>{integration.outcome}</p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CopyStepButton({ copy }: { copy: { label: string; value: string } }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      className={styles.connectStepAction}
-      onClick={() => {
-        const legacyCopy = () => {
-          const scratch = document.createElement("textarea");
-          scratch.value = copy.value;
-          scratch.setAttribute("readonly", "");
-          scratch.style.position = "fixed";
-          scratch.style.opacity = "0";
-          document.body.appendChild(scratch);
-          scratch.select();
-          const ok = document.execCommand("copy");
-          scratch.remove();
-          return ok;
-        };
-        const done = () => {
-          setCopied(true);
-          window.setTimeout(() => setCopied(false), 2400);
-        };
-        if (legacyCopy()) done();
-        else if (navigator.clipboard?.writeText) {
-          navigator.clipboard.writeText(copy.value).then(done).catch(() => {});
-        }
-      }}
-    >
-      {copied ? "Copied" : copy.label}
-    </button>
-  );
 }
 
 // The transcript inside the assistant sidebar: user and assistant turns,
@@ -194,7 +76,6 @@ export function AssistantConversation({
   onUndoProposal,
   nativeConnection,
   onConnectNative,
-  onBuildItemType,
   aiSettingsHref,
   onOpenAiSettings,
 }: {
@@ -218,7 +99,6 @@ export function AssistantConversation({
   onUndoProposal?: (messageId: string) => Promise<void> | void;
   nativeConnection?: AiConnectionSnapshot | null;
   onConnectNative?: () => void;
-  onBuildItemType?: () => void;
   /** Direct route to the workspace's API-key setup. */
   aiSettingsHref?: string;
   /** Closes the assistant before its settings route replaces the workspace. */
@@ -314,32 +194,26 @@ export function AssistantConversation({
                   Continue with ChatGPT
                 </button>
               )}
-              {/* One service per row; opening a row shows the numbered steps
-                  and a labeled action, so nothing is a mystery glyph and
-                  nobody lands somewhere with nothing to do. The compressed
-                  row-with-a-copy-icon version failed exactly that way. */}
-              <ConnectPaths />
-              <p className={styles.connectAlt}>
-                Prefer to stay here?{" "}
-                <a
-                  href={aiSettingsHref ?? "/docs/ai#api-key"}
-                  onClick={onOpenAiSettings}
-                >
-                  Set up the in-app assistant
-                </a>
-              </p>
+              <a
+                className={styles.connectChoice}
+                href={aiSettingsHref ?? "/docs/ai#embedded-agent"}
+                onClick={onOpenAiSettings}
+              >
+                <span>
+                  <strong>Set up TextText Agent</strong>
+                  <small>Keep the conversation inside TextText</small>
+                </span>
+                <span aria-hidden="true">›</span>
+              </a>
+              <a className={styles.connectChoice} href="/connect">
+                <span>
+                  <strong>Connect your AI app</strong>
+                  <small>Use Claude, Codex, ChatGPT, or another MCP client</small>
+                </span>
+                <span aria-hidden="true">›</span>
+              </a>
             </div>
           )}
-          {onBuildItemType ? (
-            <button
-              type="button"
-              className={styles.buildType}
-              onClick={onBuildItemType}
-            >
-              <span aria-hidden="true">✦</span>
-              Build a new item type
-            </button>
-          ) : null}
           {connected && onUsePrompt && (
             <div className={styles.examples} aria-label="Prompt starters">
               {startersFor(starterContext ?? FALLBACK_STARTER_CONTEXT).map((starter) => (
