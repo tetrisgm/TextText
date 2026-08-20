@@ -28,6 +28,7 @@ import {
   getWorkspaceAiConfigStatusForOwner,
 } from "@/lib/ai/workspace-ai-config.server";
 import { workspaceLanguageModel } from "@/lib/ai/provider-model.server";
+import { readBoundedJson } from "@/lib/http/bounded-json";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -37,6 +38,8 @@ const MAX_HISTORY = 20;
 // Bound one request's input tokens: a single oversized message cannot balloon
 // the model bill. Generous for a real prompt, small enough to defeat abuse.
 const MAX_MESSAGE_CHARS = 16_000;
+const MAX_REQUEST_BODY_BYTES = 1_100_000;
+const NO_STORE_HEADERS = { "Cache-Control": "private, no-store" } as const;
 // Best-effort per-user throttle. Provider-side limits remain authoritative.
 const RATE_WINDOW_MS = 60_000;
 const RATE_MAX_PER_WINDOW = 20;
@@ -194,12 +197,23 @@ export async function POST(request: Request) {
     );
   }
 
-  let body: { messages?: unknown; context?: unknown };
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: "Send a JSON body" }, { status: 400 });
+  const decoded = await readBoundedJson<{
+    messages?: unknown;
+    context?: unknown;
+  }>(request, MAX_REQUEST_BODY_BYTES);
+  if ("error" in decoded && decoded.error === "too_large") {
+    return Response.json(
+      { error: "The assistant request is too large." },
+      { status: 413, headers: NO_STORE_HEADERS },
+    );
   }
+  if ("error" in decoded) {
+    return Response.json(
+      { error: "Send a JSON body" },
+      { status: 400, headers: NO_STORE_HEADERS },
+    );
+  }
+  const body = decoded.value;
   const messages = coerceMessages(body.messages);
   if (messages.length === 0) {
     return Response.json({ error: "messages is required" }, { status: 400 });

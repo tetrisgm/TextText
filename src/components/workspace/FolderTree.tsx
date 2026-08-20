@@ -138,8 +138,18 @@ export function FolderTree({
   const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
-    const idsToOpen = [...rootIds(tree), ...activeAncestorIds(folders, activePath)];
-    setOpenIds((current) => new Set([...current, ...idsToOpen]));
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      const idsToOpen = [
+        ...rootIds(tree),
+        ...activeAncestorIds(folders, activePath),
+      ];
+      setOpenIds((current) => new Set([...current, ...idsToOpen]));
+    });
+    return () => {
+      active = false;
+    };
   }, [activePath, folders, tree]);
 
   const toggleOpen = useCallback((folderId: string) => {

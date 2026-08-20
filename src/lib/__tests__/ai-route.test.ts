@@ -64,6 +64,22 @@ function post(bodyObj: unknown) {
     body: JSON.stringify(bodyObj),
   });
 }
+
+function streamedOversizedRequest() {
+  const encoder = new TextEncoder();
+  const chunk = encoder.encode("x".repeat(600_000));
+  return new Request("http://x/api/ai", {
+    method: "POST",
+    body: new ReadableStream({
+      start(controller) {
+        controller.enqueue(chunk);
+        controller.enqueue(chunk);
+        controller.close();
+      },
+    }),
+    duplex: "half",
+  } as RequestInit & { duplex: "half" });
+}
 const user = { sub: "editor-sub", userId: "user-uuid" };
 const turn = { messages: [{ role: "user", content: "Summarize my draft" }] };
 
@@ -109,6 +125,19 @@ describe("/api/ai cloud assistant route", () => {
   it("rejects an empty message list (400)", async () => {
     const res = await POST(post({ messages: [] }));
     expect(res.status).toBe(400);
+    expect(mocks.generateText).not.toHaveBeenCalled();
+  });
+
+  it("rejects declared and streamed oversized requests without spending", async () => {
+    const declared = post(turn);
+    declared.headers.set("content-length", "1100001");
+    const declaredResponse = await POST(declared);
+    expect(declaredResponse.status).toBe(413);
+    expect(declaredResponse.headers.get("cache-control")).toContain("no-store");
+
+    const streamedResponse = await POST(streamedOversizedRequest());
+    expect(streamedResponse.status).toBe(413);
+    expect(streamedResponse.headers.get("cache-control")).toContain("no-store");
     expect(mocks.generateText).not.toHaveBeenCalled();
   });
 

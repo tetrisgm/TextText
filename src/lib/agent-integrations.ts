@@ -8,11 +8,8 @@ export const CLAUDE_PLUGIN_INSTALL_COMMAND =
 export const CODEX_PLUGIN_INSTALL_COMMAND =
   "codex plugin marketplace add tetrisgm/TextText && codex plugin add texttext@texttext";
 
-export const TEXTTEXT_TOKEN_PROMPT_COMMAND =
-  `read -rs "TEXTTEXT_WORKSPACE_TOKEN?Paste your TextText token: "; printf '\\n'; export TEXTTEXT_WORKSPACE_TOKEN`;
-
-export const CHATGPT_CONNECTOR_URL =
-  "https://chatgpt.com/#settings/Connectors";
+export const TEXTTEXT_CLI_VERIFY_COMMAND =
+  "if command -v texttext >/dev/null 2>&1; then texttext ls; else /Applications/TextText.app/Contents/Helpers/texttext ls; fi";
 
 export type AgentIntegrationStep = {
   /** One sentence, imperative, sentence case. */
@@ -22,7 +19,7 @@ export type AgentIntegrationStep = {
 };
 
 export type AgentIntegration = {
-  id: "claude" | "codex" | "chatgpt" | "mcp";
+  id: "claude" | "codex" | "mcp";
   name: string;
   company: string;
   monogram: string;
@@ -39,14 +36,10 @@ export type AgentIntegration = {
 };
 
 /**
- * Every path in here ends in a token a person creates at /connect and supplies
- * without placing it in source, shell history, or an install command.
- *
- * These steps described a browser window opening for an approval, which was
- * the OAuth flow; that flow was deleted (owner ruling 2026-08-15) and the copy
- * outlived it here, on the three surfaces that render this list: /connect,
- * /docs/ai, and the assistant rail. Onboarding copy is a claim about the
- * product like any other.
+ * Claude Code and Codex on the same Mac use the CLI shipped in the standalone
+ * app. Installing either plugin must not start MCP or ask for a workspace
+ * token. Hosted MCP is a separate, explicit path for remote clients. The
+ * sandboxed TestFlight app uses the API-key in-app assistant.
  */
 export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
   {
@@ -55,32 +48,38 @@ export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
     company: "Anthropic",
     monogram: "C",
     description:
-      "Install TextText once, then create, reshape, publish, and maintain documents from Claude.",
-    environment: "Claude Code and Claude.ai",
+      "Install the TextText skills, then work in your signed-in Mac workspace with no token or server setup.",
+    environment: "Claude Code on this Mac",
     action: {
       kind: "copy",
       label: "Install Claude plugin",
       value: CLAUDE_PLUGIN_INSTALL_COMMAND,
       copiedLabel: "Copied. Paste in Terminal",
     },
-    secondaryAction: {
-      label: "Use in Claude.ai",
-      href: "https://claude.ai/settings/connectors",
-    },
     steps: [
       {
         text: "Copy the install command.",
-        copy: { label: "Copy install command", value: CLAUDE_PLUGIN_INSTALL_COMMAND },
+        copy: {
+          label: "Copy install command",
+          value: CLAUDE_PLUGIN_INSTALL_COMMAND,
+        },
       },
-      { text: "Paste it into Terminal and press Return. It adds the TextText plugin to Claude Code." },
-      { text: "Create a token at Connect. The plugin installer does not ask for it." },
       {
-        text: "In the same Terminal, run this hidden token prompt and paste the token when prompted.",
-        copy: { label: "Copy secure token prompt", value: TEXTTEXT_TOKEN_PROMPT_COMMAND },
+        text: "Paste it into Terminal and press Return. It adds the TextText plugin to Claude Code.",
       },
-      { text: "Start Claude Code from that Terminal. Open /mcp to confirm TextText is connected." },
+      {
+        text: "Keep the standalone TextText app in Applications and sign in once. The plugin uses the command already bundled with the app.",
+      },
+      {
+        text: "Ask Claude to list your TextText workspace. It checks the installed command with this read-only request.",
+        copy: {
+          label: "Copy verification command",
+          value: TEXTTEXT_CLI_VERIFY_COMMAND,
+        },
+      },
     ],
-    outcome: "Claude appears as a collaborator with its own cursor whenever it works in your documents.",
+    outcome:
+      "During connected edits, TextText can show Claude as an active collaborator and records its supplied label and intent in the audit.",
   },
   {
     id: "codex",
@@ -88,8 +87,8 @@ export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
     company: "OpenAI",
     monogram: "O",
     description:
-      "Add the TextText plugin to Codex for durable project notes, changelogs, publishing, and collaboration.",
-    environment: "Codex app and CLI",
+      "Add TextText skills to Codex, then work in your signed-in Mac workspace with no token or server setup.",
+    environment: "Codex app and CLI on this Mac",
     action: {
       kind: "copy",
       label: "Install Codex plugin",
@@ -99,50 +98,36 @@ export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
     steps: [
       {
         text: "Copy the install command.",
-        copy: { label: "Copy install command", value: CODEX_PLUGIN_INSTALL_COMMAND },
+        copy: {
+          label: "Copy install command",
+          value: CODEX_PLUGIN_INSTALL_COMMAND,
+        },
       },
-      { text: "Paste it into Terminal and press Return. It adds the TextText plugin to Codex." },
-      { text: "Create a token at Connect. The plugin installer does not ask for it." },
       {
-        text: "In the same Terminal, run this hidden token prompt and paste the token when prompted.",
-        copy: { label: "Copy secure token prompt", value: TEXTTEXT_TOKEN_PROMPT_COMMAND },
+        text: "Paste it into Terminal and press Return. It adds the TextText plugin to Codex.",
       },
-      { text: "Start Codex from that Terminal. Open /mcp to confirm TextText is connected." },
-    ],
-    outcome: "Codex appears as a collaborator with its own cursor whenever it works in your documents.",
-  },
-  {
-    id: "chatgpt",
-    name: "ChatGPT",
-    company: "OpenAI",
-    monogram: "G",
-    description:
-      "Connect TextText as a custom MCP app where your ChatGPT plan, role, and workspace policy allow it.",
-    environment: "Eligible ChatGPT apps workspaces",
-    action: {
-      kind: "link",
-      label: "Open ChatGPT apps",
-      href: CHATGPT_CONNECTOR_URL,
-    },
-    steps: [
       {
-        text: "Copy the TextText address first.",
-        copy: { label: "Copy TextText address", value: TEXTTEXT_HOSTED_MCP_URL },
+        text: "Keep the standalone TextText app in Applications and sign in once. The plugin uses the command already bundled with the app.",
       },
-      { text: "Open ChatGPT's Apps settings and confirm your plan and workspace role allow a custom MCP app." },
-      { text: "Add TextText with the copied address and choose bearer-token authentication if your workspace offers it. TextText does not currently provide OAuth." },
-      { text: "Give the app a token you created at Connect. If ChatGPT requires OAuth instead, this connection path is not compatible yet." },
+      {
+        text: "Ask Codex to list your TextText workspace. It checks the installed command with this read-only request.",
+        copy: {
+          label: "Copy verification command",
+          value: TEXTTEXT_CLI_VERIFY_COMMAND,
+        },
+      },
     ],
-    outcome: "ChatGPT can use the TextText capabilities allowed by your plan and workspace, and appears as a collaborator while it works.",
+    outcome:
+      "During connected edits, TextText can show Codex as an active collaborator and records its supplied label and intent in the audit.",
   },
   {
     id: "mcp",
-    name: "Other agents",
-    company: "MCP",
+    name: "Remote agents",
+    company: "Hosted MCP",
     monogram: "M",
     description:
-      "Use the hosted address in Cursor, Claude-compatible clients, automations, and any MCP app.",
-    environment: "Any remote MCP client",
+      "Connect from another computer, a browser client, or an automation with a revocable workspace token.",
+    environment: "Remote MCP clients",
     action: {
       kind: "copy",
       label: "Copy MCP address",
@@ -152,12 +137,20 @@ export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
     steps: [
       {
         text: "Copy the TextText address.",
-        copy: { label: "Copy TextText address", value: TEXTTEXT_HOSTED_MCP_URL },
+        copy: {
+          label: "Copy TextText address",
+          value: TEXTTEXT_HOSTED_MCP_URL,
+        },
       },
-      { text: "Add it wherever your app configures MCP servers, and give the connection a name you will recognize." },
-      { text: "Give the client a token you created at Connect. One token, one workspace, revocable from the same page." },
+      {
+        text: "Add it wherever your app configures MCP servers, and give the connection a name you will recognize.",
+      },
+      {
+        text: "Create a token at Connect and save it in the client's protected credential field. One token, one workspace, revocable from the same page.",
+      },
     ],
-    outcome: "The app appears in your documents under the name on its token, with every change attributed to it.",
+    outcome:
+      "The remote client can use TextText's hosted tools inside the token's workspace. Revoke the token from Connect at any time.",
   },
 ] as const;
 

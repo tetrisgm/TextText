@@ -8,9 +8,10 @@
 import { recordAction } from "@/lib/audit";
 import { resolveWorkspaceAccess } from "@/lib/permissions";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
+import { readBoundedJson } from "@/lib/http/bounded-json";
 import { renameFolder } from "@/lib/store";
 import { resolveSyncWorkspace } from "../../auth";
-import { syncError } from "../../sync";
+import { MAX_SYNC_METADATA_BODY_BYTES, syncError } from "../../sync";
 
 export const dynamic = "force-dynamic";
 
@@ -22,18 +23,28 @@ export async function PATCH(request: Request, { params }: Props) {
   const workspace = await resolveSyncWorkspace(request);
   if (workspace instanceof Response) return workspace;
   const { blog, userId } = workspace;
-  const access = await resolveWorkspaceAccess({ handle: blog.handle, user: workspace });
+  const access = await resolveWorkspaceAccess({
+    handle: blog.handle,
+    user: workspace,
+  });
   if (!access.isOwner) {
     return syncError(403, "Only the owner can rename folders");
   }
 
   const { folderId } = await params;
-  let body: { name?: unknown };
-  try {
-    body = await request.json();
-  } catch {
+  const parsedBody = await readBoundedJson<{ name?: unknown }>(
+    request,
+    MAX_SYNC_METADATA_BODY_BYTES,
+  );
+  if ("error" in parsedBody) {
+    if (parsedBody.error === "too_large") {
+      return syncError(413, "Request body is too large", {
+        "Cache-Control": "private, no-store",
+      });
+    }
     return syncError(400, "Send a JSON body");
   }
+  const body = parsedBody.value;
   const name = typeof body.name === "string" ? body.name.trim() : "";
   if (!name) return syncError(400, "name is required");
 

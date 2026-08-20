@@ -15,6 +15,44 @@ function displayedMessageText(message: AssistantMessage): string {
   return message.text;
 }
 
+function progressFallback(context: StarterContext): string {
+  if (context.level === "item") return `Reading ${context.label}`;
+  if (context.level === "folder") return `Reviewing ${context.label}`;
+  return "Reviewing your workspace";
+}
+
+/**
+ * Provider runtimes may emit operational narration rather than a useful
+ * status. The rail has room for one concrete line, not a running monologue.
+ */
+function boundedProgressText(
+  text: string,
+  context: StarterContext,
+  provider?: CloudAssistantProviderLabel | null,
+): string {
+  const contextual = progressFallback(context);
+  const fallback = provider ? `${contextual} with ${provider}` : contextual;
+  const compact = text.replace(/\s+/g, " ").trim();
+  if (
+    !compact ||
+    compact.length > 108 ||
+    /\b(using the .* skill|waiting|one last|attempt|tim(?:e|ing) out|unavailable|keep trying|read-only)\b/i.test(
+      compact,
+    )
+  ) {
+    return fallback;
+  }
+  return compact;
+}
+
+function boundedFailureText(text: string): string {
+  const compact = text.replace(/\s+/g, " ").trim();
+  if (!compact) return "The assistant could not finish that request.";
+  const firstReason = compact.split(/(?:\n\s*\n|(?<=[.!?])\s+)/, 1)[0];
+  if (firstReason.length <= 180) return firstReason;
+  return `${firstReason.slice(0, 177).trimEnd()}...`;
+}
+
 // The transcript inside the assistant sidebar: user and assistant turns,
 // lightweight progress rows while the selected provider drives tools, a jobs
 // strip so background work stays visible from anywhere.
@@ -78,6 +116,7 @@ export function AssistantConversation({
   onConnectNative,
   aiSettingsHref,
   onOpenAiSettings,
+  onRetry,
 }: {
   activeCloudProvider?: CloudAssistantProviderLabel | null;
   cloudProvider?: CloudAssistantProviderLabel | null;
@@ -103,8 +142,11 @@ export function AssistantConversation({
   aiSettingsHref?: string;
   /** Closes the assistant before its settings route replaces the workspace. */
   onOpenAiSettings?: () => void;
+  /** Re-runs the last user turn through the same assistant submit path. */
+  onRetry?: (prompt: string) => Promise<void> | void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
+  const context = starterContext ?? FALLBACK_STARTER_CONTEXT;
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
@@ -120,7 +162,9 @@ export function AssistantConversation({
             type="button"
             className={styles.quickAction}
             disabled={submitting}
-            title={action.description ?? `${action.label} with your AI provider`}
+            title={
+              action.description ?? `${action.label} with your AI provider`
+            }
             onClick={() => void onQuickAction?.(action.id)}
           >
             {action.label}
@@ -146,7 +190,7 @@ export function AssistantConversation({
               <span className={styles.jobMeta}>
                 {job.contextLabel}
                 {job.status === "running"
-                  ? ` · ${job.activity ?? "Working"}`
+                  ? ` · ${job.activity ?? "In progress"}`
                   : job.status === "error"
                     ? " · Failed"
                     : " · Done"}
@@ -158,7 +202,14 @@ export function AssistantConversation({
     ) : null;
 
   if (messages.length === 0) {
-    const connected = Boolean(cloudProvider) || nativeConnection?.state === "ready";
+    const connected =
+      Boolean(cloudProvider) || nativeConnection?.state === "ready";
+    const embeddedConnectionAvailable = Boolean(
+      nativeConnection?.embeddedChatSupported && onConnectNative,
+    );
+    const primaryConnectionLabel = embeddedConnectionAvailable
+      ? "Continue with ChatGPT"
+      : "Set up the in-app assistant";
     return (
       <div className={styles.empty}>
         {jobsStrip}
@@ -171,52 +222,50 @@ export function AssistantConversation({
         <div className={styles.emptyCenter}>
           <div className={styles.emptyLede}>
             <p className={styles.emptyTitle}>
-              {connected ? greeting(viewerName, new Date()) : "Write with your AI"}
+              {connected
+                ? greeting(viewerName, new Date())
+                : "Write with your AI"}
             </p>
             <p className={styles.emptyBody}>
               {connected
                 ? "Ask about what you are looking at, or start with one of these."
                 : nativeConnection?.state === "unavailable"
-                  ? "Use an API key for the in-app assistant, or connect another AI app to work here."
-                : nativeConnection?.state === "runtime-missing"
-                  ? "The built-in agent needs the Codex runtime on this Mac. Connect another AI app or add an API key to work here."
-                  : "Connect the AI you already use once, and it works right here, beside your documents."}
+                  ? "Set up the in-app assistant once, then write here beside your documents."
+                  : nativeConnection?.state === "runtime-missing"
+                    ? "Set up the in-app assistant to keep the conversation inside TextText."
+                    : "Connect once. The agent reads and writes the document you have open."}
             </p>
           </div>
           {!connected && (
             <div className={styles.connect} aria-label="Connect an AI">
-              {nativeConnection?.embeddedChatSupported && onConnectNative && (
+              {embeddedConnectionAvailable ? (
                 <button
                   type="button"
                   className={styles.connectPrimary}
                   onClick={onConnectNative}
                 >
-                  Continue with ChatGPT
+                  {primaryConnectionLabel}
                 </button>
+              ) : (
+                <a
+                  className={styles.connectPrimary}
+                  href={aiSettingsHref ?? "/docs/ai#embedded-agent"}
+                  onClick={onOpenAiSettings}
+                >
+                  {primaryConnectionLabel}
+                </a>
               )}
-              <a
-                className={styles.connectChoice}
-                href={aiSettingsHref ?? "/docs/ai#embedded-agent"}
-                onClick={onOpenAiSettings}
-              >
-                <span>
-                  <strong>Set up TextText Agent</strong>
-                  <small>Keep the conversation inside TextText</small>
-                </span>
-                <span aria-hidden="true">›</span>
+              <a className={styles.connectSecondary} href="/connect">
+                Connect your AI app instead
               </a>
-              <a className={styles.connectChoice} href="/connect">
-                <span>
-                  <strong>Connect your AI app</strong>
-                  <small>Use Claude, Codex, ChatGPT, or another MCP client</small>
-                </span>
-                <span aria-hidden="true">›</span>
+              <a className={styles.connectGuide} href="/docs/ai">
+                Read the setup guide
               </a>
             </div>
           )}
           {connected && onUsePrompt && (
             <div className={styles.examples} aria-label="Prompt starters">
-              {startersFor(starterContext ?? FALLBACK_STARTER_CONTEXT).map((starter) => (
+              {startersFor(context).map((starter) => (
                 <button
                   key={starter.label}
                   type="button"
@@ -243,6 +292,12 @@ export function AssistantConversation({
     );
   }
 
+  const visibleMessages = messages.filter(
+    (message) => message.role !== "progress",
+  );
+  const latestProgress = submitting
+    ? [...messages].reverse().find((message) => message.role === "progress")
+    : undefined;
   return (
     <div
       className={styles.thread}
@@ -252,14 +307,7 @@ export function AssistantConversation({
     >
       {jobsStrip}
       {quickActionBar}
-      {messages.map((message) => {
-        if (message.role === "progress") {
-          return (
-            <div key={message.id} className={styles.progress} role="status">
-              {displayedMessageText(message)}
-            </div>
-          );
-        }
+      {visibleMessages.map((message, messageIndex) => {
         if (message.proposal) {
           const proposal = message.proposal;
           const changing =
@@ -363,16 +411,37 @@ export function AssistantConversation({
             </div>
           );
         }
+        if (message.role === "error") {
+          const precedingUserMessage = visibleMessages
+            .slice(0, messageIndex)
+            .reverse()
+            .find((candidate) => candidate.role === "user");
+          return (
+            <div key={message.id} role="alert" className={styles.errorTurn}>
+              <span>{boundedFailureText(displayedMessageText(message))}</span>
+              <div className={styles.errorActions}>
+                {precedingUserMessage && onRetry ? (
+                  <button
+                    type="button"
+                    onClick={() => void onRetry(precedingUserMessage.text)}
+                  >
+                    Try again
+                  </button>
+                ) : null}
+                {aiSettingsHref ? (
+                  <a href={aiSettingsHref} onClick={onOpenAiSettings}>
+                    Settings
+                  </a>
+                ) : null}
+              </div>
+            </div>
+          );
+        }
         return (
           <div
             key={message.id}
-            role={message.role === "error" ? "alert" : undefined}
             className={
-              message.role === "user"
-                ? styles.userTurn
-                : message.role === "error"
-                  ? styles.errorTurn
-                  : styles.assistantTurn
+              message.role === "user" ? styles.userTurn : styles.assistantTurn
             }
           >
             {message.provider && (
@@ -387,9 +456,15 @@ export function AssistantConversation({
       })}
       {submitting && (
         <div className={styles.progress} role="status">
-          {activeCloudProvider
-            ? `Thinking with ${activeCloudProvider}`
-            : "Contacting your AI provider"}
+          {latestProgress
+            ? boundedProgressText(
+                latestProgress.text,
+                context,
+                activeCloudProvider,
+              )
+            : activeCloudProvider
+              ? `${progressFallback(context)} with ${activeCloudProvider}`
+              : progressFallback(context)}
         </div>
       )}
       <div ref={endRef} aria-hidden="true" />

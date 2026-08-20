@@ -5,21 +5,23 @@ description: Save a useful AI answer, prompt-response pair, or full conversation
 
 # Capture a conversation
 
-## With the `texttext` CLI
+## With the local command
 
-Distil the conversation as described below, then append it to an existing note or
-write a new one:
+Resolve `TEXTTEXT_CMD` from `texttext` on PATH, then fall back to
+`/Applications/TextText.app/Contents/Helpers/texttext`. Verify it with
+`"$TEXTTEXT_CMD" ls` before continuing.
+
+Distil the conversation as described below, then append it to an existing note
+or create a new one:
 
 ```sh
-texttext ls Notes                              # find a home for it
-texttext append "<doc>" --from /tmp/capture.md \
+"$TEXTTEXT_CMD" ls Notes                              # find a home for it
+"$TEXTTEXT_CMD" new "<clean title>" --folder Notes    # create it when needed
+"$TEXTTEXT_CMD" append "<doc>" --from /tmp/capture.md \
   --as codex --message "capture the pricing discussion"
 ```
 
-The CLI has no `new` command yet, so to start a fresh note use MCP's
-`create_item`, then keep working on it with the CLI.
-
-## With MCP
+## With MCP, when it is already connected
 
 1. Call `list_folders` and choose the user's requested folder. Prefer a notes
    folder when the user does not specify one.

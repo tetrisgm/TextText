@@ -9,9 +9,58 @@ export const dynamic = "force-dynamic";
 const JSON_HEADERS = {
   "Cache-Control": "private, no-store",
 } as const;
+const MAX_COMMAND_BODY_BYTES = 1_100_000;
 
 function jsonError(message: string, status: number) {
   return Response.json({ error: message }, { status, headers: JSON_HEADERS });
+}
+
+async function readCommandBody(
+  request: Request,
+): Promise<
+  | { body: { handle?: unknown; name?: unknown; args?: unknown } }
+  | { error: "invalid" | "too_large" }
+> {
+  const rawLength = request.headers.get("content-length");
+  if (rawLength !== null) {
+    const declared = Number(rawLength);
+    if (Number.isFinite(declared) && declared > MAX_COMMAND_BODY_BYTES) {
+      return { error: "too_large" };
+    }
+  }
+
+  const reader = request.body?.getReader();
+  if (!reader) return { error: "invalid" };
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_COMMAND_BODY_BYTES) {
+      await reader.cancel().catch(() => {});
+      return { error: "too_large" };
+    }
+    chunks.push(value);
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { error: "invalid" };
+    }
+    return {
+      body: parsed as { handle?: unknown; name?: unknown; args?: unknown },
+    };
+  } catch {
+    return { error: "invalid" };
+  }
 }
 
 function resultText(
@@ -41,12 +90,14 @@ export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) return jsonError("Sign in to use the assistant.", 401);
 
-  let body: { handle?: unknown; name?: unknown; args?: unknown };
-  try {
-    body = await request.json();
-  } catch {
+  const decoded = await readCommandBody(request);
+  if ("error" in decoded && decoded.error === "too_large") {
+    return jsonError("The workspace command is too large.", 413);
+  }
+  if ("error" in decoded) {
     return jsonError("Send a JSON body.", 400);
   }
+  const body = decoded.body;
 
   if (
     typeof body.handle !== "string" ||

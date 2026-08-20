@@ -5,6 +5,7 @@
 
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
   auth,
@@ -73,12 +74,12 @@ function Shell({ children }: { children: React.ReactNode }) {
     <div className="applecms connect-shell">
       <main className="connect-main signin-main">
         <div className="signin-topline">
-          <a className="signin-wordmark" href="/">
+          <Link className="signin-wordmark" href="/">
             TextText
-          </a>
-          <a className="signin-back" href="/">
+          </Link>
+          <Link className="signin-back" href="/">
             Back
-          </a>
+          </Link>
         </div>
         {children}
       </main>
@@ -216,7 +217,7 @@ export default async function SignInPage({ searchParams }: Props) {
       )}
 
       <p className="signin-terms">
-        By continuing, you agree to TextText's terms and privacy policy.
+        By continuing, you agree to TextText&apos;s terms and privacy policy.
       </p>
     </Shell>
   );

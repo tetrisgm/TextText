@@ -165,7 +165,7 @@ describe("assistant sidebar UI", () => {
     );
 
     expect(html).toContain("Answered by OpenAI");
-    expect(html).toContain("Thinking with OpenAI");
+    expect(html).toContain("Reviewing your workspace with OpenAI");
     expect(html).not.toContain("off this Mac");
   });
 
@@ -177,7 +177,10 @@ describe("assistant sidebar UI", () => {
         submitting: false,
         onUsePrompt: () => {},
         viewerName: "Ramine Darabiha",
-        starterContext: { level: "item", label: "The Invisible Hand of Super Metroid" },
+        starterContext: {
+          level: "item",
+          label: "The Invisible Hand of Super Metroid",
+        },
       }),
     );
 
@@ -190,7 +193,7 @@ describe("assistant sidebar UI", () => {
     expect(html).toContain("Challenge my thinking");
   });
 
-  it("offers two clear destinations when no AI is wired up", () => {
+  it("leads with one in-app setup action when no AI is wired up", () => {
     const html = renderToStaticMarkup(
       React.createElement(AssistantConversation, {
         cloudProvider: null,
@@ -201,15 +204,14 @@ describe("assistant sidebar UI", () => {
       }),
     );
 
-    // Provider-specific setup stays out of the narrow rail. The user chooses
-    // between an in-app agent and the external AI app they already use.
+    // Provider-specific setup stays out of the narrow rail. One recommended
+    // path leads; the external-app path remains a quiet alternative.
     expect(html).toContain("Write with your AI");
     expect(html).toContain('aria-label="Connect an AI"');
-    expect(html).toContain("Set up TextText Agent");
-    expect(html).toContain("Connect your AI app");
-    expect(html).toContain("Claude");
-    expect(html).toContain("Codex");
-    expect(html).toContain("ChatGPT");
+    expect(html).toContain("Set up the in-app assistant");
+    expect(html).toContain("Connect your AI app instead");
+    expect(html).toContain("Read the setup guide");
+    expect(html).not.toContain("another MCP client");
     expect(html).not.toContain('aria-expanded="false"');
     expect(html).not.toMatch(/Good (morning|afternoon|evening)/);
     expect(html).not.toContain('aria-label="Prompt starters"');
@@ -239,10 +241,61 @@ describe("assistant sidebar UI", () => {
       }),
     );
 
-    expect(html).toContain("Use an API key for the in-app assistant");
+    expect(html).toContain("Set up the in-app assistant once");
     expect(html).not.toContain("Continue with ChatGPT");
     expect(html).toContain('aria-label="Connect an AI"');
     expect(html).toContain('href="/@writer?view=settings#api-key-connections"');
+  });
+
+  it("keeps progress to one useful contextual line", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        cloudProvider: "OpenAI",
+        messages: [
+          { id: "user-1", role: "user", text: "Summarize recent work" },
+          {
+            id: "progress-1",
+            role: "progress",
+            text: "I am using the workspace skill to inspect your documents.",
+          },
+          {
+            id: "progress-2",
+            role: "progress",
+            text: "The index is responding slowly; I am waiting and will make one last attempt.",
+          },
+        ],
+        starterContext: { level: "folder", label: "Notes" },
+        submitting: true,
+      }),
+    );
+
+    expect(html).toContain("Reviewing Notes");
+    expect(html).not.toContain("workspace skill");
+    expect(html).not.toContain("one last attempt");
+    expect(html.match(/role="status"/g)).toHaveLength(1);
+  });
+
+  it("turns a long failure into one reason with recovery actions", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        aiSettingsHref: "/@writer?view=settings#api-key-connections",
+        messages: [
+          { id: "user-1", role: "user", text: "Tighten this paragraph" },
+          {
+            id: "error-1",
+            role: "error",
+            text: "The provider did not answer. I am making another attempt and waiting for the workspace index.",
+          },
+        ],
+        onRetry: () => {},
+        submitting: false,
+      }),
+    );
+
+    expect(html).toContain("The provider did not answer.");
+    expect(html).not.toContain("another attempt");
+    expect(html).toContain("Try again");
+    expect(html).toContain("Settings");
   });
 
   it("explains selected-text context and unavailable attachments", () => {
@@ -263,7 +316,8 @@ describe("assistant sidebar UI", () => {
           detail: "Selected body text",
         },
         attachmentDisabled: true,
-        attachmentTitle: "Attachments are not available for provider connections yet",
+        attachmentTitle:
+          "Attachments are not available for provider connections yet",
       }),
     );
 
@@ -294,7 +348,10 @@ describe("starting a new chat", () => {
       React.createElement(AssistantSidebar, { ...base, hasConversation: true }),
     );
     const empty = renderToStaticMarkup(
-      React.createElement(AssistantSidebar, { ...base, hasConversation: false }),
+      React.createElement(AssistantSidebar, {
+        ...base,
+        hasConversation: false,
+      }),
     );
     expect(withTranscript).toContain('aria-label="New chat"');
     expect(empty).not.toContain('aria-label="New chat"');

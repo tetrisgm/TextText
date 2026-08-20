@@ -1,9 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Blog, Post } from "@/lib/content";
-import {
-  renderSyncDocumentFile,
-  renderSyncFile,
-} from "@/app/api/sync/v1/sync";
+import { renderSyncDocumentFile, renderSyncFile } from "@/app/api/sync/v1/sync";
 import {
   serializeSyncDocumentEnvelope,
   SYNC_DOCUMENT_CONTENT_TYPE,
@@ -62,7 +59,14 @@ vi.mock("@/lib/revalidate-blog", () => ({
   revalidateBlogPaths: mocks.revalidateBlogPaths,
 }));
 
-import { DELETE, GET, PATCH, PUT } from "@/app/api/sync/v1/files/[postId]/route";
+import {
+  DELETE,
+  GET,
+  MAX_SYNC_FILE_BODY_BYTES,
+  MAX_SYNC_FILE_PATCH_BYTES,
+  PATCH,
+  PUT,
+} from "@/app/api/sync/v1/files/[postId]/route";
 
 const postId = "0b4f6a52-8c1d-4e3a-9b7f-2d5e8a1c3f60";
 const folderId = "beec8d18-b602-4cd3-bc2b-640e067c01c8";
@@ -115,10 +119,7 @@ function mutationRequest(
   });
 }
 
-function structuredMutationRequest(
-  method: "PUT",
-  currentPost: Post,
-): Request {
+function structuredMutationRequest(method: "PUT", currentPost: Post): Request {
   const document = {
     schemaVersion: 1 as const,
     content: {
@@ -147,6 +148,35 @@ function structuredMutationRequest(
   });
 }
 
+function streamedMutationRequest(
+  method: "PUT" | "PATCH",
+  byteCount: number,
+): Request {
+  let remaining = byteCount;
+  const headers = new Headers({
+    "Content-Type": method === "PATCH" ? "application/json" : "text/markdown",
+  });
+  if (method === "PUT") {
+    headers.set("If-Match", `"${renderSyncFile(blog, post).hash}"`);
+  }
+  return new Request(`https://texttext.example/api/sync/v1/files/${postId}`, {
+    method,
+    headers,
+    body: new ReadableStream({
+      pull(controller) {
+        if (remaining === 0) {
+          controller.close();
+          return;
+        }
+        const size = Math.min(remaining, 64 * 1024);
+        remaining -= size;
+        controller.enqueue(new Uint8Array(size).fill(32));
+      },
+    }),
+    duplex: "half",
+  } as RequestInit & { duplex: "half" });
+}
+
 describe("sync file PATCH", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -166,6 +196,31 @@ describe("sync file PATCH", () => {
     });
 
     expect(response.status).toBe(428);
+    expect(mocks.movePostFile).not.toHaveBeenCalled();
+  });
+
+  it("rejects declared and streamed oversized metadata", async () => {
+    const declared = patchRequest({ title: "Changed" });
+    declared.headers.set(
+      "Content-Length",
+      String(MAX_SYNC_FILE_PATCH_BYTES + 1),
+    );
+    const declaredResponse = await PATCH(declared, {
+      params: Promise.resolve({ postId }),
+    });
+    const streamedResponse = await PATCH(
+      streamedMutationRequest("PATCH", MAX_SYNC_FILE_PATCH_BYTES + 1),
+      { params: Promise.resolve({ postId }) },
+    );
+
+    expect(declaredResponse.status).toBe(413);
+    expect(streamedResponse.status).toBe(413);
+    expect(declaredResponse.headers.get("Cache-Control")).toBe(
+      "private, no-store",
+    );
+    expect(streamedResponse.headers.get("Cache-Control")).toBe(
+      "private, no-store",
+    );
     expect(mocks.movePostFile).not.toHaveBeenCalled();
   });
 
@@ -318,7 +373,10 @@ describe("sync file PATCH", () => {
         title: "What??",
         expectedRevision: post.revision,
       },
-      expect.objectContaining({ actionName: "sync.patch_file", targetId: postId }),
+      expect.objectContaining({
+        actionName: "sync.patch_file",
+        targetId: postId,
+      }),
     );
     // The sync.patch_file audit is folded into movePostFile now; only the
     // secondary slug-change annotation remains a separate best-effort write.
@@ -420,6 +478,35 @@ describe("sync file PUT during a live co-editing session", () => {
     expect(response.status).toBe(409);
     expect(mocks.savePost).not.toHaveBeenCalled();
     expect(mocks.savePostContentPatch).not.toHaveBeenCalled();
+  });
+
+  it("rejects declared and streamed oversized file bodies", async () => {
+    mocks.hasActiveCoEditors.mockResolvedValue(false);
+    const declared = mutationRequest(
+      "PUT",
+      `"${renderSyncFile(blog, post).hash}"`,
+    );
+    declared.headers.set(
+      "Content-Length",
+      String(MAX_SYNC_FILE_BODY_BYTES + 1),
+    );
+    const declaredResponse = await PUT(declared, {
+      params: Promise.resolve({ postId }),
+    });
+    const streamedResponse = await PUT(
+      streamedMutationRequest("PUT", MAX_SYNC_FILE_BODY_BYTES + 1),
+      { params: Promise.resolve({ postId }) },
+    );
+
+    expect(declaredResponse.status).toBe(413);
+    expect(streamedResponse.status).toBe(413);
+    expect(declaredResponse.headers.get("Cache-Control")).toBe(
+      "private, no-store",
+    );
+    expect(streamedResponse.headers.get("Cache-Control")).toBe(
+      "private, no-store",
+    );
+    expect(mocks.savePost).not.toHaveBeenCalled();
   });
 
   it("saves normally when no one is co-editing", async () => {

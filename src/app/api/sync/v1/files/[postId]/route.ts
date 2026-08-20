@@ -1,7 +1,5 @@
 import { isPrivatePostType, type Blog, type Post } from "@/lib/content";
-import {
-  legacyProjectionFromDocument,
-} from "@/lib/documents/legacy";
+import { legacyProjectionFromDocument } from "@/lib/documents/legacy";
 import { requireDocumentSnapshot } from "@/lib/documents/model";
 import {
   mergeMarkdownIntoDocument,
@@ -29,6 +27,7 @@ import { hasActiveCoEditors } from "@/lib/collab";
 import { recordAction, recordSlugChanged } from "@/lib/audit";
 import { sanitizePostSlug } from "@/lib/post-slug";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
+import { readBoundedJson, readBoundedText } from "@/lib/http/bounded-json";
 import {
   clientSaveError,
   ifMatchSatisfied,
@@ -37,6 +36,7 @@ import {
   isUuid,
   renderSyncDocumentFile,
   renderSyncFile,
+  MAX_SYNC_METADATA_BODY_BYTES,
   syncError,
   syncManifestItem,
 } from "../../sync";
@@ -46,6 +46,8 @@ interface Props {
 }
 
 export const dynamic = "force-dynamic";
+export const MAX_SYNC_FILE_BODY_BYTES = 8 * 1024 * 1024;
+export const MAX_SYNC_FILE_PATCH_BYTES = MAX_SYNC_METADATA_BODY_BYTES;
 
 type WorkspacePost = {
   blog: Blog;
@@ -146,7 +148,10 @@ export async function PUT(request: Request, { params }: Props) {
   // would silently discard it. Refuse rather than lose the write. The sync
   // client surfaces the 409 like any conflict and retries once the session ends.
   if (post.id && (await hasActiveCoEditors(post.id))) {
-    return syncError(409, "This item is being co-edited right now; try again after the session ends");
+    return syncError(
+      409,
+      "This item is being co-edited right now; try again after the session ends",
+    );
   }
   // The If-Match check above is fast but check-then-texttext: two PUTs on the same
   // base both pass it before either commits. The base revision is carried into
@@ -160,7 +165,13 @@ export async function PUT(request: Request, { params }: Props) {
     `Persisted item ${post.id ?? post.slug}`,
   );
   try {
-    const raw = await request.text();
+    const body = await readBoundedText(request, MAX_SYNC_FILE_BODY_BYTES);
+    if ("error" in body) {
+      return syncError(413, "File is too large", {
+        "Cache-Control": "private, no-store",
+      });
+    }
+    const raw = body.value;
     if (structured) {
       const envelope = parseSyncDocumentEnvelope(raw);
       parsed = parsePostMarkdownFile(envelope.markdown);
@@ -281,7 +292,10 @@ export async function DELETE(request: Request, { params }: Props) {
   // statement. An edit that commits after the hash check makes the guarded
   // delete match nothing, and deletePostAtomic raises a conflict.
   if (post.revision === undefined) {
-    return syncError(409, "This item has no version and cannot be safely deleted");
+    return syncError(
+      409,
+      "This item has no version and cannot be safely deleted",
+    );
   }
   try {
     // The audit row is folded into the delete's own transaction, so a deleted
@@ -316,12 +330,20 @@ export async function PATCH(request: Request, { params }: Props) {
     return syncError(403, "Only the owner can move or rename files");
   }
 
-  let body: { folder?: unknown; slug?: unknown; title?: unknown };
-  try {
-    body = await request.json();
-  } catch {
+  type PatchBody = { folder?: unknown; slug?: unknown; title?: unknown };
+  const parsedBody = await readBoundedJson<PatchBody>(
+    request,
+    MAX_SYNC_FILE_PATCH_BYTES,
+  );
+  if ("error" in parsedBody) {
+    if (parsedBody.error === "too_large") {
+      return syncError(413, "Request body is too large", {
+        "Cache-Control": "private, no-store",
+      });
+    }
     return syncError(400, "Send a JSON body");
   }
+  const body = parsedBody.value;
   const folderId = typeof body.folder === "string" ? body.folder.trim() : "";
   const slug =
     typeof body.slug === "string" && body.slug.trim()
@@ -355,7 +377,10 @@ export async function PATCH(request: Request, { params }: Props) {
     return syncError(412, "The post changed since this file was fetched");
   }
   if (post.revision === undefined) {
-    return syncError(409, "This item has no version and cannot be safely changed");
+    return syncError(
+      409,
+      "This item has no version and cannot be safely changed",
+    );
   }
 
   // Validate the tenant-scoped identity up front so a foreign or unknown id is
@@ -450,7 +475,7 @@ function shouldEnqueueBookmarkCapture(
     const previousUrl = bookmarkCaptureUrl(previousPost);
     return Boolean(
       (!previousUrl || !sameUrl(previousUrl, url)) &&
-        (!captureUrl || !sameUrl(captureUrl, url)),
+      (!captureUrl || !sameUrl(captureUrl, url)),
     );
   }
   if (captureUrl && sameUrl(captureUrl, url)) return false;
@@ -461,7 +486,8 @@ function sameUrl(left: string | undefined, right: string | undefined): boolean {
   if (!left || !right) return false;
   const normalizedLeft = normalizeHttpUrl(left);
   const normalizedRight = normalizeHttpUrl(right);
-  if (normalizedLeft && normalizedRight) return normalizedLeft === normalizedRight;
+  if (normalizedLeft && normalizedRight)
+    return normalizedLeft === normalizedRight;
   return left.trim() === right.trim();
 }
 

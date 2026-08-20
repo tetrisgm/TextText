@@ -1063,10 +1063,10 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                 "registered \(self.codexDynamicTools.count, privacy: .public) in-app tools")
             return
         }
-        // Outbound MCP to a server on this Mac. The web view cannot make this
-        // request itself: the page is https in production and the server is
-        // http on loopback, which is mixed content. LocalMcpBridge refuses
-        // anything that is not loopback.
+        #if !TEXTTEXT_STORE
+        // Outbound MCP belongs to the standalone embedded-agent runtime. Store
+        // builds do not include that runtime and must not expose its native
+        // network bridge to web content.
         if body["action"] as? String == "localMcpRequest",
            let requestId = body["requestId"] as? String,
            let urlString = body["url"] as? String,
@@ -1096,6 +1096,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             }
             return
         }
+        #endif
         if body["action"] as? String == "assistantToolResult",
            let callId = body["callId"] as? String,
            let requestId = codexPendingToolCalls.removeValue(forKey: callId) {

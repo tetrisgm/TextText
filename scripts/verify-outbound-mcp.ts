@@ -1,7 +1,10 @@
 // Live proof of outbound MCP: TextText as a client of somebody else's server.
 //
-//   node scripts/mock-mcp-server.mjs &          # the counterpart
-//   npx tsx scripts/verify-outbound-mcp.ts      # against a running dev server
+//   npm run eval:mcp:outbound
+//
+// The default command owns an isolated dev server, deterministic AI provider,
+// and MCP counterpart. Set TEXTTEXT_BASE_URL only when deliberately exercising
+// an already-running development server.
 //
 // It drives the real Settings UI in a real browser, because the question is not
 // "does the module work" but "can a person connect a server, see what it
@@ -21,18 +24,32 @@
 // creates is removed in a finally.
 
 import { chromium, type Browser, type Page } from "playwright";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, type ChildProcess } from "node:child_process";
+import { join } from "node:path";
 
-const BASE = process.env.TEXTTEXT_BASE_URL ?? "http://localhost:3000";
-const MCP_URL = process.env.MOCK_MCP_URL ?? "http://localhost:3998/mcp";
+const OWNS_RUNTIME = !process.env.TEXTTEXT_BASE_URL;
+const APP_PORT = Number(process.env.OUTBOUND_MCP_APP_PORT ?? "3142");
+const AI_PORT = Number(process.env.OUTBOUND_MCP_AI_PORT ?? "3143");
+const MCP_PORT = Number(process.env.OUTBOUND_MCP_SERVER_PORT ?? "3144");
+const EVAL_DIST = ".texttext/outbound-mcp-eval";
+const EVAL_TSCONFIG = ".texttext/outbound-mcp-tsconfig.json";
+const BASE = process.env.TEXTTEXT_BASE_URL ?? `http://localhost:${APP_PORT}`;
+const MCP_URL = process.env.MOCK_MCP_URL ?? `http://localhost:${MCP_PORT}/mcp`;
 const SHOTS = process.env.SHOT_DIR ?? "/tmp/texttext-outbound-mcp";
 const WHO = { email: "fresh-user-aug14@example.com", name: "Fresh" };
 const CONNECTION_NAME = "Mock Design";
 const MOCK_LOG = process.env.MOCK_MCP_LOG ?? "";
+let ownedMcpOutput = "";
 
 /** Lines the mock counterpart has logged, so "it was really called" is evidence
  *  from the other process rather than from our own optimism. */
 function callsSeen(): string[] {
+  if (ownedMcpOutput) {
+    return ownedMcpOutput
+      .split("\n")
+      .filter((line) => line.includes("[mock-mcp]"));
+  }
   if (!MOCK_LOG) return [];
   try {
     return readFileSync(MOCK_LOG, "utf8")
@@ -41,6 +58,101 @@ function callsSeen(): string[] {
   } catch {
     return [];
   }
+}
+
+type OwnedRuntime = {
+  children: ChildProcess[];
+  nextLog: () => string;
+};
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function waitForOwnedServer(runtime: OwnedRuntime): Promise<void> {
+  for (let attempt = 0; attempt < 180; attempt += 1) {
+    const exited = runtime.children.find((child) => child.exitCode !== null);
+    if (exited) {
+      throw new Error(`an outbound evaluator service exited early\n${runtime.nextLog()}`);
+    }
+    try {
+      const response = await fetch(`${BASE}/editor`, { redirect: "manual" });
+      if (response.status < 500) return;
+    } catch {
+      // Still compiling or not listening yet.
+    }
+    await sleep(500);
+  }
+  throw new Error(`the outbound evaluator app did not start\n${runtime.nextLog()}`);
+}
+
+function startOwnedRuntime(): OwnedRuntime {
+  const env = { ...process.env };
+  const evalDistPath = join(process.cwd(), EVAL_DIST);
+  const evalTsconfigPath = join(process.cwd(), EVAL_TSCONFIG);
+  // This exact tree and config are evaluator-owned scratch. A stopped Next dev
+  // process can leave route manifests that answer 404 on the following run, so
+  // every run starts from an empty lane. The alternate tsconfig prevents Next
+  // from adding this disposable tree to the repository's real tsconfig.json.
+  rmSync(evalDistPath, { recursive: true, force: true });
+  writeFileSync(
+    evalTsconfigPath,
+    `${JSON.stringify({ extends: "../tsconfig.json" }, null, 2)}\n`,
+    { mode: 0o600 },
+  );
+  let nextOutput = "";
+  const rememberNext = (chunk: Buffer | string) => {
+    nextOutput = `${nextOutput}${String(chunk)}`.slice(-12_000);
+  };
+  const ai = spawn(process.execPath, ["scripts/mock-ai-provider.mjs"], {
+    cwd: process.cwd(),
+    env: { ...env, TEXTTEXT_MOCK_AI_PORT: String(AI_PORT) },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const mcp = spawn(process.execPath, ["scripts/mock-mcp-server.mjs"], {
+    cwd: process.cwd(),
+    env: { ...env, PORT: String(MCP_PORT) },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  mcp.stdout?.on("data", (chunk) => {
+    ownedMcpOutput += String(chunk);
+  });
+  mcp.stderr?.on("data", (chunk) => {
+    ownedMcpOutput += String(chunk);
+  });
+
+  const next = spawn(
+    process.execPath,
+    [join(process.cwd(), "node_modules/next/dist/bin/next"), "dev", "-p", String(APP_PORT)],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...env,
+        TEXTTEXT_NEXT_DIST_DIR: EVAL_DIST,
+        TEXTTEXT_NEXT_TSCONFIG_PATH: EVAL_TSCONFIG,
+        TEXTTEXT_AI_BASE_URL: `http://localhost:${AI_PORT}/v1`,
+        TEXTTEXT_DEV_AI_KEY: "deterministic-evaluator-key",
+        TEXTTEXT_DEV_AI_PROVIDER: "anthropic",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  next.stdout?.on("data", rememberNext);
+  next.stderr?.on("data", rememberNext);
+  return { children: [next, mcp, ai], nextLog: () => nextOutput };
+}
+
+async function stopOwnedRuntime(runtime: OwnedRuntime | null): Promise<void> {
+  if (!runtime) return;
+  await Promise.all(
+    runtime.children.map(async (child) => {
+      if (child.exitCode !== null) return;
+      const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+      child.kill("SIGTERM");
+      await Promise.race([exited, sleep(5_000)]);
+      if (child.exitCode === null) child.kill("SIGKILL");
+    }),
+  );
+  rmSync(join(process.cwd(), EVAL_DIST), { recursive: true, force: true });
+  rmSync(join(process.cwd(), EVAL_TSCONFIG), { force: true });
 }
 
 let failures = 0;
@@ -55,17 +167,51 @@ function check(label: string, condition: boolean, detail = "") {
 }
 
 async function devSignIn(page: Page) {
-  await page.goto(`${BASE}/editor`, { waitUntil: "networkidle" });
-  const form = page.locator("form.ac-devsignin");
-  await form.waitFor({ timeout: 20000 });
-  await form.locator('input[type="email"]').fill(WHO.email);
-  await form
-    .locator('input[placeholder="Name (optional)"]')
-    .first()
-    .fill(WHO.name)
-    .catch(() => undefined);
-  await form.locator('button[type="submit"]').click();
-  await page.waitForTimeout(1500);
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    await page.goto(`${BASE}/editor`, {
+      // The signed-in workspace holds a long-poll open for change delivery, so
+      // networkidle is not a reachable state after the first attempt.
+      waitUntil: "domcontentloaded",
+      timeout: 60_000,
+    });
+    const form = page.locator("form.ac-devsignin");
+    await form.waitFor({ timeout: 30_000 }).catch(() => undefined);
+    if ((await form.count()) === 0) return;
+    // The form is in the server-rendered HTML before its client submit handler
+    // is hydrated. Clicking that early performs an inert GET to /editor.
+    await page.waitForTimeout(1500);
+    await form.locator('input[type="email"]').fill(WHO.email);
+    await form
+      .locator('input[placeholder="Name (optional)"]')
+      .first()
+      .fill(WHO.name)
+      .catch(() => undefined);
+    await form.locator('button[type="submit"]').click();
+    let signedIn = false;
+    for (let poll = 0; poll < 30; poll += 1) {
+      signedIn = await page
+        .evaluate(async () => {
+          const response = await fetch("/api/auth/session", { cache: "no-store" });
+          const session = (await response.json()) as { user?: unknown };
+          return Boolean(session.user);
+        })
+        .catch(() => false);
+      if (signedIn) break;
+      await page.waitForTimeout(500);
+    }
+    if (!signedIn) {
+      console.log(`    (session was not established, retry ${attempt})`);
+      continue;
+    }
+    await page.goto(`${BASE}/start?to=home`, {
+      waitUntil: "domcontentloaded",
+      timeout: 60_000,
+    });
+    await page.waitForTimeout(1000);
+    if (!page.url().includes("/signin")) return;
+    console.log(`    (sign-in bounced, retry ${attempt})`);
+  }
+  throw new Error(`dev sign-in never took; last page was ${page.url()}`);
 }
 
 // The workspace's own settings URL, resolved from where sign-in actually
@@ -84,7 +230,7 @@ async function resolveSettingsUrl(page: Page): Promise<string> {
 
 async function openSettings(page: Page) {
   const url = await resolveSettingsUrl(page);
-  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60_000 });
   await page
     .locator('h2:text("Connected MCP servers")')
     .waitFor({ timeout: 20000 });
@@ -378,12 +524,20 @@ async function cleanup(page: Page) {
 
 async function main() {
   mkdirSync(SHOTS, { recursive: true });
-  const browser: Browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    viewport: { width: 1280, height: 900 },
-  });
-  const page = await context.newPage();
+  let runtime: OwnedRuntime | null = null;
+  let browser: Browser | null = null;
+  let page: Page | null = null;
+  let cleaned = false;
   try {
+    if (OWNS_RUNTIME) {
+      runtime = startOwnedRuntime();
+      await waitForOwnedServer(runtime);
+    }
+    browser = await chromium.launch({ headless: true });
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 900 },
+    });
+    page = await context.newPage();
     await devSignIn(page);
     await removeAllConnections(page);
     console.log("light theme");
@@ -398,8 +552,14 @@ async function main() {
     await reportsInputRequired(page);
     console.log("cleanup");
     await cleanup(page);
+    cleaned = true;
   } finally {
-    await browser.close();
+    if (page && !cleaned) {
+      await removeAllConnections(page).catch(() => undefined);
+    }
+    await browser?.close();
+    if (runtime && !cleaned) console.error(runtime.nextLog());
+    await stopOwnedRuntime(runtime);
   }
   console.log(
     failures === 0

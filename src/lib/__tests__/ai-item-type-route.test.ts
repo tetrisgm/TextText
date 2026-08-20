@@ -56,6 +56,22 @@ function request(body: unknown) {
   });
 }
 
+function streamedOversizedRequest() {
+  const encoder = new TextEncoder();
+  const chunk = encoder.encode("x".repeat(600_000));
+  return new Request("http://local/api/ai/item-type", {
+    method: "POST",
+    body: new ReadableStream({
+      start(controller) {
+        controller.enqueue(chunk);
+        controller.enqueue(chunk);
+        controller.close();
+      },
+    }),
+    duplex: "half",
+  } as RequestInit & { duplex: "half" });
+}
+
 describe("/api/ai/item-type", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -182,6 +198,19 @@ describe("/api/ai/item-type", () => {
       apiKey: "secret",
     });
     expect((await POST(request({ prompt: "" }))).status).toBe(400);
+    expect(mocks.generateText).not.toHaveBeenCalled();
+  });
+
+  it("rejects declared and streamed oversized requests without spending", async () => {
+    const declared = request({ prompt: "A board" });
+    declared.headers.set("content-length", "1100001");
+    const declaredResponse = await POST(declared);
+    expect(declaredResponse.status).toBe(413);
+    expect(declaredResponse.headers.get("cache-control")).toContain("no-store");
+
+    const streamedResponse = await POST(streamedOversizedRequest());
+    expect(streamedResponse.status).toBe(413);
+    expect(streamedResponse.headers.get("cache-control")).toContain("no-store");
     expect(mocks.generateText).not.toHaveBeenCalled();
   });
 

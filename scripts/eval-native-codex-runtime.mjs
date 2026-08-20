@@ -7,12 +7,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import {
+  countMatchedTopicGroups,
   completedFinalAgentMessage,
   decodeDynamicToolArguments,
   forbiddenNativeEscape,
   hasJSONRPCID,
   jsonRPCResult,
 } from "./eval-native-codex-protocol.mjs";
+import {
+  nativeAssistantTurnPrompt,
+  nativeWorkspaceIndex,
+} from "../src/lib/ai/native-turn.ts";
 
 const candidates = [
   process.env.TEXTTEXT_CODEX_RUNTIME,
@@ -127,48 +132,12 @@ function answerServerRequest(message, result) {
 }
 
 function handleSummaryTool(message, params, argumentsValue) {
-  const expected = ["list_folders", "list_items", "list_items"];
-  const callIndex = scenarioToolCalls.length;
   const tool = params.tool ?? params.name;
-  if (tool !== expected[callIndex]) {
-    unexpectedServerRequest =
-      `summary tool order was ${[...scenarioToolCalls, tool].join(",")}; expected ${expected.join(",")}`;
-    answerServerRequest(message, dynamicToolResult("Probe rejected", false));
-    return;
-  }
-  if (tool === "list_folders" && Object.keys(argumentsValue).length !== 0) {
-    unexpectedServerRequest = "list_folders received unexpected arguments";
-  }
-  if (tool === "list_items") {
-    const expectedFolder = callIndex === 1 ? "Blog" : "Notes";
-    if (
-      argumentsValue.folder_path !== expectedFolder ||
-      Object.keys(argumentsValue).some((key) => !["folder_path", "limit"].includes(key))
-    ) {
-      unexpectedServerRequest = `list_items did not request ${expectedFolder}`;
-    }
-  }
+  unexpectedServerRequest = `workspace-index summary called ${tool} instead of answering directly`;
   scenarioToolCalls.push(tool);
   dynamicToolCalls += 1;
-  if (tool === "list_folders") {
-    answerServerRequest(message, dynamicToolResult(JSON.stringify({
-      folders: [
-        { path: "Blog", name: "Blog", item_count: 2 },
-        { path: "Notes", name: "Notes", item_count: 2 },
-      ],
-    })));
-    return;
-  }
-  const items = argumentsValue.folder_path === "Blog"
-    ? [
-        { id: "agentic-writing", title: "Agentic writing research", kind: "article", updated_at: "2026-08-20T08:00:00Z", status: "draft" },
-        { id: "native-ai", title: "Native AI reliability", kind: "article", updated_at: "2026-08-20T09:00:00Z", status: "draft" },
-      ]
-    : [
-        { id: "onboarding", title: "Simpler AI onboarding", kind: "note", updated_at: "2026-08-19T20:00:00Z", status: "private" },
-        { id: "layout", title: "Pinned workspace rails", kind: "note", updated_at: "2026-08-19T21:00:00Z", status: "private" },
-      ];
-  answerServerRequest(message, dynamicToolResult(JSON.stringify({ items })));
+  void argumentsValue;
+  answerServerRequest(message, dynamicToolResult("Probe rejected", false));
 }
 
 function handleFailureTool(message, params) {
@@ -242,7 +211,7 @@ async function startIsolatedThread(disabledMCPServers) {
     ephemeral: true,
     cwd: isolatedCWD,
     developerInstructions:
-      "You are the embedded TextText Agent inside the TextText writing app. Use only the dynamic tools supplied on this thread for TextText workspace work. Never use installed skills, shell commands, the texttext CLI, a local provider, hosted MCP, or the filesystem. If a required TextText dynamic tool is missing or fails, report one concise error and stop. Do not retry through another integration or narrate provider fallback attempts. For read-only requests, do not change workspace content. For a workspace-wide catch-up or recent-work summary, never call search or read_item. Call list_folders once, then list_items only for the relevant folders, and answer from the returned titles, dates, kinds, and statuses. Make at most four dynamic tool calls for that request.",
+      "You are the embedded TextText Agent inside the TextText writing app. Use only the dynamic tools supplied on this thread for TextText workspace work. Never use installed skills, shell commands, the texttext CLI, a local provider, hosted MCP, or the filesystem. If a required TextText dynamic tool is missing or fails, report one concise error and stop. Do not retry through another integration or narrate provider fallback attempts. For read-only requests, do not change workspace content. For a workspace-wide catch-up or recent-work summary, first look for WORKSPACE_INDEX in the user turn. When it is present, answer immediately from that current visible index and make no tool calls. Only when WORKSPACE_INDEX is absent may you call list_folders once, then list_items for the relevant folders. Never call search or read_item for that request, and make at most four dynamic tool calls.",
     config: { mcp_servers: disabledMCPServers },
     dynamicTools: [
       {
@@ -280,7 +249,17 @@ async function startIsolatedThread(disabledMCPServers) {
   return { threadID, threadStart };
 }
 
-async function runTurn({ threadID, prompt, expectedAnswer, expectedTools, label }) {
+async function runTurn({
+  threadID,
+  prompt,
+  expectedAnswer,
+  expectedMentions = [],
+  expectedTopicGroups = [],
+  minimumTopicGroups = expectedTopicGroups.length,
+  expectedTools,
+  label,
+  budgetMS = turnBudgetMS,
+}) {
   scenario = label;
   scenarioToolCalls = [];
   const finalOffset = finalAgentMessages.length;
@@ -291,10 +270,10 @@ async function runTurn({ threadID, prompt, expectedAnswer, expectedTools, label 
     input: [{ type: "text", text: prompt }],
     approvalPolicy: "never",
   });
-  const completed = await withTimeout(completedNotification, `${label} turn`, turnBudgetMS);
+  const completed = await withTimeout(completedNotification, `${label} turn`, budgetMS);
   const latencyMS = Math.round(performance.now() - startedAt);
-  if (latencyMS > turnBudgetMS) {
-    throw new Error(`${label} turn took ${latencyMS}ms, over ${turnBudgetMS}ms`);
+  if (latencyMS > budgetMS) {
+    throw new Error(`${label} turn took ${latencyMS}ms, over ${budgetMS}ms`);
   }
   if (completed?.turn?.status !== "completed") {
     throw new Error(
@@ -303,8 +282,21 @@ async function runTurn({ threadID, prompt, expectedAnswer, expectedTools, label 
   }
   const answers = finalAgentMessages.slice(finalOffset);
   const answer = answers.at(-1)?.trim() ?? "";
-  if (answer !== expectedAnswer) {
+  if (expectedAnswer !== undefined && answer !== expectedAnswer) {
     throw new Error(`${label} turn returned an unexpected final answer`);
+  }
+  const normalizedAnswer = answer.toLocaleLowerCase();
+  const missingMention = expectedMentions.find(
+    (mention) => !normalizedAnswer.includes(mention.toLocaleLowerCase()),
+  );
+  if (missingMention) {
+    throw new Error(`${label} turn did not mention ${missingMention}`);
+  }
+  const matchedTopicGroups = countMatchedTopicGroups(answer, expectedTopicGroups);
+  if (matchedTopicGroups < minimumTopicGroups) {
+    throw new Error(
+      `${label} turn covered ${matchedTopicGroups} grounded topics; expected at least ${minimumTopicGroups}`,
+    );
   }
   if (answers.length !== 1) {
     throw new Error(`${label} turn emitted ${answers.length} final answers`);
@@ -343,17 +335,62 @@ try {
     effectiveMCPServers.map((name) => [name, { enabled: false }]),
   );
 
+  const summaryIndex = nativeWorkspaceIndex({
+    folders: [
+      { id: "blog", name: "Blog" },
+      { id: "notes", name: "Notes" },
+    ],
+    posts: [
+      {
+        id: "native-ai",
+        folderId: "blog",
+        type: "article",
+        title: "Native AI reliability",
+        excerpt: "Making workspace summaries fast, bounded, and dependable.",
+        status: "draft",
+        updatedAt: "2026-08-20T09:00:00Z",
+      },
+      {
+        id: "agentic-writing",
+        folderId: "blog",
+        type: "article",
+        title: "Agentic writing research",
+        excerpt: "Clear writing workflows inspired by strong visual agent tools.",
+        status: "draft",
+        updatedAt: "2026-08-20T08:00:00Z",
+      },
+      {
+        id: "layout",
+        folderId: "notes",
+        type: "note",
+        title: "Pinned workspace rails",
+        excerpt: "Keep navigation and the assistant fixed while documents scroll.",
+        status: "draft",
+        updatedAt: "2026-08-19T21:00:00Z",
+      },
+    ],
+  });
+  if (!summaryIndex) throw new Error("native workspace index was empty");
+
   stage = "summary thread/start";
   const summaryThread = await startIsolatedThread(disabledMCPServers);
   stage = "summary turn";
   const summaryLatencyMS = await runTurn({
     threadID: summaryThread.threadID,
     label: "summary",
-    expectedTools: ["list_folders", "list_items", "list_items"],
-    expectedAnswer:
-      "Recent work centers on agentic writing research, native AI reliability, simpler AI onboarding, and pinned workspace rails.",
-    prompt:
-      "Summarize what I have been working on recently. Call list_folders exactly once, then list_items exactly once for Blog and exactly once for Notes. Do not inspect files or use a skill, CLI, MCP server, shell, search, or read_item. After those tools succeed, reply with exactly: Recent work centers on agentic writing research, native AI reliability, simpler AI onboarding, and pinned workspace rails.",
+    budgetMS: 10_000,
+    expectedTools: [],
+    minimumTopicGroups: 2,
+    expectedTopicGroups: [
+      ["native ai", "native assistant", "reliability", "workspace summaries"],
+      ["agentic writing", "writing workflow", "design tools"],
+      ["pinned", "fixed", "workspace rails", "navigation", "assistant", "scroll"],
+    ],
+    prompt: nativeAssistantTurnPrompt({
+      context: "The person is at the TextText workspace root.",
+      request: "Summarize what I have been working on recently.",
+      workspaceIndex: summaryIndex,
+    }),
   });
 
   stage = "failure thread/start";
@@ -368,8 +405,8 @@ try {
       "Summarize what I have been working on recently. Call list_folders once. If it fails, do not retry and do not use any other tool or integration. Reply with exactly: I could not read your TextText workspace. Try again.",
   });
 
-  if (numericToolRequestIDs.length !== 4 || numericToolRequestIDs.some((id) => !Number.isInteger(id))) {
-    throw new Error("dynamic tool responses did not preserve four numeric JSON-RPC ids");
+  if (numericToolRequestIDs.length !== 1 || numericToolRequestIDs.some((id) => !Number.isInteger(id))) {
+    throw new Error("dynamic tool responses did not preserve the numeric JSON-RPC id");
   }
 
   console.log(JSON.stringify({
@@ -380,7 +417,7 @@ try {
     threadStartedObserved: true,
     summaryTurnStatus: "completed",
     summaryLatencyMS,
-    summaryDynamicToolCalls: 3,
+    summaryDynamicToolCalls: 0,
     failureTurnStatus: "completed",
     failureLatencyMS,
     failureDynamicToolCalls: 1,

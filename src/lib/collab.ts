@@ -17,12 +17,14 @@ import {
 import * as Y from "yjs";
 import { db } from "@/lib/db/client";
 import {
+  actionAudit,
   blogs,
   collabPresence,
   collabState,
   collabUpdates,
   posts,
 } from "@/lib/db/schema";
+import { auditValues, type AuditEntry } from "@/lib/audit";
 import {
   applyDocumentMutation,
   documentText,
@@ -237,19 +239,49 @@ export async function appendCollabUpdate(
   postId: string,
   updateBase64: string,
   clientEpoch: number,
+  audit?: AuditEntry,
 ): Promise<{ seq: number } | { retired: true }> {
   if (!db) throw new Error("collab needs a database");
-  const result = await db.execute(sql`
-    INSERT INTO ${collabUpdates} (post_id, "update", epoch)
-    SELECT ${postId}::uuid, ${updateBase64}, ${clientEpoch}::int
-    WHERE ${clientEpoch}::int = (
-      SELECT epoch FROM ${collabState}
-      WHERE post_id = ${postId}::uuid
-        AND baseline_update IS NOT NULL
-        AND baseline_revision IS NOT NULL
-    )
-    RETURNING seq
-  `);
+  const result = audit
+    ? await db.execute(
+        (() => {
+          const values = auditValues(audit);
+          return sql`
+            WITH appended AS (
+              INSERT INTO ${collabUpdates} (post_id, "update", epoch)
+              SELECT ${postId}::uuid, ${updateBase64}, ${clientEpoch}::int
+              WHERE ${clientEpoch}::int = (
+                SELECT epoch FROM ${collabState}
+                WHERE post_id = ${postId}::uuid
+                  AND baseline_update IS NOT NULL
+                  AND baseline_revision IS NOT NULL
+              )
+              RETURNING seq
+            ), audited AS (
+              INSERT INTO ${actionAudit}
+                (actor_user_id, actor_type, action_name, target_type,
+                 target_id, input_summary, output_summary)
+              SELECT ${values.actorUserId}::uuid, ${values.actorType},
+                     ${values.actionName}, ${values.targetType},
+                     ${values.targetId}, ${values.inputSummary},
+                     ${values.outputSummary}
+              FROM appended
+            )
+            SELECT seq FROM appended
+          `;
+        })(),
+      )
+    : await db.execute(sql`
+        INSERT INTO ${collabUpdates} (post_id, "update", epoch)
+        SELECT ${postId}::uuid, ${updateBase64}, ${clientEpoch}::int
+        WHERE ${clientEpoch}::int = (
+          SELECT epoch FROM ${collabState}
+          WHERE post_id = ${postId}::uuid
+            AND baseline_update IS NOT NULL
+            AND baseline_revision IS NOT NULL
+        )
+        RETURNING seq
+      `);
   // A row means the fence matched and the append landed. `seq` is a bigserial,
   // which neon-http returns as a string, so coerce rather than type-check.
   const raw = (result.rows[0] as { seq?: number | string } | undefined)?.seq;
@@ -356,11 +388,13 @@ async function loadCurrentCollabDocument(
 export async function applyLiveDocumentMutation(
   postId: string,
   mutation: DocumentMutation,
+  audit?: AuditEntry,
 ): Promise<{
   snapshot: DocumentSnapshot;
   epoch: number;
   seq: number;
   applied: boolean;
+  auditRecorded: boolean;
 } | null> {
   if (!db) return null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -379,6 +413,11 @@ export async function applyLiveDocumentMutation(
           epoch: loaded.epoch,
           seq: await latestCollabSeq(postId, loaded.epoch),
           applied: false,
+          // An operation id present in the live document means its delta was
+          // accepted on an earlier attempt. Agent deltas and their audit rows
+          // are appended atomically, so a retry must not ask savePost to write
+          // the same audit a second time.
+          auditRecorded: Boolean(mutation.operationId),
         };
       }
       const update = Y.encodeStateAsUpdate(loaded.document, before);
@@ -386,6 +425,7 @@ export async function applyLiveDocumentMutation(
         postId,
         Buffer.from(update).toString("base64"),
         loaded.epoch,
+        audit,
       );
       if ("retired" in appended) continue;
       return {
@@ -393,6 +433,7 @@ export async function applyLiveDocumentMutation(
         epoch: loaded.epoch,
         seq: appended.seq,
         applied: true,
+        auditRecorded: Boolean(audit),
       };
     } finally {
       loaded.document.destroy();

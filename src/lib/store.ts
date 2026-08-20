@@ -108,11 +108,9 @@ import {
   type BookmarkCaptureGeneration,
 } from "./bookmark-capture-generation";
 import {
-  CHATGPT_CONNECTOR_URL,
   CLAUDE_PLUGIN_INSTALL_COMMAND,
   CODEX_PLUGIN_INSTALL_COMMAND,
   TEXTTEXT_HOSTED_MCP_URL,
-  TEXTTEXT_TOKEN_PROMPT_COMMAND,
 } from "./agent-integrations";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { normalizeTag, normalizeTags } from "./tags";
@@ -242,6 +240,11 @@ export type ItemCommentActorContext = {
   actorUserId?: string | null;
   actorType: AuditActorType;
   actorName?: string | null;
+};
+export type ItemCommentMutationOptions = {
+  /** Override the default comment audit so an external command can preserve
+   * its own attributed action name inside the mutation's atomic statement. */
+  audit?: AuditEntry;
 };
 export type ItemComment = {
   id: string;
@@ -478,7 +481,9 @@ function postListSelection() {
     captureUrl: sql<string | null>`${posts.capture}->>'url'`,
     captureTitle: sql<string | null>`${posts.capture}->>'title'`,
     captureDescription: sql<string | null>`${posts.capture}->>'description'`,
-    captureScreenshotUrl: sql<string | null>`${posts.capture}->>'screenshotUrl'`,
+    captureScreenshotUrl: sql<
+      string | null
+    >`${posts.capture}->>'screenshotUrl'`,
     linkLabel: sql<string | null>`${posts.links}->0->>'label'`,
     linkHref: sql<string | null>`${posts.links}->0->>'href'`,
   };
@@ -538,7 +543,10 @@ export async function getBlogByUsername(
   return getBlogByUsernameCached(username);
 }
 
-async function selectPosts(handle: string, publishedOnly: boolean): Promise<Post[]> {
+async function selectPosts(
+  handle: string,
+  publishedOnly: boolean,
+): Promise<Post[]> {
   const rows = await db!
     .select(postListSelection())
     .from(posts)
@@ -566,9 +574,7 @@ async function selectPosts(handle: string, publishedOnly: boolean): Promise<Post
       desc(posts.createdAt),
     );
   const mapped = rows.map(mapPostList);
-  return publishedOnly
-    ? mapped.map(withoutPersonalWorkspaceMetadata)
-    : mapped;
+  return publishedOnly ? mapped.map(withoutPersonalWorkspaceMetadata) : mapped;
 }
 
 function pinnedFirst(items: Post[]): Post[] {
@@ -733,7 +739,12 @@ export async function getAdjacentPublishedPosts(
         }
       : null,
     next: next
-      ? { id: next.id, folderId: next.folderId, slug: next.slug, title: next.title }
+      ? {
+          id: next.id,
+          folderId: next.folderId,
+          slug: next.slug,
+          title: next.title,
+        }
       : null,
   };
 }
@@ -828,7 +839,10 @@ async function publicPostLocationById(
     )
     .limit(1);
   if (!row || !isPublishedPublicPost(mapPost(row.post))) return null;
-  return { folderPath: row.folderPath, post: withoutPersonalWorkspaceMetadata(mapPost(row.post)) };
+  return {
+    folderPath: row.folderPath,
+    post: withoutPersonalWorkspaceMetadata(mapPost(row.post)),
+  };
 }
 
 /**
@@ -1028,20 +1042,13 @@ const STARTER_AGENT_GUIDES = [
   {
     slug: "connect-your-ai-tools",
     title: "Connect your AI tools",
-    body: `TextText works beside the AI tools you already use. Each connected agent appears in live documents with its own name and avatar.
+    body: `TextText works beside the AI tools you already use. The in-app assistant stays beside the document, while local Claude and Codex plugins work through the signed-in TextText CLI.
 
 ## Connect Claude Code or Codex securely
 
-Create a workspace token at **Connect**. Their plugin installers do not ask for
-generic bearer tokens. In Terminal, run this hidden prompt and paste the token
-when it asks:
-
-\`\`\`zsh
-${TEXTTEXT_TOKEN_PROMPT_COMMAND}
-\`\`\`
-
-The prompt keeps the token out of the command and shell history. Start the
-client from that same Terminal so it can read \`TEXTTEXT_WORKSPACE_TOKEN\`.
+The local plugins use the TextText command bundled with the standalone Mac app.
+Keep TextText in Applications and sign in once. Local work needs no workspace
+token and no server setup.
 
 ## Claude
 
@@ -1051,8 +1058,8 @@ Install the TextText plugin from Terminal:
 ${CLAUDE_PLUGIN_INSTALL_COMMAND}
 \`\`\`
 
-Run \`claude\` from the same Terminal, then open \`/mcp\` to confirm TextText
-is connected.
+Ask Claude to list your TextText workspace. Then open a scratch note and ask it
+to add a heading called **Connection verified** without changing anything else.
 
 For a Claude surface that permits person-supplied bearer credentials, add
 ${TEXTTEXT_HOSTED_MCP_URL}, then give it a workspace token from **Connect**.
@@ -1066,34 +1073,27 @@ Install the TextText plugin from Terminal:
 ${CODEX_PLUGIN_INSTALL_COMMAND}
 \`\`\`
 
-Run \`codex\` from the same Terminal, then open \`/mcp\` to confirm TextText is
-connected. Codex appears as **Codex** while it works in an open document.
+Ask Codex to list your TextText workspace. Then open a scratch note and ask it
+to add a heading called **Connection verified** without changing anything else.
 
-## ChatGPT
+## Remote MCP clients
 
-If your ChatGPT plan, role, and workspace policy permit a custom MCP app with a
-person-supplied bearer credential, open ${CHATGPT_CONNECTOR_URL}, add
-${TEXTTEXT_HOSTED_MCP_URL}, and give it a workspace token from **Connect**.
-An OAuth-only ChatGPT surface cannot connect to TextText today.
-
-ChatGPT appears as **ChatGPT** while it works in an open document.
-
-## Other MCP clients
-
-Add ${TEXTTEXT_HOSTED_MCP_URL} to any client that supports remote MCP with a bearer credential. Create a workspace token at **Connect**, paste it into the client, and give the connection a descriptive name. TextText uses that token name when the client is not Claude, Codex, ChatGPT, or Cursor.
+Add ${TEXTTEXT_HOSTED_MCP_URL} only to a client that supports remote MCP with a bearer credential. Create a workspace token at **Connect**, save it in the client's protected credential field, and give the connection a descriptive name. If the client offers no bearer-token field, use the local Claude or Codex plugin instead.
 
 ## Check it worked
 
-Ask your agent: "List my TextText library." If it answers with your items, the connection is live. From then on the agent appears with its own name and avatar whenever it works in a document you have open.
+The connection is verified when the requested heading appears in the open note.
+Read the change, then edit it directly or ask for a smaller correction if you
+do not want to keep the test text.
 
 ## What agents can do
 
-Connected agents can create and find documents, update or append content, move items, publish articles, manage access, add comments, recapture bookmarks, and work in the same live document as you. Privacy and audit rules apply no matter which client performs the action.`,
+The API-key in-app assistant can create and find documents, update or append content, organize items, and use other tools that do not need a confirmation gate. The standalone native assistant and hosted MCP add guarded publishing, access management, and comments. The local Claude and Codex plugin handles document create, read, update, and append unless hosted MCP is connected separately. Privacy and audit rules apply no matter which client performs the action.`,
   },
   {
     slug: "use-texttext-as-a-live-ai-canvas",
     title: "Use TextText as a live AI canvas",
-    body: `Keep a TextText document open beside Claude, Codex, ChatGPT, or another connected agent. The document stays the main surface. The agent assists inside it.
+    body: `Keep a TextText document open beside Claude, Codex, or another supported agent. The document stays the main surface. The agent assists inside it.
 
 ## Start with one document
 
@@ -1101,7 +1101,7 @@ Tell the agent:
 
 > Use TextText as the live canvas for this task. Find the matching document or create it once, tell me which document to open, and keep that same item current as our work develops. Preserve my concurrent edits, reconcile conflicts, and use stable idempotency keys for every append that may retry.
 
-Open the item in TextText. When the agent writes, its provider name and avatar appear with the other collaborators. You can keep typing while it works.
+Open the item in TextText. The agent writes into that same document. Read back each completed change before continuing, and ask for a smaller correction when needed.
 
 ## Capture useful AI conversations
 
@@ -1169,7 +1169,9 @@ const WORKSPACE_STARTER_POST_SLUGS = [
 ] as const;
 
 export function isWorkspaceStarterPost(post: Pick<Post, "slug">): boolean {
-  return (WORKSPACE_STARTER_POST_SLUGS as readonly string[]).includes(post.slug);
+  return (WORKSPACE_STARTER_POST_SLUGS as readonly string[]).includes(
+    post.slug,
+  );
 }
 
 function starterAgentGuideValues(blogId: string, folderId: string) {
@@ -1346,9 +1348,7 @@ export async function setFolderTemplate(
   const blogId = await blogIdFor(handle);
   const template = await getDocumentTemplate(blogId, reference);
   if (!template) {
-    throw new Error(
-      `Unknown template ${reference.id}@${reference.version}`,
-    );
+    throw new Error(`Unknown template ${reference.id}@${reference.version}`);
   }
   const updated = await db
     .update(folders)
@@ -1428,10 +1428,14 @@ export async function retemplateFolderItems(
  * Bookmarks waiting for a capture agent (normally the Mac app). Each entry
  * carries the URL to capture: the first link's href, set at creation.
  */
-export async function listPendingCaptures(
-  handle: string,
-): Promise<
-  Array<{ id: string; slug: string; title: string; url: string; generation?: string }>
+export async function listPendingCaptures(handle: string): Promise<
+  Array<{
+    id: string;
+    slug: string;
+    title: string;
+    url: string;
+    generation?: string;
+  }>
 > {
   if (!db) return [];
   const blogId = await blogIdFor(handle);
@@ -1498,7 +1502,11 @@ export async function saveBookmarkCapture(
     .select()
     .from(posts)
     .where(
-      and(eq(posts.id, postId), eq(posts.blogId, blogId), isNull(posts.deletedAt)),
+      and(
+        eq(posts.id, postId),
+        eq(posts.blogId, blogId),
+        isNull(posts.deletedAt),
+      ),
     )
     .limit(1);
   const row = existing[0];
@@ -1606,10 +1614,7 @@ export async function saveBookmarkCapture(
     .where(
       opts.expectedRevision === undefined
         ? eq(posts.id, row.id)
-        : and(
-            eq(posts.id, row.id),
-            eq(posts.revision, opts.expectedRevision),
-          ),
+        : and(eq(posts.id, row.id), eq(posts.revision, opts.expectedRevision)),
     )
     .returning();
   return updated[0] ? mapPost(updated[0]) : null;
@@ -1638,7 +1643,11 @@ export async function prepareBookmarkCaptureGeneration(
     return { ok: false, reason: "missing", message: "Bookmark not found" };
   }
   const blogId = await blogIdFor(handle);
-  for (let attempt = 0; attempt < CAPTURE_GENERATION_CAS_ATTEMPTS; attempt += 1) {
+  for (
+    let attempt = 0;
+    attempt < CAPTURE_GENERATION_CAS_ATTEMPTS;
+    attempt += 1
+  ) {
     const rows = await db
       .select()
       .from(posts)
@@ -1688,7 +1697,11 @@ export async function prepareBookmarkCaptureGeneration(
     });
     const updated = await db
       .update(posts)
-      .set({ capture: storage, captureStatus: "pending", updatedAt: new Date() })
+      .set({
+        capture: storage,
+        captureStatus: "pending",
+        updatedAt: new Date(),
+      })
       .where(
         and(
           eq(posts.id, row.id),
@@ -1724,7 +1737,11 @@ export async function saveBookmarkCaptureGeneration(
     return { ok: false, reason: "missing", message: "Bookmark not found" };
   }
   const blogId = await blogIdFor(handle);
-  for (let attempt = 0; attempt < CAPTURE_GENERATION_CAS_ATTEMPTS; attempt += 1) {
+  for (
+    let attempt = 0;
+    attempt < CAPTURE_GENERATION_CAS_ATTEMPTS;
+    attempt += 1
+  ) {
     const rows = await db
       .select()
       .from(posts)
@@ -1765,12 +1782,17 @@ export async function saveBookmarkCaptureGeneration(
     if (opts.isFinal) {
       const finalized = finalizeCaptureGeneration(staged.storage, generationId);
       if (!finalized.ok) return finalized;
-      const saved = await saveBookmarkCapture(handle, postId, finalized.capture, {
-        readableMarkdown: finalized.readableMarkdown,
-        replaceCapture: true,
-        expectedRevision: row.revision,
-        completedGeneration: generationId,
-      });
+      const saved = await saveBookmarkCapture(
+        handle,
+        postId,
+        finalized.capture,
+        {
+          readableMarkdown: finalized.readableMarkdown,
+          replaceCapture: true,
+          expectedRevision: row.revision,
+          completedGeneration: generationId,
+        },
+      );
       if (saved) return { ok: true, post: saved, finalized: true };
       continue;
     }
@@ -1867,10 +1889,12 @@ function mergeBookmarkCaptureAssets(
 ): BookmarkCaptureAsset[] {
   const byOriginalUrl = new Map<string, BookmarkCaptureAsset>();
   for (const asset of existing ?? []) {
-    if (asset.originalUrl && asset.url) byOriginalUrl.set(asset.originalUrl, asset);
+    if (asset.originalUrl && asset.url)
+      byOriginalUrl.set(asset.originalUrl, asset);
   }
   for (const asset of incoming ?? []) {
-    if (asset.originalUrl && asset.url) byOriginalUrl.set(asset.originalUrl, asset);
+    if (asset.originalUrl && asset.url)
+      byOriginalUrl.set(asset.originalUrl, asset);
   }
   return [...byOriginalUrl.values()];
 }
@@ -1881,7 +1905,8 @@ function bookmarkReadableMarkdown(
 ): string {
   const replacements = new Map<string, string>();
   for (const asset of assets ?? []) {
-    if (asset.originalUrl && asset.url) replacements.set(asset.originalUrl, asset.url);
+    if (asset.originalUrl && asset.url)
+      replacements.set(asset.originalUrl, asset.url);
   }
   return localizeRemoteMarkdownImages(readableMarkdown, replacements).trim();
 }
@@ -1900,7 +1925,9 @@ export function shouldRefreshBookmarkReadable(
     .map((asset) => asset.url?.trim())
     .filter((url): url is string => Boolean(url));
   if (assetUrls.length === 0) return false;
-  const nextSavedImageCount = assetUrls.filter((url) => nextBody.includes(url)).length;
+  const nextSavedImageCount = assetUrls.filter((url) =>
+    nextBody.includes(url),
+  ).length;
   const currentSavedImageCount = assetUrls.filter((url) =>
     currentBody.includes(url),
   ).length;
@@ -1927,9 +1954,11 @@ export function shouldReplaceBookmarkReadableAfterRecapture(
 }
 
 function markdownImageCount(markdown: string): number {
-  return markdown.match(
-    /!\[[^\]]*]\(\s*<?(?:https?:\/\/|\/|\.\/|\.\.\/)[^\s<>)]+>?/gi,
-  )?.length ?? 0;
+  return (
+    markdown.match(
+      /!\[[^\]]*]\(\s*<?(?:https?:\/\/|\/|\.\/|\.\.\/)[^\s<>)]+>?/gi,
+    )?.length ?? 0
+  );
 }
 
 /** Enter a fresh bookmark into the capture pipeline. */
@@ -2005,7 +2034,11 @@ export async function setPostFolder(
     .select()
     .from(posts)
     .where(
-      and(eq(posts.id, postId), eq(posts.blogId, blogId), isNull(posts.deletedAt)),
+      and(
+        eq(posts.id, postId),
+        eq(posts.blogId, blogId),
+        isNull(posts.deletedAt),
+      ),
     )
     .limit(1);
   const row = existing[0];
@@ -2055,17 +2088,18 @@ export async function movePostFile(
     expectedRevision?: number;
   },
   audit?: AuditEntry,
-): Promise<
-  | { post: Post; changed: boolean; previousSlug: string }
-  | null
-> {
+): Promise<{ post: Post; changed: boolean; previousSlug: string } | null> {
   if (!db) return null;
   const blogId = await blogIdFor(handle);
   const existing = await db
     .select()
     .from(posts)
     .where(
-      and(eq(posts.id, postId), eq(posts.blogId, blogId), isNull(posts.deletedAt)),
+      and(
+        eq(posts.id, postId),
+        eq(posts.blogId, blogId),
+        isNull(posts.deletedAt),
+      ),
     )
     .limit(1);
   const row = existing[0];
@@ -2180,7 +2214,11 @@ export async function movePostFile(
       // already wrapped in parens, so `AS ${q}` yields the single-paren CTE body
       // `AS (update ...)`. Wrapping it again would produce `AS ((update ...))`,
       // which Postgres rejects as a syntax error.
-      const updateQuery = db.update(posts).set(set).where(where).returning({ id: posts.id });
+      const updateQuery = db
+        .update(posts)
+        .set(set)
+        .where(where)
+        .returning({ id: posts.id });
       const auditCte = auditCteFrom(audit, "changed", sql`changed.id::text`);
       const result = await db.execute(sql`
         WITH changed AS ${updateQuery}, audit AS (${auditCte})
@@ -2188,7 +2226,11 @@ export async function movePostFile(
       `);
       movedId = (result.rows[0] as { id?: string } | undefined)?.id;
     } else {
-      const updated = await db.update(posts).set(set).where(where).returning({ id: posts.id });
+      const updated = await db
+        .update(posts)
+        .set(set)
+        .where(where)
+        .returning({ id: posts.id });
       movedId = updated[0]?.id;
     }
     if (movedId) {
@@ -2273,7 +2315,46 @@ type CreateDraftOptions = {
   representation?: FileRepresentation;
   template?: { id: string; version: number };
   audit?: AuditEntry;
+  /**
+   * A claim already created by claimIdempotencyKey. When supplied, resolving
+   * that claim, inserting the final document, and writing its audit row happen
+   * in one SQL statement. An ambiguous response can therefore never leave a
+   * committed item behind an unresolved key that a later retry may reclaim.
+   */
+  idempotencyKey?: string;
+  /**
+   * Initial draft content for callers that already know the complete item.
+   * The store persists this content and its audit in one statement, avoiding
+   * a visible placeholder followed by a second, separately audited save.
+   */
+  initial?: Partial<
+    Pick<
+      Post,
+      | "type"
+      | "slug"
+      | "title"
+      | "excerpt"
+      | "accent"
+      | "cover"
+      | "coverCaption"
+      | "coverHeight"
+      | "body"
+      | "starred"
+      | "gallery"
+      | "links"
+      | "tags"
+      | "videoUrl"
+      | "venue"
+      | "duration"
+    >
+  >;
 };
+
+function postTypeBelongsInFolder(type: PostType, mode: FolderMode): boolean {
+  if (mode === "notes") return type === "note";
+  if (mode === "bookmarks") return type === "bookmark";
+  return type === "article" || type === "project" || type === "talk";
+}
 
 /**
  * Create an empty draft directly inside a specific folder (a File Provider
@@ -2289,47 +2370,134 @@ export async function createDraftInFolder(
   if (!db) throw new Error("createDraftInFolder requires DATABASE_URL");
   const folder = await getFolderById(handle, folderId);
   if (!folder) throw new Error("Folder not found");
-  const template =
-    options.template ??
+  const template = options.template ??
     folder.defaultTemplate ?? {
       id: legacyTemplateId(defaultPostTypeForFolderMode(folder.mode)),
       version: 1,
     };
-  const document = emptyDocumentSnapshot(template);
-  const type = defaultPostTypeForFolderMode(folder.mode);
+  const type =
+    options.initial?.type ?? defaultPostTypeForFolderMode(folder.mode);
+  if (!postTypeBelongsInFolder(type, folder.mode)) {
+    throw new Error("That item kind does not belong in this folder");
+  }
   const blogId = await blogIdFor(handle);
-  const slug = `untitled-${Date.now().toString(36)}`;
-  const inserted = await db
+  const id = crypto.randomUUID();
+  const slug = sanitizePostSlug(
+    options.initial?.slug ?? `untitled-${Date.now().toString(36)}`,
+    "post",
+  );
+  const seed: Post = {
+    type,
+    slug,
+    title: options.initial?.title ?? "",
+    excerpt: options.initial?.excerpt,
+    accent: options.initial?.accent,
+    cover: options.initial?.cover,
+    coverCaption: options.initial?.coverCaption,
+    coverHeight: options.initial?.coverHeight,
+    body: options.initial?.body ?? "",
+    starred: options.initial?.starred ?? false,
+    gallery: options.initial?.gallery,
+    links: options.initial?.links,
+    tags: normalizeTags(options.initial?.tags),
+    videoUrl: options.initial?.videoUrl,
+    venue: options.initial?.venue,
+    duration: options.initial?.duration,
+    status: "draft",
+    pinned: false,
+    folderId: folder.id,
+    template,
+    visibility: "private",
+  };
+  const legacyDocument = documentFromLegacyPost(seed);
+  const document = validateDocumentSnapshot({
+    ...legacyDocument,
+    presentation: {
+      ...legacyDocument.presentation,
+      template,
+    },
+  });
+  const projection = legacyProjectionFromDocument(document);
+  const audit = options.audit
+    ? { ...options.audit, targetId: id }
+    : {
+        actorType: "human" as const,
+        actionName: "create_document",
+        targetType: "item" as const,
+        targetId: id,
+        outputSummary: `${template.id}@${template.version}`,
+      };
+  // Make a keyed insert depend on successfully resolving the exact unresolved
+  // claim. If the claim vanished or was resolved concurrently, `claimed` is
+  // empty and the scalar blog id below becomes null, so the NOT NULL constraint
+  // aborts the whole statement (including the claim update and audit).
+  const insertBlogId = options.idempotencyKey
+    ? sql<string>`(SELECT blog_id FROM claimed LIMIT 1)`
+    : blogId;
+  const insertQuery = db
     .insert(posts)
     .values({
-      blogId,
+      id,
+      blogId: insertBlogId,
       folderId: folder.id,
-      representation:
-        options.representation ?? DEFAULT_FILE_REPRESENTATION,
+      representation: options.representation ?? DEFAULT_FILE_REPRESENTATION,
       document,
       visibility: "private",
       templateId: template.id,
       templateVersion: template.version,
       type,
       slug,
-      title: "",
-      excerpt: "",
-      body: "",
-      wordCount: 0,
+      title: projection.title,
+      excerpt: projection.excerpt || null,
+      accent: projection.accent,
+      cover: projection.cover,
+      coverCaption: projection.coverCaption,
+      coverHeight: projection.coverHeight,
+      gallery: projection.gallery,
+      links: projection.links,
+      tags: projection.tags,
+      videoUrl: projection.videoUrl,
+      venue: projection.venue,
+      duration: projection.duration,
+      body: projection.body,
+      wordCount: wordCountForMarkdown(projection.body),
       status: "draft",
+      pinned: false,
+      starred: seed.starred,
+      publishedAt: null,
     })
-    .returning();
-  const created = mapPost(inserted[0]);
-  await recordAction(
-    options.audit ?? {
-      actorType: "human",
-      actionName: "create_document",
-      targetType: "item",
-      targetId: created.id,
-      outputSummary: `${template.id}@${template.version}`,
-    },
-  );
-  return created;
+    .returning({ id: posts.id });
+  const auditCte = auditCteFrom(audit, "changed", sql`changed.id::text`);
+  try {
+    const result = options.idempotencyKey
+      ? await db.execute(sql`
+          WITH claimed AS (
+            UPDATE ${idempotencyKeys}
+            SET result_kind = 'post', result_id = ${id}
+            WHERE blog_id = ${blogId}
+              AND key = ${options.idempotencyKey}
+              AND result_id IS NULL
+            RETURNING blog_id
+          ), changed AS ${insertQuery}, audit AS (${auditCte})
+          SELECT id FROM changed
+        `)
+      : await db.execute(sql`
+          WITH changed AS ${insertQuery}, audit AS (${auditCte})
+          SELECT id FROM changed
+        `);
+    const createdId = (result.rows[0] as { id?: string } | undefined)?.id;
+    if (!createdId) throw new Error("The draft could not be created");
+    const [fresh] = await db
+      .select()
+      .from(posts)
+      .where(and(eq(posts.id, createdId), eq(posts.blogId, blogId)))
+      .limit(1);
+    if (!fresh) throw new Error("The created draft is unavailable");
+    return mapPost(fresh);
+  } catch (error) {
+    if (isPostsSlugConflict(error)) throw new Error("That URL is already used");
+    throw error;
+  }
 }
 
 function cleanFolderMode(value: string | null): FolderMode {
@@ -2359,7 +2527,9 @@ async function workspaceFoldersByBlogId(blogId: string): Promise<Folder[]> {
 // Provision ALL system folders: one multi-row INSERT with ON CONFLICT DO
 // NOTHING settles races on the (blog, path) partial unique index, same pattern
 // as blogs, then one SELECT reads the settled rows back in order.
-export async function ensureWorkspaceFolders(blogId: string): Promise<Folder[]> {
+export async function ensureWorkspaceFolders(
+  blogId: string,
+): Promise<Folder[]> {
   if (!db) throw new Error(NO_DATABASE);
   await db
     .insert(folders)
@@ -2371,8 +2541,7 @@ export async function ensureWorkspaceFolders(blogId: string): Promise<Folder[]> 
         mode: folder.mode,
         position: folder.position,
         parentId: folder.parentId,
-        defaultTemplateId:
-          folder.defaultTemplate?.id ?? "texttext.article",
+        defaultTemplateId: folder.defaultTemplate?.id ?? "texttext.article",
         defaultTemplateVersion: folder.defaultTemplate?.version ?? 1,
       })),
     )
@@ -2391,7 +2560,9 @@ async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
   );
   const blogFolderId = folderIdByPath.get(folderPathForPostType("article"));
   const notesFolderId = folderIdByPath.get(folderPathForPostType("note"));
-  const bookmarksFolderId = folderIdByPath.get(folderPathForPostType("bookmark"));
+  const bookmarksFolderId = folderIdByPath.get(
+    folderPathForPostType("bookmark"),
+  );
   if (!blogFolderId || !notesFolderId || !bookmarksFolderId) {
     throw new Error("failed to resolve the workspace folders");
   }
@@ -2620,9 +2791,7 @@ async function selectFullPosts(
       desc(posts.createdAt),
     );
   const mapped = rows.map((r) => mapPost(r.posts));
-  return publishedOnly
-    ? mapped.map(withoutPersonalWorkspaceMetadata)
-    : mapped;
+  return publishedOnly ? mapped.map(withoutPersonalWorkspaceMetadata) : mapped;
 }
 
 async function getPublishedPostFilesUncached(handle: string): Promise<Post[]> {
@@ -2717,7 +2886,9 @@ export async function getFolderPostFiles(
 
 // Live (not trashed) item counts per folder path, drafts included, in one
 // grouped query. A NULL folder_id counts toward the default "blog" folder.
-async function getFolderCountsUncached(handle: string): Promise<Record<string, number>> {
+async function getFolderCountsUncached(
+  handle: string,
+): Promise<Record<string, number>> {
   if (!db) throw new Error(NO_DATABASE);
   const rows = await db
     .select({ path: folders.path, count: sql<number>`count(*)::int` })
@@ -2752,7 +2923,9 @@ export async function getFolderCounts(
   return getFolderCountsCached(handle);
 }
 
-async function getPostFolderRowsUncached(handle: string): Promise<PostFolderRow[]> {
+async function getPostFolderRowsUncached(
+  handle: string,
+): Promise<PostFolderRow[]> {
   if (!db) return [];
   const rows = await db
     .select({ id: posts.id, folderId: posts.folderId, type: posts.type })
@@ -2834,13 +3007,16 @@ export async function getAccessibleFolderCounts(
   user: AccessUser | null,
 ): Promise<Record<string, number>> {
   if (!db || !user) return {};
-  const [allFolders, postRows, visiblePostIds, visibleFolderIds] = await Promise.all([
-    getFolders(handle),
-    getPostFolderRows(handle),
-    accessiblePostIdsForUser(handle, user),
-    accessibleFolderIdsForUser(handle, user),
-  ]);
-  const pathById = new Map(allFolders.map((folder) => [folder.id, folder.path]));
+  const [allFolders, postRows, visiblePostIds, visibleFolderIds] =
+    await Promise.all([
+      getFolders(handle),
+      getPostFolderRows(handle),
+      accessiblePostIdsForUser(handle, user),
+      accessibleFolderIdsForUser(handle, user),
+    ]);
+  const pathById = new Map(
+    allFolders.map((folder) => [folder.id, folder.path]),
+  );
   const visiblePaths =
     visibleFolderIds === "all"
       ? new Set(allFolders.map((folder) => folder.path))
@@ -2852,7 +3028,9 @@ export async function getAccessibleFolderCounts(
   const counts: Record<string, number> = {};
   for (const post of postRows) {
     if (visiblePostIds !== "all" && !visiblePostIds.has(post.id)) continue;
-    const path = post.folderId ? pathById.get(post.folderId) : DEFAULT_FOLDER_PATH;
+    const path = post.folderId
+      ? pathById.get(post.folderId)
+      : DEFAULT_FOLDER_PATH;
     if (!path || !visiblePaths.has(path)) continue;
     counts[path] = (counts[path] ?? 0) + 1;
   }
@@ -2935,11 +3113,7 @@ export async function getPostStoreContext(
     .from(posts)
     .innerJoin(blogs, eq(posts.blogId, blogs.id))
     .where(
-      and(
-        eq(posts.id, id),
-        isNull(blogs.deletedAt),
-        isNull(posts.deletedAt),
-      ),
+      and(eq(posts.id, id), isNull(blogs.deletedAt), isNull(posts.deletedAt)),
     )
     .limit(1);
   const row = rows[0];
@@ -3043,7 +3217,10 @@ export async function listDocumentTemplates(
         isNull(documentTemplates.retiredAt),
       ),
     )
-    .orderBy(asc(documentTemplates.templateId), desc(documentTemplates.version));
+    .orderBy(
+      asc(documentTemplates.templateId),
+      desc(documentTemplates.version),
+    );
   const latest: TemplateDefinition[] = [];
   const seen = new Set<string>();
   for (const row of rows) {
@@ -3119,10 +3296,7 @@ export async function listDocumentTemplateLibrary(
     versionsById.set(row.templateId, history);
     if (!creatorById.has(row.templateId)) {
       creatorById.set(row.templateId, row.createdById);
-      createdAtById.set(
-        row.templateId,
-        row.createdAt?.toISOString() ?? null,
-      );
+      createdAtById.set(row.templateId, row.createdAt?.toISOString() ?? null);
     }
   }
 
@@ -3274,7 +3448,8 @@ export async function createDocumentTemplateVersion(input: {
   actor: AuditEntry;
   createdById?: string | null;
 }): Promise<TemplateDefinition> {
-  if (!db) throw new Error("createDocumentTemplateVersion requires DATABASE_URL");
+  if (!db)
+    throw new Error("createDocumentTemplateVersion requires DATABASE_URL");
   const candidate = validateTemplateDefinition(input.definition);
   if (candidate.id.startsWith("texttext.")) {
     throw new Error("Built-in template identifiers cannot be replaced");
@@ -3344,7 +3519,8 @@ export async function saveDocumentAsLook(input: {
   const post = await getPostById(input.handle, input.postId);
   if (!post) throw new Error("That item could not be found.");
   const document = post.document;
-  if (!document) throw new Error("That item has no document to take a look from.");
+  if (!document)
+    throw new Error("That item has no document to take a look from.");
 
   const reference = document.presentation.template;
   const base = await getDocumentTemplate(input.blogId, reference);
@@ -3645,10 +3821,7 @@ function mapItemComment(row: ItemCommentRow): ItemComment {
     anchor,
     author,
     authorName: row.authorName,
-    editedBy: storedItemCommentActor(
-      row.editedByUserId,
-      row.editedByActorType,
-    ),
+    editedBy: storedItemCommentActor(row.editedByUserId, row.editedByActorType),
     resolved: row.resolvedAt !== null,
     resolvedAt: row.resolvedAt?.toISOString() ?? null,
     resolvedBy: storedItemCommentActor(
@@ -3671,7 +3844,8 @@ export async function listItemComments(
 ): Promise<ItemComment[]> {
   if (!db) return [];
   const filters: SQL[] = [eq(itemComments.postId, itemId)];
-  if (options.resolved === true) filters.push(isNotNull(itemComments.resolvedAt));
+  if (options.resolved === true)
+    filters.push(isNotNull(itemComments.resolvedAt));
   if (options.resolved === false) filters.push(isNull(itemComments.resolvedAt));
   if (options.parentId === null) filters.push(isNull(itemComments.parentId));
   if (typeof options.parentId === "string") {
@@ -3691,10 +3865,11 @@ export function createItemComment(
 export function createItemComment(
   input: CreateItemCommentInput,
   actorContext: ItemCommentActorContext,
+  options?: ItemCommentMutationOptions,
 ): Promise<ItemComment>;
 export async function createItemComment(
   input: CreateItemCommentInput | CreateItemCommentRequest,
-  ...actorContexts: [ItemCommentActorContext?]
+  ...args: [ItemCommentActorContext?, ItemCommentMutationOptions?]
 ): Promise<ItemComment> {
   if (!db) throw new Error("createItemComment requires DATABASE_URL");
   const record = input as unknown as Record<string, unknown>;
@@ -3731,7 +3906,7 @@ export async function createItemComment(
         ? record.actorName
         : null;
   const actor = cleanItemCommentActor(
-    actorContexts[0] ??
+    args[0] ??
       embeddedActor ?? {
         actorUserId,
         actorType,
@@ -3765,7 +3940,7 @@ export async function createItemComment(
     if (!parents[0]) throw new Error("Parent comment not found");
   }
 
-  const inserted = await db
+  const changed = db
     .insert(itemComments)
     .values({
       postId: itemId,
@@ -3776,17 +3951,32 @@ export async function createItemComment(
       authorName: actor.actorName,
       authorActorType: actor.actorType,
     })
-    .returning();
-  if (!inserted[0]) throw new Error("Failed to create comment");
-  await recordAction({
-    actorUserId: actor.actorUserId,
-    actorType: actor.actorType,
-    actionName: "create_item_comment",
-    targetType: "item",
-    targetId: itemId,
-    outputSummary: inserted[0].id,
-  });
-  return mapItemComment(inserted[0]);
+    .returning({ id: itemComments.id });
+  const auditCte = auditCteFrom(
+    args[1]?.audit ?? {
+      actorUserId: actor.actorUserId,
+      actorType: actor.actorType,
+      actionName: "create_item_comment",
+      targetType: "item",
+      targetId: itemId,
+      inputSummary: body,
+    },
+    "changed",
+    sql`${itemId}::text`,
+  );
+  const result = await db.execute(sql`
+    WITH changed AS ${changed}, audit AS (${auditCte})
+    SELECT id FROM changed
+  `);
+  const insertedId = (result.rows[0] as { id?: string } | undefined)?.id;
+  if (!insertedId) throw new Error("Failed to create comment");
+  const [inserted] = await db
+    .select()
+    .from(itemComments)
+    .where(and(eq(itemComments.id, insertedId), eq(itemComments.postId, itemId)))
+    .limit(1);
+  if (!inserted) throw new Error("The created comment is unavailable");
+  return mapItemComment(inserted);
 }
 
 function hasOwnItemCommentKey<K extends keyof UpdateItemCommentInput>(
@@ -3830,9 +4020,7 @@ export async function updateItemComment(
       editedByActorType: actor.actorType,
       updatedAt: new Date(),
     })
-    .where(
-      and(eq(itemComments.id, commentId), eq(itemComments.postId, itemId)),
-    )
+    .where(and(eq(itemComments.id, commentId), eq(itemComments.postId, itemId)))
     .returning();
   if (!updated[0]) throw new Error("Comment not found");
   await recordAction({
@@ -3854,10 +4042,16 @@ export function setItemCommentResolved(
   commentId: string,
   resolved: boolean,
   actorContext: ItemCommentActorContext,
+  options?: ItemCommentMutationOptions,
 ): Promise<ItemComment>;
 export async function setItemCommentResolved(
   inputOrItemId: string | SetItemCommentResolvedRequest,
-  ...args: [string?, boolean?, ItemCommentActorContext?]
+  ...args: [
+    string?,
+    boolean?,
+    ItemCommentActorContext?,
+    ItemCommentMutationOptions?,
+  ]
 ): Promise<ItemComment> {
   if (!db) throw new Error("setItemCommentResolved requires DATABASE_URL");
   const record =
@@ -3883,7 +4077,9 @@ export async function setItemCommentResolved(
   const resolved =
     typeof inputOrItemId === "string" ? args[1] : inputOrItemId.resolved;
   if (!itemId || !commentId || typeof resolved !== "boolean") {
-    throw new Error("Comment item ID, comment ID, and resolved state are required");
+    throw new Error(
+      "Comment item ID, comment ID, and resolved state are required",
+    );
   }
   const embeddedActor =
     typeof inputOrItemId === "object" &&
@@ -3906,7 +4102,7 @@ export async function setItemCommentResolved(
     args[2] ?? embeddedActor ?? { actorUserId, actorType },
   );
   const now = new Date();
-  const updated = await db
+  const changed = db
     .update(itemComments)
     .set({
       resolvedAt: resolved ? now : null,
@@ -3914,20 +4110,33 @@ export async function setItemCommentResolved(
       resolvedByActorType: resolved ? actor.actorType : null,
       updatedAt: now,
     })
-    .where(
-      and(eq(itemComments.id, commentId), eq(itemComments.postId, itemId)),
-    )
-    .returning();
-  if (!updated[0]) throw new Error("Comment not found");
-  await recordAction({
-    actorUserId: actor.actorUserId,
-    actorType: actor.actorType,
-    actionName: resolved ? "resolve_item_comment" : "reopen_item_comment",
-    targetType: "item",
-    targetId: itemId,
-    inputSummary: commentId,
-  });
-  return mapItemComment(updated[0]);
+    .where(and(eq(itemComments.id, commentId), eq(itemComments.postId, itemId)))
+    .returning({ id: itemComments.id });
+  const auditCte = auditCteFrom(
+    args[3]?.audit ?? {
+      actorUserId: actor.actorUserId,
+      actorType: actor.actorType,
+      actionName: resolved ? "resolve_item_comment" : "reopen_item_comment",
+      targetType: "item",
+      targetId: itemId,
+      inputSummary: commentId,
+    },
+    "changed",
+    sql`${itemId}::text`,
+  );
+  const result = await db.execute(sql`
+    WITH changed AS ${changed}, audit AS (${auditCte})
+    SELECT id FROM changed
+  `);
+  const updatedId = (result.rows[0] as { id?: string } | undefined)?.id;
+  if (!updatedId) throw new Error("Comment not found");
+  const [updated] = await db
+    .select()
+    .from(itemComments)
+    .where(and(eq(itemComments.id, updatedId), eq(itemComments.postId, itemId)))
+    .limit(1);
+  if (!updated) throw new Error("The updated comment is unavailable");
+  return mapItemComment(updated);
 }
 
 export async function resolveItemComment(
@@ -3956,9 +4165,7 @@ export async function deleteItemComment(
   const actor = cleanItemCommentActor(actorContext);
   const deleted = await db
     .delete(itemComments)
-    .where(
-      and(eq(itemComments.id, commentId), eq(itemComments.postId, itemId)),
-    )
+    .where(and(eq(itemComments.id, commentId), eq(itemComments.postId, itemId)))
     .returning();
   if (!deleted[0]) throw new Error("Comment not found");
   await recordAction({
@@ -3979,11 +4186,7 @@ export async function deletePost(handle: string, id: string): Promise<void> {
     .update(posts)
     .set({ deletedAt: new Date(), updatedAt: new Date() })
     .where(
-      and(
-        eq(posts.id, id),
-        eq(posts.blogId, blogId),
-        isNull(posts.deletedAt),
-      ),
+      and(eq(posts.id, id), eq(posts.blogId, blogId), isNull(posts.deletedAt)),
     );
 }
 
@@ -4088,7 +4291,9 @@ export async function claimIdempotencyKey(
       resultId: idempotencyKeys.resultId,
     })
     .from(idempotencyKeys)
-    .where(and(eq(idempotencyKeys.blogId, blogId), eq(idempotencyKeys.key, key)))
+    .where(
+      and(eq(idempotencyKeys.blogId, blogId), eq(idempotencyKeys.key, key)),
+    )
     .limit(1);
   const row = existing[0];
   if (
@@ -4136,7 +4341,9 @@ export async function resolveIdempotencyKey(
   await db
     .update(idempotencyKeys)
     .set({ resultKind: kind, resultId: id })
-    .where(and(eq(idempotencyKeys.blogId, blogId), eq(idempotencyKeys.key, key)));
+    .where(
+      and(eq(idempotencyKeys.blogId, blogId), eq(idempotencyKeys.key, key)),
+    );
 }
 
 /** Release a claim whose create ultimately failed, so a retry can start fresh
@@ -4187,10 +4394,14 @@ export async function getTrashedFolders(handle: string): Promise<Folder[]> {
   return rows.map(mapFolder);
 }
 
-export async function restorePost(handle: string, id: string): Promise<Post> {
+export async function restorePost(
+  handle: string,
+  id: string,
+  audit?: AuditEntry,
+): Promise<Post> {
   if (!db) throw new Error("restorePost requires DATABASE_URL");
   const blogId = await blogIdFor(handle);
-  const updated = await db
+  const updateQuery = db
     .update(posts)
     .set({ deletedAt: null, updatedAt: new Date() })
     .where(
@@ -4199,17 +4410,36 @@ export async function restorePost(handle: string, id: string): Promise<Post> {
         eq(posts.blogId, blogId),
         isNotNull(posts.deletedAt),
       ),
-    )
-    .returning();
-  if (!updated[0]) throw new Error("Item not found in Trash");
-  return mapPost(updated[0]);
+    );
+  if (!audit) {
+    const updated = await updateQuery.returning();
+    if (!updated[0]) throw new Error("Item not found in Trash");
+    return mapPost(updated[0]);
+  }
+  const changed = updateQuery.returning({ id: posts.id });
+  const auditCte = auditCteFrom(audit, "changed", sql`changed.id::text`);
+  const result = await db.execute(sql`
+    WITH changed AS ${changed}, audit AS (${auditCte})
+    SELECT id FROM changed
+  `);
+  const restoredId = (result.rows[0] as { id?: string } | undefined)?.id;
+  if (!restoredId) throw new Error("Item not found in Trash");
+  const [updated] = await db
+    .select()
+    .from(posts)
+    .where(and(eq(posts.id, restoredId), eq(posts.blogId, blogId)))
+    .limit(1);
+  if (!updated) throw new Error("The restored item is unavailable");
+  return mapPost(updated);
 }
 
 async function deleteCollabDataForPostIds(ids: string[]): Promise<void> {
   if (!db) return;
   for (let i = 0; i < ids.length; i += 500) {
     const chunk = ids.slice(i, i + 500);
-    await db.delete(collabPresence).where(inArray(collabPresence.postId, chunk));
+    await db
+      .delete(collabPresence)
+      .where(inArray(collabPresence.postId, chunk));
     await db.delete(collabUpdates).where(inArray(collabUpdates.postId, chunk));
     // collab_state has its own post foreign key. It must be removed too, or a
     // post that has ever joined a collab epoch cannot be permanently deleted.
@@ -4294,7 +4524,10 @@ export async function trashFolder(
       and(
         eq(folders.blogId, blogId),
         isNull(folders.deletedAt),
-        or(eq(folders.path, folder.path), like(folders.path, `${folder.path}/%`)),
+        or(
+          eq(folders.path, folder.path),
+          like(folders.path, `${folder.path}/%`),
+        ),
       ),
     );
   const ids = descendants.map((entry) => entry.id);
@@ -4345,7 +4578,10 @@ export async function restoreFolder(
       and(
         eq(folders.blogId, blogId),
         eq(folders.deletedAt, deletionTime),
-        or(eq(folders.path, folder.path), like(folders.path, `${folder.path}/%`)),
+        or(
+          eq(folders.path, folder.path),
+          like(folders.path, `${folder.path}/%`),
+        ),
       ),
     );
   const ids = descendants.map((entry) => entry.id);
@@ -4394,7 +4630,10 @@ export async function permanentlyDeleteFolder(
       and(
         eq(folders.blogId, blogId),
         isNotNull(folders.deletedAt),
-        or(eq(folders.path, folder.path), like(folders.path, `${folder.path}/%`)),
+        or(
+          eq(folders.path, folder.path),
+          like(folders.path, `${folder.path}/%`),
+        ),
       ),
     );
   const ids = descendants.map((entry) => entry.id);
@@ -4407,7 +4646,9 @@ export async function permanentlyDeleteFolder(
   // This is normally prevented by the Trash UI, but the store still fails safe
   // against a restore race or a direct caller that revived a child first.
   if (folderPosts.some((post) => post.deletedAt === null)) {
-    throw new Error("The folder contains a restored item and cannot be deleted");
+    throw new Error(
+      "The folder contains a restored item and cannot be deleted",
+    );
   }
   await deleteCollabDataForPostIds(folderPosts.map((post) => post.id));
   await db
@@ -4419,7 +4660,9 @@ export async function permanentlyDeleteFolder(
         isNotNull(posts.deletedAt),
       ),
     );
-  await db.delete(folders).where(and(eq(folders.blogId, blogId), inArray(folders.id, ids)));
+  await db
+    .delete(folders)
+    .where(and(eq(folders.blogId, blogId), inArray(folders.id, ids)));
 }
 
 export async function trashBlogPosts(handle: string): Promise<void> {
@@ -4444,11 +4687,7 @@ export async function setPostPinned(
     // reaches sync clients instantly, not only on the 60s fallback pass.
     .set({ pinned, updatedAt: new Date() })
     .where(
-      and(
-        eq(posts.id, id),
-        eq(posts.blogId, blogId),
-        isNull(posts.deletedAt),
-      ),
+      and(eq(posts.id, id), eq(posts.blogId, blogId), isNull(posts.deletedAt)),
     )
     .returning();
   if (!updated[0]) throw new Error("Post not found");
@@ -4468,11 +4707,7 @@ export async function setPostStarred(
     // advance the same mutation cursor as every other post change.
     .set({ starred, updatedAt: new Date() })
     .where(
-      and(
-        eq(posts.id, id),
-        eq(posts.blogId, blogId),
-        isNull(posts.deletedAt),
-      ),
+      and(eq(posts.id, id), eq(posts.blogId, blogId), isNull(posts.deletedAt)),
     )
     .returning();
   if (!updated[0]) throw new Error("Post not found");
@@ -4485,17 +4720,14 @@ export async function setPostCreatedAt(
   createdAt: Date,
 ): Promise<Post> {
   if (!db) throw new Error("setPostCreatedAt requires DATABASE_URL");
-  if (!Number.isFinite(createdAt.getTime())) throw new Error("Choose a valid date");
+  if (!Number.isFinite(createdAt.getTime()))
+    throw new Error("Choose a valid date");
   const blogId = await blogIdFor(handle);
   const updated = await db
     .update(posts)
     .set({ createdAt, updatedAt: new Date() })
     .where(
-      and(
-        eq(posts.id, id),
-        eq(posts.blogId, blogId),
-        isNull(posts.deletedAt),
-      ),
+      and(eq(posts.id, id), eq(posts.blogId, blogId), isNull(posts.deletedAt)),
     )
     .returning();
   if (!updated[0]) throw new Error("Post not found");
@@ -4607,6 +4839,12 @@ type SavePostOptions = {
   expectedRevision?: number;
   audit?: AuditEntry;
   /**
+   * The caller already wrote the command audit atomically with a live Yjs
+   * delta. Canonical materialization is the second half of that same command,
+   * not another user-visible mutation, so it must not create a duplicate row.
+   */
+  auditAlreadyRecorded?: boolean;
+  /**
    * Custom field values to merge into the canonical document's content.fields,
    * applied on top of whatever base canonicalDocumentForSave derives (the
    * supplied document, the existing row, or the legacy projection). A null
@@ -4631,9 +4869,7 @@ function canonicalDocumentForSave(
     ? validateDocumentSnapshot(post.document)
     : null;
   const base =
-    suppliedDocument ??
-    current?.document ??
-    documentFromLegacyPost(post);
+    suppliedDocument ?? current?.document ?? documentFromLegacyPost(post);
   const fields = { ...base.content.fields };
   if (fieldsPatch) {
     for (const [key, value] of Object.entries(fieldsPatch)) {
@@ -4652,7 +4888,8 @@ function canonicalDocumentForSave(
       typeof value === "number" ||
       typeof value === "boolean" ||
       value === null ||
-      (Array.isArray(value) && value.every((entry) => typeof entry === "string"))
+      (Array.isArray(value) &&
+        value.every((entry) => typeof entry === "string"))
     ) {
       fields[key] = value;
     } else {
@@ -4708,9 +4945,7 @@ function canonicalDocumentForSave(
       assets: legacyChanged("gallery")
         ? (post.gallery ?? []).map((asset, index) => ({
             id: `gallery-${index + 1}`,
-            kind: /\.(?:mp4|webm|mov|m4v|ogv|ogg)(?:[?#].*)?$/i.test(
-              asset.src,
-            )
+            kind: /\.(?:mp4|webm|mov|m4v|ogv|ogg)(?:[?#].*)?$/i.test(asset.src)
               ? ("video" as const)
               : ("image" as const),
             src: asset.src,
@@ -4726,7 +4961,10 @@ function canonicalDocumentForSave(
   });
 }
 
-function visibilityForSave(post: Post, existingRow?: PostRow): DocumentVisibility {
+function visibilityForSave(
+  post: Post,
+  existingRow?: PostRow,
+): DocumentVisibility {
   return resolveDocumentVisibility({
     requested: post.visibility,
     existing: existingRow?.visibility,
@@ -4734,21 +4972,16 @@ function visibilityForSave(post: Post, existingRow?: PostRow): DocumentVisibilit
   });
 }
 
-async function recordPostSave(
-  saved: Post,
-  audit: AuditEntry | undefined,
-): Promise<Post> {
-  if (!saved.id) return saved;
-  await recordAction(
+function postSaveAudit(post: Post, audit: AuditEntry | undefined): AuditEntry {
+  return (
     audit ?? {
       actorType: "human",
       actionName: "save_document",
       targetType: "item",
-      targetId: saved.id,
-      inputSummary: saved.slug,
-    },
+      targetId: post.id,
+      inputSummary: post.slug,
+    }
   );
-  return saved;
 }
 
 export async function savePost(
@@ -4777,7 +5010,11 @@ export async function savePost(
           .limit(1)
       )[0]
     : undefined;
-  const document = canonicalDocumentForSave(post, existingRow, options.fieldsPatch);
+  const document = canonicalDocumentForSave(
+    post,
+    existingRow,
+    options.fieldsPatch,
+  );
   const projection = legacyProjectionFromDocument(document);
   const visibility = visibilityForSave(post, existingRow);
   const compatibilityType = existingRow?.type ?? post.type;
@@ -4843,7 +5080,7 @@ export async function savePost(
         options.expectedRevision !== undefined
           ? [eq(posts.revision, options.expectedRevision)]
           : [];
-      const updated = await db
+      const updateQuery = db
         .update(posts)
         .set({ ...set, slug })
         .where(
@@ -4853,10 +5090,31 @@ export async function savePost(
             isNull(posts.deletedAt),
             ...guard,
           ),
-        )
-        .returning();
-      if (updated[0]) {
-        return recordPostSave(mapPost(updated[0]), options.audit);
+        );
+      if (options.auditAlreadyRecorded) {
+        const updated = await updateQuery.returning();
+        if (updated[0]) return mapPost(updated[0]);
+      } else {
+        const changed = updateQuery.returning({ id: posts.id });
+        const auditCte = auditCteFrom(
+          postSaveAudit({ ...post, slug }, options.audit),
+          "changed",
+          sql`changed.id::text`,
+        );
+        const result = await db.execute(sql`
+          WITH changed AS ${changed}, audit AS (${auditCte})
+          SELECT id FROM changed
+        `);
+        const updatedId = (result.rows[0] as { id?: string } | undefined)?.id;
+        if (updatedId) {
+          const [fresh] = await db
+            .select()
+            .from(posts)
+            .where(and(eq(posts.id, updatedId), eq(posts.blogId, blogId)))
+            .limit(1);
+          if (!fresh) throw new Error("The saved item is unavailable");
+          return mapPost(fresh);
+        }
       }
       // A guarded save that matched nothing is a conflict, never an insert:
       // the base moved (someone else wrote) or the row is gone (deleted). Both
@@ -4866,7 +5124,7 @@ export async function savePost(
       if (options.preservePublishedAt) throw new Error("Post not found");
     }
 
-    const inserted = await db
+    const insertQuery = db
       .insert(posts)
       .values({
         blogId,
@@ -4887,9 +5145,30 @@ export async function savePost(
         target: [posts.folderId, posts.slug],
         targetWhere: sql`${posts.deletedAt} is null`,
         set,
-      })
-      .returning();
-    return recordPostSave(mapPost(inserted[0]), options.audit);
+      });
+    if (options.auditAlreadyRecorded) {
+      const inserted = await insertQuery.returning();
+      return mapPost(inserted[0]);
+    }
+    const changed = insertQuery.returning({ id: posts.id });
+    const auditCte = auditCteFrom(
+      postSaveAudit({ ...post, slug }, options.audit),
+      "changed",
+      sql`changed.id::text`,
+    );
+    const result = await db.execute(sql`
+      WITH changed AS ${changed}, audit AS (${auditCte})
+      SELECT id FROM changed
+    `);
+    const insertedId = (result.rows[0] as { id?: string } | undefined)?.id;
+    if (!insertedId) throw new Error("The item could not be saved");
+    const [fresh] = await db
+      .select()
+      .from(posts)
+      .where(and(eq(posts.id, insertedId), eq(posts.blogId, blogId)))
+      .limit(1);
+    if (!fresh) throw new Error("The saved item is unavailable");
+    return mapPost(fresh);
   } catch (error) {
     if (isPostsSlugConflict(error)) throw new Error("That URL is already used");
     throw error;
@@ -4900,7 +5179,11 @@ export async function savePostContentPatch(
   handle: string,
   existing: Post,
   patch: PostContentPatch,
-  options: { expectedRevision?: number; audit?: AuditEntry } = {},
+  options: {
+    expectedRevision?: number;
+    audit?: AuditEntry;
+    auditAlreadyRecorded?: boolean;
+  } = {},
 ): Promise<Post> {
   const next: Post = {
     ...existing,
@@ -4949,6 +5232,7 @@ export async function savePostContentPatch(
     preservePublishedAt: true,
     expectedRevision: options.expectedRevision,
     audit: options.audit,
+    auditAlreadyRecorded: options.auditAlreadyRecorded,
   });
 }
 
@@ -4963,8 +5247,7 @@ export async function createDraft(
   if (!db) throw new Error("createDraft requires DATABASE_URL");
   const blogId = await blogIdFor(handle);
   const folder = await folderForPostType(blogId, type);
-  const template =
-    options.template ??
+  const template = options.template ??
     folder.defaultTemplate ?? { id: legacyTemplateId(type), version: 1 };
   const document = emptyDocumentSnapshot(template);
   const slug = `untitled-${Date.now().toString(36)}`;
@@ -4973,8 +5256,7 @@ export async function createDraft(
     .values({
       blogId,
       folderId: folder.id,
-      representation:
-        options.representation ?? DEFAULT_FILE_REPRESENTATION,
+      representation: options.representation ?? DEFAULT_FILE_REPRESENTATION,
       document,
       visibility: "private",
       templateId: template.id,
@@ -5001,7 +5283,11 @@ export async function createDraft(
   return created;
 }
 
-function slugifyHandle(value: string, maxLength = 24, fallback = "blog"): string {
+function slugifyHandle(
+  value: string,
+  maxLength = 24,
+  fallback = "blog",
+): string {
   const slug = value
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -5250,10 +5536,7 @@ async function ensureUserUsername(
 ): Promise<string> {
   if (owner.username) return owner.username;
   const username = await uniqueUsername(seed, owner.id);
-  await db!
-    .update(users)
-    .set({ username })
-    .where(eq(users.id, owner.id));
+  await db!.update(users).set({ username }).where(eq(users.id, owner.id));
   owner.username = username;
   return username;
 }
@@ -5365,7 +5648,7 @@ export async function updateBlogByHandle(
         tagline: blogs.tagline,
         accent: blogs.accent,
         bioLine: blogs.bioLine,
-          homeLayout: blogs.homeLayout,
+        homeLayout: blogs.homeLayout,
         author: users.name,
       })
       .from(blogs)
@@ -5403,7 +5686,9 @@ export async function updateBlogByHandle(
       const taken = await db
         .select({ id: users.id })
         .from(users)
-        .where(and(eq(users.username, username), ne(users.id, existing.ownerId)))
+        .where(
+          and(eq(users.username, username), ne(users.id, existing.ownerId)),
+        )
         .limit(1);
       if (taken[0]) throw new Error("That username is taken");
       // Validated here, written only after the blogs update succeeds, so a
@@ -5438,7 +5723,10 @@ export async function updateBlogByHandle(
 
   if (Object.keys(set).length === 0) {
     await applyUsername();
-    return mapBlog({ ...existing, username: nextUsername ?? existing.username });
+    return mapBlog({
+      ...existing,
+      username: nextUsername ?? existing.username,
+    });
   }
 
   try {
@@ -5494,7 +5782,10 @@ export async function ensureOwnerBlog(user: StoreUser): Promise<Blog> {
   }
   const name = user.name ? `${user.name}'s blog` : "My blog";
   const seed = user.email?.split("@")[0] || user.name || "blog";
-  const username = await ensureUserUsername(owner, usernameSeedForUser(user, seed));
+  const username = await ensureUserUsername(
+    owner,
+    usernameSeedForUser(user, seed),
+  );
 
   // Provision the blog. ON CONFLICT DO NOTHING lets the DB settle the races: a
   // concurrent first sign-in that already made this owner's blog (owner unique
@@ -5574,7 +5865,9 @@ export async function findAccountTombstone(
 }
 
 /** Every tombstone whose purge never finished, for the operator recovery command. */
-export async function listPendingAccountTombstones(): Promise<AccountTombstone[]> {
+export async function listPendingAccountTombstones(): Promise<
+  AccountTombstone[]
+> {
   if (!db) return [];
   return db
     .select({
@@ -5697,12 +5990,11 @@ export async function getAccountDeletionSummary(
  * Every blob URL reachable from a row in this workspace. Collected BEFORE any
  * row is deleted, because the rows carry the only addresses these files have.
  */
-export async function listWorkspaceAssetUrls(blogId: string): Promise<string[]> {
+export async function listWorkspaceAssetUrls(
+  blogId: string,
+): Promise<string[]> {
   if (!db) return [];
-  const rows = await db
-    .select()
-    .from(posts)
-    .where(eq(posts.blogId, blogId));
+  const rows = await db.select().from(posts).where(eq(posts.blogId, blogId));
   const urls = new Set<string>();
   for (const row of rows) {
     for (const ref of listItemAssetReferences(row as never)) {
@@ -5722,7 +6014,10 @@ export async function listWorkspaceAssetUrls(blogId: string): Promise<string[]> 
 export async function purgeWorkspaceContent(blogId: string): Promise<number> {
   if (!db) throw new Error("purgeWorkspaceContent requires DATABASE_URL");
   const ids = (
-    await db.select({ id: posts.id }).from(posts).where(eq(posts.blogId, blogId))
+    await db
+      .select({ id: posts.id })
+      .from(posts)
+      .where(eq(posts.blogId, blogId))
   ).map((row) => row.id);
   // Collab rows first: collab_state holds a post foreign key, so a document
   // that ever joined an epoch cannot be deleted while its state row lives.
@@ -5752,9 +6047,7 @@ export async function purgeUserIdentityRows(
   if (!db) throw new Error("purgeUserIdentityRows requires DATABASE_URL");
   await db.delete(apiTokens).where(eq(apiTokens.userId, userId));
   await db.delete(appHealthReports).where(eq(appHealthReports.userId, userId));
-  await db
-    .delete(deviceLinks)
-    .where(eq(deviceLinks.approvedByUserId, userId));
+  await db.delete(deviceLinks).where(eq(deviceLinks.approvedByUserId, userId));
   await db
     .delete(collaborators)
     .where(
@@ -5778,7 +6071,10 @@ export async function purgeUserIdentityRows(
   await db
     .delete(documentResponses)
     .where(
-      inArray(documentResponses.responderKey, [`user:${userId}`, `user:${sub}`]),
+      inArray(documentResponses.responderKey, [
+        `user:${userId}`,
+        `user:${sub}`,
+      ]),
     );
 }
 
@@ -5806,7 +6102,12 @@ export async function anonymizeAuditActor(
     await db
       .update(actionAudit)
       .set({ actorUserId: null })
-      .where(inArray(actionAudit.id, batch.map((row) => row.id)));
+      .where(
+        inArray(
+          actionAudit.id,
+          batch.map((row) => row.id),
+        ),
+      );
     total += batch.length;
   }
   return total;

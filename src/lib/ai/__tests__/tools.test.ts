@@ -86,18 +86,17 @@ const CONFIRMED_TOOLS = new Set([
   "retire_document_template",
 ]);
 
-const OPEN_WORLD_TOOLS = new Set([
-  "recapture_bookmark",
-  "add_item_asset",
-]);
+const OPEN_WORLD_TOOLS = new Set(["recapture_bookmark", "add_item_asset"]);
 
 describe("workspace tool contract", () => {
   it("defines the complete safe workspace surface once", () => {
     expect(WORKSPACE_TOOL_NAMES).toEqual(EXPECTED_NAMES);
-    expect(new Set(WORKSPACE_TOOL_NAMES).size).toBe(WORKSPACE_TOOL_NAMES.length);
-    expect(WORKSPACE_TOOL_NAMES.some((name) => name.includes("permanent"))).toBe(
-      false,
+    expect(new Set(WORKSPACE_TOOL_NAMES).size).toBe(
+      WORKSPACE_TOOL_NAMES.length,
     );
+    expect(
+      WORKSPACE_TOOL_NAMES.some((name) => name.includes("permanent")),
+    ).toBe(false);
     expect(WORKSPACE_TOOL_NAMES.some((name) => name.includes("member"))).toBe(
       false,
     );
@@ -172,6 +171,66 @@ describe("workspace tool contract", () => {
       }),
     ).toEqual({ id: "post-1", pinned: true });
     expect(
+      parseWorkspaceToolInput("update_item", {
+        id: "post-1",
+        section: "## Pricing",
+        expected_section_body: "Ten dollars.",
+        body: "Twelve dollars.",
+      }),
+    ).toMatchObject({
+      section: "## Pricing",
+      expected_section_body: "Ten dollars.",
+      body: "Twelve dollars.",
+    });
+    expect(() =>
+      parseWorkspaceToolInput("update_item", {
+        id: "post-1",
+        section: "## Pricing",
+        body: "Twelve dollars.",
+      }),
+    ).toThrow("requires body and expected_section_body");
+    expect(() =>
+      parseWorkspaceToolInput("update_item", {
+        id: "post-1",
+        section: "## Pricing",
+        expected_section_body: "Ten dollars.",
+        body: "Twelve dollars.",
+        title: "Also rename it",
+      }),
+    ).toThrow("cannot change other content or metadata");
+    expect(
+      parseWorkspaceToolInput("update_item", {
+        id: "post-1",
+        text_edit: {
+          field: "body",
+          start: 2,
+          end: 6,
+          expected_text: "body",
+          replacement_text: "draft",
+        },
+      }),
+    ).toMatchObject({
+      text_edit: {
+        field: "body",
+        start: 2,
+        end: 6,
+        expected_text: "body",
+        replacement_text: "draft",
+      },
+    });
+    expect(() =>
+      parseWorkspaceToolInput("update_item", {
+        id: "post-1",
+        text_edit: {
+          field: "body",
+          start: 2,
+          end: 5,
+          expected_text: "body",
+          replacement_text: "draft",
+        },
+      }),
+    ).toThrow("range length must match expected_text");
+    expect(
       parseWorkspaceToolInput("create_item_type", {
         blueprint: {
           name: "Tasks",
@@ -205,28 +264,34 @@ describe("update_item custom fields", () => {
     // The refinement used to reject this with "Pass content or metadata to
     // update", which silently broke every agent field texttext: the error was
     // returned before the handler ran, no audit row, no change.
-    const parsed = WORKSPACE_TOOL_DEFINITIONS.update_item.inputSchema.safeParse({
-      id: "00000000-0000-4000-8000-000000000000",
-      fields: { rating: 4.5, status: "read", author: "Peter Watts" },
-    });
+    const parsed = WORKSPACE_TOOL_DEFINITIONS.update_item.inputSchema.safeParse(
+      {
+        id: "00000000-0000-4000-8000-000000000000",
+        fields: { rating: 4.5, status: "read", author: "Peter Watts" },
+      },
+    );
     expect(parsed.success).toBe(true);
   });
 
   it("accepts row-record values and null clears", () => {
-    const parsed = WORKSPACE_TOOL_DEFINITIONS.update_item.inputSchema.safeParse({
-      id: "00000000-0000-4000-8000-000000000000",
-      fields: {
-        tasks: [{ done: false, task: "Ship it", priority: "high" }],
-        stale: null,
+    const parsed = WORKSPACE_TOOL_DEFINITIONS.update_item.inputSchema.safeParse(
+      {
+        id: "00000000-0000-4000-8000-000000000000",
+        fields: {
+          tasks: [{ done: false, task: "Ship it", priority: "high" }],
+          stale: null,
+        },
       },
-    });
+    );
     expect(parsed.success).toBe(true);
   });
 
   it("still rejects an update with nothing to change", () => {
-    const parsed = WORKSPACE_TOOL_DEFINITIONS.update_item.inputSchema.safeParse({
-      id: "00000000-0000-4000-8000-000000000000",
-    });
+    const parsed = WORKSPACE_TOOL_DEFINITIONS.update_item.inputSchema.safeParse(
+      {
+        id: "00000000-0000-4000-8000-000000000000",
+      },
+    );
     expect(parsed.success).toBe(false);
   });
 });

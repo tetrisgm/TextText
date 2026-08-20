@@ -1,5 +1,51 @@
 import Foundation
 
+public struct TextTextAgentCommandItem: Decodable, Sendable {
+    public let id: String?
+    public let title: String
+    public let hash: String
+
+    public init(id: String?, title: String, hash: String) {
+        self.id = id
+        self.title = title
+        self.hash = hash
+    }
+}
+
+public struct TextTextAgentCommandReply: Decodable, Sendable {
+    public struct StructuredContent: Decodable, Sendable {
+        public let item: TextTextAgentCommandItem?
+        public let markdown: String?
+        public let replayed: Bool?
+    }
+
+    private struct Content: Decodable, Sendable {
+        let type: String
+        let text: String?
+    }
+
+    public let structuredContent: StructuredContent?
+    public let isError: Bool?
+    private let content: [Content]
+
+    public init(
+        item: TextTextAgentCommandItem? = nil,
+        markdown: String? = nil,
+        replayed: Bool? = nil,
+        isError: Bool? = nil,
+        message: String? = nil
+    ) {
+        self.structuredContent = StructuredContent(
+            item: item, markdown: markdown, replayed: replayed)
+        self.isError = isError
+        self.content = message.map { [Content(type: "text", text: $0)] } ?? []
+    }
+
+    public var message: String? {
+        content.first(where: { $0.type == "text" })?.text
+    }
+}
+
 /// The production `TextTextSyncAPI`: async URLSession calls against the platform's
 /// /api/sync/v1 routes, authenticated with the workspace `wsk_` token. The File
 /// Provider extension constructs one of these once it has the token from the
@@ -73,12 +119,120 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
             guard reply.status == 200 else { return .failure(reply.httpError) }
             do {
                 let decoded = try Self.decodeSyncDocument(reply.data)
-                return .success(TextTextFileContent(
-                    text: decoded.markdown,
-                    documentJSON: decoded.documentJSON,
-                    hash: reply.bareETag))
+                return .success(
+                    TextTextFileContent(
+                        text: decoded.markdown,
+                        documentJSON: decoded.documentJSON,
+                        hash: reply.bareETag))
             } catch {
                 return .failure(.decode(error.localizedDescription))
+            }
+        }
+    }
+
+    // MARK: Local agent commands
+
+    public func agentReadItem(
+        postId: String, agentName: String?, agentIntent: String?
+    ) async -> Result<TextTextAgentCommandReply, TextTextSyncError> {
+        await agentCommand(
+            name: "read_item", arguments: ["id": postId],
+            agentName: agentName, agentIntent: agentIntent)
+    }
+
+    public func agentCreateItem(
+        markdown: String, folderPath: String, idempotencyKey: String,
+        agentName: String?, agentIntent: String?
+    ) async -> Result<TextTextAgentCommandReply, TextTextSyncError> {
+        await agentCommand(
+            name: "create_item",
+            arguments: [
+                "markdown": markdown,
+                "folder_path": folderPath,
+                "idempotency_key": idempotencyKey,
+            ],
+            agentName: agentName, agentIntent: agentIntent)
+    }
+
+    public func agentUpdateItem(
+        postId: String, markdown: String, ifMatchHash: String,
+        agentName: String?, agentIntent: String?
+    ) async -> Result<TextTextAgentCommandReply, TextTextSyncError> {
+        await agentCommand(
+            name: "update_item",
+            arguments: [
+                "id": postId,
+                "markdown": markdown,
+                "if_match_hash": ifMatchHash,
+            ],
+            agentName: agentName, agentIntent: agentIntent)
+    }
+
+    public func agentUpdateItemSection(
+        postId: String, section: String, expectedBody: String,
+        replacementBody: String, ifMatchHash: String,
+        agentName: String?, agentIntent: String?
+    ) async -> Result<TextTextAgentCommandReply, TextTextSyncError> {
+        await agentCommand(
+            name: "update_item",
+            arguments: [
+                "id": postId,
+                "section": section,
+                "expected_section_body": expectedBody,
+                "body": replacementBody,
+                "if_match_hash": ifMatchHash,
+            ],
+            agentName: agentName, agentIntent: agentIntent)
+    }
+
+    public func agentAppendItem(
+        postId: String, markdown: String, ifMatchHash: String,
+        idempotencyKey: String, agentName: String?, agentIntent: String?
+    ) async -> Result<TextTextAgentCommandReply, TextTextSyncError> {
+        await agentCommand(
+            name: "append_to_item",
+            arguments: [
+                "id": postId,
+                "markdown": markdown,
+                "if_match_hash": ifMatchHash,
+                "idempotency_key": idempotencyKey,
+            ],
+            agentName: agentName, agentIntent: agentIntent)
+    }
+
+    private func agentCommand(
+        name: String, arguments: [String: String],
+        agentName: String?, agentIntent: String?
+    ) async -> Result<TextTextAgentCommandReply, TextTextSyncError> {
+        let encoded: Data
+        do {
+            encoded = try JSONSerialization.data(withJSONObject: [
+                "name": name,
+                "arguments": arguments,
+            ])
+        } catch {
+            return .failure(.decode(error.localizedDescription))
+        }
+        var headers = ["Content-Type": "application/json"]
+        if let agentName = Self.safeAgentHeader(agentName, maximumLength: 120) {
+            headers["X-TextText-Agent-Name"] = agentName
+        }
+        if let agentIntent = Self.safeAgentHeader(agentIntent, maximumLength: 500) {
+            headers["X-TextText-Agent-Intent"] = agentIntent
+        }
+        switch await send(
+            "POST", "/api/agent/commands", headers: headers, body: encoded
+        ) {
+        case .failure(let error): return .failure(error)
+        case .success(let reply):
+            guard reply.status == 200 else { return .failure(reply.httpError) }
+            switch decode(TextTextAgentCommandReply.self, reply.data) {
+            case .failure(let error): return .failure(error)
+            case .success(let commandReply):
+                guard commandReply.isError == true else { return .success(commandReply) }
+                let message = commandReply.message ?? "The workspace command failed"
+                if message.hasPrefix("Conflict:") { return .failure(.conflict) }
+                return .failure(.rejected(message))
             }
         }
     }
@@ -95,9 +249,10 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
         url: URL
     ) async -> Result<TextTextArtifactContent, TextTextSyncError> {
         guard url.scheme?.lowercased() == "https",
-              let host = url.host?.lowercased(),
-              host.hasSuffix(".blob.vercel-storage.com"),
-              Self.isAllowedArtifactPath(url.path) else {
+            let host = url.host?.lowercased(),
+            host.hasSuffix(".blob.vercel-storage.com"),
+            Self.isAllowedArtifactPath(url.path)
+        else {
             return .failure(.rejected("Artifact URL is not TextText-hosted"))
         }
         var request = URLRequest(url: url)
@@ -110,9 +265,10 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
             guard http.statusCode == 200 else {
                 return .failure(.http(http.statusCode, "artifact download failed"))
             }
-            return .success(TextTextArtifactContent(
-                data: data,
-                contentType: http.value(forHTTPHeaderField: "Content-Type")))
+            return .success(
+                TextTextArtifactContent(
+                    data: data,
+                    contentType: http.value(forHTTPHeaderField: "Content-Type")))
         } catch {
             return .failure(.network(error.localizedDescription))
         }
@@ -122,10 +278,12 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
         postId: String, filename: String, data: Data, contentType: String?
     ) async -> Result<TextTextArtifact, TextTextSyncError> {
         guard TextTextDocumentAssets.isSafeFilename(filename),
-              !data.isEmpty else {
+            !data.isEmpty
+        else {
             return .failure(.rejected("Asset is empty or has an unsafe filename"))
         }
-        let boundary = "TextTextBoundary\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+        let boundary =
+            "TextTextBoundary\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
         var body = Data()
         body.append("--\(boundary)\r\n")
         body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n")
@@ -166,8 +324,9 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
     public func createFile(
         body: String, folderId: String?, idempotencyKey: String?
     ) async -> Result<TextTextManifestItem, TextTextSyncError> {
-        await createFile(
-            body: body, folderId: folderId, representation: .markdown,
+        await createFileRequest(
+            body: body, documentJSON: nil, folderId: folderId,
+            representation: .markdown,
             idempotencyKey: idempotencyKey)
     }
 
@@ -175,12 +334,21 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
         body: String, folderId: String?, representation: TextTextFileRepresentation,
         idempotencyKey: String?
     ) async -> Result<TextTextManifestItem, TextTextSyncError> {
-        await createFile(
+        await createFileRequest(
             body: body, documentJSON: nil, folderId: folderId,
             representation: representation, idempotencyKey: idempotencyKey)
     }
 
     public func createFile(
+        body: String, documentJSON: String?, folderId: String?,
+        representation: TextTextFileRepresentation, idempotencyKey: String?
+    ) async -> Result<TextTextManifestItem, TextTextSyncError> {
+        await createFileRequest(
+            body: body, documentJSON: documentJSON, folderId: folderId,
+            representation: representation, idempotencyKey: idempotencyKey)
+    }
+
+    private func createFileRequest(
         body: String, documentJSON: String?, folderId: String?,
         representation: TextTextFileRepresentation, idempotencyKey: String?
     ) async -> Result<TextTextManifestItem, TextTextSyncError> {
@@ -285,13 +453,28 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
         }
     }
 
+    private static func safeAgentHeader(
+        _ value: String?, maximumLength: Int
+    ) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+            trimmed.count <= maximumLength,
+            trimmed.unicodeScalars.allSatisfy({
+                !CharacterSet.controlCharacters.contains($0)
+            })
+        else { return nil }
+        return trimmed
+    }
+
     private static func decodeSyncDocument(
         _ data: Data
     ) throws -> (markdown: String, documentJSON: String) {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              root["schema"] as? String == "texttext.sync-document.v1",
-              let markdown = root["markdown"] as? String,
-              let document = root["document"] as? [String: Any] else {
+            root["schema"] as? String == "texttext.sync-document.v1",
+            let markdown = root["markdown"] as? String,
+            let document = root["document"] as? [String: Any]
+        else {
             throw NSError(
                 domain: "TextTextSync", code: 1,
                 userInfo: [NSLocalizedDescriptionKey: "invalid structured document"])
@@ -310,8 +493,10 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
         markdown: String, documentJSON: String
     ) throws -> Data {
         let data = Data(documentJSON.utf8)
-        guard let document = try JSONSerialization.jsonObject(with: data)
-                as? [String: Any] else {
+        guard
+            let document = try JSONSerialization.jsonObject(with: data)
+                as? [String: Any]
+        else {
             throw NSError(
                 domain: "TextTextSync", code: 3,
                 userInfo: [NSLocalizedDescriptionKey: "document.json must contain an object"])
@@ -325,7 +510,9 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
             options: [.prettyPrinted, .sortedKeys])
     }
 
-    public func deleteFile(postId: String, ifMatch hash: String?) async -> Result<Void, TextTextSyncError> {
+    public func deleteFile(postId: String, ifMatch hash: String?) async -> Result<
+        Void, TextTextSyncError
+    > {
         var headers: [String: String] = [:]
         if let hash { headers["If-Match"] = "\"\(hash)\"" }
         switch await send("DELETE", "/api/sync/v1/files/\(escape(postId))", headers: headers) {
@@ -420,7 +607,8 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
         }
         var errorMessage: String {
             if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let message = object["error"] as? String {
+                let message = object["error"] as? String
+            {
                 return message
             }
             return "status \(status)"
@@ -485,8 +673,8 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
     }
 }
 
-private extension Data {
-    mutating func append(_ string: String) {
+extension Data {
+    fileprivate mutating func append(_ string: String) {
         append(contentsOf: string.utf8)
     }
 }

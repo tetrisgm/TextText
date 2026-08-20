@@ -9,6 +9,7 @@
 import { recordAction } from "@/lib/audit";
 import { resolveWorkspaceAccess } from "@/lib/permissions";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
+import { readBoundedJson } from "@/lib/http/bounded-json";
 import {
   claimIdempotencyKey,
   createSubfolder,
@@ -17,7 +18,7 @@ import {
   resolveIdempotencyKey,
 } from "@/lib/store";
 import { resolveSyncWorkspace } from "../auth";
-import { syncError } from "../sync";
+import { MAX_SYNC_METADATA_BODY_BYTES, syncError } from "../sync";
 
 export const dynamic = "force-dynamic";
 
@@ -25,17 +26,30 @@ export async function POST(request: Request) {
   const workspace = await resolveSyncWorkspace(request);
   if (workspace instanceof Response) return workspace;
   const { blog, userId } = workspace;
-  const access = await resolveWorkspaceAccess({ handle: blog.handle, user: workspace });
+  const access = await resolveWorkspaceAccess({
+    handle: blog.handle,
+    user: workspace,
+  });
   if (!access.isOwner) {
     return syncError(403, "Only the owner can create folders");
   }
 
-  let body: { parent_path?: unknown; name?: unknown };
-  try {
-    body = await request.json();
-  } catch {
+  const parsedBody = await readBoundedJson<{
+    parent_path?: unknown;
+    name?: unknown;
+  }>(
+    request,
+    MAX_SYNC_METADATA_BODY_BYTES,
+  );
+  if ("error" in parsedBody) {
+    if (parsedBody.error === "too_large") {
+      return syncError(413, "Request body is too large", {
+        "Cache-Control": "private, no-store",
+      });
+    }
     return syncError(400, "Send a JSON body");
   }
+  const body = parsedBody.value;
   const parentPath =
     typeof body.parent_path === "string" ? body.parent_path.trim() : "";
   const name = typeof body.name === "string" ? body.name.trim() : "";
@@ -49,21 +63,35 @@ export async function POST(request: Request) {
     const claim = await claimIdempotencyKey(blog.handle, idempotencyKey);
     if (claim.status === "done") {
       if (claim.kind !== "folder") {
-        return syncError(409, "This Idempotency-Key was used for a different resource");
+        return syncError(
+          409,
+          "This Idempotency-Key was used for a different resource",
+        );
       }
       const existing = await getFolderById(blog.handle, claim.id);
       if (existing) return Response.json({ folder: existing }, { status: 201 });
       // The folder this key created was since deleted; the key is spent.
-      return syncError(409, "The folder created for this Idempotency-Key was deleted");
+      return syncError(
+        409,
+        "The folder created for this Idempotency-Key was deleted",
+      );
     } else if (claim.status === "inflight") {
-      return syncError(409, "A create with this Idempotency-Key is in progress; retry shortly");
+      return syncError(
+        409,
+        "A create with this Idempotency-Key is in progress; retry shortly",
+      );
     }
   }
 
   try {
     const folder = await createSubfolder(blog.handle, parentPath, name);
     if (idempotencyKey) {
-      await resolveIdempotencyKey(blog.handle, idempotencyKey, "folder", folder.id);
+      await resolveIdempotencyKey(
+        blog.handle,
+        idempotencyKey,
+        "folder",
+        folder.id,
+      );
     }
     await recordAction({
       actorUserId: userId,
@@ -76,7 +104,8 @@ export async function POST(request: Request) {
     revalidateBlogPaths(blog);
     return Response.json({ folder }, { status: 201 });
   } catch (error) {
-    if (idempotencyKey) await releaseIdempotencyKey(blog.handle, idempotencyKey).catch(() => {});
+    if (idempotencyKey)
+      await releaseIdempotencyKey(blog.handle, idempotencyKey).catch(() => {});
     return syncError(
       400,
       error instanceof Error ? error.message : "Could not create the folder",

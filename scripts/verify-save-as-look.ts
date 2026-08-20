@@ -141,9 +141,14 @@ async function run(page: Page, theme: "light" | "dark", lookName: string) {
     await field.waitFor({ timeout: 10000 });
     await field.fill(lookName);
     await page.locator('.tt-editor-more-form button[type="submit"]').click();
-    await page.waitForTimeout(3000);
 
-    const notice = await page.locator(".tt-look-notice").innerText().catch(() => "");
+    const savedNotice = page.locator(".tt-look-notice");
+    await savedNotice
+      .filter({ hasText: /Saved as/i })
+      .waitFor({ timeout: 20000 })
+      .catch(() => undefined);
+
+    const notice = await savedNotice.innerText().catch(() => "");
     check(
       "naming a look reports that it saved",
       notice.includes(lookName) || /saved/i.test(notice),

@@ -5,25 +5,30 @@ description: Use one TextText item as a live shared canvas while the user and an
 
 # Use a live TextText document
 
-## With the `texttext` CLI
+## With the local command
+
+Resolve `TEXTTEXT_CMD` from `texttext` on PATH, then fall back to
+`/Applications/TextText.app/Contents/Helpers/texttext`. Verify it with
+`"$TEXTTEXT_CMD" ls` before continuing.
 
 This skill is what the CLI is built for: the person watches the document change
 while you work in it.
 
 ```sh
-texttext open "<doc>" --as codex           # put it on their screen
-texttext edit "<doc>" --section "## Plan" --as codex --message "draft the plan"
+"$TEXTTEXT_CMD" open "<doc>" --as codex           # put it on their screen
+"$TEXTTEXT_CMD" edit "<doc>" --section "## Plan" --as codex --message "draft the plan"
 ```
 
-Passing `--as` is what makes you appear in the document with your own name and
-colour, anchored at the section you are editing. Keep working section by section
+Passing `--as` labels the durable action audit and may show short-lived
+collaborator presence during a connected edit. Keep working section by section
 so the person can watch progress arrive in place, rather than the whole document
-being replaced under them.
+being replaced under them. Do not treat presence as proof that the edit landed;
+read the document back and report the durable result.
 
 Re-read before each write. The person is editing the same document at the same
 time, and their changes must survive yours.
 
-## With MCP, when the CLI is not available
+## With MCP, when it is already connected and the CLI is not available
 
 1. Call `get_workspace`, then `list_folders`.
 2. Search for the document by project identity and title before creating it.
@@ -32,8 +37,9 @@ time, and their changes must survive yours.
 4. Call `open_item` with that exact item id and `mode: "edit"`. On macOS, launch
    the returned `native_url` with the system `open` command. Do not ask the user
    to find the workspace, folder, or document manually.
-5. Keep the returned item id for the rest of the task. The open document shows
-   the agent identity, cursor, selection, and mutations as they happen.
+5. Keep the returned item id for the rest of the task. During connected edits,
+   TextText may show the agent identity, cursor, and selection while mutations
+   arrive in the open document.
 6. Use `update_item` for deliberate revisions and `append_to_item` for durable
    milestones. Give every retryable append a stable `idempotency_key`.
 7. Preserve concurrent human edits. If a guarded update conflicts, read the

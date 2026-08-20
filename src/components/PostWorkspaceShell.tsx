@@ -110,6 +110,18 @@ async function runTrashOperation(
     | null;
   throw new Error(payload?.error || "Trash operation failed");
 }
+
+const subscribeHydration = () => () => {};
+const hydratedSnapshot = () => true;
+const serverHydrationSnapshot = () => false;
+
+function useClientHydrated(): boolean {
+  return useSyncExternalStore(
+    subscribeHydration,
+    hydratedSnapshot,
+    serverHydrationSnapshot,
+  );
+}
 import {
   WorkspaceViewModeControl,
 } from "@/components/workspace/WorkspaceViewModeControl";
@@ -2594,12 +2606,7 @@ function WorkspaceRootLanding({
     "all" | "article" | "note" | "bookmark"
   >("all");
   const creationFolders = useMemo(() => rootSectionFolders(pool), [pool]);
-  const [creationFolderPath, setCreationFolderPath] = useState(
-    () => creationFolders[0]?.path ?? "",
-  );
-  const creationFolder =
-    creationFolders.find((folder) => folder.path === creationFolderPath) ??
-    creationFolders[0];
+  const creationFolder = creationFolders[0];
   const [openHistory, setOpenHistory] = useState<WorkspaceDocumentOpenHistory>(
     () =>
       readWorkspaceDocumentOpenHistory(
@@ -2670,16 +2677,6 @@ function WorkspaceRootLanding({
     }),
     [pool.posts],
   );
-
-  useEffect(() => {
-    if (
-      creationFolderPath &&
-      creationFolders.some((folder) => folder.path === creationFolderPath)
-    ) {
-      return;
-    }
-    setCreationFolderPath(creationFolders[0]?.path ?? "");
-  }, [creationFolderPath, creationFolders]);
 
   useEffect(() => {
     const opened = (event: Event) => {
@@ -3916,8 +3913,7 @@ function LocalUnifiedWorkspacePostEditor({
   // are client module state; letting them into the first render made the
   // server and client disagree and hydration fail. After mount, the client
   // may know more.
-  const [bodySourcesMounted, setBodySourcesMounted] = useState(false);
-  useEffect(() => setBodySourcesMounted(true), []);
+  const bodySourcesMounted = useClientHydrated();
   const bodyKnown =
     poolBody != null ||
     (bodySourcesMounted &&
@@ -4306,7 +4302,7 @@ function LocalWorkspaceShell({
   const { pool } = useWorkspacePool();
   const itemIdentity = useLocalWorkspaceItemIdentity();
   const [view, setView] = useState<LocalWorkspaceView>(initialView);
-  const [poolHydrated, setPoolHydrated] = useState(false);
+  const poolHydrated = useClientHydrated();
   const sourcePool =
     poolHydrated && pool?.blogId === initialPool.blogId ? pool : initialPool;
   const displayPool = useMemo(
@@ -4402,9 +4398,6 @@ function LocalWorkspaceShell({
   const [assistantConfirmation, setAssistantConfirmation] =
     useState<AssistantConfirmationRequest | null>(null);
 
-  useEffect(() => {
-    setPoolHydrated(true);
-  }, []);
   const assistantConfirmationController = useMemo(
     () => createAssistantConfirmationController(setAssistantConfirmation),
     [],
@@ -5282,28 +5275,35 @@ function LocalWorkspaceShell({
     [selectedPostIds, visiblePosts],
   );
   useEffect(() => {
-    const visibleIds = new Set(visiblePosts.map((post) => post.id));
-    setSelectedPostIds((current) => {
-      const next = new Set(
-        Array.from(current).filter((postId) => visibleIds.has(postId)),
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      const visibleIds = new Set(visiblePosts.map((post) => post.id));
+      setSelectedPostIds((current) => {
+        const next = new Set(
+          Array.from(current).filter((postId) => visibleIds.has(postId)),
+        );
+        if (
+          next.size === current.size &&
+          Array.from(next).every((postId) => current.has(postId))
+        ) {
+          return current;
+        }
+        return next;
+      });
+      setSelectedPostId((current) =>
+        current && visibleIds.has(current) ? current : null,
       );
       if (
-        next.size === current.size &&
-        Array.from(next).every((postId) => current.has(postId))
+        selectionAnchorPostIdRef.current &&
+        !visibleIds.has(selectionAnchorPostIdRef.current)
       ) {
-        return current;
+        selectionAnchorPostIdRef.current = null;
       }
-      return next;
     });
-    setSelectedPostId((current) =>
-      current && visibleIds.has(current) ? current : null,
-    );
-    if (
-      selectionAnchorPostIdRef.current &&
-      !visibleIds.has(selectionAnchorPostIdRef.current)
-    ) {
-      selectionAnchorPostIdRef.current = null;
-    }
+    return () => {
+      active = false;
+    };
   }, [visiblePosts]);
   const selectedPoolPosts = useMemo(
     () =>
@@ -6456,6 +6456,7 @@ function LocalWorkspaceShell({
       navigateRoot,
       navigateSection,
       navigateSettings,
+      navigateToNavTargetByIndex,
       navigateUp,
       openCreatedPost,
       openSelected,
@@ -6810,6 +6811,7 @@ function LocalWorkspaceShell({
           onConnectNative={assistant.connectNativeAssistant}
           aiSettingsHref={`${workspaceSettingsHref(homePath)}#api-key-connections`}
           onOpenAiSettings={() => changeAssistantState("hidden")}
+          onRetry={(prompt) => assistant.submit(prompt)}
           jobs={assistant.jobs}
           messages={assistant.messages}
           starterContext={starterContextFromChip(assistantContext)}

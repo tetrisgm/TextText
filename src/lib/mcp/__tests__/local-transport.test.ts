@@ -5,7 +5,8 @@
 // the authoritative check by resolving the host; this side refuses early so an
 // obvious mistake never becomes a message to the app.
 
-import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { isLoopbackUrl, localMcpAvailable } from "@/lib/mcp/local-transport";
 import {
   connectionSlug,
@@ -15,6 +16,22 @@ import {
   requestHeaders,
   MCP_PROTOCOL_VERSION,
 } from "@/lib/mcp/outbound-protocol";
+
+afterEach(() => vi.unstubAllGlobals());
+
+function nativeWindow(embeddedAgent?: boolean) {
+  return {
+    __TEXTTEXT_APP__: true,
+    ...(embeddedAgent === undefined
+      ? {}
+      : { __TEXTTEXT_EMBEDDED_AGENT__: embeddedAgent }),
+    webkit: {
+      messageHandlers: {
+        textTextApp: { postMessage: vi.fn() },
+      },
+    },
+  };
+}
 
 describe("what counts as a server on this Mac", () => {
   it("accepts the loopback addresses a local MCP server actually uses", () => {
@@ -41,6 +58,34 @@ describe("what counts as a server on this Mac", () => {
     // No __TEXTTEXT_APP__ in a test environment, so every call refuses rather
     // than silently doing nothing.
     expect(localMcpAvailable()).toBe(false);
+  });
+
+  it("requires the standalone embedded agent, not merely the native bridge", () => {
+    vi.stubGlobal("window", nativeWindow(false));
+    expect(localMcpAvailable()).toBe(false);
+
+    vi.stubGlobal("window", nativeWindow());
+    expect(localMcpAvailable()).toBe(false);
+
+    vi.stubGlobal("window", nativeWindow(true));
+    expect(localMcpAvailable()).toBe(true);
+  });
+
+  it("omits the local MCP message handler from Store builds", () => {
+    const source = readFileSync(
+      "mac/Sources/TextText/WebAppWindowController.swift",
+      "utf8",
+    );
+    const handler = source.indexOf(
+      'if body["action"] as? String == "localMcpRequest"',
+    );
+    const guard = source.lastIndexOf("#if !TEXTTEXT_STORE", handler);
+    const guardEnd = source.indexOf("#endif", handler);
+
+    expect(handler).toBeGreaterThan(-1);
+    expect(guard).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(handler);
+    expect(guardEnd).toBeGreaterThan(handler);
   });
 });
 

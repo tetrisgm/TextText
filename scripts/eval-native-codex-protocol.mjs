@@ -31,6 +31,15 @@ export function completedFinalAgentMessage(message) {
   return item.text;
 }
 
+export function countMatchedTopicGroups(answer, topicGroups) {
+  const normalizedAnswer = String(answer ?? "").toLocaleLowerCase();
+  return topicGroups.filter((alternatives) =>
+    alternatives.some((alternative) =>
+      normalizedAnswer.includes(alternative.toLocaleLowerCase()),
+    ),
+  ).length;
+}
+
 const forbiddenNativeItemTypes = new Set([
   "commandExecution",
   "fileChange",

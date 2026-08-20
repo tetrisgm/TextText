@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   getPostById: vi.fn(),
   getPostStoreContext: vi.fn(),
   getTrashedFolders: vi.fn(),
+  getTrashedPosts: vi.fn(),
   hasActiveCoEditors: vi.fn(async () => false),
   importItemAssetFromUrl: vi.fn(),
   inviteScopeShare: vi.fn(),
@@ -38,6 +39,7 @@ const mocks = vi.hoisted(() => ({
   releaseIdempotencyKey: vi.fn(),
   resolveIdempotencyKey: vi.fn(),
   restoreFolder: vi.fn(),
+  restorePost: vi.fn(),
   revokeScopeShare: vi.fn(),
   savePost: vi.fn(),
   savePostContentPatch: vi.fn(),
@@ -94,7 +96,7 @@ vi.mock("@/lib/store", () => ({
   getPostById: mocks.getPostById,
   getPostStoreContext: mocks.getPostStoreContext,
   getTrashedFolders: mocks.getTrashedFolders,
-  getTrashedPosts: vi.fn(),
+  getTrashedPosts: mocks.getTrashedPosts,
   listItemComments: mocks.listItemComments,
   markCapturePending: mocks.markCapturePending,
   movePostFile: vi.fn(),
@@ -102,7 +104,7 @@ vi.mock("@/lib/store", () => ({
   releaseIdempotencyKey: mocks.releaseIdempotencyKey,
   resolveIdempotencyKey: mocks.resolveIdempotencyKey,
   restoreFolder: mocks.restoreFolder,
-  restorePost: vi.fn(),
+  restorePost: mocks.restorePost,
   resolvePostSlug: mocks.resolvePostSlug,
   savePost: mocks.savePost,
   savePostContentPatch: mocks.savePostContentPatch,
@@ -115,6 +117,7 @@ import {
   WORKSPACE_TOOL_DEFINITIONS,
   WORKSPACE_TOOL_NAMES,
 } from "@/lib/ai/tools";
+import { PostConflictError } from "@/lib/store";
 import {
   executeMcpTool,
   resolveMcpScopeAccess,
@@ -151,6 +154,7 @@ function registrations(): Registration[] {
 function auth(
   scopes: string[],
   connectionName?: string,
+  actorIntent?: string,
 ): { authInfo: AuthInfo } {
   return {
     authInfo: {
@@ -161,6 +165,7 @@ function auth(
         userId: "user-1",
         sub: "sub-1",
         ...(connectionName ? { connectionName } : {}),
+        ...(actorIntent !== undefined ? { actorIntent } : {}),
       },
     },
   };
@@ -193,6 +198,7 @@ describe("MCP workspace tool adapter", () => {
     mocks.getAccessibleFolders.mockResolvedValue([]);
     mocks.getAccessibleAllPostFiles.mockResolvedValue([]);
     mocks.getTrashedFolders.mockResolvedValue([]);
+    mocks.getTrashedPosts.mockResolvedValue([]);
     mocks.listItemAssetReferences.mockReturnValue([]);
     mocks.listItemComments.mockResolvedValue([]);
     mocks.listScopeShares.mockResolvedValue([]);
@@ -296,11 +302,22 @@ describe("MCP workspace tool adapter", () => {
     );
     const result = await createFolder!.callback(
       { parent_path: "blog", name: "Ideas" },
-      auth(["sync"]),
+      auth(["sync"], "Claude"),
     );
     expect(result.isError).not.toBe(true);
-    expect(mocks.createSubfolder).toHaveBeenCalledWith("local", "blog", "Ideas");
-    expect(mocks.recordAction).toHaveBeenCalledOnce();
+    expect(mocks.createSubfolder).toHaveBeenCalledWith(
+      "local",
+      "blog",
+      "Ideas",
+    );
+    expect(mocks.recordAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorUserId: "user-1",
+        actorType: "external_agent",
+        actionName: "mcp.create_folder",
+        inputSummary: "Agent: Claude; blog/ideas",
+      }),
+    );
   });
 
   it("opens the exact item and publishes a one-shot agent focus event", async () => {
@@ -351,8 +368,7 @@ describe("MCP workspace tool adapter", () => {
         path: `/t/local/working-note?edit=1&id=${id}`,
       },
       mode: "edit",
-      native_url:
-        `texttext-app://item/${id}?workspace=local&mode=edit`,
+      native_url: `texttext-app://item/${id}?workspace=local&mode=edit`,
     });
     expect(mocks.createAgentAwareness).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -384,7 +400,7 @@ describe("MCP workspace tool adapter", () => {
       actionName: "mcp.open_item",
       targetType: "item",
       targetId: id,
-      inputSummary: "edit:notes",
+      inputSummary: "Agent: Codex; edit:notes",
     });
   });
 
@@ -406,8 +422,15 @@ describe("MCP workspace tool adapter", () => {
 
   it("audits an in-app session mutation as the ai actor, not external_agent", async () => {
     const id = "99999999-9999-4999-8999-999999999999";
-    mocks.getOwnedBlog.mockResolvedValue({ handle: "local", name: "Local Workspace" });
-    mocks.resolveItemAccess.mockResolvedValue({ canView: true, canEditContent: true, isOwner: true });
+    mocks.getOwnedBlog.mockResolvedValue({
+      handle: "local",
+      name: "Local Workspace",
+    });
+    mocks.resolveItemAccess.mockResolvedValue({
+      canView: true,
+      canEditContent: true,
+      isOwner: true,
+    });
     const post = {
       id,
       folderId: "blog",
@@ -457,7 +480,10 @@ describe("MCP workspace tool adapter", () => {
       },
       capabilities: {
         folderModes: ["blog", "notes", "bookmarks"],
-        scopes: { fullAccess: "sync", readOnly: expect.arrayContaining(["read"]) },
+        scopes: {
+          fullAccess: "sync",
+          readOnly: expect.arrayContaining(["read"]),
+        },
         permanentDeletion: false,
         memberManagement: true,
         accessManagement: true,
@@ -489,7 +515,7 @@ describe("MCP workspace tool adapter", () => {
     );
     const result = await updateItem!.callback(
       { id, body: "After" },
-      auth(["sync"]),
+      auth(["sync"], "Claude"),
     );
     expect(result.isError).not.toBe(true);
     expect(mocks.savePost).toHaveBeenCalledWith(
@@ -501,6 +527,22 @@ describe("MCP workspace tool adapter", () => {
           actorType: "external_agent",
           actionName: "mcp.update_item",
           targetId: id,
+        }),
+      }),
+    );
+
+    mocks.savePost.mockClear();
+    const hostedAgentUpdate = await updateItem!.callback(
+      { id, tags: ["Research"] },
+      auth(["sync"], "Claude"),
+    );
+    expect(hostedAgentUpdate.isError).not.toBe(true);
+    expect(mocks.savePost).toHaveBeenCalledWith(
+      "local",
+      expect.objectContaining({ tags: ["research"] }),
+      expect.objectContaining({
+        audit: expect.objectContaining({
+          inputSummary: "Agent: Claude; content (tags)",
         }),
       }),
     );
@@ -594,7 +636,7 @@ describe("MCP workspace tool adapter", () => {
 
     const updated = await updateItem.callback(
       { id, tags: ["Design", "#Notes", "notes"] },
-      auth(["sync"]),
+      auth(["sync"], "Codex", "Normalize the topic tags"),
     );
     expect(updated.isError).not.toBe(true);
     expect(mocks.savePost).toHaveBeenCalledWith(
@@ -604,16 +646,24 @@ describe("MCP workspace tool adapter", () => {
         expectedRevision: 7,
         audit: expect.objectContaining({
           actionName: "mcp.update_item",
-          inputSummary: "content (tags)",
+          inputSummary:
+            "Agent: Codex; Intent: Normalize the topic tags; content (tags)",
         }),
       }),
     );
   });
 
-  it("routes a body overwrite through the live document while it is co-edited", async () => {
+  it("rejects a whole-body overwrite while the document is co-edited", async () => {
     const id = "44444444-4444-4444-8444-444444444444";
-    mocks.getOwnedBlog.mockResolvedValue({ handle: "local", name: "Local Workspace" });
-    mocks.resolveItemAccess.mockResolvedValue({ canView: true, canEditContent: true, isOwner: true });
+    mocks.getOwnedBlog.mockResolvedValue({
+      handle: "local",
+      name: "Local Workspace",
+    });
+    mocks.resolveItemAccess.mockResolvedValue({
+      canView: true,
+      canEditContent: true,
+      isOwner: true,
+    });
     const post = {
       id,
       folderId: "blog",
@@ -647,6 +697,8 @@ describe("MCP workspace tool adapter", () => {
       snapshot,
       epoch: 1,
       seq: 2,
+      applied: true,
+      auditRecorded: true,
     });
     mocks.getPostStoreContext.mockResolvedValue({ handle: "local", post });
     mocks.materializeCollabDocument.mockResolvedValue(snapshot);
@@ -656,30 +708,247 @@ describe("MCP workspace tool adapter", () => {
       document: snapshot,
       revision: 43,
     });
-    const updateItem = registrations().find((entry) => entry.name === "update_item");
-    const result = await updateItem!.callback({ id, body: "After" }, auth(["sync"]));
-    expect(result.isError).not.toBe(true);
-    expect(mocks.applyLiveDocumentMutation).toHaveBeenCalledWith(id, {
-      title: undefined,
-      subtitle: undefined,
-      body: "After",
-      tags: undefined,
+    const updateItem = registrations().find(
+      (entry) => entry.name === "update_item",
+    );
+    const result = await updateItem!.callback(
+      { id, body: "After" },
+      auth(["sync"], "Claude"),
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content[0]).toMatchObject({
+      text: expect.stringContaining("Conflict:"),
     });
-    expect(mocks.savePost).toHaveBeenCalledWith(
-      "local",
-      expect.objectContaining({ body: "After", document: snapshot }),
+    expect(mocks.applyLiveDocumentMutation).not.toHaveBeenCalled();
+    expect(mocks.savePost).not.toHaveBeenCalled();
+  });
+
+  it("applies a guarded section edit to live Yjs without replacing the document", async () => {
+    const id = "45454545-4545-4545-8545-454545454545";
+    mocks.getOwnedBlog.mockResolvedValue({
+      handle: "local",
+      name: "Local Workspace",
+    });
+    mocks.resolveItemAccess.mockResolvedValue({
+      canView: true,
+      canEditContent: true,
+      isOwner: true,
+    });
+    const before = "## Pricing\n\nTen dollars.\n\n## Availability\n\nToday.";
+    const after = "## Pricing\n\nTwelve dollars.\n\n## Availability\n\nToday.";
+    const post = {
+      id,
+      folderId: "blog",
+      type: "article",
+      slug: "draft",
+      title: "Draft",
+      excerpt: "",
+      body: before,
+      status: "draft",
+      pinned: false,
+      revision: 42,
+    } as const;
+    const snapshot = {
+      schemaVersion: 1 as const,
+      content: {
+        title: "Draft",
+        subtitle: "",
+        body: after,
+        fields: {},
+        tags: [],
+        assets: [],
+      },
+      presentation: {
+        template: { id: "texttext.article", version: 1 },
+        theme: {},
+      },
+    };
+    mocks.getPostById.mockResolvedValue(post);
+    mocks.hasActiveCoEditors.mockResolvedValueOnce(true);
+    mocks.applyLiveDocumentMutation.mockResolvedValue({
+      snapshot,
+      epoch: 1,
+      seq: 2,
+      applied: true,
+      auditRecorded: true,
+    });
+    mocks.getPostStoreContext.mockResolvedValue({ handle: "local", post });
+    mocks.materializeCollabDocument.mockResolvedValue(snapshot);
+    mocks.savePost.mockResolvedValue({
+      ...post,
+      body: after,
+      document: snapshot,
+      revision: 43,
+    });
+    const updateItem = registrations().find(
+      (entry) => entry.name === "update_item",
+    )!;
+
+    const result = await updateItem.callback(
+      {
+        id,
+        section: "## Pricing",
+        expected_section_body: "Ten dollars.",
+        body: "Twelve dollars.",
+      },
+      auth(["sync"], "Codex"),
+    );
+
+    expect(result.isError).not.toBe(true);
+    expect(mocks.applyLiveDocumentMutation).toHaveBeenCalledWith(
+      id,
       expect.objectContaining({
-        expectedRevision: 42,
-        audit: expect.objectContaining({ actionName: "mcp.update_item" }),
+        title: undefined,
+        subtitle: undefined,
+        body: undefined,
+        bodySection: {
+          heading: "## Pricing",
+          expectedBody: "Ten dollars.",
+          replacementBody: "Twelve dollars.",
+        },
+        tags: undefined,
+        fields: undefined,
+      }),
+      expect.objectContaining({
+        actionName: "mcp.update_item",
+        actorType: "external_agent",
       }),
     );
-    expect(mocks.markCollabMaterialized).toHaveBeenCalledWith(id, 43);
+    expect(mocks.savePost).toHaveBeenCalledWith(
+      "local",
+      expect.any(Object),
+      expect.objectContaining({ auditAlreadyRecorded: true }),
+    );
+  });
+
+  it("audits the live delta before surfacing a later canonical save conflict", async () => {
+    const id = "47474747-4747-4747-8747-474747474747";
+    const post = {
+      id,
+      folderId: "blog",
+      type: "article",
+      slug: "draft",
+      title: "Draft",
+      excerpt: "",
+      body: "## Status\n\nBefore",
+      status: "draft",
+      pinned: false,
+      revision: 42,
+    } as const;
+    const snapshot = {
+      schemaVersion: 1 as const,
+      content: {
+        title: "Draft",
+        subtitle: "",
+        body: "## Status\n\nAfter",
+        fields: {},
+        tags: [],
+        assets: [],
+      },
+      presentation: {
+        template: { id: "texttext.article", version: 1 },
+        theme: {},
+      },
+    };
+    mocks.resolveItemAccess.mockResolvedValue({
+      canView: true,
+      canEditContent: true,
+      isOwner: true,
+    });
+    mocks.getPostById.mockResolvedValue(post);
+    mocks.hasActiveCoEditors.mockResolvedValue(true);
+    mocks.applyLiveDocumentMutation.mockResolvedValue({
+      snapshot,
+      epoch: 1,
+      seq: 9,
+      applied: true,
+      auditRecorded: true,
+    });
+    mocks.getPostStoreContext.mockResolvedValue({ handle: "local", post });
+    mocks.materializeCollabDocument.mockResolvedValue(snapshot);
+    mocks.savePost.mockRejectedValue(new PostConflictError());
+
+    const updateItem = registrations().find(
+      (entry) => entry.name === "update_item",
+    )!;
+    const result = await updateItem.callback(
+      {
+        id,
+        section: "Status",
+        expected_section_body: "Before",
+        body: "After",
+      },
+      auth(["sync"], "Codex", "Update status"),
+    );
+
+    expect(result.isError).toBe(true);
+    expect(mocks.applyLiveDocumentMutation).toHaveBeenCalledWith(
+      id,
+      expect.any(Object),
+      expect.objectContaining({
+        actionName: "mcp.update_item",
+        inputSummary: expect.stringContaining("Agent: Codex"),
+      }),
+    );
+    expect(mocks.savePost).toHaveBeenCalledWith(
+      "local",
+      expect.any(Object),
+      expect.objectContaining({ auditAlreadyRecorded: true }),
+    );
+  });
+
+  it("rejects a section edit when the expected section has changed", async () => {
+    const id = "46464646-4646-4646-8646-464646464646";
+    mocks.getOwnedBlog.mockResolvedValue({ handle: "local", name: "Local" });
+    mocks.resolveItemAccess.mockResolvedValue({
+      canView: true,
+      canEditContent: true,
+      isOwner: true,
+    });
+    mocks.getPostById.mockResolvedValue({
+      id,
+      folderId: "blog",
+      type: "article",
+      slug: "draft",
+      title: "Draft",
+      body: "## Pricing\n\nEleven dollars.",
+      status: "draft",
+      pinned: false,
+      revision: 42,
+    });
+    const updateItem = registrations().find(
+      (entry) => entry.name === "update_item",
+    )!;
+
+    const result = await updateItem.callback(
+      {
+        id,
+        section: "Pricing",
+        expected_section_body: "Ten dollars.",
+        body: "Twelve dollars.",
+      },
+      auth(["sync"], "Codex"),
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]).toMatchObject({
+      text: expect.stringContaining("Conflict:"),
+    });
+    expect(mocks.savePost).not.toHaveBeenCalled();
+    expect(mocks.applyLiveDocumentMutation).not.toHaveBeenCalled();
   });
 
   it("writes a body change when no one is co-editing", async () => {
     const id = "66666666-6666-4666-8666-666666666666";
-    mocks.getOwnedBlog.mockResolvedValue({ handle: "local", name: "Local Workspace" });
-    mocks.resolveItemAccess.mockResolvedValue({ canView: true, canEditContent: true, isOwner: true });
+    mocks.getOwnedBlog.mockResolvedValue({
+      handle: "local",
+      name: "Local Workspace",
+    });
+    mocks.resolveItemAccess.mockResolvedValue({
+      canView: true,
+      canEditContent: true,
+      isOwner: true,
+    });
     const post = {
       id,
       folderId: "blog",
@@ -694,16 +963,28 @@ describe("MCP workspace tool adapter", () => {
     } as const;
     mocks.getPostById.mockResolvedValue(post);
     mocks.savePost.mockResolvedValue({ ...post, body: "After", revision: 43 });
-    const updateItem = registrations().find((entry) => entry.name === "update_item");
-    const result = await updateItem!.callback({ id, body: "After" }, auth(["sync"]));
+    const updateItem = registrations().find(
+      (entry) => entry.name === "update_item",
+    );
+    const result = await updateItem!.callback(
+      { id, body: "After" },
+      auth(["sync"]),
+    );
     expect(result.isError).not.toBe(true);
     expect(mocks.savePost).toHaveBeenCalledTimes(1);
   });
 
   it("routes a title-only edit through the live document while co-edited", async () => {
     const id = "55555555-5555-4555-8555-555555555555";
-    mocks.getOwnedBlog.mockResolvedValue({ handle: "local", name: "Local Workspace" });
-    mocks.resolveItemAccess.mockResolvedValue({ canView: true, canEditContent: true, isOwner: true });
+    mocks.getOwnedBlog.mockResolvedValue({
+      handle: "local",
+      name: "Local Workspace",
+    });
+    mocks.resolveItemAccess.mockResolvedValue({
+      canView: true,
+      canEditContent: true,
+      isOwner: true,
+    });
     const post = {
       id,
       folderId: "blog",
@@ -736,6 +1017,8 @@ describe("MCP workspace tool adapter", () => {
       snapshot,
       epoch: 1,
       seq: 2,
+      applied: true,
+      auditRecorded: true,
     });
     mocks.getPostStoreContext.mockResolvedValue({ handle: "local", post });
     mocks.materializeCollabDocument.mockResolvedValue(snapshot);
@@ -746,20 +1029,33 @@ describe("MCP workspace tool adapter", () => {
       revision: 43,
     });
     mocks.hasActiveCoEditors.mockResolvedValueOnce(true);
-    const updateItem = registrations().find((entry) => entry.name === "update_item");
-    const result = await updateItem!.callback({ id, title: "Renamed" }, auth(["sync"]));
+    const updateItem = registrations().find(
+      (entry) => entry.name === "update_item",
+    );
+    const result = await updateItem!.callback(
+      { id, title: "Renamed" },
+      auth(["sync"]),
+    );
     expect(result.isError).not.toBe(true);
     expect(mocks.applyLiveDocumentMutation).toHaveBeenCalledWith(
       id,
       expect.objectContaining({ title: "Renamed" }),
+      expect.objectContaining({ actionName: "mcp.update_item" }),
     );
     expect(mocks.savePost).toHaveBeenCalledTimes(1);
   });
 
   it("appends through the live document while the item is being co-edited", async () => {
     const id = "77777777-7777-4777-8777-777777777777";
-    mocks.getOwnedBlog.mockResolvedValue({ handle: "local", name: "Local Workspace" });
-    mocks.resolveItemAccess.mockResolvedValue({ canView: true, canEditContent: true, isOwner: true });
+    mocks.getOwnedBlog.mockResolvedValue({
+      handle: "local",
+      name: "Local Workspace",
+    });
+    mocks.resolveItemAccess.mockResolvedValue({
+      canView: true,
+      canEditContent: true,
+      isOwner: true,
+    });
     const post = {
       id,
       folderId: "blog",
@@ -793,6 +1089,8 @@ describe("MCP workspace tool adapter", () => {
       snapshot,
       epoch: 1,
       seq: 2,
+      applied: true,
+      auditRecorded: true,
     });
     mocks.getPostStoreContext.mockResolvedValue({ handle: "local", post });
     mocks.materializeCollabDocument.mockResolvedValue(snapshot);
@@ -802,22 +1100,116 @@ describe("MCP workspace tool adapter", () => {
       document: snapshot,
       revision: 43,
     });
-    const appendItem = registrations().find((entry) => entry.name === "append_to_item");
+    const appendItem = registrations().find(
+      (entry) => entry.name === "append_to_item",
+    );
     const result = await appendItem!.callback(
       { id, markdown_fragment: "More text" },
       auth(["sync"]),
     );
     expect(result.isError).not.toBe(true);
-    expect(mocks.applyLiveDocumentMutation).toHaveBeenCalledWith(id, {
-      appendBody: "More text",
-    });
+    expect(mocks.applyLiveDocumentMutation).toHaveBeenCalledWith(
+      id,
+      { appendBody: "More text", operationId: undefined },
+      expect.objectContaining({ actionName: "mcp.append_to_item" }),
+    );
     expect(mocks.savePost).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not duplicate an atomic live audit when an idempotent retry materializes", async () => {
+    const id = "78787878-7878-4787-8787-787878787878";
+    const post = {
+      id,
+      folderId: "blog",
+      type: "article",
+      slug: "draft",
+      title: "Draft",
+      excerpt: "",
+      body: "Before",
+      status: "draft",
+      pinned: false,
+      revision: 42,
+    } as const;
+    const snapshot = {
+      schemaVersion: 1 as const,
+      content: {
+        title: "Draft",
+        subtitle: "",
+        body: "Before\n\nExactly once",
+        fields: {},
+        tags: [],
+        assets: [],
+      },
+      presentation: {
+        template: { id: "texttext.article", version: 1 },
+        theme: {},
+      },
+    };
+    mocks.resolveItemAccess.mockResolvedValue({
+      canView: true,
+      canEditContent: true,
+      isOwner: true,
+    });
+    mocks.getPostById.mockResolvedValue(post);
+    mocks.hasActiveCoEditors.mockResolvedValue(true);
+    mocks.applyLiveDocumentMutation
+      .mockResolvedValueOnce({
+        snapshot,
+        epoch: 1,
+        seq: 2,
+        applied: true,
+        auditRecorded: true,
+      })
+      .mockResolvedValueOnce({
+        snapshot,
+        epoch: 1,
+        seq: 2,
+        applied: false,
+        auditRecorded: true,
+      });
+    mocks.getPostStoreContext.mockResolvedValue({ handle: "local", post });
+    mocks.materializeCollabDocument.mockResolvedValue(snapshot);
+    mocks.savePost
+      .mockRejectedValueOnce(new PostConflictError())
+      .mockRejectedValueOnce(new PostConflictError())
+      .mockRejectedValueOnce(new PostConflictError())
+      .mockResolvedValueOnce({
+        ...post,
+        body: snapshot.content.body,
+        document: snapshot,
+        revision: 43,
+      });
+    const appendItem = registrations().find(
+      (entry) => entry.name === "append_to_item",
+    )!;
+    const args = {
+      id,
+      markdown: "Exactly once",
+      idempotency_key: "agent-task-1",
+    };
+
+    const first = await appendItem.callback(args, auth(["sync"], "Codex"));
+    const retried = await appendItem.callback(args, auth(["sync"], "Codex"));
+
+    expect(first.isError).toBe(true);
+    expect(retried.isError).not.toBe(true);
+    expect(mocks.applyLiveDocumentMutation).toHaveBeenCalledTimes(2);
+    for (const call of mocks.savePost.mock.calls) {
+      expect(call[2]).toMatchObject({ auditAlreadyRecorded: true });
+    }
   });
 
   it("appends when no one is co-editing", async () => {
     const id = "88888888-8888-4888-8888-888888888888";
-    mocks.getOwnedBlog.mockResolvedValue({ handle: "local", name: "Local Workspace" });
-    mocks.resolveItemAccess.mockResolvedValue({ canView: true, canEditContent: true, isOwner: true });
+    mocks.getOwnedBlog.mockResolvedValue({
+      handle: "local",
+      name: "Local Workspace",
+    });
+    mocks.resolveItemAccess.mockResolvedValue({
+      canView: true,
+      canEditContent: true,
+      isOwner: true,
+    });
     const post = {
       id,
       folderId: "blog",
@@ -831,8 +1223,14 @@ describe("MCP workspace tool adapter", () => {
       revision: 42,
     } as const;
     mocks.getPostById.mockResolvedValue(post);
-    mocks.savePost.mockResolvedValue({ ...post, body: "Before\n\nMore", revision: 43 });
-    const appendItem = registrations().find((entry) => entry.name === "append_to_item");
+    mocks.savePost.mockResolvedValue({
+      ...post,
+      body: "Before\n\nMore",
+      revision: 43,
+    });
+    const appendItem = registrations().find(
+      (entry) => entry.name === "append_to_item",
+    );
     const result = await appendItem!.callback(
       { id, markdown_fragment: "More" },
       auth(["sync"]),
@@ -869,10 +1267,11 @@ describe("MCP workspace tool adapter", () => {
       revision: 2,
     };
     mocks.getAccessibleFolders.mockResolvedValue([folder]);
-    mocks.createDraftInFolder.mockResolvedValue(draft);
-    mocks.savePost.mockResolvedValue(saved);
+    mocks.createDraftInFolder.mockResolvedValue(saved);
     mocks.getPostById.mockResolvedValue(saved);
-    const createItem = registrations().find((entry) => entry.name === "create_item");
+    const createItem = registrations().find(
+      (entry) => entry.name === "create_item",
+    );
     const input = {
       folder_path: "blog",
       title: "Project Alpha",
@@ -884,12 +1283,22 @@ describe("MCP workspace tool adapter", () => {
     expect(first.isError).not.toBe(true);
     expect(JSON.parse(toolText(first))).toMatchObject({ replayed: false });
     expect(mocks.createDraftInFolder).toHaveBeenCalledTimes(1);
-    expect(mocks.resolveIdempotencyKey).toHaveBeenCalledWith(
+    expect(mocks.createDraftInFolder).toHaveBeenCalledWith(
       "local",
-      "agent:create:project:https://example.com/alpha",
-      "post",
-      id,
+      "blog",
+      expect.objectContaining({
+        idempotencyKey: "agent:create:project:https://example.com/alpha",
+        initial: expect.objectContaining({
+          title: "Project Alpha",
+          body: "# Project Alpha",
+        }),
+        audit: expect.objectContaining({
+          actionName: "mcp.create_item",
+          actorType: "external_agent",
+        }),
+      }),
     );
+    expect(mocks.resolveIdempotencyKey).not.toHaveBeenCalled();
 
     mocks.claimIdempotencyKey.mockResolvedValue({
       status: "done",
@@ -903,7 +1312,7 @@ describe("MCP workspace tool adapter", () => {
       item: { id, title: "Project Alpha" },
     });
     expect(mocks.createDraftInFolder).toHaveBeenCalledTimes(1);
-    expect(mocks.savePost).toHaveBeenCalledTimes(1);
+    expect(mocks.savePost).not.toHaveBeenCalled();
   });
 
   it("appends a changelog entry once when an agent retries", async () => {
@@ -926,8 +1335,34 @@ describe("MCP workspace tool adapter", () => {
       revision: 9,
     };
     mocks.getPostById.mockResolvedValue(post);
+    const snapshot = {
+      schemaVersion: 1 as const,
+      content: {
+        title: post.title,
+        subtitle: post.excerpt,
+        body: saved.body,
+        fields: {},
+        tags: [],
+        assets: [],
+      },
+      presentation: {
+        template: { id: "texttext.note", version: 1 },
+        theme: {},
+      },
+    };
+    mocks.applyLiveDocumentMutation.mockResolvedValue({
+      snapshot,
+      epoch: 1,
+      seq: 2,
+      applied: true,
+      auditRecorded: true,
+    });
+    mocks.getPostStoreContext.mockResolvedValue({ handle: "local", post });
+    mocks.materializeCollabDocument.mockResolvedValue(snapshot);
     mocks.savePost.mockResolvedValue(saved);
-    const appendItem = registrations().find((entry) => entry.name === "append_to_item");
+    const appendItem = registrations().find(
+      (entry) => entry.name === "append_to_item",
+    );
     const input = {
       id,
       markdown_fragment: "## 1.2.0\n\nShipped sync.",
@@ -998,6 +1433,105 @@ describe("MCP workspace tool adapter", () => {
     );
   });
 
+  it("folds restore and publication audits into their store mutations", async () => {
+    const id = "33333333-3333-4333-8333-333333333334";
+    const draft = {
+      id,
+      folderId: "blog",
+      type: "article",
+      slug: "atomic-draft",
+      title: "Atomic draft",
+      body: "Body",
+      status: "draft",
+      pinned: false,
+      revision: 14,
+    } as const;
+    mocks.getTrashedPosts.mockResolvedValue([draft]);
+    mocks.restorePost.mockResolvedValue(draft);
+
+    const entries = registrations();
+    const restoreItem = entries.find((entry) => entry.name === "restore_item");
+    const restored = await restoreItem!.callback(
+      { id },
+      auth(["sync"], "Claude"),
+    );
+
+    expect(restored.isError).not.toBe(true);
+    expect(mocks.restorePost).toHaveBeenCalledWith(
+      "local",
+      id,
+      expect.objectContaining({
+        actorType: "external_agent",
+        actionName: "mcp.restore_item",
+        targetId: id,
+        inputSummary: "Agent: Claude; Atomic draft",
+      }),
+    );
+
+    mocks.getPostById.mockResolvedValue(draft);
+    mocks.savePost.mockResolvedValue({
+      ...draft,
+      status: "published",
+      visibility: "public",
+      revision: 15,
+    });
+    const setStatus = entries.find(
+      (entry) => entry.name === "set_item_status",
+    );
+    const published = await setStatus!.callback(
+      { id, status: "published" },
+      auth(["sync"], "Claude"),
+    );
+
+    expect(published.isError).not.toBe(true);
+    expect(mocks.savePost).toHaveBeenCalledWith(
+      "local",
+      expect.objectContaining({ id, status: "published" }),
+      expect.objectContaining({
+        expectedRevision: 14,
+        audit: expect.objectContaining({
+          actorType: "external_agent",
+          actionName: "mcp.publish_item",
+          targetId: id,
+          inputSummary: "Agent: Claude; Atomic draft",
+        }),
+      }),
+    );
+
+    const publishedPost = {
+      ...draft,
+      status: "published" as const,
+      visibility: "public" as const,
+      revision: 15,
+    };
+    mocks.getPostById.mockResolvedValue(publishedPost);
+    mocks.savePost.mockResolvedValue({
+      ...publishedPost,
+      status: "draft",
+      visibility: "private",
+      revision: 16,
+    });
+    const unpublished = await setStatus!.callback(
+      { id, status: "draft" },
+      auth(["sync"], "Claude"),
+    );
+
+    expect(unpublished.isError).not.toBe(true);
+    expect(mocks.savePost).toHaveBeenLastCalledWith(
+      "local",
+      expect.objectContaining({ id, status: "draft" }),
+      expect.objectContaining({
+        expectedRevision: 15,
+        audit: expect.objectContaining({
+          actorType: "external_agent",
+          actionName: "mcp.unpublish_item",
+          targetId: id,
+        }),
+      }),
+    );
+    expect(mocks.recordAction).not.toHaveBeenCalled();
+  });
+
   it("moves a folder to Trash and restores it with adapter-owned audits", async () => {
     const folder = {
       id: "folder-ideas",
@@ -1011,8 +1545,12 @@ describe("MCP workspace tool adapter", () => {
     mocks.getTrashedFolders.mockResolvedValue([folder]);
 
     const entries = registrations();
-    const deleteFolder = entries.find((entry) => entry.name === "delete_folder");
-    const restoreFolder = entries.find((entry) => entry.name === "restore_folder");
+    const deleteFolder = entries.find(
+      (entry) => entry.name === "delete_folder",
+    );
+    const restoreFolder = entries.find(
+      (entry) => entry.name === "restore_folder",
+    );
     const deleted = await deleteFolder!.callback(
       { folder_id: folder.id },
       auth(["sync"]),
@@ -1081,7 +1619,7 @@ describe("MCP workspace tool adapter", () => {
 
     const listed = await listAccess!.callback(
       { scope_type: "workspace" },
-      auth(["sync"]),
+      auth(["sync"], "Claude"),
     );
     const changed = await setAccess!.callback(
       {
@@ -1089,17 +1627,15 @@ describe("MCP workspace tool adapter", () => {
         email: share.email,
         role: "member",
       },
-      auth(["sync"]),
+      auth(["sync"], "Claude"),
     );
     const revoked = await revokeAccess!.callback(
       { scope_type: "workspace", access_id: share.id },
-      auth(["sync"]),
+      auth(["sync"], "Claude"),
     );
 
     expect(
-      [listed, changed, revoked].every(
-        (result) => result.isError !== true,
-      ),
+      [listed, changed, revoked].every((result) => result.isError !== true),
     ).toBe(true);
     expect(mocks.listScopeShares).toHaveBeenCalledWith("workspace", "blog-1");
     expect(mocks.inviteScopeShare).toHaveBeenCalledWith(
@@ -1112,6 +1648,7 @@ describe("MCP workspace tool adapter", () => {
         actorType: "external_agent",
         actorUserId: "user-1",
         auditActionName: "mcp.set_access",
+        auditInputSummary: `Agent: Claude; ${share.email} as member`,
       }),
     );
     expect(mocks.revokeScopeShare).toHaveBeenCalledWith(
@@ -1123,6 +1660,7 @@ describe("MCP workspace tool adapter", () => {
         actorType: "external_agent",
         actorUserId: "user-1",
         auditActionName: "mcp.revoke_access",
+        auditInputSummary: `Agent: Claude; Access: ${share.id}`,
       }),
     );
     expect(mocks.recordAction).not.toHaveBeenCalled();
@@ -1156,7 +1694,9 @@ describe("MCP workspace tool adapter", () => {
     });
 
     const entries = registrations();
-    const listComments = entries.find((entry) => entry.name === "list_comments");
+    const listComments = entries.find(
+      (entry) => entry.name === "list_comments",
+    );
     const addComment = entries.find((entry) => entry.name === "add_comment");
     const resolveComment = entries.find(
       (entry) => entry.name === "set_comment_resolved",
@@ -1174,11 +1714,11 @@ describe("MCP workspace tool adapter", () => {
         anchor_start: 0,
         anchor_end: 13,
       },
-      auth(["sync"]),
+      auth(["sync"], "Claude"),
     );
     const resolved = await resolveComment!.callback(
       { id, comment_id: comment.id, resolved: true },
-      auth(["sync"]),
+      auth(["sync"], "Claude"),
     );
 
     expect(
@@ -1198,28 +1738,59 @@ describe("MCP workspace tool adapter", () => {
           end: 13,
         },
       }),
-      expect.objectContaining({ actorType: "external_agent" }),
+      expect.objectContaining({
+        actorType: "external_agent",
+        actorName: "Claude",
+      }),
+      {
+        audit: expect.objectContaining({
+          actorType: "external_agent",
+          actionName: "mcp.add_comment",
+          targetId: id,
+          inputSummary: `Agent: Claude; ${comment.body}`,
+        }),
+      },
     );
     expect(mocks.setItemCommentResolved).toHaveBeenCalledWith(
+      id,
+      comment.id,
+      true,
       expect.objectContaining({
-        itemId: id,
-        commentId: comment.id,
-        resolved: true,
-        actor: expect.objectContaining({ actorType: "external_agent" }),
+          actorType: "external_agent",
+          actorName: "Claude",
       }),
+      {
+        audit: expect.objectContaining({
+          actorType: "external_agent",
+          actionName: "mcp.resolve_comment",
+          targetId: id,
+          inputSummary: `Agent: Claude; ${comment.id}`,
+        }),
+      },
     );
-    expect(mocks.recordAction).toHaveBeenCalledWith(
-      expect.objectContaining({
-        actionName: "mcp.add_comment",
-        targetId: id,
-      }),
+    mocks.setItemCommentResolved.mockResolvedValue({
+      ...comment,
+      resolved: false,
+    });
+    const reopened = await resolveComment!.callback(
+      { id, comment_id: comment.id, resolved: false },
+      auth(["sync"], "Claude"),
     );
-    expect(mocks.recordAction).toHaveBeenCalledWith(
-      expect.objectContaining({
-        actionName: "mcp.resolve_comment",
-        targetId: id,
-      }),
+    expect(reopened.isError).not.toBe(true);
+    expect(mocks.setItemCommentResolved).toHaveBeenLastCalledWith(
+      id,
+      comment.id,
+      false,
+      expect.objectContaining({ actorType: "external_agent" }),
+      {
+        audit: expect.objectContaining({
+          actorType: "external_agent",
+          actionName: "mcp.reopen_comment",
+          targetId: id,
+        }),
+      },
     );
+    expect(mocks.recordAction).not.toHaveBeenCalled();
   });
 
   it("queues bookmark recapture and audits the original URL", async () => {
@@ -1292,7 +1863,10 @@ describe("MCP workspace tool adapter", () => {
       { url: assetUrl, role: "body" },
     ]);
     mocks.importItemAssetFromUrl.mockResolvedValue(asset);
-    mocks.attachItemAsset.mockReturnValue({ ...post, body: `Body\n\n![](${assetUrl})` });
+    mocks.attachItemAsset.mockReturnValue({
+      ...post,
+      body: `Body\n\n![](${assetUrl})`,
+    });
     mocks.removeItemAssetReferences.mockReturnValue({
       changed: true,
       post: { ...post, body: "Body" },
@@ -1354,7 +1928,10 @@ describe("MCP workspace tool adapter", () => {
       "body_end",
       { altText: "Cover art", caption: undefined },
     );
-    expect(mocks.removeItemAssetReferences).toHaveBeenCalledWith(post, assetUrl);
+    expect(mocks.removeItemAssetReferences).toHaveBeenCalledWith(
+      post,
+      assetUrl,
+    );
     expect(mocks.savePost).toHaveBeenCalledWith(
       "local",
       expect.objectContaining({
@@ -1371,7 +1948,10 @@ describe("MCP workspace tool adapter", () => {
       }),
     );
     expect(mocks.recordAction).toHaveBeenCalledWith(
-      expect.objectContaining({ actionName: "mcp.add_item_asset", targetId: id }),
+      expect.objectContaining({
+        actionName: "mcp.add_item_asset",
+        targetId: id,
+      }),
     );
     expect(mocks.recordAction).toHaveBeenCalledWith(
       expect.objectContaining({

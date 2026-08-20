@@ -9,6 +9,7 @@ const groups = [
     label: "Write",
     links: [
       ["Work with an agent", "/docs/how-it-works"],
+      ["Writing recipes", "/docs/recipes"],
       ["Features", "/docs/features"],
       ["Item types", "/docs/item-types"],
     ],
@@ -33,7 +34,9 @@ export function DocsNavigation() {
   return (
     <nav className="docs-navigation" aria-label="TextText documentation">
       <Link className="docs-navigation-home" href="/docs">
-        <span className="docs-navigation-mark" aria-hidden="true">T</span>
+        <span className="docs-navigation-mark" aria-hidden="true">
+          T
+        </span>
         <span>
           <strong>TextText</strong>
           <small>Documentation</small>
@@ -44,7 +47,9 @@ export function DocsNavigation() {
           <section className="docs-navigation-group" key={group.label}>
             <p>{group.label}</p>
             {group.links.map(([label, href]) => (
-              <Link href={href} key={href}>{label}</Link>
+              <Link href={href} key={href}>
+                {label}
+              </Link>
             ))}
           </section>
         ))}

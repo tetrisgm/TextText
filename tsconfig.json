@@ -31,7 +31,9 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts",
     ".texttext/next-live-eval/types/**/*.ts",
-    ".texttext/next-live-eval/dev/types/**/*.ts"
+    ".texttext/next-live-eval/dev/types/**/*.ts",
+    ".texttext/native-bridge-eval/types/**/*.ts",
+    ".texttext/native-bridge-eval/dev/types/**/*.ts"
   ],
   "exclude": ["node_modules"]
 }

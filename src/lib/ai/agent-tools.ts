@@ -561,7 +561,11 @@ export function createWorkspaceAgentTools(
     markdown_fragment?: unknown;
     title?: unknown;
     excerpt?: unknown;
+    text_edit?: { field?: unknown };
   }): WorkspaceAgentActivityField {
+    if (input.text_edit?.field === "title") return "title";
+    if (input.text_edit?.field === "excerpt") return "subtitle";
+    if (input.text_edit?.field === "body") return "body";
     if (
       input.body !== undefined ||
       input.markdown !== undefined ||
@@ -895,6 +899,7 @@ export function createWorkspaceAgentTools(
           actor,
         );
         const metadataRequested =
+          input.text_edit !== undefined ||
           input.markdown !== undefined ||
           input.slug !== undefined ||
           input.accent !== undefined ||

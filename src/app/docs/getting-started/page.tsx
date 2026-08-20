@@ -10,49 +10,79 @@ export default function GettingStartedPage() {
         <p className="connect-provider-kicker">Getting started</p>
         <h1 className="connect-title">Make one visible edit</h1>
         <p className="connect-lede">
-          The fastest way to understand TextText is to work with an agent in a
-          real document. This takes about two minutes and is safe to undo.
+          The fastest way to understand TextText is to rewrite one selected
+          sentence in a real document. This takes about two minutes and keeps
+          the original within reach.
         </p>
         <section className="connect-section">
           <h2 className="connect-section-title">1. Open a scratch note</h2>
           <p>
-            Open Notes and create a blank note. Keep it open. The document you
-            are looking at becomes the agent&apos;s working context, and its name
-            appears above the assistant composer.
+            Open Notes and create a note with one sentence you can safely
+            change. Keep the note open, select that sentence, and leave the
+            selection active. The context chip above the assistant composer
+            names the document and selected passage.
           </p>
+          <p>For a predictable test, type and select this sentence:</p>
+          <blockquote className="docs-prompt">
+            The machines are important to the work, but they should not get in
+            the way of the work.
+          </blockquote>
         </section>
         <section className="connect-section">
           <h2 className="connect-section-title">2. Open the agent</h2>
           <p>
             Open the right sidebar. If TextText Agent is already connected,
-            start writing. Otherwise choose <strong>Set up TextText Agent</strong>
-            for an assistant inside the app, or <strong>Connect your AI app</strong>
-            to use Claude, Codex, ChatGPT, or another MCP client.
+            start writing. Otherwise choose{" "}
+            <strong>Set up the in-app assistant</strong>. This two-minute loop
+            uses the selection Rewrite action so its proposal, Apply, and Undo
+            controls all stay visible together.
           </p>
           <p>
-            <Link href="/docs/ai">Follow the connection guide</Link> if neither
-            option is ready yet.
+            <Link href="/docs/ai">Follow the connection guide</Link> if that
+            path is not ready yet.
           </p>
         </section>
         <section className="connect-section">
-          <h2 className="connect-section-title">3. Ask for a change you can see</h2>
-          <p>Send this exact request:</p>
-          <blockquote className="docs-prompt">
-            Add a heading called Connection verified and one sentence beneath
-            it about why this document exists. Do not change anything else.
-          </blockquote>
+          <h2 className="connect-section-title">
+            3. Ask for a change you can see
+          </h2>
           <p>
-            A connected agent edits the same document. Its name and activity
-            stay visible, and TextText shows the proposed result before a
-            guarded change is applied.
+            With the sentence still selected, choose <strong>Rewrite</strong>
+            from the selection toolbar. The quick action asks the connected
+            in-app provider for a clearer replacement without changing the rest
+            of the note.
+          </p>
+          <p>
+            TextText shows the selected source and proposed replacement before
+            anything changes. This preview belongs to the selection quick
+            action; an ordinary freeform assistant request may update the
+            document directly instead.
+          </p>
+        </section>
+        <section className="connect-section">
+          <h2 className="connect-section-title">
+            Using the standalone Mac edition with Claude or Codex?
+          </h2>
+          <p>
+            The standalone Mac edition includes the local TextText plugin.
+            Install it, then name the exact document path in Claude or Codex.
+            Local plugin edits appear in TextText and follow the same
+            validation, permissions, audit, and conflict rules. Review or
+            correct them in the document rather than expecting the sidebar
+            proposal and Undo controls.
+          </p>
+          <p>
+            <Link href="/docs/ai#external-agent">Connect the local plugin</Link>
+            .
           </p>
         </section>
         <section className="connect-section">
           <h2 className="connect-section-title">4. Review, keep, or undo</h2>
           <p>
-            Read the change in the document. Keep it if it is useful, or choose
-            Undo to return to the previous version. That is the complete TextText
-            loop: document, request, visible change, control.
+            Read the replacement, choose Apply, and confirm it appears in the
+            note. Keep it if it is useful, or choose Undo beside that quick
+            action result. That is the complete selection loop: passage,
+            proposal, visible change, control.
           </p>
         </section>
         <section className="connect-section">
@@ -63,8 +93,11 @@ export default function GettingStartedPage() {
             <li>Find related notes and draft an outline from them.</li>
           </ul>
           <p>
-            Next, <Link href="/docs/how-it-works">learn what the agent sees</Link>
-            or <Link href="/docs/features"> browse verified capabilities</Link>.
+            Next, try the{" "}
+            <Link href="/docs/recipes">copyable writing recipes</Link>,
+            <Link href="/docs/how-it-works"> learn what the agent sees</Link>,
+            or
+            <Link href="/docs/features"> browse verified capabilities</Link>.
           </p>
         </section>
       </main>

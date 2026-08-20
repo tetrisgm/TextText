@@ -12,6 +12,7 @@
 
 export type LocalMcpWindow = Window & {
   __TEXTTEXT_APP__?: boolean;
+  __TEXTTEXT_EMBEDDED_AGENT__?: boolean;
   webkit?: {
     messageHandlers?: {
       textTextApp?: { postMessage: (message: unknown) => void };
@@ -43,6 +44,7 @@ export function localMcpAvailable(): boolean {
   const current = window as LocalMcpWindow;
   return (
     current.__TEXTTEXT_APP__ === true &&
+    current.__TEXTTEXT_EMBEDDED_AGENT__ === true &&
     Boolean(current.webkit?.messageHandlers?.textTextApp)
   );
 }

@@ -1,5 +1,6 @@
-import XCTest
 import TextTextFileProviderKit
+import XCTest
+
 @testable import TextTextCLICore
 
 final class DocumentStoreTests: XCTestCase {
@@ -163,9 +164,11 @@ final class DocumentStoreTests: XCTestCase {
         try Data("Plain text".utf8).write(to: root.appendingPathComponent("Plain.txt"))
 
         let listed = try store.list()
-        XCTAssertEqual(listed, [
-            "Bundled.textbundle", "Markdown.md", "Packed.textpack", "Plain.txt",
-        ])
+        XCTAssertEqual(
+            listed,
+            [
+                "Bundled.textbundle", "Markdown.md", "Packed.textpack", "Plain.txt",
+            ])
         XCTAssertEqual(try store.readMarkdown(at: store.resolve("Bundled")), "# Bundled")
         XCTAssertEqual(try store.readMarkdown(at: store.resolve("Markdown")), "# Markdown")
         XCTAssertEqual(try store.readMarkdown(at: store.resolve("Packed")), "# Packed")
@@ -241,10 +244,12 @@ final class DocumentStoreTests: XCTestCase {
 
     func testCredentialsLoadFromAnOverridePath() throws {
         let path = root.appendingPathComponent("credentials.json")
-        try Data("""
+        try Data(
+            """
             {"token":"wsk_test","serverOrigin":"https://example.com",
              "tokenName":"n","linkedAt":0}
-            """.utf8).write(to: path)
+            """.utf8
+        ).write(to: path)
 
         let credentials = DeviceCredentials.load(
             environment: ["TEXTTEXT_CREDENTIALS_PATH": path.path])
@@ -282,14 +287,23 @@ final class DocumentStoreTests: XCTestCase {
             outside.path)
     }
 
-    func testResolveReturnsAnAbsolutePathUntouched() throws {
+    func testResolveRejectsAnAbsolutePathOutsideTheExplicitRoot() throws {
         let outside = root.deletingLastPathComponent()
             .appendingPathComponent("outside-\(UUID().uuidString).textpack")
         try Data("zip".utf8).write(to: outside)
         defer { try? FileManager.default.removeItem(at: outside) }
 
+        XCTAssertThrowsError(try store.resolve(outside.path)) { error in
+            guard case TextTextCLIError.invalidDocument = error else {
+                return XCTFail("expected invalidDocument, got \(error)")
+            }
+        }
+    }
+
+    func testResolveAcceptsAnAbsolutePathInsideTheExplicitRoot() throws {
+        let inside = try makeTextpack(named: "Inside", markdown: "# Inside")
         XCTAssertEqual(
-            try store.resolve(outside.path).standardizedFileURL.path,
-            outside.standardizedFileURL.path)
+            try store.resolve(inside.path).standardizedFileURL.path,
+            inside.standardizedFileURL.path)
     }
 }

@@ -8,12 +8,7 @@ import {
   DEFAULT_FILE_REPRESENTATION,
   isFileRepresentation,
 } from "@/lib/content";
-import type {
-  Blog,
-  FileRepresentation,
-  Folder,
-  Post,
-} from "@/lib/content";
+import type { Blog, FileRepresentation, Folder, Post } from "@/lib/content";
 import { markdownFileHash } from "@/lib/content-hash";
 import {
   renderSyncDocumentEnvelope,
@@ -27,7 +22,9 @@ import {
 } from "@/lib/markdown-files";
 
 export const WORKSPACE_SCHEMA = "texttext.workspace.v1";
-export const TEXTTEXT_FILE_REPRESENTATION_HEADER = "TextText-File-Representation";
+export const TEXTTEXT_FILE_REPRESENTATION_HEADER =
+  "TextText-File-Representation";
+export const MAX_SYNC_METADATA_BODY_BYTES = 32 * 1024;
 
 const SYNC_FILE_EXTENSIONS: Record<FileRepresentation, string> = {
   textbundle: ".textbundle",
@@ -140,7 +137,9 @@ export function ifMatchSatisfied(headerValue: string, etag: string): boolean {
   // quotes before the weak prefix). Without this, the File Provider's
   // fetched-version If-Match spuriously conflicts on compressed reads.
   const target = normalizeEtag(etag);
-  return headerValue.split(",").some((candidate) => normalizeEtag(candidate) === target);
+  return headerValue
+    .split(",")
+    .some((candidate) => normalizeEtag(candidate) === target);
 }
 
 /** Reduce an ETag / If-Match token to its bare content hash: drop surrounding
@@ -156,7 +155,10 @@ function normalizeEtag(value: string): string {
 // RFC 9110 13.1.2: If-None-Match uses the WEAK comparison, so a
 // proxy-weakened W/"hash" (nginx does this when it gzips) still revalidates,
 // and a bare "*" matches any current representation.
-export function ifNoneMatchSatisfied(headerValue: string, etag: string): boolean {
+export function ifNoneMatchSatisfied(
+  headerValue: string,
+  etag: string,
+): boolean {
   if (headerValue.trim() === "*") return true;
   return headerValue
     .split(",")

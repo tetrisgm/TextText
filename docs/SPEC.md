@@ -31,32 +31,30 @@ Nothing else is.
 
 ## Pillar 2: the AI is a collaborator, not a feature
 
-- The rail assistant behaves like a person the document was shared with:
-  its own name, avatar, presence, live cursor, attributed edits, comments.
-  It holds no powers a human collaborator lacks.
+- The rail assistant keeps its provider identity and current document context
+  visible. Selection quick actions show a proposed replacement before Apply;
+  ordinary freeform turns may change the document directly.
 - It lives in the right rail (open by default), knows what you are looking
   at (workspace, folder, item, selection), and acts through the same
   workspace-command surface as every other client.
-- Model access is bring-your-own (Anthropic or OpenAI key, or a connected
-  app); TextText never resells inference.
+- Model access is bring-your-own through an Anthropic or OpenAI provider key.
+  The standalone Mac edition may also connect an eligible local Codex account;
+  TextText never resells inference.
 
 ## Pillar 3: MCP in both directions
 
-- **Inbound**: any MCP client (Claude, Codex, ChatGPT, Cursor, Figma's
-  agent, anything) connects to the hosted server and works on documents with
-  the full tool surface, under the workspace's permissions, with presence
-  and audit.
+- **Inbound**: a remote MCP client that accepts a bearer-authenticated server
+  connects to the hosted endpoint and works under the workspace's permissions,
+  with audit attribution. Claude and Codex on the same Mac normally use the
+  signed-in TextText CLI instead.
 - **Outbound** (built 2026-08-15): the rail assistant is itself an MCP client. The
   workspace keeps a list of connected external servers; the assistant may
   use their tools with per-connection approval. "Put this spec in Figma" and
   "document what you did into TextText" are the same conversation from
   either end.
-- Hosted servers are reached from our server. Servers on the person's own
-  machine (Paper, pen.dev, Figma all listen on loopback) are reached by the
-  Mac app natively, because nothing on the internet can fetch someone's
-  127.0.0.1 and an https page cannot either. This is the one capability the
-  web genuinely cannot have, and it does not make the Mac app superior: it
-  makes local tools a Mac thing, like Finder and Quick Look.
+- Outbound connections use public HTTPS addresses in this release. Desktop
+  loopback MCP endpoints such as Paper, pen.dev, and Figma are not offered in
+  Workspace Settings.
 
 ## Pillar 4: templates for items and folders, managed by conversation
 

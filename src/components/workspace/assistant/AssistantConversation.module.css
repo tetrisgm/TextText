@@ -42,11 +42,12 @@
 
 .connect {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   justify-items: center;
 }
 
 .connectPrimary {
+  width: 100%;
   min-height: 34px;
   display: inline-flex;
   align-items: center;
@@ -72,49 +73,28 @@
   box-shadow: var(--ac-focus);
 }
 
-/* Two clear destinations are easier to scan than an integration catalog in a
-   360px rail. Detailed provider instructions live on the destination pages. */
-.connectChoice {
-  width: 100%;
-  min-height: 52px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-radius: 10px;
-  padding: 10px 12px;
-  background: var(--ac-fill-4);
-  color: var(--ac-label);
-  text-align: left;
+.connectSecondary,
+.connectGuide {
+  border-radius: 7px;
+  padding: 5px 8px;
+  color: var(--ac-label-2);
+  font: 550 var(--ac-fs-caption1) / 1.25 var(--ac-font-text);
   text-decoration: none;
 }
 
-.connectChoice:hover {
-  background: var(--ac-fill-3);
+.connectSecondary:hover,
+.connectGuide:hover {
+  background: var(--ac-fill-4);
+  color: var(--ac-label);
 }
 
-.connectChoice:focus-visible {
+.connectSecondary:focus-visible,
+.connectGuide:focus-visible {
   outline: none;
   box-shadow: var(--ac-focus);
 }
 
-.connectChoice > span:first-child {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.connectChoice strong {
-  font: 600 var(--ac-fs-footnote) / 1.25 var(--ac-font-text);
-}
-
-.connectChoice small {
-  color: var(--ac-label-2);
-  font: 400 var(--ac-fs-caption1) / 1.3 var(--ac-font-text);
-}
-
-.connectChoice > span:last-child {
-  flex: 0 0 auto;
+.connectGuide {
   color: var(--ac-label-3);
 }
 
@@ -318,10 +298,41 @@
 }
 
 .errorTurn {
+  display: grid;
+  gap: 8px;
   justify-self: start;
   border: 1px solid var(--ac-hairline);
   background: var(--ac-fill-4);
   color: var(--ac-red);
+}
+
+.errorActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.errorActions button,
+.errorActions a {
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 7px;
+  background: var(--ac-fill-3);
+  color: var(--ac-label);
+  font: 600 var(--ac-fs-caption1) / 1 var(--ac-font-text);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.errorActions button:hover,
+.errorActions a:hover {
+  background: var(--ac-fill-2);
+}
+
+.errorActions button:focus-visible,
+.errorActions a:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
 }
 
 .progress {
@@ -735,7 +746,8 @@
 }
 
 .outboundCall code {
-  font: 500 11px/1.4 var(--ac-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font: 500 11px/1.4
+    var(--ac-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
 }
 
 .outboundFailed {

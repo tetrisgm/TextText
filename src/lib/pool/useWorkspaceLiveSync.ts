@@ -56,7 +56,10 @@ export function useWorkspaceLiveSync(
   onAgentFocus?: (focus: AgentFocusEvent) => void,
 ): void {
   const focusCallbackRef = useRef(onAgentFocus);
-  focusCallbackRef.current = onAgentFocus;
+
+  useEffect(() => {
+    focusCallbackRef.current = onAgentFocus;
+  }, [onAgentFocus]);
 
   useEffect(() => {
     if (!handle || !blogId) return;

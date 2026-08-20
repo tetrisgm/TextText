@@ -148,7 +148,9 @@
   color: var(--ac-accent);
   text-decoration: none;
 }
-.connect-shell a:not(.ac-btn):hover { text-decoration: underline; }
+.connect-shell a:not(.ac-btn):hover {
+  text-decoration: underline;
+}
 
 .connect-section {
   border-top: 1px solid var(--ac-separator);
@@ -360,7 +362,25 @@
 
 .connect-advanced > summary {
   cursor: pointer;
-  list-style-position: outside;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  list-style: none;
+}
+
+.connect-advanced > summary::-webkit-details-marker {
+  display: none;
+}
+
+.connect-advanced > summary::after {
+  content: "+";
+  color: var(--ac-label-2);
+  font-weight: 400;
+}
+
+.connect-advanced[open] > summary::after {
+  content: "−";
 }
 
 .connect-minor-title {
@@ -376,7 +396,9 @@
   gap: 8px;
   margin: 0 0 16px;
 }
-.connect-form .ac-field { flex: 1; }
+.connect-form .ac-field {
+  flex: 1;
+}
 
 /* --- the one-time raw token reveal --- */
 
@@ -389,7 +411,8 @@
 }
 
 .connect-fresh-name {
-  font: 600 var(--ac-fs-subheadline)/var(--ac-lh-subheadline) var(--ac-font-text);
+  font: 600 var(--ac-fs-subheadline)/var(--ac-lh-subheadline)
+    var(--ac-font-text);
   letter-spacing: var(--ac-tr-subheadline);
   margin: 0 0 8px;
 }
@@ -403,7 +426,13 @@
 .connect-fresh-token {
   flex: 1;
   min-width: 0;
-  font: 500 13px/1.4 ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  font:
+    500 13px/1.4 ui-monospace,
+    "SF Mono",
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
   overflow-wrap: anywhere;
   user-select: all;
 }
@@ -430,12 +459,18 @@
   padding: 12px 0;
   border-top: 1px solid var(--ac-hairline);
 }
-.connect-row:first-child { border-top: none; }
+.connect-row:first-child {
+  border-top: none;
+}
 
-.connect-row-main { flex: 1; min-width: 0; }
+.connect-row-main {
+  flex: 1;
+  min-width: 0;
+}
 
 .connect-row-name {
-  font: 500 var(--ac-fs-subheadline)/var(--ac-lh-subheadline) var(--ac-font-text);
+  font: 500 var(--ac-fs-subheadline)/var(--ac-lh-subheadline)
+    var(--ac-font-text);
   letter-spacing: var(--ac-tr-subheadline);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -493,7 +528,13 @@
   background: var(--ac-bg-2);
   border: 1px solid var(--ac-hairline);
   border-radius: 10px;
-  font: 400 12.5px/1.55 ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  font:
+    400 12.5px/1.55 ui-monospace,
+    "SF Mono",
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
   color: var(--ac-label);
   overflow-x: auto;
   white-space: pre;
@@ -506,7 +547,13 @@
 }
 
 .connect-inline-code {
-  font: 500 0.9em ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  font:
+    500 0.9em ui-monospace,
+    "SF Mono",
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
   background: var(--ac-fill-4);
   border-radius: 4px;
   padding: 1px 5px;
@@ -543,7 +590,9 @@
 }
 
 .docs-start-step h2,
-.docs-start-step p { margin: 0; }
+.docs-start-step p {
+  margin: 0;
+}
 
 .docs-start-step h2 {
   color: var(--ac-label);
@@ -594,7 +643,9 @@
   list-style: none;
 }
 
-.docs-agent summary::-webkit-details-marker { display: none; }
+.docs-agent summary::-webkit-details-marker {
+  display: none;
+}
 
 .docs-agent summary > span:last-child {
   display: grid;
@@ -611,15 +662,143 @@
   font: 400 var(--ac-fs-footnote)/1.2 var(--ac-font-text);
 }
 
-.docs-agent > :is(ol, p) { margin-inline: 66px 18px; }
-.docs-agent > ol { padding: 0 0 4px 18px; }
+.docs-agent > :is(ol, p) {
+  margin-inline: 66px 18px;
+}
+.docs-agent > ol {
+  padding: 0 0 4px 18px;
+}
 
 .docs-agent > p {
   padding-bottom: 16px;
   color: var(--ac-label-2);
 }
 
-.docs-agent .connect-code { margin-top: 8px; }
+.docs-agent .connect-code {
+  margin-top: 8px;
+}
+
+.docs-advanced {
+  margin-top: 36px;
+  border-top: 1px solid var(--ac-separator);
+  border-bottom: 1px solid var(--ac-separator);
+}
+
+.docs-advanced summary {
+  padding: 16px 0;
+  color: var(--ac-label);
+  font: 600 var(--ac-fs-headline)/1.3 var(--ac-font-text);
+  cursor: pointer;
+}
+
+.docs-advanced summary:focus-visible {
+  outline: none;
+  border-radius: 5px;
+  box-shadow: var(--ac-focus);
+}
+
+.docs-advanced > div {
+  padding-bottom: 8px;
+}
+
+.docs-recipes {
+  display: grid;
+  margin-top: 42px;
+  border-top: 1px solid var(--ac-separator);
+}
+
+.docs-recipe {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 16px;
+  padding: 28px 0;
+  border-bottom: 1px solid var(--ac-separator);
+}
+
+.docs-recipe-number {
+  margin: 5px 0 0;
+  color: var(--ac-label-3);
+  font: 600 var(--ac-fs-caption1)/1 var(--ac-font-text);
+}
+
+.docs-recipe h2 {
+  margin: 0 0 14px;
+  color: var(--ac-label);
+  font: 600 var(--ac-fs-title3)/1.25 var(--ac-font-text);
+}
+
+.docs-recipe dl {
+  margin: 0;
+}
+.docs-recipe dl > div {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 16px;
+  padding: 7px 0;
+}
+.docs-recipe dt {
+  color: var(--ac-label-2);
+  font: 600 var(--ac-fs-footnote)/1.5 var(--ac-font-text);
+}
+.docs-recipe dd {
+  margin: 0;
+  color: var(--ac-label);
+  font: 400 var(--ac-fs-callout)/1.55 var(--ac-font-text);
+}
+
+.docs-recipe-prompt {
+  display: grid;
+  gap: 10px;
+  border-left: 3px solid var(--ac-accent);
+  border-radius: 0 8px 8px 0;
+  padding: 12px 14px;
+  background: var(--ac-fill-4);
+}
+
+.docs-recipe-proof {
+  margin: 22px 0 0;
+}
+
+.docs-recipe-proof img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--ac-separator);
+  border-radius: 10px;
+  background: var(--ac-bg-2);
+}
+
+.docs-recipe-proof-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.docs-recipe-proof figcaption {
+  max-width: 68ch;
+  margin-top: 9px;
+  color: var(--ac-label-2);
+  font: 400 var(--ac-fs-footnote)/1.45 var(--ac-font-text);
+}
+
+.docs-prompt-copy {
+  width: max-content;
+  border: 0;
+  border-radius: 6px;
+  padding: 5px 8px;
+  background: var(--ac-fill-3);
+  color: var(--ac-label);
+  font: 600 var(--ac-fs-caption1)/1 var(--ac-font-text);
+  cursor: pointer;
+}
+
+.docs-prompt-copy:hover {
+  background: var(--ac-fill-2);
+}
+.docs-prompt-copy:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
 
 /* --- example prompts --- */
 
@@ -680,7 +859,9 @@
   line-height: 1.5;
 }
 
-.connect-doc .connect-body + .connect-body { margin-top: 0; }
+.connect-doc .connect-body + .connect-body {
+  margin-top: 0;
+}
 
 .connect-doc h3 {
   font: 600 var(--ac-fs-headline)/var(--ac-lh-headline) var(--ac-font-text);
@@ -725,14 +906,37 @@
   border-bottom: 1px solid var(--ac-hairline);
 }
 
-.connect-table td:first-child { white-space: nowrap; }
+.connect-table td:first-child {
+  white-space: nowrap;
+}
 
 @media (max-width: 480px) {
-  .connect-main { padding-top: 36px; }
-  .connect-form { flex-direction: column; }
-  .connect-integration-actions { align-items: stretch; }
-  .connect-integration-actions .ac-btn { justify-content: center; }
-  .docs-agent > :is(ol, p) { margin-inline: 18px; }
+  .connect-main {
+    padding-top: 36px;
+  }
+  .connect-form {
+    flex-direction: column;
+  }
+  .connect-integration-actions {
+    align-items: stretch;
+  }
+  .connect-integration-actions .ac-btn {
+    justify-content: center;
+  }
+  .docs-agent > :is(ol, p) {
+    margin-inline: 18px;
+  }
+  .docs-recipe {
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 8px;
+  }
+  .docs-recipe dl > div {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .docs-recipe-proof-pair {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 760px) {
@@ -772,7 +976,9 @@
   .connect-workflow-grid {
     grid-template-columns: 1fr;
   }
-  .connect-integration-description { min-height: 0; }
+  .connect-integration-description {
+    min-height: 0;
+  }
 }
 
 @media (min-width: 761px) and (max-width: 900px) {
@@ -790,7 +996,8 @@
 .connect-link-done {
   margin: 0;
   color: var(--ac-label);
-  font: 500 var(--ac-fs-subheadline)/var(--ac-lh-subheadline) var(--ac-font-text);
+  font: 500 var(--ac-fs-subheadline)/var(--ac-lh-subheadline)
+    var(--ac-font-text);
 }
 .connect-link-error {
   margin: 0;

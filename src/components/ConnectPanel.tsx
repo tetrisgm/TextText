@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import {
   createApiTokenAction,
   revokeApiTokenAction,
@@ -11,15 +11,48 @@ import {
   hostedMcpUrl,
 } from "@/lib/agent-integrations";
 import type { ApiTokenSummary } from "@/lib/api-tokens";
-import { WORKSPACE_TOOL_DEFINITIONS } from "@/lib/ai/tools";
+import {
+  nativeAssistantAvailable,
+  nativeEmbeddedAssistantAvailable,
+} from "@/lib/ai/native-client";
 
-const WORKSPACE_TOOL_COUNT = Object.keys(WORKSPACE_TOOL_DEFINITIONS).length;
+const LOCAL_AGENT_INTEGRATIONS = AGENT_INTEGRATIONS.filter(
+  (integration) => integration.id !== "mcp",
+);
+const LOCAL_AGENT_WORKFLOWS = AGENT_WORKFLOWS.filter(
+  (workflow) => workflow.id !== "publish-collaborate",
+);
 
 type FreshToken = { id: string; name: string; token: string };
 
+export type TextTextConnectionEdition =
+  | "unknown"
+  | "standalone"
+  | "remote-only";
+
+function subscribeNativeEdition() {
+  return () => undefined;
+}
+
+export function connectionEditionSnapshot(): TextTextConnectionEdition {
+  if (typeof window === "undefined") return "unknown";
+  if (!nativeAssistantAvailable()) return "remote-only";
+  return nativeEmbeddedAssistantAvailable() ? "standalone" : "remote-only";
+}
+
 const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ];
 
 function formatDay(iso: string): string {
@@ -71,6 +104,11 @@ export function ConnectPanel({
   const [confirming, setConfirming] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const edition = useSyncExternalStore(
+    subscribeNativeEdition,
+    connectionEditionSnapshot,
+    () => "unknown",
+  );
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const remoteOrigin =
     origin ||
@@ -101,7 +139,9 @@ export function ConnectPanel({
       if (copyTimer.current) clearTimeout(copyTimer.current);
       copyTimer.current = setTimeout(() => setCopiedKey(null), 2000);
     } catch {
-      setError("Clipboard access was denied. Select and copy the text instead.");
+      setError(
+        "Clipboard access was denied. Select and copy the text instead.",
+      );
     }
   }
 
@@ -150,156 +190,160 @@ export function ConnectPanel({
           {error}
         </p>
       )}
-      <section className="connect-section" aria-labelledby="connect-primary">
-        <h2 className="connect-section-title" id="connect-primary">
-          Add TextText to your agents
-        </h2>
-        <p className="connect-sub">
-          Install TextText once in the AI products you already use. Each agent
-          keeps its own model, account, and billing while TextText stays the
-          durable home for your documents.
-        </p>
+      {edition === "standalone" && (
+        <section className="connect-section" aria-labelledby="connect-primary">
+          <h2 className="connect-section-title" id="connect-primary">
+            Add TextText to your agents
+          </h2>
+          <p className="connect-sub">
+            The standalone Mac edition can add TextText to Claude and Codex.
+            Each agent keeps its own model, account, and billing while TextText
+            stays the durable home for your documents.
+          </p>
 
-        <div className="connect-integration-grid">
-          {AGENT_INTEGRATIONS.map((integration) => {
-            const action = integration.action;
-            const actionKey = `integration:${integration.id}`;
-            const copied = copiedKey === actionKey;
-            return (
-              <article className="connect-integration-card" key={integration.id}>
-                <div className="connect-integration-heading">
-                  <span
-                    className={`connect-integration-mark is-${integration.id}`}
-                    aria-hidden="true"
-                  >
-                    {integration.monogram}
-                  </span>
-                  <div>
-                    <p className="connect-provider-kicker">
-                      {integration.company}
-                    </p>
-                    <h3>{integration.name}</h3>
+          <div className="connect-integration-grid">
+            {LOCAL_AGENT_INTEGRATIONS.map((integration) => {
+              const action = integration.action;
+              const actionKey = `integration:${integration.id}`;
+              const copied = copiedKey === actionKey;
+              return (
+                <article
+                  className="connect-integration-card"
+                  key={integration.id}
+                >
+                  <div className="connect-integration-heading">
+                    <span
+                      className={`connect-integration-mark is-${integration.id}`}
+                      aria-hidden="true"
+                    >
+                      {integration.monogram}
+                    </span>
+                    <div>
+                      <p className="connect-provider-kicker">
+                        {integration.company}
+                      </p>
+                      <h3>{integration.name}</h3>
+                    </div>
                   </div>
-                </div>
-                <p className="connect-integration-description">
-                  {integration.description}
-                </p>
-                <p className="connect-integration-environment">
-                  {integration.environment}
-                </p>
-                <div className="connect-integration-actions">
-                  {action.kind === "copy" ? (
-                    <button
-                      className="ac-btn ac-btn-filled"
-                      type="button"
-                      onClick={() => void copy(action.value, actionKey)}
-                    >
-                      {copied
-                        ? action.copiedLabel
-                        : action.label}
-                    </button>
-                  ) : (
-                    <a
-                      className="ac-btn ac-btn-filled"
-                      href={action.href}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {action.label}
-                    </a>
-                  )}
-                  {integration.secondaryAction && (
-                    <a
-                      className="ac-btn ac-btn-plain"
-                      href={integration.secondaryAction.href}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {integration.secondaryAction.label}
-                    </a>
-                  )}
-                </div>
+                  <p className="connect-integration-description">
+                    {integration.description}
+                  </p>
+                  <p className="connect-integration-environment">
+                    {integration.environment}
+                  </p>
+                  <div className="connect-integration-actions">
+                    {action.kind === "copy" ? (
+                      <button
+                        className="ac-btn ac-btn-filled"
+                        type="button"
+                        onClick={() => void copy(action.value, actionKey)}
+                      >
+                        {copied ? action.copiedLabel : action.label}
+                      </button>
+                    ) : (
+                      <a
+                        className="ac-btn ac-btn-filled"
+                        href={action.href}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {action.label}
+                      </a>
+                    )}
+                    {integration.secondaryAction && (
+                      <a
+                        className="ac-btn ac-btn-plain"
+                        href={integration.secondaryAction.href}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {integration.secondaryAction.label}
+                      </a>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {edition === "standalone" && (
+        <section
+          className="connect-section"
+          aria-labelledby="connect-workflows"
+        >
+          <h2 className="connect-section-title" id="connect-workflows">
+            Ready-made workflows
+          </h2>
+          <p className="connect-sub">
+            The local plugins teach Claude and Codex how to read, create,
+            update, and append TextText documents safely.
+          </p>
+          <div className="connect-workflow-grid">
+            {LOCAL_AGENT_WORKFLOWS.map((workflow) => (
+              <article className="connect-workflow" key={workflow.id}>
+                <h3>{workflow.title}</h3>
+                <p>{workflow.description}</p>
+                <button
+                  className="ac-btn ac-btn-gray"
+                  type="button"
+                  onClick={() =>
+                    void copy(workflow.prompt, `workflow:${workflow.id}`)
+                  }
+                >
+                  {copiedKey === `workflow:${workflow.id}`
+                    ? "Prompt copied"
+                    : "Copy prompt"}
+                </button>
               </article>
-            );
-          })}
-        </div>
-
-        {/* Counted, not typed. The strip claimed 29 tools while the workspace
-            surface had grown to 33, and it advertised OAuth for months after
-            OAuth was deleted. Both were hand-written promises about a moving
-            product. */}
-        <div className="connect-capability-strip" aria-label="Connection features">
-          <span>{WORKSPACE_TOOL_COUNT} document tools</span>
-          <span>One workspace token</span>
-          <span>Read, write, publish, and collaborate</span>
-        </div>
-      </section>
-
-      <section className="connect-section" aria-labelledby="connect-workflows">
-        <h2 className="connect-section-title" id="connect-workflows">
-          Ready-made workflows
-        </h2>
-        <p className="connect-sub">
-          The plugins teach Claude and Codex how to use TextText safely. These
-          same workflows work in ChatGPT and other MCP clients.
-        </p>
-        <div className="connect-workflow-grid">
-          {AGENT_WORKFLOWS.map((workflow) => (
-            <article className="connect-workflow" key={workflow.id}>
-              <h3>{workflow.title}</h3>
-              <p>{workflow.description}</p>
-              <button
-                className="ac-btn ac-btn-gray"
-                type="button"
-                onClick={() =>
-                  void copy(workflow.prompt, `workflow:${workflow.id}`)
-                }
-              >
-                {copiedKey === `workflow:${workflow.id}`
-                  ? "Prompt copied"
-                  : "Copy prompt"}
-              </button>
-            </article>
-          ))}
-        </div>
-      </section>
-
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="connect-section" aria-labelledby="connect-in-app">
         <h2 className="connect-section-title" id="connect-in-app">
           In-app assistant
         </h2>
         <p className="connect-body">
-          App Store and browser versions use a workspace-owned Anthropic or
-          OpenAI API key for the in-app assistant, or an external MCP app. The
-          standalone Mac edition can also use an eligible ChatGPT or Codex
-          account through its local agent.
+          Set up a workspace-owned Anthropic or OpenAI API key, then write with
+          the assistant beside the current TextText document. Provider usage is
+          billed separately.
+        </p>
+        <p>
+          <a className="ac-btn ac-btn-filled" href="/docs/ai#embedded-agent">
+            Set up the in-app assistant
+          </a>
         </p>
       </section>
 
       <details className="connect-section connect-advanced">
-        <summary className="connect-section-title">Advanced connections</summary>
+        <summary className="connect-section-title">
+          Advanced connections
+        </summary>
         <p className="connect-sub">
-          The plugins above set this up for you. Reach for these when a client
-          cannot install one and you want to wire the endpoint and the token by
-          hand.
+          Reach for these only when a remote client supports a protected bearer
+          token field and you want to wire the endpoint by hand.
         </p>
 
-        <h3 className="connect-minor-title">Agents on this Mac</h3>
-        <p className="connect-body">
-          The standalone Mac app includes a <code>texttext</code> command for
-          Codex, Claude, and other local coding agents. Run
-          {" "}<code>texttext install</code> once to add it to your PATH, then
-          check it with the command below. The App Store edition intentionally
-          excludes this shell command; use the hosted plugin or MCP connection
-          with that edition.
-        </p>
-        <CodeRecipe
-          copyKey="cli-check"
-          value={commands.cliCheck}
-          copiedKey={copiedKey}
-          onCopy={(value, key) => void copy(value, key)}
-        />
+        {edition === "standalone" && (
+          <>
+            <h3 className="connect-minor-title">Agents on this Mac</h3>
+            <p className="connect-body">
+              The standalone Mac app includes a <code>texttext</code> command
+              for Codex, Claude, and other local coding agents. Run{" "}
+              <code>texttext install</code> once to add it to your PATH, then
+              check it with the command below.
+            </p>
+            <CodeRecipe
+              copyKey="cli-check"
+              value={commands.cliCheck}
+              copiedKey={copiedKey}
+              onCopy={(value, key) => void copy(value, key)}
+            />
+          </>
+        )}
 
         <h3 className="connect-minor-title">Direct hosted connection</h3>
         <p className="connect-body">
@@ -419,8 +463,10 @@ export function ConnectPanel({
         />
         <p className="connect-body">
           File sync lives at{" "}
-          <code className="connect-inline-code">{remoteOrigin}/api/sync/v1</code>.
-          See <a href="/docs/ai">the complete AI and agent guide</a> for tool,
+          <code className="connect-inline-code">
+            {remoteOrigin}/api/sync/v1
+          </code>
+          . See <a href="/docs/ai">the complete AI and agent guide</a> for tool,
           privacy, conflict, and automation details.
         </p>
       </details>

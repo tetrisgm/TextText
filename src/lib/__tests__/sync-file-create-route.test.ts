@@ -47,7 +47,7 @@ vi.mock("@/lib/revalidate-blog", () => ({
   revalidateBlogPaths: mocks.revalidateBlogPaths,
 }));
 
-import { POST } from "@/app/api/sync/v1/files/route";
+import { MAX_SYNC_FILE_BODY_BYTES, POST } from "@/app/api/sync/v1/files/route";
 
 const blog: Blog = {
   handle: "sync-test",
@@ -72,10 +72,7 @@ function draft(
   };
 }
 
-function createRequest(
-  representation?: string,
-  folderId?: string,
-): Request {
+function createRequest(representation?: string, folderId?: string): Request {
   const headers = new Headers({ "Content-Type": "text/markdown" });
   if (representation !== undefined) {
     headers.set("TextText-File-Representation", representation);
@@ -120,6 +117,26 @@ function createStructuredRequest(folderId = "notes-folder"): Request {
   );
 }
 
+function streamedCreateRequest(byteCount: number): Request {
+  let remaining = byteCount;
+  return new Request("https://texttext.example/api/sync/v1/files", {
+    method: "POST",
+    headers: { "Content-Type": "text/markdown" },
+    body: new ReadableStream({
+      pull(controller) {
+        if (remaining === 0) {
+          controller.close();
+          return;
+        }
+        const size = Math.min(remaining, 64 * 1024);
+        remaining -= size;
+        controller.enqueue(new Uint8Array(size).fill(32));
+      },
+    }),
+    duplex: "half",
+  } as RequestInit & { duplex: "half" });
+}
+
 describe("sync file POST representation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -130,8 +147,11 @@ describe("sync file POST representation", () => {
     });
     mocks.resolveWorkspaceAccess.mockResolvedValue({ isOwner: true });
     mocks.createDraft.mockImplementation(
-      (_handle: string, type: Post["type"], options: { representation: FileRepresentation }) =>
-        Promise.resolve(draft(options.representation, type)),
+      (
+        _handle: string,
+        type: Post["type"],
+        options: { representation: FileRepresentation },
+      ) => Promise.resolve(draft(options.representation, type)),
     );
     mocks.createDraftInFolder.mockImplementation(
       (
@@ -234,5 +254,26 @@ describe("sync file POST representation", () => {
       "create-123",
     );
     expect(mocks.savePost).not.toHaveBeenCalled();
+  });
+
+  it("rejects a declared oversized file before creating a placeholder", async () => {
+    const request = createRequest();
+    request.headers.set("Content-Length", String(MAX_SYNC_FILE_BODY_BYTES + 1));
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(413);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(mocks.createDraft).not.toHaveBeenCalled();
+  });
+
+  it("rejects a chunked oversized file without Content-Length", async () => {
+    const response = await POST(
+      streamedCreateRequest(MAX_SYNC_FILE_BODY_BYTES + 1),
+    );
+
+    expect(response.status).toBe(413);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(mocks.createDraft).not.toHaveBeenCalled();
   });
 });

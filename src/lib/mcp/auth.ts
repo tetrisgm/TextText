@@ -84,9 +84,10 @@ function insufficientScopeResponse(request: Request): Response {
   );
 }
 
-export async function enforceMcpToolScope(
+export function enforceMcpToolScope(
   request: Request,
-): Promise<Response | null> {
+  payload: unknown,
+): Response | null {
   const scopes = (request as AuthenticatedRequest).auth?.scopes ?? [];
   const hasReadOnlyScope = scopes.some((scope) =>
     WORKSPACE_SCOPE_CAPABILITIES.readOnly.includes(
@@ -94,13 +95,6 @@ export async function enforceMcpToolScope(
     ),
   );
   if (scopes.includes(WORKSPACE_SCOPE_CAPABILITIES.fullAccess) && !hasReadOnlyScope) {
-    return null;
-  }
-
-  let payload: unknown;
-  try {
-    payload = await request.clone().json();
-  } catch {
     return null;
   }
 

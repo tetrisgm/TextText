@@ -105,6 +105,142 @@ final class StateStoreLocationTests: XCTestCase {
         )[.posixPermissions] as? NSNumber
         XCTAssertEqual(mode?.int16Value, 0o600)
     }
+
+    func testStandaloneCredentialSaveCreatesPrivateCLIHandshake() throws {
+        let container = try makeContainer()
+        let cliCredential = root.appendingPathComponent(
+            "Application Support/TextText/credentials.json")
+        let store = StateStore(
+            groupContainer: container,
+            cliCredentialsURL: cliCredential
+        )
+        let credential = Credentials(
+            token: "wsk_first",
+            serverOrigin: "https://texttext.app",
+            tokenName: "Mac",
+            linkedAt: Date(timeIntervalSince1970: 1)
+        )
+
+        store.saveCredentials(credential)
+
+        let loaded = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: cliCredential))
+                as? [String: Any]
+        )
+        XCTAssertEqual(loaded["token"] as? String, "wsk_first")
+        XCTAssertEqual(loaded["serverOrigin"] as? String, "https://texttext.app")
+        let fileMode = try FileManager.default.attributesOfItem(atPath: cliCredential.path)[
+            .posixPermissions
+        ] as? NSNumber
+        let directoryMode = try FileManager.default.attributesOfItem(
+            atPath: cliCredential.deletingLastPathComponent().path
+        )[.posixPermissions] as? NSNumber
+        XCTAssertEqual(fileMode?.int16Value, 0o600)
+        XCTAssertEqual(directoryMode?.int16Value, 0o700)
+    }
+
+    func testRelinkRefreshesCLIHandshakeAndSignOutRemovesIt() throws {
+        let container = try makeContainer()
+        let cliCredential = root.appendingPathComponent(
+            "Application Support/TextText/credentials.json")
+        let store = StateStore(
+            groupContainer: container,
+            cliCredentialsURL: cliCredential
+        )
+
+        store.saveCredentials(Credentials(
+            token: "wsk_old",
+            serverOrigin: "https://texttext.app",
+            tokenName: "Mac",
+            linkedAt: Date(timeIntervalSince1970: 1)
+        ))
+        store.saveCredentials(Credentials(
+            token: "wsk_new",
+            serverOrigin: "https://texttext.app",
+            tokenName: "Mac",
+            linkedAt: Date(timeIntervalSince1970: 2)
+        ))
+
+        let loaded = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: cliCredential))
+                as? [String: Any]
+        )
+        XCTAssertEqual(loaded["token"] as? String, "wsk_new")
+
+        store.deleteCredentials()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cliCredential.path))
+        XCTAssertNil(store.loadCredentials())
+    }
+
+    func testLoadingExistingGroupCredentialCreatesMissingCLIHandshake() throws {
+        let container = try makeContainer()
+        let cliCredential = root.appendingPathComponent(
+            "Application Support/TextText/credentials.json")
+        let store = StateStore(
+            groupContainer: container,
+            cliCredentialsURL: cliCredential
+        )
+        store.saveCredentials(Credentials(
+            token: "wsk_current",
+            serverOrigin: "https://texttext.app",
+            tokenName: "Mac",
+            linkedAt: Date(timeIntervalSince1970: 3)
+        ))
+        try FileManager.default.removeItem(at: cliCredential)
+
+        XCTAssertEqual(store.loadCredentials()?.token, "wsk_current")
+
+        let handedOff = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: cliCredential))
+                as? [String: Any]
+        )
+        XCTAssertEqual(handedOff["token"] as? String, "wsk_current")
+    }
+
+    func testLoadingExistingGroupCredentialRefreshesStaleCLIHandshake() throws {
+        let container = try makeContainer()
+        let cliCredential = root.appendingPathComponent(
+            "Application Support/TextText/credentials.json")
+        let store = StateStore(
+            groupContainer: container,
+            cliCredentialsURL: cliCredential
+        )
+        store.saveCredentials(Credentials(
+            token: "wsk_current",
+            serverOrigin: "https://texttext.app",
+            tokenName: "Mac",
+            linkedAt: Date(timeIntervalSince1970: 4)
+        ))
+        try Data(#"{"token":"wsk_stale"}"#.utf8).write(to: cliCredential, options: .atomic)
+
+        XCTAssertEqual(store.loadCredentials()?.token, "wsk_current")
+
+        let handedOff = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: cliCredential))
+                as? [String: Any]
+        )
+        XCTAssertEqual(handedOff["token"] as? String, "wsk_current")
+    }
+
+    func testLoadingIsolatedCredentialDoesNotCreateCLIHandshake() throws {
+        let container = try makeContainer()
+        let wouldBeHandshake = root.appendingPathComponent(
+            "Application Support/TextText/credentials.json")
+        let store = StateStore(
+            groupContainer: container,
+            cliCredentialsURL: nil
+        )
+        store.saveCredentials(Credentials(
+            token: "wsk_isolated",
+            serverOrigin: "https://texttext.app",
+            tokenName: "Test",
+            linkedAt: Date(timeIntervalSince1970: 5)
+        ))
+
+        XCTAssertEqual(store.loadCredentials()?.token, "wsk_isolated")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: wouldBeHandshake.path))
+    }
 }
 
 /// The container choice is what actually decides whether the two editions share

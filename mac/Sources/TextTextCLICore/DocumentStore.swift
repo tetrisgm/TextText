@@ -4,10 +4,12 @@ import TextTextFileProviderKit
 public enum TextTextCLIError: Error, CustomStringConvertible, Equatable {
     case workspaceNotFound
     case workspaceUnavailable(String)
+    case folderNotFound(String)
     case documentNotFound(String)
     case ambiguous(String, [String])
     case sectionNotFound(String, available: [String])
     case invalidDocument(String)
+    case documentChanged(String)
 
     public var description: String {
         switch self {
@@ -19,9 +21,10 @@ public enum TextTextCLIError: Error, CustomStringConvertible, Equatable {
         case .workspaceUnavailable(let reason):
             return """
                 The TextText workspace is unavailable: \(reason)
-                Turn on TextText in System Settings > General > Login Items & \
-                Extensions > File Providers, then reopen TextText and try again.
+                Open TextText, confirm you are signed in, then try again.
                 """
+        case .folderNotFound(let name):
+            return "No folder matching \(name)."
         case .documentNotFound(let name):
             return "No document matching \(name)."
         case .ambiguous(let name, let matches):
@@ -35,6 +38,8 @@ public enum TextTextCLIError: Error, CustomStringConvertible, Equatable {
             return "No section \(name). Available:\n  \(list)"
         case .invalidDocument(let reason):
             return "Invalid document: \(reason)"
+        case .documentChanged(let name):
+            return "\(name) changed while this command was running. Read it again, then retry."
         }
     }
 }
@@ -63,8 +68,9 @@ public struct DocumentStore: Sendable {
         }
         let cloud = fileManager.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/CloudStorage", isDirectory: true)
-        let candidates = (try? fileManager.contentsOfDirectory(
-            at: cloud, includingPropertiesForKeys: nil)) ?? []
+        let candidates =
+            (try? fileManager.contentsOfDirectory(
+                at: cloud, includingPropertiesForKeys: nil)) ?? []
         // The domain is named for the app, historically "TextText-TextText".
         for candidate in candidates.sorted(by: { $0.path < $1.path })
         where candidate.lastPathComponent.hasPrefix("TextText-") {
@@ -80,14 +86,20 @@ public struct DocumentStore: Sendable {
     /// matches exactly one document.
     public func resolve(_ name: String) throws -> URL {
         let fileManager = FileManager.default
-        // An absolute path is what a hook or a script will have in hand, and it
-        // is unambiguous, so take it as given.
         if name.hasPrefix("/") {
             let absolute = URL(fileURLWithPath: name)
+            guard contains(absolute) else {
+                throw TextTextCLIError.invalidDocument(
+                    "the document is outside TEXTTEXT_WORKSPACE_ROOT")
+            }
             if fileManager.fileExists(atPath: absolute.path) { return absolute }
             throw TextTextCLIError.documentNotFound(name)
         }
         let direct = root.appendingPathComponent(name)
+        guard contains(direct) else {
+            throw TextTextCLIError.invalidDocument(
+                "the document is outside TEXTTEXT_WORKSPACE_ROOT")
+        }
         if fileManager.fileExists(atPath: direct.path) { return direct }
         for suffix in [".textpack", ".textbundle", ".md", ".txt"]
         where !name.hasSuffix(suffix) {
@@ -129,7 +141,8 @@ public struct DocumentStore: Sendable {
                 throw TextTextCLIError.workspaceUnavailable(error.localizedDescription)
             }
             for entry in entries.sorted(by: { $0.path < $1.path }) {
-                let isDirectory = (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?
+                let isDirectory =
+                    (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?
                     .isDirectory ?? false
                 let ext = entry.pathExtension.lowercased()
                 let relative = relativePath(of: entry)
@@ -154,6 +167,13 @@ public struct DocumentStore: Sendable {
         let path = url.standardizedFileURL.path
         guard path.hasPrefix(rootPath) else { return path }
         return String(path.dropFirst(rootPath.count).drop { $0 == "/" })
+    }
+
+    private func contains(_ candidate: URL) -> Bool {
+        let rootPath = root.standardizedFileURL.resolvingSymlinksInPath().path
+        let candidatePath = candidate.standardizedFileURL
+            .resolvingSymlinksInPath().path
+        return candidatePath == rootPath || candidatePath.hasPrefix(rootPath + "/")
     }
 
     // MARK: - Read
@@ -255,7 +275,8 @@ public struct DocumentStore: Sendable {
                 "\(name) already exists. Edit it, or choose another title.")
         }
 
-        let markdown = DocumentCreation.frontmatter(title: title, kind: kind)
+        let markdown =
+            DocumentCreation.frontmatter(title: title, kind: kind)
             + (body.isEmpty ? "" : body.trimmingCharacters(in: .newlines) + "\n")
 
         let temporary = try makeTemporaryDirectory()

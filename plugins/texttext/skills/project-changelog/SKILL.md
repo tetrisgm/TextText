@@ -5,21 +5,25 @@ description: Create or update a durable TextText project record and append user-
 
 # Maintain a project changelog
 
-## With the `texttext` CLI, which is the fast path
+## With the local command
+
+Resolve `TEXTTEXT_CMD` from `texttext` on PATH, then fall back to
+`/Applications/TextText.app/Contents/Helpers/texttext`. Verify it with
+`"$TEXTTEXT_CMD" ls` before continuing.
 
 ```sh
-texttext ls | grep -i changelog          # find it once
-texttext sections "<the changelog>"      # entries are grouped by version
-texttext read "<the changelog>" --section "## 0.143"
+"$TEXTTEXT_CMD" ls | grep -i changelog          # find it once
+"$TEXTTEXT_CMD" sections "<the changelog>"      # entries are grouped by version
+"$TEXTTEXT_CMD" read "<the changelog>" --section "## 0.143"
 ```
 
 To add an entry, read the document, put the new version section on top, and
 write it back in one go:
 
 ```sh
-texttext read "<the changelog>" > /tmp/log.md
+"$TEXTTEXT_CMD" read "<the changelog>" > /tmp/log.md
 # prepend the new "## <version>" section to /tmp/log.md
-texttext write "<the changelog>" --from /tmp/log.md \
+"$TEXTTEXT_CMD" write "<the changelog>" --from /tmp/log.md \
   --as codex --message "0.144 changelog entry"
 ```
 
@@ -31,7 +35,7 @@ Read the document again before writing if any time has passed. Never write an
 entry you have not just derived from the current content, or you will drop
 someone else's.
 
-## With MCP, when the CLI is not available
+## With MCP, when it is already connected and the CLI is not available
 
 1. Call `list_folders`, then search for the project's existing changelog or
    project note.

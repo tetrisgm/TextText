@@ -54,6 +54,27 @@ function push(body: unknown): Request {
   });
 }
 
+function streamedPush(byteCount: number): Request {
+  const encoder = new TextEncoder();
+  let remaining = byteCount;
+  return new Request(`http://localhost/api/collab/${postId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: new ReadableStream({
+      pull(controller) {
+        if (remaining === 0) {
+          controller.close();
+          return;
+        }
+        const size = Math.min(remaining, 64 * 1024);
+        remaining -= size;
+        controller.enqueue(encoder.encode("x".repeat(size)));
+      },
+    }),
+    duplex: "half",
+  } as RequestInit & { duplex: "half" });
+}
+
 function read(query = ""): Request {
   return new Request(`http://localhost/api/collab/${postId}${query}`);
 }
@@ -133,6 +154,25 @@ describe("collab relay route", () => {
       expect(res.status).toBe(400);
       expect(mocks.appendCollabUpdate).not.toHaveBeenCalled();
     }
+  });
+
+  it("rejects a declared oversized relay body before parsing", async () => {
+    const request = push({ updates: [realUpdate()], epoch: 3 });
+    request.headers.set("content-length", String(34 * 1024 * 1024 + 1));
+
+    const response = await POST(request, ctx);
+
+    expect(response.status).toBe(413);
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(mocks.appendCollabUpdate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a streamed oversized relay body without Content-Length", async () => {
+    const response = await POST(streamedPush(34 * 1024 * 1024 + 1), ctx);
+
+    expect(response.status).toBe(413);
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(mocks.appendCollabUpdate).not.toHaveBeenCalled();
   });
 
   it("treats an empty push as a no-op rather than an error", async () => {

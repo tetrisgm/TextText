@@ -19,11 +19,14 @@ import {
   itemTypeQualityRevisionPrompt,
 } from "@/lib/presentation/item-type-quality";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
+import { readBoundedJson } from "@/lib/http/bounded-json";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const MAX_PROMPT_CHARS = 6_000;
+const MAX_REQUEST_BODY_BYTES = 1_100_000;
+const NO_STORE_HEADERS = { "Cache-Control": "private, no-store" } as const;
 const RATE_WINDOW_MS = 60_000;
 const RATE_MAX_PER_WINDOW = 12;
 const recentHits = new Map<string, number[]>();
@@ -89,12 +92,24 @@ export async function POST(request: Request) {
     );
   }
 
-  let body: { prompt?: unknown; current?: unknown; folderName?: unknown };
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: "Send a JSON body." }, { status: 400 });
+  const decoded = await readBoundedJson<{
+    prompt?: unknown;
+    current?: unknown;
+    folderName?: unknown;
+  }>(request, MAX_REQUEST_BODY_BYTES);
+  if ("error" in decoded && decoded.error === "too_large") {
+    return Response.json(
+      { error: "The design request is too large." },
+      { status: 413, headers: NO_STORE_HEADERS },
+    );
   }
+  if ("error" in decoded) {
+    return Response.json(
+      { error: "Send a JSON body." },
+      { status: 400, headers: NO_STORE_HEADERS },
+    );
+  }
+  const body = decoded.value;
   const prompt = cleanPrompt(body.prompt);
   if (!prompt) {
     return Response.json({ error: "Describe what you want to build." }, { status: 400 });

@@ -44,6 +44,7 @@ const JSON_HEADERS = {
   "Content-Type": "application/json",
   "Cache-Control": "no-store",
 };
+const MAX_MCP_BODY_BYTES = 1_100_000;
 
 type JsonRpcId = string | number;
 
@@ -69,6 +70,42 @@ function resultResponse(id: JsonRpcId, result: Record<string, unknown>) {
     status: 200,
     headers: JSON_HEADERS,
   });
+}
+
+async function readBoundedJson(
+  request: Request,
+): Promise<{ body?: unknown; invalid?: true; tooLarge?: true }> {
+  const declared = Number(request.headers.get("content-length") ?? "0");
+  if (Number.isFinite(declared) && declared > MAX_MCP_BODY_BYTES) {
+    return { tooLarge: true };
+  }
+
+  const reader = request.body?.getReader();
+  if (!reader) return { invalid: true };
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_MCP_BODY_BYTES) {
+      await reader.cancel().catch(() => {});
+      return { tooLarge: true };
+    }
+    chunks.push(value);
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return { body: JSON.parse(new TextDecoder().decode(bytes)) as unknown };
+  } catch {
+    return { invalid: true };
+  }
 }
 
 /**
@@ -314,12 +351,19 @@ export async function handleMcpRequest(request: Request): Promise<Response> {
   if (!auth) return unauthorized(request);
   (request as Request & { auth?: AuthInfo }).auth = auth;
 
-  let body: unknown;
-  try {
-    body = await request.clone().json();
-  } catch {
+  const decoded = await readBoundedJson(request);
+  if (decoded.tooLarge) {
+    return errorResponse(
+      null,
+      JSONRPC_PARSE_ERROR,
+      "Request body is too large",
+      413,
+    );
+  }
+  if (decoded.invalid) {
     return errorResponse(null, JSONRPC_PARSE_ERROR, "Invalid JSON", 400);
   }
+  const body = decoded.body;
 
   const message = asRecord(body);
   const method = typeof message.method === "string" ? message.method : null;
@@ -340,7 +384,7 @@ export async function handleMcpRequest(request: Request): Promise<Response> {
     const meta = parseRequestMeta(params);
     validateHeaders(request, method, params, meta.protocolVersion);
 
-    const denied = await enforceMcpToolScope(request);
+    const denied = enforceMcpToolScope(request, body);
     if (denied) return denied;
 
     if (method === "subscriptions/listen") return subscriptionResponse(id);

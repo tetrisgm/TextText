@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // The CLI presence route: the piece that makes an agent visible in a document
-// while the `texttext` CLI works on it. It authenticates with the device
-// credential the app already holds, so there is no session cookie here.
+// while the `texttext` CLI works on it. It authenticates with the signed-in
+// app's workspace token, so there is no session cookie here.
 
 const verifyTextTextApiToken = vi.fn();
+const workspaceBlog = vi.fn();
 const getPostStoreContext = vi.fn();
 const signalWorkspaceChange = vi.fn();
 const upsertPresence = vi.fn();
@@ -13,7 +14,9 @@ const agentSelectionAtEnd = vi.fn();
 const buildAgentPresence = vi.fn();
 
 vi.mock("@/lib/mcp/auth", () => ({
-  verifyTextTextApiToken: (...args: unknown[]) => verifyTextTextApiToken(...args),
+  verifyTextTextApiToken: (...args: unknown[]) =>
+    verifyTextTextApiToken(...args),
+  workspaceBlog: (...args: unknown[]) => workspaceBlog(...args),
 }));
 vi.mock("@/lib/store", () => ({
   getPostStoreContext: (...args: unknown[]) => getPostStoreContext(...args),
@@ -48,7 +51,11 @@ const PRESENCE = {
 describe("POST /api/agent/presence", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    verifyTextTextApiToken.mockResolvedValue({ extra: { userId: "user-1" } });
+    verifyTextTextApiToken.mockResolvedValue({
+      scopes: ["sync"],
+      extra: { userId: "user-1", sub: "account-1" },
+    });
+    workspaceBlog.mockResolvedValue({ handle: "shoku" });
     getPostStoreContext.mockResolvedValue({ handle: "shoku" });
     agentSelectionAtEnd.mockResolvedValue(null);
     buildAgentPresence.mockReturnValue(PRESENCE);
@@ -57,8 +64,10 @@ describe("POST /api/agent/presence", () => {
     signalWorkspaceChange.mockResolvedValue(undefined);
   });
 
-  it("publishes presence for an authenticated device token", async () => {
-    const response = await POST(post({ itemId: "p1", agent: "codex", active: true }));
+  it("publishes presence for an authenticated workspace token", async () => {
+    const response = await POST(
+      post({ itemId: "p1", agent: "codex", active: true }),
+    );
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
@@ -69,7 +78,7 @@ describe("POST /api/agent/presence", () => {
     expect(signalWorkspaceChange).toHaveBeenCalledWith("shoku");
   });
 
-  it("rejects a caller with no device token", async () => {
+  it("rejects a caller with no authenticated workspace token", async () => {
     verifyTextTextApiToken.mockResolvedValue(undefined);
 
     const response = await POST(post({ itemId: "p1", agent: "codex" }));
@@ -96,10 +105,57 @@ describe("POST /api/agent/presence", () => {
     expect(upsertPresence).not.toHaveBeenCalled();
   });
 
+  it("refuses a real item from another workspace", async () => {
+    getPostStoreContext.mockResolvedValue({ handle: "someone-else" });
+
+    const response = await POST(post({ itemId: "foreign", agent: "codex" }));
+
+    expect(response.status).toBe(404);
+    expect(upsertPresence).not.toHaveBeenCalled();
+  });
+
+  it("requires sync scope before publishing presence", async () => {
+    verifyTextTextApiToken.mockResolvedValue({
+      scopes: ["read"],
+      extra: { userId: "user-1", sub: "account-1" },
+    });
+
+    const response = await POST(post({ itemId: "p1", agent: "codex" }));
+
+    expect(response.status).toBe(403);
+    expect(workspaceBlog).not.toHaveBeenCalled();
+    expect(upsertPresence).not.toHaveBeenCalled();
+  });
+
+  it("rejects oversized or control-character agent names", async () => {
+    const oversized = await POST(
+      post({ itemId: "p1", agent: "a".repeat(121) }),
+    );
+    const control = await POST(
+      post({ itemId: "p1", agent: "codex\u007fspoof" }),
+    );
+
+    expect(oversized.status).toBe(400);
+    expect(control.status).toBe(400);
+    expect(upsertPresence).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid section metadata before scanning the document", async () => {
+    const response = await POST(
+      post({ itemId: "p1", agent: "codex", section: "s".repeat(201) }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(getPostStoreContext).not.toHaveBeenCalled();
+    expect(agentSelectionAtEnd).not.toHaveBeenCalled();
+  });
+
   it("removes the collaborator when the command finishes", async () => {
     // Blanking awareness would leave the agent lingering as a nameless
     // collaborator, so the row is deleted instead.
-    const response = await POST(post({ itemId: "p1", agent: "codex", active: false }));
+    const response = await POST(
+      post({ itemId: "p1", agent: "codex", active: false }),
+    );
 
     expect(response.status).toBe(200);
     expect(removePresence).toHaveBeenCalledWith("p1", "agent-abc");
@@ -119,5 +175,30 @@ describe("POST /api/agent/presence", () => {
   it("requires an item and an agent name", async () => {
     const response = await POST(post({ itemId: "", agent: "" }));
     expect(response.status).toBe(400);
+  });
+
+  it("rejects a declared oversized body before workspace lookup", async () => {
+    const request = post({ itemId: "p1", agent: "codex" });
+    request.headers.set("content-length", "16385");
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(413);
+    expect(workspaceBlog).not.toHaveBeenCalled();
+    expect(getPostStoreContext).not.toHaveBeenCalled();
+  });
+
+  it("rejects a streamed oversized body without Content-Length", async () => {
+    const request = new Request("https://texttext.app/api/agent/presence", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "x".repeat(16_385),
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(413);
+    expect(workspaceBlog).not.toHaveBeenCalled();
+    expect(getPostStoreContext).not.toHaveBeenCalled();
   });
 });

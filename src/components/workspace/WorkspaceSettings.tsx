@@ -394,11 +394,11 @@ export function WorkspaceSettings({
               </p>
             )}
             <p className={styles.aiNotConfigured}>
-              Provider API usage is billed separately from ChatGPT and
-              Claude.ai subscriptions. To use an existing subscription, connect
-              TextText from that app through{" "}
+              Provider API usage is billed separately from consumer AI
+              subscriptions. See the guide for the supported ways to use Claude
+              or Codex without a provider key.{" "}
               <a href="/docs/ai" target="_blank" rel="noreferrer">
-                MCP
+                Read the AI guide
               </a>
               .
             </p>

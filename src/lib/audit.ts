@@ -17,8 +17,8 @@
 // content save (savePost, the hot path with ~20 call sites and returned-revision
 // semantics, where an atomic rewrite is high-risk for a CAS-safe operation) and
 // the one-time / self-healing paths (workspace provisioning, bookmark recapture,
-// comments, workspace claim, token mint). For those, recordAction retries once
-// and then swallows with a loud warning; the only uncovered window (process
+// workspace claim, token mint). For those, recordAction retries once and then
+// swallows with a loud warning; the only uncovered window (process
 // death between the committed mutation and the audit insert) is vanishingly rare
 // and, on those paths, low-consequence. Converting savePost to an atomic audit
 // is a deliberate, separately-gated follow-up (see docs and the golden save

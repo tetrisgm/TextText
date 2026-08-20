@@ -7,37 +7,53 @@ description: Use TextText as the durable document home for notes, articles, book
 
 TextText is the source of truth for the documents it manages.
 
-## Pick the transport first
+## Use the local command first
 
-**If the `texttext` command is available, use it.** It is the fastest path, it
-owns the document format so an edit cannot corrupt a package, and it shows you in
-the document as a named collaborator while you work.
+Resolve the command before doing anything else:
 
 ```sh
-texttext ls                                    # what is here
-texttext sections <doc>                        # the headings
-texttext read <doc> [--section "## Heading"]   # read all of it, or one section
-texttext edit <doc> --section "## Heading" --as codex --message "why"
-texttext write <doc> --as codex --message "why"    # replace the whole body
-texttext append <doc> --as codex --message "why"   # add to the end
-texttext open <doc>                            # open it in the app
+if command -v texttext >/dev/null 2>&1; then
+  TEXTTEXT_CMD="$(command -v texttext)"
+elif test -x /Applications/TextText.app/Contents/Helpers/texttext; then
+  TEXTTEXT_CMD=/Applications/TextText.app/Contents/Helpers/texttext
+else
+  echo "TextText command not found"
+fi
 ```
 
-Check with `command -v texttext`, and fall back to
-`/Applications/TextText.app/Contents/Helpers/texttext` before giving up. The
-sandboxed TestFlight edition intentionally excludes the command, so use hosted
-MCP there.
+When `TEXTTEXT_CMD` is set, verify the connection with the harmless read
+`"$TEXTTEXT_CMD" ls`. Use that same resolved command for the rest of the task.
+Do not start MCP, request a workspace token, or ask the user to relaunch the
+agent from a special Terminal session.
 
-Always pass `--as <your name>` and `--message "<what this change is for>"`. They
-are how the person sees who is working and why, both live in the document and in
-its history afterwards. Input comes from stdin, so pipe it or use `--from FILE`.
+The command owns the document format so an edit cannot corrupt a package.
+During a connected edit, TextText may show short-lived collaborator presence.
+The durable action audit records the supplied agent name and intent.
 
-Prefer `--section` over rewriting a whole document: a section edit changes only
-that span, so a person typing elsewhere is not disturbed.
+```sh
+"$TEXTTEXT_CMD" ls                                    # what is here
+"$TEXTTEXT_CMD" sections <doc>                        # the headings
+"$TEXTTEXT_CMD" read <doc> [--section "## Heading"]   # all or one section
+"$TEXTTEXT_CMD" edit <doc> --section "## Heading" --as codex --message "why"
+"$TEXTTEXT_CMD" write <doc> --as codex --message "why"
+"$TEXTTEXT_CMD" append <doc> --as codex --message "why"
+"$TEXTTEXT_CMD" open <doc>                            # open it in the app
+"$TEXTTEXT_CMD" new <title> --folder <folder>         # create a document
+```
 
-**Use the MCP tools when the CLI is not available** (you are in a browser, on a
-phone, or on another machine), or for work that has no file equivalent:
-publishing, audience and sharing, comments, templates, and trash.
+Always pass `--as <your name>` and `--message "<what this change is for>"`.
+They label the durable action audit, and may also label best-effort presence
+while the edit is connected. Input comes from stdin, so pipe it or use
+`--from FILE`.
+
+Prefer `--section` over rewriting a whole document because it narrows the
+intended change. If TextText reports a conflict, read the latest document,
+merge only that section, and retry.
+
+Use hosted MCP only when its tools are already connected and the local command
+is unavailable, such as TestFlight, a browser, or another machine. Do not turn a
+missing local app into a token setup flow. MCP also covers work that has no file
+equivalent: publishing, audience and sharing, comments, templates, and Trash.
 
 ## Start with context
 

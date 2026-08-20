@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  countMatchedTopicGroups,
   completedFinalAgentMessage,
   decodeDynamicToolArguments,
   forbiddenNativeEscape,
@@ -42,6 +43,17 @@ describe("native Codex eval protocol", () => {
       method: "item/completed",
       params: { item: { type: "agentMessage", phase: "final_answer", text: "Done" } },
     })).toBe("Done");
+  });
+
+  it("accepts grounded topic paraphrases without coaching an exact answer", () => {
+    expect(countMatchedTopicGroups(
+      "You have been improving native assistant reliability and studying writing workflows.",
+      [
+        ["native ai", "native assistant", "reliability"],
+        ["agentic writing", "writing workflow"],
+        ["pinned", "fixed rails"],
+      ],
+    )).toBe(2);
   });
 
   it("rejects filesystem, shell, web, and MCP escape paths", () => {

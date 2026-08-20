@@ -1,40 +1,35 @@
 # TextText for AI agents
 
-TextText gives Claude, Codex, ChatGPT, and other MCP clients one shared command
-surface for durable notes, articles, bookmarks, project records, publishing,
-and collaboration.
+TextText gives Claude and Codex a direct way to create and edit durable notes,
+articles, bookmarks, and project records on the Mac.
 
-## Connect your workspace
+## Before you install
 
-The plugin installer adds TextText's tools, but it cannot collect or store a
-TextText credential. Claude Code and Codex read the same revocable workspace
-token from `TEXTTEXT_WORKSPACE_TOKEN` when they start.
+Install the standalone TextText app at `/Applications/TextText.app` and sign in
+once. The plugin uses the `texttext` command shipped inside that app. It does not
+start an MCP server, ask for a workspace token, or depend on the Terminal session
+that installed it.
 
-Create a token at `https://texttext.app/connect`. Then start either client from
-the same terminal session:
+The skills discover the command in this order:
 
-```zsh
-read -rs "TEXTTEXT_WORKSPACE_TOKEN?Paste your TextText token: "
-printf '\n'
-export TEXTTEXT_WORKSPACE_TOKEN
+```text
+texttext
+/Applications/TextText.app/Contents/Helpers/texttext
 ```
 
-The hidden prompt keeps the token out of the command, shell history, and plugin
-files. Close that terminal session or run `unset TEXTTEXT_WORKSPACE_TOKEN` when
-you are done. You can revoke the token from TextText at any time.
+The first available command is verified with a read-only `texttext ls`. If you
+want the short command available to every shell, run `texttext install` once.
 
 ## Install in Claude Code
 
 ```sh
 claude plugin marketplace add tetrisgm/TextText
 claude plugin install texttext@texttext
-claude
 ```
 
-Claude Code does not ask for a generic bearer token during plugin installation,
-so set `TEXTTEXT_WORKSPACE_TOKEN` before starting it. The plugin includes the
-TextText MCP connection, five reusable skills, and two slash commands. Open
-`/mcp` after launch to confirm that `plugin:texttext:texttext` is connected.
+Restart Claude Code, then ask it to list your TextText workspace. The plugin
+includes five reusable skills and two slash commands. No MCP connection or
+credential setup is part of the local install.
 
 Use `/texttext:canvas project-name` to maintain one document while you work.
 Use `/texttext:changelog release-details` to append a release exactly once.
@@ -44,27 +39,27 @@ Use `/texttext:changelog release-details` to append a release exactly once.
 ```sh
 codex plugin marketplace add tetrisgm/TextText
 codex plugin add texttext@texttext
-codex
 ```
 
-Codex does not ask for a generic bearer token during plugin installation, so
-set `TEXTTEXT_WORKSPACE_TOKEN` before starting it. The plugin includes the same
-MCP connection and skills as the Claude package. Open `/mcp` after launch to
-confirm that `texttext` is connected.
+Restart Codex, then ask it to list your TextText workspace. Codex uses the same
+skills and the same bundled command as Claude Code. The install requires no
+token and does not add a hosted MCP server to the session.
 
-## Connect ChatGPT
+## Verify the local connection
 
-Open ChatGPT Settings, choose Apps, create a custom app, and enter:
+This is the harmless read the skills run before doing any work:
 
-```text
-https://texttext.app/api/mcp
+```sh
+if command -v texttext >/dev/null 2>&1; then
+  texttext ls
+else
+  /Applications/TextText.app/Contents/Helpers/texttext ls
+fi
 ```
 
-Choose bearer-token authentication if that option is available, then provide a
-token created at `https://texttext.app/connect`. TextText does not currently run
-an OAuth authorization server. ChatGPT custom-app availability and supported
-authentication depend on the plan, workspace role, and administrator policy. An
-OAuth-only ChatGPT surface cannot connect to TextText yet.
+If neither command exists, install the standalone TextText build. If the read
+reports that TextText is not signed in, open the app and sign in. Do not create a
+token or start a server to repair a local setup.
 
 ## Included skills
 
@@ -77,9 +72,16 @@ OAuth-only ChatGPT surface cannot connect to TextText yet.
 - `publish-collaborate`: apply a validated look, publish safely, and manage
   collaborators.
 
-## Other MCP clients
+## Remote and TestFlight clients
 
-Use `https://texttext.app/api/mcp` as a remote MCP server with a revocable
-workspace bearer token from `https://texttext.app/connect`. TextText keeps
-authorization, content rules, and audit logging below the client-specific
-integration layer.
+Hosted MCP is an explicit alternative for an external agent on another
+computer, in a browser client, or in an automation. A TestFlight user can keep
+the sandboxed TextText app open while a separately connected external client
+uses hosted MCP. The TestFlight app itself is not an MCP client, and hosted MCP
+is not bundled with the local Claude or Codex plugin.
+
+Use `https://texttext.app/api/mcp` as the remote server and create a revocable
+workspace token at `https://texttext.app/connect`. Save the token in the
+client's protected credential field, not in the plugin, source code, or an
+install command. TextText keeps authorization, content rules, and audit logging
+below the client-specific integration layer.

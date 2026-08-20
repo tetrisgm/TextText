@@ -106,6 +106,42 @@ describe("authorization", () => {
   });
 });
 
+describe("request body limits", () => {
+  it("rejects a declared oversized body before parsing it", async () => {
+    const request = post({ method: "tools/list" });
+    request.headers.set("content-length", "1100001");
+    const response = await handleMcpRequest(request);
+    expect(response.status).toBe(413);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect((await json(response)).error.message).toBe(
+      "Request body is too large",
+    );
+  });
+
+  it("rejects a streamed oversized body with no Content-Length", async () => {
+    const chunk = new Uint8Array(600_000).fill(32);
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(chunk);
+        controller.enqueue(chunk);
+        controller.close();
+      },
+    });
+    const request = new Request(ENDPOINT, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer wsk_test",
+        "content-type": "application/json",
+      },
+      body: stream,
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+    const response = await handleMcpRequest(request);
+    expect(response.status).toBe(413);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+  });
+});
+
 describe("header and body mirroring", () => {
   it("rejects a missing protocol version header with -32020", async () => {
     const request = post({ method: "tools/list" });

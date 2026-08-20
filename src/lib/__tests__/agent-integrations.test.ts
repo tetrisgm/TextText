@@ -2,27 +2,24 @@ import { describe, expect, it } from "vitest";
 import {
   AGENT_INTEGRATIONS,
   AGENT_WORKFLOWS,
-  CHATGPT_CONNECTOR_URL,
   CLAUDE_PLUGIN_INSTALL_COMMAND,
   CODEX_PLUGIN_INSTALL_COMMAND,
   hostedMcpUrl,
+  TEXTTEXT_CLI_VERIFY_COMMAND,
   TEXTTEXT_HOSTED_MCP_URL,
-  TEXTTEXT_TOKEN_PROMPT_COMMAND,
 } from "@/lib/agent-integrations";
 
 describe("agent integrations", () => {
-  it("keeps Claude, Codex, ChatGPT, and MCP as first-class entries", () => {
+  it("leads with local Claude and Codex, then keeps hosted MCP explicit", () => {
     expect(AGENT_INTEGRATIONS.map((integration) => integration.id)).toEqual([
       "claude",
       "codex",
-      "chatgpt",
       "mcp",
     ]);
     expect(AGENT_INTEGRATIONS.map((integration) => integration.name)).toEqual([
       "Claude",
       "Codex",
-      "ChatGPT",
-      "Other agents",
+      "Remote agents",
     ]);
   });
 
@@ -33,9 +30,6 @@ describe("agent integrations", () => {
     expect(CODEX_PLUGIN_INSTALL_COMMAND).toBe(
       "codex plugin marketplace add tetrisgm/TextText && codex plugin add texttext@texttext",
     );
-    expect(CHATGPT_CONNECTOR_URL).toBe(
-      "https://chatgpt.com/#settings/Connectors",
-    );
   });
 
   it("normalizes hosted MCP addresses", () => {
@@ -45,24 +39,29 @@ describe("agent integrations", () => {
     );
   });
 
-  it("prompts for plugin credentials without putting a token in a command", () => {
-    expect(TEXTTEXT_TOKEN_PROMPT_COMMAND).toContain("read -rs");
-    expect(TEXTTEXT_TOKEN_PROMPT_COMMAND).toContain(
-      "export TEXTTEXT_WORKSPACE_TOKEN",
+  it("keeps the recommended local plugin setup token-free", () => {
+    expect(TEXTTEXT_CLI_VERIFY_COMMAND).toContain("command -v texttext");
+    expect(TEXTTEXT_CLI_VERIFY_COMMAND).toContain(
+      "/Applications/TextText.app/Contents/Helpers/texttext ls",
     );
-    expect(TEXTTEXT_TOKEN_PROMPT_COMMAND).not.toContain("wsk_");
-
     for (const id of ["claude", "codex"] as const) {
       const integration = AGENT_INTEGRATIONS.find((entry) => entry.id === id);
-      expect(integration?.steps.map((step) => step.text).join(" ")).toContain(
-        "The plugin installer does not ask for it.",
-      );
-      expect(
-        integration?.steps.some(
-          (step) => step.copy?.value === TEXTTEXT_TOKEN_PROMPT_COMMAND,
-        ),
-      ).toBe(true);
+      const serialized = JSON.stringify(integration);
+      expect(serialized).toContain("standalone TextText app");
+      expect(serialized).toContain(TEXTTEXT_CLI_VERIFY_COMMAND);
+      expect(serialized).not.toContain("TEXTTEXT_WORKSPACE_TOKEN");
+      expect(serialized).not.toContain("same Terminal");
+      expect(serialized).not.toContain("/mcp");
     }
+  });
+
+  it("does not advertise an unsupported ChatGPT connection", () => {
+    const serialized = JSON.stringify(AGENT_INTEGRATIONS);
+    expect(serialized).not.toContain("ChatGPT");
+    expect(serialized).not.toContain("own cursor");
+    expect(serialized).not.toContain("name on its token");
+    expect(serialized).not.toContain("TestFlight");
+    expect(serialized).not.toContain("chatgpt.com/#settings/Connectors");
   });
 
   it("ships distinct reusable workflows", () => {

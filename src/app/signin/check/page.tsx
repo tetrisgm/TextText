@@ -3,6 +3,7 @@
 
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
+import Link from "next/link";
 import {
   SIGNIN_CALLBACK_COOKIE,
   SIGNIN_EMAIL_COOKIE,
@@ -33,12 +34,12 @@ export default async function SignInCheckPage() {
     <div className="applecms connect-shell">
       <main className="connect-main signin-main">
         <div className="signin-topline">
-          <a className="signin-wordmark" href="/">
+          <Link className="signin-wordmark" href="/">
             TextText
-          </a>
-          <a className="signin-back" href="/signin">
+          </Link>
+          <Link className="signin-back" href="/signin">
             Back
-          </a>
+          </Link>
         </div>
         <h1 className="connect-title">Check your email</h1>
         <p className="connect-lede">
@@ -76,7 +77,7 @@ export default async function SignInCheckPage() {
           </p>
         )}
         <p className="signin-terms">
-          By continuing, you agree to TextText's terms and privacy policy.
+          By continuing, you agree to TextText&apos;s terms and privacy policy.
         </p>
       </main>
     </div>

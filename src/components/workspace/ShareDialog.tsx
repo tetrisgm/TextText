@@ -109,24 +109,34 @@ export function ShareDialog({
     if (!resolvedScopeId) return;
 
     let active = true;
-    setLoading(true);
-    setError(null);
-    setConfirmingId(null);
-    setRole(defaultRole(scopeType));
+    async function loadShares() {
+      // The dialog can mount during hydration. Start the state transition in
+      // the next microtask so opening it does not cascade another render from
+      // inside the effect itself.
+      await Promise.resolve();
+      if (!active) return;
+      setLoading(true);
+      setError(null);
+      setConfirmingId(null);
+      setRole(defaultRole(scopeType));
 
-    listScopeSharesAction(handle, scopeType, resolvedScopeId)
-      .then((nextShares) => {
+      try {
+        const nextShares = await listScopeSharesAction(
+          handle,
+          scopeType,
+          resolvedScopeId,
+        );
         if (active) setShares(nextShares);
-      })
-      .catch((loadError) => {
+      } catch (loadError) {
         if (active) {
           setError(errorMessage(loadError, "Could not load sharing."));
           setShares([]);
         }
-      })
-      .finally(() => {
+      } finally {
         if (active) setLoading(false);
-      });
+      }
+    }
+    void loadShares();
 
     return () => {
       active = false;

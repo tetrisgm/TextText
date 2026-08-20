@@ -6,81 +6,41 @@ import TextTextCLICore
 // the document like a person. See docs/agent-interoperability.md.
 
 let usage = """
-texttext - work with a TextText workspace
+    texttext - work with a TextText workspace
 
-USAGE
-  texttext ls [folder]                     list documents
-  texttext read <doc> [--section "## H"]   print the body, or one section
-  texttext write <doc> [--from FILE]       replace the body (stdin by default)
-  texttext append <doc> [--from FILE]      append to the body
-  texttext edit <doc> --section "## H"     replace one section (stdin by default)
-  texttext open <doc> [--section "## H"]   open it in TextText
-  texttext sections <doc>                  list the headings
-  texttext new <title> [--folder F]        create a document
-  texttext lint [<doc>]                    check documents are well formed
-  texttext install                         put texttext on your PATH
+    USAGE
+      texttext ls [folder]                     list documents
+      texttext read <doc> [--section "## H"]   print the body, or one section
+      texttext write <doc> [--from FILE]       replace the body (stdin by default)
+      texttext append <doc> [--from FILE]      append to the body
+      texttext edit <doc> --section "## H"     replace one section (stdin by default)
+      texttext open <doc> [--section "## H"]   open it in TextText
+      texttext sections <doc>                  list the headings
+      texttext new <title> [--folder F]        create a document
+      texttext lint [<doc>]                    check documents are well formed
+      texttext install                         put texttext on your PATH
 
-OPTIONS
-  --as NAME        who is working (shown in the document while it runs)
-  --message TEXT   what this change is for (recorded with the change)
-  --from FILE      read input from FILE instead of stdin
-  --section NAME   address one section by heading
-  --json           machine-readable output
+    OPTIONS
+      --as NAME        self-declared agent label for presence and audit
+      --message TEXT   what this change is for (recorded with the change)
+      --idempotency-key KEY  stable retry key for new and append
+      --from FILE      read input from FILE instead of stdin
+      --section NAME   address one section by heading
+      --json           machine-readable output
 
-Documents are addressed by workspace-relative path. A bare name works when it
-matches exactly one document.
-"""
-
-struct Options {
-    var command = ""
-    var positional: [String] = []
-    var section: String?
-    var from: String?
-    var actor: String?
-    var message: String?
-    var folder: String?
-    var json = false
-}
-
-func parse(_ arguments: [String]) -> Options {
-    var options = Options()
-    var rest = arguments
-    if let first = rest.first, !first.hasPrefix("-") {
-        options.command = first
-        rest.removeFirst()
-    }
-    var index = 0
-    while index < rest.count {
-        let argument = rest[index]
-        func value() -> String? {
-            index += 1
-            return index < rest.count ? rest[index] : nil
-        }
-        switch argument {
-        case "--section", "-s": options.section = value()
-        case "--from", "-f": options.from = value()
-        case "--as": options.actor = value()
-        case "--message", "-m": options.message = value()
-        case "--folder": options.folder = value()
-        case "--json": options.json = true
-        case "--help", "-h": options.command = "help"
-        default:
-            if !argument.hasPrefix("-") { options.positional.append(argument) }
-        }
-        index += 1
-    }
-    return options
-}
+    Documents are addressed by workspace-relative path. A bare name works when it
+    matches exactly one document.
+    """
 
 func fail(_ message: String) -> Never {
     FileHandle.standardError.write(Data(("texttext: " + message + "\n").utf8))
     exit(1)
 }
 
-func readInput(_ options: Options) -> String {
+func readInput(_ options: CLICommandLineOptions) -> String {
     if let from = options.from {
         guard let data = FileManager.default.contents(atPath: from),
-              let text = String(data: data, encoding: .utf8)
+            let text = String(data: data, encoding: .utf8)
         else { fail("could not read \(from)") }
         return text
     }
@@ -92,37 +52,95 @@ func emit(_ text: String) {
     FileHandle.standardOutput.write(Data((text + "\n").utf8))
 }
 
-let options = parse(Array(CommandLine.arguments.dropFirst()))
+let options: CLICommandLineOptions
+do {
+    options = try CLICommandLineOptions.parse(
+        Array(CommandLine.arguments.dropFirst()))
+} catch {
+    fail(String(describing: error))
+}
 if options.command.isEmpty || options.command == "help" {
     emit(usage)
     exit(0)
 }
 
-let store: DocumentStore
+if let key = options.idempotencyKey,
+    AgentActor.validatedIntent(key) == nil
+{
+    fail("--idempotency-key must be 1 to 500 characters with no control characters")
+}
+
+// Installation must work before TextText is signed in. Resolving a workspace
+// here would turn the command that makes the CLI discoverable into an
+// authentication-dependent operation.
+if options.command == "install" {
+    let source = URL(fileURLWithPath: CommandLine.arguments[0])
+        .resolvingSymlinksInPath()
+    let binDirectory = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".local/bin", isDirectory: true)
+    let link = binDirectory.appendingPathComponent("texttext")
+    do {
+        try CLIInstaller.install(source: source, destination: link)
+    } catch {
+        fail("could not link into ~/.local/bin: \(error)")
+    }
+    emit("Linked \(link.path)")
+    emit("Add ~/.local/bin to your PATH if it is not there already.")
+    exit(0)
+}
+
+let store: CLIWorkspace
 do {
-    store = try DocumentStore.locate()
+    store = try CLIWorkspace.locate()
 } catch {
     fail(String(describing: error))
 }
 
-/// Presence wraps every mutation, so an agent shows up in the document simply by
-/// doing its work.
-func withPresence<T>(
-    _ documentPath: String, _ url: URL, _ activity: AgentActor.Activity,
-    _ work: () throws -> T
-) rethrows -> T {
-    guard let name = options.actor else { return try work() }
+/// Attribution wraps every mutation. Presence is a best-effort, short-lived
+/// signal while the command runs; the audit label remains with the change.
+@MainActor
+func withActor<T>(
+    _ activity: AgentActor.Activity, itemId: String?,
+    _ work: () async throws -> T
+) async rethrows -> T {
+    guard let requestedName = options.actor else { return try await work() }
+    guard let name = AgentActor.validatedName(requestedName) else {
+        fail("--as must be 1 to 120 characters with no control characters")
+    }
+    let intent: String?
+    if options.message == nil {
+        intent = nil
+    } else if let valid = AgentActor.validatedIntent(options.message) {
+        intent = valid
+    } else {
+        fail("--message must be 1 to 500 characters with no control characters")
+    }
     let actor = AgentActor(
         name: name, activity: activity,
-        section: options.section, message: options.message,
-        itemId: store.itemId(at: url))
-    return try PresencePublisher().around(document: documentPath, actor: actor, work: work)
+        section: options.section, message: intent,
+        itemId: itemId)
+    return try await CLICommandActor.$current.withValue(actor) {
+        try await work()
+    }
+}
+
+@MainActor
+func withPresence<T>(
+    _ documentPath: String, _ reference: CLIDocumentReference,
+    _ activity: AgentActor.Activity,
+    _ work: () async throws -> T
+) async rethrows -> T {
+    try await withActor(activity, itemId: await store.itemId(at: reference)) {
+        guard let actor = CLICommandActor.current else { return try await work() }
+        return try await PresencePublisher().around(
+            document: documentPath, actor: actor, work: work)
+    }
 }
 
 do {
     switch options.command {
     case "ls":
-        let entries = try store.list(under: options.positional.first)
+        let entries = try await store.list(under: options.positional.first)
         if options.json {
             let data = try JSONSerialization.data(
                 withJSONObject: entries, options: [.prettyPrinted, .sortedKeys])
@@ -133,11 +151,12 @@ do {
 
     case "sections":
         guard let name = options.positional.first else { fail("usage: texttext sections <doc>") }
-        let url = try store.resolve(name)
-        let headings = DocumentSections.parse(try store.readMarkdown(at: url))
+        let reference = try await store.resolve(name)
+        let headings = DocumentSections.parse(try await store.readMarkdown(at: reference))
             .map { String(repeating: "#", count: $0.level) + " " + $0.title }
         if options.json {
-            let data = try JSONSerialization.data(withJSONObject: headings, options: [.prettyPrinted])
+            let data = try JSONSerialization.data(
+                withJSONObject: headings, options: [.prettyPrinted])
             emit(String(decoding: data, as: UTF8.self))
         } else {
             headings.forEach { emit($0) }
@@ -145,8 +164,8 @@ do {
 
     case "read":
         guard let name = options.positional.first else { fail("usage: texttext read <doc>") }
-        let url = try store.resolve(name)
-        let markdown = try store.readMarkdown(at: url)
+        let reference = try await store.resolve(name)
+        let markdown = try await store.readMarkdown(at: reference)
         if let wanted = options.section {
             guard let section = DocumentSections.find(wanted, in: markdown) else {
                 throw TextTextCLIError.sectionNotFound(
@@ -162,20 +181,19 @@ do {
         guard let name = options.positional.first else {
             fail("usage: texttext \(options.command) <doc>")
         }
-        let url = try store.resolve(name)
-        let relative = store.relativePath(of: url)
+        let reference = try await store.resolve(name)
+        let relative = store.relativePath(of: reference)
         let input = readInput(options)
 
-        try withPresence(relative, url, .edit) {
-            let current = try store.readMarkdown(at: url)
-            let updated: String
-            switch options.command {
-            case "write":
-                updated = input
-            case "append":
-                let separator = current.hasSuffix("\n") ? "" : "\n"
-                updated = current + separator + input
-            default:
+        try await withPresence(relative, reference, .edit) {
+            if options.command == "append" {
+                try await store.appendMarkdown(
+                    input, to: reference,
+                    idempotencyKey: options.idempotencyKey)
+                return
+            }
+            if options.command == "edit" {
+                let current = try await store.readMarkdown(at: reference)
                 guard let wanted = options.section else {
                     fail("edit needs --section; use write to replace the whole body")
                 }
@@ -184,10 +202,11 @@ do {
                         wanted,
                         available: DocumentSections.parse(current).map(\.title))
                 }
-                updated = DocumentSections.replaceBody(
-                    of: section, in: current, with: input)
+                try await store.replaceSectionBody(
+                    input, section: section, in: reference)
+                return
             }
-            try store.writeMarkdown(updated, to: url)
+            try await store.writeMarkdown(input, to: reference)
         }
         if options.json {
             emit("{\"ok\":true,\"document\":\"\(relative)\"}")
@@ -195,20 +214,16 @@ do {
 
     case "open":
         guard let name = options.positional.first else { fail("usage: texttext open <doc>") }
-        let url = try store.resolve(name)
-        let relative = store.relativePath(of: url)
-        var link = "texttext-app://open?path=" + (relative
-            .addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? relative)
-        if let section = options.section,
-           let encoded = section.addingPercentEncoding(withAllowedCharacters: .alphanumerics)
-        {
-            link += "&section=" + encoded
+        let reference = try await store.resolve(name)
+        let relative = store.relativePath(of: reference)
+        guard let link = await store.itemLink(for: reference) else {
+            fail("\(relative) does not carry a TextText item identity")
         }
-        withPresence(relative, url, .open) {
+        try await withPresence(relative, reference, .open) {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-            process.arguments = [link]
-            try? process.run()
+            process.arguments = [link.absoluteString]
+            try process.run()
             process.waitUntilExit()
         }
 
@@ -223,9 +238,15 @@ do {
             return isatty(FileHandle.standardInput.fileDescriptor) == 1
                 ? "" : readInput(options)
         }()
-        let created = try store.create(
-            title: title, body: body,
-            folder: options.positional.dropFirst().first ?? options.folder)
+        // There is no item id to publish presence against until the create has
+        // committed, but the command-scoped actor still reaches the authenticated
+        // create request and its audit record.
+        let created = try await withActor(.edit, itemId: nil) {
+            try await store.create(
+                title: title, body: body,
+                folder: options.positional.dropFirst().first ?? options.folder,
+                idempotencyKey: options.idempotencyKey)
+        }
         let relative = store.relativePath(of: created)
         emit(options.json ? "{\"ok\":true,\"document\":\"\(relative)\"}" : relative)
 
@@ -235,18 +256,15 @@ do {
         // outside the workspace: relativePath passes such a path through
         // unchanged, so re-appending it produced "<root>//tmp/...". A hook
         // lints whatever file was just written, which is exactly that case.
-        let targets: [(url: URL, name: String)]
+        let targets: [CLIDocumentReference]
         if let name = options.positional.first {
-            let url = try store.resolve(name)
-            targets = [(url, store.relativePath(of: url))]
+            targets = [try await store.resolve(name)]
         } else {
-            targets = try store.list().map {
-                (store.root.appendingPathComponent($0), $0)
-            }
+            targets = try await store.references()
         }
         var findings: [LintFinding] = []
         for target in targets {
-            findings += DocumentLinter.check(target.url, named: target.name)
+            findings += await store.lint(target)
         }
         if options.json {
             let payload = findings.map { ["document": $0.document, "problem": $0.problem] }
@@ -260,24 +278,6 @@ do {
         }
         // A nonzero exit is what lets a hook block an agent on a broken document.
         if !findings.isEmpty { exit(1) }
-
-    case "install":
-        let source = URL(fileURLWithPath: CommandLine.arguments[0])
-            .resolvingSymlinksInPath()
-        let binDirectory = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".local/bin", isDirectory: true)
-        let link = binDirectory.appendingPathComponent("texttext")
-        do {
-            try FileManager.default.createDirectory(
-                at: binDirectory, withIntermediateDirectories: true)
-            try? FileManager.default.removeItem(at: link)
-            try FileManager.default.createSymbolicLink(
-                at: link, withDestinationURL: source)
-        } catch {
-            fail("could not link into ~/.local/bin: \(error)")
-        }
-        emit("Linked \(link.path)")
-        emit("Add ~/.local/bin to your PATH if it is not there already.")
 
     default:
         fail("unknown command \(options.command)\n\n" + usage)

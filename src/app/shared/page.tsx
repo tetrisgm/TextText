@@ -26,14 +26,12 @@ export default async function SharedPage() {
           <p className="shared-lede">
             Sign in to see the posts people have shared with you.
           </p>
-          <p>
-            <a
-              className="ac-btn ac-btn-filled"
-              href="/api/auth/signin?callbackUrl=/shared"
-            >
+          <form action="/api/auth/signin" method="get">
+            <input type="hidden" name="callbackUrl" value="/shared" />
+            <button className="ac-btn ac-btn-filled" type="submit">
               Sign in
-            </a>
-          </p>
+            </button>
+          </form>
         </main>
       </div>
     );

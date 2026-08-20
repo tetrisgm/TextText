@@ -22,6 +22,26 @@ function request(body: unknown) {
   });
 }
 
+function streamedRequest(chunks: string[], contentLength?: number) {
+  const encoder = new TextEncoder();
+  return new Request("http://write.test/api/ai/tools", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(contentLength === undefined
+        ? {}
+        : { "Content-Length": String(contentLength) }),
+    },
+    body: new ReadableStream({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+        controller.close();
+      },
+    }),
+    duplex: "half",
+  } as RequestInit & { duplex: "half" });
+}
+
 describe("/api/ai/tools stable assistant transport", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -75,6 +95,28 @@ describe("/api/ai/tools stable assistant transport", () => {
     expect(missingWorkspace.status).toBe(400);
     expect(unknown.status).toBe(400);
     expect(invalid.status).toBe(400);
+    expect(mocks.runWorkspaceToolForSession).not.toHaveBeenCalled();
+  });
+
+  it("rejects a declared oversized command before parsing", async () => {
+    const response = await POST(streamedRequest(["{}"], 1_100_001));
+
+    expect(response.status).toBe(413);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(mocks.runWorkspaceToolForSession).not.toHaveBeenCalled();
+  });
+
+  it("rejects a streamed oversized command without Content-Length", async () => {
+    const response = await POST(
+      streamedRequest([
+        '{"handle":"current-workspace","name":"read_item","args":{"id":"',
+        "x".repeat(1_100_000),
+        '"}}',
+      ]),
+    );
+
+    expect(response.status).toBe(413);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
     expect(mocks.runWorkspaceToolForSession).not.toHaveBeenCalled();
   });
 

@@ -15,6 +15,7 @@ import TextTextWorkspaceCore
 /// TEXTTEXT_STATE_DIR overrides the base dir (headless/CI isolation).
 final class StateStore {
     let baseDir: URL
+    private let cliCredentialsURL: URL?
 
     private let encoder: JSONEncoder = {
         let e = JSONEncoder()
@@ -29,10 +30,13 @@ final class StateStore {
     }()
 
     init(fileManager: FileManager = .default,
-         groupContainer: URL? = AppGroupContainer.resolve()) {
+         groupContainer: URL? = AppGroupContainer.resolve(),
+         cliCredentialsURL: URL? = StateStore.defaultCLICredentialsURL()) {
         let fm = fileManager
         let legacyDir = Self.legacyBaseDir(fileManager: fm)
         var migrateFromLegacy = false
+
+        self.cliCredentialsURL = cliCredentialsURL
 
         if let override = ProcessInfo.processInfo.environment["TEXTTEXT_STATE_DIR"], !override.isEmpty {
             baseDir = URL(fileURLWithPath: (override as NSString).expandingTildeInPath, isDirectory: true)
@@ -62,6 +66,30 @@ final class StateStore {
         let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
         return support.appendingPathComponent("TextText", isDirectory: true)
+    }
+
+    /// The standalone app hands its current device credential to the bundled
+    /// CLI at one stable, private path. The CLI cannot read the app-group
+    /// container from an ordinary shell process. Store builds do not ship the
+    /// CLI, so they must not create this handoff file.
+    static func defaultCLICredentialsURL(
+        fileManager fm: FileManager = .default
+    ) -> URL? {
+        #if TEXTTEXT_STORE
+        return nil
+        #else
+        let environment = ProcessInfo.processInfo.environment
+        if let explicit = environment["TEXTTEXT_CREDENTIALS_PATH"], !explicit.isEmpty {
+            return URL(fileURLWithPath: (explicit as NSString).expandingTildeInPath)
+        }
+        // An isolated state directory is used by tests and headless tooling.
+        // It must never leak a fixture credential into the signed-in user's
+        // real Application Support directory.
+        if let isolatedState = environment["TEXTTEXT_STATE_DIR"], !isolatedState.isEmpty {
+            return nil
+        }
+        return legacyBaseDir(fileManager: fm).appendingPathComponent("credentials.json")
+        #endif
     }
 
     /// Carry state forward the first time this app runs against the group
@@ -110,8 +138,16 @@ final class StateStore {
     // MARK: Credentials
 
     func loadCredentials() -> Credentials? {
-        guard let data = try? Data(contentsOf: credentialsURL) else { return nil }
-        return try? decoder.decode(Credentials.self, from: data)
+        guard let data = try? Data(contentsOf: credentialsURL),
+              let credentials = try? decoder.decode(Credentials.self, from: data) else {
+            return nil
+        }
+        // Upgrades must work without forcing a sign-out/relink. Existing users
+        // may already have the current credential only in the app-group state
+        // directory, so refresh the standalone CLI handoff whenever the app
+        // successfully reads its authoritative credential.
+        mirrorCredentialsForCLI(data)
+        return credentials
     }
 
     func saveCredentials(_ credentials: Credentials) {
@@ -119,13 +155,45 @@ final class StateStore {
         try? data.write(to: credentialsURL, options: .atomic)
         try? FileManager.default.setAttributes([.posixPermissions: 0o600],
                                                ofItemAtPath: credentialsURL.path)
+        mirrorCredentialsForCLI(data)
     }
 
     /// Sign out: the credential goes; the local folder and its files stay.
     /// (Server-side revoke is best effort and may not exist yet.)
     func deleteCredentials() {
         try? FileManager.default.removeItem(at: credentialsURL)
+        if let cliCredentialsURL,
+           cliCredentialsURL.standardizedFileURL != credentialsURL.standardizedFileURL {
+            try? FileManager.default.removeItem(at: cliCredentialsURL)
+        }
         try? FileManager.default.removeItem(at: accountURL)
+    }
+
+    private func mirrorCredentialsForCLI(_ data: Data) {
+        guard let cliCredentialsURL,
+              cliCredentialsURL.standardizedFileURL != credentialsURL.standardizedFileURL else {
+            return
+        }
+        let fm = FileManager.default
+        let directory = cliCredentialsURL.deletingLastPathComponent()
+        do {
+            try fm.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+            try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+            try data.write(to: cliCredentialsURL, options: .atomic)
+            try fm.setAttributes(
+                [.posixPermissions: 0o600],
+                ofItemAtPath: cliCredentialsURL.path
+            )
+        } catch {
+            // Never leave a previous device token behind after relinking. The
+            // app remains linked through its authoritative state store, while
+            // the CLI fails closed until a later successful handoff.
+            try? fm.removeItem(at: cliCredentialsURL)
+        }
     }
 
     // MARK: Workspace cache (offline reuse)

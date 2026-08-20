@@ -24,6 +24,7 @@ import { resolveWorkspaceAccess } from "@/lib/permissions";
 import { resolveSyncWorkspace } from "../auth";
 import { recordAction } from "@/lib/audit";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
+import { readBoundedText } from "@/lib/http/bounded-json";
 import {
   clientSaveError,
   parseSyncFileRepresentation,
@@ -33,12 +34,16 @@ import {
 } from "../sync";
 
 export const dynamic = "force-dynamic";
+export const MAX_SYNC_FILE_BODY_BYTES = 8 * 1024 * 1024;
 
 export async function POST(request: Request) {
   const workspace = await resolveSyncWorkspace(request);
   if (workspace instanceof Response) return workspace;
   const { blog, userId } = workspace;
-  const access = await resolveWorkspaceAccess({ handle: blog.handle, user: workspace });
+  const access = await resolveWorkspaceAccess({
+    handle: blog.handle,
+    user: workspace,
+  });
   if (!access.isOwner) {
     return syncError(403, "You cannot create files in this workspace");
   }
@@ -56,7 +61,13 @@ export async function POST(request: Request) {
   let parsed: ReturnType<typeof parsePostMarkdownFile>;
   let suppliedDocument: Post["document"];
   try {
-    const raw = await request.text();
+    const body = await readBoundedText(request, MAX_SYNC_FILE_BODY_BYTES);
+    if ("error" in body) {
+      return syncError(413, "File is too large", {
+        "Cache-Control": "private, no-store",
+      });
+    }
+    const raw = body.value;
     if (requestUsesSyncDocument(request)) {
       const envelope = parseSyncDocumentEnvelope(raw);
       parsed = parsePostMarkdownFile(envelope.markdown);
@@ -76,17 +87,29 @@ export async function POST(request: Request) {
     const claim = await claimIdempotencyKey(blog.handle, idempotencyKey);
     if (claim.status === "done") {
       if (claim.kind !== "post") {
-        return syncError(409, "This Idempotency-Key was used for a different resource");
+        return syncError(
+          409,
+          "This Idempotency-Key was used for a different resource",
+        );
       }
       const existing = await getPostById(blog.handle, claim.id);
       if (existing) {
-        return Response.json({ item: syncManifestItem(blog, existing) }, { status: 201 });
+        return Response.json(
+          { item: syncManifestItem(blog, existing) },
+          { status: 201 },
+        );
       }
       // The item this key created was since deleted. The key is spent: do not
       // recreate, which two concurrent retries would each do (a second race).
-      return syncError(409, "The item created for this Idempotency-Key was deleted");
+      return syncError(
+        409,
+        "The item created for this Idempotency-Key was deleted",
+      );
     } else if (claim.status === "inflight") {
-      return syncError(409, "A create with this Idempotency-Key is in progress; retry shortly");
+      return syncError(
+        409,
+        "A create with this Idempotency-Key is in progress; retry shortly",
+      );
     }
   }
 
@@ -148,7 +171,12 @@ export async function POST(request: Request) {
     });
     await enqueueBookmarkCaptureIfNeeded(blog.handle, saved);
     if (idempotencyKey && saved.id) {
-      await resolveIdempotencyKey(blog.handle, idempotencyKey, "post", saved.id);
+      await resolveIdempotencyKey(
+        blog.handle,
+        idempotencyKey,
+        "post",
+        saved.id,
+      );
     }
     await recordAction({
       actorUserId: userId,
@@ -159,11 +187,15 @@ export async function POST(request: Request) {
       inputSummary: saved.title,
     });
     revalidateBlogPaths(blog, [saved.slug]);
-    return Response.json({ item: syncManifestItem(blog, saved) }, { status: 201 });
+    return Response.json(
+      { item: syncManifestItem(blog, saved) },
+      { status: 201 },
+    );
   } catch (error) {
     // A failed create must free the claim so a retry starts fresh instead of
     // being told a nonexistent item already exists.
-    if (idempotencyKey) await releaseIdempotencyKey(blog.handle, idempotencyKey).catch(() => {});
+    if (idempotencyKey)
+      await releaseIdempotencyKey(blog.handle, idempotencyKey).catch(() => {});
     // Best effort: never strand the placeholder draft behind a failed save
     // (e.g. the file's slug is already used).
     if (created.id) await deletePost(blog.handle, created.id).catch(() => {});
@@ -205,7 +237,8 @@ function sameUrl(left: string | undefined, right: string | undefined): boolean {
   if (!left || !right) return false;
   const normalizedLeft = normalizeHttpUrl(left);
   const normalizedRight = normalizeHttpUrl(right);
-  if (normalizedLeft && normalizedRight) return normalizedLeft === normalizedRight;
+  if (normalizedLeft && normalizedRight)
+    return normalizedLeft === normalizedRight;
   return left.trim() === right.trim();
 }
 

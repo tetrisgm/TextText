@@ -2,7 +2,7 @@
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "texttext",
   "version": "0.1.0",
-  "description": "Create, reshape, publish, and maintain TextText documents from Claude.",
+  "description": "Create, find, and edit TextText documents through the signed-in Mac app.",
   "author": {
     "name": "TextText",
     "email": "support@TextText.app"

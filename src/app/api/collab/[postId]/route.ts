@@ -24,6 +24,7 @@ import {
   prepareCollabBaseline,
 } from "@/lib/collab";
 import { getCollabRequestAccess } from "@/lib/collab/access.server";
+import { readBoundedJson } from "@/lib/http/bounded-json";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -38,6 +39,10 @@ const MAX_UPDATES_PER_POST = 64;
 // larger than any real edit, so anything bigger is rejected rather than
 // stored forever in the append log.
 const MAX_UPDATE_CHARS = 512 * 1024;
+// 64 maximum-size base64 updates plus their small JSON envelope. Enforce this
+// while streaming so an authenticated client cannot make the server buffer an
+// arbitrarily large body before the per-update validation below runs.
+const MAX_RELAY_BODY_BYTES = 34 * 1024 * 1024;
 
 // Reject a base64 string that is not a well-formed Yjs update: a stored
 // garbage update would throw in every peer's Y.applyUpdate and, because the
@@ -73,12 +78,20 @@ export async function POST(
     return Response.json({ error: "Not an editor of this post" }, { status: 403 });
   }
 
-  let body: { updates?: unknown; epoch?: unknown };
-  try {
-    body = await request.json();
-  } catch {
+  const decoded = await readBoundedJson<{
+    updates?: unknown;
+    epoch?: unknown;
+  }>(request, MAX_RELAY_BODY_BYTES);
+  if ("error" in decoded) {
+    if (decoded.error === "too_large") {
+      return Response.json(
+        { error: "Collaboration update batch is too large" },
+        { status: 413, headers: { "Cache-Control": "private, no-store" } },
+      );
+    }
     return Response.json({ error: "Send a JSON body" }, { status: 400 });
   }
+  const body = decoded.value;
   // The epoch the client caught up under. Absent (an old client) means epoch 0,
   // which is correct for any post that has never been retired.
   const clientEpoch =

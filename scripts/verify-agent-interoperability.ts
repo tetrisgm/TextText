@@ -47,7 +47,10 @@ function assert(condition: unknown, message: string): asserts condition {
 }
 
 for (const name of requiredTools) {
-  assert(WORKSPACE_TOOL_DEFINITIONS[name], `Missing shared agent tool: ${name}`);
+  assert(
+    WORKSPACE_TOOL_DEFINITIONS[name],
+    `Missing shared agent tool: ${name}`,
+  );
 }
 
 assert(
@@ -105,17 +108,19 @@ assert(
 );
 assert(
   publicDocs.includes("command -v texttext") &&
-    publicDocs.includes("/Applications/TextText.app/Contents/Helpers/texttext") &&
+    publicDocs.includes(
+      "/Applications/TextText.app/Contents/Helpers/texttext",
+    ) &&
     publicDocs.includes("TestFlight"),
   "Public agent docs must tell an agent on this Mac to use the CLI, and how to find it",
 );
 
 // ---- The texttext CLI ----
 //
-// Local agents work through the CLI: they edit documents as files rather than
-// driving a protocol. It must ship inside the app bundle, own the .textpack
-// format rather than reimplementing it, write atomically, and publish presence
-// automatically so an agent shows up in the document simply by working.
+// Local agents work through the CLI. The default signed-in path uses the app's
+// authenticated workspace credential and the shared workspace-command surface;
+// Finder/File Provider is not an auth or availability dependency. An explicit
+// TEXTTEXT_WORKSPACE_ROOT retains the offline package backend for development.
 
 const source = (path: string) =>
   readFileSync(join(repositoryRoot, path), "utf8");
@@ -126,8 +131,18 @@ const codexProtocol = source(
   "mac/Sources/TextTextWorkspaceCore/CodexAppServerProtocol.swift",
 );
 const cliMain = source("mac/Sources/TextTextCLI/main.swift");
+const cliOptions = source(
+  "mac/Sources/TextTextCLICore/CLICommandLineOptions.swift",
+);
 const cliStore = source("mac/Sources/TextTextCLICore/DocumentStore.swift");
+const cliWorkspace = source("mac/Sources/TextTextCLICore/CLIWorkspace.swift");
 const cliPresence = source("mac/Sources/TextTextCLICore/AgentPresence.swift");
+const cliSyncAPI = source(
+  "mac/Sources/TextTextFileProviderKit/LiveTextTextSyncAPI.swift",
+);
+const cliCommandRoute = source("src/app/api/agent/commands/route.ts");
+const cliPresenceRoute = source("src/app/api/agent/presence/route.ts");
+const mcpTools = source("src/lib/mcp/tools.ts");
 
 assert(
   packageManifest.includes('.executable(name: "texttext"'),
@@ -160,7 +175,9 @@ assert(
   "Store compilation must reach the workspace core that locates native runtimes",
 );
 const storeRuntimeGuard = codexProtocol.indexOf("#if !TEXTTEXT_STORE");
-const runtimeLocator = codexProtocol.indexOf("public struct CodexRuntimeLocator");
+const runtimeLocator = codexProtocol.indexOf(
+  "public struct CodexRuntimeLocator",
+);
 const storeRuntimeGuardEnd = codexProtocol.indexOf("#endif", runtimeLocator);
 assert(
   storeRuntimeGuard !== -1 &&
@@ -171,11 +188,87 @@ assert(
 assert(
   cliStore.includes("TextTextTextBundlePackage") &&
     !cliStore.includes("net.daringfireball.markdown"),
-  "The CLI must reuse TextTextTextBundlePackage rather than reimplement the format",
+  "The explicit offline CLI backend must reuse TextTextTextBundlePackage",
 );
 assert(
   cliStore.includes("replaceItemAt"),
-  "CLI writes must be atomic, so a crash cannot leave a partial document",
+  "Explicit offline CLI writes must remain atomic",
+);
+assert(
+  cliWorkspace.includes('environment["TEXTTEXT_WORKSPACE_ROOT"]') &&
+    cliWorkspace.includes("credentials.validatedServerOrigin") &&
+    cliWorkspace.includes("throw TextTextCLIError.workspaceNotFound") &&
+    !cliWorkspace.includes("CloudStorage"),
+  "The default CLI must use signed-in credentials, never silently fall back to File Provider",
+);
+assert(
+  cliMain.indexOf('if options.command == "install"') !== -1 &&
+    cliMain.indexOf('if options.command == "install"') <
+      cliMain.indexOf("let store: CLIWorkspace"),
+  "CLI installation must not require a signed-in workspace",
+);
+assert(
+  cliWorkspace.includes(
+    "remote documents must use a workspace-relative path",
+  ) &&
+    cliStore.includes("private func contains") &&
+    cliStore.includes("resolvingSymlinksInPath"),
+  "CLI addressing must reject absolute remote paths and contain explicit local paths",
+);
+for (const command of [
+  "read_item",
+  "create_item",
+  "update_item",
+  "append_to_item",
+]) {
+  assert(
+    cliCommandRoute.includes(`"${command}"`),
+    `The authenticated local command route must allow ${command}`,
+  );
+}
+assert(
+  cliCommandRoute.includes("verifyTextTextApiToken") &&
+    cliCommandRoute.includes('auth.scopes.includes("sync")') &&
+    cliCommandRoute.includes("runWorkspaceToolForAuth") &&
+    cliCommandRoute.includes("MAX_COMMAND_BODY_BYTES"),
+  "The local command route must authenticate, require sync, share the executor, and bound input",
+);
+assert(
+  cliSyncAPI.includes('"/api/agent/commands"') &&
+    cliSyncAPI.includes('"if_match_hash"') &&
+    cliSyncAPI.includes('"idempotency_key"'),
+  "CLI mutations must use the shared command route with CAS and idempotency",
+);
+assert(
+  cliWorkspace.includes("structuredContent?.item?.hash") &&
+    cliWorkspace.includes("ifMatchHash: hash") &&
+    cliWorkspace.includes("cli-create-") &&
+    cliWorkspace.includes("cli-append-"),
+  "The CLI must guard mutations with the command hash and stable retry keys",
+);
+assert(
+  cliOptions.includes('case "--idempotency-key"') &&
+    cliMain.includes("options.idempotencyKey"),
+  "The CLI must expose a stable idempotency key for exact create and append retries",
+);
+assert(
+  cliOptions.includes("unknown option") &&
+    cliOptions.includes("needs a value") &&
+    cliOptions.includes("--message requires --as"),
+  "The CLI parser must reject unknown, missing-value, and unattributed intent flags",
+);
+assert(
+  cliSyncAPI.includes('"expected_section_body"') &&
+    cliWorkspace.includes("agentUpdateItemSection") &&
+    mcpTools.includes("bodySection") &&
+    mcpTools.includes("DocumentSectionConflictError"),
+  "Section edits must use a guarded live Yjs mutation instead of a whole-document overwrite",
+);
+assert(
+  mcpTools.includes(
+    "a whole-document overwrite could be saved while it is open",
+  ),
+  "Whole-document writes must fail while another editor has unmaterialized changes",
 );
 assert(
   cliPresence.includes("func around") && cliPresence.includes("defer"),
@@ -198,10 +291,13 @@ assert(
   "The local MCP server must stay retired; agents use the texttext CLI",
 );
 
-const cliPresenceRoute = source("src/app/api/agent/presence/route.ts");
 assert(
-  cliPresenceRoute.includes("verifyTextTextApiToken"),
-  "The CLI presence route must authenticate the device token",
+  cliPresenceRoute.includes("verifyTextTextApiToken") &&
+    cliPresenceRoute.includes('auth.scopes.includes("sync")') &&
+    cliPresenceRoute.includes("workspaceBlog(auth)") &&
+    cliPresenceRoute.includes("context.handle !== blog.handle") &&
+    cliPresenceRoute.includes("MAX_PRESENCE_BODY_BYTES"),
+  "The CLI presence route must enforce auth, scope, tenant, and bounded input",
 );
 assert(
   cliPresenceRoute.includes("buildAgentPresence"),
@@ -213,7 +309,7 @@ assert(
 );
 
 // One construction site: hosted MCP must not rebuild agent presence by hand.
-const mcpTools = source("src/lib/mcp/tools.ts");assert(
+assert(
   mcpTools.includes("buildAgentPresence"),
   "Hosted MCP must build agent presence through the shared helper",
 );
@@ -242,8 +338,7 @@ assert(
   "mcp-handler implements the stateful pre-2026-07-28 shape and must stay removed",
 );
 assert(
-  transport.includes('request.method !== "POST"') &&
-    transport.includes("405"),
+  transport.includes('request.method !== "POST"') && transport.includes("405"),
   "GET and DELETE must answer 405: the session and standalone-stream verbs are gone",
 );
 assert(

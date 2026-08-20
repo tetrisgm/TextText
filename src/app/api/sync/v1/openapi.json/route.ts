@@ -1,17 +1,12 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-
-type YamlModule = {
-  load(input: string): unknown;
-};
-
-const yaml = require("js-yaml") as YamlModule;
+import { load as loadYaml } from "js-yaml";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const filePath = path.join(process.cwd(), "public/openapi/sync-v1.yaml");
-  const document = yaml.load(await readFile(filePath, "utf8"));
+  const document = loadYaml(await readFile(filePath, "utf8"));
 
   return Response.json(withRequestServer(document, request), {
     headers: {

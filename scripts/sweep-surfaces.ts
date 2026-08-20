@@ -44,18 +44,37 @@ type Surface = {
  * earlier sweep photographed Home three times and called it coverage.
  */
 async function openSidebar(page: Page, label: string) {
-  await page.goto(`${BASE}/start?to=home`, { waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(1400);
-  const destination = page
-    .locator(".post-editor-sidebar button")
-    .filter({ hasText: new RegExp(`^${label}$`) })
-    .first();
-  await destination.waitFor({ state: "attached" });
-  // At tablet and phone widths the sidebar is intentionally off canvas. This
-  // helper is route setup, not an interaction check, so invoke the same button
-  // handler directly and photograph the destination rather than the drawer.
-  await destination.evaluate((button) => (button as HTMLButtonElement).click());
-  await page.waitForTimeout(500);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await page.goto(`${BASE}/start?to=home`, {
+      waitUntil: "domcontentloaded",
+    });
+    await page.waitForTimeout(1400);
+    const destination = page
+      .locator(".post-editor-sidebar button")
+      .filter({ hasText: new RegExp(`^${label}$`) })
+      .first();
+    await destination.waitFor({ state: "attached" });
+    // At tablet and phone widths the sidebar is intentionally off canvas. This
+    // helper is route setup, not an interaction check, so invoke the same
+    // button handler directly and photograph the destination rather than the
+    // drawer.
+    await destination.evaluate(
+      (button) => (button as HTMLButtonElement).click(),
+    );
+    const heading = page
+      .getByRole("heading", { name: label, exact: true })
+      .first();
+    if (
+      await heading
+        .waitFor({ state: "visible", timeout: 10000 })
+        .then(() => true)
+        .catch(() => false)
+    ) {
+      await page.waitForTimeout(500);
+      return;
+    }
+  }
+  throw new Error(`${label} did not open from the sidebar`);
 }
 
 async function verifyWorkspaceScrollOwnership(page: Page) {
@@ -128,6 +147,19 @@ async function verifyWorkspaceScrollOwnership(page: Page) {
   }
 }
 
+async function verifyRemoteMcpPresetOnly(page: Page) {
+  const addServer = page.getByRole("button", { name: "Add server" });
+  await addServer.waitFor({ state: "visible", timeout: 10000 });
+  await addServer.click();
+  await page
+    .getByRole("button", { name: "Linear" })
+    .waitFor({ state: "visible", timeout: 10000 });
+  await page
+    .getByRole("button", { name: "Paper" })
+    .waitFor({ state: "detached", timeout: 10000 });
+  await page.getByRole("button", { name: "Cancel" }).click();
+}
+
 async function openItemTypeStudio(
   page: Page,
   surface: "prompt" | "item" | "folder",
@@ -165,6 +197,7 @@ const surfaces: Surface[] = [
     "docs/getting-started",
     "docs/how-it-works",
     "docs/ai",
+    "docs/recipes",
     "docs/mcp",
     "docs/security",
     "docs/troubleshooting",
@@ -287,6 +320,8 @@ const surfaces: Surface[] = [
       await page.goto(`${BASE}/@${handle}?folder=blog`, {
         waitUntil: "domcontentloaded",
       });
+      await page.waitForTimeout(1200);
+      await verifyWorkspaceScrollOwnership(page);
     },
   },
   {
@@ -295,19 +330,30 @@ const surfaces: Surface[] = [
       await page.goto(`${BASE}/@${handle}?folder=notes`, {
         waitUntil: "domcontentloaded",
       });
+      await page.waitForTimeout(1200);
+      await verifyWorkspaceScrollOwnership(page);
     },
   },
   {
     name: "starred",
-    go: async (page) => openSidebar(page, "Starred"),
+    go: async (page) => {
+      await openSidebar(page, "Starred");
+      await verifyWorkspaceScrollOwnership(page);
+    },
   },
   {
     name: "shared",
-    go: async (page) => openSidebar(page, "Shared with me"),
+    go: async (page) => {
+      await openSidebar(page, "Shared with me");
+      await verifyWorkspaceScrollOwnership(page);
+    },
   },
   {
     name: "trash",
-    go: async (page) => openSidebar(page, "Trash"),
+    go: async (page) => {
+      await openSidebar(page, "Trash");
+      await verifyWorkspaceScrollOwnership(page);
+    },
   },
   {
     name: "settings",
@@ -316,12 +362,17 @@ const surfaces: Surface[] = [
       await page.goto(`${BASE}/@${handle}?view=settings`, {
         waitUntil: "domcontentloaded",
       });
+      await page.waitForTimeout(1200);
+      await verifyWorkspaceScrollOwnership(page);
+      await verifyRemoteMcpPresetOnly(page);
     },
   },
   {
     name: "editor",
     go: async (page) => {
       await page.goto(`${BASE}/start`, { waitUntil: "domcontentloaded" });
+      await page.waitForTimeout(1400);
+      await verifyWorkspaceScrollOwnership(page);
     },
   },
   {
@@ -349,6 +400,106 @@ const surfaces: Surface[] = [
     fullPage: true,
     go: async (page) => {
       await page.goto(`${BASE}/connect`, { waitUntil: "domcontentloaded" });
+      await page
+        .getByRole("heading", { name: "In-app assistant" })
+        .waitFor({ state: "visible" });
+      await page
+        .getByRole("heading", { name: "Add TextText to your agents" })
+        .waitFor({ state: "detached", timeout: 10000 });
+    },
+  },
+  {
+    name: "connect-standalone-edition",
+    fullPage: true,
+    go: async (page) => {
+      await page.addInitScript(() => {
+        Object.defineProperty(window, "__TEXTTEXT_APP__", {
+          configurable: true,
+          value: true,
+        });
+        Object.defineProperty(window, "__TEXTTEXT_EMBEDDED_AGENT__", {
+          configurable: true,
+          value: true,
+        });
+        Object.defineProperty(window, "webkit", {
+          configurable: true,
+          value: {
+            messageHandlers: {
+              textTextApp: { postMessage() {} },
+            },
+          },
+        });
+      });
+      await page.goto(`${BASE}/connect`, { waitUntil: "domcontentloaded" });
+      await page
+        .getByRole("heading", { name: "Add TextText to your agents" })
+        .waitFor({ state: "visible" });
+    },
+  },
+  {
+    name: "connect-store-edition",
+    fullPage: true,
+    go: async (page) => {
+      await page.addInitScript(() => {
+        Object.defineProperty(window, "__TEXTTEXT_APP__", {
+          configurable: true,
+          value: true,
+        });
+        Object.defineProperty(window, "__TEXTTEXT_EMBEDDED_AGENT__", {
+          configurable: true,
+          value: false,
+        });
+        Object.defineProperty(window, "webkit", {
+          configurable: true,
+          value: {
+            messageHandlers: {
+              textTextApp: { postMessage() {} },
+            },
+          },
+        });
+      });
+      await page.goto(`${BASE}/connect`, { waitUntil: "domcontentloaded" });
+      await page
+        .getByRole("heading", { name: "In-app assistant" })
+        .waitFor({ state: "visible" });
+      await page
+        .getByRole("heading", { name: "Add TextText to your agents" })
+        .waitFor({ state: "detached", timeout: 10000 });
+    },
+  },
+  {
+    name: "settings-store-edition",
+    fullPage: true,
+    go: async (page, handle) => {
+      await page.addInitScript(() => {
+        Object.defineProperty(window, "__TEXTTEXT_APP__", {
+          configurable: true,
+          value: true,
+        });
+        Object.defineProperty(window, "__TEXTTEXT_EMBEDDED_AGENT__", {
+          configurable: true,
+          value: false,
+        });
+        Object.defineProperty(window, "webkit", {
+          configurable: true,
+          value: {
+            messageHandlers: {
+              textTextApp: { postMessage() {} },
+            },
+          },
+        });
+      });
+      await page.goto(`${BASE}/@${handle}?view=settings`, {
+        waitUntil: "domcontentloaded",
+      });
+      await page
+        .getByText("Connect a remote agent", { exact: true })
+        .waitFor({ state: "visible" });
+      await page
+        .getByText("Use Claude or Codex on this Mac", { exact: true })
+        .waitFor({ state: "detached", timeout: 10000 });
+      await verifyWorkspaceScrollOwnership(page);
+      await verifyRemoteMcpPresetOnly(page);
     },
   },
   {
@@ -396,12 +547,9 @@ const surfaces: Surface[] = [
       await page.waitForTimeout(1200);
       const launcher = page.getByRole("button", { name: "Open assistant" });
       if (await launcher.isVisible().catch(() => false)) await launcher.click();
-      const unavailable = page.getByText(
-        "Use an API key for the in-app assistant",
-        {
-          exact: false,
-        },
-      );
+      const unavailable = page.getByText("Set up the in-app assistant once", {
+        exact: false,
+      });
       await unavailable.waitFor({ state: "visible", timeout: 10000 });
       if (
         await page
@@ -502,6 +650,7 @@ async function devSignIn(page: Page): Promise<string> {
 
 const blank: string[] = [];
 const overflow: string[] = [];
+const failed: string[] = [];
 
 async function main() {
   mkdirSync(OUT, { recursive: true });
@@ -546,6 +695,7 @@ async function main() {
             `  ${surface.name} ${theme}${painted ? "" : "   BLANK"}${spills ? "   OVERFLOW" : ""} (${Math.round(shot.length / 1024)}kb)`,
           );
         } catch (error) {
+          failed.push(`${surface.name} ${width}px ${theme}`);
           console.log(
             `  FAILED ${surface.name} ${theme}: ${String(error).slice(0, 120)}`,
           );
@@ -560,7 +710,8 @@ async function main() {
     console.log(`\nBLANK: ${blank.join(", ")}`);
   }
   if (overflow.length) console.log(`\nOVERFLOW: ${overflow.join(", ")}`);
-  if (blank.length || overflow.length) process.exitCode = 1;
+  if (failed.length) console.log(`\nFAILED: ${failed.join(", ")}`);
+  if (blank.length || overflow.length || failed.length) process.exitCode = 1;
 }
 
 main().catch((error) => {

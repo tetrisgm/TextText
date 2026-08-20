@@ -14,9 +14,10 @@ server.
   `scripts/sync-tool-docs.ts`; edit the registry, not the list.
 - The in-app assistant and the hosted MCP server consume that same contract.
   Their execution adapters differ because they run in different trust and
-  transport boundaries. The `texttext` CLI sits below the tool layer entirely:
-  it edits the workspace as files, so it inherits the same store, sync, and
-  audit path without a second command surface.
+  transport boundaries. The signed-in `texttext` CLI uses the authenticated
+  agent-command route for its read, create, update, and append operations. That
+  route dispatches the matching workspace commands rather than editing through
+  a File Provider mount or a second local server.
 - Product UI and assistant mutations use the same pool mutations and server
   actions. MCP mutations enter through server-side handlers and the same
   content store.
@@ -24,12 +25,16 @@ server.
   bypass permissions, revision checks, privacy rules, or auditing.
 - Notes and bookmarks stay private and unlisted forever, regardless of which
   consumer calls a command.
-- Every mutation is audited. MCP records the actor as `external_agent` with
-  per-token attribution.
+- Every connected mutation is audited. MCP records the actor as
+  `external_agent` with per-token attribution. The signed-in CLI keeps the
+  authenticated account identity and may add a bounded, self-declared agent
+  label and intent. Explicit `TEXTTEXT_WORKSPACE_ROOT` offline writes do not
+  claim server audit or presence.
 - A delete command means Move to Trash. The shared surface exposes restore,
   but no permanent delete.
 
 <!-- generated:tool-contract -->
+
 ## Shared 34-tool contract
 
 The 10 read-scope tools are:
@@ -71,6 +76,7 @@ The 24 sync-scope tools are:
 22. `restore_folder`
 23. `set_access`
 24. `revoke_access`
+
 <!-- /generated:tool-contract -->
 
 `list_access` is read-only but requires `sync` because membership information is
@@ -124,17 +130,23 @@ external interoperability adapter, not an internal transport.
 
 ### Agents on this Mac
 
-An agent running on the same Mac with the standalone app does not speak a
-protocol. It uses the `texttext` CLI (`mac/Sources/TextTextCLI`), which ships
-inside that app bundle and edits documents as files in the File Provider
-workspace. There is no port, no token to paste, and no pairing step: the CLI
-runs as the user and reads the device credential the app already stores. The
-sandboxed TestFlight edition excludes the CLI and uses hosted MCP for external
-agents.
+An agent running on the same Mac with the standalone app uses the `texttext`
+CLI (`mac/Sources/TextTextCLI`), which ships inside that app bundle. The CLI
+loads the signed-in app's tenant-scoped device credential and calls the
+authenticated sync and agent-command routes. There is no port, token to paste,
+or second sign-in. Finder and File Provider integration are optional rather
+than a prerequisite for agent work. An explicit `TEXTTEXT_WORKSPACE_ROOT`
+keeps the file backend available for tests and offline file workflows.
 
-Every mutating command publishes agent presence before it acts and clears it
-afterwards, so an agent appears as a named collaborator in the open document
-simply by doing its work. `docs/agent-interoperability.md` is the reference.
+Commands with an item identity publish short-lived, best-effort presence. The
+device credential authenticates the person and workspace; the requested agent
+name and intent are bounded, self-declared metadata attached to the connected
+audit row. Presence never authorizes or blocks an edit. Creates and appends
+accept a stable idempotency key, while updates use the current document hash and
+stop on conflict so the agent can reread and reconcile. The sandboxed
+TestFlight edition excludes the bundled CLI, so external agents there use
+hosted MCP when their client supports bearer credentials.
+`docs/agent-interoperability.md` is the transport reference.
 
 The loopback MCP server this section used to describe was retired in `0.146`.
 Deleting the port deleted the whole local trust problem with it.
@@ -152,11 +164,15 @@ Current assistant behavior includes:
   selection context
 - one conversation transcript per workspace context, retained for the browser
   session
-- all canonical workspace tools, with progress events surfaced in the conversation
-- confirmation gates for Trash, restore, publication, access, and destructive
+- progress events surfaced in the conversation
+- all canonical workspace tools in the standalone native path, with
+  confirmation gates for Trash, restore, publication, access, and destructive
   asset changes
+- only tools that need no confirmation in the API-key cloud path
 - quick actions for summarize, rewrite, title, tags, and excerpt
-- preview, apply, undo, and stale-source checks for quick-action edits
+- preview, apply, undo, and stale-source checks for Rewrite and Summarize
+  selection quick actions; ordinary freeform turns can mutate through workspace
+  tools without this proposal UI
 - background job state that keeps a reply attached to the context that
   submitted it even if the user navigates elsewhere
 
@@ -174,27 +190,21 @@ leaking workspace data or provider credentials.
    key stays server-side and is never returned to the browser. The assistant
    exposes only tools that need no confirmation and cannot fetch a
    model-chosen URL.
-3. **Agents on this Mac: shipped in the standalone app.** Claude Code, Codex,
-   and any other local agent use the `texttext` CLI rather than a network
-   endpoint. The model and billing stay with that client, presence and audit
-   intent are automatic, and local file changes remain immediate.
-4. **Hosted external agents over MCP: shipped.** Claude.ai, hosted Codex,
-   ChatGPT, Cursor, and other MCP hosts connect to `/api/mcp` with a workspace token.
-   Claude, Codex, and ChatGPT are the primary documented clients. Cursor and
-   other standards-compatible hosts remain supported secondary clients.
+3. **Agents on this Mac: shipped in the standalone app.** Claude Code and Codex
+   use the bundled `texttext` CLI. The model and billing stay with that client;
+   the CLI reuses the signed-in device credential and authenticated server
+   command route.
+4. **Hosted external agents over MCP: shipped.** A remote MCP client that
+   exposes a bearer-token field can connect to `/api/mcp` with a revocable
+   workspace token. OAuth-only clients are not compatible because TextText does
+   not run an OAuth authorization server.
 5. **Native agent plugins: shipped.** The repository is a Claude and Codex
-   plugin marketplace. `plugins/texttext` packages the hosted MCP
-   connection with reusable skills for conversation capture, project
-   changelogs, publishing, and collaboration. The product connection center
-   leads with these installs. Raw MCP commands and bearer tokens are advanced
-   fallbacks, not the primary experience.
+   plugin marketplace. `plugins/texttext` packages reusable skills for
+   conversation capture, project changelogs, publishing, and collaboration;
+   the installed skills invoke the bundled CLI. Hosted MCP and its bearer token
+   are an explicit remote-client fallback, not a hidden plugin dependency.
 
-ChatGPT can connect as a hosted app where the person's plan, role, workspace
-policy, and available authentication choices permit a custom MCP app. TextText
-does not run an OAuth authorization server, so an OAuth-only ChatGPT surface is
-not compatible with the current token flow. When connected, it uses the same
-endpoint and command surface. TextText never receives a user's Claude, ChatGPT,
-or Codex password.
+TextText never receives a user's Claude, ChatGPT, or Codex password.
 
 No provider secret is stored in a Markdown folder. The cloud rung remains
 opt-in and executes the same workspace contract rather than creating a
@@ -254,5 +264,6 @@ never asks for the person's Claude, ChatGPT, or Codex password.
 - Add or change a workspace tool in the shared registry first, then implement
   both execution adapters and their tests.
 - Keep privacy and auditing below the tool layer.
-- Agents authenticate with a workspace bearer token from `/connect`. TextText
+- Hosted MCP agents authenticate with a workspace bearer token from `/connect`.
+  The local CLI instead reuses the signed-in app's device credential. TextText
   runs no OAuth authorization server (owner ruling 2026-08-15).

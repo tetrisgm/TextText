@@ -53,6 +53,27 @@ function req(bodyObj: unknown) {
     body: JSON.stringify(bodyObj),
   });
 }
+
+function streamedReq(byteCount: number) {
+  const encoder = new TextEncoder();
+  let remaining = byteCount;
+  return new Request(`http://x/api/collab/${POST_ID}/materialize`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: new ReadableStream({
+      pull(controller) {
+        if (remaining === 0) {
+          controller.close();
+          return;
+        }
+        const size = Math.min(remaining, 64 * 1024);
+        remaining -= size;
+        controller.enqueue(encoder.encode("x".repeat(size)));
+      },
+    }),
+    duplex: "half",
+  } as RequestInit & { duplex: "half" });
+}
 const ctx = { params: Promise.resolve({ postId: POST_ID }) };
 
 describe("POST /api/collab/[postId]/materialize", () => {
@@ -156,6 +177,25 @@ describe("POST /api/collab/[postId]/materialize", () => {
     expect((await POST(req({ body: "New body" }), ctx)).status).toBe(400);
     expect((await POST(req({ handle: "demo-blog" }), ctx)).status).toBe(400);
     expect(mocks.savePost).not.toHaveBeenCalled();
+  });
+
+  it("rejects a declared oversized materialization before loading the post", async () => {
+    const request = req({ handle: "demo-blog", state: "encoded" });
+    request.headers.set("content-length", String(8 * 1024 * 1024 + 1));
+
+    const response = await POST(request, ctx);
+
+    expect(response.status).toBe(413);
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(mocks.getPostById).not.toHaveBeenCalled();
+  });
+
+  it("rejects a streamed oversized materialization without Content-Length", async () => {
+    const response = await POST(streamedReq(8 * 1024 * 1024 + 1), ctx);
+
+    expect(response.status).toBe(413);
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(mocks.getPostById).not.toHaveBeenCalled();
   });
 
   it("404s when the post is not in the given handle", async () => {

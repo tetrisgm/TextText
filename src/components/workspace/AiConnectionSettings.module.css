@@ -1,14 +1,103 @@
-.grid { display: grid; gap: 10px; }
-.card { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; border: 1px solid var(--ac-hairline); border-radius: 10px; padding: 14px; background: var(--ac-fill-4); }
-.kicker { margin: 0 0 3px; color: var(--ac-label-2); font-size: var(--ac-fs-caption1); font-weight: 700; text-transform: uppercase; }
-.card h3 { margin: 0; font-size: var(--ac-fs-subheadline); }
-.card p:not(.kicker) { margin: 5px 0 0; color: var(--ac-label-2); font-size: var(--ac-fs-footnote); line-height: 1.4; }
-.primary, .secondary { flex: 0 0 auto; border-radius: 7px; padding: 8px 10px; font: 650 var(--ac-fs-footnote) / 1 var(--ac-font-text); text-decoration: none; cursor: pointer; }
-.primary { border: 1px solid var(--ac-accent); background: var(--ac-accent); color: var(--ac-accent-contrast); }
-.primary:disabled { cursor: default; opacity: .55; }
-.secondary { border: 1px solid var(--ac-hairline); color: var(--ac-label); }
-.footnote { margin: 2px 0 0; font-size: var(--ac-fs-footnote); }
-.footnote a { color: var(--ac-accent); text-decoration: none; }
-.footnote a:hover { text-decoration: underline; }
-.primary:focus-visible, .secondary:focus-visible { outline: none; box-shadow: var(--ac-focus); }
-@media (max-width: 620px) { .card { display: grid; } }
+.settings {
+  display: grid;
+  gap: 10px;
+}
+.primaryCard {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  border: 1px solid var(--ac-hairline);
+  border-radius: 10px;
+  padding: 14px;
+  background: var(--ac-fill-4);
+}
+.kicker {
+  margin: 0 0 3px;
+  color: var(--ac-label-2);
+  font-size: var(--ac-fs-caption1);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.primaryCard h3 {
+  margin: 0;
+  font-size: var(--ac-fs-subheadline);
+}
+.primaryCard p:not(.kicker) {
+  margin: 5px 0 0;
+  color: var(--ac-label-2);
+  font-size: var(--ac-fs-footnote);
+  line-height: 1.4;
+}
+.primary,
+.secondary {
+  flex: 0 0 auto;
+  border-radius: 7px;
+  padding: 8px 10px;
+  font: 650 var(--ac-fs-footnote) / 1 var(--ac-font-text);
+  text-decoration: none;
+  cursor: pointer;
+}
+.primary {
+  border: 1px solid var(--ac-accent);
+  background: var(--ac-accent);
+  color: var(--ac-accent-contrast);
+}
+.primary:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.secondary {
+  border: 1px solid var(--ac-hairline);
+  color: var(--ac-label);
+}
+.alternative {
+  border-top: 1px solid var(--ac-hairline);
+  padding: 10px 2px 2px;
+  color: var(--ac-label);
+}
+.alternative summary {
+  width: max-content;
+  border-radius: 6px;
+  padding: 3px 5px;
+  font: 650 var(--ac-fs-footnote) / 1.2 var(--ac-font-text);
+  cursor: pointer;
+}
+.alternative summary:hover {
+  background: var(--ac-fill-4);
+}
+.alternative summary:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
+.alternative p {
+  max-width: 62ch;
+  margin: 8px 5px 10px;
+  color: var(--ac-label-2);
+  font: 500 var(--ac-fs-footnote) / 1.4 var(--ac-font-text);
+}
+.alternative .secondary {
+  display: inline-flex;
+  margin-left: 5px;
+}
+.footnote {
+  margin: 2px 0 0;
+  font-size: var(--ac-fs-footnote);
+}
+.footnote a {
+  color: var(--ac-accent);
+  text-decoration: none;
+}
+.footnote a:hover {
+  text-decoration: underline;
+}
+.primary:focus-visible,
+.secondary:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
+@media (max-width: 620px) {
+  .primaryCard {
+    display: grid;
+  }
+}

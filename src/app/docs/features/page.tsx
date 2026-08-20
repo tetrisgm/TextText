@@ -1,9 +1,8 @@
 // /docs/features: what TextText does, feature by feature.
 //
-// House rule for this page: nothing is described here that has not been
-// exercised in a running build. When a feature grows, this page grows only
-// after the new behavior has been driven for real. That keeps the documentation
-// an inventory of the product rather than of its intentions.
+// House rule for this page: claims covered by the product eval are exercised in
+// a running build. Connection-specific behavior names its channel explicitly,
+// so local CLI and hosted MCP are not presented as one transport.
 
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -48,17 +47,19 @@ const sections = [
   {
     title: "Working together, including with your AI",
     body: [
-      "Documents are live. People in the same document see each other as presence avatars at the top of the page, and every change stays attributed to whoever made it.",
-      "A connected AI is a collaborator in the same sense: it has a name, a color, and an avatar, appears on documents it works in, and its edits are attributed like anyone else's.",
+      "Documents are live. People in the same document see each other as presence avatars at the top of the page. Connected changes keep the authenticated account attribution; a supplied agent label is display metadata rather than a separate account.",
+      "The in-app assistant keeps its provider identity and current document context visible in the right rail. Rewrite and Summarize selection quick actions show the exact replacement before Apply and keep Undo close after the change. An ordinary freeform turn may update the document directly.",
+      "In the standalone Mac edition, local Claude and Codex plugins write through the signed-in TextText CLI. Their changes follow the same document model, permissions, validation, audit, and conflict rules. Read the updated document, then correct the text directly or ask the agent for a smaller follow-up change.",
     ],
   },
   {
     title: "Agents do real document work",
     body: [
-      "A connected agent works with the same tools the app uses. It can create an item with real content in the right folder, rewrite an entire document while you watch it happen, change an item's look, retitle it, set its excerpt and tags, and find items by title or by words inside their bodies.",
-      "An agent authenticates with a workspace token you create at /connect and paste into the client. One token, one workspace, revocable from the same page; there is no consent screen to click through and no OAuth server to keep alive.",
-      "Repeated automation is safe: an agent that retries a create or an append with the same idempotency key gets the original result back instead of a duplicate. Every agent action is recorded in the audit log under the agent's own identity, agents cannot see into workspaces they were not granted, and their comments carry their name.",
-      "While an agent edits a document you have open, you see it as a collaborator: its avatar in the page header and its named cursor at the text it is writing.",
+      "The API-key in-app assistant uses the workspace-command surface for tools that need no confirmation. It can find and create items, rewrite text, organize documents, and change presentation.",
+      "The standalone native assistant and hosted MCP use the broader guarded surface for comments, publishing, and collaborator management. They ask before actions that affect an audience or access.",
+      "In the standalone Mac edition, Claude and Codex on this Mac use the installed TextText plugin and bundled CLI. They use your existing signed-in session, so local work needs no workspace token and no loopback server.",
+      "Remote MCP clients use the hosted endpoint with a revocable bearer token created at /connect. This path is for clients that expose a bearer-token field; OAuth-only clients are not compatible with it.",
+      "Hosted commands record the authenticated account and action in the audit log, stay inside that workspace, and make repeated create or append requests safe through idempotency keys. The local CLI route is documented separately and is not described here as a live cursor or sidebar proposal.",
     ],
   },
   {
@@ -66,7 +67,7 @@ const sections = [
     body: [
       "TextText speaks MCP in both directions. Other tools reach your documents, and your own assistant can use tools from servers you connect to it, so \u201cput this spec in Figma\u201d stays one sentence instead of a copy and a paste.",
       "A server you add is saved switched off. Turning on Allow is the consent, because connecting a URL and letting somebody else\u2019s tools into your assistant are different promises. When the assistant uses one, the conversation shows which server and which tool, and a server that did not answer is named rather than quietly missing.",
-      "Design tools run on your own machine: Paper and pen.dev listen on a local address that nothing on the internet can reach. Those work in the Mac app, which makes the request natively and refuses any address that is not your own machine.",
+      "Paper and pen.dev can expose local MCP servers tied to the app's current file or selection. A loopback address is reachable only from that Mac, not from TextText's servers. Outbound TextText MCP connections use public https addresses in this release, so Workspace Settings does not offer a loopback preset.",
     ],
   },
   {
@@ -88,15 +89,15 @@ const sections = [
       "Each refinement becomes a complete design version. Undo, Redo, the history menu, and before/current comparison let you explore without losing a direction. The preview can use sample content, the selected folder's documents, an empty state, or long stress-test content in wide, tablet, and phone frames. A quality preflight blocks Done only when the type would be structurally incomplete.",
       "Types can model people and document relations, recurrence, guarded status workflows, field validation, conditional fields, and read-only computed facts. A folder can expose several named views over the same items, each with its own layout, filters, grouping, columns, and sort.",
       "Done saves one reusable, versioned type to the Look gallery and can make it the default for a destination folder. New items inherit it. Updating existing folder items stays an explicit choice.",
-      "Connected agents use the same create item type operation as the app, so a request for a Medium-like publication or a Notion-like project board produces the same reusable result.",
+      "The in-app assistant and hosted MCP agents use the same create item type operation as the app, so a request for a Medium-like publication or a Notion-like project board produces the same reusable result.",
     ],
   },
   {
     title: "The AI rail",
     body: [
-      "Everything AI lives in the rail on the right. Open, it greets you and offers starters for exactly where you are; the context chip in the composer always says what the AI is looking at. New chat starts over without leaving the page.",
-      "Closed, the rail folds into a small round avatar at the bottom right, wearing your connected agent's face.",
-      "Connecting is one action in the rail: continue with the AI you already use, connect another app, or bring an API key. TextText never resells AI usage; your account, your billing.",
+      "The right rail keeps the in-app assistant beside the document. Its heading names the provider, the context chip states what it can read or change, and New chat starts over without leaving the page.",
+      "Before setup, the rail presents one recommended action: Set up the in-app assistant. In the standalone Mac edition, local Claude and Codex plugin instructions stay in a quiet secondary path. Remote MCP instructions remain secondary in every edition.",
+      "Progress stays short and specific. A failed request shows one useful reason with Try again and Settings rather than an indefinite working state or a transcript of internal retries.",
     ],
   },
 ] as const;
@@ -108,8 +109,10 @@ export default function FeaturesPage() {
         <p className="connect-provider-kicker">TextText documentation</p>
         <h1 className="connect-title">What TextText does</h1>
         <p className="connect-lede">
-          The features, as they work today. Every behavior on this page has
-          been exercised in a running build before being written down here.
+          The features, as they work today. Claims covered by the product eval
+          are driven in a running build. Connection-specific behavior is named
+          by channel so local CLI and hosted MCP are not presented as the same
+          experience.
         </p>
         {sections.map((section) => (
           <section className="connect-section" key={section.title}>
@@ -123,9 +126,11 @@ export default function FeaturesPage() {
           <h2 className="connect-section-title">Go deeper</h2>
           <p>
             <Link href="/docs/getting-started">Getting started</Link> walks the
-            first connection. <Link href="/docs/ai">The AI and agent guide</Link>{" "}
-            covers providers, tools, and workflows. <Link href="/docs/item-types">Build item types</Link>{" "}
-            covers the complete builder and prompt patterns.{" "}
+            first connection.{" "}
+            <Link href="/docs/ai">The AI and agent guide</Link> covers
+            providers, tools, and workflows.{" "}
+            <Link href="/docs/item-types">Build item types</Link> covers the
+            complete builder and prompt patterns.{" "}
             <Link href="/docs/security">Security and privacy</Link> explains
             what stays local and what crosses the network.
           </p>

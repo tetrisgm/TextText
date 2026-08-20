@@ -195,8 +195,8 @@ function PresenceStack({ peers }: { peers: PresencePeer[] }) {
           <span
             key={presencePersonKey(peer)}
             className="post-presence-agent"
-            title={`${peer.userName} is collaborating through MCP`}
-            aria-label={`${peer.userName} is collaborating through MCP`}
+            title={`${peer.userName} is collaborating`}
+            aria-label={`${peer.userName} is collaborating`}
           >
             <span
               className="post-presence-avatar is-agent"

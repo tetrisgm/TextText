@@ -135,11 +135,19 @@ body {
   padding: 0 17px;
 }
 .not-found-home-link {
+  appearance: none;
+  background: transparent;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
   color: color-mix(in srgb, var(--accent) 60%, var(--ink));
+  cursor: pointer;
+  font-family: inherit;
   font-size: 15px;
   font-weight: 600;
   letter-spacing: 0;
+  padding: 0;
   text-decoration: none;
 }
 .not-found-home-link:hover {
@@ -181,9 +189,13 @@ export default function GlobalError({
             <button className="error-button" onClick={() => retry?.()} type="button">
               Try again
             </button>
-            <a className="not-found-home-link" href="/">
+            <button
+              className="not-found-home-link"
+              onClick={() => window.location.assign("/")}
+              type="button"
+            >
               Go home
-            </a>
+            </button>
             {statusUrl ? (
               <a
                 className="not-found-home-link"

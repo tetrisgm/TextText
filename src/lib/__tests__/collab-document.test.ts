@@ -7,6 +7,8 @@ import {
   documentTheme,
   documentSnapshotFromYDoc,
   encodeDocumentBaseline,
+  DocumentSectionConflictError,
+  DocumentTextRangeConflictError,
 } from "@/lib/collab/document";
 import { evaluateMultiClientCollaboration } from "@/lib/collab/evaluation";
 import type { DocumentSnapshot } from "@/lib/documents/model";
@@ -128,9 +130,7 @@ describe("canonical collaboration document", () => {
     Y.applyUpdate(human, baseline);
     Y.applyUpdate(agent, baseline);
 
-    const humanBody = (
-      human.getMap("document").get("body") as Y.Text
-    );
+    const humanBody = human.getMap("document").get("body") as Y.Text;
     humanBody.insert(humanBody.length, " Human edit.");
     applyDocumentMutation(agent, {
       appendBody: "Agent milestone.",
@@ -146,6 +146,107 @@ describe("canonical collaboration document", () => {
     expect(humanResult).toContain("Agent milestone.");
     human.destroy();
     agent.destroy();
+  });
+
+  it("replaces one section without erasing a concurrent edit elsewhere", () => {
+    const sectionSnapshot: DocumentSnapshot = {
+      ...snapshot,
+      content: {
+        ...snapshot.content,
+        body: "## Pricing\n\nTen dollars.\n\n## Availability\n\nToday.",
+      },
+    };
+    const human = new Y.Doc();
+    const agent = new Y.Doc();
+    const baseline = encodeDocumentBaseline(sectionSnapshot, "post:sections");
+    Y.applyUpdate(human, baseline);
+    Y.applyUpdate(agent, baseline);
+
+    const humanBody = human.getMap("document").get("body") as Y.Text;
+    humanBody.insert(humanBody.length, " Human clarification.");
+    applyDocumentMutation(agent, {
+      bodySection: {
+        heading: "## Pricing",
+        expectedBody: "Ten dollars.",
+        replacementBody: "Twelve dollars.",
+      },
+    });
+
+    Y.applyUpdate(human, Y.encodeStateAsUpdate(agent));
+    Y.applyUpdate(agent, Y.encodeStateAsUpdate(human));
+    const merged = documentSnapshotFromYDoc(agent).content.body;
+    expect(merged).toContain("Twelve dollars.");
+    expect(merged).toContain("Today. Human clarification.");
+    human.destroy();
+    agent.destroy();
+  });
+
+  it("fails closed when the targeted section changed", () => {
+    const doc = new Y.Doc();
+    applyDocumentSnapshot(doc, {
+      ...snapshot,
+      content: {
+        ...snapshot.content,
+        body: "## Pricing\n\nEleven dollars.",
+      },
+    });
+
+    expect(() =>
+      applyDocumentMutation(doc, {
+        bodySection: {
+          heading: "Pricing",
+          expectedBody: "Ten dollars.",
+          replacementBody: "Twelve dollars.",
+        },
+      }),
+    ).toThrow(DocumentSectionConflictError);
+    expect(documentSnapshotFromYDoc(doc).content.body).toContain(
+      "Eleven dollars.",
+    );
+    doc.destroy();
+  });
+
+  it("replaces one guarded text range without erasing an edit elsewhere", () => {
+    const doc = new Y.Doc();
+    applyDocumentSnapshot(doc, snapshot);
+    const body = doc.getMap("document").get("body") as Y.Text;
+    body.insert(body.length, " Human note.");
+
+    applyDocumentMutation(doc, {
+      textRange: {
+        field: "body",
+        start: 2,
+        end: 6,
+        expectedText: "body",
+        replacementText: "draft",
+      },
+    });
+
+    expect(documentSnapshotFromYDoc(doc).content.body).toBe(
+      "A draft everyone can edit. Human note.",
+    );
+    doc.destroy();
+  });
+
+  it("fails closed when the guarded text range changed", () => {
+    const doc = new Y.Doc();
+    applyDocumentSnapshot(doc, snapshot);
+
+    expect(() =>
+      applyDocumentMutation(doc, {
+        textRange: {
+          field: "body",
+          start: 2,
+          end: 6,
+          expectedText: "note",
+          replacementText: "draft",
+        },
+      }),
+    ).toThrow(DocumentTextRangeConflictError);
+    expect(documentSnapshotFromYDoc(doc).content.body).toBe(
+      snapshot.content.body,
+    );
+    doc.destroy();
   });
 
   it("converges browser, native, agent, and offline edits", () => {

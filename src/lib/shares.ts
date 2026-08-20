@@ -43,6 +43,7 @@ type ShareAuditContext = {
   actorType?: AuditActorType;
   actorUserId?: string | null;
   auditActionName?: string;
+  auditInputSummary?: string;
 };
 
 export function normalizeShareEmail(email: string): string {
@@ -149,7 +150,7 @@ export async function inviteScopeShare(opts: {
         actionName: opts.auditActionName ?? "share.invite",
         targetType: auditTargetType(opts.scopeType),
         targetId: opts.scopeId,
-        inputSummary: `${email} as ${role}`,
+        inputSummary: opts.auditInputSummary ?? `${email} as ${role}`,
       }, database),
     ] as const);
     const row = updated[0];
@@ -181,7 +182,7 @@ export async function inviteScopeShare(opts: {
       actionName: opts.auditActionName ?? "share.invite",
       targetType: auditTargetType(opts.scopeType),
       targetId: opts.scopeId,
-      inputSummary: `${email} as ${role}`,
+      inputSummary: opts.auditInputSummary ?? `${email} as ${role}`,
     }, database),
   ] as const);
   const row = inserted[0];
@@ -225,7 +226,7 @@ export async function updateScopeShareRole(opts: {
       actionName: opts.auditActionName ?? "share.role",
       targetType: auditTargetType(opts.scopeType),
       targetId: opts.scopeId,
-      inputSummary: role,
+      inputSummary: opts.auditInputSummary ?? role,
     }, database),
   ] as const);
 }
@@ -260,6 +261,7 @@ export async function revokeScopeShare(
       actionName: audit.auditActionName ?? "share.revoke",
       targetType: auditTargetType(scopeType),
       targetId: scopeId,
+      inputSummary: audit.auditInputSummary,
     }, database),
   ] as const);
 }

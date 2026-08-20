@@ -5,6 +5,14 @@ description: Reshape a TextText draft, apply a validated template, publish it, a
 
 # Publish and collaborate
 
+Resolve `TEXTTEXT_CMD` from `texttext` on PATH, then fall back to
+`/Applications/TextText.app/Contents/Helpers/texttext`. Verify it with
+`"$TEXTTEXT_CMD" ls`, then use it to read and reshape the draft. Publishing,
+access, comments, templates, and Trash require hosted MCP because they have no
+file equivalent. Use those tools only when they are already connected. If they
+are unavailable, finish the draft locally and explain that publishing is the
+separate remote connection path instead of asking for a token mid-task.
+
 1. Read the item and inspect available templates before changing its look.
 2. Preserve the document's content while applying a template or constrained
    template operations.

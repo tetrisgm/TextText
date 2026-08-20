@@ -3,12 +3,9 @@
 //   npm run dev
 //   npm run eval:features
 //
-// The page promises that every behavior on it has been exercised in a running
-// build. That promise was a habit, kept by whoever wrote the page, which is
-// the kind of promise that quietly stops being true: this session found the
-// page still describing a Layout control that had been deleted from the Blog
-// page hours earlier. So the claims that can be driven are driven here, and
-// the ones that cannot are named at the end rather than left to look checked.
+// The page names the claims covered by a running product eval. This script
+// drives those claims, while behavior covered by narrower product evals or unit
+// tests is named at the end instead of being presented as checked here.
 //
 // A claim fails here when the page says something the app does not do. It is
 // not a design review; it does not care how any of it looks.
@@ -75,7 +72,9 @@ async function pageClaims(page: Page): Promise<string> {
 
 async function main() {
   const browser: Browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 940 } });
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 940 },
+  });
   const page = await context.newPage();
 
   try {
@@ -88,7 +87,7 @@ async function main() {
       "the page still makes the claims this verifier checks",
       claims.includes("Type a thought") &&
         claims.includes("Save as look") &&
-        claims.includes("workspace token") &&
+        claims.includes("revocable bearer token") &&
         claims.includes("Build an item type") &&
         claims.includes("Look library is searchable") &&
         claims.includes("before/current comparison") &&
@@ -102,13 +101,21 @@ async function main() {
     // "Build an item type opens one focused studio from Home" and complete
     // starters work without connecting a provider.
     const buildItemType = page.locator(".workspace-build-type-button");
-    check("Home offers the item-type builder", (await buildItemType.count()) === 1);
+    check(
+      "Home offers the item-type builder",
+      (await buildItemType.count()) === 1,
+    );
     await buildItemType.click();
     check(
       "the item-type builder is one focused studio with ready-made starters",
-      (await page.getByRole("heading", { name: "What do you want to build?" }).count()) === 1 &&
-        (await page.getByRole("button", { name: /Editorial publication/ }).count()) === 1 &&
-        (await page.getByRole("button", { name: /Project board/ }).count()) === 1 &&
+      (await page
+        .getByRole("heading", { name: "What do you want to build?" })
+        .count()) === 1 &&
+        (await page
+          .getByRole("button", { name: /Editorial publication/ })
+          .count()) === 1 &&
+        (await page.getByRole("button", { name: /Project board/ }).count()) ===
+          1 &&
         (await page.getByRole("button", { name: /Quick notes/ }).count()) === 1,
     );
     await page.getByRole("button", { name: /Project board/ }).click();
@@ -119,38 +126,57 @@ async function main() {
     );
     check(
       "the studio exposes the exercised history, responsive content and preflight controls",
-      (await page.getByRole("combobox", { name: "Design version" }).count()) === 1 &&
-        (await page.getByRole("group", { name: "Preview device" }).count()) === 1 &&
-        (await page.getByRole("combobox", { name: "Preview content" }).count()) === 1 &&
-        (await page.locator("details").filter({ hasText: /Ready|suggestion|attention/ }).count()) === 1,
+      (await page.getByRole("combobox", { name: "Design version" }).count()) ===
+        1 &&
+        (await page.getByRole("group", { name: "Preview device" }).count()) ===
+          1 &&
+        (await page
+          .getByRole("combobox", { name: "Preview content" })
+          .count()) === 1 &&
+        (await page
+          .locator("details")
+          .filter({ hasText: /Ready|suggestion|attention/ })
+          .count()) === 1,
     );
     await page.keyboard.press("Escape");
     await page.getByRole("dialog").waitFor({ state: "detached" });
 
     // "Type a thought, a title, or paste a link into the box at the top of
     //  your Library and it becomes an item immediately."
-    const capture = page.locator('[placeholder="Type a title, or paste a link"]');
-    check("the Library has the capture box the page describes", (await capture.count()) > 0);
+    const capture = page.locator(
+      '[placeholder="Type a title, or paste a link"]',
+    );
+    check(
+      "the Library has the capture box the page describes",
+      (await capture.count()) > 0,
+    );
 
     // "filters for articles, notes, and bookmarks and a sort control"
     const filters = await page
-      .locator('[aria-label="Filter library items"] button, .workspace-library-filters button')
+      .locator(
+        '[aria-label="Filter library items"] button, .workspace-library-filters button',
+      )
       .allInnerTexts();
     const joined = filters.join(" ");
     check(
       "the Library offers the filters the page names",
-      ["Articles", "Notes", "Bookmarks"].every((label) => joined.includes(label)),
+      ["Articles", "Notes", "Bookmarks"].every((label) =>
+        joined.includes(label),
+      ),
       joined.slice(0, 60),
     );
     check(
       "the Library offers a sort control",
-      (await page.locator('select[aria-label="Sort library items"]').count()) > 0,
+      (await page.locator('select[aria-label="Sort library items"]').count()) >
+        0,
     );
 
     // "How Home lays out ... list, one column, or cards."
     const views = await page
       .locator(".workspace-view-segmented button")
-      .evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")));
+      .evaluateAll((nodes) =>
+        nodes.map((node) => node.getAttribute("aria-label")),
+      );
     check(
       "Home offers exactly the three layouts the page names",
       JSON.stringify(views) === JSON.stringify(["List", "One column", "Cards"]),
@@ -195,7 +221,9 @@ async function main() {
     // "Rewrite, Summarize, and Excerpt appear above the selection"
     const documentBody = page.getByRole("textbox", { name: "Document body" });
     await documentBody.click();
-    await page.keyboard.type("A passage worth rewriting, summarizing and excerpting.");
+    await page.keyboard.type(
+      "A passage worth rewriting, summarizing and excerpting.",
+    );
     const selectionActions = page.getByRole("toolbar", {
       name: "AI actions for the selected text",
     });
@@ -225,16 +253,26 @@ async function main() {
     await page.waitForTimeout(800);
     check(
       "closing the rail leaves the launcher behind",
-      (await page.locator('button[aria-label^="Open assistant"], button[aria-label^="Chat with"]').count()) > 0,
+      (await page
+        .locator(
+          'button[aria-label^="Open assistant"], button[aria-label^="Chat with"]',
+        )
+        .count()) > 0,
     );
 
-    // "An agent authenticates with a workspace token you create at /connect."
+    // "Remote MCP clients use ... a revocable bearer token created at /connect."
     await page.goto(`${BASE}/connect`, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(1600);
+    const advancedConnections = page.getByText("Advanced connections", {
+      exact: true,
+    });
+    if (await advancedConnections.isVisible().catch(() => false)) {
+      await advancedConnections.click();
+    }
     const connect = await page.locator("body").innerText();
     check(
-      "/connect is where a workspace token is created",
-      /token/i.test(connect) && !/OAuth/i.test(connect),
+      "/connect is where a remote MCP bearer token is created",
+      connect.includes("Manual access tokens") && !/OAuth/i.test(connect),
       /OAuth/i.test(connect) ? "the page still mentions OAuth" : "",
     );
   } finally {

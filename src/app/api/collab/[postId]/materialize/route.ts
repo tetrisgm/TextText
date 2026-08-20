@@ -34,8 +34,13 @@ import {
 import { requireDocumentSnapshot } from "@/lib/documents/model";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import { getBlog } from "@/lib/store";
+import { readBoundedJson } from "@/lib/http/bounded-json";
 
 export const dynamic = "force-dynamic";
+
+// A supported document is capped well below this once decoded. The extra room
+// covers base64 and Yjs structure without permitting an unbounded unload beacon.
+const MAX_MATERIALIZE_BODY_BYTES = 8 * 1024 * 1024;
 
 export async function POST(
   request: Request,
@@ -54,12 +59,21 @@ export async function POST(
     return Response.json({ error: "Not an editor of this post" }, { status: 403 });
   }
 
-  let body: { handle?: unknown; state?: unknown; body?: unknown };
-  try {
-    body = await request.json();
-  } catch {
+  const decoded = await readBoundedJson<{
+    handle?: unknown;
+    state?: unknown;
+    body?: unknown;
+  }>(request, MAX_MATERIALIZE_BODY_BYTES);
+  if ("error" in decoded) {
+    if (decoded.error === "too_large") {
+      return Response.json(
+        { error: "Collaborative document state is too large" },
+        { status: 413, headers: { "Cache-Control": "private, no-store" } },
+      );
+    }
     return Response.json({ error: "Send a JSON body" }, { status: 400 });
   }
+  const body = decoded.value;
   const handle = typeof body.handle === "string" ? body.handle : "";
   const state = typeof body.state === "string" ? body.state : undefined;
   const legacyBody = typeof body.body === "string" ? body.body : undefined;

@@ -34,7 +34,6 @@ import {
 } from "@/lib/ai/quick-actions";
 import {
   createWorkspaceItemTextEdit,
-  resolveWorkspaceItemTextEdit,
   resolveWorkspaceItemTextSelection,
   type WorkspaceItemTextEdit,
   type WorkspaceItemTextSelection,
@@ -165,6 +164,7 @@ function assistantAgentError(error: unknown): string {
 // ---- Per-context transcript store (module scope, sessionStorage mirror) ----
 
 const MAX_MESSAGES_PER_THREAD = 200;
+const EMPTY_TRANSCRIPT: AssistantMessage[] = [];
 const transcripts = new Map<string, AssistantMessage[]>();
 const busyThreads = new Set<string>();
 const cloudProviderByThread = new Map<string, CloudAssistantProviderLabel>();
@@ -423,7 +423,12 @@ export function useNativeAssistant({
   const messages = useSyncExternalStore(
     subscribe,
     () => threadFor(threadKey),
-    () => threadFor(threadKey),
+    // The server cannot see sessionStorage. Hydration must replay that same
+    // empty snapshot before React switches to the live client snapshot, which
+    // restores the saved transcript. Reading storage here made the client add
+    // the New chat control while it was hydrating markup that only had the
+    // close control.
+    () => EMPTY_TRANSCRIPT,
   );
   const submitting = useSyncExternalStore(
     subscribe,
@@ -1019,8 +1024,12 @@ export function useNativeAssistant({
         return;
       }
       const current = await readItemTextRef.current(proposal.itemId);
-      const resolution = resolveWorkspaceItemTextEdit(current, edit, direction);
-      if (!resolution.ok) {
+      const start = edit.range.start;
+      const expectedText = direction === "apply" ? edit.before : edit.after;
+      const replacementText =
+        direction === "apply" ? edit.after : edit.before;
+      const end = start + expectedText.length;
+      if (current[edit.field].slice(start, end) !== expectedText) {
         appendToThread(
           threadKey,
           "error",
@@ -1039,23 +1048,23 @@ export function useNativeAssistant({
           : undefined,
       }));
       try {
-        const result = await applyItemPatchRef.current(
-          proposal.itemId,
-          resolution.patch,
-          resolution.expected,
-        );
-        const syncPending =
-          typeof result === "object" &&
-          result !== null &&
-          "synced" in result &&
-          (result as { synced?: unknown }).synced === false;
+        await tools.executor("update_item", {
+          id: proposal.itemId,
+          text_edit: {
+            field: edit.field,
+            start,
+            end,
+            expected_text: expectedText,
+            replacement_text: replacementText,
+          },
+        });
         updateThreadMessage(threadKey, messageId, (candidate) => ({
           ...candidate,
           proposal: candidate.proposal
             ? {
                 ...candidate.proposal,
                 status: direction === "apply" ? "applied" : "undone",
-                syncPending,
+                syncPending: false,
               }
             : undefined,
         }));

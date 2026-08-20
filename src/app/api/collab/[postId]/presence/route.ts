@@ -21,8 +21,11 @@ import {
   upsertPresence,
 } from "@/lib/collab";
 import { getCollabRequestAccess } from "@/lib/collab/access.server";
+import { readBoundedJson } from "@/lib/http/bounded-json";
 
 export const dynamic = "force-dynamic";
+
+const MAX_PRESENCE_BODY_BYTES = 96 * 1024;
 
 export async function GET(
   request: Request,
@@ -56,18 +59,23 @@ export async function POST(
     return Response.json({ error: "No access to this post" }, { status: 403 });
   }
 
-  let body: {
+  const decoded = await readBoundedJson<{
     clientId?: unknown;
     userName?: unknown;
     color?: unknown;
     awareness?: unknown;
     leave?: unknown;
-  };
-  try {
-    body = await request.json();
-  } catch {
+  }>(request, MAX_PRESENCE_BODY_BYTES);
+  if ("error" in decoded) {
+    if (decoded.error === "too_large") {
+      return Response.json(
+        { error: "Presence update is too large" },
+        { status: 413, headers: { "Cache-Control": "private, no-store" } },
+      );
+    }
     return Response.json({ error: "Send a JSON body" }, { status: 400 });
   }
+  const body = decoded.value;
   const clientId = typeof body.clientId === "string" ? body.clientId.slice(0, 64) : "";
   if (!clientId) {
     return Response.json({ error: "clientId is required" }, { status: 400 });

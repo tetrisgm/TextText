@@ -44,7 +44,10 @@ type DefinitionOptions<Schema extends z.ZodType> = {
   requiredScope?: WorkspaceToolRequiredScope;
 };
 
-const CONFIRMATION_COPY: Record<Exclude<WorkspaceToolConfirmation, "none">, string> = {
+const CONFIRMATION_COPY: Record<
+  Exclude<WorkspaceToolConfirmation, "none">,
+  string
+> = {
   destructive:
     "This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it.",
   audience:
@@ -56,7 +59,8 @@ function defineTool<Name extends string, Schema extends z.ZodType>(
   options: DefinitionOptions<Schema>,
 ): WorkspaceToolDefinition<Schema> & { name: Name } {
   const mutability = options.mutability ?? "read";
-  const requiredScope = options.requiredScope ?? (mutability === "write" ? "sync" : "read");
+  const requiredScope =
+    options.requiredScope ?? (mutability === "write" ? "sync" : "read");
   const confirmation = options.confirmation ?? "none";
   const destructive = options.destructive ?? confirmation === "destructive";
   const audienceChanging = confirmation === "audience";
@@ -145,11 +149,17 @@ const accessTargetInput = {
     .min(1)
     .max(128)
     .optional()
-    .describe("Required for folder and item scopes. Omit for the current workspace."),
+    .describe(
+      "Required for folder and item scopes. Omit for the current workspace.",
+    ),
 } as const;
 
 function validateAccessTarget(
-  value: { scope_type: z.infer<typeof scopeType>; scope_id?: string; role?: z.infer<typeof accessRole> },
+  value: {
+    scope_type: z.infer<typeof scopeType>;
+    scope_id?: string;
+    role?: z.infer<typeof accessRole>;
+  },
   context: z.RefinementCtx,
 ) {
   if (value.scope_type !== "workspace" && !value.scope_id) {
@@ -163,7 +173,8 @@ function validateAccessTarget(
     context.addIssue({
       code: "custom",
       path: ["scope_id"],
-      message: "Workspace access uses the current workspace and does not accept scope_id.",
+      message:
+        "Workspace access uses the current workspace and does not accept scope_id.",
     });
   }
   if (!value.role) return;
@@ -196,7 +207,9 @@ const createItemInput = z
       ),
     folder_path: folderPath
       .optional()
-      .describe('The destination folder path. Defaults to the Blog folder at "blog".'),
+      .describe(
+        'The destination folder path. Defaults to the Blog folder at "blog".',
+      ),
     title: z.string().trim().min(1).max(300).optional(),
     body: z.string().max(1_000_000).optional(),
     excerpt: z.string().max(2_000).nullable().optional(),
@@ -248,7 +261,12 @@ const fieldValues = z
         .array(
           z.record(
             z.string().regex(/^[a-z][A-Za-z0-9_.-]{0,119}$/),
-            z.union([z.string().max(20_000), z.number().finite(), z.boolean(), z.null()]),
+            z.union([
+              z.string().max(20_000),
+              z.number().finite(),
+              z.boolean(),
+              z.null(),
+            ]),
           ),
         )
         .max(500),
@@ -264,6 +282,35 @@ const updateItemInput = z
     title: z.string().trim().min(1).max(300).optional(),
     excerpt: z.string().max(2_000).nullable().optional(),
     body: z.string().max(1_000_000).optional(),
+    section: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .optional()
+      .describe(
+        "Replace only this Markdown heading's body. Pass body and expected_section_body with it.",
+      ),
+    expected_section_body: z
+      .string()
+      .max(1_000_000)
+      .optional()
+      .describe(
+        "The section body returned by read_item. A different live value rejects the surgical edit.",
+      ),
+    text_edit: z
+      .object({
+        field: z.enum(["title", "excerpt", "body"]),
+        start: z.number().int().min(0).max(1_000_000),
+        end: z.number().int().min(0).max(1_000_000),
+        expected_text: z.string().max(1_000_000),
+        replacement_text: z.string().max(1_000_000),
+      })
+      .strict()
+      .optional()
+      .describe(
+        "Replace one exact text range. The current text at start..end must equal expected_text, so unrelated live edits merge and a changed selection is rejected.",
+      ),
     tags: tags.optional(),
     slug: z.string().trim().min(1).max(120).optional(),
     accent: z
@@ -276,7 +323,9 @@ const updateItemInput = z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/)
       .optional()
-      .describe("Publication date for an already-published item, as YYYY-MM-DD."),
+      .describe(
+        "Publication date for an already-published item, as YYYY-MM-DD.",
+      ),
     pinned: z.boolean().optional(),
     fields: fieldValues.optional(),
     markdown: z
@@ -291,7 +340,86 @@ const updateItemInput = z
   })
   .strict()
   .superRefine((value, context) => {
+    if (value.text_edit !== undefined) {
+      if (value.text_edit.end < value.text_edit.start) {
+        context.addIssue({
+          code: "custom",
+          path: ["text_edit", "end"],
+          message: "text_edit end must be at or after start.",
+        });
+      }
+      if (
+        value.text_edit.end - value.text_edit.start !==
+        value.text_edit.expected_text.length
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["text_edit", "expected_text"],
+          message: "text_edit range length must match expected_text.",
+        });
+      }
+      const incompatible = [
+        value.title,
+        value.excerpt,
+        value.body,
+        value.section,
+        value.expected_section_body,
+        value.tags,
+        value.slug,
+        value.accent,
+        value.cover,
+        value.cover_caption,
+        value.cover_height,
+        value.date,
+        value.pinned,
+        value.fields,
+        value.markdown,
+      ].some((entry) => entry !== undefined);
+      if (incompatible) {
+        context.addIssue({
+          code: "custom",
+          message: "A text_edit cannot change other content or metadata.",
+        });
+      }
+    }
+    if (value.section !== undefined) {
+      if (
+        value.body === undefined ||
+        value.expected_section_body === undefined
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "A section update requires body and expected_section_body.",
+        });
+      }
+      const incompatible = [
+        value.title,
+        value.excerpt,
+        value.tags,
+        value.slug,
+        value.accent,
+        value.cover,
+        value.cover_caption,
+        value.cover_height,
+        value.date,
+        value.pinned,
+        value.fields,
+        value.markdown,
+      ].some((entry) => entry !== undefined);
+      if (incompatible) {
+        context.addIssue({
+          code: "custom",
+          message: "A section update cannot change other content or metadata.",
+        });
+      }
+    } else if (value.expected_section_body !== undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "expected_section_body requires section.",
+      });
+    }
     const structured =
+      value.text_edit !== undefined ||
       value.title !== undefined ||
       value.excerpt !== undefined ||
       value.body !== undefined ||
@@ -305,7 +433,10 @@ const updateItemInput = z
       value.pinned !== undefined ||
       value.fields !== undefined;
     if (!value.markdown && !structured) {
-      context.addIssue({ code: "custom", message: "Pass content or metadata to update." });
+      context.addIssue({
+        code: "custom",
+        message: "Pass content or metadata to update.",
+      });
     }
     if (value.markdown && structured) {
       context.addIssue({
@@ -335,7 +466,13 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     inputSchema: z
       .object({
         folder_path: folderPath.optional().describe('Defaults to "blog".'),
-        limit: z.number().int().min(1).max(100).optional().describe("Defaults to 50."),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe("Defaults to 50."),
       })
       .strict(),
   }),
@@ -363,7 +500,13 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     inputSchema: z
       .object({
         query: z.string().trim().min(1).max(500),
-        limit: z.number().int().min(1).max(50).optional().describe("Defaults to 25."),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(50)
+          .optional()
+          .describe("Defaults to 25."),
       })
       .strict(),
   }),
@@ -428,7 +571,12 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     inputSchema: z
       .object({
         id,
-        name: z.string().trim().min(1).max(160).describe("What to call the look."),
+        name: z
+          .string()
+          .trim()
+          .min(1)
+          .max(160)
+          .describe("What to call the look."),
       })
       .strict(),
     mutability: "write",
@@ -444,7 +592,9 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
           .trim()
           .min(1)
           .max(255)
-          .describe('Folder path inside the workspace, e.g. "blog" or "blog/ideas".'),
+          .describe(
+            'Folder path inside the workspace, e.g. "blog" or "blog/ideas".',
+          ),
         template_id: templateId,
         template_version: templateVersion,
         apply_to_existing: z
@@ -550,7 +700,9 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   move_item: defineTool("move_item", {
     title: "Move item",
     description: "Move one item to another folder of the same mode.",
-    inputSchema: z.object({ id, folder_path: folderPath, if_match_hash: ifMatchHash }).strict(),
+    inputSchema: z
+      .object({ id, folder_path: folderPath, if_match_hash: ifMatchHash })
+      .strict(),
     mutability: "write",
     destructive: true,
     idempotent: true,
@@ -594,7 +746,11 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     description:
       "Remove references to one asset URL from an item's cover, body, and gallery.",
     inputSchema: z
-      .object({ id, asset_url: z.string().url().max(2_048), if_match_hash: ifMatchHash })
+      .object({
+        id,
+        asset_url: z.string().url().max(2_048),
+        if_match_hash: ifMatchHash,
+      })
       .strict(),
     mutability: "write",
     confirmation: "destructive",
@@ -639,7 +795,10 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
             message: "Anchored comments require anchor_field and anchor_exact.",
           });
         }
-        if ((value.anchor_start === undefined) !== (value.anchor_end === undefined)) {
+        if (
+          (value.anchor_start === undefined) !==
+          (value.anchor_end === undefined)
+        ) {
           context.addIssue({
             code: "custom",
             path: ["anchor_start"],
@@ -681,7 +840,12 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     inputSchema: z
       .object({
         parent_path: folderPath.describe("The existing parent folder path."),
-        name: z.string().trim().min(1).max(80).describe("The new display name."),
+        name: z
+          .string()
+          .trim()
+          .min(1)
+          .max(80)
+          .describe("The new display name."),
       })
       .strict(),
     mutability: "write",
@@ -759,7 +923,10 @@ export const WORKSPACE_TOOL_NAMES = Object.freeze(
 );
 
 export function isWorkspaceToolName(value: string): value is WorkspaceToolName {
-  return Object.prototype.hasOwnProperty.call(WORKSPACE_TOOL_DEFINITIONS, value);
+  return Object.prototype.hasOwnProperty.call(
+    WORKSPACE_TOOL_DEFINITIONS,
+    value,
+  );
 }
 
 export function parseWorkspaceToolInput<Name extends WorkspaceToolName>(

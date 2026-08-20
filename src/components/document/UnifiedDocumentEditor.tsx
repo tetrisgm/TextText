@@ -310,11 +310,11 @@ function CollaborativeTextarea({
     ref.current.style.height = `${Math.max(ref.current.scrollHeight, 40)}px`;
   }, [grow, ref, value]);
 
-  const reportSelection = useCallback(() => {
+  const reportSelection = () => {
     const control = ref.current;
     if (!control) return;
     onSelection(field, control.selectionStart, control.selectionEnd);
-  }, [field, onSelection, ref]);
+  };
 
   const syncScroll = useCallback(
     (event: UIEvent<HTMLTextAreaElement>) => {
@@ -364,7 +364,7 @@ function Presence({ peers, activeAgent, onOpenAgent }: { peers: PresencePeer[]; 
             className="tt-agent-presence"
             type="button"
             onClick={onOpenAgent}
-            title={`${peer.userName} is collaborating through MCP`}
+            title={`${peer.userName} is collaborating`}
           >
             <span
               className="tt-agent-avatar"
@@ -418,6 +418,10 @@ export function UnifiedDocumentEditor({
   const initialDocumentRef = useRef(initialDocument);
   const [document, setDocument] = useState(initialDocument);
   const documentRef = useRef(document);
+  const networkEnabled = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    collab.postId,
+  );
+  const localOrigin = useRef(Symbol("unified-document-editor"));
   /**
    * Local edits made BEFORE the provider is ready, kept where an incoming
    * remote update cannot clobber them. documentRef mirrors whatever was
@@ -434,11 +438,17 @@ export function UnifiedDocumentEditor({
     () => preReadyLocalRef.current ?? documentRef.current,
     [],
   );
-  const [doc] = useState(() => new Y.Doc());
+  const [doc] = useState(() => {
+    const next = new Y.Doc();
+    if (!networkEnabled) {
+      applyDocumentSnapshot(next, initialDocument, "initial-document");
+    }
+    return next;
+  });
   const [awareness] = useState(() => new Awareness(doc));
   const [peers, setPeers] = useState<PresencePeer[]>([]);
   const [remoteRevision, setRemoteRevision] = useState(0);
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState(!networkEnabled);
   const [saveState, setSaveState] = useState<SaveState>("local");
   const [error, setError] = useState<string | null>(null);
   const [choosingTemplate, setChoosingTemplate] = useState(false);
@@ -461,11 +471,6 @@ export function UnifiedDocumentEditor({
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const subtitleRef = useRef<HTMLTextAreaElement>(null);
   const bodySurfaceRef = useRef<HTMLDivElement>(null);
-  const localOrigin = useRef(Symbol("unified-document-editor"));
-  const networkEnabled = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    collab.postId,
-  );
-
   const publishDocument = useCallback(
     (next: DocumentSnapshot) => {
       documentRef.current = next;
@@ -599,15 +604,7 @@ export function UnifiedDocumentEditor({
   }, [collab.canEdit, doc, flushMaterialization, networkEnabled]);
 
   useEffect(() => {
-    if (!networkEnabled) {
-      if (!hasDocumentSnapshot(doc)) {
-        applyDocumentSnapshot(doc, initialDocumentRef.current, localOrigin.current);
-      }
-      publishDocument(documentSnapshotFromYDoc(doc));
-      setReady(true);
-      setSaveState("local");
-      return;
-    }
+    if (!networkEnabled) return;
 
     let cancelled = false;
     const provider = new CollabProvider(doc, {
@@ -1006,7 +1003,7 @@ export function UnifiedDocumentEditor({
                     const name = lookName.trim();
                     if (!name) return;
                     setSavingLook(true);
-                    setLookNotice(null);
+                    setLookNotice("Saving look...");
                     setNamingLook(false);
                     void onSaveAsLook(name)
                       .then((result) => setLookNotice(result.message))
@@ -1108,8 +1105,10 @@ export function UnifiedDocumentEditor({
         </details>
       )}
       <div className={`tt-save-state is-${saveState}`} role="status" aria-live="polite">
-        {saveState === "local" && !networkEnabled
-          ? "Saved on this device"
+        {saveState === "local"
+          ? networkEnabled
+            ? "Saved"
+            : "Saved on this device"
           : saveState === "offline"
           ? "Saved on this device"
           : saveState === "error"

@@ -107,8 +107,8 @@ export function SelectionActions({
 
   useEffect(() => {
     if (!enabled) {
-      setAnchor(null);
-      return;
+      const clear = window.setTimeout(() => setAnchor(null), 0);
+      return () => window.clearTimeout(clear);
     }
     // Settling on mouse/key release keeps the toolbar from chasing the cursor
     // across the paragraph mid-drag.

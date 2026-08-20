@@ -29,6 +29,25 @@ public struct AgentActor: Equatable, Sendable {
         self.message = message
         self.itemId = itemId
     }
+
+    public static func validatedName(_ value: String?) -> String? {
+        validated(value, maximumLength: 120)
+    }
+
+    public static func validatedIntent(_ value: String?) -> String? {
+        validated(value, maximumLength: 500)
+    }
+
+    private static func validated(_ value: String?, maximumLength: Int) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= maximumLength else { return nil }
+        let controls = CharacterSet.controlCharacters
+        guard trimmed.unicodeScalars.allSatisfy({ !controls.contains($0) }) else {
+            return nil
+        }
+        return trimmed
+    }
 }
 
 /// The device credential the app already keeps, which is why the CLI needs no
@@ -37,6 +56,27 @@ public struct AgentActor: Equatable, Sendable {
 public struct DeviceCredentials: Decodable, Sendable {
     public let token: String
     public let serverOrigin: String
+
+    public init(token: String, serverOrigin: String) {
+        self.token = token
+        self.serverOrigin = serverOrigin
+    }
+
+    /// The app may mint a device token for its configured HTTPS origin, while
+    /// explicit development builds may use loopback HTTP. A corrupt state file
+    /// must not turn the CLI into a bearer-token forwarder to an arbitrary
+    /// plaintext host.
+    public var validatedServerOrigin: URL? {
+        guard token.hasPrefix("wsk_"),
+            let url = URL(string: serverOrigin),
+            let scheme = url.scheme?.lowercased(),
+            let host = url.host?.lowercased(),
+            url.user == nil, url.password == nil
+        else { return nil }
+        if scheme == "https" { return url }
+        let loopback = host == "localhost" || host == "127.0.0.1" || host == "::1"
+        return scheme == "http" && loopback ? url : nil
+    }
 
     public static func load(
         fileManager: FileManager = .default,
@@ -79,7 +119,7 @@ public struct PresencePublisher: Sendable {
         self.timeout = timeout
     }
 
-    public var isConfigured: Bool { credentials != nil }
+    public var isConfigured: Bool { credentials?.validatedServerOrigin != nil }
 
     /// Announce, run the work, then clear. The work runs even when presence
     /// cannot be published at all.
@@ -88,19 +128,37 @@ public struct PresencePublisher: Sendable {
         actor: AgentActor,
         work: () throws -> T
     ) rethrows -> T {
-        publish(document: document, actor: actor, active: true)
-        defer { publish(document: document, actor: actor, active: false) }
+        publishSynchronously(document: document, actor: actor, active: true)
+        defer { publishSynchronously(document: document, actor: actor, active: false) }
         return try work()
     }
 
-    private func publish(document: String, actor: AgentActor, active: Bool) {
-        guard let credentials else { return }
+    public func around<T>(
+        document: String,
+        actor: AgentActor,
+        work: () async throws -> T
+    ) async rethrows -> T {
+        await publish(document: document, actor: actor, active: true)
+        do {
+            let value = try await work()
+            await publish(document: document, actor: actor, active: false)
+            return value
+        } catch {
+            await publish(document: document, actor: actor, active: false)
+            throw error
+        }
+    }
+
+    private func request(document: String, actor: AgentActor, active: Bool) -> URLRequest? {
+        guard let credentials,
+            let origin = credentials.validatedServerOrigin,
+            let name = AgentActor.validatedName(actor.name)
+        else { return nil }
         // The document carries its own id in frontmatter (`textTextId`, injected
         // locally and stripped before upload), so presence addresses the exact
         // item without the server having to resolve a file path.
-        guard let itemId = actor.itemId else { return }
-        guard let url = URL(string: credentials.serverOrigin + "/api/agent/presence")
-        else { return }
+        guard let itemId = actor.itemId else { return nil }
+        let url = origin.appending(path: "api/agent/presence")
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -110,14 +168,31 @@ public struct PresencePublisher: Sendable {
         var payload: [String: Any] = [
             "itemId": itemId,
             "document": document,
-            "agent": actor.name,
+            "agent": name,
             "activity": actor.activity.rawValue,
             "active": active,
         ]
         if let section = actor.section { payload["section"] = section }
-        if let message = actor.message { payload["message"] = message }
+        if let message = AgentActor.validatedIntent(actor.message) {
+            payload["message"] = message
+        }
         request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+        return request
+    }
 
+    private func publish(document: String, actor: AgentActor, active: Bool) async {
+        guard let request = request(document: document, actor: actor, active: active) else {
+            return
+        }
+        _ = try? await session.data(for: request)
+    }
+
+    private func publishSynchronously(
+        document: String, actor: AgentActor, active: Bool
+    ) {
+        guard let request = request(document: document, actor: actor, active: active) else {
+            return
+        }
         // Fire and wait briefly: presence must never outlive or delay the edit.
         let semaphore = DispatchSemaphore(value: 0)
         let task = session.dataTask(with: request) { _, _, _ in semaphore.signal() }

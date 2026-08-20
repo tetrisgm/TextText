@@ -232,7 +232,7 @@ async function collaboratorRowsForUserUncached(
   if (!db || !user) return { rows: [], userId: null, email: "" };
   const database = db;
 
-  let userId = await existingUserIdForAccess(user);
+  const userId = await existingUserIdForAccess(user);
   const email = user.email ? normalizeAccessEmail(user.email) : "";
   const userPredicates: SQL[] = [];
   if (userId) userPredicates.push(eq(collaborators.userId, userId));

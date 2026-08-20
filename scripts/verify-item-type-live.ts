@@ -8,11 +8,36 @@
 // edits its generated fields, and watches the item move on the rendered board.
 
 import { chromium, type Page } from "playwright";
+import { and, eq, inArray } from "drizzle-orm";
 import { ITEM_TYPE_STARTERS } from "../src/lib/presentation/item-type-blueprint";
+import {
+  closeDatabaseConnections,
+  db,
+  executeAtomicBatch,
+} from "../src/lib/db/client";
+import {
+  actionAudit,
+  blogs,
+  collabPresence,
+  collabState,
+  collabUpdates,
+  documentTemplates,
+  folders,
+  posts,
+  users,
+} from "../src/lib/db/schema";
 
 const BASE = process.env.TEXTTEXT_BASE_URL ?? "http://localhost:3000";
-const WHO = { email: "item-type-live-aug19@example.com", name: "Item type" };
+const RUN_ID = `${process.pid}-${Date.now().toString(36)}`;
+const WHO = {
+  email: `item-type-live-${RUN_ID}@example.com`,
+  name: "Item type eval",
+};
+const FOLDER_NAME = `Item type eval ${RUN_ID}`;
 let failures = 0;
+let runBlogId: string | null = null;
+let runFolderId: string | null = null;
+let runUserId: string | null = null;
 
 function check(claim: string, condition: boolean, detail = "") {
   if (condition) console.log(`  ok    ${claim}`);
@@ -23,24 +48,34 @@ function check(claim: string, condition: boolean, detail = "") {
 }
 
 async function signIn(page: Page) {
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    await page.goto(`${BASE}/editor`, { waitUntil: "networkidle" });
+  await page.goto(`${BASE}/editor`, { waitUntil: "domcontentloaded" });
+  for (let attempt = 1; attempt <= 12; attempt += 1) {
     const form = page.locator("form.ac-devsignin");
     await form.waitFor({ timeout: 20_000 }).catch(() => undefined);
     if ((await form.count()) === 0) break;
+    // A cold Next dev compile can paint the server markup several seconds
+    // before React owns it. Keep this page mounted and retry the real submit;
+    // navigating on every miss restarts hydration and can starve it forever.
+    await page.waitForTimeout(1_000);
     await form.locator('input[type="email"]').fill(WHO.email);
     await form
       .locator('input[placeholder="Name (optional)"]')
       .first()
       .fill(WHO.name)
       .catch(() => undefined);
+    const callback = page
+      .waitForResponse(
+        (response) => response.url().includes("/api/auth/callback/dev-login"),
+        { timeout: 8_000 },
+      )
+      .catch(() => null);
     await form.locator('button[type="submit"]').click();
-    await page.waitForTimeout(2500);
-    await page.goto(`${BASE}/start?to=home`, { waitUntil: "domcontentloaded" });
-    await page.waitForTimeout(1200);
-    if (!page.url().includes("/signin")) break;
-    console.log(`    (sign-in bounced, retry ${attempt})`);
-    if (attempt === 3) throw new Error("dev sign-in never took");
+    if (!(await callback)) {
+      console.log(`    (sign-in was not hydrated, retry ${attempt})`);
+      continue;
+    }
+    await page.waitForTimeout(1_000);
+    break;
   }
   for (let attempt = 0; attempt < 6; attempt += 1) {
     await page.goto(`${BASE}/start?to=home`, { waitUntil: "domcontentloaded" });
@@ -53,7 +88,195 @@ async function signIn(page: Page) {
   );
 }
 
+function requireLocalDatabase() {
+  const raw = process.env.DATABASE_URL;
+  if (!raw) throw new Error("DATABASE_URL is required");
+  const host = new URL(raw).hostname;
+  if (!["localhost", "127.0.0.1", "::1"].includes(host)) {
+    throw new Error(`item-type eval refuses non-local database host ${host}`);
+  }
+  if (!db) throw new Error("local database client is unavailable");
+}
+
+async function resolveRunWorkspace() {
+  if (!db) throw new Error("local database client is unavailable");
+  const [identity] = await db
+    .select({ blogId: blogs.id, handle: blogs.handle, userId: users.id })
+    .from(users)
+    .innerJoin(blogs, eq(blogs.ownerId, users.id))
+    .where(eq(users.email, WHO.email))
+    .limit(1);
+  if (!identity) throw new Error("the disposable workspace was not provisioned");
+  runBlogId = identity.blogId;
+  runUserId = identity.userId;
+  return identity.handle;
+}
+
+async function createRunFolder(page: Page, handle: string) {
+  const result = await page.evaluate(
+    async ({ folderName, workspaceHandle }) => {
+      const response = await fetch("/api/ai/tools", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          handle: workspaceHandle,
+          name: "create_folder",
+          args: { parent_path: "blog", name: folderName },
+        }),
+      });
+      return {
+        status: response.status,
+        payload: (await response.json()) as {
+          error?: string;
+          result?: { folder?: { id?: string; path?: string } };
+        },
+      };
+    },
+    { folderName: FOLDER_NAME, workspaceHandle: handle },
+  );
+  const folder = result.payload.result?.folder;
+  if (result.status !== 200 || !folder?.id || !folder.path) {
+    throw new Error(
+      `disposable folder creation failed (${result.status}): ${JSON.stringify(result.payload)}`,
+    );
+  }
+  runFolderId = folder.id;
+  return folder.path;
+}
+
+async function createPreviewItem(page: Page, handle: string, folderPath: string) {
+  const result = await page.evaluate(
+    async ({ workspaceHandle, targetFolder }) => {
+      const response = await fetch("/api/ai/tools", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          handle: workspaceHandle,
+          name: "create_item",
+          args: {
+            folder_path: targetFolder,
+            kind: "article",
+            title: "Preview source",
+            body: "A disposable source document for the canonical folder preview.",
+          },
+        }),
+      });
+      return { status: response.status, body: await response.text() };
+    },
+    { targetFolder: folderPath, workspaceHandle: handle },
+  );
+  if (result.status !== 200) {
+    throw new Error(
+      `disposable preview creation failed (${result.status}): ${result.body.slice(0, 500)}`,
+    );
+  }
+}
+
+async function cleanupRunFixture() {
+  if (!db || !runBlogId || !runUserId) return;
+  const itemRows = runFolderId
+    ? await db
+        .select({ id: posts.id })
+        .from(posts)
+        .where(and(eq(posts.blogId, runBlogId), eq(posts.folderId, runFolderId)))
+    : [];
+  const itemIds = itemRows.map((row) => row.id);
+  const templateRows = await db
+    .select({ id: documentTemplates.templateId })
+    .from(documentTemplates)
+    .where(
+      and(
+        eq(documentTemplates.blogId, runBlogId),
+        eq(documentTemplates.createdById, runUserId),
+      ),
+    );
+  const templateIds = templateRows.map((row) => row.id);
+
+  await executeAtomicBatch((executor) => {
+    const statements = [];
+    if (itemIds.length > 0) {
+      statements.push(
+        executor.delete(collabPresence).where(inArray(collabPresence.postId, itemIds)),
+        executor.delete(collabUpdates).where(inArray(collabUpdates.postId, itemIds)),
+        executor.delete(collabState).where(inArray(collabState.postId, itemIds)),
+        executor.delete(posts).where(inArray(posts.id, itemIds)),
+      );
+    }
+    statements.push(
+      executor.delete(actionAudit).where(eq(actionAudit.actorUserId, runUserId!)),
+      executor
+        .delete(documentTemplates)
+        .where(
+          and(
+            eq(documentTemplates.blogId, runBlogId!),
+            eq(documentTemplates.createdById, runUserId!),
+          ),
+        ),
+    );
+    if (runFolderId) {
+      statements.push(executor.delete(folders).where(eq(folders.id, runFolderId)));
+    }
+    return statements;
+  });
+
+  const [remainingFolder] = runFolderId
+    ? await db
+        .select({ id: folders.id })
+        .from(folders)
+        .where(eq(folders.id, runFolderId))
+        .limit(1)
+    : [];
+  const remainingTemplates = templateIds.length
+    ? await db
+        .select({ id: documentTemplates.templateId })
+        .from(documentTemplates)
+        .where(
+          and(
+            eq(documentTemplates.blogId, runBlogId),
+            inArray(documentTemplates.templateId, templateIds),
+          ),
+        )
+    : [];
+  if (remainingFolder || remainingTemplates.length > 0) {
+    throw new Error("item-type eval cleanup left database residue");
+  }
+  runFolderId = null;
+}
+
+async function openItemTypeStudio(page: Page) {
+  const opener = page.locator(".workspace-build-type-button");
+  const heading = page.getByRole("heading", { name: "What do you want to build?" });
+  await opener.waitFor({ state: "visible", timeout: 20_000 });
+  for (let attempt = 1; attempt <= 8; attempt += 1) {
+    await opener.click();
+    if (
+      await heading
+        .waitFor({ state: "visible", timeout: 2_000 })
+        .then(() => true)
+        .catch(() => false)
+    ) {
+      return;
+    }
+    await page.waitForTimeout(500);
+  }
+  throw new Error("the hydrated item-type studio opener never responded");
+}
+
+async function openRunFolder(page: Page) {
+  const child = page.getByRole("button", { name: FOLDER_NAME, exact: true });
+  if ((await child.count()) === 0) {
+    const blogRow = page.locator(".post-editor-folder-row", {
+      has: page.getByRole("button", { name: "Blog", exact: true }),
+    });
+    const expand = blogRow.getByRole("button", { name: "Expand", exact: true });
+    if ((await expand.count()) > 0) await expand.click();
+  }
+  await child.waitFor({ state: "visible", timeout: 20_000 });
+  await child.click();
+}
+
 async function main() {
+  requireLocalDatabase();
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 940 } });
   const connectedAgentBlueprint = {
@@ -114,7 +337,12 @@ async function main() {
 
   try {
     await signIn(page);
-    await page.locator(".workspace-build-type-button").click();
+    const handle = await resolveRunWorkspace();
+    const runFolderPath = await createRunFolder(page, handle);
+    await createPreviewItem(page, handle, runFolderPath);
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.locator(".workspace-library-header").waitFor({ timeout: 20_000 });
+    await openItemTypeStudio(page);
     check(
       "the focused builder opens from Home",
       (await page.getByRole("heading", { name: "What do you want to build?" }).count()) === 1,
@@ -199,7 +427,9 @@ async function main() {
     );
     await page.getByRole("combobox", { name: "Preview content" }).selectOption("sample");
     await page.getByRole("button", { name: "Wide" }).click();
-    await page.getByRole("combobox", { name: "Use in folder" }).selectOption({ label: "Blog" });
+    await page
+      .getByRole("combobox", { name: "Use in folder" })
+      .selectOption({ label: FOLDER_NAME });
     await page.getByRole("combobox", { name: "Preview content" }).selectOption("folder");
     check(
       "the preview can use canonical documents from the selected folder",
@@ -208,7 +438,7 @@ async function main() {
     await page.getByRole("button", { name: "Done" }).click();
     await page.getByRole("dialog").waitFor({ state: "detached", timeout: 20_000 });
 
-    await page.getByRole("button", { name: "Blog", exact: true }).click();
+    await openRunFolder(page);
     const composer = page.getByRole("textbox", { name: "Create an item" });
     await composer.fill(itemTitle);
     await composer.press("Enter");
@@ -313,7 +543,7 @@ async function main() {
     await statusInput.selectOption({ label: "In progress" });
     await page.getByRole("combobox", { name: "Priority" }).selectOption({ label: "High" });
     await page.locator(".tt-save-state", { hasText: "Saved" }).waitFor({ timeout: 10_000 });
-    await page.getByRole("button", { name: "Blog", exact: true }).click();
+    await openRunFolder(page);
     await page.waitForTimeout(1000);
     const board = page.getByRole("listbox", { name: "Folder board" });
     await board.waitFor({ timeout: 20_000 });
@@ -329,11 +559,15 @@ async function main() {
       (await progressColumn.innerText()).includes(itemTitle),
     );
 
-    const folderOptions = page.getByRole("button", { name: "Folder options for Blog" });
+    const folderOptions = page.getByRole("button", {
+      name: `Folder options for ${FOLDER_NAME}`,
+    });
     await folderOptions.hover({ force: true });
     await folderOptions.click({ force: true });
-    await page.locator('button:text-is("Change look")').first().click();
-    const gallery = page.getByRole("dialog");
+    const changeLook = page.locator('button:text-is("Change look")').first();
+    await changeLook.waitFor({ state: "visible", timeout: 10_000 });
+    await changeLook.click();
+    const gallery = page.getByRole("dialog").first();
     await gallery.waitFor({ timeout: 20_000 });
     check(
       "the generated type is reusable from the look gallery",
@@ -341,6 +575,8 @@ async function main() {
     );
   } finally {
     await browser.close();
+    await cleanupRunFixture();
+    await closeDatabaseConnections();
   }
 
   console.log(failures === 0 ? "\npass" : `\n${failures} behavior(s) failed`);

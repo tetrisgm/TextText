@@ -21,7 +21,7 @@ import "@/styles/docs-mcp.css";
 export const metadata: Metadata = {
   title: "MCP reference",
   description:
-    "Every TextText MCP tool, per-client setup for Claude, Codex, Cursor, ChatGPT, Copilot and Windsurf, and how to connect other MCP servers to your assistant.",
+    "Every TextText MCP tool, bearer-authenticated remote setup, and how to connect other MCP servers to your assistant.",
 };
 
 const MCP_URL = TEXTTEXT_HOSTED_MCP_URL;
@@ -44,7 +44,7 @@ const GROUPS: Array<{
     id: "writing",
     title: "Writing",
     blurb:
-      "Create and change documents. Every call writes an audit row and uses a conflict check rather than overwriting newer content.",
+      "Create and change documents. Every call writes an audit row. A client can supply the current content hash to refuse a stale write.",
     match: (name) => {
       const tool = WORKSPACE_TOOL_DEFINITIONS[name];
       return tool.mutability === "write" && tool.confirmation === "none";
@@ -55,7 +55,8 @@ const GROUPS: Array<{
     title: "Audience and access",
     blurb:
       "Change who can see something. These ask for confirmation first, and the web assistant is not given them at all.",
-    match: (name) => WORKSPACE_TOOL_DEFINITIONS[name].confirmation === "audience",
+    match: (name) =>
+      WORKSPACE_TOOL_DEFINITIONS[name].confirmation === "audience",
   },
   {
     id: "destructive",
@@ -98,110 +99,24 @@ const CLIENTS: Array<{
   code?: { label: string; value: string };
 }> = [
   {
-    id: "claude-code",
-    name: "Claude Code",
+    id: "bearer-client",
+    name: "Bearer-authenticated MCP client",
     steps: [
-      "Install the TextText plugin, which carries the connection and the workflows:",
+      "Create a revocable workspace token at Connect.",
+      "Add the endpoint below only in a client that provides a protected bearer-credential field.",
+      "Save the workspace token in that field. An OAuth-only connector without a bearer-token field is not compatible with this endpoint.",
     ],
     code: {
-      label: "Terminal",
-      value: "claude plugin marketplace add texttext/texttext\nclaude plugin install texttext@texttext",
+      label: "MCP endpoint",
+      value: MCP_URL,
     },
-  },
-  {
-    id: "claude-code-manual",
-    name: "Claude Code, without the plugin",
-    steps: ["Add the endpoint directly:"],
-    code: {
-      label: "Terminal",
-      value: `claude mcp add texttext --transport http ${MCP_URL} --scope user`,
-    },
-  },
-  {
-    id: "claude-desktop",
-    name: "Claude Desktop",
-    steps: [
-      "Settings, then Developer, then Edit Config, and add TextText to mcpServers:",
-    ],
-    code: {
-      label: "claude_desktop_config.json",
-      value: `{
-  "mcpServers": {
-    "texttext": {
-      "type": "http",
-      "url": "${MCP_URL}"
-    }
-  }
-}`,
-    },
-  },
-  {
-    id: "codex",
-    name: "Codex app and CLI",
-    steps: [
-      "Install the plugin, or add a Streamable HTTP server pointing at the endpoint:",
-    ],
-    code: {
-      label: "~/.codex/config.toml",
-      value: `[mcp_servers.texttext]\nurl = "${MCP_URL}"`,
-    },
-  },
-  {
-    id: "cursor",
-    name: "Cursor",
-    steps: [
-      "Settings, then Tools and MCP, then Add. Or write the file directly:",
-    ],
-    code: {
-      label: ".cursor/mcp.json",
-      value: `{
-  "mcpServers": {
-    "texttext": {
-      "url": "${MCP_URL}"
-    }
-  }
-}`,
-    },
-  },
-  {
-    id: "copilot",
-    name: "GitHub Copilot in VS Code",
-    steps: ["Create the workspace MCP file:"],
-    code: {
-      label: ".vscode/mcp.json",
-      value: `{
-  "servers": {
-    "texttext": {
-      "type": "http",
-      "url": "${MCP_URL}"
-    }
-  }
-}`,
-    },
-  },
-  {
-    id: "chatgpt",
-    name: "ChatGPT",
-    steps: [
-      "Create a token at Connect and copy it, along with the address below.",
-      "In ChatGPT, open Settings, then the connectors area, and add a custom connector using that address with the token as its bearer credential.",
-      "Some ChatGPT connector kinds expect an authorization server rather than a pasted token. If yours offers no token field, use Claude, Codex, Cursor or Copilot instead.",
-    ],
-    code: { label: "Server address", value: MCP_URL },
-  },
-  {
-    id: "windsurf",
-    name: "Windsurf and other MCP clients",
-    steps: [
-      "Any client that speaks Streamable HTTP can use the same address. There is nothing TextText-specific in the transport:",
-    ],
-    code: { label: "Server address", value: MCP_URL },
   },
 ];
 
 export default function McpReferencePage() {
   const groups = groupedTools();
-  const readCount = groups.find((group) => group.id === "reading")?.names.length ?? 0;
+  const readCount =
+    groups.find((group) => group.id === "reading")?.names.length ?? 0;
 
   return (
     <div className="applecms connect-shell">
@@ -209,32 +124,34 @@ export default function McpReferencePage() {
         <p className="connect-provider-kicker">Reference</p>
         <h1 className="connect-title">MCP</h1>
         <p className="connect-lede">
-          TextText speaks MCP in both directions. Any client can work on your
-          documents through the hosted server, and your own assistant can use
-          tools from servers you connect to it.
+          TextText speaks MCP in both directions. A bearer-authenticated client
+          can work on your documents through the hosted server, and your own
+          assistant can use tools from servers you connect to it.
         </p>
 
         <section className="connect-section" id="endpoint">
           <h2 className="connect-section-title">The endpoint</h2>
           <p className="connect-body">
             One address, Streamable HTTP, and a workspace token you create and
-            paste. It is the same server for every client.
+            save in the client&apos;s protected bearer-credential field.
           </p>
           <pre className="docs-code" aria-label="TextText MCP endpoint">
             <code>{MCP_URL}</code>
           </pre>
           <p className="connect-body">
-            Create a token at <Link href="/connect">Connect</Link>, and revoke it
-            there. Every client authenticates the same way: one thing to
-            understand, one thing to take away.
+            Create a token at <Link href="/connect">Connect</Link>, and revoke
+            it there. The hosted endpoint does not currently provide the OAuth
+            authorization flow required by some connector galleries.
           </p>
         </section>
 
         <section className="connect-section" id="clients">
           <h2 className="connect-section-title">Connect a client</h2>
           <p className="connect-body">
-            Pick yours. The plugin paths also install ready-made workflows; the
-            manual paths give the same tools without them.
+            Use the hosted endpoint only when the client accepts a bearer token.
+            For local Claude or Codex, the recommended path is the token-free
+            TextText plugin described in the{" "}
+            <Link href="/docs/ai#external-agent">connection guide</Link>.
           </p>
           <div className="docs-clients">
             {CLIENTS.map((client) => (
@@ -291,7 +208,11 @@ export default function McpReferencePage() {
             receive.
           </p>
           {groups.map((group) => (
-            <div className="docs-tool-group" id={`tools-${group.id}`} key={group.id}>
+            <div
+              className="docs-tool-group"
+              id={`tools-${group.id}`}
+              key={group.id}
+            >
               <h3>
                 {group.title} <span>{group.names.length}</span>
               </h3>
@@ -330,9 +251,9 @@ export default function McpReferencePage() {
           <p className="connect-body">
             Your assistant can also be a client. Connect an MCP server in
             Workspace Settings and its tools join the ones your assistant
-            already has, so &quot;put this spec in Figma&quot; and
-            &quot;write up what you did in TextText&quot; are the same
-            conversation from either end.
+            already has, so &quot;put this spec in Figma&quot; and &quot;write
+            up what you did in TextText&quot; are the same conversation from
+            either end.
           </p>
           <ol className="docs-verify">
             <li>
@@ -355,34 +276,39 @@ export default function McpReferencePage() {
           </p>
           <h3>Servers on your own machine</h3>
           <p className="connect-body">
-            The design tools run locally: Paper listens on{" "}
-            <code>127.0.0.1:29979</code>, and pen.dev and Figma ship the same
-            shape, because the design file never leaves your Mac. Nothing on the
-            internet can reach that address, including TextText&apos;s own
-            servers, so a loopback connection works in the{" "}
-            <strong>Mac app</strong> and not on the web. The app makes the
-            request natively and refuses any address that is not loopback.
+            Paper, pen.dev, and Figma can expose desktop MCP servers tied to the
+            app&apos;s current file or selection. Paper listens on{" "}
+            <code>127.0.0.1:29979</code>. A loopback address is reachable only
+            from that Mac, not from TextText&apos;s servers. Outbound TextText MCP
+            connections use a public https address in this release, so these
+            loopback endpoints are not offered in Workspace Settings.
           </p>
           <p className="connect-body">
-            Local connections do not carry an access token yet. The local design
-            servers do not ask for one.
+            TextText&apos;s local Claude and Codex integration is different: the
+            standalone Mac app bundles a signed-in CLI for working on TextText
+            documents. It does not turn TextText into a client for another
+            app&apos;s loopback MCP server.
           </p>
         </section>
 
         <section className="connect-section" id="safety">
-          <h2 className="connect-section-title">What holds in both directions</h2>
+          <h2 className="connect-section-title">
+            What holds in both directions
+          </h2>
           <ul className="connect-feature-list">
             <li>
               Every request is scoped to one workspace, and visibility fails
               closed. Notes and bookmarks stay unlisted.
             </li>
             <li>
-              Every mutation writes an audit row naming the agent that made it,
-              including calls your assistant makes to a connected server.
+              TextText workspace mutations write an audit row with the
+              authenticated account. Connected-server tool calls stay named in
+              the assistant conversation.
             </li>
             <li>
-              Writes carry a conflict check, so an agent working from a stale
-              read is refused rather than allowed to overwrite newer content.
+              A write that supplies the current content hash refuses a stale
+              read instead of overwriting newer content. The guarded local CLI
+              supplies that hash for edits.
             </li>
             <li>
               A connected server&apos;s tool names, descriptions and results are
@@ -391,9 +317,9 @@ export default function McpReferencePage() {
               text, and it will tell you what happened.
             </li>
             <li>
-              A connected server&apos;s address is re-checked before every
-              connection and must resolve to a public host, and its access token
-              is encrypted at rest and never shown back to any browser.
+              A remote connected server&apos;s address is re-checked before
+              every connection and must resolve to a public host. Its access
+              token is encrypted at rest and never shown back to any browser.
             </li>
           </ul>
           <p className="connect-body">

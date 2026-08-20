@@ -31,6 +31,27 @@ function request(body: unknown): Request {
   });
 }
 
+function streamedRequest(byteCount: number): Request {
+  const encoder = new TextEncoder();
+  let remaining = byteCount;
+  return new Request(`http://localhost/api/collab/${postId}/presence`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: new ReadableStream({
+      pull(controller) {
+        if (remaining === 0) {
+          controller.close();
+          return;
+        }
+        const size = Math.min(remaining, 16 * 1024);
+        remaining -= size;
+        controller.enqueue(encoder.encode("x".repeat(size)));
+      },
+    }),
+    duplex: "half",
+  } as RequestInit & { duplex: "half" });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.getCurrentUser.mockResolvedValue({ sub: "user-1", name: "Ada" });
@@ -77,5 +98,24 @@ describe("collaboration presence route", () => {
       color: "#112233",
       awareness: null,
     });
+  });
+
+  it("rejects a declared oversized presence body before storage", async () => {
+    const oversized = request({ clientId: "active" });
+    oversized.headers.set("content-length", String(96 * 1024 + 1));
+
+    const response = await POST(oversized, context);
+
+    expect(response.status).toBe(413);
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(mocks.upsertPresence).not.toHaveBeenCalled();
+  });
+
+  it("rejects a streamed oversized presence body without Content-Length", async () => {
+    const response = await POST(streamedRequest(96 * 1024 + 1), context);
+
+    expect(response.status).toBe(413);
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(mocks.upsertPresence).not.toHaveBeenCalled();
   });
 });

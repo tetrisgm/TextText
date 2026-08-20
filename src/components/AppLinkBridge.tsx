@@ -25,15 +25,24 @@ export function AppLinkBridge() {
   const [state, setState] = useState<State>("checking");
 
   useEffect(() => {
+    let active = true;
     const w = window as TextTextAppWindow;
     const bridge = w.__TEXTTEXT_APP__ === true ? w.webkit?.messageHandlers?.textTextApp : undefined;
-    if (!bridge) {
-      setState("browser");
-      return;
-    }
-    setState("linking");
-    mintAppTokenAction(w.__TEXTTEXT_DEVICE__ ?? "this Mac")
-      .then((result) => {
+    async function linkApp() {
+      // Let hydration finish before the bridge-specific view replaces the
+      // server-rendered checking state.
+      await Promise.resolve();
+      if (!active) return;
+      if (!bridge) {
+        setState("browser");
+        return;
+      }
+      setState("linking");
+      try {
+        const result = await mintAppTokenAction(
+          w.__TEXTTEXT_DEVICE__ ?? "this Mac",
+        );
+        if (!active) return;
         if ("error" in result) {
           setState("error");
           return;
@@ -44,8 +53,14 @@ export function AppLinkBridge() {
           origin: result.origin,
         });
         setState("linked");
-      })
-      .catch(() => setState("error"));
+      } catch {
+        if (active) setState("error");
+      }
+    }
+    void linkApp();
+    return () => {
+      active = false;
+    };
   }, []);
 
   return (

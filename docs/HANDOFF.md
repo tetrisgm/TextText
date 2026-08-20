@@ -563,6 +563,63 @@ Two traps worth keeping:
   outbound MCP, collaboration, and real-model sidebar evaluations, plus 36
   inspected light/dark screenshots across 1440, 768, and 375 pixel widths.
 
+## Agentic writing simplification (source, 2026-08-20)
+
+- The product now has one primary agentic-writing loop in the right rail:
+  choose the current document or workspace context, ask for a concrete change,
+  watch bounded progress, and read the attributed result. Selection quick
+  actions use an explicit proposal with Apply and Undo. Provider plumbing and
+  fallback connection paths stay progressively disclosed.
+- Home no longer repeats an AI setup card. The rail starts the work, Workspace
+  Settings manages providers, and the public guides explain the available
+  channels. `/docs/recipes` is a small visual recipe gallery with copyable
+  prompts and real TextText screenshots for connection proof, folder-to-draft,
+  selection rewrite, and Undo.
+- Connect is edition-aware. The standalone Mac edition can offer its bundled
+  local Claude and Codex plugins and eligible ChatGPT/Codex native account.
+  Browser and Store editions lead with the API-key in-app assistant and can
+  describe hosted bearer MCP as an advanced external-client path. Store and
+  browser surfaces do not advertise the standalone CLI or local loopback MCP.
+- The local Claude and Codex plugins no longer bundle an MCP configuration or
+  ask for an exported token. They call the `texttext` helper inside the
+  signed-in standalone app. Hosted `/api/mcp` remains the explicit path for a
+  remote client that can securely store a bearer credential.
+- The CLI no longer depends on File Provider or a localhost server. It reads
+  the signed-in app credential, discovers workspace paths through sync
+  manifests, and sends create, read, update, and append operations through the
+  shared authenticated workspace-command executor. `TEXTTEXT_WORKSPACE_ROOT`
+  is the only explicit offline file mode.
+- Remote CLI writes use command hashes, bounded input, workspace and scope
+  checks, stable idempotency keys, and attributed audits. Whole-document writes
+  refuse an active-editor conflict. Section edits use a guarded section
+  mutation against the live Yjs document so concurrent changes outside that
+  section survive and a changed target section conflicts.
+- Agent-driven content, status, restore, comment, access, share, and live Yjs
+  mutations now couple the data change and `action_audit` row atomically.
+  A failed audit cannot leave an unattributed change, and an idempotent retry
+  cannot duplicate either the content operation or its audit.
+- Native recent-work summaries receive a bounded workspace index and answer
+  from it without tool calls. A real signed-in Codex evaluation proves the
+  read-only sandbox, disabled inherited MCP servers, numeric JSON-RPC request
+  IDs, bounded failure recovery, and exact dynamic-tool completion. A separate
+  browser/WK bridge evaluation uses a disposable local document to prove the
+  rendered summary, real command execution, visible edit, AI audit, proposal,
+  Apply, and Undo, then removes its fixture.
+- The desktop shell gives the center document or library sole vertical scroll
+  ownership. Left navigation and the assistant remain pinned. The visual sweep
+  asserts that contract on Home, folders, editor, Starred, Shared, Trash, and
+  Settings at 1440, 768, and 375 pixels in both themes.
+- The settled-tree gate passes 995 web tests, 493 Swift tests, TypeScript,
+  lint with zero errors, both agent integration verifiers, the real native
+  Codex evaluation, the browser/native bridge evaluation, the transactional
+  local-promotion fixtures, and the 43-page production build. The build still
+  reports the known non-blocking duplicate-Yjs warning from separate Turbopack
+  route chunks; one installed Yjs version and serialized route boundaries were
+  verified.
+- TestFlight preparation, App Store Connect changes, release records, and live
+  Apple/Google account consent remain owner-run gates and were not performed in
+  this source pass.
+
 ## Local promotion and TestFlight state (2026-08-19)
 
 - The complete promotion gate now passes 926 web tests, 460 Swift tests, 17

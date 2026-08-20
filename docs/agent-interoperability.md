@@ -1,26 +1,28 @@
 # Agent interoperability
 
-TextText exposes one workspace command contract to the product UI, the in-app
-assistant, and external agents. How an agent reaches that contract depends on
-where it runs.
+TextText exposes one document model and one set of permission, validation,
+audit, and conflict rules. How an agent reaches that model depends on where it
+runs.
 
-| Where the agent runs | How it works | Auth |
-|---|---|---|
-| On this Mac with the standalone app (Claude Code, Codex, a script) | The `texttext` CLI, editing documents as files | The device credential the app already holds |
-| Anywhere else (Claude.ai, ChatGPT, Cursor, a phone) | Hosted MCP at `https://texttext.app/api/mcp` | A `wsk_` workspace token from `/connect` |
+| Where the agent runs                 | Recommended path                                             | Authentication                                     |
+| ------------------------------------ | ------------------------------------------------------------ | -------------------------------------------------- |
+| On this Mac with the standalone app  | Bundled `texttext` CLI through authenticated TextText routes | The signed-in app's device credential              |
+| In a remote or manual MCP client     | Hosted MCP at `https://texttext.app/api/mcp`                 | A revocable `wsk_` workspace token from `/connect` |
+| In an explicit offline file workflow | `texttext` CLI with `TEXTTEXT_WORKSPACE_ROOT`                | Local filesystem permissions                       |
 
-The app never calls its own MCP endpoint. There is no loopback server: the local
-MCP endpoint was retired in `0.146`, and with it the port, the transport guard,
-and the whole local-trust problem.
+The app never calls its own MCP endpoint. The local plugin does not start a
+server, use a loopback port, or ask the person to paste a workspace token.
 
-## Agents on this Mac: the `texttext` CLI
+## Agents on this Mac
 
-An agent with a shell should edit files, not drive a protocol. The CLI ships
-inside the standalone Developer ID app bundle (`mac/Sources/TextTextCLI`, copied
-to `TextText.app/Contents/Helpers/texttext` and signed with the app), and it runs
-as the user. The sandboxed TestFlight edition does not include the CLI because a
-nested sandboxed command cannot reach the person's shell or the app's container.
-TestFlight users connect a local agent through the hosted plugin or MCP path.
+The standalone Developer ID app ships the `texttext` CLI at
+`/Applications/TextText.app/Contents/Helpers/texttext`. Claude Code and Codex
+plugins package skills that call that command. Running `texttext install` links
+the same signed helper into `~/.local/bin` when a shorter command is useful.
+
+The sandboxed TestFlight app does not include the CLI. A TestFlight user can
+still use the in-app API-key assistant or a remote client that supports hosted
+MCP with a bearer credential.
 
 ```text
 texttext ls [folder]                     list documents
@@ -29,172 +31,150 @@ texttext write <doc> [--from FILE]       replace the body (stdin by default)
 texttext append <doc> [--from FILE]      append to the body
 texttext edit <doc> --section "## H"     replace one section (stdin by default)
 texttext open <doc> [--section "## H"]   open it in TextText
-texttext sections <doc>                  list the headings
+texttext sections <doc>                  list headings
 texttext new <title> [--folder F]        create a document
-texttext lint [<doc>]                    check documents are well formed
-texttext install                         put texttext on your PATH
+texttext lint [<doc>]                    validate readable content
+texttext install                         put texttext on PATH
 ```
 
-Global options: `--as NAME`, `--message TEXT`, `--from FILE`, `--section NAME`,
-`--json`. Documents are addressed by workspace-relative path; a bare name works
+Global options are `--as NAME`, `--message TEXT`, `--idempotency-key KEY`,
+`--from FILE`, `--section NAME`, and `--json`. `--idempotency-key` applies to
+`new` and `append`; reuse the same key after a timeout so retrying cannot create
+or append the same content twice.
+
+Documents are addressed by workspace-relative path. A bare name works only
 when it matches exactly one document.
 
-### Why there is no port, token, or pairing step
+### Authentication and transport
 
-The app stores a device credential at
-`~/Library/Application Support/TextText/credentials.json` (mode 0600, a `wsk_` token
-plus its origin). The CLI runs as the same user and reads it, so it is
-authenticated by construction. Nothing to configure, nothing to paste, and no
-listening socket for a web page to reach. This applies to the standalone app and
-its bundled CLI. It is not a promise that the TestFlight app installs a command.
+The signed-in standalone app stores one tenant-scoped device credential. The
+CLI reads that app-owned state and sends the credential only as a bearer token
+to its validated TextText HTTPS origin. It never accepts a token in an argument
+or environment variable, and it does not fall back to a File Provider mount.
+Loopback HTTP is accepted only when the saved app state explicitly names a
+development origin.
 
-### Presence is automatic
+Workspace and manifest sync routes provide path discovery. Content reads,
+creates, updates, and appends go through the authenticated
+`/api/agent/commands` route, whose allowlist dispatches the matching shared
+workspace commands. The local plugin does not gain comments, publishing,
+collaborator management, or the rest of the hosted MCP surface through this
+route.
 
-Every mutating command publishes presence before it acts and clears it after,
-through `POST /api/agent/presence`. The agent never has to remember to announce
-itself.
+### Identity, presence, and audit
+
+The device credential authenticates the person and workspace. `--as` is a
+bounded, self-declared agent label, not a second login or a security principal.
+`--message` is optional intent metadata. Connected mutations keep the
+authenticated account identity in the audit row and may add that agent label
+and intent so the source of the change remains legible.
+
+Commands with an item identity also publish short-lived, best-effort presence.
+Presence can make the supplied agent label visible while work is in progress,
+but it never authorizes an edit and never blocks a mutation if presence is
+unavailable.
 
 ```bash
-texttext edit posts/launch.md --section "## Pricing" \
-  --as codex --message "tighten the pricing copy"
+texttext edit "Notes/Launch plan.textpack" --section "## Pricing" \
+  --as Codex --message "Tighten the pricing copy"
 ```
 
-While that runs, an open TextText document shows Codex with its provider color,
-anchored at the Pricing heading. Section anchoring is the right unit for an
-agent: a human has a caret, an agent has a region of interest, and headings
-survive edits above them.
+### Connected correctness
 
-The presence route derives workspace identity from the authenticated token,
-never from the request body, so `--as` decorates a collaborator that is already
-known to be this user's device. It cannot impersonate another account.
+- Reads return the current server document and version hash.
+- Updates use that hash as a compare-and-swap guard. If the document changed,
+  the CLI stops so the agent can reread and reconcile instead of overwriting
+  concurrent work.
+- When a person has the document open, the shared workspace command applies the
+  edit through the live Yjs document path.
+- Creates and appends accept `--idempotency-key`; the CLI also reuses its key
+  for one bounded retry after a lost network response.
+- A section edit computes an updated document and remains subject to the same
+  whole-document version check. Two section edits can still conflict.
 
-### Intent reaches the audit row
+### Explicit offline mode
 
-`--message` rides through to `action_audit`, so the record says that Codex
-tightened the pricing copy rather than that something changed.
+`TEXTTEXT_WORKSPACE_ROOT=/absolute/path` opts into the local file backend for
+tests and intentional offline package work. In that mode the CLI preserves
+TextText package structure and uses atomic local replacements. This is not the
+default plugin path, does not use the signed-in server workspace, and does not
+promise cloud presence, server audit rows, or live collaboration.
 
-### Correctness guarantees
-
-- **The CLI owns the rich package formats.** It reuses
-  `TextTextFileProviderKit/TextBundlePackage.swift` rather than reimplementing it,
-  so frontmatter, `info.json`, and assets survive a round trip and an agent never
-  touches the zip. Listing and addressing also cover `.textbundle`, `.md`, and
-  `.txt`; the auxiliary `Data` attachment tree is not reported as documents.
-- **Writes are atomic.** The replacement is built in a temporary file and swapped
-  in with `replaceItemAt`, a single rename. A crash leaves the previous document
-  intact and the File Provider sees one complete replacement, never a partial
-  file.
-- **Section edits are surgical.** Only the addressed span changes, with canonical
-  blank-line spacing re-emitted around it. Two agents in different sections of
-  one document do not collide.
-- **`texttext lint`** validates package structure, frontmatter, and asset
-  references. It is the net that catches an agent which went around the CLI; a
-  `PostToolUse` hook can block on it.
-
-## Remote agents: hosted MCP
+## Remote agents over hosted MCP
 
 External clients connect to `https://texttext.app/api/mcp` with a manual `wsk_`
 workspace token from `/connect`. TextText does not implement an OAuth
-authorization server, consent page, refresh token flow, or dynamic client
-registration. A client must support a person-supplied bearer credential. The server
-implements **MCP `2026-07-28`**, the stateless revision: no `initialize`, no
-session header, no GET stream. Call `server/discover` to see what it supports.
-`docs/mcp.md` is the full protocol reference; `src/lib/ai/tools.ts` is the source
-of truth for tool names and schemas.
+authorization server, consent page, refresh-token flow, or dynamic client
+registration. A compatible client must let the person provide a bearer
+credential. OAuth-only connectors cannot use this endpoint.
 
-ChatGPT custom MCP availability depends on the person's plan, workspace role,
-and administrator settings. A ChatGPT surface that requires OAuth cannot connect
-to TextText's current token-only endpoint. Do not describe this as a universal
-one-click ChatGPT connection. OpenAI's current availability and setup rules are
-documented in its [developer mode and custom MCP app guide](https://help.openai.com/en/articles/12584461-developer-mode-and-full-mcp-connectors-in-chatgpt).
+Hosted MCP exposes the complete shared tool contract, including comments,
+guarded publishing, and collaborator management. Tool descriptions mark actions
+that require confirmation; the client and agent are responsible for presenting
+that confirmation before calling the tool. `docs/mcp.md` is the protocol
+reference and `src/lib/ai/tools.ts` is the source of truth for tool names and
+schemas.
 
 ## The assistant inside TextText
 
 The standalone Developer ID app can launch the local Codex runtime and use an
-eligible existing ChatGPT or Codex account. That path does not consume provider
-API credits. The sandboxed TestFlight app cannot launch a command from the
-person's home directory, so it cannot offer that embedded subscription path.
+eligible ChatGPT or Codex account already available to it. The sandboxed
+TestFlight app cannot launch that runtime.
 
 The API-key assistant works in the web product and both Mac channels. Provider
 API billing is separate from ChatGPT and Claude consumer subscriptions. An
-external agent connected over hosted MCP uses the account and model in that
-external product; TextText receives only its workspace bearer token, not the
-person's provider password or subscription credential.
+external agent connected through hosted MCP uses the account and model in that
+external product; TextText receives its workspace token, not the person's
+provider password or subscription credential.
 
-### Automation contract
+## Automation contracts
 
-- Read workspace and item state through MCP tools or MCP resources.
-- Mutate content only through the shared workspace tools.
+For the local CLI:
+
+- Resolve an exact workspace-relative path before changing a document.
+- Reread after a version conflict, reconcile, and retry deliberately.
+- Supply a stable `--idempotency-key` for retried `new` and `append` commands.
+- Use `--as` and `--message` as honest display and intent metadata.
+- Read back the changed document before reporting completion.
+
+For hosted MCP:
+
+- Read workspace and item state through MCP tools or resources.
 - Pass `if_match_hash` when changing an existing item.
 - Pass a stable `idempotency_key` to `create_item` and `append_to_item`.
 - Reuse that key after timeouts or reconnects.
-- Ask before publishing, changing access, moving to Trash, or restoring content.
+- Ask before publishing, changing access, moving to Trash, or restoring
+  content.
 - Treat returned item IDs as durable references. Do not infer storage URLs.
 
-### Project documents
+Use one TextText item per project. A repository URL or another durable project
+identifier can serve as the creation identity, and a commit SHA, release
+version, or source event ID can identify one changelog append. MCP hosts that
+support prompts can use `maintain_project_documents`; other clients can retain
+the returned item ID and call `append_to_item` with a stable idempotency key.
 
-Use one TextText item per project. The repository URL or another durable project
-identifier is the creation identity:
+Use `capture_conversation` to save useful prompts, answers, decisions, and
+source context as a portable TextText note.
 
-```text
-project:<workspace-id>:<repository-url>
-```
+## Invariants
 
-Append a dated Markdown section for each meaningful update. A commit SHA,
-release version, or source event ID is the update identity:
+Connected in-app, CLI, and hosted MCP operations share these boundaries:
 
-```text
-project-update:<workspace-id>:<repository-url>:<event-id>
-```
-
-This contract makes retries safe. A reconnect cannot create a second project
-document or append the same release twice.
-
-MCP hosts that support prompts can use `maintain_project_documents`. Hosts that
-only support tools use `create_item`, retain the returned item ID, and call
-`append_to_item` for later updates.
-
-### Conversation capture
-
-Use `capture_conversation` to save useful prompts, answers, decisions, and source
-context as a portable TextText note. The source conversation or message ID is
-the stable creation key.
-
-### Protocol surface
-
-Resources:
-
-- `texttext://agent-guide`
-- `texttext://workspace`
-- `texttext://items/{id}`
-
-Prompts:
-
-- `maintain_project_documents`
-- `capture_conversation`
-- `prepare_release_note`
-
-## Invariants that hold for every surface
-
-These live below the tool and file layers, so no transport can bypass them.
-
-- `src/lib/store.ts` is the only content access boundary.
-- Every mutation writes an `action_audit` row.
-- Notes and bookmarks stay private and unlisted forever.
+- `src/lib/store.ts` is the content access boundary.
+- Connected mutations write `action_audit`.
+- Notes and bookmarks remain private and unlisted.
 - Missing or unknown visibility means private.
-- A delete means Move to Trash. There is no permanent delete on the shared
-  surface.
+- Delete means Move to Trash; the shared command surface has no permanent
+  delete.
 
-## Release gate
+The explicit `TEXTTEXT_WORKSPACE_ROOT` offline mode is outside the connected
+server path and therefore cannot claim server audit, presence, permissions, or
+live collaboration.
 
-`scripts/verify-agent-interoperability.ts` runs inside `npm run verify:release`.
-It asserts the shared tool contract, the public agent docs, the CLI's bundling
-and format ownership, atomic writes, automatic presence, the presence route's
-token-derived identity, and that the loopback MCP server stays retired.
+## Verification
 
-The live client gate starts a local server and runs
-`scripts/test-token-mcp-loop.ts` against an isolated local workspace. It proves
-missing and unknown tokens are rejected, a real workspace token can discover
-the server and read its own workspace, revocation takes effect immediately,
-and a replacement token works. The gate refuses non-local databases and removes
-all scratch rows before it reports success.
+The release verifier and focused tests check the plugin package, the absence of
+loopback MCP configuration, signed-in CLI routing, command allowlists,
+idempotent create and append behavior, conflict handling, self-declared agent
+metadata, and hosted MCP authentication. The live MCP loop runs only against an
+isolated local workspace and refuses a non-local database.

@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "texttext",
-      "description": "Create, reshape, publish, and maintain TextText documents from Claude.",
+      "description": "Create, find, and edit TextText documents through the signed-in Mac app.",
       "version": "0.1.0",
       "author": {
         "name": "TextText",

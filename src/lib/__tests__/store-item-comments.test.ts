@@ -68,7 +68,9 @@ function createFakeDb(state: FakeState) {
     inserts: Call[];
     updates: Call[];
     deletes: Call[];
-  } = { selects: [], inserts: [], updates: [], deletes: [] };
+    executes: unknown[];
+  } = { selects: [], inserts: [], updates: [], deletes: [], executes: [] };
+  let lastMutationRows: Array<Record<string, unknown>> = [];
 
   const db = {
     select(fields?: unknown) {
@@ -81,7 +83,9 @@ function createFakeDb(state: FakeState) {
               return {
                 limit(limit: number) {
                   call.limit = limit;
-                  return Promise.resolve(state.selectRows.shift() ?? []);
+                  return Promise.resolve(
+                    state.selectRows.shift() ?? lastMutationRows,
+                  );
                 },
                 orderBy(...orderBy: unknown[]) {
                   call.orderBy = orderBy;
@@ -100,7 +104,8 @@ function createFakeDb(state: FakeState) {
           calls.inserts.push(call);
           return {
             returning() {
-              return Promise.resolve(state.insertRows.shift() ?? []);
+              lastMutationRows = state.insertRows.shift() ?? [];
+              return Promise.resolve(lastMutationRows);
             },
           };
         },
@@ -116,7 +121,8 @@ function createFakeDb(state: FakeState) {
               call.cond = cond;
               return {
                 returning() {
-                  return Promise.resolve(state.updateRows.shift() ?? []);
+                  lastMutationRows = state.updateRows.shift() ?? [];
+                  return Promise.resolve(lastMutationRows);
                 },
               };
             },
@@ -136,6 +142,12 @@ function createFakeDb(state: FakeState) {
           };
         },
       };
+    },
+    execute(statement: unknown) {
+      calls.executes.push(statement);
+      return Promise.resolve({
+        rows: lastMutationRows.map((row) => ({ id: row.id })),
+      });
     },
   };
   return { db, calls };

@@ -8,16 +8,24 @@
 
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { WORKSPACE_TOOL_DEFINITIONS, WORKSPACE_TOOL_NAMES } from "@/lib/ai/tools";
+import {
+  WORKSPACE_TOOL_DEFINITIONS,
+  WORKSPACE_TOOL_NAMES,
+} from "@/lib/ai/tools";
 
-const source = readFileSync(new URL("../mcp/page.tsx", import.meta.url), "utf8");
+const source = readFileSync(
+  new URL("../mcp/page.tsx", import.meta.url),
+  "utf8",
+);
 
 describe("the MCP reference page", () => {
   it("builds its tool list from the registry rather than a copy", () => {
     expect(source).toContain("WORKSPACE_TOOL_NAMES");
     expect(source).toContain("WORKSPACE_TOOL_DEFINITIONS[name].description");
     for (const name of WORKSPACE_TOOL_NAMES) {
-      expect(source, `${name} must not be hardcoded`).not.toContain(`"${name}"`);
+      expect(source, `${name} must not be hardcoded`).not.toContain(
+        `"${name}"`,
+      );
     }
   });
 
@@ -41,20 +49,17 @@ describe("the MCP reference page", () => {
     }
   });
 
-  it("documents both directions and every client it claims to support", () => {
-    for (const client of [
-      "Claude Code",
-      "Claude Desktop",
-      "Codex",
-      "Cursor",
-      "Copilot",
-      "ChatGPT",
-      "Windsurf",
-    ]) {
-      expect(source, `${client} setup missing`).toContain(client);
-    }
+  it("documents both directions without promising unsupported authentication", () => {
+    expect(source).toContain("Bearer-authenticated MCP client");
+    expect(source).toContain("OAuth-only connector");
+    expect(source).toContain("token-free");
+    expect(source).not.toContain('name: "ChatGPT"');
     expect(source).toContain("connect a server to TextText");
     expect(source).toContain("figma__create_frame");
+    expect(source).toContain("standalone Mac app");
+    expect(source).toContain("public https address");
+    expect(source).toContain("not offered in Workspace Settings");
+    expect(source).not.toContain("loopback connection works only");
   });
 });
 

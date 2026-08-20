@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+
 @testable import TextTextFileProviderKit
 
 private func requestBodyData(_ request: URLRequest) throws -> Data {
@@ -61,10 +62,13 @@ final class LiveTextTextSyncAPITests: XCTestCase {
         var capturedRequest: URLRequest?
         TextTextSyncURLProtocol.handler = { request in
             capturedRequest = request
-            let response = try XCTUnwrap(HTTPURLResponse(
-                url: try XCTUnwrap(request.url), statusCode: 201,
-                httpVersion: nil, headerFields: nil))
-            let data = Data(#"{"item":{"file":"posts/item.txt","representation":"text","kind":"note","slug":"item","title":"Item","status":"draft","hash":"h","id":"p1"}}"#.utf8)
+            let response = try XCTUnwrap(
+                HTTPURLResponse(
+                    url: try XCTUnwrap(request.url), statusCode: 201,
+                    httpVersion: nil, headerFields: nil))
+            let data = Data(
+                #"{"item":{"file":"posts/item.txt","representation":"text","kind":"note","slug":"item","title":"Item","status":"draft","hash":"h","id":"p1"}}"#
+                    .utf8)
             return (response, data)
         }
         let configuration = URLSessionConfiguration.ephemeral
@@ -94,10 +98,13 @@ final class LiveTextTextSyncAPITests: XCTestCase {
         TextTextSyncURLProtocol.handler = { request in
             representationHeader = request.value(
                 forHTTPHeaderField: "TextText-File-Representation")
-            let response = try XCTUnwrap(HTTPURLResponse(
-                url: try XCTUnwrap(request.url), statusCode: 201,
-                httpVersion: nil, headerFields: nil))
-            let data = Data(#"{"item":{"file":"posts/item.md","representation":"markdown","kind":"note","slug":"item","title":"Item","status":"draft","hash":"h","id":"p1"}}"#.utf8)
+            let response = try XCTUnwrap(
+                HTTPURLResponse(
+                    url: try XCTUnwrap(request.url), statusCode: 201,
+                    httpVersion: nil, headerFields: nil))
+            let data = Data(
+                #"{"item":{"file":"posts/item.md","representation":"markdown","kind":"note","slug":"item","title":"Item","status":"draft","hash":"h","id":"p1"}}"#
+                    .utf8)
             return (response, data)
         }
         let configuration = URLSessionConfiguration.ephemeral
@@ -112,14 +119,91 @@ final class LiveTextTextSyncAPITests: XCTestCase {
         XCTAssertEqual(representationHeader, "markdown")
     }
 
+    func testAgentUpdateUsesTheCommandRouteWithBoundedMetadata() async throws {
+        var capturedRequest: URLRequest?
+        var capturedBody: Data?
+        TextTextSyncURLProtocol.handler = { request in
+            capturedRequest = request
+            capturedBody = try requestBodyData(request)
+            let response = try XCTUnwrap(
+                HTTPURLResponse(
+                    url: try XCTUnwrap(request.url), statusCode: 200,
+                    httpVersion: nil, headerFields: nil))
+            let data = Data(
+                #"{"content":[{"type":"text","text":"{}"}],"structuredContent":{"item":{"id":"p1","title":"Item","hash":"h2"}}}"#
+                    .utf8)
+            return (response, data)
+        }
+        let api = makeAPI()
+
+        let result = await api.agentUpdateItem(
+            postId: "p1", markdown: "# Item", ifMatchHash: "h1",
+            agentName: "Codex", agentIntent: "Tighten the introduction")
+
+        let request = try XCTUnwrap(capturedRequest)
+        XCTAssertEqual(request.url?.path, "/api/agent/commands")
+        XCTAssertEqual(
+            request.value(forHTTPHeaderField: "X-TextText-Agent-Name"), "Codex")
+        XCTAssertEqual(
+            request.value(forHTTPHeaderField: "X-TextText-Agent-Intent"),
+            "Tighten the introduction")
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try XCTUnwrap(capturedBody))
+                as? [String: Any])
+        XCTAssertEqual(object["name"] as? String, "update_item")
+        let arguments = try XCTUnwrap(object["arguments"] as? [String: String])
+        XCTAssertEqual(arguments["id"], "p1")
+        XCTAssertEqual(arguments["if_match_hash"], "h1")
+        guard case .success(let reply) = result else {
+            return XCTFail("agentUpdateItem failed: \(result)")
+        }
+        XCTAssertEqual(reply.structuredContent?.item?.hash, "h2")
+    }
+
+    func testAgentSectionUpdateSendsGuardedSurgicalArguments() async throws {
+        var capturedBody: Data?
+        TextTextSyncURLProtocol.handler = { request in
+            capturedBody = try requestBodyData(request)
+            let response = try XCTUnwrap(
+                HTTPURLResponse(
+                    url: try XCTUnwrap(request.url), statusCode: 200,
+                    httpVersion: nil, headerFields: nil))
+            return (
+                response,
+                Data(
+                    #"{"content":[{"type":"text","text":"{}"}],"structuredContent":{"item":{"id":"p1","title":"Item","hash":"h2"}}}"#
+                        .utf8))
+        }
+        let api = makeAPI()
+
+        _ = await api.agentUpdateItemSection(
+            postId: "p1", section: "## Pricing",
+            expectedBody: "Ten dollars.", replacementBody: "Twelve dollars.",
+            ifMatchHash: "h1", agentName: "Codex",
+            agentIntent: "Update pricing")
+
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try XCTUnwrap(capturedBody))
+                as? [String: Any])
+        XCTAssertEqual(object["name"] as? String, "update_item")
+        let arguments = try XCTUnwrap(object["arguments"] as? [String: String])
+        XCTAssertEqual(arguments["section"], "## Pricing")
+        XCTAssertEqual(arguments["expected_section_body"], "Ten dollars.")
+        XCTAssertEqual(arguments["body"], "Twelve dollars.")
+        XCTAssertEqual(arguments["if_match_hash"], "h1")
+    }
+
     func testTextPackReadRequestsAndDecodesStructuredDocument() async throws {
         var acceptHeader: String?
         TextTextSyncURLProtocol.handler = { request in
             acceptHeader = request.value(forHTTPHeaderField: "Accept")
-            let response = try XCTUnwrap(HTTPURLResponse(
-                url: try XCTUnwrap(request.url), statusCode: 200,
-                httpVersion: nil, headerFields: ["ETag": "\"document-hash\""]))
-            let data = Data(##"{"schema":"texttext.sync-document.v1","markdown":"# Hello","document":{"schema":1,"content":{"body":"Hello"}}}"##.utf8)
+            let response = try XCTUnwrap(
+                HTTPURLResponse(
+                    url: try XCTUnwrap(request.url), statusCode: 200,
+                    httpVersion: nil, headerFields: ["ETag": "\"document-hash\""]))
+            let data = Data(
+                ##"{"schema":"texttext.sync-document.v1","markdown":"# Hello","document":{"schema":1,"content":{"body":"Hello"}}}"##
+                    .utf8)
             return (response, data)
         }
         let api = makeAPI()
@@ -142,10 +226,13 @@ final class LiveTextTextSyncAPITests: XCTestCase {
         TextTextSyncURLProtocol.handler = { request in
             capturedRequest = request
             capturedBody = try requestBodyData(request)
-            let response = try XCTUnwrap(HTTPURLResponse(
-                url: try XCTUnwrap(request.url), statusCode: 201,
-                httpVersion: nil, headerFields: nil))
-            let data = Data(#"{"item":{"file":"posts/item.textpack","representation":"textpack","kind":"note","slug":"item","title":"Item","status":"draft","hash":"markdown-hash","documentHash":"document-hash","id":"p1"}}"#.utf8)
+            let response = try XCTUnwrap(
+                HTTPURLResponse(
+                    url: try XCTUnwrap(request.url), statusCode: 201,
+                    httpVersion: nil, headerFields: nil))
+            let data = Data(
+                #"{"item":{"file":"posts/item.textpack","representation":"textpack","kind":"note","slug":"item","title":"Item","status":"draft","hash":"markdown-hash","documentHash":"document-hash","id":"p1"}}"#
+                    .utf8)
             return (response, data)
         }
         let api = makeAPI()
@@ -175,10 +262,13 @@ final class LiveTextTextSyncAPITests: XCTestCase {
         var capturedRequest: URLRequest?
         TextTextSyncURLProtocol.handler = { request in
             capturedRequest = request
-            let response = try XCTUnwrap(HTTPURLResponse(
-                url: try XCTUnwrap(request.url), statusCode: 200,
-                httpVersion: nil, headerFields: nil))
-            let data = Data(#"{"item":{"file":"posts/item.textpack","representation":"textpack","kind":"note","slug":"item","title":"Item","status":"draft","hash":"markdown-hash","documentHash":"next-document-hash","id":"p1"}}"#.utf8)
+            let response = try XCTUnwrap(
+                HTTPURLResponse(
+                    url: try XCTUnwrap(request.url), statusCode: 200,
+                    httpVersion: nil, headerFields: nil))
+            let data = Data(
+                #"{"item":{"file":"posts/item.textpack","representation":"textpack","kind":"note","slug":"item","title":"Item","status":"draft","hash":"markdown-hash","documentHash":"next-document-hash","id":"p1"}}"#
+                    .utf8)
             return (response, data)
         }
         let api = makeAPI()
@@ -189,8 +279,9 @@ final class LiveTextTextSyncAPITests: XCTestCase {
             ifMatch: "base-document-hash")
 
         let request = try XCTUnwrap(capturedRequest)
-        XCTAssertEqual(request.value(forHTTPHeaderField: "If-Match"),
-                       "\"base-document-hash\"")
+        XCTAssertEqual(
+            request.value(forHTTPHeaderField: "If-Match"),
+            "\"base-document-hash\"")
         XCTAssertEqual(
             request.value(forHTTPHeaderField: "Content-Type"),
             "application/vnd.texttext.document+json")

@@ -27,7 +27,7 @@
 //    mid-drag. Segments are keyed by source offset so an unchanged text
 //    reconciles without touching the nodes the selection lives in.
 
-import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 export type SurfaceSelection = {
   clientId: number;
@@ -136,6 +136,19 @@ function offsetOf(root: HTMLElement, node: Node, nodeOffset: number): number {
   return total;
 }
 
+function selectionOffsets(
+  root: HTMLElement | null,
+): { anchor: number; head: number } | null {
+  const selection = window.getSelection();
+  if (!root || !selection || selection.rangeCount === 0) return null;
+  const range = selection.getRangeAt(0);
+  if (!root.contains(range.startContainer)) return null;
+  return {
+    anchor: offsetOf(root, range.startContainer, range.startOffset),
+    head: offsetOf(root, range.endContainer, range.endOffset),
+  };
+}
+
 /** The DOM position for an absolute character offset. */
 function positionAt(
   root: HTMLElement,
@@ -181,28 +194,20 @@ export function MarkdownSurface({
   const rangeRef = useRef<{ anchor: number; head: number } | null>(null);
   const renderedValueRef = useRef<string | null>(null);
 
-  const readSelection = useCallback(() => {
-    const root = ref.current;
-    const selection = window.getSelection();
-    if (!root || !selection || selection.rangeCount === 0) return null;
-    const range = selection.getRangeAt(0);
-    if (!root.contains(range.startContainer)) return null;
-    return {
-      anchor: offsetOf(root, range.startContainer, range.startOffset),
-      head: offsetOf(root, range.endContainer, range.endOffset),
-    };
-  }, [ref]);
-
-  const reportSelection = useCallback(() => {
-    const at = readSelection();
+  const reportSelection = () => {
+    const at = selectionOffsets(ref.current);
     if (!at) return;
     rangeRef.current = at;
     onSelection(at.anchor, at.head);
-  }, [onSelection, readSelection]);
+  };
 
   useEffect(() => {
     const onSelectionChange = () => {
-      if (document.activeElement === ref.current) reportSelection();
+      if (document.activeElement !== ref.current) return;
+      const at = selectionOffsets(ref.current);
+      if (!at) return;
+      rangeRef.current = at;
+      onSelection(at.anchor, at.head);
     };
     const onPointerUp = () => {
       draggingRef.current = false;
@@ -213,18 +218,18 @@ export function MarkdownSurface({
       document.removeEventListener("selectionchange", onSelectionChange);
       document.removeEventListener("pointerup", onPointerUp);
     };
-  }, [ref, reportSelection]);
+  }, [onSelection, ref]);
 
-  const publish = useCallback(() => {
+  const publish = () => {
     const root = ref.current;
     if (!root || composingRef.current) return;
-    const at = readSelection();
+    const at = selectionOffsets(root);
     if (at) rangeRef.current = at;
     // textContent is exactly the source, because every child is inline and
     // newlines are literal characters. contentEditable="plaintext-only" keeps
     // it that way: no pasted markup, no browser-invented elements.
     onChange(root.textContent ?? "");
-  }, [onChange, readSelection, ref]);
+  };
 
   // React must NOT own these children. The browser inserts text nodes as the
   // writer types, React does not know about them, and reconciling against its
@@ -243,7 +248,7 @@ export function MarkdownSurface({
     if (builtRef.current === signature && root.textContent === value) return;
 
     const focused = document.activeElement === root;
-    const keep = focused ? (readSelection() ?? rangeRef.current) : null;
+    const keep = focused ? (selectionOffsets(root) ?? rangeRef.current) : null;
 
     const carets = selections
       .filter((selection) => selection.from === selection.to)

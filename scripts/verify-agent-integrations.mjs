@@ -1,11 +1,12 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 
 const root = process.cwd();
 const hostedMcpUrl = "https://texttext.app/api/mcp";
-const tokenEnvVar = "TEXTTEXT_WORKSPACE_TOKEN";
 const pluginName = "texttext";
 const pluginVersion = "0.1.0";
+const canonicalCli = "/Applications/TextText.app/Contents/Helpers/texttext";
 const skillNames = [
   "texttext",
   "live-document",
@@ -13,6 +14,7 @@ const skillNames = [
   "project-changelog",
   "publish-collaborate",
 ];
+const commandNames = ["canvas", "changelog"];
 
 function fail(message) {
   throw new Error(`Agent integration verification failed: ${message}`);
@@ -30,19 +32,39 @@ function assert(condition, message) {
   if (!condition) fail(message);
 }
 
+function runIfAvailable(command, args) {
+  const version = spawnSync(command, ["--version"], {
+    encoding: "utf8",
+    stdio: "pipe",
+  });
+  if (version.error?.code === "ENOENT") return { skipped: true };
+  if (version.status !== 0) {
+    fail(`${command} is installed but --version failed: ${version.stderr}`);
+  }
+
+  const result = spawnSync(command, args, {
+    cwd: root,
+    encoding: "utf8",
+    stdio: "pipe",
+  });
+  if (result.status !== 0) {
+    fail(
+      `${command} ${args.join(" ")} failed:\n${result.stdout}\n${result.stderr}`,
+    );
+  }
+  return { skipped: false };
+}
+
 const codexMarketplace = readJson(".agents/plugins/marketplace.json");
 const claudeMarketplace = readJson(".claude-plugin/marketplace.json");
 const codexManifest = readJson("plugins/texttext/.codex-plugin/plugin.json");
 const claudeManifest = readJson("plugins/texttext/.claude-plugin/plugin.json");
-const mcpConfig = readJson("plugins/texttext/.mcp.json");
 const integrationSource = read("src/lib/agent-integrations.ts");
-const starterGuideSource = read("src/lib/store.ts");
 const connectPanelSource = read("src/components/ConnectPanel.tsx");
 const pluginReadme = read("plugins/texttext/README.md");
-const commandNames = ["canvas", "changelog"];
+const mainSkill = read("plugins/texttext/skills/texttext/SKILL.md");
 
 for (const [path, contents] of [
-  ["plugins/texttext/.mcp.json", read("plugins/texttext/.mcp.json")],
   ["plugins/texttext/README.md", pluginReadme],
   ["src/lib/agent-integrations.ts", integrationSource],
 ]) {
@@ -53,9 +75,13 @@ for (const [path, contents] of [
 }
 
 assert(
-  connectPanelSource.includes("--bearer-token-env-var TEXTTEXT_WORKSPACE_TOKEN") &&
-    connectPanelSource.includes("Authorization: Bearer \\${TEXTTEXT_WORKSPACE_TOKEN}"),
-  "direct MCP recipes must keep bearer tokens out of saved client configuration",
+  connectPanelSource.includes(
+    "--bearer-token-env-var TEXTTEXT_WORKSPACE_TOKEN",
+  ) &&
+    connectPanelSource.includes(
+      "Authorization: Bearer \\${TEXTTEXT_WORKSPACE_TOKEN}",
+    ),
+  "advanced direct MCP recipes must keep bearer tokens out of saved client configuration",
 );
 assert(
   !connectPanelSource.includes("codex mcp login texttext"),
@@ -76,8 +102,8 @@ assert(
   "Codex marketplace points at the wrong plugin package",
 );
 assert(
-  codexEntry.policy?.authentication === "ON_INSTALL",
-  "Codex plugin must declare that authentication is required",
+  codexEntry.policy?.authentication === "ON_USE",
+  "Codex plugin must not request authentication during local installation",
 );
 assert(
   claudeMarketplace.name === pluginName,
@@ -88,45 +114,54 @@ assert(
   claudeEntry.source === "./plugins/texttext",
   "Claude marketplace points at the wrong plugin package",
 );
+assert(
+  claudeEntry.description === claudeManifest.description,
+  "Claude marketplace description must match the installed plugin",
+);
 
 for (const [client, manifest] of [
   ["Codex", codexManifest],
   ["Claude", claudeManifest],
 ]) {
   assert(manifest.name === pluginName, `${client} manifest name drifted`);
-  assert(
-    manifest.version === pluginVersion,
-    `${client} manifest version drifted`,
-  );
-  assert(
-    Array.isArray(manifest.skills) &&
-      manifest.skills.length === skillNames.length,
-    `${client} manifest must expose every TextText skill`,
-  );
 }
 
 assert(
-  mcpConfig.mcpServers?.texttext?.type === "http",
-  "plugin MCP transport must be HTTP",
+  claudeManifest.version === pluginVersion,
+  "Claude manifest version drifted",
 );
 assert(
-  mcpConfig.mcpServers?.texttext?.url === hostedMcpUrl,
-  "plugin MCP endpoint drifted",
-);
-assert(
-  mcpConfig.mcpServers?.texttext?.bearer_token_env_var === tokenEnvVar,
-  "Codex must resolve the TextText bearer token from the documented environment variable",
-);
-assert(
-  mcpConfig.mcpServers?.texttext?.headers?.Authorization ===
-    `Bearer \${${tokenEnvVar}}`,
-  "Claude Code must resolve the TextText bearer token from the documented environment variable",
+  new RegExp(`^${pluginVersion.replaceAll(".", "\\.")}\\+codex\\.[0-9]{14}$`).test(
+    codexManifest.version,
+  ),
+  "Codex manifest must carry exactly one timestamped cachebuster",
 );
 
-const credentialDocs = `${read("plugins/texttext/.mcp.json")}\n${pluginReadme}`;
 assert(
-  !/wsk_[A-Za-z0-9_-]{43}/.test(credentialDocs),
-  "the shipped plugin must not contain a workspace-token credential",
+  codexManifest.skills === "./skills",
+  "Codex manifest must discover every skill from its skills directory",
+);
+assert(
+  Array.isArray(claudeManifest.skills) &&
+    claudeManifest.skills.length === skillNames.length,
+  "Claude manifest must expose every TextText skill",
+);
+
+assert(
+  !codexManifest.keywords?.includes("mcp"),
+  "Codex local plugin must not advertise a bundled MCP integration",
+);
+assert(
+  Array.isArray(codexManifest.interface?.defaultPrompt) &&
+    codexManifest.interface.defaultPrompt.some((prompt) =>
+      prompt.includes("local TextText command"),
+    ),
+  "Codex default prompt must lead with the local command",
+);
+
+assert(
+  !existsSync(join(root, "plugins/texttext/.mcp.json")),
+  "local plugin must not bundle hosted MCP or start an authenticated server",
 );
 
 for (const skillName of skillNames) {
@@ -139,6 +174,19 @@ for (const skillName of skillNames) {
   );
   assert(!skill.includes("TODO"), `${path} contains unfinished guidance`);
   assert(!skill.includes("\u2014"), `${path} contains an em dash`);
+  assert(
+    skill.includes(canonicalCli),
+    `${path} does not fall back to the canonical bundled CLI`,
+  );
+  assert(
+    skill.includes('"$TEXTTEXT_CMD" ls'),
+    `${path} does not verify the local connection with a harmless read`,
+  );
+  assert(
+    !skill.includes("TEXTTEXT_WORKSPACE_TOKEN") &&
+      !skill.includes("same Terminal"),
+    `${path} sends a local user through hosted authentication`,
+  );
 }
 
 for (const commandName of commandNames) {
@@ -148,74 +196,97 @@ for (const commandName of commandNames) {
   assert(command.includes("$ARGUMENTS"), `${path} does not accept arguments`);
   assert(!command.includes("TODO"), `${path} contains unfinished guidance`);
   assert(!command.includes("\u2014"), `${path} contains an em dash`);
+  assert(
+    command.includes("local `texttext` command"),
+    `${path} does not lead with the local CLI`,
+  );
 }
 
 for (const required of [
-  hostedMcpUrl,
   "claude plugin marketplace add tetrisgm/TextText",
   "claude plugin install texttext@texttext",
   "codex plugin marketplace add tetrisgm/TextText",
   "codex plugin add texttext@texttext",
-  "https://chatgpt.com/#settings/Connectors",
-  tokenEnvVar,
-  "Copy secure token prompt",
+  "command -v texttext",
+  canonicalCli,
 ]) {
   assert(
     integrationSource.includes(required),
     `the product connection catalog is missing ${required}`,
   );
-}
-
-for (const required of [
-  tokenEnvVar,
-  "Their plugin installers do not ask for",
-  "client from that same Terminal",
-]) {
-  assert(
-    starterGuideSource.includes(required),
-    `the starter connection guide is missing ${required}`,
-  );
-}
-
-for (const required of [
-  "claude plugin marketplace add tetrisgm/TextText",
-  "claude plugin install texttext@texttext",
-  "codex plugin marketplace add tetrisgm/TextText",
-  "codex plugin add texttext@texttext",
-  hostedMcpUrl,
-  "/texttext:canvas",
-  "/texttext:changelog",
-  tokenEnvVar,
-  "does not ask for a generic bearer token during plugin installation",
-  'read -rs "TEXTTEXT_WORKSPACE_TOKEN?Paste your TextText token: "',
-]) {
   assert(
     pluginReadme.includes(required),
     `the plugin README is missing ${required}`,
   );
 }
 
-for (const unsupportedClaim of [
-  "Claude asks for a revocable TextText workspace token",
-  "Codex asks for the same revocable workspace token",
-  "codex mcp login texttext",
+for (const forbidden of [
+  "TEXTTEXT_TOKEN_PROMPT_COMMAND",
+  "TEXTTEXT_WORKSPACE_TOKEN",
+  "same Terminal",
+  "chatgpt.com/#settings/Connectors",
+  'id: "chatgpt"',
 ]) {
   assert(
-    !pluginReadme.includes(unsupportedClaim),
-    `the plugin README makes an unsupported authentication claim: ${unsupportedClaim}`,
+    !integrationSource.includes(forbidden),
+    `the recommended connection catalog still contains ${forbidden}`,
+  );
+  assert(
+    !pluginReadme.includes(forbidden),
+    `the local plugin README still contains ${forbidden}`,
   );
 }
 
-for (const [path, contents] of [
-  ["src/lib/agent-integrations.ts", integrationSource],
-  ["src/lib/store.ts", starterGuideSource],
+for (const required of [
+  "command -v texttext",
+  canonicalCli,
+  '"$TEXTTEXT_CMD" ls',
+  "Do not start MCP",
 ]) {
+  assert(mainSkill.includes(required), `the main skill is missing ${required}`);
+}
+
+for (const required of [hostedMcpUrl, "Remote and TestFlight clients"]) {
   assert(
-    !contents.includes("when the plugin asks for the TextText credential"),
-    `${path} falsely claims that a plugin installer collects the workspace token`,
+    pluginReadme.includes(required),
+    `the explicit remote alternative is missing ${required}`,
+  );
+}
+
+const claudeValidation = runIfAvailable("claude", [
+  "plugin",
+  "validate",
+  "--strict",
+  "plugins/texttext",
+]);
+
+// Codex does not currently expose a read-only plugin validation command. Do
+// not repurpose CODEX_HOME or mutate the owner's configured marketplaces just
+// to exercise an installer. The marketplace and plugin manifests are parsed
+// and checked above, while the official plugin validator runs in the release
+// gate. This verifier remains strictly read-only.
+const codexValidation = { skipped: false };
+
+if (process.platform === "darwin" && existsSync(canonicalCli)) {
+  const cliHelp = spawnSync(canonicalCli, ["--help"], {
+    encoding: "utf8",
+    stdio: "pipe",
+  });
+  assert(
+    cliHelp.status === 0,
+    "the canonical bundled TextText CLI did not run",
+  );
+  assert(
+    cliHelp.stdout.includes("texttext ls") &&
+      cliHelp.stdout.includes("texttext new"),
+    "the canonical bundled CLI does not expose the commands taught by the plugin",
   );
 }
 
 console.log(
-  `Agent integrations verified: 2 native plugins, ${skillNames.length} skills, ${commandNames.length} Claude commands, token-authenticated hosted MCP, and conditional ChatGPT setup.`,
+  [
+    `Agent integrations verified: token-free local plugins, ${skillNames.length} skills, ${commandNames.length} Claude commands, and explicit hosted MCP.`,
+    `Claude parser: ${claudeValidation.skipped ? "not installed" : "passed"}.`,
+    `Codex manifest contract: ${codexValidation.skipped ? "not installed" : "passed"}.`,
+  ].join(" "),
 );
