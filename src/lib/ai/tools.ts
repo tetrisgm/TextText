@@ -208,7 +208,16 @@ const createItemInput = z
     folder_path: folderPath
       .optional()
       .describe(
-        'The destination folder path. Defaults to the Blog folder at "blog".',
+        'The destination folder path. Structured creation defaults to the Blog folder at "blog". Quick capture chooses Notes or Bookmarks automatically.',
+      ),
+    capture: z
+      .string()
+      .trim()
+      .min(1)
+      .max(1_000_000)
+      .optional()
+      .describe(
+        "The raw thought, passage, transcript, or URL to save quickly. Pass this by itself and TextText derives the title, routes text to Notes or a URL to Bookmarks, and returns a save receipt.",
       ),
     title: z.string().trim().min(1).max(300).optional(),
     body: z.string().max(1_000_000).optional(),
@@ -245,10 +254,24 @@ const createItemInput = z
       value.template_id !== undefined ||
       value.template_version !== undefined ||
       value.fields !== undefined;
-    if (!value.markdown && !value.title && !value.body?.trim()) {
+    if (
+      !value.capture &&
+      !value.markdown &&
+      !value.title &&
+      !value.body?.trim()
+    ) {
       context.addIssue({
         code: "custom",
-        message: "Pass markdown, a title, or body text for the new item.",
+        message:
+          "Pass capture text, markdown, a title, or body text for the new item.",
+      });
+    }
+    if (value.capture && (value.markdown || structured)) {
+      context.addIssue({
+        code: "custom",
+        path: ["capture"],
+        message:
+          "Pass capture by itself. Use structured fields or markdown when you need to control the item shape.",
       });
     }
     if (value.markdown && structured) {
@@ -365,6 +388,17 @@ const updateItemInput = z
   })
   .strict()
   .superRefine((value, context) => {
+    const replacesWholeItem =
+      value.markdown !== undefined ||
+      (value.body !== undefined && value.section === undefined);
+    if (replacesWholeItem && !value.if_match_hash) {
+      context.addIssue({
+        code: "custom",
+        path: ["if_match_hash"],
+        message:
+          "Whole-item replacement requires if_match_hash from read_item. Targeted text_edit and section edits use their own live-content guards.",
+      });
+    }
     if (value.text_edit !== undefined) {
       if (value.text_edit.end < value.text_edit.start) {
         context.addIssue({
@@ -673,14 +707,14 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   create_item: defineTool("create_item", {
     title: "Create item",
     description:
-      "Create one draft item in a folder from fields or a full markdown file. Never published, never pinned. Automated clients should pass a stable idempotency_key so retries cannot create duplicates.",
+      "Save something to TextText. For quick capture, pass capture alone: text becomes a private Note and a URL becomes a Bookmark, with a receipt in the result. For precise creation, pass fields or a full markdown file and choose a folder. New items are never published or pinned. Automated clients should pass a stable idempotency_key so retries cannot create duplicates.",
     inputSchema: createItemInput,
     mutability: "write",
   }),
   update_item: defineTool("update_item", {
     title: "Update item",
     description:
-      "Update one item's content or metadata: title, body, excerpt, tags, slug, cover, pin, publication date, and custom template fields via the fields map. Full markdown may update the same fields. Cannot publish, unpublish, or move an item.",
+      "Update one item's content or metadata: title, body, excerpt, tags, slug, cover, pin, publication date, and custom template fields via the fields map. A full body or markdown replacement requires if_match_hash from read_item. Targeted text_edit and section edits use their own expected-content guards. Cannot publish, unpublish, or move an item.",
     inputSchema: updateItemInput,
     mutability: "write",
     destructive: true,

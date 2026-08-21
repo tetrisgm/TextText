@@ -17,6 +17,55 @@ unverified until exercised. The Notion-look polish continues, but behavior
 outranks look, and the owner's Notion screenshots set the bar, not the old
 polish ledger.
 
+## Agentic text inbox loop (2026-08-20)
+
+- The product loop is now explicit: capture instantly, retrieve from any
+  authorized AI, make a visible guarded change, then verify or recover. The
+  competitive contract and Pen/Paper inventory live in
+  `docs/agentic-text-product.md`.
+- Library capture accepts a thought, note, link, or AI answer without leaving
+  the current view. Text routes to Notes and URLs route to Bookmarks through
+  the shared `create_item` command. A durable six-item queue keeps the raw
+  input and stable idempotency key before clearing the composer. Reload,
+  rapid capture, Retry, View, Copy, Discard, confirmed Undo, and queue-full
+  recovery are covered.
+- Browser, standalone Mac quick capture, signed-in `texttext capture`, Claude
+  and Codex plugin skills, and hosted MCP use the same routing semantics. A
+  successful capture returns an authoritative receipt with the exact title,
+  destination, item id, and Open action. The UI never predicts success from
+  model prose or requested arguments.
+- Retrieval uses one normalized ranked token matcher in Library, MCP, and the
+  local CLI. `texttext search` returns exact ids, snippets, hashes, and folder
+  paths; `texttext read <id>` resolves the exact item. Read-only credentials
+  can search and read, while mutation commands still require full scope.
+- Assistant receipts are derived only from validated command results. Native
+  writes report Updated only after acknowledgement, known authorization and
+  stale-write failures roll back, whole-document replacement requires a hash,
+  and targeted text or section edits keep their narrower guards. Completed
+  receipts survive a later provider error instead of being replaced by a
+  false total failure.
+- Recent-work summaries use an access-scoped, newest-first SQL query capped at
+  12 items. Selection quick actions are server-enforced read-only until Apply,
+  and user content is fenced as untrusted context so text inside a note cannot
+  grant the assistant write access.
+- External-agent folder, template, asset, capture-status, comment, restore,
+  publish, and document mutations now write their attributed audit atomically
+  with the mutation. Failed storage or audit work cannot leave an unaudited
+  content change behind.
+- Visual proof covers Library capture, six simultaneous receipts, assistant
+  safe areas, and failed-capture recovery at 1440, 768, and 375 pixels in both
+  themes. The native bridge proof uses a disposable local item and exercises
+  zero-tool summary, exact read, guarded live edit, AI audit, Apply, and Undo.
+- Settled verification passed 1,063 web tests, 509 Swift tests, TypeScript,
+  lint with zero errors, both agent integration verifiers, the real read-only
+  Codex runtime, the native browser bridge, and the 44-page production build.
+  The build retains the known non-blocking duplicate-Yjs warning from separate
+  Turbopack route chunks.
+- This is source work only. No app was installed, no deployment or promotion
+  ran, and no TestFlight, App Store Connect, release-record, or update-channel
+  action occurred. The installed and public app remain unchanged until the
+  owner deliberately promotes a later commit.
+
 ## Capability scorecard
 
 - [x] Create with substance: agent-created note with body, right folder,

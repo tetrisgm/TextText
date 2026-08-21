@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { Folder } from "@/lib/content";
 import type { WorkspacePoolPost } from "@/lib/pool/types";
 import {
+  normalizeSearchText,
   parseWorkspaceDateQuery,
+  rankSearchText,
   searchWorkspace,
   workspaceRootBodyMode,
   workspaceSearchHandoffIndex,
@@ -61,6 +63,57 @@ describe("workspace search", () => {
     expect(new Set(results.slice(1).map((result) => result.id))).toEqual(
       new Set(["post:preview", "post:body"]),
     );
+  });
+
+  it("finds a remembered note when normalized query tokens are separated", () => {
+    expect(normalizeSearchText("  Launch-brief: Évidence  ")).toBe(
+      "launch brief evidence",
+    );
+    expect(
+      rankSearchText(
+        "Planning note",
+        "Evidence to collect after the launch owner revises the brief.",
+        "launch brief evidence",
+      ),
+    ).not.toBeNull();
+
+    const results = searchWorkspace({
+      folders,
+      posts: [
+        post("match", "Planning note", "2026-07-13T12:00:00.000Z", {
+          bodyPreview:
+            "Evidence to collect after the launch owner revises the brief.",
+        }),
+        post("partial", "Launch brief", "2026-07-14T12:00:00.000Z", {
+          bodyPreview: "Ready to share.",
+        }),
+      ],
+      query: "launch brief evidence",
+    });
+
+    expect(results.map((result) => result.id)).toEqual(["post:match"]);
+  });
+
+  it("keeps exact title matches ahead of token-only body matches", () => {
+    const results = searchWorkspace({
+      folders,
+      posts: [
+        post("tokens", "Planning note", "2026-07-14T12:00:00.000Z", {
+          bodyPreview: "Evidence follows the launch brief.",
+        }),
+        post(
+          "title",
+          "Launch brief evidence",
+          "2026-07-13T12:00:00.000Z",
+        ),
+      ],
+      query: "launch brief evidence",
+    });
+
+    expect(results.map((result) => result.id)).toEqual([
+      "post:title",
+      "post:tokens",
+    ]);
   });
 
   it("parses named and ISO dates and rejects impossible dates", () => {

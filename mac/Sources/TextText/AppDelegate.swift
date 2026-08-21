@@ -38,6 +38,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var webWindow: WebAppWindowController?
     private var sharingServicePicker: NSSharingServicePicker?
     private var quickCaptureController: QuickCaptureController?
+    private var quickCaptureRecoveryController: QuickCaptureRecoveryController?
+    private var quickCaptureFeedback: QuickCaptureFeedback = .ready
     private var quickCaptureHotKey: GlobalHotKey?
     private var quickBookmarkHotKey: GlobalHotKey?
     private var toggleWindowHotKey: GlobalHotKey?
@@ -581,6 +583,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func configureQuickCapture() {
         do {
             quickCaptureOutbox = try QuickCaptureOutbox(baseDirectory: store.baseDir)
+            refreshQuickCaptureFeedback()
         } catch {
             appendActivity(error.localizedDescription)
         }
@@ -630,17 +633,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func newBookmarkAction() {
-        enqueueQuickCapture(
-            QuickCaptureContent(title: "Untitled", body: ""),
-            target: .bookmarks)
+        guard let text = NSPasteboard.general.string(forType: .string),
+            let capture = QuickCaptureIntent(text), capture.target == .bookmarks
+        else {
+            presentQuickCapture()
+            return
+        }
+        enqueueQuickCapture(capture.content, target: capture.target)
     }
 
     @objc private func captureClipboardAction() {
         guard let text = NSPasteboard.general.string(forType: .string),
-              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return
-        }
-        enqueueQuickCapture(QuickCaptureContent.parse(text), target: .notes)
+            let capture = QuickCaptureIntent(text)
+        else { return }
+        enqueueQuickCapture(capture.content, target: capture.target)
     }
 
     private func enqueueQuickCapture(
@@ -653,20 +659,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         do {
             try outbox.enqueue(content, target: target)
+            refreshQuickCaptureFeedback()
             retryQuickCaptureDrain()
         } catch {
+            updateQuickCaptureFeedback(.failed(1))
             appendActivity(error.localizedDescription)
         }
     }
 
     private func presentQuickCapture() {
         if quickCaptureController == nil {
-            quickCaptureController = QuickCaptureController { [weak self] content in
+            quickCaptureController = QuickCaptureController { [weak self] capture in
                 guard let self, let outbox = self.quickCaptureOutbox else {
                     throw QuickCaptureOutboxError.couldNotPersist(
                         "The capture outbox is unavailable")
                 }
-                try outbox.enqueue(content)
+                try outbox.enqueue(capture.content, target: capture.target)
+                self.refreshQuickCaptureFeedback()
                 self.retryQuickCaptureDrain()
             }
         }
@@ -716,6 +725,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 store.cacheWorkspace(data)
             case .failure(let error):
                 appendActivity("Could not file capture: \(error.description)")
+                refreshQuickCaptureFeedback()
                 retryQuickCaptureDrain(delay: 15)
                 return
             }
@@ -735,6 +745,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     workspace: freshWorkspace,
                     client: client)
                 summary.savedItems.append(contentsOf: refreshed.savedItems)
+                summary.savedReceipts.append(contentsOf: refreshed.savedReceipts)
                 summary.rejectedMessages.append(
                     contentsOf: refreshed.rejectedMessages)
                 summary.retryMessages = refreshed.retryMessages
@@ -750,7 +761,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         for message in summary.rejectedMessages {
-            appendActivity("Capture rejected: \(message); kept in Capture Rejected")
+            appendActivity("Capture failed: \(message); kept for recovery")
         }
         if summary.shouldRetry {
             if let message = summary.retryMessages.first {
@@ -758,6 +769,72 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             retryQuickCaptureDrain(delay: 15)
         }
+        refreshQuickCaptureFeedback(recentlySaved: summary.savedReceipts)
+    }
+
+    private func refreshQuickCaptureFeedback(
+        recentlySaved: [QuickCaptureSavedReceipt] = []
+    ) {
+        guard let outbox = quickCaptureOutbox else {
+            updateQuickCaptureFeedback(.failed(1))
+            return
+        }
+        let failed = outbox.rejectedRecordCount()
+        let queued = outbox.pendingRecords().count
+        if failed > 0 {
+            updateQuickCaptureFeedback(.failed(failed))
+        } else if queued > 0 {
+            updateQuickCaptureFeedback(.queued(queued))
+        } else if !recentlySaved.isEmpty {
+            updateQuickCaptureFeedback(.saved(recentlySaved))
+        } else {
+            updateQuickCaptureFeedback(.ready)
+        }
+    }
+
+    private func updateQuickCaptureFeedback(_ feedback: QuickCaptureFeedback) {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in
+                self?.updateQuickCaptureFeedback(feedback)
+            }
+            return
+        }
+        quickCaptureFeedback = feedback
+        statusItem?.button?.toolTip = "\(appName): \(feedback.title)"
+    }
+
+    @objc private func openLastQuickCaptureAction() {
+        guard case .saved(let receipts) = quickCaptureFeedback,
+            let receipt = receipts.last,
+            let handle = store.cachedWorkspace()?.blog.handle
+        else { return }
+        openInMainWindow(
+            TextTextItemOpenTarget(
+                handle: handle,
+                itemId: receipt.itemId,
+                slug: receipt.slug,
+                kind: receipt.kind))
+    }
+
+    @objc private func reviewFailedCapturesAction() {
+        if quickCaptureRecoveryController == nil {
+            quickCaptureRecoveryController = QuickCaptureRecoveryController(
+                loadRecords: { [weak self] in
+                    self?.quickCaptureOutbox?.rejectedRecords() ?? []
+                },
+                retryAll: { [weak self] in
+                    guard let self, let outbox = self.quickCaptureOutbox else {
+                        throw QuickCaptureOutboxError.couldNotPersist(
+                            "The capture outbox is unavailable")
+                    }
+                    let count = try outbox.retryRejectedRecords()
+                    self.refreshQuickCaptureFeedback()
+                    self.retryQuickCaptureDrain()
+                    return count
+                }
+            )
+        }
+        quickCaptureRecoveryController?.present()
     }
 
     // MARK: Share inbox
@@ -2206,6 +2283,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let last = NSMenuItem(title: lastSyncLine(), action: nil, keyEquivalent: "")
         last.isEnabled = false
         menu.addItem(last)
+        if quickCaptureFeedback != .ready {
+            let captureStatus = NSMenuItem(
+                title: quickCaptureFeedback.title,
+                action: #selector(openLastQuickCaptureAction),
+                keyEquivalent: "")
+            captureStatus.target = self
+            captureStatus.isEnabled = {
+                if case .saved(let receipts) = quickCaptureFeedback {
+                    return !receipts.isEmpty
+                }
+                return false
+            }()
+            captureStatus.image = NSImage(
+                systemSymbolName: quickCaptureFeedback.symbolName,
+                accessibilityDescription: quickCaptureFeedback.title)
+            menu.addItem(captureStatus)
+        }
+        if case .failed(let count) = quickCaptureFeedback, count > 0 {
+            menu.addItem(item(
+                "Review failed captures…",
+                #selector(reviewFailedCapturesAction)))
+        }
         menu.addItem(.separator())
 
         // The primary action: the full workspace in a native window.

@@ -26,9 +26,27 @@ export type CloudAssistantActor = {
   handle: string;
 };
 
-export function cloudAssistantToolNames(): WorkspaceToolName[] {
+/**
+ * Exact workspace-command evidence from the cloud model loop.
+ *
+ * The route sends this only to the signed-in workspace owner. The client turns
+ * it into a compact artifact receipt, so a successful create or edit cannot
+ * end as an orphaned chat answer.
+ */
+export type CloudAssistantWorkspaceCall = {
+  tool: WorkspaceToolName;
+  args: Record<string, unknown>;
+  output: unknown;
+};
+
+export type CloudAssistantToolMode = "full" | "read_only";
+
+export function cloudAssistantToolNames(
+  mode: CloudAssistantToolMode = "full",
+): WorkspaceToolName[] {
   return WORKSPACE_TOOL_NAMES.filter((name) => {
     const definition = WORKSPACE_TOOL_DEFINITIONS[name];
+    if (mode === "read_only" && definition.mutability !== "read") return false;
     // Exclude confirmation-gated tools (destructive / sharing / publish): the
     // web path has no interactive confirmation yet.
     if (definition.confirmation !== "none") return false;
@@ -53,9 +71,11 @@ function resultText(
 
 export function cloudAssistantTools(
   actor: CloudAssistantActor,
+  onWorkspaceCall?: (call: CloudAssistantWorkspaceCall) => void,
+  mode: CloudAssistantToolMode = "full",
 ): Record<string, Tool> {
   const tools: Record<string, Tool> = {};
-  for (const name of cloudAssistantToolNames()) {
+  for (const name of cloudAssistantToolNames(mode)) {
     const definition = WORKSPACE_TOOL_DEFINITIONS[name];
     tools[name] = tool({
       description: definition.description,
@@ -63,13 +83,19 @@ export function cloudAssistantTools(
       // union, so the dynamic tool map typechecks; the executor re-validates.
       inputSchema: jsonSchema(definition.jsonSchema),
       execute: async (args: unknown) => {
+        const commandArgs = (args ?? {}) as Record<string, unknown>;
         const result = await runWorkspaceToolForSession(
           name,
-          (args ?? {}) as Record<string, unknown>,
+          commandArgs,
           actor,
         );
         const text = resultText(result);
         if (result.isError) throw new Error(text || `${name} failed`);
+        onWorkspaceCall?.({
+          tool: name,
+          args: commandArgs,
+          output: result.structuredContent ?? {},
+        });
         return text || "Done.";
       },
     });

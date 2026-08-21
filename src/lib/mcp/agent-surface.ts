@@ -12,6 +12,9 @@ write directly to the database.
 
 ## Reliable automation
 
+- For a raw thought, passage, transcript, or URL, call create_item with capture
+  instead of making the user choose a folder or document kind. TextText routes
+  text to Notes and URLs to Bookmarks and returns a receipt.
 - Pass a stable idempotency_key to create_item. Derive it from the durable
   identity of the source, such as a repository URL or project slug.
 - Pass a stable idempotency_key to append_to_item. Derive it from the source

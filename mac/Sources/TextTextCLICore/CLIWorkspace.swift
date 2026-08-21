@@ -14,8 +14,15 @@ public protocol TextTextCLISyncAPI: Sendable {
     func agentReadItem(
         postId: String, agentName: String?, agentIntent: String?
     ) async -> Result<TextTextAgentCommandReply, TextTextSyncError>
+    func agentSearchItems(
+        query: String, agentName: String?, agentIntent: String?
+    ) async -> Result<TextTextAgentCommandReply, TextTextSyncError>
     func agentCreateItem(
         markdown: String, folderPath: String, idempotencyKey: String,
+        agentName: String?, agentIntent: String?
+    ) async -> Result<TextTextAgentCommandReply, TextTextSyncError>
+    func agentCaptureItem(
+        capture: String, folderPath: String?, idempotencyKey: String,
         agentName: String?, agentIntent: String?
     ) async -> Result<TextTextAgentCommandReply, TextTextSyncError>
     func agentUpdateItem(
@@ -63,6 +70,30 @@ public enum CLIDocumentReference: Equatable, Sendable {
         case .local: return nil
         case .remote(let document): return document.itemId
         }
+    }
+}
+
+public struct AgentCaptureReceipt: Equatable, Sendable {
+    public let itemId: String?
+    public let kind: String
+    public let savedTo: String
+    public let title: String
+
+    public init(itemId: String?, kind: String, savedTo: String, title: String) {
+        self.itemId = itemId
+        self.kind = kind
+        self.savedTo = savedTo
+        self.title = title
+    }
+}
+
+public struct CLICaptureResult: Equatable, Sendable {
+    public let reference: CLIDocumentReference
+    public let receipt: AgentCaptureReceipt
+
+    public init(reference: CLIDocumentReference, receipt: AgentCaptureReceipt) {
+        self.reference = reference
+        self.receipt = receipt
     }
 }
 
@@ -138,6 +169,17 @@ public enum CLIWorkspace: Sendable {
                     "remote documents must use a workspace-relative path")
             }
             return .remote(try await store.resolve(name))
+        }
+    }
+
+    /// Search uses the authenticated workspace command instead of downloading
+    /// every folder manifest and document into a second local index.
+    public func search(_ query: String) async throws -> [TextTextAgentSearchResult] {
+        switch self {
+        case .remote(let store): return try await store.search(query)
+        case .local:
+            throw TextTextCLIError.workspaceUnavailable(
+                "search needs the signed-in TextText workspace")
         }
     }
 
@@ -227,6 +269,37 @@ public enum CLIWorkspace: Sendable {
         }
     }
 
+    @discardableResult
+    public func capture(
+        _ input: AgentCaptureInput, rawValue: String, folder: String? = nil,
+        idempotencyKey: String? = nil
+    ) async throws -> CLICaptureResult {
+        switch self {
+        case .local(let store):
+            let url = try store.create(
+                title: input.title, body: input.body,
+                folder: folder ?? input.folder, kind: input.kind,
+                sourceURL: input.sourceURL)
+            let reference = CLIDocumentReference.local(url)
+            let relative = store.relativePath(of: url)
+            return CLICaptureResult(
+                reference: reference,
+                receipt: AgentCaptureReceipt(
+                    itemId: store.itemId(at: url),
+                    kind: input.kind,
+                    savedTo: relative.split(separator: "/").dropLast()
+                        .joined(separator: "/"),
+                    title: input.title))
+        case .remote(let store):
+            let captured = try await store.capture(
+                input, rawValue: rawValue, folder: folder,
+                idempotencyKey: idempotencyKey)
+            return CLICaptureResult(
+                reference: .remote(captured.document),
+                receipt: captured.receipt)
+        }
+    }
+
     public func relativePath(of reference: CLIDocumentReference) -> String {
         switch reference {
         case .local(let url):
@@ -261,7 +334,9 @@ public enum CLIWorkspace: Sendable {
         components.host = "item"
         components.path = "/\(itemId)"
         var query = [URLQueryItem(name: "mode", value: "edit")]
-        if let workspace { query.append(URLQueryItem(name: "workspace", value: workspace)) }
+        if let workspace, !workspace.isEmpty {
+            query.append(URLQueryItem(name: "workspace", value: workspace))
+        }
         components.queryItems = query
         return components.url
     }
@@ -326,6 +401,13 @@ public final class RemoteDocumentStore: @unchecked Sendable {
         let documents = try await snapshot().documents
         let normalized = name.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
 
+        // Search results expose the durable item id. Accepting it directly
+        // makes `texttext search ...` followed by `texttext read <id>` an exact
+        // readback rather than a potentially ambiguous title lookup.
+        if let item = documents.first(where: { $0.itemId == normalized }) {
+            return item
+        }
+
         if let exact = documents.first(where: {
             $0.path.caseInsensitiveCompare(normalized) == .orderedSame
         }) {
@@ -357,6 +439,23 @@ public final class RemoteDocumentStore: @unchecked Sendable {
     public func readMarkdown(at document: RemoteDocument) async throws -> String {
         let content = try await fetchCommandContent(document)
         return content.text
+    }
+
+    public func search(_ query: String) async throws -> [TextTextAgentSearchResult] {
+        switch await api.agentSearchItems(
+            query: query,
+            agentName: CLICommandActor.current?.name,
+            agentIntent: CLICommandActor.current?.message)
+        {
+        case .success(let reply):
+            guard let results = reply.structuredContent?.results else {
+                throw TextTextCLIError.workspaceUnavailable(
+                    "the server returned no search results")
+            }
+            return results
+        case .failure(let error):
+            throw Self.cliError(error)
+        }
     }
 
     public func writeMarkdown(_ markdown: String, to document: RemoteDocument) async throws {
@@ -525,6 +624,77 @@ public final class RemoteDocumentStore: @unchecked Sendable {
             folderId: targetFolder.id,
             workspaceHandle: current.workspace.blog.handle,
             representation: .textpack)
+    }
+
+    @discardableResult
+    public func capture(
+        _: AgentCaptureInput, rawValue: String, folder: String? = nil,
+        idempotencyKey: String? = nil
+    ) async throws -> (document: RemoteDocument, receipt: AgentCaptureReceipt) {
+        let key = idempotencyKey ?? "cli-capture-\(UUID().uuidString.lowercased())"
+
+        func reply(
+            from result: Result<TextTextAgentCommandReply, TextTextSyncError>
+        ) throws -> TextTextAgentCommandReply {
+            switch result {
+            case .success(let value):
+                guard let id = value.structuredContent?.item?.id, !id.isEmpty else {
+                    throw TextTextCLIError.workspaceUnavailable(
+                        "the server captured an item without an identity")
+                }
+                guard let receipt = value.structuredContent?.receipt,
+                    receipt.itemId == id
+                else {
+                    throw TextTextCLIError.workspaceUnavailable(
+                        "the server captured an item without an exact receipt")
+                }
+                return value
+            case .failure(let error): throw Self.cliError(error)
+            }
+        }
+
+        let first = await api.agentCaptureItem(
+            capture: rawValue, folderPath: folder,
+            idempotencyKey: key,
+            agentName: CLICommandActor.current?.name,
+            agentIntent: CLICommandActor.current?.message)
+        let capturedReply: TextTextAgentCommandReply
+        if case .failure(.network) = first {
+            capturedReply = try reply(
+                from: await api.agentCaptureItem(
+                    capture: rawValue, folderPath: folder,
+                    idempotencyKey: key,
+                    agentName: CLICommandActor.current?.name,
+                    agentIntent: CLICommandActor.current?.message))
+        } else {
+            capturedReply = try reply(from: first)
+        }
+        guard let structured = capturedReply.structuredContent,
+            let createdId = structured.item?.id,
+            let authoritative = structured.receipt
+        else {
+            throw TextTextCLIError.workspaceUnavailable(
+                "the server captured an item without an exact receipt")
+        }
+        let receipt = AgentCaptureReceipt(
+            itemId: authoritative.itemId,
+            kind: authoritative.kind,
+            savedTo: authoritative.savedTo,
+            title: authoritative.title)
+
+        // The command receipt is the authority. Do not crawl every manifest
+        // after a successful capture or invent a location from the requested
+        // folder: an idempotent replay may return an item that was moved.
+        let filename = TextTextFilename.filename(
+            title: receipt.title, slug: createdId, representation: .textpack)
+        let document = RemoteDocument(
+            path: [receipt.savedTo, filename].filter { !$0.isEmpty }
+                .joined(separator: "/"),
+            itemId: createdId,
+            folderId: "",
+            workspaceHandle: "",
+            representation: .textpack)
+        return (document, receipt)
     }
 
     private func snapshot() async throws -> Snapshot {

@@ -27,6 +27,18 @@ final class DocumentCreationTests: XCTestCase {
         XCTAssertEqual(url.lastPathComponent, "My Idea.textpack")
     }
 
+    func testBookmarkCaptureKeepsItsCanonicalLink() throws {
+        let url = try store.create(
+            title: "paper.design", body: "[paper.design](https://paper.design/docs/mcp)",
+            folder: "Notes", kind: "bookmark",
+            sourceURL: "https://paper.design/docs/mcp")
+
+        let markdown = try store.readMarkdown(at: url)
+        XCTAssertTrue(
+            markdown.contains(
+                "links: [{\"href\":\"https://paper.design/docs/mcp\",\"label\":\"paper.design\"}]"))
+    }
+
     func testFrontmatterIsSeparatedFromTheBody() throws {
         // Matches how every existing document on disk is laid out.
         let url = try store.create(title: "Spacing", body: "Body.", folder: "Notes")

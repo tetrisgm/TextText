@@ -615,6 +615,16 @@
   }
 }
 
+/* A tablet still benefits from seeing the document beside the inspector, but
+   it does not have room for the user-resized desktop rail. Keep the overlay
+   compact and deterministic so the workspace can reserve a matching safe
+   area without coupling its grid to the assistant again. */
+@media (min-width: 561px) and (max-width: 900px) {
+  .root[data-layout="auto"][data-state] {
+    width: min(320px, 50vw);
+  }
+}
+
 @media (max-width: 560px) {
   .root[data-layout="auto"][data-state] {
     inset: 0;

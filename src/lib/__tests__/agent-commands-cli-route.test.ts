@@ -8,6 +8,12 @@ vi.mock("@/lib/mcp/auth", () => ({
     verifyTextTextApiToken(...args),
 }));
 vi.mock("@/lib/mcp/tools", () => ({
+  resolveMcpScopeAccess: (scopes: string[]) =>
+    scopes.includes("read")
+      ? "read-only"
+      : scopes.includes("sync")
+        ? "full"
+        : "none",
   runWorkspaceToolForAuth: (...args: unknown[]) =>
     runWorkspaceToolForAuth(...args),
 }));
@@ -78,14 +84,51 @@ describe("POST /api/agent/commands", () => {
     );
   });
 
-  it("rejects unapproved tools and insufficient scope", async () => {
+  it("runs the shared read-only search command without inventing a local index", async () => {
+    const response = await POST(command("search", { query: "field notes" }));
+
+    expect(response.status).toBe(200);
+    expect(runWorkspaceToolForAuth).toHaveBeenCalledWith(
+      "search",
+      { query: "field notes" },
+      expect.objectContaining({
+        authInfo: expect.objectContaining({
+          clientId: "user-1",
+          scopes: ["sync"],
+        }),
+      }),
+    );
+  });
+
+  it("allows read scope to search and read but not mutate", async () => {
+    verifyTextTextApiToken.mockResolvedValue({
+      clientId: "user-1",
+      scopes: ["read"],
+      extra: { userId: "user-1", sub: "sub-1" },
+    });
+
+    let response = await POST(command("search", { query: "field notes" }));
+    expect(response.status).toBe(200);
+    response = await POST(command("read_item", { id: "item-1" }));
+    expect(response.status).toBe(200);
+    response = await POST(
+      command("update_item", {
+        id: "item-1",
+        markdown: "# Changed",
+        if_match_hash: "hash-1",
+      }),
+    );
+    expect(response.status).toBe(403);
+  });
+
+  it("rejects unapproved tools and tokens with no workspace scope", async () => {
     let response = await POST(command("delete_item", { id: "item-1" }));
     expect(response.status).toBe(400);
     expect(runWorkspaceToolForAuth).not.toHaveBeenCalled();
 
     verifyTextTextApiToken.mockResolvedValue({
       clientId: "user-1",
-      scopes: ["read"],
+      scopes: [],
       extra: { userId: "user-1", sub: "sub-1" },
     });
     response = await POST(command("read_item", { id: "item-1" }));

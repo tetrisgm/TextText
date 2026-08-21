@@ -53,6 +53,7 @@ import {
   listItemAssetReferences,
   removeItemAssetReferences,
 } from "@/lib/item-assets";
+import { captureFolderPath, captureIntent } from "@/lib/capture-intent";
 import { parseItemInput } from "@/lib/item-creation";
 import {
   parsePostMarkdownFile,
@@ -127,7 +128,7 @@ import {
   itemKindForPost,
   kindsForFolderMode,
   normalizeItemHash,
-  postMatchesQuery,
+  postSearchScore,
   renderItemFile,
   searchSnippet,
 } from "./items";
@@ -902,6 +903,15 @@ export async function executeMcpTool(
           resolved.blog.handle,
           folder.id,
           reference,
+          {
+            audit: mcpAuditEntry(
+              extra,
+              "mcp.set_folder_template",
+              "folder",
+              folder.id,
+              `${input.template_id}@${input.template_version}`,
+            ),
+          },
         );
         // Everything already in the folder moves too, unless the caller asked
         // otherwise. A folder whose index changed while every item in it kept
@@ -913,16 +923,17 @@ export async function executeMcpTool(
                 resolved.blog.handle,
                 folder.id,
                 reference,
+                {
+                  audit: (post) =>
+                    mcpAuditEntry(
+                      extra,
+                      "mcp.set_item_template",
+                      "item",
+                      post.id,
+                      `${input.template_id}@${input.template_version}`,
+                    ),
+                },
               );
-        await recordAction(
-          mcpAuditEntry(
-            extra,
-            "mcp.set_folder_template",
-            "folder",
-            folder.id,
-            `${input.template_id}@${input.template_version} (+${restyled.changed} items)`,
-          ),
-        );
         revalidateBlogPaths(resolved.blog, []);
         return jsonResult({
           folder: updated,
@@ -951,19 +962,21 @@ export async function executeMcpTool(
         const retired = await retireDocumentTemplate(
           resolved.access.blogId,
           input.template_id,
+          {
+            audit: mcpAuditEntry(
+              extra,
+              "mcp.retire_document_template",
+              "workspace",
+              resolved.access.blogId,
+              input.template_id,
+            ),
+          },
         );
         if (!retired) {
           return errorResult(
             "No look with that id is in use in this workspace.",
           );
         }
-        await auditMcp(
-          extra,
-          "mcp.retire_document_template",
-          "workspace",
-          resolved.access.blogId,
-          input.template_id,
-        );
         return jsonResult({
           retired: input.template_id,
           note: "Documents already using it keep rendering unchanged.",
@@ -1090,13 +1103,15 @@ export async function executeMcpTool(
           resolved.blog.handle,
           input.parent_path,
           input.name,
-        );
-        await auditMcp(
-          extra,
-          "mcp.create_folder",
-          "folder",
-          folder.id,
-          folder.path,
+          {
+            audit: mcpAuditEntry(
+              extra,
+              "mcp.create_folder",
+              "folder",
+              undefined,
+              `${input.parent_path}/${input.name}`,
+            ),
+          },
         );
         revalidateBlogPaths(resolved.blog);
         return jsonResult({ folder: folderSummary(folder) });
@@ -1123,13 +1138,15 @@ export async function executeMcpTool(
           resolved.blog.handle,
           input.folder_id,
           input.name,
-        );
-        await auditMcp(
-          extra,
-          "mcp.rename_folder",
-          "folder",
-          folder.id,
-          folder.name,
+          {
+            audit: mcpAuditEntry(
+              extra,
+              "mcp.rename_folder",
+              "folder",
+              input.folder_id,
+              input.name,
+            ),
+          },
         );
         revalidateBlogPaths(resolved.blog);
         return jsonResult({ folder: folderSummary(folder) });
@@ -1149,14 +1166,15 @@ export async function executeMcpTool(
       ).find((entry) => entry.id === input.folder_id);
       if (!folder) return errorResult("Folder not found.");
       try {
-        await trashFolder(resolved.blog.handle, folder.id);
-        await auditMcp(
-          extra,
-          "mcp.delete_folder",
-          "folder",
-          folder.id,
-          folder.path,
-        );
+        await trashFolder(resolved.blog.handle, folder.id, {
+          audit: mcpAuditEntry(
+            extra,
+            "mcp.delete_folder",
+            "folder",
+            folder.id,
+            folder.path,
+          ),
+        });
         revalidateBlogPaths(resolved.blog);
         return jsonResult({
           ok: true,
@@ -1181,14 +1199,15 @@ export async function executeMcpTool(
       );
       if (!folder) return errorResult("Folder not found in Trash.");
       try {
-        await restoreFolder(resolved.blog.handle, folder.id);
-        await auditMcp(
-          extra,
-          "mcp.restore_folder",
-          "folder",
-          folder.id,
-          folder.path,
-        );
+        await restoreFolder(resolved.blog.handle, folder.id, {
+          audit: mcpAuditEntry(
+            extra,
+            "mcp.restore_folder",
+            "folder",
+            folder.id,
+            folder.path,
+          ),
+        });
         revalidateBlogPaths(resolved.blog);
         return jsonResult({
           ok: true,
@@ -1395,16 +1414,32 @@ export async function executeMcpTool(
       const input = args as WorkspaceToolInput<"search">;
       const blog = await requireBlog(extra);
       if (isToolResult(blog)) return blog;
-      const posts = await getAccessibleAllPostFiles(
-        blog.handle,
-        accessUser(extra),
+      const user = accessUser(extra);
+      const [posts, folders] = await Promise.all([
+        getAccessibleAllPostFiles(blog.handle, user),
+        getAccessibleFolders(blog.handle, user),
+      ]);
+      const folderPathById = new Map(
+        folders.map((folder) => [folder.id, folder.path]),
       );
       const results = await Promise.all(
         posts
-          .filter((post) => post.id && postMatchesQuery(post, input.query))
+          .flatMap((post) => {
+            if (!post.id) return [];
+            const score = postSearchScore(post, input.query);
+            return score === null ? [] : [{ post, score }];
+          })
+          .sort(
+            (left, right) =>
+              left.score - right.score ||
+              left.post.title.localeCompare(right.post.title),
+          )
           .slice(0, input.limit ?? 25)
-          .map(async (post) => ({
+          .map(async ({ post }) => ({
             ...(await mcpItemEntry(extra, blog, post, { visiblePosts: posts })),
+            folder_path: post.folderId
+              ? (folderPathById.get(post.folderId) ?? null)
+              : "blog",
             snippet: searchSnippet(post, input.query),
           })),
       );
@@ -1415,10 +1450,28 @@ export async function executeMcpTool(
       const input = args as WorkspaceToolInput<"create_item">;
       const blog = await requireBlog(extra);
       if (isToolResult(blog)) return blog;
+      const captured = input.capture ? captureIntent(input.capture) : null;
+      let destinationPath = input.folder_path;
+      if (captured && !destinationPath) {
+        const folders = await getAccessibleFolders(
+          blog.handle,
+          accessUser(extra),
+        );
+        destinationPath = captureFolderPath(
+          folders,
+          captured.preferredFolderMode,
+        ) ?? undefined;
+        if (!destinationPath) {
+          return errorResult(
+            `Quick capture needs an accessible ${captured.preferredFolderMode} folder. ` +
+              "Create or share that folder, then retry.",
+          );
+        }
+      }
       const folder = await accessibleFolder(
         blog,
         extra,
-        input.folder_path ?? "blog",
+        destinationPath ?? "blog",
       );
       if (isToolResult(folder)) return folder;
       const folderAccess = await resolveFolderAccess({
@@ -1451,7 +1504,19 @@ export async function executeMcpTool(
 
       let parsed: ReturnType<typeof parsePostMarkdownFile>;
       try {
-        parsed = input.markdown
+        parsed = captured
+          ? {
+              fields: {
+                links: captured.sourceUrl
+                  ? [{ label: captured.title, href: captured.sourceUrl }]
+                  : undefined,
+                title: captured.title,
+                type: postTypeForItemKind(captured.kind),
+              },
+              body: captured.body,
+              unknownKeys: [],
+            }
+          : input.markdown
           ? parsePostMarkdownFile(input.markdown)
           : {
               fields: {
@@ -1514,8 +1579,33 @@ export async function executeMcpTool(
               "The original item for this idempotency key is unavailable.",
             );
           }
+          const existingFolders = await getAccessibleFolders(
+            blog.handle,
+            accessUser(extra),
+          );
+          const existingFolderPath = existing.folderId
+            ? existingFolders.find(
+                (candidate) => candidate.id === existing.folderId,
+              )?.path
+            : "blog";
+          if (!existingFolderPath) {
+            return errorResult(
+              "The original item's saved location is no longer accessible.",
+            );
+          }
+          const item = await mcpItemEntry(extra, blog, existing);
           return jsonResult({
-            item: await mcpItemEntry(extra, blog, existing),
+            item,
+            ...(captured
+              ? {
+                  receipt: {
+                    item_id: existing.id,
+                    kind: item.kind,
+                    saved_to: existingFolderPath,
+                    title: item.title,
+                  },
+                }
+              : {}),
             replayed: true,
           });
         }
@@ -1619,8 +1709,19 @@ export async function executeMcpTool(
         return saveErrorResult(error);
       }
       revalidateBlogPaths(blog, [created.slug]);
+      const item = await mcpItemEntry(extra, blog, created);
       return jsonResult({
-        item: await mcpItemEntry(extra, blog, created),
+        item,
+        ...(captured
+          ? {
+              receipt: {
+                item_id: created.id,
+                kind: item.kind,
+                saved_to: folder.path,
+                title: item.title,
+              },
+            }
+          : {}),
         grounding,
         replayed: false,
       });
@@ -2516,15 +2617,17 @@ export async function executeMcpTool(
         resolved.blog.handle,
         input.id,
         sourceUrl.toString(),
+        {
+          audit: mcpAuditEntry(
+            extra,
+            "mcp.recapture_bookmark",
+            "item",
+            input.id,
+            sourceUrl.toString(),
+          ),
+        },
       );
       if (!pending) return errorResult("Bookmark not found.");
-      await auditMcp(
-        extra,
-        "mcp.recapture_bookmark",
-        "item",
-        input.id,
-        sourceUrl.toString(),
-      );
       revalidateBlogPaths(resolved.blog, [resolved.post.slug]);
       return jsonResult({
         item: await mcpItemEntry(extra, resolved.blog, pending),
@@ -2568,14 +2671,16 @@ export async function executeMcpTool(
                 ? resolved.post.date
                 : undefined,
           },
-          { expectedRevision: revision },
-        );
-        await auditMcp(
-          extra,
-          "mcp.add_item_asset",
-          "item",
-          input.id,
-          `${input.placement}: ${asset.filename} (${asset.bytes} bytes)`,
+          {
+            expectedRevision: revision,
+            audit: mcpAuditEntry(
+              extra,
+              "mcp.add_item_asset",
+              "item",
+              input.id,
+              `${input.placement}: ${asset.filename} (${asset.bytes} bytes)`,
+            ),
+          },
         );
         revalidateBlogPaths(resolved.blog, [saved.slug]);
         return jsonResult({
@@ -2619,14 +2724,14 @@ export async function executeMcpTool(
       try {
         const saved = await savePost(resolved.blog.handle, next, {
           expectedRevision: revision,
+          audit: mcpAuditEntry(
+            extra,
+            "mcp.remove_item_asset",
+            "item",
+            input.id,
+            input.asset_url,
+          ),
         });
-        await auditMcp(
-          extra,
-          "mcp.remove_item_asset",
-          "item",
-          input.id,
-          input.asset_url,
-        );
         revalidateBlogPaths(resolved.blog, [saved.slug]);
         return jsonResult({
           item: await mcpItemEntry(extra, resolved.blog, saved),

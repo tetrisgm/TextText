@@ -80,8 +80,8 @@ export default function TroubleshootingPage() {
             Narrow the request to one document and one outcome. Name what must
             not change. Ask for a visible edit before asking the agent to
             reorganize a folder or publish anything. The{" "}
-            <Link href="/docs/getting-started">first-edit guide</Link> provides
-            a known-good request.
+            <Link href="/docs/getting-started">first capture guide</Link>
+            provides a known-good capture, search, and guarded rewrite loop.
           </p>
         </section>
       </main>

@@ -10,14 +10,22 @@ export const metadata: Metadata = {
 const nextSteps = [
   {
     number: "01",
-    title: "Turn notes into a Living brief",
+    title: "Save anything without filing it",
     description:
-      "Give the agent a source folder. Get a readable brief with addressable claims, visible evidence, and source versions.",
+      "Press C in Library, paste a thought, link, meeting note, or useful AI answer, and press Enter. TextText saves it in place and tells you where it went.",
     href: "/docs/getting-started",
-    label: "Build the flagship workflow",
+    label: "Try the one-line inbox",
   },
   {
     number: "02",
+    title: "Turn notes into a Living brief",
+    description:
+      "Give the agent a source folder. Get a readable brief with addressable claims, visible evidence, and source versions.",
+    href: "/docs/recipes",
+    label: "Build the flagship workflow",
+  },
+  {
+    number: "03",
     title: "Connect the AI you use",
     description:
       "Use the assistant inside TextText. In the standalone Mac edition, you can also connect the local TextText plugin to Claude or Codex.",
@@ -25,7 +33,7 @@ const nextSteps = [
     label: "Choose a connection",
   },
   {
-    number: "03",
+    number: "04",
     title: "Learn the working model",
     description:
       "The open document is the canvas. Context and collaborator identity stay visible, while selection quick actions add proposal and Undo controls.",
@@ -41,10 +49,10 @@ export default function DocsIndexPage() {
         <p className="connect-provider-kicker">TextText documentation</p>
         <h1 className="connect-title">Write with agents. Keep the document.</h1>
         <p className="connect-lede">
-          TextText is a shared writing surface for you, other people, and the AI
-          you already use. Start with source material and leave with grounded
-          writing you can inspect, revise, and keep current. Learn connection
-          details only when you need them.
+          TextText is a fast, durable writing home for you, other people, and
+          the AI you already use. Capture first. Organize later. Every saved
+          item becomes material an authorized agent can retrieve, change, and
+          cite without hiding what happened.
         </p>
         <div className="docs-start-path" aria-label="Start here">
           {nextSteps.map((step) => (

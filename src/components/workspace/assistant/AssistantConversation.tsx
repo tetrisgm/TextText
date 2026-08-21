@@ -7,6 +7,7 @@ import type { NativeQuickActionId } from "@/lib/ai/quick-actions";
 import type { CloudAssistantProviderLabel } from "@/lib/ai/cloud-client";
 import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
 import { greeting, startersFor, type StarterContext } from "./starters";
+import type { AssistantArtifactProof } from "./artifact-proof";
 import styles from "./AssistantConversation.module.css";
 
 const FALLBACK_STARTER_CONTEXT: StarterContext = { level: "root" };
@@ -95,6 +96,67 @@ function OutboundTrace({
         </span>
       )}
     </div>
+  );
+}
+
+function ArtifactRow({ proof }: { proof: AssistantArtifactProof }) {
+  return (
+    <div className={styles.artifactRow}>
+      <span className={styles.artifactCopy}>
+        <span className={styles.artifactTitle}>{proof.title}</span>
+        <span className={styles.artifactPath}>{proof.folderPath}</span>
+      </span>
+      {proof.href ? (
+        <a className={styles.artifactOpen} href={proof.href}>
+          Open
+        </a>
+      ) : null}
+    </div>
+  );
+}
+
+/** The concrete TextText item receipt for a completed turn. */
+function ArtifactProof({
+  artifacts,
+}: {
+  artifacts: readonly AssistantArtifactProof[] | undefined;
+}) {
+  if (!artifacts || artifacts.length === 0) return null;
+  const firstOperation = artifacts[0].operation;
+  const sameOperation = artifacts.every(
+    (artifact) => artifact.operation === firstOperation,
+  );
+  if (artifacts.length === 1) {
+    return (
+      <div className={styles.artifactProof} aria-label="TextText proof">
+        <span className={styles.artifactOperation}>{firstOperation}</span>
+        <ArtifactRow proof={artifacts[0]} />
+      </div>
+    );
+  }
+  return (
+    <details className={styles.artifactProof} aria-label="TextText proof">
+      <summary className={styles.artifactSummary}>
+        {sameOperation
+          ? `${firstOperation} ${artifacts.length} TextText items`
+          : `${artifacts.length} verified TextText actions`}
+      </summary>
+      <div className={styles.artifactList}>
+        {artifacts.map((artifact, index) => (
+          <div
+            className={styles.artifactWithOperation}
+            key={`${artifact.operation}-${artifact.itemId}-${index}`}
+          >
+            {!sameOperation ? (
+              <span className={styles.artifactOperation}>
+                {artifact.operation}
+              </span>
+            ) : null}
+            <ArtifactRow proof={artifact} />
+          </div>
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -408,6 +470,7 @@ export function AssistantConversation({
                   <span className={styles.proposalStatus}>Sync pending</span>
                 )}
               </div>
+              <ArtifactProof artifacts={message.artifactProofs} />
             </div>
           );
         }
@@ -450,6 +513,7 @@ export function AssistantConversation({
               </span>
             )}
             <span>{displayedMessageText(message)}</span>
+            <ArtifactProof artifacts={message.artifactProofs} />
             {message.outbound && <OutboundTrace outbound={message.outbound} />}
           </div>
         );

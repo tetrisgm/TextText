@@ -12,7 +12,7 @@ Resolve `TEXTTEXT_CMD` from `texttext` on PATH, then fall back to
 `"$TEXTTEXT_CMD" ls` before continuing.
 
 ```sh
-"$TEXTTEXT_CMD" ls | grep -i changelog          # find it once
+"$TEXTTEXT_CMD" search "<project> changelog" --json  # find it once
 "$TEXTTEXT_CMD" sections "<the changelog>"      # entries are grouped by version
 "$TEXTTEXT_CMD" read "<the changelog>" --section "## 0.143"
 ```
@@ -37,8 +37,7 @@ someone else's.
 
 ## With MCP, when it is already connected and the CLI is not available
 
-1. Call `list_folders`, then search for the project's existing changelog or
-   project note.
+1. Call `search` directly for the project's existing changelog or project note.
 2. If several matches exist, read them and use the one whose project identity
    matches the current repository or product.
 3. Summarize user-facing results, not internal implementation noise.

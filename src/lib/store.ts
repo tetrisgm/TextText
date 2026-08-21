@@ -108,6 +108,7 @@ import {
   type BookmarkCaptureGeneration,
 } from "./bookmark-capture-generation";
 import {
+  AGENT_CONNECTION_CHECK_PROMPT,
   CLAUDE_PLUGIN_INSTALL_COMMAND,
   CODEX_PLUGIN_INSTALL_COMMAND,
   TEXTTEXT_HOSTED_MCP_URL,
@@ -1058,8 +1059,9 @@ Install the TextText plugin from Terminal:
 ${CLAUDE_PLUGIN_INSTALL_COMMAND}
 \`\`\`
 
-Ask Claude to list your TextText workspace. Then open a scratch note and ask it
-to add a heading called **Connection verified** without changing anything else.
+Then paste this verification prompt into Claude:
+
+> ${AGENT_CONNECTION_CHECK_PROMPT}
 
 For a Claude surface that permits person-supplied bearer credentials, add
 ${TEXTTEXT_HOSTED_MCP_URL}, then give it a workspace token from **Connect**.
@@ -1073,8 +1075,9 @@ Install the TextText plugin from Terminal:
 ${CODEX_PLUGIN_INSTALL_COMMAND}
 \`\`\`
 
-Ask Codex to list your TextText workspace. Then open a scratch note and ask it
-to add a heading called **Connection verified** without changing anything else.
+Then paste this verification prompt into Codex:
+
+> ${AGENT_CONNECTION_CHECK_PROMPT}
 
 ## Remote MCP clients
 
@@ -1082,9 +1085,9 @@ Add ${TEXTTEXT_HOSTED_MCP_URL} only to a client that supports remote MCP with a 
 
 ## Check it worked
 
-The connection is verified when the requested heading appears in the open note.
-Read the change, then edit it directly or ask for a smaller correction if you
-do not want to keep the test text.
+The connection is verified when **Agent connection check** appears in Notes and
+the agent can read the saved line back. Keep the private note as a working
+scratchpad or move it to Trash.
 
 ## What agents can do
 
@@ -1259,6 +1262,7 @@ export async function createSubfolder(
   handle: string,
   parentPath: string,
   name: string,
+  options: { audit?: AuditEntry } = {},
 ): Promise<Folder> {
   if (!db) throw new Error("Subfolders need a database.");
   const blogId = await blogIdFor(handle);
@@ -1286,7 +1290,7 @@ export async function createSubfolder(
   for (let attempt = 0; attempt < 9; attempt++) {
     const segment = attempt === 0 ? base : `${base}-${attempt + 1}`;
     const path = `${parent.path}/${segment}`;
-    const inserted = await db
+    const insertQuery = db
       .insert(folders)
       .values({
         blogId,
@@ -1299,8 +1303,31 @@ export async function createSubfolder(
         defaultTemplateVersion: parent.defaultTemplateVersion,
       })
       .onConflictDoNothing()
-      .returning();
-    if (inserted[0]) return mapFolder(inserted[0]);
+      .returning({ id: folders.id });
+    let insertedId: string | undefined;
+    if (options.audit) {
+      const auditCte = auditCteFrom(
+        options.audit,
+        "changed",
+        sql`changed.id::text`,
+      );
+      const result = await db.execute(sql`
+        WITH changed AS ${insertQuery}, audit AS (${auditCte})
+        SELECT id FROM changed
+      `);
+      insertedId = (result.rows[0] as { id?: string } | undefined)?.id;
+    } else {
+      insertedId = (await insertQuery)[0]?.id;
+    }
+    if (insertedId) {
+      const [fresh] = await db
+        .select()
+        .from(folders)
+        .where(and(eq(folders.id, insertedId), eq(folders.blogId, blogId)))
+        .limit(1);
+      if (!fresh) throw new Error("The created folder is unavailable.");
+      return mapFolder(fresh);
+    }
   }
   throw new Error("A folder with that name already exists here.");
 }
@@ -1309,12 +1336,13 @@ export async function renameFolder(
   handle: string,
   folderId: string,
   name: string,
+  options: { audit?: AuditEntry } = {},
 ): Promise<Folder> {
   if (!db) throw new Error("Renaming folders needs a database.");
   const blogId = await blogIdFor(handle);
   const cleanName = name.trim().replace(/\s+/g, " ").slice(0, 80);
   if (!cleanName) throw new Error("A folder needs a name.");
-  const updated = await db
+  const updateQuery = db
     .update(folders)
     .set({ name: cleanName, updatedAt: new Date() })
     .where(
@@ -1324,9 +1352,30 @@ export async function renameFolder(
         isNull(folders.deletedAt),
       ),
     )
-    .returning();
-  if (!updated[0]) throw new Error("Folder not found");
-  return mapFolder(updated[0]);
+    .returning({ id: folders.id });
+  let updatedId: string | undefined;
+  if (options.audit) {
+    const auditCte = auditCteFrom(
+      options.audit,
+      "changed",
+      sql`changed.id::text`,
+    );
+    const result = await db.execute(sql`
+      WITH changed AS ${updateQuery}, audit AS (${auditCte})
+      SELECT id FROM changed
+    `);
+    updatedId = (result.rows[0] as { id?: string } | undefined)?.id;
+  } else {
+    updatedId = (await updateQuery)[0]?.id;
+  }
+  if (!updatedId) throw new Error("Folder not found");
+  const [fresh] = await db
+    .select()
+    .from(folders)
+    .where(and(eq(folders.id, updatedId), eq(folders.blogId, blogId)))
+    .limit(1);
+  if (!fresh) throw new Error("The renamed folder is unavailable.");
+  return mapFolder(fresh);
 }
 
 /**
@@ -1343,6 +1392,7 @@ export async function setFolderTemplate(
   handle: string,
   folderId: string,
   reference: TemplateReference,
+  options: { audit?: AuditEntry } = {},
 ): Promise<Folder> {
   if (!db) throw new Error("Setting a folder's look needs a database.");
   const blogId = await blogIdFor(handle);
@@ -1350,7 +1400,7 @@ export async function setFolderTemplate(
   if (!template) {
     throw new Error(`Unknown template ${reference.id}@${reference.version}`);
   }
-  const updated = await db
+  const updateQuery = db
     .update(folders)
     .set({
       defaultTemplateId: reference.id,
@@ -1364,9 +1414,30 @@ export async function setFolderTemplate(
         isNull(folders.deletedAt),
       ),
     )
-    .returning();
-  if (!updated[0]) throw new Error("Folder not found");
-  return mapFolder(updated[0]);
+    .returning({ id: folders.id });
+  let updatedId: string | undefined;
+  if (options.audit) {
+    const auditCte = auditCteFrom(
+      options.audit,
+      "changed",
+      sql`changed.id::text`,
+    );
+    const result = await db.execute(sql`
+      WITH changed AS ${updateQuery}, audit AS (${auditCte})
+      SELECT id FROM changed
+    `);
+    updatedId = (result.rows[0] as { id?: string } | undefined)?.id;
+  } else {
+    updatedId = (await updateQuery)[0]?.id;
+  }
+  if (!updatedId) throw new Error("Folder not found");
+  const [fresh] = await db
+    .select()
+    .from(folders)
+    .where(and(eq(folders.id, updatedId), eq(folders.blogId, blogId)))
+    .limit(1);
+  if (!fresh) throw new Error("The updated folder is unavailable.");
+  return mapFolder(fresh);
 }
 
 /**
@@ -1383,7 +1454,10 @@ export async function retemplateFolderItems(
   handle: string,
   folderId: string,
   reference: TemplateReference,
-  options: { limit?: number } = {},
+  options: {
+    limit?: number;
+    audit?: (post: Post) => AuditEntry;
+  } = {},
 ): Promise<{ changed: number; remaining: number }> {
   if (!db) throw new Error("Retemplating needs a database.");
   const blogId = await blogIdFor(handle);
@@ -1411,14 +1485,18 @@ export async function retemplateFolderItems(
     ) {
       continue;
     }
-    await savePost(handle, {
-      ...post,
-      document: {
-        ...current,
-        presentation: { ...current.presentation, template: reference },
+    await savePost(
+      handle,
+      {
+        ...post,
+        document: {
+          ...current,
+          presentation: { ...current.presentation, template: reference },
+        },
+        template: reference,
       },
-      template: reference,
-    });
+      { audit: options.audit?.(post) },
+    );
     changed += 1;
   }
   return { changed, remaining: Math.max(0, rows.length - limit) };
@@ -1966,6 +2044,7 @@ export async function markCapturePending(
   handle: string,
   postId: string,
   url: string,
+  options: { audit?: AuditEntry } = {},
 ): Promise<Post | null> {
   if (!db) return null;
   const blogId = await blogIdFor(handle);
@@ -1991,7 +2070,7 @@ export async function markCapturePending(
   });
   delete capture.error;
 
-  const updated = await db
+  const updateQuery = db
     .update(posts)
     .set({ captureStatus: "pending", capture, updatedAt: new Date() })
     .where(
@@ -2002,8 +2081,29 @@ export async function markCapturePending(
         isNull(posts.deletedAt),
       ),
     )
-    .returning();
-  return updated[0] ? mapPost(updated[0]) : null;
+    .returning({ id: posts.id });
+  let updatedId: string | undefined;
+  if (options.audit) {
+    const auditCte = auditCteFrom(
+      options.audit,
+      "changed",
+      sql`changed.id::text`,
+    );
+    const result = await db.execute(sql`
+      WITH changed AS ${updateQuery}, audit AS (${auditCte})
+      SELECT id FROM changed
+    `);
+    updatedId = (result.rows[0] as { id?: string } | undefined)?.id;
+  } else {
+    updatedId = (await updateQuery)[0]?.id;
+  }
+  if (!updatedId) return null;
+  const [fresh] = await db
+    .select()
+    .from(posts)
+    .where(and(eq(posts.id, updatedId), eq(posts.blogId, blogId)))
+    .limit(1);
+  return fresh ? mapPost(fresh) : null;
 }
 
 /**
@@ -2957,6 +3057,74 @@ export async function getAccessibleFolders(
   return allFolders.filter((folder) => ids.has(folder.id));
 }
 
+export type AccessibleRecentPost = {
+  post: Post;
+  folderPath: string;
+};
+
+/**
+ * A small, ordered workspace index for catch-up and summary surfaces.
+ *
+ * Tenant, access, optional folder scope, ordering, and the hard row limit all
+ * live in this query. Callers never need to materialize the workspace just to
+ * find its newest items.
+ */
+export async function getAccessibleRecentPosts(
+  handle: string,
+  user: AccessUser | null,
+  options: { folderPath?: string; limit?: number } = {},
+): Promise<AccessibleRecentPost[]> {
+  if (!db || !user) return [];
+  const visiblePostIds = await accessiblePostIdsForUser(handle, user);
+  if (visiblePostIds !== "all" && visiblePostIds.size === 0) return [];
+
+  const limit = Math.max(
+    1,
+    Math.min(12, Math.trunc(options.limit ?? 12) || 12),
+  );
+  const folderPath = options.folderPath?.trim() || null;
+  const inFolder =
+    folderPath === DEFAULT_FOLDER_PATH
+      ? or(
+          isNull(posts.folderId),
+          eq(folders.path, folderPath),
+          like(folders.path, `${folderPath}/%`),
+        )
+      : folderPath
+        ? eq(folders.path, folderPath)
+        : undefined;
+  const rows = await db
+    .select({ ...postListSelection(), folderPath: folders.path })
+    .from(posts)
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .leftJoin(
+      folders,
+      and(eq(posts.folderId, folders.id), isNull(folders.deletedAt)),
+    )
+    .where(
+      and(
+        eq(blogs.handle, handle),
+        isNull(blogs.deletedAt),
+        isNull(posts.deletedAt),
+        visiblePostIds === "all"
+          ? undefined
+          : inArray(posts.id, [...visiblePostIds]),
+        inFolder,
+      ),
+    )
+    .orderBy(
+      desc(posts.updatedAt),
+      desc(posts.createdAt),
+      desc(posts.id),
+    )
+    .limit(limit);
+
+  return rows.map((row) => ({
+    post: mapPostList(row),
+    folderPath: row.folderPath ?? DEFAULT_FOLDER_PATH,
+  }));
+}
+
 export async function getAccessibleFolderPosts(
   handle: string,
   folderPath: string,
@@ -3569,12 +3737,13 @@ export async function saveDocumentAsLook(input: {
 export async function retireDocumentTemplate(
   blogId: string,
   templateId: string,
+  options: { audit?: AuditEntry } = {},
 ): Promise<boolean> {
   if (!db) throw new Error(NO_DATABASE);
   if (templateId.startsWith("texttext.")) {
     throw new Error("Built-in looks cannot be retired.");
   }
-  const rows = await db
+  const updateQuery = db
     .update(documentTemplates)
     .set({ retiredAt: new Date() })
     .where(
@@ -3585,7 +3754,21 @@ export async function retireDocumentTemplate(
       ),
     )
     .returning({ templateId: documentTemplates.templateId });
-  return rows.length > 0;
+  if (!options.audit) return (await updateQuery).length > 0;
+  const auditCte = auditCteFrom(
+    options.audit,
+    "audited_target",
+    sql`${blogId}::text`,
+  );
+  const result = await db.execute(sql`
+    WITH changed AS ${updateQuery},
+         audited_target AS (SELECT template_id FROM changed LIMIT 1),
+         audit AS (${auditCte})
+    SELECT template_id FROM audited_target
+  `);
+  return Boolean(
+    (result.rows[0] as { template_id?: string } | undefined)?.template_id,
+  );
 }
 
 export async function createDocumentCapability(input: {
@@ -4506,6 +4689,7 @@ export async function emptyTrash(handle: string): Promise<number> {
 export async function trashFolder(
   handle: string,
   folderId: string,
+  options: { audit?: AuditEntry } = {},
 ): Promise<void> {
   if (!db) throw new Error("trashFolder requires DATABASE_URL");
   const blogId = await blogIdFor(handle);
@@ -4538,6 +4722,42 @@ export async function trashFolder(
   const ids = descendants.map((entry) => entry.id);
   const now = new Date();
   if (ids.length > 0) {
+    if (options.audit) {
+      const changedPosts = db
+        .update(posts)
+        .set({ deletedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(posts.blogId, blogId),
+            inArray(posts.folderId, ids),
+            isNull(posts.deletedAt),
+          ),
+        )
+        .returning({ id: posts.id });
+      const changedFolders = db
+        .update(folders)
+        .set({ deletedAt: now, updatedAt: now })
+        .where(and(eq(folders.blogId, blogId), inArray(folders.id, ids)))
+        .returning({ id: folders.id });
+      const auditCte = auditCteFrom(
+        options.audit,
+        "audited_target",
+        sql`audited_target.id::text`,
+      );
+      const result = await db.execute(sql`
+        WITH changed_posts AS ${changedPosts},
+             changed_folders AS ${changedFolders},
+             audited_target AS (
+               SELECT id FROM changed_folders WHERE id = ${folder.id} LIMIT 1
+             ),
+             audit AS (${auditCte})
+        SELECT id FROM audited_target
+      `);
+      if (!(result.rows[0] as { id?: string } | undefined)?.id) {
+        throw new Error("Folder not found");
+      }
+      return;
+    }
     await db
       .update(posts)
       .set({ deletedAt: now, updatedAt: now })
@@ -4558,6 +4778,7 @@ export async function trashFolder(
 export async function restoreFolder(
   handle: string,
   folderId: string,
+  options: { audit?: AuditEntry } = {},
 ): Promise<void> {
   if (!db) throw new Error("restoreFolder requires DATABASE_URL");
   const blogId = await blogIdFor(handle);
@@ -4592,6 +4813,42 @@ export async function restoreFolder(
   const ids = descendants.map((entry) => entry.id);
   if (ids.length > 0) {
     const now = new Date();
+    if (options.audit) {
+      const changedFolders = db
+        .update(folders)
+        .set({ deletedAt: null, updatedAt: now })
+        .where(and(eq(folders.blogId, blogId), inArray(folders.id, ids)))
+        .returning({ id: folders.id });
+      const changedPosts = db
+        .update(posts)
+        .set({ deletedAt: null, updatedAt: now })
+        .where(
+          and(
+            eq(posts.blogId, blogId),
+            inArray(posts.folderId, ids),
+            eq(posts.deletedAt, deletionTime),
+          ),
+        )
+        .returning({ id: posts.id });
+      const auditCte = auditCteFrom(
+        options.audit,
+        "audited_target",
+        sql`audited_target.id::text`,
+      );
+      const result = await db.execute(sql`
+        WITH changed_folders AS ${changedFolders},
+             changed_posts AS ${changedPosts},
+             audited_target AS (
+               SELECT id FROM changed_folders WHERE id = ${folder.id} LIMIT 1
+             ),
+             audit AS (${auditCte})
+        SELECT id FROM audited_target
+      `);
+      if (!(result.rows[0] as { id?: string } | undefined)?.id) {
+        throw new Error("Folder not found in Trash");
+      }
+      return;
+    }
     await db
       .update(folders)
       .set({ deletedAt: null, updatedAt: now })

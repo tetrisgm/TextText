@@ -9,8 +9,17 @@ import { generateText, stepCountIs } from "ai";
 import type { ModelMessage } from "ai";
 import { getCurrentUser } from "@/lib/session";
 import { ASSISTANT_SYSTEM_PROMPT } from "@/lib/ai/system-prompt";
-import { getBlogEditRecord, getOwnedBlog, getUserIdBySub } from "@/lib/store";
-import { cloudAssistantTools } from "@/lib/ai/cloud-tools";
+import {
+  getAccessibleRecentPosts,
+  getBlogEditRecord,
+  getOwnedBlog,
+  getUserIdBySub,
+} from "@/lib/store";
+import type { AccessUser } from "@/lib/permissions";
+import {
+  cloudAssistantTools,
+  type CloudAssistantWorkspaceCall,
+} from "@/lib/ai/cloud-tools";
 import {
   outboundAssistantTools,
   outboundSystemNote,
@@ -107,28 +116,140 @@ function coerceMessages(value: unknown): ModelMessage[] {
   return messages.slice(-MAX_HISTORY);
 }
 
+type AssistantViewContext = {
+  level?: unknown;
+  folderPath?: unknown;
+  postId?: unknown;
+  itemTitle?: unknown;
+  selection?: unknown;
+  itemPreview?: unknown;
+  mode?: unknown;
+};
+
+function viewContext(value: unknown): AssistantViewContext {
+  return value && typeof value === "object"
+    ? (value as AssistantViewContext)
+    : {};
+}
+
+function fencedUntrusted(label: string, value: string): string {
+  const escaped = value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+  return `<${label}>\n${escaped}\n</${label}>`;
+}
+
+function lastUserText(messages: readonly ModelMessage[]): string {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role === "user" && typeof message.content === "string") {
+      return message.content;
+    }
+  }
+  return "";
+}
+
+const WRITE_VERB =
+  "add|append|apply|attach|build|capture|change|convert|copy|create|delete|draft|edit|extract|fix|make|move|organize|pin|publish|put|recapture|remove|rename|replace|restructure|revise|rewrite|save|set|share|tag|transform|trash|turn|unpublish|update|write";
+const DIRECT_WRITE_INTENT = new RegExp(`^\\s*(?:${WRITE_VERB})\\b`, "i");
+const REQUESTED_WRITE_INTENT = new RegExp(
+  `\\b(?:can you|could you|go ahead and|i need you to|i want you to|please|would you)\\s+(?:${WRITE_VERB})\\b`,
+  "i",
+);
+const RECENT_SUMMARY_INTENT =
+  /\b(catch me up|latest|recent|recently|what (?:have|was|were|am|is)|working on|summari[sz]e (?:my|the) work)\b/i;
+
+function cloudToolMode(
+  messages: readonly ModelMessage[],
+  context: unknown,
+): "full" | "read_only" {
+  const view = viewContext(context);
+  if (view.mode === "suggestion") return "read_only";
+  const request = lastUserText(messages);
+  return DIRECT_WRITE_INTENT.test(request) ||
+    REQUESTED_WRITE_INTENT.test(request)
+    ? "full"
+    : "read_only";
+}
+
+function recentItemIndex(
+  entries: Awaited<ReturnType<typeof getAccessibleRecentPosts>>,
+): string {
+  return entries
+    .slice(0, 12)
+    .map(({ folderPath, post }) =>
+      [
+        `id: ${post.id ?? ""}`,
+        `title: ${post.title?.trim() || "Untitled"}`,
+        `folder: ${folderPath}`,
+        `kind: ${post.type}`,
+        post.updatedAt ? `updated: ${post.updatedAt}` : "",
+        post.excerpt?.trim()
+          ? `excerpt: ${post.excerpt.trim().slice(0, 360)}`
+          : "",
+        post.bodyPreview?.trim()
+          ? `preview: ${post.bodyPreview.trim().slice(0, 360)}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    )
+    .join("\n\n");
+}
+
+async function recentWorkspaceSystemNote({
+  context,
+  handle,
+  messages,
+  user,
+}: {
+  context: unknown;
+  handle: string;
+  messages: readonly ModelMessage[];
+  user: AccessUser;
+}): Promise<string> {
+  if (!RECENT_SUMMARY_INTENT.test(lastUserText(messages))) return "";
+  const view = viewContext(context);
+  if (typeof view.postId === "string" && view.postId) return "";
+  const folderPath =
+    typeof view.folderPath === "string" && view.folderPath.trim()
+      ? view.folderPath.trim()
+      : null;
+  const entries = await getAccessibleRecentPosts(handle, user, {
+    ...(folderPath ? { folderPath } : {}),
+    limit: 12,
+  });
+  const index = recentItemIndex(entries);
+  return [
+    "A bounded, access-checked recent item index is included below. For a high-level recent-work summary, answer from this index immediately. Read an item only when the request needs detail the index does not contain.",
+    fencedUntrusted(
+      "UNTRUSTED_RECENT_ITEM_INDEX",
+      index || "No recent items are visible in this scope.",
+    ),
+  ].join("\n\n");
+}
+
 function buildSystem(context: unknown): string {
-  if (!context || typeof context !== "object") return SYSTEM;
-  const view = context as {
-    level?: unknown;
-    folderPath?: unknown;
-    postId?: unknown;
-    itemTitle?: unknown;
-    selection?: unknown;
-    itemPreview?: unknown;
-  };
+  const view = viewContext(context);
   const bits: string[] = [];
-  if (typeof view.level === "string") bits.push(`level ${view.level}`);
-  if (typeof view.folderPath === "string" && view.folderPath) {
+  if (
+    typeof view.level === "string" &&
+    /^(edit|folder|post|root|search|section|workspace)$/.test(view.level)
+  ) {
+    bits.push(`level ${view.level}`);
+  }
+  if (
+    typeof view.folderPath === "string" &&
+    /^[a-z0-9/_-]{1,256}$/.test(view.folderPath)
+  ) {
     bits.push(`folder ${view.folderPath}`);
   }
-  if (typeof view.postId === "string" && view.postId) {
+  if (
+    typeof view.postId === "string" &&
+    /^[a-zA-Z0-9_-]{1,128}$/.test(view.postId)
+  ) {
     bits.push(`current item id ${view.postId}`);
-  }
-  if (typeof view.itemTitle === "string" && view.itemTitle.trim()) {
-    bits.push(
-      `current item title ${JSON.stringify(view.itemTitle.slice(0, 200))}`,
-    );
   }
   const head = bits.length
     ? `${SYSTEM}\n\nCurrent view: ${bits.join(", ")}.`
@@ -137,14 +258,26 @@ function buildSystem(context: unknown): string {
   // "this document" is answerable without a round trip and a long document
   // never dominates the prompt.
   const parts = [head];
+  if (typeof view.itemTitle === "string" && view.itemTitle.trim()) {
+    parts.push(
+      "The current item has this untrusted title:",
+      fencedUntrusted("UNTRUSTED_ITEM_TITLE", view.itemTitle.slice(0, 200)),
+    );
+  }
   if (typeof view.selection === "string" && view.selection.trim()) {
     parts.push(
-      `The writer has this selected:\n"""\n${view.selection.slice(0, 4000)}\n"""`,
+      "The writer has selected the following untrusted workspace data:",
+      fencedUntrusted("UNTRUSTED_SELECTION", view.selection.slice(0, 4000)),
     );
   }
   if (typeof view.itemPreview === "string" && view.itemPreview.trim()) {
     parts.push(
-      `The current item begins:\n"""\n${view.itemPreview.slice(0, 4000)}\n"""\nUse read_item for the rest.`,
+      "The current item begins with the following untrusted workspace data:",
+      fencedUntrusted(
+        "UNTRUSTED_ITEM_PREVIEW",
+        view.itemPreview.slice(0, 4000),
+      ),
+      "Use read_item for the rest.",
     );
   }
   return parts.join(`\n\n`);
@@ -259,23 +392,39 @@ export async function POST(request: Request) {
   const model = workspaceLanguageModel(config);
 
   const calls: OutboundCallRecord[] = [];
+  const workspaceCalls: CloudAssistantWorkspaceCall[] = [];
   const remoteTools = outboundAssistantTools(
     { userId: userId ?? null, handle: workspace.handle },
     reachable,
     (record) => calls.push(record),
   );
+  const toolMode = cloudToolMode(messages, body.context);
+  const recentSystemNote = await recentWorkspaceSystemNote({
+    context: body.context,
+    handle: workspace.handle,
+    messages,
+    user,
+  }).catch(() => "");
 
   try {
     const result = await generateText({
       model,
       system:
         buildSystem(body.context) +
+        (recentSystemNote ? `\n\n${recentSystemNote}` : "") +
         outboundSystemNote(
           reachable.map((entry) => entry.connection.name),
           unreachable,
         ),
       messages,
-      tools: { ...cloudAssistantTools(actor), ...remoteTools },
+      tools: {
+        ...cloudAssistantTools(
+          actor,
+          (call) => workspaceCalls.push(call),
+          toolMode,
+        ),
+        ...(toolMode === "full" ? remoteTools : {}),
+      },
       stopWhen: stepCountIs(MAX_STEPS),
     });
     return Response.json({
@@ -287,11 +436,29 @@ export async function POST(request: Request) {
       // cannot see is one they cannot object to.
       outboundCalls: calls,
       unreachableServers: unreachable,
+      // Validated workspace-command results, never model prose. The client
+      // reduces these to exact item receipts with Open when resolvable.
+      workspaceCalls,
     });
   } catch {
     // Provider errors can carry request metadata. Do not log the error object,
     // because a user-supplied API key must never reach logs.
     console.error("cloud assistant turn failed");
+    if (
+      workspaceCalls.length > 0 ||
+      calls.some((call) => call.status === "ok")
+    ) {
+      return Response.json({
+        text: "",
+        provider,
+        model: config.model,
+        outboundCalls: calls,
+        unreachableServers: unreachable,
+        workspaceCalls,
+        terminalError:
+          "Some actions completed, but the assistant stopped before it could finish the reply.",
+      });
+    }
     return Response.json(
       { error: "The assistant could not complete that." },
       { status: 502 },

@@ -213,7 +213,12 @@ export type WorkspaceAgentToolsOptions = {
   applyItemPatch?: (
     postId: string,
     patch: WorkspaceItemTextPatch,
-  ) => Promise<unknown> | unknown;
+    expected?: WorkspaceItemTextPatch,
+    ifMatchHash?: string,
+  ) =>
+    | Promise<{ queued?: boolean; synced: boolean } | void>
+    | { queued?: boolean; synced: boolean }
+    | void;
   /** Required for soft deletion and audience-changing restore/status calls. */
   confirmDestructive?: (description: string) => Promise<boolean> | boolean;
   executeTool?: <Name extends WorkspaceToolName>(
@@ -281,6 +286,7 @@ function normalizeLegacyNativeArgs(
   }
   if (
     name === "create_item" &&
+    typeof normalized.capture !== "string" &&
     (typeof normalized.folder_path !== "string" ||
       !normalized.folder_path.trim())
   ) {
@@ -460,16 +466,20 @@ export function createWorkspaceAgentTools(
   async function saveDraftPatch(
     poolPost: WorkspacePoolPost,
     patch: WorkspaceItemTextPatch,
+    ifMatchHash?: string,
   ) {
     const current = await currentText(poolPost);
     if (applyItemPatch) {
-      await applyItemPatch(poolPost.id, patch);
+      const commit = await applyItemPatch(poolPost.id, patch, {}, ifMatchHash);
+      const synced = commit?.synced === true && commit.queued !== true;
       return {
         id: poolPost.id,
         title: patch.title ?? current.title,
         excerpt: patch.excerpt ?? current.excerpt,
         body: patch.body ?? current.body,
         tags: normalizeTags(patch.tags ?? poolPost.tags),
+        queued: !synced,
+        synced,
       };
     }
     const title = patch.title ?? current.title;
@@ -490,6 +500,7 @@ export function createWorkspaceAgentTools(
         ...(patch.excerpt !== undefined ? { excerpt: patch.excerpt } : {}),
         ...(patch.body !== undefined ? { body: patch.body } : {}),
         ...(patch.tags !== undefined ? { tags } : {}),
+        ...(ifMatchHash ? { if_match_hash: ifMatchHash } : {}),
       });
     } catch (error) {
       updatePost(poolPost.id, previousPost);
@@ -497,7 +508,15 @@ export function createWorkspaceAgentTools(
       throw error;
     }
     await refreshPoolAfterMutation();
-    return { id: poolPost.id, title, excerpt, body, tags };
+    return {
+      id: poolPost.id,
+      title,
+      excerpt,
+      body,
+      tags,
+      queued: false,
+      synced: true,
+    };
   }
 
   async function confirmTool(
@@ -789,6 +808,7 @@ export function createWorkspaceAgentTools(
             (): Record<string, unknown> => ({}),
           ),
         ]);
+        const persistedItem = asRecord(persisted.item);
         return {
           id: input.id,
           title: text.title,
@@ -806,6 +826,12 @@ export function createWorkspaceAgentTools(
           date: post.date ?? null,
           updatedAt: post.updatedAt ?? null,
           body: capped(text.body, 12_000),
+          hash:
+            typeof persistedItem.hash === "string"
+              ? persistedItem.hash
+              : typeof persisted.hash === "string"
+                ? persisted.hash
+                : null,
           assets: Array.isArray(persisted.assets) ? persisted.assets : [],
         };
       }
@@ -862,19 +888,23 @@ export function createWorkspaceAgentTools(
 
       case "create_item": {
         const input = args as WorkspaceToolInput<"create_item">;
-        const folderPath = normalizeFolderPath(
-          input.folder_path ?? defaultBlogFolderPath(pool().folders),
-          pool().folders,
-        );
+        const folderPath = input.folder_path
+          ? normalizeFolderPath(input.folder_path, pool().folders)
+          : input.capture
+            ? undefined
+            : defaultBlogFolderPath(pool().folders);
         if (
+          folderPath &&
           !pool().folders.some((candidate) => candidate.path === folderPath)
         ) {
           throw new Error(`No folder at path ${folderPath}`);
         }
-        const title = input.markdown
-          ? (parsePostMarkdownFile(input.markdown).fields.title ?? "Untitled")
-          : (input.title ?? "Untitled");
-        const dedupeKey = `${folderPath}::${title.toLowerCase()}`;
+        const title = input.capture
+          ? parseItemInput(input.capture).title || "Saved link"
+          : input.markdown
+            ? (parsePostMarkdownFile(input.markdown).fields.title ?? "Untitled")
+            : (input.title ?? "Untitled");
+        const dedupeKey = `${folderPath ?? "capture"}::${title.toLowerCase()}`;
         const priorCreates = requestTag ? requestCreates(requestTag) : null;
         const prior = priorCreates?.get(dedupeKey);
         if (prior) {
@@ -885,14 +915,19 @@ export function createWorkspaceAgentTools(
         }
         const result = await runRemote("create_item", {
           ...input,
-          folder_path: folderPath,
+          ...(folderPath ? { folder_path: folderPath } : {}),
         });
         const item = asRecord(result.item);
+        const receipt = asRecord(result.receipt);
+        const savedTo =
+          typeof receipt.saved_to === "string"
+            ? receipt.saved_to
+            : (folderPath ?? "");
         const created = {
           ok: true,
           id: typeof item.id === "string" ? item.id : "",
           title: typeof item.title === "string" ? item.title : title,
-          folder_path: folderPath,
+          folder_path: savedTo,
           status: typeof item.status === "string" ? item.status : "draft",
         };
         priorCreates?.set(dedupeKey, created);
@@ -912,7 +947,9 @@ export function createWorkspaceAgentTools(
         );
         const metadataRequested =
           input.text_edit !== undefined ||
+          input.section !== undefined ||
           input.markdown !== undefined ||
+          input.fields !== undefined ||
           input.slug !== undefined ||
           input.accent !== undefined ||
           input.cover !== undefined ||
@@ -921,13 +958,24 @@ export function createWorkspaceAgentTools(
           input.date !== undefined ||
           input.pinned !== undefined;
         if (!metadataRequested) {
-          const saved = await saveDraftPatch(post, {
-            title: input.title,
-            excerpt: input.excerpt === null ? "" : input.excerpt,
-            body: input.body,
-            tags: input.tags,
-          });
-          return { ok: true, id: input.id, title: saved.title };
+          const saved = await saveDraftPatch(
+            post,
+            {
+              title: input.title,
+              excerpt: input.excerpt === null ? "" : input.excerpt,
+              body: input.body,
+              tags: input.tags,
+            },
+            input.if_match_hash,
+          );
+          const acknowledged = saved.synced && !saved.queued;
+          return {
+            ok: acknowledged,
+            id: input.id,
+            title: saved.title,
+            queued: saved.queued,
+            sync_status: acknowledged ? "acknowledged" : "queued_locally",
+          };
         }
 
         const optimistic = {
@@ -966,10 +1014,13 @@ export function createWorkspaceAgentTools(
           date: post.date,
           pinned: post.pinned,
         };
-        const previousBody =
-          input.body !== undefined ? (await currentText(post)).body : undefined;
+        const replacesWholeBody =
+          input.body !== undefined && input.section === undefined;
+        const previousBody = replacesWholeBody
+          ? (await currentText(post)).body
+          : undefined;
         updatePost(input.id, optimistic);
-        if (input.body !== undefined) {
+        if (replacesWholeBody && input.body !== undefined) {
           updatePostBody(pool().blogId, input.id, input.body);
         }
         let result: Record<string, unknown>;
@@ -1007,8 +1058,25 @@ export function createWorkspaceAgentTools(
         const joined = body.trim()
           ? `${body.replace(/\s+$/, "")}\n\n${fragment}`
           : fragment;
-        await saveDraftPatch(post, { body: joined });
-        return { ok: true, id: input.id };
+        if (!applyItemPatch) {
+          const result = await runRemote("append_to_item", input);
+          await refreshPoolAfterMutation();
+          return {
+            ok: true,
+            id: input.id,
+            queued: false,
+            sync_status: "acknowledged",
+            ...result,
+          };
+        }
+        const saved = await saveDraftPatch(post, { body: joined });
+        const acknowledged = saved.synced && !saved.queued;
+        return {
+          ok: acknowledged,
+          id: input.id,
+          queued: saved.queued,
+          sync_status: acknowledged ? "acknowledged" : "queued_locally",
+        };
       }
 
       case "move_item": {

@@ -30,21 +30,21 @@ time, and their changes must survive yours.
 
 ## With MCP, when it is already connected and the CLI is not available
 
-1. Call `get_workspace`, then `list_folders`.
-2. Search for the document by project identity and title before creating it.
-3. Create the item only when no correct match exists. Use a stable
+1. Search for the document by project identity and title before creating it.
+   Do not list folders first for this lookup.
+2. Create the item only when no correct match exists. Use a stable
    `idempotency_key` based on the project and purpose.
-4. Call `open_item` with that exact item id and `mode: "edit"`. On macOS, launch
+3. Call `open_item` with that exact item id and `mode: "edit"`. On macOS, launch
    the returned `native_url` with the system `open` command. Do not ask the user
    to find the workspace, folder, or document manually.
-5. Keep the returned item id for the rest of the task. During connected edits,
+4. Keep the returned item id for the rest of the task. During connected edits,
    TextText may show the agent identity, cursor, and selection while mutations
    arrive in the open document.
-6. Use `update_item` for deliberate revisions and `append_to_item` for durable
+5. Use `update_item` for deliberate revisions and `append_to_item` for durable
    milestones. Give every retryable append a stable `idempotency_key`.
-7. Preserve concurrent human edits. If a guarded update conflicts, read the
+6. Preserve concurrent human edits. If a guarded update conflicts, read the
    latest item and reconcile instead of replacing it with stale content.
-8. Keep the item useful as a standalone document. Do not paste raw chat logs or
+7. Keep the item useful as a standalone document. Do not paste raw chat logs or
    internal reasoning unless the user asks for them.
 
 Open TextText editors and agent mutations share the same collaborative document.

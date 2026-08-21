@@ -29,4 +29,13 @@ describe("cloudAssistantToolNames", () => {
     expect(names).not.toContain("add_item_asset");
     expect(names).not.toContain("recapture_bookmark");
   });
+
+  it("has a server-selected read-only allowlist for suggestion turns", () => {
+    const readOnly = cloudAssistantToolNames("read_only");
+    expect(readOnly).toContain("read_item");
+    expect(readOnly).toContain("search");
+    expect(readOnly).not.toContain("create_item");
+    expect(readOnly).not.toContain("update_item");
+    expect(readOnly).not.toContain("append_to_item");
+  });
 });

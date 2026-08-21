@@ -135,6 +135,81 @@ describe("workspace local authority", () => {
     expect(store.getWorkspacePost(original.id)).toBeNull();
   });
 
+  it("lets concurrent callers await the active pool refresh", async () => {
+    const store = await import("@/lib/pool/store");
+    store.seedWorkspacePool(pool("2026-07-10T10:00:00.000Z", [post()]));
+    let resolveRefresh: (response: Response) => void = () => undefined;
+    const fetchMock = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const first = store.refreshWorkspacePool("local-first", "blog-1");
+    const second = store.refreshWorkspacePool("local-first", "blog-1");
+    let secondSettled = false;
+    void second.then(() => {
+      secondSettled = true;
+    });
+    await Promise.resolve();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(secondSettled).toBe(false);
+
+    resolveRefresh(
+      new Response(
+        JSON.stringify(
+          pool("2026-07-10T10:01:00.000Z", [post("Fresh title")]),
+        ),
+        { status: 200 },
+      ),
+    );
+    await Promise.all([first, second]);
+
+    expect(secondSettled).toBe(true);
+    expect(store.getWorkspacePost("post-1")?.title).toBe("Fresh title");
+  });
+
+  it("repeats an in-flight refresh after a local mutation instead of resolving stale", async () => {
+    const store = await import("@/lib/pool/store");
+    store.seedWorkspacePool(pool("2026-07-10T10:00:00.000Z", [post()]));
+    const responses: Array<(response: Response) => void> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            responses.push(resolve);
+          }),
+      ),
+    );
+
+    const refresh = store.refreshWorkspacePool("local-first", "blog-1");
+    await vi.waitFor(() => expect(responses).toHaveLength(1));
+    store.addPost({ ...post("Optimistic"), id: "optimistic-note-1" });
+    responses[0]?.(
+      new Response(
+        JSON.stringify(pool("2026-07-10T10:01:00.000Z", [post("Stale")])),
+        { status: 200 },
+      ),
+    );
+    await vi.waitFor(() => expect(responses).toHaveLength(2));
+    responses[1]?.(
+      new Response(
+        JSON.stringify(pool("2026-07-10T10:02:00.000Z", [post("Fresh")])),
+        { status: 200 },
+      ),
+    );
+    await refresh;
+
+    expect(store.getWorkspacePost("post-1")?.title).toBe("Fresh");
+    expect(store.getWorkspacePost("optimistic-note-1")?.title).toBe(
+      "Optimistic",
+    );
+  });
+
   it("restores a locally trashed item when the server mutation fails", async () => {
     const store = await import("@/lib/pool/store");
     const original = post();

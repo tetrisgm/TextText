@@ -16,14 +16,14 @@ export function LandingHeader({
           Download
         </Link>
         <Link className="texttext-landing-nav-item" href="/docs/ai">
-          For agents
+          Connect AI
         </Link>
       </div>
       <div className="texttext-landing-nav-actions">
         {signedIn ? (
           <>
             <Link className="texttext-landing-signin" href="/start?to=home">
-              Open your workspace
+              Open your inbox
             </Link>
             <SignOutButton className="texttext-landing-link" redirectTo="/" />
           </>

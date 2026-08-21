@@ -6,6 +6,7 @@ import {
   revokeApiTokenAction,
 } from "@/app/editor/token-actions";
 import {
+  AGENT_CONNECTION_CHECK_PROMPT,
   AGENT_INTEGRATIONS,
   AGENT_WORKFLOWS,
   hostedMcpUrl,
@@ -316,6 +317,34 @@ export function ConnectPanel({
             Set up the in-app assistant
           </a>
         </p>
+      </section>
+
+      <section
+        className="connect-section connect-verification"
+        aria-labelledby="connect-verification"
+      >
+        <div>
+          <p className="connect-provider-kicker">One-minute check</p>
+          <h2 className="connect-section-title" id="connect-verification">
+            Prove the connection in TextText
+          </h2>
+          <p className="connect-sub">
+            Paste this into the agent you connected. It works when the private
+            note appears in Notes and the agent can read it back.
+          </p>
+        </div>
+        <div className="connect-verification-prompt">
+          <p>{AGENT_CONNECTION_CHECK_PROMPT}</p>
+          <button
+            className="ac-btn ac-btn-gray"
+            type="button"
+            onClick={() =>
+              void copy(AGENT_CONNECTION_CHECK_PROMPT, "connection-check")
+            }
+          >
+            {copiedKey === "connection-check" ? "Prompt copied" : "Copy prompt"}
+          </button>
+        </div>
       </section>
 
       <details className="connect-section connect-advanced">

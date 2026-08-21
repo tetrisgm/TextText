@@ -89,7 +89,11 @@ describe("assistant attachments", () => {
     });
     const ocr = vi.fn(async () => ({ text: "Words from image" }));
     const file = new File(["image bytes"], "scan.png", { type: "image/png" });
-    const result = await buildNativeAssistantPrompt("", [attachment(file)], ocr);
+    const result = await buildNativeAssistantPrompt(
+      "",
+      [attachment(file)],
+      ocr,
+    );
 
     expect(formatAssistantSubmission("", [attachment(file)])).toBe(
       "Review attached: scan.png",
@@ -147,11 +151,17 @@ describe("assistant local-first item edits", () => {
         excerpt: "Local excerpt",
       }),
     ).resolves.toMatchObject({ ok: true, id: "post-1", title: "Local title" });
-    expect(applyItemPatch).toHaveBeenCalledWith("post-1", {
-      title: "Local title",
-      excerpt: "Local excerpt",
-      body: undefined,
-    });
+    expect(applyItemPatch).toHaveBeenCalledWith(
+      "post-1",
+      {
+        title: "Local title",
+        excerpt: "Local excerpt",
+        body: undefined,
+        tags: undefined,
+      },
+      {},
+      undefined,
+    );
   });
 
   it("persists tag metadata through the stable workspace command", async () => {

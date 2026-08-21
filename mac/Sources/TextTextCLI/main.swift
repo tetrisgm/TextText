@@ -10,6 +10,7 @@ let usage = """
 
     USAGE
       texttext ls [folder]                     list documents
+      texttext search <query>                  find documents by title or content
       texttext read <doc> [--section "## H"]   print the body, or one section
       texttext write <doc> [--from FILE]       replace the body (stdin by default)
       texttext append <doc> [--from FILE]      append to the body
@@ -17,13 +18,14 @@ let usage = """
       texttext open <doc> [--section "## H"]   open it in TextText
       texttext sections <doc>                  list the headings
       texttext new <title> [--folder F]        create a document
+      texttext capture [TEXT] [--folder F]     save a thought, passage, or URL
       texttext lint [<doc>]                    check documents are well formed
       texttext install                         put texttext on your PATH
 
     OPTIONS
       --as NAME        self-declared agent label for presence and audit
       --message TEXT   what this change is for (recorded with the change)
-      --idempotency-key KEY  stable retry key for new and append
+      --idempotency-key KEY  stable retry key for new, capture, and append
       --from FILE      read input from FILE instead of stdin
       --section NAME   address one section by heading
       --json           machine-readable output
@@ -149,6 +151,44 @@ do {
             entries.forEach { emit($0) }
         }
 
+    case "search":
+        let query = options.positional.joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { fail("usage: texttext search <query>") }
+        let results = try await withActor(.open, itemId: nil) {
+            try await store.search(query)
+        }
+        if options.json {
+            let payload: [[String: Any]] = results.map { result in
+                var entry: [String: Any] = [
+                    "hash": result.hash,
+                    "id": result.id,
+                    "kind": result.kind,
+                    "slug": result.slug,
+                    "snippet": result.snippet,
+                    "status": result.status,
+                    "title": result.title,
+                ]
+                if let folderPath = result.folderPath {
+                    entry["folder_path"] = folderPath
+                }
+                return entry
+            }
+            let data = try JSONSerialization.data(
+                withJSONObject: ["query": query, "results": payload],
+                options: [.prettyPrinted, .sortedKeys])
+            emit(String(decoding: data, as: UTF8.self))
+        } else if results.isEmpty {
+            emit("No matches.")
+        } else {
+            for result in results {
+                emit(result.title)
+                let location = result.folderPath.map { " · \($0)" } ?? ""
+                emit("  \(result.kind) · \(result.status)\(location) · \(result.id)")
+                if !result.snippet.isEmpty { emit("  \(result.snippet)") }
+            }
+        }
+
     case "sections":
         guard let name = options.positional.first else { fail("usage: texttext sections <doc>") }
         let reference = try await store.resolve(name)
@@ -249,6 +289,53 @@ do {
         }
         let relative = store.relativePath(of: created)
         emit(options.json ? "{\"ok\":true,\"document\":\"\(relative)\"}" : relative)
+
+    case "capture":
+        let raw = options.positional.isEmpty
+            ? readInput(options)
+            : options.positional.joined(separator: " ")
+        guard let capture = AgentCaptureInput(value: raw) else {
+            fail("usage: texttext capture [TEXT] [--folder FOLDER]")
+        }
+        let retryStore: CLICaptureRetryIdentityStore?
+        let retryLease: CLICaptureRetryLease?
+        if options.idempotencyKey == nil, store.usesRemoteSync {
+            let identityStore = try CLICaptureRetryIdentityStore.applicationSupport()
+            retryStore = identityStore
+            retryLease = try identityStore.claim(
+                capture: raw, folder: options.folder)
+        } else {
+            retryStore = nil
+            retryLease = nil
+        }
+        let captured = try await withActor(.edit, itemId: nil) {
+            try await store.capture(
+                capture, rawValue: raw, folder: options.folder,
+                idempotencyKey: options.idempotencyKey
+                    ?? retryLease?.idempotencyKey)
+        }
+        if let retryStore, let retryLease {
+            try? retryStore.confirm(retryLease)
+        }
+        let relative = store.relativePath(of: captured.reference)
+        let authoritative = captured.receipt
+        if options.json {
+            var receipt: [String: Any] = [
+                "document": relative,
+                "kind": authoritative.kind,
+                "ok": true,
+                "saved_to": authoritative.savedTo,
+                "title": authoritative.title,
+            ]
+            if let itemId = authoritative.itemId {
+                receipt["item_id"] = itemId
+            }
+            let data = try JSONSerialization.data(
+                withJSONObject: receipt, options: [.sortedKeys])
+            emit(String(decoding: data, as: UTF8.self))
+        } else {
+            emit("Saved \(authoritative.title) to \(authoritative.savedTo) (\(relative))")
+        }
 
     case "lint":
         // Keep the URL `resolve` returned. Round-tripping it through

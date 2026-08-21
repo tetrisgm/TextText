@@ -1,14 +1,23 @@
 import type { WorkspaceToolName } from "@/lib/ai/tools";
 import { verifyTextTextApiToken } from "@/lib/mcp/auth";
-import { runWorkspaceToolForAuth, type ToolContext } from "@/lib/mcp/tools";
+import {
+  resolveMcpScopeAccess,
+  runWorkspaceToolForAuth,
+  type ToolContext,
+} from "@/lib/mcp/tools";
 
 export const dynamic = "force-dynamic";
 
 const ALLOWED_COMMANDS = new Set<WorkspaceToolName>([
+  "search",
   "read_item",
   "create_item",
   "update_item",
   "append_to_item",
+]);
+const READ_ONLY_COMMANDS = new Set<WorkspaceToolName>([
+  "search",
+  "read_item",
 ]);
 const HEADER_CONTROL_RE = /[\u0000-\u001f\u007f]/;
 const MAX_COMMAND_BODY_BYTES = 1_100_000;
@@ -74,12 +83,6 @@ function boundedHeader(
 export async function POST(request: Request) {
   const auth = await verifyTextTextApiToken(request);
   if (!auth) return noStore({ error: "Sign in to TextText on this Mac" }, 401);
-  if (!auth.scopes.includes("sync")) {
-    return noStore(
-      { error: "This connection cannot change the workspace" },
-      403,
-    );
-  }
 
   const requestedName = boundedHeader(request, "x-texttext-agent-name", 120);
   const requestedIntent = boundedHeader(
@@ -104,6 +107,19 @@ export async function POST(request: Request) {
     return noStore(
       { error: "That command is not available to the local CLI" },
       400,
+    );
+  }
+  const scopeAccess = resolveMcpScopeAccess(auth.scopes);
+  if (scopeAccess === "none") {
+    return noStore({ error: "This connection cannot read the workspace" }, 403);
+  }
+  if (
+    !READ_ONLY_COMMANDS.has(name as WorkspaceToolName) &&
+    scopeAccess !== "full"
+  ) {
+    return noStore(
+      { error: "This connection cannot change the workspace" },
+      403,
     );
   }
   const args = body.arguments;

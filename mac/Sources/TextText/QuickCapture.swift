@@ -20,6 +20,19 @@ struct QuickCaptureContent: Equatable {
 
 }
 
+struct QuickCaptureIntent: Equatable {
+    let content: QuickCaptureContent
+    let target: QuickCaptureTarget
+
+    init?(_ text: String) {
+        guard let captured = TextTextCaptureIntent(value: text),
+            let target = QuickCaptureTarget(rawValue: captured.folder)
+        else { return nil }
+        content = QuickCaptureContent(title: captured.title, body: captured.body)
+        self.target = target
+    }
+}
+
 enum QuickCaptureTarget: String, Codable, Equatable {
     case notes
     case bookmarks
@@ -83,6 +96,15 @@ struct QuickCaptureRecord: Codable, Equatable, Identifiable {
             target: target,
             attempts: attempts + 1,
             lastError: message
+        )
+    }
+
+    func restoredForRetry() -> QuickCaptureRecord {
+        QuickCaptureRecord(
+            id: id,
+            content: QuickCaptureContent(title: title, body: body),
+            createdAt: createdAt,
+            target: target
         )
     }
 
@@ -238,6 +260,48 @@ final class QuickCaptureOutbox {
         queue.sync { jsonFiles(in: rejectedDirectory).count }
     }
 
+    func rejectedRecords() -> [QuickCaptureRecord] {
+        queue.sync {
+            jsonFiles(in: rejectedDirectory).compactMap { url in
+                guard let data = try? Data(contentsOf: url) else { return nil }
+                return try? decoder.decode(QuickCaptureRecord.self, from: data)
+            }.sorted {
+                if $0.createdAt == $1.createdAt { return $0.id < $1.id }
+                return $0.createdAt < $1.createdAt
+            }
+        }
+    }
+
+    /// Moves every readable dead-letter record back to the durable pending
+    /// queue. The stable id and idempotency key survive, while the bounded
+    /// attempt count starts over for this explicit user retry.
+    @discardableResult
+    func retryRejectedRecords() throws -> Int {
+        try queue.sync {
+            var restoredCount = 0
+            for source in jsonFiles(in: rejectedDirectory) {
+                guard let data = try? Data(contentsOf: source),
+                      let record = try? decoder.decode(QuickCaptureRecord.self, from: data)
+                else { continue }
+
+                let restored = record.restoredForRetry()
+                let destination = pendingURL(for: restored)
+                do {
+                    let restoredData = try encoder.encode(restored)
+                    try restoredData.write(to: destination, options: .atomic)
+                    try? fileManager.setAttributes(
+                        [.posixPermissions: 0o600], ofItemAtPath: destination.path)
+                    try fileManager.removeItem(at: source)
+                    restoredCount += 1
+                } catch {
+                    throw QuickCaptureOutboxError.couldNotPersist(
+                        error.localizedDescription)
+                }
+            }
+            return restoredCount
+        }
+    }
+
     private func pendingURL(for record: QuickCaptureRecord) -> URL {
         pendingDirectory.appendingPathComponent("\(safeFilename(record.id)).json")
     }
@@ -280,8 +344,42 @@ final class QuickCaptureOutbox {
     }
 }
 
+enum QuickCaptureFeedback: Equatable {
+    case ready
+    case saved([QuickCaptureSavedReceipt])
+    case queued(Int)
+    case failed(Int)
+
+    var title: String {
+        switch self {
+        case .ready: return "Ready to capture"
+        case .saved(let receipts):
+            guard let last = receipts.last else { return "Saved to TextText" }
+            if receipts.count == 1 {
+                return "Saved \(last.title) to \(last.folderPath)"
+            }
+            return "Saved \(receipts.count) captures; last saved \(last.title) to \(last.folderPath)"
+        case .queued(let count):
+            return count == 1 ? "Queued safely" : "\(count) captures queued safely"
+        case .failed(let count):
+            if count == 0 { return "Capture failed" }
+            if count == 1 { return "Failed capture" }
+            return "Failed captures (\(count))"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .ready: "square.and.pencil"
+        case .saved: "checkmark.circle"
+        case .queued: "clock.arrow.circlepath"
+        case .failed: "exclamationmark.triangle"
+        }
+    }
+}
+
 enum QuickCaptureFilingResult {
-    case saved(ManifestItem)
+    case saved(ManifestItem, folderPath: String)
     case retry(String)
     case rejected(String)
 }
@@ -292,7 +390,16 @@ struct QuickCaptureFiler {
         workspace: Workspace,
         client: any SyncClient
     ) -> QuickCaptureFilingResult {
-        guard let targetFolder = workspace.folders.first(where: { $0.mode == record.target.rawValue }) else {
+        let targetFolder = workspace.folders
+            .filter { $0.mode == record.target.rawValue }
+            .sorted {
+                let leftDepth = $0.path.split(separator: "/").count
+                let rightDepth = $1.path.split(separator: "/").count
+                if leftDepth != rightDepth { return leftDepth < rightDepth }
+                return $0.path.localizedStandardCompare($1.path) == .orderedAscending
+            }
+            .first
+        guard let targetFolder else {
             return .retry("This workspace has no \(record.target.rawValue.capitalized) folder")
         }
         switch client.postFile(
@@ -311,13 +418,22 @@ struct QuickCaptureFiler {
             guard item.id != nil else {
                 return .retry("The server returned no item id")
             }
-            return .saved(item)
+            return .saved(item, folderPath: targetFolder.path)
         }
     }
 }
 
+struct QuickCaptureSavedReceipt: Equatable {
+    let itemId: String
+    let title: String
+    let folderPath: String
+    let slug: String
+    let kind: String
+}
+
 struct QuickCaptureDrainSummary {
     var savedItems: [ManifestItem] = []
+    var savedReceipts: [QuickCaptureSavedReceipt] = []
     var retryMessages: [String] = []
     var rejectedMessages: [String] = []
 
@@ -337,10 +453,19 @@ struct QuickCaptureOutboxDrainer {
         var summary = QuickCaptureDrainSummary()
         for record in outbox.pendingRecords() {
             switch filer.file(record, workspace: workspace, client: client) {
-            case .saved(let item):
+            case .saved(let item, let folderPath):
                 do {
                     try outbox.remove(record)
                     summary.savedItems.append(item)
+                    if let itemId = item.id {
+                        summary.savedReceipts.append(
+                            QuickCaptureSavedReceipt(
+                                itemId: itemId,
+                                title: item.title,
+                                folderPath: folderPath,
+                                slug: item.slug,
+                                kind: item.kind))
+                    }
                 } catch {
                     summary.retryMessages.append(error.localizedDescription)
                 }

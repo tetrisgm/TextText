@@ -22,6 +22,7 @@ import {
 import { createWorkspaceAgentTools } from "@/lib/ai/agent-tools";
 import {
   cloudAssistantTurn,
+  type CloudWorkspaceCall,
   type OutboundCall,
   cloudAssistantStatus,
   type CloudAssistantProviderLabel,
@@ -54,10 +55,7 @@ import {
 } from "@/lib/mcp/local-tools";
 import { getMcpConnectionsAction } from "@/app/editor/mcp-connection-actions";
 import { findPoolPostById } from "@/lib/pool/selectors";
-import type {
-  WorkspacePoolPayload,
-  WorkspacePoolPost,
-} from "@/lib/pool/types";
+import type { WorkspacePoolPayload, WorkspacePoolPost } from "@/lib/pool/types";
 import { normalizeTags } from "@/lib/tags";
 import type { AssistantAttachment } from "./AssistantSidebar";
 import { formatAssistantSubmission } from "./attachments";
@@ -83,6 +81,12 @@ import {
   nativeWorkspaceIndex,
 } from "@/lib/ai/native-turn";
 import { workspaceToolProgress } from "./tool-progress";
+import {
+  itemArtifactProof,
+  mergeArtifactProofs,
+  workspaceToolArtifactProofs,
+  type AssistantArtifactProof,
+} from "./artifact-proof";
 
 export type { AssistantViewSnapshot } from "./context";
 
@@ -129,6 +133,12 @@ export type AssistantMessage = {
    * kept beside the thread so it survives reload with the words it explains.
    */
   outbound?: { calls: OutboundCall[]; unreachable: string[] };
+  /**
+   * Inspectable TextText items the completed turn actually read or changed.
+   * These come from the frozen view or a validated workspace command result,
+   * never from the model's prose.
+   */
+  artifactProofs?: AssistantArtifactProof[];
 };
 
 type UseNativeAssistantOptions = {
@@ -145,10 +155,57 @@ type UseNativeAssistantOptions = {
     postId: string,
     patch: WorkspaceItemTextPatch,
     expected?: WorkspaceItemTextPatch,
-  ) => Promise<unknown> | unknown;
+    ifMatchHash?: string,
+  ) =>
+    | Promise<{ queued?: boolean; synced: boolean } | void>
+    | { queued?: boolean; synced: boolean }
+    | void;
   confirmDestructive?: (description: string) => Promise<boolean> | boolean;
 };
 
+function cloudWorkspaceProofs(
+  calls: readonly CloudWorkspaceCall[],
+  pool: WorkspacePoolPayload | null,
+): AssistantArtifactProof[] {
+  return calls.reduce<AssistantArtifactProof[]>((proofs, call) => {
+    return mergeArtifactProofs(
+      proofs,
+      workspaceToolArtifactProofs({
+        args: call.args,
+        output: call.output,
+        pool,
+        tool: call.tool,
+      }),
+    );
+  }, []);
+}
+
+function workspaceMutationQueued(output: unknown): boolean {
+  if (!output || typeof output !== "object" || Array.isArray(output)) {
+    return false;
+  }
+  const result = output as Record<string, unknown>;
+  return (
+    result.queued === true ||
+    result.sync_status === "queued_locally" ||
+    result.ok === false
+  );
+}
+
+function completedWorkspaceProofs({
+  args,
+  output,
+  pool,
+  tool,
+}: {
+  args: Record<string, unknown>;
+  output: unknown;
+  pool: WorkspacePoolPayload | null;
+  tool: string;
+}): AssistantArtifactProof[] {
+  if (workspaceMutationQueued(output)) return [];
+  return workspaceToolArtifactProofs({ args, output, pool, tool });
+}
 
 function assistantAgentError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error ?? "");
@@ -226,11 +283,12 @@ function appendToThread(
   proposal?: AssistantProposal,
   provider?: CloudAssistantProviderLabel,
   outbound?: AssistantMessage["outbound"],
+  artifactProofs?: AssistantArtifactProof[],
 ): string {
   const id = nextMessageId();
   const next = [
     ...threadFor(threadKey),
-    { id, role, text, proposal, provider, outbound },
+    { id, role, text, proposal, provider, outbound, artifactProofs },
   ].slice(-MAX_MESSAGES_PER_THREAD);
   transcripts.set(threadKey, next);
   try {
@@ -330,13 +388,13 @@ function quickActionProposal({
   const field: NativeQuickActionField | null =
     action === "title"
       ? "title"
-        : action === "excerpt"
-          ? "excerpt"
-          : action === "rewrite"
-            ? (selection?.field ?? "body")
-            : action === "structure"
-              ? "body"
-          : null;
+      : action === "excerpt"
+        ? "excerpt"
+        : action === "rewrite"
+          ? (selection?.field ?? "body")
+          : action === "structure"
+            ? "body"
+            : null;
   if (!field) return undefined;
 
   const source = item[field] ?? "";
@@ -400,6 +458,7 @@ export function useNativeAssistant({
     useState<AiConnectionSnapshot | null>(null);
   const nativeJobRef = useRef<string | null>(null);
   const nativeMessageRef = useRef<string | null>(null);
+  const nativeProofsRef = useRef<AssistantArtifactProof[]>([]);
   const nativeItemTypeDesignRef = useRef<{
     blueprint: ItemTypeBlueprint | null;
     lastError: string | null;
@@ -463,7 +522,6 @@ export function useNativeAssistant({
     ],
   );
 
-
   /**
    * What the connected servers on this Mac offer, discovered once per mount.
    *
@@ -523,22 +581,36 @@ export function useNativeAssistant({
         setNativeConnection((current) => ({
           state: event.state ?? current?.state ?? "unavailable",
           kind: event.kind ?? current?.kind ?? "native-codex",
-          providerLabel: event.providerLabel ?? current?.providerLabel ?? "Codex with ChatGPT",
+          providerLabel:
+            event.providerLabel ??
+            current?.providerLabel ??
+            "Codex with ChatGPT",
           accountEmail: event.accountEmail ?? current?.accountEmail ?? null,
           planLabel: event.planLabel ?? current?.planLabel ?? null,
-          runtimeVersion: event.runtimeVersion ?? current?.runtimeVersion ?? null,
-          rateLimitResetAt: event.rateLimitResetAt ?? current?.rateLimitResetAt ?? null,
-          lastHealthCheckAt: event.lastHealthCheckAt ?? current?.lastHealthCheckAt ?? null,
-          embeddedChatSupported: event.embeddedChatSupported ?? current?.embeddedChatSupported ?? false,
-          recoveryAction: event.recoveryAction ?? current?.recoveryAction ?? null,
+          runtimeVersion:
+            event.runtimeVersion ?? current?.runtimeVersion ?? null,
+          rateLimitResetAt:
+            event.rateLimitResetAt ?? current?.rateLimitResetAt ?? null,
+          lastHealthCheckAt:
+            event.lastHealthCheckAt ?? current?.lastHealthCheckAt ?? null,
+          embeddedChatSupported:
+            event.embeddedChatSupported ??
+            current?.embeddedChatSupported ??
+            false,
+          recoveryAction:
+            event.recoveryAction ?? current?.recoveryAction ?? null,
         }));
       } else if (event.type === "text-delta") {
         if (nativeItemTypeDesignRef.current) return;
         if (nativeMessageRef.current) {
-          updateThreadMessage(threadKey, nativeMessageRef.current, (message) => ({
-            ...message,
-            text: message.text + event.text,
-          }));
+          updateThreadMessage(
+            threadKey,
+            nativeMessageRef.current,
+            (message) => ({
+              ...message,
+              text: message.text + event.text,
+            }),
+          );
         } else {
           nativeMessageRef.current = appendToThread(
             threadKey,
@@ -546,15 +618,21 @@ export function useNativeAssistant({
             event.text,
             undefined,
             "OpenAI",
+            undefined,
+            nativeProofsRef.current,
           );
         }
       } else if (event.type === "final-text") {
         if (nativeItemTypeDesignRef.current) return;
         if (nativeMessageRef.current) {
-          updateThreadMessage(threadKey, nativeMessageRef.current, (message) => ({
-            ...message,
-            text: event.text,
-          }));
+          updateThreadMessage(
+            threadKey,
+            nativeMessageRef.current,
+            (message) => ({
+              ...message,
+              text: event.text,
+            }),
+          );
         } else {
           nativeMessageRef.current = appendToThread(
             threadKey,
@@ -562,6 +640,8 @@ export function useNativeAssistant({
             event.text,
             undefined,
             "OpenAI",
+            undefined,
+            nativeProofsRef.current,
           );
         }
       } else if (event.type === "tool-call") {
@@ -597,7 +677,8 @@ export function useNativeAssistant({
             pending.lastError = null;
             submitNativeAssistantToolResult(event.callId, {
               accepted: true,
-              message: "The preview is ready. Finish the turn without calling another tool.",
+              message:
+                "The preview is ready. Finish the turn without calling another tool.",
             });
           } catch (error) {
             pending.lastError = assistantAgentError(error);
@@ -611,7 +692,10 @@ export function useNativeAssistant({
         }
         void (async () => {
           try {
-            const args = typeof event.arguments === "string" ? JSON.parse(event.arguments) : event.arguments;
+            const args =
+              typeof event.arguments === "string"
+                ? JSON.parse(event.arguments)
+                : event.arguments;
             const progress = workspaceToolProgress(
               event.tool,
               (args ?? {}) as Record<string, unknown>,
@@ -633,9 +717,38 @@ export function useNativeAssistant({
             const output = local
               ? await local
               : await tools.executor(event.tool as never, args as never);
+            const proofs = completedWorkspaceProofs({
+              args: (args ?? {}) as Record<string, unknown>,
+              output,
+              pool: getPoolRef.current(),
+              tool: event.tool,
+            });
+            if (proofs.length > 0) {
+              nativeProofsRef.current = mergeArtifactProofs(
+                nativeProofsRef.current,
+                proofs,
+              );
+              if (nativeMessageRef.current) {
+                updateThreadMessage(
+                  threadKey,
+                  nativeMessageRef.current,
+                  (message) => ({
+                    ...message,
+                    artifactProofs: mergeArtifactProofs(
+                      message.artifactProofs,
+                      proofs,
+                    ),
+                  }),
+                );
+              }
+            }
             submitNativeAssistantToolResult(event.callId, output);
           } catch (error) {
-            submitNativeAssistantToolResult(event.callId, { error: assistantAgentError(error) }, true);
+            submitNativeAssistantToolResult(
+              event.callId,
+              { error: assistantAgentError(error) },
+              true,
+            );
           }
         })();
       } else if (event.type === "turn-completed") {
@@ -656,9 +769,36 @@ export function useNativeAssistant({
           }
           return;
         }
-        if (nativeJobRef.current) updateAssistantJob(nativeJobRef.current, { status: "done" });
+        if (nativeProofsRef.current.length > 0) {
+          if (nativeMessageRef.current) {
+            updateThreadMessage(
+              threadKey,
+              nativeMessageRef.current,
+              (message) => ({
+                ...message,
+                artifactProofs: mergeArtifactProofs(
+                  message.artifactProofs,
+                  nativeProofsRef.current,
+                ),
+              }),
+            );
+          } else {
+            nativeMessageRef.current = appendToThread(
+              threadKey,
+              "assistant",
+              "Done.",
+              undefined,
+              "OpenAI",
+              undefined,
+              nativeProofsRef.current,
+            );
+          }
+        }
+        if (nativeJobRef.current)
+          updateAssistantJob(nativeJobRef.current, { status: "done" });
         nativeJobRef.current = null;
         nativeMessageRef.current = null;
+        nativeProofsRef.current = [];
         setThreadBusy(threadKey, false);
       } else if (event.type === "error") {
         const itemTypeDesign = nativeItemTypeDesignRef.current;
@@ -669,10 +809,37 @@ export function useNativeAssistant({
           itemTypeDesign.reject(new Error(assistantAgentError(event.message)));
           return;
         }
+        if (nativeProofsRef.current.length > 0) {
+          if (nativeMessageRef.current) {
+            updateThreadMessage(
+              threadKey,
+              nativeMessageRef.current,
+              (message) => ({
+                ...message,
+                artifactProofs: mergeArtifactProofs(
+                  message.artifactProofs,
+                  nativeProofsRef.current,
+                ),
+              }),
+            );
+          } else {
+            nativeMessageRef.current = appendToThread(
+              threadKey,
+              "assistant",
+              "Some actions completed before the assistant stopped.",
+              undefined,
+              "OpenAI",
+              undefined,
+              nativeProofsRef.current,
+            );
+          }
+        }
         appendToThread(threadKey, "error", assistantAgentError(event.message));
-        if (nativeJobRef.current) updateAssistantJob(nativeJobRef.current, { status: "error" });
+        if (nativeJobRef.current)
+          updateAssistantJob(nativeJobRef.current, { status: "error" });
         nativeJobRef.current = null;
         nativeMessageRef.current = null;
+        nativeProofsRef.current = [];
         setThreadBusy(threadKey, false);
       }
     });
@@ -697,7 +864,9 @@ export function useNativeAssistant({
       }
       if (busyThreads.has(threadKey) || nativeItemTypeDesignRef.current) {
         return Promise.reject(
-          new Error("The connected agent is already working. Try again in a moment."),
+          new Error(
+            "The connected agent is already working. Try again in a moment.",
+          ),
         );
       }
       return new Promise<ItemTypeBlueprint>((resolve, reject) => {
@@ -705,7 +874,11 @@ export function useNativeAssistant({
           if (!nativeItemTypeDesignRef.current) return;
           nativeItemTypeDesignRef.current = null;
           setThreadBusy(threadKey, false);
-          reject(new Error("The connected agent took too long to design that item type."));
+          reject(
+            new Error(
+              "The connected agent took too long to design that item type.",
+            ),
+          );
         }, 120_000);
         nativeItemTypeDesignRef.current = {
           blueprint: null,
@@ -787,27 +960,50 @@ export function useNativeAssistant({
       try {
         if (nativeConnection?.state === "ready") {
           const open = submittedView.postId
-            ? await readItemTextRef.current(submittedView.postId).catch(() => null)
+            ? await readItemTextRef
+                .current(submittedView.postId)
+                .catch(() => null)
             : null;
           const openSelection = open
             ? resolveWorkspaceItemTextSelection(open)
             : null;
           const nativePrompt = nativeAssistantTurnPrompt({
             context: tools.describeContext(submittedView),
-            item: open && submittedView.postId
-              ? {
-                  id: submittedView.postId,
-                  title: open.title,
-                  excerpt: open.excerpt,
-                  body: open.body,
-                }
-              : null,
+            item:
+              open && submittedView.postId
+                ? {
+                    id: submittedView.postId,
+                    title: open.title,
+                    excerpt: open.excerpt,
+                    body: open.body,
+                  }
+                : null,
             request: prompt,
             selection: openSelection,
-            workspaceIndex: open ? null : nativeWorkspaceIndex(getPoolRef.current()),
+            workspaceIndex: open
+              ? null
+              : nativeWorkspaceIndex(getPoolRef.current()),
           });
           if (submitNativeAssistantTurn(nativePrompt)) {
-            appendToThread(thread, "progress", "Working with the TextText Agent");
+            const currentPost =
+              submittedView.postId && getPoolRef.current()
+                ? findPoolPostById(getPoolRef.current()!, submittedView.postId)
+                : null;
+            const currentProof =
+              currentPost && getPoolRef.current()
+                ? itemArtifactProof({
+                    id: currentPost.id,
+                    operation: "Read",
+                    pool: getPoolRef.current(),
+                    title: open?.title,
+                  })
+                : null;
+            nativeProofsRef.current = currentProof ? [currentProof] : [];
+            appendToThread(
+              thread,
+              "progress",
+              "Working with the TextText Agent",
+            );
             nativeJobRef.current = jobId;
             nativeMessageRef.current = null;
             return;
@@ -818,7 +1014,9 @@ export function useNativeAssistant({
         // already do. Without it a request about "this document" arrives as an
         // id with no text behind it.
         const open = submittedView.postId
-          ? await readItemTextRef.current(submittedView.postId).catch(() => null)
+          ? await readItemTextRef
+              .current(submittedView.postId)
+              .catch(() => null)
           : null;
         const openSelection = open
           ? resolveWorkspaceItemTextSelection(open)
@@ -842,10 +1040,24 @@ export function useNativeAssistant({
         }
         setCloudProvider(result.provider);
         setThreadCloudProvider(thread, result.provider);
+        const pool = getPoolRef.current();
+        let proofs = cloudWorkspaceProofs(result.workspaceCalls, pool);
+        if (submittedView.postId && pool) {
+          const proof = itemArtifactProof({
+            id: submittedView.postId,
+            operation: "Read",
+            pool,
+            title: open?.title,
+          });
+          if (proof) proofs = mergeArtifactProofs([proof], proofs);
+        }
         appendToThread(
           thread,
           "assistant",
-          result.text || "Done.",
+          result.text ||
+            (result.terminalError
+              ? "Some actions completed before the assistant stopped."
+              : "Done."),
           undefined,
           result.provider,
           result.outboundCalls.length || result.unreachableServers.length
@@ -854,8 +1066,14 @@ export function useNativeAssistant({
                 unreachable: result.unreachableServers,
               }
             : undefined,
+          proofs.length > 0 ? proofs : undefined,
         );
-        updateAssistantJob(jobId, { status: "done" });
+        if (result.terminalError) {
+          appendToThread(thread, "error", result.terminalError);
+          updateAssistantJob(jobId, { status: "error" });
+        } else {
+          updateAssistantJob(jobId, { status: "done" });
+        }
       } catch (error) {
         appendToThread(thread, "error", assistantAgentError(error));
         updateAssistantJob(jobId, { status: "error" });
@@ -864,13 +1082,7 @@ export function useNativeAssistant({
         setThreadBusy(thread, false);
       }
     },
-    [
-      contextKey,
-      contextLabel,
-      nativeConnection,
-      threadKey,
-      tools,
-    ],
+    [contextKey, contextLabel, nativeConnection, threadKey, tools],
   );
 
   const runQuickAction = useCallback(
@@ -899,12 +1111,16 @@ export function useNativeAssistant({
             : actionLabel,
         );
         if (selection && selectionAction) {
-          actionPrompt = `${actionLabel} this selected ${selection.field} text. Return the suggestion only. Do not change the item.\n\n${selection.text}`;
+          actionPrompt = `${actionLabel} this selected ${selection.field} text. Return the suggestion only. Do not change the item.`;
         }
         const result = await cloudAssistantTurn(actionPrompt, {
           level: view.level,
           folderPath: view.folderPath,
           postId: view.postId,
+          itemTitle: item.title,
+          selection: selection?.text,
+          itemPreview: item.body.slice(0, 4000),
+          mode: "suggestion",
         });
         if ("disabled" in result) {
           appendToThread(
@@ -916,18 +1132,29 @@ export function useNativeAssistant({
         }
         setCloudProvider(result.provider);
         setThreadCloudProvider(thread, result.provider);
+        const pool = getPoolRef.current();
+        let proofs = cloudWorkspaceProofs(result.workspaceCalls, pool);
+        const proof = itemArtifactProof({
+          id: view.postId,
+          operation: "Read",
+          pool,
+          title: item.title,
+        });
+        if (proof) proofs = mergeArtifactProofs([proof], proofs);
         appendToThread(
           thread,
           "assistant",
           result.text || "Done.",
-          quickActionProposal({
-            action,
-            actionLabel,
-            item,
-            itemId: view.postId,
-            selection: selection && selectionAction ? selection : null,
-            text: result.text ?? "",
-          }),
+          result.terminalError
+            ? undefined
+            : quickActionProposal({
+                action,
+                actionLabel,
+                item,
+                itemId: view.postId,
+                selection: selection && selectionAction ? selection : null,
+                text: result.text ?? "",
+              }),
           result.provider,
           result.outboundCalls.length || result.unreachableServers.length
             ? {
@@ -935,7 +1162,11 @@ export function useNativeAssistant({
                 unreachable: result.unreachableServers,
               }
             : undefined,
+          proofs.length > 0 ? proofs : undefined,
         );
+        if (result.terminalError) {
+          appendToThread(thread, "error", result.terminalError);
+        }
       } catch (error) {
         appendToThread(
           thread,
@@ -994,16 +1225,30 @@ export function useNativeAssistant({
             : undefined,
         }));
         try {
-          await tools.executor("update_item", {
+          const outcome = await tools.executor("update_item", {
             id: proposal.itemId,
             tags: normalizeTags(next),
           });
+          const queued = workspaceMutationQueued(outcome);
           updateThreadMessage(threadKey, messageId, (candidate) => ({
             ...candidate,
+            artifactProofs: queued
+              ? candidate.artifactProofs
+              : (() => {
+                  const proof = itemArtifactProof({
+                    id: proposal.itemId,
+                    operation: "Updated",
+                    pool: getPoolRef.current(),
+                  });
+                  return proof
+                    ? mergeArtifactProofs(candidate.artifactProofs, [proof])
+                    : candidate.artifactProofs;
+                })(),
             proposal: candidate.proposal
               ? {
                   ...candidate.proposal,
                   status: direction === "apply" ? "applied" : "undone",
+                  syncPending: queued,
                 }
               : undefined,
           }));
@@ -1039,8 +1284,7 @@ export function useNativeAssistant({
       const current = await readItemTextRef.current(proposal.itemId);
       const start = edit.range.start;
       const expectedText = direction === "apply" ? edit.before : edit.after;
-      const replacementText =
-        direction === "apply" ? edit.after : edit.before;
+      const replacementText = direction === "apply" ? edit.after : edit.before;
       const end = start + expectedText.length;
       if (current[edit.field].slice(start, end) !== expectedText) {
         appendToThread(
@@ -1061,7 +1305,7 @@ export function useNativeAssistant({
           : undefined,
       }));
       try {
-        await tools.executor("update_item", {
+        const outcome = await tools.executor("update_item", {
           id: proposal.itemId,
           text_edit: {
             field: edit.field,
@@ -1071,13 +1315,26 @@ export function useNativeAssistant({
             replacement_text: replacementText,
           },
         });
+        const queued = workspaceMutationQueued(outcome);
         updateThreadMessage(threadKey, messageId, (candidate) => ({
           ...candidate,
+          artifactProofs: queued
+            ? candidate.artifactProofs
+            : (() => {
+                const proof = itemArtifactProof({
+                  id: proposal.itemId,
+                  operation: "Updated",
+                  pool: getPoolRef.current(),
+                });
+                return proof
+                  ? mergeArtifactProofs(candidate.artifactProofs, [proof])
+                  : candidate.artifactProofs;
+              })(),
           proposal: candidate.proposal
             ? {
                 ...candidate.proposal,
                 status: direction === "apply" ? "applied" : "undone",
-                syncPending: false,
+                syncPending: queued,
               }
             : undefined,
         }));

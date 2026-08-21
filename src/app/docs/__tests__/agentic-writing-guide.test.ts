@@ -41,6 +41,7 @@ const gettingStartedSource = readFileSync(
   new URL("../getting-started/page.tsx", import.meta.url),
   "utf8",
 );
+const compactGettingStartedSource = gettingStartedSource.replace(/\s+/g, " ");
 const docsIndexSource = readFileSync(
   new URL("../page.tsx", import.meta.url),
   "utf8",
@@ -144,9 +145,12 @@ describe("the agentic writing guide", () => {
   });
 
   it("scopes proposal controls and guarded audience tools to real paths", () => {
-    expect(gettingStartedSource).toContain("selection Rewrite action");
-    expect(gettingStartedSource).toContain(
-      "ordinary freeform assistant request may update",
+    expect(compactGettingStartedSource).toContain("selection Rewrite action");
+    expect(compactGettingStartedSource).toContain(
+      "previews the exact replacement",
+    );
+    expect(compactGettingStartedSource).toContain(
+      "keeps Undo beside the result",
     );
     expect(featuresSource).toContain("selection quick actions");
     expect(featuresSource).toContain("API-key in-app assistant");
@@ -161,7 +165,7 @@ describe("the agentic writing guide", () => {
   it("qualifies every local plugin and consumer subscription path by edition", () => {
     expect(docsIndexSource).toContain("In the standalone Mac edition");
     expect(gettingStartedSource).toContain(
-      "Using the standalone Mac edition with Claude or Codex?",
+      "In the standalone Mac edition, a connected Claude or Codex agent",
     );
     expect(howItWorksSource).toContain(
       "In the standalone Mac edition, the local",
@@ -177,6 +181,34 @@ describe("the agentic writing guide", () => {
       "From your AI app in the standalone Mac edition",
     );
     expect(aiSource).toContain("The standalone Mac plugin does not use");
+  });
+
+  it("makes the first-value path capture, retrieval, proof, and recovery", () => {
+    for (const phrase of [
+      "Capture without filing",
+      "Find the saved note",
+      "Make one visible change",
+      "Save from an AI conversation",
+      "receipt with the saved title, destination, Open, and Undo",
+      "search and document command surface",
+      "reports the durable document path",
+    ]) {
+      expect(compactGettingStartedSource, `${phrase} is missing`).toContain(
+        phrase,
+      );
+    }
+
+    expect(compactGettingStartedSource).toContain(
+      "does not need a folder inventory",
+    );
+    expect(compactGettingStartedSource).toContain(
+      "words can be separated or reordered",
+    );
+    expect(compactGettingStartedSource).toContain(
+      "do not need to remember the exact sentence",
+    );
+    expect(docsIndexSource).toContain('href: "/docs/getting-started"');
+    expect(docsIndexSource).toContain('href: "/docs/recipes"');
   });
 
   it("states the item type provider requirements for each edition", () => {

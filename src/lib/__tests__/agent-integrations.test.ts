@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  AGENT_CONNECTION_CHECK_PROMPT,
   AGENT_INTEGRATIONS,
   AGENT_WORKFLOWS,
   CLAUDE_PLUGIN_INSTALL_COMMAND,
@@ -36,6 +37,16 @@ describe("agent integrations", () => {
     expect(hostedMcpUrl()).toBe(TEXTTEXT_HOSTED_MCP_URL);
     expect(hostedMcpUrl("https://preview.TextText.app/")).toBe(
       "https://preview.TextText.app/api/mcp",
+    );
+  });
+
+  it("ships one channel-neutral visible connection check", () => {
+    expect(AGENT_CONNECTION_CHECK_PROMPT).toContain(
+      "private note titled Agent connection check",
+    );
+    expect(AGENT_CONNECTION_CHECK_PROMPT).toContain("Read the note back");
+    expect(AGENT_CONNECTION_CHECK_PROMPT).toContain(
+      "do not publish or share it",
     );
   });
 

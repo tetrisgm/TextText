@@ -32,6 +32,7 @@ The durable action audit records the supplied agent name and intent.
 
 ```sh
 "$TEXTTEXT_CMD" ls                                    # what is here
+"$TEXTTEXT_CMD" search "exact phrase" --json          # find matching content
 "$TEXTTEXT_CMD" sections <doc>                        # the headings
 "$TEXTTEXT_CMD" read <doc> [--section "## Heading"]   # all or one section
 "$TEXTTEXT_CMD" edit <doc> --section "## Heading" --as codex --message "why"
@@ -39,6 +40,7 @@ The durable action audit records the supplied agent name and intent.
 "$TEXTTEXT_CMD" append <doc> --as codex --message "why"
 "$TEXTTEXT_CMD" open <doc>                            # open it in the app
 "$TEXTTEXT_CMD" new <title> --folder <folder>         # create a document
+printf '%s' "one thing to keep" | "$TEXTTEXT_CMD" capture --json
 ```
 
 Always pass `--as <your name>` and `--message "<what this change is for>"`.
@@ -55,27 +57,48 @@ is unavailable, such as TestFlight, a browser, or another machine. Do not turn a
 missing local app into a token setup flow. MCP also covers work that has no file
 equivalent: publishing, audience and sharing, comments, templates, and Trash.
 
+## Find before inventory
+
+For a simple find, retrieval, or "what did I write about" request, call
+`texttext search "<query>" --json` directly. Do not list the workspace or poll
+folders first. Search returns the same title, body, and excerpt matches as the
+in-app assistant and hosted MCP, with an item id and snippet. Read the exact
+result with `texttext read <id>`.
+
+Use `texttext ls` only when the user actually asked for an inventory, when no
+search term can be inferred, or when choosing among folders for a precise
+creation request.
+
 ## Start with context
 
-With the CLI: `texttext ls` to see what exists, then `texttext sections <doc>`
-and `texttext read` before changing anything.
+With the CLI: search for the relevant item, then use `texttext sections <id>`
+and `texttext read <id>` before changing anything.
 
 With MCP:
 
 1. Call `get_workspace`.
-2. Call `list_folders` before assuming folder paths.
-3. Search before creating a document that may already exist.
+2. Call `search` directly for a simple retrieval. Do not list folders first.
+3. Call `list_folders` only before a precise create or when the user asked for
+   workspace organization.
 4. Read an item before changing it, and retain its content hash for guarded
    updates.
 
+For a direct request such as "save this," do not make the user choose a folder
+or document shape. With the CLI, pipe the exact content to `texttext capture`.
+With hosted MCP, call `create_item` with `capture` and a stable
+`idempotency_key`. TextText routes text to Notes and a URL to Bookmarks. Report
+the returned receipt, then read the item back only when the user asked for
+verification or the next step needs its content.
+
 ## Mutation rules
 
-- Read before you write, on either transport. Never replay content you have not
-  just read.
+- Read an existing item before changing it. A new quick capture does not need a
+  workspace inventory or an unrelated read first.
 - Pass a stable `idempotency_key` to `create_item` and `append_to_item` when an
   automation may retry.
 - Use `if_match_hash` for guarded item mutations.
-- Read back the item after a mutation and report the durable result.
+- Report the durable receipt after capture. Read the item back when the user
+  asks for verification or the next step needs its content.
 - Keep notes and bookmarks unlisted. Never try to publish them.
 - Ask before publishing, changing audience, deleting, or revoking access unless
   the user already gave explicit permission for that exact action.

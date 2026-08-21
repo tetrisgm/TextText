@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 import {
   persistPool,
   persistPostBody,
@@ -46,6 +46,12 @@ let state: WorkspacePoolState = {
   error: null,
   bodies: {},
 };
+
+let activePoolRefresh: {
+  blogId: string;
+  handle: string;
+  promise: Promise<void>;
+} | null = null;
 
 function bodyKey(blogId: string, postId: string): string {
   return `${blogId}:${postId}`;
@@ -260,46 +266,50 @@ export function seedWorkspacePool(
   }
 }
 
-export async function refreshWorkspacePool(handle: string, blogId: string) {
-  if (state.refreshing) return;
-  const requestGeneration = poolMutationGeneration;
+async function performWorkspacePoolRefresh(handle: string, blogId: string) {
   state = { ...state, refreshing: true, error: null };
   try {
-    const params = new URLSearchParams({ handle });
-    const response = await fetch(`/api/workspace/pool?${params.toString()}`, {
-      credentials: "same-origin",
-      headers: { Accept: "application/json" },
-    });
-    if (!response.ok) throw new Error("Could not refresh the workspace");
-    const pool = (await response.json()) as WorkspacePoolPayload;
-    if (pool.blogId !== blogId) throw new Error("Workspace response mismatch");
-    if (requestGeneration !== poolMutationGeneration) {
-      setState({ refreshing: false, error: null });
-      queueMicrotask(() => void refreshWorkspacePool(handle, blogId));
-      return;
-    }
-    const nextPool = mergeIncomingPool(pool);
-    setState({ pool: nextPool, refreshing: false, error: null });
-    void persistPool(nextPool);
-    for (const initial of nextPool.initialBodies ?? []) {
-      const key = bodyKey(blogId, initial.postId);
-      const current = state.bodies[key];
-      if (locallyDirtyBodies.has(key)) continue;
-      if (
-        current?.status === "ready" &&
-        !isWorkspacePostBodyStale(initial.updatedAt, current.body.updatedAt)
-      ) {
-        continue;
+    // A local optimistic mutation can land while the request is in flight.
+    // Repeat inside this same promise so every awaiting caller observes the
+    // first server snapshot that is current with its local mutation.
+    while (true) {
+      const requestGeneration = poolMutationGeneration;
+      const params = new URLSearchParams({ handle });
+      const response = await fetch(`/api/workspace/pool?${params.toString()}`, {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) throw new Error("Could not refresh the workspace");
+      const pool = (await response.json()) as WorkspacePoolPayload;
+      if (pool.blogId !== blogId) {
+        throw new Error("Workspace response mismatch");
       }
-      const body: WorkspacePostBodyPayload = {
-        blogId,
-        postId: initial.postId,
-        body: initial.body,
-        updatedAt: initial.updatedAt,
-        fetchedAt: new Date().toISOString(),
-      };
-      setBodyEntry(blogId, initial.postId, { status: "ready", body });
-      void persistPostBody(body);
+      if (requestGeneration !== poolMutationGeneration) continue;
+
+      const nextPool = mergeIncomingPool(pool);
+      setState({ pool: nextPool, refreshing: false, error: null });
+      void persistPool(nextPool);
+      for (const initial of nextPool.initialBodies ?? []) {
+        const key = bodyKey(blogId, initial.postId);
+        const current = state.bodies[key];
+        if (locallyDirtyBodies.has(key)) continue;
+        if (
+          current?.status === "ready" &&
+          !isWorkspacePostBodyStale(initial.updatedAt, current.body.updatedAt)
+        ) {
+          continue;
+        }
+        const body: WorkspacePostBodyPayload = {
+          blogId,
+          postId: initial.postId,
+          body: initial.body,
+          updatedAt: initial.updatedAt,
+          fetchedAt: new Date().toISOString(),
+        };
+        setBodyEntry(blogId, initial.postId, { status: "ready", body });
+        void persistPostBody(body);
+      }
+      return;
     }
   } catch (error) {
     setState({
@@ -307,6 +317,25 @@ export async function refreshWorkspacePool(handle: string, blogId: string) {
       error: error instanceof Error ? error.message : "Could not refresh",
     });
   }
+}
+
+export function refreshWorkspacePool(
+  handle: string,
+  blogId: string,
+): Promise<void> {
+  const active = activePoolRefresh;
+  if (active) {
+    if (active.handle === handle && active.blogId === blogId) {
+      return active.promise;
+    }
+    return active.promise.then(() => refreshWorkspacePool(handle, blogId));
+  }
+
+  const promise = performWorkspacePoolRefresh(handle, blogId).finally(() => {
+    if (activePoolRefresh?.promise === promise) activePoolRefresh = null;
+  });
+  activePoolRefresh = { blogId, handle, promise };
+  return promise;
 }
 
 export async function ensurePostBody(
@@ -384,8 +413,24 @@ export async function ensurePostBody(
   }
 }
 
-export function useWorkspacePool() {
-  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+export function useWorkspacePool(initialPool?: WorkspacePoolPayload) {
+  const initialServerSnapshot = useMemo<WorkspacePoolState | null>(
+    () =>
+      initialPool
+        ? {
+            pool: initialPool,
+            refreshing: false,
+            error: null,
+            bodies: {},
+          }
+        : null,
+    [initialPool],
+  );
+  const serverSnapshot = useCallback(
+    () => initialServerSnapshot ?? getServerSnapshot(),
+    [initialServerSnapshot],
+  );
+  return useSyncExternalStore(subscribe, getSnapshot, serverSnapshot);
 }
 
 export function useWorkspacePostBody(

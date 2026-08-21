@@ -13,6 +13,8 @@ export type CloudAssistantContext = {
   selection?: string;
   /** The opening of the body, bounded. The model can read the rest. */
   itemPreview?: string;
+  /** Suggestion turns are server-limited to read-only workspace tools. */
+  mode?: "suggestion";
 };
 
 export type CloudAssistantStatus = {
@@ -32,11 +34,21 @@ export type OutboundCall = {
   status: "ok" | "input_required" | "failed";
 };
 
+/** One validated TextText workspace command completed during the model turn. */
+export type CloudWorkspaceCall = {
+  tool: string;
+  args: Record<string, unknown>;
+  output: unknown;
+};
+
 export type CloudAssistantOutcome =
   | {
       text: string;
       provider: CloudAssistantProviderLabel;
       outboundCalls: OutboundCall[];
+      workspaceCalls: CloudWorkspaceCall[];
+      /** Some commands completed before the provider failed later in the turn. */
+      terminalError?: string;
       /** Connected servers that did not answer, so the turn was smaller. */
       unreachableServers: string[];
     }
@@ -62,6 +74,28 @@ function cleanOutboundCalls(value: unknown): OutboundCall[] {
       connection: candidate.connection,
       tool: candidate.tool,
       status,
+    });
+  }
+  return calls;
+}
+
+function cleanRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function cleanWorkspaceCalls(value: unknown): CloudWorkspaceCall[] {
+  if (!Array.isArray(value)) return [];
+  const calls: CloudWorkspaceCall[] = [];
+  for (const entry of value.slice(0, 16)) {
+    const candidate = cleanRecord(entry);
+    const args = cleanRecord(candidate?.args);
+    if (!candidate || typeof candidate.tool !== "string" || !args) continue;
+    calls.push({
+      tool: candidate.tool,
+      args,
+      output: candidate.output,
     });
   }
   return calls;
@@ -114,6 +148,8 @@ export async function cloudAssistantTurn(
     provider?: unknown;
     outboundCalls?: unknown;
     unreachableServers?: unknown;
+    workspaceCalls?: unknown;
+    terminalError?: unknown;
   };
   if (data.provider !== "Anthropic" && data.provider !== "OpenAI") {
     throw new Error("The cloud provider could not be identified.");
@@ -122,6 +158,10 @@ export async function cloudAssistantTurn(
     text: typeof data.text === "string" ? data.text : "",
     provider: data.provider,
     outboundCalls: cleanOutboundCalls(data.outboundCalls),
+    workspaceCalls: cleanWorkspaceCalls(data.workspaceCalls),
+    ...(typeof data.terminalError === "string" && data.terminalError.trim()
+      ? { terminalError: data.terminalError.trim() }
+      : {}),
     unreachableServers: Array.isArray(data.unreachableServers)
       ? data.unreachableServers.filter(
           (entry): entry is string => typeof entry === "string",

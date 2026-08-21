@@ -169,6 +169,76 @@ describe("assistant sidebar UI", () => {
     expect(html).not.toContain("off this Mac");
   });
 
+  it("ends a completed turn with compact inspectable TextText proof", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        cloudProvider: "OpenAI",
+        messages: [
+          {
+            id: "cloud-1",
+            role: "assistant",
+            text: "I tightened the opening.",
+            provider: "OpenAI",
+            artifactProofs: [
+              {
+                operation: "Updated",
+                itemId: "note-1",
+                title: "Launch notes",
+                folderPath: "notes",
+                href: "/@writer/notes/launch-notes",
+              },
+            ],
+          },
+        ],
+        submitting: false,
+      }),
+    );
+
+    expect(html).toContain('aria-label="TextText proof"');
+    expect(html).toContain("Updated");
+    expect(html).toContain("Launch notes");
+    expect(html).toContain("notes");
+    expect(html).toContain('href="/@writer/notes/launch-notes"');
+    expect(html).toContain(">Open<");
+    expect(html).not.toContain("Undo");
+  });
+
+  it("collapses multi-item source proof instead of filling the rail", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        cloudProvider: "OpenAI",
+        messages: [
+          {
+            id: "cloud-1",
+            role: "assistant",
+            text: "These notes cover the launch.",
+            artifactProofs: [
+              {
+                operation: "Found",
+                itemId: "note-1",
+                title: "Launch notes",
+                folderPath: "notes",
+                href: "/@writer/notes/launch-notes",
+              },
+              {
+                operation: "Found",
+                itemId: "note-2",
+                title: "Launch checklist",
+                folderPath: "notes",
+                href: "/@writer/notes/launch-checklist",
+              },
+            ],
+          },
+        ],
+        submitting: false,
+      }),
+    );
+
+    expect(html).toContain("<details");
+    expect(html).toContain("Found 2 TextText items");
+    expect(html.match(/>Open</g)).toHaveLength(2);
+  });
+
   it("greets the reader and offers starters that name the open item", () => {
     const html = renderToStaticMarkup(
       React.createElement(AssistantConversation, {

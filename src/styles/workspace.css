@@ -245,6 +245,121 @@
   opacity: 0.45;
 }
 
+.universal-item-receipts {
+  display: grid;
+  gap: 2px;
+}
+
+.universal-item-receipt {
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+  gap: 10px;
+  padding: 3px 4px 0 10px;
+  color: var(--muted);
+  font: 500 12px/1.35 var(--font-ui);
+}
+
+.universal-item-receipt-copy {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 7px;
+}
+
+.universal-item-receipt-copy strong {
+  max-width: min(38vw, 360px);
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.universal-item-receipt-copy small {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.universal-item-receipt-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-width: 100%;
+  margin-left: auto;
+}
+
+.universal-item-receipt-actions .ac-btn {
+  min-height: 26px;
+  padding-inline: 7px;
+  font-size: 12px;
+}
+
+.universal-item-receipt-raw {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.universal-item-receipt-raw summary {
+  list-style: none;
+}
+
+.universal-item-receipt-raw summary::-webkit-details-marker {
+  display: none;
+}
+
+.universal-item-receipt-raw[open] {
+  flex: 1 0 100%;
+}
+
+.universal-item-receipt-raw pre {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: min(320px, 70vw);
+  margin: 2px 0 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-control);
+  background: var(--paper);
+  color: var(--ink);
+  font: 500 12px/1.45 var(--font-mono);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 520px) {
+  .universal-item-composer {
+    min-height: 58px;
+  }
+
+  .universal-item-composer-input {
+    min-height: 44px;
+  }
+
+  .universal-item-composer-input:placeholder-shown {
+    overflow-y: hidden;
+  }
+
+  .universal-item-composer-input::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
+  .universal-item-receipt {
+    flex-wrap: wrap;
+  }
+
+  .universal-item-receipt-copy {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .universal-item-receipt-copy strong {
+    max-width: 48vw;
+  }
+}
+
 .workspace-library-toolbar {
   min-height: 42px;
   margin: 0 0 14px;
@@ -835,6 +950,31 @@
   .workspace-library-filters {
     width: 100%;
     overflow-x: auto;
+  }
+}
+
+/* The tablet assistant is a viewport overlay, not a grid column. Give the
+   Library's primary capture loop a matching safe area while it is open so
+   the field, truthful receipt, and recovery actions never sit underneath the
+   inspector. Phones intentionally promote the assistant to a full-screen
+   surface instead. */
+@media (min-width: 561px) and (max-width: 900px) {
+  .post-editor-shell.has-assistant-open .workspace-root-page {
+    max-width: none;
+    margin-inline: 0;
+    padding-right: calc(min(320px, 50vw) + 48px);
+  }
+
+  .post-editor-shell.has-assistant-open .universal-item-receipt {
+    flex-wrap: wrap;
+  }
+
+  .post-editor-shell.has-assistant-open .universal-item-receipt-copy {
+    flex: 1 1 220px;
+  }
+
+  .post-editor-shell.has-assistant-open .universal-item-receipt-actions {
+    margin-left: 0;
   }
 }
 

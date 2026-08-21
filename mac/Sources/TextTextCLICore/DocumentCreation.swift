@@ -10,7 +10,9 @@ import TextTextFileProviderKit
 public enum DocumentCreation {
     /// Frontmatter keys the parser recognizes. Anything else is dropped on sync,
     /// so writing more than this is noise at best.
-    public static func frontmatter(title: String, kind: String) -> String {
+    public static func frontmatter(
+        title: String, kind: String, sourceURL: String? = nil
+    ) -> String {
         // Values are single-line JSON, matching the on-disk grammar exactly.
         func json(_ value: String) -> String {
             let data = try? JSONSerialization.data(
@@ -23,6 +25,15 @@ public enum DocumentCreation {
         }
         // The trailing blank line matches how every existing document on disk
         // separates frontmatter from body.
+        let links = sourceURL.map {
+            let value: [[String: String]] = [["label": title, "href": $0]]
+            guard let data = try? JSONSerialization.data(
+                withJSONObject: value,
+                options: [.withoutEscapingSlashes, .sortedKeys]),
+                let text = String(data: data, encoding: .utf8)
+            else { return "" }
+            return "links: \(text)\n"
+        } ?? ""
         return """
             ---
             schema: "texttext.markdown-file.v1"
@@ -30,7 +41,7 @@ public enum DocumentCreation {
             type: \(json(kind))
             title: \(json(title))
             status: "draft"
-            ---
+            \(links)---
 
 
             """

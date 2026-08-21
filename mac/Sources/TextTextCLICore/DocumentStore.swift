@@ -258,7 +258,8 @@ public struct DocumentStore: Sendable {
     /// when it ingests the file.
     @discardableResult
     public func create(
-        title: String, body: String = "", folder: String? = nil, kind: String = "note"
+        title: String, body: String = "", folder: String? = nil, kind: String = "note",
+        sourceURL: String? = nil
     ) throws -> URL {
         let fileManager = FileManager.default
         var destination = root
@@ -276,14 +277,15 @@ public struct DocumentStore: Sendable {
         }
 
         let markdown =
-            DocumentCreation.frontmatter(title: title, kind: kind)
+            DocumentCreation.frontmatter(
+                title: title, kind: kind, sourceURL: sourceURL)
             + (body.isEmpty ? "" : body.trimmingCharacters(in: .newlines) + "\n")
 
         let temporary = try makeTemporaryDirectory()
         defer { try? fileManager.removeItem(at: temporary) }
         let package = try TextTextTextBundlePackage.materialize(
             canonicalMarkdown: markdown, documentJSON: nil,
-            assets: [], sourceURL: nil, in: temporary)
+            assets: [], sourceURL: sourceURL, in: temporary)
         let packed = try TextTextTextBundlePackage.zipToTextPack(
             packageURL: package.url, in: temporary)
         try atomicallyReplace(url, with: try Data(contentsOf: packed))

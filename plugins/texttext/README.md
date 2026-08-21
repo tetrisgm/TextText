@@ -45,6 +45,14 @@ Restart Codex, then ask it to list your TextText workspace. Codex uses the same
 skills and the same bundled command as Claude Code. The install requires no
 token and does not add a hosted MCP server to the session.
 
+To verify the write path without choosing a folder or format, ask the agent to
+"save this in TextText." The plugin uses `texttext capture`, which routes text
+to Notes and links to Bookmarks and returns the saved document path.
+
+For retrieval, ask "find my notes about pricing." The plugin calls
+`texttext search "pricing" --json` directly, then reads the exact returned item
+id. It does not crawl every folder before answering.
+
 ## Verify the local connection
 
 This is the harmless read the skills run before doing any work:

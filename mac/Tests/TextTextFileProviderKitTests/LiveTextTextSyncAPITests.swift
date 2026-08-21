@@ -160,6 +160,67 @@ final class LiveTextTextSyncAPITests: XCTestCase {
         XCTAssertEqual(reply.structuredContent?.item?.hash, "h2")
     }
 
+    func testAgentSearchUsesSharedCommandAndDecodesStructuredResults() async throws {
+        var capturedBody: Data?
+        TextTextSyncURLProtocol.handler = { request in
+            capturedBody = try requestBodyData(request)
+            let response = try XCTUnwrap(
+                HTTPURLResponse(
+                    url: try XCTUnwrap(request.url), statusCode: 200,
+                    httpVersion: nil, headerFields: nil))
+            let data = Data(
+                #"{"content":[{"type":"text","text":"{}"}],"structuredContent":{"query":"field notes","results":[{"id":"p1","slug":"field-notes","title":"Field notes","kind":"note","status":"draft","hash":"h1","snippet":"Notes from the field.","folder_path":"Notes/Research"}]}}"#.utf8)
+            return (response, data)
+        }
+        let api = makeAPI()
+
+        let result = await api.agentSearchItems(
+            query: "field notes", agentName: "Codex", agentIntent: nil)
+
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try XCTUnwrap(capturedBody))
+                as? [String: Any])
+        XCTAssertEqual(object["name"] as? String, "search")
+        let arguments = try XCTUnwrap(object["arguments"] as? [String: String])
+        XCTAssertEqual(arguments, ["query": "field notes"])
+        guard case .success(let reply) = result else {
+            return XCTFail("agentSearchItems failed: \(result)")
+        }
+        XCTAssertEqual(reply.structuredContent?.query, "field notes")
+        XCTAssertEqual(reply.structuredContent?.results?.first?.id, "p1")
+        XCTAssertEqual(reply.structuredContent?.results?.first?.snippet, "Notes from the field.")
+        XCTAssertEqual(
+            reply.structuredContent?.results?.first?.folderPath,
+            "Notes/Research")
+    }
+
+    func testAgentCaptureDecodesAuthoritativeReceipt() async throws {
+        TextTextSyncURLProtocol.handler = { request in
+            let response = try XCTUnwrap(
+                HTTPURLResponse(
+                    url: try XCTUnwrap(request.url), statusCode: 200,
+                    httpVersion: nil, headerFields: nil))
+            let data = Data(
+                #"{"content":[{"type":"text","text":"{}"}],"structuredContent":{"item":{"id":"p1","title":"Server title","hash":"h1"},"receipt":{"item_id":"p1","kind":"note","saved_to":"Notes/Research","title":"Server title"}}}"#.utf8)
+            return (response, data)
+        }
+        let api = makeAPI()
+
+        let result = await api.agentCaptureItem(
+            capture: "Client title", folderPath: nil,
+            idempotencyKey: "capture-1", agentName: "Codex",
+            agentIntent: nil)
+
+        guard case .success(let reply) = result else {
+            return XCTFail("agentCaptureItem failed: \(result)")
+        }
+        XCTAssertEqual(reply.structuredContent?.receipt?.itemId, "p1")
+        XCTAssertEqual(
+            reply.structuredContent?.receipt?.savedTo,
+            "Notes/Research")
+        XCTAssertEqual(reply.structuredContent?.receipt?.title, "Server title")
+    }
+
     func testAgentSectionUpdateSendsGuardedSurgicalArguments() async throws {
         var capturedBody: Data?
         TextTextSyncURLProtocol.handler = { request in

@@ -12,12 +12,7 @@ import {
   useState,
   useTransition,
 } from "react";
-import type {
-  CSSProperties,
-  FormEvent,
-  MouseEvent,
-  ReactNode,
-} from "react";
+import type { CSSProperties, FormEvent, MouseEvent, ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -52,6 +47,16 @@ import {
 import { formatArticleDate, isVideoFile, postBodyPreview } from "@/lib/content";
 import type { Blog, Folder, Post } from "@/lib/content";
 import { resolveCoverSource } from "@/lib/cover";
+import { captureIntent } from "@/lib/capture-intent";
+import {
+  enqueueCapture,
+  readCaptureQueue,
+  recoverCaptureQueue,
+  removeCapture,
+  updateCapture,
+  writeCaptureQueue,
+} from "@/lib/capture-queue";
+import type { CaptureQueueEntry } from "@/lib/capture-queue";
 import type { TemplateReference } from "@/lib/documents/model";
 import { documentFromLegacyPost } from "@/lib/documents/legacy";
 import { applyCollectionSpec } from "@/lib/documents/collection-query";
@@ -99,12 +104,36 @@ export type FolderCreateRequest =
       title?: string;
     };
 
-export type FolderCreateItem = (request: FolderCreateRequest) => void;
+export type FolderCreateOptions = {
+  /** Home captures stay in the inbox. Folder creation keeps opening the item. */
+  open?: boolean;
+  /** Raw inbox input. The shell sends this through the shared create_item command. */
+  capture?: string;
+  /** Stable across ambiguous retries so one capture can never create twice. */
+  idempotencyKey?: string;
+  /** Called only after the server has returned the durable item and receipt. */
+  onPersisted?: (post: Post, receipt?: FolderCaptureReceipt) => void;
+  /** Called after a bounded in-place capture fails and its optimistic row is removed. */
+  onFailed?: (error: unknown) => void;
+};
+
+export type FolderCaptureReceipt = {
+  itemId: string;
+  savedTo: string;
+  title: string;
+};
+
+export type FolderCreateItem = (
+  request: FolderCreateRequest,
+  options?: FolderCreateOptions,
+) => Post | void;
 
 export type FolderDeleteItem = (post: Post) => Promise<void> | void;
 export type FolderCaptureResolved = (post: Post) => void;
 export type FolderViewMode = WorkspaceViewMode;
 export type FolderDeleteFolder = (folder: Folder) => Promise<void> | void;
+
+type InboxCapture = CaptureQueueEntry<FolderCreateRequest, Post>;
 
 export const CREATE_FOLDER_ITEM_EVENT = "texttext:create-folder-item";
 const EDIT_FOLDER_TITLE_EVENT = "texttext:edit-folder-title";
@@ -631,32 +660,246 @@ function FolderTitleEditor({
 export function UniversalItemComposer({
   blog,
   destinations,
+  focusRequestKey = 0,
   folder,
   handle,
   onCreateItem,
+  onDeleteItem,
+  onOpenCapturedItem,
 }: {
   blog: Blog;
   destinations?: readonly Folder[];
+  focusRequestKey?: number;
   folder: Folder;
   handle: string;
   onCreateItem?: FolderCreateItem;
+  onDeleteItem?: FolderDeleteItem;
+  onOpenCapturedItem?: (post: Post) => void;
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const lastFocusRequestKey = useRef(focusRequestKey);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [captures, setCaptures] = useState<InboxCapture[]>([]);
+  const [hydratedCaptureQueueHandle, setHydratedCaptureQueueHandle] = useState<
+    string | null
+  >(
+    destinations?.length ? null : handle,
+  );
+  const capturesRef = useRef<InboxCapture[]>([]);
   const [, startTransition] = useTransition();
+  const capturesInPlace = Boolean(destinations?.length);
+  const captureQueueReady =
+    !capturesInPlace || hydratedCaptureQueueHandle === handle;
+
+  useEffect(() => {
+    if (focusRequestKey <= lastFocusRequestKey.current) return;
+    lastFocusRequestKey.current = focusRequestKey;
+    inputRef.current?.focus();
+  }, [focusRequestKey]);
+
+  const replaceCaptures = useCallback(
+    (next: readonly InboxCapture[], required = false): boolean => {
+      try {
+        const persisted = writeCaptureQueue(
+          window.localStorage,
+          handle,
+          next,
+        );
+        capturesRef.current = persisted;
+        setCaptures(persisted);
+        return true;
+      } catch (storageError) {
+        if (!required) {
+          capturesRef.current = [...next];
+          setCaptures([...next]);
+        }
+        setError(
+          actionErrorMessage(
+            storageError,
+            "TextText could not protect this capture locally",
+          ),
+        );
+        return false;
+      }
+    },
+    [handle],
+  );
+
+  const patchCapture = useCallback(
+    (id: string, patch: Partial<InboxCapture>) =>
+      replaceCaptures(updateCapture(capturesRef.current, id, patch)),
+    [replaceCaptures],
+  );
+
+  useEffect(() => {
+    if (!capturesInPlace) return;
+    const hydrate = window.setTimeout(() => {
+      const recovered = recoverCaptureQueue(
+        readCaptureQueue<FolderCreateRequest, Post>(window.localStorage, handle),
+      );
+      if (replaceCaptures(recovered)) setHydratedCaptureQueueHandle(handle);
+    }, 0);
+    return () => window.clearTimeout(hydrate);
+  }, [capturesInPlace, handle, replaceCaptures]);
 
   // A pasted link belongs with the other saved links, wherever you typed it.
   const destinationFor = useCallback(
     (sourceUrl: string | null): Folder => {
-      if (!sourceUrl || !destinations?.length) return folder;
+      if (!destinations?.length) return folder;
       return (
-        destinations.find((candidate) => candidate.mode === "bookmarks") ??
-        folder
+        destinations.find(
+          (candidate) => candidate.mode === (sourceUrl ? "bookmarks" : "notes"),
+        ) ?? folder
       );
     },
     [destinations, folder],
+  );
+
+  const runInPlaceCapture = useCallback(
+    (capture: InboxCapture) => {
+      if (!onCreateItem) return;
+      patchCapture(capture.id, {
+        error: undefined,
+        post: undefined,
+        status: "saving",
+      });
+      try {
+        const created = onCreateItem(capture.request, {
+          capture: capture.raw,
+          idempotencyKey: capture.idempotencyKey,
+          open: false,
+          onPersisted: (savedPost, receipt) => {
+            if (!receipt || receipt.itemId !== savedPost.id) {
+              patchCapture(capture.id, {
+                error:
+                  "The item was saved without an exact receipt. Retry to confirm it.",
+                post: undefined,
+                status: "failed",
+              });
+              return;
+            }
+            patchCapture(capture.id, {
+              destination: receipt.savedTo,
+              error: undefined,
+              post: savedPost,
+              status: "saved",
+              title: receipt.title,
+            });
+          },
+          onFailed: (captureError) => {
+            patchCapture(capture.id, {
+              error: actionErrorMessage(
+                captureError,
+                "TextText could not save this yet",
+              ),
+              post: undefined,
+              status: "failed",
+            });
+          },
+        });
+        if (!created) {
+          patchCapture(capture.id, {
+            error: "TextText could not start this capture.",
+            post: undefined,
+            status: "failed",
+          });
+          return;
+        }
+        patchCapture(capture.id, { post: created });
+      } catch (captureError) {
+        patchCapture(capture.id, {
+          error: actionErrorMessage(
+            captureError,
+            "TextText could not start this capture",
+          ),
+          post: undefined,
+          status: "failed",
+        });
+      }
+      window.requestAnimationFrame(() => inputRef.current?.focus());
+    },
+    [onCreateItem, patchCapture],
+  );
+
+  const queueInPlaceCapture = useCallback(
+    (
+      request: FolderCreateRequest,
+      destination: Folder,
+      title: string,
+      raw: string,
+    ): boolean => {
+      const capture: InboxCapture = {
+        createdAt: Date.now(),
+        destination: destination.name,
+        id: crypto.randomUUID(),
+        idempotencyKey: crypto.randomUUID(),
+        raw,
+        request,
+        status: "saving",
+        title,
+      };
+      const queued = enqueueCapture(capturesRef.current, capture);
+      if (!queued.some((entry) => entry.id === capture.id)) {
+        setError(
+          "Six captures still need attention. Retry or dismiss one first.",
+        );
+        return false;
+      }
+      // This is the loss boundary: raw input and its stable retry key reach
+      // durable browser storage before the textarea is ever cleared.
+      if (!replaceCaptures(queued, true)) return false;
+      runInPlaceCapture(capture);
+      return true;
+    },
+    [replaceCaptures, runInPlaceCapture],
+  );
+
+  const undoCapture = useCallback(
+    async (capture: InboxCapture) => {
+      if (!onDeleteItem || !capture.post) return;
+      patchCapture(capture.id, {
+        error: undefined,
+        status: "deleting",
+      });
+      try {
+        // The receipt is only dismissed after the server has confirmed Trash.
+        await onDeleteItem(capture.post);
+        replaceCaptures(removeCapture(capturesRef.current, capture.id));
+        window.requestAnimationFrame(() => inputRef.current?.focus());
+      } catch (deleteError) {
+        patchCapture(capture.id, {
+          error: actionErrorMessage(deleteError, "Could not undo capture"),
+          status: "saved",
+        });
+      }
+    },
+    [onDeleteItem, patchCapture, replaceCaptures],
+  );
+
+  const copyCaptureRaw = useCallback(async (capture: InboxCapture) => {
+    try {
+      await navigator.clipboard.writeText(capture.raw);
+      setError(null);
+    } catch (copyError) {
+      setError(actionErrorMessage(copyError, "Could not copy capture text"));
+    }
+  }, []);
+
+  const discardCapture = useCallback(
+    (capture: InboxCapture) => {
+      if (
+        !window.confirm(
+          `Discard the unsaved capture “${capture.title}”? This cannot be undone.`,
+        )
+      ) {
+        return;
+      }
+      replaceCaptures(removeCapture(capturesRef.current, capture.id));
+      window.requestAnimationFrame(() => inputRef.current?.focus());
+    },
+    [replaceCaptures],
   );
 
   useEffect(() => {
@@ -680,9 +923,17 @@ export function UniversalItemComposer({
         inputRef.current?.focus();
         return;
       }
+      if (capturesInPlace && !captureQueueReady) {
+        setError("Finishing capture recovery. Your text is still here.");
+        inputRef.current?.focus();
+        return;
+      }
 
       const draft = parseItemInput(value);
-      const destination = destinationFor(draft.sourceUrl);
+      const capturePreview = capturesInPlace ? captureIntent(value) : null;
+      const destination = destinationFor(
+        capturePreview?.sourceUrl ?? draft.sourceUrl,
+      );
       const template = defaultTemplateForFolder(destination);
       const type = compatibilityTypeForTemplate(template, draft.sourceUrl);
       const request: FolderCreateRequest =
@@ -710,13 +961,31 @@ export function UniversalItemComposer({
               title: draft.title,
             };
 
-      form.reset();
       setError(null);
       if (onCreateItem) {
-        onCreateItem(request);
+        if (capturesInPlace) {
+          if (
+            queueInPlaceCapture(
+              request,
+              destination,
+              capturePreview?.title ?? draft.title ?? "Untitled",
+              value,
+            )
+          ) {
+            form.reset();
+          }
+          return;
+        }
+        form.reset();
+        onCreateItem(request, { open: true });
+        return;
+      }
+      if (capturesInPlace) {
+        setError("TextText could not start this capture.");
         return;
       }
 
+      form.reset();
       setCreating(true);
       startTransition(() => {
         const creation =
@@ -762,7 +1031,17 @@ export function UniversalItemComposer({
           .finally(() => setCreating(false));
       });
     },
-    [blog, creating, destinationFor, handle, onCreateItem, router],
+    [
+      blog,
+      capturesInPlace,
+      captureQueueReady,
+      creating,
+      destinationFor,
+      handle,
+      onCreateItem,
+      router,
+      queueInPlaceCapture,
+    ],
   );
 
   return (
@@ -772,14 +1051,19 @@ export function UniversalItemComposer({
           ref={inputRef}
           name="item"
           className="universal-item-composer-input"
-          placeholder="Type a title, or paste a link"
-          aria-label="Create an item"
+          placeholder={
+            capturesInPlace
+              ? "Save a thought, note, link, or AI answer"
+              : "Create something in this folder"
+          }
+          aria-label={capturesInPlace ? "Save to TextText" : "Create an item"}
           autoCapitalize="sentences"
           autoCorrect="on"
           rows={1}
           onKeyDown={(event) => {
-            // Enter creates and opens the item, the way a new page does
-            // everywhere else. Shift+Enter is the newline.
+            // Home is an inbox: Enter saves without taking the person away.
+            // A folder already supplies intent, so its composer still creates
+            // and opens the item. Shift+Enter is always the newline.
             if (
               event.key === "Enter" &&
               !event.shiftKey &&
@@ -793,12 +1077,107 @@ export function UniversalItemComposer({
         <button
           type="submit"
           className="ac-icon-btn universal-item-create"
-          aria-label="Create item"
-          disabled={creating}
+          aria-label={capturesInPlace ? "Save to TextText" : "Create item"}
+          disabled={
+            creating || (capturesInPlace && !captureQueueReady)
+          }
         >
           <span aria-hidden="true">↑</span>
         </button>
       </form>
+      {captures.length > 0 && (
+        <div className="universal-item-receipts" aria-label="Recent captures">
+          {captures.map((capture) => (
+            <div
+              className={`universal-item-receipt is-${capture.status}`}
+              role="status"
+              key={capture.id}
+            >
+              <span className="universal-item-receipt-copy">
+                <strong>{capture.title}</strong>
+                <small>
+                  {capture.status === "saving"
+                    ? `Saving to ${capture.destination}`
+                    : capture.status === "deleting"
+                      ? "Undoing save"
+                      : capture.error
+                        ? capture.error
+                        : capture.status === "saved"
+                          ? `Saved to ${capture.destination}`
+                          : "Ready to retry"}
+                </small>
+              </span>
+              <span className="universal-item-receipt-actions">
+                {capture.status === "saved" && capture.post && (
+                  <button
+                    type="button"
+                    className="ac-btn ac-btn-plain"
+                    aria-label={`Open ${capture.title}`}
+                    onClick={() => {
+                      if (onOpenCapturedItem) {
+                        onOpenCapturedItem(capture.post!);
+                      } else {
+                        router.push(blogPostEditPath(blog, capture.post!));
+                      }
+                    }}
+                  >
+                    Open
+                  </button>
+                )}
+                {capture.status === "failed" && (
+                  <>
+                    <button
+                      type="button"
+                      className="ac-btn ac-btn-plain"
+                      aria-label={`Retry saving ${capture.title}`}
+                      onClick={() => runInPlaceCapture(capture)}
+                    >
+                      Retry
+                    </button>
+                    <details className="universal-item-receipt-raw">
+                      <summary
+                        className="ac-btn ac-btn-plain"
+                        aria-label={`View unsaved text for ${capture.title}`}
+                      >
+                        View
+                      </summary>
+                      <pre>{capture.raw}</pre>
+                    </details>
+                    <button
+                      type="button"
+                      className="ac-btn ac-btn-plain"
+                      aria-label={`Copy unsaved text for ${capture.title}`}
+                      onClick={() => void copyCaptureRaw(capture)}
+                    >
+                      Copy
+                    </button>
+                    <button
+                      type="button"
+                      className="ac-btn ac-btn-plain"
+                      aria-label={`Discard unsaved capture ${capture.title}`}
+                      onClick={() => discardCapture(capture)}
+                    >
+                      Discard
+                    </button>
+                  </>
+                )}
+                {capture.status === "saved" &&
+                  capture.post &&
+                  onDeleteItem && (
+                    <button
+                      type="button"
+                      className="ac-btn ac-btn-plain"
+                      aria-label={`Undo saving ${capture.title}`}
+                      onClick={() => void undoCapture(capture)}
+                    >
+                      Undo
+                    </button>
+                  )}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       {error && (
         <span className="post-folder-error" role="alert">
           {error}
@@ -884,11 +1263,18 @@ function UniversalFolderContents({
         ? current
         : next;
     });
-  }, [collectionDefinition?.collection.defaultView, folder.id, savedViewKey, savedViews]);
+  }, [
+    collectionDefinition?.collection.defaultView,
+    folder.id,
+    savedViewKey,
+    savedViews,
+  ]);
   const selectedSavedView = savedViews.find((view) => view.id === savedViewId);
   const activeCollection = useMemo(() => {
     const base = collectionDefinition?.collection;
-    return base ? selectCollectionView(base, selectedSavedView?.id ?? "") : base;
+    return base
+      ? selectCollectionView(base, selectedSavedView?.id ?? "")
+      : base;
   }, [collectionDefinition, selectedSavedView?.id]);
   /**
    * Does this folder still wear a look that ships with the app?
@@ -910,7 +1296,10 @@ function UniversalFolderContents({
   }, [activeCollection]);
   const sorted = useMemo(() => {
     if (!collectionSpec) {
-      return sortedByTimestampDesc(items, (post) => post.updatedAt ?? post.date ?? "");
+      return sortedByTimestampDesc(
+        items,
+        (post) => post.updatedAt ?? post.date ?? "",
+      );
     }
     const shaped = applyCollectionSpec(
       items.map((post) => ({
@@ -1074,8 +1463,7 @@ function UniversalFolderContents({
             {sorted.map((post) => {
               const selected = Boolean(
                 post.id &&
-                  (selectedPostIds?.has(post.id) ??
-                    post.id === selectedPostId),
+                (selectedPostIds?.has(post.id) ?? post.id === selectedPostId),
               );
               return (
                 <BookmarkCard
@@ -1094,9 +1482,7 @@ function UniversalFolderContents({
                   onOpenTag={onOpenTag}
                   onSelect={() => post.id && onSelectPost?.(post.id)}
                   onItemClick={(event) =>
-                    post.id
-                      ? (onItemClick?.(post.id, event) ?? true)
-                      : true
+                    post.id ? (onItemClick?.(post.id, event) ?? true) : true
                   }
                 />
               );
@@ -1119,8 +1505,7 @@ function UniversalFolderContents({
             {sorted.map((post) => {
               const selected = Boolean(
                 post.id &&
-                  (selectedPostIds?.has(post.id) ??
-                    post.id === selectedPostId),
+                (selectedPostIds?.has(post.id) ?? post.id === selectedPostId),
               );
               const preview = previewLine(
                 post.excerpt || postBodyPreview(post),
@@ -1185,7 +1570,10 @@ function UniversalFolderContents({
                       )}
                     </span>
                     {cover && (
-                      <span className="blog-folder-feed-cover" aria-hidden="true">
+                      <span
+                        className="blog-folder-feed-cover"
+                        aria-hidden="true"
+                      >
                         {isVideoFile(cover) ? (
                           <video
                             src={cover}
@@ -1236,8 +1624,7 @@ function UniversalFolderContents({
               );
               const selected = Boolean(
                 post.id &&
-                  (selectedPostIds?.has(post.id) ??
-                    post.id === selectedPostId),
+                (selectedPostIds?.has(post.id) ?? post.id === selectedPostId),
               );
               return (
                 <div
@@ -1314,351 +1701,358 @@ function UniversalFolderContents({
               );
             })}
           </div>
-        ) : (() => {
-          const renderUniversalCard = (post: (typeof sorted)[number]) => {
-            const selected = Boolean(
-              post.id &&
-                (selectedPostIds?.has(post.id) ??
-                  post.id === selectedPostId),
-            );
-            // A note card is hand-made chrome for the built-in Note look.
-            // Once the folder carries an authored look, the template draws the row.
-            const isNote = folder.mode === "notes" && usesBuiltInLook;
-            const document = post.document ?? documentFromLegacyPost(post);
-            const reference = post.template ?? document.presentation.template;
-            const definition =
-              resolveTemplate(reference) ??
-              getBuiltinTemplate("texttext.article", 1)!;
-            const notePreview = expandedPreview(
-              postBodyPreview(post) || post.excerpt || "",
-            );
-            return (
-              <div
-                key={itemKey(post)}
-                id={postOptionId(post.id)}
-                className={`universal-item-card${isNote ? " is-note-card" : ""}${
-                  selected ? " is-command-selected" : ""
-                }`}
-                role="option"
-                aria-selected={selected}
-                tabIndex={post.id === selectedPostId ? 0 : -1}
-                data-workspace-post-id={post.id}
-                onFocus={() => post.id && onSelectPost?.(post.id)}
-                onPointerMove={updateSpatialCardTilt}
-                onPointerLeave={resetSpatialCardTilt}
-              >
-                <WorkspaceItemStar
-                  handle={handle}
-                  owner={canEditItems}
-                  post={post}
-                />
-                <Link
-                  className="universal-item-card-link"
-                  href={blogPostPath(blog, post)}
-                  prefetch={onOpenPost ? false : undefined}
-                  onMouseDown={(event) => {
-                    if (shouldSuppressNativeItemSelection(event)) {
-                      event.preventDefault();
-                    }
-                  }}
-                  onClick={(event) => {
-                    if (
-                      post.id &&
-                      onItemClick &&
-                      !onItemClick(post.id, event)
-                    ) {
-                      event.preventDefault();
-                      return;
-                    }
-                    if (!onOpenPost || !shouldOpenLocally(event)) return;
-                    event.preventDefault();
-                    onOpenPost(post);
-                  }}
+        ) : (
+          (() => {
+            const renderUniversalCard = (post: (typeof sorted)[number]) => {
+              const selected = Boolean(
+                post.id &&
+                (selectedPostIds?.has(post.id) ?? post.id === selectedPostId),
+              );
+              // A note card is hand-made chrome for the built-in Note look.
+              // Once the folder carries an authored look, the template draws the row.
+              const isNote = folder.mode === "notes" && usesBuiltInLook;
+              const document = post.document ?? documentFromLegacyPost(post);
+              const reference = post.template ?? document.presentation.template;
+              const definition =
+                resolveTemplate(reference) ??
+                getBuiltinTemplate("texttext.article", 1)!;
+              const notePreview = expandedPreview(
+                postBodyPreview(post) || post.excerpt || "",
+              );
+              return (
+                <div
+                  key={itemKey(post)}
+                  id={postOptionId(post.id)}
+                  className={`universal-item-card${isNote ? " is-note-card" : ""}${
+                    selected ? " is-command-selected" : ""
+                  }`}
+                  role="option"
+                  aria-selected={selected}
+                  tabIndex={post.id === selectedPostId ? 0 : -1}
+                  data-workspace-post-id={post.id}
+                  onFocus={() => post.id && onSelectPost?.(post.id)}
+                  onPointerMove={updateSpatialCardTilt}
+                  onPointerLeave={resetSpatialCardTilt}
                 >
-                  {isNote ? (
-                    <span className="note-folder-card-content">
-                      <span className="note-folder-card-title">
-                        {itemTitle(post)}
-                      </span>
-                      {notePreview && (
-                        <span className="note-folder-card-preview">
-                          {notePreview}
+                  <WorkspaceItemStar
+                    handle={handle}
+                    owner={canEditItems}
+                    post={post}
+                  />
+                  <Link
+                    className="universal-item-card-link"
+                    href={blogPostPath(blog, post)}
+                    prefetch={onOpenPost ? false : undefined}
+                    onMouseDown={(event) => {
+                      if (shouldSuppressNativeItemSelection(event)) {
+                        event.preventDefault();
+                      }
+                    }}
+                    onClick={(event) => {
+                      if (
+                        post.id &&
+                        onItemClick &&
+                        !onItemClick(post.id, event)
+                      ) {
+                        event.preventDefault();
+                        return;
+                      }
+                      if (!onOpenPost || !shouldOpenLocally(event)) return;
+                      event.preventDefault();
+                      onOpenPost(post);
+                    }}
+                  >
+                    {isNote ? (
+                      <span className="note-folder-card-content">
+                        <span className="note-folder-card-title">
+                          {itemTitle(post)}
                         </span>
-                      )}
-                      <span className="note-folder-card-date">
-                        {formatArticleDate(post.updatedAt ?? post.date, {
-                          style: "short",
-                        })}
+                        {notePreview && (
+                          <span className="note-folder-card-preview">
+                            {notePreview}
+                          </span>
+                        )}
+                        <span className="note-folder-card-date">
+                          {formatArticleDate(post.updatedAt ?? post.date, {
+                            style: "short",
+                          })}
+                        </span>
                       </span>
-                    </span>
-                  ) : (
-                    <DocumentCollectionRenderer
-                      document={document}
-                      template={definition}
-                      documentId={`collection-${post.id ?? post.slug}`}
-                      metadata={{
-                        date: formatArticleDate(post.updatedAt ?? post.date, {
-                          style: "short",
-                        }),
-                      }}
+                    ) : (
+                      <DocumentCollectionRenderer
+                        document={document}
+                        template={definition}
+                        documentId={`collection-${post.id ?? post.slug}`}
+                        metadata={{
+                          date: formatArticleDate(post.updatedAt ?? post.date, {
+                            style: "short",
+                          }),
+                        }}
+                      />
+                    )}
+                  </Link>
+                  {canEditItems && (
+                    <WorkspaceItemActions
+                      blog={blog}
+                      handle={handle}
+                      href={blogPostPath(blog, post)}
+                      owner
+                      post={post}
+                      onDeletePost={onDeleteItem}
                     />
                   )}
-                </Link>
-                {canEditItems && (
-                  <WorkspaceItemActions
-                    blog={blog}
-                    handle={handle}
-                    href={blogPostPath(blog, post)}
-                    owner
-                    post={post}
-                    onDeletePost={onDeleteItem}
-                  />
-                )}
-              </div>
-            );
-          };
-          if (heatmap) {
-            const today = new Date();
-            const pad = (value: number) => String(value).padStart(2, "0");
-            const start = new Date(today);
-            start.setDate(start.getDate() - 364);
-            start.setDate(start.getDate() - start.getDay());
-            const days: { key: string; count: number }[] = [];
-            const cursor = new Date(start);
-            while (cursor <= today) {
-              const key = `${cursor.getFullYear()}-${pad(cursor.getMonth() + 1)}-${pad(cursor.getDate())}`;
-              days.push({ key, count: heatmap.counts.get(key) ?? 0 });
-              cursor.setDate(cursor.getDate() + 1);
-            }
-            const level = (count: number) =>
-              count === 0 ? 0 : count === 1 ? 1 : count === 2 ? 2 : 3;
-            return (
-              <>
-                <div
-                  className="universal-item-heatmap"
-                  aria-label="A year of writing activity"
-                >
-                  {days.map((day) => (
-                    <span
-                      key={day.key}
-                      className={`universal-item-heatmap-cell is-l${level(day.count)}`}
-                      title={
-                        day.count > 0
-                          ? `${day.key} · ${day.count} ${day.count === 1 ? "entry" : "entries"}`
-                          : day.key
-                      }
-                    />
-                  ))}
                 </div>
+              );
+            };
+            if (heatmap) {
+              const today = new Date();
+              const pad = (value: number) => String(value).padStart(2, "0");
+              const start = new Date(today);
+              start.setDate(start.getDate() - 364);
+              start.setDate(start.getDate() - start.getDay());
+              const days: { key: string; count: number }[] = [];
+              const cursor = new Date(start);
+              while (cursor <= today) {
+                const key = `${cursor.getFullYear()}-${pad(cursor.getMonth() + 1)}-${pad(cursor.getDate())}`;
+                days.push({ key, count: heatmap.counts.get(key) ?? 0 });
+                cursor.setDate(cursor.getDate() + 1);
+              }
+              const level = (count: number) =>
+                count === 0 ? 0 : count === 1 ? 1 : count === 2 ? 2 : 3;
+              return (
+                <>
+                  <div
+                    className="universal-item-heatmap"
+                    aria-label="A year of writing activity"
+                  >
+                    {days.map((day) => (
+                      <span
+                        key={day.key}
+                        className={`universal-item-heatmap-cell is-l${level(day.count)}`}
+                        title={
+                          day.count > 0
+                            ? `${day.key} · ${day.count} ${day.count === 1 ? "entry" : "entries"}`
+                            : day.key
+                        }
+                      />
+                    ))}
+                  </div>
+                  <div
+                    className={`universal-item-collection is-${viewMode}`}
+                    role="listbox"
+                    aria-label="Folder items"
+                    aria-activedescendant={postOptionId(selectedPostId)}
+                  >
+                    <DocumentEngineStyles />
+                    {sorted.map(renderUniversalCard)}
+                  </div>
+                </>
+              );
+            }
+            if (calendar) {
+              const now = new Date();
+              const anchor = new Date(
+                now.getFullYear(),
+                now.getMonth() + calendarOffset,
+                1,
+              );
+              const monthLabel = anchor.toLocaleDateString("en-US", {
+                month: "long",
+                year: "numeric",
+              });
+              const pad = (value: number) => String(value).padStart(2, "0");
+              const dayKey = (year: number, month: number, day: number) =>
+                `${year}-${pad(month + 1)}-${pad(day)}`;
+              const todayKey = dayKey(
+                now.getFullYear(),
+                now.getMonth(),
+                now.getDate(),
+              );
+              const daysInMonth = new Date(
+                anchor.getFullYear(),
+                anchor.getMonth() + 1,
+                0,
+              ).getDate();
+              const cells: { key: string | null; day: number | null }[] = [];
+              for (let blank = 0; blank < anchor.getDay(); blank += 1) {
+                cells.push({ key: null, day: null });
+              }
+              for (let day = 1; day <= daysInMonth; day += 1) {
+                cells.push({
+                  key: dayKey(anchor.getFullYear(), anchor.getMonth(), day),
+                  day,
+                });
+              }
+              return (
                 <div
-                  className={`universal-item-collection is-${viewMode}`}
+                  className="universal-item-calendar"
+                  aria-label="Folder calendar"
+                >
+                  <header className="universal-item-calendar-bar">
+                    <button
+                      type="button"
+                      onClick={() => setCalendarOffset((offset) => offset - 1)}
+                      aria-label="Previous month"
+                    >
+                      &lsaquo;
+                    </button>
+                    <h2>{monthLabel}</h2>
+                    <button
+                      type="button"
+                      onClick={() => setCalendarOffset((offset) => offset + 1)}
+                      aria-label="Next month"
+                    >
+                      &rsaquo;
+                    </button>
+                  </header>
+                  <div className="universal-item-calendar-grid">
+                    {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
+                      (weekday) => (
+                        <div
+                          key={weekday}
+                          className="universal-item-calendar-dow"
+                          aria-hidden="true"
+                        >
+                          {weekday}
+                        </div>
+                      ),
+                    )}
+                    {cells.map((cell, index) => (
+                      <div
+                        key={cell.key ?? `blank-${index}`}
+                        className={`universal-item-calendar-cell${
+                          cell.key === todayKey ? " is-today" : ""
+                        }${cell.day === null ? " is-blank" : ""}`}
+                      >
+                        {cell.day !== null ? (
+                          <span className="universal-item-calendar-daynum">
+                            {cell.day}
+                          </span>
+                        ) : null}
+                        {cell.key
+                          ? (calendar.byDay.get(cell.key) ?? []).map((post) => (
+                              <Link
+                                key={itemKey(post)}
+                                className="universal-item-calendar-chip"
+                                href={blogPostPath(blog, post)}
+                                onClick={(event) => {
+                                  if (
+                                    !onOpenPost ||
+                                    !shouldOpenLocally(event)
+                                  ) {
+                                    return;
+                                  }
+                                  event.preventDefault();
+                                  onOpenPost(post);
+                                }}
+                              >
+                                {post.title || "Untitled"}
+                              </Link>
+                            ))
+                          : null}
+                      </div>
+                    ))}
+                  </div>
+                  {calendar.undated.length > 0 ? (
+                    <div className="universal-item-calendar-undated">
+                      <h3>Undated</h3>
+                      <div>
+                        {calendar.undated.map((post) => (
+                          <Link
+                            key={itemKey(post)}
+                            className="universal-item-calendar-chip"
+                            href={blogPostPath(blog, post)}
+                            onClick={(event) => {
+                              if (!onOpenPost || !shouldOpenLocally(event))
+                                return;
+                              event.preventDefault();
+                              onOpenPost(post);
+                            }}
+                          >
+                            {post.title || "Untitled"}
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            }
+            if (board) {
+              const boardColumns = [
+                ...board.columns,
+                ...(board.unsorted.length > 0
+                  ? [
+                      {
+                        value: "__unsorted",
+                        label: "Unsorted",
+                        tone: "neutral",
+                        icon: undefined as string | undefined,
+                        posts: board.unsorted,
+                      },
+                    ]
+                  : []),
+              ];
+              return (
+                <div
+                  className="universal-item-board"
                   role="listbox"
-                  aria-label="Folder items"
+                  aria-label="Folder board"
                   aria-activedescendant={postOptionId(selectedPostId)}
                 >
                   <DocumentEngineStyles />
-                  {sorted.map(renderUniversalCard)}
-                </div>
-              </>
-            );
-          }
-          if (calendar) {
-            const now = new Date();
-            const anchor = new Date(
-              now.getFullYear(),
-              now.getMonth() + calendarOffset,
-              1,
-            );
-            const monthLabel = anchor.toLocaleDateString("en-US", {
-              month: "long",
-              year: "numeric",
-            });
-            const pad = (value: number) => String(value).padStart(2, "0");
-            const dayKey = (year: number, month: number, day: number) =>
-              `${year}-${pad(month + 1)}-${pad(day)}`;
-            const todayKey = dayKey(
-              now.getFullYear(),
-              now.getMonth(),
-              now.getDate(),
-            );
-            const daysInMonth = new Date(
-              anchor.getFullYear(),
-              anchor.getMonth() + 1,
-              0,
-            ).getDate();
-            const cells: { key: string | null; day: number | null }[] = [];
-            for (let blank = 0; blank < anchor.getDay(); blank += 1) {
-              cells.push({ key: null, day: null });
-            }
-            for (let day = 1; day <= daysInMonth; day += 1) {
-              cells.push({
-                key: dayKey(anchor.getFullYear(), anchor.getMonth(), day),
-                day,
-              });
-            }
-            return (
-              <div className="universal-item-calendar" aria-label="Folder calendar">
-                <header className="universal-item-calendar-bar">
-                  <button
-                    type="button"
-                    onClick={() => setCalendarOffset((offset) => offset - 1)}
-                    aria-label="Previous month"
-                  >
-                    &lsaquo;
-                  </button>
-                  <h2>{monthLabel}</h2>
-                  <button
-                    type="button"
-                    onClick={() => setCalendarOffset((offset) => offset + 1)}
-                    aria-label="Next month"
-                  >
-                    &rsaquo;
-                  </button>
-                </header>
-                <div className="universal-item-calendar-grid">
-                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
-                    (weekday) => (
-                      <div
-                        key={weekday}
-                        className="universal-item-calendar-dow"
-                        aria-hidden="true"
-                      >
-                        {weekday}
-                      </div>
-                    ),
-                  )}
-                  {cells.map((cell, index) => (
-                    <div
-                      key={cell.key ?? `blank-${index}`}
-                      className={`universal-item-calendar-cell${
-                        cell.key === todayKey ? " is-today" : ""
-                      }${cell.day === null ? " is-blank" : ""}`}
+                  {boardColumns.map((column) => (
+                    <section
+                      key={column.value}
+                      className="universal-item-board-column"
+                      aria-label={column.label}
                     >
-                      {cell.day !== null ? (
-                        <span className="universal-item-calendar-daynum">
-                          {cell.day}
-                        </span>
-                      ) : null}
-                      {cell.key
-                        ? (calendar.byDay.get(cell.key) ?? []).map((post) => (
-                            <Link
-                              key={itemKey(post)}
-                              className="universal-item-calendar-chip"
-                              href={blogPostPath(blog, post)}
-                              onClick={(event) => {
-                                if (!onOpenPost || !shouldOpenLocally(event)) {
-                                  return;
-                                }
-                                event.preventDefault();
-                                onOpenPost(post);
-                              }}
-                            >
-                              {post.title || "Untitled"}
-                            </Link>
-                          ))
-                        : null}
-                    </div>
+                      <header
+                        className={`universal-item-board-header is-tone-${column.tone}`}
+                      >
+                        <span
+                          className="universal-item-board-dot"
+                          aria-hidden="true"
+                        />
+                        {column.icon ? (
+                          <span aria-hidden="true">{column.icon}</span>
+                        ) : null}
+                        <span>{column.label}</span>
+                        <small>{column.posts.length}</small>
+                      </header>
+                      {column.posts.map(renderUniversalCard)}
+                    </section>
                   ))}
                 </div>
-                {calendar.undated.length > 0 ? (
-                  <div className="universal-item-calendar-undated">
-                    <h3>Undated</h3>
-                    <div>
-                      {calendar.undated.map((post) => (
-                        <Link
-                          key={itemKey(post)}
-                          className="universal-item-calendar-chip"
-                          href={blogPostPath(blog, post)}
-                          onClick={(event) => {
-                            if (!onOpenPost || !shouldOpenLocally(event)) return;
-                            event.preventDefault();
-                            onOpenPost(post);
-                          }}
-                        >
-                          {post.title || "Untitled"}
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            );
-          }
-          if (board) {
-            const boardColumns = [
-              ...board.columns,
-              ...(board.unsorted.length > 0
-                ? [
-                    {
-                      value: "__unsorted",
-                      label: "Unsorted",
-                      tone: "neutral",
-                      icon: undefined as string | undefined,
-                      posts: board.unsorted,
-                    },
-                  ]
-                : []),
-            ];
+              );
+            }
+            // The look says how its index is laid out; the view control is the
+            // reader's override on top of that. `columns` and `gap` were
+            // declared, defaulted and validated by the schema but read by
+            // nothing, so a look could ask for a two-column index and get
+            // whatever CSS happened to say.
             return (
               <div
-                className="universal-item-board"
+                className={`universal-item-collection is-${collectionViewMode}`}
+                data-collection-layout={activeCollection?.layout}
+                style={
+                  {
+                    "--collection-columns": activeCollection?.columns,
+                    "--collection-gap": activeCollection
+                      ? COLLECTION_GAP[activeCollection.gap]
+                      : undefined,
+                  } as CSSProperties
+                }
                 role="listbox"
-                aria-label="Folder board"
+                aria-label="Folder items"
                 aria-activedescendant={postOptionId(selectedPostId)}
               >
                 <DocumentEngineStyles />
-                {boardColumns.map((column) => (
-                  <section
-                    key={column.value}
-                    className="universal-item-board-column"
-                    aria-label={column.label}
-                  >
-                    <header
-                      className={`universal-item-board-header is-tone-${column.tone}`}
-                    >
-                      <span
-                        className="universal-item-board-dot"
-                        aria-hidden="true"
-                      />
-                      {column.icon ? (
-                        <span aria-hidden="true">{column.icon}</span>
-                      ) : null}
-                      <span>{column.label}</span>
-                      <small>{column.posts.length}</small>
-                    </header>
-                    {column.posts.map(renderUniversalCard)}
-                  </section>
-                ))}
+                {sorted.map(renderUniversalCard)}
               </div>
             );
-          }
-          // The look says how its index is laid out; the view control is the
-          // reader's override on top of that. `columns` and `gap` were
-          // declared, defaulted and validated by the schema but read by
-          // nothing, so a look could ask for a two-column index and get
-          // whatever CSS happened to say.
-          return (
-            <div
-              className={`universal-item-collection is-${collectionViewMode}`}
-              data-collection-layout={activeCollection?.layout}
-              style={
-                {
-                  "--collection-columns":
-                    activeCollection?.columns,
-                  "--collection-gap": activeCollection
-                    ? COLLECTION_GAP[activeCollection.gap]
-                    : undefined,
-                } as CSSProperties
-              }
-              role="listbox"
-              aria-label="Folder items"
-              aria-activedescendant={postOptionId(selectedPostId)}
-            >
-              <DocumentEngineStyles />
-              {sorted.map(renderUniversalCard)}
-            </div>
-          );
-        })()}
+          })()
+        )}
       </section>
     </>
   );

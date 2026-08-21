@@ -360,6 +360,39 @@ async function openEditor(page: Page, id: string) {
     .waitFor({ state: "visible", timeout: 20_000 });
 }
 
+async function openAssistant(page: Page) {
+  const composer = page.getByRole("textbox", { name: "Message assistant" });
+
+  for (let attempt = 1; attempt <= 6; attempt += 1) {
+    if (await composer.isVisible().catch(() => false)) return composer;
+
+    const sidebar = page.locator('[data-assistant-sidebar=""]').first();
+    await sidebar.waitFor({ state: "attached", timeout: 20_000 });
+    if ((await sidebar.getAttribute("data-state")) !== "hidden") {
+      await page.waitForTimeout(150);
+      continue;
+    }
+
+    // The initial workspace refresh can replace the complete sidebar subtree.
+    // Resolve the launcher from the current subtree on every attempt so this
+    // proof exercises the button a person can actually see, not a stale node.
+    const launcher = sidebar.getByRole("button", {
+      name: /Open assistant|Chat with Codex/,
+    });
+    await launcher
+      .click({ timeout: 3_000 })
+      .catch(() => undefined);
+    await page.waitForTimeout(250);
+  }
+
+  const state = await page
+    .locator('[data-assistant-sidebar=""]')
+    .first()
+    .getAttribute("data-state")
+    .catch(() => null);
+  throw new Error(`assistant did not open from the live launcher (state ${state})`);
+}
+
 async function editorBody(page: Page) {
   return page
     .locator(".tt-document-editor .tt-md-surface")
@@ -552,14 +585,7 @@ async function main() {
     await page.waitForTimeout(100);
     toolResponses.length = 0;
     console.log("  stage disposable fixture ready");
-    const sidebar = page.locator('[data-assistant-sidebar=""]');
-    await sidebar.waitFor({ timeout: 20_000 });
-    if ((await sidebar.getAttribute("data-state")) === "hidden") {
-      await page
-        .getByRole("button", { name: /Open assistant|Chat with Codex/ })
-        .click();
-    }
-    const composer = page.getByRole("textbox", { name: "Message assistant" });
+    const composer = await openAssistant(page);
     await composer.waitFor({ state: "visible", timeout: 20_000 });
     await page.waitForFunction(
       () =>
@@ -782,6 +808,12 @@ async function main() {
     await until(20_000, async () =>
       (await databaseItem(itemId))?.body === original.body ? true : null,
     );
+    const restoreTurnReady = await until(20_000, async () =>
+      (await composer.isEnabled()) ? true : null,
+    );
+    if (!restoreTurnReady) {
+      throw new Error("the native restore turn did not release the composer");
+    }
 
     const proposalEdit = guardedWord(original.body.slice(nativeEdit.end));
     proposalEdit.start += nativeEdit.end;
@@ -825,6 +857,7 @@ async function main() {
       { key: transcriptKey, id: itemId, body: original.body, edit: proposalEdit },
     );
     await page.reload({ waitUntil: "domcontentloaded" });
+    await openAssistant(page);
     console.log("  stage proposal restored");
     await page
       .locator(".tt-document-editor .tt-md-surface")

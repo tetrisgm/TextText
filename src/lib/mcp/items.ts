@@ -5,12 +5,13 @@
 // conflict currency for updates. Nothing here touches the database.
 
 import { blogBaseUrl, oneLine, postUrl } from "@/lib/agent-surface";
-import type { Blog, Folder, FolderMode, ItemKind, Post, PostType } from "@/lib/content";
+import type { Blog, FolderMode, ItemKind, Post, PostType } from "@/lib/content";
 import { markdownFileHash } from "@/lib/content-hash";
 import { itemKindForPostType, renderPostMarkdownFile } from "@/lib/markdown-files";
 import { normalizeTags } from "@/lib/tags";
 import { extractWikiLinks, resolveTarget } from "@/lib/wikilinks";
 import { serializeWikiLink } from "@/lib/wikilink-syntax";
+import { rankSearchText, searchExcerpt } from "@/lib/workspace-search";
 
 /** What a new item is when the file's frontmatter does not say. */
 export const DEFAULT_TYPE_BY_MODE: Record<FolderMode, PostType> = {
@@ -234,28 +235,24 @@ export function normalizeItemHash(value: string): string {
   return value.trim().replace(/^W\//i, "").replace(/^"|"$/g, "");
 }
 
-/** Case-insensitive substring match over an item's title, excerpt, and body. */
-export function postMatchesQuery(post: Post, query: string): boolean {
-  const q = query.toLowerCase();
-  return [post.title, post.excerpt ?? "", post.body].some((text) =>
-    text.toLowerCase().includes(q),
+/** The canonical ranked token match over an item's title, excerpt, and body. */
+export function postSearchScore(post: Post, query: string): number | null {
+  return rankSearchText(
+    post.title,
+    [post.excerpt ?? "", post.body].filter(Boolean).join(" "),
+    query,
   );
+}
+
+export function postMatchesQuery(post: Post, query: string): boolean {
+  return postSearchScore(post, query) !== null;
 }
 
 /** A short one-line snippet around the first match, for search results. */
 export function searchSnippet(post: Post, query: string): string {
-  const q = query.toLowerCase();
-  for (const source of [post.excerpt ?? "", post.body]) {
-    const flat = oneLine(source);
-    const index = flat.toLowerCase().indexOf(q);
-    if (index === -1) continue;
-    const start = Math.max(0, index - 60);
-    const end = Math.min(flat.length, index + q.length + 100);
-    const prefix = start > 0 ? "..." : "";
-    const suffix = end < flat.length ? "..." : "";
-    return `${prefix}${flat.slice(start, end)}${suffix}`;
-  }
+  const opening = oneLine([post.excerpt ?? "", post.body].filter(Boolean).join(" "));
+  const excerpt = searchExcerpt(opening, query);
+  if (excerpt) return excerpt;
   // The match was in the title alone; fall back to how the item opens.
-  const opening = oneLine(post.excerpt || post.body);
   return opening.length > 160 ? `${opening.slice(0, 157)}...` : opening;
 }

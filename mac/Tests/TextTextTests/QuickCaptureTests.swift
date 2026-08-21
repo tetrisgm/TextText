@@ -14,6 +14,24 @@ final class QuickCaptureTests: XCTestCase {
         XCTAssertEqual(QuickCaptureContent.parse("\nBody").title, "Untitled")
     }
 
+    func testNativeCaptureUsesSharedURLAndTextIntent() throws {
+        let bookmark = try XCTUnwrap(
+            QuickCaptureIntent("paper.design/docs/mcp"))
+        XCTAssertEqual(bookmark.target, .bookmarks)
+        XCTAssertEqual(bookmark.content.title, "paper.design")
+        XCTAssertEqual(
+            bookmark.content.body,
+            "[paper.design](https://paper.design/docs/mcp)")
+
+        let note = try XCTUnwrap(
+            QuickCaptureIntent("A launch thought\n\nKeep the first run tiny."))
+        XCTAssertEqual(note.target, .notes)
+        XCTAssertEqual(note.content.title, "A launch thought")
+        XCTAssertEqual(
+            note.content.body,
+            "A launch thought\n\nKeep the first run tiny.")
+    }
+
     func testOutboxPersistsCaptureWithoutCredentialsOrNetwork() throws {
         let root = try temporaryDirectory()
         let createdAt = Date(timeIntervalSince1970: 1_700_000_000)
@@ -104,6 +122,36 @@ final class QuickCaptureTests: XCTestCase {
         XCTAssertTrue(record.markdown.contains("kind: bookmark"))
     }
 
+    func testCaptureChoosesShallowestDeterministicFolder() throws {
+        let root = try temporaryDirectory()
+        let outbox = try QuickCaptureOutbox(baseDirectory: root)
+        try outbox.enqueue(
+            QuickCaptureContent(title: "Fast note", body: "Keep this"),
+            id: "shallow-capture")
+        let client = QuickCaptureSyncClient(results: [
+            .success(.saved(savedItem(id: "note-shallow")))
+        ])
+        let folders = [
+            WorkspaceFolder(
+                id: "nested-notes", name: "Notes", path: "Projects/Notes",
+                mode: "notes", parentId: "projects"),
+            WorkspaceFolder(
+                id: "z-notes", name: "Z Notes", path: "Z Notes",
+                mode: "notes", parentId: nil),
+            WorkspaceFolder(
+                id: "a-notes", name: "A Notes", path: "A Notes",
+                mode: "notes", parentId: nil),
+        ]
+        let target = Workspace(
+            blog: WorkspaceBlog(handle: "demo", name: "Demo", username: nil),
+            folders: folders)
+
+        _ = QuickCaptureOutboxDrainer(outbox: outbox).drain(
+            workspace: target, client: client)
+
+        XCTAssertEqual(client.requests.first?.folderId, "a-notes")
+    }
+
     func testPermanentFailureDeadLettersAfterBoundedAttempts() throws {
         let root = try temporaryDirectory()
         let outbox = try QuickCaptureOutbox(baseDirectory: root)
@@ -155,6 +203,48 @@ final class QuickCaptureTests: XCTestCase {
         )
         let data = try Data(contentsOf: try XCTUnwrap(rejected.first))
         XCTAssertTrue(String(decoding: data, as: UTF8.self).contains("Preserve me"))
+    }
+
+    func testFailedCapturesCanBeReviewedAndRestoredWithStableIdentity() throws {
+        let root = try temporaryDirectory()
+        let outbox = try QuickCaptureOutbox(baseDirectory: root)
+        let original = try outbox.enqueue(
+            QuickCaptureContent(title: "Bring this back", body: "Still valuable"),
+            id: "recoverable-capture"
+        )
+        let client = QuickCaptureSyncClient(results: [
+            .success(.rejected("invalid folder"))
+        ])
+
+        _ = QuickCaptureOutboxDrainer(outbox: outbox).drain(
+            workspace: workspace(), client: client)
+
+        let failed = try XCTUnwrap(outbox.rejectedRecords().first)
+        XCTAssertEqual(failed.id, original.id)
+        XCTAssertEqual(failed.title, "Bring this back")
+        XCTAssertEqual(failed.body, "Still valuable")
+
+        XCTAssertEqual(try outbox.retryRejectedRecords(), 1)
+        XCTAssertTrue(outbox.rejectedRecords().isEmpty)
+        let restored = try XCTUnwrap(outbox.pendingRecords().first)
+        XCTAssertEqual(restored.idempotencyKey, original.idempotencyKey)
+        XCTAssertEqual(restored.attempts, 0)
+        XCTAssertNil(restored.lastError)
+    }
+
+    func testQuickCaptureFeedbackUsesTruthfulDeliveryLanguage() {
+        XCTAssertEqual(QuickCaptureFeedback.ready.title, "Ready to capture")
+        let receipt = QuickCaptureSavedReceipt(
+            itemId: "note-1", title: "Field note", folderPath: "Notes",
+            slug: "field-note", kind: "note")
+        XCTAssertEqual(
+            QuickCaptureFeedback.saved([receipt]).title,
+            "Saved Field note to Notes")
+        XCTAssertEqual(QuickCaptureFeedback.queued(1).title, "Queued safely")
+        XCTAssertEqual(QuickCaptureFeedback.failed(0).title, "Capture failed")
+        XCTAssertEqual(QuickCaptureFeedback.failed(1).title, "Failed capture")
+        XCTAssertEqual(QuickCaptureFeedback.failed(3).title, "Failed captures (3)")
+        XCTAssertEqual(QuickCaptureFeedback.queued(2).symbolName, "clock.arrow.circlepath")
     }
 
     func testCachedWorkspaceRejectionCanRetryWithFreshFolder() throws {

@@ -216,6 +216,7 @@ assert(
   "CLI addressing must reject absolute remote paths and contain explicit local paths",
 );
 for (const command of [
+  "search",
   "read_item",
   "create_item",
   "update_item",
@@ -228,10 +229,12 @@ for (const command of [
 }
 assert(
   cliCommandRoute.includes("verifyTextTextApiToken") &&
-    cliCommandRoute.includes('auth.scopes.includes("sync")') &&
+    cliCommandRoute.includes("resolveMcpScopeAccess") &&
+    cliCommandRoute.includes('scopeAccess === "none"') &&
+    cliCommandRoute.includes('scopeAccess !== "full"') &&
     cliCommandRoute.includes("runWorkspaceToolForAuth") &&
     cliCommandRoute.includes("MAX_COMMAND_BODY_BYTES"),
-  "The local command route must authenticate, require sync, share the executor, and bound input",
+  "The local command route must authenticate, split read and write scope, share the executor, and bound input",
 );
 assert(
   cliSyncAPI.includes('"/api/agent/commands"') &&

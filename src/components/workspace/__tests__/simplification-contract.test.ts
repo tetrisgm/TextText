@@ -28,6 +28,14 @@ const broadsheetStyles = readFileSync(
   new URL("../../../styles/broadsheet.css", import.meta.url),
   "utf8",
 );
+const workspaceStyles = readFileSync(
+  new URL("../../../styles/workspace.css", import.meta.url),
+  "utf8",
+);
+const assistantSidebarStyles = readFileSync(
+  new URL("../assistant/AssistantSidebar.module.css", import.meta.url),
+  "utf8",
+);
 
 describe("workspace simplification contract", () => {
   it("prints the library item count once, in the filter row", () => {
@@ -83,5 +91,38 @@ describe("workspace simplification contract", () => {
     );
     expect(landingSource).not.toContain('"/try"');
     expect(landingSource).not.toContain("/@demo");
+  });
+
+  it("positions TextText as the fast durable inbox for people and agents", () => {
+    expect(landingSource).toContain("Save anything. Bring your AI.");
+    expect(landingSource).toContain("compatible, authorized AI");
+    expect(landingSource).toContain("Capture now. Find it from anywhere.");
+    expect(landingSource).toContain("Quick capture");
+    expect(landingSource).toContain("Saved to Notes");
+    expect(landingSource).toContain('name: "Capture"');
+    expect(landingSource).toContain('name: "Find"');
+    expect(landingSource).toContain('name: "Change"');
+    expect(landingSource).not.toContain("Claude, ChatGPT, Codex");
+  });
+
+  it("keeps tablet capture receipts clear of the assistant overlay", () => {
+    expect(assistantSidebarStyles).toContain(
+      '@media (min-width: 561px) and (max-width: 900px)',
+    );
+    expect(assistantSidebarStyles).toContain("width: min(320px, 50vw)");
+    expect(workspaceStyles).toContain(
+      ".post-editor-shell.has-assistant-open .workspace-root-page",
+    );
+    expect(workspaceStyles).toContain(
+      "padding-right: calc(min(320px, 50vw) + 48px)",
+    );
+    expect(workspaceStyles).toContain(
+      ".post-editor-shell.has-assistant-open .universal-item-receipt",
+    );
+    expect(workspaceStyles).toContain(".universal-item-receipts");
+    expect(workspaceStyles).toContain("flex-wrap: wrap");
+    expect(workspaceStyles).toContain(".universal-item-receipt-raw pre");
+    expect(workspaceStyles).toContain("overflow-wrap: anywhere");
+    expect(workspaceStyles).toContain("white-space: pre-wrap");
   });
 });

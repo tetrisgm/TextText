@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { drizzle } from "drizzle-orm/neon-http";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { idempotencyKeys, itemComments, posts } from "@/lib/db/schema";
+import { folders, idempotencyKeys, itemComments, posts } from "@/lib/db/schema";
 import { auditCteFrom } from "@/lib/audit";
 
 // The atomic-audit mutations (deletePostAtomic, movePostFile) hand-compose a
@@ -293,5 +293,49 @@ describe("restore and comment atomic-audit CTEs", () => {
     expect(lower).toContain('"item_comments"."post_id"');
     expect(lower.match(/insert into "action_audit"/g)).toHaveLength(1);
     expect(lower).toContain("from \"changed\"");
+  });
+});
+
+describe("folder tree atomic-audit CTEs", () => {
+  it("renders descendant item and folder changes with one root-folder audit", () => {
+    const folderId = "11111111-1111-4111-8111-111111111111";
+    const changedPosts = qb
+      .update(posts)
+      .set({ deletedAt: new Date("2026-08-20T00:00:00.000Z") })
+      .where(eq(posts.blogId, "b1"))
+      .returning({ id: posts.id });
+    const changedFolders = qb
+      .update(folders)
+      .set({ deletedAt: new Date("2026-08-20T00:00:00.000Z") })
+      .where(eq(folders.blogId, "b1"))
+      .returning({ id: folders.id });
+    const folderAudit = auditCteFrom(
+      {
+        actorType: "external_agent",
+        actionName: "mcp.delete_folder",
+        targetType: "folder",
+        targetId: folderId,
+      },
+      "audited_target",
+      sql`audited_target.id::text`,
+    );
+    const stmt = sql`
+      WITH changed_posts AS ${changedPosts},
+           changed_folders AS ${changedFolders},
+           audited_target AS (
+             SELECT id FROM changed_folders WHERE id = ${folderId} LIMIT 1
+           ),
+           audit AS (${folderAudit})
+      SELECT id FROM audited_target
+    `;
+    const compiled = dialect.sqlToQuery(stmt);
+    const lower = compiled.sql.toLowerCase().replace(/\s+/g, " ");
+
+    expect(lower).toContain("changed_posts as (update");
+    expect(lower).toContain("changed_folders as (update");
+    expect(lower).toContain("audited_target as ( select id from changed_folders");
+    expect(lower.match(/insert into "action_audit"/g)).toHaveLength(1);
+    expect(lower).toContain("select id from audited_target");
+    expect(compiled.params).toContain(folderId);
   });
 });

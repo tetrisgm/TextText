@@ -96,6 +96,32 @@ final class RemoteDocumentStoreTests: XCTestCase {
         XCTAssertEqual(researchPaths.count, 2)
     }
 
+    func testSearchUsesSharedCommandAndResultIdReadsBackExactly() async throws {
+        let notes = folder(id: "notes", name: "Notes", path: "Notes", mode: "notes")
+        let result = TextTextAgentSearchResult(
+            id: "recent", slug: "recent", title: "Planning note", kind: "note",
+            status: "draft", hash: "hash-1",
+            snippet: "Evidence follows the launch owner review and revised brief.",
+            folderPath: "Notes/Research")
+        let api = FakeCLISyncAPI(
+            workspace: workspace(folders: [notes]),
+            manifests: [notes.id: [item(id: "recent", title: "Recent")]],
+            contents: ["recent": ("# Recent\n\nA field observation", "hash-1")],
+            searchResults: [result])
+        let store = RemoteDocumentStore(api: api)
+
+        let matches = try await store.search("launch brief evidence")
+        XCTAssertEqual(matches.map(\.id), ["recent"])
+        XCTAssertEqual(matches.map(\.folderPath), ["Notes/Research"])
+        let searchQuery = await api.lastSearchQuery()
+        XCTAssertEqual(searchQuery, "launch brief evidence")
+
+        let exact = try await store.resolve(matches[0].id)
+        XCTAssertEqual(exact.itemId, "recent")
+        let markdown = try await store.readMarkdown(at: exact)
+        XCTAssertEqual(markdown, "# Recent\n\nA field observation")
+    }
+
     func testReadThenWriteUsesTheCommandHashAndAgentAttribution() async throws {
         let notes = folder(id: "notes", name: "Notes", path: "Notes", mode: "notes")
         let api = FakeCLISyncAPI(
@@ -219,6 +245,56 @@ final class RemoteDocumentStoreTests: XCTestCase {
         XCTAssertFalse(request.markdown.contains("type: \"note\""))
     }
 
+    func testCaptureUsesTheSharedCaptureCommandWithoutForcingAFolder() async throws {
+        let notes = folder(id: "notes", name: "Notes", path: "notes", mode: "notes")
+        let api = FakeCLISyncAPI(
+            workspace: workspace(folders: [notes]),
+            manifests: [notes.id: []])
+        let store = RemoteDocumentStore(api: api)
+        let input = try XCTUnwrap(AgentCaptureInput(value: "A useful observation"))
+
+        let captured = try await store.capture(
+            input, rawValue: "A useful observation",
+            idempotencyKey: "capture:observation-1")
+
+        XCTAssertEqual(captured.document.path, "notes/Field notes.textpack")
+        XCTAssertEqual(
+            captured.receipt,
+            AgentCaptureReceipt(
+                itemId: "created", kind: "note", savedTo: "notes",
+                title: "Field notes"))
+        let capturedRequest = await api.lastCapture()
+        let request = try XCTUnwrap(capturedRequest)
+        XCTAssertEqual(request.capture, "A useful observation")
+        XCTAssertNil(request.folderPath)
+        XCTAssertEqual(request.idempotencyKey, "capture:observation-1")
+        let events = await api.recordedEvents()
+        XCTAssertEqual(events, ["capture"])
+    }
+
+    func testCaptureFallbackUsesAuthoritativeReceiptLocation() async throws {
+        let notes = folder(id: "notes", name: "Notes", path: "notes", mode: "notes")
+        let archive = folder(
+            id: "archive", name: "Archive", path: "notes/archive",
+            mode: "notes", parentId: notes.id)
+        let api = FakeCLISyncAPI(
+            workspace: workspace(folders: [notes, archive]),
+            manifests: [notes.id: [], archive.id: []],
+            captureReceiptFolderPath: archive.path)
+        let store = RemoteDocumentStore(api: api)
+        let input = try XCTUnwrap(AgentCaptureInput(value: "A useful observation"))
+
+        let captured = try await store.capture(
+            input, rawValue: "A useful observation",
+            idempotencyKey: "capture:receipt-location")
+
+        XCTAssertEqual(
+            captured.document.path, "notes/archive/Field notes.textpack")
+        XCTAssertEqual(captured.document.folderId, "")
+        XCTAssertEqual(captured.document.workspaceHandle, "")
+        XCTAssertEqual(captured.receipt.savedTo, archive.path)
+    }
+
     func testDeviceCredentialRejectsPlaintextNonLoopbackOrigin() {
         XCTAssertNil(
             DeviceCredentials(
@@ -295,6 +371,14 @@ private actor FakeCLISyncAPI: TextTextCLISyncAPI {
         let agentIntent: String?
     }
 
+    struct CaptureRequest: Sendable {
+        let capture: String
+        let folderPath: String?
+        let idempotencyKey: String
+        let agentName: String?
+        let agentIntent: String?
+    }
+
     struct SectionUpdateRequest: Sendable {
         let postId: String
         let section: String
@@ -308,21 +392,30 @@ private actor FakeCLISyncAPI: TextTextCLISyncAPI {
     private let workspaceValue: TextTextWorkspace
     private var manifests: [String: [TextTextManifestItem]]
     private let contents: [String: (markdown: String, hash: String)]
+    private let searchResults: [TextTextAgentSearchResult]
     private let updateResult: Result<TextTextAgentCommandReply, TextTextSyncError>
+    private let captureReceiptFolderPath: String?
     private var updates: [UpdateRequest] = []
     private var creates: [CreateRequest] = []
+    private var captures: [CaptureRequest] = []
     private var sectionUpdates: [SectionUpdateRequest] = []
     private var readCount = 0
+    private var searchQueries: [String] = []
+    private var events: [String] = []
 
     init(
         workspace: TextTextWorkspace,
         manifests: [String: [TextTextManifestItem]],
         contents: [String: (String, String)] = [:],
+        searchResults: [TextTextAgentSearchResult] = [],
+        captureReceiptFolderPath: String? = nil,
         updateResult: Result<TextTextAgentCommandReply, TextTextSyncError>? = nil
     ) {
         self.workspaceValue = workspace
         self.manifests = manifests
         self.contents = contents
+        self.searchResults = searchResults
+        self.captureReceiptFolderPath = captureReceiptFolderPath
         self.updateResult =
             updateResult
             ?? .success(
@@ -332,13 +425,15 @@ private actor FakeCLISyncAPI: TextTextCLISyncAPI {
     }
 
     func workspace() async -> Result<TextTextWorkspace, TextTextSyncError> {
-        .success(workspaceValue)
+        events.append("workspace")
+        return .success(workspaceValue)
     }
 
     func manifest(folderId: String) async
         -> Result<[TextTextManifestItem], TextTextSyncError>
     {
-        .success(manifests[folderId] ?? [])
+        events.append("manifest")
+        return .success(manifests[folderId] ?? [])
     }
 
     func fileContent(
@@ -362,6 +457,14 @@ private actor FakeCLISyncAPI: TextTextCLISyncAPI {
                 markdown: value.markdown))
     }
 
+    func agentSearchItems(
+        query: String, agentName: String?, agentIntent: String?
+    ) async -> Result<TextTextAgentCommandReply, TextTextSyncError> {
+        searchQueries.append(query)
+        return .success(
+            TextTextAgentCommandReply(query: query, results: searchResults))
+    }
+
     func agentCreateItem(
         markdown: String, folderPath: String, idempotencyKey: String,
         agentName: String?, agentIntent: String?
@@ -380,6 +483,36 @@ private actor FakeCLISyncAPI: TextTextCLISyncAPI {
                 item: TextTextAgentCommandItem(
                     id: "created", title: "Field notes", hash: "hash-created")))
     }
+
+    func agentCaptureItem(
+        capture: String, folderPath: String?, idempotencyKey: String,
+        agentName: String?, agentIntent: String?
+    ) async -> Result<TextTextAgentCommandReply, TextTextSyncError> {
+        events.append("capture")
+        captures.append(
+            CaptureRequest(
+                capture: capture, folderPath: folderPath,
+                idempotencyKey: idempotencyKey, agentName: agentName,
+                agentIntent: agentIntent))
+        let selected = captureReceiptFolderPath.flatMap { path in
+            workspaceValue.folders.first { $0.path == path }
+        } ?? folderPath.flatMap { path in
+            workspaceValue.folders.first { $0.path == path }
+        } ?? workspaceValue.folders.first { $0.mode == "notes" }
+        if let selected {
+            manifests[selected.id, default: []].append(
+                Self.item(id: "created", title: "Field notes"))
+        }
+        return .success(
+            TextTextAgentCommandReply(
+                item: TextTextAgentCommandItem(
+                    id: "created", title: "Field notes", hash: "hash-created"),
+                receipt: TextTextAgentCaptureReceipt(
+                    itemId: "created", kind: "note",
+                    savedTo: selected?.path ?? "notes", title: "Field notes")))
+    }
+
+    func recordedEvents() -> [String] { events }
 
     func agentUpdateItem(
         postId: String, markdown: String, ifMatchHash hash: String,
@@ -417,8 +550,10 @@ private actor FakeCLISyncAPI: TextTextCLISyncAPI {
 
     func lastPut() -> UpdateRequest? { updates.last }
     func lastCreate() -> CreateRequest? { creates.last }
+    func lastCapture() -> CaptureRequest? { captures.last }
     func lastSectionUpdate() -> SectionUpdateRequest? { sectionUpdates.last }
     func commandReadCount() -> Int { readCount }
+    func lastSearchQuery() -> String? { searchQueries.last }
 
     private static func item(id: String, title: String) -> TextTextManifestItem {
         TextTextManifestItem(

@@ -52,9 +52,10 @@ private final class QuickCaptureTextView: NSTextView {
 final class QuickCaptureController: NSWindowController, NSWindowDelegate {
     private let textView = QuickCaptureTextView()
     private let statusLabel = NSTextField(labelWithString: "")
-    private let onSave: (QuickCaptureContent) throws -> Void
+    private let onSave: (QuickCaptureIntent) throws -> Void
+    private var hideWorkItem: DispatchWorkItem?
 
-    init(onSave: @escaping (QuickCaptureContent) throws -> Void) {
+    init(onSave: @escaping (QuickCaptureIntent) throws -> Void) {
         self.onSave = onSave
         let panel = QuickCapturePanel(
             contentRect: NSRect(x: 0, y: 0, width: 520, height: 300),
@@ -82,7 +83,10 @@ final class QuickCaptureController: NSWindowController, NSWindowDelegate {
 
     func present() {
         guard let window else { return }
+        hideWorkItem?.cancel()
         statusLabel.stringValue = ""
+        statusLabel.textColor = .secondaryLabelColor
+        textView.isEditable = true
         window.center()
         window.alphaValue = 0
         showWindow(nil)
@@ -119,7 +123,7 @@ final class QuickCaptureController: NSWindowController, NSWindowDelegate {
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         statusLabel.font = .systemFont(ofSize: 11, weight: .medium)
-        statusLabel.textColor = .systemRed
+        statusLabel.textColor = .secondaryLabelColor
         statusLabel.lineBreakMode = .byTruncatingTail
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
 
@@ -159,20 +163,29 @@ final class QuickCaptureController: NSWindowController, NSWindowDelegate {
             NSSound.beep()
             return
         }
-        let content = QuickCaptureContent.parse(textView.string)
+        guard let capture = QuickCaptureIntent(textView.string) else {
+            NSSound.beep()
+            return
+        }
         do {
-            try onSave(content)
+            try onSave(capture)
             textView.string = ""
             textView.needsDisplay = true
-            statusLabel.stringValue = ""
-            hide()
+            textView.isEditable = false
+            statusLabel.textColor = .systemGreen
+            statusLabel.stringValue = "Queued safely"
+            let work = DispatchWorkItem { [weak self] in self?.hide() }
+            hideWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.65, execute: work)
         } catch {
-            statusLabel.stringValue = "Could not save"
+            statusLabel.textColor = .systemRed
+            statusLabel.stringValue = "Failed to queue. Your text is still here."
             NSSound.beep()
         }
     }
 
     private func dismiss() {
+        hideWorkItem?.cancel()
         textView.string = ""
         textView.needsDisplay = true
         statusLabel.stringValue = ""
@@ -192,8 +205,211 @@ final class QuickCaptureController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        hideWorkItem?.cancel()
         textView.string = ""
         textView.needsDisplay = true
         statusLabel.stringValue = ""
+    }
+}
+
+/// A small, sandbox-safe recovery surface for captures that exhausted their
+/// automatic retries. It reads and restores the existing app-owned dead-letter
+/// records without relying on Finder or the File Provider extension.
+final class QuickCaptureRecoveryController: NSWindowController,
+    NSTableViewDataSource, NSTableViewDelegate
+{
+    private let loadRecords: () -> [QuickCaptureRecord]
+    private let retryAll: () throws -> Int
+    private var records: [QuickCaptureRecord] = []
+    private let tableView = NSTableView()
+    private let summaryLabel = NSTextField(labelWithString: "")
+    private let statusLabel = NSTextField(labelWithString: "")
+    private let copyButton = NSButton(title: "Copy capture", target: nil, action: nil)
+    private let retryButton = NSButton(title: "Retry all", target: nil, action: nil)
+
+    init(
+        loadRecords: @escaping () -> [QuickCaptureRecord],
+        retryAll: @escaping () throws -> Int
+    ) {
+        self.loadRecords = loadRecords
+        self.retryAll = retryAll
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 540, height: 360),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Failed captures"
+        window.minSize = NSSize(width: 440, height: 280)
+        window.center()
+        super.init(window: window)
+        window.setFrameAutosaveName("TextTextQuickCaptureRecoveryWindow")
+        buildContent()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    func present() {
+        reload()
+        NSApp.activate(ignoringOtherApps: true)
+        showWindow(nil)
+        window?.makeKeyAndOrderFront(nil)
+    }
+
+    private func buildContent() {
+        guard let content = window?.contentView else { return }
+
+        let titleLabel = NSTextField(labelWithString: "Recover failed captures")
+        titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
+        summaryLabel.font = .systemFont(ofSize: 12)
+        summaryLabel.textColor = .secondaryLabelColor
+        statusLabel.font = .systemFont(ofSize: 11)
+        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.lineBreakMode = .byTruncatingTail
+
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("capture"))
+        column.title = "Capture"
+        column.width = 500
+        column.resizingMask = .autoresizingMask
+        tableView.addTableColumn(column)
+        tableView.headerView = nil
+        tableView.rowHeight = 54
+        tableView.intercellSpacing = NSSize(width: 0, height: 1)
+        tableView.usesAlternatingRowBackgroundColors = true
+        tableView.allowsMultipleSelection = false
+        tableView.dataSource = self
+        tableView.delegate = self
+
+        let scrollView = NSScrollView()
+        scrollView.documentView = tableView
+        scrollView.hasVerticalScroller = true
+        scrollView.borderType = .bezelBorder
+
+        copyButton.target = self
+        copyButton.action = #selector(copySelectedCapture)
+        copyButton.isEnabled = false
+        retryButton.target = self
+        retryButton.action = #selector(retryFailedCaptures)
+
+        let buttons = NSStackView(views: [statusLabel, NSView(), copyButton, retryButton])
+        buttons.orientation = .horizontal
+        buttons.alignment = .centerY
+        buttons.spacing = 8
+
+        let stack = NSStackView(views: [titleLabel, summaryLabel, scrollView, buttons])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 8
+        stack.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(stack)
+
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        buttons.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: content.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            stack.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            scrollView.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32),
+            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 170),
+            buttons.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32),
+        ])
+    }
+
+    private func reload() {
+        records = loadRecords()
+        tableView.reloadData()
+        copyButton.isEnabled = false
+        retryButton.isEnabled = !records.isEmpty
+        summaryLabel.stringValue = records.isEmpty
+            ? "No readable failed captures remain."
+            : "Nothing was deleted. Copy a capture or put every item back in the retry queue."
+    }
+
+    func numberOfRows(in tableView: NSTableView) -> Int { records.count }
+
+    func tableView(
+        _ tableView: NSTableView,
+        viewFor tableColumn: NSTableColumn?,
+        row: Int
+    ) -> NSView? {
+        let identifier = NSUserInterfaceItemIdentifier("QuickCaptureRecoveryCell")
+        let cell: NSTableCellView
+        if let reused = tableView.makeView(withIdentifier: identifier, owner: self)
+            as? NSTableCellView
+        {
+            cell = reused
+        } else {
+            cell = NSTableCellView()
+            cell.identifier = identifier
+            let label = NSTextField(wrappingLabelWithString: "")
+            label.translatesAutoresizingMaskIntoConstraints = false
+            label.maximumNumberOfLines = 2
+            cell.textField = label
+            cell.addSubview(label)
+            NSLayoutConstraint.activate([
+                label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 8),
+                label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8),
+                label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            ])
+        }
+        let record = records[row]
+        let detail = record.lastError ?? "The server did not accept this capture."
+        cell.textField?.attributedStringValue = recoveryCellText(
+            title: record.title, detail: detail)
+        return cell
+    }
+
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        copyButton.isEnabled = tableView.selectedRow >= 0
+    }
+
+    @objc private func copySelectedCapture() {
+        let row = tableView.selectedRow
+        guard records.indices.contains(row) else { return }
+        let record = records[row]
+        let text = record.body.isEmpty ? record.title : "\(record.title)\n\n\(record.body)"
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.stringValue = "Copied"
+    }
+
+    @objc private func retryFailedCaptures() {
+        do {
+            let count = try retryAll()
+            if count == 0 {
+                statusLabel.textColor = .secondaryLabelColor
+                statusLabel.stringValue = "No readable captures to retry"
+            } else {
+                statusLabel.textColor = .systemGreen
+                statusLabel.stringValue = count == 1
+                    ? "Queued 1 capture safely"
+                    : "Queued \(count) captures safely"
+            }
+            reload()
+        } catch {
+            statusLabel.textColor = .systemRed
+            statusLabel.stringValue = "Could not queue the captures"
+            NSSound.beep()
+        }
+    }
+
+    private func recoveryCellText(title: String, detail: String) -> NSAttributedString {
+        let value = NSMutableAttributedString(
+            string: title,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+                .foregroundColor: NSColor.labelColor,
+            ])
+        value.append(NSAttributedString(
+            string: "\n\(detail)",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ]))
+        return value
     }
 }

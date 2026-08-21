@@ -178,6 +178,31 @@
   margin: 0 0 12px;
 }
 
+.connect-verification {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(280px, 1.2fr);
+  align-items: center;
+  gap: 24px;
+}
+
+.connect-verification .connect-sub {
+  margin-bottom: 0;
+}
+
+.connect-verification-prompt {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--ac-separator);
+  border-radius: 8px;
+  background: var(--ac-fill-4);
+}
+
+.connect-verification-prompt p {
+  color: var(--ac-label);
+  font: 500 var(--ac-fs-callout)/1.55 var(--ac-font-text);
+  margin: 0 0 12px;
+}
+
 /* --- provider catalog --- */
 
 .connect-integration-grid {
@@ -961,6 +986,11 @@
 }
 
 @media (max-width: 760px) {
+  .connect-verification {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
   .docs-frame {
     display: block;
   }

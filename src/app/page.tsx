@@ -20,29 +20,29 @@ const workspacePlaces = [
 
 const productSteps = [
   {
-    name: "Create",
-    body: "Type a thought, paste a link, or bring in an answer from ChatGPT, Claude, or Codex. The item appears right away.",
+    name: "Capture",
+    body: "Press C from Library. Type a thought, paste a link, or keep a useful AI answer. Press Enter and keep moving.",
   },
   {
-    name: "Shape",
-    body: "Choose a template, or ask the assistant to reshape the same content as a note, an article, or a collection.",
+    name: "Find",
+    body: "Search one private workspace from TextText or a supported, authorized AI. The document stays the source of truth.",
   },
   {
-    name: "Share",
-    body: "Publish openly, keep it reachable only by link, or invite people to edit and comment with you.",
+    name: "Change",
+    body: "Ask in plain language. TextText names the document and operation, keeps the change attributed, and guards conflicts.",
   },
 ];
 
 const trustPoints = [
-  "Your content stays in portable textpacks.",
+  "Export your content as portable textpacks.",
   "Private items fail closed.",
   "Collaboration merges edits without replacing your local work.",
 ];
 
 const previewFiles = [
-  { label: "Input", value: "Text, link, or conversation" },
-  { label: "Look", value: "Article" },
-  { label: "Access", value: "Only me" },
+  { label: "Input", value: "Any text or link" },
+  { label: "Access", value: "Private workspace" },
+  { label: "Next", value: "Open or undo" },
 ];
 
 const actionHref = "/start";
@@ -53,7 +53,7 @@ function PrimaryAction({ signedIn }: { signedIn: boolean }) {
       className="texttext-landing-primary"
       href={signedIn ? "/start?to=home" : actionHref}
     >
-      {signedIn ? "Open your workspace" : "Get started"}
+      {signedIn ? "Open your inbox" : "Get started"}
     </Link>
   );
 }
@@ -77,14 +77,14 @@ function ProductPreview() {
       </div>
       <article className="texttext-landing-document">
         <div className="texttext-landing-editor-bar">
-          <span>Create an item</span>
-          <span>Saved locally</span>
+          <span>Quick capture</span>
+          <span>Saved to Notes</span>
         </div>
-        <p className="texttext-landing-document-eyebrow">New item</p>
-        <h2>Start with a title, some text, or a link</h2>
+        <p className="texttext-landing-document-eyebrow">Inbox</p>
+        <h2>Save a thought, link, or AI answer</h2>
         <p>
-          It saves as you type. Choose a look and decide who can see it
-          whenever you are ready.
+          Press Enter. Keep going. TextText can file it now or let you
+          organize it later.
         </p>
         <dl className="texttext-landing-file-list">
           {previewFiles.map((file) => (
@@ -184,10 +184,10 @@ function LandingDownload() {
         <p className="texttext-landing-kicker">The desktop app</p>
         <h2>TextText on your Mac</h2>
         <p>
-          The same workspace as the web, in a native window you open from the
-          Dock or the menu bar. Your documents sit in the Finder sidebar as
-          real files, show up in Spotlight, answer to Shortcuts, and a saved
-          link captures the whole page.
+          Open the same workspace in a native window, capture from the menu bar,
+          or send text and links from the system Share menu. The standalone
+          edition also gives supported Claude and Codex agents a signed-in local
+          document connection.
         </p>
       </div>
       <div className="texttext-landing-download-actions">
@@ -210,9 +210,9 @@ function LandingSections() {
         aria-label="How TextText works"
       >
         <SectionHeading
-          kicker="One item, any shape"
-          title="Create first. Choose the look later."
-          body="Every item uses the same durable content model. Its look controls how it reads, while access controls who can see or change it."
+          kicker="One fast loop"
+          title="Capture now. Find it from anywhere."
+          body="Save once, then keep working from TextText or a supported AI. Every channel reads and changes the same durable document."
         />
         <FolderCards />
       </section>
@@ -235,14 +235,15 @@ function LandingSections() {
       <section className="texttext-landing-portability" aria-label="Portability">
         <div className="texttext-landing-band-inner">
           <div>
-            <p className="texttext-landing-kicker">Local, shared, durable</p>
-            <h2>Your writing stays yours</h2>
+            <p className="texttext-landing-kicker">One document model</p>
+            <h2>Save once. Use it everywhere.</h2>
           </div>
           <div className="texttext-landing-band-copy">
             <p>
-              TextText keeps your writing and assets in portable textpacks.
-              The Mac app works from local files, sync keeps devices current,
-              and live collaboration adds people without changing the source.
+              The app, in-app assistant, local agent connection, and hosted MCP
+              all address the same validated document. Access stays scoped,
+              mutations stay attributed, and your content can be exported as
+              portable textpacks.
             </p>
             <TrustList />
             <TextLink href="/security">Read security</TextLink>
@@ -260,12 +261,13 @@ function LandingSections() {
           </p>
         </article>
         <article>
-          <p className="texttext-landing-kicker">Use your AI</p>
-          <h2>Keep the document at the center</h2>
+          <p className="texttext-landing-kicker">Bring your AI</p>
+          <h2>Prove the connection in one note</h2>
           <p>
-            Claude, ChatGPT, Codex, and other MCP clients can create, find, and
-            update the same documents you work on. Their changes stay visible
-            and attributed.
+            The in-app assistant and supported Claude or Codex connections can
+            create a private note, read it back, and report where it was saved.
+            Local Mac agents use the signed-in TextText connection. Remote
+            agents use scoped hosted access. Their changes stay attributed.
           </p>
           <TextLink href="/docs/ai">Connect an AI</TextLink>
         </article>
@@ -287,11 +289,11 @@ export default async function Home() {
 
       <section className="texttext-landing-hero">
         <div className="texttext-landing-copy">
-          <h1>Everything you write, in one place.</h1>
+          <h1>Save anything. Bring your AI.</h1>
           <p>
-            Notes, articles, and the links you save. Create an item, give it a
-            look, work on it with other people or your AI, and publish it with
-            a link when it is ready.
+            Capture a thought, link, meeting note, or useful AI answer in one
+            motion. TextText keeps it as a durable document that you and any
+            compatible, authorized AI can find, change, and share.
           </p>
           <div className="texttext-landing-actions">
             <PrimaryAction signedIn={Boolean(user)} />

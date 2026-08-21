@@ -182,6 +182,18 @@ function toolText(result: CallToolResult): string {
   return first?.type === "text" ? first.text : "";
 }
 
+function persistedHash(post: object): string {
+  return renderItemFile(
+    {
+      handle: "local",
+      name: "Local Workspace",
+      author: "Writer",
+      homeLayout: "grid",
+    },
+    post as Post,
+  ).hash;
+}
+
 describe("MCP workspace tool adapter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -282,6 +294,103 @@ describe("MCP workspace tool adapter", () => {
     }
   });
 
+  it("returns exact folder location with every search result", async () => {
+    const post: Post = {
+      id: "11111111-1111-4111-8111-111111111111",
+      folderId: "research",
+      type: "note",
+      slug: "field-note",
+      title: "Field note",
+      excerpt: "A useful observation from the field.",
+      body: "",
+      status: "draft",
+      tags: [],
+      pinned: false,
+      revision: 1,
+    };
+    mocks.getAccessibleAllPostFiles.mockResolvedValue([post]);
+    mocks.getAccessibleFolders.mockResolvedValue([
+      {
+        id: "research",
+        name: "Research",
+        path: "Notes/Research",
+        mode: "notes",
+      },
+    ]);
+    const search = registrations().find((entry) => entry.name === "search")!;
+
+    const result = await search.callback(
+      { query: "useful observation" },
+      auth(["read"]),
+    );
+
+    expect(result.isError).not.toBe(true);
+    expect(JSON.parse(toolText(result))).toMatchObject({
+      results: [
+        {
+          id: post.id,
+          folder_path: "Notes/Research",
+          title: "Field note",
+        },
+      ],
+    });
+  });
+
+  it("uses the same ranked token search for separated remembered words", async () => {
+    const exactTitle: Post = {
+      id: "22222222-2222-4222-8222-222222222222",
+      folderId: "notes",
+      type: "note",
+      slug: "launch-brief-evidence",
+      title: "Launch brief evidence",
+      excerpt: "The short version.",
+      body: "Ready.",
+      status: "draft",
+      tags: [],
+      pinned: false,
+      revision: 1,
+    };
+    const tokenBody: Post = {
+      ...exactTitle,
+      id: "33333333-3333-4333-8333-333333333333",
+      slug: "planning-note",
+      title: "Planning note",
+      excerpt: "Evidence follows the launch owner review and revised brief.",
+    };
+    const partial: Post = {
+      ...exactTitle,
+      id: "44444444-4444-4444-8444-444444444444",
+      slug: "partial",
+      title: "Launch brief",
+      excerpt: "No supporting material yet.",
+    };
+    mocks.getAccessibleAllPostFiles.mockResolvedValue([
+      tokenBody,
+      partial,
+      exactTitle,
+    ]);
+    mocks.getAccessibleFolders.mockResolvedValue([
+      { id: "notes", name: "Notes", path: "notes", mode: "notes" },
+    ]);
+    const search = registrations().find((entry) => entry.name === "search")!;
+
+    const result = await search.callback(
+      { query: "launch brief evidence" },
+      auth(["read"]),
+    );
+
+    expect(result.isError).not.toBe(true);
+    const payload = JSON.parse(toolText(result));
+    expect(payload.results.map((entry: { id: string }) => entry.id)).toEqual([
+      exactTitle.id,
+      tokenBody.id,
+    ]);
+    expect(payload.results[1]).toMatchObject({
+      folder_path: "notes",
+      snippet: expect.stringContaining("Evidence"),
+    });
+  });
+
   it("denies every mutation to read scope before any store call", async () => {
     const entries = registrations();
     for (const name of WORKSPACE_TOOL_NAMES) {
@@ -317,15 +426,16 @@ describe("MCP workspace tool adapter", () => {
       "local",
       "blog",
       "Ideas",
-    );
-    expect(mocks.recordAction).toHaveBeenCalledWith(
       expect.objectContaining({
-        actorUserId: "user-1",
-        actorType: "external_agent",
-        actionName: "mcp.create_folder",
-        inputSummary: "Agent: Claude; blog/ideas",
+        audit: expect.objectContaining({
+          actorUserId: "user-1",
+          actorType: "external_agent",
+          actionName: "mcp.create_folder",
+          inputSummary: "Agent: Claude; blog/Ideas",
+        }),
       }),
     );
+    expect(mocks.recordAction).not.toHaveBeenCalled();
   });
 
   it("opens the exact item and publishes a one-shot agent focus event", async () => {
@@ -455,7 +565,7 @@ describe("MCP workspace tool adapter", () => {
     mocks.savePost.mockResolvedValue({ ...post, body: "After", revision: 6 });
     const result = await runWorkspaceToolForSession(
       "update_item",
-      { id, body: "After" },
+      { id, body: "After", if_match_hash: persistedHash(post) },
       { sub: "owner-sub", userId: "owner-uuid", handle: "local" },
     );
     expect(result.isError).not.toBe(true);
@@ -522,7 +632,7 @@ describe("MCP workspace tool adapter", () => {
       (entry) => entry.name === "update_item",
     );
     const result = await updateItem!.callback(
-      { id, body: "After" },
+      { id, body: "After", if_match_hash: persistedHash(post) },
       auth(["sync"], "Claude"),
     );
     expect(result.isError).not.toBe(true);
@@ -620,6 +730,7 @@ describe("MCP workspace tool adapter", () => {
     expect(read.isError).not.toBe(true);
     expect(JSON.parse(toolText(read))).toMatchObject({
       item: {
+        hash: persistedHash(post),
         tags: ["design"],
         wikilinks: [
           {
@@ -720,7 +831,7 @@ describe("MCP workspace tool adapter", () => {
       (entry) => entry.name === "update_item",
     );
     const result = await updateItem!.callback(
-      { id, body: "After" },
+      { id, body: "After", if_match_hash: persistedHash(post) },
       auth(["sync"], "Claude"),
     );
     expect(result.isError).toBe(true);
@@ -975,7 +1086,7 @@ describe("MCP workspace tool adapter", () => {
       (entry) => entry.name === "update_item",
     );
     const result = await updateItem!.callback(
-      { id, body: "After" },
+      { id, body: "After", if_match_hash: persistedHash(post) },
       auth(["sync"]),
     );
     expect(result.isError).not.toBe(true);
@@ -1601,6 +1712,196 @@ describe("MCP workspace tool adapter", () => {
     expect(mocks.savePost).not.toHaveBeenCalled();
   });
 
+  it("quick-captures raw text to Notes and returns a receipt", async () => {
+    const noteFolder = {
+      id: "notes",
+      name: "Notes",
+      path: "notes",
+      mode: "notes",
+    };
+    const bookmarkFolder = {
+      id: "bookmarks",
+      name: "Bookmarks",
+      path: "bookmarks",
+      mode: "bookmarks",
+    };
+    const saved = {
+      id: "77777777-7777-4777-8777-777777777777",
+      folderId: "notes",
+      type: "note",
+      slug: "launch-thought",
+      title: "A launch thought",
+      excerpt: "",
+      body: "A launch thought\n\nKeep the first run tiny.",
+      status: "draft",
+      tags: [],
+      pinned: false,
+      revision: 1,
+    };
+    mocks.getAccessibleFolders.mockResolvedValue([bookmarkFolder, noteFolder]);
+    mocks.createDraftInFolder.mockResolvedValue(saved);
+
+    const createItem = registrations().find(
+      (entry) => entry.name === "create_item",
+    )!;
+    const result = await createItem.callback(
+      {
+        capture: "A launch thought\n\nKeep the first run tiny.",
+        idempotency_key: "capture:message-77",
+      },
+      auth(["sync"], "Claude"),
+    );
+
+    expect(result.isError).not.toBe(true);
+    expect(JSON.parse(toolText(result))).toMatchObject({
+      item: {
+        id: saved.id,
+        kind: "note",
+        title: "A launch thought",
+      },
+      receipt: {
+        item_id: saved.id,
+        kind: "note",
+        saved_to: "notes",
+        title: "A launch thought",
+      },
+      replayed: false,
+    });
+    expect(mocks.createDraftInFolder).toHaveBeenCalledWith(
+      "local",
+      "notes",
+      expect.objectContaining({
+        idempotencyKey: "agent:create:capture:message-77",
+        initial: expect.objectContaining({
+          body: "A launch thought\n\nKeep the first run tiny.",
+          title: "A launch thought",
+          type: "note",
+        }),
+        audit: expect.objectContaining({
+          actionName: "mcp.create_item",
+          actorType: "external_agent",
+        }),
+      }),
+    );
+  });
+
+  it("replays a capture receipt from the existing item's actual folder", async () => {
+    const inbox = {
+      id: "notes",
+      name: "Notes",
+      path: "notes",
+      mode: "notes",
+    };
+    const archive = {
+      id: "archive",
+      name: "Archive",
+      path: "notes/archive",
+      mode: "notes",
+      parentId: "notes",
+    };
+    const existing = {
+      id: "76767676-7676-4767-8767-767676767676",
+      folderId: "archive",
+      type: "note",
+      slug: "launch-thought",
+      title: "A launch thought",
+      excerpt: "",
+      body: "A launch thought",
+      status: "draft",
+      tags: [],
+      pinned: false,
+      revision: 1,
+    };
+    mocks.getAccessibleFolders.mockResolvedValue([inbox, archive]);
+    mocks.claimIdempotencyKey.mockResolvedValue({
+      status: "done",
+      kind: "post",
+      id: existing.id,
+    });
+    mocks.getPostById.mockResolvedValue(existing);
+    const createItem = registrations().find(
+      (entry) => entry.name === "create_item",
+    )!;
+
+    const result = await createItem.callback(
+      {
+        capture: "A launch thought",
+        idempotency_key: "capture:already-saved",
+      },
+      auth(["sync"]),
+    );
+
+    expect(result.isError).not.toBe(true);
+    expect(JSON.parse(toolText(result))).toMatchObject({
+      replayed: true,
+      receipt: {
+        item_id: existing.id,
+        saved_to: "notes/archive",
+        title: "A launch thought",
+      },
+    });
+    expect(mocks.createDraftInFolder).not.toHaveBeenCalled();
+  });
+
+  it("quick-captures a URL as a canonical bookmark link", async () => {
+    const bookmarkFolder = {
+      id: "bookmarks",
+      name: "Bookmarks",
+      path: "bookmarks",
+      mode: "bookmarks",
+    };
+    const saved = {
+      id: "78787878-7878-4787-8787-787878787878",
+      folderId: "bookmarks",
+      type: "bookmark",
+      slug: "paper-design",
+      title: "paper.design",
+      excerpt: "",
+      body: "[paper.design](https://paper.design/docs/mcp)",
+      links: [{ label: "paper.design", href: "https://paper.design/docs/mcp" }],
+      status: "draft",
+      tags: [],
+      pinned: false,
+      revision: 1,
+    };
+    mocks.getAccessibleFolders.mockResolvedValue([bookmarkFolder]);
+    mocks.createDraftInFolder.mockResolvedValue(saved);
+
+    const createItem = registrations().find(
+      (entry) => entry.name === "create_item",
+    )!;
+    const result = await createItem.callback(
+      {
+        capture: "paper.design/docs/mcp",
+        idempotency_key: "capture:bookmark-1",
+      },
+      auth(["sync"], "Codex"),
+    );
+
+    expect(result.isError).not.toBe(true);
+    expect(JSON.parse(toolText(result))).toMatchObject({
+      receipt: {
+        item_id: saved.id,
+        kind: "bookmark",
+        saved_to: "bookmarks",
+        title: "paper.design",
+      },
+    });
+    expect(mocks.createDraftInFolder).toHaveBeenCalledWith(
+      "local",
+      "bookmarks",
+      expect.objectContaining({
+        initial: expect.objectContaining({
+          links: [
+            { label: "paper.design", href: "https://paper.design/docs/mcp" },
+          ],
+          title: "paper.design",
+          type: "bookmark",
+        }),
+      }),
+    );
+  });
+
   it("appends a changelog entry once when an agent retries", async () => {
     const id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const post = {
@@ -1846,26 +2147,31 @@ describe("MCP workspace tool adapter", () => {
 
     expect(deleted.isError).not.toBe(true);
     expect(restored.isError).not.toBe(true);
-    expect(mocks.trashFolder).toHaveBeenCalledWith("local", folder.id);
-    expect(mocks.restoreFolder).toHaveBeenCalledWith("local", folder.id);
-    expect(mocks.recordAction).toHaveBeenNthCalledWith(
-      1,
+    expect(mocks.trashFolder).toHaveBeenCalledWith(
+      "local",
+      folder.id,
       expect.objectContaining({
-        actorType: "external_agent",
-        actionName: "mcp.delete_folder",
-        targetType: "folder",
-        targetId: folder.id,
+        audit: expect.objectContaining({
+          actorType: "external_agent",
+          actionName: "mcp.delete_folder",
+          targetType: "folder",
+          targetId: folder.id,
+        }),
       }),
     );
-    expect(mocks.recordAction).toHaveBeenNthCalledWith(
-      2,
+    expect(mocks.restoreFolder).toHaveBeenCalledWith(
+      "local",
+      folder.id,
       expect.objectContaining({
-        actorType: "external_agent",
-        actionName: "mcp.restore_folder",
-        targetType: "folder",
-        targetId: folder.id,
+        audit: expect.objectContaining({
+          actorType: "external_agent",
+          actionName: "mcp.restore_folder",
+          targetType: "folder",
+          targetId: folder.id,
+        }),
       }),
     );
+    expect(mocks.recordAction).not.toHaveBeenCalled();
   });
 
   it("requires sync scope for access lists", async () => {
@@ -2040,8 +2346,8 @@ describe("MCP workspace tool adapter", () => {
       comment.id,
       true,
       expect.objectContaining({
-          actorType: "external_agent",
-          actorName: "Claude",
+        actorType: "external_agent",
+        actorName: "Claude",
       }),
       {
         audit: expect.objectContaining({
@@ -2109,15 +2415,16 @@ describe("MCP workspace tool adapter", () => {
       "local",
       id,
       "https://example.com/article",
-    );
-    expect(mocks.recordAction).toHaveBeenCalledWith(
       expect.objectContaining({
-        actorType: "external_agent",
-        actionName: "mcp.recapture_bookmark",
-        targetId: id,
-        inputSummary: "https://example.com/article",
+        audit: expect.objectContaining({
+          actorType: "external_agent",
+          actionName: "mcp.recapture_bookmark",
+          targetId: id,
+          inputSummary: "https://example.com/article",
+        }),
       }),
     );
+    expect(mocks.recordAction).not.toHaveBeenCalled();
   });
 
   it("reads, adds, removes, and selects item cover assets", async () => {
@@ -2231,18 +2538,29 @@ describe("MCP workspace tool adapter", () => {
         }),
       }),
     );
-    expect(mocks.recordAction).toHaveBeenCalledWith(
+    expect(mocks.savePost).toHaveBeenCalledWith(
+      "local",
+      expect.any(Object),
       expect.objectContaining({
-        actionName: "mcp.add_item_asset",
-        targetId: id,
+        expectedRevision: 5,
+        audit: expect.objectContaining({
+          actionName: "mcp.add_item_asset",
+          targetId: id,
+        }),
       }),
     );
-    expect(mocks.recordAction).toHaveBeenCalledWith(
+    expect(mocks.savePost).toHaveBeenCalledWith(
+      "local",
+      expect.any(Object),
       expect.objectContaining({
-        actionName: "mcp.remove_item_asset",
-        targetId: id,
+        expectedRevision: 5,
+        audit: expect.objectContaining({
+          actionName: "mcp.remove_item_asset",
+          targetId: id,
+        }),
       }),
     );
+    expect(mocks.recordAction).not.toHaveBeenCalled();
   });
 
   it("never publishes a private note", async () => {

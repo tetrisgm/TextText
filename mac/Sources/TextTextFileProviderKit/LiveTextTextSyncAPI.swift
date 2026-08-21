@@ -12,11 +12,72 @@ public struct TextTextAgentCommandItem: Decodable, Sendable {
     }
 }
 
+/// The mutation receipt emitted by the shared workspace command. This is the
+/// authoritative destination chosen by the server, including any default or
+/// nested folder resolution the caller did not perform locally.
+public struct TextTextAgentCaptureReceipt: Decodable, Sendable {
+    public let itemId: String
+    public let kind: String
+    public let savedTo: String
+    public let title: String
+
+    private enum CodingKeys: String, CodingKey {
+        case itemId = "item_id"
+        case kind
+        case savedTo = "saved_to"
+        case title
+    }
+
+    public init(itemId: String, kind: String, savedTo: String, title: String) {
+        self.itemId = itemId
+        self.kind = kind
+        self.savedTo = savedTo
+        self.title = title
+    }
+}
+
+/// One result from the shared workspace `search` command. The local CLI
+/// decodes this exact server shape instead of rebuilding a second search index
+/// from folder manifests.
+public struct TextTextAgentSearchResult: Decodable, Sendable {
+    public let id: String
+    public let slug: String
+    public let title: String
+    public let kind: String
+    public let status: String
+    public let hash: String
+    public let snippet: String
+    public let folderPath: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, slug, title, kind, status, hash, snippet
+        case folderPath = "folder_path"
+    }
+
+    public init(
+        id: String, slug: String, title: String, kind: String,
+        status: String, hash: String, snippet: String,
+        folderPath: String? = nil
+    ) {
+        self.id = id
+        self.slug = slug
+        self.title = title
+        self.kind = kind
+        self.status = status
+        self.hash = hash
+        self.snippet = snippet
+        self.folderPath = folderPath
+    }
+}
+
 public struct TextTextAgentCommandReply: Decodable, Sendable {
     public struct StructuredContent: Decodable, Sendable {
         public let item: TextTextAgentCommandItem?
         public let markdown: String?
         public let replayed: Bool?
+        public let query: String?
+        public let results: [TextTextAgentSearchResult]?
+        public let receipt: TextTextAgentCaptureReceipt?
     }
 
     private struct Content: Decodable, Sendable {
@@ -32,11 +93,15 @@ public struct TextTextAgentCommandReply: Decodable, Sendable {
         item: TextTextAgentCommandItem? = nil,
         markdown: String? = nil,
         replayed: Bool? = nil,
+        query: String? = nil,
+        results: [TextTextAgentSearchResult]? = nil,
+        receipt: TextTextAgentCaptureReceipt? = nil,
         isError: Bool? = nil,
         message: String? = nil
     ) {
         self.structuredContent = StructuredContent(
-            item: item, markdown: markdown, replayed: replayed)
+            item: item, markdown: markdown, replayed: replayed,
+            query: query, results: results, receipt: receipt)
         self.isError = isError
         self.content = message.map { [Content(type: "text", text: $0)] } ?? []
     }
@@ -140,6 +205,14 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
             agentName: agentName, agentIntent: agentIntent)
     }
 
+    public func agentSearchItems(
+        query: String, agentName: String?, agentIntent: String?
+    ) async -> Result<TextTextAgentCommandReply, TextTextSyncError> {
+        await agentCommand(
+            name: "search", arguments: ["query": query],
+            agentName: agentName, agentIntent: agentIntent)
+    }
+
     public func agentCreateItem(
         markdown: String, folderPath: String, idempotencyKey: String,
         agentName: String?, agentIntent: String?
@@ -151,6 +224,22 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
                 "folder_path": folderPath,
                 "idempotency_key": idempotencyKey,
             ],
+            agentName: agentName, agentIntent: agentIntent)
+    }
+
+    public func agentCaptureItem(
+        capture: String, folderPath: String?, idempotencyKey: String,
+        agentName: String?, agentIntent: String?
+    ) async -> Result<TextTextAgentCommandReply, TextTextSyncError> {
+        var arguments = [
+            "capture": capture,
+            "idempotency_key": idempotencyKey,
+        ]
+        if let folderPath, !folderPath.isEmpty {
+            arguments["folder_path"] = folderPath
+        }
+        return await agentCommand(
+            name: "create_item", arguments: arguments,
             agentName: agentName, agentIntent: agentIntent)
     }
 

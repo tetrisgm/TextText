@@ -145,6 +145,21 @@ describe("workspace tool contract", () => {
     ).toEqual({ body: "# Draft from body\n\nComplete text." });
     expect(
       parseWorkspaceToolInput("create_item", {
+        capture: "A thought worth keeping",
+        idempotency_key: "capture:message-42",
+      }),
+    ).toEqual({
+      capture: "A thought worth keeping",
+      idempotency_key: "capture:message-42",
+    });
+    expect(() =>
+      parseWorkspaceToolInput("create_item", {
+        capture: "A thought worth keeping",
+        body: "Conflicting structured body",
+      }),
+    ).toThrow("Pass capture by itself");
+    expect(
+      parseWorkspaceToolInput("create_item", {
         title: "Grounded launch brief",
         template_id: "texttext.brief",
         fields: {
@@ -257,6 +272,28 @@ describe("workspace tool contract", () => {
         replacement_text: "draft",
       },
     });
+    expect(() =>
+      parseWorkspaceToolInput("update_item", {
+        id: "post-1",
+        body: "A complete replacement",
+      }),
+    ).toThrow("Whole-item replacement requires if_match_hash");
+    expect(
+      parseWorkspaceToolInput("update_item", {
+        id: "post-1",
+        body: "A complete replacement",
+        if_match_hash: "sha256:persisted",
+      }),
+    ).toMatchObject({
+      body: "A complete replacement",
+      if_match_hash: "sha256:persisted",
+    });
+    expect(() =>
+      parseWorkspaceToolInput("update_item", {
+        id: "post-1",
+        markdown: "---\ntitle: Replacement\n---\n\nBody",
+      }),
+    ).toThrow("Whole-item replacement requires if_match_hash");
     expect(() =>
       parseWorkspaceToolInput("update_item", {
         id: "post-1",

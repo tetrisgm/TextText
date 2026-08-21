@@ -100,26 +100,85 @@ function cleanText(value: string | undefined): string {
   return (value ?? "").replace(/\s+/g, " ").trim();
 }
 
-function titleScore(title: string, query: string): number | null {
-  const lowered = title.toLocaleLowerCase();
-  if (lowered === query) return 0;
-  if (lowered.startsWith(query)) return 8;
-  const wordIndex = lowered.search(new RegExp(`(?:^|\\s)${escapeRegExp(query)}`));
-  if (wordIndex >= 0) return 14 + wordIndex;
-  const index = lowered.indexOf(query);
-  return index >= 0 ? 24 + index : null;
+/**
+ * The canonical search normalization used by Library and the workspace
+ * command surface. Punctuation, repeated whitespace, case, and accents must
+ * not make an item disappear just because a person remembered different
+ * typography.
+ */
+export function normalizeSearchText(value: string): string {
+  return value
+    .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .replace(/\s+/g, " ");
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function queryTokens(query: string): string[] {
+  return [...new Set(normalizeSearchText(query).split(" ").filter(Boolean))];
 }
 
-function excerptAround(value: string, query: string): string {
+function tokenScore(value: string, tokens: readonly string[]): number | null {
+  let score = 0;
+  for (const token of tokens) {
+    const index = value.indexOf(token);
+    if (index < 0) return null;
+    score += index;
+  }
+  return score;
+}
+
+/**
+ * Rank a remembered phrase even when its meaningful words are separated or
+ * reordered in the document. Every query token is required, while exact
+ * title and phrase matches remain strongest.
+ */
+export function rankSearchText(
+  title: string,
+  content: string,
+  query: string,
+): number | null {
+  const normalizedQuery = normalizeSearchText(query);
+  const tokens = queryTokens(query);
+  if (!normalizedQuery || tokens.length === 0) return null;
+
+  const normalizedTitle = normalizeSearchText(title);
+  const normalizedContent = normalizeSearchText(content);
+  const combined = [normalizedTitle, normalizedContent]
+    .filter(Boolean)
+    .join(" ");
+
+  if (normalizedTitle === normalizedQuery) return 0;
+  if (normalizedTitle.startsWith(normalizedQuery)) return 8;
+  const titlePhraseIndex = normalizedTitle.indexOf(normalizedQuery);
+  if (titlePhraseIndex >= 0) return 16 + titlePhraseIndex;
+
+  const titleTokens = tokenScore(normalizedTitle, tokens);
+  if (titleTokens !== null) return 32 + titleTokens;
+
+  const contentPhraseIndex = normalizedContent.indexOf(normalizedQuery);
+  if (contentPhraseIndex >= 0) return 100 + contentPhraseIndex;
+
+  const combinedTokens = tokenScore(combined, tokens);
+  return combinedTokens === null ? null : 200 + combinedTokens;
+}
+
+export function searchExcerpt(value: string, query: string): string {
   const clean = cleanText(value);
   if (!clean) return "";
-  const index = clean.toLocaleLowerCase().indexOf(query);
+  const tokens = queryTokens(query);
+  const lowered = normalizeSearchText(clean);
+  const indices = tokens
+    .map((token) => lowered.indexOf(token))
+    .filter((index) => index >= 0);
+  const index = indices.length > 0 ? Math.min(...indices) : 0;
   const start = Math.max(0, index - 42);
-  const end = Math.min(clean.length, Math.max(index + query.length + 72, 130));
+  const end = Math.min(
+    clean.length,
+    Math.max(index + normalizeSearchText(query).length + 72, 130),
+  );
   return `${start > 0 ? "..." : ""}${clean.slice(start, end)}${end < clean.length ? "..." : ""}`;
 }
 
@@ -163,7 +222,7 @@ export function searchWorkspace({
 
   const results: WorkspaceSearchResult[] = [];
   for (const folder of folders) {
-    const score = titleScore(folder.name, cleanQuery);
+    const score = rankSearchText(folder.name, folder.path, cleanQuery);
     if (score === null) continue;
     results.push({
       kind: "folder",
@@ -177,31 +236,19 @@ export function searchWorkspace({
 
   for (const post of posts) {
     const title = cleanText(post.title) || "Untitled";
-    const titleMatch = titleScore(title, cleanQuery);
-    if (titleMatch !== null) {
-      results.push({
-        kind: "post",
-        id: `post:${post.id}`,
-        postId: post.id,
-        title,
-        detail: cleanText(post.excerpt) || post.type,
-        score: titleMatch,
-      });
-      continue;
-    }
     const excerpt = cleanText(post.excerpt);
     const preview = cleanText(post.bodyPreview);
     const body = cleanText(bodies[post.id]);
     const content = [excerpt, preview, body].filter(Boolean).join(" ");
-    const contentIndex = content.toLocaleLowerCase().indexOf(cleanQuery);
-    if (contentIndex < 0) continue;
+    const score = rankSearchText(title, content, cleanQuery);
+    if (score === null) continue;
     results.push({
       kind: "post",
       id: `post:${post.id}`,
       postId: post.id,
       title,
-      detail: excerptAround(content, cleanQuery) || post.type,
-      score: 100 + contentIndex,
+      detail: searchExcerpt(content, cleanQuery) || post.type,
+      score,
     });
   }
 

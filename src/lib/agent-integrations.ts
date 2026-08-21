@@ -11,6 +11,9 @@ export const CODEX_PLUGIN_INSTALL_COMMAND =
 export const TEXTTEXT_CLI_VERIFY_COMMAND =
   "if command -v texttext >/dev/null 2>&1; then texttext ls; else /Applications/TextText.app/Contents/Helpers/texttext ls; fi";
 
+export const AGENT_CONNECTION_CHECK_PROMPT =
+  "Use TextText to create a private note titled Agent connection check. Add one line: Connected through [your agent name], replacing the brackets with your name. Read the note back, tell me where you saved it, and do not publish or share it.";
+
 export type AgentIntegrationStep = {
   /** One sentence, imperative, sentence case. */
   text: string;

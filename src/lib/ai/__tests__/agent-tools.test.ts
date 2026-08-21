@@ -374,6 +374,43 @@ describe("native workspace tool adapter", () => {
     });
   });
 
+  it("passes quick capture through without forcing it into Blog", async () => {
+    const executeTool = vi.fn().mockResolvedValue({
+      item: {
+        id: "note-2",
+        title: "A thought worth keeping",
+        status: "draft",
+      },
+      receipt: {
+        item_id: "note-2",
+        kind: "note",
+        saved_to: "notes",
+        title: "A thought worth keeping",
+      },
+    });
+    const tools = createWorkspaceAgentTools({
+      handle: "local",
+      getPool: workspacePool,
+      executeTool,
+      refreshPool: async () => {},
+    });
+
+    await expect(
+      tools.executor("create_item", {
+        capture: "A thought worth keeping",
+        idempotency_key: "capture:thought-1",
+      }),
+    ).resolves.toMatchObject({
+      folder_path: "notes",
+      id: "note-2",
+      title: "A thought worth keeping",
+    });
+    expect(executeTool).toHaveBeenCalledWith("create_item", {
+      capture: "A thought worth keeping",
+      idempotency_key: "capture:thought-1",
+    });
+  });
+
   it("fails closed for an audience-changing restore without confirmation", async () => {
     const executeTool = vi.fn();
     const tools = createWorkspaceAgentTools({
@@ -477,7 +514,114 @@ describe("native workspace tool adapter", () => {
     await expect(
       tools.executor("read_item", { id: "post-1" }),
     ).resolves.toMatchObject({
+      hash: null,
       assets: [{ url: "https://assets.test/a.jpg" }],
+    });
+  });
+
+  it("returns the persisted hash instead of hashing an unsynced open draft", async () => {
+    const tools = createWorkspaceAgentTools({
+      handle: "local",
+      getPool: workspacePool,
+      readItemText: vi.fn(async () => ({
+        title: "Unsynced title",
+        excerpt: "",
+        body: "Unsynced local body",
+        tags: [],
+      })),
+      executeTool: vi.fn(async () => ({
+        item: { id: "post-1", hash: "sha256:persisted" },
+      })),
+    });
+
+    await expect(
+      tools.executor("read_item", { id: "post-1" }),
+    ).resolves.toMatchObject({
+      title: "Unsynced title",
+      body: "Unsynced local body",
+      hash: "sha256:persisted",
+    });
+  });
+
+  it("reports an open-draft edit as queued until sync is acknowledged", async () => {
+    const applyItemPatch = vi.fn(async () => ({
+      synced: false,
+      queued: true,
+    }));
+    const tools = createWorkspaceAgentTools({
+      handle: "local",
+      getPool: workspacePool,
+      readItemText: vi.fn(async () => ({
+        title: "Draft",
+        excerpt: "",
+        body: "Persisted body",
+        tags: [],
+      })),
+      applyItemPatch,
+    });
+
+    await expect(
+      tools.executor("update_item", { id: "post-1", title: "Queued title" }),
+    ).resolves.toMatchObject({
+      ok: false,
+      queued: true,
+      sync_status: "queued_locally",
+    });
+  });
+
+  it("propagates authorization and conflict failures from draft sync", async () => {
+    const tools = createWorkspaceAgentTools({
+      handle: "local",
+      getPool: workspacePool,
+      readItemText: vi.fn(async () => ({
+        title: "Draft",
+        excerpt: "",
+        body: "Persisted body",
+        tags: [],
+      })),
+      applyItemPatch: vi.fn(async () => {
+        throw new Error("Conflict: You cannot edit this item.");
+      }),
+    });
+
+    await expect(
+      tools.executor("update_item", { id: "post-1", title: "Rejected" }),
+    ).rejects.toThrow("Conflict: You cannot edit this item.");
+  });
+
+  it("keeps guarded section edits on the authoritative command path", async () => {
+    const applyItemPatch = vi.fn(async () => ({ synced: true }));
+    const executeTool = vi.fn(async () => ({
+      item: { id: "post-1", title: "Draft" },
+    }));
+    const tools = createWorkspaceAgentTools({
+      handle: "local",
+      getPool: workspacePool,
+      readItemText: vi.fn(async () => ({
+        title: "Draft",
+        excerpt: "",
+        body: "# Draft\n\n## Pricing\n\nTen dollars.",
+        tags: [],
+      })),
+      applyItemPatch,
+      executeTool,
+    });
+
+    await expect(
+      tools.executor("update_item", {
+        id: "post-1",
+        section: "Pricing",
+        expected_section_body: "Ten dollars.",
+        body: "Twenty dollars.",
+      }),
+    ).resolves.toMatchObject({ ok: true, id: "post-1" });
+
+    expect(applyItemPatch).not.toHaveBeenCalled();
+    expect(executeTool).toHaveBeenCalledWith("update_item", {
+      id: "post-1",
+      section: "Pricing",
+      expected_section_body: "Ten dollars.",
+      body: "Twenty dollars.",
     });
   });
 
@@ -521,7 +665,7 @@ describe("external agent presence signalling", () => {
         body: "Existing body",
         tags: [],
       })),
-      applyItemPatch: vi.fn(),
+      applyItemPatch: vi.fn(async () => ({ synced: true })),
       executeTool: vi.fn(async () => ({ item: { title: "Draft" } })),
       signalAgentActivity,
     });
@@ -559,7 +703,7 @@ describe("external agent presence signalling", () => {
 
     await tools.executor(
       "update_item",
-      { id: "post-1", body: "New body" },
+      { id: "post-1", body: "New body", if_match_hash: "sha256:read" },
       "agent-request",
       actor,
     );
@@ -600,7 +744,12 @@ describe("external agent presence signalling", () => {
 
     await tools.executor(
       "update_item",
-      { id: "post-1", title: "New title", body: "New body" },
+      {
+        id: "post-1",
+        title: "New title",
+        body: "New body",
+        if_match_hash: "sha256:read",
+      },
       "agent-request",
       actor,
     );
@@ -634,7 +783,7 @@ describe("external agent presence signalling", () => {
     const signalAgentActivity = vi.fn(async () => {
       throw new Error("presence route unavailable");
     });
-    const applyItemPatch = vi.fn();
+    const applyItemPatch = vi.fn(async () => ({ synced: true }));
     const tools = createWorkspaceAgentTools({
       handle: "local",
       getPool: workspacePool,

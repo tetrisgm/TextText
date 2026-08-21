@@ -126,7 +126,7 @@ export default function FeaturesPage() {
           <h2 className="connect-section-title">Go deeper</h2>
           <p>
             <Link href="/docs/getting-started">Getting started</Link> walks the
-            first connection.{" "}
+            first capture, search, and guarded edit.{" "}
             <Link href="/docs/ai">The AI and agent guide</Link> covers
             providers, tools, and workflows.{" "}
             <Link href="/docs/item-types">Build item types</Link> covers the
