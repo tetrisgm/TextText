@@ -61,6 +61,16 @@ public struct RemoteDocument: Equatable, Sendable {
     }
 }
 
+public struct CLIDocumentContent: Equatable, Sendable {
+    public let markdown: String
+    public let hash: String?
+
+    public init(markdown: String, hash: String?) {
+        self.markdown = markdown
+        self.hash = hash
+    }
+}
+
 public enum CLIDocumentReference: Equatable, Sendable {
     case local(URL)
     case remote(RemoteDocument)
@@ -183,31 +193,46 @@ public enum CLIWorkspace: Sendable {
         }
     }
 
-    public func readMarkdown(at reference: CLIDocumentReference) async throws -> String {
+    public func readContent(
+        at reference: CLIDocumentReference
+    ) async throws -> CLIDocumentContent {
         switch reference {
         case .local(let url):
-            return try DocumentStore(root: url.deletingLastPathComponent())
-                .readMarkdown(at: url)
+            return CLIDocumentContent(
+                markdown: try DocumentStore(
+                    root: url.deletingLastPathComponent()
+                ).readMarkdown(at: url),
+                hash: nil)
         case .remote(let document):
             guard case .remote(let store) = self else {
                 throw TextTextCLIError.documentNotFound(document.path)
             }
-            return try await store.readMarkdown(at: document)
+            return try await store.readContent(at: document)
         }
     }
 
+    public func readMarkdown(at reference: CLIDocumentReference) async throws -> String {
+        try await readContent(at: reference).markdown
+    }
+
     public func writeMarkdown(
-        _ markdown: String, to reference: CLIDocumentReference
+        _ markdown: String, to reference: CLIDocumentReference,
+        ifMatchHash: String? = nil
     ) async throws {
         switch reference {
         case .local(let url):
+            if ifMatchHash != nil {
+                throw TextTextCLIError.workspaceUnavailable(
+                    "--if-match-hash needs the signed-in workspace")
+            }
             try DocumentStore(root: url.deletingLastPathComponent())
                 .writeMarkdown(markdown, to: url)
         case .remote(let document):
             guard case .remote(let store) = self else {
                 throw TextTextCLIError.documentNotFound(document.path)
             }
-            try await store.writeMarkdown(markdown, to: document)
+            try await store.writeMarkdown(
+                markdown, to: document, ifMatchHash: ifMatchHash)
         }
     }
 
@@ -232,10 +257,14 @@ public enum CLIWorkspace: Sendable {
 
     public func replaceSectionBody(
         _ replacement: String, section: DocumentSection,
-        in reference: CLIDocumentReference
+        in reference: CLIDocumentReference, ifMatchHash: String? = nil
     ) async throws {
         switch reference {
         case .local(let url):
+            if ifMatchHash != nil {
+                throw TextTextCLIError.workspaceUnavailable(
+                    "--if-match-hash needs the signed-in workspace")
+            }
             let store = DocumentStore(root: url.deletingLastPathComponent())
             let current = try store.readMarkdown(at: url)
             try store.writeMarkdown(
@@ -247,7 +276,8 @@ public enum CLIWorkspace: Sendable {
                 throw TextTextCLIError.documentNotFound(document.path)
             }
             try await store.replaceSectionBody(
-                replacement, section: section, in: document)
+                replacement, section: section, in: document,
+                ifMatchHash: ifMatchHash)
         }
     }
 
@@ -375,6 +405,7 @@ public final class RemoteDocumentStore: @unchecked Sendable {
     private let api: any TextTextCLISyncAPI
     private let cacheLock = NSLock()
     private var contentByItemId: [String: TextTextFileContent] = [:]
+    private var documentByItemId: [String: RemoteDocument] = [:]
 
     public init(api: any TextTextCLISyncAPI) {
         self.api = api
@@ -398,8 +429,16 @@ public final class RemoteDocumentStore: @unchecked Sendable {
     }
 
     public func resolve(_ name: String) async throws -> RemoteDocument {
-        let documents = try await snapshot().documents
         let normalized = name.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if let cached = cacheLock.withLock({ documentByItemId[normalized] }) {
+            return cached
+        }
+        if Self.looksLikeItemId(normalized) {
+            return RemoteDocument(
+                path: normalized, itemId: normalized, folderId: "",
+                workspaceHandle: "", representation: .textpack)
+        }
+        let documents = try await snapshot().documents
 
         // Search results expose the durable item id. Accepting it directly
         // makes `texttext search ...` followed by `texttext read <id>` an exact
@@ -437,8 +476,14 @@ public final class RemoteDocumentStore: @unchecked Sendable {
     }
 
     public func readMarkdown(at document: RemoteDocument) async throws -> String {
+        try await readContent(at: document).markdown
+    }
+
+    public func readContent(
+        at document: RemoteDocument
+    ) async throws -> CLIDocumentContent {
         let content = try await fetchCommandContent(document)
-        return content.text
+        return CLIDocumentContent(markdown: content.text, hash: content.hash)
     }
 
     public func search(_ query: String) async throws -> [TextTextAgentSearchResult] {
@@ -452,18 +497,31 @@ public final class RemoteDocumentStore: @unchecked Sendable {
                 throw TextTextCLIError.workspaceUnavailable(
                     "the server returned no search results")
             }
+            cacheLock.withLock {
+                for result in results {
+                    let filename = TextTextFilename.filename(
+                        title: result.title, slug: result.id,
+                        representation: .textpack)
+                    documentByItemId[result.id] = RemoteDocument(
+                        path: [result.folderPath ?? "", filename]
+                            .filter { !$0.isEmpty }.joined(separator: "/"),
+                        itemId: result.id, folderId: "", workspaceHandle: "",
+                        representation: .textpack)
+                }
+            }
             return results
         case .failure(let error):
             throw Self.cliError(error)
         }
     }
 
-    public func writeMarkdown(_ markdown: String, to document: RemoteDocument) async throws {
+    public func writeMarkdown(
+        _ markdown: String, to document: RemoteDocument,
+        ifMatchHash: String? = nil
+    ) async throws {
         let current = try await cachedOrFetchContent(document)
-        guard let hash = current.hash, !hash.isEmpty else {
-            throw TextTextCLIError.workspaceUnavailable(
-                "the server did not provide a document version")
-        }
+        let hash = try guardedHash(
+            current, expected: ifMatchHash, document: document)
         let result = await api.agentUpdateItem(
             postId: document.itemId,
             markdown: markdown,
@@ -523,13 +581,11 @@ public final class RemoteDocumentStore: @unchecked Sendable {
 
     public func replaceSectionBody(
         _ replacement: String, section: DocumentSection,
-        in document: RemoteDocument
+        in document: RemoteDocument, ifMatchHash: String? = nil
     ) async throws {
         let current = try await cachedOrFetchContent(document)
-        guard let hash = current.hash, !hash.isEmpty else {
-            throw TextTextCLIError.workspaceUnavailable(
-                "the server did not provide a document version")
-        }
+        let hash = try guardedHash(
+            current, expected: ifMatchHash, document: document)
         let expected = DocumentSections.body(of: section, in: current.text)
         let result = await api.agentUpdateItemSection(
             postId: document.itemId,
@@ -694,6 +750,7 @@ public final class RemoteDocumentStore: @unchecked Sendable {
             folderId: "",
             workspaceHandle: "",
             representation: .textpack)
+        cacheLock.withLock { documentByItemId[createdId] = document }
         return (document, receipt)
     }
 
@@ -784,6 +841,34 @@ public final class RemoteDocumentStore: @unchecked Sendable {
             return cached
         }
         return try await fetchCommandContent(document)
+    }
+
+    private func guardedHash(
+        _ current: TextTextFileContent, expected: String?,
+        document: RemoteDocument
+    ) throws -> String {
+        guard let hash = current.hash, !hash.isEmpty else {
+            throw TextTextCLIError.workspaceUnavailable(
+                "the server did not provide a document version")
+        }
+        if let expected,
+            Self.normalizeHash(expected) != Self.normalizeHash(hash)
+        {
+            throw TextTextCLIError.documentChanged(document.path)
+        }
+        return hash
+    }
+
+    private static func normalizeHash(_ value: String) -> String {
+        var normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized.lowercased().hasPrefix("w/") {
+            normalized.removeFirst(2)
+        }
+        return normalized.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+    }
+
+    private static func looksLikeItemId(_ value: String) -> Bool {
+        UUID(uuidString: value) != nil
     }
 
     private func resolveFolder(

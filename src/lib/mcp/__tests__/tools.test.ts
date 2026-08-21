@@ -1732,7 +1732,7 @@ describe("MCP workspace tool adapter", () => {
       slug: "launch-thought",
       title: "A launch thought",
       excerpt: "",
-      body: "A launch thought\n\nKeep the first run tiny.",
+      body: "Keep the first run tiny.",
       status: "draft",
       tags: [],
       pinned: false,
@@ -1773,7 +1773,7 @@ describe("MCP workspace tool adapter", () => {
       expect.objectContaining({
         idempotencyKey: "agent:create:capture:message-77",
         initial: expect.objectContaining({
-          body: "A launch thought\n\nKeep the first run tiny.",
+          body: "Keep the first run tiny.",
           title: "A launch thought",
           type: "note",
         }),

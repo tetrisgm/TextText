@@ -92,6 +92,30 @@ const publicDocs = [
   readFileSync(join(repositoryRoot, "src/app/docs/ai/page.tsx"), "utf8"),
   readFileSync(join(repositoryRoot, "src/app/llms.txt/route.ts"), "utf8"),
 ].join("\n");
+const mcpReference = readFileSync(
+  join(repositoryRoot, "src/app/docs/mcp/page.tsx"),
+  "utf8",
+);
+const pluginReadme = readFileSync(
+  join(repositoryRoot, "plugins/texttext/README.md"),
+  "utf8",
+);
+const pluginManifest = readFileSync(
+  join(repositoryRoot, "plugins/texttext/.codex-plugin/plugin.json"),
+  "utf8",
+);
+const pluginTextSkill = readFileSync(
+  join(repositoryRoot, "plugins/texttext/skills/texttext/SKILL.md"),
+  "utf8",
+);
+const pluginCaptureSkill = readFileSync(
+  join(repositoryRoot, "plugins/texttext/skills/capture-conversation/SKILL.md"),
+  "utf8",
+);
+const pluginLiveSkill = readFileSync(
+  join(repositoryRoot, "plugins/texttext/skills/live-document/SKILL.md"),
+  "utf8",
+);
 assert(
   TEXTTEXT_HOSTED_MCP_URL === "https://texttext.app/api/mcp" &&
     publicDocs.includes("TEXTTEXT_HOSTED_MCP_URL"),
@@ -113,6 +137,35 @@ assert(
     ) &&
     publicDocs.includes("TestFlight"),
   "Public agent docs must tell an agent on this Mac to use the CLI, and how to find it",
+);
+for (const client of ["Codex", "Claude Code", "Cursor", "VS Code"]) {
+  assert(
+    mcpReference.includes(`name: "${client}"`),
+    `Public MCP docs must include copyable ${client} setup`,
+  );
+}
+assert(
+  mcpReference.includes("Claude and Claude Desktop connectors") &&
+    mcpReference.includes("AGENT_CONNECTION_CHECK_PROMPT") &&
+    mcpReference.includes("same idempotency key"),
+  "Public MCP docs must state the OAuth-only limitation and one receipt/read-back proof",
+);
+assert(
+  pluginReadme.includes('texttext search "launch brief evidence" --json') &&
+    pluginReadme.includes("--if-match-hash") &&
+    pluginReadme.includes("Report the exact receipt title") &&
+    pluginReadme.includes("item id, and saved location") &&
+    pluginReadme.includes("require hosted MCP to be connected separately") &&
+    pluginManifest.includes(
+      "Publishing and collaboration require hosted MCP connected separately",
+    ) &&
+    pluginTextSkill.includes("read <doc> --json") &&
+    pluginTextSkill.includes("--if-match-hash") &&
+    pluginTextSkill.includes("The plugin does not add hosted MCP itself") &&
+    pluginCaptureSkill.includes("capture --json") &&
+    !pluginCaptureSkill.includes("ls Notes") &&
+    pluginLiveSkill.includes("--if-match-hash"),
+  "Claude and Codex skills must use direct capture, exact search/read, and guarded edits",
 );
 
 // ---- The texttext CLI ----
@@ -251,8 +304,11 @@ assert(
 );
 assert(
   cliOptions.includes('case "--idempotency-key"') &&
-    cliMain.includes("options.idempotencyKey"),
-  "The CLI must expose a stable idempotency key for exact create and append retries",
+    cliMain.includes("options.idempotencyKey") &&
+    cliOptions.includes('case "--if-match-hash"') &&
+    cliMain.includes("options.ifMatchHash") &&
+    cliMain.includes("store.readContent"),
+  "The CLI must expose stable retry keys and versioned guarded edits",
 );
 assert(
   cliOptions.includes("unknown option") &&

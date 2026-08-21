@@ -14,7 +14,16 @@ import {
   WORKSPACE_TOOL_NAMES,
   type WorkspaceToolName,
 } from "@/lib/ai/tools";
-import { TEXTTEXT_HOSTED_MCP_URL } from "@/lib/agent-integrations";
+import {
+  TEXTTEXT_CLAUDE_CODE_MCP_CONFIG,
+  TEXTTEXT_CODEX_MCP_CONFIG,
+  TEXTTEXT_CURSOR_MCP_CONFIG,
+  TEXTTEXT_VSCODE_MCP_CONFIG,
+} from "@/lib/agent-mcp-configs";
+import {
+  AGENT_CONNECTION_CHECK_PROMPT,
+  TEXTTEXT_HOSTED_MCP_URL,
+} from "@/lib/agent-integrations";
 import "@/styles/connect.css";
 import "@/styles/docs-mcp.css";
 
@@ -99,12 +108,78 @@ const CLIENTS: Array<{
   code?: { label: string; value: string };
 }> = [
   {
-    id: "bearer-client",
-    name: "Bearer-authenticated MCP client",
+    id: "codex",
+    name: "Codex",
     steps: [
       "Create a revocable workspace token at Connect.",
-      "Add the endpoint below only in a client that provides a protected bearer-credential field.",
-      "Save the workspace token in that field. An OAuth-only connector without a bearer-token field is not compatible with this endpoint.",
+      "Provide it to the Codex process as TEXTTEXT_WORKSPACE_TOKEN through your credential or environment manager. Do not put the token in this command.",
+      "Run the copyable command below. It saves the endpoint and only the environment variable name.",
+      "Start a new Codex task and run the shared connection proof below.",
+    ],
+    code: {
+      label: "Codex command",
+      value: TEXTTEXT_CODEX_MCP_CONFIG,
+    },
+  },
+  {
+    id: "claude-code",
+    name: "Claude Code",
+    steps: [
+      "Create a revocable workspace token at Connect.",
+      "Put the configuration below in .mcp.json for a project. Keep the token itself out of the file.",
+      "Provide TEXTTEXT_WORKSPACE_TOKEN through the environment that launches Claude Code, approve the project server, and check /mcp.",
+      "Start a new Claude Code session and run the shared connection proof below.",
+    ],
+    code: {
+      label: ".mcp.json",
+      value: TEXTTEXT_CLAUDE_CODE_MCP_CONFIG,
+    },
+  },
+  {
+    id: "cursor",
+    name: "Cursor",
+    steps: [
+      "Create a revocable workspace token at Connect.",
+      "Put the configuration below in ~/.cursor/mcp.json for every project, or .cursor/mcp.json for one project.",
+      "Provide TEXTTEXT_WORKSPACE_TOKEN through the environment that launches Cursor, then enable the TextText server.",
+      "Start a new Cursor conversation and run the shared connection proof below.",
+    ],
+    code: {
+      label: "Cursor mcp.json",
+      value: TEXTTEXT_CURSOR_MCP_CONFIG,
+    },
+  },
+  {
+    id: "vscode",
+    name: "VS Code",
+    steps: [
+      "Create a revocable workspace token at Connect.",
+      "Open MCP: Open User Configuration and paste the configuration below.",
+      "Start the TextText server. VS Code asks for the token once as a masked input and keeps it in secure storage.",
+      "Start a new agent conversation and run the shared connection proof below.",
+    ],
+    code: {
+      label: "VS Code mcp.json",
+      value: TEXTTEXT_VSCODE_MCP_CONFIG,
+    },
+  },
+  {
+    id: "oauth-only",
+    name: "Claude and Claude Desktop connectors",
+    steps: [
+      "Claude and Claude Desktop remote connectors currently accept authless or OAuth servers, not a manually supplied bearer token.",
+      "TextText does not currently provide an OAuth authorization server, so do not add the hosted endpoint there and expect it to authenticate.",
+      "On this Mac, use the token-free TextText plugin in Claude Code. Otherwise use Codex, Cursor, VS Code, or another client with protected bearer headers.",
+    ],
+  },
+  {
+    id: "bearer-client",
+    name: "Another bearer-authenticated MCP client",
+    steps: [
+      "Create a revocable workspace token at Connect.",
+      "Add the endpoint below only in a client that provides a protected bearer-credential or Authorization-header field.",
+      "Save the token in that protected field, enable the server, and run the shared connection proof below.",
+      "If the client is OAuth-only, it is not compatible with this endpoint today.",
     ],
     code: {
       label: "MCP endpoint",
@@ -178,20 +253,15 @@ export default function McpReferencePage() {
         <section className="connect-section" id="verify">
           <h2 className="connect-section-title">Check that it worked</h2>
           <p className="connect-body">Ask your agent, in its own words:</p>
-          <ol className="docs-verify">
-            <li>
-              <em>&quot;What folders are in my TextText workspace?&quot;</em> It
-              should ask for approval the first time, then list Blog, Notes and
-              Bookmarks.
-            </li>
-            <li>
-              <em>
-                &quot;Create a draft note in TextText called MCP test, then read
-                it back.&quot;
-              </em>{" "}
-              The note should appear in your Notes folder while you watch.
-            </li>
-          </ol>
+          <blockquote className="docs-prompt">
+            {AGENT_CONNECTION_CHECK_PROMPT}
+          </blockquote>
+          <p className="connect-body">
+            Success is one private note, an exact receipt with title, item id,
+            and saved location, followed by a read of that same item id. Retry
+            the prompt with the same idempotency key to confirm that it does not
+            create a duplicate.
+          </p>
           <p className="connect-body">
             If the tools do not appear, the client is usually still holding an
             older tool list. Restart it, then reconnect.
@@ -279,8 +349,8 @@ export default function McpReferencePage() {
             Paper, pen.dev, and Figma can expose desktop MCP servers tied to the
             app&apos;s current file or selection. Paper listens on{" "}
             <code>127.0.0.1:29979</code>. A loopback address is reachable only
-            from that Mac, not from TextText&apos;s servers. Outbound TextText MCP
-            connections use a public https address in this release, so these
+            from that Mac, not from TextText&apos;s servers. Outbound TextText
+            MCP connections use a public https address in this release, so these
             loopback endpoints are not offered in Workspace Settings.
           </p>
           <p className="connect-body">

@@ -22,6 +22,19 @@ function bookmarkTitle(sourceUrl: string): string {
   }
 }
 
+function capturedNoteBody(value: string, fallback: string): string {
+  const clean = value.trim();
+  const lines = clean.split(/\r?\n/);
+  const looksLikeTranscript = lines.some((line) =>
+    /^(?:user|human|prompt|assistant|claude|chatgpt|codex)\s*:/i.test(
+      line.trim(),
+    ),
+  );
+  if (looksLikeTranscript) return fallback;
+  if (lines.length <= 1) return "";
+  return lines.slice(1).join("\n").trim();
+}
+
 /**
  * Turn the one thing somebody wants to keep into a private TextText item.
  * This is the routing contract shared by quick capture surfaces: links go to
@@ -40,7 +53,7 @@ export function captureIntent(value: string): CaptureIntent {
     };
   }
   return {
-    body: parsed.body,
+    body: capturedNoteBody(value, parsed.body),
     kind: "note",
     preferredFolderMode: "notes",
     sourceUrl: null,
@@ -56,8 +69,7 @@ export function captureFolderPath(
   const candidates = folders
     .filter((folder) => folder.mode === mode)
     .sort((left, right) => {
-      const depth =
-        left.path.split("/").length - right.path.split("/").length;
+      const depth = left.path.split("/").length - right.path.split("/").length;
       return depth || left.path.localeCompare(right.path);
     });
   return candidates[0]?.path ?? null;

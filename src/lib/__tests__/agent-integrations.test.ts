@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  TEXTTEXT_CLAUDE_CODE_MCP_CONFIG,
+  TEXTTEXT_CODEX_MCP_CONFIG,
+  TEXTTEXT_CURSOR_MCP_CONFIG,
+  TEXTTEXT_VSCODE_MCP_CONFIG,
+} from "@/lib/agent-mcp-configs";
+import {
   AGENT_CONNECTION_CHECK_PROMPT,
   AGENT_INTEGRATIONS,
   AGENT_WORKFLOWS,
@@ -42,12 +48,38 @@ describe("agent integrations", () => {
 
   it("ships one channel-neutral visible connection check", () => {
     expect(AGENT_CONNECTION_CHECK_PROMPT).toContain(
-      "private note titled Agent connection check",
+      "private note with a stable idempotency key",
     );
-    expect(AGENT_CONNECTION_CHECK_PROMPT).toContain("Read the note back");
+    expect(AGENT_CONNECTION_CHECK_PROMPT).toContain("exact receipt title");
+    expect(AGENT_CONNECTION_CHECK_PROMPT).toContain("exact item id back");
     expect(AGENT_CONNECTION_CHECK_PROMPT).toContain(
       "do not publish or share it",
     );
+  });
+
+  it("keeps remote bearer setup copyable without putting a token in source", () => {
+    expect(TEXTTEXT_CODEX_MCP_CONFIG).toContain(
+      "--bearer-token-env-var TEXTTEXT_WORKSPACE_TOKEN",
+    );
+    expect(TEXTTEXT_CLAUDE_CODE_MCP_CONFIG).toContain(
+      "Bearer ${TEXTTEXT_WORKSPACE_TOKEN}",
+    );
+    expect(TEXTTEXT_CURSOR_MCP_CONFIG).toContain(
+      "Bearer ${env:TEXTTEXT_WORKSPACE_TOKEN}",
+    );
+    expect(TEXTTEXT_VSCODE_MCP_CONFIG).toContain(
+      "Bearer ${input:texttext-token}",
+    );
+    expect(TEXTTEXT_VSCODE_MCP_CONFIG).toContain('"password": true');
+    for (const config of [
+      TEXTTEXT_CODEX_MCP_CONFIG,
+      TEXTTEXT_CLAUDE_CODE_MCP_CONFIG,
+      TEXTTEXT_CURSOR_MCP_CONFIG,
+      TEXTTEXT_VSCODE_MCP_CONFIG,
+    ]) {
+      expect(config).toContain(TEXTTEXT_HOSTED_MCP_URL);
+      expect(config).not.toContain("wsk_");
+    }
   });
 
   it("keeps the recommended local plugin setup token-free", () => {

@@ -16,7 +16,9 @@ while you work in it.
 
 ```sh
 "$TEXTTEXT_CMD" open "<doc>" --as codex           # put it on their screen
-"$TEXTTEXT_CMD" edit "<doc>" --section "## Plan" --as codex --message "draft the plan"
+"$TEXTTEXT_CMD" read "<doc>" --json                # retain markdown and hash
+"$TEXTTEXT_CMD" edit "<doc>" --section "## Plan" --if-match-hash "<hash>" \
+  --as codex --message "Draft the plan"
 ```
 
 Passing `--as` labels the durable action audit and may show short-lived
@@ -25,8 +27,10 @@ so the person can watch progress arrive in place, rather than the whole document
 being replaced under them. Do not treat presence as proof that the edit landed;
 read the document back and report the durable result.
 
-Re-read before each write. The person is editing the same document at the same
-time, and their changes must survive yours.
+Re-read before each write, retain the returned hash, and pass it to the edit.
+The person is editing the same document at the same time, and their changes
+must survive yours. If TextText reports a conflict, read the latest document,
+reconcile only the intended section, and retry with its new hash.
 
 ## With MCP, when it is already connected and the CLI is not available
 

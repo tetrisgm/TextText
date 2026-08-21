@@ -11,7 +11,7 @@ let usage = """
     USAGE
       texttext ls [folder]                     list documents
       texttext search <query>                  find documents by title or content
-      texttext read <doc> [--section "## H"]   print the body, or one section
+      texttext read <doc> [--section "## H"]   print content; --json adds its hash
       texttext write <doc> [--from FILE]       replace the body (stdin by default)
       texttext append <doc> [--from FILE]      append to the body
       texttext edit <doc> --section "## H"     replace one section (stdin by default)
@@ -26,6 +26,7 @@ let usage = """
       --as NAME        self-declared agent label for presence and audit
       --message TEXT   what this change is for (recorded with the change)
       --idempotency-key KEY  stable retry key for new, capture, and append
+      --if-match-hash HASH   refuse a stale write or section edit
       --from FILE      read input from FILE instead of stdin
       --section NAME   address one section by heading
       --json           machine-readable output
@@ -70,6 +71,14 @@ if let key = options.idempotencyKey,
     AgentActor.validatedIntent(key) == nil
 {
     fail("--idempotency-key must be 1 to 500 characters with no control characters")
+}
+if let hash = options.ifMatchHash {
+    if AgentActor.validatedIntent(hash) == nil {
+        fail("--if-match-hash must be 1 to 500 characters with no control characters")
+    }
+    if options.command != "write" && options.command != "edit" {
+        fail("--if-match-hash applies only to write and edit")
+    }
 }
 
 // Installation must work before TextText is signed in. Resolving a workspace
@@ -205,16 +214,33 @@ do {
     case "read":
         guard let name = options.positional.first else { fail("usage: texttext read <doc>") }
         let reference = try await store.resolve(name)
-        let markdown = try await store.readMarkdown(at: reference)
+        let content = try await store.readContent(at: reference)
+        let markdown = content.markdown
+        let output: String
         if let wanted = options.section {
             guard let section = DocumentSections.find(wanted, in: markdown) else {
                 throw TextTextCLIError.sectionNotFound(
                     wanted,
                     available: DocumentSections.parse(markdown).map(\.title))
             }
-            emit(DocumentSections.body(of: section, in: markdown))
+            output = DocumentSections.body(of: section, in: markdown)
         } else {
-            emit(markdown)
+            output = markdown
+        }
+        if options.json {
+            var payload: [String: Any] = [
+                "document": store.relativePath(of: reference),
+                "markdown": output,
+            ]
+            if let hash = content.hash { payload["hash"] = hash }
+            if let itemId = await store.itemId(at: reference) {
+                payload["item_id"] = itemId
+            }
+            let data = try JSONSerialization.data(
+                withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
+            emit(String(decoding: data, as: UTF8.self))
+        } else {
+            emit(output)
         }
 
     case "write", "append", "edit":
@@ -233,20 +259,24 @@ do {
                 return
             }
             if options.command == "edit" {
-                let current = try await store.readMarkdown(at: reference)
+                let current = try await store.readContent(at: reference)
                 guard let wanted = options.section else {
                     fail("edit needs --section; use write to replace the whole body")
                 }
-                guard let section = DocumentSections.find(wanted, in: current) else {
+                guard let section = DocumentSections.find(
+                    wanted, in: current.markdown
+                ) else {
                     throw TextTextCLIError.sectionNotFound(
                         wanted,
-                        available: DocumentSections.parse(current).map(\.title))
+                        available: DocumentSections.parse(current.markdown).map(\.title))
                 }
                 try await store.replaceSectionBody(
-                    input, section: section, in: reference)
+                    input, section: section, in: reference,
+                    ifMatchHash: options.ifMatchHash)
                 return
             }
-            try await store.writeMarkdown(input, to: reference)
+            try await store.writeMarkdown(
+                input, to: reference, ifMatchHash: options.ifMatchHash)
         }
         if options.json {
             emit("{\"ok\":true,\"document\":\"\(relative)\"}")

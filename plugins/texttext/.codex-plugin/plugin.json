@@ -1,6 +1,6 @@
 {
   "name": "texttext",
-  "version": "0.1.0+codex.20260820144621",
+  "version": "0.1.0+codex.20260821014019",
   "description": "Create, find, and edit TextText documents through the signed-in Mac app.",
   "author": {
     "name": "TextText",
@@ -10,24 +10,15 @@
   "homepage": "https://texttext.app/connect",
   "repository": "https://github.com/tetrisgm/TextText",
   "license": "MIT",
-  "keywords": [
-    "documents",
-    "notes",
-    "publishing",
-    "collaboration",
-    "writing"
-  ],
+  "keywords": ["documents", "notes", "publishing", "collaboration", "writing"],
   "skills": "./skills",
   "interface": {
     "displayName": "TextText",
     "shortDescription": "Create and maintain durable documents",
-    "longDescription": "Use TextText as the durable document home for notes, articles, bookmarks, project changelogs, publishing, and collaboration.",
+    "longDescription": "Use the signed-in TextText Mac app to capture, find, read, and safely edit durable documents. Publishing and collaboration require hosted MCP connected separately.",
     "developerName": "TextText",
     "category": "Productivity",
-    "capabilities": [
-      "Interactive",
-      "Write"
-    ],
+    "capabilities": ["Interactive", "Write"],
     "websiteURL": "https://texttext.app",
     "privacyPolicyURL": "https://texttext.app/privacy",
     "termsOfServiceURL": "https://texttext.app/terms",

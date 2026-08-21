@@ -5,6 +5,25 @@ private final class QuickCapturePanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+enum QuickCaptureKeyAction: Equatable {
+    case dismiss
+    case forward
+    case newline
+    case save
+
+    static func resolve(
+        keyCode: UInt16,
+        modifiers: NSEvent.ModifierFlags,
+        hasMarkedText: Bool
+    ) -> QuickCaptureKeyAction {
+        if hasMarkedText { return .forward }
+        if keyCode == 53 { return .dismiss }
+        guard keyCode == 36 || keyCode == 76 else { return .forward }
+        let flags = modifiers.intersection(.deviceIndependentFlagsMask)
+        return flags.contains(.shift) ? .newline : .save
+    }
+}
+
 private final class QuickCaptureTextView: NSTextView {
     var save: (() -> Void)?
     var dismiss: (() -> Void)?
@@ -34,16 +53,18 @@ private final class QuickCaptureTextView: NSTextView {
     }
 
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 {
+        switch QuickCaptureKeyAction.resolve(
+            keyCode: event.keyCode,
+            modifiers: event.modifierFlags,
+            hasMarkedText: hasMarkedText()
+        ) {
+        case .dismiss:
             dismiss?()
-            return
-        }
-        if event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            .contains(.command), event.keyCode == 36 || event.keyCode == 76 {
+        case .save:
             save?()
-            return
+        case .forward, .newline:
+            super.keyDown(with: event)
         }
-        super.keyDown(with: event)
     }
 }
 
@@ -59,11 +80,11 @@ final class QuickCaptureController: NSWindowController, NSWindowDelegate {
         self.onSave = onSave
         let panel = QuickCapturePanel(
             contentRect: NSRect(x: 0, y: 0, width: 520, height: 300),
-            styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel, .hudWindow],
+            styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
-        panel.title = "New note"
+        panel.title = "Quick capture"
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.isMovableByWindowBackground = true
@@ -110,7 +131,7 @@ final class QuickCaptureController: NSWindowController, NSWindowDelegate {
         textView.textColor = .labelColor
         textView.insertionPointColor = .labelColor
         textView.textContainerInset = NSSize(width: 18, height: 18)
-        textView.placeholder = "Title\nStart writing"
+        textView.placeholder = "Save a thought, note, link, or AI answer"
         textView.save = { [weak self] in self?.save() }
         textView.dismiss = { [weak self] in self?.dismiss() }
 
@@ -127,7 +148,8 @@ final class QuickCaptureController: NSWindowController, NSWindowDelegate {
         statusLabel.lineBreakMode = .byTruncatingTail
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        let shortcutLabel = NSTextField(labelWithString: "Save ⌘↩    Close Esc")
+        let shortcutLabel = NSTextField(
+            labelWithString: "Save ↩    New line ⇧↩    Close Esc")
         shortcutLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         shortcutLabel.textColor = .secondaryLabelColor
         shortcutLabel.alignment = .right
@@ -220,27 +242,38 @@ final class QuickCaptureRecoveryController: NSWindowController,
 {
     private let loadRecords: () -> [QuickCaptureRecord]
     private let retryAll: () throws -> Int
+    private let retryOne: (String) throws -> Bool
+    private let discardOne: (String) throws -> Bool
     private var records: [QuickCaptureRecord] = []
     private let tableView = NSTableView()
+    private let previewTextView = NSTextView()
     private let summaryLabel = NSTextField(labelWithString: "")
     private let statusLabel = NSTextField(labelWithString: "")
     private let copyButton = NSButton(title: "Copy capture", target: nil, action: nil)
+    private let retrySelectedButton = NSButton(
+        title: "Retry selected", target: nil, action: nil)
+    private let discardButton = NSButton(
+        title: "Discard selected", target: nil, action: nil)
     private let retryButton = NSButton(title: "Retry all", target: nil, action: nil)
 
     init(
         loadRecords: @escaping () -> [QuickCaptureRecord],
+        retryOne: @escaping (String) throws -> Bool,
+        discardOne: @escaping (String) throws -> Bool,
         retryAll: @escaping () throws -> Int
     ) {
         self.loadRecords = loadRecords
+        self.retryOne = retryOne
+        self.discardOne = discardOne
         self.retryAll = retryAll
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 540, height: 360),
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 500),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Failed captures"
-        window.minSize = NSSize(width: 440, height: 280)
+        window.minSize = NSSize(width: 560, height: 400)
         window.center()
         super.init(window: window)
         window.setFrameAutosaveName("TextTextQuickCaptureRecoveryWindow")
@@ -286,18 +319,41 @@ final class QuickCaptureRecoveryController: NSWindowController,
         scrollView.hasVerticalScroller = true
         scrollView.borderType = .bezelBorder
 
+        previewTextView.isEditable = false
+        previewTextView.isSelectable = true
+        previewTextView.isRichText = false
+        previewTextView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        previewTextView.textColor = .labelColor
+        previewTextView.drawsBackground = false
+        previewTextView.textContainerInset = NSSize(width: 8, height: 8)
+        let previewScrollView = NSScrollView()
+        previewScrollView.documentView = previewTextView
+        previewScrollView.hasVerticalScroller = true
+        previewScrollView.borderType = .bezelBorder
+
         copyButton.target = self
         copyButton.action = #selector(copySelectedCapture)
         copyButton.isEnabled = false
+        retrySelectedButton.target = self
+        retrySelectedButton.action = #selector(retrySelectedCapture)
+        retrySelectedButton.isEnabled = false
+        discardButton.target = self
+        discardButton.action = #selector(discardSelectedCapture)
+        discardButton.isEnabled = false
         retryButton.target = self
         retryButton.action = #selector(retryFailedCaptures)
 
-        let buttons = NSStackView(views: [statusLabel, NSView(), copyButton, retryButton])
+        let buttons = NSStackView(views: [
+            statusLabel, NSView(), copyButton, retrySelectedButton,
+            discardButton, retryButton,
+        ])
         buttons.orientation = .horizontal
         buttons.alignment = .centerY
         buttons.spacing = 8
 
-        let stack = NSStackView(views: [titleLabel, summaryLabel, scrollView, buttons])
+        let stack = NSStackView(views: [
+            titleLabel, summaryLabel, scrollView, previewScrollView, buttons,
+        ])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
@@ -306,6 +362,7 @@ final class QuickCaptureRecoveryController: NSWindowController,
         content.addSubview(stack)
 
         scrollView.translatesAutoresizingMaskIntoConstraints = false
+        previewScrollView.translatesAutoresizingMaskIntoConstraints = false
         buttons.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             stack.topAnchor.constraint(equalTo: content.topAnchor),
@@ -313,7 +370,10 @@ final class QuickCaptureRecoveryController: NSWindowController,
             stack.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             stack.bottomAnchor.constraint(equalTo: content.bottomAnchor),
             scrollView.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32),
-            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 170),
+            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 140),
+            previewScrollView.widthAnchor.constraint(
+                equalTo: stack.widthAnchor, constant: -32),
+            previewScrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 100),
             buttons.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32),
         ])
     }
@@ -322,6 +382,9 @@ final class QuickCaptureRecoveryController: NSWindowController,
         records = loadRecords()
         tableView.reloadData()
         copyButton.isEnabled = false
+        retrySelectedButton.isEnabled = false
+        discardButton.isEnabled = false
+        previewTextView.string = "Select a failed capture to review its exact text."
         retryButton.isEnabled = !records.isEmpty
         summaryLabel.stringValue = records.isEmpty
             ? "No readable failed captures remain."
@@ -363,18 +426,70 @@ final class QuickCaptureRecoveryController: NSWindowController,
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
-        copyButton.isEnabled = tableView.selectedRow >= 0
+        let row = tableView.selectedRow
+        let selected = records.indices.contains(row)
+        copyButton.isEnabled = selected
+        retrySelectedButton.isEnabled = selected
+        discardButton.isEnabled = selected
+        previewTextView.string = selected
+            ? records[row].raw
+            : "Select a failed capture to review its exact text."
     }
 
     @objc private func copySelectedCapture() {
         let row = tableView.selectedRow
         guard records.indices.contains(row) else { return }
         let record = records[row]
-        let text = record.body.isEmpty ? record.title : "\(record.title)\n\n\(record.body)"
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        NSPasteboard.general.setString(record.raw, forType: .string)
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.stringValue = "Copied"
+    }
+
+    @objc private func retrySelectedCapture() {
+        let row = tableView.selectedRow
+        guard records.indices.contains(row) else { return }
+        do {
+            guard try retryOne(records[row].id) else {
+                statusLabel.stringValue = "This capture is no longer available"
+                reload()
+                return
+            }
+            statusLabel.textColor = .systemGreen
+            statusLabel.stringValue = "Queued safely"
+            reload()
+        } catch {
+            statusLabel.textColor = .systemRed
+            statusLabel.stringValue = "Could not queue the capture"
+            NSSound.beep()
+        }
+    }
+
+    @objc private func discardSelectedCapture() {
+        let row = tableView.selectedRow
+        guard records.indices.contains(row) else { return }
+        let record = records[row]
+        let alert = NSAlert()
+        alert.messageText = "Discard this failed capture?"
+        alert.informativeText = "This removes the only recovery copy from TextText."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Discard")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        do {
+            guard try discardOne(record.id) else {
+                statusLabel.stringValue = "This capture is no longer available"
+                reload()
+                return
+            }
+            statusLabel.textColor = .secondaryLabelColor
+            statusLabel.stringValue = "Discarded"
+            reload()
+        } catch {
+            statusLabel.textColor = .systemRed
+            statusLabel.stringValue = "Could not discard the capture"
+            NSSound.beep()
+        }
     }
 
     @objc private func retryFailedCaptures() {

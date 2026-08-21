@@ -22,6 +22,7 @@ public struct CLICommandLineOptions: Equatable {
     public var actor: String?
     public var message: String?
     public var idempotencyKey: String?
+    public var ifMatchHash: String?
     public var folder: String?
     public var json = false
 
@@ -51,6 +52,7 @@ public struct CLICommandLineOptions: Equatable {
             case "--as": options.actor = try value()
             case "--message", "-m": options.message = try value()
             case "--idempotency-key": options.idempotencyKey = try value()
+            case "--if-match-hash": options.ifMatchHash = try value()
             case "--folder": options.folder = try value()
             case "--json": options.json = true
             case "--help", "-h": options.command = "help"

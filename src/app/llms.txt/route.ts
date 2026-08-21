@@ -53,18 +53,22 @@ Check for it with "command -v texttext", falling back to
 edition intentionally excludes the command, so use hosted MCP there.
 
   texttext ls                                    list documents
+  texttext search <query> --json                 ranked retrieval with item ids
   texttext sections <doc>                        list the headings
-  texttext read <doc> [--section "## Heading"]   read all of it, or one section
-  texttext edit <doc> --section "## Heading"     replace one section (stdin)
-  texttext write <doc>                           replace the body (stdin)
+  texttext read <doc> --json                     content and its current hash
+  texttext edit <doc> --section "## Heading" --if-match-hash <hash>
+  texttext write <doc> --if-match-hash <hash>    replace a body you just read
   texttext append <doc>                          add to the end (stdin)
   texttext new <title> [--folder F]              create a document
+  texttext capture [TEXT] --json                 route text or a URL, with receipt
   texttext open <doc>                            open it in the app
 
 Always pass --as <your name> and --message "<what this change is for>". They are
 how the person sees who is working and why, live and in the history afterwards.
 Prefer --section over rewriting a whole document, so a person typing elsewhere
-is not disturbed.
+is not disturbed. Retain the hash from read --json and pass it to a prepared
+write or section edit. TextText refuses the mutation if the document changed.
+Use one stable --idempotency-key for capture, new, or append retries.
 
 Use the MCP endpoint below when the CLI is absent (a browser, a phone, another
 machine) or for work with no file equivalent: publishing, sharing and access,

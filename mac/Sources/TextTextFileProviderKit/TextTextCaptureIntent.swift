@@ -32,8 +32,17 @@ public struct TextTextCaptureIntent: Equatable, Sendable {
             !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
         guard let first = content.first else { return nil }
-        title = Self.title(from: lines) ?? Self.cappedTitle(first)
-        body = lines.count > 1 ? clean : ""
+        let looksLikeTranscript = lines.contains(where: Self.isTranscriptLine)
+        title = (looksLikeTranscript ? Self.title(from: lines) : nil)
+            ?? Self.cappedTitle(first)
+        if looksLikeTranscript {
+            body = clean
+        } else if lines.count > 1 {
+            body = lines.dropFirst().joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            body = ""
+        }
         folder = "notes"
         kind = "note"
         sourceURL = nil
@@ -76,6 +85,14 @@ public struct TextTextCaptureIntent: Equatable, Sendable {
             }
         }
         return nil
+    }
+
+    private static func isTranscriptLine(_ raw: String) -> Bool {
+        let line = raw.trimmingCharacters(in: .whitespaces).lowercased()
+        return [
+            "user:", "human:", "prompt:", "assistant:", "claude:",
+            "chatgpt:", "codex:",
+        ].contains(where: { line.hasPrefix($0) })
     }
 
     private static func cappedTitle(_ value: String) -> String {

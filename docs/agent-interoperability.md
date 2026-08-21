@@ -26,21 +26,25 @@ MCP with a bearer credential.
 
 ```text
 texttext ls [folder]                     list documents
-texttext read <doc> [--section "## H"]   print the body, or one section
+texttext search <query>                  ranked title, excerpt, and body search
+texttext read <doc> [--section "## H"]   print content; --json adds its hash
 texttext write <doc> [--from FILE]       replace the body (stdin by default)
 texttext append <doc> [--from FILE]      append to the body
 texttext edit <doc> --section "## H"     replace one section (stdin by default)
 texttext open <doc> [--section "## H"]   open it in TextText
 texttext sections <doc>                  list headings
 texttext new <title> [--folder F]        create a document
+texttext capture [TEXT] [--folder F]     route text or a URL and return a receipt
 texttext lint [<doc>]                    validate readable content
 texttext install                         put texttext on PATH
 ```
 
 Global options are `--as NAME`, `--message TEXT`, `--idempotency-key KEY`,
-`--from FILE`, `--section NAME`, and `--json`. `--idempotency-key` applies to
-`new` and `append`; reuse the same key after a timeout so retrying cannot create
-or append the same content twice.
+`--if-match-hash HASH`, `--from FILE`, `--section NAME`, and `--json`.
+`--idempotency-key` applies to `capture`, `new`, and `append`; reuse the same
+key after a timeout so retrying cannot create or append the same content twice.
+`--if-match-hash` applies to `write` and `edit`; use the hash returned by the
+JSON read that the prepared change was based on.
 
 Documents are addressed by workspace-relative path. A bare name works only
 when it matches exactly one document.
@@ -75,20 +79,22 @@ but it never authorizes an edit and never blocks a mutation if presence is
 unavailable.
 
 ```bash
+texttext read "Notes/Launch plan.textpack" --json
 texttext edit "Notes/Launch plan.textpack" --section "## Pricing" \
+  --if-match-hash "<hash from the read>" \
   --as Codex --message "Tighten the pricing copy"
 ```
 
 ### Connected correctness
 
-- Reads return the current server document and version hash.
+- JSON reads return the current server document and version hash.
 - Updates use that hash as a compare-and-swap guard. If the document changed,
   the CLI stops so the agent can reread and reconcile instead of overwriting
   concurrent work.
 - When a person has the document open, the shared workspace command applies the
   edit through the live Yjs document path.
-- Creates and appends accept `--idempotency-key`; the CLI also reuses its key
-  for one bounded retry after a lost network response.
+- Captures, creates, and appends accept `--idempotency-key`; the CLI also
+  reuses its key for one bounded retry after a lost network response.
 - A section edit computes an updated document and remains subject to the same
   whole-document version check. Two section edits can still conflict.
 
@@ -115,6 +121,84 @@ that confirmation before calling the tool. `docs/mcp.md` is the protocol
 reference and `src/lib/ai/tools.ts` is the source of truth for tool names and
 schemas.
 
+### Bearer-capable client setup
+
+Create one revocable workspace token at `/connect`. Keep the token itself in
+the client's protected credential or environment manager, never in a repository
+or command argument. These configurations contain only a credential reference.
+
+Codex:
+
+```sh
+codex mcp add texttext --url https://texttext.app/api/mcp \
+  --bearer-token-env-var TEXTTEXT_WORKSPACE_TOKEN
+```
+
+Claude Code project `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "texttext": {
+      "type": "http",
+      "url": "https://texttext.app/api/mcp",
+      "headers": {
+        "Authorization": "Bearer ${TEXTTEXT_WORKSPACE_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+Cursor user or project `mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "texttext": {
+      "url": "https://texttext.app/api/mcp",
+      "headers": {
+        "Authorization": "Bearer ${env:TEXTTEXT_WORKSPACE_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+VS Code user `mcp.json` can prompt once and keep the value in secure storage:
+
+```json
+{
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "texttext-token",
+      "description": "TextText workspace token",
+      "password": true
+    }
+  ],
+  "servers": {
+    "texttext": {
+      "type": "http",
+      "url": "https://texttext.app/api/mcp",
+      "headers": {
+        "Authorization": "Bearer ${input:texttext-token}"
+      }
+    }
+  }
+}
+```
+
+Claude and Claude Desktop remote connectors currently accept authless or OAuth
+servers, not a manually supplied bearer token. TextText does not currently
+provide an OAuth authorization server, so that remote connector path is not
+compatible today. On this Mac, use the token-free Claude Code plugin instead.
+
+Every supported setup ends with the same proof: capture one private note with a
+stable idempotency key, report its authoritative receipt title, item id, and
+saved location, then read that exact item id back. Retry with the same key and
+confirm that TextText returns the same item instead of creating a duplicate.
+
 ## The assistant inside TextText
 
 The standalone Developer ID app can launch the local Codex runtime and use an
@@ -133,7 +217,10 @@ For the local CLI:
 
 - Resolve an exact workspace-relative path before changing a document.
 - Reread after a version conflict, reconcile, and retry deliberately.
-- Supply a stable `--idempotency-key` for retried `new` and `append` commands.
+- Retain the hash from `read --json` and pass it as `--if-match-hash` on a
+  prepared whole-document write or section edit.
+- Supply a stable `--idempotency-key` for retried `capture`, `new`, and
+  `append` commands.
 - Use `--as` and `--message` as honest display and intent metadata.
 - Read back the changed document before reporting completion.
 

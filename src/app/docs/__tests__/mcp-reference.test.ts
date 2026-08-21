@@ -50,8 +50,15 @@ describe("the MCP reference page", () => {
   });
 
   it("documents both directions without promising unsupported authentication", () => {
-    expect(source).toContain("Bearer-authenticated MCP client");
-    expect(source).toContain("OAuth-only connector");
+    for (const client of ["Codex", "Claude Code", "Cursor", "VS Code"]) {
+      expect(source).toContain(`name: "${client}"`);
+    }
+    expect(source).toContain("Claude and Claude Desktop connectors");
+    expect(source).toContain("Another bearer-authenticated MCP client");
+    expect(source).toContain("OAuth-only");
+    expect(source).toContain("AGENT_CONNECTION_CHECK_PROMPT");
+    expect(source).toContain("exact receipt with title, item id");
+    expect(source).toContain("same idempotency key");
     expect(source).toContain("token-free");
     expect(source).not.toContain('name: "ChatGPT"');
     expect(source).toContain("connect a server to TextText");

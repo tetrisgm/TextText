@@ -12,7 +12,7 @@ export const TEXTTEXT_CLI_VERIFY_COMMAND =
   "if command -v texttext >/dev/null 2>&1; then texttext ls; else /Applications/TextText.app/Contents/Helpers/texttext ls; fi";
 
 export const AGENT_CONNECTION_CHECK_PROMPT =
-  "Use TextText to create a private note titled Agent connection check. Add one line: Connected through [your agent name], replacing the brackets with your name. Read the note back, tell me where you saved it, and do not publish or share it.";
+  "Use TextText to capture this private note with a stable idempotency key: Agent connection check, then a new line, then Connected through [your agent name], replacing the brackets with your name. Report the exact receipt title, item id, and saved location. Read that exact item id back, confirm the saved line, and do not publish or share it.";
 
 export type AgentIntegrationStep = {
   /** One sentence, imperative, sentence case. */

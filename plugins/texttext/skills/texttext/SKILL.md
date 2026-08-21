@@ -1,6 +1,6 @@
 ---
 name: texttext
-description: Use TextText as the durable document home for notes, articles, bookmarks, project records, publishing, and collaboration. Trigger when the user asks to save, create, find, reshape, publish, share, comment on, or maintain TextText content.
+description: Use TextText as the durable document home for notes, articles, bookmarks, and project records. The signed-in local command captures, finds, reads, creates, and edits documents; an already connected hosted MCP adds publishing, sharing, comments, templates, and Trash. Trigger when the user asks to save, create, find, reshape, publish, share, comment on, or maintain TextText content.
 ---
 
 # TextText
@@ -34,13 +34,15 @@ The durable action audit records the supplied agent name and intent.
 "$TEXTTEXT_CMD" ls                                    # what is here
 "$TEXTTEXT_CMD" search "exact phrase" --json          # find matching content
 "$TEXTTEXT_CMD" sections <doc>                        # the headings
-"$TEXTTEXT_CMD" read <doc> [--section "## Heading"]   # all or one section
-"$TEXTTEXT_CMD" edit <doc> --section "## Heading" --as codex --message "why"
-"$TEXTTEXT_CMD" write <doc> --as codex --message "why"
+"$TEXTTEXT_CMD" read <doc> --json                    # content and current hash
+"$TEXTTEXT_CMD" edit <doc> --section "## Heading" --if-match-hash <hash> --as codex --message "why"
+"$TEXTTEXT_CMD" write <doc> --if-match-hash <hash> --as codex --message "why"
 "$TEXTTEXT_CMD" append <doc> --as codex --message "why"
 "$TEXTTEXT_CMD" open <doc>                            # open it in the app
 "$TEXTTEXT_CMD" new <title> --folder <folder>         # create a document
-printf '%s' "one thing to keep" | "$TEXTTEXT_CMD" capture --json
+printf '%s' "one thing to keep" \
+  | "$TEXTTEXT_CMD" capture --json --as codex \
+      --message "Save this note" --idempotency-key <stable-key>
 ```
 
 Always pass `--as <your name>` and `--message "<what this change is for>"`.
@@ -56,6 +58,8 @@ Use hosted MCP only when its tools are already connected and the local command
 is unavailable, such as TestFlight, a browser, or another machine. Do not turn a
 missing local app into a token setup flow. MCP also covers work that has no file
 equivalent: publishing, audience and sharing, comments, templates, and Trash.
+The plugin does not add hosted MCP itself. Never imply that the local command
+can publish, share, comment, manage templates, or operate Trash.
 
 ## Find before inventory
 
@@ -63,7 +67,7 @@ For a simple find, retrieval, or "what did I write about" request, call
 `texttext search "<query>" --json` directly. Do not list the workspace or poll
 folders first. Search returns the same title, body, and excerpt matches as the
 in-app assistant and hosted MCP, with an item id and snippet. Read the exact
-result with `texttext read <id>`.
+result with `texttext read <id> --json`.
 
 Use `texttext ls` only when the user actually asked for an inventory, when no
 search term can be inferred, or when choosing among folders for a precise
@@ -72,7 +76,8 @@ creation request.
 ## Start with context
 
 With the CLI: search for the relevant item, then use `texttext sections <id>`
-and `texttext read <id>` before changing anything.
+and `texttext read <id> --json` before changing anything. Retain the returned
+`hash` and pass it as `--if-match-hash` on the prepared write or section edit.
 
 With MCP:
 
@@ -94,8 +99,11 @@ verification or the next step needs its content.
 
 - Read an existing item before changing it. A new quick capture does not need a
   workspace inventory or an unrelated read first.
-- Pass a stable `idempotency_key` to `create_item` and `append_to_item` when an
-  automation may retry.
+- For a CLI write or section edit, retain the `hash` from `read --json` and pass
+  it as `--if-match-hash`. For MCP, use the corresponding `if_match_hash`.
+- Pass a stable `--idempotency-key` to CLI capture, new, and append commands
+  when an automation may retry. Use `idempotency_key` with MCP `create_item`
+  and `append_to_item`.
 - Use `if_match_hash` for guarded item mutations.
 - Report the durable receipt after capture. Read the item back when the user
   asks for verification or the next step needs its content.

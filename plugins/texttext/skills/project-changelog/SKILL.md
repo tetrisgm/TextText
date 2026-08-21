@@ -21,9 +21,10 @@ To add an entry, read the document, put the new version section on top, and
 write it back in one go:
 
 ```sh
-"$TEXTTEXT_CMD" read "<the changelog>" > /tmp/log.md
-# prepend the new "## <version>" section to /tmp/log.md
+"$TEXTTEXT_CMD" read "<the changelog id>" --json
+# retain the returned markdown and hash, then prepend the new section
 "$TEXTTEXT_CMD" write "<the changelog>" --from /tmp/log.md \
+  --if-match-hash "<hash from the read>" \
   --as codex --message "0.144 changelog entry"
 ```
 
@@ -33,7 +34,8 @@ leaves every other entry untouched.
 
 Read the document again before writing if any time has passed. Never write an
 entry you have not just derived from the current content, or you will drop
-someone else's.
+someone else's. If the write response is lost, read again before retrying. If
+the entry is already present, report success instead of adding it twice.
 
 ## With MCP, when it is already connected and the CLI is not available
 

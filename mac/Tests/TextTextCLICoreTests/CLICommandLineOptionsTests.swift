@@ -6,7 +6,8 @@ final class CLICommandLineOptionsTests: XCTestCase {
     func testParsesActorIntentAndStableRetryKey() throws {
         let options = try CLICommandLineOptions.parse([
             "append", "Notes/Log.textpack", "--as", "Codex", "--message",
-            "Record the result", "--idempotency-key", "task-123", "--json",
+            "Record the result", "--idempotency-key", "task-123",
+            "--if-match-hash", "hash-1", "--json",
         ])
 
         XCTAssertEqual(options.command, "append")
@@ -14,6 +15,7 @@ final class CLICommandLineOptionsTests: XCTestCase {
         XCTAssertEqual(options.actor, "Codex")
         XCTAssertEqual(options.message, "Record the result")
         XCTAssertEqual(options.idempotencyKey, "task-123")
+        XCTAssertEqual(options.ifMatchHash, "hash-1")
         XCTAssertTrue(options.json)
     }
 

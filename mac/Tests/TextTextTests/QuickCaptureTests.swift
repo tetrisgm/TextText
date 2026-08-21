@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import XCTest
 @testable import TextTextApp
@@ -27,9 +28,51 @@ final class QuickCaptureTests: XCTestCase {
             QuickCaptureIntent("A launch thought\n\nKeep the first run tiny."))
         XCTAssertEqual(note.target, .notes)
         XCTAssertEqual(note.content.title, "A launch thought")
+        XCTAssertEqual(note.content.body, "Keep the first run tiny.")
         XCTAssertEqual(
-            note.content.body,
+            note.rawValue,
             "A launch thought\n\nKeep the first run tiny.")
+    }
+
+    func testQuickCaptureKeyboardMatchesBrowserComposer() {
+        XCTAssertEqual(
+            QuickCaptureKeyAction.resolve(
+                keyCode: 36, modifiers: [], hasMarkedText: false),
+            .save)
+        XCTAssertEqual(
+            QuickCaptureKeyAction.resolve(
+                keyCode: 76, modifiers: [.command], hasMarkedText: false),
+            .save)
+        XCTAssertEqual(
+            QuickCaptureKeyAction.resolve(
+                keyCode: 36, modifiers: [.shift], hasMarkedText: false),
+            .newline)
+        XCTAssertEqual(
+            QuickCaptureKeyAction.resolve(
+                keyCode: 36, modifiers: [], hasMarkedText: true),
+            .forward)
+        XCTAssertEqual(
+            QuickCaptureKeyAction.resolve(
+                keyCode: 53, modifiers: [], hasMarkedText: true),
+            .forward)
+        XCTAssertEqual(
+            QuickCaptureKeyAction.resolve(
+                keyCode: 53, modifiers: [], hasMarkedText: false),
+            .dismiss)
+    }
+
+    func testOutboxRetainsExactRawInputForRecovery() throws {
+        let root = try temporaryDirectory()
+        let outbox = try QuickCaptureOutbox(baseDirectory: root)
+        let raw = "  A launch thought\n\nKeep the first run tiny.  "
+        let intent = try XCTUnwrap(QuickCaptureIntent(raw))
+
+        let record = try outbox.enqueue(intent, id: "raw-capture")
+        let reopened = try QuickCaptureOutbox(baseDirectory: root)
+
+        XCTAssertEqual(record.raw, raw.trimmingCharacters(in: .whitespacesAndNewlines))
+        XCTAssertEqual(reopened.pendingRecords().first?.raw, record.raw)
+        XCTAssertFalse(record.raw.contains("A launch thought\n\nA launch thought"))
     }
 
     func testOutboxPersistsCaptureWithoutCredentialsOrNetwork() throws {
@@ -74,6 +117,12 @@ final class QuickCaptureTests: XCTestCase {
         XCTAssertEqual(client.requests[0].representation, .textpack)
         XCTAssertEqual(client.requests[0].idempotencyKey, record.idempotencyKey)
         XCTAssertEqual(client.requests[0].body, record.markdown)
+        let receipt = try XCTUnwrap(outbox.recentSavedReceipts().first)
+        XCTAssertEqual(receipt.itemId, "note-1")
+        XCTAssertEqual(receipt.folderPath, "Notes")
+        XCTAssertEqual(receipt.workspaceHandle, "demo")
+        XCTAssertEqual(receipt.hash, "hash")
+        XCTAssertTrue(receipt.canUndo)
     }
 
     func testFailedPostKeepsRecordAndRetriesWithSameIdempotencyKey() throws {
@@ -232,6 +281,201 @@ final class QuickCaptureTests: XCTestCase {
         XCTAssertNil(restored.lastError)
     }
 
+    func testFailedCapturesCanBeRetriedOrDiscardedIndividually() throws {
+        let root = try temporaryDirectory()
+        let outbox = try QuickCaptureOutbox(baseDirectory: root)
+        try outbox.enqueue(
+            QuickCaptureContent(title: "Retry this", body: "First"),
+            id: "retry-one")
+        try outbox.enqueue(
+            QuickCaptureContent(title: "Discard this", body: "Second"),
+            id: "discard-one")
+        let client = QuickCaptureSyncClient(results: [
+            .success(.rejected("invalid first")),
+            .success(.rejected("invalid second")),
+        ])
+
+        _ = QuickCaptureOutboxDrainer(outbox: outbox).drain(
+            workspace: workspace(), client: client)
+
+        XCTAssertEqual(outbox.rejectedRecordCount(), 2)
+        XCTAssertTrue(try outbox.retryRejectedRecord(id: "retry-one"))
+        XCTAssertEqual(
+            outbox.pendingRecords().first?.idempotencyKey,
+            "quick-capture:retry-one")
+        XCTAssertTrue(try outbox.discardRejectedRecord(id: "discard-one"))
+        XCTAssertTrue(outbox.rejectedRecords().isEmpty)
+        XCTAssertFalse(try outbox.discardRejectedRecord(id: "missing"))
+    }
+
+    func testRecentSavedReceiptsAreBoundedAndSurviveRelaunch() throws {
+        let root = try temporaryDirectory()
+        let outbox = try QuickCaptureOutbox(baseDirectory: root)
+        for index in 0..<8 {
+            try outbox.recordSavedReceipt(QuickCaptureSavedReceipt(
+                itemId: "note-\(index)",
+                title: "Note \(index)",
+                folderPath: "Notes",
+                slug: "note-\(index)",
+                kind: "note",
+                savedAt: Date(timeIntervalSince1970: TimeInterval(index))))
+        }
+
+        let reopened = try QuickCaptureOutbox(baseDirectory: root)
+        let receipts = reopened.recentSavedReceipts()
+
+        XCTAssertEqual(receipts.count, 6)
+        XCTAssertEqual(receipts.map(\.itemId), [
+            "note-7", "note-6", "note-5", "note-4", "note-3", "note-2",
+        ])
+    }
+
+    func testUndoUsesServerRevisionAndRemovesOnlyConfirmedReceipt() throws {
+        let root = try temporaryDirectory()
+        let outbox = try QuickCaptureOutbox(baseDirectory: root)
+        let receipt = QuickCaptureSavedReceipt(
+            itemId: "note-undo",
+            title: "Undo me",
+            folderPath: "Notes",
+            slug: "undo-me",
+            kind: "note",
+            workspaceHandle: "demo",
+            hash: "captured-hash")
+        try outbox.recordSavedReceipt(receipt)
+        let client = QuickCaptureSyncClient(
+            results: [],
+            workspaceResult: .success((workspace(), Data())),
+            deleteResults: [.success(())])
+
+        let result = QuickCaptureUndoer(outbox: outbox).undo(
+            receipt, workspaceHandle: "demo", client: client)
+
+        guard case .success = result else {
+            return XCTFail("Expected server-confirmed Undo")
+        }
+        XCTAssertEqual(client.deleteRequests.count, 1)
+        XCTAssertEqual(client.deleteRequests.first?.postId, "note-undo")
+        XCTAssertEqual(client.deleteRequests.first?.hash, "captured-hash")
+        XCTAssertTrue(outbox.recentSavedReceipts().isEmpty)
+    }
+
+    func testUndoFailureKeepsReceiptAndCrossWorkspaceUndoNeverCallsServer() throws {
+        let root = try temporaryDirectory()
+        let outbox = try QuickCaptureOutbox(baseDirectory: root)
+        let receipt = QuickCaptureSavedReceipt(
+            itemId: "note-keep",
+            title: "Keep me",
+            folderPath: "Notes",
+            slug: "keep-me",
+            kind: "note",
+            workspaceHandle: "personal",
+            hash: "captured-hash")
+        try outbox.recordSavedReceipt(receipt)
+        let client = QuickCaptureSyncClient(
+            results: [],
+            workspaceResult: .success((workspace(handle: "personal"), Data())),
+            deleteResults: [.failure(.network("offline"))])
+
+        guard case .failure(.workspaceMismatch) = QuickCaptureUndoer(
+            outbox: outbox
+        ).undo(receipt, workspaceHandle: "work", client: client) else {
+            return XCTFail("Expected cross-workspace Undo to fail closed")
+        }
+        XCTAssertTrue(client.deleteRequests.isEmpty)
+        guard case .failure(.server(let message)) = QuickCaptureUndoer(
+            outbox: outbox
+        ).undo(receipt, workspaceHandle: "personal", client: client) else {
+            return XCTFail("Expected server failure")
+        }
+        XCTAssertEqual(message, "network: offline")
+        XCTAssertEqual(outbox.recentSavedReceipts().first?.itemId, "note-keep")
+    }
+
+    func testUndoRequiresCredentialWorkspaceToMatchReceiptBeforeDelete() throws {
+        let root = try temporaryDirectory()
+        let outbox = try QuickCaptureOutbox(baseDirectory: root)
+        let receipt = QuickCaptureSavedReceipt(
+            itemId: "note-account-a",
+            title: "Account A note",
+            folderPath: "Notes",
+            slug: "account-a-note",
+            kind: "note",
+            workspaceHandle: "account-a",
+            hash: "captured-hash")
+        try outbox.recordSavedReceipt(receipt)
+        let client = QuickCaptureSyncClient(
+            results: [],
+            workspaceResult: .success((workspace(handle: "account-b"), Data())),
+            deleteResults: [.success(())])
+
+        guard case .failure(.workspaceMismatch) = QuickCaptureUndoer(
+            outbox: outbox
+        ).undo(receipt, workspaceHandle: "account-a", client: client) else {
+            return XCTFail("Expected authenticated workspace mismatch")
+        }
+        XCTAssertTrue(client.deleteRequests.isEmpty)
+        XCTAssertEqual(
+            outbox.recentSavedReceipts(workspaceHandle: "account-a").first?.itemId,
+            "note-account-a")
+    }
+
+    func testCaptureNeverCrossesIntoAnotherWorkspace() throws {
+        let root = try temporaryDirectory()
+        let outbox = try QuickCaptureOutbox(baseDirectory: root)
+        let intent = try XCTUnwrap(QuickCaptureIntent("Private field note"))
+        let record = try outbox.enqueue(
+            intent, id: "workspace-bound", workspaceHandle: "personal")
+        let client = QuickCaptureSyncClient(results: [
+            .success(.saved(savedItem(id: "note-personal"))),
+        ])
+        let drainer = QuickCaptureOutboxDrainer(outbox: outbox)
+
+        let deferred = drainer.drain(
+            workspace: workspace(handle: "work"), client: client)
+
+        XCTAssertFalse(deferred.shouldRetry)
+        XCTAssertEqual(deferred.deferredMessages.count, 1)
+        XCTAssertTrue(client.requests.isEmpty)
+        XCTAssertEqual(outbox.pendingRecords().first?.id, record.id)
+        XCTAssertEqual(outbox.pendingRecords().first?.attempts, 0)
+
+        let saved = drainer.drain(
+            workspace: workspace(handle: "personal"), client: client)
+
+        XCTAssertEqual(saved.savedItems.first?.id, "note-personal")
+        XCTAssertTrue(outbox.pendingRecords().isEmpty)
+        XCTAssertEqual(
+            outbox.recentSavedReceipts(workspaceHandle: "personal").first?.itemId,
+            "note-personal")
+        XCTAssertTrue(
+            outbox.recentSavedReceipts(workspaceHandle: "work").isEmpty)
+    }
+
+    func testReceiptWindowIsIndependentForEachWorkspace() throws {
+        let root = try temporaryDirectory()
+        let outbox = try QuickCaptureOutbox(baseDirectory: root)
+        for handle in ["personal", "work"] {
+            for index in 0..<7 {
+                try outbox.recordSavedReceipt(QuickCaptureSavedReceipt(
+                    itemId: "\(handle)-\(index)",
+                    title: "Note \(index)",
+                    folderPath: "Notes",
+                    slug: "note-\(index)",
+                    kind: "note",
+                    savedAt: Date(timeIntervalSince1970: TimeInterval(index)),
+                    workspaceHandle: handle))
+            }
+        }
+
+        let reopened = try QuickCaptureOutbox(baseDirectory: root)
+        XCTAssertEqual(
+            reopened.recentSavedReceipts(workspaceHandle: "personal").count,
+            6)
+        XCTAssertEqual(
+            reopened.recentSavedReceipts(workspaceHandle: "work").count,
+            6)
+    }
+
     func testQuickCaptureFeedbackUsesTruthfulDeliveryLanguage() {
         XCTAssertEqual(QuickCaptureFeedback.ready.title, "Ready to capture")
         let receipt = QuickCaptureSavedReceipt(
@@ -241,6 +485,9 @@ final class QuickCaptureTests: XCTestCase {
             QuickCaptureFeedback.saved([receipt]).title,
             "Saved Field note to Notes")
         XCTAssertEqual(QuickCaptureFeedback.queued(1).title, "Queued safely")
+        XCTAssertEqual(
+            QuickCaptureFeedback.undone("Field note").title,
+            "Undid capture Field note")
         XCTAssertEqual(QuickCaptureFeedback.failed(0).title, "Capture failed")
         XCTAssertEqual(QuickCaptureFeedback.failed(1).title, "Failed capture")
         XCTAssertEqual(QuickCaptureFeedback.failed(3).title, "Failed captures (3)")
@@ -291,16 +538,31 @@ private struct QuickCaptureRequest {
     let idempotencyKey: String?
 }
 
+private struct QuickCaptureDeleteRequest {
+    let postId: String
+    let hash: String?
+}
+
 private final class QuickCaptureSyncClient: SyncClient {
     var results: [Result<SaveReply, ClientFailure>]
     var requests: [QuickCaptureRequest] = []
+    var workspaceResult: Result<(Workspace, Data), ClientFailure>
+    var deleteResults: [Result<Void, ClientFailure>]
+    var deleteRequests: [QuickCaptureDeleteRequest] = []
 
-    init(results: [Result<SaveReply, ClientFailure>]) {
+    init(
+        results: [Result<SaveReply, ClientFailure>],
+        workspaceResult: Result<(Workspace, Data), ClientFailure> =
+            .failure(.badResponse("unused")),
+        deleteResults: [Result<Void, ClientFailure>] = []
+    ) {
         self.results = results
+        self.workspaceResult = workspaceResult
+        self.deleteResults = deleteResults
     }
 
     func workspace() -> Result<(Workspace, Data), ClientFailure> {
-        .failure(.badResponse("unused"))
+        workspaceResult
     }
 
     func manifest(
@@ -360,15 +622,23 @@ private final class QuickCaptureSyncClient: SyncClient {
     func deleteFile(
         postId: String, ifMatch hash: String?
     ) -> Result<Void, ClientFailure> {
-        .failure(.badResponse("unused"))
+        deleteRequests.append(QuickCaptureDeleteRequest(
+            postId: postId, hash: hash))
+        guard !deleteResults.isEmpty else {
+            return .failure(.badResponse("unused"))
+        }
+        return deleteResults.removeFirst()
     }
 
     func advertisedAppVersion() -> String? { nil }
 }
 
-private func workspace(notesFolderId: String = "notes-folder") -> Workspace {
+private func workspace(
+    notesFolderId: String = "notes-folder",
+    handle: String = "demo"
+) -> Workspace {
     Workspace(
-        blog: WorkspaceBlog(handle: "demo", name: "Demo", username: nil),
+        blog: WorkspaceBlog(handle: handle, name: "Demo", username: nil),
         folders: [
             WorkspaceFolder(
                 id: "blog-folder", name: "Blog", path: "Blog",

@@ -3,12 +3,29 @@ import { captureFolderPath, captureIntent } from "@/lib/capture-intent";
 
 describe("captureIntent", () => {
   it("routes a thought to Notes and keeps a useful title", () => {
-    expect(captureIntent("A launch thought\n\nKeep the first run tiny.")).toEqual({
-      body: "A launch thought\n\nKeep the first run tiny.",
+    expect(
+      captureIntent("A launch thought\n\nKeep the first run tiny."),
+    ).toEqual({
+      body: "Keep the first run tiny.",
       kind: "note",
       preferredFolderMode: "notes",
       sourceUrl: null,
       title: "A launch thought",
+    });
+  });
+
+  it("keeps an imported conversation intact when its title comes from a prompt", () => {
+    const conversation = [
+      "ChatGPT conversation",
+      "",
+      "User: Explain why local files matter",
+      "Assistant: They keep the durable source close.",
+    ].join("\n");
+
+    expect(captureIntent(conversation)).toMatchObject({
+      body: conversation,
+      kind: "note",
+      title: "Explain why local files matter",
     });
   });
 

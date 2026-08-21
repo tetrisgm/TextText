@@ -120,6 +120,25 @@ final class RemoteDocumentStoreTests: XCTestCase {
         XCTAssertEqual(exact.itemId, "recent")
         let markdown = try await store.readMarkdown(at: exact)
         XCTAssertEqual(markdown, "# Recent\n\nA field observation")
+        let events = await api.recordedEvents()
+        XCTAssertEqual(events, ["search", "read"])
+    }
+
+    func testDirectItemIdReadDoesNotInventoryWorkspaceManifests() async throws {
+        let itemId = "00000000-0000-4000-8000-000000000123"
+        let api = FakeCLISyncAPI(
+            workspace: workspace(folders: []), manifests: [:],
+            contents: [itemId: ("# Exact\n\nOne item.", "hash-exact")])
+        let store = RemoteDocumentStore(api: api)
+
+        let exact = try await store.resolve(itemId)
+        let content = try await store.readContent(at: exact)
+
+        XCTAssertEqual(exact.itemId, itemId)
+        XCTAssertEqual(content.markdown, "# Exact\n\nOne item.")
+        XCTAssertEqual(content.hash, "hash-exact")
+        let events = await api.recordedEvents()
+        XCTAssertEqual(events, ["read"])
     }
 
     func testReadThenWriteUsesTheCommandHashAndAgentAttribution() async throws {
@@ -169,6 +188,41 @@ final class RemoteDocumentStoreTests: XCTestCase {
         } catch {
             XCTFail("expected documentChanged, got \(error)")
         }
+    }
+
+    func testExplicitStaleHashStopsBeforeTheMutation() async throws {
+        let notes = folder(id: "notes", name: "Notes", path: "Notes", mode: "notes")
+        let api = FakeCLISyncAPI(
+            workspace: workspace(folders: [notes]),
+            manifests: [notes.id: [item(id: "recent", title: "Recent")]],
+            contents: ["recent": ("# Current\n", "hash-current")])
+        let store = RemoteDocumentStore(api: api)
+        let document = try await store.resolve("Recent")
+
+        do {
+            try await store.writeMarkdown(
+                "# Stale\n", to: document, ifMatchHash: "hash-old")
+            XCTFail("expected the stale prepared write to be refused")
+        } catch TextTextCLIError.documentChanged(let name) {
+            XCTAssertEqual(name, "Notes/Recent.textpack")
+        }
+        let request = await api.lastPut()
+        XCTAssertNil(request)
+    }
+
+    func testVersionedReadReturnsTheGuardHash() async throws {
+        let notes = folder(id: "notes", name: "Notes", path: "Notes", mode: "notes")
+        let api = FakeCLISyncAPI(
+            workspace: workspace(folders: [notes]),
+            manifests: [notes.id: [item(id: "recent", title: "Recent")]],
+            contents: ["recent": ("# Current\n", "hash-current")])
+        let store = RemoteDocumentStore(api: api)
+        let document = try await store.resolve("Recent")
+
+        let content = try await store.readContent(at: document)
+
+        XCTAssertEqual(content.markdown, "# Current\n")
+        XCTAssertEqual(content.hash, "hash-current")
     }
 
     func testSectionEditSendsOnlyTheTargetedBodyAndItsExpectedValue() async throws {
@@ -448,6 +502,7 @@ private actor FakeCLISyncAPI: TextTextCLISyncAPI {
     func agentReadItem(
         postId: String, agentName: String?, agentIntent: String?
     ) async -> Result<TextTextAgentCommandReply, TextTextSyncError> {
+        events.append("read")
         readCount += 1
         guard let value = contents[postId] else { return .failure(.notFound) }
         return .success(
@@ -460,6 +515,7 @@ private actor FakeCLISyncAPI: TextTextCLISyncAPI {
     func agentSearchItems(
         query: String, agentName: String?, agentIntent: String?
     ) async -> Result<TextTextAgentCommandReply, TextTextSyncError> {
+        events.append("search")
         searchQueries.append(query)
         return .success(
             TextTextAgentCommandReply(query: query, results: searchResults))
