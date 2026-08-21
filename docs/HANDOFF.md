@@ -32,18 +32,26 @@ polish ledger.
 - Browser, standalone Mac quick capture, signed-in `texttext capture`, Claude
   and Codex plugin skills, and hosted MCP use the same routing semantics. A
   successful capture returns an authoritative receipt with the exact title,
-  destination, item id, and Open action. The UI never predicts success from
-  model prose or requested arguments.
+  destination, item id, and Open action. Browser capture also keeps a
+  server-confirmed Undo beside each of the six durable receipts. Native Quick
+  Capture persists the same six-receipt history per workspace, offers exact
+  Open, and performs a revision-guarded, server-confirmed Undo only after the
+  authenticated credential still resolves to that receipt's workspace. A
+  failure or account switch preserves the receipt. The UI never predicts
+  success from model prose or requested arguments.
 - Retrieval uses one normalized ranked token matcher in Library, MCP, and the
   local CLI. `texttext search` returns exact ids, snippets, hashes, and folder
   paths; `texttext read <id>` resolves the exact item. Read-only credentials
   can search and read, while mutation commands still require full scope.
-- Assistant receipts are derived only from validated command results. Native
-  writes report Updated only after acknowledgement, known authorization and
-  stale-write failures roll back, whole-document replacement requires a hash,
-  and targeted text or section edits keep their narrower guards. Completed
-  receipts survive a later provider error instead of being replaced by a
-  false total failure.
+- Assistant receipts are derived only from validated command results. Added
+  TextText context is capped at four items, resolved canonically inside the
+  authenticated workspace, and included in `Read` proof only when that item
+  was actually loaded for the turn. Client-supplied titles and bodies are not
+  trusted. Native writes report Updated only after acknowledgement, known
+  authorization and stale-write failures roll back, whole-document replacement
+  requires a hash, and targeted text or section edits keep their narrower
+  guards. Completed receipts survive a later provider error instead of being
+  replaced by a false total failure.
 - Recent-work summaries use an access-scoped, newest-first SQL query capped at
   12 items. Selection quick actions are server-enforced read-only until Apply,
   and user content is fenced as untrusted context so text inside a note cannot
@@ -54,13 +62,35 @@ polish ledger.
   content change behind.
 - Visual proof covers Library capture, six simultaneous receipts, assistant
   safe areas, and failed-capture recovery at 1440, 768, and 375 pixels in both
-  themes. The native bridge proof uses a disposable local item and exercises
-  zero-tool summary, exact read, guarded live edit, AI audit, Apply, and Undo.
-- Settled verification passed 1,063 web tests, 509 Swift tests, TypeScript,
-  lint with zero errors, both agent integration verifiers, the real read-only
-  Codex runtime, the native browser bridge, and the 44-page production build.
-  The build retains the known non-blocking duplicate-Yjs warning from separate
-  Turbopack route chunks.
+  themes. The same matrix proves pinned navigation and assistant rails, exact
+  search and Open, source-linked summaries, guarded Apply and Undo, and failed
+  provider recovery. A disposable native app proves Return and Shift-Return,
+  URL routing, recovery Copy and Retry, confirmation-gated Discard, exact Open,
+  light and dark appearance, and the guarded Undo confirmation. The native
+  bridge proof uses a disposable local item and exercises zero-tool summary,
+  exact read, guarded live edit, AI audit, Apply, and Undo.
+- The final settled-tree gate passed TypeScript, lint with zero errors, 1,073
+  web tests across 160 files, 522 Swift tests, both agent integration
+  verifiers, the official plugin validator, all five skill validators, the
+  full native browser bridge, standalone app and CLI source builds, the Store
+  source build and entitlement scan, and the 44-page production web build.
+  The Store binary has no Sparkle link; the standalone release build retains
+  Sparkle 2.9.5. The web build retains four known non-blocking duplicate-Yjs
+  warnings at serialized route boundaries.
+- The current real native Codex rerun is blocked before product execution by
+  the signed-in ChatGPT account's usage limit until August 26 at 8:31 PM. It
+  made zero dynamic tool calls. Prior real native Codex proof remains valid for
+  the unchanged App Server isolation path, while the current native bridge
+  rerun proves the final browser prompt, read, guarded edit, AI audit, proposal,
+  Apply, and Undo path. Do not call the quota-blocked rerun green.
+- One saved-workspace visual session reached `/api/ai` but returned 502 before
+  generation. A separate request through the documented Keychain-backed
+  `dev-with-ai` path selected Anthropic Claude Sonnet 5 and returned 200 in
+  about 1.2 seconds with zero tools, proving the route, SDK, and catalog model
+  against a real provider. The earlier failure is isolated to that saved
+  workspace/runtime state or a transient provider failure. The UI states that
+  no change occurred and offers Retry and Verify connection. Do not present
+  deterministic-provider screenshots as evidence of a live Anthropic response.
 - This is source work only. No app was installed, no deployment or promotion
   ran, and no TestFlight, App Store Connect, release-record, or update-channel
   action occurred. The installed and public app remain unchanged until the
@@ -160,21 +190,17 @@ polish ledger.
 - Per-call approval was dropped: MRTR is the protocol's own mechanism, so
   bespoke approval UI would have been reinventing it worse.
 
-## Local MCP servers (Mac only, by physics)
+## Historical local MCP exploration (superseded 2026-08-20)
 
-- Paper listens on `127.0.0.1:29979`; pen.dev and Figma are the same shape.
-  Nothing hosted can reach a person's loopback, and an https page cannot
-  either (mixed content), so `LocalMcpBridge.swift` makes the call natively
-  and refuses any address that does not RESOLVE to loopback.
-- Local tools live on the NATIVE rung only, since that rung executes tools
-  in the app on the person's machine. Hosted servers stay on the cloud rung.
-- `outbound-protocol.ts` is isomorphic and shared by both clients, so a
-  server on somebody's laptop cannot get a laxer parser than a hosted one.
-- Local connections take no token, and the form no longer offers the field
-  for a loopback address. Storing one would mean handing it to the browser to
-  reach Swift, and no token ever reaches a browser. A local server that
-  required auth is unsupported, deliberately and visibly rather than by a
-  field that silently does nothing.
+- Paper, pen.dev, and Figma can expose loopback MCP endpoints tied to their
+  desktop applications. That comparison informed the product, but TextText
+  does not offer loopback endpoints in Workspace Settings in this release.
+- TextText's local Claude and Codex integration is the signed-in `texttext`
+  CLI in the standalone Mac edition. It does not start an MCP server, request
+  a workspace token, or depend on File Provider.
+- Outbound TextText MCP connections use public HTTPS addresses. Browser and
+  Store editions cannot expose the capability-gated native loopback bridge,
+  and public product copy must not advertise it as an available setup path.
 
 ## Templates simplified to A+B (owner, 2026-08-15)
 

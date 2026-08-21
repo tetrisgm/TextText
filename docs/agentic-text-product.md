@@ -186,10 +186,12 @@ they do not get to interrupt capture or first-run understanding.
 | Claim | Status | Gate |
 | --- | --- | --- |
 | Capture stays in Library and offers Open and Undo | Implemented | Rapid-capture contract plus visual browser check |
+| Native Quick Capture preserves failures and offers exact Open and guarded Undo | Implemented in source | Quick Capture tests plus isolated light and dark app proof |
 | New and returning Library sessions hydrate to the same first frame | Implemented | Fresh-tab hydration check and pool server snapshot |
 | Local Claude and Codex avoid workspace-token setup | Implemented | Agent integration verifier |
 | Hosted MCP is scoped, revocable, and tenant isolated | Implemented | Token MCP live loop and route tests |
-| Native summary uses the supplied workspace index before tools | Implemented | Native Codex eval, zero-tool summary leg |
+| Added TextText context is canonical and access checked | Implemented | AI route authorization tests and exact Read receipts |
+| Native summary uses the supplied workspace index before tools | Implemented | Native bridge prompt proof plus prior real Codex zero-tool run; latest live rerun is account-capacity blocked |
 | Agent edits are guarded, attributed, and audited | Implemented | Native bridge, collaboration, CLI command, and atomic-audit tests |
 | Selection rewrite supports preview, Apply, and Undo | Implemented | Native bridge proposal leg and UI tests |
 | Touch ID, Google provider consent, and TestFlight distribution | Owner validation deferred | Interactive owner test, then TestFlight gate |
