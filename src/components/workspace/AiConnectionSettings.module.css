@@ -29,6 +29,12 @@
   font-size: var(--ac-fs-footnote);
   line-height: 1.4;
 }
+.primaryCard .verification {
+  margin-top: 7px;
+  color: var(--ac-green);
+  font-size: var(--ac-fs-caption1);
+  font-weight: 600;
+}
 .primary,
 .secondary {
   flex: 0 0 auto;

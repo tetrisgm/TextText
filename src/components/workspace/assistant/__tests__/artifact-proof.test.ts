@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { WorkspacePoolPayload } from "@/lib/pool/types";
 import {
   itemArtifactProof,
+  loadedContextArtifactProofs,
   mergeArtifactProofs,
   workspaceToolArtifactProofs,
 } from "../artifact-proof";
@@ -84,6 +85,23 @@ describe("assistant artifact proof", () => {
       { operation: "Found", itemId: "note-1", folderPath: "notes" },
       { operation: "Found", itemId: "post-1", folderPath: "blog" },
     ]);
+  });
+
+  it("proves only context bodies that the turn successfully loaded", () => {
+    expect(
+      loadedContextArtifactProofs(
+        [{ id: "note-1", title: "Launch notes" }],
+        pool,
+      ),
+    ).toMatchObject([
+      { operation: "Read", itemId: "note-1", folderPath: "notes" },
+    ]);
+    expect(
+      loadedContextArtifactProofs(
+        [{ id: "deleted-note", title: "Deleted note" }],
+        pool,
+      ),
+    ).toEqual([]);
   });
 
   it("uses the authoritative capture receipt before the pool refresh lands", () => {

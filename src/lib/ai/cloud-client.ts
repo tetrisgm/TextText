@@ -13,6 +13,8 @@ export type CloudAssistantContext = {
   selection?: string;
   /** The opening of the body, bounded. The model can read the rest. */
   itemPreview?: string;
+  /** IDs for TextText items the server must resolve in this workspace. */
+  relatedItems?: Array<{ id: string }>;
   /** Suggestion turns are server-limited to read-only workspace tools. */
   mode?: "suggestion";
 };
@@ -41,12 +43,21 @@ export type CloudWorkspaceCall = {
   output: unknown;
 };
 
+export type CloudContextItem = {
+  id: string;
+  title: string;
+  folderPath: string;
+  slug: string;
+};
+
 export type CloudAssistantOutcome =
   | {
       text: string;
       provider: CloudAssistantProviderLabel;
       outboundCalls: OutboundCall[];
       workspaceCalls: CloudWorkspaceCall[];
+      /** Exact access-checked items supplied as source context for the turn. */
+      contextItems: CloudContextItem[];
       /** Some commands completed before the provider failed later in the turn. */
       terminalError?: string;
       /** Connected servers that did not answer, so the turn was smaller. */
@@ -101,6 +112,28 @@ function cleanWorkspaceCalls(value: unknown): CloudWorkspaceCall[] {
   return calls;
 }
 
+function cleanContextItems(value: unknown): CloudContextItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 12).flatMap((entry) => {
+    const candidate = cleanRecord(entry);
+    if (
+      !candidate ||
+      typeof candidate.id !== "string" ||
+      typeof candidate.title !== "string" ||
+      typeof candidate.folderPath !== "string" ||
+      typeof candidate.slug !== "string"
+    ) {
+      return [];
+    }
+    return [{
+      id: candidate.id,
+      title: candidate.title,
+      folderPath: candidate.folderPath,
+      slug: candidate.slug,
+    }];
+  });
+}
+
 export async function cloudAssistantStatus(): Promise<CloudAssistantStatus> {
   const response = await fetch("/api/ai", {
     method: "GET",
@@ -141,6 +174,19 @@ export async function cloudAssistantTurn(
     const data = (await response.json().catch(() => null)) as {
       error?: string;
     } | null;
+    if (response.status === 502) {
+      throw new Error(
+        "Your request was not applied because the AI provider did not answer.",
+      );
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(
+        "Your request was not applied because this AI connection was rejected.",
+      );
+    }
+    if (response.status === 429) {
+      throw new Error("Nothing changed. Try again in a moment.");
+    }
     throw new Error(data?.error || "The assistant could not finish that.");
   }
   const data = (await response.json()) as {
@@ -149,6 +195,7 @@ export async function cloudAssistantTurn(
     outboundCalls?: unknown;
     unreachableServers?: unknown;
     workspaceCalls?: unknown;
+    contextItems?: unknown;
     terminalError?: unknown;
   };
   if (data.provider !== "Anthropic" && data.provider !== "OpenAI") {
@@ -159,6 +206,7 @@ export async function cloudAssistantTurn(
     provider: data.provider,
     outboundCalls: cleanOutboundCalls(data.outboundCalls),
     workspaceCalls: cleanWorkspaceCalls(data.workspaceCalls),
+    contextItems: cleanContextItems(data.contextItems),
     ...(typeof data.terminalError === "string" && data.terminalError.trim()
       ? { terminalError: data.terminalError.trim() }
       : {}),

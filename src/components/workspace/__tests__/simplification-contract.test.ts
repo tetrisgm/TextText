@@ -74,7 +74,8 @@ describe("workspace simplification contract", () => {
   it("gives every empty state an action instead of pointing at the composer", () => {
     expect(folderSource).toContain("Nothing here yet.");
     expect(folderSource).not.toContain("to create the first item");
-    expect(shellSource).toContain("Nothing here yet.");
+    expect(shellSource).toContain("Your first TextText loop");
+    expect(shellSource).toContain("Save your first thought");
     expect(shellSource).not.toContain("Create your first item above");
     expect(shellSource).toContain("Show all items");
   });
@@ -124,5 +125,19 @@ describe("workspace simplification contract", () => {
     expect(workspaceStyles).toContain(".universal-item-receipt-raw pre");
     expect(workspaceStyles).toContain("overflow-wrap: anywhere");
     expect(workspaceStyles).toContain("white-space: pre-wrap");
+  });
+
+  it("keeps Library controls reachable on narrow and touch layouts", () => {
+    expect(workspaceStyles).toContain(
+      ".post-editor-shell.has-assistant-open .workspace-library-toolbar",
+    );
+    expect(workspaceStyles).toContain("flex-direction: column");
+    expect(workspaceStyles).toContain("flex-wrap: nowrap");
+    expect(workspaceStyles).toContain(
+      ".workspace-recent.is-view-list .workspace-recent-list",
+    );
+    expect(workspaceStyles).toContain("padding-left: 22px");
+    expect(workspaceStyles).toContain("@media (hover: none)");
+    expect(workspaceStyles).toContain(".workspace-item-actions-trigger");
   });
 });

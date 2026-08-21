@@ -85,6 +85,23 @@ export function itemArtifactProof({
   };
 }
 
+/** Proof only for context bodies that the current turn actually loaded. */
+export function loadedContextArtifactProofs(
+  items: readonly { id: string; title: string }[],
+  pool: WorkspacePoolPayload | null,
+): AssistantArtifactProof[] {
+  if (!pool) return [];
+  return items.slice(0, 4).flatMap((item) => {
+    const proof = itemArtifactProof({
+      id: item.id,
+      operation: "Read",
+      pool,
+      title: item.title,
+    });
+    return proof ? [proof] : [];
+  });
+}
+
 function proofFromRecord(
   value: unknown,
   operation: AssistantProofOperation,

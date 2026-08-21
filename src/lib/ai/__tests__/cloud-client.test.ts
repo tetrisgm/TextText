@@ -79,4 +79,54 @@ describe("cloud assistant client", () => {
         "Some actions completed, but the assistant stopped before it could finish the reply.",
     });
   });
+
+  it("keeps exact source items supplied to a workspace summary", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          text: "Recent work summary",
+          provider: "Anthropic",
+          outboundCalls: [],
+          unreachableServers: [],
+          workspaceCalls: [],
+          contextItems: [
+            {
+              id: "note-1",
+              title: "Launch notes",
+              folderPath: "notes",
+              slug: "launch-notes",
+            },
+            { id: 7, title: "invalid" },
+          ],
+        }),
+      ),
+    );
+
+    await expect(cloudAssistantTurn("Catch me up")).resolves.toMatchObject({
+      contextItems: [
+        {
+          id: "note-1",
+          title: "Launch notes",
+          folderPath: "notes",
+        },
+      ],
+    });
+  });
+
+  it("makes a provider outage explicit that nothing was applied", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          { error: "The assistant could not complete that." },
+          { status: 502 },
+        ),
+      ),
+    );
+
+    await expect(cloudAssistantTurn("Rewrite this")).rejects.toThrow(
+      "Your request was not applied because the AI provider did not answer.",
+    );
+  });
 });

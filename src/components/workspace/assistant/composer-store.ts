@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback, useSyncExternalStore } from "react";
-import type { AssistantAttachment } from "./AssistantSidebar";
+import type {
+  AssistantAttachment,
+  AssistantWorkspaceContextItem,
+} from "./AssistantSidebar";
 
 export type AssistantComposerDraft = {
   attachments: readonly AssistantAttachment[];
@@ -94,6 +97,40 @@ export function useAssistantComposerDraft(contextKey: string) {
     [contextKey],
   );
 
+  const addContextItem = useCallback(
+    (item: AssistantWorkspaceContextItem) => {
+      const current = readAssistantComposerDraft(contextKey);
+      if (
+        current.attachments.filter((attachment) => attachment.workspaceItemId)
+          .length >= 4
+      ) {
+        return;
+      }
+      if (
+        current.attachments.some(
+          (attachment) => attachment.workspaceItemId === item.id,
+        )
+      ) {
+        return;
+      }
+      attachmentCounter += 1;
+      writeDraft(contextKey, {
+        ...current,
+        attachments: [
+          ...current.attachments,
+          {
+            id: `workspace:${item.id}:${attachmentCounter}`,
+            name: item.name,
+            detail: item.detail,
+            type: "application/x-texttext-item",
+            workspaceItemId: item.id,
+          },
+        ],
+      });
+    },
+    [contextKey],
+  );
+
   const removeAttachment = useCallback(
     (attachmentId: string) => {
       const current = readAssistantComposerDraft(contextKey);
@@ -111,7 +148,14 @@ export function useAssistantComposerDraft(contextKey: string) {
     writeDraft(contextKey, EMPTY_DRAFT);
   }, [contextKey]);
 
-  return { addFiles, clear, draft, removeAttachment, setText };
+  return {
+    addContextItem,
+    addFiles,
+    clear,
+    draft,
+    removeAttachment,
+    setText,
+  };
 }
 
 export function resetAssistantComposerDraftsForTests() {

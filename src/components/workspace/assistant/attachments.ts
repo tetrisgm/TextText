@@ -25,10 +25,25 @@ export function formatAssistantSubmission(
   attachments: readonly AssistantAttachment[],
 ): string {
   const trimmed = text.trim();
-  const attachmentNames = attachments.map((attachment) => attachment.name);
-  if (attachmentNames.length === 0) return trimmed;
-  if (!trimmed) return `Review attached: ${attachmentNames.join(", ")}`;
-  return `${trimmed}\n\nAttached: ${attachmentNames.join(", ")}`;
+  const contextNames = attachments
+    .filter((attachment) => attachment.workspaceItemId)
+    .map((attachment) => attachment.name);
+  const attachmentNames = attachments
+    .filter((attachment) => !attachment.workspaceItemId)
+    .map((attachment) => attachment.name);
+  const details = [
+    contextNames.length ? `Context: ${contextNames.join(", ")}` : "",
+    attachmentNames.length ? `Attached: ${attachmentNames.join(", ")}` : "",
+  ].filter(Boolean);
+  if (details.length === 0) return trimmed;
+  if (!trimmed && contextNames.length === 0) {
+    return `Review attached: ${attachmentNames.join(", ")}`;
+  }
+  if (!trimmed && attachmentNames.length === 0) {
+    return `Review with context: ${contextNames.join(", ")}`;
+  }
+  if (!trimmed) return `Review ${details.join("; ")}`;
+  return `${trimmed}\n\n${details.join("\n")}`;
 }
 
 function fileExtension(name: string): string {

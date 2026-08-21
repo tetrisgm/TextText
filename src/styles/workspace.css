@@ -159,6 +159,7 @@
 }
 
 .workspace-root-page {
+  box-sizing: border-box;
   width: 100%;
   max-width: var(--content-max);
   margin: 0 auto;
@@ -361,6 +362,7 @@
 }
 
 .workspace-library-toolbar {
+  min-width: 0;
   min-height: 42px;
   margin: 0 0 14px;
   padding: 0 0 10px;
@@ -425,6 +427,79 @@
   margin-top: 6px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.workspace-first-loop {
+  width: min(100%, 640px);
+  display: grid;
+  gap: 16px;
+  justify-items: start;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  padding: 20px;
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+}
+
+.workspace-first-loop > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.workspace-first-loop > div:first-child > strong {
+  font-size: 16px;
+}
+
+.workspace-first-loop > div:first-child > span {
+  margin: 0;
+}
+
+.workspace-first-loop ol {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workspace-first-loop li {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: start;
+  gap: 7px;
+  padding: 9px;
+  border-radius: var(--radius-control);
+  background: var(--control-bg);
+}
+
+.workspace-first-loop li b {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--control-bg-hover);
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.workspace-first-loop li span {
+  margin: 1px 0 0;
+  line-height: 1.35;
+}
+
+@media (max-width: 620px) {
+  .workspace-first-loop {
+    padding: 16px;
+  }
+
+  .workspace-first-loop ol {
+    grid-template-columns: 1fr;
+  }
 }
 
 
@@ -852,13 +927,16 @@
    previous fluid rail could grow to half the window after a persisted resize,
    leaving the library stranded in a narrow strip. */
 :where(.workspace-root-page, .workspace-collection-page, .post-folder-page) {
+  box-sizing: border-box;
   max-width: 1000px;
   margin-inline: auto;
   padding: 64px 48px 96px;
 }
 
 .workspace-root-inner {
+  min-width: 0;
   width: 100%;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 :where(
@@ -948,8 +1026,16 @@
   }
 
   .workspace-library-filters {
+    min-width: 0;
     width: 100%;
+    max-width: 100%;
+    flex-wrap: nowrap;
     overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .workspace-library-filters::-webkit-scrollbar {
+    display: none;
   }
 }
 
@@ -975,6 +1061,52 @@
 
   .post-editor-shell.has-assistant-open .universal-item-receipt-actions {
     margin-left: 0;
+  }
+
+  /* The rail halves the useful canvas at this breakpoint. Treat the Library
+     toolbar as a compact two-row control instead of letting four filters wrap
+     into a tall column beside the sort and view controls. */
+  .post-editor-shell.has-assistant-open .workspace-library-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .post-editor-shell.has-assistant-open .workspace-library-filters {
+    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .post-editor-shell.has-assistant-open
+    .workspace-library-filters::-webkit-scrollbar {
+    display: none;
+  }
+
+  .post-editor-shell.has-assistant-open .workspace-library-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 560px) {
+  /* List stars sit just outside their rows on a wide canvas. Give that gutter
+     real space on a phone so the control never falls beyond the viewport. */
+  .workspace-recent.is-view-list .workspace-recent-list {
+    box-sizing: border-box;
+    padding-left: 22px;
+  }
+
+  .workspace-library-filters button {
+    padding-inline: 7px;
+  }
+}
+
+@media (hover: none) {
+  /* Touch has no hover reveal. Keep the row menu available without requiring
+     a keyboard focus state that a phone cannot reliably create. */
+  .workspace-item-actions-trigger {
+    opacity: 0.72;
   }
 }
 

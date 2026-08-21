@@ -13,9 +13,10 @@ import {
   getAccessibleRecentPosts,
   getBlogEditRecord,
   getOwnedBlog,
+  getPostById,
   getUserIdBySub,
 } from "@/lib/store";
-import type { AccessUser } from "@/lib/permissions";
+import { isUuid, type AccessUser } from "@/lib/permissions";
 import {
   cloudAssistantTools,
   type CloudAssistantWorkspaceCall,
@@ -123,6 +124,7 @@ type AssistantViewContext = {
   itemTitle?: unknown;
   selection?: unknown;
   itemPreview?: unknown;
+  relatedItems?: unknown;
   mode?: unknown;
 };
 
@@ -198,7 +200,14 @@ function recentItemIndex(
     .join("\n\n");
 }
 
-async function recentWorkspaceSystemNote({
+type RecentWorkspaceContextItem = {
+  id: string;
+  title: string;
+  folderPath: string;
+  slug: string;
+};
+
+async function recentWorkspaceContext({
   context,
   handle,
   messages,
@@ -208,10 +217,14 @@ async function recentWorkspaceSystemNote({
   handle: string;
   messages: readonly ModelMessage[];
   user: AccessUser;
-}): Promise<string> {
-  if (!RECENT_SUMMARY_INTENT.test(lastUserText(messages))) return "";
+}): Promise<{ note: string; items: RecentWorkspaceContextItem[] }> {
+  if (!RECENT_SUMMARY_INTENT.test(lastUserText(messages))) {
+    return { note: "", items: [] };
+  }
   const view = viewContext(context);
-  if (typeof view.postId === "string" && view.postId) return "";
+  if (typeof view.postId === "string" && view.postId) {
+    return { note: "", items: [] };
+  }
   const folderPath =
     typeof view.folderPath === "string" && view.folderPath.trim()
       ? view.folderPath.trim()
@@ -221,16 +234,71 @@ async function recentWorkspaceSystemNote({
     limit: 12,
   });
   const index = recentItemIndex(entries);
-  return [
+  const note = [
     "A bounded, access-checked recent item index is included below. For a high-level recent-work summary, answer from this index immediately. Read an item only when the request needs detail the index does not contain.",
     fencedUntrusted(
       "UNTRUSTED_RECENT_ITEM_INDEX",
       index || "No recent items are visible in this scope.",
     ),
   ].join("\n\n");
+  const items = entries.slice(0, 12).flatMap(({ folderPath, post }) =>
+    post.id
+      ? [
+          {
+            id: post.id,
+            title: post.title?.trim() || "Untitled",
+            folderPath,
+            slug: post.slug,
+          },
+        ]
+      : [],
+  );
+  return { note, items };
 }
 
-function buildSystem(context: unknown): string {
+type RelatedWorkspaceContextItem = {
+  id: string;
+  title: string;
+  body: string;
+  slug: string;
+};
+
+async function relatedWorkspaceContext(
+  context: unknown,
+  handle: string,
+): Promise<RelatedWorkspaceContextItem[]> {
+  const view = viewContext(context);
+  if (!Array.isArray(view.relatedItems)) return [];
+  const ids = [
+    ...new Set(
+      view.relatedItems.slice(0, 4).flatMap((entry) => {
+        if (!entry || typeof entry !== "object") return [];
+        const id = (entry as Record<string, unknown>).id;
+        return typeof id === "string" && isUuid(id.trim()) ? [id.trim()] : [];
+      }),
+    ),
+  ];
+  const posts = await Promise.all(
+    ids.map((id) => getPostById(handle, id).catch(() => null)),
+  );
+  return posts.flatMap((post) =>
+    post?.id
+      ? [
+          {
+            id: post.id,
+            title: post.title?.trim() || "Untitled",
+            body: post.body || "",
+            slug: post.slug,
+          },
+        ]
+      : [],
+  );
+}
+
+function buildSystem(
+  context: unknown,
+  relatedItems: readonly RelatedWorkspaceContextItem[] = [],
+): string {
   const view = viewContext(context);
   const bits: string[] = [];
   if (
@@ -279,6 +347,18 @@ function buildSystem(context: unknown): string {
       ),
       "Use read_item for the rest.",
     );
+  }
+  if (relatedItems.length > 0) {
+    const related = relatedItems.map(
+      (item) =>
+        `id: ${item.id.slice(0, 128)}\ntitle: ${item.title.slice(0, 200)}\nbody:\n${item.body.slice(0, 6000)}`,
+    );
+    if (related.length > 0) {
+      parts.push(
+        "The writer explicitly added these TextText items as context:",
+        fencedUntrusted("UNTRUSTED_ADDED_CONTEXT", related.join("\n\n")),
+      );
+    }
   }
   return parts.join(`\n\n`);
 }
@@ -399,19 +479,35 @@ export async function POST(request: Request) {
     (record) => calls.push(record),
   );
   const toolMode = cloudToolMode(messages, body.context);
-  const recentSystemNote = await recentWorkspaceSystemNote({
+  const recentContext = await recentWorkspaceContext({
     context: body.context,
     handle: workspace.handle,
     messages,
     user,
-  }).catch(() => "");
+  }).catch(() => ({ note: "", items: [] }));
+  const relatedContext = await relatedWorkspaceContext(
+    body.context,
+    workspace.handle,
+  ).catch(() => []);
+  const contextItems = [
+    ...recentContext.items,
+    ...relatedContext.map((item) => ({
+      id: item.id,
+      title: item.title,
+      folderPath: "",
+      slug: item.slug,
+    })),
+  ].filter(
+    (item, index, items) =>
+      items.findIndex((candidate) => candidate.id === item.id) === index,
+  );
 
   try {
     const result = await generateText({
       model,
       system:
-        buildSystem(body.context) +
-        (recentSystemNote ? `\n\n${recentSystemNote}` : "") +
+        buildSystem(body.context, relatedContext) +
+        (recentContext.note ? `\n\n${recentContext.note}` : "") +
         outboundSystemNote(
           reachable.map((entry) => entry.connection.name),
           unreachable,
@@ -439,6 +535,11 @@ export async function POST(request: Request) {
       // Validated workspace-command results, never model prose. The client
       // reduces these to exact item receipts with Open when resolvable.
       workspaceCalls,
+      // Exact access-checked items supplied to the model for this summary.
+      // This is source proof, not an inference from the reply.
+      ...(contextItems.length > 0
+        ? { contextItems }
+        : {}),
     });
   } catch {
     // Provider errors can carry request metadata. Do not log the error object,
@@ -455,6 +556,9 @@ export async function POST(request: Request) {
         outboundCalls: calls,
         unreachableServers: unreachable,
         workspaceCalls,
+        ...(contextItems.length > 0
+          ? { contextItems }
+          : {}),
         terminalError:
           "Some actions completed, but the assistant stopped before it could finish the reply.",
       });

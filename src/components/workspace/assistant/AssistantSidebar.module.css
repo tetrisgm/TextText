@@ -530,6 +530,91 @@
   padding: 2px 5px 5px;
 }
 
+.contextPicker {
+  position: relative;
+}
+
+.contextPickerPanel {
+  position: absolute;
+  z-index: 4;
+  bottom: calc(100% + 6px);
+  left: 0;
+  width: min(292px, calc(100vw - 42px));
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--ac-hairline);
+  border-radius: 10px;
+  padding: 7px;
+  background: var(--ac-bg);
+  box-shadow: var(--ac-shadow-popover, 0 8px 28px rgba(0, 0, 0, 0.16));
+}
+
+.contextPickerPanel > input {
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid var(--ac-hairline);
+  border-radius: 7px;
+  padding: 5px 8px;
+  background: var(--ac-fill-5, var(--ac-bg));
+  color: var(--ac-label);
+  font: 500 var(--ac-fs-footnote) / 1.2 var(--ac-font-text);
+}
+
+.contextPickerPanel > input:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
+
+.contextPickerResults {
+  max-height: 224px;
+  display: grid;
+  gap: 2px;
+  overflow: auto;
+}
+
+.contextPickerResults > button {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  border: 0;
+  border-radius: 7px;
+  padding: 7px 8px;
+  background: transparent;
+  color: var(--ac-label);
+  text-align: left;
+  cursor: pointer;
+}
+
+.contextPickerResults > button:hover {
+  background: var(--ac-fill-4);
+}
+
+.contextPickerResults > button:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
+
+.contextPickerResults > button span,
+.contextPickerResults > button small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contextPickerResults > button span {
+  font: 600 var(--ac-fs-footnote) / 1.2 var(--ac-font-text);
+}
+
+.contextPickerResults > button small,
+.contextPickerEmpty {
+  color: var(--ac-label-2);
+  font: 500 var(--ac-fs-caption1) / 1.2 var(--ac-font-text);
+}
+
+.contextPickerEmpty {
+  padding: 9px 8px;
+}
+
 .composerButton {
   width: 30px;
   height: 30px;

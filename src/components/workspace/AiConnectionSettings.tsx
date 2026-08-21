@@ -8,9 +8,13 @@ import {
   subscribeNativeAssistant,
 } from "@/lib/ai/native-client";
 import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
+import { AGENT_CONNECTION_CHECK_PROMPT } from "@/lib/agent-integrations";
 import styles from "./AiConnectionSettings.module.css";
 
 type TextTextEdition = "unknown" | "standalone" | "store-or-browser";
+
+export const TRY_AI_IN_TEXTTEXT_EVENT = "texttext:try-ai-in-workspace";
+export const AI_CONNECTION_PROOF_PROMPT = AGENT_CONNECTION_CHECK_PROMPT;
 
 function subscribeNativeEdition() {
   return () => undefined;
@@ -24,7 +28,11 @@ function nativeEditionSnapshot(): TextTextEdition {
     : "store-or-browser";
 }
 
-export function AiConnectionSettings() {
+export function AiConnectionSettings({
+  onTryInTextText,
+}: {
+  onTryInTextText?: () => void;
+}) {
   const [connection, setConnection] = useState<AiConnectionSnapshot | null>(
     null,
   );
@@ -80,15 +88,24 @@ export function AiConnectionSettings() {
                 : "Connect once, then ask the agent to read or change the document you have open."
               : "Add one provider key, then ask the agent to read or change the document you have open."}
           </p>
+          {ready && connection?.lastHealthCheckAt ? (
+            <p className={styles.verification}>
+              Verified {new Date(connection.lastHealthCheckAt).toLocaleString()}
+              {connection.runtimeVersion ? ` · Runtime ${connection.runtimeVersion}` : ""}
+            </p>
+          ) : null}
         </div>
         {embeddedAgent ? (
           <button
             type="button"
             className={styles.primary}
-            onClick={() => requestNativeAssistant("assistantConnect")}
-            disabled={ready}
+            onClick={() =>
+              ready
+                ? onTryInTextText?.()
+                : requestNativeAssistant("assistantConnect")
+            }
           >
-            {ready ? "Connected" : "Continue with ChatGPT"}
+            {ready ? "Try in TextText" : "Continue with ChatGPT"}
           </button>
         ) : (
           <a className={styles.secondary} href="#api-key-connections">

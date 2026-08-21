@@ -43,10 +43,8 @@ import {
   useWorkspaceCommandSurface,
 } from "@/components/keyboard/CommandLayer";
 import {
-  CREATE_FOLDER_ITEM_EVENT,
   FolderPage,
   UniversalItemComposer,
-  dispatchFolderUiEvent,
   type FolderCaptureResolved,
   type FolderCreateItem,
   type FolderDeleteItem,
@@ -137,6 +135,7 @@ import {
   type AssistantSidebarState,
 } from "@/components/workspace/assistant";
 import { AssistantConversation } from "@/components/workspace/assistant/AssistantConversation";
+import { TRY_AI_IN_TEXTTEXT_EVENT } from "@/components/workspace/AiConnectionSettings";
 import { useAssistantComposerDraft } from "@/components/workspace/assistant/composer-store";
 import {
   createAssistantConfirmationController,
@@ -2528,6 +2527,7 @@ function WorkspaceRootLanding({
   onConnectAssistant,
   onOpenAssistant,
   onBuildItemType,
+  onFocusCapture,
   settingsHref,
 }: {
   canManageItems: boolean;
@@ -2554,6 +2554,7 @@ function WorkspaceRootLanding({
   onConnectAssistant?: () => void;
   onOpenAssistant: () => void;
   onBuildItemType: () => void;
+  onFocusCapture: () => void;
   settingsHref: string;
 }) {
   const searchRef = useRef<HTMLInputElement>(null);
@@ -3049,34 +3050,47 @@ function WorkspaceRootLanding({
               </header>
               {recent.length === 0 ? (
                 <div className="workspace-recent-empty">
-                  <p>
-                    {itemFilter === "all"
-                      ? "Nothing here yet."
-                      : "Nothing here with that filter."}
-                  </p>
                   {itemFilter === "all" ? (
-                    canManageItems && creationFolder ? (
+                    <div className="workspace-first-loop">
+                      <div>
+                        <strong>Your first TextText loop</strong>
+                        <span>One thought becomes durable, findable work.</span>
+                      </div>
+                      <ol>
+                        <li>
+                          <b>1</b>
+                          <span><strong>Capture</strong> Save a thought above.</span>
+                        </li>
+                        <li>
+                          <b>2</b>
+                          <span><strong>Find</strong> Press / and search any words you remember.</span>
+                        </li>
+                        <li>
+                          <b>3</b>
+                          <span><strong>Change</strong> Open it, ask your AI, then review the receipt.</span>
+                        </li>
+                      </ol>
+                      {canManageItems && creationFolder ? (
+                        <button
+                          type="button"
+                          className="ac-btn ac-btn-filled"
+                          onClick={onFocusCapture}
+                        >
+                          Save your first thought
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <>
+                      <p>Nothing here with that filter.</p>
                       <button
                         type="button"
-                        className="ac-btn ac-btn-filled"
-                        onClick={() =>
-                          dispatchFolderUiEvent(
-                            CREATE_FOLDER_ITEM_EVENT,
-                            creationFolder.id,
-                          )
-                        }
+                        className="ac-btn ac-btn-gray"
+                        onClick={() => setItemFilter("all")}
                       >
-                        Create an item
+                        Show all items
                       </button>
-                    ) : null
-                  ) : (
-                    <button
-                      type="button"
-                      className="ac-btn ac-btn-gray"
-                      onClick={() => setItemFilter("all")}
-                    >
-                      Show all items
-                    </button>
+                    </>
                   )}
                 </div>
               ) : (
@@ -4052,6 +4066,7 @@ function LocalWorkspaceContent({
   onConnectAssistant,
   onOpenAssistant,
   onBuildItemType,
+  onFocusCapture,
 }: {
   blog: Blog;
   canCommentPost: boolean;
@@ -4092,6 +4107,7 @@ function LocalWorkspaceContent({
   onConnectAssistant?: () => void;
   onOpenAssistant: () => void;
   onBuildItemType: (folderPath?: string) => void;
+  onFocusCapture: () => void;
 }) {
   let page: ReactNode;
   let activePost: WorkspacePoolPost | null = null;
@@ -4121,6 +4137,7 @@ function LocalWorkspaceContent({
       onConnectAssistant={onConnectAssistant}
       onOpenAssistant={onOpenAssistant}
       onBuildItemType={() => onBuildItemType()}
+      onFocusCapture={onFocusCapture}
       settingsHref={workspaceSettingsHref(homePath)}
     />
   );
@@ -5771,6 +5788,39 @@ function LocalWorkspaceShell({
   const assistantComposer = useAssistantComposerDraft(
     `${displayPool.blog.handle}:${assistantTarget.contextKey}`,
   );
+  const setAssistantComposerText = assistantComposer.setText;
+  useEffect(() => {
+    const onTryAi = (event: Event) => {
+      const prompt = (event as CustomEvent<{ prompt?: unknown }>).detail?.prompt;
+      if (typeof prompt !== "string" || !prompt.trim()) return;
+      setAssistantComposerText(prompt);
+      changeAssistantState("pinned");
+    };
+    window.addEventListener(TRY_AI_IN_TEXTTEXT_EVENT, onTryAi);
+    return () => window.removeEventListener(TRY_AI_IN_TEXTTEXT_EVENT, onTryAi);
+  }, [changeAssistantState, setAssistantComposerText]);
+  const assistantContextItems = useMemo(
+    () =>
+      [...displayPool.posts]
+        .sort((left, right) =>
+          (right.updatedAt ?? right.createdAt ?? "").localeCompare(
+            left.updatedAt ?? left.createdAt ?? "",
+          ),
+        )
+        .map((post) => {
+          const folderPath = folderPathForPoolPost(displayPool, post);
+          const folderName =
+            displayPool.folders.find((folder) => folder.path === folderPath)
+              ?.name ?? folderPath;
+          const kind = `${post.type.charAt(0).toUpperCase()}${post.type.slice(1)}`;
+          return {
+            id: post.id,
+            name: post.title.trim() || "Untitled",
+            detail: `${folderName} · ${kind}`,
+          };
+        }),
+    [displayPool],
+  );
 
   useEffect(() => {
     if (!mounted) return;
@@ -6759,6 +6809,9 @@ function LocalWorkspaceShell({
       onBuildItemType={(folderPath = "") =>
         setItemTypeStudioFolderPath(folderPath)
       }
+      onFocusCapture={() =>
+        setCaptureFocusRequestKey((value) => value + 1)
+      }
     />
   );
 
@@ -6903,6 +6956,8 @@ function LocalWorkspaceShell({
           composerValue={assistantComposer.draft.text}
           onComposerChange={assistantComposer.setText}
           attachments={assistantComposer.draft.attachments}
+          availableContextItems={assistantContextItems}
+          onAddContextItem={assistantComposer.addContextItem}
           onFilesSelected={assistantComposer.addFiles}
           onRemoveAttachment={(attachment) =>
             assistantComposer.removeAttachment(attachment.id)
@@ -6916,7 +6971,7 @@ function LocalWorkspaceShell({
           composerPlaceholder={
             assistant.cloudProvider ||
             assistant.nativeConnection?.state === "ready"
-              ? "Do anything with AI"
+              ? undefined
               : "Connect an AI to start"
           }
           accept={assistant.attachmentAccept}

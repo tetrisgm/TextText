@@ -15,7 +15,11 @@ import {
   type CloudAiProvider,
 } from "@/lib/ai/provider-catalog";
 import { updateWorkspaceBlog } from "@/lib/pool/store";
-import { AiConnectionSettings } from "./AiConnectionSettings";
+import {
+  AI_CONNECTION_PROOF_PROMPT,
+  AiConnectionSettings,
+  TRY_AI_IN_TEXTTEXT_EVENT,
+} from "./AiConnectionSettings";
 import { McpConnections } from "./McpConnections";
 import { connectApple, connectGoogle } from "@/app/editor/connect-provider-actions";
 import DeleteAccountDialog, {
@@ -192,6 +196,17 @@ export function WorkspaceSettings({
     }
   };
 
+  const tryAiInTextText = () => {
+    onBack();
+    window.setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent(TRY_AI_IN_TEXTTEXT_EVENT, {
+          detail: { prompt: AI_CONNECTION_PROOF_PROMPT },
+        }),
+      );
+    }, 0);
+  };
+
   return (
     <main className={styles.page} aria-labelledby="workspace-settings-title">
       <div className={styles.inner}>
@@ -259,7 +274,7 @@ export function WorkspaceSettings({
                 </p>
               </div>
             </div>
-            <AiConnectionSettings />
+            <AiConnectionSettings onTryInTextText={tryAiInTextText} />
             <h3 className={styles.subsectionTitle} id="api-key-connections">
               API key connections
             </h3>
@@ -275,10 +290,18 @@ export function WorkspaceSettings({
                       ? "Anthropic"
                       : "OpenAI"}
                     {aiSettings.model ? ` · ${aiSettings.model}` : ""}. The
-                    saved key is write-only and cannot be viewed here.
+                    saved key is write-only and cannot be viewed here. This
+                    provider and model were verified when the key was saved.
                   </small>
                 </span>
                 <div className={styles.aiActions}>
+                  <button
+                    type="button"
+                    className="ac-btn ac-btn-filled"
+                    onClick={tryAiInTextText}
+                  >
+                    Try in TextText
+                  </button>
                   <button
                     type="button"
                     className="ac-btn ac-btn-gray"

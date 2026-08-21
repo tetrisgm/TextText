@@ -588,12 +588,16 @@ async function main() {
     const composer = await openAssistant(page);
     await composer.waitFor({ state: "visible", timeout: 20_000 });
     await page.waitForFunction(
-      () =>
-        document
-          .querySelector<HTMLTextAreaElement>(
-            '[data-assistant-sidebar] textarea[aria-label="Message assistant"]',
-          )
-          ?.placeholder === "Do anything with AI",
+      () => {
+        const textarea = document.querySelector<HTMLTextAreaElement>(
+          '[data-assistant-sidebar] textarea[aria-label="Message assistant"]',
+        );
+        return (
+          Boolean(textarea) &&
+          !textarea?.disabled &&
+          textarea?.placeholder !== "Connect an AI to start"
+        );
+      },
       undefined,
       { timeout: 20_000 },
     );

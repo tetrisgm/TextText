@@ -22,6 +22,7 @@ import {
 import { createWorkspaceAgentTools } from "@/lib/ai/agent-tools";
 import {
   cloudAssistantTurn,
+  type CloudContextItem,
   type CloudWorkspaceCall,
   type OutboundCall,
   cloudAssistantStatus,
@@ -83,6 +84,7 @@ import {
 import { workspaceToolProgress } from "./tool-progress";
 import {
   itemArtifactProof,
+  loadedContextArtifactProofs,
   mergeArtifactProofs,
   workspaceToolArtifactProofs,
   type AssistantArtifactProof,
@@ -178,6 +180,50 @@ function cloudWorkspaceProofs(
       }),
     );
   }, []);
+}
+
+function cloudContextProofs(
+  items: readonly CloudContextItem[],
+  pool: WorkspacePoolPayload | null,
+): AssistantArtifactProof[] {
+  if (!pool) return [];
+  return items.flatMap((item) => {
+    const proof = itemArtifactProof({
+      folderPath: item.folderPath,
+      id: item.id,
+      operation: "Read",
+      pool,
+      slug: item.slug,
+      title: item.title,
+    });
+    return proof ? [proof] : [];
+  });
+}
+
+const RECENT_WORKSPACE_REQUEST =
+  /\b(catch me up|latest|recent|recently|working on|summari[sz]e (?:my|the) work)\b/i;
+
+function nativeIndexProofs(
+  prompt: string,
+  pool: WorkspacePoolPayload | null,
+): AssistantArtifactProof[] {
+  if (!pool || !RECENT_WORKSPACE_REQUEST.test(prompt)) return [];
+  return [...pool.posts]
+    .sort((left, right) =>
+      (right.updatedAt ?? right.createdAt ?? "").localeCompare(
+        left.updatedAt ?? left.createdAt ?? "",
+      ),
+    )
+    .slice(0, 12)
+    .flatMap((post) => {
+      const proof = itemArtifactProof({
+        id: post.id,
+        operation: "Read",
+        pool,
+        title: post.title,
+      });
+      return proof ? [proof] : [];
+    });
 }
 
 function workspaceMutationQueued(output: unknown): boolean {
@@ -947,6 +993,11 @@ export function useNativeAssistant({
       if ((!prompt && attachments.length === 0) || busyThreads.has(thread)) {
         return;
       }
+      const modelPrompt =
+        prompt ||
+        (attachments.some((attachment) => attachment.workspaceItemId)
+          ? "Review the added TextText context."
+          : "Review the attached content.");
       const displayPrompt = formatAssistantSubmission(prompt, attachments);
       const submittedView = getViewRef.current();
       appendToThread(thread, "user", displayPrompt);
@@ -958,6 +1009,28 @@ export function useNativeAssistant({
         prompt: displayPrompt,
       });
       try {
+        const relatedItems = (
+          await Promise.all(
+            attachments
+              .filter((attachment) => attachment.workspaceItemId)
+              .slice(0, 4)
+              .map(async (attachment) => {
+                const id = attachment.workspaceItemId;
+                if (!id) return null;
+                const item = await readItemTextRef.current(id).catch(() => null);
+                return item
+                  ? {
+                      id,
+                      title: item.title.trim() || attachment.name,
+                      body: item.body.slice(0, 6000),
+                    }
+                  : null;
+              }),
+          )
+        ).filter(
+          (item): item is { body: string; id: string; title: string } =>
+            Boolean(item),
+        );
         if (nativeConnection?.state === "ready") {
           const open = submittedView.postId
             ? await readItemTextRef
@@ -978,7 +1051,8 @@ export function useNativeAssistant({
                     body: open.body,
                   }
                 : null,
-            request: prompt,
+            request: modelPrompt,
+            relatedItems,
             selection: openSelection,
             workspaceIndex: open
               ? null
@@ -986,7 +1060,7 @@ export function useNativeAssistant({
           });
           if (submitNativeAssistantTurn(nativePrompt)) {
             const currentPost =
-              submittedView.postId && getPoolRef.current()
+              open && submittedView.postId && getPoolRef.current()
                 ? findPoolPostById(getPoolRef.current()!, submittedView.postId)
                 : null;
             const currentProof =
@@ -998,7 +1072,12 @@ export function useNativeAssistant({
                     title: open?.title,
                   })
                 : null;
-            nativeProofsRef.current = currentProof ? [currentProof] : [];
+            nativeProofsRef.current = mergeArtifactProofs(
+              currentProof
+                ? [currentProof]
+                : nativeIndexProofs(modelPrompt, getPoolRef.current()),
+              loadedContextArtifactProofs(relatedItems, getPoolRef.current()),
+            );
             appendToThread(
               thread,
               "progress",
@@ -1021,13 +1100,14 @@ export function useNativeAssistant({
         const openSelection = open
           ? resolveWorkspaceItemTextSelection(open)
           : null;
-        const result = await cloudAssistantTurn(prompt, {
+        const result = await cloudAssistantTurn(modelPrompt, {
           level: submittedView.level,
           folderPath: submittedView.folderPath,
           postId: submittedView.postId,
           itemTitle: open?.title,
           selection: openSelection?.text,
           itemPreview: open?.body?.slice(0, 4000),
+          relatedItems: relatedItems.map((item) => ({ id: item.id })),
         });
         if ("disabled" in result) {
           appendToThread(
@@ -1041,8 +1121,11 @@ export function useNativeAssistant({
         setCloudProvider(result.provider);
         setThreadCloudProvider(thread, result.provider);
         const pool = getPoolRef.current();
-        let proofs = cloudWorkspaceProofs(result.workspaceCalls, pool);
-        if (submittedView.postId && pool) {
+        let proofs = mergeArtifactProofs(
+          cloudContextProofs(result.contextItems, pool),
+          cloudWorkspaceProofs(result.workspaceCalls, pool),
+        );
+        if (open && submittedView.postId && pool) {
           const proof = itemArtifactProof({
             id: submittedView.postId,
             operation: "Read",

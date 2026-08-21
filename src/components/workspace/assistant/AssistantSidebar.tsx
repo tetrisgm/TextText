@@ -33,6 +33,15 @@ export type AssistantAttachment = {
   name: string;
   size?: number;
   type?: string;
+  /** A real TextText item added as bounded prompt context. */
+  workspaceItemId?: string;
+  detail?: string;
+};
+
+export type AssistantWorkspaceContextItem = {
+  id: string;
+  name: string;
+  detail: string;
 };
 
 export type AssistantComposerSubmission = {
@@ -56,6 +65,8 @@ export type AssistantSidebarProps = {
   onFilesSelected: (files: readonly File[]) => void;
   onRemoveAttachment: (attachment: AssistantAttachment) => void;
   attachments?: readonly AssistantAttachment[];
+  availableContextItems?: readonly AssistantWorkspaceContextItem[];
+  onAddContextItem?: (item: AssistantWorkspaceContextItem) => void;
   context?: AssistantContext | null;
   children?: ReactNode;
   layout?: AssistantSidebarLayout;
@@ -92,6 +103,7 @@ type ResizeSession = {
 };
 
 const EMPTY_ATTACHMENTS: readonly AssistantAttachment[] = [];
+const EMPTY_CONTEXT_ITEMS: readonly AssistantWorkspaceContextItem[] = [];
 
 function classNames(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -103,6 +115,14 @@ function positiveNumber(value: number, fallback: number): number {
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
+}
+
+export function assistantComposerPlaceholder(
+  context: AssistantContext | null | undefined,
+): string {
+  if (context?.kind === "item") return "Ask or change this item";
+  if (context?.kind === "folder") return "Ask or work with this collection";
+  return "Find, create, or change anything";
 }
 
 export function resolveAssistantSidebarDimensions({
@@ -193,6 +213,8 @@ export function AssistantSidebar({
   onFilesSelected,
   onRemoveAttachment,
   attachments = EMPTY_ATTACHMENTS,
+  availableContextItems = EMPTY_CONTEXT_ITEMS,
+  onAddContextItem,
   context,
   children,
   layout = "auto",
@@ -203,10 +225,7 @@ export function AssistantSidebar({
   ariaLabel,
   contentLabel,
   composerLabel = "Message assistant",
-  // "Ask about this page" describes a chat box. The assistant edits, drafts,
-  // finds, and files; the placeholder should say the bigger thing so people try
-  // it, and the context chip above already says which page.
-  composerPlaceholder = "Do anything with AI",
+  composerPlaceholder,
   accept,
   attachmentDisabled = false,
   attachmentTitle = "Add attachment",
@@ -239,6 +258,8 @@ export function AssistantSidebar({
   const [resizing, setResizing] = useState(false);
   const [focusWithin, setFocusWithin] = useState(false);
   const [viewportWidth, setViewportWidth] = useState<number | null>(null);
+  const [contextPickerOpen, setContextPickerOpen] = useState(false);
+  const [contextQuery, setContextQuery] = useState("");
 
   const { resolvedMaxWidth, resolvedMinWidth, resolvedWidth } =
     resolveAssistantSidebarDimensions({
@@ -248,6 +269,21 @@ export function AssistantSidebar({
       width,
     });
   const resolvedResizeStep = positiveNumber(resizeStep, 16);
+  const resolvedComposerPlaceholder =
+    composerPlaceholder ?? assistantComposerPlaceholder(context);
+  const selectedContextIds = new Set(
+    attachments.flatMap((attachment) =>
+      attachment.workspaceItemId ? [attachment.workspaceItemId] : [],
+    ),
+  );
+  const contextLimitReached = selectedContextIds.size >= 4;
+  const contextChoices = availableContextItems
+    .filter((item) => !selectedContextIds.has(item.id))
+    .filter((item) => {
+      const query = contextQuery.trim().toLowerCase();
+      return !query || `${item.name} ${item.detail}`.toLowerCase().includes(query);
+    })
+    .slice(0, 8);
   // The rail is open or it is closed; there is nothing else. A floating
   // third state (an overlay that covered the page, plus a hover-peek that
   // opened it uninvited) is what made the layout read as chaos: the panel
@@ -554,26 +590,28 @@ export function AssistantSidebar({
           aria-label={`${title} composer`}
           onSubmit={submit}
         >
-          <input
-            ref={fileInputRef}
-            id={fileInputId}
-            type="file"
-            accept={accept}
-            aria-label="Choose assistant attachments"
-            disabled={disabled || submitting || attachmentDisabled}
-            hidden
-            multiple={multiple}
-            onChange={chooseFiles}
-          />
+          {!attachmentDisabled ? (
+            <input
+              ref={fileInputRef}
+              id={fileInputId}
+              type="file"
+              accept={accept}
+              aria-label="Choose assistant attachments"
+              disabled={disabled || submitting}
+              hidden
+              multiple={multiple}
+              onChange={chooseFiles}
+            />
+          ) : null}
 
           {attachments.length > 0 && (
-            <ul className={styles.attachmentList} aria-label="Attachments">
+            <ul className={styles.attachmentList} aria-label="Added context">
               {attachments.map((attachment) => {
                 const fileSize = formatFileSize(attachment.size);
                 return (
                   <li className={styles.attachmentChip} key={attachment.id}>
                     <span className={styles.attachmentIcon} aria-hidden="true">
-                      <AttachmentIcon />
+                      {attachment.workspaceItemId ? <DocumentIcon /> : <AttachmentIcon />}
                     </span>
                     <span className={styles.attachmentCopy}>
                       <span
@@ -582,15 +620,15 @@ export function AssistantSidebar({
                       >
                         {attachment.name}
                       </span>
-                      {fileSize && (
-                        <span className={styles.attachmentSize}>{fileSize}</span>
+                      {(attachment.detail || fileSize) && (
+                        <span className={styles.attachmentSize}>{attachment.detail || fileSize}</span>
                       )}
                     </span>
                     <button
                       className={styles.removeAttachmentButton}
                       type="button"
                       disabled={disabled || submitting}
-                      aria-label={`Remove attachment ${attachment.name}`}
+                      aria-label={`${attachment.workspaceItemId ? "Remove context" : "Remove attachment"} ${attachment.name}`}
                       title={`Remove ${attachment.name}`}
                       onClick={() => onRemoveAttachment(attachment)}
                     >
@@ -646,22 +684,88 @@ export function AssistantSidebar({
               disabled={disabled}
               enterKeyHint={submitOnEnter ? "send" : "enter"}
               maxLength={maxComposerLength}
-              placeholder={composerPlaceholder}
+              placeholder={resolvedComposerPlaceholder}
               onChange={(event) => onComposerChange(event.currentTarget.value)}
               onKeyDown={handleComposerKeyDown}
             />
             <div className={styles.composerToolbar}>
-              <button
-                className={styles.composerButton}
-                type="button"
-                disabled={disabled || submitting || attachmentDisabled}
-                aria-controls={fileInputId}
-                aria-label="Add attachment"
-                title={attachmentTitle}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <PlusIcon />
-              </button>
+              {onAddContextItem &&
+              availableContextItems.length > 0 &&
+              !contextLimitReached ? (
+                <div className={styles.contextPicker}>
+                  <button
+                    className={styles.composerButton}
+                    type="button"
+                    disabled={disabled || submitting}
+                    aria-expanded={contextPickerOpen}
+                    aria-label="Add TextText context"
+                    title="Add a TextText item as context"
+                    onClick={() => setContextPickerOpen((open) => !open)}
+                  >
+                    <PlusIcon />
+                  </button>
+                  {contextPickerOpen ? (
+                    <div className={styles.contextPickerPanel} role="dialog" aria-label="Add TextText context">
+                      <input
+                        autoFocus
+                        aria-label="Search TextText items"
+                        placeholder="Search items"
+                        value={contextQuery}
+                        onChange={(event) => setContextQuery(event.currentTarget.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            const first = contextChoices[0];
+                            if (!first) return;
+                            onAddContextItem(first);
+                            setContextPickerOpen(false);
+                            setContextQuery("");
+                            composerRef.current?.focus();
+                            return;
+                          }
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setContextPickerOpen(false);
+                            setContextQuery("");
+                            composerRef.current?.focus();
+                          }
+                        }}
+                      />
+                      <div className={styles.contextPickerResults}>
+                        {contextChoices.length > 0 ? contextChoices.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              onAddContextItem(item);
+                              setContextPickerOpen(false);
+                              setContextQuery("");
+                              composerRef.current?.focus();
+                            }}
+                          >
+                            <span>{item.name}</span>
+                            <small>{item.detail}</small>
+                          </button>
+                        )) : <span className={styles.contextPickerEmpty}>No matching items</span>}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : !attachmentDisabled ? (
+                <button
+                  className={styles.composerButton}
+                  type="button"
+                  disabled={disabled || submitting}
+                  aria-controls={fileInputId}
+                  aria-label="Add attachment"
+                  title={attachmentTitle}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <PlusIcon />
+                </button>
+              ) : <span />}
               <button
                 className={classNames(
                   styles.composerButton,

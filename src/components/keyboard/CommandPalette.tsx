@@ -24,6 +24,7 @@ import {
   blogHomePath,
   blogPostPath,
 } from "@/lib/public-paths";
+import { folderPathForPoolPost } from "@/lib/pool/selectors";
 
 export const OPEN_COMMAND_PALETTE_EVENT = "texttext:open-command-palette";
 export const OPEN_KEYBOARD_SHORTCUTS_EVENT = "texttext:open-keyboard-shortcuts";
@@ -33,6 +34,7 @@ type PaletteResult = {
   label: string;
   detail?: string;
   group: string;
+  searchText?: string;
   shortcut?: string;
   run: () => void | Promise<void>;
 };
@@ -47,6 +49,28 @@ function oneLine(value: string | undefined): string {
 
 function compactPath(path: string): string {
   return path.replace(/^blog\/?/, "") || "Blog";
+}
+
+function itemKindLabel(type: WorkspacePoolPost["type"]): string {
+  if (type === "note") return "Note";
+  if (type === "bookmark") return "Bookmark";
+  if (type === "project") return "Project";
+  if (type === "talk") return "Talk";
+  return "Article";
+}
+
+function itemFolderLabel(
+  post: WorkspacePoolPost,
+  pool: WorkspacePoolPayload,
+): string {
+  const path = folderPathForPoolPost(pool, post);
+  const folder = pool.folders.find((candidate) => candidate.path === path);
+  if (folder?.name.trim()) return folder.name.trim();
+  return path
+    .split("/")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" / ") || "Library";
 }
 
 function folderHref(pool: WorkspacePoolPayload, folderPath: string): string {
@@ -120,11 +144,17 @@ function postResult(
   pool: WorkspacePoolPayload,
   ctx: CommandContext,
 ): PaletteResult {
+  const folder = itemFolderLabel(post, pool);
+  const kind = itemKindLabel(post.type);
+  const preview = oneLine(post.excerpt) || oneLine(post.bodyPreview);
   return {
     id: `post:${post.id}`,
     label: displayTitle(post.title),
-    detail: oneLine(post.excerpt) || post.slug,
-    group: post.status === "published" ? "Posts" : "Drafts",
+    // Retrieval results name the human place and content kind. A storage slug
+    // is an implementation detail, and "Drafts" is not where a note lives.
+    detail: preview ? `${kind} · ${preview}` : kind,
+    group: folder,
+    searchText: oneLine(post.bodyPreview),
     run: () => {
       if (ctx.workspace?.blog.handle === pool.blog.handle) {
         ctx.workspace.openPost(post.id);
@@ -246,6 +276,7 @@ export function CommandPalette({
               result.label,
               result.group,
               result.detail ?? "",
+              result.searchText ?? "",
             ]),
           }))
           .filter((entry): entry is { result: PaletteResult; score: number } =>

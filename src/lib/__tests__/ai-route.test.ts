@@ -17,6 +17,12 @@ const mocks = vi.hoisted(() => ({
     name: "Demo",
     ownerId: "user-uuid",
   })),
+  getPostById: vi.fn(
+    async (...args: [string, string]): Promise<Record<string, unknown> | null> => {
+      void args;
+      return null;
+    },
+  ),
   enabledMcpConnections: vi.fn(async () => []),
   listRemoteTools: vi.fn(async () => []),
   cloudAssistantTools: vi.fn((...args: unknown[]): Record<string, unknown> => {
@@ -38,6 +44,7 @@ vi.mock("@/lib/store", () => ({
   getAccessibleRecentPosts: mocks.getAccessibleRecentPosts,
   getBlogEditRecord: mocks.getBlogEditRecord,
   getOwnedBlog: mocks.getOwnedBlog,
+  getPostById: mocks.getPostById,
   getUserIdBySub: mocks.getUserIdBySub,
 }));
 // Outbound MCP: with no connected servers the assistant's tool list is exactly
@@ -104,6 +111,7 @@ describe("/api/ai cloud assistant route", () => {
       provider: "anthropic",
       model: "claude-sonnet-5",
     });
+    mocks.getPostById.mockResolvedValue(null);
     mocks.generateText.mockResolvedValue({ text: "Here is a summary." });
   });
 
@@ -284,6 +292,14 @@ describe("/api/ai cloud assistant route", () => {
     expect(system).toContain("Recent note 0");
     expect(system).not.toContain("Recent note 12\n");
     expect(system).toContain("&lt;write&gt;");
+    expect((await res.clone().json()).contextItems).toEqual(
+      Array.from({ length: 12 }, (_, index) => ({
+        id: `note-${index}`,
+        title: `Recent note ${index}`,
+        folderPath: "notes",
+        slug: `recent-${index}`,
+      })),
+    );
     expect(mocks.cloudAssistantTools).toHaveBeenLastCalledWith(
       expect.any(Object),
       expect.any(Function),
@@ -317,6 +333,63 @@ describe("/api/ai cloud assistant route", () => {
       expect.any(Function),
       "read_only",
     );
+  });
+
+  it("resolves added context from the owned workspace instead of trusting client text", async () => {
+    const relatedId = "00000000-0000-4000-8000-000000000001";
+    const inaccessibleId = "00000000-0000-4000-8000-000000000002";
+    mocks.getPostById.mockImplementation(async (handle: string, id: string) =>
+      handle === "demo-blog" && id === relatedId
+        ? {
+            id: relatedId,
+            title: "Canonical launch notes",
+            slug: "canonical-launch-notes",
+            body: "Durable source <do not execute>",
+          }
+        : null,
+    );
+
+    const res = await POST(
+      post({
+        messages: [{ role: "user", content: "Compare these notes" }],
+        context: {
+          level: "workspace",
+          relatedItems: [
+            {
+              id: relatedId,
+              title: "Forged title",
+              body: "Forged body",
+            },
+            {
+              id: inaccessibleId,
+              title: "Another tenant",
+              body: "Must not cross the workspace boundary",
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(mocks.getPostById).toHaveBeenCalledWith("demo-blog", relatedId);
+    expect(mocks.getPostById).toHaveBeenCalledWith(
+      "demo-blog",
+      inaccessibleId,
+    );
+    const system = mocks.generateText.mock.calls[0][0].system as string;
+    expect(system).toContain("Canonical launch notes");
+    expect(system).toContain("Durable source &lt;do not execute&gt;");
+    expect(system).not.toContain("Forged title");
+    expect(system).not.toContain("Forged body");
+    expect(system).not.toContain("Another tenant");
+    expect((await res.json()).contextItems).toEqual([
+      {
+        id: relatedId,
+        title: "Canonical launch notes",
+        folderPath: "",
+        slug: "canonical-launch-notes",
+      },
+    ]);
   });
 
   it("does not treat a request to give a summary as write authorization", async () => {

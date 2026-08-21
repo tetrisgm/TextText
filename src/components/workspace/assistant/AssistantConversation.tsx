@@ -22,6 +22,12 @@ function progressFallback(context: StarterContext): string {
   return "Reviewing your workspace";
 }
 
+function workflowHeading(context: StarterContext): string {
+  if (context.level === "item") return `Ways to work with ${context.label}`;
+  if (context.level === "folder") return `Ways to work with ${context.label}`;
+  return "Start with a workspace workflow";
+}
+
 /**
  * Provider runtimes may emit operational narration rather than a useful
  * status. The rail has room for one concrete line, not a running monologue.
@@ -138,7 +144,7 @@ function ArtifactProof({
     <details className={styles.artifactProof} aria-label="TextText proof">
       <summary className={styles.artifactSummary}>
         {sameOperation
-          ? `${firstOperation} ${artifacts.length} TextText items`
+          ? `${firstOperation} ${artifacts.length} items`
           : `${artifacts.length} verified TextText actions`}
       </summary>
       <div className={styles.artifactList}>
@@ -290,7 +296,7 @@ export function AssistantConversation({
             </p>
             <p className={styles.emptyBody}>
               {connected
-                ? "Ask about what you are looking at, or start with one of these."
+                ? workflowHeading(context)
                 : nativeConnection?.state === "unavailable"
                   ? "Set up the in-app assistant once, then write here beside your documents."
                   : nativeConnection?.state === "runtime-missing"
@@ -326,7 +332,7 @@ export function AssistantConversation({
             </div>
           )}
           {connected && onUsePrompt && (
-            <div className={styles.examples} aria-label="Prompt starters">
+            <div className={styles.examples} aria-label="Suggested workflows">
               {startersFor(context).map((starter) => (
                 <button
                   key={starter.label}
@@ -390,6 +396,7 @@ export function AssistantConversation({
             <div key={message.id} className={styles.proposal}>
               <p className={styles.proposalLabel}>{proposal.label}</p>
               <p className={styles.proposalScope}>{scopeLabel}</p>
+              <ArtifactProof artifacts={message.artifactProofs} />
               {tagProposal ? (
                 <div
                   className={styles.proposalTags}
@@ -470,7 +477,6 @@ export function AssistantConversation({
                   <span className={styles.proposalStatus}>Sync pending</span>
                 )}
               </div>
-              <ArtifactProof artifacts={message.artifactProofs} />
             </div>
           );
         }
@@ -493,7 +499,7 @@ export function AssistantConversation({
                 ) : null}
                 {aiSettingsHref ? (
                   <a href={aiSettingsHref} onClick={onOpenAiSettings}>
-                    Settings
+                    Verify connection
                   </a>
                 ) : null}
               </div>
@@ -512,8 +518,8 @@ export function AssistantConversation({
                 Answered by {message.provider}
               </span>
             )}
-            <span>{displayedMessageText(message)}</span>
             <ArtifactProof artifacts={message.artifactProofs} />
+            <span>{displayedMessageText(message)}</span>
             {message.outbound && <OutboundTrace outbound={message.outbound} />}
           </div>
         );

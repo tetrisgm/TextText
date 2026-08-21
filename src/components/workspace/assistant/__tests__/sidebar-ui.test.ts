@@ -14,7 +14,7 @@ import {
 import { AssistantConversation } from "@/components/workspace/assistant/AssistantConversation";
 
 describe("assistant sidebar UI", () => {
-  it("renders contextual, resizable, hideable, and attach controls", () => {
+  it("renders contextual, resizable, hideable, and TextText context controls", () => {
     const html = renderToStaticMarkup(
       React.createElement(
         AssistantSidebar,
@@ -28,6 +28,11 @@ describe("assistant sidebar UI", () => {
           onSubmit: () => {},
           onFilesSelected: () => {},
           onRemoveAttachment: () => {},
+          attachmentDisabled: true,
+          availableContextItems: [
+            { id: "note-1", name: "Launch notes", detail: "Notes · Note" },
+          ],
+          onAddContextItem: () => {},
           context: { kind: "folder", label: "Notes", detail: "Folder" },
         },
         React.createElement("p", null, "Conversation"),
@@ -41,9 +46,41 @@ describe("assistant sidebar UI", () => {
     // close story.
     expect(html).not.toContain("pin assistant");
     expect(html).toContain('aria-label="Hide assistant"');
-    expect(html).toContain('aria-label="Add attachment"');
+    expect(html).toContain('aria-label="Add TextText context"');
+    expect(html).not.toContain('aria-label="Add attachment"');
+    expect(html).not.toContain('aria-label="Choose assistant attachments"');
     expect(html).toContain('aria-label="Message assistant"');
     expect(html).toContain('aria-keyshortcuts="Meta+Shift+A Control+Shift+A"');
+  });
+
+  it("stops offering more context once the bounded prompt limit is reached", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantSidebar, {
+        state: "pinned",
+        onStateChange: () => {},
+        title: "Assistant",
+        width: 420,
+        onWidthChange: () => {},
+        composerValue: "",
+        onComposerChange: () => {},
+        onSubmit: () => {},
+        onFilesSelected: () => {},
+        onRemoveAttachment: () => {},
+        attachmentDisabled: true,
+        attachments: Array.from({ length: 4 }, (_, index) => ({
+          id: `context-${index}`,
+          name: `Note ${index}`,
+          workspaceItemId: `note-${index}`,
+        })),
+        availableContextItems: [
+          { id: "note-5", name: "One more", detail: "Notes · Note" },
+        ],
+        onAddContextItem: () => {},
+      }),
+    );
+
+    expect(html).not.toContain('aria-label="Add TextText context"');
+    expect(html).toContain('aria-label="Added context"');
   });
 
   it("clamps the rendered and accessible width to narrow viewports", () => {
@@ -235,7 +272,7 @@ describe("assistant sidebar UI", () => {
     );
 
     expect(html).toContain("<details");
-    expect(html).toContain("Found 2 TextText items");
+    expect(html).toContain("Found 2 items");
     expect(html.match(/>Open</g)).toHaveLength(2);
   });
 
@@ -254,7 +291,7 @@ describe("assistant sidebar UI", () => {
       }),
     );
 
-    expect(html).toContain('aria-label="Prompt starters"');
+    expect(html).toContain('aria-label="Suggested workflows"');
     // The greeting leads, not which provider happens to be wired up.
     expect(html).toMatch(/Good (morning|afternoon|evening), Ramine/);
     expect(html).not.toContain("Using Anthropic");
@@ -365,7 +402,7 @@ describe("assistant sidebar UI", () => {
     expect(html).toContain("The provider did not answer.");
     expect(html).not.toContain("another attempt");
     expect(html).toContain("Try again");
-    expect(html).toContain("Settings");
+    expect(html).toContain("Verify connection");
   });
 
   it("explains selected-text context and unavailable attachments", () => {
@@ -392,10 +429,9 @@ describe("assistant sidebar UI", () => {
     );
 
     expect(html).toContain('aria-label="Context: Draft, Selected body text"');
-    expect(html).toContain(
-      'title="Attachments are not available for provider connections yet"',
-    );
-    expect(html).toContain('aria-label="Choose assistant attachments"');
+    expect(html).not.toContain('aria-label="Add attachment"');
+    expect(html).toContain('placeholder="Ask or change this item"');
+    expect(html).not.toContain('aria-label="Choose assistant attachments"');
     expect(html).toContain('aria-keyshortcuts="Enter"');
   });
 });
