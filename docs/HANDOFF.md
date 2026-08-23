@@ -37,6 +37,11 @@ polish ledger.
   provider failure remained a failure with no fake answer; Save to Notes created
   a private note and returned its Open receipt; thumbs-up persisted as pressed;
   a fresh tab hydrated with restored jobs and no console error.
+- Repeated through `scripts/dev-with-ai.sh` with the real Anthropic key loaded
+  from the login Keychain. Claude Sonnet 5 streamed `REAL STREAM OK` in about
+  1.4 seconds, then completed a separate read-only workspace-tool turn in about
+  3.2 seconds and correctly reported the synthetic demo's seven items. Neither
+  turn logged a browser error or exposed the key.
 - This proves the corrected runtime loop, not competitive completeness. Current
   gaps versus the referenced products remain searchable durable chat history,
   editable agent instructions and reusable skills, automatic or per-turn model
