@@ -174,8 +174,12 @@ Current assistant behavior includes:
 - background job state that keeps a reply attached to the context that
   submitted it even if the user navigates elsewhere
 
-Attachments are deferred until provider uploads can be implemented without
-leaking workspace data or provider credentials.
+Attachments follow the provider boundary. Configured cloud providers accept
+bounded local text and Markdown context, with the file contents embedded in the
+request and no upload token or persistent provider copy. Images and other
+binary files remain available only through the standalone native OCR path;
+cloud turns reject them with a recovery message instead of pretending they
+were attached.
 
 ## Provider connections
 
