@@ -6966,6 +6966,7 @@ function LocalWorkspaceShell({
             assistantComposer.clear();
             void assistant.submit(submission.text, submission.attachments);
           }}
+          onCancel={assistant.cancel}
           submitting={assistant.submitting}
           launcherBusy={assistant.runningJobs > 0}
           composerPlaceholder={

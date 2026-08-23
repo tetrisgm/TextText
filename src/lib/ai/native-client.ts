@@ -35,6 +35,7 @@ export function requestNativeAssistant(
     | "assistantStatus"
     | "assistantConnect"
     | "assistantDisconnect"
+    | "assistantCancel"
     | "assistantTurn",
   prompt?: string,
 ) {

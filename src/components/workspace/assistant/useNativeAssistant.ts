@@ -22,6 +22,7 @@ import {
 import { createWorkspaceAgentTools } from "@/lib/ai/agent-tools";
 import {
   cloudAssistantTurn,
+  type CloudAssistantStreamEvent,
   type CloudContextItem,
   type CloudWorkspaceCall,
   type OutboundCall,
@@ -261,6 +262,12 @@ function completedWorkspaceProofs({
 
 function assistantAgentError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error ?? "");
+  if (
+    (error instanceof DOMException && error.name === "AbortError") ||
+    /\babort(?:ed|ing)?\b/i.test(message)
+  ) {
+    return "The assistant was stopped.";
+  }
   if (
     /Pass either markdown or a title|invalid_type|too_small|unrecognized_keys/i.test(
       message,
@@ -510,6 +517,7 @@ export function useNativeAssistant({
     useState<AiConnectionSnapshot | null>(null);
   const nativeJobRef = useRef<string | null>(null);
   const nativeMessageRef = useRef<string | null>(null);
+  const activeCloudAbortRef = useRef<AbortController | null>(null);
   const nativeProofsRef = useRef<AssistantArtifactProof[]>([]);
   const nativeItemTypeDesignRef = useRef<{
     blueprint: ItemTypeBlueprint | null;
@@ -1117,6 +1125,38 @@ export function useNativeAssistant({
         const openSelection = open
           ? resolveWorkspaceItemTextSelection(open)
           : null;
+        const cloudAbortController = new AbortController();
+        activeCloudAbortRef.current = cloudAbortController;
+        let cloudMessageId: string | null = null;
+        let streamProvider: CloudAssistantProviderLabel | undefined;
+        const onCloudEvent = (event: CloudAssistantStreamEvent) => {
+          if (event.type === "start") {
+            streamProvider = event.provider;
+            setCloudProvider(event.provider);
+            setThreadCloudProvider(thread, event.provider);
+            updateAssistantJob(jobId, {
+              activity: `Connected to ${event.provider}`,
+            });
+          } else if (event.type === "progress") {
+            appendToThread(thread, "progress", event.message);
+            updateAssistantJob(jobId, { activity: event.message });
+          } else if (event.type === "text" && event.text) {
+            if (!cloudMessageId) {
+              cloudMessageId = appendToThread(
+                thread,
+                "assistant",
+                event.text,
+                undefined,
+                streamProvider,
+              );
+            } else {
+              updateThreadMessage(thread, cloudMessageId, (message) => ({
+                ...message,
+                text: `${message.text}${event.text}`,
+              }));
+            }
+          }
+        };
         const result = await cloudAssistantTurn(preparedPrompt, {
           level: submittedView.level,
           folderPath: submittedView.folderPath,
@@ -1125,6 +1165,10 @@ export function useNativeAssistant({
           selection: openSelection?.text,
           itemPreview: open?.body?.slice(0, 4000),
           relatedItems: relatedItems.map((item) => ({ id: item.id })),
+        }, {
+          stream: true,
+          signal: cloudAbortController.signal,
+          onEvent: onCloudEvent,
         });
         if ("disabled" in result) {
           appendToThread(
@@ -1151,23 +1195,41 @@ export function useNativeAssistant({
           });
           if (proof) proofs = mergeArtifactProofs([proof], proofs);
         }
-        appendToThread(
-          thread,
-          "assistant",
+        const finalText =
           result.text ||
-            (result.terminalError
-              ? "Some actions completed before the assistant stopped."
-              : "Done."),
-          undefined,
-          result.provider,
-          result.outboundCalls.length || result.unreachableServers.length
-            ? {
-                calls: result.outboundCalls,
-                unreachable: result.unreachableServers,
-              }
-            : undefined,
-          proofs.length > 0 ? proofs : undefined,
-        );
+          (result.terminalError
+            ? "Some actions completed before the assistant stopped."
+            : "Done.");
+        if (cloudMessageId) {
+          updateThreadMessage(thread, cloudMessageId, (message) => ({
+            ...message,
+            text: finalText,
+            provider: result.provider,
+            outbound:
+              result.outboundCalls.length || result.unreachableServers.length
+                ? {
+                    calls: result.outboundCalls,
+                    unreachable: result.unreachableServers,
+                  }
+                : undefined,
+            artifactProofs: proofs.length > 0 ? proofs : message.artifactProofs,
+          }));
+        } else {
+          appendToThread(
+            thread,
+            "assistant",
+            finalText,
+            undefined,
+            result.provider,
+            result.outboundCalls.length || result.unreachableServers.length
+              ? {
+                  calls: result.outboundCalls,
+                  unreachable: result.unreachableServers,
+                }
+              : undefined,
+            proofs.length > 0 ? proofs : undefined,
+          );
+        }
         if (result.terminalError) {
           appendToThread(thread, "error", result.terminalError);
           updateAssistantJob(jobId, { status: "error" });
@@ -1178,6 +1240,7 @@ export function useNativeAssistant({
         appendToThread(thread, "error", assistantAgentError(error));
         updateAssistantJob(jobId, { status: "error" });
       } finally {
+        activeCloudAbortRef.current = null;
         setThreadCloudProvider(thread, null);
         setThreadBusy(thread, false);
       }
@@ -1213,6 +1276,8 @@ export function useNativeAssistant({
         if (selection && selectionAction) {
           actionPrompt = `${actionLabel} this selected ${selection.field} text. Return the suggestion only. Do not change the item.`;
         }
+        const cloudAbortController = new AbortController();
+        activeCloudAbortRef.current = cloudAbortController;
         const result = await cloudAssistantTurn(actionPrompt, {
           level: view.level,
           folderPath: view.folderPath,
@@ -1221,6 +1286,17 @@ export function useNativeAssistant({
           selection: selection?.text,
           itemPreview: item.body.slice(0, 4000),
           mode: "suggestion",
+        }, {
+          stream: true,
+          signal: cloudAbortController.signal,
+          onEvent: (event) => {
+            if (event.type === "start") {
+              setCloudProvider(event.provider);
+              setThreadCloudProvider(thread, event.provider);
+            } else if (event.type === "progress") {
+              appendToThread(thread, "progress", event.message);
+            }
+          },
         });
         if ("disabled" in result) {
           appendToThread(
@@ -1276,6 +1352,7 @@ export function useNativeAssistant({
             : "The AI provider could not finish.",
         );
       } finally {
+        activeCloudAbortRef.current = null;
         setThreadCloudProvider(thread, null);
         setThreadBusy(thread, false);
       }
@@ -1469,6 +1546,14 @@ export function useNativeAssistant({
     [applyProposalValue],
   );
 
+  const cancel = useCallback(() => {
+    const cloudAbort = activeCloudAbortRef.current;
+    cloudAbort?.abort();
+    if (!cloudAbort && nativeConnection?.state === "ready" && nativeJobRef.current) {
+      requestNativeAssistant("assistantCancel");
+    }
+  }, [nativeConnection?.state]);
+
   const quickActions =
     getView().postId && cloudProvider
       ? NATIVE_QUICK_ACTIONS.map((action) => ({
@@ -1506,6 +1591,7 @@ export function useNativeAssistant({
     attachmentTitle,
     applyProposal,
     cloudProvider,
+    cancel,
     nativeConnection,
     connectNativeAssistant: () => requestNativeAssistant("assistantConnect"),
     jobs,

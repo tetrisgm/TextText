@@ -1,11 +1,11 @@
 // Workspace-owned cloud assistant. TextText never spends a shared provider key:
 // the owner explicitly connects a provider and chooses a model.
 //
-// MVP: non-streaming (returns the final reply). The cloud tool set excludes
-// confirmation-gated destructive/sharing/publish tools until an interactive
-// confirmation flow is wired for the web path (see cloud-tools.ts).
+// The HTTPS path streams newline-delimited progress and text events. The cloud
+// tool set still excludes confirmation-gated destructive/sharing/publish tools
+// until an interactive confirmation flow is wired for the web path.
 
-import { generateText, stepCountIs } from "ai";
+import { generateText, stepCountIs, streamText } from "ai";
 import type { ModelMessage } from "ai";
 import { getCurrentUser } from "@/lib/session";
 import { ASSISTANT_SYSTEM_PROMPT } from "@/lib/ai/system-prompt";
@@ -50,6 +50,11 @@ const MAX_HISTORY = 20;
 const MAX_MESSAGE_CHARS = 16_000;
 const MAX_REQUEST_BODY_BYTES = 1_100_000;
 const NO_STORE_HEADERS = { "Cache-Control": "private, no-store" } as const;
+const STREAM_HEADERS = {
+  ...NO_STORE_HEADERS,
+  "Content-Type": "application/x-ndjson; charset=utf-8",
+  "X-Accel-Buffering": "no",
+} as const;
 // Best-effort per-user throttle. Provider-side limits remain authoritative.
 const RATE_WINDOW_MS = 60_000;
 const RATE_MAX_PER_WINDOW = 20;
@@ -150,6 +155,166 @@ function lastUserText(messages: readonly ModelMessage[]): string {
     }
   }
   return "";
+}
+
+function assistantToolProgress(toolName: string, finished = false): string {
+  const label = toolName
+    .replaceAll("__", " ")
+    .replaceAll("_", " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return finished ? `Finished ${label}` : `Using ${label}`;
+}
+
+type AssistantStreamEvent =
+  | { type: "start"; provider: string; model: string }
+  | { type: "text"; text: string }
+  | { type: "progress"; message: string; tool?: string }
+  | {
+      type: "complete";
+      text: string;
+      provider: string;
+      model: string;
+      outboundCalls: OutboundCallRecord[];
+      unreachableServers: string[];
+      workspaceCalls: CloudAssistantWorkspaceCall[];
+      contextItems?: RecentWorkspaceContextItem[];
+    }
+  | {
+      type: "error";
+      message: string;
+      partialText?: string;
+      outboundCalls?: OutboundCallRecord[];
+      unreachableServers?: string[];
+      workspaceCalls?: CloudAssistantWorkspaceCall[];
+    };
+
+type StreamableAssistantResult = {
+  fullStream: AsyncIterable<unknown>;
+};
+
+function assistantStreamResponse(
+  result: StreamableAssistantResult,
+  {
+    provider,
+    model,
+    calls,
+    unreachable,
+    workspaceCalls,
+    contextItems,
+    signal,
+  }: {
+    provider: string;
+    model: string;
+    calls: OutboundCallRecord[];
+    unreachable: string[];
+    workspaceCalls: CloudAssistantWorkspaceCall[];
+    contextItems: RecentWorkspaceContextItem[];
+    signal: AbortSignal;
+  },
+): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      let text = "";
+      let completed = false;
+      const emit = (event: AssistantStreamEvent) => {
+        controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+      };
+      emit({ type: "start", provider, model });
+      try {
+        for await (const rawPart of result.fullStream) {
+          if (signal.aborted) break;
+          const part = rawPart as Record<string, unknown>;
+          const type = typeof part.type === "string" ? part.type : "";
+          if (type === "text-delta" && typeof part.text === "string") {
+            text += part.text;
+            emit({ type: "text", text: part.text });
+          } else if (
+            type === "start-step" ||
+            type === "finish-step" ||
+            type === "start"
+          ) {
+            emit({ type: "progress", message: "Thinking" });
+          } else if (
+            type === "tool-call" &&
+            typeof part.toolName === "string"
+          ) {
+            emit({
+              type: "progress",
+              message: assistantToolProgress(part.toolName),
+              tool: part.toolName,
+            });
+          } else if (
+            type === "tool-result" &&
+            typeof part.toolName === "string"
+          ) {
+            emit({
+              type: "progress",
+              message: assistantToolProgress(part.toolName, true),
+              tool: part.toolName,
+            });
+          } else if (type === "error") {
+            emit({
+              type: "error",
+              message: "The assistant could not finish that.",
+              partialText: text || undefined,
+              outboundCalls: calls,
+              unreachableServers: unreachable,
+              workspaceCalls,
+            });
+          } else if (type === "abort") {
+            emit({
+              type: "error",
+              message: "The assistant was stopped.",
+              partialText: text || undefined,
+              outboundCalls: calls,
+              unreachableServers: unreachable,
+              workspaceCalls,
+            });
+          } else if (type === "finish") {
+            completed = true;
+            emit({
+              type: "complete",
+              text,
+              provider,
+              model,
+              outboundCalls: calls,
+              unreachableServers: unreachable,
+              workspaceCalls,
+              ...(contextItems.length > 0 ? { contextItems } : {}),
+            });
+          }
+        }
+        if (!completed && !signal.aborted) {
+          emit({
+            type: "complete",
+            text,
+            provider,
+            model,
+            outboundCalls: calls,
+            unreachableServers: unreachable,
+            workspaceCalls,
+            ...(contextItems.length > 0 ? { contextItems } : {}),
+          });
+        }
+      } catch {
+        if (!signal.aborted) {
+          emit({
+            type: "error",
+            message: "The assistant could not finish that.",
+            partialText: text || undefined,
+            outboundCalls: calls,
+            unreachableServers: unreachable,
+            workspaceCalls,
+          });
+        }
+      } finally {
+        controller.close();
+      }
+    },
+  });
+  return new Response(stream, { status: 200, headers: STREAM_HEADERS });
 }
 
 const WRITE_VERB =
@@ -413,6 +578,7 @@ export async function POST(request: Request) {
   const decoded = await readBoundedJson<{
     messages?: unknown;
     context?: unknown;
+    stream?: unknown;
   }>(request, MAX_REQUEST_BODY_BYTES);
   if ("error" in decoded && decoded.error === "too_large") {
     return Response.json(
@@ -502,33 +668,57 @@ export async function POST(request: Request) {
       items.findIndex((candidate) => candidate.id === item.id) === index,
   );
 
+  const tools = {
+    ...cloudAssistantTools(
+      actor,
+      (call) => workspaceCalls.push(call),
+      toolMode,
+    ),
+    // External servers are already explicitly approved per connection in
+    // Settings. Their tools remain available on read turns as well: a
+    // user asking to read a remote notice must be able to reach it, and a
+    // user asking to create something remotely must not be downgraded to
+    // a text-only answer merely because the sentence does not begin with
+    // an English write verb. Workspace mutations remain intent-gated by
+    // cloudAssistantTools above.
+    ...remoteTools,
+  };
+  const modelRequest = {
+    model,
+    system:
+      buildSystem(body.context, relatedContext) +
+      (recentContext.note ? `\n\n${recentContext.note}` : "") +
+      outboundSystemNote(
+        reachable.map((entry) => entry.connection.name),
+        unreachable,
+      ),
+    messages,
+    tools,
+    stopWhen: stepCountIs(MAX_STEPS),
+  };
+
+  const wantsStream =
+    body.stream === true ||
+    request.headers.get("accept")?.includes("text/event-stream") === true;
+  if (wantsStream) {
+    const streamed = streamText({
+      ...modelRequest,
+      abortSignal: request.signal,
+    });
+    return assistantStreamResponse(streamed, {
+      provider,
+      model: config.model,
+      calls,
+      unreachable,
+      workspaceCalls,
+      contextItems,
+      signal: request.signal,
+    });
+  }
+
   try {
     const result = await generateText({
-      model,
-      system:
-        buildSystem(body.context, relatedContext) +
-        (recentContext.note ? `\n\n${recentContext.note}` : "") +
-        outboundSystemNote(
-          reachable.map((entry) => entry.connection.name),
-          unreachable,
-        ),
-      messages,
-      tools: {
-        ...cloudAssistantTools(
-          actor,
-          (call) => workspaceCalls.push(call),
-          toolMode,
-        ),
-        // External servers are already explicitly approved per connection in
-        // Settings. Their tools remain available on read turns as well: a
-        // user asking to read a remote notice must be able to reach it, and a
-        // user asking to create something remotely must not be downgraded to
-        // a text-only answer merely because the sentence does not begin with
-        // an English write verb. Workspace mutations remain intent-gated by
-        // cloudAssistantTools above.
-        ...remoteTools,
-      },
-      stopWhen: stepCountIs(MAX_STEPS),
+      ...modelRequest,
     });
     return Response.json({
       text: result.text,

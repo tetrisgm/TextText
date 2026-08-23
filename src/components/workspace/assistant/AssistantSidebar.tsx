@@ -62,6 +62,7 @@ export type AssistantSidebarProps = {
   composerValue: string;
   onComposerChange: (value: string) => void;
   onSubmit: (submission: AssistantComposerSubmission) => void;
+  onCancel?: () => void;
   onFilesSelected: (files: readonly File[]) => void;
   onRemoveAttachment: (attachment: AssistantAttachment) => void;
   attachments?: readonly AssistantAttachment[];
@@ -210,6 +211,7 @@ export function AssistantSidebar({
   composerValue,
   onComposerChange,
   onSubmit,
+  onCancel,
   onFilesSelected,
   onRemoveAttachment,
   attachments = EMPTY_ATTACHMENTS,
@@ -766,24 +768,35 @@ export function AssistantSidebar({
                   <PlusIcon />
                 </button>
               ) : <span />}
-              <button
-                className={classNames(
-                  styles.composerButton,
-                  styles.submitButton,
-                )}
-                type="submit"
-                disabled={!canSubmit}
-                aria-label={submitting ? "Sending message" : "Send message"}
-                title={
-                  submitting
-                    ? "Sending message"
-                    : submitOnEnter
-                      ? "Send message (Return)"
-                      : "Send message"
-                }
-              >
-                <SendIcon />
-              </button>
+              {submitting ? (
+                <button
+                  className={classNames(
+                    styles.composerButton,
+                    styles.submitButton,
+                  )}
+                  type="button"
+                  aria-label="Stop assistant"
+                  title="Stop assistant"
+                  onClick={() => onCancel?.()}
+                >
+                  <StopIcon />
+                </button>
+              ) : (
+                <button
+                  className={classNames(
+                    styles.composerButton,
+                    styles.submitButton,
+                  )}
+                  type="submit"
+                  disabled={!canSubmit}
+                  aria-label="Send message"
+                  title={
+                    submitOnEnter ? "Send message (Return)" : "Send message"
+                  }
+                >
+                  <SendIcon />
+                </button>
+              )}
             </div>
           </div>
         </form>
@@ -963,6 +976,21 @@ function SendIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeWidth="1.7"
+      />
+    </svg>
+  );
+}
+
+function StopIcon() {
+  return (
+    <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <rect
+        x="5"
+        y="5"
+        width="8"
+        height="8"
+        rx="1.25"
+        fill="currentColor"
       />
     </svg>
   );

@@ -65,6 +65,36 @@ export type CloudAssistantOutcome =
     }
   | { disabled: true };
 
+export type CloudAssistantStreamEvent =
+  | { type: "start"; provider: CloudAssistantProviderLabel; model: string }
+  | { type: "text"; text: string }
+  | { type: "progress"; message: string; tool?: string }
+  | {
+      type: "complete";
+      text: string;
+      provider: CloudAssistantProviderLabel;
+      model: string;
+      outboundCalls: OutboundCall[];
+      unreachableServers: string[];
+      workspaceCalls: CloudWorkspaceCall[];
+      contextItems: CloudContextItem[];
+    }
+  | {
+      type: "error";
+      message: string;
+      partialText?: string;
+      outboundCalls?: OutboundCall[];
+      unreachableServers?: string[];
+      workspaceCalls?: CloudWorkspaceCall[];
+    };
+
+export type CloudAssistantTurnOptions = {
+  /** Use the incremental NDJSON protocol instead of the legacy JSON response. */
+  stream?: boolean;
+  signal?: AbortSignal;
+  onEvent?: (event: CloudAssistantStreamEvent) => void;
+};
+
 function cleanOutboundCalls(value: unknown): OutboundCall[] {
   if (!Array.isArray(value)) return [];
   const calls: OutboundCall[] = [];
@@ -159,14 +189,21 @@ export async function cloudAssistantStatus(): Promise<CloudAssistantStatus> {
 export async function cloudAssistantTurn(
   prompt: string,
   context?: CloudAssistantContext,
+  options: CloudAssistantTurnOptions = {},
 ): Promise<CloudAssistantOutcome> {
+  const stream = options.stream === true;
   const response = await fetch("/api/ai", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(stream ? { Accept: "application/x-ndjson" } : {}),
+    },
     body: JSON.stringify({
       messages: [{ role: "user", content: prompt }],
       context,
+      ...(stream ? { stream: true } : {}),
     }),
+    ...(options.signal ? { signal: options.signal } : {}),
   });
   // 404 is the off-by-default gate: this owner has no configured provider.
   if (response.status === 404) return { disabled: true };
@@ -189,6 +226,112 @@ export async function cloudAssistantTurn(
     }
     throw new Error(data?.error || "The assistant could not finish that.");
   }
+  if (stream) {
+    if (!response.body) {
+      throw new Error("The assistant returned an empty stream.");
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let provider: CloudAssistantProviderLabel | null = null;
+    let model = "";
+    let partialText = "";
+    let latest: CloudAssistantOutcome | null = null;
+    const consumeLine = (line: string) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      let raw: unknown;
+      try {
+        raw = JSON.parse(trimmed);
+      } catch {
+        return;
+      }
+      const record = cleanRecord(raw);
+      if (!record || typeof record.type !== "string") return;
+      if (record.type === "start") {
+        const nextProvider =
+          record.provider === "Anthropic" || record.provider === "OpenAI"
+            ? record.provider
+            : null;
+        if (nextProvider) provider = nextProvider;
+        model = typeof record.model === "string" ? record.model : model;
+      }
+      if (record.type === "text" && typeof record.text === "string") {
+        partialText += record.text;
+      }
+      if (record.type === "complete") {
+        const nextProvider =
+          record.provider === "Anthropic" || record.provider === "OpenAI"
+            ? record.provider
+            : provider;
+        if (!nextProvider) return;
+        provider = nextProvider;
+        model = typeof record.model === "string" ? record.model : model;
+        latest = {
+          text: typeof record.text === "string" ? record.text : partialText,
+          provider,
+          outboundCalls: cleanOutboundCalls(record.outboundCalls),
+          workspaceCalls: cleanWorkspaceCalls(record.workspaceCalls),
+          contextItems: cleanContextItems(record.contextItems),
+          unreachableServers: Array.isArray(record.unreachableServers)
+            ? record.unreachableServers.filter(
+                (entry): entry is string => typeof entry === "string",
+              )
+            : [],
+        };
+      }
+      options.onEvent?.(cleanStreamEvent(record, provider, model));
+      if (record.type === "error" && !latest && provider) {
+        latest = {
+          text:
+            typeof record.partialText === "string"
+              ? record.partialText
+              : partialText,
+          provider,
+          outboundCalls: cleanOutboundCalls(record.outboundCalls),
+          workspaceCalls: cleanWorkspaceCalls(record.workspaceCalls),
+          contextItems: [],
+          unreachableServers: Array.isArray(record.unreachableServers)
+            ? record.unreachableServers.filter(
+                (entry): entry is string => typeof entry === "string",
+              )
+            : [],
+          terminalError:
+            typeof record.message === "string"
+              ? record.message
+              : "The assistant could not finish that.",
+        };
+      }
+    };
+    while (true) {
+      const chunk = await reader.read();
+      buffer += decoder.decode(chunk.value ?? new Uint8Array(), {
+        stream: !chunk.done,
+      });
+      let newline = buffer.indexOf("\n");
+      while (newline >= 0) {
+        consumeLine(buffer.slice(0, newline));
+        buffer = buffer.slice(newline + 1);
+        newline = buffer.indexOf("\n");
+      }
+      if (chunk.done) break;
+    }
+    if (buffer.trim()) consumeLine(buffer);
+    if (latest) return latest;
+    if (provider) {
+      return {
+        text: partialText,
+        provider,
+        outboundCalls: [],
+        workspaceCalls: [],
+        contextItems: [],
+        unreachableServers: [],
+        terminalError: "The assistant stopped before it could finish.",
+      };
+    }
+    throw new Error("The assistant returned no usable response.");
+  }
+
   const data = (await response.json()) as {
     text?: unknown;
     provider?: unknown;
@@ -215,5 +358,66 @@ export async function cloudAssistantTurn(
           (entry): entry is string => typeof entry === "string",
         )
       : [],
+  };
+}
+
+function cleanStreamEvent(
+  record: Record<string, unknown>,
+  provider: CloudAssistantProviderLabel | null,
+  model: string,
+): CloudAssistantStreamEvent {
+  if (record.type === "start") {
+    return {
+      type: "start",
+      provider: provider ?? "OpenAI",
+      model,
+    };
+  }
+  if (record.type === "text") {
+    return {
+      type: "text",
+      text: typeof record.text === "string" ? record.text : "",
+    };
+  }
+  if (record.type === "progress") {
+    return {
+      type: "progress",
+      message:
+        typeof record.message === "string" ? record.message : "Working",
+      ...(typeof record.tool === "string" ? { tool: record.tool } : {}),
+    };
+  }
+  if (record.type === "complete") {
+    return {
+      type: "complete",
+      text: typeof record.text === "string" ? record.text : "",
+      provider: provider ?? "OpenAI",
+      model,
+      outboundCalls: cleanOutboundCalls(record.outboundCalls),
+      unreachableServers: Array.isArray(record.unreachableServers)
+        ? record.unreachableServers.filter(
+            (entry): entry is string => typeof entry === "string",
+          )
+        : [],
+      workspaceCalls: cleanWorkspaceCalls(record.workspaceCalls),
+      contextItems: cleanContextItems(record.contextItems),
+    };
+  }
+  return {
+    type: "error",
+    message:
+      typeof record.message === "string"
+        ? record.message
+        : "The assistant could not finish that.",
+    ...(typeof record.partialText === "string"
+      ? { partialText: record.partialText }
+      : {}),
+    outboundCalls: cleanOutboundCalls(record.outboundCalls),
+    unreachableServers: Array.isArray(record.unreachableServers)
+      ? record.unreachableServers.filter(
+          (entry): entry is string => typeof entry === "string",
+        )
+      : [],
+    workspaceCalls: cleanWorkspaceCalls(record.workspaceCalls),
   };
 }

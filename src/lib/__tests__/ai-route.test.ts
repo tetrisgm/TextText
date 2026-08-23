@@ -20,6 +20,7 @@ type MockRemoteToolsResult = {
 
 const mocks = vi.hoisted(() => ({
   generateText: vi.fn(),
+  streamText: vi.fn(),
   stepCountIs: vi.fn(() => "stop-marker"),
   getCurrentUser: vi.fn(),
   getOwnedBlog: vi.fn(async (): Promise<{ handle: string } | null> => ({
@@ -61,6 +62,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("ai", () => ({
   generateText: mocks.generateText,
+  streamText: mocks.streamText,
   stepCountIs: mocks.stepCountIs,
 }));
 vi.mock("@/lib/session", () => ({ getCurrentUser: mocks.getCurrentUser }));
@@ -141,6 +143,7 @@ describe("/api/ai cloud assistant route", () => {
     });
     mocks.getPostById.mockResolvedValue(null);
     mocks.generateText.mockResolvedValue({ text: "Here is a summary." });
+    mocks.streamText.mockReset();
   });
 
   it("is disabled (404) when no workspace provider is connected", async () => {
@@ -211,6 +214,63 @@ describe("/api/ai cloud assistant route", () => {
     expect(call.messages).toEqual([
       { role: "user", content: "Summarize my draft" },
     ]);
+  });
+
+  it("streams progress, text, and a complete receipt over HTTPS", async () => {
+    mocks.streamText.mockReturnValue({
+      fullStream: (async function* () {
+        yield { type: "start-step" };
+        yield { type: "tool-call", toolName: "get_workspace" };
+        yield { type: "tool-result", toolName: "get_workspace" };
+        yield { type: "text-delta", text: "Here" };
+        yield { type: "text-delta", text: " is a stream." };
+        yield { type: "finish" };
+      })(),
+    });
+
+    const res = await POST(
+      new Request("http://x/api/ai", {
+        method: "POST",
+        headers: { Accept: "application/x-ndjson" },
+        body: JSON.stringify({ ...turn, stream: true }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/x-ndjson");
+    const events = (await res.text())
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(events).toEqual([
+      { type: "start", provider: "Anthropic", model: "claude-sonnet-5" },
+      { type: "progress", message: "Thinking" },
+      {
+        type: "progress",
+        message: "Using get workspace",
+        tool: "get_workspace",
+      },
+      {
+        type: "progress",
+        message: "Finished get workspace",
+        tool: "get_workspace",
+      },
+      { type: "text", text: "Here" },
+      { type: "text", text: " is a stream." },
+      {
+        type: "complete",
+        text: "Here is a stream.",
+        provider: "Anthropic",
+        model: "claude-sonnet-5",
+        outboundCalls: [],
+        unreachableServers: [],
+        workspaceCalls: [],
+      },
+    ]);
+    expect(mocks.streamText).toHaveBeenCalledWith(
+      expect.objectContaining({ abortSignal: expect.any(AbortSignal) }),
+    );
+    expect(mocks.generateText).not.toHaveBeenCalled();
   });
 
   it("keeps an enabled outbound MCP tool available on read and write turns", async () => {

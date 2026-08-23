@@ -78,6 +78,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     private var codexTimeoutRecoveryDeadline: DispatchWorkItem?
     private var codexTurnTimedOut = false
     private var codexTurnInterruptSent = false
+    private var codexTurnCancelRequested = false
     private var codexAgentMessagePhases: [String: CodexAgentMessage.Phase] = [:]
 
     private static let codexTurnTimeoutSeconds: TimeInterval = 30
@@ -521,6 +522,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                 self.codexActiveTurnID = nil
                 self.codexTurnTimedOut = false
                 self.codexTurnInterruptSent = false
+                self.codexTurnCancelRequested = false
                 self.codexAgentMessagePhases.removeAll()
                 self.emitCodexEvent([
                     "type": "status",
@@ -671,6 +673,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         codexActiveTurnID = nil
         codexTurnTimedOut = false
         codexTurnInterruptSent = false
+        codexTurnCancelRequested = false
         codexAgentMessagePhases.removeAll()
         server?.stop()
         emitCodexEvent([
@@ -716,6 +719,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         codexTurnDeadline?.cancel()
         codexTurnTimedOut = false
         codexTurnInterruptSent = false
+        codexTurnCancelRequested = false
         let deadline = DispatchWorkItem { [weak self] in
             guard let self else { return }
             Self.codexLog.error(
@@ -745,6 +749,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         codexActiveTurnID = nil
         codexTurnTimedOut = false
         codexTurnInterruptSent = false
+        codexTurnCancelRequested = false
         codexAgentMessagePhases.removeAll()
     }
 
@@ -781,6 +786,33 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             codexTurnInterruptSent = true
         } catch {
             // The forced process recovery below remains the bounded fallback.
+        }
+    }
+
+    private func cancelCodexTurn() {
+        guard codexActiveTurnID != nil || codexThreadID != nil else {
+            emitCodexEvent(["type": "error", "message": "No TextText Agent turn is running."])
+            return
+        }
+        codexTurnCancelRequested = true
+        interruptCancelledCodexTurnIfPossible(threadID: codexThreadID ?? "")
+    }
+
+    private func interruptCancelledCodexTurnIfPossible(threadID: String) {
+        guard codexTurnCancelRequested,
+              !codexTurnInterruptSent,
+              !threadID.isEmpty,
+              let turnID = codexActiveTurnID else { return }
+        do {
+            try sendCodexRequest(
+                .turnInterrupt,
+                method: "turn/interrupt",
+                params: CodexAppServerRequests.turnInterrupt(
+                    threadID: threadID,
+                    turnID: turnID))
+            codexTurnInterruptSent = true
+        } catch {
+            emitCodexEvent(["type": "error", "message": "The TextText Agent could not be stopped."])
         }
     }
 
@@ -943,6 +975,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                     codexActiveTurnID = turnID
                     if codexTurnTimedOut {
                         interruptTimedOutCodexTurnIfPossible(threadID: codexThreadID ?? "")
+                    } else if codexTurnCancelRequested {
+                        interruptCancelledCodexTurnIfPossible(threadID: codexThreadID ?? "")
                     }
                 }
             case .turnInterrupt:
@@ -985,6 +1019,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             codexActiveTurnID = turnID
             if codexTurnTimedOut {
                 interruptTimedOutCodexTurnIfPossible(threadID: codexThreadID ?? "")
+            } else if codexTurnCancelRequested {
+                interruptCancelledCodexTurnIfPossible(threadID: codexThreadID ?? "")
             }
             return
         }
@@ -997,7 +1033,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
            let itemID = message.rawParams?["itemId"] as? String,
            codexAgentMessagePhases[itemID] == .finalAnswer,
            let delta = message.params?["delta"] as? String {
-            if codexTurnTimedOut { return }
+            if codexTurnTimedOut || codexTurnCancelRequested { return }
             emitCodexEvent(["type": "text-delta", "text": delta])
             return
         }
@@ -1005,6 +1041,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
            let agentMessage = CodexAgentMessage(params: message.rawParams) {
             codexAgentMessagePhases.removeValue(forKey: agentMessage.id)
             if !codexTurnTimedOut,
+               !codexTurnCancelRequested,
                agentMessage.phase == .finalAnswer,
                !agentMessage.text.isEmpty {
                 emitCodexEvent(["type": "final-text", "text": agentMessage.text])
@@ -1014,11 +1051,13 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         if message.method == "item/tool/call" {
             let params = message.rawParams ?? [:]
             let callId = (params["callId"] as? String) ?? (params["id"] as? String) ?? UUID().uuidString
-            if codexTurnTimedOut, let requestId = message.jsonRPCID {
+            if (codexTurnTimedOut || codexTurnCancelRequested), let requestId = message.jsonRPCID {
                 try? codexServer?.respond(
                     id: requestId,
                     result: CodexAppServerRequests.dynamicToolResult(
-                        text: "The TextText Agent turn timed out.", success: false))
+                        text: codexTurnCancelRequested
+                            ? "The TextText Agent turn was stopped."
+                            : "The TextText Agent turn timed out.", success: false))
                 return
             }
             if let requestId = message.jsonRPCID { codexPendingToolCalls[callId] = requestId }
@@ -1035,8 +1074,13 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         }
         if message.method == "turn/completed" {
             let timedOut = codexTurnTimedOut
+            let cancelled = codexTurnCancelRequested
             finishCodexTurn()
             if timedOut { return }
+            if cancelled {
+                emitCodexEvent(["type": "error", "message": "The TextText Agent was stopped."])
+                return
+            }
             switch CodexTurnOutcome(params: message.rawParams) {
             case .completed:
                 emitCodexEvent(["type": "turn-completed"])
@@ -1088,6 +1132,10 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         }
         if body["action"] as? String == "assistantDisconnect" {
             disconnectCodex()
+            return
+        }
+        if body["action"] as? String == "assistantCancel" {
+            cancelCodexTurn()
             return
         }
         if body["action"] as? String == "assistantTurn",

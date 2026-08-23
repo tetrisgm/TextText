@@ -114,6 +114,67 @@ describe("cloud assistant client", () => {
     });
   });
 
+  it("parses incremental cloud progress and text without waiting on JSON", async () => {
+    const encoder = new TextEncoder();
+    const payload = [
+      { type: "start", provider: "OpenAI", model: "gpt-5.6" },
+      { type: "progress", message: "Using get workspace", tool: "get_workspace" },
+      { type: "text", text: "A partial answer" },
+      {
+        type: "complete",
+        text: "A partial answer.",
+        provider: "OpenAI",
+        model: "gpt-5.6",
+        outboundCalls: [],
+        unreachableServers: [],
+        workspaceCalls: [],
+        contextItems: [],
+      },
+    ]
+      .map((event) => `${JSON.stringify(event)}\n`)
+      .join("");
+    const first = payload.slice(0, Math.floor(payload.length / 2));
+    const second = payload.slice(first.length);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        expect(init?.signal).toBeInstanceOf(AbortSignal);
+        expect(JSON.parse(String(init?.body))).toMatchObject({ stream: true });
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(encoder.encode(first));
+              controller.enqueue(encoder.encode(second));
+              controller.close();
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/x-ndjson" },
+          },
+        );
+      }),
+    );
+    const events: string[] = [];
+    const result = await cloudAssistantTurn(
+      "Summarize this",
+      undefined,
+      {
+        stream: true,
+        signal: new AbortController().signal,
+        onEvent: (event) => events.push(event.type),
+      },
+    );
+
+    expect(events).toEqual(["start", "progress", "text", "complete"]);
+    expect(result).toMatchObject({
+      text: "A partial answer.",
+      provider: "OpenAI",
+      workspaceCalls: [],
+      contextItems: [],
+    });
+  });
+
   it("makes a provider outage explicit that nothing was applied", async () => {
     vi.stubGlobal(
       "fetch",
