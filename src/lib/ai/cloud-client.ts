@@ -15,8 +15,16 @@ export type CloudAssistantContext = {
   itemPreview?: string;
   /** IDs for TextText items the server must resolve in this workspace. */
   relatedItems?: Array<{ id: string }>;
+  /** Bounded image parts uploaded over HTTPS for the hosted model. */
+  attachments?: CloudAssistantAttachment[];
   /** Suggestion turns are server-limited to read-only workspace tools. */
   mode?: "suggestion";
+};
+
+export type CloudAssistantAttachment = {
+  name: string;
+  mediaType: string;
+  dataUrl: string;
 };
 
 export type CloudAssistantStatus = {
@@ -94,6 +102,20 @@ export type CloudAssistantTurnOptions = {
   signal?: AbortSignal;
   onEvent?: (event: CloudAssistantStreamEvent) => void;
 };
+
+export async function submitAssistantFeedback(input: {
+  messageId: string;
+  rating: "up" | "down";
+  provider?: CloudAssistantProviderLabel | "Codex";
+}): Promise<void> {
+  const response = await fetch("/api/ai/feedback", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error("The answer rating could not be saved.");
+}
 
 function cleanOutboundCalls(value: unknown): OutboundCall[] {
   if (!Array.isArray(value)) return [];

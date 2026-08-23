@@ -22,6 +22,7 @@ import {
 import { createWorkspaceAgentTools } from "@/lib/ai/agent-tools";
 import {
   cloudAssistantTurn,
+  submitAssistantFeedback,
   type CloudAssistantStreamEvent,
   type CloudContextItem,
   type CloudWorkspaceCall,
@@ -62,8 +63,8 @@ import { normalizeTags } from "@/lib/tags";
 import type { AssistantAttachment } from "./AssistantSidebar";
 import {
   assistantAttachmentAccept,
-  ASSISTANT_TEXT_ATTACHMENT_ACCEPT,
   buildCloudAssistantPrompt,
+  buildCloudAssistantAttachments,
   buildNativeAssistantPrompt,
   formatAssistantSubmission,
 } from "./attachments";
@@ -148,6 +149,9 @@ export type AssistantMessage = {
    * never from the model's prose.
    */
   artifactProofs?: AssistantArtifactProof[];
+  /** A durable save receipt for a reply captured into Notes. */
+  savedItem?: { id: string; title: string };
+  feedback?: "up" | "down";
 };
 
 type UseNativeAssistantOptions = {
@@ -515,6 +519,7 @@ export function useNativeAssistant({
     useState<CloudAssistantProviderLabel | null>(null);
   const [nativeConnection, setNativeConnection] =
     useState<AiConnectionSnapshot | null>(null);
+  const [savingAnswerId, setSavingAnswerId] = useState<string | null>(null);
   const nativeJobRef = useRef<string | null>(null);
   const nativeMessageRef = useRef<string | null>(null);
   const activeCloudAbortRef = useRef<AbortController | null>(null);
@@ -1027,6 +1032,9 @@ export function useNativeAssistant({
           (attachment) => !attachment.workspaceItemId,
         );
         const nativeReady = nativeConnection?.state === "ready";
+        const cloudAttachments = nativeReady
+          ? []
+          : await buildCloudAssistantAttachments(attachments);
         const preparedPrompt = nativeReady
           ? localAttachments.length > 0
             ? (
@@ -1165,6 +1173,9 @@ export function useNativeAssistant({
           selection: openSelection?.text,
           itemPreview: open?.body?.slice(0, 4000),
           relatedItems: relatedItems.map((item) => ({ id: item.id })),
+          ...(cloudAttachments.length > 0
+            ? { attachments: cloudAttachments }
+            : {}),
         }, {
           stream: true,
           signal: cloudAbortController.signal,
@@ -1546,6 +1557,96 @@ export function useNativeAssistant({
     [applyProposalValue],
   );
 
+  const saveAnswer = useCallback(
+    async (messageId: string) => {
+      if (savingAnswerId) return;
+      const thread = threadFor(threadKey);
+      const messageIndex = thread.findIndex((candidate) => candidate.id === messageId);
+      const message = thread[messageIndex];
+      if (!message || message.role !== "assistant" || !message.text.trim()) return;
+      if (message.savedItem) return;
+      const source = [...thread.slice(0, messageIndex)]
+        .reverse()
+        .find((candidate) => candidate.role === "user")?.text;
+      const capture = [
+        source ? `Prompt: ${source}` : "Prompt: Assistant answer",
+        `Assistant: ${message.text.trim()}`,
+        message.provider ? `Provider: ${message.provider}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+      setSavingAnswerId(messageId);
+      try {
+        const output = await tools.executor("create_item", {
+          capture,
+          idempotency_key: `assistant-answer:${messageId}`,
+        });
+        const proofs = workspaceToolArtifactProofs({
+          args: { capture },
+          output,
+          pool: getPoolRef.current(),
+          tool: "create_item",
+        });
+        const result =
+          output && typeof output === "object" && !Array.isArray(output)
+            ? (output as Record<string, unknown>)
+            : {};
+        const itemId =
+          proofs[0]?.itemId ??
+          (typeof result.id === "string" ? result.id : "");
+        if (!itemId) throw new Error("The answer was not saved to Notes.");
+        const title =
+          proofs[0]?.title ??
+          (typeof result.title === "string" && result.title.trim()
+            ? result.title.trim()
+            : "Saved answer");
+        updateThreadMessage(threadKey, messageId, (candidate) => ({
+          ...candidate,
+          savedItem: { id: itemId, title },
+          artifactProofs: mergeArtifactProofs(candidate.artifactProofs, proofs),
+        }));
+      } catch (error) {
+        appendToThread(
+          threadKey,
+          "error",
+          error instanceof Error && error.message
+            ? error.message
+            : "The answer could not be saved to Notes.",
+        );
+      } finally {
+        setSavingAnswerId(null);
+      }
+    },
+    [savingAnswerId, threadKey, tools],
+  );
+
+  const rateAnswer = useCallback(
+    async (messageId: string, rating: "up" | "down") => {
+      const message = threadFor(threadKey).find(
+        (candidate) => candidate.id === messageId,
+      );
+      if (!message || message.role !== "assistant") return;
+      const previous = message.feedback;
+      updateThreadMessage(threadKey, messageId, (candidate) => ({
+        ...candidate,
+        feedback: rating,
+      }));
+      try {
+        await submitAssistantFeedback({
+          messageId,
+          provider: message.provider ?? "Codex",
+          rating,
+        });
+      } catch {
+        updateThreadMessage(threadKey, messageId, (candidate) => ({
+          ...candidate,
+          ...(previous ? { feedback: previous } : { feedback: undefined }),
+        }));
+      }
+    },
+    [threadKey],
+  );
+
   const cancel = useCallback(() => {
     const cloudAbort = activeCloudAbortRef.current;
     cloudAbort?.abort();
@@ -1566,11 +1667,11 @@ export function useNativeAssistant({
   const attachmentAccept = nativeReady
     ? assistantAttachmentAccept({ ocr: true })
     : cloudProvider
-      ? ASSISTANT_TEXT_ATTACHMENT_ACCEPT
+      ? assistantAttachmentAccept({ vision: true })
       : "";
   const attachmentTitle = nativeReady
     ? "Add a text or image attachment"
-    : "Add a text attachment";
+    : "Add a text or image attachment";
 
   const jobs = useSyncExternalStore(
     subscribeAssistantJobs,
@@ -1600,6 +1701,9 @@ export function useNativeAssistant({
     quickActions,
     runQuickAction,
     runningJobs,
+    saveAnswer,
+    rateAnswer,
+    savingAnswerId,
     submit,
     submitting,
     undoProposal,

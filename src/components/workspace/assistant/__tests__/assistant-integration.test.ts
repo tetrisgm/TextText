@@ -6,6 +6,7 @@ vi.mock("@/lib/ai/workspace-tool-client", () => ({
 
 import {
   assistantAttachmentAccept,
+  buildCloudAssistantAttachments,
   buildCloudAssistantPrompt,
   buildNativeAssistantPrompt,
   formatAssistantSubmission,
@@ -115,20 +116,35 @@ describe("assistant attachments", () => {
     expect(result).toContain("Cloud-safe source text");
   });
 
-  it("keeps image attachments on the native-only path", async () => {
+  it("passes image attachments to the hosted provider as bounded data URLs", async () => {
     const file = new File(["image bytes"], "scan.png", { type: "image/png" });
+    vi.stubGlobal("window", {
+      btoa: (value: string) => Buffer.from(value, "binary").toString("base64"),
+    });
     await expect(
       buildCloudAssistantPrompt("Review this", [attachment(file)]),
-    ).rejects.toThrow("standalone native agent");
+    ).resolves.toContain("[Image attachment: scan.png]");
+    await expect(
+      buildCloudAssistantAttachments([attachment(file)]),
+    ).resolves.toEqual([
+      {
+        name: "scan.png",
+        mediaType: "image/png",
+        dataUrl: "data:image/png;base64,aW1hZ2UgYnl0ZXM=",
+      },
+    ]);
   });
 
-  it("offers image attachments only when native OCR is available", () => {
+  it("offers image attachments when native OCR or hosted vision is available", () => {
     expect(assistantAttachmentAccept(null)).toBe(".txt,.md,.markdown");
     expect(
       assistantAttachmentAccept({
         ocr: true,
       }),
     ).toBe("image/*,.txt,.md,.markdown");
+    expect(assistantAttachmentAccept({ vision: true })).toBe(
+      "image/*,.txt,.md,.markdown",
+    );
   });
 });
 

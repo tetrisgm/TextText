@@ -206,6 +206,61 @@ describe("assistant sidebar UI", () => {
     expect(html).not.toContain("off this Mac");
   });
 
+  it("offers a first-class save receipt for useful answers", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        messages: [
+          {
+            id: "cloud-1",
+            role: "assistant",
+            text: "A useful answer to keep.",
+            provider: "OpenAI",
+          },
+        ],
+        submitting: false,
+        onSaveAnswer: () => {},
+      }),
+    );
+
+    expect(html).toContain("Save to Notes");
+    expect(html).toContain("_saveAnswer_");
+  });
+
+  it("shows the durable note receipt after saving an answer", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        messages: [
+          {
+            id: "cloud-1",
+            role: "assistant",
+            text: "A useful answer to keep.",
+            savedItem: { id: "note-1", title: "A useful answer" },
+          },
+        ],
+        submitting: false,
+        onSaveAnswer: () => {},
+      }),
+    );
+
+    expect(html).toContain("Saved to Notes · A useful answer");
+    expect(html).not.toContain("Save to Notes");
+  });
+
+  it("keeps answer feedback beside the save action", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        messages: [{ id: "cloud-1", role: "assistant", text: "Answer" }],
+        submitting: false,
+        onSaveAnswer: () => {},
+        onRateAnswer: () => {},
+      }),
+    );
+
+    expect(html).toContain('aria-label="Rate answer"');
+    expect(html).toContain('aria-label="Helpful answer"');
+    expect(html).toContain('aria-label="Unhelpful answer"');
+  });
+
   it("ends a completed turn with compact inspectable TextText proof", () => {
     const html = renderToStaticMarkup(
       React.createElement(AssistantConversation, {

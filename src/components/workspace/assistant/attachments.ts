@@ -1,17 +1,20 @@
 import { nativeOcr } from "@/lib/ai/native-ocr";
 import type { AssistantAttachment } from "./AssistantSidebar";
+import type { CloudAssistantAttachment } from "@/lib/ai/cloud-client";
 
 export const ASSISTANT_ATTACHMENT_ACCEPT = "image/*,.txt,.md,.markdown";
 export const ASSISTANT_TEXT_ATTACHMENT_ACCEPT = ".txt,.md,.markdown";
 
 export type NativeOcrCapabilities = {
   ocr?: boolean;
+  /** Hosted providers can receive image parts directly over HTTPS. */
+  vision?: boolean;
 };
 
 export function assistantAttachmentAccept(
   capabilities: NativeOcrCapabilities | null,
 ): string {
-  return capabilities?.ocr
+  return capabilities?.ocr || capabilities?.vision
     ? ASSISTANT_ATTACHMENT_ACCEPT
     : ASSISTANT_TEXT_ATTACHMENT_ACCEPT;
 }
@@ -118,10 +121,9 @@ export async function buildNativeAssistantPrompt(
 }
 
 /**
- * Browser and Store builds can safely send plain-text attachments through the
- * already-configured provider request. Images stay native-only because their
- * OCR bridge is a local capability, not a reason to upload raw files from a
- * sandboxed App Store build.
+ * Browser and Store builds can safely send bounded text and image attachments
+ * through the already-configured provider request. Native OCR remains useful
+ * for the standalone agent, while hosted vision uses ordinary HTTPS upload.
  */
 export async function buildCloudAssistantPrompt(
   text: string,
@@ -133,9 +135,14 @@ export async function buildCloudAssistantPrompt(
   let remaining = MAX_ATTACHMENT_CONTEXT_LENGTH;
   const sections: string[] = [];
   for (const attachment of files) {
-    if (attachmentKind(attachment) !== "text") {
+    const kind = attachmentKind(attachment);
+    if (kind === "image") {
+      sections.push(`[Image attachment: ${attachment.name}]`);
+      continue;
+    }
+    if (kind !== "text") {
       throw new Error(
-        `${attachment.name} is an image or unsupported file. Image attachments require the standalone native agent.`,
+        `${attachment.name} is not a supported attachment. Use a text file or image.`,
       );
     }
     if (!attachment.file) {
@@ -153,4 +160,40 @@ export async function buildCloudAssistantPrompt(
   }
 
   return `${text.trim() || "Review the attached content."}\n\n${sections.join("\n\n")}`;
+}
+
+/**
+ * Prepare image parts for the hosted provider. The server receives a bounded
+ * data URL over HTTPS and passes it to the provider as a multimodal user part;
+ * no localhost bridge or App Store-only capability is involved.
+ */
+export async function buildCloudAssistantAttachments(
+  attachments: readonly AssistantAttachment[],
+): Promise<CloudAssistantAttachment[]> {
+  const images = attachments.filter(
+    (attachment) =>
+      !attachment.workspaceItemId && attachmentKind(attachment) === "image",
+  );
+  const prepared: CloudAssistantAttachment[] = [];
+  for (const attachment of images) {
+    if (!attachment.file) {
+      throw new Error(`Reattach ${attachment.name} so the assistant can read it.`);
+    }
+    if (attachment.file.size > MAX_CLOUD_ATTACHMENT_BYTES) {
+      throw new Error(
+        `${attachment.name} is too large. Keep image attachments under 1 MB.`,
+      );
+    }
+    const mediaType = attachment.file.type.startsWith("image/")
+      ? attachment.file.type
+      : "image/png";
+    prepared.push({
+      name: attachment.name,
+      mediaType,
+      dataUrl: `data:${mediaType};base64,${arrayBufferToBase64(
+        await attachment.file.arrayBuffer(),
+      )}`,
+    });
+  }
+  return prepared;
 }

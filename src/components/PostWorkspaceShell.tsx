@@ -6987,6 +6987,9 @@ function LocalWorkspaceShell({
             aiSettingsHref={`${workspaceSettingsHref(homePath)}#api-key-connections`}
             onOpenAiSettings={() => changeAssistantState("hidden")}
             onRetry={(prompt) => assistant.submit(prompt)}
+            onSaveAnswer={assistant.saveAnswer}
+            savingAnswerId={assistant.savingAnswerId}
+            onRateAnswer={assistant.rateAnswer}
             jobs={assistant.jobs}
             messages={assistant.messages}
             starterContext={starterContextFromChip(assistantContext)}

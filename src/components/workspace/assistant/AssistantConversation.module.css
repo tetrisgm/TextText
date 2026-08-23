@@ -289,6 +289,68 @@
   color: var(--ac-label);
 }
 
+.saveAnswer,
+.savedAnswer {
+  width: fit-content;
+  margin-top: 8px;
+  color: var(--ac-label-2);
+  font: 600 var(--ac-fs-caption1) / 1.2 var(--ac-font-text);
+}
+
+.saveAnswer {
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 6px;
+  background: transparent;
+  color: var(--ac-accent);
+  cursor: pointer;
+}
+
+.saveAnswer:hover:not(:disabled) {
+  background: var(--ac-fill-3);
+}
+
+.saveAnswer:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
+
+.saveAnswer:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.answerFeedback {
+  display: flex;
+  gap: 2px;
+  margin-top: 6px;
+}
+
+.feedbackButton {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0;
+  background: transparent;
+  color: var(--ac-label-2);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.72;
+}
+
+.feedbackButton:hover,
+.feedbackButton[aria-pressed="true"] {
+  background: var(--ac-fill-3);
+  opacity: 1;
+}
+
+.feedbackButton:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
+
 .providerLabel {
   display: block;
   margin-bottom: 5px;

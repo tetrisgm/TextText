@@ -352,6 +352,31 @@ describe("/api/ai cloud assistant route", () => {
     });
   });
 
+  it("keeps a bounded image attachment as a multimodal user part", async () => {
+    const dataUrl = "data:image/png;base64,aW1hZ2UgYnl0ZXM=";
+    const res = await POST(
+      post({
+        messages: [{ role: "user", content: "Read this image" }],
+        context: {
+          attachments: [
+            { name: "scan.png", mediaType: "image/png", dataUrl },
+          ],
+        },
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(mocks.generateText.mock.calls[0][0].messages).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Read this image" },
+          { type: "image", image: dataUrl },
+        ],
+      },
+    ]);
+  });
+
   it("returns validated workspace command evidence for artifact receipts", async () => {
     mocks.cloudAssistantTools.mockImplementationOnce((...args: unknown[]) => {
       const onWorkspaceCall = args[1] as

@@ -185,6 +185,9 @@ export function AssistantConversation({
   aiSettingsHref,
   onOpenAiSettings,
   onRetry,
+  onSaveAnswer,
+  savingAnswerId,
+  onRateAnswer,
 }: {
   activeCloudProvider?: CloudAssistantProviderLabel | null;
   cloudProvider?: CloudAssistantProviderLabel | null;
@@ -212,6 +215,10 @@ export function AssistantConversation({
   onOpenAiSettings?: () => void;
   /** Re-runs the last user turn through the same assistant submit path. */
   onRetry?: (prompt: string) => Promise<void> | void;
+  /** Captures an answer and its prompt into the private Notes folder. */
+  onSaveAnswer?: (messageId: string) => Promise<void> | void;
+  savingAnswerId?: string | null;
+  onRateAnswer?: (messageId: string, rating: "up" | "down") => Promise<void> | void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
   const context = starterContext ?? FALLBACK_STARTER_CONTEXT;
@@ -521,6 +528,44 @@ export function AssistantConversation({
             <ArtifactProof artifacts={message.artifactProofs} />
             <span>{displayedMessageText(message)}</span>
             {message.outbound && <OutboundTrace outbound={message.outbound} />}
+            {message.role === "assistant" && onSaveAnswer ? (
+              message.savedItem ? (
+                <span className={styles.savedAnswer}>
+                  Saved to Notes · {message.savedItem.title}
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className={styles.saveAnswer}
+                  disabled={savingAnswerId === message.id}
+                  onClick={() => void onSaveAnswer(message.id)}
+                >
+                  {savingAnswerId === message.id ? "Saving to Notes" : "Save to Notes"}
+                </button>
+              )
+            ) : null}
+            {message.role === "assistant" && onRateAnswer ? (
+              <span className={styles.answerFeedback} aria-label="Rate answer">
+                <button
+                  type="button"
+                  className={styles.feedbackButton}
+                  aria-label="Helpful answer"
+                  aria-pressed={message.feedback === "up"}
+                  onClick={() => void onRateAnswer(message.id, "up")}
+                >
+                  👍
+                </button>
+                <button
+                  type="button"
+                  className={styles.feedbackButton}
+                  aria-label="Unhelpful answer"
+                  aria-pressed={message.feedback === "down"}
+                  onClick={() => void onRateAnswer(message.id, "down")}
+                >
+                  👎
+                </button>
+              </span>
+            ) : null}
           </div>
         );
       })}

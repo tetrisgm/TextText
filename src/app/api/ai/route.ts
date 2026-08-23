@@ -130,6 +130,7 @@ type AssistantViewContext = {
   selection?: unknown;
   itemPreview?: unknown;
   relatedItems?: unknown;
+  attachments?: unknown;
   mode?: unknown;
 };
 
@@ -137,6 +138,49 @@ function viewContext(value: unknown): AssistantViewContext {
   return value && typeof value === "object"
     ? (value as AssistantViewContext)
     : {};
+}
+
+function messagesWithImageAttachments(
+  messages: readonly ModelMessage[],
+  context: unknown,
+): ModelMessage[] {
+  const view = viewContext(context);
+  if (!Array.isArray(view.attachments)) return [...messages];
+  const images = view.attachments.slice(0, 4).flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+    const candidate = entry as Record<string, unknown>;
+    const dataUrl = typeof candidate.dataUrl === "string" ? candidate.dataUrl : "";
+    const mediaType = typeof candidate.mediaType === "string" ? candidate.mediaType : "";
+    if (
+      !/^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=\s]{1,1000000}$/i.test(dataUrl) ||
+      !/^image\/[a-z0-9.+-]+$/i.test(mediaType)
+    ) {
+      return [];
+    }
+    return [{ type: "image" as const, image: dataUrl }];
+  });
+  if (images.length === 0) return [...messages];
+  let lastUserIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === "user") {
+      lastUserIndex = index;
+      break;
+    }
+  }
+  if (lastUserIndex < 0) return [...messages];
+  const last = messages[lastUserIndex];
+  if (last.role !== "user" || typeof last.content !== "string") {
+    return [...messages];
+  }
+  const textContent = last.content as string;
+  return messages.map((message, index) =>
+    index === lastUserIndex
+      ? {
+          role: "user" as const,
+          content: [{ type: "text" as const, text: textContent }, ...images],
+        }
+      : message,
+  );
 }
 
 function fencedUntrusted(label: string, value: string): string {
@@ -597,6 +641,7 @@ export async function POST(request: Request) {
   if (messages.length === 0) {
     return Response.json({ error: "messages is required" }, { status: 400 });
   }
+  const modelMessages = messagesWithImageAttachments(messages, body.context);
 
   const userId = user.userId ?? (await getUserIdBySub(user.sub));
   const actor = {
@@ -692,7 +737,7 @@ export async function POST(request: Request) {
         reachable.map((entry) => entry.connection.name),
         unreachable,
       ),
-    messages,
+    messages: modelMessages,
     tools,
     stopWhen: stepCountIs(MAX_STEPS),
   };
