@@ -1191,7 +1191,7 @@ export function useNativeAssistant({
           onEvent: onCloudEvent,
         });
         if ("disabled" in result) {
-          const fallbackMessageId = appendToThread(
+          appendToThread(
             thread,
             "error",
             "Connect Anthropic or OpenAI in Workspace Settings.",
@@ -1283,6 +1283,12 @@ export function useNativeAssistant({
         NATIVE_QUICK_ACTIONS.find((candidate) => candidate.id === action)
           ?.label ?? action;
       setThreadBusy(thread, true);
+      const jobId = startAssistantJob({
+        threadKey: thread,
+        contextKey,
+        contextLabel: contextLabel(),
+        prompt: actionLabel,
+      });
       let actionPrompt =
         action === "structure"
           ? "Restructure the current item's full body into a clear, useful document. Preserve its meaning and details. Return the complete replacement body only. Do not change the item."
@@ -1318,8 +1324,12 @@ export function useNativeAssistant({
             if (event.type === "start") {
               setCloudProvider(event.provider);
               setThreadCloudProvider(thread, event.provider);
+              updateAssistantJob(jobId, {
+                activity: `Connected to ${event.provider}`,
+              });
             } else if (event.type === "progress") {
               appendToThread(thread, "progress", event.message);
+              updateAssistantJob(jobId, { activity: event.message });
             }
           },
         });
@@ -1329,6 +1339,7 @@ export function useNativeAssistant({
             "error",
             "Connect Anthropic or OpenAI in Workspace Settings.",
           );
+          updateAssistantJob(jobId, { status: "error" });
           return;
         }
         setCloudProvider(result.provider);
@@ -1342,7 +1353,7 @@ export function useNativeAssistant({
           title: item.title,
         });
         if (proof) proofs = mergeArtifactProofs([proof], proofs);
-        appendToThread(
+        const resultMessageId = appendToThread(
           thread,
           "assistant",
           result.text || "Done.",
@@ -1365,8 +1376,15 @@ export function useNativeAssistant({
             : undefined,
           proofs.length > 0 ? proofs : undefined,
         );
+        updateThreadMessage(thread, resultMessageId, (message) => ({
+          ...message,
+          model: result.model,
+        }));
         if (result.terminalError) {
           appendToThread(thread, "error", result.terminalError);
+          updateAssistantJob(jobId, { status: "error" });
+        } else {
+          updateAssistantJob(jobId, { status: "done" });
         }
       } catch (error) {
         appendToThread(
@@ -1376,13 +1394,14 @@ export function useNativeAssistant({
             ? error.message
             : "The AI provider could not finish.",
         );
+        updateAssistantJob(jobId, { status: "error" });
       } finally {
         activeCloudAbortRef.current = null;
         setThreadCloudProvider(thread, null);
         setThreadBusy(thread, false);
       }
     },
-    [threadKey],
+    [contextKey, contextLabel, threadKey],
   );
 
   const applyProposalValue = useCallback(
