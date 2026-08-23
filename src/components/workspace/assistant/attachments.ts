@@ -20,7 +20,10 @@ export function assistantAttachmentAccept(
 }
 
 const MAX_ATTACHMENT_CONTEXT_LENGTH = 7_000;
-const MAX_CLOUD_ATTACHMENT_BYTES = 1_000_000;
+const MAX_CLOUD_TEXT_ATTACHMENT_BYTES = 1_000_000;
+// Base64 expands binary data by roughly one third, so keep the raw image below
+// the bounded JSON request budget while leaving room for the prompt and context.
+const MAX_CLOUD_IMAGE_ATTACHMENT_BYTES = 700_000;
 
 type Ocr = (imageBase64: string) => Promise<{ text: string }>;
 
@@ -148,7 +151,7 @@ export async function buildCloudAssistantPrompt(
     if (!attachment.file) {
       throw new Error(`Reattach ${attachment.name} so the assistant can read it.`);
     }
-    if (attachment.file.size > MAX_CLOUD_ATTACHMENT_BYTES) {
+    if (attachment.file.size > MAX_CLOUD_TEXT_ATTACHMENT_BYTES) {
       throw new Error(
         `${attachment.name} is too large. Keep text attachments under 1 MB.`,
       );
@@ -179,9 +182,9 @@ export async function buildCloudAssistantAttachments(
     if (!attachment.file) {
       throw new Error(`Reattach ${attachment.name} so the assistant can read it.`);
     }
-    if (attachment.file.size > MAX_CLOUD_ATTACHMENT_BYTES) {
+    if (attachment.file.size > MAX_CLOUD_IMAGE_ATTACHMENT_BYTES) {
       throw new Error(
-        `${attachment.name} is too large. Keep image attachments under 1 MB.`,
+        `${attachment.name} is too large. Keep image attachments under 700 KB.`,
       );
     }
     const mediaType = attachment.file.type.startsWith("image/")
