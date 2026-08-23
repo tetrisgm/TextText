@@ -161,6 +161,8 @@ export async function pollDeviceLink(
     .returning({ id: deviceLinks.id });
   if (!claimed[0]) return { status: "expired" };
 
-  const { raw } = await createApiToken(row.approvedByUserId, row.appName);
+  const { raw } = await createApiToken(row.approvedByUserId, row.appName, {
+    kind: "app",
+  });
   return { status: "approved", token: raw, tokenName: row.appName };
 }

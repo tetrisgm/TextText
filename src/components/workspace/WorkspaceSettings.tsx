@@ -3,12 +3,19 @@
 import { useEffect, useState } from "react";
 import { updateBlogNameAction } from "@/app/editor/actions";
 import {
+  listApiTokensAction,
+  revokeApiTokenAction,
+} from "@/app/editor/token-actions";
+import {
   getWorkspaceAiSettingsAction,
   removeWorkspaceAiSettingsAction,
   saveWorkspaceAiSettingsAction,
   type WorkspaceAiSettingsState,
 } from "@/app/editor/ai-config-actions";
 import type { Blog } from "@/lib/content";
+import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
+import type { ApiTokenSummary } from "@/lib/api-tokens";
+import { apiTokenKindLabel } from "@/lib/api-token-kinds";
 import {
   CLOUD_AI_CATALOG,
   defaultCloudAiModel,
@@ -56,6 +63,27 @@ export function WorkspaceSettings({
   const [aiEditing, setAiEditing] = useState(false);
   const [aiSaving, setAiSaving] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [tokens, setTokens] = useState<ApiTokenSummary[]>([]);
+  const [tokensError, setTokensError] = useState<string | null>(null);
+  const [revokingToken, setRevokingToken] = useState<string | null>(null);
+  const [confirmingTokenId, setConfirmingTokenId] = useState<string | null>(
+    null,
+  );
+  const [tokensLoading, setTokensLoading] = useState(false);
+  const [tokensVisible, setTokensVisible] = useState(false);
+  const [mcpCount, setMcpCount] = useState<number | null>(null);
+  const [nativeConnection, setNativeConnection] =
+    useState<AiConnectionSnapshot | null>(null);
+
+  function formatTokenDate(value: string | null): string {
+    if (!value) return "Never used";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "Never used";
+    return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+    })}`;
+  }
 
   // Self-contained fetch, like WorkspaceMenuMount does. A 404 is the normal
   // answer for a collaborator or a signed-out viewer, and leaving account
@@ -139,6 +167,32 @@ export function WorkspaceSettings({
     };
   }, [blog.handle]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        setTokensLoading(true);
+        const next = await listApiTokensAction();
+        if (!cancelled) {
+          setTokens(next);
+          setTokensVisible(true);
+          setTokensError(null);
+        }
+      } catch {
+        if (!cancelled) {
+          setTokens([]);
+          setTokensVisible(false);
+          setTokensError("Could not load connected app tokens.");
+        }
+      } finally {
+        if (!cancelled) setTokensLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const saveName = async () => {
     const clean = name.trim().replace(/\s+/g, " ");
     if (!clean || saving) return;
@@ -207,6 +261,33 @@ export function WorkspaceSettings({
     }, 0);
   };
 
+  const aiOverviewLabel =
+    nativeConnection?.state === "ready"
+      ? `Codex with ChatGPT${nativeConnection.accountEmail ? ` · ${nativeConnection.accountEmail}` : ""}`
+      : nativeConnection?.state === "connecting"
+        ? "Codex is connecting"
+        : nativeConnection?.state === "rate-limited"
+          ? "Codex is rate-limited"
+        : aiSettings === null
+          ? "Checking"
+          : aiSettings.configured
+            ? `${aiSettings.provider === "anthropic" ? "Anthropic" : "OpenAI"}${aiSettings.model ? ` · ${aiSettings.model}` : ""}`
+            : "Not configured";
+
+  const revokeToken = async (tokenId: string) => {
+    setTokensError(null);
+    setRevokingToken(tokenId);
+    try {
+      await revokeApiTokenAction(tokenId);
+      setTokens((previous) => previous.filter((token) => token.id !== tokenId));
+      setConfirmingTokenId(null);
+    } catch {
+      setTokensError("Could not revoke this token.");
+    } finally {
+      setRevokingToken(null);
+    }
+  };
+
   return (
     <main className={styles.page} aria-labelledby="workspace-settings-title">
       <div className={styles.inner}>
@@ -264,6 +345,53 @@ export function WorkspaceSettings({
           )}
         </section>
 
+        <section
+          className={styles.section}
+          aria-labelledby="settings-connections-overview"
+        >
+          <div className={styles.sectionHeader}>
+            <div>
+              <h2 id="settings-connections-overview">Connections</h2>
+              <p>
+                Everything that can access this workspace, with a direct path
+                to its controls.
+              </p>
+            </div>
+          </div>
+          <ul className={styles.connectionOverview}>
+            <li>
+              <a href="#settings-ai">TextText AI</a>
+              <span>{aiOverviewLabel}</span>
+            </li>
+            <li>
+              <a href="#settings-connected-clients">AI and app clients</a>
+              <span>
+                {tokensLoading
+                  ? "Loading"
+                  : tokensVisible
+                    ? `${tokens.length} active ${tokens.length === 1 ? "client" : "clients"}`
+                    : "Sign in to manage"}
+              </span>
+            </li>
+            <li>
+              <a href="#settings-mcp">Other MCP servers</a>
+              <span>
+                {mcpCount === null
+                  ? "Loading"
+                  : `${mcpCount} connected ${mcpCount === 1 ? "server" : "servers"}`}
+              </span>
+            </li>
+            <li>
+              <a href="#settings-account">Sign-in methods</a>
+              <span>
+                {account
+                  ? `${account.identities.length} connected ${account.identities.length === 1 ? "method" : "methods"}`
+                  : "Workspace owner only"}
+              </span>
+            </li>
+          </ul>
+        </section>
+
         {aiSettings?.allowed && (
           <section className={styles.section} aria-labelledby="settings-ai">
             <div className={styles.sectionHeader}>
@@ -274,7 +402,10 @@ export function WorkspaceSettings({
                 </p>
               </div>
             </div>
-            <AiConnectionSettings onTryInTextText={tryAiInTextText} />
+            <AiConnectionSettings
+              onTryInTextText={tryAiInTextText}
+              onConnectionChange={setNativeConnection}
+            />
             <h3 className={styles.subsectionTitle} id="api-key-connections">
               API key connections
             </h3>
@@ -428,7 +559,89 @@ export function WorkspaceSettings({
           </section>
         )}
 
-        <McpConnections handle={blog.handle} />
+        <McpConnections handle={blog.handle} onCountChange={setMcpCount} />
+
+        {(tokensVisible || Boolean(account)) && (
+          <section
+            className={styles.section}
+            id="settings-connected-clients"
+            aria-labelledby="settings-connections"
+          >
+            <div className={styles.sectionHeader}>
+              <div>
+                <h2 id="settings-connections">Connected clients</h2>
+                <p>API tokens used by TextText apps and external AI clients.</p>
+              </div>
+              <a href="/connect" className={styles.connectionAddLink}>
+                Add client token
+              </a>
+            </div>
+
+            {tokensLoading && !tokens.length ? (
+              <p className={styles.aiNotConfigured}>Loading clients.</p>
+            ) : tokens.length > 0 ? (
+              <ul className={styles.connectionList}>
+                {tokens.map((token) => (
+                  <li className={styles.connectionRow} key={token.id}>
+                    <div className={styles.connectionMain}>
+                      <span className={styles.connectionName}>
+                        {token.name}
+                      </span>
+                      <span className={styles.connectionMeta}>
+                        {apiTokenKindLabel(token.kind)} · {" "}
+                        Created {formatTokenDate(token.createdAt)} · Last used{" "}
+                        {token.lastUsedAt
+                          ? formatTokenDate(token.lastUsedAt)
+                          : "never"}
+                      </span>
+                    </div>
+                    <div className={styles.connectionActions}>
+                      {confirmingTokenId === token.id ? (
+                        <>
+                          <button
+                            type="button"
+                            className="ac-btn ac-btn-plain"
+                            onClick={() => setConfirmingTokenId(null)}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            className="ac-btn ac-btn-plain ac-danger"
+                            disabled={revokingToken === token.id}
+                            onClick={() => void revokeToken(token.id)}
+                          >
+                            {revokingToken === token.id
+                              ? "Revoking"
+                              : "Confirm revoke"}
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="ac-btn ac-btn-plain ac-danger"
+                          onClick={() => setConfirmingTokenId(token.id)}
+                        >
+                          Revoke
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className={styles.aiNotConfigured}>
+                No connected clients yet.
+              </p>
+            )}
+
+            {tokensError && (
+              <p className={styles.error} role="alert">
+                {tokensError}
+              </p>
+            )}
+          </section>
+        )}
 
         {/* Only when the viewer owns an account. A collaborator, a guest
             workspace and a failed fetch all render nothing, and this

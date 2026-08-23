@@ -7,7 +7,7 @@ runs.
 | Where the agent runs                 | Recommended path                                             | Authentication                                     |
 | ------------------------------------ | ------------------------------------------------------------ | -------------------------------------------------- |
 | On this Mac with the standalone app  | Bundled `texttext` CLI through authenticated TextText routes | The signed-in app's device credential              |
-| In a remote or manual MCP client     | Hosted MCP at `https://texttext.app/api/mcp`                 | A revocable `wsk_` workspace token from `/connect` |
+| In a remote MCP client                | Hosted MCP at `https://texttext.app/api/mcp`                 | A revocable `wsk_` workspace token from `/connect` |
 | In an explicit offline file workflow | `texttext` CLI with `TEXTTEXT_WORKSPACE_ROOT`                | Local filesystem permissions                       |
 
 The app never calls its own MCP endpoint. The local plugin does not start a

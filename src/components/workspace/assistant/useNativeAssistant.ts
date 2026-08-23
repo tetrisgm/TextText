@@ -59,7 +59,13 @@ import { findPoolPostById } from "@/lib/pool/selectors";
 import type { WorkspacePoolPayload, WorkspacePoolPost } from "@/lib/pool/types";
 import { normalizeTags } from "@/lib/tags";
 import type { AssistantAttachment } from "./AssistantSidebar";
-import { formatAssistantSubmission } from "./attachments";
+import {
+  assistantAttachmentAccept,
+  ASSISTANT_TEXT_ATTACHMENT_ACCEPT,
+  buildCloudAssistantPrompt,
+  buildNativeAssistantPrompt,
+  formatAssistantSubmission,
+} from "./attachments";
 import { type AssistantViewSnapshot } from "./context";
 import {
   nativeAssistantAvailable,
@@ -1009,6 +1015,17 @@ export function useNativeAssistant({
         prompt: displayPrompt,
       });
       try {
+        const localAttachments = attachments.filter(
+          (attachment) => !attachment.workspaceItemId,
+        );
+        const nativeReady = nativeConnection?.state === "ready";
+        const preparedPrompt = nativeReady
+          ? localAttachments.length > 0
+            ? (
+                await buildNativeAssistantPrompt(modelPrompt, localAttachments)
+              ).prompt
+            : modelPrompt
+          : await buildCloudAssistantPrompt(modelPrompt, attachments);
         const relatedItems = (
           await Promise.all(
             attachments
@@ -1051,7 +1068,7 @@ export function useNativeAssistant({
                     body: open.body,
                   }
                 : null,
-            request: modelPrompt,
+            request: preparedPrompt,
             relatedItems,
             selection: openSelection,
             workspaceIndex: open
@@ -1100,7 +1117,7 @@ export function useNativeAssistant({
         const openSelection = open
           ? resolveWorkspaceItemTextSelection(open)
           : null;
-        const result = await cloudAssistantTurn(modelPrompt, {
+        const result = await cloudAssistantTurn(preparedPrompt, {
           level: submittedView.level,
           folderPath: submittedView.folderPath,
           postId: submittedView.postId,
@@ -1459,9 +1476,16 @@ export function useNativeAssistant({
           description: `${action.label} with ${cloudProvider}`,
         }))
       : [];
-  const attachmentsAvailable = false;
-  const attachmentTitle =
-    "Attachments are not available for provider connections yet";
+  const nativeReady = nativeConnection?.state === "ready";
+  const attachmentsAvailable = nativeReady || Boolean(cloudProvider);
+  const attachmentAccept = nativeReady
+    ? assistantAttachmentAccept({ ocr: true })
+    : cloudProvider
+      ? ASSISTANT_TEXT_ATTACHMENT_ACCEPT
+      : "";
+  const attachmentTitle = nativeReady
+    ? "Add a text or image attachment"
+    : "Add a text attachment";
 
   const jobs = useSyncExternalStore(
     subscribeAssistantJobs,
@@ -1477,7 +1501,7 @@ export function useNativeAssistant({
   return {
     activeCloudProvider,
     startNewConversation: () => clearThread(threadKey),
-    attachmentAccept: "",
+    attachmentAccept,
     attachmentsAvailable,
     attachmentTitle,
     applyProposal,

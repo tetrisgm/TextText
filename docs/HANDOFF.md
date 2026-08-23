@@ -17,6 +17,26 @@ unverified until exercised. The Notion-look polish continues, but behavior
 outranks look, and the owner's Notion screenshots set the bar, not the old
 polish ledger.
 
+## Connection management pass (2026-08-23)
+
+- Settings now opens with a Connections overview linking to the configured
+  provider, native Codex state, client capabilities, outbound MCP servers, and
+  sign-in methods. Client-token loading no longer depends on the destructive
+  account-summary endpoint, so collaborators and valid signed-in states do not
+  lose their connection list.
+- `api_tokens.kind` records whether a capability is hosted MCP, TextText app,
+  CLI, native, manual, or other. Existing rows backfill to `manual`; new app
+  and hosted MCP capabilities are labeled at creation and can be revoked from
+  Settings without exposing their secret.
+- The standalone native Codex bridge now exposes Disconnect. It stops the
+  embedded TextText runtime and clears its session state, while explicitly not
+  claiming to sign the person out of Codex in another application.
+- Configured browser and Store AI connections accept bounded local text and
+  Markdown attachments. Images remain on the standalone native OCR path.
+- Verification after this pass: 1,076 web tests, 522 Swift tests, TypeScript,
+  lint, the production web build, migration coverage, and the agent integration
+  verifier all pass. The build retains the known duplicate-Yjs warnings.
+
 ## Agentic text inbox loop (2026-08-20)
 
 - The product loop is now explicit: capture instantly, retrieve from any

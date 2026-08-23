@@ -17,6 +17,7 @@ export function assistantAttachmentAccept(
 }
 
 const MAX_ATTACHMENT_CONTEXT_LENGTH = 7_000;
+const MAX_CLOUD_ATTACHMENT_BYTES = 1_000_000;
 
 type Ocr = (imageBase64: string) => Promise<{ text: string }>;
 
@@ -114,4 +115,42 @@ export async function buildNativeAssistantPrompt(
     displayText,
     prompt: `${trimmed || "Review the attached content."}\n\n${sections.join("\n\n")}`,
   };
+}
+
+/**
+ * Browser and Store builds can safely send plain-text attachments through the
+ * already-configured provider request. Images stay native-only because their
+ * OCR bridge is a local capability, not a reason to upload raw files from a
+ * sandboxed App Store build.
+ */
+export async function buildCloudAssistantPrompt(
+  text: string,
+  attachments: readonly AssistantAttachment[],
+): Promise<string> {
+  const files = attachments.filter((attachment) => !attachment.workspaceItemId);
+  if (files.length === 0) return text.trim();
+
+  let remaining = MAX_ATTACHMENT_CONTEXT_LENGTH;
+  const sections: string[] = [];
+  for (const attachment of files) {
+    if (attachmentKind(attachment) !== "text") {
+      throw new Error(
+        `${attachment.name} is an image or unsupported file. Image attachments require the standalone native agent.`,
+      );
+    }
+    if (!attachment.file) {
+      throw new Error(`Reattach ${attachment.name} so the assistant can read it.`);
+    }
+    if (attachment.file.size > MAX_CLOUD_ATTACHMENT_BYTES) {
+      throw new Error(
+        `${attachment.name} is too large. Keep text attachments under 1 MB.`,
+      );
+    }
+    const content = (await attachment.file.text()).slice(0, remaining);
+    sections.push(`[Attachment: ${attachment.name}]\n${content}`);
+    remaining -= content.length;
+    if (remaining <= 0) break;
+  }
+
+  return `${text.trim() || "Review the attached content."}\n\n${sections.join("\n\n")}`;
 }

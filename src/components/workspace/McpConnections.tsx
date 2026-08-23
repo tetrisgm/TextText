@@ -57,7 +57,13 @@ function checkedAgo(value: string | null): string {
   })}`;
 }
 
-export function McpConnections({ handle }: { handle: string }) {
+export function McpConnections({
+  handle,
+  onCountChange,
+}: {
+  handle: string;
+  onCountChange?: (count: number) => void;
+}) {
   const [state, setState] = useState<McpConnectionsState | null>(null);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
@@ -81,15 +87,21 @@ export function McpConnections({ handle }: { handle: string }) {
     void (async () => {
       try {
         const next = await getMcpConnectionsAction(handle);
-        if (!cancelled) setState(next);
+        if (!cancelled) {
+          setState(next);
+          onCountChange?.(next.allowed ? next.connections.length : 0);
+        }
       } catch {
-        if (!cancelled) setState({ allowed: false, connections: [] });
+        if (!cancelled) {
+          setState({ allowed: false, connections: [] });
+          onCountChange?.(0);
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [handle]);
+  }, [handle, onCountChange]);
 
   const run = useCallback(
     async (work: () => Promise<McpConnectionsState>, fallback: string) => {
@@ -97,7 +109,9 @@ export function McpConnections({ handle }: { handle: string }) {
       setBusy(true);
       setError(null);
       try {
-        setState(await work());
+        const next = await work();
+        setState(next);
+        onCountChange?.(next.connections.length);
       } catch (caught) {
         setError(errorMessage(caught, fallback));
       } finally {
@@ -105,7 +119,7 @@ export function McpConnections({ handle }: { handle: string }) {
         setPendingEnabled({});
       }
     },
-    [busy],
+    [busy, onCountChange],
   );
 
   if (!state?.allowed) return null;

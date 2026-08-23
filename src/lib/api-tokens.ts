@@ -1,4 +1,4 @@
-// Bearer tokens for the machine surface (sync API v1 today, MCP next). This is
+// Bearer tokens for the machine surface (sync API and hosted MCP). This is
 // the one module that touches the api_tokens table. Only the SHA-256 hash of a
 // token is stored; the raw "wsk_..." secret is returned once at creation and
 // verified by exact hash lookup in SQL, so no secret is ever string-compared in
@@ -8,6 +8,13 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
 import { db } from "./db/client";
 import { apiTokens, users } from "./db/schema";
+import {
+  API_TOKEN_KINDS,
+  type ApiTokenKind,
+} from "./api-token-kinds";
+
+export { API_TOKEN_KINDS, apiTokenKindLabel } from "./api-token-kinds";
+export type { ApiTokenKind } from "./api-token-kinds";
 
 /** "wsk_" + 43 base64url chars (32 random bytes, unpadded). */
 const API_TOKEN_RE = /^wsk_[A-Za-z0-9_-]{43}$/;
@@ -18,8 +25,9 @@ const LAST_USED_TOUCH_MS = 60 * 60 * 1000;
 
 export type ApiTokenIdentity = {
   userId: string;
-  /** user-visible connection name, including OAuth client names */
+  /** user-visible connection name supplied when the capability is created */
   name: string;
+  kind: ApiTokenKind;
   /** the owning user's Apple sub, the key getOwnedBlog resolves blogs by */
   sub: string;
   /** space-separated scopes, e.g. "sync" */
@@ -31,6 +39,7 @@ export type ApiTokenIdentity = {
 export type ApiTokenSummary = {
   id: string;
   name: string;
+  kind: ApiTokenKind;
   createdAt: string;
   lastUsedAt: string | null;
 };
@@ -39,9 +48,16 @@ function mapToken(row: typeof apiTokens.$inferSelect): ApiTokenSummary {
   return {
     id: row.id,
     name: row.name,
+    kind: normalizeTokenKind(row.kind),
     createdAt: row.createdAt.toISOString(),
     lastUsedAt: row.lastUsedAt ? row.lastUsedAt.toISOString() : null,
   };
+}
+
+function normalizeTokenKind(value: string | null | undefined): ApiTokenKind {
+  return (API_TOKEN_KINDS as readonly string[]).includes(value ?? "")
+    ? (value as ApiTokenKind)
+    : "manual";
 }
 
 export function generateApiToken(): string {
@@ -67,7 +83,11 @@ export function parseBearerApiToken(header: string | null): string | null {
 export async function createApiToken(
   userId: string,
   name: string,
-  options: { scopes?: string; expiresAt?: Date } = {},
+  options: {
+    kind?: ApiTokenKind;
+    scopes?: string;
+    expiresAt?: Date;
+  } = {},
 ): Promise<{ raw: string; record: ApiTokenSummary }> {
   if (!db) throw new Error("createApiToken requires DATABASE_URL");
   const raw = generateApiToken();
@@ -76,6 +96,7 @@ export async function createApiToken(
     .values({
       userId,
       name,
+      kind: options.kind ?? "manual",
       tokenHash: hashApiToken(raw),
       scopes: options.scopes,
       expiresAt: options.expiresAt,
@@ -131,6 +152,7 @@ export async function resolveApiToken(
       id: apiTokens.id,
       userId: apiTokens.userId,
       name: apiTokens.name,
+      kind: apiTokens.kind,
       scopes: apiTokens.scopes,
       expiresAt: apiTokens.expiresAt,
       lastUsedAt: apiTokens.lastUsedAt,
@@ -166,6 +188,7 @@ export async function resolveApiToken(
   return {
     userId: row.userId,
     name: row.name,
+    kind: normalizeTokenKind(row.kind),
     sub: row.sub,
     scopes: row.scopes,
     expiresAt: row.expiresAt,

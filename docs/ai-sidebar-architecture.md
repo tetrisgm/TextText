@@ -254,6 +254,16 @@ The resource metadata and the MCP `401` response both direct a client to the
 token flow. A client must let the person provide a bearer credential. The app
 never asks for the person's Claude, ChatGPT, or Codex password.
 
+Workspace Settings keeps these boundaries visible in one Connections overview:
+the workspace provider key, native Codex session when the standalone app is
+present, active machine client tokens, outbound MCP servers, and sign-in
+methods. Hosted tokens carry a `kind` such as `mcp` or `app`, so the UI can
+explain the transport instead of guessing from the freeform token name. Each
+capability has its matching control: remove the provider key, revoke a token,
+remove an outbound MCP server, or disconnect the native TextText Codex
+session. Native disconnect stops TextText's embedded runtime; it does not
+claim to sign the person out of Codex in other applications.
+
 ## Maintenance
 
 - Keep `docs/mcp.md`, `/docs/ai`, `/llms.txt`, and `/openapi.json` aligned with

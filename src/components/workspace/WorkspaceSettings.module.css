@@ -88,6 +88,110 @@
   font: 500 13px/1.45 var(--ac-font-text);
 }
 
+.connectionAddLink {
+  display: inline-flex;
+  height: 34px;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--ac-separator);
+  border-radius: var(--ac-radius-control);
+  padding: 0 12px;
+  color: var(--ac-label);
+  text-decoration: none;
+  font: 600 13px/1 var(--ac-font-text);
+}
+
+.connectionAddLink:hover {
+  background: color-mix(in srgb, var(--ac-label) 4%, transparent);
+}
+
+.connectionList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.connectionOverview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.connectionOverview li {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--ac-separator);
+  border-radius: var(--ac-radius-field);
+  background: var(--ac-fill-4);
+}
+
+.connectionOverview a {
+  color: var(--ac-label);
+  font: 650 13px/1.2 var(--ac-font-text);
+  text-decoration: none;
+}
+
+.connectionOverview a:hover {
+  color: var(--ac-accent);
+}
+
+.connectionOverview span {
+  color: var(--ac-label-2);
+  font: 500 12px/1.3 var(--ac-font-text);
+}
+
+.connectionRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: var(--ac-radius-field);
+  border: 1px solid var(--ac-separator);
+  background: var(--ac-fill-4);
+}
+
+.connectionMain {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.connectionName {
+  color: var(--ac-label);
+  font: 600 14px/1.2 var(--ac-font-text);
+  overflow-wrap: anywhere;
+}
+
+.connectionMeta {
+  color: var(--ac-label-2);
+  font: 500 12px/1.35 var(--ac-font-text);
+}
+
+.connectionActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.connectionActions .ac-danger {
+  white-space: nowrap;
+}
+
+@media (max-width: 620px) {
+  .connectionOverview {
+    grid-template-columns: 1fr;
+  }
+}
+
 .nameForm {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

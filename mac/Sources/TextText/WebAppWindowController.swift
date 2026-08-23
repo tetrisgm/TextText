@@ -646,6 +646,43 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         #endif
     }
 
+    /// Ends TextText's embedded Codex session and stops the bundled runtime.
+    /// Codex owns its account credential, so this intentionally does not claim
+    /// to sign the person out of Codex in other applications.
+    private func disconnectCodex() {
+        #if TEXTTEXT_STORE
+        codexStatus()
+        #else
+        let server = codexServer
+        codexServer = nil
+        codexThreadID = nil
+        codexAccount = nil
+        codexLoginInFlight = false
+        codexShouldStartLogin = false
+        codexAccountKnownSignedOut = true
+        codexPendingRequests.removeAll()
+        codexPendingToolCalls.removeAll()
+        for deadline in codexToolDeadlines.values { deadline.cancel() }
+        codexToolDeadlines.removeAll()
+        codexTurnDeadline?.cancel()
+        codexTurnDeadline = nil
+        codexTimeoutRecoveryDeadline?.cancel()
+        codexTimeoutRecoveryDeadline = nil
+        codexActiveTurnID = nil
+        codexTurnTimedOut = false
+        codexTurnInterruptSent = false
+        codexAgentMessagePhases.removeAll()
+        server?.stop()
+        emitCodexEvent([
+            "type": "status",
+            "state": "signed-out",
+            "embeddedChatSupported": true,
+            "providerLabel": "Codex with ChatGPT",
+            "recoveryAction": "connect",
+        ])
+        #endif
+    }
+
     private func sendCodexTurn(_ prompt: String) {
         guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let threadID = codexThreadID else {
@@ -1047,6 +1084,10 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         }
         if body["action"] as? String == "assistantConnect" {
             connectCodex()
+            return
+        }
+        if body["action"] as? String == "assistantDisconnect" {
+            disconnectCodex()
             return
         }
         if body["action"] as? String == "assistantTurn",

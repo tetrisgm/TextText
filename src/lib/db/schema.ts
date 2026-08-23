@@ -389,7 +389,7 @@ export const deviceLinks = pgTable(
   ],
 );
 
-// Scoped bearer tokens for the machine surface (sync API today, MCP next).
+// Scoped bearer tokens for the machine surface (sync API and hosted MCP).
 // Only the SHA-256 hash is stored; the raw token is shown once at creation.
 export const apiTokens = pgTable(
   "api_tokens",
@@ -399,6 +399,8 @@ export const apiTokens = pgTable(
       .notNull()
       .references(() => users.id),
     name: text("name").notNull(),
+    /** How this capability is used, so connection management can explain it. */
+    kind: text("kind").notNull().default("manual"),
     tokenHash: text("token_hash").notNull(),
     /** space-separated scopes; "sync" grants read/write on owned content */
     scopes: text("scopes").notNull().default("sync"),
@@ -408,7 +410,13 @@ export const apiTokens = pgTable(
     lastUsedAt: timestamp("last_used_at"),
     revokedAt: timestamp("revoked_at"),
   },
-  (t) => [uniqueIndex("api_tokens_hash_idx").on(t.tokenHash)],
+  (t) => [
+    uniqueIndex("api_tokens_hash_idx").on(t.tokenHash),
+    check(
+      "api_tokens_kind_valid",
+      sql`${t.kind} in ('manual', 'mcp', 'cli', 'native', 'app', 'other')`,
+    ),
+  ],
 );
 
 // A workspace (blogs row) holds folders; folders hold items (posts rows). The

@@ -30,8 +30,10 @@ function nativeEditionSnapshot(): TextTextEdition {
 
 export function AiConnectionSettings({
   onTryInTextText,
+  onConnectionChange,
 }: {
   onTryInTextText?: () => void;
+  onConnectionChange?: (connection: AiConnectionSnapshot) => void;
 }) {
   const [connection, setConnection] = useState<AiConnectionSnapshot | null>(
     null,
@@ -70,8 +72,17 @@ export function AiConnectionSettings({
     return unsubscribe;
   }, []);
 
+  useEffect(() => {
+    if (connection) onConnectionChange?.(connection);
+  }, [connection, onConnectionChange]);
+
   const embeddedAgent = edition === "standalone";
   const ready = connection?.state === "ready";
+  const canDisconnect =
+    embeddedAgent &&
+    (ready ||
+      connection?.state === "rate-limited" ||
+      Boolean(connection?.accountEmail));
   return (
     <section
       className={styles.settings}
@@ -96,23 +107,40 @@ export function AiConnectionSettings({
           ) : null}
         </div>
         {embeddedAgent ? (
-          <button
-            type="button"
-            className={styles.primary}
-            onClick={() =>
-              ready
-                ? onTryInTextText?.()
-                : requestNativeAssistant("assistantConnect")
-            }
-          >
-            {ready ? "Try in TextText" : "Continue with ChatGPT"}
-          </button>
+          <div className={styles.actions}>
+            <button
+              type="button"
+              className={styles.primary}
+              onClick={() =>
+                ready
+                  ? onTryInTextText?.()
+                  : requestNativeAssistant("assistantConnect")
+              }
+            >
+              {ready ? "Try in TextText" : "Continue with ChatGPT"}
+            </button>
+            {canDisconnect && (
+              <button
+                type="button"
+                className={styles.disconnect}
+                onClick={() => requestNativeAssistant("assistantDisconnect")}
+              >
+                Disconnect
+              </button>
+            )}
+          </div>
         ) : (
           <a className={styles.secondary} href="#api-key-connections">
             Set up the in-app assistant
           </a>
         )}
       </article>
+      {canDisconnect && (
+        <p className={styles.disconnectNote}>
+          Disconnect stops TextText using this Codex session. It does not sign
+          you out of Codex in other apps.
+        </p>
+      )}
       {edition !== "unknown" ? (
         <details className={styles.alternative}>
           <summary>

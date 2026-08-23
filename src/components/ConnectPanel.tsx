@@ -12,6 +12,7 @@ import {
   hostedMcpUrl,
 } from "@/lib/agent-integrations";
 import type { ApiTokenSummary } from "@/lib/api-tokens";
+import { apiTokenKindLabel } from "@/lib/api-token-kinds";
 import {
   nativeAssistantAvailable,
   nativeEmbeddedAssistantAvailable,
@@ -152,12 +153,13 @@ export function ConnectPanel({
     setBusy(true);
     setError(null);
     try {
-      const created = await createApiTokenAction(name);
+      const created = await createApiTokenAction(name, "mcp");
       setFresh({ id: created.id, name: created.name, token: created.token });
       setTokens((previous) => [
         {
           id: created.id,
           name: created.name,
+          kind: created.kind,
           createdAt: created.createdAt,
           lastUsedAt: created.lastUsedAt,
         },
@@ -399,7 +401,7 @@ export function ConnectPanel({
           onCopy={(value, key) => void copy(value, key)}
         />
 
-        <h3 className="connect-minor-title">Manual access tokens</h3>
+        <h3 className="connect-minor-title">Hosted MCP tokens</h3>
         <form className="connect-form" onSubmit={handleCreate}>
           <input
             className="ac-field"
@@ -443,6 +445,7 @@ export function ConnectPanel({
                 <div className="connect-row-main">
                   <div className="connect-row-name">{token.name}</div>
                   <div className="connect-row-meta">
+                    {apiTokenKindLabel(token.kind)} · {" "}
                     Created {formatDay(token.createdAt)}
                     {token.lastUsedAt
                       ? ` · Last used ${formatDay(token.lastUsedAt)}`

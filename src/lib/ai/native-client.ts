@@ -31,7 +31,11 @@ export function nativeEmbeddedAssistantAvailable(): boolean {
 }
 
 export function requestNativeAssistant(
-  action: "assistantStatus" | "assistantConnect" | "assistantTurn",
+  action:
+    | "assistantStatus"
+    | "assistantConnect"
+    | "assistantDisconnect"
+    | "assistantTurn",
   prompt?: string,
 ) {
   if (typeof window === "undefined") return false;

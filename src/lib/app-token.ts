@@ -26,7 +26,9 @@ export async function mintAppTokenForUser(
     typeof deviceNameInput === "string" && deviceNameInput.trim()
       ? deviceNameInput.trim().slice(0, 60)
       : "this Mac";
-  const { raw } = await createApiToken(userId, `TextText.app on ${deviceName}`);
+  const { raw } = await createApiToken(userId, `TextText.app on ${deviceName}`, {
+    kind: "app",
+  });
   await recordAction({
     actorUserId: userId,
     actorType: "human",

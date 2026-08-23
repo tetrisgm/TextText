@@ -7,6 +7,15 @@ import {
   parseBearerApiToken,
   resolveApiToken,
 } from "@/lib/api-tokens";
+import { apiTokenKindLabel } from "@/lib/api-token-kinds";
+
+describe("api token connection labels", () => {
+  it("explains the transport instead of relying on the freeform name", () => {
+    expect(apiTokenKindLabel("mcp")).toBe("Hosted MCP client");
+    expect(apiTokenKindLabel("app")).toBe("TextText app");
+    expect(apiTokenKindLabel("manual")).toBe("Workspace token");
+  });
+});
 
 describe("generateApiToken", () => {
   it("mints wsk_ tokens with 43 base64url chars", () => {

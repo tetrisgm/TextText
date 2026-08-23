@@ -36,7 +36,8 @@
   font-weight: 600;
 }
 .primary,
-.secondary {
+.secondary,
+.disconnect {
   flex: 0 0 auto;
   border-radius: 7px;
   padding: 8px 10px;
@@ -56,6 +57,26 @@
 .secondary {
   border: 1px solid var(--ac-hairline);
   color: var(--ac-label);
+}
+.actions {
+  display: grid;
+  flex: 0 0 auto;
+  justify-items: stretch;
+  gap: 6px;
+}
+.disconnect {
+  border: 0;
+  background: transparent;
+  color: var(--ac-label-2);
+  font-size: var(--ac-fs-caption1);
+}
+.disconnect:hover {
+  color: var(--ac-red);
+}
+.disconnectNote {
+  margin: -4px 2px 0;
+  color: var(--ac-label-2);
+  font-size: var(--ac-fs-caption1);
 }
 .alternative {
   border-top: 1px solid var(--ac-hairline);
@@ -98,7 +119,8 @@
   text-decoration: underline;
 }
 .primary:focus-visible,
-.secondary:focus-visible {
+.secondary:focus-visible,
+.disconnect:focus-visible {
   outline: none;
   box-shadow: var(--ac-focus);
 }

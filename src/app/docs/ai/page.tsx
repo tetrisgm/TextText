@@ -44,7 +44,22 @@ export default function AiDocsPage() {
             external-app paths.
           </p>
           <p>
+            With a configured provider, the assistant accepts local text and
+            Markdown attachments and sends their bounded contents with the
+            request. Image and OCR attachments require the standalone native
+            Mac agent.
+          </p>
+          <p>
             <Link href="/connect">Open connection setup</Link>.
+          </p>
+          <p>
+            Workspace Settings has a Connections overview. It lists the
+            configured provider, active AI client tokens, outbound MCP
+            servers, and sign-in methods, with each row linking to its control.
+            Revoke a hosted client token, remove an outbound MCP server, or
+            remove a workspace provider key there. On the standalone Mac,
+            Disconnect stops TextText using the native Codex session without
+            signing you out of Codex in other apps.
           </p>
         </section>
         <section className="connect-section" id="external-agent">
@@ -89,7 +104,7 @@ export default function AiDocsPage() {
           </div>
         </section>
         <details className="docs-advanced" id="remote-client">
-          <summary>Connect a remote or manual MCP client</summary>
+          <summary>Connect a remote MCP client</summary>
           <div>
             <p>
               A client that supports bearer-authenticated MCP can use a

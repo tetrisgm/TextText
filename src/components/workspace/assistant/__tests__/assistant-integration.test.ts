@@ -6,6 +6,7 @@ vi.mock("@/lib/ai/workspace-tool-client", () => ({
 
 import {
   assistantAttachmentAccept,
+  buildCloudAssistantPrompt,
   buildNativeAssistantPrompt,
   formatAssistantSubmission,
 } from "@/components/workspace/assistant/attachments";
@@ -100,6 +101,25 @@ describe("assistant attachments", () => {
     );
     expect(ocr).toHaveBeenCalledOnce();
     expect(result.prompt).toContain("Words from image");
+  });
+
+  it("includes bounded text attachments for cloud providers", async () => {
+    const file = new File(["Cloud-safe source text"], "source.txt", {
+      type: "text/plain",
+    });
+    const result = await buildCloudAssistantPrompt("Summarize this", [
+      attachment(file),
+    ]);
+
+    expect(result).toContain("[Attachment: source.txt]");
+    expect(result).toContain("Cloud-safe source text");
+  });
+
+  it("keeps image attachments on the native-only path", async () => {
+    const file = new File(["image bytes"], "scan.png", { type: "image/png" });
+    await expect(
+      buildCloudAssistantPrompt("Review this", [attachment(file)]),
+    ).rejects.toThrow("standalone native agent");
   });
 
   it("offers image attachments only when native OCR is available", () => {
