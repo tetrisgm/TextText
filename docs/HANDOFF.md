@@ -37,6 +37,35 @@ polish ledger.
   lint, the production web build, migration coverage, and the agent integration
   verifier all pass. The build retains the known duplicate-Yjs warnings.
 
+## AI runtime parity pass (2026-08-23)
+
+- The in-app assistant now uses one streamed turn contract for hosted AI and
+  native Codex. Hosted turns emit newline-delimited start, text, tool progress,
+  completion, and error events over HTTPS. The sidebar renders live text and
+  tool activity, and Stop aborts the request without requiring a local server.
+- Assistant jobs persist in bounded local storage. A reload or app close marks
+  an interrupted run as failed with a truthful explanation instead of leaving
+  a permanently running spinner. Quick actions use the same job history and
+  streamed progress as freeform turns.
+- A completed answer can be saved to Notes with a server-authoritative receipt
+  and idempotency key. Answers expose thumbs-up and thumbs-down feedback that
+  records only bounded metadata in `action_audit`, never the answer body. The
+  receipt shows the provider and selected model so a person can understand what
+  produced it.
+- Configured hosted providers accept bounded text, Markdown, and image
+  attachments over HTTPS. Image data is validated at the route boundary and
+  passed to vision-capable models as image parts; native OCR remains available
+  for the standalone app. No localhost or loopback service is required.
+- The shipped interaction contract is documented in
+  `docs/ai-sidebar-architecture.md` and `/docs/ai`. Remaining deliberate
+  boundaries are OAuth/PKCE connector onboarding (ruled unnecessary by the
+  owner), server-side scheduled automations, semantic long-term memory, and a
+  full proposal/approval surface for arbitrary freeform cloud mutations.
+- Verification after this pass: 1,087 web tests across 162 files, 522 Swift
+  tests, TypeScript, targeted lint, and the production web build all pass. The
+  build retains four known non-blocking duplicate-Yjs warnings. No TestFlight,
+  App Store Connect, release-record, or update-channel action occurred.
+
 ## Agentic text inbox loop (2026-08-20)
 
 - The product loop is now explicit: capture instantly, retrieve from any
