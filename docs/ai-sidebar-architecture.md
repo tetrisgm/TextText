@@ -161,9 +161,14 @@ Current assistant behavior includes:
 
 - workspace, folder, Trash, shared-items, reader, editor, and exact text
   selection context
-- one conversation transcript per workspace context, retained for the browser
-  session
-- progress events surfaced in the conversation
+- one conversation transcript per workspace context, retained locally with a
+  bounded history
+- streamed progress and answer text, with a Stop control for cloud and native
+  turns
+- a reload-safe job history that marks interrupted work instead of hiding it
+- Save to Notes for useful answers, with a verified item receipt
+- thumbs-up/down answer feedback recorded without copying answer content into
+  telemetry
 - all canonical workspace tools in the standalone native path, with
   confirmation gates for Trash, restore, publication, access, and destructive
   asset changes
@@ -176,11 +181,10 @@ Current assistant behavior includes:
   submitted it even if the user navigates elsewhere
 
 Attachments follow the provider boundary. Configured cloud providers accept
-bounded local text and Markdown context, with the file contents embedded in the
-request and no upload token or persistent provider copy. Images and other
-binary files remain available only through the standalone native OCR path;
-cloud turns reject them with a recovery message instead of pretending they
-were attached.
+bounded local text, Markdown, and image parts over HTTPS, with no upload token
+or persistent provider copy. The standalone native path can additionally use
+local OCR. Unsupported binary formats are rejected with a recovery message
+instead of pretending they were attached.
 
 ## Provider connections
 
@@ -200,7 +204,9 @@ were attached.
 4. **Hosted external agents over MCP: shipped.** A remote MCP client that
    exposes a bearer-token field can connect to `/api/mcp` with a revocable
    workspace token. OAuth-only clients are not compatible because TextText does
-   not run an OAuth authorization server.
+   not run an OAuth authorization server. This is a remaining interoperability
+   gap, not an App Store requirement: an OAuth/PKCE broker and connector catalog
+   would make first-time setup as smooth as the best agent products.
 5. **Native agent plugins: shipped.** The repository is a Claude and Codex
    plugin marketplace. `plugins/texttext` packages reusable skills for
    conversation capture, project changelogs, publishing, and collaboration;

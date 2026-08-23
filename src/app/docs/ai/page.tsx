@@ -44,10 +44,10 @@ export default function AiDocsPage() {
             external-app paths.
           </p>
           <p>
-            With a configured provider, the assistant accepts local text and
-            Markdown attachments and sends their bounded contents with the
-            request. Image and OCR attachments require the standalone native
-            Mac agent.
+            With a configured provider, the assistant accepts bounded local
+            text, Markdown, and image attachments over HTTPS. The standalone
+            native Mac agent can also use its local OCR path when that is the
+            better fit.
           </p>
           <p>
             <Link href="/connect">Open connection setup</Link>.
@@ -140,8 +140,9 @@ export default function AiDocsPage() {
             Review the proposed replacement, choose Apply, and confirm the new
             sentence appears in the note. The provider identity stays visible in
             the sidebar and document header. Choose Undo beside this quick
-            action result to finish the test. Freeform assistant requests do not
-            promise the same proposal step.
+            action result to finish the test. Freeform requests stream their
+            answer and tool progress, and you can save a useful answer directly
+            to Notes or rate it with thumbs up or down.
           </p>
           <figure className="docs-recipe-proof">
             <Image
