@@ -523,6 +523,7 @@ export function AssistantConversation({
             {message.provider && (
               <span className={styles.providerLabel}>
                 Answered by {message.provider}
+                {message.model ? ` · ${message.model}` : ""}
               </span>
             )}
             <ArtifactProof artifacts={message.artifactProofs} />

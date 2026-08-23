@@ -136,6 +136,7 @@ export type AssistantMessage = {
   role: AssistantMessageRole;
   text: string;
   provider?: CloudAssistantProviderLabel;
+  model?: string;
   proposal?: AssistantProposal;
   /**
    * What this turn did on machines the workspace does not control, and which
@@ -1137,9 +1138,11 @@ export function useNativeAssistant({
         activeCloudAbortRef.current = cloudAbortController;
         let cloudMessageId: string | null = null;
         let streamProvider: CloudAssistantProviderLabel | undefined;
+        let streamModel: string | undefined;
         const onCloudEvent = (event: CloudAssistantStreamEvent) => {
           if (event.type === "start") {
             streamProvider = event.provider;
+            streamModel = event.model;
             setCloudProvider(event.provider);
             setThreadCloudProvider(thread, event.provider);
             updateAssistantJob(jobId, {
@@ -1157,6 +1160,12 @@ export function useNativeAssistant({
                 undefined,
                 streamProvider,
               );
+              if (streamModel) {
+                updateThreadMessage(thread, cloudMessageId, (message) => ({
+                  ...message,
+                  model: streamModel,
+                }));
+              }
             } else {
               updateThreadMessage(thread, cloudMessageId, (message) => ({
                 ...message,
@@ -1182,7 +1191,7 @@ export function useNativeAssistant({
           onEvent: onCloudEvent,
         });
         if ("disabled" in result) {
-          appendToThread(
+          const fallbackMessageId = appendToThread(
             thread,
             "error",
             "Connect Anthropic or OpenAI in Workspace Settings.",
@@ -1216,6 +1225,7 @@ export function useNativeAssistant({
             ...message,
             text: finalText,
             provider: result.provider,
+            model: result.model,
             outbound:
               result.outboundCalls.length || result.unreachableServers.length
                 ? {
@@ -1226,7 +1236,7 @@ export function useNativeAssistant({
             artifactProofs: proofs.length > 0 ? proofs : message.artifactProofs,
           }));
         } else {
-          appendToThread(
+          const fallbackMessageId = appendToThread(
             thread,
             "assistant",
             finalText,
@@ -1240,6 +1250,10 @@ export function useNativeAssistant({
               : undefined,
             proofs.length > 0 ? proofs : undefined,
           );
+          updateThreadMessage(thread, fallbackMessageId, (message) => ({
+            ...message,
+            model: result.model,
+          }));
         }
         if (result.terminalError) {
           appendToThread(thread, "error", result.terminalError);

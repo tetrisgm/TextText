@@ -62,6 +62,7 @@ export type CloudAssistantOutcome =
   | {
       text: string;
       provider: CloudAssistantProviderLabel;
+      model: string;
       outboundCalls: OutboundCall[];
       workspaceCalls: CloudWorkspaceCall[];
       /** Exact access-checked items supplied as source context for the turn. */
@@ -292,6 +293,7 @@ export async function cloudAssistantTurn(
         latest = {
           text: typeof record.text === "string" ? record.text : partialText,
           provider,
+          model,
           outboundCalls: cleanOutboundCalls(record.outboundCalls),
           workspaceCalls: cleanWorkspaceCalls(record.workspaceCalls),
           contextItems: cleanContextItems(record.contextItems),
@@ -310,6 +312,7 @@ export async function cloudAssistantTurn(
               ? record.partialText
               : partialText,
           provider,
+          model,
           outboundCalls: cleanOutboundCalls(record.outboundCalls),
           workspaceCalls: cleanWorkspaceCalls(record.workspaceCalls),
           contextItems: [],
@@ -344,6 +347,7 @@ export async function cloudAssistantTurn(
       return {
         text: partialText,
         provider,
+        model,
         outboundCalls: [],
         workspaceCalls: [],
         contextItems: [],
@@ -357,6 +361,7 @@ export async function cloudAssistantTurn(
   const data = (await response.json()) as {
     text?: unknown;
     provider?: unknown;
+    model?: unknown;
     outboundCalls?: unknown;
     unreachableServers?: unknown;
     workspaceCalls?: unknown;
@@ -369,6 +374,7 @@ export async function cloudAssistantTurn(
   return {
     text: typeof data.text === "string" ? data.text : "",
     provider: data.provider,
+    model: typeof data.model === "string" ? data.model : "",
     outboundCalls: cleanOutboundCalls(data.outboundCalls),
     workspaceCalls: cleanWorkspaceCalls(data.workspaceCalls),
     contextItems: cleanContextItems(data.contextItems),
