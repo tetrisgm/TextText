@@ -262,6 +262,7 @@ function assistantStreamResponse(
     async start(controller) {
       let text = "";
       let completed = false;
+      let failed = false;
       const emit = (event: AssistantStreamEvent) => {
         controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
       };
@@ -299,6 +300,7 @@ function assistantStreamResponse(
               tool: part.toolName,
             });
           } else if (type === "error") {
+            failed = true;
             emit({
               type: "error",
               message: "The assistant could not finish that.",
@@ -308,6 +310,7 @@ function assistantStreamResponse(
               workspaceCalls,
             });
           } else if (type === "abort") {
+            failed = true;
             emit({
               type: "error",
               message: "The assistant was stopped.",
@@ -330,7 +333,7 @@ function assistantStreamResponse(
             });
           }
         }
-        if (!completed && !signal.aborted) {
+        if (!completed && !failed && !signal.aborted) {
           emit({
             type: "complete",
             text,
@@ -343,6 +346,7 @@ function assistantStreamResponse(
           });
         }
       } catch {
+        failed = true;
         if (!signal.aborted) {
           emit({
             type: "error",
@@ -749,6 +753,10 @@ export async function POST(request: Request) {
     const streamed = streamText({
       ...modelRequest,
       abortSignal: request.signal,
+      // AI SDK's default handler logs the raw provider error object. Provider
+      // errors can contain request metadata, so keep the public stream generic
+      // and never write that object to server logs.
+      onError: () => {},
     });
     return assistantStreamResponse(streamed, {
       provider,

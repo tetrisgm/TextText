@@ -15,6 +15,134 @@
 import http from "node:http";
 
 const PORT = Number.parseInt(process.env.TEXTTEXT_MOCK_AI_PORT ?? "3999", 10);
+const STREAM_DELAY_MS = Number.parseInt(
+  process.env.TEXTTEXT_MOCK_AI_DELAY_MS ?? "20",
+  10,
+);
+
+function streamEvent(type, payload) {
+  return `event: ${type}\ndata: ${JSON.stringify(payload)}\n\n`;
+}
+
+function streamChunks(content) {
+  const events = [
+    {
+      type: "message_start",
+      message: {
+        id: "msg_mock",
+        type: "message",
+        role: "assistant",
+        model: "mock-anthropic",
+        content: [],
+        stop_reason: null,
+        usage: { input_tokens: 10, output_tokens: 0 },
+      },
+    },
+  ];
+  for (const [index, block] of content.entries()) {
+    if (block.type === "text") {
+      events.push({
+        type: "content_block_start",
+        index,
+        content_block: { type: "text", text: "" },
+      });
+      const midpoint = Math.max(1, Math.ceil(block.text.length / 2));
+      for (const text of [
+        block.text.slice(0, midpoint),
+        block.text.slice(midpoint),
+      ].filter(Boolean)) {
+        events.push({
+          type: "content_block_delta",
+          index,
+          delta: { type: "text_delta", text },
+        });
+      }
+    } else if (block.type === "tool_use") {
+      events.push({
+        type: "content_block_start",
+        index,
+        content_block: {
+          type: "tool_use",
+          id: block.id,
+          name: block.name,
+          input: {},
+        },
+      });
+      events.push({
+        type: "content_block_delta",
+        index,
+        delta: {
+          type: "input_json_delta",
+          partial_json: JSON.stringify(block.input ?? {}),
+        },
+      });
+    }
+    events.push({ type: "content_block_stop", index });
+  }
+  events.push(
+    {
+      type: "message_delta",
+      delta: {
+        stop_reason: content[0]?.type === "tool_use" ? "tool_use" : "end_turn",
+        stop_sequence: null,
+      },
+      usage: { output_tokens: 20 },
+    },
+    { type: "message_stop" },
+  );
+  return events;
+}
+
+function sendStream(res, content, delayMs) {
+  res.writeHead(200, {
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-cache",
+    connection: "keep-alive",
+  });
+  const events = streamChunks(content);
+  let index = 0;
+  const writeNext = () => {
+    if (index >= events.length) {
+      res.end();
+      return;
+    }
+    const event = events[index];
+    index += 1;
+    res.write(streamEvent(event.type, event));
+    setTimeout(writeNext, delayMs);
+  };
+  writeNext();
+}
+
+function sendFailedStream(res) {
+  res.writeHead(200, {
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-cache",
+    connection: "keep-alive",
+  });
+  res.write(
+    streamEvent("message_start", {
+      type: "message_start",
+      message: {
+        id: "msg_mock_failed",
+        type: "message",
+        role: "assistant",
+        model: "mock-anthropic",
+        content: [],
+        stop_reason: null,
+        usage: { input_tokens: 10, output_tokens: 0 },
+      },
+    }),
+  );
+  setTimeout(() => {
+    res.end(
+      streamEvent("error", {
+        type: "error",
+        error: { type: "api_error", message: "Mock provider failure" },
+      }),
+    );
+  }, STREAM_DELAY_MS);
+}
 
 function pickTool(tools, names) {
   for (const name of names) {
@@ -162,6 +290,17 @@ const server = http.createServer((req, res) => {
               : "Mock assistant here: I received your request and this reply proves the full round trip.",
           },
         ];
+      }
+      if (body.stream === true) {
+        if (transcript.includes("FAIL_STREAM")) {
+          sendFailedStream(res);
+          return;
+        }
+        const delayMs = transcript.includes("SLOW_STREAM")
+          ? Math.max(STREAM_DELAY_MS, 300)
+          : STREAM_DELAY_MS;
+        sendStream(res, content, delayMs);
+        return;
       }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(

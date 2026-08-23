@@ -47,6 +47,7 @@ import {
 import {
   assistantJobs,
   runningAssistantJobCount,
+  serverAssistantJobs,
   startAssistantJob,
   subscribeAssistantJobs,
   updateAssistantJob,
@@ -272,6 +273,9 @@ function assistantAgentError(error: unknown): string {
     /\babort(?:ed|ing)?\b/i.test(message)
   ) {
     return "The assistant was stopped.";
+  }
+  if (/\b(network error|load failed|failed to fetch|fetch failed)\b/i.test(message)) {
+    return "The assistant connection was interrupted.";
   }
   if (
     /Pass either markdown or a title|invalid_type|too_small|unrecognized_keys/i.test(
@@ -1191,12 +1195,13 @@ export function useNativeAssistant({
           onEvent: onCloudEvent,
         });
         if ("disabled" in result) {
+          const message = "Connect Anthropic or OpenAI in Workspace Settings.";
           appendToThread(
             thread,
             "error",
-            "Connect Anthropic or OpenAI in Workspace Settings.",
+            message,
           );
-          updateAssistantJob(jobId, { status: "error" });
+          updateAssistantJob(jobId, { status: "error", activity: message });
           return;
         }
         setCloudProvider(result.provider);
@@ -1215,11 +1220,16 @@ export function useNativeAssistant({
           });
           if (proof) proofs = mergeArtifactProofs([proof], proofs);
         }
+        const completedActions =
+          result.workspaceCalls.length > 0 ||
+          result.outboundCalls.some((call) => call.status === "ok");
         const finalText =
           result.text ||
-          (result.terminalError
+          (result.terminalError && completedActions
             ? "Some actions completed before the assistant stopped."
-            : "Done.");
+            : result.terminalError
+              ? ""
+              : "Done.");
         if (cloudMessageId) {
           updateThreadMessage(thread, cloudMessageId, (message) => ({
             ...message,
@@ -1235,7 +1245,7 @@ export function useNativeAssistant({
                 : undefined,
             artifactProofs: proofs.length > 0 ? proofs : message.artifactProofs,
           }));
-        } else {
+        } else if (finalText) {
           const fallbackMessageId = appendToThread(
             thread,
             "assistant",
@@ -1257,13 +1267,17 @@ export function useNativeAssistant({
         }
         if (result.terminalError) {
           appendToThread(thread, "error", result.terminalError);
-          updateAssistantJob(jobId, { status: "error" });
+          updateAssistantJob(jobId, {
+            status: "error",
+            activity: result.terminalError,
+          });
         } else {
           updateAssistantJob(jobId, { status: "done" });
         }
       } catch (error) {
-        appendToThread(thread, "error", assistantAgentError(error));
-        updateAssistantJob(jobId, { status: "error" });
+        const message = assistantAgentError(error);
+        appendToThread(thread, "error", message);
+        updateAssistantJob(jobId, { status: "error", activity: message });
       } finally {
         activeCloudAbortRef.current = null;
         setThreadCloudProvider(thread, null);
@@ -1334,12 +1348,13 @@ export function useNativeAssistant({
           },
         });
         if ("disabled" in result) {
+          const message = "Connect Anthropic or OpenAI in Workspace Settings.";
           appendToThread(
             thread,
             "error",
-            "Connect Anthropic or OpenAI in Workspace Settings.",
+            message,
           );
-          updateAssistantJob(jobId, { status: "error" });
+          updateAssistantJob(jobId, { status: "error", activity: message });
           return;
         }
         setCloudProvider(result.provider);
@@ -1382,19 +1397,21 @@ export function useNativeAssistant({
         }));
         if (result.terminalError) {
           appendToThread(thread, "error", result.terminalError);
-          updateAssistantJob(jobId, { status: "error" });
+          updateAssistantJob(jobId, {
+            status: "error",
+            activity: result.terminalError,
+          });
         } else {
           updateAssistantJob(jobId, { status: "done" });
         }
       } catch (error) {
+        const message = assistantAgentError(error);
         appendToThread(
           thread,
           "error",
-          error instanceof Error && error.message
-            ? error.message
-            : "The AI provider could not finish.",
+          message,
         );
-        updateAssistantJob(jobId, { status: "error" });
+        updateAssistantJob(jobId, { status: "error", activity: message });
       } finally {
         activeCloudAbortRef.current = null;
         setThreadCloudProvider(thread, null);
@@ -1709,7 +1726,7 @@ export function useNativeAssistant({
   const jobs = useSyncExternalStore(
     subscribeAssistantJobs,
     assistantJobs,
-    assistantJobs,
+    serverAssistantJobs,
   );
   const runningJobs = useSyncExternalStore(
     subscribeAssistantJobs,

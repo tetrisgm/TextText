@@ -267,7 +267,7 @@ export function AssistantConversation({
                 {job.status === "running"
                   ? ` · ${job.activity ?? "In progress"}`
                   : job.status === "error"
-                    ? " · Failed"
+                    ? ` · ${job.activity ?? "Failed"}`
                     : " · Done"}
               </span>
             </span>

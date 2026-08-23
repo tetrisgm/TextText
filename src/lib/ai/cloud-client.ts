@@ -260,6 +260,7 @@ export async function cloudAssistantTurn(
     let model = "";
     let partialText = "";
     let latest: CloudAssistantOutcome | null = null;
+    let failed = false;
     const consumeLine = (line: string) => {
       const trimmed = line.trim();
       if (!trimmed) return;
@@ -282,7 +283,7 @@ export async function cloudAssistantTurn(
       if (record.type === "text" && typeof record.text === "string") {
         partialText += record.text;
       }
-      if (record.type === "complete") {
+      if (record.type === "complete" && !failed) {
         const nextProvider =
           record.provider === "Anthropic" || record.provider === "OpenAI"
             ? record.provider
@@ -306,6 +307,7 @@ export async function cloudAssistantTurn(
       }
       options.onEvent?.(cleanStreamEvent(record, provider, model));
       if (record.type === "error" && !latest && provider) {
+        failed = true;
         latest = {
           text:
             typeof record.partialText === "string"

@@ -17,6 +17,38 @@ unverified until exercised. The Notion-look polish continues, but behavior
 outranks look, and the owner's Notion screenshots set the bar, not the old
 polish ledger.
 
+## AI runtime observed proof correction (2026-08-23)
+
+- The earlier parity pass was not complete when it was first reported. Its
+  tests were green, but the required running-build observation had not happened.
+  The first real hosted turn exposed an empty reply that the UI mislabeled as
+  `Done`, and the first reload exposed a persisted-job hydration mismatch.
+- The deterministic Anthropic-shaped provider now implements the provider's
+  streaming protocol instead of returning a non-streaming response to
+  `streamText`. A provider stream error is terminal and can no longer be
+  followed by an empty successful completion. The route also overrides the AI
+  SDK's raw-error logger so provider error objects do not enter server logs.
+- Assistant job SSR uses a stable empty snapshot, then restores bounded client
+  history after hydration. Interrupted or failed jobs retain truthful activity
+  instead of a permanent `Thinking` label or a hydration error.
+- Observed in the signed-in `/@visual-demo` workspace against the running app:
+  a hosted reply streamed useful text; a deliberately slow run exposed Stop and
+  stopped with a failed receipt; a reload recovered the interrupted job; a
+  provider failure remained a failure with no fake answer; Save to Notes created
+  a private note and returned its Open receipt; thumbs-up persisted as pressed;
+  a fresh tab hydrated with restored jobs and no console error.
+- This proves the corrected runtime loop, not competitive completeness. Current
+  gaps versus the referenced products remain searchable durable chat history,
+  editable agent instructions and reusable skills, automatic or per-turn model
+  choice, semantic retrieval with citations across connected sources, richer
+  file analysis, and a uniform approval/review surface for freeform writes.
+  No release or store action occurred.
+- After the observed proof, TypeScript, targeted lint, 1,088 web tests across
+  162 files, 522 Swift tests, the production build, and the live outbound-MCP
+  evaluator all pass. The evaluator proves a real streamed assistant turn can
+  call an allowed remote tool, resist a hostile tool description, preserve an
+  `input_required` result, and remove its temporary connection afterward.
+
 ## Connection management pass (2026-08-23)
 
 - Settings now opens with a Connections overview linking to the configured

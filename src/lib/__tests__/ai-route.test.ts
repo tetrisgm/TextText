@@ -268,9 +268,40 @@ describe("/api/ai cloud assistant route", () => {
       },
     ]);
     expect(mocks.streamText).toHaveBeenCalledWith(
-      expect.objectContaining({ abortSignal: expect.any(AbortSignal) }),
+      expect.objectContaining({
+        abortSignal: expect.any(AbortSignal),
+        onError: expect.any(Function),
+      }),
     );
     expect(mocks.generateText).not.toHaveBeenCalled();
+  });
+
+  it("does not turn a failed stream into an empty successful completion", async () => {
+    mocks.streamText.mockReturnValue({
+      fullStream: (async function* () {
+        yield { type: "start-step" };
+        yield { type: "error", error: new Error("provider stopped") };
+      })(),
+    });
+
+    const res = await POST(
+      new Request("http://x/api/ai", {
+        method: "POST",
+        body: JSON.stringify({ ...turn, stream: true }),
+      }),
+    );
+    const events = (await res.text())
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+    expect(events.at(-1)).toMatchObject({
+      type: "error",
+      message: "The assistant could not finish that.",
+    });
+    expect(events).not.toContainEqual(
+      expect.objectContaining({ type: "complete" }),
+    );
   });
 
   it("keeps an enabled outbound MCP tool available on read and write turns", async () => {

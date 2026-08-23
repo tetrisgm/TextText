@@ -29,6 +29,9 @@ export type AssistantJob = {
 
 const MAX_JOBS = 20;
 const STORAGE_KEY = "texttext:assistant-jobs";
+const EMPTY_SERVER_JOBS: AssistantJob[] = [];
+const PROGRESS_ACTIVITY =
+  /^(Contacting |Connected to |Finished |Thinking$|Using |Working)/;
 
 let jobs: AssistantJob[] = [];
 let loaded = false;
@@ -66,7 +69,10 @@ function loadJobs() {
               activity: "Interrupted when TextText closed.",
               finishedAt: Date.now(),
             } as AssistantJob
-          : (candidate as AssistantJob),
+          : candidate.status === "error" &&
+              (!candidate.activity || PROGRESS_ACTIVITY.test(candidate.activity))
+            ? ({ ...candidate, activity: "Failed" } as AssistantJob)
+            : (candidate as AssistantJob),
       ];
     });
     jobs = restored.slice(0, MAX_JOBS);
@@ -97,6 +103,11 @@ export function subscribeAssistantJobs(listener: () => void): () => void {
 export function assistantJobs(): AssistantJob[] {
   loadJobs();
   return jobs;
+}
+
+/** Stable empty snapshot used for SSR and the first hydration render. */
+export function serverAssistantJobs(): AssistantJob[] {
+  return EMPTY_SERVER_JOBS;
 }
 
 export function runningAssistantJobCount(): number {
@@ -143,6 +154,9 @@ export function updateAssistantJob(
       ? {
           ...job,
           ...patch,
+          activity:
+            patch.activity ??
+            (patch.status === "error" ? "Failed" : job.activity),
           finishedAt:
             patch.status && patch.status !== "running"
               ? Date.now()

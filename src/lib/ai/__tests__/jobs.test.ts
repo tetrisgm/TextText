@@ -18,6 +18,8 @@ describe("assistant job history", () => {
     const localStorage = fakeStorage();
     vi.stubGlobal("window", { localStorage });
     const first = await import("../jobs");
+    expect(first.serverAssistantJobs()).toBe(first.serverAssistantJobs());
+    expect(first.serverAssistantJobs()).toEqual([]);
     const id = first.startAssistantJob({
       threadKey: "writer:root",
       contextKey: "place:/@writer",
@@ -31,15 +33,29 @@ describe("assistant job history", () => {
       contextLabel: "Launch note",
       prompt: "Rewrite this",
     });
+    const staleError = first.startAssistantJob({
+      threadKey: "writer:item:two",
+      contextKey: "item:two",
+      contextLabel: "Old note",
+      prompt: "Summarize this",
+    });
+    first.updateAssistantJob(staleError, {
+      status: "error",
+      activity: "Thinking",
+    });
 
     vi.resetModules();
     const second = await import("../jobs");
     const jobs = second.assistantJobs();
-    expect(jobs).toHaveLength(2);
+    expect(jobs).toHaveLength(3);
     expect(jobs.find((job) => job.id === id)?.status).toBe("done");
     expect(jobs.find((job) => job.contextKey === "item:one")).toMatchObject({
       status: "error",
       activity: "Interrupted when TextText closed.",
+    });
+    expect(jobs.find((job) => job.contextKey === "item:two")).toMatchObject({
+      status: "error",
+      activity: "Failed",
     });
   });
 });
