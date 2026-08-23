@@ -34,20 +34,21 @@ server.
   but no permanent delete.
 
 <!-- generated:tool-contract -->
-## Shared 34-tool contract
+## Shared 35-tool contract
 
-The 10 read-scope tools are:
+The 11 read-scope tools are:
 
 1. `get_workspace`
 2. `list_folders`
 3. `list_items`
 4. `read_item`
-5. `open_item`
-6. `search`
-7. `list_trash`
-8. `list_comments`
-9. `list_responses`
-10. `list_document_templates`
+5. `review_brief_sources`
+6. `open_item`
+7. `search`
+8. `list_trash`
+9. `list_comments`
+10. `list_responses`
+11. `list_document_templates`
 
 The 24 sync-scope tools are:
 

@@ -1,5 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+type MockOutboundConnection = {
+  id: string;
+  name: string;
+  url: string;
+  token: string | null;
+};
+
+type MockRemoteTool = {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+};
+
+type MockRemoteToolsResult = {
+  tools: MockRemoteTool[];
+  ttlMs: number | null;
+};
+
 const mocks = vi.hoisted(() => ({
   generateText: vi.fn(),
   stepCountIs: vi.fn(() => "stop-marker"),
@@ -23,8 +41,14 @@ const mocks = vi.hoisted(() => ({
       return null;
     },
   ),
-  enabledMcpConnections: vi.fn(async () => []),
-  listRemoteTools: vi.fn(async () => []),
+  enabledMcpConnections: vi.fn(
+    async (): Promise<MockOutboundConnection[]> => [],
+  ),
+  listRemoteTools: vi.fn(
+    async (): Promise<MockRemoteToolsResult> => ({ tools: [], ttlMs: null }),
+  ),
+  outboundAssistantTools: vi.fn(() => ({})),
+  outboundSystemNote: vi.fn(() => ""),
   cloudAssistantTools: vi.fn((...args: unknown[]): Record<string, unknown> => {
     void args;
     return { get_workspace: {} };
@@ -54,6 +78,10 @@ vi.mock("@/lib/mcp/outbound.server", () => ({
 }));
 vi.mock("@/lib/mcp/outbound-client", () => ({
   listRemoteTools: mocks.listRemoteTools,
+}));
+vi.mock("@/lib/ai/outbound-tools", () => ({
+  outboundAssistantTools: mocks.outboundAssistantTools,
+  outboundSystemNote: mocks.outboundSystemNote,
 }));
 vi.mock("@/lib/ai/cloud-tools", () => ({
   cloudAssistantTools: mocks.cloudAssistantTools,
@@ -183,6 +211,61 @@ describe("/api/ai cloud assistant route", () => {
     expect(call.messages).toEqual([
       { role: "user", content: "Summarize my draft" },
     ]);
+  });
+
+  it("keeps an enabled outbound MCP tool available on read and write turns", async () => {
+    mocks.enabledMcpConnections.mockResolvedValueOnce([
+      {
+        id: "mcp-1",
+        name: "Mock Design",
+        url: "https://design.example/mcp",
+        token: null,
+      },
+    ]);
+    mocks.listRemoteTools.mockResolvedValueOnce({
+      tools: [
+        {
+          name: "read_notice",
+          description: "Read the notice",
+          inputSchema: { type: "object", properties: {} },
+        },
+      ],
+      ttlMs: null,
+    });
+    mocks.outboundAssistantTools.mockReturnValueOnce({
+      mock_design__read_notice: { description: "Read the notice" },
+    });
+
+    await POST(post({
+      messages: [{ role: "user", content: "Read the notice from Mock Design" }],
+    }));
+
+    expect(mocks.outboundAssistantTools).toHaveBeenCalledWith(
+      { userId: "user-uuid", handle: "demo-blog" },
+      [
+        {
+          connection: {
+            id: "mcp-1",
+            name: "Mock Design",
+            url: "https://design.example/mcp",
+            token: null,
+          },
+          tools: [
+            {
+              name: "read_notice",
+              description: "Read the notice",
+              inputSchema: { type: "object", properties: {} },
+            },
+          ],
+        },
+      ],
+      expect.any(Function),
+    );
+    const call = mocks.generateText.mock.calls.at(-1)?.[0];
+    expect(call.tools).toMatchObject({
+      get_workspace: {},
+      mock_design__read_notice: { description: "Read the notice" },
+    });
   });
 
   it("uses the selected workspace OpenAI model", async () => {

@@ -519,7 +519,14 @@ export async function POST(request: Request) {
           (call) => workspaceCalls.push(call),
           toolMode,
         ),
-        ...(toolMode === "full" ? remoteTools : {}),
+        // External servers are already explicitly approved per connection in
+        // Settings. Their tools remain available on read turns as well: a
+        // user asking to read a remote notice must be able to reach it, and a
+        // user asking to create something remotely must not be downgraded to
+        // a text-only answer merely because the sentence does not begin with
+        // an English write verb. Workspace mutations remain intent-gated by
+        // cloudAssistantTools above.
+        ...remoteTools,
       },
       stopWhen: stepCountIs(MAX_STEPS),
     });

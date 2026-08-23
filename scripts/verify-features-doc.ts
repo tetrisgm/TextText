@@ -144,7 +144,7 @@ async function main() {
     // "Type a thought, a title, or paste a link into the box at the top of
     //  your Library and it becomes an item immediately."
     const capture = page.locator(
-      '[placeholder="Type a title, or paste a link"]',
+      'textarea[aria-label="Save to TextText"], textarea[placeholder="Save a thought, note, link, or AI answer"]',
     );
     check(
       "the Library has the capture box the page describes",
@@ -272,8 +272,9 @@ async function main() {
     const connect = await page.locator("body").innerText();
     check(
       "/connect is where a remote MCP bearer token is created",
-      connect.includes("Manual access tokens") && !/OAuth/i.test(connect),
-      /OAuth/i.test(connect) ? "the page still mentions OAuth" : "",
+      connect.includes("Hosted MCP tokens") &&
+        connect.includes("protected bearer"),
+      "the current hosted-token controls were not visible",
     );
   } finally {
     await browser.close();

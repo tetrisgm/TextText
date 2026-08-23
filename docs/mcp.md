@@ -13,7 +13,7 @@ agents used with that channel connect through this hosted endpoint instead. See
 endpoint was retired in `0.146`.
 
 <!-- generated:tool-source -->
-`src/lib/ai/tools.ts` is the source of truth for the 34 tool
+`src/lib/ai/tools.ts` is the source of truth for the 35 tool
 names, schemas, mutability, confirmation requirements, and MCP
 annotations. The MCP adapter registers those definitions in
 `src/lib/mcp/tools.ts`.
@@ -109,8 +109,8 @@ Manual tokens currently carry `sync` access and remain valid until revoked.
 <!-- generated:scope-table -->
 | Scope | Access |
 |-------|--------|
-| `read` | Call the 10 read-scope tools: `get_workspace`, `list_folders`, `list_items`, `read_item`, `open_item`, `search`, `list_trash`, `list_comments`, `list_responses`, `list_document_templates`. |
-| `sync` | Call all 34 tools, including the 24 that mutate content or read administration data. It also grants every `read` operation. |
+| `read` | Call the 11 read-scope tools: `get_workspace`, `list_folders`, `list_items`, `read_item`, `review_brief_sources`, `open_item`, `search`, `list_trash`, `list_comments`, `list_responses`, `list_document_templates`. |
+| `sync` | Call all 35 tools, including the 24 that mutate content or read administration data. It also grants every `read` operation. |
 <!-- /generated:scope-table -->
 
 A mutation attempted with a `read` token returns `403 insufficient_scope` and
@@ -140,7 +140,7 @@ or workspace selector that could cross that boundary.
   cover and asset references use the same audited command surface.
 
 <!-- generated:tool-table -->
-## Tools (34)
+## Tools (35)
 
 | Tool | Scope | Effect |
 |------|-------|--------|
@@ -148,6 +148,7 @@ or workspace selector that could cross that boundary.
 | `list_folders` | `read` or `sync` | List every folder you can see with its id, path, mode, and item count. |
 | `list_items` | `read` or `sync` | List the live items in one folder with their ids, titles, tags, status, and content hash. |
 | `read_item` | `read` or `sync` | Read one item's markdown, metadata, tags, outbound links, backlinks, and assets by id. |
+| `review_brief_sources` | `read` or `sync` | Compare a Living brief's captured workspace-source versions with the current documents. Return changed or missing sources and the exact claim ids that need review. Read-only. |
 | `open_item` | `read` or `sync` | Open one exact item in TextText for the user and join its live collaboration session. |
 | `search` | `read` or `sync` | Search item titles, excerpts, and bodies you can access, and return matches with snippets. |
 | `list_trash` | `read` or `sync` | List soft-deleted items and folder restore-units. Nothing here is permanently deleted. |
@@ -160,8 +161,8 @@ or workspace selector that could cross that boundary.
 | `set_folder_template` | `sync` | Give a folder a look, and by default restyle everything already in it. The template becomes what the folder's index page renders from, what new items are created with, and what the items already there use. This is how a request like 'make this folder a magazine' actually lands. Pass apply_to_existing false only if the person asked for the change to affect new items alone: leaving old items behind means the index changes and not one article does, which reads as nothing having happened. |
 | `retire_document_template` | `sync` | Stop offering one workspace look. It disappears from the look pickers and from list_document_templates, and every document and folder already using it keeps rendering exactly as it does now, because template versions are immutable and nothing is deleted. Built-in looks cannot be retired. Use this when someone says a look they made is no longer wanted, rather than leaving a picker full of abandoned experiments. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it. |
 | `set_item_template` | `sync` | Apply one document template to an item without changing its content or audience. Omit template_version to use the look's current version, which is almost always what you want. |
-| `create_item` | `sync` | Save something to TextText. Pass `capture` alone for a raw thought, passage, transcript, or URL; TextText routes text to Notes and a URL to Bookmarks and returns a receipt. Pass fields or markdown for precise creation. New items are never published or pinned. Automated clients should pass a stable `idempotency_key` so retries cannot create duplicates. |
-| `update_item` | `sync` | Update one item's content or metadata: title, body, excerpt, tags, slug, cover, pin, publication date, and custom template fields via the fields map. Full markdown may update the same fields. Cannot publish, unpublish, or move an item. |
+| `create_item` | `sync` | Save something to TextText. For quick capture, pass capture alone: text becomes a private Note and a URL becomes a Bookmark, with a receipt in the result. For precise creation, pass fields or a full markdown file and choose a folder. New items are never published or pinned. Automated clients should pass a stable idempotency_key so retries cannot create duplicates. |
+| `update_item` | `sync` | Update one item's content or metadata: title, body, excerpt, tags, slug, cover, pin, publication date, and custom template fields via the fields map. A full body or markdown replacement requires if_match_hash from read_item. Targeted text_edit and section edits use their own expected-content guards. Cannot publish, unpublish, or move an item. |
 | `append_to_item` | `sync` | Append a markdown block to the end of one item's body without touching its metadata. Pass the text as `markdown`. Automated clients should pass an idempotency_key derived from the source event or commit. |
 | `set_item_status` | `sync` | Publish or unpublish one blog item. Notes and bookmarks can never be published. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
 | `move_item` | `sync` | Move one item to another folder of the same mode. |
