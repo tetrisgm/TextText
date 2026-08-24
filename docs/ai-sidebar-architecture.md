@@ -6,6 +6,11 @@ in-app API provider adapter, the `texttext` CLI in the standalone app, and a
 hosted MCP adapter for remote agents. The web product does not call its own MCP
 server.
 
+For the exact data model, owner gates, cloud and native turn lifecycles,
+proposal state machines, outbound trust boundary, regression history, file map,
+and safe change recipes, read `docs/agentic-assistant-runbook.md`. This overview
+and that runbook are the canonical entry point for future implementation work.
+
 ## Architectural invariants
 
 - `src/lib/ai/tools.ts` is the source of truth for the public workspace tool

@@ -124,6 +124,10 @@ turns intent into a visible, recoverable artifact.
 This ledger separates the product that exists from the larger category claim.
 It must not be collapsed into a single "AI complete" status.
 
+The implementation proof and maintenance map live in
+`docs/agentic-assistant-runbook.md`. Future product claims must remain
+consistent with that runbook and with the verified facts in `docs/HANDOFF.md`.
+
 | Capability set by the reference products | TextText now | Still missing |
 | --- | --- | --- |
 | Current canvas, file, or selection becomes agent context | Workspace, folder, item, selection, and explicitly attached TextText items are stable turn context | No model-readable screenshot or rendered-layout inspection tool for checking the final document visually |

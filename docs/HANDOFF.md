@@ -874,6 +874,14 @@ Two traps worth keeping:
 
 ## Guarded agentic assistant completion (source, 2026-08-24)
 
+- `docs/agentic-assistant-runbook.md` is the canonical implementation and
+  maintenance reference for this work. It documents the data model,
+  authorization sequence, cloud and native lifecycles, native scope fence,
+  proposal state machines, outbound MCP approval boundary, evidence semantics,
+  edition matrix, regression history, verification commands, and deliberate
+  gaps. Future Codex and Claude sessions should begin there, then use
+  `docs/ai-sidebar-architecture.md` for the system overview and this section for
+  the last observed proof.
 - An initial completeness claim was incorrect. Three adversarial audit passes
   subsequently found and closed owner-scope mismatches, native relaunch
   continuity, proposal race and ambiguity handling, misleading provenance,
