@@ -1,6 +1,8 @@
 // Client for the workspace-owned AI connection. The browser sees provider and
 // model metadata, never the configured key.
 
+import { TENANT_HANDLE_RE } from "@/lib/tenants";
+
 export type CloudAssistantProviderLabel = "Anthropic" | "OpenAI";
 
 export type CloudAssistantContext = {
@@ -51,11 +53,41 @@ export type CloudWorkspaceCall = {
   output: unknown;
 };
 
+type CloudAssistantWriteProposalBase = {
+  id: string;
+  status: "pending";
+  tool: string;
+  title: string;
+  summary: string;
+  arguments: Record<string, unknown>;
+  createdAt: string;
+  expiresAt: string;
+};
+
+export type CloudAssistantWriteProposal =
+  | (CloudAssistantWriteProposalBase & { kind: "workspace" })
+  | (CloudAssistantWriteProposalBase & {
+      kind: "outbound_mcp";
+      connection: { id: string; name: string };
+      remoteTool: {
+        name: string;
+        description: string;
+        annotations: {
+          title?: string;
+          readOnlyHint?: boolean;
+          destructiveHint?: boolean;
+          idempotentHint?: boolean;
+          openWorldHint?: boolean;
+        };
+      };
+    });
+
 export type CloudContextItem = {
   id: string;
   title: string;
   folderPath: string;
   slug: string;
+  operation: "Found" | "Read";
 };
 
 export type CloudAssistantOutcome =
@@ -65,6 +97,7 @@ export type CloudAssistantOutcome =
       model: string;
       outboundCalls: OutboundCall[];
       workspaceCalls: CloudWorkspaceCall[];
+      writeProposals: CloudAssistantWriteProposal[];
       /** Exact access-checked items supplied as source context for the turn. */
       contextItems: CloudContextItem[];
       /** Some commands completed before the provider failed later in the turn. */
@@ -86,6 +119,7 @@ export type CloudAssistantStreamEvent =
       outboundCalls: OutboundCall[];
       unreachableServers: string[];
       workspaceCalls: CloudWorkspaceCall[];
+      writeProposals: CloudAssistantWriteProposal[];
       contextItems: CloudContextItem[];
     }
   | {
@@ -95,9 +129,17 @@ export type CloudAssistantStreamEvent =
       outboundCalls?: OutboundCall[];
       unreachableServers?: string[];
       workspaceCalls?: CloudWorkspaceCall[];
+      writeProposals?: CloudAssistantWriteProposal[];
     };
 
 export type CloudAssistantTurnOptions = {
+  /** Optional per-turn model from the connected provider's allowlisted catalog. */
+  model?: string;
+  /** Bounded prior user/assistant turns from this exact TextText chat. */
+  history?: ReadonlyArray<{
+    role: "user" | "assistant";
+    content: string;
+  }>;
   /** Use the incremental NDJSON protocol instead of the legacy JSON response. */
   stream?: boolean;
   signal?: AbortSignal;
@@ -165,6 +207,105 @@ function cleanWorkspaceCalls(value: unknown): CloudWorkspaceCall[] {
   return calls;
 }
 
+function cleanWriteProposals(value: unknown): CloudAssistantWriteProposal[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 12).flatMap((entry): CloudAssistantWriteProposal[] => {
+    const candidate = cleanRecord(entry);
+    const args = cleanRecord(candidate?.arguments);
+    if (
+      !candidate ||
+      !args ||
+      typeof candidate.id !== "string" ||
+      candidate.status !== "pending" ||
+      typeof candidate.tool !== "string" ||
+      typeof candidate.title !== "string" ||
+      typeof candidate.summary !== "string" ||
+      typeof candidate.createdAt !== "string" ||
+      typeof candidate.expiresAt !== "string"
+    ) {
+      return [];
+    }
+    const common = {
+      id: candidate.id,
+      status: "pending" as const,
+      tool: candidate.tool,
+      title: candidate.title,
+      summary: candidate.summary,
+      arguments: args,
+      createdAt: candidate.createdAt,
+      expiresAt: candidate.expiresAt,
+    };
+    if (candidate.kind !== "outbound_mcp") {
+      return [{ ...common, kind: "workspace" as const }];
+    }
+    const connection = cleanRecord(candidate.connection);
+    const remoteTool = cleanRecord(candidate.remoteTool);
+    const annotations = cleanRecord(remoteTool?.annotations) ?? {};
+    if (
+      !connection ||
+      !remoteTool ||
+      typeof connection.id !== "string" ||
+      typeof connection.name !== "string" ||
+      typeof remoteTool.name !== "string" ||
+      typeof remoteTool.description !== "string"
+    ) {
+      return [];
+    }
+    const cleanAnnotations: NonNullable<
+      Extract<CloudAssistantWriteProposal, { kind: "outbound_mcp" }>["remoteTool"]
+    >["annotations"] = {};
+    if (typeof annotations.title === "string") {
+      cleanAnnotations.title = annotations.title.slice(0, 200);
+    }
+    for (const key of [
+      "readOnlyHint",
+      "destructiveHint",
+      "idempotentHint",
+      "openWorldHint",
+    ] as const) {
+      if (typeof annotations[key] === "boolean") {
+        cleanAnnotations[key] = annotations[key];
+      }
+    }
+    return [{
+      ...common,
+      kind: "outbound_mcp" as const,
+      connection: {
+        id: connection.id.slice(0, 128),
+        name: connection.name.slice(0, 120),
+      },
+      remoteTool: {
+        name: remoteTool.name.slice(0, 64),
+        description: remoteTool.description.slice(0, 600),
+        annotations: cleanAnnotations,
+      },
+    }];
+  });
+}
+
+export async function decideCloudAssistantWriteProposal(
+  id: string,
+  decision: "approve" | "deny",
+): Promise<Record<string, unknown>> {
+  const response = await fetch(`/api/ai/proposals/${encodeURIComponent(id)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decision }),
+    cache: "no-store",
+  });
+  const data = (await response.json().catch(() => null)) as
+    | Record<string, unknown>
+    | null;
+  if (!response.ok) {
+    throw new Error(
+      typeof data?.error === "string"
+        ? data.error
+        : "The proposed change could not be decided.",
+    );
+  }
+  return data ?? {};
+}
+
 function cleanContextItems(value: unknown): CloudContextItem[] {
   if (!Array.isArray(value)) return [];
   return value.slice(0, 12).flatMap((entry) => {
@@ -183,15 +324,30 @@ function cleanContextItems(value: unknown): CloudContextItem[] {
       title: candidate.title,
       folderPath: candidate.folderPath,
       slug: candidate.slug,
+      // Missing or malformed provenance fails closed to discovery. Only the
+      // server's explicit Read marker may become a full-source receipt.
+      operation: candidate.operation === "Read" ? "Read" : "Found",
     }];
   });
 }
 
-export async function cloudAssistantStatus(): Promise<CloudAssistantStatus> {
-  const response = await fetch("/api/ai", {
-    method: "GET",
-    cache: "no-store",
-  });
+function cleanWorkspaceHandle(value: string): string | null {
+  const handle = value.trim().toLowerCase();
+  return TENANT_HANDLE_RE.test(handle) ? handle : null;
+}
+
+export async function cloudAssistantStatus(
+  workspaceHandle: string,
+): Promise<CloudAssistantStatus> {
+  const handle = cleanWorkspaceHandle(workspaceHandle);
+  if (!handle) return { enabled: false, provider: null, model: null };
+  const response = await fetch(
+    `/api/ai?workspaceHandle=${encodeURIComponent(handle)}`,
+    {
+      method: "GET",
+      cache: "no-store",
+    },
+  );
   if (!response.ok) return { enabled: false, provider: null, model: null };
   const data = (await response.json()) as {
     enabled?: unknown;
@@ -210,11 +366,40 @@ export async function cloudAssistantStatus(): Promise<CloudAssistantStatus> {
 }
 
 export async function cloudAssistantTurn(
+  workspaceHandle: string,
   prompt: string,
   context?: CloudAssistantContext,
   options: CloudAssistantTurnOptions = {},
 ): Promise<CloudAssistantOutcome> {
+  const handle = cleanWorkspaceHandle(workspaceHandle);
+  if (!handle) {
+    throw new Error(
+      "Your request was not applied because the workspace could not be verified.",
+    );
+  }
   const stream = options.stream === true;
+  const history = (options.history ?? [])
+    .slice(-20)
+    .reduceRight<Array<{ role: "user" | "assistant"; content: string }>>(
+      (bounded, message) => {
+        if (
+          (message.role !== "user" && message.role !== "assistant") ||
+          typeof message.content !== "string"
+        ) {
+          return bounded;
+        }
+        const content = message.content.trim().slice(0, 8_000);
+        if (!content) return bounded;
+        const used = bounded.reduce(
+          (total, entry) => total + entry.content.length,
+          0,
+        );
+        return used + content.length <= 32_000
+          ? [{ role: message.role, content }, ...bounded]
+          : bounded;
+      },
+      [],
+    );
   const response = await fetch("/api/ai", {
     method: "POST",
     headers: {
@@ -222,8 +407,10 @@ export async function cloudAssistantTurn(
       ...(stream ? { Accept: "application/x-ndjson" } : {}),
     },
     body: JSON.stringify({
-      messages: [{ role: "user", content: prompt }],
+      workspaceHandle: handle,
+      messages: [...history, { role: "user", content: prompt }],
       context,
+      ...(options.model ? { model: options.model } : {}),
       ...(stream ? { stream: true } : {}),
     }),
     ...(options.signal ? { signal: options.signal } : {}),
@@ -297,6 +484,7 @@ export async function cloudAssistantTurn(
           model,
           outboundCalls: cleanOutboundCalls(record.outboundCalls),
           workspaceCalls: cleanWorkspaceCalls(record.workspaceCalls),
+          writeProposals: cleanWriteProposals(record.writeProposals),
           contextItems: cleanContextItems(record.contextItems),
           unreachableServers: Array.isArray(record.unreachableServers)
             ? record.unreachableServers.filter(
@@ -317,6 +505,7 @@ export async function cloudAssistantTurn(
           model,
           outboundCalls: cleanOutboundCalls(record.outboundCalls),
           workspaceCalls: cleanWorkspaceCalls(record.workspaceCalls),
+          writeProposals: cleanWriteProposals(record.writeProposals),
           contextItems: [],
           unreachableServers: Array.isArray(record.unreachableServers)
             ? record.unreachableServers.filter(
@@ -352,6 +541,7 @@ export async function cloudAssistantTurn(
         model,
         outboundCalls: [],
         workspaceCalls: [],
+        writeProposals: [],
         contextItems: [],
         unreachableServers: [],
         terminalError: "The assistant stopped before it could finish.",
@@ -367,6 +557,7 @@ export async function cloudAssistantTurn(
     outboundCalls?: unknown;
     unreachableServers?: unknown;
     workspaceCalls?: unknown;
+    writeProposals?: unknown;
     contextItems?: unknown;
     terminalError?: unknown;
   };
@@ -379,6 +570,7 @@ export async function cloudAssistantTurn(
     model: typeof data.model === "string" ? data.model : "",
     outboundCalls: cleanOutboundCalls(data.outboundCalls),
     workspaceCalls: cleanWorkspaceCalls(data.workspaceCalls),
+    writeProposals: cleanWriteProposals(data.writeProposals),
     contextItems: cleanContextItems(data.contextItems),
     ...(typeof data.terminalError === "string" && data.terminalError.trim()
       ? { terminalError: data.terminalError.trim() }
@@ -430,6 +622,7 @@ function cleanStreamEvent(
           )
         : [],
       workspaceCalls: cleanWorkspaceCalls(record.workspaceCalls),
+      writeProposals: cleanWriteProposals(record.writeProposals),
       contextItems: cleanContextItems(record.contextItems),
     };
   }
@@ -449,5 +642,6 @@ function cleanStreamEvent(
         )
       : [],
     workspaceCalls: cleanWorkspaceCalls(record.workspaceCalls),
+    writeProposals: cleanWriteProposals(record.writeProposals),
   };
 }

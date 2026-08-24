@@ -6,7 +6,7 @@
 // until an interactive confirmation flow is wired for the web path.
 
 import { generateText, stepCountIs, streamText } from "ai";
-import type { ModelMessage } from "ai";
+import type { ModelMessage, UserContent } from "ai";
 import { getCurrentUser } from "@/lib/session";
 import { ASSISTANT_SYSTEM_PROMPT } from "@/lib/ai/system-prompt";
 import {
@@ -18,11 +18,13 @@ import {
 } from "@/lib/store";
 import { isUuid, type AccessUser } from "@/lib/permissions";
 import {
-  cloudAssistantTools,
+  guardedCloudAssistantTools,
   type CloudAssistantWorkspaceCall,
+  type CloudAssistantWriteProposal,
 } from "@/lib/ai/cloud-tools";
 import {
-  outboundAssistantTools,
+  explicitlyRequestedOutboundConnections,
+  guardedOutboundAssistantTools,
   outboundSystemNote,
   type OutboundCallRecord,
 } from "@/lib/ai/outbound-tools";
@@ -38,7 +40,14 @@ import {
   getWorkspaceAiConfigStatusForOwner,
 } from "@/lib/ai/workspace-ai-config.server";
 import { workspaceLanguageModel } from "@/lib/ai/provider-model.server";
+import {
+  AUTO_CLOUD_AI_MODEL,
+  automaticCloudAiModel,
+  isCloudAiModel,
+} from "@/lib/ai/provider-catalog";
+import { workspaceAgentPromptForOwner } from "@/lib/ai/workspace-agent-instructions.server";
 import { readBoundedJson } from "@/lib/http/bounded-json";
+import { TENANT_HANDLE_RE } from "@/lib/tenants";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -140,26 +149,66 @@ function viewContext(value: unknown): AssistantViewContext {
     : {};
 }
 
-function messagesWithImageAttachments(
+function hasWorkspaceTurnContext(view: AssistantViewContext): boolean {
+  if (
+    typeof view.level === "string" &&
+    /^(edit|folder|post|root|search|section|workspace)$/.test(view.level)
+  ) {
+    return true;
+  }
+  if (
+    [
+      view.folderPath,
+      view.postId,
+      view.itemTitle,
+      view.selection,
+      view.itemPreview,
+    ].some((value) => typeof value === "string" && value.trim().length > 0)
+  ) {
+    return true;
+  }
+  return Array.isArray(view.relatedItems) && view.relatedItems.length > 0;
+}
+
+function messagesWithAttachments(
   messages: readonly ModelMessage[],
   context: unknown,
 ): ModelMessage[] {
   const view = viewContext(context);
   if (!Array.isArray(view.attachments)) return [...messages];
-  const images = view.attachments.slice(0, 4).flatMap((entry) => {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+  const attachments: Exclude<UserContent, string> = [];
+  for (const entry of view.attachments.slice(0, 4)) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
     const candidate = entry as Record<string, unknown>;
     const dataUrl = typeof candidate.dataUrl === "string" ? candidate.dataUrl : "";
     const mediaType = typeof candidate.mediaType === "string" ? candidate.mediaType : "";
+    const filename =
+      typeof candidate.name === "string" && candidate.name.trim()
+        ? candidate.name.trim().slice(0, 200)
+        : "attachment.pdf";
+    if (
+      mediaType === "application/pdf" &&
+      /^data:application\/pdf;base64,[A-Za-z0-9+/=\s]{1,1000000}$/i.test(
+        dataUrl,
+      )
+    ) {
+      attachments.push({
+        type: "file",
+        data: dataUrl,
+        mediaType: "application/pdf",
+        filename,
+      });
+      continue;
+    }
     if (
       !/^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=\s]{1,1000000}$/i.test(dataUrl) ||
       !/^image\/[a-z0-9.+-]+$/i.test(mediaType)
     ) {
-      return [];
+      continue;
     }
-    return [{ type: "image" as const, image: dataUrl }];
-  });
-  if (images.length === 0) return [...messages];
+    attachments.push({ type: "image", image: dataUrl });
+  }
+  if (attachments.length === 0) return [...messages];
   let lastUserIndex = -1;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     if (messages[index].role === "user") {
@@ -177,7 +226,10 @@ function messagesWithImageAttachments(
     index === lastUserIndex
       ? {
           role: "user" as const,
-          content: [{ type: "text" as const, text: textContent }, ...images],
+          content: [
+            { type: "text" as const, text: textContent },
+            ...attachments,
+          ],
         }
       : message,
   );
@@ -222,6 +274,7 @@ type AssistantStreamEvent =
       outboundCalls: OutboundCallRecord[];
       unreachableServers: string[];
       workspaceCalls: CloudAssistantWorkspaceCall[];
+      writeProposals?: CloudAssistantWriteProposal[];
       contextItems?: RecentWorkspaceContextItem[];
     }
   | {
@@ -231,6 +284,7 @@ type AssistantStreamEvent =
       outboundCalls?: OutboundCallRecord[];
       unreachableServers?: string[];
       workspaceCalls?: CloudAssistantWorkspaceCall[];
+      writeProposals?: CloudAssistantWriteProposal[];
     };
 
 type StreamableAssistantResult = {
@@ -245,6 +299,7 @@ function assistantStreamResponse(
     calls,
     unreachable,
     workspaceCalls,
+    writeProposals,
     contextItems,
     signal,
   }: {
@@ -253,6 +308,7 @@ function assistantStreamResponse(
     calls: OutboundCallRecord[];
     unreachable: string[];
     workspaceCalls: CloudAssistantWorkspaceCall[];
+    writeProposals: CloudAssistantWriteProposal[];
     contextItems: RecentWorkspaceContextItem[];
     signal: AbortSignal;
   },
@@ -308,6 +364,7 @@ function assistantStreamResponse(
               outboundCalls: calls,
               unreachableServers: unreachable,
               workspaceCalls,
+              ...(writeProposals.length > 0 ? { writeProposals } : {}),
             });
           } else if (type === "abort") {
             failed = true;
@@ -318,6 +375,7 @@ function assistantStreamResponse(
               outboundCalls: calls,
               unreachableServers: unreachable,
               workspaceCalls,
+              ...(writeProposals.length > 0 ? { writeProposals } : {}),
             });
           } else if (type === "finish") {
             completed = true;
@@ -329,6 +387,7 @@ function assistantStreamResponse(
               outboundCalls: calls,
               unreachableServers: unreachable,
               workspaceCalls,
+              ...(writeProposals.length > 0 ? { writeProposals } : {}),
               ...(contextItems.length > 0 ? { contextItems } : {}),
             });
           }
@@ -342,6 +401,7 @@ function assistantStreamResponse(
             outboundCalls: calls,
             unreachableServers: unreachable,
             workspaceCalls,
+            ...(writeProposals.length > 0 ? { writeProposals } : {}),
             ...(contextItems.length > 0 ? { contextItems } : {}),
           });
         }
@@ -355,6 +415,7 @@ function assistantStreamResponse(
             outboundCalls: calls,
             unreachableServers: unreachable,
             workspaceCalls,
+            ...(writeProposals.length > 0 ? { writeProposals } : {}),
           });
         }
       } finally {
@@ -418,6 +479,8 @@ type RecentWorkspaceContextItem = {
   title: string;
   folderPath: string;
   slug: string;
+  /** A compact index proves discovery. Only a loaded body proves a read. */
+  operation: "Found" | "Read";
 };
 
 async function recentWorkspaceContext({
@@ -462,6 +525,7 @@ async function recentWorkspaceContext({
             title: post.title?.trim() || "Untitled",
             folderPath,
             slug: post.slug,
+            operation: "Found" as const,
           },
         ]
       : [],
@@ -576,19 +640,47 @@ function buildSystem(
   return parts.join(`\n\n`);
 }
 
-export async function GET() {
+function requestWorkspaceHandle(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const handle = value.trim().toLowerCase();
+  return TENANT_HANDLE_RE.test(handle) ? handle : null;
+}
+
+export async function GET(request: Request) {
+  const requestedHandle = requestWorkspaceHandle(
+    new URL(request.url).searchParams.get("workspaceHandle"),
+  );
+  if (!requestedHandle) {
+    return Response.json(
+      { enabled: false, provider: null, model: null },
+      { headers: NO_STORE_HEADERS },
+    );
+  }
   const user = await getCurrentUser();
-  if (!user) return Response.json({ enabled: false, provider: null });
+  if (!user) {
+    return Response.json(
+      { enabled: false, provider: null, model: null },
+      { headers: NO_STORE_HEADERS },
+    );
+  }
   const workspace = await getOwnedBlog(user.sub);
-  if (!workspace) return Response.json({ enabled: false, provider: null });
+  if (!workspace || workspace.handle !== requestedHandle) {
+    return Response.json(
+      { enabled: false, provider: null, model: null },
+      { headers: NO_STORE_HEADERS },
+    );
+  }
   const status = await getWorkspaceAiConfigStatusForOwner(user.sub);
   const enabled = status.configured;
-  return Response.json({
-    enabled,
-    provider:
-      enabled && status.provider ? cloudProviderLabel(status.provider) : null,
-    model: enabled ? status.model : null,
-  });
+  return Response.json(
+    {
+      enabled,
+      provider:
+        enabled && status.provider ? cloudProviderLabel(status.provider) : null,
+      model: enabled ? status.model : null,
+    },
+    { headers: NO_STORE_HEADERS },
+  );
 }
 
 export async function POST(request: Request) {
@@ -609,24 +701,12 @@ export async function POST(request: Request) {
       { status: 403 },
     );
   }
-  const config = await getWorkspaceAiConfigForOwner(user.sub);
-  if (!config) {
-    return Response.json(
-      { error: "Connect an AI provider in Workspace Settings." },
-      { status: 404 },
-    );
-  }
-  if (rateLimited(user.sub)) {
-    return Response.json(
-      { error: "Too many assistant requests. Try again in a moment." },
-      { status: 429 },
-    );
-  }
-
   const decoded = await readBoundedJson<{
     messages?: unknown;
     context?: unknown;
+    model?: unknown;
     stream?: unknown;
+    workspaceHandle?: unknown;
   }>(request, MAX_REQUEST_BODY_BYTES);
   if ("error" in decoded && decoded.error === "too_large") {
     return Response.json(
@@ -641,11 +721,31 @@ export async function POST(request: Request) {
     );
   }
   const body = decoded.value;
+  const requestedHandle = requestWorkspaceHandle(body.workspaceHandle);
+  if (!requestedHandle || requestedHandle !== workspace.handle) {
+    return Response.json(
+      { error: "This AI connection is not available for this workspace." },
+      { status: 403, headers: NO_STORE_HEADERS },
+    );
+  }
+  const config = await getWorkspaceAiConfigForOwner(user.sub);
+  if (!config) {
+    return Response.json(
+      { error: "Connect an AI provider in Workspace Settings." },
+      { status: 404 },
+    );
+  }
+  if (rateLimited(user.sub)) {
+    return Response.json(
+      { error: "Too many assistant requests. Try again in a moment." },
+      { status: 429 },
+    );
+  }
   const messages = coerceMessages(body.messages);
   if (messages.length === 0) {
     return Response.json({ error: "messages is required" }, { status: 400 });
   }
-  const modelMessages = messagesWithImageAttachments(messages, body.context);
+  const modelMessages = messagesWithAttachments(messages, body.context);
 
   const userId = user.userId ?? (await getUserIdBySub(user.sub));
   const actor = {
@@ -654,19 +754,48 @@ export async function POST(request: Request) {
     handle: workspace.handle,
   };
   const provider = cloudProviderLabel(config.provider);
+  // A turn may deliberately choose another model from the already-connected
+  // provider. Never accept an arbitrary model id: the workspace catalog is the
+  // allowlist, and an invalid value simply falls back to the saved default.
+  const requestView = viewContext(body.context);
+  const requestAttachments = Array.isArray(requestView.attachments)
+    ? requestView.attachments
+    : [];
+  const requestRelatedItems = Array.isArray(requestView.relatedItems)
+    ? requestView.relatedItems
+    : [];
+  const requestedModel =
+    body.model === AUTO_CLOUD_AI_MODEL
+      ? automaticCloudAiModel(config.provider, {
+          request: lastUserText(messages),
+          hasAttachments: requestAttachments.length > 0,
+          hasWorkspaceContext:
+            requestRelatedItems.length > 0 ||
+            hasWorkspaceTurnContext(requestView),
+        })
+      : body.model;
+  const selectedModel = isCloudAiModel(config.provider, requestedModel)
+    ? requestedModel
+    : config.model;
 
-  // Outbound MCP: a workspace can connect servers somebody else runs, and the
-  // assistant may use their tools.
+  // Outbound MCP: enabling a connection does not authorize background contact.
+  // Only the connection invoked by its exact @mcp shortcut in the latest
+  // request is discovered or injected; bare names and ordinary prose leave
+  // every enabled server untouched.
   //
-  // Discovery is cached per connection for as long as the server says its list
-  // is good for (2026-07-28 added ttlMs). Before that this route asked every
-  // connected server for its tool list on every single message, which is a
-  // round trip the person waits through to learn something that had not
+  // Requested discovery is cached per connection for as long as the server
+  // says its list is good for (2026-07-28 added ttlMs). Before that this route
+  // asked every connected server for its tool list on every message. That was
+  // a round trip the person waited through to learn something that had not
   // changed.
   const workspaceRecord = await getBlogEditRecord(workspace.handle);
   const connections = workspaceRecord
     ? await enabledMcpConnections(workspaceRecord.id)
     : [];
+  const requestedConnections = explicitlyRequestedOutboundConnections(
+    lastUserText(messages),
+    connections,
+  );
   const reachable: Array<{
     connection: (typeof connections)[number];
     tools: RemoteTool[];
@@ -675,7 +804,7 @@ export async function POST(request: Request) {
   // simply seemed unable to do what it did yesterday. Now the turn says so.
   const unreachable: string[] = [];
   await Promise.all(
-    connections.map(async (connection) => {
+    requestedConnections.map(async (connection) => {
       try {
         const tools = await discoverTools(connection);
         if (tools.length > 0) reachable.push({ connection, tools });
@@ -684,16 +813,21 @@ export async function POST(request: Request) {
       }
     }),
   );
-  const model = workspaceLanguageModel(config);
+  const model = workspaceLanguageModel({ ...config, model: selectedModel });
 
   const calls: OutboundCallRecord[] = [];
   const workspaceCalls: CloudAssistantWorkspaceCall[] = [];
-  const remoteTools = outboundAssistantTools(
-    { userId: userId ?? null, handle: workspace.handle },
+  const writeProposals: CloudAssistantWriteProposal[] = [];
+  const remoteTools = guardedOutboundAssistantTools(
+    actor,
     reachable,
-    (record) => calls.push(record),
+    (proposal) => writeProposals.push(proposal),
   );
   const toolMode = cloudToolMode(messages, body.context);
+  const workspaceAgentPrompt = await workspaceAgentPromptForOwner(
+    user.sub,
+    messages,
+  ).catch(() => "");
   const recentContext = await recentWorkspaceContext({
     context: body.context,
     handle: workspace.handle,
@@ -711,25 +845,29 @@ export async function POST(request: Request) {
       title: item.title,
       folderPath: "",
       slug: item.slug,
+      operation: "Read" as const,
     })),
-  ].filter(
-    (item, index, items) =>
-      items.findIndex((candidate) => candidate.id === item.id) === index,
-  );
+  ].reduce<RecentWorkspaceContextItem[]>((items, item) => {
+    const existing = items.findIndex((candidate) => candidate.id === item.id);
+    if (existing < 0) return [...items, item];
+    if (items[existing].operation === "Found" && item.operation === "Read") {
+      return items.map((candidate, index) =>
+        index === existing ? item : candidate,
+      );
+    }
+    return items;
+  }, []);
 
   const tools = {
-    ...cloudAssistantTools(
+    ...guardedCloudAssistantTools(
       actor,
+      (proposal) => writeProposals.push(proposal),
       (call) => workspaceCalls.push(call),
       toolMode,
     ),
-    // External servers are already explicitly approved per connection in
-    // Settings. Their tools remain available on read turns as well: a
-    // user asking to read a remote notice must be able to reach it, and a
-    // user asking to create something remotely must not be downgraded to
-    // a text-only answer merely because the sentence does not begin with
-    // an English write verb. Workspace mutations remain intent-gated by
-    // cloudAssistantTools above.
+    // Remote tools remain visible so the model can stage the exact requested
+    // arguments. No server-supplied safety hint permits execution in this
+    // turn: every external call becomes a durable owner review proposal.
     ...remoteTools,
   };
   const modelRequest = {
@@ -737,6 +875,7 @@ export async function POST(request: Request) {
     system:
       buildSystem(body.context, relatedContext) +
       (recentContext.note ? `\n\n${recentContext.note}` : "") +
+      (workspaceAgentPrompt ? `\n\n${workspaceAgentPrompt}` : "") +
       outboundSystemNote(
         reachable.map((entry) => entry.connection.name),
         unreachable,
@@ -760,10 +899,11 @@ export async function POST(request: Request) {
     });
     return assistantStreamResponse(streamed, {
       provider,
-      model: config.model,
+      model: selectedModel,
       calls,
       unreachable,
       workspaceCalls,
+      writeProposals,
       contextItems,
       signal: request.signal,
     });
@@ -776,7 +916,7 @@ export async function POST(request: Request) {
     return Response.json({
       text: result.text,
       provider,
-      model: config.model,
+      model: selectedModel,
       // What the assistant did on machines this workspace does not control.
       // The conversation shows these, because a remote side effect the person
       // cannot see is one they cannot object to.
@@ -785,6 +925,7 @@ export async function POST(request: Request) {
       // Validated workspace-command results, never model prose. The client
       // reduces these to exact item receipts with Open when resolvable.
       workspaceCalls,
+      ...(writeProposals.length > 0 ? { writeProposals } : {}),
       // Exact access-checked items supplied to the model for this summary.
       // This is source proof, not an inference from the reply.
       ...(contextItems.length > 0
@@ -797,20 +938,26 @@ export async function POST(request: Request) {
     console.error("cloud assistant turn failed");
     if (
       workspaceCalls.length > 0 ||
+      writeProposals.length > 0 ||
       calls.some((call) => call.status === "ok")
     ) {
       return Response.json({
         text: "",
         provider,
-        model: config.model,
+        model: selectedModel,
         outboundCalls: calls,
         unreachableServers: unreachable,
         workspaceCalls,
+        ...(writeProposals.length > 0 ? { writeProposals } : {}),
         ...(contextItems.length > 0
           ? { contextItems }
           : {}),
         terminalError:
-          "Some actions completed, but the assistant stopped before it could finish the reply.",
+          writeProposals.length > 0 &&
+          workspaceCalls.length === 0 &&
+          !calls.some((call) => call.status === "ok")
+            ? "A proposed change is ready for review, but the assistant stopped before it could finish the reply."
+            : "Some actions completed, but the assistant stopped before it could finish the reply.",
       });
     }
     return Response.json(

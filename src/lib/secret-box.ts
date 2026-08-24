@@ -8,7 +8,13 @@
 //
 // Server-only: imports node:crypto. Never import from a client component.
 
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  createHmac,
+  randomBytes,
+} from "node:crypto";
 
 const CIPHER_VERSION = "v1";
 const IV_BYTES = 12;
@@ -58,4 +64,20 @@ export function decryptSecret(value: string): string {
     decipher.update(Buffer.from(ciphertextValue, "base64url")),
     decipher.final(),
   ]).toString("utf8");
+}
+
+/**
+ * Bind protected configuration into durable metadata without storing a token
+ * or a reusable unsalted verifier. The purpose label prevents a fingerprint
+ * created for one subsystem from being meaningful in another.
+ */
+export function fingerprintProtectedValue(
+  purpose: string,
+  value: string,
+): string {
+  return createHmac("sha256", encryptionKey())
+    .update(purpose, "utf8")
+    .update("\0", "utf8")
+    .update(value, "utf8")
+    .digest("hex");
 }

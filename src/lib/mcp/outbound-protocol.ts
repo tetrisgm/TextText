@@ -21,6 +21,14 @@ export type RemoteTool = {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  /** Untrusted server claims. Only an explicit boolean true is read-only. */
+  annotations?: {
+    title?: string;
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
 };
 
 export type RemoteToolsResult = {
@@ -127,6 +135,7 @@ export function readTools(result: unknown): RemoteToolsResult {
       name?: unknown;
       description?: unknown;
       inputSchema?: unknown;
+      annotations?: unknown;
     };
     if (typeof candidate.name !== "string") continue;
     if (!REMOTE_TOOL_NAME.test(candidate.name)) continue;
@@ -134,10 +143,30 @@ export function readTools(result: unknown): RemoteToolsResult {
       candidate.inputSchema && typeof candidate.inputSchema === "object"
         ? (candidate.inputSchema as Record<string, unknown>)
         : { type: "object", properties: {} };
+    const rawAnnotations =
+      candidate.annotations && typeof candidate.annotations === "object"
+        ? candidate.annotations as Record<string, unknown>
+        : {};
+    const annotations: NonNullable<RemoteTool["annotations"]> = {};
+    if (typeof rawAnnotations.title === "string") {
+      const title = clamp(rawAnnotations.title, 200).trim();
+      if (title) annotations.title = title;
+    }
+    for (const key of [
+      "readOnlyHint",
+      "destructiveHint",
+      "idempotentHint",
+      "openWorldHint",
+    ] as const) {
+      if (typeof rawAnnotations[key] === "boolean") {
+        annotations[key] = rawAnnotations[key];
+      }
+    }
     tools.push({
       name: candidate.name,
       description: clamp(candidate.description, MAX_DESCRIPTION_CHARS),
       inputSchema: schema,
+      annotations,
     });
     if (tools.length >= MAX_TOOLS) break;
   }

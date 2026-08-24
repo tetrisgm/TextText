@@ -2,12 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getCurrentUser: vi.fn(),
+  getOwnedBlog: vi.fn(),
   getUserIdBySub: vi.fn(),
   runWorkspaceToolForSession: vi.fn(),
 }));
 
 vi.mock("@/lib/session", () => ({ getCurrentUser: mocks.getCurrentUser }));
-vi.mock("@/lib/store", () => ({ getUserIdBySub: mocks.getUserIdBySub }));
+vi.mock("@/lib/store", () => ({
+  getOwnedBlog: mocks.getOwnedBlog,
+  getUserIdBySub: mocks.getUserIdBySub,
+}));
 vi.mock("@/lib/mcp/tools", () => ({
   runWorkspaceToolForSession: mocks.runWorkspaceToolForSession,
 }));
@@ -49,6 +53,7 @@ describe("/api/ai/tools stable assistant transport", () => {
       sub: "owner-sub",
       userId: "owner-id",
     });
+    mocks.getOwnedBlog.mockResolvedValue({ handle: "current-workspace" });
     mocks.getUserIdBySub.mockResolvedValue("owner-id");
     mocks.runWorkspaceToolForSession.mockResolvedValue({
       content: [
@@ -95,6 +100,32 @@ describe("/api/ai/tools stable assistant transport", () => {
     expect(missingWorkspace.status).toBe(400);
     expect(unknown.status).toBe(400);
     expect(invalid.status).toBe(400);
+    expect(mocks.runWorkspaceToolForSession).not.toHaveBeenCalled();
+  });
+
+  it("refuses a collaborator or a different owned workspace", async () => {
+    mocks.getOwnedBlog.mockResolvedValue({ handle: "owner-workspace" });
+
+    const different = await POST(
+      request({
+        handle: "current-workspace",
+        name: "read_item",
+        args: { id: "post-1" },
+      }),
+    );
+    mocks.getOwnedBlog.mockResolvedValue(null);
+    const collaborator = await POST(
+      request({
+        handle: "current-workspace",
+        name: "read_item",
+        args: { id: "post-1" },
+      }),
+    );
+
+    expect(different.status).toBe(403);
+    expect(collaborator.status).toBe(403);
+    expect(different.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(mocks.getUserIdBySub).not.toHaveBeenCalled();
     expect(mocks.runWorkspaceToolForSession).not.toHaveBeenCalled();
   });
 

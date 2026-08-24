@@ -1,9 +1,16 @@
 import { nativeOcr } from "@/lib/ai/native-ocr";
 import type { AssistantAttachment } from "./AssistantSidebar";
 import type { CloudAssistantAttachment } from "@/lib/ai/cloud-client";
+import {
+  ASSISTANT_OFFICE_ATTACHMENT_ACCEPT,
+  extractOfficeAttachmentText,
+  officeAttachmentKind,
+} from "./office-attachment-text";
 
-export const ASSISTANT_ATTACHMENT_ACCEPT = "image/*,.txt,.md,.markdown";
-export const ASSISTANT_TEXT_ATTACHMENT_ACCEPT = ".txt,.md,.markdown";
+export const ASSISTANT_ATTACHMENT_ACCEPT =
+  `image/*,.pdf,.txt,.md,.markdown,.csv,.json,.jsonl,.yaml,.yml,.xml,.html,.htm,${ASSISTANT_OFFICE_ATTACHMENT_ACCEPT}`;
+export const ASSISTANT_TEXT_ATTACHMENT_ACCEPT =
+  `.txt,.md,.markdown,.csv,.json,.jsonl,.yaml,.yml,.xml,.html,.htm,${ASSISTANT_OFFICE_ATTACHMENT_ACCEPT}`;
 
 export type NativeOcrCapabilities = {
   ocr?: boolean;
@@ -59,11 +66,30 @@ function fileExtension(name: string): string {
 
 function attachmentKind(
   attachment: AssistantAttachment,
-): "image" | "text" | "unsupported" {
+): "image" | "office" | "pdf" | "text" | "unsupported" {
   if (attachment.type?.startsWith("image/")) return "image";
+  if (attachment.type === "application/pdf") return "pdf";
   if (attachment.type?.startsWith("text/")) return "text";
+  if (officeAttachmentKind(attachment.name, attachment.type)) return "office";
   const extension = fileExtension(attachment.name);
-  if (["md", "markdown", "txt"].includes(extension)) return "text";
+  if (extension === "pdf") return "pdf";
+  if (
+    [
+      "csv",
+      "htm",
+      "html",
+      "json",
+      "jsonl",
+      "md",
+      "markdown",
+      "txt",
+      "xml",
+      "yaml",
+      "yml",
+    ].includes(extension)
+  ) {
+    return "text";
+  }
   return "unsupported";
 }
 
@@ -87,10 +113,18 @@ async function attachmentText(
 
   const kind = attachmentKind(attachment);
   if (kind === "text") return await attachment.file.text();
+  if (kind === "office") {
+    return await extractOfficeAttachmentText(attachment.file);
+  }
   if (kind === "image") {
     const imageBase64 = arrayBufferToBase64(await attachment.file.arrayBuffer());
     const result = await ocr(imageBase64);
     return result.text.trim() || "No text was found in this image.";
+  }
+  if (kind === "pdf") {
+    throw new Error(
+      `${attachment.name} needs a connected hosted AI provider for PDF reading.`,
+    );
   }
   throw new Error(`${attachment.name} is not a supported attachment.`);
 }
@@ -143,9 +177,28 @@ export async function buildCloudAssistantPrompt(
       sections.push(`[Image attachment: ${attachment.name}]`);
       continue;
     }
+    if (kind === "pdf") {
+      sections.push(`[PDF attachment: ${attachment.name}]`);
+      continue;
+    }
+    if (kind === "office") {
+      if (!attachment.file) {
+        throw new Error(
+          `Reattach ${attachment.name} so the assistant can read it.`,
+        );
+      }
+      const content = (await extractOfficeAttachmentText(attachment.file)).slice(
+        0,
+        remaining,
+      );
+      sections.push(`[Office attachment: ${attachment.name}]\n${content}`);
+      remaining -= content.length;
+      if (remaining <= 0) break;
+      continue;
+    }
     if (kind !== "text") {
       throw new Error(
-        `${attachment.name} is not a supported attachment. Use a text file or image.`,
+        `${attachment.name} is not a supported attachment. Use a PDF, Office document, text file, or image.`,
       );
     }
     if (!attachment.file) {
@@ -166,30 +219,35 @@ export async function buildCloudAssistantPrompt(
 }
 
 /**
- * Prepare image parts for the hosted provider. The server receives a bounded
- * data URL over HTTPS and passes it to the provider as a multimodal user part;
- * no localhost bridge or App Store-only capability is involved.
+ * Prepare image and PDF parts for the hosted provider. The server receives a
+ * bounded data URL over HTTPS and passes it to the provider as a multimodal
+ * user part; no localhost bridge or App Store-only capability is involved.
  */
 export async function buildCloudAssistantAttachments(
   attachments: readonly AssistantAttachment[],
 ): Promise<CloudAssistantAttachment[]> {
-  const images = attachments.filter(
+  const files = attachments.filter(
     (attachment) =>
-      !attachment.workspaceItemId && attachmentKind(attachment) === "image",
+      !attachment.workspaceItemId &&
+      ["image", "pdf"].includes(attachmentKind(attachment)),
   );
   const prepared: CloudAssistantAttachment[] = [];
-  for (const attachment of images) {
+  for (const attachment of files) {
     if (!attachment.file) {
       throw new Error(`Reattach ${attachment.name} so the assistant can read it.`);
     }
     if (attachment.file.size > MAX_CLOUD_IMAGE_ATTACHMENT_BYTES) {
       throw new Error(
-        `${attachment.name} is too large. Keep image attachments under 700 KB.`,
+        `${attachment.name} is too large. Keep image and PDF attachments under 700 KB.`,
       );
     }
-    const mediaType = attachment.file.type.startsWith("image/")
-      ? attachment.file.type
-      : "image/png";
+    const kind = attachmentKind(attachment);
+    const mediaType =
+      kind === "pdf"
+        ? "application/pdf"
+        : attachment.file.type.startsWith("image/")
+          ? attachment.file.type
+          : "image/png";
     prepared.push({
       name: attachment.name,
       mediaType,

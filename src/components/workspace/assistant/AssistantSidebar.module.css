@@ -257,6 +257,33 @@
   gap: 2px;
 }
 
+.modelSelect {
+  width: 92px;
+  height: 26px;
+  padding: 0 22px 0 7px;
+  overflow: hidden;
+  border: 1px solid var(--ac-hairline, rgba(0, 0, 0, 0.12));
+  border-radius: 6px;
+  background-color: var(--ac-bg, #fff);
+  color: var(--ac-label-2, rgba(60, 60, 67, 0.72));
+  font: 500 11px / 1 var(--ac-font-text, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.modelSelect:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus, 0 0 0 3px rgba(0, 122, 255, 0.45));
+}
+
+@media (prefers-color-scheme: dark) {
+  .modelSelect {
+    border-color: var(--ac-hairline, rgba(255, 255, 255, 0.14));
+    background-color: var(--ac-bg, #1c1c1e);
+    color: var(--ac-label-2, rgba(235, 235, 245, 0.6));
+  }
+}
+
 .iconButton,
 .composerButton,
 .removeAttachmentButton {

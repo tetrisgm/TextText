@@ -504,7 +504,7 @@ final class AppHealthReporter {
         return (valid ? .pass : .fail, [
             "identity_valid": validIdentity ? 1 : 0,
             "feed_valid": validFeed ? 1 : 0,
-            "signature_key_present": validKey ? 1 : 0,
+            "signature_config_valid": validKey ? 1 : 0,
         ])
     }
 

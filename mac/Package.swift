@@ -190,7 +190,8 @@ let package = Package(
                 "TextTextFileProviderBridge",
                 "TextTextFileProviderKit",
             ],
-            path: "Tests/TextTextTests"
+            path: "Tests/TextTextTests",
+            swiftSettings: editionSwiftSettings
         ),
         .testTarget(
             name: "TextTextFileProviderKitTests",

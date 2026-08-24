@@ -64,8 +64,10 @@ describe("the MCP reference page", () => {
     expect(source).toContain("connect a server to TextText");
     expect(source).toContain("figma__create_frame");
     expect(source).toContain("standalone Mac app");
-    expect(source).toContain("public https address");
-    expect(source).toContain("not offered in Workspace Settings");
+    expect(source).toContain("public https connections");
+    expect(source).toContain("not loopback endpoints");
+    expect(source).toContain("review of its exact arguments");
+    expect(source).toContain("server claims, not permission");
     expect(source).not.toContain("loopback connection works only");
   });
 });

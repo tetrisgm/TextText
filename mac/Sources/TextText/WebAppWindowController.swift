@@ -46,7 +46,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         case accountRead
         case configRead
         case loginStart
-        case threadStart
+        case threadStart(String?)
         case turnStart
         case turnInterrupt
     }
@@ -65,6 +65,10 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     private var codexServer: CodexAppServerController?
     private var codexRequestCounter = 0
     private var codexThreadID: String?
+    private var codexConversationThreads = CodexConversationThreadRouter()
+    private var codexAwaitingThreadConversationID: String?
+    private var codexAwaitingThreadPrompt: String?
+    private var codexDisabledMCPServerNames: [String] = []
     private var codexDynamicTools: [[String: Any]] = []
     private var codexPendingToolCalls: [String: AnyHashable] = [:]
     private var codexToolDeadlines: [String: DispatchWorkItem] = [:]
@@ -74,6 +78,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     private var codexShouldStartLogin = false
     private var codexAccountKnownSignedOut = false
     private var codexActiveTurnID: String?
+    private var codexActiveConversationID: String?
+    private var codexActiveThreadID: String?
     private var codexTurnDeadline: DispatchWorkItem?
     private var codexTimeoutRecoveryDeadline: DispatchWorkItem?
     private var codexTurnTimedOut = false
@@ -505,8 +511,13 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         server.onExit = { [weak self, weak server] status in
             DispatchQueue.main.async {
                 guard let self, self.codexServer === server else { return }
+                let interruptedConversationID = self.codexActiveConversationID
                 self.codexServer = nil
                 self.codexThreadID = nil
+                self.codexConversationThreads.reset()
+                self.codexAwaitingThreadConversationID = nil
+                self.codexAwaitingThreadPrompt = nil
+                self.codexDisabledMCPServerNames = []
                 self.codexAccount = nil
                 self.codexLoginInFlight = false
                 self.codexShouldStartLogin = false
@@ -520,10 +531,20 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                 self.codexTimeoutRecoveryDeadline?.cancel()
                 self.codexTimeoutRecoveryDeadline = nil
                 self.codexActiveTurnID = nil
+                self.codexActiveConversationID = nil
+                self.codexActiveThreadID = nil
                 self.codexTurnTimedOut = false
                 self.codexTurnInterruptSent = false
                 self.codexTurnCancelRequested = false
                 self.codexAgentMessagePhases.removeAll()
+                if let interruptedConversationID {
+                    self.emitCodexTurnEvent(
+                        [
+                            "type": "error",
+                            "message": "The TextText Agent connection closed before that reply finished.",
+                        ],
+                        conversationID: interruptedConversationID)
+                }
                 self.emitCodexEvent([
                     "type": "status",
                     "state": status == 0 ? "signed-out" : "failed",
@@ -546,6 +567,17 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                 "window.dispatchEvent(new CustomEvent('texttext:assistant', { detail: " + json + " }));",
                 completionHandler: nil)
         }
+    }
+
+    private func emitCodexTurnEvent(
+        _ payload: [String: Any],
+        conversationID: String? = nil
+    ) {
+        var tagged = payload
+        if let conversationID = conversationID ?? codexActiveConversationID {
+            tagged["conversationId"] = conversationID
+        }
+        emitCodexEvent(tagged)
     }
 
     private func codexStatus() {
@@ -658,6 +690,10 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         let server = codexServer
         codexServer = nil
         codexThreadID = nil
+        codexConversationThreads.reset()
+        codexAwaitingThreadConversationID = nil
+        codexAwaitingThreadPrompt = nil
+        codexDisabledMCPServerNames = []
         codexAccount = nil
         codexLoginInFlight = false
         codexShouldStartLogin = false
@@ -671,6 +707,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         codexTimeoutRecoveryDeadline?.cancel()
         codexTimeoutRecoveryDeadline = nil
         codexActiveTurnID = nil
+        codexActiveConversationID = nil
+        codexActiveThreadID = nil
         codexTurnTimedOut = false
         codexTurnInterruptSent = false
         codexTurnCancelRequested = false
@@ -686,19 +724,68 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         #endif
     }
 
-    private func sendCodexTurn(_ prompt: String) {
+    private func sendCodexTurn(
+        _ prompt: String,
+        conversationID: String,
+        history: [[String: Any]] = []
+    ) {
         guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              let threadID = codexThreadID else {
-            emitCodexEvent(["type": "error", "message": "Connect the TextText Agent before sending a message."])
+              !conversationID.isEmpty,
+              codexThreadID != nil else {
+            emitCodexTurnEvent(
+                ["type": "error", "message": "Connect the TextText Agent before sending a message."],
+                conversationID: conversationID)
             return
         }
-        if codexTurnTimedOut || codexActiveTurnID != nil {
-            emitCodexEvent([
+        if codexTurnTimedOut || codexActiveConversationID != nil ||
+            codexAwaitingThreadConversationID != nil {
+            emitCodexTurnEvent([
                 "type": "error",
                 "message": "The previous TextText Agent turn is still stopping. Try again in a moment.",
-            ])
+            ], conversationID: conversationID)
             return
         }
+        let alreadyMapped = codexConversationThreads.hasThread(for: conversationID)
+        if let threadID = codexConversationThreads.threadID(for: conversationID) {
+            startCodexTurn(
+                prompt: alreadyMapped
+                    ? prompt
+                    : CodexAppServerRequests.promptRestoringConversation(
+                        currentPrompt: prompt,
+                        history: history),
+                conversationID: conversationID,
+                threadID: threadID)
+            return
+        }
+
+        codexAwaitingThreadConversationID = conversationID
+        codexAwaitingThreadPrompt = CodexAppServerRequests.promptRestoringConversation(
+            currentPrompt: prompt,
+            history: history)
+        do {
+            try sendCodexRequest(
+                .threadStart(conversationID),
+                method: "thread/start",
+                params: CodexAppServerRequests.threadStart(
+                    dynamicTools: codexDynamicTools,
+                    disabledMCPServers: codexDisabledMCPServerNames,
+                    workingDirectory: FileManager.default.temporaryDirectory.path))
+        } catch {
+            codexAwaitingThreadConversationID = nil
+            codexAwaitingThreadPrompt = nil
+            emitCodexTurnEvent(
+                ["type": "error", "message": "The TextText Agent could not start a private chat thread."],
+                conversationID: conversationID)
+        }
+    }
+
+    private func startCodexTurn(
+        prompt: String,
+        conversationID: String,
+        threadID: String
+    ) {
+        codexActiveConversationID = conversationID
+        codexActiveThreadID = threadID
         do {
             try sendCodexRequest(
                 .turnStart,
@@ -709,9 +796,12 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                     "approvalPolicy": "never",
                 ])
             startCodexTurnDeadline(threadID: threadID)
-            emitCodexEvent(["type": "turn-started"])
+            emitCodexTurnEvent(["type": "turn-started"])
         } catch {
-            emitCodexEvent(["type": "error", "message": "The TextText Agent could not start that turn."])
+            finishCodexTurn()
+            emitCodexTurnEvent(
+                ["type": "error", "message": "The TextText Agent could not start that turn."],
+                conversationID: conversationID)
         }
     }
 
@@ -725,7 +815,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             Self.codexLog.error(
                 "turn timed out with \(self.codexPendingToolCalls.count, privacy: .public) pending tool calls")
             self.codexTurnTimedOut = true
-            self.emitCodexEvent([
+            self.emitCodexTurnEvent([
                 "type": "error",
                 "message": "The TextText Agent took too long. Try the request again.",
             ])
@@ -747,6 +837,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         codexToolDeadlines.removeAll()
         codexPendingToolCalls.removeAll()
         codexActiveTurnID = nil
+        codexActiveConversationID = nil
+        codexActiveThreadID = nil
         codexTurnTimedOut = false
         codexTurnInterruptSent = false
         codexTurnCancelRequested = false
@@ -789,13 +881,43 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         }
     }
 
-    private func cancelCodexTurn() {
-        guard codexActiveTurnID != nil || codexThreadID != nil else {
-            emitCodexEvent(["type": "error", "message": "No TextText Agent turn is running."])
+    private func cancelCodexTurn(requestedConversationID: String?) {
+        if let awaitingConversationID = codexAwaitingThreadConversationID {
+            if let requestedConversationID,
+               requestedConversationID != awaitingConversationID {
+                emitCodexTurnEvent(
+                    [
+                        "type": "error",
+                        "message": "No TextText Agent turn is running in this chat.",
+                    ],
+                    conversationID: requestedConversationID)
+                return
+            }
+            // App Server does not expose a thread/start cancellation. Keep the
+            // pending conversation id so its eventual thread can be registered,
+            // but discard the prompt so no turn starts after the UI stops it.
+            codexAwaitingThreadPrompt = nil
+            emitCodexTurnEvent(
+                ["type": "error", "message": "The TextText Agent was stopped."],
+                conversationID: awaitingConversationID)
+            return
+        }
+        guard let activeConversationID = codexActiveConversationID,
+              let activeThreadID = codexActiveThreadID else {
+            emitCodexTurnEvent(
+                ["type": "error", "message": "No TextText Agent turn is running."],
+                conversationID: requestedConversationID)
+            return
+        }
+        if let requestedConversationID,
+           requestedConversationID != activeConversationID {
+            emitCodexTurnEvent(
+                ["type": "error", "message": "No TextText Agent turn is running in this chat."],
+                conversationID: requestedConversationID)
             return
         }
         codexTurnCancelRequested = true
-        interruptCancelledCodexTurnIfPossible(threadID: codexThreadID ?? "")
+        interruptCancelledCodexTurnIfPossible(threadID: activeThreadID)
     }
 
     private func interruptCancelledCodexTurnIfPossible(threadID: String) {
@@ -812,8 +934,17 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                     turnID: turnID))
             codexTurnInterruptSent = true
         } catch {
-            emitCodexEvent(["type": "error", "message": "The TextText Agent could not be stopped."])
+            emitCodexTurnEvent(["type": "error", "message": "The TextText Agent could not be stopped."])
         }
+    }
+
+    private func codexMessageBelongsToActiveThread(
+        _ message: CodexAppServerMessage
+    ) -> Bool {
+        guard let activeThreadID = codexActiveThreadID else { return false }
+        guard let messageThreadID = message.rawParams?["threadId"] as? String
+        else { return true }
+        return messageThreadID == activeThreadID
     }
 
     private func startCodexToolDeadline(
@@ -851,8 +982,21 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             if let errorMessage = message.errorMessage {
                 if requestKind == .turnInterrupt { return }
                 if requestKind == .turnStart {
+                    let conversationID = codexActiveConversationID
                     finishCodexTurn()
-                    emitCodexEvent(["type": "error", "message": errorMessage])
+                    emitCodexTurnEvent(
+                        ["type": "error", "message": errorMessage],
+                        conversationID: conversationID)
+                } else if case .threadStart(let conversationID) = requestKind,
+                          let conversationID {
+                    codexAwaitingThreadConversationID = nil
+                    codexAwaitingThreadPrompt = nil
+                    emitCodexTurnEvent(
+                        [
+                            "type": "error",
+                            "message": "The TextText Agent could not start a private chat thread.",
+                        ],
+                        conversationID: conversationID)
                 } else {
                     emitCodexEvent([
                         "type": "status",
@@ -871,6 +1015,10 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                 guard let account = CodexAccountSummary(result: message.rawResult) else {
                     codexAccount = nil
                     codexThreadID = nil
+                    codexConversationThreads.reset()
+                    codexAwaitingThreadConversationID = nil
+                    codexAwaitingThreadPrompt = nil
+                    codexDisabledMCPServerNames = []
                     codexAccountKnownSignedOut = true
                     emitCodexEvent([
                         "type": "status",
@@ -930,9 +1078,10 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                     ])
                     return
                 }
+                codexDisabledMCPServerNames = serverNames
                 do {
                     try sendCodexRequest(
-                        .threadStart,
+                        .threadStart(nil),
                         method: "thread/start",
                         params: CodexAppServerRequests.threadStart(
                             dynamicTools: codexDynamicTools,
@@ -974,9 +1123,11 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                    let turnID = turn["id"] as? String {
                     codexActiveTurnID = turnID
                     if codexTurnTimedOut {
-                        interruptTimedOutCodexTurnIfPossible(threadID: codexThreadID ?? "")
+                        interruptTimedOutCodexTurnIfPossible(
+                            threadID: codexActiveThreadID ?? "")
                     } else if codexTurnCancelRequested {
-                        interruptCancelledCodexTurnIfPossible(threadID: codexThreadID ?? "")
+                        interruptCancelledCodexTurnIfPossible(
+                            threadID: codexActiveThreadID ?? "")
                     }
                 }
             case .turnInterrupt:
@@ -1001,16 +1152,52 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         if message.method == "thread/started",
            let thread = message.rawParams?["thread"] as? [String: Any],
            let threadID = thread["id"] as? String {
-            codexThreadID = threadID
-            emitCodexEvent([
-                "type": "status",
-                "state": "ready",
-                "embeddedChatSupported": true,
-                "providerLabel": "Codex with ChatGPT",
-                "accountEmail": codexAccount?.email ?? NSNull(),
-                "planLabel": codexAccount?.planType ?? NSNull(),
-                "recoveryAction": NSNull(),
-            ])
+            if let conversationID = codexAwaitingThreadConversationID {
+                let prompt = codexAwaitingThreadPrompt
+                codexAwaitingThreadConversationID = nil
+                codexAwaitingThreadPrompt = nil
+                codexConversationThreads.register(
+                    threadID: threadID,
+                    for: conversationID)
+                if let prompt {
+                    startCodexTurn(
+                        prompt: prompt,
+                        conversationID: conversationID,
+                        threadID: threadID)
+                }
+            } else {
+                codexThreadID = threadID
+                codexConversationThreads.setInitialThreadID(threadID)
+                emitCodexEvent([
+                    "type": "status",
+                    "state": "ready",
+                    "embeddedChatSupported": true,
+                    "providerLabel": "Codex with ChatGPT",
+                    "accountEmail": codexAccount?.email ?? NSNull(),
+                    "planLabel": codexAccount?.planType ?? NSNull(),
+                    "recoveryAction": NSNull(),
+                ])
+            }
+            return
+        }
+        let turnScopedMethods: Set<String> = [
+            "turn/started",
+            "item/started",
+            "item/agentMessage/delta",
+            "item/completed",
+            "item/tool/call",
+            "turn/completed",
+        ]
+        if let method = message.method,
+           turnScopedMethods.contains(method),
+           !codexMessageBelongsToActiveThread(message) {
+            if method == "item/tool/call", let requestID = message.jsonRPCID {
+                try? codexServer?.respond(
+                    id: requestID,
+                    result: CodexAppServerRequests.dynamicToolResult(
+                        text: "That tool call belongs to an inactive TextText chat.",
+                        success: false))
+            }
             return
         }
         if message.method == "turn/started",
@@ -1018,9 +1205,11 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
            let turnID = turn["id"] as? String {
             codexActiveTurnID = turnID
             if codexTurnTimedOut {
-                interruptTimedOutCodexTurnIfPossible(threadID: codexThreadID ?? "")
+                interruptTimedOutCodexTurnIfPossible(
+                    threadID: codexActiveThreadID ?? "")
             } else if codexTurnCancelRequested {
-                interruptCancelledCodexTurnIfPossible(threadID: codexThreadID ?? "")
+                interruptCancelledCodexTurnIfPossible(
+                    threadID: codexActiveThreadID ?? "")
             }
             return
         }
@@ -1034,7 +1223,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
            codexAgentMessagePhases[itemID] == .finalAnswer,
            let delta = message.params?["delta"] as? String {
             if codexTurnTimedOut || codexTurnCancelRequested { return }
-            emitCodexEvent(["type": "text-delta", "text": delta])
+            emitCodexTurnEvent(["type": "text-delta", "text": delta])
             return
         }
         if message.method == "item/completed",
@@ -1044,7 +1233,10 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                !codexTurnCancelRequested,
                agentMessage.phase == .finalAnswer,
                !agentMessage.text.isEmpty {
-                emitCodexEvent(["type": "final-text", "text": agentMessage.text])
+                emitCodexTurnEvent([
+                    "type": "final-text",
+                    "text": agentMessage.text,
+                ])
             }
             return
         }
@@ -1069,27 +1261,52 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                     requestID: requestID,
                     toolName: toolName)
             }
-            emitCodexEvent(["type": "tool-call", "callId": callId, "tool": toolName, "arguments": params["arguments"] ?? [:]])
+            emitCodexTurnEvent([
+                "type": "tool-call",
+                "callId": callId,
+                "tool": toolName,
+                "arguments": params["arguments"] ?? [:],
+            ])
             return
         }
         if message.method == "turn/completed" {
             let timedOut = codexTurnTimedOut
             let cancelled = codexTurnCancelRequested
+            let conversationID = codexActiveConversationID
             finishCodexTurn()
             if timedOut { return }
             if cancelled {
-                emitCodexEvent(["type": "error", "message": "The TextText Agent was stopped."])
+                emitCodexTurnEvent(
+                    ["type": "error", "message": "The TextText Agent was stopped."],
+                    conversationID: conversationID)
                 return
             }
             switch CodexTurnOutcome(params: message.rawParams) {
             case .completed:
-                emitCodexEvent(["type": "turn-completed"])
+                emitCodexTurnEvent(
+                    ["type": "turn-completed"],
+                    conversationID: conversationID)
             case .failed(let message):
-                emitCodexEvent(["type": "error", "message": message ?? "The TextText Agent could not finish that turn."])
+                emitCodexTurnEvent(
+                    [
+                        "type": "error",
+                        "message": message ?? "The TextText Agent could not finish that turn.",
+                    ],
+                    conversationID: conversationID)
             case .interrupted:
-                emitCodexEvent(["type": "error", "message": "That TextText Agent turn was interrupted."])
+                emitCodexTurnEvent(
+                    [
+                        "type": "error",
+                        "message": "That TextText Agent turn was interrupted.",
+                    ],
+                    conversationID: conversationID)
             case nil:
-                emitCodexEvent(["type": "error", "message": "The TextText Agent returned an unknown turn result."])
+                emitCodexTurnEvent(
+                    [
+                        "type": "error",
+                        "message": "The TextText Agent returned an unknown turn result.",
+                    ],
+                    conversationID: conversationID)
             }
             return
         }
@@ -1135,12 +1352,16 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             return
         }
         if body["action"] as? String == "assistantCancel" {
-            cancelCodexTurn()
+            cancelCodexTurn(
+                requestedConversationID: body["conversationId"] as? String)
             return
         }
         if body["action"] as? String == "assistantTurn",
            let prompt = body["prompt"] as? String {
-            sendCodexTurn(prompt)
+            sendCodexTurn(
+                prompt,
+                conversationID: body["conversationId"] as? String ?? "legacy",
+                history: body["history"] as? [[String: Any]] ?? [])
             return
         }
         if body["action"] as? String == "assistantTools",
@@ -1152,40 +1373,18 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                 "registered \(self.codexDynamicTools.count, privacy: .public) in-app tools")
             return
         }
-        #if !TEXTTEXT_STORE
-        // Outbound MCP belongs to the standalone embedded-agent runtime. Store
-        // builds do not include that runtime and must not expose its native
-        // network bridge to web content.
+        // Local MCP cannot use the durable exact-argument owner review required
+        // for every external tool call, so even the standalone bridge refuses
+        // it. Do not read a URL, token, headers, or payload from web content.
         if body["action"] as? String == "localMcpRequest",
-           let requestId = body["requestId"] as? String,
-           let urlString = body["url"] as? String,
-           let payload = body["body"] as? [String: Any] {
-            let token = body["token"] as? String
-            let headers = (body["headers"] as? [String: String]) ?? [:]
-            LocalMcpBridge.send(
-                urlString: urlString,
-                body: payload,
-                token: token,
-                headers: headers
-            ) { [weak self] result in
-                switch result {
-                case .success(let text):
-                    self?.emitCodexEvent([
-                        "type": "local-mcp-response",
-                        "requestId": requestId,
-                        "text": text,
-                    ])
-                case .failure(let failure):
-                    self?.emitCodexEvent([
-                        "type": "local-mcp-response",
-                        "requestId": requestId,
-                        "error": failure.message,
-                    ])
-                }
-            }
+           let requestId = body["requestId"] as? String {
+            emitCodexEvent([
+                "type": "local-mcp-response",
+                "requestId": requestId,
+                "error": "Local MCP execution is disabled until it can use durable owner review.",
+            ])
             return
         }
-        #endif
         if body["action"] as? String == "assistantToolResult",
            let callId = body["callId"] as? String,
            let requestId = codexPendingToolCalls.removeValue(forKey: callId) {

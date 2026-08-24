@@ -44,10 +44,27 @@ export default function AiDocsPage() {
             external-app paths.
           </p>
           <p>
-            With a configured provider, the assistant accepts bounded local
-            text, Markdown, and image attachments over HTTPS. The standalone
-            native Mac agent can also use its local OCR path when that is the
-            better fit.
+            With a configured provider, the assistant accepts bounded text,
+            Markdown, CSV, JSON, YAML, XML, HTML, PDF, Word, Excel, PowerPoint,
+            and image attachments over HTTPS. Office files are reduced to
+            useful text, tables, cells, formulas, slides, and notes before the
+            turn. PDF and image files stay as provider file parts. Unsupported
+            or unsafe archives fail with a recovery message.
+          </p>
+          <p>
+            Model selection starts on Auto. TextText uses the provider&apos;s
+            faster model for a short answer and its stronger model for files,
+            workspace work, editing, and synthesis. Choose an exact model in
+            the assistant header whenever you need a reproducible turn. The
+            completed answer names the model that actually ran.
+          </p>
+          <p>
+            Each workspace context keeps a bounded, owner-only chat history.
+            Start another chat, reopen an earlier one, search by title or
+            message text, and pin the conversations you return to. TextText
+            keeps a local copy for offline use and synchronizes it across the
+            owner&apos;s signed-in devices. Common credential fields and
+            recognizable token-shaped text are removed before synchronization.
           </p>
           <p>
             <Link href="/connect">Open connection setup</Link>.
@@ -60,6 +77,37 @@ export default function AiDocsPage() {
             remove a workspace provider key there. On the standalone Mac,
             Disconnect stops TextText using the native Codex session without
             signing you out of Codex in other apps.
+          </p>
+          <p>
+            TextText contacts a connected external MCP server for tool discovery
+            only when you include its exact Settings shortcut, such as
+            <code className="connect-inline-code">@mcp:paper</code>, in the
+            request. A bare name or ordinary prose never contacts it. No
+            discovered tool runs during answer generation. Every tool, including one the
+            server labels read-only, waits for your review of the exact
+            arguments. TextText also freezes
+            the reviewed tool definition and refuses approval if a same-name
+            tool, destination endpoint, or protected connection configuration
+            changes before execution. Unrelated turns do not discover or
+            contact the connection. Local MCP execution
+            stays disabled; agents on this Mac use the signed-in TextText CLI
+            instead.
+          </p>
+          <p>
+            Agent instructions in Workspace Settings hold durable guidance for
+            the in-app assistant. Standing instructions apply to every turn. A
+            reusable skill applies only when the request names its shortcut,
+            such as <code className="connect-inline-code">/weekly-review</code>.
+            Type <code className="connect-inline-code">/</code> in the assistant
+            to find and insert a saved shortcut. Notes and retrieved text remain
+            reference material, not assistant instructions.
+          </p>
+          <p>
+            For high-level recent-work questions, the assistant can answer from
+            a bounded, access-checked index, and those receipts are marked Found.
+            When a request needs document detail, it reads the exact relevant
+            documents and marks their receipts Read. An index or search snippet
+            is never presented as a read source.
           </p>
         </section>
         <section className="connect-section" id="external-agent">
@@ -144,6 +192,14 @@ export default function AiDocsPage() {
             answer and tool progress, and you can save a useful answer directly
             to Notes or rate it with thumbs up or down.
           </p>
+          <p>
+            Freeform document writes use the same review rule. The model can
+            prepare a validated change, but the change remains inert until the
+            workspace owner reviews the exact fields and chooses Apply change.
+            Dismiss, expiry, replay, or an account mismatch cannot execute it.
+            Publishing, access, Trash, restore, and model-chosen network work
+            stay outside this cloud proposal surface.
+          </p>
           <figure className="docs-recipe-proof">
             <Image
               src="/docs/agentic-writing/connection-ready.jpg"
@@ -168,13 +224,13 @@ export default function AiDocsPage() {
         <section className="connect-section">
           <h2 className="connect-section-title">What the connection enables</h2>
           <p>
-            The API-key in-app assistant can find and create documents, edit and
-            organize them, and maintain project records with tools that do not
-            require a confirmation gate. The standalone native assistant and
-            hosted MCP add guarded comments, publishing, and collaborator
-            management. In the standalone Mac edition, the local Claude and
-            Codex plugin handles document create, read, update, and append
-            unless you connect hosted MCP separately. Start with the copyable
+            The API-key in-app assistant can search and read workspace sources,
+            create documents, prepare edits and organization changes for
+            review, and maintain project records. The standalone native
+            assistant and hosted MCP add guarded comments, publishing, and
+            collaborator management. In the standalone Mac edition, the local
+            Claude and Codex plugin handles document create, read, update, and
+            append unless you connect hosted MCP separately. Start with the copyable
             <Link href="/docs/recipes"> writing recipes</Link>, or use the
             <Link href="/docs/mcp"> MCP reference</Link> for exact commands and
             schemas.

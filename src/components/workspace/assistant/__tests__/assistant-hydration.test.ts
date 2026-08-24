@@ -8,9 +8,23 @@ vi.mock("@/components/keyboard/CommandLayer", () => ({
 vi.mock("@/app/editor/mcp-connection-actions", () => ({
   getMcpConnectionsAction: async () => [],
 }));
+vi.mock("@/app/editor/agent-instructions-actions", () => ({
+  getWorkspaceAgentPromptAction: async () => "",
+}));
+vi.mock("@/app/editor/assistant-conversation-actions", () => ({
+  getAssistantConversationCacheScopeAction: async () => null,
+  syncAssistantConversationsAction: async () => ({
+    allowed: false,
+    conversations: [],
+  }),
+}));
+vi.mock("@/app/editor/agent-skill-metadata-actions", () => ({
+  getWorkspaceAgentSkillMetadataAction: async () => [],
+}));
 
 import { AssistantSidebar } from "@/components/workspace/assistant/AssistantSidebar";
 import { useNativeAssistant } from "@/components/workspace/assistant/useNativeAssistant";
+import { resetAssistantConversationStore } from "@/components/workspace/assistant/conversation-store";
 
 function HydrationTranscriptSidebar() {
   const assistant = useNativeAssistant({
@@ -28,39 +42,66 @@ function HydrationTranscriptSidebar() {
     onStateChange: () => {},
     width: 360,
     onWidthChange: () => {},
-    composerValue: "",
+    composerValue: "Draft kept while access resolves",
     onComposerChange: () => {},
     onSubmit: () => {},
     onFilesSelected: () => {},
     onRemoveAttachment: () => {},
     onNewConversation: assistant.startNewConversation,
     hasConversation: assistant.messages.length > 0,
+    submitDisabled: !assistant.ownerScopeReady,
   });
 }
 
 afterEach(() => {
+  resetAssistantConversationStore();
   vi.unstubAllGlobals();
 });
 
 describe("assistant transcript hydration", () => {
   it("renders the server snapshot before restoring a stored conversation", () => {
-    const sessionStorage = {
+    const localStorage = {
       getItem: vi.fn(() =>
-        JSON.stringify([
-          { id: "saved-message", role: "user", text: "Saved question" },
-        ]),
+        JSON.stringify({
+          version: 1,
+          activeByContext: { "place:/hydration-proof": "saved-chat" },
+          conversations: [
+            {
+              id: "saved-chat",
+              contextKey: "place:/hydration-proof",
+              title: "Saved question",
+              pinned: false,
+              createdAt: "2026-08-24T12:00:00.000Z",
+              updatedAt: "2026-08-24T12:00:00.000Z",
+              messages: [
+                { id: "saved-message", role: "user", text: "Saved question" },
+              ],
+            },
+          ],
+        }),
       ),
       removeItem: vi.fn(),
       setItem: vi.fn(),
     };
-    vi.stubGlobal("sessionStorage", sessionStorage);
+    vi.stubGlobal("window", {
+      localStorage,
+      sessionStorage: {
+        getItem: vi.fn(),
+        removeItem: vi.fn(),
+        setItem: vi.fn(),
+      },
+    });
 
     const html = renderToStaticMarkup(
       React.createElement(HydrationTranscriptSidebar),
     );
 
-    expect(sessionStorage.getItem).not.toHaveBeenCalled();
+    expect(localStorage.getItem).not.toHaveBeenCalled();
     expect(html).toContain('aria-label="Hide assistant"');
     expect(html).not.toContain('aria-label="New chat"');
+    expect(html).toContain("Draft kept while access resolves");
+    expect(html).toMatch(
+      /<button[^>]*disabled=""[^>]*aria-label="Send message"/,
+    );
   });
 });

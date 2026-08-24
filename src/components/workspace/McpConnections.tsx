@@ -17,6 +17,7 @@ import {
   type McpConnectionsState,
 } from "@/app/editor/mcp-connection-actions";
 import type { McpConnectionView } from "@/lib/mcp/outbound.server";
+import { connectionSlug } from "@/lib/mcp/outbound-protocol";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import styles from "./McpConnections.module.css";
 
@@ -172,6 +173,9 @@ export function McpConnections({
                   )}
                 </div>
                 <span className={styles.rowUrl}>{connection.url}</span>
+                <span className={styles.rowInvocation}>
+                  Use in assistant: <code>@mcp:{connectionSlug(connection.name)}</code>
+                </span>
                 <span className={styles.rowMeta}>
                   {connection.toolNames.length > 0
                     ? `${connection.toolNames.length} tool${

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { WorkspacePoolPayload } from "@/lib/pool/types";
 import {
+  compactWorkspaceIndexArtifactProofs,
   itemArtifactProof,
   loadedContextArtifactProofs,
   mergeArtifactProofs,
@@ -85,6 +86,31 @@ describe("assistant artifact proof", () => {
       { operation: "Found", itemId: "note-1", folderPath: "notes" },
       { operation: "Found", itemId: "post-1", folderPath: "blog" },
     ]);
+  });
+
+  it("does not present a listed item as a fully read source", () => {
+    expect(
+      workspaceToolArtifactProofs({
+        tool: "list_items",
+        args: {},
+        output: { items: [{ id: "note-1", title: "Launch notes" }] },
+        pool,
+      }),
+    ).toMatchObject([
+      { operation: "Found", itemId: "note-1", folderPath: "notes" },
+    ]);
+  });
+
+  it("presents compact workspace-index items only as found", () => {
+    expect(compactWorkspaceIndexArtifactProofs(pool, 2)).toMatchObject([
+      { operation: "Found", itemId: "note-1" },
+      { operation: "Found", itemId: "post-1" },
+    ]);
+    expect(
+      compactWorkspaceIndexArtifactProofs(pool).some(
+        (proof) => proof.operation === "Read",
+      ),
+    ).toBe(false);
   });
 
   it("proves only context bodies that the turn successfully loaded", () => {
@@ -189,6 +215,42 @@ describe("assistant artifact proof", () => {
       mergeArtifactProofs(read ? [read] : [], updated ? [updated] : []),
     ).toEqual([
       expect.objectContaining({ operation: "Updated", itemId: "note-1" }),
+    ]);
+  });
+
+  it("promotes discovery to one exact read receipt for the same item", () => {
+    const found = itemArtifactProof({
+      id: "note-1",
+      operation: "Found",
+      pool,
+    });
+    const read = itemArtifactProof({
+      id: "note-1",
+      operation: "Read",
+      pool,
+    });
+    expect(
+      mergeArtifactProofs(found ? [found] : [], read ? [read] : []),
+    ).toEqual([
+      expect.objectContaining({ operation: "Read", itemId: "note-1" }),
+    ]);
+  });
+
+  it("does not let later discovery demote an exact read receipt", () => {
+    const found = itemArtifactProof({
+      id: "note-1",
+      operation: "Found",
+      pool,
+    });
+    const read = itemArtifactProof({
+      id: "note-1",
+      operation: "Read",
+      pool,
+    });
+    expect(
+      mergeArtifactProofs(read ? [read] : [], found ? [found] : []),
+    ).toEqual([
+      expect.objectContaining({ operation: "Read", itemId: "note-1" }),
     ]);
   });
 });

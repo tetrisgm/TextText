@@ -97,6 +97,19 @@
   font: 500 12px/1.4 var(--ac-font-mono, var(--ac-font-text));
 }
 
+.rowInvocation {
+  color: var(--ac-label-2);
+  font: 500 12px/1.4 var(--ac-font-text);
+}
+
+.rowInvocation code {
+  border-radius: 4px;
+  padding: 1px 5px;
+  background: var(--ac-fill-4);
+  color: var(--ac-label);
+  font-family: var(--ac-font-mono, ui-monospace, monospace);
+}
+
 .rowMeta {
   color: var(--ac-label-2);
   font: 500 12px/1.45 var(--ac-font-text);

@@ -67,7 +67,7 @@ const sections = [
     body: [
       "TextText speaks MCP in both directions. Other tools reach your documents, and your own assistant can use tools from servers you connect to it, so \u201cput this spec in Figma\u201d stays one sentence instead of a copy and a paste.",
       "A server you add is saved switched off. Turning on Allow is the consent, because connecting a URL and letting somebody else\u2019s tools into your assistant are different promises. When the assistant uses one, the conversation shows which server and which tool, and a server that did not answer is named rather than quietly missing.",
-      "Paper and pen.dev can expose local MCP servers tied to the app's current file or selection. A loopback address is reachable only from that Mac, not from TextText's servers. Outbound TextText MCP connections use public https addresses in this release, so Workspace Settings does not offer a loopback preset.",
+      "Every external MCP call waits for review of its exact arguments, even when the server labels the tool read-only. Use the exact @mcp shortcut shown in Settings; a bare name or unrelated prose does not contact the connection. Server descriptions and safety labels are untrusted, and TextText refuses a tool or destination configuration that changed after review. Local MCP execution is disabled; agents on this Mac use the signed-in TextText CLI, with no localhost server.",
     ],
   },
   {

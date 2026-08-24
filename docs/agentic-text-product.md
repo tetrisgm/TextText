@@ -119,6 +119,30 @@ turns intent into a visible, recoverable artifact.
 | Plugin-first setup | Local Claude and Codex connection in the standalone Mac edition | No copied workspace token or loopback server in the primary local flow | Plugin parser and agent integration verifier |
 | Cross-app recipes | Turn research, conversations, and project history into durable writing | Recipes start from a real source, name the destination, and show the final document | Writing Recipes documentation |
 
+## Parity ledger, 2026-08-24
+
+This ledger separates the product that exists from the larger category claim.
+It must not be collapsed into a single "AI complete" status.
+
+| Capability set by the reference products | TextText now | Still missing |
+| --- | --- | --- |
+| Current canvas, file, or selection becomes agent context | Workspace, folder, item, selection, and explicitly attached TextText items are stable turn context | No model-readable screenshot or rendered-layout inspection tool for checking the final document visually |
+| Agent changes the native artifact and the result appears in the product | All channels use the workspace command surface; cloud document writes become exact, durable review proposals | Confirmation-gated publish, access, Trash, restore, and model-chosen network work stay outside cloud chat |
+| Searchable, pinnable chat history | Multiple owner-only chats per context, generated titles, full-text local search, pinning, reopen, bounded local-first persistence, and deterministic cross-device synchronization | No shared team chat history, conversation export, or retention controls |
+| Personal instructions and reusable skills | Owner-managed standing instructions and twelve explicitly invoked `/skill` shortcuts with an in-composer slash launcher | No team skill library, automatic skill selection, page-backed skill sharing, or agent-authored instruction updates |
+| Automatic and exact model choice | Auto chooses a fast or strong allowlisted provider model; exact choice remains available and the receipt names the actual model | No quality or cost telemetry for tuning the router, and no custom provider/model endpoint |
+| Grounded workspace answers with source evidence | Bounded recent-work indexes produce Found receipts; requests needing detail read exact accessible items and produce Read receipts; snippets alone do not count as read evidence | Retrieval is ranked lexical search, not embeddings; no semantic index, answer-level citation markers, or cross-service unified ranking |
+| Rich file analysis | Text, structured text, images, PDF, DOCX, XLSX, and PPTX enter bounded provider turns; Office extraction preserves useful document structure | No generic ZIP, audio/video transcription, OCR for cloud PDFs, spreadsheet computation engine, or code execution sandbox |
+| Bring outside context into the artifact | An exact `@mcp:<connection_slug>` shortcut discovers one enabled public HTTPS MCP connection and stages every exact remote call for review; external agents can also call hosted TextText MCP | No first-party Slack, Drive, Jira, GitHub, mail, or calendar gallery; no OAuth onboarding or indexed connector search |
+| Clear setup across popular AI tools | Standalone Claude and Codex plugins, signed-in CLI, hosted bearer MCP, connection inventory, revoke, and disconnect controls | Remote setup is not one-click for OAuth-only clients and there is no public integration directory |
+| Headless or batch agent workflows | The signed-in `texttext` CLI supports deterministic capture, search, read, create, update, and append for an external agent | TextText does not bundle its own headless model runner, task-file batch agent, or export-verification loop |
+| Autonomous background agents | None | Event and schedule triggered shared agents are deliberately outside this build; persistent jobs also require an explicit owner decision |
+
+The near-term category claim is therefore narrower and testable: TextText is a
+fast document inbox and visible agent canvas that any supported AI can read and
+change through one guarded command surface. It is not yet a Notion-scale
+knowledge connector or autonomous-agent platform.
+
 ## What TextText must be unusually good at
 
 ### Capture latency

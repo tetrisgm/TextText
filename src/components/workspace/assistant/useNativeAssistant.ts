@@ -2,12 +2,10 @@
 
 // The assistant's workspace-scoped provider client. It routes requests to the
 // Anthropic or OpenAI connection selected by the workspace owner and keeps one
-// transcript per context: the root, each folder, and each item own a thread.
-//
-// Transcripts live in a module store mirrored to sessionStorage, so they
-// survive component remounts, route changes (the full editor is a different
-// route), and pool refreshes. A reply always lands in the thread that
-// SUBMITTED it, even if the user navigates elsewhere while the model works.
+// durable conversations per context: the root, each folder, and each item can
+// own multiple searchable threads. A reply always lands in the conversation
+// that submitted it, even if the user opens another conversation while the
+// model works.
 //
 // Credentials remain server-side. The browser only receives provider metadata.
 
@@ -22,8 +20,10 @@ import {
 import { createWorkspaceAgentTools } from "@/lib/ai/agent-tools";
 import {
   cloudAssistantTurn,
+  decideCloudAssistantWriteProposal,
   submitAssistantFeedback,
   type CloudAssistantStreamEvent,
+  type CloudAssistantWriteProposal,
   type CloudContextItem,
   type CloudWorkspaceCall,
   type OutboundCall,
@@ -46,7 +46,6 @@ import {
 } from "@/lib/ai/workspace-item-draft";
 import {
   assistantJobs,
-  runningAssistantJobCount,
   serverAssistantJobs,
   startAssistantJob,
   subscribeAssistantJobs,
@@ -59,6 +58,7 @@ import {
 } from "@/lib/mcp/local-tools";
 import { getMcpConnectionsAction } from "@/app/editor/mcp-connection-actions";
 import { findPoolPostById } from "@/lib/pool/selectors";
+import { refreshWorkspacePool } from "@/lib/pool/store";
 import type { WorkspacePoolPayload, WorkspacePoolPost } from "@/lib/pool/types";
 import { normalizeTags } from "@/lib/tags";
 import type { AssistantAttachment } from "./AssistantSidebar";
@@ -92,12 +92,46 @@ import {
 } from "@/lib/ai/native-turn";
 import { workspaceToolProgress } from "./tool-progress";
 import {
+  compactWorkspaceIndexArtifactProofs,
   itemArtifactProof,
   loadedContextArtifactProofs,
   mergeArtifactProofs,
   workspaceToolArtifactProofs,
   type AssistantArtifactProof,
 } from "./artifact-proof";
+import {
+  activateAssistantConversation,
+  activeAssistantConversation,
+  appendAssistantConversationMessage,
+  assistantConversationMessages,
+  assistantConversationRevision,
+  assistantConversationSyncPayload,
+  assistantConversationSummaries,
+  createAssistantConversation,
+  mergeSyncedAssistantConversations,
+  migrateAssistantConversationOwnerScope,
+  serverAssistantConversationRevision,
+  subscribeAssistantConversations,
+  toggleAssistantConversationPinned,
+  updateAssistantConversationMessage,
+} from "./conversation-store";
+import {
+  assistantModelChoices,
+  readAssistantModelPreference,
+  saveAssistantModelPreference,
+} from "./model-preference";
+import { appendNativeOwnerPrompt } from "./native-owner-prompt";
+import {
+  assistantOwnerScopeMatches,
+  nativeEventMatchesTurnFence,
+  type AssistantOwnerScope,
+  type NativeTurnFence,
+} from "./native-turn-fence";
+import { getWorkspaceAgentPromptAction } from "@/app/editor/agent-instructions-actions";
+import {
+  getAssistantConversationCacheScopeAction,
+  syncAssistantConversationsAction,
+} from "@/app/editor/assistant-conversation-actions";
 
 export type { AssistantViewSnapshot } from "./context";
 
@@ -136,6 +170,8 @@ export type AssistantMessage = {
   id: string;
   role: AssistantMessageRole;
   text: string;
+  /** Replica conflict clock; provider and document content never control it. */
+  updatedAt?: string;
   provider?: CloudAssistantProviderLabel;
   model?: string;
   proposal?: AssistantProposal;
@@ -154,7 +190,36 @@ export type AssistantMessage = {
   /** A durable save receipt for a reply captured into Notes. */
   savedItem?: { id: string; title: string };
   feedback?: "up" | "down";
+  /** A guarded cloud write that remains inert until the owner decides it. */
+  writeProposals?: AssistantWriteProposal[];
 };
+
+type AssistantWriteProposalState = {
+  status: "pending" | "approved" | "denied" | "error";
+  deciding?: "approve" | "deny";
+  error?: string;
+  /** A possibly completed external call must never offer a blind retry. */
+  terminal?: boolean;
+  receipt?: Record<string, unknown>;
+};
+
+export type AssistantWriteProposal =
+  | (Omit<
+      Extract<CloudAssistantWriteProposal, { kind: "workspace" }>,
+      "kind" | "status"
+    > & { kind?: "workspace" } & AssistantWriteProposalState)
+  | (Omit<
+      Extract<CloudAssistantWriteProposal, { kind: "outbound_mcp" }>,
+      "status"
+    > & AssistantWriteProposalState);
+
+function assistantWriteProposals(
+  proposals: readonly CloudAssistantWriteProposal[],
+): AssistantWriteProposal[] | undefined {
+  return proposals.length > 0
+    ? proposals.map((proposal) => ({ ...proposal, status: "pending" }))
+    : undefined;
+}
 
 type UseNativeAssistantOptions = {
   handle: string;
@@ -204,7 +269,7 @@ function cloudContextProofs(
     const proof = itemArtifactProof({
       folderPath: item.folderPath,
       id: item.id,
-      operation: "Read",
+      operation: item.operation,
       pool,
       slug: item.slug,
       title: item.title,
@@ -221,22 +286,7 @@ function nativeIndexProofs(
   pool: WorkspacePoolPayload | null,
 ): AssistantArtifactProof[] {
   if (!pool || !RECENT_WORKSPACE_REQUEST.test(prompt)) return [];
-  return [...pool.posts]
-    .sort((left, right) =>
-      (right.updatedAt ?? right.createdAt ?? "").localeCompare(
-        left.updatedAt ?? left.createdAt ?? "",
-      ),
-    )
-    .slice(0, 12)
-    .flatMap((post) => {
-      const proof = itemArtifactProof({
-        id: post.id,
-        operation: "Read",
-        pool,
-        title: post.title,
-      });
-      return proof ? [proof] : [];
-    });
+  return compactWorkspaceIndexArtifactProofs(pool);
 }
 
 function workspaceMutationQueued(output: unknown): boolean {
@@ -287,61 +337,53 @@ function assistantAgentError(error: unknown): string {
   return message.trim() || "The assistant could not finish that.";
 }
 
-// ---- Per-context transcript store (module scope, sessionStorage mirror) ----
+function cloudConversationHistory(messages: readonly AssistantMessage[]) {
+  return messages.flatMap((message) =>
+    (message.role === "user" || message.role === "assistant") &&
+    message.text.trim()
+      ? [{ role: message.role, content: message.text }]
+      : [],
+  );
+}
 
-const MAX_MESSAGES_PER_THREAD = 200;
+// ---- Conversation runtime state ----
+
 const EMPTY_TRANSCRIPT: AssistantMessage[] = [];
-const transcripts = new Map<string, AssistantMessage[]>();
 const busyThreads = new Set<string>();
 const cloudProviderByThread = new Map<string, CloudAssistantProviderLabel>();
 const listeners = new Set<() => void>();
 let messageCounter = 0;
 
 function nextMessageId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
   messageCounter += 1;
   return `m${Date.now().toString(36)}_${messageCounter}`;
 }
 
-function storageKey(threadKey: string): string {
-  return `texttext:assistant:${threadKey}`;
+function conversationAddress(threadKey: string): {
+  handle: string;
+  conversationId: string;
+} {
+  const separator = threadKey.indexOf("\u001f");
+  return separator < 0
+    ? { handle: "", conversationId: threadKey }
+    : {
+        handle: threadKey.slice(0, separator),
+        conversationId: threadKey.slice(separator + 1),
+      };
 }
 
 function threadFor(threadKey: string): AssistantMessage[] {
-  const existing = transcripts.get(threadKey);
-  if (existing) return existing;
-  let restored: AssistantMessage[] = [];
-  try {
-    const raw = sessionStorage.getItem(storageKey(threadKey));
-    if (raw) restored = JSON.parse(raw) as AssistantMessage[];
-  } catch {
-    // Session storage is best effort; an empty thread is a valid start.
-  }
-  transcripts.set(threadKey, restored);
-  return restored;
+  const { handle, conversationId } = conversationAddress(threadKey);
+  return handle
+    ? assistantConversationMessages(handle, conversationId)
+    : EMPTY_TRANSCRIPT;
 }
 
 function notify() {
   for (const listener of listeners) listener();
-}
-
-/**
- * Start over in this context without leaving it.
- *
- * A transcript is keyed to where the person is, so before this the only way to
- * get a clean one was to navigate somewhere else and come back. That makes the
- * rail feel like it is holding onto an argument you already finished.
- *
- * The stored copy goes too, otherwise the old transcript reappears on the next
- * render from session storage.
- */
-function clearThread(threadKey: string) {
-  transcripts.set(threadKey, []);
-  try {
-    sessionStorage.removeItem(storageKey(threadKey));
-  } catch {
-    // Session storage is best effort; the in-memory clear is what matters.
-  }
-  notify();
 }
 
 function appendToThread(
@@ -354,17 +396,16 @@ function appendToThread(
   artifactProofs?: AssistantArtifactProof[],
 ): string {
   const id = nextMessageId();
-  const next = [
-    ...threadFor(threadKey),
-    { id, role, text, proposal, provider, outbound, artifactProofs },
-  ].slice(-MAX_MESSAGES_PER_THREAD);
-  transcripts.set(threadKey, next);
-  try {
-    sessionStorage.setItem(storageKey(threadKey), JSON.stringify(next));
-  } catch {
-    // Quota or private mode: the in-memory thread still works.
-  }
-  notify();
+  const { handle, conversationId } = conversationAddress(threadKey);
+  appendAssistantConversationMessage(handle, conversationId, {
+    id,
+    role,
+    text,
+    proposal,
+    provider,
+    outbound,
+    artifactProofs,
+  });
   return id;
 }
 
@@ -373,16 +414,13 @@ function updateThreadMessage(
   messageId: string,
   update: (message: AssistantMessage) => AssistantMessage,
 ) {
-  const next = threadFor(threadKey).map((message) =>
-    message.id === messageId ? update(message) : message,
+  const { handle, conversationId } = conversationAddress(threadKey);
+  updateAssistantConversationMessage(
+    handle,
+    conversationId,
+    messageId,
+    update,
   );
-  transcripts.set(threadKey, next);
-  try {
-    sessionStorage.setItem(storageKey(threadKey), JSON.stringify(next));
-  } catch {
-    // The in-memory transcript remains authoritative for this session.
-  }
-  notify();
 }
 
 function setThreadBusy(threadKey: string, busy: boolean) {
@@ -520,13 +558,29 @@ export function useNativeAssistant({
   applyItemPatch,
   confirmDestructive,
 }: UseNativeAssistantOptions) {
-  const [cloudProvider, setCloudProvider] =
-    useState<CloudAssistantProviderLabel | null>(null);
+  const [cloudProviderScope, setCloudProviderScope] = useState<{
+    handle: string;
+    provider: CloudAssistantProviderLabel;
+  } | null>(null);
   const [nativeConnection, setNativeConnection] =
     useState<AiConnectionSnapshot | null>(null);
   const [savingAnswerId, setSavingAnswerId] = useState<string | null>(null);
+  const [selectedCloudModel, setSelectedCloudModel] = useState<string | null>(
+    null,
+  );
+  const [conversationOwnerScope, setConversationOwnerScope] = useState<{
+    handle: string;
+    scope: string | null;
+  } | null>(null);
   const nativeJobRef = useRef<string | null>(null);
   const nativeMessageRef = useRef<string | null>(null);
+  const nativeThreadRef = useRef<string | null>(null);
+  const nativeConversationRef = useRef<string | null>(null);
+  const nativeTurnFenceRef = useRef<NativeTurnFence | null>(null);
+  const currentOwnerScopeRef = useRef<AssistantOwnerScope>({
+    handle,
+    ownerScopeKey: null,
+  });
   const activeCloudAbortRef = useRef<AbortController | null>(null);
   const nativeProofsRef = useRef<AssistantArtifactProof[]>([]);
   const nativeItemTypeDesignRef = useRef<{
@@ -541,7 +595,115 @@ export function useNativeAssistant({
   const getViewRef = useRef(getView);
   const readItemTextRef = useRef(readItemText);
   const applyItemPatchRef = useRef(applyItemPatch);
-  const threadKey = `${handle}:${contextKey}`;
+  const ownerScopeResolved = conversationOwnerScope?.handle === handle;
+  const ownerScopeReady = Boolean(
+    ownerScopeResolved && conversationOwnerScope?.scope,
+  );
+  const cloudProvider =
+    ownerScopeReady && cloudProviderScope?.handle === handle
+      ? cloudProviderScope.provider
+      : null;
+  const setCloudProvider = useCallback(
+    (provider: CloudAssistantProviderLabel | null) => {
+      setCloudProviderScope(provider ? { handle, provider } : null);
+    },
+    [handle],
+  );
+  const conversationStoreKey =
+    ownerScopeReady && conversationOwnerScope?.scope
+    ? `${handle}:${conversationOwnerScope.scope}`
+    : null;
+  // Assigned during render, before effects run, so an async continuation from
+  // the previous workspace cannot pass a stale owner check in the gap between
+  // navigation and effect cleanup.
+  currentOwnerScopeRef.current = {
+    handle,
+    ownerScopeKey: conversationStoreKey,
+  };
+  const conversationRevision = useSyncExternalStore(
+    subscribeAssistantConversations,
+    () =>
+      conversationStoreKey
+        ? assistantConversationRevision(conversationStoreKey)
+        : -1,
+    serverAssistantConversationRevision,
+  );
+  const activeConversation = useMemo(
+    () => {
+      if (conversationRevision < 0) return null;
+      return conversationStoreKey
+        ? activeAssistantConversation(conversationStoreKey, contextKey)
+        : null;
+    },
+    [contextKey, conversationRevision, conversationStoreKey],
+  );
+  const threadKey = `${conversationStoreKey ?? "server"}\u001f${activeConversation?.id ?? "server"}`;
+
+  const cancelNativeTurnForScopeChange = useCallback((message: string) => {
+    const fence = nativeTurnFenceRef.current;
+    if (!fence) return;
+    nativeTurnFenceRef.current = null;
+    requestNativeAssistant(
+      "assistantCancel",
+      undefined,
+      fence.conversationId,
+    );
+    const itemTypeDesign = nativeItemTypeDesignRef.current;
+    if (itemTypeDesign) {
+      clearTimeout(itemTypeDesign.timeout);
+      nativeItemTypeDesignRef.current = null;
+      itemTypeDesign.reject(new Error(message));
+    } else {
+      appendToThread(fence.threadKey, "error", message);
+    }
+    if (nativeJobRef.current) {
+      updateAssistantJob(nativeJobRef.current, {
+        status: "error",
+        activity: message,
+      });
+    }
+    nativeJobRef.current = null;
+    nativeMessageRef.current = null;
+    nativeProofsRef.current = [];
+    nativeThreadRef.current = null;
+    nativeConversationRef.current = null;
+    setThreadBusy(fence.threadKey, false);
+  }, []);
+
+  useEffect(() => {
+    const active = nativeTurnFenceRef.current;
+    if (
+      active &&
+      (!ownerScopeReady ||
+        !conversationStoreKey ||
+        active.handle !== handle ||
+        active.ownerScopeKey !== conversationStoreKey)
+    ) {
+      cancelNativeTurnForScopeChange(
+        "The assistant was stopped because the workspace changed.",
+      );
+    }
+    if (!ownerScopeReady) {
+      setNativeConnection(null);
+      registerNativeAssistantTools([]);
+    }
+  }, [
+    cancelNativeTurnForScopeChange,
+    conversationStoreKey,
+    handle,
+    ownerScopeReady,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      const active = nativeTurnFenceRef.current;
+      if (active?.ownerScopeKey === conversationStoreKey) {
+        cancelNativeTurnForScopeChange(
+          "The assistant was stopped because the workspace changed.",
+        );
+      }
+    };
+  }, [cancelNativeTurnForScopeChange, conversationStoreKey]);
 
   useEffect(() => {
     getPoolRef.current = getPool;
@@ -550,10 +712,54 @@ export function useNativeAssistant({
     applyItemPatchRef.current = applyItemPatch;
   }, [applyItemPatch, getPool, getView, readItemText]);
 
+  useEffect(() => {
+    setSelectedCloudModel(readAssistantModelPreference(handle, cloudProvider));
+  }, [cloudProvider, handle]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getAssistantConversationCacheScopeAction(handle)
+      .then((scope) => {
+        if (cancelled) return;
+        if (scope) {
+          const scopedKey = `${handle}:${scope}`;
+          migrateAssistantConversationOwnerScope(scopedKey, handle);
+        }
+        setConversationOwnerScope({ handle, scope });
+      })
+      .catch(() => {
+        // An unverified account never receives a local owner-history scope.
+        if (!cancelled) setConversationOwnerScope({ handle, scope: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [handle]);
+
+  useEffect(() => {
+    if (conversationRevision < 0 || !conversationStoreKey) return;
+    const timeout = window.setTimeout(() => {
+      const local = assistantConversationSyncPayload(conversationStoreKey);
+      void syncAssistantConversationsAction(handle, local)
+        .then((result) => {
+          if (result.allowed) {
+            mergeSyncedAssistantConversations(
+              conversationStoreKey,
+              result.conversations,
+            );
+          }
+        })
+        .catch(() => {
+          // The local replica remains fully usable while offline.
+        });
+    }, 900);
+    return () => window.clearTimeout(timeout);
+  }, [conversationRevision, conversationStoreKey, handle]);
+
   const messages = useSyncExternalStore(
-    subscribe,
+    subscribeAssistantConversations,
     () => threadFor(threadKey),
-    // The server cannot see sessionStorage. Hydration must replay that same
+    // The server cannot see localStorage. Hydration must replay that same
     // empty snapshot before React switches to the live client snapshot, which
     // restores the saved transcript. Reading storage here made the client add
     // the New chat control while it was hydrating markup that only had the
@@ -592,14 +798,7 @@ export function useNativeAssistant({
     ],
   );
 
-  /**
-   * What the connected servers on this Mac offer, discovered once per mount.
-   *
-   * A ref rather than state on purpose: the tool-call handler reads it, and
-   * rebuilding that subscription every time discovery finishes would drop
-   * in-flight calls. Discovery failing is normal, the design app is closed, and
-   * costs nothing but those tools.
-   */
+  /** Local external tools stay empty until they share durable owner review. */
   const localToolsRef = useRef<LocalToolSet>({
     definitions: [],
     connectionNames: [],
@@ -609,7 +808,13 @@ export function useNativeAssistant({
   const [localToolsVersion, setLocalToolsVersion] = useState(0);
 
   useEffect(() => {
-    if (!nativeAssistantAvailable()) return;
+    localToolsRef.current = {
+      definitions: [],
+      connectionNames: [],
+      unreachable: [],
+      run: () => null,
+    };
+    if (!ownerScopeReady || !nativeAssistantAvailable()) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -628,14 +833,16 @@ export function useNativeAssistant({
     return () => {
       cancelled = true;
     };
-  }, [handle]);
+  }, [handle, ownerScopeReady]);
 
   useEffect(() => {
+    if (!ownerScopeReady || !conversationStoreKey) {
+      registerNativeAssistantTools([]);
+      return;
+    }
     if (nativeAssistantAvailable()) {
-      // Workspace tools, plus whatever the connected servers on THIS Mac offer.
-      // The hosted rung cannot include those: a server in a data centre
-      // fetching 127.0.0.1 reaches itself, so a local design tool is only ever
-      // reachable from here.
+      // Only first-party workspace tools are registered. The legacy local MCP
+      // loader returns an empty set because it cannot use durable owner review.
       registerNativeAssistantTools([
         NATIVE_ITEM_TYPE_PREVIEW_TOOL,
         ...tools.toolDefinitions.map((tool) => ({
@@ -670,11 +877,40 @@ export function useNativeAssistant({
           recoveryAction:
             event.recoveryAction ?? current?.recoveryAction ?? null,
         }));
-      } else if (event.type === "text-delta") {
+        return;
+      }
+
+      const fence = nativeTurnFenceRef.current;
+      if (
+        !fence ||
+        !nativeEventMatchesTurnFence({
+          currentHandle: handle,
+          currentOwnerScopeKey: conversationStoreKey,
+          eventConversationId: event.conversationId,
+          fence,
+        }) ||
+        nativeConversationRef.current !== event.conversationId ||
+        nativeThreadRef.current !== fence.threadKey
+      ) {
+        if (event.type === "tool-call") {
+          submitNativeAssistantToolResult(
+            event.callId,
+            {
+              error:
+                "This assistant turn is no longer active in its original workspace.",
+            },
+            true,
+          );
+        }
+        return;
+      }
+      const eventThread = fence.threadKey;
+
+      if (event.type === "text-delta") {
         if (nativeItemTypeDesignRef.current) return;
         if (nativeMessageRef.current) {
           updateThreadMessage(
-            threadKey,
+            eventThread,
             nativeMessageRef.current,
             (message) => ({
               ...message,
@@ -683,7 +919,7 @@ export function useNativeAssistant({
           );
         } else {
           nativeMessageRef.current = appendToThread(
-            threadKey,
+            eventThread,
             "assistant",
             event.text,
             undefined,
@@ -696,7 +932,7 @@ export function useNativeAssistant({
         if (nativeItemTypeDesignRef.current) return;
         if (nativeMessageRef.current) {
           updateThreadMessage(
-            threadKey,
+            eventThread,
             nativeMessageRef.current,
             (message) => ({
               ...message,
@@ -705,7 +941,7 @@ export function useNativeAssistant({
           );
         } else {
           nativeMessageRef.current = appendToThread(
-            threadKey,
+            eventThread,
             "assistant",
             event.text,
             undefined,
@@ -760,8 +996,18 @@ export function useNativeAssistant({
           }
           return;
         }
+        const eventFence = fence;
         void (async () => {
           try {
+            const turnIsStillActive = () =>
+              nativeTurnFenceRef.current === eventFence &&
+              nativeConversationRef.current === eventFence.conversationId &&
+              nativeThreadRef.current === eventFence.threadKey;
+            if (!turnIsStillActive()) {
+              throw new Error(
+                "This assistant turn is no longer active in its original workspace.",
+              );
+            }
             const args =
               typeof event.arguments === "string"
                 ? JSON.parse(event.arguments)
@@ -771,15 +1017,15 @@ export function useNativeAssistant({
               (args ?? {}) as Record<string, unknown>,
             );
             if (progress) {
-              appendToThread(threadKey, "progress", progress);
+              appendToThread(eventThread, "progress", progress);
               if (nativeJobRef.current) {
                 updateAssistantJob(nativeJobRef.current, {
                   activity: progress,
                 });
               }
             }
-            // A namespaced name belongs to a connected server, not the
-            // workspace, and runs through the local bridge instead.
+            // The local external-tool set is intentionally empty until native
+            // calls can use the durable proposal surface.
             const local = localToolsRef.current.run(
               event.tool,
               (args ?? {}) as Record<string, unknown>,
@@ -787,6 +1033,17 @@ export function useNativeAssistant({
             const output = local
               ? await local
               : await tools.executor(event.tool as never, args as never);
+            if (!turnIsStillActive()) {
+              submitNativeAssistantToolResult(
+                event.callId,
+                {
+                  error:
+                    "This assistant turn ended while its workspace command was finishing. Verify the workspace before trying again.",
+                },
+                true,
+              );
+              return;
+            }
             const proofs = completedWorkspaceProofs({
               args: (args ?? {}) as Record<string, unknown>,
               output,
@@ -800,7 +1057,7 @@ export function useNativeAssistant({
               );
               if (nativeMessageRef.current) {
                 updateThreadMessage(
-                  threadKey,
+                  eventThread,
                   nativeMessageRef.current,
                   (message) => ({
                     ...message,
@@ -826,7 +1083,10 @@ export function useNativeAssistant({
         if (itemTypeDesign) {
           clearTimeout(itemTypeDesign.timeout);
           nativeItemTypeDesignRef.current = null;
-          setThreadBusy(threadKey, false);
+          nativeTurnFenceRef.current = null;
+          nativeThreadRef.current = null;
+          nativeConversationRef.current = null;
+          setThreadBusy(eventThread, false);
           if (itemTypeDesign.blueprint) {
             itemTypeDesign.resolve(itemTypeDesign.blueprint);
           } else {
@@ -842,7 +1102,7 @@ export function useNativeAssistant({
         if (nativeProofsRef.current.length > 0) {
           if (nativeMessageRef.current) {
             updateThreadMessage(
-              threadKey,
+              eventThread,
               nativeMessageRef.current,
               (message) => ({
                 ...message,
@@ -854,7 +1114,7 @@ export function useNativeAssistant({
             );
           } else {
             nativeMessageRef.current = appendToThread(
-              threadKey,
+              eventThread,
               "assistant",
               "Done.",
               undefined,
@@ -869,20 +1129,26 @@ export function useNativeAssistant({
         nativeJobRef.current = null;
         nativeMessageRef.current = null;
         nativeProofsRef.current = [];
-        setThreadBusy(threadKey, false);
+        nativeTurnFenceRef.current = null;
+        nativeThreadRef.current = null;
+        nativeConversationRef.current = null;
+        setThreadBusy(eventThread, false);
       } else if (event.type === "error") {
         const itemTypeDesign = nativeItemTypeDesignRef.current;
         if (itemTypeDesign) {
           clearTimeout(itemTypeDesign.timeout);
           nativeItemTypeDesignRef.current = null;
-          setThreadBusy(threadKey, false);
+          nativeTurnFenceRef.current = null;
+          nativeThreadRef.current = null;
+          nativeConversationRef.current = null;
+          setThreadBusy(eventThread, false);
           itemTypeDesign.reject(new Error(assistantAgentError(event.message)));
           return;
         }
         if (nativeProofsRef.current.length > 0) {
           if (nativeMessageRef.current) {
             updateThreadMessage(
-              threadKey,
+              eventThread,
               nativeMessageRef.current,
               (message) => ({
                 ...message,
@@ -894,7 +1160,7 @@ export function useNativeAssistant({
             );
           } else {
             nativeMessageRef.current = appendToThread(
-              threadKey,
+              eventThread,
               "assistant",
               "Some actions completed before the assistant stopped.",
               undefined,
@@ -904,18 +1170,30 @@ export function useNativeAssistant({
             );
           }
         }
-        appendToThread(threadKey, "error", assistantAgentError(event.message));
+        appendToThread(eventThread, "error", assistantAgentError(event.message));
         if (nativeJobRef.current)
           updateAssistantJob(nativeJobRef.current, { status: "error" });
         nativeJobRef.current = null;
         nativeMessageRef.current = null;
         nativeProofsRef.current = [];
-        setThreadBusy(threadKey, false);
+        nativeTurnFenceRef.current = null;
+        nativeThreadRef.current = null;
+        nativeConversationRef.current = null;
+        setThreadBusy(eventThread, false);
       }
     });
     if (nativeAssistantAvailable()) requestNativeAssistant("assistantStatus");
-    return unsubscribe;
-  }, [threadKey, tools, localToolsVersion]);
+    return () => {
+      unsubscribe();
+      registerNativeAssistantTools([]);
+    };
+  }, [
+    conversationStoreKey,
+    handle,
+    localToolsVersion,
+    ownerScopeReady,
+    tools,
+  ]);
 
   const generateItemTypeBlueprint = useCallback(
     ({
@@ -927,12 +1205,21 @@ export function useNativeAssistant({
       folderName?: string;
       request: string;
     }) => {
+      if (!ownerScopeReady || !conversationStoreKey) {
+        return Promise.reject(
+          new Error("Only the workspace owner can use this assistant."),
+        );
+      }
       if (nativeConnection?.state !== "ready") {
         return Promise.reject(
           new Error("Connect the TextText Agent before building with it."),
         );
       }
-      if (busyThreads.has(threadKey) || nativeItemTypeDesignRef.current) {
+      if (
+        busyThreads.has(threadKey) ||
+        nativeItemTypeDesignRef.current ||
+        nativeConversationRef.current
+      ) {
         return Promise.reject(
           new Error(
             "The connected agent is already working. Try again in a moment.",
@@ -940,10 +1227,27 @@ export function useNativeAssistant({
         );
       }
       return new Promise<ItemTypeBlueprint>((resolve, reject) => {
+        const designThread = threadKey;
+        // Item-type design is an invisible utility turn, so it must never run
+        // in the visible chat's model thread or contaminate later replies.
+        const designConversationId = `item-type:${nextMessageId()}`;
         const timeout = setTimeout(() => {
-          if (!nativeItemTypeDesignRef.current) return;
+          if (
+            !nativeItemTypeDesignRef.current ||
+            nativeTurnFenceRef.current?.conversationId !== designConversationId
+          ) {
+            return;
+          }
+          requestNativeAssistant(
+            "assistantCancel",
+            undefined,
+            designConversationId,
+          );
           nativeItemTypeDesignRef.current = null;
-          setThreadBusy(threadKey, false);
+          nativeTurnFenceRef.current = null;
+          nativeThreadRef.current = null;
+          nativeConversationRef.current = null;
+          setThreadBusy(designThread, false);
           reject(
             new Error(
               "The connected agent took too long to design that item type.",
@@ -958,24 +1262,43 @@ export function useNativeAssistant({
           request,
           timeout,
         };
-        setThreadBusy(threadKey, true);
+        nativeTurnFenceRef.current = {
+          conversationId: designConversationId,
+          handle,
+          ownerScopeKey: conversationStoreKey,
+          threadKey: designThread,
+        };
+        nativeThreadRef.current = designThread;
+        nativeConversationRef.current = designConversationId;
+        setThreadBusy(designThread, true);
         const started = submitNativeAssistantTurn(
           nativeItemTypeDesignPrompt({ current, folderName, request }),
+          designConversationId,
         );
         if (!started) {
           clearTimeout(timeout);
           nativeItemTypeDesignRef.current = null;
-          setThreadBusy(threadKey, false);
+          nativeTurnFenceRef.current = null;
+          nativeThreadRef.current = null;
+          nativeConversationRef.current = null;
+          setThreadBusy(designThread, false);
           reject(new Error("The connected agent could not start that design."));
         }
       });
     },
-    [nativeConnection?.state, threadKey],
+    [
+      conversationStoreKey,
+      handle,
+      nativeConnection?.state,
+      ownerScopeReady,
+      threadKey,
+    ],
   );
 
   useEffect(() => {
     let cancelled = false;
-    void cloudAssistantStatus()
+    if (!ownerScopeReady) return;
+    void cloudAssistantStatus(handle)
       .then((status) => {
         if (!cancelled) {
           setCloudProvider(status.enabled ? status.provider : null);
@@ -987,7 +1310,7 @@ export function useNativeAssistant({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [handle, ownerScopeReady, setCloudProvider]);
 
   const contextLabel = useCallback(() => {
     const view = getViewRef.current();
@@ -1014,15 +1337,30 @@ export function useNativeAssistant({
       // Replies and job updates land in the thread that asked, even if the
       // user navigates away while the model works.
       const thread = threadKey;
-      if ((!prompt && attachments.length === 0) || busyThreads.has(thread)) {
+      if (
+        !ownerScopeReady ||
+        !conversationStoreKey ||
+        (!prompt && attachments.length === 0) ||
+        busyThreads.has(thread)
+      ) {
         return;
       }
+      const submittedOwnerScope: AssistantOwnerScope = {
+        handle,
+        ownerScopeKey: conversationStoreKey,
+      };
+      const ownerScopeIsStillCurrent = () =>
+        assistantOwnerScopeMatches(
+          currentOwnerScopeRef.current,
+          submittedOwnerScope,
+        );
       const modelPrompt =
         prompt ||
         (attachments.some((attachment) => attachment.workspaceItemId)
           ? "Review the added TextText context."
           : "Review the attached content.");
       const displayPrompt = formatAssistantSubmission(prompt, attachments);
+      const priorCloudMessages = cloudConversationHistory(threadFor(thread));
       const submittedView = getViewRef.current();
       appendToThread(thread, "user", displayPrompt);
       setThreadBusy(thread, true);
@@ -1036,7 +1374,9 @@ export function useNativeAssistant({
         const localAttachments = attachments.filter(
           (attachment) => !attachment.workspaceItemId,
         );
-        const nativeReady = nativeConnection?.state === "ready";
+        const nativeReady =
+          nativeConnection?.state === "ready" &&
+          !nativeConversationRef.current;
         const cloudAttachments = nativeReady
           ? []
           : await buildCloudAssistantAttachments(attachments);
@@ -1069,7 +1409,7 @@ export function useNativeAssistant({
           (item): item is { body: string; id: string; title: string } =>
             Boolean(item),
         );
-        if (nativeConnection?.state === "ready") {
+        if (nativeReady) {
           const open = submittedView.postId
             ? await readItemTextRef
                 .current(submittedView.postId)
@@ -1078,25 +1418,41 @@ export function useNativeAssistant({
           const openSelection = open
             ? resolveWorkspaceItemTextSelection(open)
             : null;
-          const nativePrompt = nativeAssistantTurnPrompt({
-            context: tools.describeContext(submittedView),
-            item:
-              open && submittedView.postId
-                ? {
-                    id: submittedView.postId,
-                    title: open.title,
-                    excerpt: open.excerpt,
-                    body: open.body,
-                  }
-                : null,
-            request: preparedPrompt,
-            relatedItems,
-            selection: openSelection,
-            workspaceIndex: open
-              ? null
-              : nativeWorkspaceIndex(getPoolRef.current()),
-          });
-          if (submitNativeAssistantTurn(nativePrompt)) {
+          const ownerPrompt = await getWorkspaceAgentPromptAction(
+            handle,
+            modelPrompt,
+          ).catch(() => "");
+          if (!ownerScopeIsStillCurrent()) {
+            throw new Error(
+              "The assistant was stopped because the workspace changed.",
+            );
+          }
+          const nativePrompt = appendNativeOwnerPrompt(
+            nativeAssistantTurnPrompt({
+              context: tools.describeContext(submittedView),
+              item:
+                open && submittedView.postId
+                  ? {
+                      id: submittedView.postId,
+                      title: open.title,
+                      excerpt: open.excerpt,
+                      body: open.body,
+                    }
+                  : null,
+              request: preparedPrompt,
+              relatedItems,
+              selection: openSelection,
+              workspaceIndex: open
+                ? null
+                : nativeWorkspaceIndex(getPoolRef.current()),
+            }),
+            ownerPrompt,
+          );
+          const nativeConversationId = activeConversation?.id;
+          if (
+            nativeConversationId &&
+            !nativeConversationRef.current
+          ) {
             const currentPost =
               open && submittedView.postId && getPoolRef.current()
                 ? findPoolPostById(getPoolRef.current()!, submittedView.postId)
@@ -1116,15 +1472,40 @@ export function useNativeAssistant({
                 : nativeIndexProofs(modelPrompt, getPoolRef.current()),
               loadedContextArtifactProofs(relatedItems, getPoolRef.current()),
             );
-            appendToThread(
-              thread,
-              "progress",
-              "Working with the TextText Agent",
-            );
+            nativeTurnFenceRef.current = {
+              conversationId: nativeConversationId,
+              handle,
+              ownerScopeKey: conversationStoreKey,
+              threadKey: thread,
+            };
+            nativeThreadRef.current = thread;
+            nativeConversationRef.current = nativeConversationId;
             nativeJobRef.current = jobId;
             nativeMessageRef.current = null;
-            return;
+            const started = submitNativeAssistantTurn(
+              nativePrompt,
+              nativeConversationId,
+              priorCloudMessages,
+            );
+            if (started) {
+              appendToThread(
+                thread,
+                "progress",
+                "Working with the TextText Agent",
+              );
+              return;
+            }
+            nativeTurnFenceRef.current = null;
+            nativeThreadRef.current = null;
+            nativeConversationRef.current = null;
+            nativeJobRef.current = null;
+            nativeProofsRef.current = [];
           }
+        }
+        if (!ownerScopeIsStillCurrent()) {
+          throw new Error(
+            "The assistant was stopped because the workspace changed.",
+          );
         }
         updateAssistantJob(jobId, { activity: "Contacting your AI provider" });
         // Hand over what the writer is looking at, the way the quick actions
@@ -1178,7 +1559,7 @@ export function useNativeAssistant({
             }
           }
         };
-        const result = await cloudAssistantTurn(preparedPrompt, {
+        const result = await cloudAssistantTurn(handle, preparedPrompt, {
           level: submittedView.level,
           folderPath: submittedView.folderPath,
           postId: submittedView.postId,
@@ -1191,6 +1572,8 @@ export function useNativeAssistant({
             : {}),
         }, {
           stream: true,
+          history: priorCloudMessages,
+          ...(selectedCloudModel ? { model: selectedCloudModel } : {}),
           signal: cloudAbortController.signal,
           onEvent: onCloudEvent,
         });
@@ -1229,7 +1612,9 @@ export function useNativeAssistant({
             ? "Some actions completed before the assistant stopped."
             : result.terminalError
               ? ""
-              : "Done.");
+              : result.writeProposals.length > 0
+                ? "Review the proposed change."
+                : "Done.");
         if (cloudMessageId) {
           updateThreadMessage(thread, cloudMessageId, (message) => ({
             ...message,
@@ -1244,6 +1629,7 @@ export function useNativeAssistant({
                   }
                 : undefined,
             artifactProofs: proofs.length > 0 ? proofs : message.artifactProofs,
+            writeProposals: assistantWriteProposals(result.writeProposals),
           }));
         } else if (finalText) {
           const fallbackMessageId = appendToThread(
@@ -1263,6 +1649,7 @@ export function useNativeAssistant({
           updateThreadMessage(thread, fallbackMessageId, (message) => ({
             ...message,
             model: result.model,
+            writeProposals: assistantWriteProposals(result.writeProposals),
           }));
         }
         if (result.terminalError) {
@@ -1284,11 +1671,24 @@ export function useNativeAssistant({
         setThreadBusy(thread, false);
       }
     },
-    [contextKey, contextLabel, nativeConnection, threadKey, tools],
+    [
+      contextKey,
+      contextLabel,
+      conversationStoreKey,
+      handle,
+      nativeConnection,
+      activeConversation?.id,
+      ownerScopeReady,
+      selectedCloudModel,
+      setCloudProvider,
+      threadKey,
+      tools,
+    ],
   );
 
   const runQuickAction = useCallback(
     async (action: NativeQuickActionId) => {
+      if (!ownerScopeReady || !conversationStoreKey) return;
       const thread = threadKey;
       if (busyThreads.has(thread)) return;
       const view = getViewRef.current();
@@ -1311,6 +1711,7 @@ export function useNativeAssistant({
         const item = await readItemTextRef.current(view.postId);
         const selection = resolveWorkspaceItemTextSelection(item);
         const selectionAction = action === "rewrite" || action === "summarize";
+        const priorCloudMessages = cloudConversationHistory(threadFor(thread));
         appendToThread(
           thread,
           "user",
@@ -1323,7 +1724,7 @@ export function useNativeAssistant({
         }
         const cloudAbortController = new AbortController();
         activeCloudAbortRef.current = cloudAbortController;
-        const result = await cloudAssistantTurn(actionPrompt, {
+        const result = await cloudAssistantTurn(handle, actionPrompt, {
           level: view.level,
           folderPath: view.folderPath,
           postId: view.postId,
@@ -1333,6 +1734,8 @@ export function useNativeAssistant({
           mode: "suggestion",
         }, {
           stream: true,
+          history: priorCloudMessages,
+          ...(selectedCloudModel ? { model: selectedCloudModel } : {}),
           signal: cloudAbortController.signal,
           onEvent: (event) => {
             if (event.type === "start") {
@@ -1371,7 +1774,10 @@ export function useNativeAssistant({
         const resultMessageId = appendToThread(
           thread,
           "assistant",
-          result.text || "Done.",
+          result.text ||
+            (result.writeProposals.length > 0
+              ? "Review the proposed change."
+              : "Done."),
           result.terminalError
             ? undefined
             : quickActionProposal({
@@ -1394,6 +1800,7 @@ export function useNativeAssistant({
         updateThreadMessage(thread, resultMessageId, (message) => ({
           ...message,
           model: result.model,
+          writeProposals: assistantWriteProposals(result.writeProposals),
         }));
         if (result.terminalError) {
           appendToThread(thread, "error", result.terminalError);
@@ -1418,7 +1825,16 @@ export function useNativeAssistant({
         setThreadBusy(thread, false);
       }
     },
-    [contextKey, contextLabel, threadKey],
+    [
+      contextKey,
+      contextLabel,
+      conversationStoreKey,
+      handle,
+      ownerScopeReady,
+      selectedCloudModel,
+      setCloudProvider,
+      threadKey,
+    ],
   );
 
   const applyProposalValue = useCallback(
@@ -1697,22 +2113,165 @@ export function useNativeAssistant({
     [threadKey],
   );
 
+  const decideWriteProposal = useCallback(
+    async (
+      messageId: string,
+      proposalId: string,
+      decision: "approve" | "deny",
+    ) => {
+      const message = threadFor(threadKey).find(
+        (candidate) => candidate.id === messageId,
+      );
+      const proposal = message?.writeProposals?.find(
+        (candidate) => candidate.id === proposalId,
+      );
+      if (
+        !proposal ||
+        proposal.terminal ||
+        proposal.deciding ||
+        (proposal.status !== "pending" && proposal.status !== "error")
+      ) {
+        return;
+      }
+      updateThreadMessage(threadKey, messageId, (candidate) => ({
+        ...candidate,
+        writeProposals: candidate.writeProposals?.map((current) =>
+          current.id === proposalId
+            ? current.receipt ||
+              current.status === "approved" ||
+              current.status === "denied" ||
+              current.terminal
+              ? current
+              : {
+                ...current,
+                status: "pending",
+                deciding: decision,
+                error: undefined,
+              }
+            : current,
+        ),
+      }));
+      try {
+        const result = await decideCloudAssistantWriteProposal(
+          proposalId,
+          decision,
+        );
+        const receipt =
+          result.receipt &&
+          typeof result.receipt === "object" &&
+          !Array.isArray(result.receipt)
+            ? (result.receipt as Record<string, unknown>)
+            : undefined;
+        const ambiguous = result.status === "ambiguous";
+        const denied = result.status === "denied";
+        const approved = Boolean(receipt);
+        const ambiguousMessage =
+          typeof result.message === "string"
+            ? result.message
+            : "The external tool may have completed. Verify it before retrying.";
+        const receiptTool =
+          typeof receipt?.tool === "string" ? receipt.tool : proposal.tool;
+        const receiptOutput =
+          receipt?.output &&
+          typeof receipt.output === "object" &&
+          !Array.isArray(receipt.output)
+            ? receipt.output
+            : {};
+        const approvedProofs =
+          approved &&
+          receipt?.kind === "workspace" &&
+          proposal.kind === "workspace"
+            ? completedWorkspaceProofs({
+                args: proposal.arguments,
+                output: receiptOutput,
+                pool: getPoolRef.current(),
+                tool: receiptTool,
+              })
+            : [];
+        updateThreadMessage(threadKey, messageId, (candidate) => ({
+          ...candidate,
+          artifactProofs: mergeArtifactProofs(
+            candidate.artifactProofs,
+            approvedProofs,
+          ),
+          writeProposals: candidate.writeProposals?.map((current) =>
+            current.id === proposalId
+              ? current.receipt && !approved
+                ? current
+                : {
+                    ...current,
+                    status: approved
+                      ? "approved"
+                      : denied
+                        ? "denied"
+                        : ambiguous
+                          ? "error"
+                          : current.status,
+                    deciding: undefined,
+                    error: ambiguous ? ambiguousMessage : undefined,
+                    terminal: ambiguous || undefined,
+                    ...(receipt ? { receipt } : {}),
+                  }
+              : current,
+          ),
+        }));
+        if (
+          approved &&
+          receipt?.kind === "workspace" &&
+          proposal.kind === "workspace"
+        ) {
+          const pool = getPoolRef.current();
+          if (pool) {
+            await refreshWorkspacePool(handle, pool.blogId).catch(() => {
+              // The command receipt is authoritative. Live sync or the next
+              // foreground refresh will reconcile a temporarily offline pool.
+            });
+          }
+        }
+      } catch (error) {
+        updateThreadMessage(threadKey, messageId, (candidate) => ({
+          ...candidate,
+          writeProposals: candidate.writeProposals?.map((current) =>
+            current.id === proposalId
+              ? current.receipt ||
+                current.status === "approved" ||
+                current.status === "denied" ||
+                current.terminal
+                ? current
+                : {
+                  ...current,
+                  status: "error",
+                  deciding: undefined,
+                  error: assistantAgentError(error),
+                }
+              : current,
+          ),
+        }));
+      }
+    },
+    [handle, threadKey],
+  );
+
   const cancel = useCallback(() => {
     const cloudAbort = activeCloudAbortRef.current;
     cloudAbort?.abort();
     if (!cloudAbort && nativeConnection?.state === "ready" && nativeJobRef.current) {
-      requestNativeAssistant("assistantCancel");
+      requestNativeAssistant(
+        "assistantCancel",
+        undefined,
+        nativeConversationRef.current ?? undefined,
+      );
     }
   }, [nativeConnection?.state]);
 
   const quickActions =
-    getView().postId && cloudProvider
+    ownerScopeReady && getView().postId && cloudProvider
       ? NATIVE_QUICK_ACTIONS.map((action) => ({
           ...action,
           description: `${action.label} with ${cloudProvider}`,
         }))
       : [];
-  const nativeReady = nativeConnection?.state === "ready";
+  const nativeReady = ownerScopeReady && nativeConnection?.state === "ready";
   const attachmentsAvailable = nativeReady || Boolean(cloudProvider);
   const attachmentAccept = nativeReady
     ? assistantAttachmentAccept({ ocr: true })
@@ -1728,34 +2287,94 @@ export function useNativeAssistant({
     assistantJobs,
     serverAssistantJobs,
   );
-  const runningJobs = useSyncExternalStore(
-    subscribeAssistantJobs,
-    runningAssistantJobCount,
-    () => 0,
+  const scopedJobs = useMemo(
+    () =>
+      ownerScopeReady && conversationStoreKey
+        ? jobs.filter((job) =>
+            job.threadKey.startsWith(`${conversationStoreKey}\u001f`),
+          )
+        : [],
+    [conversationStoreKey, jobs, ownerScopeReady],
   );
+  const scopedRunningJobs = scopedJobs.reduce(
+    (count, job) => (job.status === "running" ? count + 1 : count),
+    0,
+  );
+  const conversations = useMemo(
+    () => {
+      if (conversationRevision < 0) return [];
+      return conversationStoreKey
+        ? assistantConversationSummaries(conversationStoreKey, contextKey)
+        : [];
+    },
+    [contextKey, conversationRevision, conversationStoreKey],
+  );
+  const modelChoices = useMemo(
+    () => assistantModelChoices(cloudProvider),
+    [cloudProvider],
+  );
+  const ownerScopeStatus: "checking" | "denied" | "ready" = ownerScopeReady
+    ? "ready"
+    : ownerScopeResolved
+      ? "denied"
+      : "checking";
 
   return {
-    activeCloudProvider,
-    startNewConversation: () => clearThread(threadKey),
+    activeCloudProvider: ownerScopeReady ? activeCloudProvider : null,
+    activeConversationId: activeConversation?.id ?? null,
+    conversations,
+    searchConversations: (query: string) =>
+      conversationStoreKey
+        ? assistantConversationSummaries(conversationStoreKey, contextKey, query)
+        : [],
+    startNewConversation: () =>
+      conversationStoreKey
+        ? createAssistantConversation(conversationStoreKey, contextKey)
+        : "",
+    openConversation: (conversationId: string) =>
+      Boolean(
+        conversationStoreKey &&
+          activateAssistantConversation(
+            conversationStoreKey,
+            contextKey,
+            conversationId,
+          ),
+      ),
+    toggleConversationPinned: (conversationId: string) =>
+      Boolean(
+        conversationStoreKey &&
+          toggleAssistantConversationPinned(conversationStoreKey, conversationId),
+      ),
     attachmentAccept,
     attachmentsAvailable,
     attachmentTitle,
     applyProposal,
     cloudProvider,
+    modelChoices,
+    selectedCloudModel,
+    selectCloudModel: (model: string) => {
+      const saved = saveAssistantModelPreference(handle, cloudProvider, model);
+      if (saved) setSelectedCloudModel(saved);
+    },
+    decideWriteProposal,
     cancel,
-    nativeConnection,
-    connectNativeAssistant: () => requestNativeAssistant("assistantConnect"),
-    jobs,
+    nativeConnection: ownerScopeReady ? nativeConnection : null,
+    connectNativeAssistant: () => {
+      if (ownerScopeReady) requestNativeAssistant("assistantConnect");
+    },
+    jobs: scopedJobs,
     generateItemTypeBlueprint,
-    messages,
+    messages: ownerScopeReady ? messages : EMPTY_TRANSCRIPT,
+    ownerScopeReady,
+    ownerScopeStatus,
     quickActions,
     runQuickAction,
-    runningJobs,
+    runningJobs: scopedRunningJobs,
     saveAnswer,
     rateAnswer,
     savingAnswerId,
     submit,
-    submitting,
+    submitting: ownerScopeReady ? submitting : false,
     undoProposal,
   };
 }

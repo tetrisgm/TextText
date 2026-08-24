@@ -6919,7 +6919,9 @@ function LocalWorkspaceShell({
           rail runs, against the same selection it already reads, and the
           result arrives as a proposal to accept or undo. */}
         <SelectionActions
-          enabled={assistantTarget.view.level === "edit"}
+          enabled={
+            assistant.ownerScopeReady && assistantTarget.view.level === "edit"
+          }
           readSelection={() =>
             assistantTarget.view.level === "edit" && assistantTarget.view.postId
               ? readOpenWorkspaceItemSelection(assistantTarget.view.postId)
@@ -6932,6 +6934,7 @@ function LocalWorkspaceShell({
         />
 
         <AssistantSidebar
+          workspaceHandle={displayPool.blog.handle}
           agent={assistantAgentIdentity(
             assistant.cloudProvider,
             assistant.nativeConnection,
@@ -6940,6 +6943,14 @@ function LocalWorkspaceShell({
           )}
           onNewConversation={assistant.startNewConversation}
           hasConversation={assistant.messages.length > 0}
+          activeConversationId={assistant.activeConversationId}
+          conversations={assistant.conversations}
+          onOpenConversation={assistant.openConversation}
+          onSearchConversations={assistant.searchConversations}
+          onToggleConversationPinned={assistant.toggleConversationPinned}
+          modelChoices={assistant.modelChoices}
+          selectedModel={assistant.selectedCloudModel}
+          onModelChange={assistant.selectCloudModel}
           className="workspace-assistant-shell"
           state={assistantState}
           onStateChange={changeAssistantState}
@@ -6963,23 +6974,30 @@ function LocalWorkspaceShell({
             assistantComposer.removeAttachment(attachment.id)
           }
           onSubmit={(submission) => {
+            if (!assistant.ownerScopeReady) return;
             assistantComposer.clear();
             void assistant.submit(submission.text, submission.attachments);
           }}
           onCancel={assistant.cancel}
           submitting={assistant.submitting}
+          submitDisabled={!assistant.ownerScopeReady}
           launcherBusy={assistant.runningJobs > 0}
           composerPlaceholder={
-            assistant.cloudProvider ||
-            assistant.nativeConnection?.state === "ready"
-              ? undefined
-              : "Connect an AI to start"
+            assistant.ownerScopeStatus === "checking"
+              ? "Checking assistant access"
+              : assistant.ownerScopeStatus === "denied"
+                ? "Assistant is available to the workspace owner"
+                : assistant.cloudProvider ||
+                    assistant.nativeConnection?.state === "ready"
+                  ? undefined
+                  : "Connect an AI to start"
           }
           accept={assistant.attachmentAccept}
           attachmentDisabled={!assistant.attachmentsAvailable}
           attachmentTitle={assistant.attachmentTitle}
         >
           <AssistantConversation
+            accessState={assistant.ownerScopeStatus}
             activeCloudProvider={assistant.activeCloudProvider}
             cloudProvider={assistant.cloudProvider}
             nativeConnection={assistant.nativeConnection}
@@ -6990,6 +7008,7 @@ function LocalWorkspaceShell({
             onSaveAnswer={assistant.saveAnswer}
             savingAnswerId={assistant.savingAnswerId}
             onRateAnswer={assistant.rateAnswer}
+            onWriteProposalDecision={assistant.decideWriteProposal}
             jobs={assistant.jobs}
             messages={assistant.messages}
             starterContext={starterContextFromChip(assistantContext)}

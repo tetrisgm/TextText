@@ -872,6 +872,78 @@ Two traps worth keeping:
   WKWebView, rendered the Library and assistant, and reached the ready
   "Chat with Codex" state. It did not replace `/Applications/TextText.app`.
 
+## Guarded agentic assistant completion (source, 2026-08-24)
+
+- An initial completeness claim was incorrect. Three adversarial audit passes
+  subsequently found and closed owner-scope mismatches, native relaunch
+  continuity, proposal race and ambiguity handling, misleading provenance,
+  collaborator selection actions, and accidental outbound discovery from
+  ordinary prose. This section supersedes earlier assistant implementation
+  claims where they conflict.
+- Assistant conversations now have durable owner-only records with stable
+  conversation IDs, search, pinning, reopening, bounded cross-device sync, and
+  bounded prior-turn context. Cloud follow-ups receive the durable transcript.
+  A native App Server thread restores that transcript only when attaching a
+  durable conversation to a fresh ephemeral thread, so relaunches preserve
+  context without duplicating messages.
+- The assistant offers a truthful Auto model choice plus exact supported model
+  choices and records the provider and actual model used. Workspace owners can
+  set standing instructions and explicit slash or at-sign skills. The composer
+  accepts bounded text, structured data, images, PDF, DOCX, XLSX, and PPTX
+  attachments. Model Markdown is rendered through the safe renderer and never
+  loads remote tracking images.
+- Workspace grounding distinguishes documents merely Found from documents
+  actually Read. Source proof cards are derived from server receipts, not
+  model prose. Eligible cloud workspace changes and every outbound MCP call are
+  inert durable proposals until the owner approves the exact stored arguments.
+  The standalone native path retains its explicit confirmation gates for
+  publication, access, restore, Trash, and destructive asset actions. A stale
+  proposal decision replays the authoritative durable outcome. A successful
+  side effect whose receipt cannot be saved is terminal and ambiguous, with no
+  blind retry.
+- Connected MCP servers are never discovered because their natural-language
+  name appears in a prompt. Settings shows a unique literal shortcut such as
+  `@mcp:paper`; only that exact token authorizes discovery for the current turn.
+  Every external call still requires proposal review. Approval revalidates an
+  HMAC fingerprint covering the destination, credential identity, and tool
+  definition before execution. Shortcut collisions fail closed.
+- Assistant status, provider data, transcripts, jobs, item-type generation,
+  quick actions, and selection actions remain hidden or disabled until the
+  displayed workspace is proven to be the caller's owned workspace. The API
+  verifies the same workspace handle before reading configuration, context, or
+  executing the privileged assistant command transport. Native registration,
+  status, and events are owner-gated; every turn is fenced to its initiating
+  opaque owner scope, workspace, and conversation, and navigation cancels it.
+  Private assistant status and proposal responses are `private, no-store`.
+- Settings now inventories connected AI providers and MCP servers, shows how
+  each connection is used, and exposes disconnect or removal controls. The
+  standalone local agent path uses the signed-in `texttext` CLI. Store builds
+  compile out the local Codex locator and local MCP bridge, retain only ordinary
+  App Sandbox entitlements, and do not restore a loopback service.
+- Observed behavior used a real Keychain-backed Anthropic provider. An exact
+  prompt returned `LIVE AI OK` with an Anthropic and Claude model receipt; a
+  grounded question produced distinct Found and Read proof; a create-note
+  proposal remained inert and was dismissed; reload retained the conversation;
+  and a follow-up answered from prior durable context. The outbound MCP browser
+  evaluation passed discovery, proposal-only execution, approval receipts,
+  hostile-description resistance, input-required handling, and cleanup.
+- Final source gates passed 182 web test files with 1,260 tests, the 45-page
+  production Next build, 526 standalone Swift tests, 525 Store Swift tests,
+  the 48-point Apple acceptance matrix, TypeScript, lint with zero errors,
+  30 current migrations, the token-free agent integration verifier, and the
+  outbound MCP browser evaluation.
+- Deliberate remaining product gaps are not described as complete: no
+  first-party OAuth connector gallery or indexed Slack, Drive, Jira, GitHub,
+  mail, and calendar search; no embeddings or cross-service semantic ranker;
+  no answer-level inline citations beyond source artifact cards; no generic
+  archive, audio, video, transcription, cloud OCR, spreadsheet computation, or
+  code sandbox; no team, page-backed, or automatically learned skills; no
+  model-readable screenshot verification tool; no bundled unattended batch
+  runner; no multi-step Plan mode; and no scheduled custom background agents.
+  A persistent background job requires the owner's explicit approval.
+- No TestFlight build, store upload, release record, deployment, installation,
+  or public release action was performed in this pass.
+
 ## Resolved episodes (one line each, dates in git log)
 
 - Apple consent screen "write app": appleid.apple.com caches its own copy;

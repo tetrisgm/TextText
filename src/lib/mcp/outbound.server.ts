@@ -14,6 +14,7 @@ import {
   OutboundMcpError,
   type OutboundConnection,
 } from "@/lib/mcp/outbound-client";
+import { connectionSlug } from "@/lib/mcp/outbound-protocol";
 
 /** What a browser may see: no token, ever. */
 export type McpConnectionView = {
@@ -56,7 +57,7 @@ export function cleanConnectionName(value: unknown): string {
   return name;
 }
 
-export { connectionSlug } from "@/lib/mcp/outbound-protocol";
+export { connectionSlug };
 
 function view(row: typeof mcpConnections.$inferSelect): McpConnectionView {
   return {
@@ -101,6 +102,32 @@ export async function enabledMcpConnections(
   }));
 }
 
+/** Resolve one still-enabled connection inside the already-authorized workspace. */
+export async function enabledMcpConnection(
+  blogId: string,
+  connectionId: string,
+): Promise<OutboundConnection | null> {
+  if (!db) return null;
+  const [row] = await db
+    .select()
+    .from(mcpConnections)
+    .where(
+      and(
+        eq(mcpConnections.id, connectionId),
+        eq(mcpConnections.blogId, blogId),
+        eq(mcpConnections.enabled, true),
+      ),
+    )
+    .limit(1);
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    url: row.url,
+    token: row.tokenCiphertext ? decryptSecret(row.tokenCiphertext) : null,
+  };
+}
+
 /**
  * Save a connection and immediately ask the server what it offers. A connection
  * that cannot be reached is not saved: discovering that at the moment the
@@ -133,6 +160,11 @@ export async function addMcpConnection(
   }
   if (existing.some((entry) => entry.name.toLowerCase() === name.toLowerCase())) {
     throw new OutboundMcpError("A connection with that name already exists.");
+  }
+  if (existing.some((entry) => connectionSlug(entry.name) === connectionSlug(name))) {
+    throw new OutboundMcpError(
+      "Choose a connection name with a different assistant shortcut.",
+    );
   }
 
   const { tools } = await listRemoteTools({ id: "new", name, url, token });

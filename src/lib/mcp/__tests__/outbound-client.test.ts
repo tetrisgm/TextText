@@ -102,6 +102,47 @@ describe("what it accepts from a server", () => {
     expect(tools[0].description.length).toBeLessThanOrEqual(600);
   });
 
+  it("preserves bounded tool annotations without inventing read-only safety", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse({
+          result: {
+            tools: [
+              {
+                name: "lookup",
+                description: "Read a record",
+                inputSchema: {},
+                annotations: {
+                  title: "Lookup".repeat(100),
+                  readOnlyHint: true,
+                  destructiveHint: false,
+                  openWorldHint: "yes",
+                },
+              },
+              {
+                name: "unknown_safety",
+                description: "No annotations",
+                inputSchema: {},
+              },
+            ],
+          },
+        }),
+      ),
+    );
+    const { tools } = await listRemoteTools(connection);
+    const lookupAnnotations = tools[0]?.annotations;
+    const unknownAnnotations = tools[1]?.annotations;
+    expect(lookupAnnotations).toEqual({
+      title: expect.any(String),
+      readOnlyHint: true,
+      destructiveHint: false,
+    });
+    expect(lookupAnnotations?.title?.length).toBeLessThanOrEqual(200);
+    expect(unknownAnnotations).toEqual({});
+    expect(unknownAnnotations?.readOnlyHint).not.toBe(true);
+  });
+
   it("reads a Streamable HTTP event-stream reply", async () => {
     const fetchMock = vi.fn(async (_url: unknown, init?: RequestInit) => {
       const method = JSON.parse(String(init?.body)).method;

@@ -21,6 +21,8 @@ migrations=(
   scripts/migrate-add-tags.mjs
   scripts/migrate-add-starred.mjs
   scripts/migrate-add-workspace-ai-config.mjs
+  scripts/migrate-add-workspace-agent-config.mjs
+  scripts/migrate-add-assistant-conversation-history.mjs
   scripts/migrate-add-app-health.mjs
   scripts/migrate-add-oauth-token-lifecycle.mjs
   scripts/migrate-add-item-comments.mjs
@@ -38,6 +40,7 @@ migrations=(
   scripts/migrate-add-content-reports.mjs
   scripts/migrate-drop-edit-token-hash.mjs
   scripts/migrate-add-mcp-connections.mjs
+  scripts/migrate-add-ai-write-proposals.mjs
   scripts/migrate-add-api-token-kind.mjs
   scripts/migrate-add-template-retirement.mjs
   scripts/migrate-drop-oauth.mjs

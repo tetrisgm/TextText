@@ -187,6 +187,13 @@ const server = http.createServer((req, res) => {
             text: "The export did not complete. The server returned input_required and asked which format to use: PNG or SVG.",
           },
         ];
+      } else if (hasToolResult && transcript.includes("approval_required")) {
+        content = [
+          {
+            type: "text",
+            text: "I prepared the exact external tool call for your review. The external server has not been contacted yet.",
+          },
+        ];
       } else if (hasToolResult && transcript.includes("design review is on Thursday")) {
         content = [
           {

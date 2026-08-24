@@ -1,4 +1,4 @@
-// Reaching an MCP server running on this Mac.
+// Former transport for reaching an MCP server running on this Mac.
 //
 // The hosted assistant cannot: a server in a data centre fetching 127.0.0.1
 // reaches its own container. The browser cannot either, because an https page
@@ -6,9 +6,10 @@
 // handed to Swift, which has neither problem, and comes back through the same
 // event channel the native assistant already uses.
 //
-// This module is the transport only. What it returns is a raw JSON-RPC reply,
-// parsed by the same code that reads a hosted server's, so a local server and a
-// remote one are the same thing to everything above.
+// Execution is disabled below because this bridge cannot yet use the durable
+// exact-argument review required for every external call. Keeping the bounded
+// transport code lets old standalone builds fail honestly without restoring a
+// loopback integration in the product.
 
 export type LocalMcpWindow = Window & {
   __TEXTTEXT_APP__?: boolean;
@@ -40,13 +41,7 @@ export function isLoopbackUrl(raw: string): boolean {
 }
 
 export function localMcpAvailable(): boolean {
-  if (typeof window === "undefined") return false;
-  const current = window as LocalMcpWindow;
-  return (
-    current.__TEXTTEXT_APP__ === true &&
-    current.__TEXTTEXT_EMBEDDED_AGENT__ === true &&
-    Boolean(current.webkit?.messageHandlers?.textTextApp)
-  );
+  return false;
 }
 
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -73,7 +68,9 @@ export function sendLocalMcpRequest(
 ): Promise<string> {
   if (!localMcpAvailable()) {
     return Promise.reject(
-      new Error("A server on this Mac can only be reached from the TextText Mac app."),
+      new Error(
+        "Local MCP execution is disabled until it can use durable owner review.",
+      ),
     );
   }
   if (!isLoopbackUrl(url)) {

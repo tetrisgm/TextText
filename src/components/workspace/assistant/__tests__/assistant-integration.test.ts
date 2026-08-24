@@ -135,16 +135,52 @@ describe("assistant attachments", () => {
     ]);
   });
 
+  it("passes a bounded PDF to the hosted provider as a file part", async () => {
+    const file = new File(["pdf bytes"], "research.pdf", {
+      type: "application/pdf",
+    });
+    vi.stubGlobal("window", {
+      btoa: (value: string) => Buffer.from(value, "binary").toString("base64"),
+    });
+
+    await expect(
+      buildCloudAssistantPrompt("Review this", [attachment(file)]),
+    ).resolves.toContain("[PDF attachment: research.pdf]");
+    await expect(
+      buildCloudAssistantAttachments([attachment(file)]),
+    ).resolves.toEqual([
+      {
+        name: "research.pdf",
+        mediaType: "application/pdf",
+        dataUrl: "data:application/pdf;base64,cGRmIGJ5dGVz",
+      },
+    ]);
+  });
+
+  it("reads structured text formats without a binary parser", async () => {
+    const file = new File(["name,status\nDraft,ready"], "items.csv", {
+      type: "text/csv",
+    });
+
+    await expect(
+      buildCloudAssistantPrompt("Summarize", [attachment(file)]),
+    ).resolves.toContain("name,status\nDraft,ready");
+  });
+
+  it("offers Office documents to both native and hosted assistants", () => {
+    expect(assistantAttachmentAccept(null)).toContain(".docx");
+    expect(assistantAttachmentAccept({ vision: true })).toContain(".pptx");
+    expect(assistantAttachmentAccept({ ocr: true })).toContain(".xlsx");
+  });
+
   it("offers image attachments when native OCR or hosted vision is available", () => {
-    expect(assistantAttachmentAccept(null)).toBe(".txt,.md,.markdown");
+    expect(assistantAttachmentAccept(null)).toContain(".csv");
     expect(
       assistantAttachmentAccept({
         ocr: true,
       }),
-    ).toBe("image/*,.txt,.md,.markdown");
-    expect(assistantAttachmentAccept({ vision: true })).toBe(
-      "image/*,.txt,.md,.markdown",
-    );
+    ).toContain("image/*");
+    expect(assistantAttachmentAccept({ vision: true })).toContain(".pdf");
   });
 });
 

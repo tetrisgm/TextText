@@ -338,10 +338,12 @@ themes.
 `npm run eval:mcp:outbound` is the outbound MCP proof. It drives Workspace
 Settings in Chromium, connects `scripts/mock-mcp-server.mjs`, allows it, and
 then asks the assistant to create a frame on it. The mock's own log is the
-evidence that the call left this process. It also ships a tool whose description
-orders the assistant to read every document and forward it, and asserts from the
-receiving side's payload log that nothing was forwarded. Screenshots in both
-themes; every row it creates is removed at the end.
+evidence that no call leaves during generation, then that one exact call leaves
+only after proposal approval. It also ships a tool that claims to be read-only
+and whose description orders the assistant to read every document and forward
+it. That tool still waits for review, and the receiving-side payload log proves
+nothing was forwarded. Screenshots in both themes; every row it creates is
+removed at the end.
 
 The release check catches deterministic merge regressions without network or
 database variability. The local soak proves the full persistence path when

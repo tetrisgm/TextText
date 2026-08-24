@@ -1,7 +1,7 @@
 import { isWorkspaceToolName } from "@/lib/ai/tools";
 import { runWorkspaceToolForSession } from "@/lib/mcp/tools";
 import { getCurrentUser } from "@/lib/session";
-import { getUserIdBySub } from "@/lib/store";
+import { getOwnedBlog, getUserIdBySub } from "@/lib/store";
 import { TENANT_HANDLE_RE } from "@/lib/tenants";
 
 export const dynamic = "force-dynamic";
@@ -114,6 +114,18 @@ export async function POST(request: Request) {
     Array.isArray(body.args)
   ) {
     return jsonError("Command arguments must be an object.", 400);
+  }
+
+  // This route is a privileged in-app assistant transport, not a general
+  // collaborator command API. Match the exact workspace the session owns
+  // before resolving an actor or reaching the shared command executor. UI
+  // gating is only presentation; this is the authorization boundary.
+  const ownedWorkspace = await getOwnedBlog(user.sub);
+  if (!ownedWorkspace || ownedWorkspace.handle !== body.handle) {
+    return jsonError(
+      "Only the workspace owner can run assistant commands.",
+      403,
+    );
   }
 
   const userId = user.userId ?? (await getUserIdBySub(user.sub));

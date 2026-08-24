@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { AssistantMessage } from "./useNativeAssistant";
 import type { AssistantJob } from "@/lib/ai/jobs";
 import type { NativeQuickActionId } from "@/lib/ai/quick-actions";
@@ -14,6 +16,37 @@ const FALLBACK_STARTER_CONTEXT: StarterContext = { level: "root" };
 
 function displayedMessageText(message: AssistantMessage): string {
   return message.text;
+}
+
+/**
+ * Provider text is untrusted Markdown. ReactMarkdown escapes raw HTML by
+ * default; the image override also prevents a reply from loading a tracking
+ * URL merely because it was rendered in the sidebar.
+ */
+function AssistantMarkdown({ text }: { text: string }) {
+  return (
+    <div className={styles.assistantMarkdown}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ href, children }) => (
+            <a href={href} target="_blank" rel="noreferrer noopener">
+              {children}
+            </a>
+          ),
+          h1: ({ children }) => <h3>{children}</h3>,
+          h2: ({ children }) => <h3>{children}</h3>,
+          img: ({ alt }) => (
+            <span className={styles.assistantImagePlaceholder}>
+              {alt ? `Image: ${alt}` : "Image omitted"}
+            </span>
+          ),
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
 function progressFallback(context: StarterContext): string {
@@ -166,7 +199,164 @@ function ArtifactProof({
   );
 }
 
+const PROPOSAL_ARGUMENT_LABELS: Record<string, string> = {
+  body: "Body",
+  capture: "Content",
+  excerpt: "Excerpt",
+  fields: "Fields",
+  folder_id: "Folder",
+  folder_path: "Folder",
+  id: "Item",
+  markdown: "Content",
+  markdown_fragment: "Content",
+  name: "Name",
+  slug: "URL name",
+  tags: "Tags",
+  title: "Title",
+};
+
+function proposalArgumentText(value: unknown, exact = false): string {
+  if (typeof value === "string") {
+    const compact = value.trim();
+    if (exact) return compact || "Empty";
+    return compact.length > 1_200
+      ? `${compact.slice(0, 1_200)}\n\n${compact.length.toLocaleString()} characters total`
+      : compact || "Empty";
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  try {
+    const serialized = JSON.stringify(value, null, 2) ?? "Empty";
+    if (exact) return serialized;
+    return serialized.length > 1_200
+      ? `${serialized.slice(0, 1_200)}\n\nPreview truncated`
+      : serialized;
+  } catch {
+    return "Value unavailable";
+  }
+}
+
+function writeProposalArguments(
+  args: Record<string, unknown>,
+  exact = false,
+): Array<{ key: string; label: string; text: string }> {
+  const entries = Object.entries(args)
+    .filter(
+      ([key]) => exact ||
+        (key !== "if_match_hash" && key !== "idempotency_key"),
+    );
+  return (exact ? entries : entries.slice(0, 10))
+    .map(([key, value]) => ({
+      key,
+      label:
+        PROPOSAL_ARGUMENT_LABELS[key] ??
+        key.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase()),
+      text: proposalArgumentText(value, exact),
+    }));
+}
+
+function WriteProposalReview({
+  messageId,
+  proposal,
+  onDecision,
+}: {
+  messageId: string;
+  proposal: NonNullable<AssistantMessage["writeProposals"]>[number];
+  onDecision?: (
+    messageId: string,
+    proposalId: string,
+    decision: "approve" | "deny",
+  ) => Promise<void> | void;
+}) {
+  const externalProposal =
+    proposal.kind === "outbound_mcp" ? proposal : null;
+  const external = Boolean(externalProposal);
+  const fields = writeProposalArguments(proposal.arguments, external);
+  const decided =
+    proposal.status === "approved" ||
+    proposal.status === "denied" ||
+    proposal.terminal === true;
+  const status =
+    proposal.status === "approved"
+      ? external
+        ? "Ran"
+        : "Applied"
+      : proposal.status === "denied"
+        ? "Not applied"
+        : proposal.terminal
+          ? proposal.error || "May have run. Verify before retrying."
+          : proposal.status === "error"
+            ? proposal.error || "This change could not be applied."
+            : "Waiting for your review";
+
+  return (
+    <section className={styles.writeProposal} aria-label={proposal.title}>
+      <div className={styles.writeProposalHeading}>
+        <span>{proposal.title}</span>
+        <span data-status={proposal.terminal ? "ambiguous" : proposal.status}>
+          {status}
+        </span>
+      </div>
+      {externalProposal ? (
+        <>
+          <p className={styles.writeProposalRemote}>
+            External MCP · {externalProposal.connection.name} ·{" "}
+            {externalProposal.remoteTool.name}
+          </p>
+          <p className={styles.writeProposalUntrusted}>
+            External server description, not instructions:{" "}
+            {externalProposal.remoteTool.description ||
+              "No description provided"}
+          </p>
+        </>
+      ) : null}
+      <p className={styles.writeProposalSummary}>{proposal.summary}</p>
+      {fields.length > 0 ? (
+        <details className={styles.writeProposalDetails} open={fields.length <= 3}>
+          <summary>
+            {external ? "Review exact arguments" : "Review changed fields"}
+          </summary>
+          <div className={styles.writeProposalFields}>
+            {fields.map((field) => (
+              <div className={styles.writeProposalField} key={field.key}>
+                <span>{field.label}</span>
+                <pre>{field.text}</pre>
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
+      {!decided ? (
+        <div className={styles.proposalActions}>
+          <button
+            type="button"
+            className={styles.proposalPrimary}
+            disabled={Boolean(proposal.deciding) || !onDecision}
+            onClick={() =>
+              void onDecision?.(messageId, proposal.id, "approve")
+            }
+          >
+            {proposal.deciding === "approve"
+              ? external ? "Running" : "Applying"
+              : external ? "Run tool" : "Apply change"}
+          </button>
+          <button
+            type="button"
+            className={styles.proposalSecondary}
+            disabled={Boolean(proposal.deciding) || !onDecision}
+            onClick={() => void onDecision?.(messageId, proposal.id, "deny")}
+          >
+            {proposal.deciding === "deny" ? "Dismissing" : "Dismiss"}
+          </button>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export function AssistantConversation({
+  accessState = "ready",
   activeCloudProvider,
   cloudProvider,
   jobs,
@@ -188,7 +378,9 @@ export function AssistantConversation({
   onSaveAnswer,
   savingAnswerId,
   onRateAnswer,
+  onWriteProposalDecision,
 }: {
+  accessState?: "checking" | "denied" | "ready";
   activeCloudProvider?: CloudAssistantProviderLabel | null;
   cloudProvider?: CloudAssistantProviderLabel | null;
   jobs?: AssistantJob[];
@@ -219,6 +411,11 @@ export function AssistantConversation({
   onSaveAnswer?: (messageId: string) => Promise<void> | void;
   savingAnswerId?: string | null;
   onRateAnswer?: (messageId: string, rating: "up" | "down") => Promise<void> | void;
+  onWriteProposalDecision?: (
+    messageId: string,
+    proposalId: string,
+    decision: "approve" | "deny",
+  ) => Promise<void> | void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
   const context = starterContext ?? FALLBACK_STARTER_CONTEXT;
@@ -275,6 +472,27 @@ export function AssistantConversation({
         ))}
       </div>
     ) : null;
+
+  if (accessState !== "ready") {
+    return (
+      <div className={styles.empty}>
+        <div className={styles.emptyCenter}>
+          <div className={styles.emptyLede}>
+            <p className={styles.emptyTitle}>
+              {accessState === "checking"
+                ? "Checking assistant access"
+                : "Assistant unavailable"}
+            </p>
+            <p className={styles.emptyBody}>
+              {accessState === "checking"
+                ? "Verifying this workspace before enabling its assistant."
+                : "The assistant is available to this workspace's owner."}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (messages.length === 0) {
     const connected =
@@ -527,7 +745,23 @@ export function AssistantConversation({
               </span>
             )}
             <ArtifactProof artifacts={message.artifactProofs} />
-            <span>{displayedMessageText(message)}</span>
+            {message.role === "assistant" ? (
+              <AssistantMarkdown text={displayedMessageText(message)} />
+            ) : (
+              <span>{displayedMessageText(message)}</span>
+            )}
+            {message.writeProposals && message.writeProposals.length > 0 ? (
+              <div className={styles.writeProposalList}>
+                {message.writeProposals.map((proposal) => (
+                  <WriteProposalReview
+                    key={proposal.id}
+                    messageId={message.id}
+                    proposal={proposal}
+                    onDecision={onWriteProposalDecision}
+                  />
+                ))}
+              </div>
+            ) : null}
             {message.outbound && <OutboundTrace outbound={message.outbound} />}
             {message.role === "assistant" && onSaveAnswer ? (
               message.savedItem ? (

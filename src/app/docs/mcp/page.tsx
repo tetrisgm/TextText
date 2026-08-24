@@ -335,7 +335,9 @@ export default function McpReferencePage() {
             </li>
             <li>
               It is saved switched OFF. Turn on Allow when you want your
-              assistant to use it.
+              assistant to use it. Name this connection in the request when you
+              want TextText to discover its tools; unrelated turns do not
+              contact it.
             </li>
           </ol>
           <p className="connect-body">
@@ -347,11 +349,10 @@ export default function McpReferencePage() {
           <h3>Servers on your own machine</h3>
           <p className="connect-body">
             Paper, pen.dev, and Figma can expose desktop MCP servers tied to the
-            app&apos;s current file or selection. Paper listens on{" "}
-            <code>127.0.0.1:29979</code>. A loopback address is reachable only
-            from that Mac, not from TextText&apos;s servers. Outbound TextText
-            MCP connections use a public https address in this release, so these
-            loopback endpoints are not offered in Workspace Settings.
+            app&apos;s current file or selection. TextText does not execute local
+            MCP tools in this release because that path cannot yet use the same
+            durable exact-argument review as a hosted connection. Workspace
+            Settings accepts public https connections, not loopback endpoints.
           </p>
           <p className="connect-body">
             TextText&apos;s local Claude and Codex integration is different: the
@@ -372,8 +373,9 @@ export default function McpReferencePage() {
             </li>
             <li>
               TextText workspace mutations write an audit row with the
-              authenticated account. Connected-server tool calls stay named in
-              the assistant conversation.
+              authenticated account. Every connected-server tool call waits for
+              review of its exact arguments and stays named in the assistant
+              conversation.
             </li>
             <li>
               A write that supplies the current content hash refuses a stale
@@ -382,9 +384,10 @@ export default function McpReferencePage() {
             </li>
             <li>
               A connected server&apos;s tool names, descriptions and results are
-              treated as data. If one tries to instruct your assistant, the
-              assistant is told plainly that it is reading somebody else&apos;s
-              text, and it will tell you what happened.
+              treated as untrusted data. Read-only and destructive annotations
+              are server claims, not permission. Approval also compares the
+              current tool definition, endpoint, and protected connection
+              configuration with what you reviewed.
             </li>
             <li>
               A remote connected server&apos;s address is re-checked before

@@ -112,8 +112,17 @@ export function auditInsertQuery(
   return database.insert(actionAudit).values(auditValues(entry));
 }
 
-export async function recordAction(entry: AuditEntry): Promise<void> {
-  if (!db) return; // no database configured, nothing durable to write to
+/**
+ * Record an action and surface a durable-write failure to the caller.
+ *
+ * Most existing audit sites are intentionally best-effort because their
+ * mutation has already committed. A caller that contacts an untrusted third
+ * party needs the stricter contract: if the remote reports success and this
+ * insert cannot be confirmed, the product must report an ambiguous outcome
+ * instead of inviting a blind retry.
+ */
+export async function recordActionStrict(entry: AuditEntry): Promise<void> {
+  if (!db) throw new Error("Action audit needs a configured database.");
   const values = auditValues(entry);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
@@ -121,10 +130,19 @@ export async function recordAction(entry: AuditEntry): Promise<void> {
       return;
     } catch (error) {
       if (attempt === 0) continue; // retry once for a transient failure
-      // Loud, not silent: a missing audit row is a real gap even though it must
-      // not fail the mutation it describes.
-      console.error("action audit write failed after retry", entry.actionName, error);
+      throw error;
     }
+  }
+}
+
+export async function recordAction(entry: AuditEntry): Promise<void> {
+  if (!db) return; // no database configured, nothing durable to write to
+  try {
+    await recordActionStrict(entry);
+  } catch (error) {
+    // Loud, not silent: a missing audit row is a real gap even though it must
+    // not fail the mutation it describes.
+    console.error("action audit write failed after retry", entry.actionName, error);
   }
 }
 

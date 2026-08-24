@@ -68,8 +68,23 @@ export default function TroubleshootingPage() {
           <p>
             The document may have changed after the agent read it. Ask the agent
             to read the latest version, merge only the intended edit, and retry.
-            Publishing, access changes, and destructive actions may also wait
-            for confirmation in TextText.
+            A cloud proposal may also have expired or already been decided. Ask
+            for a new proposal rather than retrying the old approval. Publishing,
+            access changes, and destructive actions stay in TextText&apos;s own
+            guarded controls.
+          </p>
+          <p>
+            If TextText says an external call may have completed, check the
+            external app before doing anything else. That state means the
+            server returned a result but TextText could not confirm its audit
+            or receipt. The old proposal is terminal and cannot be run again.
+          </p>
+          <p>
+            The same rule applies when a workspace change completed but its
+            receipt could not be saved. Verify the document before asking for
+            another change. If another device already completed or denied a
+            proposal, TextText returns that durable result instead of replacing
+            it with a generic error.
           </p>
         </section>
         <section className="connect-section">

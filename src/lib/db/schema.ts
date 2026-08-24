@@ -264,6 +264,36 @@ export const workspaceAiConfigs = pgTable(
   ],
 );
 
+// Owner-authored, workspace-scoped instructions for the in-app assistant.
+// Unlike document content, these values are explicitly promoted to assistant
+// authority in Settings. The prompt builder revalidates every row and activates
+// a reusable skill only when the current request names its shortcut.
+export const workspaceAgentConfigs = pgTable(
+  "workspace_agent_config",
+  {
+    blogId: uuid("blog_id")
+      .primaryKey()
+      .references(() => blogs.id, { onDelete: "cascade" }),
+    instructions: text("instructions").notNull().default(""),
+    skills: jsonb("skills")
+      .$type<Array<{ name: string; trigger: string; instructions: string }>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    check(
+      "workspace_agent_config_instructions_length",
+      sql`char_length(${t.instructions}) <= 8000`,
+    ),
+    check(
+      "workspace_agent_config_skills_array",
+      sql`jsonb_typeof(${t.skills}) = 'array'`,
+    ),
+  ],
+);
+
 // An external MCP server this workspace's assistant may call: the outbound
 // half of "MCP in both directions". Inbound, agents connect to us; here, we
 // connect to Figma or anything else that speaks MCP.
@@ -298,6 +328,89 @@ export const mcpConnections = pgTable(
   (t) => [
     index("mcp_connections_blog_idx").on(t.blogId),
     uniqueIndex("mcp_connections_blog_name_idx").on(t.blogId, t.name),
+  ],
+);
+
+// Owner-only assistant conversation replicas. The browser remains local-first;
+// this bounded row lets the owner's devices converge without exposing chats to
+// workspace collaborators or storing provider credentials.
+export const workspaceAssistantConversationHistories = pgTable(
+  "workspace_assistant_conversation_history",
+  {
+    blogId: uuid("blog_id")
+      .primaryKey()
+      .references(() => blogs.id, { onDelete: "cascade" }),
+    conversations: jsonb("conversations")
+      .$type<Array<Record<string, unknown>>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    check(
+      "workspace_assistant_conversation_history_array",
+      sql`jsonb_typeof(${t.conversations}) = 'array'`,
+    ),
+    check(
+      "workspace_assistant_conversation_history_count",
+      sql`jsonb_array_length(${t.conversations}) <= 60`,
+    ),
+    check(
+      "workspace_assistant_conversation_history_size",
+      sql`octet_length(${t.conversations}::text) <= 4000000`,
+    ),
+  ],
+);
+
+// A cloud assistant write is first stored here as inert, validated data. The
+// browser can preview it, but only the workspace owner who created it can move
+// it out of `pending`. Approval claims the row exactly once before the shared
+// workspace or outbound command executor runs. Connection deletion nulls the
+// reference while immutable display metadata survives; a later approval then
+// fails closed because the enabled connection can no longer be resolved.
+export const aiWriteProposals = pgTable(
+  "ai_write_proposals",
+  {
+    id: uuid("id").primaryKey(),
+    blogId: uuid("blog_id")
+      .notNull()
+      .references(() => blogs.id, { onDelete: "cascade" }),
+    actorUserId: uuid("actor_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    proposalKind: text("proposal_kind").notNull().default("workspace"),
+    connectionId: uuid("connection_id").references(() => mcpConnections.id, {
+      onDelete: "set null",
+    }),
+    toolName: text("tool_name").notNull(),
+    arguments: jsonb("arguments").$type<Record<string, unknown>>().notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    status: text("status").notNull().default("pending"),
+    receipt: jsonb("receipt").$type<Record<string, unknown>>(),
+    failureCode: text("failure_code"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    decidedAt: timestamp("decided_at"),
+    completedAt: timestamp("completed_at"),
+  },
+  (t) => [
+    check(
+      "ai_write_proposals_status_valid",
+      sql`${t.status} in ('pending', 'executing', 'completed', 'denied', 'failed')`,
+    ),
+    check(
+      "ai_write_proposals_kind_valid",
+      sql`${t.proposalKind} in ('workspace', 'outbound_mcp')`,
+    ),
+    index("ai_write_proposals_owner_status_idx").on(
+      t.actorUserId,
+      t.blogId,
+      t.status,
+    ),
+    index("ai_write_proposals_pending_expiry_idx")
+      .on(t.expiresAt)
+      .where(sql`${t.status} = 'pending'`),
   ],
 );
 

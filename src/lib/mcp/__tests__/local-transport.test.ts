@@ -7,7 +7,12 @@
 
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isLoopbackUrl, localMcpAvailable } from "@/lib/mcp/local-transport";
+import {
+  isLoopbackUrl,
+  localMcpAvailable,
+  sendLocalMcpRequest,
+} from "@/lib/mcp/local-transport";
+import { loadLocalTools } from "@/lib/mcp/local-tools";
 import {
   connectionSlug,
   isRemoteToolName,
@@ -60,7 +65,7 @@ describe("what counts as a server on this Mac", () => {
     expect(localMcpAvailable()).toBe(false);
   });
 
-  it("requires the standalone embedded agent, not merely the native bridge", () => {
+  it("stays disabled even in the standalone embedded agent", () => {
     vi.stubGlobal("window", nativeWindow(false));
     expect(localMcpAvailable()).toBe(false);
 
@@ -68,24 +73,39 @@ describe("what counts as a server on this Mac", () => {
     expect(localMcpAvailable()).toBe(false);
 
     vi.stubGlobal("window", nativeWindow(true));
-    expect(localMcpAvailable()).toBe(true);
+    expect(localMcpAvailable()).toBe(false);
   });
 
-  it("omits the local MCP message handler from Store builds", () => {
+  it("does not expose or execute inherited local tools", async () => {
+    const current = nativeWindow(true);
+    vi.stubGlobal("window", current);
+    const tools = await loadLocalTools([{
+      id: "paper-local",
+      name: "Paper",
+      url: "http://127.0.0.1:3998/mcp",
+    }]);
+    expect(tools.definitions).toEqual([]);
+    expect(tools.run("paper__create_frame", {})).toBeNull();
+    await expect(sendLocalMcpRequest(
+      "http://127.0.0.1:3998/mcp",
+      { method: "tools/call" },
+    )).rejects.toThrow(/disabled until it can use durable owner review/i);
+    expect(current.webkit.messageHandlers.textTextApp.postMessage)
+      .not.toHaveBeenCalled();
+  });
+
+  it("makes the native message handler refuse without invoking the bridge", () => {
     const source = readFileSync(
       "mac/Sources/TextText/WebAppWindowController.swift",
       "utf8",
     );
-    const handler = source.indexOf(
+    expect(source).toContain(
       'if body["action"] as? String == "localMcpRequest"',
     );
-    const guard = source.lastIndexOf("#if !TEXTTEXT_STORE", handler);
-    const guardEnd = source.indexOf("#endif", handler);
-
-    expect(handler).toBeGreaterThan(-1);
-    expect(guard).toBeGreaterThan(-1);
-    expect(guard).toBeLessThan(handler);
-    expect(guardEnd).toBeGreaterThan(handler);
+    expect(source).toContain(
+      "Local MCP execution is disabled until it can use durable owner review.",
+    );
+    expect(source).not.toContain("LocalMcpBridge.send(");
   });
 });
 

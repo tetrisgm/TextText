@@ -356,15 +356,17 @@ final class AppHealthReporterTests: XCTestCase {
             try FileManager.default.createDirectory(
                 at: plugins.appendingPathComponent(name), withIntermediateDirectories: true)
         }
-        let info: [String: Any] = [
+        var info: [String: Any] = [
             "CFBundleIdentifier": "app.texttext.test",
             "CFBundleName": "TextText",
             "CFBundlePackageType": "APPL",
             "CFBundleShortVersionString": "9.8",
             "CFBundleVersion": "76",
-            "SUFeedURL": "https://texttext.example/appcast.xml",
-            "SUPublicEDKey": "a-real-shaped-test-key",
         ]
+        #if !TEXTTEXT_STORE
+        info["SUFeedURL"] = "https://texttext.example/appcast.xml"
+        info["SUPublicEDKey"] = "a-real-shaped-test-key"
+        #endif
         let data = try PropertyListSerialization.data(
             fromPropertyList: info, format: .xml, options: 0)
         try data.write(to: contents.appendingPathComponent("Info.plist"))

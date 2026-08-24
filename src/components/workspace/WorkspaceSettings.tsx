@@ -28,6 +28,7 @@ import {
   TRY_AI_IN_TEXTTEXT_EVENT,
 } from "./AiConnectionSettings";
 import { McpConnections } from "./McpConnections";
+import { AgentInstructionsSettings } from "./AgentInstructionsSettings";
 import { connectApple, connectGoogle } from "@/app/editor/connect-provider-actions";
 import DeleteAccountDialog, {
   type AccountOverview,
@@ -406,6 +407,7 @@ export function WorkspaceSettings({
               onTryInTextText={tryAiInTextText}
               onConnectionChange={setNativeConnection}
             />
+            <AgentInstructionsSettings handle={blog.handle} />
             <h3 className={styles.subsectionTitle} id="api-key-connections">
               API key connections
             </h3>

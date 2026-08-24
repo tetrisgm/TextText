@@ -12,7 +12,8 @@
 //   - the URL is SSRF-checked before every connection, not just when saved,
 //     because DNS can change under a stored hostname;
 //   - loopback is refused in production, since a hosted server fetching
-//     127.0.0.1 reaches itself; local servers go through the Mac app instead.
+//     127.0.0.1 reaches itself. Localhost is available only to development
+//     tests and is not a product connection path.
 
 import { hostResolvesToPublicOnly, isFetchableBookmarkUrl } from "@/lib/bookmark-fetch";
 import {
@@ -75,8 +76,8 @@ async function assertReachable(rawUrl: string): Promise<URL> {
 /**
  * Development only, and never in production: a localhost MCP server is how you
  * try this against one you are writing. In production this returns false for
- * every URL, so the SSRF gate above is the only path, and a real local server
- * is reached through the Mac app rather than from here.
+ * every URL, so the SSRF gate above is the only path. The native assistant does
+ * not expose a separate local MCP execution path.
  */
 function isLocalDevUrl(url: URL): boolean {
   if (process.env.NODE_ENV === "production") return false;

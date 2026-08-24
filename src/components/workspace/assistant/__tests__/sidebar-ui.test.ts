@@ -5,6 +5,12 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/components/keyboard/CommandLayer", () => ({
   useEscapeLayer: () => {},
 }));
+vi.mock("@/app/editor/agent-skill-metadata-actions", () => ({
+  getWorkspaceAgentSkillMetadataAction: vi.fn(async () => ({
+    allowed: true,
+    skills: [],
+  })),
+}));
 
 import {
   AssistantSidebar,
@@ -14,6 +20,44 @@ import {
 import { AssistantConversation } from "@/components/workspace/assistant/AssistantConversation";
 
 describe("assistant sidebar UI", () => {
+  it("keeps a draft but disables submission while owner access is unresolved", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantSidebar, {
+        state: "open",
+        onStateChange: () => {},
+        width: 360,
+        onWidthChange: () => {},
+        composerValue: "Do not drop this draft",
+        onComposerChange: () => {},
+        onSubmit: () => {},
+        onFilesSelected: () => {},
+        onRemoveAttachment: () => {},
+        submitDisabled: true,
+      }),
+    );
+
+    expect(html).toContain("Do not drop this draft");
+    expect(html).toMatch(
+      /<button[^>]*disabled=""[^>]*aria-label="Send message"/,
+    );
+  });
+
+  it("does not show connection controls to a non-owner workspace viewer", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        accessState: "denied",
+        cloudProvider: "OpenAI",
+        messages: [],
+        submitting: false,
+      }),
+    );
+
+    expect(html).toContain("Assistant unavailable");
+    expect(html).toContain("available to this workspace&#x27;s owner");
+    expect(html).not.toContain("Connect an AI");
+    expect(html).not.toContain("OpenAI");
+  });
+
   it("renders contextual, resizable, hideable, and TextText context controls", () => {
     const html = renderToStaticMarkup(
       React.createElement(
@@ -184,6 +228,155 @@ describe("assistant sidebar UI", () => {
     expect(html).toContain(">Apply<");
   });
 
+  it("shows guarded cloud writes as reviewable changes, not completed actions", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        messages: [
+          {
+            id: "cloud-1",
+            role: "assistant",
+            text: "Review the proposed change.",
+            provider: "Anthropic",
+            writeProposals: [
+              {
+                id: "11111111-1111-4111-8111-111111111111",
+                status: "pending",
+                tool: "update_item",
+                title: "Update item",
+                summary: "Update item: note-1, 12 characters",
+                arguments: {
+                  id: "note-1",
+                  body: "Revised body",
+                  if_match_hash: "sha256:secret-proof",
+                },
+                createdAt: "2026-08-24T12:00:00.000Z",
+                expiresAt: "2026-08-24T12:15:00.000Z",
+              },
+            ],
+          },
+        ],
+        submitting: false,
+        onWriteProposalDecision: () => {},
+      }),
+    );
+
+    expect(html).toContain('aria-label="Update item"');
+    expect(html).toContain("Waiting for your review");
+    expect(html).toContain("Review changed fields");
+    expect(html).toContain("Revised body");
+    expect(html).not.toContain("sha256:secret-proof");
+    expect(html).toContain("Apply change");
+    expect(html).toContain("Dismiss");
+    expect(html).not.toContain('aria-label="TextText proof"');
+  });
+
+  it("names the external MCP connection and tool before approval", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        messages: [{
+          id: "cloud-mcp-1",
+          role: "assistant",
+          text: "Review this external action.",
+          writeProposals: [{
+            id: "proposal-1",
+            kind: "outbound_mcp",
+            status: "pending",
+            tool: "create_frame",
+            title: "Review external tool call",
+            summary: "Paper · create_frame",
+            arguments: {
+              title: "Hero",
+              instructions: "A".repeat(1_301),
+              idempotency_key: "remote-key-must-be-reviewed",
+            },
+            connection: { id: "connection-1", name: "Paper" },
+            remoteTool: {
+              name: "create_frame",
+              description: "Create one frame",
+              annotations: { readOnlyHint: false },
+            },
+            createdAt: "2026-08-24T12:00:00.000Z",
+            expiresAt: "2026-08-24T12:15:00.000Z",
+          }],
+        }],
+        submitting: false,
+        onWriteProposalDecision: () => {},
+      }),
+    );
+    expect(html).toContain("External MCP · Paper · create_frame");
+    expect(html).toContain("External server description, not instructions:");
+    expect(html).toContain("Create one frame");
+    expect(html).toContain("Review exact arguments");
+    expect(html).toContain("A".repeat(1_301));
+    expect(html).toContain("remote-key-must-be-reviewed");
+    expect(html).not.toContain("characters total");
+    expect(html).toContain("Run tool");
+    expect(html).not.toContain("Apply change");
+  });
+
+  it("makes an ambiguous external result terminal and blocks blind retry", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        messages: [{
+          id: "cloud-mcp-ambiguous",
+          role: "assistant",
+          text: "The external call returned, but its audit did not persist.",
+          writeProposals: [{
+            id: "proposal-ambiguous",
+            kind: "outbound_mcp",
+            status: "error",
+            terminal: true,
+            error: "It may have completed. Verify before retrying.",
+            tool: "create_frame",
+            title: "Review external tool call",
+            summary: "Paper · create_frame",
+            arguments: { title: "Hero" },
+            connection: { id: "connection-1", name: "Paper" },
+            remoteTool: {
+              name: "create_frame",
+              description: "Create one frame",
+              annotations: {},
+            },
+            createdAt: "2026-08-24T12:00:00.000Z",
+            expiresAt: "2026-08-24T12:15:00.000Z",
+          }],
+        }],
+        submitting: false,
+        onWriteProposalDecision: () => {},
+      }),
+    );
+    expect(html).toContain("It may have completed. Verify before retrying.");
+    expect(html).not.toContain("Run tool");
+    expect(html).not.toContain("Dismiss");
+  });
+
+  it("labels a dismissal as dismissal while the decision is pending", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        messages: [{
+          id: "cloud-dismiss-1",
+          role: "assistant",
+          text: "Review this change.",
+          writeProposals: [{
+            id: "11111111-1111-4111-8111-111111111111",
+            status: "pending",
+            deciding: "deny",
+            tool: "create_item",
+            title: "Create item",
+            summary: "Create item: Approval proof",
+            arguments: { title: "Approval proof", kind: "note" },
+            createdAt: "2026-08-24T12:00:00.000Z",
+            expiresAt: "2026-08-24T12:15:00.000Z",
+          }],
+        }],
+        submitting: false,
+        onWriteProposalDecision: () => {},
+      }),
+    );
+    expect(html).toContain("Dismissing");
+    expect(html).not.toContain(">Applying<");
+  });
+
   it("labels provider work and answers", () => {
     const html = renderToStaticMarkup(
       React.createElement(AssistantConversation, {
@@ -204,6 +397,24 @@ describe("assistant sidebar UI", () => {
     expect(html).toContain("Answered by OpenAI");
     expect(html).toContain("Reviewing your workspace with OpenAI");
     expect(html).not.toContain("off this Mac");
+  });
+
+  it("renders assistant Markdown without loading provider-supplied images", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        messages: [{
+          id: "markdown-1",
+          role: "assistant",
+          text: "**Strong**\n\n- One\n- Two\n\n![tracker](https://tracker.example/pixel.png)",
+        }],
+        submitting: false,
+      }),
+    );
+    expect(html).toContain("<strong>Strong</strong>");
+    expect(html).toContain("<ul>");
+    expect(html).toContain("Image: tracker");
+    expect(html).not.toContain("tracker.example");
+    expect(html).not.toContain("**Strong**");
   });
 
   it("offers a first-class save receipt for useful answers", () => {
@@ -492,6 +703,65 @@ describe("assistant sidebar UI", () => {
 });
 
 describe("starting a new chat", () => {
+  it("shows an allowlisted compact model selector", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantSidebar, {
+        state: "open",
+        onStateChange: () => {},
+        width: 360,
+        onWidthChange: () => {},
+        composerValue: "",
+        onComposerChange: () => {},
+        onSubmit: () => {},
+        onFilesSelected: () => {},
+        onRemoveAttachment: () => {},
+        modelChoices: [
+          { id: "gpt-5.6", label: "GPT-5.6" },
+          { id: "gpt-5.6-luna", label: "GPT-5.6 Luna" },
+        ],
+        selectedModel: "gpt-5.6-luna",
+        onModelChange: () => {},
+      }),
+    );
+
+    expect(html).toContain('aria-label="Assistant model"');
+    expect(html).toContain('value="gpt-5.6-luna" selected=""');
+  });
+
+  it("offers durable conversation history when handlers are connected", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantSidebar, {
+        state: "open",
+        onStateChange: () => {},
+        width: 360,
+        onWidthChange: () => {},
+        composerValue: "",
+        onComposerChange: () => {},
+        onSubmit: () => {},
+        onFilesSelected: () => {},
+        onRemoveAttachment: () => {},
+        onNewConversation: () => {},
+        onOpenConversation: () => {},
+        onToggleConversationPinned: () => {},
+        activeConversationId: "chat-1",
+        conversations: [
+          {
+            id: "chat-1",
+            title: "Review the launch plan",
+            contextKey: "root",
+            pinned: true,
+            createdAt: "2026-08-24T12:00:00.000Z",
+            updatedAt: "2026-08-24T12:00:00.000Z",
+            messageCount: 4,
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('aria-label="Conversation history"');
+    expect(html).toContain('aria-expanded="false"');
+  });
+
   it("offers New chat only when there is a transcript to clear", () => {
     const base = {
       state: "open" as const,

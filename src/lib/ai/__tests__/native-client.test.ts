@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   nativeAssistantAvailable,
   nativeEmbeddedAssistantAvailable,
+  requestNativeAssistant,
+  submitNativeAssistantTurn,
 } from "@/lib/ai/native-client";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -39,5 +41,38 @@ describe("native assistant capability", () => {
 
     expect(nativeAssistantAvailable()).toBe(false);
     expect(nativeEmbeddedAssistantAvailable()).toBe(false);
+  });
+
+  it("tags native turns and cancellation with the durable chat id", () => {
+    const current = nativeWindow();
+    vi.stubGlobal("window", current);
+
+    expect(
+      submitNativeAssistantTurn("Continue this draft", "chat-2", [
+        { role: "user", content: "Remember cobalt" },
+        { role: "assistant", content: "I will remember cobalt." },
+      ]),
+    ).toBe(true);
+    expect(requestNativeAssistant("assistantCancel", undefined, "chat-2")).toBe(
+      true,
+    );
+
+    expect(
+      current.webkit.messageHandlers.textTextApp.postMessage,
+    ).toHaveBeenNthCalledWith(1, {
+      action: "assistantTurn",
+      prompt: "Continue this draft",
+      conversationId: "chat-2",
+      history: [
+        { role: "user", content: "Remember cobalt" },
+        { role: "assistant", content: "I will remember cobalt." },
+      ],
+    });
+    expect(
+      current.webkit.messageHandlers.textTextApp.postMessage,
+    ).toHaveBeenNthCalledWith(2, {
+      action: "assistantCancel",
+      conversationId: "chat-2",
+    });
   });
 });

@@ -1,8 +1,47 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cloudAssistantTurn } from "@/lib/ai/cloud-client";
+import {
+  cloudAssistantStatus,
+  cloudAssistantTurn,
+} from "@/lib/ai/cloud-client";
 
 describe("cloud assistant client", () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it("binds status discovery to the exact displayed workspace handle", async () => {
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        enabled: true,
+        provider: "Anthropic",
+        model: "claude-sonnet-5",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(cloudAssistantStatus(" Writer ")).resolves.toEqual({
+      enabled: true,
+      provider: "Anthropic",
+      model: "claude-sonnet-5",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/ai?workspaceHandle=writer",
+      expect.objectContaining({ method: "GET", cache: "no-store" }),
+    );
+  });
+
+  it("fails closed before a request when the displayed handle is invalid", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(cloudAssistantStatus("not a handle")).resolves.toEqual({
+      enabled: false,
+      provider: null,
+      model: null,
+    });
+    await expect(
+      cloudAssistantTurn("not a handle", "Private displayed content"),
+    ).rejects.toThrow("workspace could not be verified");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 
   it("keeps validated workspace command evidence for the receipt UI", async () => {
     vi.stubGlobal(
@@ -36,7 +75,9 @@ describe("cloud assistant client", () => {
       ),
     );
 
-    await expect(cloudAssistantTurn("Save this")).resolves.toMatchObject({
+    await expect(
+      cloudAssistantTurn("writer", "Save this"),
+    ).resolves.toMatchObject({
       text: "Saved it.",
       workspaceCalls: [
         {
@@ -72,12 +113,59 @@ describe("cloud assistant client", () => {
       ),
     );
 
-    await expect(cloudAssistantTurn("Revise this")).resolves.toMatchObject({
+    await expect(
+      cloudAssistantTurn("writer", "Revise this"),
+    ).resolves.toMatchObject({
       provider: "Anthropic",
       workspaceCalls: [{ tool: "update_item" }],
       terminalError:
         "Some actions completed, but the assistant stopped before it could finish the reply.",
     });
+  });
+
+  it("keeps visible external proposal metadata without accepting bearer fields", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          text: "Review the Paper action.",
+          provider: "Anthropic",
+          outboundCalls: [],
+          unreachableServers: [],
+          workspaceCalls: [],
+          writeProposals: [{
+            id: "proposal-1",
+            kind: "outbound_mcp",
+            status: "pending",
+            tool: "create_frame",
+            title: "Run a tool on Paper",
+            summary: "Create frame on Paper",
+            arguments: { title: "Hero" },
+            connection: {
+              id: "connection-1",
+              name: "Paper",
+              token: "must-not-survive",
+            },
+            remoteTool: {
+              name: "create_frame",
+              description: "Create one frame",
+              annotations: { readOnlyHint: false },
+            },
+            createdAt: "2026-08-24T12:00:00.000Z",
+            expiresAt: "2026-08-24T12:15:00.000Z",
+          }],
+        }),
+      ),
+    );
+    const result = await cloudAssistantTurn("writer", "Create a frame");
+    expect(result).toMatchObject({
+      writeProposals: [{
+        kind: "outbound_mcp",
+        connection: { id: "connection-1", name: "Paper" },
+        remoteTool: { name: "create_frame" },
+      }],
+    });
+    expect(JSON.stringify(result)).not.toContain("must-not-survive");
   });
 
   it("keeps exact source items supplied to a workspace summary", async () => {
@@ -96,6 +184,7 @@ describe("cloud assistant client", () => {
               title: "Launch notes",
               folderPath: "notes",
               slug: "launch-notes",
+              operation: "Read",
             },
             { id: 7, title: "invalid" },
           ],
@@ -103,15 +192,52 @@ describe("cloud assistant client", () => {
       ),
     );
 
-    await expect(cloudAssistantTurn("Catch me up")).resolves.toMatchObject({
+    await expect(
+      cloudAssistantTurn("writer", "Catch me up"),
+    ).resolves.toMatchObject({
       contextItems: [
         {
           id: "note-1",
           title: "Launch notes",
           folderPath: "notes",
+          operation: "Read",
         },
       ],
     });
+  });
+
+  it("sends bounded prior messages from the same chat before a follow-up", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      expect(body.workspaceHandle).toBe("writer");
+      expect(body.messages).toEqual([
+        { role: "user", content: "Draft a launch note" },
+        { role: "assistant", content: "Here is a first draft." },
+        { role: "user", content: "Make the ending more direct" },
+      ]);
+      return Response.json({
+        text: "Revised.",
+        provider: "OpenAI",
+        outboundCalls: [],
+        unreachableServers: [],
+        workspaceCalls: [],
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await cloudAssistantTurn(
+      "writer",
+      "Make the ending more direct",
+      undefined,
+      {
+        history: [
+          { role: "user", content: "Draft a launch note" },
+          { role: "assistant", content: "Here is a first draft." },
+        ],
+      },
+    );
+
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it("parses incremental cloud progress and text without waiting on JSON", async () => {
@@ -139,7 +265,10 @@ describe("cloud assistant client", () => {
       "fetch",
       vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
         expect(init?.signal).toBeInstanceOf(AbortSignal);
-        expect(JSON.parse(String(init?.body))).toMatchObject({ stream: true });
+        expect(JSON.parse(String(init?.body))).toMatchObject({
+          stream: true,
+          model: "gpt-5.6-terra",
+        });
         return new Response(
           new ReadableStream<Uint8Array>({
             start(controller) {
@@ -157,10 +286,12 @@ describe("cloud assistant client", () => {
     );
     const events: string[] = [];
     const result = await cloudAssistantTurn(
+      "writer",
       "Summarize this",
       undefined,
       {
         stream: true,
+        model: "gpt-5.6-terra",
         signal: new AbortController().signal,
         onEvent: (event) => events.push(event.type),
       },
@@ -186,7 +317,7 @@ describe("cloud assistant client", () => {
       ),
     );
 
-    await expect(cloudAssistantTurn("Rewrite this")).rejects.toThrow(
+    await expect(cloudAssistantTurn("writer", "Rewrite this")).rejects.toThrow(
       "Your request was not applied because the AI provider did not answer.",
     );
   });

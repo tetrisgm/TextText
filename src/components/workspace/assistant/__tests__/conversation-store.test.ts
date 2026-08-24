@@ -1,0 +1,295 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  activateAssistantConversation,
+  activeAssistantConversation,
+  appendAssistantConversationMessage,
+  assistantConversationMessages,
+  assistantConversationSyncPayload,
+  assistantConversationSummaries,
+  createAssistantConversation,
+  mergeSyncedAssistantConversations,
+  migrateAssistantConversationOwnerScope,
+  resetAssistantConversationStore,
+  toggleAssistantConversationPinned,
+} from "@/components/workspace/assistant/conversation-store";
+
+function browserStorage(initialSession: Record<string, string> = {}) {
+  const local = new Map<string, string>();
+  const session = new Map(Object.entries(initialSession));
+  vi.stubGlobal("window", {
+    localStorage: {
+      getItem: (key: string) => local.get(key) ?? null,
+      removeItem: (key: string) => local.delete(key),
+      setItem: (key: string, value: string) => local.set(key, value),
+    },
+    sessionStorage: {
+      getItem: (key: string) => session.get(key) ?? null,
+      removeItem: (key: string) => session.delete(key),
+      setItem: (key: string, value: string) => session.set(key, value),
+    },
+  });
+  return { local, session };
+}
+
+beforeEach(() => {
+  resetAssistantConversationStore();
+});
+
+afterEach(() => {
+  resetAssistantConversationStore();
+  vi.unstubAllGlobals();
+});
+
+describe("assistant conversation history", () => {
+  it("migrates the prior session transcript into durable storage", () => {
+    const legacyKey = "texttext:assistant:writer:item:one";
+    const { local } = browserStorage({
+      [legacyKey]: JSON.stringify([
+        { id: "old-user", role: "user", text: "Plan the launch notes" },
+        { id: "old-answer", role: "assistant", text: "Start with scope" },
+      ]),
+    });
+
+    const active = activeAssistantConversation("writer", "item:one");
+
+    expect(active?.title).toBe("Plan the launch notes");
+    expect(active?.messageCount).toBe(2);
+    expect(local.has("texttext:assistant-conversations:v1:writer")).toBe(true);
+  });
+
+  it("moves a handle-only cache into one verified owner scope", () => {
+    const { local } = browserStorage();
+    local.set(
+      "texttext:assistant-conversations:v1:writer",
+      JSON.stringify({
+        version: 1,
+        activeByContext: { root: "owner-chat" },
+        conversations: [
+          {
+            id: "owner-chat",
+            contextKey: "root",
+            title: "Private owner chat",
+            pinned: false,
+            createdAt: "2026-08-24T12:00:00.000Z",
+            updatedAt: "2026-08-24T12:00:00.000Z",
+            messages: [
+              {
+                id: "private-message",
+                role: "user",
+                text: "Owner-only history",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    migrateAssistantConversationOwnerScope("writer:owner-a", "writer");
+
+    expect(local.has("texttext:assistant-conversations:v1:writer")).toBe(false);
+    expect(activeAssistantConversation("writer:owner-a", "root")).toMatchObject({
+      id: "owner-chat",
+      title: "Private owner chat",
+    });
+    expect(activeAssistantConversation("writer:owner-b", "root")?.id).not.toBe(
+      "owner-chat",
+    );
+  });
+
+  it("keeps multiple stable conversations and reopens the selected one", () => {
+    browserStorage();
+    const first = activeAssistantConversation("writer", "folder:drafts");
+    expect(first).not.toBeNull();
+    appendAssistantConversationMessage("writer", first!.id, {
+      id: "first-user",
+      role: "user",
+      text: "Review the product narrative for clarity",
+    });
+    appendAssistantConversationMessage("writer", first!.id, {
+      id: "first-answer",
+      role: "assistant",
+      text: "The middle section repeats the positioning claim.",
+    });
+
+    const secondId = createAssistantConversation("writer", "folder:drafts");
+    appendAssistantConversationMessage("writer", secondId, {
+      id: "second-user",
+      role: "user",
+      text: "Draft release notes",
+    });
+
+    expect(secondId).not.toBe(first!.id);
+    expect(activeAssistantConversation("writer", "folder:drafts")?.id).toBe(
+      secondId,
+    );
+    expect(
+      activateAssistantConversation("writer", "folder:drafts", first!.id),
+    ).toBe(true);
+    expect(activeAssistantConversation("writer", "folder:drafts")?.id).toBe(
+      first!.id,
+    );
+    expect(assistantConversationMessages("writer", first!.id)).toHaveLength(2);
+  });
+
+  it("merges a remote owner replica without changing the active chat", () => {
+    browserStorage();
+    const active = activeAssistantConversation("writer", "root")!;
+    appendAssistantConversationMessage("writer", active.id, {
+      id: "local-message",
+      role: "user",
+      text: "Local question",
+    });
+    const local = assistantConversationSyncPayload("writer")[0]!;
+    const remote = {
+      ...local,
+      updatedAt: "2026-08-24T23:00:00.000Z",
+      messages: [
+        ...local.messages,
+        {
+          id: "remote-message",
+          role: "assistant" as const,
+          text: "Remote answer",
+          updatedAt: "2026-08-24T23:00:00.000Z",
+        },
+      ],
+    };
+
+    expect(mergeSyncedAssistantConversations("writer", [remote])).toBe(true);
+    expect(activeAssistantConversation("writer", "root")?.id).toBe(active.id);
+    expect(
+      assistantConversationMessages("writer", active.id).map(
+        (message) => message.id,
+      ),
+    ).toEqual(["local-message", "remote-message"]);
+  });
+
+  it("keeps the in-memory chat usable when browser storage is offline", () => {
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: () => null,
+        setItem: () => {
+          throw new Error("storage unavailable");
+        },
+      },
+      sessionStorage: { getItem: () => null },
+    });
+    const active = activeAssistantConversation("offline-writer", "root")!;
+
+    appendAssistantConversationMessage("offline-writer", active.id, {
+      id: "offline-message",
+      role: "user",
+      text: "Keep this locally",
+    });
+
+    expect(
+      assistantConversationMessages("offline-writer", active.id)[0]?.text,
+    ).toBe("Keep this locally");
+  });
+
+  it("searches message content and keeps pinned chats first", () => {
+    browserStorage();
+    const first = activeAssistantConversation("writer", "root")!;
+    appendAssistantConversationMessage("writer", first.id, {
+      id: "u1",
+      role: "user",
+      text: "Review my notes",
+    });
+    appendAssistantConversationMessage("writer", first.id, {
+      id: "a1",
+      role: "assistant",
+      text: "The roadmap mentions an observability milestone.",
+    });
+    const secondId = createAssistantConversation("writer", "root");
+    appendAssistantConversationMessage("writer", secondId, {
+      id: "u2",
+      role: "user",
+      text: "Write the meeting recap",
+    });
+
+    expect(assistantConversationSummaries("writer", "root", "observability"))
+      .toMatchObject([{ id: first.id }]);
+    expect(toggleAssistantConversationPinned("writer", first.id)).toBe(true);
+    expect(assistantConversationSummaries("writer", "root")[0]).toMatchObject({
+      id: first.id,
+      pinned: true,
+    });
+  });
+
+  it("restores conversations after the module cache is reset", () => {
+    browserStorage();
+    const first = activeAssistantConversation("writer", "root")!;
+    appendAssistantConversationMessage("writer", first.id, {
+      id: "saved-user",
+      role: "user",
+      text: "A durable question",
+    });
+
+    resetAssistantConversationStore();
+
+    expect(activeAssistantConversation("writer", "root")).toMatchObject({
+      id: first.id,
+      title: "A durable question",
+      messageCount: 1,
+    });
+  });
+
+  it("persists guarded write proposal review state with its answer", () => {
+    browserStorage();
+    const active = activeAssistantConversation("writer", "root")!;
+    appendAssistantConversationMessage("writer", active.id, {
+      id: "answer-with-proposal",
+      role: "assistant",
+      text: "Review the proposed change.",
+      writeProposals: [
+        {
+          id: "proposal-1",
+          status: "pending",
+          tool: "update_item",
+          title: "Update Draft",
+          summary: "Replace the introduction",
+          arguments: { id: "post-1", body: "New introduction" },
+          createdAt: "2026-08-24T12:00:00.000Z",
+          expiresAt: "2026-08-24T12:10:00.000Z",
+        },
+      ],
+    });
+
+    resetAssistantConversationStore();
+
+    expect(
+      assistantConversationMessages("writer", active.id)[0]?.writeProposals,
+    ).toMatchObject([{ id: "proposal-1", status: "pending" }]);
+  });
+
+  it("bounds each transcript to the most recent 200 messages", () => {
+    browserStorage();
+    const active = activeAssistantConversation("writer", "root")!;
+    for (let index = 0; index < 205; index += 1) {
+      appendAssistantConversationMessage("writer", active.id, {
+        id: `message-${index}`,
+        role: index % 2 === 0 ? "user" : "assistant",
+        text: `Message ${index}`,
+      });
+    }
+
+    const messages = assistantConversationMessages("writer", active.id);
+    expect(messages).toHaveLength(200);
+    expect(messages[0]?.id).toBe("message-5");
+    expect(messages.at(-1)?.id).toBe("message-204");
+  });
+
+  it("bounds stored history to 60 conversations", () => {
+    browserStorage();
+    for (let index = 0; index < 65; index += 1) {
+      const active = activeAssistantConversation("writer", "root")!;
+      appendAssistantConversationMessage("writer", active.id, {
+        id: `user-${index}`,
+        role: "user",
+        text: `Conversation ${index}`,
+      });
+      createAssistantConversation("writer", "root");
+    }
+
+    expect(assistantConversationSummaries("writer", "root")).toHaveLength(60);
+  });
+});

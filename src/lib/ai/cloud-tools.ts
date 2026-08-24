@@ -18,6 +18,12 @@ import {
   WORKSPACE_TOOL_NAMES,
   type WorkspaceToolName,
 } from "@/lib/ai/tools";
+import { isProposableWorkspaceWrite } from "@/lib/ai/write-proposal-policy";
+import {
+  createWorkspaceWriteProposal,
+  type WorkspaceWriteProposalPreview,
+} from "@/lib/ai/write-proposals.server";
+import type { OutboundMcpProposalPreview } from "@/lib/ai/outbound-proposals.server";
 import { runWorkspaceToolForSession } from "@/lib/mcp/tools";
 
 export type CloudAssistantActor = {
@@ -40,6 +46,10 @@ export type CloudAssistantWorkspaceCall = {
 };
 
 export type CloudAssistantToolMode = "full" | "read_only";
+
+export type CloudAssistantWriteProposal =
+  | WorkspaceWriteProposalPreview
+  | OutboundMcpProposalPreview;
 
 export function cloudAssistantToolNames(
   mode: CloudAssistantToolMode = "full",
@@ -84,6 +94,66 @@ export function cloudAssistantTools(
       inputSchema: jsonSchema(definition.jsonSchema),
       execute: async (args: unknown) => {
         const commandArgs = (args ?? {}) as Record<string, unknown>;
+        const result = await runWorkspaceToolForSession(
+          name,
+          commandArgs,
+          actor,
+        );
+        const text = resultText(result);
+        if (result.isError) throw new Error(text || `${name} failed`);
+        onWorkspaceCall?.({
+          tool: name,
+          args: commandArgs,
+          output: result.structuredContent ?? {},
+        });
+        return text || "Done.";
+      },
+    });
+  }
+  return tools;
+}
+
+/**
+ * Cloud tools for a turn with interactive approval wired on the client. Reads
+ * still execute immediately. Safe writes only create a durable proposal and
+ * return its opaque id; the canonical command executor is reached later by the
+ * authenticated proposal decision route. Confirmation-gated and open-world
+ * writes are absent from this map, not merely rejected after a call.
+ */
+export function guardedCloudAssistantTools(
+  actor: CloudAssistantActor,
+  onProposal: (proposal: CloudAssistantWriteProposal) => void,
+  onWorkspaceCall?: (call: CloudAssistantWorkspaceCall) => void,
+  mode: CloudAssistantToolMode = "full",
+): Record<string, Tool> {
+  const tools: Record<string, Tool> = {};
+  for (const name of cloudAssistantToolNames(mode)) {
+    const definition = WORKSPACE_TOOL_DEFINITIONS[name];
+    if (
+      definition.mutability === "write" &&
+      !isProposableWorkspaceWrite(name)
+    ) {
+      continue;
+    }
+    tools[name] = tool({
+      description: definition.description,
+      inputSchema: jsonSchema(definition.jsonSchema),
+      execute: async (args: unknown) => {
+        const commandArgs = (args ?? {}) as Record<string, unknown>;
+        if (definition.mutability === "write") {
+          const proposal = await createWorkspaceWriteProposal({
+            actor,
+            tool: name,
+            arguments: commandArgs,
+          });
+          onProposal(proposal);
+          return JSON.stringify({
+            approval_required: true,
+            proposal_id: proposal.id,
+            summary: proposal.summary,
+            expires_at: proposal.expiresAt,
+          });
+        }
         const result = await runWorkspaceToolForSession(
           name,
           commandArgs,

@@ -102,6 +102,30 @@ export function loadedContextArtifactProofs(
   });
 }
 
+/** A compact visible index proves discovery only, never a full-body read. */
+export function compactWorkspaceIndexArtifactProofs(
+  pool: WorkspacePoolPayload | null,
+  limit = 12,
+): AssistantArtifactProof[] {
+  if (!pool) return [];
+  return [...pool.posts]
+    .sort((left, right) =>
+      (right.updatedAt ?? right.createdAt ?? "").localeCompare(
+        left.updatedAt ?? left.createdAt ?? "",
+      ),
+    )
+    .slice(0, Math.max(1, limit))
+    .flatMap((post) => {
+      const proof = itemArtifactProof({
+        id: post.id,
+        operation: "Found",
+        pool,
+        title: post.title,
+      });
+      return proof ? [proof] : [];
+    });
+}
+
 function proofFromRecord(
   value: unknown,
   operation: AssistantProofOperation,
@@ -155,7 +179,10 @@ export function workspaceToolArtifactProofs({
   if (tool === "list_items") {
     const values = Array.isArray(result.items) ? result.items : [];
     return values
-      .map((value) => proofFromRecord(value, "Read", pool, fallbackFolder))
+      // Listing proves discovery, not that the model opened the full body.
+      // Keep exact source receipts reserved for read_item and explicitly
+      // attached context so a compact index can never masquerade as evidence.
+      .map((value) => proofFromRecord(value, "Found", pool, fallbackFolder))
       .filter((proof): proof is AssistantArtifactProof => Boolean(proof));
   }
   if (tool === "list_trash") {
@@ -242,6 +269,18 @@ export function mergeArtifactProofs(
         );
         merged.splice(sameItemIndex, 1);
       } else if (!existingIsRead && isRead) {
+        continue;
+      } else if (existingIsRead && isRead) {
+        // Discovery and an exact read are two evidence levels for one item,
+        // not two separate receipts. Promote Found to Read in place and never
+        // let a later compact-index result demote an exact read.
+        if (existing.operation === "Found" && proof.operation === "Read") {
+          seen.delete(
+            `${existing.operation}:${existing.itemId}:${existing.folderPath}`,
+          );
+          merged[sameItemIndex] = proof;
+          seen.add(`${proof.operation}:${proof.itemId}:${proof.folderPath}`);
+        }
         continue;
       }
     }

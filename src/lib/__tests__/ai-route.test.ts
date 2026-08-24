@@ -11,6 +11,7 @@ type MockRemoteTool = {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  annotations?: { readOnlyHint?: boolean };
 };
 
 type MockRemoteToolsResult = {
@@ -48,7 +49,10 @@ const mocks = vi.hoisted(() => ({
   listRemoteTools: vi.fn(
     async (): Promise<MockRemoteToolsResult> => ({ tools: [], ttlMs: null }),
   ),
-  outboundAssistantTools: vi.fn(() => ({})),
+  outboundAssistantTools: vi.fn((...args: unknown[]) => {
+    void args;
+    return {};
+  }),
   outboundSystemNote: vi.fn(() => ""),
   cloudAssistantTools: vi.fn((...args: unknown[]): Record<string, unknown> => {
     void args;
@@ -56,6 +60,7 @@ const mocks = vi.hoisted(() => ({
   }),
   getWorkspaceAiConfigForOwner: vi.fn(),
   getWorkspaceAiConfigStatusForOwner: vi.fn(),
+  workspaceAgentPromptForOwner: vi.fn(async () => ""),
   createAnthropic: vi.fn(() => vi.fn(() => "anthropic-model")),
   createOpenAI: vi.fn(() => vi.fn(() => "openai-model")),
 }));
@@ -83,10 +88,18 @@ vi.mock("@/lib/mcp/outbound-client", () => ({
 }));
 vi.mock("@/lib/ai/outbound-tools", () => ({
   outboundAssistantTools: mocks.outboundAssistantTools,
+  guardedOutboundAssistantTools: mocks.outboundAssistantTools,
+  explicitlyRequestedOutboundConnections: (
+    request: string,
+    connections: MockOutboundConnection[],
+  ) => connections.filter((connection) =>
+    request.toLowerCase().includes(connection.name.toLowerCase())
+  ),
   outboundSystemNote: mocks.outboundSystemNote,
 }));
 vi.mock("@/lib/ai/cloud-tools", () => ({
   cloudAssistantTools: mocks.cloudAssistantTools,
+  guardedCloudAssistantTools: mocks.cloudAssistantTools,
 }));
 vi.mock("@ai-sdk/anthropic", () => ({
   createAnthropic: mocks.createAnthropic,
@@ -98,14 +111,37 @@ vi.mock("@/lib/ai/workspace-ai-config.server", () => ({
   getWorkspaceAiConfigForOwner: mocks.getWorkspaceAiConfigForOwner,
   getWorkspaceAiConfigStatusForOwner: mocks.getWorkspaceAiConfigStatusForOwner,
 }));
+vi.mock("@/lib/ai/workspace-agent-instructions.server", () => ({
+  workspaceAgentPromptForOwner: mocks.workspaceAgentPromptForOwner,
+}));
 
 import { GET, POST } from "@/app/api/ai/route";
 
 function post(bodyObj: unknown) {
+  const body =
+    bodyObj && typeof bodyObj === "object" && !Array.isArray(bodyObj)
+      ? {
+          workspaceHandle: "demo-blog",
+          ...(bodyObj as Record<string, unknown>),
+        }
+      : bodyObj;
+  return new Request("http://x/api/ai", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+function unscopedPost(bodyObj: unknown) {
   return new Request("http://x/api/ai", {
     method: "POST",
     body: JSON.stringify(bodyObj),
   });
+}
+
+function statusRequest(workspaceHandle?: string) {
+  const url = new URL("http://x/api/ai");
+  if (workspaceHandle) url.searchParams.set("workspaceHandle", workspaceHandle);
+  return new Request(url);
 }
 
 function streamedOversizedRequest() {
@@ -125,11 +161,14 @@ function streamedOversizedRequest() {
 }
 const user = { sub: "editor-sub", userId: "user-uuid" };
 const turn = { messages: [{ role: "user", content: "Summarize my draft" }] };
+let userSequence = 0;
+let currentUser = user;
 
 describe("/api/ai cloud assistant route", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getCurrentUser.mockResolvedValue(user);
+    currentUser = { ...user, sub: `${user.sub}-${++userSequence}` };
+    mocks.getCurrentUser.mockResolvedValue(currentUser);
     mocks.getOwnedBlog.mockResolvedValue({ handle: "demo-blog" });
     mocks.getWorkspaceAiConfigForOwner.mockResolvedValue({
       provider: "anthropic",
@@ -167,6 +206,29 @@ describe("/api/ai cloud assistant route", () => {
     expect(mocks.generateText).not.toHaveBeenCalled();
   });
 
+  it("requires an exact displayed owner workspace before loading a provider", async () => {
+    const missing = await POST(unscopedPost(turn));
+    expect(missing.status).toBe(403);
+
+    const mismatched = await POST(
+      post({
+        ...turn,
+        workspaceHandle: "collaborator-space",
+        context: {
+          level: "post",
+          postId: "00000000-0000-4000-8000-000000000001",
+          itemPreview: "Displayed collaborator content must stay here.",
+        },
+      }),
+    );
+    expect(mismatched.status).toBe(403);
+    expect(mismatched.headers.get("cache-control")).toContain("no-store");
+    expect(mocks.getWorkspaceAiConfigForOwner).not.toHaveBeenCalled();
+    expect(mocks.getPostById).not.toHaveBeenCalled();
+    expect(mocks.generateText).not.toHaveBeenCalled();
+    expect(mocks.streamText).not.toHaveBeenCalled();
+  });
+
   it("rejects an empty message list (400)", async () => {
     const res = await POST(post({ messages: [] }));
     expect(res.status).toBe(400);
@@ -200,10 +262,11 @@ describe("/api/ai cloud assistant route", () => {
     // The session actor is threaded into the tool factory.
     expect(mocks.cloudAssistantTools).toHaveBeenCalledWith(
       {
-        sub: "editor-sub",
+        sub: currentUser.sub,
         userId: "user-uuid",
         handle: "demo-blog",
       },
+      expect.any(Function),
       expect.any(Function),
       "read_only",
     );
@@ -214,6 +277,121 @@ describe("/api/ai cloud assistant route", () => {
     expect(call.messages).toEqual([
       { role: "user", content: "Summarize my draft" },
     ]);
+    expect(call.system).toMatch(
+      /search the\s+workspace using a short concept-focused query/,
+    );
+    expect(call.system).toMatch(/Never cite an item you did not actually read/);
+  });
+
+  it("allows one turn to use another catalog model from the connected provider", async () => {
+    const res = await POST(post({ ...turn, model: "claude-haiku-4-5" }));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ model: "claude-haiku-4-5" });
+    expect(mocks.createAnthropic).toHaveBeenCalledWith({
+      apiKey: "workspace-secret-key",
+    });
+    expect(mocks.createAnthropic.mock.results[0]?.value).toHaveBeenCalledWith(
+      "claude-haiku-4-5",
+    );
+  });
+
+  it("applies the owner-saved agent prompt to the model turn", async () => {
+    mocks.workspaceAgentPromptForOwner.mockResolvedValueOnce(
+      "<WORKSPACE_OWNER_INSTRUCTIONS>Use active voice.</WORKSPACE_OWNER_INSTRUCTIONS>",
+    );
+
+    const res = await POST(post(turn));
+
+    expect(res.status).toBe(200);
+    expect(mocks.workspaceAgentPromptForOwner).toHaveBeenCalledWith(
+      currentUser.sub,
+      [{ role: "user", content: "Summarize my draft" }],
+    );
+    expect(mocks.generateText.mock.calls[0][0].system).toContain(
+      "<WORKSPACE_OWNER_INSTRUCTIONS>Use active voice.</WORKSPACE_OWNER_INSTRUCTIONS>",
+    );
+  });
+
+  it("falls back to the saved model when a turn requests an unknown model", async () => {
+    const res = await POST(post({ ...turn, model: "arbitrary-provider-model" }));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ model: "claude-sonnet-5" });
+    expect(mocks.createAnthropic.mock.results[0]?.value).toHaveBeenCalledWith(
+      "claude-sonnet-5",
+    );
+  });
+
+  it("resolves Auto to a fast model for a simple turn", async () => {
+    const res = await POST(
+      post({
+        messages: [{ role: "user", content: "What is this?" }],
+        model: "auto",
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ model: "claude-haiku-4-5" });
+    expect(mocks.createAnthropic.mock.results[0]?.value).toHaveBeenCalledWith(
+      "claude-haiku-4-5",
+    );
+  });
+
+  it("resolves Auto to the strongest model for a contextual writing turn", async () => {
+    const res = await POST(
+      post({
+        messages: [
+          {
+            role: "user",
+            content: "Compare these notes and write a sourced plan",
+          },
+        ],
+        context: {
+          relatedItems: [{ id: "00000000-0000-4000-8000-000000000001" }],
+        },
+        model: "auto",
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ model: "claude-sonnet-5" });
+    expect(mocks.createAnthropic.mock.results[0]?.value).toHaveBeenCalledWith(
+      "claude-sonnet-5",
+    );
+  });
+
+  it("resolves Auto to the strongest model for a short open-item follow-up", async () => {
+    const res = await POST(
+      post({
+        messages: [{ role: "user", content: "Why?" }],
+        context: {
+          level: "post",
+          postId: "00000000-0000-4000-8000-000000000001",
+          itemTitle: "Launch draft",
+        },
+        model: "auto",
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ model: "claude-sonnet-5" });
+    expect(mocks.createAnthropic.mock.results[0]?.value).toHaveBeenCalledWith(
+      "claude-sonnet-5",
+    );
+  });
+
+  it("resolves Auto to the strongest model for current workspace context", async () => {
+    const res = await POST(
+      post({
+        messages: [{ role: "user", content: "What stands out?" }],
+        context: { level: "workspace" },
+        model: "auto",
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ model: "claude-sonnet-5" });
   });
 
   it("streams progress, text, and a complete receipt over HTTPS", async () => {
@@ -232,7 +410,11 @@ describe("/api/ai cloud assistant route", () => {
       new Request("http://x/api/ai", {
         method: "POST",
         headers: { Accept: "application/x-ndjson" },
-        body: JSON.stringify({ ...turn, stream: true }),
+        body: JSON.stringify({
+          ...turn,
+          workspaceHandle: "demo-blog",
+          stream: true,
+        }),
       }),
     );
 
@@ -287,7 +469,11 @@ describe("/api/ai cloud assistant route", () => {
     const res = await POST(
       new Request("http://x/api/ai", {
         method: "POST",
-        body: JSON.stringify({ ...turn, stream: true }),
+        body: JSON.stringify({
+          ...turn,
+          workspaceHandle: "demo-blog",
+          stream: true,
+        }),
       }),
     );
     const events = (await res.text())
@@ -304,7 +490,7 @@ describe("/api/ai cloud assistant route", () => {
     );
   });
 
-  it("keeps an enabled outbound MCP tool available on read and write turns", async () => {
+  it("keeps every outbound MCP tool available only as a proposal", async () => {
     mocks.enabledMcpConnections.mockResolvedValueOnce([
       {
         id: "mcp-1",
@@ -323,16 +509,37 @@ describe("/api/ai cloud assistant route", () => {
       ],
       ttlMs: null,
     });
-    mocks.outboundAssistantTools.mockReturnValueOnce({
-      mock_design__read_notice: { description: "Read the notice" },
+    const remoteProposal = {
+      id: "019ff398-f321-76e3-9175-383a15c311a2",
+      kind: "outbound_mcp" as const,
+      status: "pending" as const,
+      tool: "write_notice",
+      title: "Review external tool call",
+      summary: "Mock Design · write_notice",
+      arguments: { text: "Ready" },
+      connection: { id: "mcp-1", name: "Mock Design" },
+      remoteTool: {
+        name: "write_notice",
+        description: "Write the notice",
+        annotations: { readOnlyHint: false },
+      },
+      createdAt: "2026-08-24T00:00:00.000Z",
+      expiresAt: "2026-08-24T00:15:00.000Z",
+    };
+    mocks.outboundAssistantTools.mockImplementationOnce((...args: unknown[]) => {
+      const onProposal = args[2] as (proposal: typeof remoteProposal) => void;
+      onProposal(remoteProposal);
+      return {
+        mock_design__read_notice: { description: "Read the notice" },
+      };
     });
 
-    await POST(post({
+    const response = await POST(post({
       messages: [{ role: "user", content: "Read the notice from Mock Design" }],
     }));
 
     expect(mocks.outboundAssistantTools).toHaveBeenCalledWith(
-      { userId: "user-uuid", handle: "demo-blog" },
+      { sub: expect.any(String), userId: "user-uuid", handle: "demo-blog" },
       [
         {
           connection: {
@@ -357,6 +564,29 @@ describe("/api/ai cloud assistant route", () => {
       get_workspace: {},
       mock_design__read_notice: { description: "Read the notice" },
     });
+    expect((await response.json()).writeProposals).toEqual([remoteProposal]);
+  });
+
+  it("does not discover or inject enabled servers on an unrelated turn", async () => {
+    mocks.enabledMcpConnections.mockResolvedValueOnce([{
+      id: "mcp-quiet",
+      name: "Paper",
+      url: "https://paper.example/mcp",
+      token: null,
+    }]);
+
+    const response = await POST(post({
+      messages: [{ role: "user", content: "Summarize my recent notes" }],
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.listRemoteTools).not.toHaveBeenCalled();
+    expect(mocks.outboundAssistantTools).toHaveBeenCalledWith(
+      { sub: expect.any(String), userId: "user-uuid", handle: "demo-blog" },
+      [],
+      expect.any(Function),
+    );
+    expect(mocks.outboundSystemNote).toHaveBeenCalledWith([], []);
   });
 
   it("uses the selected workspace OpenAI model", async () => {
@@ -408,9 +638,43 @@ describe("/api/ai cloud assistant route", () => {
     ]);
   });
 
+  it("keeps a bounded PDF attachment as a provider file part", async () => {
+    const dataUrl = "data:application/pdf;base64,cGRmIGJ5dGVz";
+    const res = await POST(
+      post({
+        messages: [{ role: "user", content: "Read this PDF" }],
+        context: {
+          attachments: [
+            {
+              name: "research.pdf",
+              mediaType: "application/pdf",
+              dataUrl,
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(mocks.generateText.mock.calls[0][0].messages).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Read this PDF" },
+          {
+            type: "file",
+            data: dataUrl,
+            mediaType: "application/pdf",
+            filename: "research.pdf",
+          },
+        ],
+      },
+    ]);
+  });
+
   it("returns validated workspace command evidence for artifact receipts", async () => {
     mocks.cloudAssistantTools.mockImplementationOnce((...args: unknown[]) => {
-      const onWorkspaceCall = args[1] as
+      const onWorkspaceCall = args[2] as
         ((call: Record<string, unknown>) => void) | undefined;
       onWorkspaceCall?.({
         tool: "create_item",
@@ -448,6 +712,91 @@ describe("/api/ai cloud assistant route", () => {
     ]);
   });
 
+  it("returns an inert write proposal without claiming the workspace changed", async () => {
+    const proposal = {
+      id: "11111111-1111-4111-8111-111111111111",
+      status: "pending",
+      tool: "update_item",
+      title: "Update item",
+      summary: "Update item: note-1, 12 characters",
+      arguments: {
+        id: "note-1",
+        body: "Revised body",
+        if_match_hash: "sha256:abc",
+      },
+      createdAt: "2026-08-24T12:00:00.000Z",
+      expiresAt: "2026-08-24T12:15:00.000Z",
+    };
+    mocks.cloudAssistantTools.mockImplementationOnce((...args: unknown[]) => {
+      const onProposal = args[1] as
+        ((value: typeof proposal) => void) | undefined;
+      onProposal?.(proposal);
+      return { update_item: {} };
+    });
+
+    const res = await POST(
+      post({
+        messages: [{ role: "user", content: "Rewrite the launch note" }],
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      workspaceCalls: [],
+      writeProposals: [proposal],
+    });
+  });
+
+  it("propagates an inert external MCP proposal without recording a remote call", async () => {
+    const proposal = {
+      id: "22222222-2222-4222-8222-222222222222",
+      kind: "outbound_mcp",
+      status: "pending",
+      tool: "create_frame",
+      title: "Review external tool call",
+      summary: "Paper · create_frame",
+      arguments: { title: "Hero" },
+      connection: { id: "mcp-1", name: "Paper" },
+      remoteTool: {
+        name: "create_frame",
+        description: "Create one frame",
+        annotations: { readOnlyHint: false },
+      },
+      createdAt: "2026-08-24T12:00:00.000Z",
+      expiresAt: "2026-08-24T12:15:00.000Z",
+    };
+    mocks.enabledMcpConnections.mockResolvedValueOnce([{
+      id: "mcp-1",
+      name: "Paper",
+      url: "https://paper.example/mcp",
+      token: null,
+    }]);
+    mocks.listRemoteTools.mockResolvedValueOnce({
+      tools: [{
+        name: "create_frame",
+        description: "Create one frame",
+        inputSchema: { type: "object", properties: {} },
+        annotations: { readOnlyHint: false },
+      }],
+      ttlMs: null,
+    });
+    mocks.outboundAssistantTools.mockImplementationOnce((...args: unknown[]) => {
+      const onProposal = args[2] as
+        ((value: typeof proposal) => void) | undefined;
+      onProposal?.(proposal);
+      return { paper__create_frame: {} };
+    });
+
+    const response = await POST(post({
+      messages: [{ role: "user", content: "Create a frame in Paper" }],
+    }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      outboundCalls: [],
+      writeProposals: [proposal],
+    });
+  });
+
   it("uses a bounded access-scoped recent index for workspace catch-up", async () => {
     mocks.getAccessibleRecentPosts.mockResolvedValueOnce(
       Array.from({ length: 20 }, (_, index) => ({
@@ -483,7 +832,7 @@ describe("/api/ai cloud assistant route", () => {
     expect(res.status).toBe(200);
     expect(mocks.getAccessibleRecentPosts).toHaveBeenCalledWith(
       "demo-blog",
-      user,
+      currentUser,
       { limit: 12 },
     );
     const system = mocks.generateText.mock.calls[0][0].system as string;
@@ -497,10 +846,12 @@ describe("/api/ai cloud assistant route", () => {
         title: `Recent note ${index}`,
         folderPath: "notes",
         slug: `recent-${index}`,
+        operation: "Found",
       })),
     );
     expect(mocks.cloudAssistantTools).toHaveBeenLastCalledWith(
       expect.any(Object),
+      expect.any(Function),
       expect.any(Function),
       "read_only",
     );
@@ -529,6 +880,7 @@ describe("/api/ai cloud assistant route", () => {
     );
     expect(mocks.cloudAssistantTools).toHaveBeenLastCalledWith(
       expect.any(Object),
+      expect.any(Function),
       expect.any(Function),
       "read_only",
     );
@@ -587,6 +939,7 @@ describe("/api/ai cloud assistant route", () => {
         title: "Canonical launch notes",
         folderPath: "",
         slug: "canonical-launch-notes",
+        operation: "Read",
       },
     ]);
   });
@@ -601,6 +954,7 @@ describe("/api/ai cloud assistant route", () => {
 
     expect(mocks.cloudAssistantTools).toHaveBeenLastCalledWith(
       expect.any(Object),
+      expect.any(Function),
       expect.any(Function),
       "read_only",
     );
@@ -622,13 +976,14 @@ describe("/api/ai cloud assistant route", () => {
     expect(mocks.cloudAssistantTools).toHaveBeenLastCalledWith(
       expect.any(Object),
       expect.any(Function),
+      expect.any(Function),
       "read_only",
     );
   });
 
   it("returns completed command receipts with a terminal failure", async () => {
     mocks.cloudAssistantTools.mockImplementationOnce((...args: unknown[]) => {
-      const onWorkspaceCall = args[1] as
+      const onWorkspaceCall = args[2] as
         ((call: Record<string, unknown>) => void) | undefined;
       onWorkspaceCall?.({
         tool: "update_item",
@@ -649,6 +1004,7 @@ describe("/api/ai cloud assistant route", () => {
     expect(mocks.cloudAssistantTools).toHaveBeenLastCalledWith(
       expect.any(Object),
       expect.any(Function),
+      expect.any(Function),
       "full",
     );
     expect(await res.json()).toMatchObject({
@@ -667,7 +1023,7 @@ describe("/api/ai cloud assistant route", () => {
   });
 
   it("GET reports enabled only when keyed and signed in", async () => {
-    expect(await (await GET()).json()).toEqual({
+    expect(await (await GET(statusRequest("demo-blog"))).json()).toEqual({
       enabled: true,
       provider: "Anthropic",
       model: "claude-sonnet-5",
@@ -677,12 +1033,26 @@ describe("/api/ai cloud assistant route", () => {
       provider: "openai",
       model: "gpt-5.6",
     });
-    expect(await (await GET()).json()).toEqual({
+    expect(await (await GET(statusRequest("demo-blog"))).json()).toEqual({
       enabled: true,
       provider: "OpenAI",
       model: "gpt-5.6",
     });
     mocks.getCurrentUser.mockResolvedValue(null);
-    expect((await (await GET()).json()).enabled).toBe(false);
+    expect(
+      (await (await GET(statusRequest("demo-blog"))).json()).enabled,
+    ).toBe(false);
+  });
+
+  it("GET fails closed for missing or non-owned displayed workspace scope", async () => {
+    expect(await (await GET(statusRequest())).json()).toEqual({
+      enabled: false,
+      provider: null,
+      model: null,
+    });
+    expect(
+      await (await GET(statusRequest("collaborator-space"))).json(),
+    ).toEqual({ enabled: false, provider: null, model: null });
+    expect(mocks.getWorkspaceAiConfigStatusForOwner).not.toHaveBeenCalled();
   });
 });

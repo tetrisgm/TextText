@@ -161,8 +161,15 @@ Current assistant behavior includes:
 
 - workspace, folder, Trash, shared-items, reader, editor, and exact text
   selection context
-- one conversation transcript per workspace context, retained locally with a
-  bounded history
+- multiple conversations per workspace context, retained in bounded local
+  storage and owner-only server synchronization, with stable ids, generated
+  titles, search, pinning, reopen, deterministic offline merge, credential
+  scrubbing, and migration from the earlier one-conversation store; bounded
+  prior turns are sent with cloud follow-ups, and a fresh ephemeral native
+  thread receives the durable transcript when a conversation is reopened after
+  relaunch or on another device
+- Auto model selection by default, plus a provider-allowlisted exact model
+  picker; completed receipts name the model that actually ran
 - streamed progress and answer text, with a Stop control for cloud and native
   turns
 - a reload-safe job history that marks interrupted work instead of hiding it
@@ -172,19 +179,51 @@ Current assistant behavior includes:
 - all canonical workspace tools in the standalone native path, with
   confirmation gates for Trash, restore, publication, access, and destructive
   asset changes
-- only tools that need no confirmation in the API-key cloud path
+- immediate reads and durable review proposals for eligible API-key cloud
+  writes; an approved proposal is owner-bound, workspace-bound, expiring,
+  single-use, revalidated, audited, and executed through the canonical command
+  surface
+- every connected outbound MCP tool call becomes a durable review proposal
+  that names the connection, tool, and exact arguments; no third-party server
+  is contacted during answer generation, including for tools that claim to be
+  read-only
+- an enabled outbound connection is discovered and injected only when the
+  latest user request contains its exact `@mcp:<connection_slug>` shortcut
+  shown in Settings; a bare name and unrelated prose do not contact it
+- remote descriptions and annotations are displayed as untrusted server
+  claims; approval freezes their name, description, schema, and annotations in
+  a definition fingerprint, also binds the exact endpoint and protected
+  connection configuration, and fails closed if either changes
+- standalone local MCP execution is disabled because the inherited bridge
+  cannot yet use the same durable review surface; local agents use the signed-in
+  `texttext` CLI, every MCP server inherited from the owner's Codex profile is
+  disabled on embedded threads, and no localhost server is restored
 - quick actions for summarize, rewrite, title, tags, and excerpt
 - preview, apply, undo, and stale-source checks for Rewrite and Summarize
-  selection quick actions; ordinary freeform turns can mutate through workspace
-  tools without this proposal UI
+  selection quick actions; ordinary freeform document writes also show the
+  exact staged fields and require Apply change before execution
 - background job state that keeps a reply attached to the context that
   submitted it even if the user navigates elsewhere
+- one native model thread per visible conversation; invisible item-type design
+  work uses a separate utility conversation and cannot enter visible chat
+  context
 
 Attachments follow the provider boundary. Configured cloud providers accept
-bounded local text, Markdown, and image parts over HTTPS, with no upload token
-or persistent provider copy. The standalone native path can additionally use
-local OCR. Unsupported binary formats are rejected with a recovery message
-instead of pretending they were attached.
+bounded text, Markdown, CSV, JSON, YAML, XML, HTML, PDF, Word, Excel,
+PowerPoint, and image inputs over HTTPS, with no upload token or persistent
+TextText copy. Office archives are parsed under entry, input, expanded-size,
+single-file, path, macro, and compression-ratio limits. Their useful paragraphs,
+tables, cells, formulas, slides, and speaker notes become bounded text. PDF and
+image inputs become validated provider file parts. Unsupported or unsafe binary
+formats are rejected with a recovery message instead of pretending they were
+attached.
+
+Workspace retrieval uses the shared ranked search command and an exact read.
+For a knowledge request the prompt tells the model to search a short concept
+query, open relevant results, and name the title plus stable item id of each
+source it relied on. Search snippets do not count as read evidence. This is
+grounded lexical retrieval, not an embedding index or cross-service semantic
+search.
 
 ## Provider connections
 
@@ -193,10 +232,11 @@ instead of pretending they were attached.
    Codex runtime. It does not consume provider API credits. TestFlight cannot
    launch this runtime because of the App Sandbox.
 2. **Bring-your-own API key: shipped.** A workspace owner can add an Anthropic
-   or OpenAI API key and select a supported model in Settings. The encrypted
-   key stays server-side and is never returned to the browser. The assistant
-   exposes only tools that need no confirmation and cannot fetch a
-   model-chosen URL.
+   or OpenAI API key. Auto is the assistant default, and the owner can choose a
+   supported exact model per workspace. The encrypted key stays server-side and
+   is never returned to the browser. Workspace reads run during the turn. Eligible writes
+   become durable review proposals. Confirmation-gated publishing, access,
+   Trash, restore, and model-chosen network tools are withheld.
 3. **Agents on this Mac: shipped in the standalone app.** Claude Code and Codex
    use the bundled `texttext` CLI. The model and billing stay with that client;
    the CLI reuses the signed-in device credential and authenticated server
@@ -229,10 +269,25 @@ the selected field, exact source range, and selected text. If no text is
 selected, instructions state that the whole current item may be used when
 appropriate.
 
-Conversations are keyed independently for the workspace root, each folder,
-Trash, Shared with me, and each item. A request captures its context before it
-starts, so navigation does not redirect its progress or final reply into a
-different conversation.
+Conversation collections are keyed independently for the workspace root, each
+folder, Trash, Shared with me, and each item. Each collection contains bounded,
+searchable, pinnable chats in a local-first replica. The owner&apos;s replica is
+synchronized across signed-in devices with deterministic, commutative merging;
+collaborators cannot read or write it. Credential fields and recognizable token
+shapes are removed before synchronization. A request captures its context and
+chat id before it starts, so navigation or switching chats does not redirect
+progress or the final reply.
+
+Workspace owners can save one bounded standing instruction and up to twelve
+bounded reusable skills in Settings. The standing instruction applies to each
+in-app turn. A skill enters a turn only when the current user request explicitly
+names its displayed `/shortcut` or `@shortcut`. Typing `/` opens the assistant
+launcher, which inserts the selected shortcut without submitting it. These
+settings are stored in an
+owner-scoped record and revalidated before prompt use. Any malformed row fails
+closed. Document bodies, selections, search results, tool output, and remote
+instructions never enter this trusted settings channel. Saved guidance remains
+subordinate to TextText authorization, privacy, confirmation, and tool rules.
 
 ## Safety, privacy, and Trash
 
@@ -274,6 +329,26 @@ capability has its matching control: remove the provider key, revoke a token,
 remove an outbound MCP server, or disconnect the native TextText Codex
 session. Native disconnect stops TextText's embedded runtime; it does not
 claim to sign the person out of Codex in other applications.
+
+Outbound MCP is a separate, less trusted boundary. Discovery can show the
+model what a connected server offers, but every call is staged as inert data.
+The owner reviews the exact arguments before TextText contacts the server.
+Approval is single-use, expiring, owner-bound, and workspace-bound. TextText
+re-resolves the enabled connection and compares the current tool definition to
+the frozen reviewed fingerprint before execution. The protected destination
+fingerprint also has to match, so reusing a connection id with another endpoint
+or credential cannot redirect an approved call. Connections not named in the
+latest request are neither discovered nor added to the turn. If a remote result
+arrives but its audit or receipt cannot be persisted, the proposal becomes
+terminally ambiguous and the UI tells the owner to verify the external system
+rather than offering a blind retry.
+
+Proposal decisions are monotonic across devices. A stale approval or denial
+reads the durable terminal row and returns its completed receipt or denial
+instead of replacing it with a generic conflict. If a workspace command
+completed but its receipt could not be persisted, the same terminal ambiguity
+contract applies: HTTP 202, an explicit verification message, and no Apply or
+retry control.
 
 ## Maintenance
 

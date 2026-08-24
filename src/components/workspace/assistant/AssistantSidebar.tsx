@@ -16,6 +16,10 @@ import type { AssistantContext } from "./context";
 import styles from "./AssistantSidebar.module.css";
 import { CollaboratorMark } from "@/components/collab/CollaboratorMark";
 import type { AssistantAgentIdentity } from "./agent-identity";
+import { AssistantConversationHistory } from "./AssistantConversationHistory";
+import type { AssistantConversationSummary } from "./conversation-store";
+import type { AssistantModelChoice } from "./model-preference";
+import { WorkspaceAssistantSkillLauncher } from "./AssistantSkillLauncher";
 
 export type { AssistantContext } from "./context";
 
@@ -50,6 +54,8 @@ export type AssistantComposerSubmission = {
 };
 
 export type AssistantSidebarProps = {
+  /** Owner-scoped workspace used to load reusable skill names and shortcuts. */
+  workspaceHandle?: string;
   agent?: AssistantAgentIdentity | null;
   state: AssistantSidebarState;
   onStateChange: (state: AssistantSidebarState) => void;
@@ -57,6 +63,16 @@ export type AssistantSidebarProps = {
   onNewConversation?: () => void;
   /** Whether there is anything to clear. */
   hasConversation?: boolean;
+  conversations?: readonly AssistantConversationSummary[];
+  activeConversationId?: string | null;
+  onOpenConversation?: (conversationId: string) => void;
+  onSearchConversations?: (
+    query: string,
+  ) => readonly AssistantConversationSummary[];
+  onToggleConversationPinned?: (conversationId: string) => void;
+  modelChoices?: readonly AssistantModelChoice[];
+  selectedModel?: string | null;
+  onModelChange?: (model: string) => void;
   width: number;
   onWidthChange: (width: number) => void;
   composerValue: string;
@@ -201,11 +217,20 @@ function formatFileSize(value: number | undefined): string | null {
 }
 
 export function AssistantSidebar({
+  workspaceHandle,
   agent,
   state,
   onStateChange,
   onNewConversation,
   hasConversation = false,
+  conversations = [],
+  activeConversationId = null,
+  onOpenConversation,
+  onSearchConversations,
+  onToggleConversationPinned,
+  modelChoices = [],
+  selectedModel = null,
+  onModelChange,
   width,
   onWidthChange,
   composerValue,
@@ -241,8 +266,6 @@ export function AssistantSidebar({
   panelId: panelIdProp,
   className,
   style,
-  edgePeeking,
-  onEdgePeekEngage,
 }: AssistantSidebarProps) {
   const generatedPanelId = useId();
   const titleId = useId();
@@ -293,7 +316,6 @@ export function AssistantSidebar({
   // fighting for the same pixels. "open" survives in the type only so old
   // saved values still parse; it means open.
   const visible = state !== "hidden";
-  const pinned = visible;
   const revealed = visible;
   const canSubmit =
     !disabled &&
@@ -547,6 +569,34 @@ export function AssistantSidebar({
               {agent ? `Chat with ${agent.name}` : title}
             </h2>
             <div className={styles.headerActions}>
+              {onModelChange && modelChoices.length > 1 ? (
+                <select
+                  className={styles.modelSelect}
+                  aria-label="Assistant model"
+                  title="Assistant model"
+                  value={selectedModel ?? modelChoices[0]?.id}
+                  onChange={(event) => onModelChange(event.currentTarget.value)}
+                >
+                  {modelChoices.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.label}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
+              {onNewConversation &&
+              onOpenConversation &&
+              onToggleConversationPinned &&
+              conversations.length > 0 ? (
+                <AssistantConversationHistory
+                  activeConversationId={activeConversationId}
+                  conversations={conversations}
+                  onNewConversation={onNewConversation}
+                  onOpenConversation={onOpenConversation}
+                  onSearchConversations={onSearchConversations}
+                  onTogglePinned={onToggleConversationPinned}
+                />
+              ) : null}
               {/* A transcript is keyed to where you are, so without this the
                   only way to get a clean one was to navigate away and come
                   back. Hidden when there is nothing to clear, so it never
@@ -643,6 +693,15 @@ export function AssistantSidebar({
           )}
 
           <div className={styles.composerField}>
+            {workspaceHandle ? (
+              <WorkspaceAssistantSkillLauncher
+                handle={workspaceHandle}
+                composerRef={composerRef}
+                value={composerValue}
+                onChange={onComposerChange}
+                disabled={disabled || submitting}
+              />
+            ) : null}
             {/* The chip lives with the input, where it answers the question
                 the input raises: what will this message be about? Removable
                 scope belongs here too when it arrives; the header stays a
