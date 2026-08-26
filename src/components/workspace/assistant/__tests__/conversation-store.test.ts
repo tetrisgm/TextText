@@ -140,16 +140,19 @@ describe("assistant conversation history", () => {
       text: "Local question",
     });
     const local = assistantConversationSyncPayload("writer")[0]!;
+    const remoteUpdatedAt = new Date(
+      Date.parse(local.messages[0]!.updatedAt) + 1_000,
+    ).toISOString();
     const remote = {
       ...local,
-      updatedAt: "2026-08-24T23:00:00.000Z",
+      updatedAt: remoteUpdatedAt,
       messages: [
         ...local.messages,
         {
           id: "remote-message",
           role: "assistant" as const,
           text: "Remote answer",
-          updatedAt: "2026-08-24T23:00:00.000Z",
+          updatedAt: remoteUpdatedAt,
         },
       ],
     };

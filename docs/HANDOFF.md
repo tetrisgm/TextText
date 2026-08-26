@@ -17,6 +17,67 @@ unverified until exercised. The Notion-look polish continues, but behavior
 outranks look, and the owner's Notion screenshots set the bar, not the old
 polish ledger.
 
+## Current AI implementation handoff (2026-08-25)
+
+- The current source boundary is `4118c930` (`Finish guarded agentic
+  assistant`). Commit `cbf89e1c` adds the durable implementation runbook and
+  links it from the architecture and product ledger. At the start of this
+  handoff pass, local `main` was clean and matched `origin/main` at
+  `cbf89e1c`.
+- A new session should read `AGENTS.md`, then
+  `docs/agentic-assistant-runbook.md`, then
+  `docs/ai-sidebar-architecture.md`. The runbook is the maintenance map for
+  data ownership, owner gates, cloud and native turn lifecycles, proposal
+  states, outbound MCP approval, evidence semantics, edition differences,
+  safe change recipes, verification, and deliberate gaps. This file records
+  observed state; `docs/agentic-text-product.md` records the competitive
+  promise and parity ledger.
+- Six surfaces must not be conflated: the cloud in-app assistant, standalone
+  native assistant, signed-in local `texttext` CLI, inbound hosted MCP,
+  outbound MCP used by the cloud assistant, and the private native item-type
+  utility turn. They use different credentials and execution boundaries. The
+  web app does not call its own MCP endpoint. Local agents do not require File
+  Provider or a localhost bridge.
+- The guarded implementation is complete in source: exact owner and workspace
+  checks, durable bounded chat history, instructions and explicit skills,
+  truthful model receipts, structured attachments, Found versus Read proof,
+  durable cloud write proposals, terminal ambiguity after an unreceipted side
+  effect, exact-shortcut outbound MCP with destination and tool fingerprints,
+  native owner/workspace/conversation fencing, and a Settings inventory with
+  disconnect and revoke controls. The detailed implementation facts and file
+  owners are in the runbook rather than duplicated here.
+- Running-build proof used a real Keychain-backed Anthropic connection. It
+  covered a streamed answer, grounded Found and Read evidence, an inert
+  create-note proposal, reload persistence, and a follow-up using durable
+  context. The live outbound MCP evaluation covered discovery, proposal-only
+  execution, approval receipts, hostile remote descriptions,
+  `input_required`, and fixture cleanup. The final implementation gate passed
+  182 web test files with 1,260 tests, a 45-page production build, 526
+  standalone Swift tests, 525 Store Swift tests, the 48-point Apple matrix,
+  TypeScript, lint, 30 migrations, agent integration verification, and the
+  outbound MCP evaluation. The documentation pass reran all 1,260 web tests.
+- “Everything is done” is not an accurate product claim. The deliberate gaps
+  remain the connector gallery and indexed external services, semantic
+  workspace retrieval and answer-level citations, broader media and document
+  computation, team or page-backed skills, rendered-output inspection,
+  unattended export verification, Plan mode, and custom background agents.
+  They are inventory, not an authorized roadmap; the owner has not selected
+  the next one to implement. The full current list is in the runbook.
+- The 2026-08-25 handoff gate exposed a date-coupled conversation merge test:
+  its remote message used a fixed August 24 timestamp, so the assertion changed
+  behavior when the real clock crossed that date. The fixture now derives a
+  timestamp one second after its generated local message. The focused 10-test
+  file and the full 182-file, 1,260-test web suite pass after the correction;
+  runtime merge behavior did not change.
+- TestFlight work, App Store Connect changes, release records, deployments,
+  installations, and public release actions remain deferred. The owner also
+  deferred hands-on Touch ID and Google sign-in testing. No such action was
+  performed by the guarded assistant or documentation passes. Store builds
+  use supported App Sandbox and HTTPS paths and compile out local process and
+  local MCP machinery; the primary AI architecture does not depend on the
+  optional Finder File Provider integration described in older diagnostic
+  notes below.
+
 ## AI runtime observed proof correction (2026-08-23)
 
 - The earlier parity pass was not complete when it was first reported. Its
@@ -383,9 +444,16 @@ Two traps worth keeping:
   round trip and reads as broken. Keep an optimistic override until the
   server answers.
 
-## Open, in priority order
+## Historical implementation notes (superseded as backlog)
 
-- Finish the scorecard above; each unchecked line is one loop iteration.
+These observations are retained because they still explain old failure modes.
+They are not the current priority order. The scorecard above is now fully
+checked, real-provider proof occurred in later passes, and current product gaps
+live in `docs/agentic-assistant-runbook.md`. File Provider notes in this section
+describe the optional Finder representation; they are not requirements for the
+in-app assistant, local CLI, or hosted MCP.
+
+- The scorecard that was once unfinished is now fully checked.
 - Fixed observation hazards: verify `window.innerWidth` is nonzero before
   trusting any browser measurement (a restarted pane can be 0x0 and serves
   stale compositor frames to screenshots).
@@ -395,7 +463,8 @@ Two traps worth keeping:
   fake key in workspace settings. Exercised 2026-08-14: greeting, root and
   item-named starters, quick actions, chat round trip with provider
   attribution, and the Rewrite proposal cycle (preview, apply, undo) all
-  observed live. Only real-provider quirks remain untested by the mock.
+  observed live. This remains the deterministic development path; later
+  sections record the separate real-provider proof.
 - Feature docs (`/docs/features`) grow only with exercised behavior, and
   `npm run eval:features` now enforces that: it drives the claims the page
   makes and names the ones it cannot drive. It caught /connect still promising
