@@ -618,6 +618,13 @@ in-app assistant, local CLI, or hosted MCP.
 - `/docs/features` documents only exercised behavior, by rule stated on the
   page. `/docs` indexes it.
 
+- The native turn deadline measures SILENCE, not work. It was an absolute
+  30s clock started at `turn/start` and never extended, so a real Codex turn
+  over a long prompt was interrupted mid-answer and the person was told the
+  agent took too long while it was still typing (owner report, 2026-08-26).
+  `WebAppWindowController.codexTurnProgress(method:)` names the events that
+  restart the clock; the per-tool deadline is a separate 8s and unchanged.
+
 ## Mac app: editions, TestFlight, sign-in
 
 - Distribution model (owner, 2026-08-11): Developer ID + Sparkle is the

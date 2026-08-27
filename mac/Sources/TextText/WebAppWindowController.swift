@@ -87,7 +87,9 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     private var codexTurnCancelRequested = false
     private var codexAgentMessagePhases: [String: CodexAgentMessage.Phase] = [:]
 
-    private static let codexTurnTimeoutSeconds: TimeInterval = 30
+    /// How long the agent may go SILENT, not how long a turn may take. See
+    /// `codexTurnProgress(method:)`.
+    private static let codexTurnSilenceSeconds: TimeInterval = 30
     private static let codexToolTimeoutSeconds: TimeInterval = 8
     private static let codexTimeoutRecoverySeconds: TimeInterval = 2
     private static let codexLog = Logger(
@@ -805,27 +807,68 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         }
     }
 
+    /// Whether an App Server message is proof the turn is still working.
+    ///
+    /// The deadline used to be an absolute clock started at `turn/start`:
+    /// thirty seconds for the whole turn, whether the agent was streaming an
+    /// answer, waiting on a tool, or genuinely wedged. A long prompt outlives
+    /// that easily, so the person was told the agent took too long while it
+    /// was still typing, and the turn was interrupted mid-answer. Every event
+    /// below is the agent showing it is alive, so each one starts the clock
+    /// over and the deadline measures silence rather than work.
+    static func codexTurnProgress(method: String?) -> Bool {
+        switch method {
+        case "turn/started",
+             "item/started",
+             "item/agentMessage/delta",
+             "item/completed",
+             "item/tool/call":
+            return true
+        default:
+            return false
+        }
+    }
+
     private func startCodexTurnDeadline(threadID: String) {
-        codexTurnDeadline?.cancel()
         codexTurnTimedOut = false
         codexTurnInterruptSent = false
         codexTurnCancelRequested = false
+        scheduleCodexTurnDeadline(threadID: threadID)
+    }
+
+    /// Start the silence clock over. Only the clock: a refresh must not clear
+    /// the timed-out or cancelled flags, which is why this is separate from
+    /// `startCodexTurnDeadline(threadID:)`.
+    private func scheduleCodexTurnDeadline(threadID: String) {
+        codexTurnDeadline?.cancel()
         let deadline = DispatchWorkItem { [weak self] in
             guard let self else { return }
             Self.codexLog.error(
-                "turn timed out with \(self.codexPendingToolCalls.count, privacy: .public) pending tool calls")
+                "turn went quiet for \(Self.codexTurnSilenceSeconds, privacy: .public)s with \(self.codexPendingToolCalls.count, privacy: .public) pending tool calls")
             self.codexTurnTimedOut = true
             self.emitCodexTurnEvent([
                 "type": "error",
-                "message": "The TextText Agent took too long. Try the request again.",
+                "message": "The TextText Agent stopped responding. Try the request again.",
             ])
             self.interruptTimedOutCodexTurnIfPossible(threadID: threadID)
             self.scheduleCodexTimeoutRecovery()
         }
         codexTurnDeadline = deadline
         DispatchQueue.main.asyncAfter(
-            deadline: .now() + Self.codexTurnTimeoutSeconds,
+            deadline: .now() + Self.codexTurnSilenceSeconds,
             execute: deadline)
+    }
+
+    /// Called for every message that arrives while a turn is open.
+    private func refreshCodexTurnDeadline(for message: CodexAppServerMessage) {
+        guard codexTurnDeadline != nil,
+              !codexTurnTimedOut,
+              !codexTurnCancelRequested,
+              Self.codexTurnProgress(method: message.method),
+              codexMessageBelongsToActiveThread(message),
+              let threadID = codexActiveThreadID
+        else { return }
+        scheduleCodexTurnDeadline(threadID: threadID)
     }
 
     private func finishCodexTurn() {
@@ -976,6 +1019,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         if message.method == "remoteControl/status/changed" {
             return
         }
+        refreshCodexTurnDeadline(for: message)
         if let requestID = message.id,
            message.method == nil,
            let requestKind = codexPendingRequests.removeValue(forKey: requestID) {
