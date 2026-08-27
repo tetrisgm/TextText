@@ -12,6 +12,7 @@
 // The control follows the declared type, so a new field type needs exactly one
 // case added here and nowhere else.
 
+import { MarkdownSurface, type SurfaceSelection } from "./MarkdownSurface";
 import { useId, useMemo, useRef, useState } from "react";
 import type { DocumentFieldRow, DocumentFieldValue } from "@/lib/documents/model";
 import type {
@@ -32,6 +33,10 @@ export type FieldInputProps = {
 
 const text = (value: DocumentFieldValue | undefined): string =>
   typeof value === "string" ? value : value == null ? "" : String(value);
+
+/** A field surface has no peers of its own and reports no selection. */
+const EMPTY_SELECTIONS: SurfaceSelection[] = [];
+const noSelection = () => {};
 
 export function FieldInput({
   field,
@@ -118,7 +123,12 @@ export function FieldInput({
   const control = (() => {
     switch (field.type) {
       case "richtext":
-        return (
+        // Markdown, so it gets the markdown surface: a richtext field showed
+        // its own `##` for the same reason the body did. It has no
+        // collaborative binding of its own, so it carries no peer carets and
+        // reports no selection; the styling and the hidden syntax are the
+        // whole of what it needs.
+        return disabled ? (
           <textarea
             id={id}
             className="tt-field-input is-richtext"
@@ -126,9 +136,20 @@ export function FieldInput({
             placeholder={label}
             rows={3}
             maxLength={field.maxLength}
-            disabled={disabled}
-            onChange={(event) => onChange(event.target.value)}
+            disabled
+            readOnly
           />
+        ) : (
+          <div className="tt-field-input is-richtext">
+            <MarkdownSurface
+              label={label}
+              placeholder={label}
+              value={text(value)}
+              selections={EMPTY_SELECTIONS}
+              onChange={onChange}
+              onSelection={noSelection}
+            />
+          </div>
         );
       case "date":
         return (

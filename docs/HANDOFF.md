@@ -650,6 +650,31 @@ in-app assistant, local CLI, or hosted MCP.
   `WebAppWindowController.codexTurnProgress(method:)` names the events that
   restart the clock; the per-tool deadline is a separate 8s and unchanged.
 
+## Markdown syntax shows on the line you are writing on (2026-08-27)
+
+- The body was never a textarea. `MarkdownSurface` is a contenteditable that
+  renders THE SOURCE, styled, in one `pre-wrap` element with inline spans and
+  literal newlines, so `textContent` is exactly the source. That is why the
+  fix is small: CodeMirror would have replaced an architecture that was
+  already right.
+- Markers are HIDDEN, never removed. `selectionOffsets` walks text nodes
+  (`createTreeWalker(SHOW_TEXT)`), which CSS cannot move, so `Y.Text`,
+  `textRange`, `bodySection` and `if_match_hash` are all untouched. Anything
+  that starts REMOVING marker text moves every offset in the product while the
+  document still looks right, which is the worst way for this to fail;
+  `eval:markdown-surface` asserts the markers are still in the DOM.
+- Only syntax the styling already speaks for hides (`tt-md-syntax`: headings,
+  strong, em, code). List and quote markers stay: nothing else on the line says
+  "list", so hiding `- ` turned a list into paragraphs. That was caught by
+  looking at the screenshot, not by the assertions, which had all passed.
+- Slots are named by kind now: `slots.prose` for markdown bindings,
+  `slots.bindings` for plain. `case "prose"` falls back to `bindings`, so an
+  older caller is unaffected. `richtext` fields use the same surface, minus
+  peer carets, which they never had.
+- `eval:sidebar` fails at DEV SIGN-IN and has nothing to do with this. It fails
+  identically with `src/` stashed to the pre-change tree. Another silently dead
+  eval, not yet chased.
+
 ## The person's text is the person's (2026-08-27)
 
 - "Create a note about: <2,500 words pasted in>" came back as the agent's

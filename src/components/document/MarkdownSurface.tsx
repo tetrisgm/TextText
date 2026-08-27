@@ -37,9 +37,21 @@ export type SurfaceSelection = {
   to: number;
 };
 
-type Segment = { text: string; className?: string };
+type Segment = { text: string; className?: string; line?: number };
 
 const MARKER = "tt-md-marker";
+/**
+ * Syntax whose meaning the styling already carries, so it can recede.
+ *
+ * A heading is large, strong text is bold, code is mono: the reader learns
+ * nothing from `##` or `**` that the type does not already say. A list bullet
+ * and a quote bar are different. Nothing else on the line says "list", so
+ * hiding `- ` turns a list into a run of paragraphs, which is a change of
+ * meaning rather than a change of noise. Those markers stay.
+ */
+const SYNTAX = "tt-md-syntax";
+/** A marker on the line the caret is in. Hidden markers stay in the source. */
+const MARKER_OPEN = "is-open";
 
 function headingClass(hashes: number): string {
   return `tt-md-h${Math.min(hashes, 4)}`;
@@ -53,7 +65,7 @@ function segmentsForLine(line: string): Segment[] {
     return [
       {
         text: `${heading[1]}${heading[2]}${heading[3]}`,
-        className: `${MARKER} ${cls}`,
+        className: `${MARKER} ${SYNTAX} ${cls}`,
       },
       { text: heading[4], className: cls },
     ];
@@ -86,18 +98,19 @@ function inlineSegments(text: string): Segment[] {
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text))) {
     if (match.index > last) out.push({ text: text.slice(last, match.index) });
+    const syntax = `${MARKER} ${SYNTAX}`;
     if (match[1]) {
-      out.push({ text: match[1], className: MARKER });
+      out.push({ text: match[1], className: syntax });
       out.push({ text: match[2], className: "tt-md-strong" });
-      out.push({ text: match[1], className: MARKER });
+      out.push({ text: match[1], className: syntax });
     } else if (match[3]) {
-      out.push({ text: match[3], className: MARKER });
+      out.push({ text: match[3], className: syntax });
       out.push({ text: match[4], className: "tt-md-em" });
-      out.push({ text: match[3], className: MARKER });
+      out.push({ text: match[3], className: syntax });
     } else {
-      out.push({ text: match[5], className: MARKER });
+      out.push({ text: match[5], className: syntax });
       out.push({ text: match[6], className: "tt-md-code" });
-      out.push({ text: match[7], className: MARKER });
+      out.push({ text: match[7], className: syntax });
     }
     last = pattern.lastIndex;
   }
@@ -110,10 +123,39 @@ function segmentsForValue(value: string): Segment[] {
   const out: Segment[] = [];
   const lines = value.split("\n");
   lines.forEach((line, index) => {
-    out.push(...segmentsForLine(line));
-    if (index < lines.length - 1) out.push({ text: "\n" });
+    for (const segment of segmentsForLine(line)) {
+      out.push({ ...segment, line: index });
+    }
+    if (index < lines.length - 1) out.push({ text: "\n", line: index });
   });
   return out;
+}
+
+/** Which line an absolute character offset falls on. */
+function lineAt(value: string, offset: number): number {
+  let line = 0;
+  const limit = Math.min(Math.max(offset, 0), value.length);
+  for (let i = 0; i < limit; i += 1) {
+    if (value[i] === "\n") line += 1;
+  }
+  return line;
+}
+
+/**
+ * Show the syntax of the line you are writing on, and only that line.
+ *
+ * The markers stay in the DOM either way, so `textContent` is still exactly
+ * the source and every character offset the agent, the Y.Text and the remote
+ * carets depend on is unmoved. Only their display changes, which is why this
+ * can be done by toggling a class rather than by rebuilding anything.
+ */
+function revealLine(root: HTMLElement | null, line: number | null): void {
+  if (!root) return;
+  const markers = root.querySelectorAll<HTMLElement>(`.${SYNTAX}`);
+  for (const marker of markers) {
+    const open = line !== null && marker.dataset.line === String(line);
+    marker.classList.toggle(MARKER_OPEN, open);
+  }
 }
 
 /** Absolute character offset of a DOM position inside the surface. */
@@ -198,6 +240,7 @@ export function MarkdownSurface({
     const at = selectionOffsets(ref.current);
     if (!at) return;
     rangeRef.current = at;
+    revealLine(ref.current, lineAt(value, at.head));
     onSelection(at.anchor, at.head);
   };
 
@@ -207,6 +250,7 @@ export function MarkdownSurface({
       const at = selectionOffsets(ref.current);
       if (!at) return;
       rangeRef.current = at;
+      revealLine(ref.current, lineAt(value, at.head));
       onSelection(at.anchor, at.head);
     };
     const onPointerUp = () => {
@@ -218,7 +262,7 @@ export function MarkdownSurface({
       document.removeEventListener("selectionchange", onSelectionChange);
       document.removeEventListener("pointerup", onPointerUp);
     };
-  }, [onSelection, ref]);
+  }, [onSelection, ref, value]);
 
   const publish = () => {
     const root = ref.current;
@@ -267,7 +311,12 @@ export function MarkdownSurface({
         caretIndex += 1;
       }
     };
-    const pushText = (text: string, from: number, className?: string) => {
+    const pushText = (
+      text: string,
+      from: number,
+      className?: string,
+      line?: number,
+    ) => {
       if (!text) return;
       const to = from + text.length;
       const peer = selections.find((s) => s.from < to && s.to > from);
@@ -275,6 +324,9 @@ export function MarkdownSurface({
       const cls = peer ? `${className ?? ""} tt-md-peer`.trim() : className;
       if (cls) span.className = cls;
       if (peer) span.style.setProperty("--tt-peer", peer.color);
+      if (line !== undefined && cls?.includes(SYNTAX)) {
+        span.dataset.line = String(line);
+      }
       span.textContent = text;
       frag.appendChild(span);
     };
@@ -295,11 +347,17 @@ export function MarkdownSurface({
           segment.text.slice(cut - segStart, boundary - segStart),
           cut,
           segment.className,
+          segment.line,
         );
         emitCaretsUpTo(boundary);
         cut = boundary;
       }
-      pushText(segment.text.slice(cut - segStart), cut, segment.className);
+      pushText(
+        segment.text.slice(cut - segStart),
+        cut,
+        segment.className,
+        segment.line,
+      );
       at = segEnd;
     }
     emitCaretsUpTo(Number.POSITIVE_INFINITY);
@@ -307,6 +365,11 @@ export function MarkdownSurface({
     root.replaceChildren(frag);
     builtRef.current = signature;
     renderedValueRef.current = value;
+    // The spans are new, so whatever was open is gone with them.
+    revealLine(
+      root,
+      focused && keep ? lineAt(value, Math.min(keep.head, value.length)) : null,
+    );
 
     if (focused && keep && !draggingRef.current) {
       const length = root.textContent?.length ?? 0;
@@ -348,7 +411,10 @@ export function MarkdownSurface({
       }}
       onKeyUp={reportSelection}
       onMouseUp={reportSelection}
-      onBlur={() => onSelection(-1, -1)}
+      onBlur={() => {
+        revealLine(ref.current, null);
+        onSelection(-1, -1);
+      }}
     />
   );
 }

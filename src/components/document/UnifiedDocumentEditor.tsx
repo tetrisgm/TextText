@@ -884,21 +884,6 @@ export function UnifiedDocumentEditor({
               ),
             }
           : {}),
-        "content.body": (
-          <div className="tt-collaborative-field tt-field-body">
-            <MarkdownSurface
-              label="Document body"
-              placeholder="Start writing"
-              value={document.content.body}
-              selections={remoteSelections.body}
-              onChange={(value) => updateText("body", value)}
-              onSelection={(anchor, head) =>
-                updateSelection("body", anchor, head)
-              }
-              surfaceRef={bodySurfaceRef}
-            />
-          </div>
-        ),
         ...Object.fromEntries(
           activeTemplate.fields
             .filter((field) => field.visibility !== "hidden")
@@ -913,6 +898,26 @@ export function UnifiedDocumentEditor({
               embedded
             />,
             ]),
+        ),
+      },
+      // The body is markdown, and saying so here is what lets the renderer
+      // hand it to a markdown surface instead of the plain one every other
+      // binding gets.
+      prose: {
+        "content.body": (
+          <div className="tt-collaborative-field tt-field-body">
+            <MarkdownSurface
+              label="Document body"
+              placeholder="Start writing"
+              value={document.content.body}
+              selections={remoteSelections.body}
+              onChange={(value) => updateText("body", value)}
+              onSelection={(anchor, head) =>
+                updateSelection("body", anchor, head)
+              }
+              surfaceRef={bodySurfaceRef}
+            />
+          </div>
         ),
       },
     }),
@@ -1149,7 +1154,14 @@ export function UnifiedDocumentEditor({
         .tt-document.tt-document-editor[data-template]:not(.tt-collection-item)>.tt-stack{gap:var(--tt-gap-md)}
         .tt-md-surface{min-height:36vh;outline:0;white-space:pre-wrap;overflow-wrap:anywhere;text-align:start;caret-color:var(--tt-accent,#0071e3)}
         .tt-md-surface[data-empty="true"]::before{content:attr(data-placeholder);color:var(--muted,#6e6e73);pointer-events:none}
+        /* Syntax the styling already speaks for shows only on the line you are
+           writing on. The markers stay in the DOM, so textContent is still
+           exactly the source and every character offset is unmoved; only their
+           display changes. List and quote markers are not in this set: nothing
+           else on the line says "list". */
         .tt-md-marker{color:color-mix(in srgb,currentColor 32%,transparent);font-weight:400}
+        .tt-md-syntax{display:none}
+        .tt-md-syntax.is-open{display:inline}
         .tt-md-strong{font-weight:700}
         .tt-md-em{font-style:italic}
         .tt-md-code{font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,monospace);font-size:.94em}

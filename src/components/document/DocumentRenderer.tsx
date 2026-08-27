@@ -26,7 +26,23 @@ export type DocumentRenderMetadata = {
 };
 
 export type DocumentRenderSlots = {
+  /**
+   * Editing surfaces for PLAIN bindings, keyed by binding name.
+   *
+   * A binding is plain or markdown according to the node that consumes it,
+   * which is the same thing that decides how it renders. The editor used to
+   * fill every binding here, so a `prose` node and a `text` node were handed
+   * the identical raw textarea, and a note's markdown body was edited as
+   * source: `## What to Create`, markers and all, inside a document whose
+   * every other part was composed from the item type's own primitives.
+   */
   bindings?: Partial<Record<string, ReactNode>>;
+  /**
+   * Editing surfaces for MARKDOWN bindings, keyed by binding name. Consumed by
+   * `prose` nodes, which fall back to `bindings` so an older caller keeps
+   * working unchanged.
+   */
+  prose?: Partial<Record<string, ReactNode>>;
   nodes?: Partial<Record<string, ReactNode>>;
   byline?: ReactNode;
   metadata?: ReactNode;
@@ -1026,7 +1042,7 @@ function NodeRenderer({
       });
     }
     case "prose": {
-      const slot = slots?.bindings?.[node.bind];
+      const slot = slots?.prose?.[node.bind] ?? slots?.bindings?.[node.bind];
       if (slot !== undefined) return <div className="tt-prose">{slot}</div>;
       const value = scalarText(resolveDocumentBinding(document, node.bind));
       return value ? <div className="tt-prose"><Markdown value={value} wikiLinkTargets={wikiLinkTargets} /></div> : null;
