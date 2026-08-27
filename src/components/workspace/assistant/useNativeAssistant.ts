@@ -602,6 +602,16 @@ export function useNativeAssistant({
     scope: string | null;
   } | null>(null);
   const nativeJobRef = useRef<string | null>(null);
+  /**
+   * Commands the workspace refused during this native turn.
+   *
+   * The connected agent's tool calls run immediately, and a refusal used to be
+   * handed back to the agent and nowhere else: the model narrated it in its own
+   * words and the turn was still labelled Done. That is the same hole the cloud
+   * lane had, and it is the one the owner saw, as a paraphrase of "Kind note
+   * does not belong in blog" with an em dash the product never wrote.
+   */
+  const nativeFailuresRef = useRef<string[]>([]);
   const nativeMessageRef = useRef<string | null>(null);
   const nativeThreadRef = useRef<string | null>(null);
   const nativeConversationRef = useRef<string | null>(null);
@@ -694,6 +704,7 @@ export function useNativeAssistant({
     nativeJobRef.current = null;
     nativeMessageRef.current = null;
     nativeProofsRef.current = [];
+    nativeFailuresRef.current = [];
     nativeThreadRef.current = null;
     nativeConversationRef.current = null;
     setThreadBusy(fence.threadKey, false);
@@ -1100,9 +1111,15 @@ export function useNativeAssistant({
             }
             submitNativeAssistantToolResult(event.callId, output);
           } catch (error) {
+            const message = assistantAgentError(error);
+            // The command's own words, in the transcript, next to whatever the
+            // agent decides to say about them. The agent still gets the error
+            // so it can recover.
+            nativeFailuresRef.current = [...nativeFailuresRef.current, message];
+            appendToThread(eventThread, "error", message);
             submitNativeAssistantToolResult(
               event.callId,
-              { error: assistantAgentError(error) },
+              { error: message },
               true,
             );
           }
@@ -1153,11 +1170,25 @@ export function useNativeAssistant({
             );
           }
         }
-        if (nativeJobRef.current)
-          updateAssistantJob(nativeJobRef.current, { status: "done" });
+        if (nativeJobRef.current) {
+          const refused = nativeFailuresRef.current.length;
+          updateAssistantJob(
+            nativeJobRef.current,
+            refused === 0
+              ? { status: "done" }
+              : {
+                  status: "error",
+                  activity:
+                    refused === 1
+                      ? "Nothing changed"
+                      : `Nothing changed (${refused} commands failed)`,
+                },
+          );
+        }
         nativeJobRef.current = null;
         nativeMessageRef.current = null;
         nativeProofsRef.current = [];
+        nativeFailuresRef.current = [];
         nativeTurnFenceRef.current = null;
         nativeThreadRef.current = null;
         nativeConversationRef.current = null;
@@ -1205,6 +1236,7 @@ export function useNativeAssistant({
         nativeJobRef.current = null;
         nativeMessageRef.current = null;
         nativeProofsRef.current = [];
+        nativeFailuresRef.current = [];
         nativeTurnFenceRef.current = null;
         nativeThreadRef.current = null;
         nativeConversationRef.current = null;
@@ -1529,6 +1561,7 @@ export function useNativeAssistant({
             nativeConversationRef.current = null;
             nativeJobRef.current = null;
             nativeProofsRef.current = [];
+            nativeFailuresRef.current = [];
           }
         }
         if (!ownerScopeIsStillCurrent()) {
