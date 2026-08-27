@@ -2563,6 +2563,90 @@ describe("MCP workspace tool adapter", () => {
     expect(mocks.recordAction).not.toHaveBeenCalled();
   });
 
+  it("creates an unplaced note in the notes folder, not the blog folder", async () => {
+    // The executor defaulted every unplaced create to "blog". An explicit note
+    // therefore landed in the one folder whose mode refuses notes, and the
+    // kind-versus-mode check below reported it as an impossible request rather
+    // than as a destination nobody had chosen.
+    const blogFolder = { id: "blog", name: "Blog", path: "blog", mode: "blog" };
+    const notesFolder = {
+      id: "notes",
+      name: "Notes",
+      path: "notes",
+      mode: "notes",
+    };
+    mocks.getAccessibleFolders.mockResolvedValue([blogFolder, notesFolder]);
+    mocks.createDraftInFolder.mockResolvedValue({
+      id: "33333333-3333-4333-8333-333333333333",
+      folderId: "notes",
+      type: "note",
+      slug: "project-requirements",
+      title: "Project requirements",
+      excerpt: "",
+      body: "What to create.",
+      status: "draft",
+      pinned: false,
+      revision: 1,
+    });
+
+    const createItem = registrations().find(
+      (entry) => entry.name === "create_item",
+    )!;
+    const result = await createItem.callback(
+      {
+        kind: "note",
+        title: "Project requirements",
+        body: "What to create.",
+      },
+      auth(["sync"], "Claude"),
+    );
+
+    expect(result.isError).not.toBe(true);
+    expect(mocks.createDraftInFolder).toHaveBeenCalledWith(
+      "local",
+      "notes",
+      expect.anything(),
+    );
+  });
+
+  it("still creates an unplaced article in the blog folder", async () => {
+    const blogFolder = { id: "blog", name: "Blog", path: "blog", mode: "blog" };
+    const notesFolder = {
+      id: "notes",
+      name: "Notes",
+      path: "notes",
+      mode: "notes",
+    };
+    mocks.getAccessibleFolders.mockResolvedValue([blogFolder, notesFolder]);
+    mocks.createDraftInFolder.mockResolvedValue({
+      id: "44444444-4444-4444-8444-444444444444",
+      folderId: "blog",
+      type: "article",
+      slug: "an-essay",
+      title: "An essay",
+      excerpt: "",
+      body: "Body.",
+      status: "draft",
+      pinned: false,
+      revision: 1,
+    });
+
+    const createItem = registrations().find(
+      (entry) => entry.name === "create_item",
+    )!;
+    const result = await createItem.callback(
+      { kind: "article", title: "An essay", body: "Body." },
+      auth(["sync"], "Claude"),
+    );
+
+    expect(result.isError).not.toBe(true);
+    expect(mocks.createDraftInFolder).toHaveBeenCalledWith(
+      "local",
+      "blog",
+      expect.anything(),
+    );
+  });
+
   it("never publishes a private note", async () => {
     const id = "22222222-2222-4222-8222-222222222222";
     mocks.getPostById.mockResolvedValue({

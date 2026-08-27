@@ -1468,6 +1468,22 @@ export async function executeMcpTool(
           );
         }
       }
+      if (!destinationPath && input.kind) {
+        // Route by the kind that was asked for. Defaulting to "blog" here sent
+        // an explicit note into the one folder that refuses notes, and the
+        // kind-versus-mode check below then reported it as an impossible
+        // request. A caller who names a folder is still obeyed, and a create
+        // with no kind still lands on blog, which is what an article wants.
+        const folders = await getAccessibleFolders(
+          blog.handle,
+          accessUser(extra),
+        );
+        const mode = folderModeForType(postTypeForItemKind(input.kind));
+        // Only the private modes need looking up; blog is the fallback below.
+        if (mode === "notes" || mode === "bookmarks") {
+          destinationPath = captureFolderPath(folders, mode) ?? undefined;
+        }
+      }
       const folder = await accessibleFolder(
         blog,
         extra,

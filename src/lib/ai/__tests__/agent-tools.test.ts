@@ -272,6 +272,95 @@ describe("native workspace tool adapter", () => {
     expect(executeTool).not.toHaveBeenCalled();
   });
 
+  it("sends an explicitly asked-for kind to the folder that accepts it", async () => {
+    // A note named by the person used to be normalized into the Blog folder,
+    // whose mode refuses notes, so the executor rejected the request as
+    // impossible. The destination now follows the kind that was asked for.
+    const executeTool = vi
+      .fn()
+      .mockResolvedValueOnce({
+        item: { id: "note-new", title: "Project requirements", status: "draft" },
+      })
+      .mockResolvedValueOnce({
+        item: { id: "post-new", title: "An essay", status: "draft" },
+      });
+    const tools = createWorkspaceAgentTools({
+      handle: "local",
+      getPool: workspacePool,
+      executeTool,
+      refreshPool: async () => {},
+    });
+
+    await tools.executor(
+      "create_item",
+      { kind: "note", title: "Project requirements" },
+      "root-request",
+    );
+    await tools.executor(
+      "create_item",
+      { kind: "article", title: "An essay" },
+      "root-request",
+    );
+
+    expect(executeTool).toHaveBeenNthCalledWith(1, "create_item", {
+      folder_path: "notes",
+      kind: "note",
+      title: "Project requirements",
+    });
+    // Everything public still lands on Blog, which is what it always wanted.
+    expect(executeTool).toHaveBeenNthCalledWith(2, "create_item", {
+      folder_path: "blog",
+      kind: "article",
+      title: "An essay",
+    });
+  });
+
+  it("names the missing folder instead of filing a kind where it cannot go", async () => {
+    // This workspace has no bookmarks folder. The old default would have sent
+    // the bookmark to Blog and produced a kind-versus-mode rejection that
+    // described the wrong problem.
+    const executeTool = vi.fn();
+    const tools = createWorkspaceAgentTools({
+      handle: "local",
+      getPool: workspacePool,
+      executeTool,
+      refreshPool: async () => {},
+    });
+
+    await expect(
+      tools.executor(
+        "create_item",
+        { kind: "bookmark", title: "Read later" },
+        "root-request",
+      ),
+    ).rejects.toThrow("No folder at path bookmarks");
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
+  it("still obeys a folder the caller named, whatever the kind", async () => {
+    const executeTool = vi.fn().mockResolvedValue({
+      item: { id: "kept", title: "Filed by hand", status: "draft" },
+    });
+    const tools = createWorkspaceAgentTools({
+      handle: "local",
+      getPool: workspacePool,
+      executeTool,
+      refreshPool: async () => {},
+    });
+
+    await tools.executor(
+      "create_item",
+      { kind: "note", title: "Filed by hand", folder_path: "notes" },
+      "root-request",
+    );
+
+    expect(executeTool).toHaveBeenCalledWith("create_item", {
+      folder_path: "notes",
+      kind: "note",
+      title: "Filed by hand",
+    });
+  });
+
   it("defaults root requests to Blog and creates every requested post", async () => {
     const executeTool = vi
       .fn()

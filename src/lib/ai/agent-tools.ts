@@ -255,20 +255,37 @@ function normalizeFolderPath(
   return prefix?.path ?? raw;
 }
 
-function defaultBlogFolderPath(
+/**
+ * Where an item of this kind belongs when the model named no folder.
+ *
+ * This used to answer "blog" for everything. A note asked for by name was
+ * therefore filed into the one folder that refuses notes, and the executor's
+ * kind-versus-mode check reported the collision as if the request had been
+ * impossible: "Kind note does not belong in blog". The model had done nothing
+ * wrong, and neither had the person; two layers of our own normalization had
+ * overwritten the destination before either was consulted.
+ *
+ * A caller who names a folder still gets that folder, and an unrecognized kind
+ * still lands on blog, which is what an article, media post or video post
+ * wants. Capture already routed this way; ordinary creation now agrees with it.
+ */
+function defaultFolderPathForKind(
   folders: Array<{ path: string; mode?: string }>,
+  kind: unknown,
 ): string {
+  const mode =
+    kind === "note" ? "notes" : kind === "bookmark" ? "bookmarks" : "blog";
   const exact = folders.find(
-    (folder) => folder.path === "blog" && folder.mode === "blog",
+    (folder) => folder.path === mode && folder.mode === mode,
   );
   if (exact) return exact.path;
-  const blogFolders = folders
-    .filter((folder) => folder.mode === "blog")
+  const matching = folders
+    .filter((folder) => folder.mode === mode)
     .sort((left, right) => {
       const depth = left.path.split("/").length - right.path.split("/").length;
       return depth || left.path.localeCompare(right.path);
     });
-  return blogFolders[0]?.path ?? "blog";
+  return matching[0]?.path ?? mode;
 }
 
 function normalizeLegacyNativeArgs(
@@ -290,7 +307,7 @@ function normalizeLegacyNativeArgs(
     (typeof normalized.folder_path !== "string" ||
       !normalized.folder_path.trim())
   ) {
-    normalized.folder_path = defaultBlogFolderPath(folders);
+    normalized.folder_path = defaultFolderPathForKind(folders, normalized.kind);
   }
   if (
     name === "create_item" &&
@@ -892,7 +909,7 @@ export function createWorkspaceAgentTools(
           ? normalizeFolderPath(input.folder_path, pool().folders)
           : input.capture
             ? undefined
-            : defaultBlogFolderPath(pool().folders);
+            : defaultFolderPathForKind(pool().folders, input.kind);
         if (
           folderPath &&
           !pool().folders.some((candidate) => candidate.path === folderPath)
@@ -1262,7 +1279,7 @@ export function createWorkspaceAgentTools(
     toolDefinitions: WORKSPACE_AGENT_TOOL_DEFINITIONS,
     describeContext: (view) => {
       if (!view || view.level === "root" || !view.level) {
-        const blogPath = defaultBlogFolderPath(pool().folders);
+        const blogPath = defaultFolderPathForKind(pool().folders, "article");
         return `The user is at the workspace root, looking at the folder list. When no destination is named, create blog posts and other public items in the Blog folder at path "${blogPath}".`;
       }
       if (view.level === "section") {
