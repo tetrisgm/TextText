@@ -650,6 +650,27 @@ in-app assistant, local CLI, or hosted MCP.
   `WebAppWindowController.codexTurnProgress(method:)` names the events that
   restart the clock; the per-tool deadline is a separate 8s and unchanged.
 
+## The two lanes create items differently (2026-08-27)
+
+- A CLOUD write is staged as a proposal the owner approves; a NATIVE (connected
+  agent) tool call runs immediately through `createWorkspaceAgentTools`. They
+  resolve a missing destination in SEPARATE code, so a routing fix in one
+  proves nothing about the other. `eval:assistant-create` covers the cloud
+  lane; `eval:native-create` covers the native one.
+- Telling them apart from a screenshot: the native lane labels its answers
+  "Answered by OpenAI" (hardcoded), and it stages no proposal, so an owner with
+  zero rows in `ai_write_proposals` has never used the cloud lane. That is how
+  the 2026-08-26 report was placed on the native lane after the fact.
+- The native lane had the cloud lane's old receipt hole: a refused command was
+  handed to the agent and nowhere else, so the rail showed only the model's
+  retelling ("Saved that as a note." over a note that was never created) and
+  the job still read Done. It now appends the command's own words to the
+  transcript and the job says "Nothing changed".
+- When neutering a client-side fix to prove an eval has teeth, WAIT for the dev
+  server to rebuild. A six-second wait served a stale bundle and the eval
+  passed against code that was no longer there, which reads exactly like a
+  toothless test. Twenty seconds plus a request, then run.
+
 ## Browser eval state, all green (2026-08-27)
 
 - Run with `NEXT_PUBLIC_ROOT_DOMAIN=localhost:3000 TEXTTEXT_AI_BASE_URL=http://localhost:3999/v1 npm run dev`
@@ -659,7 +680,7 @@ in-app assistant, local CLI, or hosted MCP.
   assistant turn answers "The assistant could not finish that."
 - Green as of this date: `eval:features`, `eval:home-layout`, `eval:folder-look`,
   `eval:save-as-look`, `eval:item-type`, `eval:assistant-create`,
-  `eval:turn-receipt`, `eval:turn-progress`.
+  `eval:turn-receipt`, `eval:turn-progress`, `eval:native-create`.
 - `eval:item-type`'s first run after a recompile can fail two board checks on
   timing. It passes on a warm server; two consecutive clean runs is the bar.
 
