@@ -650,6 +650,43 @@ in-app assistant, local CLI, or hosted MCP.
   `WebAppWindowController.codexTurnProgress(method:)` names the events that
   restart the clock; the per-tool deadline is a separate 8s and unchanged.
 
+## Deploying the web app alone (2026-08-27)
+
+- `npm run deploy:web` (`release/deploy-web.sh`) is the ONLY hand path to
+  production for the web app. It is not a release: no Mac version, no appcast,
+  no store. `release/ship.sh` still owns those.
+- It exists because a hand-run `vercel build && vercel deploy --prod` is three
+  steps short of safe, and on 2026-08-27 all three bit in one evening:
+  1. **The database was behind the build.** ship.sh migrates first; the hand
+     path did not. A build expecting `api_tokens.kind` went live against a
+     database without it. Every HTML route answered 200 and the Mac window
+     showed "Cannot reach https://texttext.app", because the only request that
+     reached the broken query was its session exchange, and a malformed token
+     is rejected before the query, so hand probing showed a healthy 401.
+  2. **The domain does not follow a CLI deploy reliably.** texttext.app is an
+     alias that must be promoted, and sometimes the deploy takes it and
+     sometimes it does not. "Deployed" read as "live" while the old build
+     served.
+  3. **Nothing checked.** The breakage was found by looking at the app.
+- So the script migrates, builds, deploys, records what the DOMAIN currently
+  serves (`vercel inspect texttext.app`, not the newest deployment), promotes,
+  waits to SEE the new deployment id on the domain, verifies, and puts the old
+  one back if verification fails.
+- `npm run verify:deployment <origin>` is that verification on its own. Its
+  load-bearing probe is `POST /api/app/session` with a WELL-FORMED unknown
+  token: 401 is healthy, 5xx means the build and the database disagree.
+- Traps found while building it, all of which produced a failed deploy and no
+  production change: a user-configured `NEXT_DEPLOYMENT_ID` must be unique per
+  project (so it carries a timestamp, not just the commit); a dev server on
+  :3000 writes `.next` while the build reads it, and Vercel then rejects the
+  output with no message; and `vercel promote` exits 409 when the deploy
+  already took the domain, which under `set -e` skipped the verification.
+- The Mac window now names the failing URL and the error domain and code on its
+  unreachable page, and logs the same line to `app.texttext.mac:web-navigation`.
+  "Cannot reach" with neither is a dead end: a policy cancel, a DNS failure and
+  a refused connection all read the same. WebKitErrorDomain 102 is the app's own
+  `decisionHandler(.cancel)`, not an unreachable server.
+
 ## Mac app: editions, TestFlight, sign-in
 
 - Distribution model (owner, 2026-08-11): Developer ID + Sparkle is the

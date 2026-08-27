@@ -92,6 +92,9 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     private static let codexTurnSilenceSeconds: TimeInterval = 30
     private static let codexToolTimeoutSeconds: TimeInterval = 8
     private static let codexTimeoutRecoverySeconds: TimeInterval = 2
+    private static let webLog = Logger(
+        subsystem: "app.texttext.mac",
+        category: "web-navigation")
     private static let codexLog = Logger(
         subsystem: "app.texttext.mac",
         category: "native-assistant")
@@ -1613,8 +1616,19 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     }
 
     private func showUnreachable(_ error: Error) {
+        let failure = error as NSError
         // -999 is "a newer navigation replaced this one", which is normal.
-        if (error as NSError).code == NSURLErrorCancelled { return }
+        if failure.code == NSURLErrorCancelled { return }
+        // Which URL, and which failure. "Cannot reach" with neither is a dead
+        // end: a policy cancel, a DNS failure and a refused connection all read
+        // the same, and the difference is the whole diagnosis.
+        let failingURL =
+            (failure.userInfo[NSURLErrorFailingURLStringErrorKey] as? String)
+            ?? (failure.userInfo[NSURLErrorFailingURLErrorKey] as? URL)?.absoluteString
+            ?? webView.url?.absoluteString
+            ?? origin.absoluteString
+        Self.webLog.error(
+            "navigation failed: \(failure.domain, privacy: .public) \(failure.code, privacy: .public) at \(failingURL, privacy: .public)")
         window?.title = "TextText"
         let isLocal = ["localhost", "127.0.0.1", "::1"].contains(origin.host ?? "")
         let hint = isLocal
@@ -1646,7 +1660,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         </style>
         <main>
           <h1>Cannot reach \(origin.absoluteString)</h1>
-          <p>\(reason)</p>
+          <p>\(reason) (\(failure.domain) \(failure.code))</p>
+          <p>\(failingURL)</p>
           <p>\(hint)</p>
           <code>\(command)</code>
           <button onclick="window.webkit.messageHandlers.textTextApp.postMessage({action:'retry'})">

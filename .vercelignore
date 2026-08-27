@@ -1,0 +1,6 @@
+# A prebuilt deploy ships .vercel/output. Uploading the local .next as well
+# made the CLI warn on every deploy and sent thousands of files nobody reads.
+.next
+node_modules
+mac/build
+.texttext

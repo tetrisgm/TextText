@@ -18,6 +18,8 @@
     "start": "next start",
     "lint": "eslint",
     "ship": "release/ship.sh",
+    "deploy:web": "release/deploy-web.sh",
+    "verify:deployment": "tsx scripts/verify-deployment.ts",
     "promote:local": "release/promote-local.sh",
     "promote:local:test": "release/test-promote-local.sh && mac/scripts/test-install-local.sh",
     "testflight:build:test": "release/test-prepare-testflight-build.sh",
