@@ -650,6 +650,32 @@ in-app assistant, local CLI, or hosted MCP.
   `WebAppWindowController.codexTurnProgress(method:)` names the events that
   restart the clock; the per-tool deadline is a separate 8s and unchanged.
 
+## Two notes may share a title (2026-08-27)
+
+- The slug comes from the title and `(folder_id, slug)` is unique among live
+  rows, so asking for a second note called the same thing as the first threw a
+  constraint violation that reached the person as "The item could not be saved.
+  Try again." Trying again produced the same collision forever, and the owner
+  hit it on the second run of their own prompt.
+- `freeSlugInFolder` in `createDraftInFolder` picks the next free slug. Every
+  create path goes through that function, so the rule is there and not in each
+  caller that derives a slug. `eval:native-create` asks for the same note twice
+  in one run; without the fix it fails with the exact 409 the owner saw.
+
+## The Mac app keeps running the JS it started with (2026-08-27)
+
+- A deploy does not reach an open app window. The WKWebView holds the bundle it
+  loaded, so fixes land in production and the person keeps using the old code:
+  the marker hiding shipped at 12:33 and an app open since before that still
+  showed every `##` at 14:15. Verified the deployed artifact DID contain the
+  rule, so this is staleness and not a missing deploy.
+- There is no version-skew signal in the app: nothing compares the running
+  build with the deployed one and nothing offers a reload. `NEXT_DEPLOYMENT_ID`
+  exists for Server Action skew, which is a different problem and does not help
+  an idle window. Quitting and reopening is the only cure today.
+- This makes every "reload and try" instruction load-bearing, and it makes
+  bug reports ambiguous: a report may describe code that is no longer live.
+
 ## What keeps the writing surface safe to change (2026-08-27)
 
 - The surface styles markdown with FOUR HAND-ROLLED REGEXES (heading, quote,

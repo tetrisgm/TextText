@@ -236,6 +236,30 @@ async function main() {
     if (sawWorking) console.log(`    (it said "${workingText}")`);
     await page.waitForTimeout(2000);
 
+    // The owner asked for the same note twice and the second attempt died on a
+    // slug collision with "The item could not be saved. Try again.", which
+    // trying again could never fix. Two notes may share a title.
+    const secondAsk = await page.evaluate(
+      async ({ workspaceHandle, title }) => {
+        const response = await fetch("/api/ai/tools", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            handle: workspaceHandle,
+            name: "create_item",
+            args: { kind: "note", title, body: "Asked for twice." },
+          }),
+        });
+        return { status: response.status, body: (await response.text()).slice(0, 240) };
+      },
+      { workspaceHandle: handle, title: NOTE_TITLE },
+    );
+    check(
+      "asking for the same note twice does not collide",
+      secondAsk.status === 200 && !/could not be saved/i.test(secondAsk.body),
+      `${secondAsk.status} ${secondAsk.body.slice(0, 140)}`,
+    );
+
     const bridge = await page.evaluate(() => {
       const state = (
         window as unknown as {

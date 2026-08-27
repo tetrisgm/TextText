@@ -2465,6 +2465,36 @@ function postTypeBelongsInFolder(type: PostType, mode: FolderMode): boolean {
  * documents inherit the folder's template and are private until explicitly
  * shared or published.
  */
+/**
+ * A slug nothing live in this folder is already using.
+ *
+ * The slug comes from the title, and `(folder_id, slug)` is unique among live
+ * rows, so asking for a second note called the same thing as the first threw
+ * a constraint violation that reached the person as "The item could not be
+ * saved. Try again." Trying again produced the same collision forever. Two
+ * notes may share a title; only their URLs have to differ.
+ *
+ * Every create goes through this function, so the rule lives here rather than
+ * in each caller that happens to derive a slug.
+ */
+async function freeSlugInFolder(
+  folderId: string,
+  desired: string,
+): Promise<string> {
+  if (!db) return desired;
+  const taken = await db
+    .select({ slug: posts.slug })
+    .from(posts)
+    .where(and(eq(posts.folderId, folderId), isNull(posts.deletedAt)));
+  const used = new Set(taken.map((row) => row.slug));
+  if (!used.has(desired)) return desired;
+  for (let suffix = 2; suffix < 1000; suffix += 1) {
+    const candidate = sanitizePostSlug(`${desired}-${suffix}`, "post");
+    if (!used.has(candidate)) return candidate;
+  }
+  return sanitizePostSlug(`${desired}-${Date.now().toString(36)}`, "post");
+}
+
 export async function createDraftInFolder(
   handle: string,
   folderId: string,
@@ -2485,9 +2515,12 @@ export async function createDraftInFolder(
   }
   const blogId = await blogIdFor(handle);
   const id = crypto.randomUUID();
-  const slug = sanitizePostSlug(
-    options.initial?.slug ?? `untitled-${Date.now().toString(36)}`,
-    "post",
+  const slug = await freeSlugInFolder(
+    folder.id,
+    sanitizePostSlug(
+      options.initial?.slug ?? `untitled-${Date.now().toString(36)}`,
+      "post",
+    ),
   );
   const seed: Post = {
     type,
