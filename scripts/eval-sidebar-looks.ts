@@ -26,7 +26,7 @@
 // that was never coming. The preflight below says so instead.
 
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { chromium, type Page } from "playwright";
 import { ASSISTANT_SYSTEM_PROMPT } from "../src/lib/ai/system-prompt";
 import { cloudAssistantToolNames } from "../src/lib/ai/cloud-tools";
@@ -42,6 +42,9 @@ const PORT = Number(process.env.SIDEBAR_EVAL_PORT ?? 3180);
 // cookie set on the other host is never sent back.
 const BASE = `http://localhost:${PORT}`;
 const MAX_STEPS = 14;
+/** Committed, so drift is visible across machines and months. */
+const BASELINE = "docs/sidebar-looks-baseline.json";
+const UPDATE_BASELINE = process.argv.includes("--update-baseline");
 
 mkdirSync(OUT, { recursive: true });
 if (!process.env.DATABASE_URL) {
@@ -84,7 +87,122 @@ const BRIEFS = [
     reference:
       "Raindrop: index of cards, each with a thumbnail, the title, and the source domain small and quiet. Item: a calm reading view with the source and a link out. Editor: the URL is the primary field.",
   },
+  // The five above cover prose, plain notes, pages, tasks and links. These
+  // four reach primitives none of them touch: checklist and facts, a gallery,
+  // a heatmap over dates, and rows with a quote. A primitive the suite never
+  // asks for is a primitive nobody finds out is broken.
+  {
+    key: "recipe-cards",
+    ask: "Make my notes work like a recipe box: each recipe has ingredients I can tick off, a cook time, and how many it serves.",
+    folder: "notes",
+    reference:
+      "Ingredients as a real checklist that ticks, not prose. Cook time and servings shown as facts near the top. Index: cards you could pick a dinner from.",
+  },
+  {
+    key: "photo-journal",
+    ask: "I want a photo journal: each entry is a few pictures and a short caption, and the index should be a wall of images by date.",
+    reference:
+      "Item: a gallery of images with the caption under them, not one cover and a body. Index: image-led and dated, closer to a wall than a list.",
+  },
+  {
+    key: "habit-tracker",
+    ask: "Track my running: one entry per run with the date and the distance, and show me the year as a grid of days so I can see the gaps.",
+    folder: "notes",
+    reference:
+      "A DIFFERENT KIND OF THING. Fields: date and distance (number). The collection is a heatmap or calendar keyed on the date, not a list.",
+  },
+  {
+    key: "reading-notes",
+    ask: "Reading notes: each book gets my rating, and quotes I want to keep with the page number.",
+    folder: "notes",
+    reference:
+      "Rating as an enum or number, not prose. Quotes as rows with a page number, set as quotes rather than paragraphs. Index: rows that read as books with their rating.",
+  },
 ] as const;
+
+/**
+ * The part of a result that should hold still between runs.
+ *
+ * The model is not deterministic, so fonts, sizes and colours differ every
+ * time and comparing them would cry wolf on every run. What should NOT drift
+ * is the shape of the answer: whether a look was applied at all, which parts
+ * the index and the item show, and whether the fields the brief asked for are
+ * reachable in the editor or buried. When one of those changes, something
+ * about the model, the prompt, or the primitives changed with it.
+ *
+ * This is measured from the RENDERED page, never from the blueprint JSON.
+ * Scoring a look by asserting on its JSON is how an earlier version of this
+ * eval passed while producing pages nobody would ship.
+ */
+type BriefShape = {
+  applied: boolean;
+  indexShows: string[];
+  itemHas: string[];
+  editorInline: string[];
+  editorBuried: string[];
+};
+
+function flagsOf(value: unknown): string[] {
+  if (!value || typeof value !== "object") return [];
+  return Object.entries(value as Record<string, unknown>)
+    .filter(([, on]) => on === true)
+    .map(([name]) => name)
+    .sort();
+}
+
+function labelsOf(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  // Keep the field NAME, drop its type: a field moving from text to richtext
+  // is a design choice, a field disappearing is a regression.
+  return value
+    .map((entry) => String(entry).split(":")[0].trim())
+    .filter(Boolean)
+    .sort();
+}
+
+function stableShape(input: {
+  applied: boolean;
+  index: Record<string, unknown> | null;
+  item: Record<string, unknown> | null;
+  editor: Record<string, unknown> | null;
+}): BriefShape {
+  return {
+    applied: input.applied,
+    indexShows: flagsOf(input.index?.shows),
+    itemHas: flagsOf(input.item?.has),
+    editorInline: labelsOf(input.editor?.inline),
+    editorBuried: labelsOf(input.editor?.buried),
+  };
+}
+
+function describeDrift(before: BriefShape, after: BriefShape): string[] {
+  const drift: string[] = [];
+  if (before.applied !== after.applied) {
+    drift.push(`applied ${before.applied} -> ${after.applied}`);
+  }
+  const lists: Array<keyof BriefShape> = [
+    "indexShows",
+    "itemHas",
+    "editorInline",
+    "editorBuried",
+  ];
+  for (const key of lists) {
+    const was = before[key] as string[];
+    const now = after[key] as string[];
+    const gone = was.filter((entry) => !now.includes(entry));
+    const added = now.filter((entry) => !was.includes(entry));
+    if (gone.length || added.length) {
+      drift.push(
+        `${key}${gone.length ? ` -${gone.join(",")}` : ""}${
+          added.length ? ` +${added.join(",")}` : ""
+        }`,
+      );
+    }
+  }
+  return drift;
+}
+
+const shapes: Record<string, BriefShape> = {};
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const notes: string[] = [];
@@ -650,6 +768,8 @@ async function main(): Promise<void> {
     await page.screenshot({ path: `${OUT}/${brief.key}-2-index.png` });
     const indexMeasure = await page.evaluate(MEASURE_INDEX);
     note(`  index:  ${JSON.stringify(indexMeasure)}`);
+    let itemMeasured: Record<string, unknown> | null = null;
+    let editorMeasured: Record<string, unknown> | null = null;
 
     const firstCard = page
       .locator("[data-workspace-post-id] a, .universal-item-card a, .blog-folder-feed-link")
@@ -659,6 +779,7 @@ async function main(): Promise<void> {
       await page.waitForTimeout(2800);
       await page.screenshot({ path: `${OUT}/${brief.key}-3-item.png` });
       const itemMeasure = await page.evaluate(MEASURE_ITEM);
+      itemMeasured = itemMeasure as Record<string, unknown>;
       note(`  item:   ${JSON.stringify(itemMeasure)}`);
       // The third surface: creating or editing one of these things.
       //
@@ -691,7 +812,8 @@ async function main(): Promise<void> {
       await page.waitForTimeout(1500);
       if (await page.locator(".tt-unified-editor").count()) {
         await page.screenshot({ path: `${OUT}/${brief.key}-4-editor.png` });
-        note(`  editor: ${JSON.stringify(await page.evaluate(MEASURE_EDITOR))}`);
+        editorMeasured = (await page.evaluate(MEASURE_EDITOR)) as Record<string, unknown>;
+        note(`  editor: ${JSON.stringify(editorMeasured)}`);
       } else {
         note("  editor: could not reach it");
       }
@@ -706,6 +828,12 @@ async function main(): Promise<void> {
     note(`  ${applied ? "assistant applied a look" : "NO LOOK APPLIED (still built-in)"}`);
     const folder = { after: listed.text.slice(0, 4000) };
     summary.push({ brief: brief.key, steps: transcript.length, applied });
+    shapes[brief.key] = stableShape({
+      applied,
+      index: indexMeasure as Record<string, unknown>,
+      item: itemMeasured,
+      editor: editorMeasured,
+    });
     writeFileSync(
       `${OUT}/${brief.key}-transcript.json`,
       JSON.stringify({ brief, handle, transcript, folder }, null, 2),
@@ -722,6 +850,47 @@ async function main(): Promise<void> {
       }`,
     );
   }
+  // Regression tracking, without pretending to score.
+  //
+  // The baseline is committed, so drift is visible across machines and months
+  // rather than only against whatever this laptop ran last. It reports what
+  // CHANGED and leaves the judgement where it belongs: with the screenshots.
+  const ran = Object.keys(shapes);
+  if (ran.length > 0) {
+    let baseline: Record<string, BriefShape> = {};
+    if (existsSync(BASELINE)) {
+      try {
+        baseline = JSON.parse(readFileSync(BASELINE, "utf8")) as Record<string, BriefShape>;
+      } catch {
+        note(`\n(baseline at ${BASELINE} is unreadable; treating every brief as new)`);
+      }
+    }
+    note("\n--- against the committed baseline ---");
+    let drifted = 0;
+    for (const key of ran) {
+      const before = baseline[key];
+      if (!before) {
+        note(`${key.padEnd(20)} new, nothing to compare`);
+        continue;
+      }
+      const drift = describeDrift(before, shapes[key]);
+      if (drift.length === 0) {
+        note(`${key.padEnd(20)} unchanged`);
+      } else {
+        drifted += 1;
+        note(`${key.padEnd(20)} DRIFTED: ${drift.join("; ")}`);
+      }
+    }
+    if (UPDATE_BASELINE) {
+      writeFileSync(BASELINE, `${JSON.stringify({ ...baseline, ...shapes }, null, 2)}\n`);
+      note(`\nbaseline updated: ${BASELINE}`);
+    } else if (drifted > 0) {
+      note(
+        `\n${drifted} brief(s) drifted. Look at the screenshots, then either fix it or accept it with --update-baseline.`,
+      );
+    }
+  }
+
   note(
     `\nScreenshots in ${OUT}. These are not scored here: look at them against the brief's reference.`,
   );

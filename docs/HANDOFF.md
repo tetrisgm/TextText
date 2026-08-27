@@ -650,6 +650,29 @@ in-app assistant, local CLI, or hosted MCP.
   `WebAppWindowController.codexTurnProgress(method:)` names the events that
   restart the clock; the per-tool deadline is a separate 8s and unchanged.
 
+## Measuring the AI look suite (2026-08-27)
+
+- Nine briefs now, not five. The original five covered prose, plain notes,
+  pages, tasks and links. The four added reach primitives none of them touched:
+  checklist and facts (recipe-cards), gallery (photo-journal), heatmap over
+  dates (habit-tracker), rows and quotes (reading-notes). A primitive the suite
+  never asks for is a primitive nobody finds out is broken.
+- `docs/sidebar-looks-baseline.json` is a COMMITTED baseline of the shape of
+  each answer: whether a look was applied, what the index and item show, and
+  which fields are inline vs buried. Measured from the RENDERED page, never
+  from the blueprint JSON. Drift is reported per brief; accepting it is a
+  deliberate `--update-baseline`.
+- It deliberately tracks only what should hold still. The model is not
+  deterministic, so fonts, sizes and colours differ every run and comparing
+  them would cry wolf every time. It still does not score: it says what
+  changed, and the screenshots are still judged by eye.
+- FIRST FINDING, unfixed: `habit-tracker` applies a look and produces NO fields
+  at all (`inline: [], buried: []`) with an index that errors
+  "no collection item on the page", though the brief asks for a date, a
+  distance and a day grid. `todo-list` gets Completed and Priority inline but
+  not the due date. That is the model's design quality, not the engine, and it
+  is now visible instead of invisible.
+
 ## texttext new: the hang was a symptom, the silence was the bug (2026-08-27)
 
 - Reported as "hangs three minutes and creates nothing". It does not hang on

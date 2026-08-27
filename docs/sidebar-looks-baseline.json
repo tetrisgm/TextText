@@ -1,0 +1,150 @@
+{
+  "medium-blog": {
+    "applied": true,
+    "indexShows": [
+      "badge",
+      "caption",
+      "cover",
+      "facts"
+    ],
+    "itemHas": [
+      "byline",
+      "cover"
+    ],
+    "editorInline": [
+      "Author",
+      "Cover image"
+    ],
+    "editorBuried": [
+      "Reading time",
+      "Subtitle"
+    ]
+  },
+  "apple-notes": {
+    "applied": true,
+    "indexShows": [
+      "caption"
+    ],
+    "itemHas": [
+      "icon"
+    ],
+    "editorInline": [],
+    "editorBuried": []
+  },
+  "notion-page": {
+    "applied": true,
+    "indexShows": [
+      "caption"
+    ],
+    "itemHas": [
+      "icon"
+    ],
+    "editorInline": [],
+    "editorBuried": []
+  },
+  "todo-list": {
+    "applied": true,
+    "indexShows": [
+      "badge",
+      "caption",
+      "checkbox",
+      "facts"
+    ],
+    "itemHas": [
+      "icon"
+    ],
+    "editorInline": [
+      "Completed",
+      "Priority"
+    ],
+    "editorBuried": [
+      "Due date"
+    ]
+  },
+  "raindrop-bookmarks": {
+    "applied": true,
+    "indexShows": [
+      "badge",
+      "caption",
+      "cover",
+      "facts"
+    ],
+    "itemHas": [
+      "cover",
+      "icon"
+    ],
+    "editorInline": [
+      "Description",
+      "Preview image",
+      "Reading status *",
+      "Site"
+    ],
+    "editorBuried": [
+      "Link *",
+      "Saved"
+    ]
+  },
+  "recipe-cards": {
+    "applied": true,
+    "indexShows": [],
+    "itemHas": [
+      "icon",
+      "metadata"
+    ],
+    "editorInline": [
+      "Ingredients *"
+    ],
+    "editorBuried": [
+      "Cook time *",
+      "Serves *"
+    ]
+  },
+  "photo-journal": {
+    "applied": true,
+    "indexShows": [
+      "badge",
+      "caption",
+      "cover",
+      "facts"
+    ],
+    "itemHas": [
+      "byline",
+      "cover",
+      "icon"
+    ],
+    "editorInline": [
+      "Caption *",
+      "Photos *"
+    ],
+    "editorBuried": [
+      "Date *",
+      "Location"
+    ]
+  },
+  "habit-tracker": {
+    "applied": true,
+    "indexShows": [],
+    "itemHas": [
+      "metadata"
+    ],
+    "editorInline": [],
+    "editorBuried": []
+  },
+  "reading-notes": {
+    "applied": true,
+    "indexShows": [
+      "badge",
+      "caption",
+      "facts"
+    ],
+    "itemHas": [
+      "icon"
+    ],
+    "editorInline": [
+      "Quotes to keep"
+    ],
+    "editorBuried": [
+      "My rating"
+    ]
+  }
+}
