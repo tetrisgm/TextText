@@ -650,6 +650,26 @@ in-app assistant, local CLI, or hosted MCP.
   `WebAppWindowController.codexTurnProgress(method:)` names the events that
   restart the clock; the per-tool deadline is a separate 8s and unchanged.
 
+## The page can tell when it is out of date (2026-08-27)
+
+- A Mac window keeps the bundle it loaded, so a deploy never reaches an app
+  that is already open. A fix shipped at 12:33, the deployed artifact contained
+  it, and a window open since before that showed the old behaviour at 14:15.
+  The owner reported a fixed bug as broken and was right to: nothing on screen
+  could have told them.
+- `next.config.ts` now inlines the same build id into the client (`env:
+  NEXT_PUBLIC_BUILD_ID`) and `/api/app/build` returns it. Both come from the
+  build, not the runtime environment, so the endpoint answers for whichever
+  deployment handled the request. `compareBuild` in `src/lib/deployed-build.ts`
+  holds the decision, away from React and the network, with its own tests.
+- `UpdatedBuildNotice` checks on focus and visibility (when a person returns to
+  an app they left open) and otherwise every ten minutes. It NEVER reloads by
+  itself: a reload mid-sentence would throw away unsaved writing, and being
+  out of date is not urgent enough to take that risk for someone.
+- It stays silent when the id is "development", where `next dev` reports the
+  same value forever while the code changes on every save, and silent when the
+  endpoint is unreachable. Saying nothing beats nagging.
+
 ## capabilities is gone (owner ruling, 2026-08-27)
 
 - A look used to declare which product features its items supported: assets,

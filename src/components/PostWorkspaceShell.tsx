@@ -62,6 +62,7 @@ import {
 } from "@/components/editor/EditableCover";
 import { FolderLookPicker } from "@/components/workspace/FolderLookPicker";
 import { ItemTypeStudio } from "@/components/workspace/ItemTypeStudio";
+import { UpdatedBuildNotice } from "@/components/workspace/UpdatedBuildNotice";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import { ReaderComments } from "@/components/workspace/ReaderComments";
 import { ReaderFindHighlights } from "@/components/workspace/ReaderFindHighlights";
@@ -7037,6 +7038,7 @@ function LocalWorkspaceShell({
           />
         </AssistantSidebar>
       </div>
+      <UpdatedBuildNotice />
       {itemTypeStudioFolderPath !== null ? (
         <ItemTypeStudio
           blogId={displayPool.blogId}

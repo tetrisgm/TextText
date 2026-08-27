@@ -5,6 +5,22 @@ import type { NextConfig } from "next";
 const devOrigin = process.env.TEXTTEXT_DEV_ORIGIN;
 const tsconfigPath = process.env.TEXTTEXT_NEXT_TSCONFIG_PATH;
 
+/**
+ * Which build this is, for both halves of the app.
+ *
+ * `deploymentId` below already stamps it for Server Action skew, but nothing
+ * could ASK what was running. A Mac window keeps the bundle it loaded, so a
+ * deploy never reached an open app: a fix shipped hours earlier looked broken
+ * because the person was still running the code from before it. Baking the
+ * same value into the client and into /api/app/build lets the running page
+ * compare itself against what the origin serves now.
+ */
+const buildId =
+  process.env.NEXT_DEPLOYMENT_ID ??
+  process.env.VERCEL_GIT_COMMIT_SHA ??
+  process.env.VERCEL_DEPLOYMENT_ID ??
+  "development";
+
 const nextConfig: NextConfig = {
   // Live client evaluations use an isolated build directory so a stopped
   // evaluator cannot leave stale development route manifests for normal work.
@@ -20,6 +36,9 @@ const nextConfig: NextConfig = {
     process.env.NEXT_DEPLOYMENT_ID ??
     process.env.VERCEL_GIT_COMMIT_SHA ??
     process.env.VERCEL_DEPLOYMENT_ID,
+  // Inlined at build time, so the client and the server agree on which build
+  // they came from without either reading the runtime environment.
+  env: { NEXT_PUBLIC_BUILD_ID: buildId },
   allowedDevOrigins: devOrigin ? [devOrigin, `*.${devOrigin}`] : [],
   devIndicators: false,
   async headers() {
