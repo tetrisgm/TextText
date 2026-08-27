@@ -650,6 +650,23 @@ in-app assistant, local CLI, or hosted MCP.
   `WebAppWindowController.codexTurnProgress(method:)` names the events that
   restart the clock; the per-tool deadline is a separate 8s and unchanged.
 
+## Driven in the real app, not described (2026-08-27)
+
+- Everything below was verified by typing the owner's own prompt into the
+  installed Mac app through computer-use and reading the result out of the
+  production database. The handoff note that the Mac webview "ignores synthetic
+  automation clicks" is about JS-dispatched events; real OS-level clicks work,
+  so the app IS drivable and a session should drive it rather than ask.
+- Verified in-app: the working line appears for the whole turn ("Working with
+  the TextText Agent"); a repeated title no longer collides
+  (project-requirements-2, -3); the note body is byte-for-byte the pasted text
+  (1341 bytes in, 1341 stored, every line verbatim); `##` markers are hidden in
+  edit mode with list bullets kept; the sort reads "Recently opened"; and a
+  receipt carries no Save-to-Notes or thumbs while a plain answer still does.
+- The clipboard is shared with the person. A paste picked up a path they had
+  copied seconds earlier and sent it as the prompt. Re-write the clipboard and
+  VERIFY the composer contents before submitting; do not assume a write stuck.
+
 ## Two notes may share a title (2026-08-27)
 
 - The slug comes from the title and `(folder_id, slug)` is unique among live
