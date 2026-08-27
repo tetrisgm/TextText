@@ -59,3 +59,82 @@ describe("assistant job history", () => {
     });
   });
 });
+
+describe("cloudTurnOutcome", () => {
+  it("is Done only when every command that ran worked", async () => {
+    const { cloudTurnOutcome } = await import("../jobs");
+    expect(
+      cloudTurnOutcome({
+        workspaceCalls: [
+          { tool: "search", status: "ok" },
+          { tool: "create_item", status: "ok" },
+        ],
+      }),
+    ).toEqual({ status: "done", errors: [] });
+  });
+
+  it("is not Done when the change the person asked for failed", async () => {
+    // The turn completed and the model answered. The note was never created,
+    // and "Done" over that is how somebody believes a note exists.
+    const { cloudTurnOutcome } = await import("../jobs");
+    expect(
+      cloudTurnOutcome({
+        workspaceCalls: [
+          { tool: "search", status: "ok" },
+          {
+            tool: "create_item",
+            status: "failed",
+            error: 'Kind "note" does not belong in "blog".',
+          },
+        ],
+      }),
+    ).toEqual({
+      status: "error",
+      activity: "Nothing changed",
+      errors: ['Kind "note" does not belong in "blog".'],
+    });
+  });
+
+  it("counts more than one failure rather than naming only the last", async () => {
+    const { cloudTurnOutcome } = await import("../jobs");
+    const outcome = cloudTurnOutcome({
+      workspaceCalls: [
+        { tool: "create_item", status: "failed", error: "First refusal." },
+        { tool: "update_item", status: "failed", error: "Second refusal." },
+      ],
+    });
+    expect(outcome.status).toBe("error");
+    expect(outcome.activity).toBe("Nothing changed (2 commands failed)");
+    expect(outcome.errors).toEqual(["First refusal.", "Second refusal."]);
+  });
+
+  it("falls back to naming the command when it reported no message", async () => {
+    const { cloudTurnOutcome } = await import("../jobs");
+    expect(
+      cloudTurnOutcome({
+        workspaceCalls: [{ tool: "create_item", status: "failed" }],
+      }).errors,
+    ).toEqual(["create_item did not complete."]);
+  });
+
+  it("keeps a terminal provider error ahead of command failures", async () => {
+    const { cloudTurnOutcome } = await import("../jobs");
+    expect(
+      cloudTurnOutcome({
+        terminalError: "The provider stopped responding.",
+        workspaceCalls: [{ tool: "create_item", status: "failed" }],
+      }),
+    ).toEqual({
+      status: "error",
+      activity: "The provider stopped responding.",
+      errors: ["The provider stopped responding."],
+    });
+  });
+
+  it("treats a call with no status as one that worked", async () => {
+    const { cloudTurnOutcome } = await import("../jobs");
+    expect(
+      cloudTurnOutcome({ workspaceCalls: [{ tool: "search" }] }).status,
+    ).toBe("done");
+  });
+});

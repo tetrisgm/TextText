@@ -43,6 +43,18 @@ export type CloudAssistantWorkspaceCall = {
   tool: WorkspaceToolName;
   args: Record<string, unknown>;
   output: unknown;
+  /**
+   * Whether the command itself succeeded.
+   *
+   * A failed command used to be thrown and forgotten: the model was told, and
+   * narrated the failure in its own words, but nothing reached the client. The
+   * turn was then labelled Done over a change that never happened, and the only
+   * failure text on screen was model prose. Recording the failure keeps both
+   * honest, and the throw below still lets the model recover.
+   */
+  status: "ok" | "failed";
+  /** The command's own message, never the model's retelling of it. */
+  error?: string;
 };
 
 export type CloudAssistantToolMode = "full" | "read_only";
@@ -100,11 +112,22 @@ export function cloudAssistantTools(
           actor,
         );
         const text = resultText(result);
-        if (result.isError) throw new Error(text || `${name} failed`);
+        if (result.isError) {
+          const message = text || `${name} failed`;
+          onWorkspaceCall?.({
+            tool: name,
+            args: commandArgs,
+            output: {},
+            status: "failed",
+            error: message,
+          });
+          throw new Error(message);
+        }
         onWorkspaceCall?.({
           tool: name,
           args: commandArgs,
           output: result.structuredContent ?? {},
+          status: "ok",
         });
         return text || "Done.";
       },
@@ -160,11 +183,22 @@ export function guardedCloudAssistantTools(
           actor,
         );
         const text = resultText(result);
-        if (result.isError) throw new Error(text || `${name} failed`);
+        if (result.isError) {
+          const message = text || `${name} failed`;
+          onWorkspaceCall?.({
+            tool: name,
+            args: commandArgs,
+            output: {},
+            status: "failed",
+            error: message,
+          });
+          throw new Error(message);
+        }
         onWorkspaceCall?.({
           tool: name,
           args: commandArgs,
           output: result.structuredContent ?? {},
+          status: "ok",
         });
         return text || "Done.";
       },

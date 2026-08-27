@@ -49,6 +49,7 @@ import {
   serverAssistantJobs,
   startAssistantJob,
   subscribeAssistantJobs,
+  cloudTurnOutcome,
   updateAssistantJob,
 } from "@/lib/ai/jobs";
 import {
@@ -384,6 +385,33 @@ function threadFor(threadKey: string): AssistantMessage[] {
 
 function notify() {
   for (const listener of listeners) listener();
+}
+
+/**
+ * Apply the finished-turn decision. The decision itself is
+ * `cloudTurnOutcome`, kept pure in lib/ai/jobs so it can be pinned by a test
+ * without standing up storage.
+ */
+function settleCloudTurn(
+  thread: string,
+  jobId: string,
+  result: {
+    terminalError?: string;
+    workspaceCalls: ReadonlyArray<{
+      tool: string;
+      status?: "ok" | "failed";
+      error?: string;
+    }>;
+  },
+): void {
+  const outcome = cloudTurnOutcome(result);
+  for (const message of outcome.errors) {
+    appendToThread(thread, "error", message);
+  }
+  updateAssistantJob(jobId, {
+    status: outcome.status,
+    ...(outcome.activity ? { activity: outcome.activity } : {}),
+  });
 }
 
 function appendToThread(
@@ -1652,15 +1680,7 @@ export function useNativeAssistant({
             writeProposals: assistantWriteProposals(result.writeProposals),
           }));
         }
-        if (result.terminalError) {
-          appendToThread(thread, "error", result.terminalError);
-          updateAssistantJob(jobId, {
-            status: "error",
-            activity: result.terminalError,
-          });
-        } else {
-          updateAssistantJob(jobId, { status: "done" });
-        }
+        settleCloudTurn(thread, jobId, result);
       } catch (error) {
         const message = assistantAgentError(error);
         appendToThread(thread, "error", message);
@@ -1802,15 +1822,7 @@ export function useNativeAssistant({
           model: result.model,
           writeProposals: assistantWriteProposals(result.writeProposals),
         }));
-        if (result.terminalError) {
-          appendToThread(thread, "error", result.terminalError);
-          updateAssistantJob(jobId, {
-            status: "error",
-            activity: result.terminalError,
-          });
-        } else {
-          updateAssistantJob(jobId, { status: "done" });
-        }
+        settleCloudTurn(thread, jobId, result);
       } catch (error) {
         const message = assistantAgentError(error);
         appendToThread(

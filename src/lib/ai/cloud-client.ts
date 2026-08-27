@@ -46,11 +46,17 @@ export type OutboundCall = {
   status: "ok" | "input_required" | "failed";
 };
 
-/** One validated TextText workspace command completed during the model turn. */
+/**
+ * One TextText workspace command attempted during the model turn, and whether
+ * it worked. A failed command carries the executor's own message so the UI
+ * never has to quote the model's retelling of it.
+ */
 export type CloudWorkspaceCall = {
   tool: string;
   args: Record<string, unknown>;
   output: unknown;
+  status?: "ok" | "failed";
+  error?: string;
 };
 
 type CloudAssistantWriteProposalBase = {
@@ -198,10 +204,16 @@ function cleanWorkspaceCalls(value: unknown): CloudWorkspaceCall[] {
     const candidate = cleanRecord(entry);
     const args = cleanRecord(candidate?.args);
     if (!candidate || typeof candidate.tool !== "string" || !args) continue;
+    const failed = candidate.status === "failed";
     calls.push({
       tool: candidate.tool,
       args,
       output: candidate.output,
+      status: failed ? "failed" : "ok",
+      // Bounded, because it is rendered, and it is the executor's own words.
+      ...(failed && typeof candidate.error === "string" && candidate.error.trim()
+        ? { error: candidate.error.trim().slice(0, 400) }
+        : {}),
     });
   }
   return calls;

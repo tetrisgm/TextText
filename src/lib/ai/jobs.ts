@@ -27,6 +27,45 @@ export type AssistantJob = {
   finishedAt?: number;
 };
 
+/**
+ * How a finished cloud turn should be reported.
+ *
+ * A turn that completed is not the same as a change that happened. A create the
+ * executor refused used to leave the job labelled Done, and the only account of
+ * the failure on screen was the model's prose retelling of the command's error.
+ * The label follows the change; the errors are the executor's own words.
+ */
+export function cloudTurnOutcome(result: {
+  terminalError?: string;
+  workspaceCalls: ReadonlyArray<{
+    tool: string;
+    status?: "ok" | "failed";
+    error?: string;
+  }>;
+}): { status: AssistantJobStatus; activity?: string; errors: string[] } {
+  if (result.terminalError) {
+    return {
+      status: "error",
+      activity: result.terminalError,
+      errors: [result.terminalError],
+    };
+  }
+  const failed = result.workspaceCalls.filter(
+    (call) => call.status === "failed",
+  );
+  if (failed.length === 0) return { status: "done", errors: [] };
+  return {
+    status: "error",
+    activity:
+      failed.length === 1
+        ? "Nothing changed"
+        : `Nothing changed (${failed.length} commands failed)`,
+    errors: failed.map(
+      (call) => call.error ?? `${call.tool} did not complete.`,
+    ),
+  };
+}
+
 const MAX_JOBS = 20;
 const STORAGE_KEY = "texttext:assistant-jobs";
 const EMPTY_SERVER_JOBS: AssistantJob[] = [];

@@ -49,6 +49,47 @@ describe("guarded cloud assistant tools", () => {
     });
   });
 
+  it("records a failed command with the executor's own message", async () => {
+    // The failure used to be thrown and forgotten. Nothing reached the client,
+    // so the turn was labelled Done and the only account of the failure on
+    // screen was the model's prose retelling of it.
+    mocks.runWorkspaceToolForSession.mockResolvedValue({
+      isError: true,
+      content: [
+        {
+          type: "text",
+          text: 'Kind "note" does not belong in "blog", which holds article, media_post, or video_post items.',
+        },
+      ],
+    });
+    const onWorkspaceCall = vi.fn();
+    const tools = guardedCloudAssistantTools(actor, vi.fn(), onWorkspaceCall);
+
+    await expect(
+      executeTool(tools.read_item, { item_id: "missing" }),
+    ).rejects.toThrow(/does not belong/);
+
+    expect(onWorkspaceCall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tool: "read_item",
+        status: "failed",
+        error:
+          'Kind "note" does not belong in "blog", which holds article, media_post, or video_post items.',
+      }),
+    );
+  });
+
+  it("marks a command that worked as ok", async () => {
+    const onWorkspaceCall = vi.fn();
+    const tools = guardedCloudAssistantTools(actor, vi.fn(), onWorkspaceCall);
+
+    await executeTool(tools.read_item, { item_id: "present" });
+
+    expect(onWorkspaceCall).toHaveBeenCalledWith(
+      expect.objectContaining({ tool: "read_item", status: "ok" }),
+    );
+  });
+
   it("stages ordinary edits but omits confirmation-gated and open-world writes", () => {
     const tools = guardedCloudAssistantTools(actor, vi.fn());
     expect(tools).toHaveProperty("create_item");
