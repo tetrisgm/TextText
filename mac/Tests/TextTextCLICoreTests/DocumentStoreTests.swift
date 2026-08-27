@@ -306,4 +306,48 @@ final class DocumentStoreTests: XCTestCase {
             try store.resolve(inside.path).standardizedFileURL.path,
             inside.standardizedFileURL.path)
     }
+
+    // MARK: create
+    //
+    // `texttext new` is a shipped surface that had no test at all. It was
+    // reported as hanging for three minutes and creating nothing; the hang was
+    // the sync extension waiting on a workspace that was returning 500s, but
+    // nothing here covered even the local half of the command.
+
+    func testCreateWritesATextpackThatReadsBackExactly() throws {
+        let url = try store.create(title: "Project notes", body: "First line.\n")
+        XCTAssertEqual(url.pathExtension, "textpack")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        let markdown = try store.readMarkdown(at: url)
+        XCTAssertTrue(markdown.contains("title: \"Project notes\""))
+        XCTAssertTrue(markdown.contains("First line."))
+    }
+
+    func testCreateHonoursTheFolderItWasGiven() throws {
+        let notes = root.appendingPathComponent("Notes", isDirectory: true)
+        try FileManager.default.createDirectory(at: notes, withIntermediateDirectories: true)
+        let url = try store.create(title: "Filed", folder: "Notes")
+        XCTAssertEqual(url.deletingLastPathComponent().lastPathComponent, "Notes")
+    }
+
+    func testCreateRefusesAFolderThatIsNotThere() {
+        XCTAssertThrowsError(try store.create(title: "Nowhere", folder: "Missing"))
+    }
+
+    /// Two documents may share a title, but not a filename. The command says so
+    /// rather than overwriting the first one.
+    func testCreateRefusesToOverwriteAnExistingFileOfTheSameName() throws {
+        _ = try store.create(title: "Same name")
+        XCTAssertThrowsError(try store.create(title: "Same name")) { error in
+            XCTAssertTrue("\(error)".contains("already exists"))
+        }
+    }
+
+    func testCreateLeavesNoTemporaryDebrisBehind() throws {
+        _ = try store.create(title: "Tidy", body: "body")
+        let leftovers = try FileManager.default
+            .contentsOfDirectory(atPath: root.path)
+            .filter { $0.hasPrefix(".texttext-") || $0.hasSuffix(".tmp") }
+        XCTAssertEqual(leftovers, [])
+    }
 }

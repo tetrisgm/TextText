@@ -650,6 +650,23 @@ in-app assistant, local CLI, or hosted MCP.
   `WebAppWindowController.codexTurnProgress(method:)` names the events that
   restart the clock; the per-tool deadline is a separate 8s and unchanged.
 
+## texttext new: the hang was a symptom, the silence was the bug (2026-08-27)
+
+- Reported as "hangs three minutes and creates nothing". It does not hang on
+  its own: every case reproduces clean now, including a duplicate title (the
+  CLI already de-duplicates the FILENAME as `Title [uuid].textpack`).
+- The hang was the broken deployment. `create` writes into the File Provider
+  root and `replaceItemAt` on that volume blocks until the extension commits,
+  and the extension was waiting on a workspace returning 500s
+  (`column api_tokens.kind does not exist`). Fixing the migration fixed it.
+- The filesystem call cannot be interrupted, so the fix is to stop it being
+  SILENT: `announcingSlowWork` in the CLI prints, after 8s, what it is waiting
+  on and why that can take minutes. It wraps `withActor`, which every mutating
+  command goes through, so new/write/append/edit/capture all get it.
+- `DocumentStore.create` had NO test. It has five now: round-trip, folder
+  honoured, missing folder refused, same filename refused rather than
+  overwritten, and no temporary debris left behind.
+
 ## npm run evals (2026-08-27)
 
 - One command runs every browser eval and reports THREE states: passed, failed,

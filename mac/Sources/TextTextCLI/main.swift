@@ -107,6 +107,32 @@ do {
     fail(String(describing: error))
 }
 
+/// How long a mutation may take before the CLI explains itself.
+private let slowWorkSeconds: UInt64 = 8
+
+/// Say what is taking so long, instead of nothing at all.
+///
+/// A create writes into the TextText folder, and the File Provider extension
+/// commits it to the workspace. `replaceItemAt` on that volume blocks until the
+/// extension acknowledges, so when the workspace was returning 500s a
+/// `texttext new` sat silent for three minutes and then created nothing. The
+/// filesystem call cannot be interrupted, but the silence can be broken: a
+/// person who knows what it is waiting on can go look at the right thing.
+@MainActor
+func announcingSlowWork<T>(_ work: () async throws -> T) async rethrows -> T {
+    let notice = Task.detached {
+        try? await Task.sleep(nanoseconds: slowWorkSeconds * 1_000_000_000)
+        FileHandle.standardError.write(
+            Data(
+                """
+                texttext: still working after \(slowWorkSeconds)s. This writes into the                 TextText folder and waits for the sync extension to commit it, which waits                 on the workspace. If the workspace is unreachable this can take minutes.
+                """.utf8))
+        FileHandle.standardError.write(Data("\n".utf8))
+    }
+    defer { notice.cancel() }
+    return try await work()
+}
+
 /// Attribution wraps every mutation. Presence is a best-effort, short-lived
 /// signal while the command runs; the audit label remains with the change.
 @MainActor
@@ -114,7 +140,9 @@ func withActor<T>(
     _ activity: AgentActor.Activity, itemId: String?,
     _ work: () async throws -> T
 ) async rethrows -> T {
-    guard let requestedName = options.actor else { return try await work() }
+    guard let requestedName = options.actor else {
+        return try await announcingSlowWork(work)
+    }
     guard let name = AgentActor.validatedName(requestedName) else {
         fail("--as must be 1 to 120 characters with no control characters")
     }
@@ -131,7 +159,7 @@ func withActor<T>(
         section: options.section, message: intent,
         itemId: itemId)
     return try await CLICommandActor.$current.withValue(actor) {
-        try await work()
+        try await announcingSlowWork(work)
     }
 }
 
