@@ -650,6 +650,23 @@ in-app assistant, local CLI, or hosted MCP.
   `WebAppWindowController.codexTurnProgress(method:)` names the events that
   restart the clock; the per-tool deadline is a separate 8s and unchanged.
 
+## The person's text is the person's (2026-08-27)
+
+- "Create a note about: <2,500 words pasted in>" came back as the agent's
+  SUMMARY of that text, reorganized into sections and bullets, and the reply
+  said so proudly. Neither prompt told it not to.
+- `SUPPLIED_CONTENT_RULE` in `src/lib/ai/system-prompt.ts` is the one copy.
+  The cloud system prompt and `nativeAssistantTurnPrompt` both include it, and
+  `supplied-content-rule.test.ts` fails if either stops. Two prompts with two
+  versions of a rule is the same shape as the placement bug: the copies drift
+  and the worse one wins.
+- STILL OPEN, and it is not a tweak: the editor shows raw markdown markers
+  (`##`, `-`) because it is a transparent `<textarea>` over a styled `<pre>`
+  mirror. The mirror must keep exact character alignment with the textarea
+  under it, so it cannot hide characters without breaking the caret. Notion or
+  Medium behavior needs a real rich-text editor (ProseMirror/Lexical/TipTap)
+  with markdown input rules, not a change to the mirror.
+
 ## The native turn went quiet the moment it started (2026-08-27)
 
 - `submit` sets the thread busy, then the native branch hands the turn to the
