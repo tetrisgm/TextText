@@ -164,11 +164,31 @@ export function guardedCloudAssistantTools(
       execute: async (args: unknown) => {
         const commandArgs = (args ?? {}) as Record<string, unknown>;
         if (definition.mutability === "write") {
-          const proposal = await createWorkspaceWriteProposal({
-            actor,
-            tool: name,
-            arguments: commandArgs,
-          });
+          // A write that cannot even be STAGED has to say so. Without this the
+          // failure was invisible from both ends: nothing was proposed, so no
+          // card appeared, and the only account on screen was the model's
+          // prose about a change it never got to offer.
+          let proposal: WorkspaceWriteProposalPreview;
+          try {
+            proposal = await createWorkspaceWriteProposal({
+              actor,
+              tool: name,
+              arguments: commandArgs,
+            });
+          } catch (error) {
+            const message =
+              error instanceof Error
+                ? error.message
+                : `${name} could not be prepared for review.`;
+            onWorkspaceCall?.({
+              tool: name,
+              args: commandArgs,
+              output: {},
+              status: "failed",
+              error: message,
+            });
+            throw new Error(message);
+          }
           onProposal(proposal);
           return JSON.stringify({
             approval_required: true,

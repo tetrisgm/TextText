@@ -19,6 +19,7 @@ import {
 import { isUuid, type AccessUser } from "@/lib/permissions";
 import {
   guardedCloudAssistantTools,
+  type CloudAssistantToolMode,
   type CloudAssistantWorkspaceCall,
   type CloudAssistantWriteProposal,
 } from "@/lib/ai/cloud-tools";
@@ -426,15 +427,33 @@ function assistantStreamResponse(
   return new Response(stream, { status: 200, headers: STREAM_HEADERS });
 }
 
+// Which words, in the PERSON'S OWN message, open the write tools for a turn.
+//
+// This is a trust boundary, not a convenience: untrusted item text reaches the
+// model fenced inside the system prompt, and a turn that was only asked to
+// summarize must not carry a tool an injected "call update_item now" could
+// reach. Only what the person typed is read here.
+//
+// It is also a lexicon, so it has near misses, and a near miss used to be
+// silent: "Give the reading log its own look" was not on the list, the whole
+// write surface disappeared, and the assistant answered with something vague
+// about having received the request. The list below is wider for that reason,
+// and readOnlyTurnNote makes the remaining misses speak.
 const WRITE_VERB =
-  "add|append|apply|attach|build|capture|change|convert|copy|create|delete|draft|edit|extract|fix|make|move|organize|pin|publish|put|recapture|remove|rename|replace|restructure|revise|rewrite|save|set|share|tag|transform|trash|turn|unpublish|update|write";
+  "add|append|apply|archive|attach|build|capture|categori[sz]e|change|clean|collect|convert|copy|create|delete|draft|duplicate|edit|extract|file|fix|generate|give|group|import|insert|jot|label|log|make|mark|merge|move|name|note|organi[sz]e|pin|produce|publish|put|recapture|record|remove|rename|reorder|replace|reshape|restructure|restyle|retitle|revise|rewrite|save|schedule|set|share|sort|split|star|start|store|style|tag|title|track|transform|trash|turn|unpin|unpublish|untag|update|write";
 const DIRECT_WRITE_INTENT = new RegExp(`^\\s*(?:${WRITE_VERB})\\b`, "i");
 const REQUESTED_WRITE_INTENT = new RegExp(
-  `\\b(?:can you|could you|go ahead and|i need you to|i want you to|please|would you)\\s+(?:${WRITE_VERB})\\b`,
+  `\\b(?:can you|could you|go ahead and|help me|how about you|i need you to|i want you to|i'?d like you to|i would like you to|let'?s|please|why don'?t you|would you)\\s+(?:${WRITE_VERB})\\b`,
   "i",
 );
 const RECENT_SUMMARY_INTENT =
   /\b(catch me up|latest|recent|recently|what (?:have|was|were|am|is)|working on|summari[sz]e (?:my|the) work)\b/i;
+
+// "Give" is in the list above because "give this folder its own look" is a
+// change. "Give me a summary" is not, and asking for something to be handed
+// back has never been authorization to write, so that shape wins over the verb.
+const HAND_ME_BACK =
+  /\b(?:give|show|read|tell|hand)\s+(?:me|us)\s+(?:a|an|the)?\s*(?:summary|overview|recap|rundown|digest|answer|list|update|version)\b/i;
 
 function cloudToolMode(
   messages: readonly ModelMessage[],
@@ -443,10 +462,29 @@ function cloudToolMode(
   const view = viewContext(context);
   if (view.mode === "suggestion") return "read_only";
   const request = lastUserText(messages);
+  if (HAND_ME_BACK.test(request)) return "read_only";
   return DIRECT_WRITE_INTENT.test(request) ||
     REQUESTED_WRITE_INTENT.test(request)
     ? "full"
     : "read_only";
+}
+
+/**
+ * What to tell the model when the turn carries no tool that changes anything.
+ *
+ * Without this the downgrade is invisible from both ends: the model has no
+ * write tool, so it says something agreeable and stops, and the person reads
+ * an answer that sounds like the work happened. A turn that cannot act should
+ * say it cannot act.
+ */
+function readOnlyTurnNote(mode: CloudAssistantToolMode): string {
+  if (mode !== "read_only") return "";
+  return (
+    "\n\nThis turn has no tools that change anything in the workspace. If the " +
+    "person asked you to create, edit, move, or organize something, do not " +
+    "imply that you did it. Say plainly that you did not make the change, and " +
+    "that asking again as a direct instruction will let you."
+  );
 }
 
 function recentItemIndex(
@@ -879,7 +917,8 @@ export async function POST(request: Request) {
       outboundSystemNote(
         reachable.map((entry) => entry.connection.name),
         unreachable,
-      ),
+      ) +
+      readOnlyTurnNote(toolMode),
     messages: modelMessages,
     tools,
     stopWhen: stepCountIs(MAX_STEPS),

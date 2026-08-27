@@ -11,6 +11,7 @@ import {
   migrateAssistantConversationOwnerScope,
   resetAssistantConversationStore,
   toggleAssistantConversationPinned,
+  updateAssistantConversationMessage,
 } from "@/components/workspace/assistant/conversation-store";
 
 function browserStorage(initialSession: Record<string, string> = {}) {
@@ -164,6 +165,57 @@ describe("assistant conversation history", () => {
         (message) => message.id,
       ),
     ).toEqual(["local-message", "remote-message"]);
+  });
+
+  it("keeps a staged change on screen when the synced copy cannot carry it", () => {
+    browserStorage();
+    const active = activeAssistantConversation("writer", "root")!;
+    appendAssistantConversationMessage("writer", active.id, {
+      id: "staged-message",
+      role: "assistant",
+      text: "Review the proposed change.",
+    });
+    updateAssistantConversationMessage(
+      "writer",
+      active.id,
+      "staged-message",
+      (message) => ({
+        ...message,
+        writeProposals: [
+          {
+            id: "proposal-1",
+            kind: "workspace",
+            status: "pending",
+            tool: "create_item_type",
+            title: "Create item type",
+            summary: "Create item type: blog/reading-log",
+            arguments: { folder_path: "blog/reading-log" },
+            createdAt: "2026-08-27T09:00:00.000Z",
+            expiresAt: "2026-08-27T09:15:00.000Z",
+          },
+        ],
+      }),
+    );
+
+    // What the server can give back: the same message, with the proposal gone,
+    // because the sync copy refuses to store one it could not reproduce.
+    const local = assistantConversationSyncPayload("writer")[0]!;
+    const remote = {
+      ...local,
+      messages: local.messages.map((message) => {
+        const { writeProposals: _dropped, ...rest } = message as Record<
+          string,
+          unknown
+        >;
+        return rest as typeof message;
+      }),
+    };
+    mergeSyncedAssistantConversations("writer", [remote]);
+
+    const merged = assistantConversationMessages("writer", active.id).find(
+      (message) => message.id === "staged-message",
+    );
+    expect(merged?.writeProposals?.[0]?.id).toBe("proposal-1");
   });
 
   it("keeps the in-memory chat usable when browser storage is offline", () => {

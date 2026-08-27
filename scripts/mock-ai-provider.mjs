@@ -177,6 +177,13 @@ const server = http.createServer((req, res) => {
       const lastText = JSON.stringify(last.content ?? "");
       const transcript = JSON.stringify(messages);
       const hasToolResult = lastText.includes("tool_result");
+      // TEXTTEXT_MOCK_AI_DEBUG_TOOLS=1 prints what the app actually offered
+      // the model. A turn that silently loses its write tools looks exactly
+      // like a model that chose not to act, and this is how to tell them apart.
+      if (process.env.TEXTTEXT_MOCK_AI_DEBUG_TOOLS) {
+        console.error("TOOLS:", (body.tools ?? []).map((t) => t.name).join(","));
+        console.error("LAST:", lastText.slice(0, 300));
+      }
       const wantsEdit = /rewrite|tighten|sharpen/i.test(lastText);
       const wantsDraft = /draft (?:an?|something)|new article/i.test(lastText);
       let content;
@@ -263,6 +270,144 @@ const server = http.createServer((req, res) => {
               id: "toolu_mock_remote_export_1",
               name: remote.name,
               input: { frame: "frame_1" },
+            },
+          ];
+        }
+      } else if (!hasToolResult && /create a note about/i.test(lastText)) {
+        // What a real model does with "create a note": it names the kind and
+        // says nothing about a folder, because the person did not mention one.
+        // Where that lands is the workspace's decision, not the model's.
+        const tool = pickTool(body.tools, ["create_item"]);
+        if (tool) {
+          content = [
+            {
+              type: "tool_use",
+              id: "toolu_mock_note_1",
+              name: tool.name,
+              input: {
+                kind: "note",
+                title: "Project requirements",
+                body: "The project must install and run consistently on the platform it is intended for.",
+                idempotency_key: "mock-create-note",
+              },
+            },
+          ];
+        }
+      } else if (!hasToolResult && /make me a reading log/i.test(lastText)) {
+        const tool = pickTool(body.tools, ["create_folder"]);
+        if (tool) {
+          content = [
+            {
+              type: "tool_use",
+              id: "toolu_mock_reading_folder_1",
+              name: tool.name,
+              input: { parent_path: "blog", name: "Reading log" },
+            },
+          ];
+        }
+      } else if (!hasToolResult && /give the reading log its own look/i.test(lastText)) {
+        // A described kind of thing becomes a blueprint. A real model writes
+        // this from the description; the shape is the contract either way, so
+        // a schema change should break this loudly rather than quietly.
+        const tool = pickTool(body.tools, ["create_item_type"]);
+        if (tool) {
+          content = [
+            {
+              type: "tool_use",
+              id: "toolu_mock_reading_type_1",
+              name: tool.name,
+              input: {
+                folder_path: "blog/reading-log",
+                blueprint: {
+                  name: "Reading log",
+                  description: "One entry per book, with how it landed.",
+                  styleReference: "A reading journal",
+                  audience: "publishable",
+                  fields: [
+                    {
+                      id: "verdict",
+                      label: "Verdict",
+                      type: "enum",
+                      required: false,
+                      display: "badge",
+                      options: [
+                        { value: "keep", label: "Keep" },
+                        { value: "pass", label: "Pass" },
+                      ],
+                      multiple: false,
+                      format: "plain",
+                      target: "document",
+                    },
+                  ],
+                  item: {
+                    shape: "note",
+                    showBody: true,
+                    showMetadata: true,
+                    showTags: false,
+                  },
+                  collection: {
+                    layout: "list",
+                    columns: 1,
+                    summaryFields: ["verdict"],
+                    sortBy: "updatedAt",
+                    sortDirection: "desc",
+                    filters: [],
+                    views: [],
+                  },
+                  theme: {},
+                },
+              },
+            },
+          ];
+        }
+      } else if (!hasToolResult && /add piranesi to the reading log/i.test(lastText)) {
+        const tool = pickTool(body.tools, ["create_item"]);
+        if (tool) {
+          content = [
+            {
+              type: "tool_use",
+              id: "toolu_mock_reading_item_1",
+              name: tool.name,
+              input: {
+                folder_path: "blog/reading-log",
+                title: "Piranesi",
+                body: "A house of statues and tides, read in two sittings.",
+                idempotency_key: "mock-create-reading-entry",
+              },
+            },
+          ];
+        }
+      } else if (!hasToolResult && /save a bookmark for/i.test(lastText)) {
+        const tool = pickTool(body.tools, ["create_item"]);
+        if (tool) {
+          content = [
+            {
+              type: "tool_use",
+              id: "toolu_mock_bookmark_1",
+              name: tool.name,
+              input: {
+                kind: "bookmark",
+                title: "The quiet tools reader",
+                body: "https://example.com/quiet-tools",
+                idempotency_key: "mock-create-bookmark",
+              },
+            },
+          ];
+        }
+      } else if (!hasToolResult && /write an article about/i.test(lastText)) {
+        const tool = pickTool(body.tools, ["create_item"]);
+        if (tool) {
+          content = [
+            {
+              type: "tool_use",
+              id: "toolu_mock_article_1",
+              name: tool.name,
+              input: {
+                kind: "article",
+                title: "Tools that recede",
+                body: "The best tools disappear into the work they support.",
+                idempotency_key: "mock-create-article",
+              },
             },
           ];
         }

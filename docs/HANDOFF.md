@@ -615,6 +615,31 @@ in-app assistant, local CLI, or hosted MCP.
   message was added, so a streamed answer grew past the bottom edge and took
   the working line off screen about two seconds in. `npm run eval:turn-progress`
   fails on the old behavior with "in in out out out".
+- A cloud write is a PROPOSAL: the model stages exact arguments, the person
+  approves them with Apply change, and only then does the executor run. Three
+  things had to be true for that to work and none of them were, until
+  2026-08-26. `npm run eval:assistant-create` drives the whole flow for a note,
+  a bookmark, an article, and a described item type (folder, then
+  create_item_type, then an entry in it) and watches each land.
+- Which turns carry write tools is a trust boundary, not a convenience: item
+  text reaches the model fenced as untrusted data, and a turn asked only to
+  summarize must not hold a tool an injected instruction could reach. The
+  gate reads the person's own message. It is a LEXICON, so it has near misses,
+  and "Give the reading log its own look" was one: the write surface vanished
+  and the assistant answered with something agreeable. The list is wider now,
+  `HAND_ME_BACK` keeps "give me a summary" read-only, and `readOnlyTurnNote`
+  makes the remaining misses speak instead of failing silently.
+- The assistant conversation sync is a bounded, redacted COPY, never the
+  authority for what is on screen. Its cleaner refuses to store a write
+  proposal it could not reproduce exactly, which is right for a copy, and its
+  depth bound of 8 could not reach the leaves of a `create_item_type`
+  blueprint (nine levels down). Merging that copy back took the approval card
+  off the screen about a second after it appeared while the change sat pending
+  on the server. Depth is 16, and `keepLocalWriteProposals` puts back what the
+  copy could not carry.
+- A write that cannot even be STAGED now reports the reason as a failed
+  workspace call. Before, a proposal rejected at validation left no card and
+  no error, only the model's prose.
 - `/docs/features` documents only exercised behavior, by rule stated on the
   page. `/docs` indexes it.
 

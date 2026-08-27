@@ -247,3 +247,58 @@ describe("assistant conversation replica merge", () => {
     expect(bytes).toBeLessThanOrEqual(4_000_000);
   });
 });
+
+describe("what a synced message can carry", () => {
+  /** A staged item type: the deepest thing a real proposal nests. */
+  const blueprintProposal = {
+    id: "proposal-1",
+    kind: "workspace",
+    status: "pending",
+    tool: "create_item_type",
+    title: "Create item type",
+    summary: "Create item type: blog/reading-log",
+    arguments: {
+      folder_path: "blog/reading-log",
+      blueprint: {
+        name: "Reading log",
+        fields: [
+          {
+            id: "verdict",
+            type: "enum",
+            options: [
+              { value: "keep", label: "Keep" },
+              { value: "pass", label: "Pass" },
+            ],
+          },
+        ],
+      },
+    },
+    createdAt: "2026-08-27T09:00:00.000Z",
+    expiresAt: "2026-08-27T09:15:00.000Z",
+  };
+
+  it("keeps a write proposal whose arguments nest as deeply as a blueprint", () => {
+    const [conversation] = cleanAssistantConversationSyncPayload([
+      chat("c1", {
+        messages: [
+          {
+            id: "m1",
+            role: "assistant",
+            text: "Review the proposed change.",
+            updatedAt: "2026-08-27T09:00:00.000Z",
+            writeProposals: [blueprintProposal],
+          },
+        ],
+      }),
+    ]);
+    const proposals = conversation?.messages[0]?.writeProposals as
+      | Array<Record<string, unknown>>
+      | undefined;
+    expect(proposals?.[0]?.id).toBe("proposal-1");
+    const args = proposals?.[0]?.arguments as Record<string, unknown>;
+    const blueprint = args.blueprint as Record<string, unknown>;
+    const fields = blueprint.fields as Array<Record<string, unknown>>;
+    const options = fields[0].options as Array<Record<string, unknown>>;
+    expect(options[0]).toEqual({ value: "keep", label: "Keep" });
+  });
+});

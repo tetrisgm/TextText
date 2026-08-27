@@ -545,21 +545,60 @@ export function assistantConversationSyncPayload(
  * Equal replicas are a no-op, preventing a successful sync from scheduling a
  * second identical sync.
  */
+/**
+ * Put back what the sync copy could not carry.
+ *
+ * The sync payload is a bounded, redacted copy kept for history, and it
+ * refuses to store a write proposal it could not reproduce exactly, which is
+ * the right call for a copy: an approval card must never show arguments that
+ * differ from the ones that will run. Merging that copy back over live state
+ * is a different matter. It used to take the approval card off the screen
+ * about a second after it appeared, while the change sat pending on the
+ * server, so the person saw a flash and then prose about a change that never
+ * happened. What is on screen comes from here, not from the copy.
+ */
+function keepLocalWriteProposals(
+  local: readonly AssistantConversation[],
+  next: readonly AssistantConversation[],
+): AssistantConversation[] {
+  const held = new Map<string, AssistantMessage["writeProposals"]>();
+  for (const conversation of local) {
+    for (const message of conversation.messages) {
+      if (message.writeProposals?.length) {
+        held.set(`${conversation.id}\u001f${message.id}`, message.writeProposals);
+      }
+    }
+  }
+  if (held.size === 0) return [...next];
+  return next.map((conversation) => ({
+    ...conversation,
+    messages: conversation.messages.map((message) => {
+      if (message.writeProposals?.length) return message;
+      const proposals = held.get(`${conversation.id}\u001f${message.id}`);
+      return proposals ? { ...message, writeProposals: proposals } : message;
+    }),
+  }));
+}
+
 export function mergeSyncedAssistantConversations(
   handle: string,
   remoteInput: unknown,
 ): boolean {
   const state = loadWorkspace(handle);
+  const local = state.conversations;
   const merged = mergeAssistantConversationSyncPayloads(
-    state.conversations,
+    local,
     remoteInput,
   );
-  const next = merged
-    .map(cleanConversation)
-    .filter(
-      (conversation): conversation is AssistantConversation =>
-        conversation !== null,
-    );
+  const next = keepLocalWriteProposals(
+    local,
+    merged
+      .map(cleanConversation)
+      .filter(
+        (conversation): conversation is AssistantConversation =>
+          conversation !== null,
+      ),
+  );
   if (
     assistantConversationSyncFingerprint(next) ===
     assistantConversationSyncFingerprint(state.conversations)

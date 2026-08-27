@@ -283,6 +283,58 @@ describe("/api/ai cloud assistant route", () => {
     expect(call.system).toMatch(/Never cite an item you did not actually read/);
   });
 
+  it("opens the write tools for ordinary ways of asking for a change", async () => {
+    // Every one of these was read-only until the lexicon was widened, so the
+    // model had nothing to act with and answered with something agreeable.
+    for (const request of [
+      "Give the reading log its own look",
+      "Note down what we decided",
+      "Start a reading log",
+      "Help me organize my notes",
+      "I'd like you to file this under Blog",
+    ]) {
+
+      await POST(post({ messages: [{ role: "user", content: request }] }));
+      expect(mocks.cloudAssistantTools).toHaveBeenLastCalledWith(
+        expect.any(Object),
+        expect.any(Function),
+        expect.any(Function),
+        "full",
+      );
+    }
+  });
+
+  it("keeps a request to hand something back read-only even when it opens with a write verb", async () => {
+    for (const request of [
+      "Give me a summary of this note",
+      "Show me the list of what changed",
+    ]) {
+      await POST(post({ messages: [{ role: "user", content: request }] }));
+      expect(mocks.cloudAssistantTools).toHaveBeenLastCalledWith(
+        expect.any(Object),
+        expect.any(Function),
+        expect.any(Function),
+        "read_only",
+      );
+    }
+  });
+
+  it("still keeps a plain question read-only, and says the turn cannot act", async () => {
+    await POST(
+      post({ messages: [{ role: "user", content: "What did I write last week?" }] }),
+    );
+    expect(mocks.cloudAssistantTools).toHaveBeenLastCalledWith(
+      expect.any(Object),
+      expect.any(Function),
+      expect.any(Function),
+      "read_only",
+    );
+    const call = mocks.generateText.mock.calls.at(-1)?.[0];
+    expect(call.system).toContain(
+      "This turn has no tools that change anything in the workspace",
+    );
+  });
+
   it("allows one turn to use another catalog model from the connected provider", async () => {
     const res = await POST(post({ ...turn, model: "claude-haiku-4-5" }));
 

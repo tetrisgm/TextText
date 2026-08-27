@@ -208,7 +208,7 @@ const createItemInput = z
     folder_path: folderPath
       .optional()
       .describe(
-        'The destination folder path. Structured creation defaults to the Blog folder at "blog". Quick capture chooses Notes or Bookmarks automatically.',
+        "The destination folder path. Omit it and the item goes to the folder its kind belongs in: a note to Notes, a bookmark to Bookmarks, anything else to Blog. Quick capture routes the same way.",
       ),
     capture: z
       .string()

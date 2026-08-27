@@ -52,8 +52,17 @@ function canonical(value: unknown): string {
     .join(",")}}`;
 }
 
+// How deep a message may nest before the cleaner gives up.
+//
+// Eight was too shallow for the things this actually carries. A staged
+// create_item_type sits nine levels down from the message root (proposals ->
+// proposal -> arguments -> blueprint -> fields -> field -> options -> option
+// -> value), so its leaf values were dropped, the cleaned copy no longer
+// matched the original, and cleanMessage discarded the whole proposal.
+const MAX_MESSAGE_DEPTH = 16;
+
 function safeValue(value: unknown, depth = 0): unknown {
-  if (depth > 8) return undefined;
+  if (depth > MAX_MESSAGE_DEPTH) return undefined;
   if (typeof value === "string") {
     return value.slice(0, 32_000).replace(SECRET_VALUE, "[redacted]");
   }
