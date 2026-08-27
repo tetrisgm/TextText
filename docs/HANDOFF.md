@@ -650,6 +650,45 @@ in-app assistant, local CLI, or hosted MCP.
   `WebAppWindowController.codexTurnProgress(method:)` names the events that
   restart the clock; the per-tool deadline is a separate 8s and unchanged.
 
+## What keeps the writing surface safe to change (2026-08-27)
+
+- The surface styles markdown with FOUR HAND-ROLLED REGEXES (heading, quote,
+  list, inline emphasis/code). The reader parses with remark + remark-gfm.
+  These are two implementations and they WILL drift: the reader knows tables,
+  strikethrough, footnotes and wiki links that the regexes do not. Do not treat
+  that as a bug to chase construct by construct.
+- The drift is cosmetic, and only cosmetic, while ONE property holds: the
+  segments concatenate back to the input, character for character. Everything
+  downstream is absolute offsets into that same string. `segmentsForValue` is
+  exported for that invariant, and
+  `markdown-surface-invariant.test.ts` pins it over a construct corpus (tables,
+  strikethrough, wiki links, fences, footnotes, unicode, empty lines) plus 2000
+  seeded-random strings, so a construct nobody has written yet is covered the
+  day it appears. It also checks every segment's stamped line number, which is
+  what `revealLine` matches against.
+- An unstyled construct looks plain. A segmenter that drops one character moves
+  every offset in the product while the document still looks right. The first
+  is a cosmetic gap; the second is the failure mode worth a property test.
+
+## eval:sidebar needs a LOCAL build, and it is the AI look suite (2026-08-27)
+
+- It was dead, and not for its own reasons. It serves `.next` with
+  `next start`, and it signs in through the dev sign-in, which is compiled away
+  unless the build carried AUTH_DEV_LOGIN=1. `vercel build --prod` (i.e. every
+  `npm run deploy:web`) leaves exactly such a build in `.next`, so deploying
+  broke this eval with no other trace. Run `npm run build` first;
+  `deploy-web.sh` now says so on the way out, and the eval refuses with the
+  reason instead of waiting 30s for a form that is not coming.
+- It also needs the `codex` (or `claude`) CLI on PATH as the model, and says
+  which one is missing.
+- This IS the "how good is the AI at generating document types" suite. Five
+  briefs today: Medium blog, Apple Notes, Notion pages, Todoist to-dos,
+  Raindrop bookmarks. It drives the real system prompt, the real tool set and
+  the real executor, and deliberately does NOT score itself: it produces
+  before/index/item/editor screenshots to be judged by eye against the
+  reference the brief names. Scoring a look by asserting on its JSON is how an
+  earlier version passed while producing pages nobody would ship.
+
 ## Markdown syntax shows on the line you are writing on (2026-08-27)
 
 - The body was never a textarea. `MarkdownSurface` is a contenteditable that

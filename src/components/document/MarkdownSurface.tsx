@@ -37,7 +37,7 @@ export type SurfaceSelection = {
   to: number;
 };
 
-type Segment = { text: string; className?: string; line?: number };
+export type Segment = { text: string; className?: string; line?: number };
 
 const MARKER = "tt-md-marker";
 /**
@@ -118,8 +118,17 @@ function inlineSegments(text: string): Segment[] {
   return out;
 }
 
-/** Every segment of the whole body, newlines included as literal text. */
-function segmentsForValue(value: string): Segment[] {
+/**
+ * Every segment of the whole body, newlines included as literal text.
+ *
+ * Exported for its INVARIANT, which is the load-bearing property of this whole
+ * surface: the segments concatenate back to exactly the input, in order. Every
+ * character offset in the product rides on that. The agent edits by range, the
+ * Y.Text holds the same string, remote carets are absolute offsets, and
+ * `if_match_hash` hashes it. A segmenter that drops or invents one character
+ * moves all of them while the document still looks right.
+ */
+export function segmentsForValue(value: string): Segment[] {
   const out: Segment[] = [];
   const lines = value.split("\n");
   lines.forEach((line, index) => {

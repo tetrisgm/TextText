@@ -11,13 +11,21 @@
 // produces screenshots of the folder index, an opened item, and the editor,
 // and those get judged by eye against the reference the brief names.
 //
+//   npm run build                           # REQUIRED, see below
 //   npm run eval:sidebar                    # every brief, via codex
 //   npm run eval:sidebar -- medium-blog     # one brief
 //   npm run eval:sidebar -- all claude      # a different local model
 //
 // Nothing is deployed and no production database is touched.
+//
+// It serves .next with `next start`, so it needs a production build made
+// LOCALLY: `npm run build` reads .env.local, which carries AUTH_DEV_LOGIN=1,
+// and the dev sign-in this eval signs in through only exists when that is set.
+// A build left behind by `vercel build --prod` looks identical on disk and has
+// no dev sign-in in it, and the only symptom was a 30 second wait for a form
+// that was never coming. The preflight below says so instead.
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { chromium, type Page } from "playwright";
 import { ASSISTANT_SYSTEM_PROMPT } from "../src/lib/ai/system-prompt";
@@ -549,8 +557,41 @@ async function waitForServer(): Promise<void> {
   throw new Error(`server never came up:\n${serverLog.slice(-3000)}`);
 }
 
+/**
+ * The dev sign-in has to be in the build being served.
+ *
+ * This eval signs in through it, and it is compiled away unless the build was
+ * made with AUTH_DEV_LOGIN=1. `vercel build --prod` leaves exactly such a
+ * build in .next, so a deploy earlier in the day is enough to break this with
+ * no other trace.
+ */
+async function requireDevSignInBuild(): Promise<void> {
+  const html = await fetch(`${BASE}/editor`, { redirect: "manual" })
+    .then((response) => response.text())
+    .catch(() => "");
+  if (html.includes("ac-devsignin")) return;
+  throw new Error(
+    `${BASE}/editor has no dev sign-in, so this eval cannot sign in.\n` +
+      "The .next build being served was made without AUTH_DEV_LOGIN=1,\n" +
+      "which is what `vercel build --prod` leaves behind. Rebuild locally:\n" +
+      "  npm run build",
+  );
+}
+
+/** The model is a local CLI, not a provider key. Say which one is missing. */
+function requireModelCli(): void {
+  const found = spawnSync("which", [ENGINE], { encoding: "utf8" });
+  if (found.status === 0 && found.stdout.trim()) return;
+  throw new Error(
+    `The "${ENGINE}" CLI is not on PATH, and this eval uses it as the model.\n` +
+      "Install it, or run with a different one: npm run eval:sidebar -- all claude",
+  );
+}
+
 async function main(): Promise<void> {
+  requireModelCli();
   await waitForServer();
+  await requireDevSignInBuild();
   note(`server up on ${BASE}, model ${ENGINE}`);
 
   const browser = await chromium.launch();

@@ -116,6 +116,11 @@ if npx tsx "$ROOT/scripts/verify-deployment.ts" https://texttext.app \
     --expect-dpl "$NEXT_DEPLOYMENT_ID"; then
   echo
   echo "Live: $NEW ($NEXT_DEPLOYMENT_ID)"
+  # vercel build writes .next as well, and that build has no dev sign-in in it
+  # because the production env has no AUTH_DEV_LOGIN. Anything that serves
+  # .next locally is now serving that. eval:sidebar is the one that does.
+  echo "Note: .next now holds a production build with no dev sign-in."
+  echo "      Run 'npm run build' before eval:sidebar or eval:item-type."
   exit 0
 fi
 
