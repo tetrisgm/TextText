@@ -47,7 +47,9 @@ export function UpdatedBuildNotice() {
     const onVisible = () => {
       if (document.visibilityState === "visible") void check();
     };
-    void check();
+    // No check on mount: a page that has just loaded came from the origin it
+    // would be asking about, so it cannot be behind. The interesting moment is
+    // returning to a window that has been sitting open.
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
     const timer = window.setInterval(() => void check(), CHECK_EVERY_MS);
