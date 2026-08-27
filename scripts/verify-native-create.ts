@@ -123,8 +123,12 @@ async function devSignIn(page: Page) {
  * kind and NO folder_path, because the person never named a folder. Where that
  * lands is the workspace's decision, and it is the decision under test.
  */
+/** How long the fake agent thinks, so a working line can be observed. */
+const DELAY_MS = Number(process.env.NATIVE_TURN_DELAY_MS ?? "2500");
+
 function nativeBridge(): string {
   return `(() => {
+    const TURN_DELAY_MS = ${DELAY_MS};
     const state = { prompts: [], tools: [], conversationId: undefined, results: [] };
     const emit = (detail) => window.dispatchEvent(
       new CustomEvent("texttext:assistant", { detail })
@@ -160,7 +164,7 @@ function nativeBridge(): string {
                     body: "The project must install and run consistently on the platform it is intended for."
                   },
                   conversationId: state.conversationId
-                }), 20);
+                }), TURN_DELAY_MS);
               } else if (
                 body.action === "assistantToolResult" &&
                 body.callId === "native-create-1"
@@ -208,11 +212,28 @@ async function main() {
     await composer.fill(OWNERS_PROMPT);
     await composer.press("Enter");
 
+    // Watch for the working line while the agent is thinking. The person sees
+    // nothing else during this window, so "nothing" is a bug.
+    let sawWorking = false;
+    let workingText = "";
     for (let waited = 0; waited < 50; waited += 1) {
-      await page.waitForTimeout(500);
-      const working = await page.locator('[role="log"] [role="status"]').count();
-      if (working === 0 && waited > 4) break;
+      await page.waitForTimeout(400);
+      const line = page.locator('[role="log"] [role="status"]').first();
+      if ((await line.count()) > 0) {
+        sawWorking = true;
+        workingText = (await line.innerText().catch(() => "")).trim();
+      } else if (waited > 4 && sawWorking) {
+        break;
+      } else if (waited > 20) {
+        break;
+      }
     }
+    check(
+      "the turn says it is working while the agent thinks",
+      sawWorking,
+      "nothing appeared under the message for the whole turn",
+    );
+    if (sawWorking) console.log(`    (it said "${workingText}")`);
     await page.waitForTimeout(2000);
 
     const bridge = await page.evaluate(() => {

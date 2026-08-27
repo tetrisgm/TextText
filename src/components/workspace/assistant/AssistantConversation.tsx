@@ -827,7 +827,14 @@ export function AssistantConversation({
               </div>
             ) : null}
             {message.outbound && <OutboundTrace outbound={message.outbound} />}
-            {message.role === "assistant" && onSaveAnswer ? (
+            {/* Save and rating belong on an ANSWER, not on a receipt. When the
+                turn did something, the message reports what it did, and
+                offering to save "Created the note X in Notes" into Notes is
+                absurd on its face: the thing is already there. Rating a
+                receipt is no better. */}
+            {message.role === "assistant" &&
+            onSaveAnswer &&
+            !message.artifactProofs?.length ? (
               message.savedItem ? (
                 <span className={styles.savedAnswer}>
                   Saved to Notes · {message.savedItem.title}
@@ -843,7 +850,9 @@ export function AssistantConversation({
                 </button>
               )
             ) : null}
-            {message.role === "assistant" && onRateAnswer ? (
+            {message.role === "assistant" &&
+            onRateAnswer &&
+            !message.artifactProofs?.length ? (
               <span className={styles.answerFeedback} aria-label="Rate answer">
                 <button
                   type="button"

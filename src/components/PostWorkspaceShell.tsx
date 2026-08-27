@@ -3032,7 +3032,11 @@ function WorkspaceRootLanding({
                       setSort(event.currentTarget.value as SidebarDocumentSort)
                     }
                   >
-                    <option value="recent">Recently updated</option>
+                    {/* This sorts by how recently you OPENED an item, with
+                        the update time only as a tiebreak, which is why a
+                        brand new item does not appear at the top. "Last
+                        edited" below is the one that sorts by update time. */}
+                    <option value="recent">Recently opened</option>
                     <option value="alphabetical">Alphabetical</option>
                     <option value="created">Date created</option>
                     <option value="edited">Last edited</option>

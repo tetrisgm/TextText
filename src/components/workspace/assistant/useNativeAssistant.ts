@@ -1425,6 +1425,16 @@ export function useNativeAssistant({
       const submittedView = getViewRef.current();
       appendToThread(thread, "user", displayPrompt);
       setThreadBusy(thread, true);
+      /**
+       * Whether this turn was handed to the connected agent and is still out.
+       *
+       * The native branch returns from inside the try below, so the finally ran
+       * and cleared the busy flag the instant the turn started. The rail then
+       * showed nothing at all for the whole turn: no working line, no dot, and
+       * the person watched an empty panel while the agent worked. A native turn
+       * is settled by its own turn-completed and error handlers instead.
+       */
+      let handedToNativeAgent = false;
       const jobId = startAssistantJob({
         threadKey: thread,
         contextKey,
@@ -1549,6 +1559,7 @@ export function useNativeAssistant({
               priorCloudMessages,
             );
             if (started) {
+              handedToNativeAgent = true;
               appendToThread(
                 thread,
                 "progress",
@@ -1722,7 +1733,7 @@ export function useNativeAssistant({
       } finally {
         activeCloudAbortRef.current = null;
         setThreadCloudProvider(thread, null);
-        setThreadBusy(thread, false);
+        if (!handedToNativeAgent) setThreadBusy(thread, false);
       }
     },
     [

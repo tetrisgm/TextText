@@ -650,6 +650,28 @@ in-app assistant, local CLI, or hosted MCP.
   `WebAppWindowController.codexTurnProgress(method:)` names the events that
   restart the clock; the per-tool deadline is a separate 8s and unchanged.
 
+## The native turn went quiet the moment it started (2026-08-27)
+
+- `submit` sets the thread busy, then the native branch hands the turn to the
+  bridge and RETURNS FROM INSIDE THE TRY. The finally then cleared the busy
+  flag immediately, so the rail showed nothing at all for the whole turn: no
+  working line, no dot, an empty panel while the agent worked. A native turn is
+  settled by its own turn-completed and error handlers, so the finally now
+  skips the clear when `handedToNativeAgent` is set.
+- Only `submit` hands off this way. `runQuickAction` is cloud-only, and
+  `generateItemTypeBlueprint` runs its own promise with its own busy handling.
+- `eval:native-create` holds the fake turn open (NATIVE_TURN_DELAY_MS, default
+  2500) and asserts the working line is on screen while the agent thinks. It
+  fails with "nothing appeared under the message for the whole turn".
+- Save-to-Notes and the thumbs belong on an ANSWER, not a receipt. A message
+  carrying artifact proofs reports work the assistant DID; offering to save
+  "Created the note X in Notes" into Notes is absurd, and rating a receipt is
+  meaningless. Both are suppressed when `message.artifactProofs` is non-empty.
+- The Library's "recent" sort keys on how recently you OPENED an item, with
+  updatedAt only as a tiebreak, so a brand new item does not appear at the top.
+  It said "Recently updated" while "Last edited" was the option that actually
+  sorted by update time. Renamed to "Recently opened".
+
 ## One rule for where an unplaced item goes (2026-08-27)
 
 - The contract says the UI, the in-app assistant and MCP call ONE
