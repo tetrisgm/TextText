@@ -209,6 +209,27 @@ const server = http.createServer((req, res) => {
             text: `Done. The Mock Design server created ${frameId}.`,
           },
         ];
+      } else if (hasToolResult && transcript.includes("No item with id")) {
+        // The model is told the command failed and says so in its own words,
+        // which is exactly the prose the UI must NOT quote as the receipt.
+        content = [
+          {
+            type: "text",
+            text: "I could not open that item, because the workspace has nothing with that id.",
+          },
+        ];
+      } else if (!hasToolResult && /open the missing item/i.test(transcript)) {
+        const read = pickTool(body.tools, ["read_item"]);
+        if (read) {
+          content = [
+            {
+              type: "tool_use",
+              id: "toolu_mock_missing_read_1",
+              name: read.name,
+              input: { id: "00000000-0000-4000-8000-000000000000" },
+            },
+          ];
+        }
       } else if (!hasToolResult && /create a frame/i.test(transcript)) {
         const remote = pickRemoteTool(body.tools, "create_frame");
         if (remote) {
