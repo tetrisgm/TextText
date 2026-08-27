@@ -286,7 +286,7 @@ async function main() {
   };
   await context.addInitScript(`(() => {
     const blueprint = ${JSON.stringify(connectedAgentBlueprint)};
-    const state = { prompts: [], registeredTools: [] };
+    const state = { prompts: [], registeredTools: [], conversationId: undefined };
     const emit = (detail) => window.dispatchEvent(
       new CustomEvent("texttext:assistant", { detail })
     );
@@ -310,17 +310,27 @@ async function main() {
                 }));
               } else if (body.action === "assistantTurn") {
                 state.prompts.push(body.prompt || "");
+                // Echo the conversation id back. Every native event is fenced
+                // against the turn that asked for it, and the item-type design
+                // turn runs in its own invisible conversation; an event without
+                // the id is answered with "this turn is no longer active" and
+                // the studio waits out its two-minute timeout.
+                state.conversationId = body.conversationId;
                 setTimeout(() => emit({
                   type: "tool-call",
                   callId: "item-type-preview",
                   tool: "preview_item_type",
-                  arguments: { blueprint_json: JSON.stringify(blueprint) }
+                  arguments: { blueprint_json: JSON.stringify(blueprint) },
+                  conversationId: state.conversationId
                 }), 10);
               } else if (
                 body.action === "assistantToolResult" &&
                 body.callId === "item-type-preview"
               ) {
-                setTimeout(() => emit({ type: "turn-completed" }), 10);
+                setTimeout(() => emit({
+                  type: "turn-completed",
+                  conversationId: state.conversationId
+                }), 10);
               }
             }
           }
@@ -358,7 +368,34 @@ async function main() {
     await page.getByRole("button", { name: "Build this item type" }).click();
     await page
       .getByRole("textbox", { name: "Name", exact: true })
-      .waitFor({ timeout: 20_000 });
+      .waitFor({ timeout: 20_000 })
+      .catch(async (error) => {
+        // A bare "waiting for Name" tells nobody why. Say what the studio is
+        // showing instead, which is where the agent's own message lands.
+        const shown = await page
+          .locator('[role="dialog"]')
+          .innerText()
+          .catch(() => "(no dialog)");
+        // Whether the turn was ever POSTED separates "the fake bridge never
+        // looked connected" from "it connected and the reply was refused".
+        const bridge = await page.evaluate(() => {
+          const state = (
+            window as unknown as {
+              __TEXTTEXT_NATIVE_ITEM_TYPE_EVAL__?: {
+                prompts: string[];
+                registeredTools: string[];
+              };
+            }
+          ).__TEXTTEXT_NATIVE_ITEM_TYPE_EVAL__;
+          return {
+            prompts: state?.prompts.length ?? -1,
+            tools: state?.registeredTools.length ?? -1,
+          };
+        });
+        throw new Error(
+          `${(error as Error).message}\n\nturns posted to the fake bridge: ${bridge.prompts}, tools registered: ${bridge.tools}\n\nThe studio is showing:\n${shown.slice(0, 400)}`,
+        );
+      });
     check(
       "the focused builder uses the connected Codex or ChatGPT agent without an API key",
       (await page

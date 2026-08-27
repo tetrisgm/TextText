@@ -650,6 +650,24 @@ in-app assistant, local CLI, or hosted MCP.
   `WebAppWindowController.codexTurnProgress(method:)` names the events that
   restart the clock; the per-tool deadline is a separate 8s and unchanged.
 
+## The item-type eval was dead, and why (2026-08-27)
+
+- `npm run eval:item-type` had been failing at its third check for long enough
+  that a session called it environmental. It is not: it injects its own
+  `window.webkit.messageHandlers.textTextApp` shim and needs no real agent.
+- Its fake bridge predated conversation fencing. Every native event is now
+  checked against `nativeConversationRef` and the turn fence, and the item-type
+  design turn runs in its own invisible conversation (`item-type:<id>`), so an
+  event with no `conversationId` is answered with "this assistant turn is no
+  longer active" and the studio waits out its 120s timeout. The shim now echoes
+  the id it was given. 22 behaviours run again.
+- The lesson generalizes: a hand-written fake of the native bridge is a second
+  implementation of a protocol, and it rots silently. When a native contract
+  changes, `scripts/verify-item-type-live.ts` is the other end of it.
+- Its first two checks kept passing while everything after them was dead, which
+  is what made it look like a flake rather than a wall. The failure now names
+  the URL, whether the turn was posted, and what the studio is showing.
+
 ## Deploying the web app alone (2026-08-27)
 
 - `npm run deploy:web` (`release/deploy-web.sh`) is the ONLY hand path to
