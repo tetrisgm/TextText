@@ -50,9 +50,28 @@ type Case = {
   title: string;
 };
 
+/**
+ * The owner's own words, verbatim, from the screenshot that started this.
+ *
+ * The workspace answered it with "Couldn't create the note: the Blog folder
+ * accepts articles, media posts, or video posts, not notes." The prompt is
+ * kept exactly as it was pasted, em dash and all, because a regression test
+ * that paraphrases the report is testing something the person never sent.
+ */
+const OWNERS_NOTE_PROMPT = `Create a note about:
+
+Project Requirements
+
+What to Create: Build a WebMCP-powered web app that imagines and explores the future of the open web—where humans and agents can interact, collaborate, and create together.
+Functionality: The Project must be capable of being successfully installed and running consistently on the platform for which it is intended and must function as depicted in the video and/or expressed in the text description.
+Platforms: A submitted Project must run on the platform for which it is intended and which is specified in the Submission Requirements.
+New & Existing: Projects must be either newly created during the Hackathon Submission Period or, if the Project existed prior to the Submission Period, must have been meaningfully extended using WebMCP after the Submission Period start date. Pre-existing Projects will be evaluated only on work added during the Submission Period.
+Entrants with pre-existing Projects must provide clear documentation distinguishing prior work from new work, including evidence that it was meaningfully extended with WebMCP within the Submission Period (e.g., timestamped, dated commit history, or equivalent).
+Third Party Integrations: If a Project integrates any third-party SDK, APIs and/or data, Entrant must be authorized to use them in accordance with any terms and conditions or licensing requirements of the tool.`;
+
 const CASES: Case[] = [
   {
-    ask: "Create a note about the project requirements",
+    ask: OWNERS_NOTE_PROMPT,
     collection: "Notes",
     title: "Project requirements",
   },
@@ -380,8 +399,9 @@ async function main() {
 
     for (const testCase of CASES) {
       const transcript = await ask(page, testCase.ask);
+      const label = testCase.ask.split("\n")[0].slice(0, 48);
       check(
-        `"${testCase.ask}" stages the change for review`,
+        `"${label}" stages the change for review`,
         /Waiting for your review/i.test(transcript),
         transcript.slice(-200),
       );
