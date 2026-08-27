@@ -127,9 +127,9 @@ async function main() {
       jobStatuses.join(", ") || "no job row found",
     );
     check(
-      "the turn is labelled as having changed nothing",
-      rail.includes("Nothing changed"),
-      jobStatuses.join(", "),
+      "no job row for this turn sits above the conversation",
+      (await page.locator('[aria-label="Assistant jobs"]').count()) === 0,
+      "the thread on screen reports itself inline, not in the strip",
     );
 
     for (const theme of ["light", "dark"] as const) {
@@ -137,6 +137,21 @@ async function main() {
       await page.waitForTimeout(600);
       await page.screenshot({ path: `${SHOTS}/receipt-${theme}.png` });
     }
+    // Where the summary label lives once the person is somewhere else. The
+    // strip is for work you cannot see, so the same turn that reports itself
+    // inline here has to be findable from another context.
+    await page
+      .locator(".post-editor-sidebar button")
+      .filter({ hasText: /^Notes/ })
+      .first()
+      .evaluate((button) => (button as HTMLButtonElement).click());
+    await page.waitForTimeout(2000);
+    const elsewhere = await page.locator("body").innerText();
+    check(
+      "from another context the strip says the turn changed nothing",
+      elsewhere.includes("Nothing changed"),
+      elsewhere.includes("Assistant jobs") ? "the strip is there without it" : "no strip",
+    );
   } finally {
     await browser.close();
   }
