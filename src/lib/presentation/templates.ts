@@ -9,7 +9,6 @@ const article = {
   name: "Article",
   description: "A long-form story in one reading column.",
   fields: [{ id: "cover", label: "Cover", type: "image" }],
-  capabilities: ["assets", "collaboration", "comments", "publish", "search"],
   theme: {
     typography: "editorial",
     measure: "reading",
@@ -115,7 +114,6 @@ const note = {
   name: "Note",
   description: "A quick private note with no ceremony.",
   fields: [],
-  capabilities: ["assets", "collaboration", "comments", "search"],
   theme: { typography: "system", measure: "reading", alignment: "start" },
   item: {
     type: "stack",
@@ -171,14 +169,6 @@ const bookmark = {
   fields: [
     { id: "cover", label: "Cover", type: "image" },
     { id: "sourceUrl", label: "Original link", type: "url", required: true },
-  ],
-  capabilities: [
-    "assets",
-    "capture",
-    "collaboration",
-    "comments",
-    "import",
-    "search",
   ],
   theme: {
     typography: "editorial",
@@ -237,7 +227,6 @@ const gallery = {
   name: "Gallery",
   description: "An image-first page where the pictures lead.",
   fields: [{ id: "cover", label: "Cover", type: "image" }],
-  capabilities: ["assets", "collaboration", "comments", "publish", "search"],
   theme: {
     typography: "system",
     measure: "full",
@@ -290,7 +279,6 @@ const talk = {
     { id: "cover", label: "Cover", type: "image" },
     { id: "videoUrl", label: "Video", type: "url" },
   ],
-  capabilities: ["assets", "collaboration", "comments", "publish", "search"],
   theme: {
     typography: "system",
     measure: "wide",
@@ -357,7 +345,6 @@ const casestudy = {
     { id: "caption", label: "Caption", type: "text" },
     { id: "role", label: "Role", type: "text" },
   ],
-  capabilities: ["assets", "collaboration", "comments", "publish", "search"],
   theme: {
     typography: "system",
     measure: "full",
@@ -475,7 +462,6 @@ const page = {
     { id: "cover", label: "Cover", type: "image" },
     { id: "icon", label: "Icon", type: "text", help: "One emoji." },
   ],
-  capabilities: ["assets", "collaboration", "comments", "publish", "search"],
   theme: {
     typography: "system",
     measure: "reading",
@@ -587,7 +573,6 @@ const todo = {
       ],
     },
   ],
-  capabilities: ["collaboration", "comments", "search"],
   theme: {
     typography: "system",
     measure: "reading",
@@ -717,7 +702,6 @@ const meeting = {
       ],
     },
   ],
-  capabilities: ["collaboration", "comments", "search"],
   theme: { typography: "system", measure: "reading", alignment: "start" },
   item: {
     type: "stack",
@@ -828,7 +812,6 @@ const journal = {
     },
     { id: "location", label: "Location", type: "text" },
   ],
-  capabilities: ["assets", "search"],
   theme: { typography: "editorial", measure: "reading", alignment: "start" },
   item: {
     type: "stack",
@@ -951,7 +934,6 @@ const bookshelf = {
     },
     { id: "favoriteQuote", label: "Favorite quote", type: "text" },
   ],
-  capabilities: ["assets", "comments", "search"],
   theme: { typography: "system", measure: "reading", alignment: "start" },
   item: {
     type: "stack",
@@ -1134,7 +1116,6 @@ const watchlist = {
     { id: "liked", label: "Loved it", type: "boolean" },
     { id: "rewatch", label: "Rewatch", type: "boolean" },
   ],
-  capabilities: ["assets", "search"],
   theme: { typography: "system", measure: "reading", alignment: "start" },
   item: {
     type: "stack",
@@ -1325,7 +1306,6 @@ const recipe = {
       ],
     },
   ],
-  capabilities: ["assets", "comments", "publish", "search"],
   theme: { typography: "system", measure: "reading", alignment: "start" },
   item: {
     type: "stack",
@@ -1506,7 +1486,6 @@ const changelog = {
       ],
     },
   ],
-  capabilities: ["assets", "publish", "search"],
   theme: { typography: "system", measure: "reading", alignment: "start" },
   item: {
     type: "stack",
@@ -1664,7 +1643,6 @@ const decision = {
     },
     { id: "outcome", label: "Outcome", type: "richtext" },
   ],
-  capabilities: ["collaboration", "comments", "search"],
   theme: {
     typography: "system",
     measure: "reading",
@@ -1794,7 +1772,6 @@ const wiki = {
       multiple: true,
     },
   ],
-  capabilities: ["assets", "collaboration", "comments", "search"],
   theme: { typography: "system", measure: "wide", alignment: "start" },
   item: {
     type: "stack",
@@ -1949,7 +1926,6 @@ const spec = {
       ],
     },
   ],
-  capabilities: ["collaboration", "comments", "search"],
   theme: { typography: "system", measure: "reading", alignment: "start" },
   item: {
     type: "stack",
@@ -2113,7 +2089,6 @@ const project = {
     },
     { id: "risks", label: "Risks", type: "richtext" },
   ],
-  capabilities: ["collaboration", "comments", "search"],
   theme: {
     typography: "system",
     measure: "wide",
@@ -2389,7 +2364,6 @@ const brief = {
       visibility: "hidden",
     },
   ],
-  capabilities: ["collaboration", "comments", "publish", "search"],
   theme: {
     accent: "#0A66C2",
     typography: "system",
@@ -2582,7 +2556,6 @@ const goals = {
       ],
     },
   ],
-  capabilities: ["collaboration", "comments", "search"],
   theme: { typography: "system", measure: "reading", alignment: "start" },
   item: {
     type: "stack",
@@ -2732,7 +2705,6 @@ const postmortem = {
       ],
     },
   ],
-  capabilities: ["collaboration", "comments", "search"],
   theme: { typography: "system", measure: "reading", alignment: "start" },
   item: {
     type: "stack",
@@ -2870,7 +2842,6 @@ const retro = {
       ],
     },
   ],
-  capabilities: ["collaboration", "comments", "search"],
   theme: { typography: "system", measure: "reading", alignment: "start" },
   item: {
     type: "stack",
@@ -3017,7 +2988,6 @@ const calendar = {
       target: "document",
     },
   ],
-  capabilities: ["collaboration", "comments", "search"],
   theme: {
     typography: "system",
     measure: "reading",
@@ -3135,7 +3105,6 @@ const newsletter = {
       ],
     },
   ],
-  capabilities: ["assets", "publish", "search"],
   theme: { typography: "editorial", measure: "reading", alignment: "center" },
   item: {
     type: "stack",
@@ -3243,7 +3212,6 @@ const now = {
       ],
     },
   ],
-  capabilities: ["publish", "search"],
   theme: { typography: "editorial", measure: "narrow", alignment: "start" },
   item: {
     type: "stack",
@@ -3358,7 +3326,6 @@ const prompts = {
       ],
     },
   ],
-  capabilities: ["collaboration", "search"],
   theme: { typography: "mono", measure: "reading", alignment: "start" },
   item: {
     type: "stack",
@@ -3471,7 +3438,6 @@ const poll = {
     },
     { id: "closesAt", label: "Closes", type: "date" },
   ],
-  capabilities: ["publish", "responses", "search"],
   theme: { typography: "system", measure: "narrow", alignment: "center" },
   item: {
     type: "stack",
@@ -3565,7 +3531,6 @@ const rsvp = {
       fields: [{ id: "option", label: "Choice", type: "text", required: true }],
     },
   ],
-  capabilities: ["assets", "publish", "responses", "search"],
   theme: { typography: "editorial", measure: "narrow", alignment: "center" },
   item: {
     type: "stack",

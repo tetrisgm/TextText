@@ -21,16 +21,6 @@ export const TEXT_ROLES = [
    */
   "icon",
 ] as const;
-export const CAPABILITIES = [
-  "assets",
-  "capture",
-  "collaboration",
-  "comments",
-  "import",
-  "publish",
-  "responses",
-  "search",
-] as const;
 export const FIELD_TYPES = [
   "text",
   "richtext",
@@ -749,7 +739,6 @@ export const templateDefinitionSchema = z
     fields: z.array(documentFieldDefinitionSchema).max(80).default([]),
     item: renderNodeSchema,
     collection: collectionRenderSchema,
-    capabilities: z.array(z.enum(CAPABILITIES)).max(CAPABILITIES.length).default([]),
     theme: themeTokensSchema.default({}),
     /** Example content travels with a look so a new or custom type can show a
      * meaningful preview before the workspace contains any items of that type. */
@@ -1180,9 +1169,6 @@ export function validateTemplateDefinition(value: unknown): TemplateDefinition {
     throw new Error(
       `collection defaultView references undeclared view ${template.collection.defaultView}`,
     );
-  }
-  if (new Set(template.capabilities).size !== template.capabilities.length) {
-    throw new Error("template capabilities must be unique");
   }
   return template;
 }

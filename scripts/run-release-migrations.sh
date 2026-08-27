@@ -46,6 +46,7 @@ migrations=(
   scripts/migrate-drop-oauth.mjs
   scripts/migrate-home-layout-default.mjs
   scripts/migrate-drop-card-style.mjs
+  scripts/migrate-drop-template-capabilities.mjs
 )
 
 missing=()

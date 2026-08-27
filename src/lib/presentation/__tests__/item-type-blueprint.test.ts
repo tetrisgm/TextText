@@ -50,7 +50,6 @@ describe("compileItemTypeBlueprint", () => {
 
     expect(template.theme.typography).toBe("editorial");
     expect(template.theme.bodyScale).toBe("relaxed");
-    expect(template.capabilities).toContain("publish");
     expect(template.collection.layout).toBe("cards");
     expect(template.collection.columns).toBe(2);
     expect(template.example?.fields.topic).toBe("design");
@@ -159,7 +158,6 @@ describe("compileItemTypeBlueprint", () => {
 
     expect(template.collection.layout).toBe("list");
     expect(template.theme.surface).toBe("system");
-    expect(template.capabilities).not.toContain("publish");
   });
 
   it("rejects a board without a single-select grouping field", () => {

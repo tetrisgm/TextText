@@ -650,6 +650,26 @@ in-app assistant, local CLI, or hosted MCP.
   `WebAppWindowController.codexTurnProgress(method:)` names the events that
   restart the clock; the per-tool deadline is a separate 8s and unchanged.
 
+## capabilities is gone (owner ruling, 2026-08-27)
+
+- A look used to declare which product features its items supported: assets,
+  capture, collaboration, comments, import, publish, responses, search. It was
+  declared on all eleven built-ins, derived for every AI-generated type, and
+  read by NOTHING. The only code that touched it checked the array for
+  duplicates. It sat exactly where "what editing does this item type support"
+  belongs, so a future session would have assumed it worked.
+- Deleted, with `migrate-drop-template-capabilities.mjs` stripping the key from
+  stored definitions. That migration is not optional: `templateDefinitionSchema`
+  is strict, so a stored look still carrying the key fails to parse once the
+  field is gone. It stripped 211 looks from a local dev database; production had
+  no stored looks at all.
+- `blueprint.audience` ("private" | "publishable") is now read by no code
+  either. It is KEPT deliberately: it tells the model what kind of thing it is
+  designing and so shapes the rest of the blueprint it writes. That is a real
+  job in the prompt, which capabilities never had anywhere.
+- What publishable actually means is still enforced, by folder mode at the
+  intent layer ("publishing refuses notes and bookmarks at the intent layer").
+
 ## Driven in the real app, not described (2026-08-27)
 
 - Everything below was verified by typing the owner's own prompt into the

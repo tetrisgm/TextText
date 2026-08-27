@@ -1276,13 +1276,6 @@ export function compileItemTypeBlueprint(
         ? `${blueprint.name}, inspired by ${blueprint.styleReference}.`
         : blueprint.name),
     fields: fieldDefinitions(blueprint),
-    capabilities: [
-      "assets",
-      "collaboration",
-      "comments",
-      "search",
-      ...(blueprint.audience === "publishable" ? (["publish"] as const) : []),
-    ],
     theme,
     item: itemTree(blueprint),
     collection: {
