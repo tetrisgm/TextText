@@ -46,6 +46,7 @@
     "eval:turn-progress": "node --env-file=.env.local --import tsx scripts/verify-turn-progress.ts",
     "eval:assistant-create": "node --env-file=.env.local --import tsx scripts/verify-assistant-create.ts",
     "eval:native-create": "node --env-file=.env.local --import tsx scripts/verify-native-create.ts",
+    "evals": "node --env-file=.env.local --import tsx scripts/run-evals.ts",
     "eval:markdown-surface": "node --env-file=.env.local --import tsx scripts/verify-markdown-surface.ts",
     "eval:features": "node --env-file=.env.local --import tsx scripts/verify-features-doc.ts",
     "eval:home-layout": "node --env-file=.env.local --import tsx scripts/verify-home-layout.ts",

@@ -650,6 +650,23 @@ in-app assistant, local CLI, or hosted MCP.
   `WebAppWindowController.codexTurnProgress(method:)` names the events that
   restart the clock; the per-tool deadline is a separate 8s and unchanged.
 
+## npm run evals (2026-08-27)
+
+- One command runs every browser eval and reports THREE states: passed, failed,
+  and could-not-run. The third is the point. Nothing ran these before: eighteen
+  scripts, six in the release gate, every browser one outside it, so
+  `eval:item-type` was dead long enough that a session called its failure
+  environmental and `eval:sidebar` was being killed by every deploy. Both looked
+  exactly like "nobody has run this yet".
+- A missing precondition is never a pass and never a failure. It is named, with
+  the command that fixes it, and only real failures set the exit code, so the
+  runner is trustworthy on a machine that is not fully set up.
+- Preconditions checked up front: dev server on :3000, mock provider on :3999,
+  a local `.next` build, the codex CLI, and a LOCAL DATABASE_URL.
+- `npm run evals -- --list` prints the matrix without running anything;
+  `npm run evals -- turn` runs the subset whose name matches.
+- 12 passed, 0 failed, 0 blocked as of this date.
+
 ## The page can tell when it is out of date (2026-08-27)
 
 - A Mac window keeps the bundle it loaded, so a deploy never reaches an app
