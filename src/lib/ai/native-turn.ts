@@ -55,6 +55,24 @@ export function nativeWorkspaceIndex(
     .join("\n\n");
 }
 
+/**
+ * The person's own words, fenced but NOT escaped.
+ *
+ * `fenced` below entity-escapes `&`, `<` and `>` so untrusted document text
+ * cannot terminate its own boundary. The request is not untrusted: it is the
+ * one channel that is allowed to instruct, so escaping it buys no safety and
+ * costs correctness. It cost exactly that. Someone pasted "New & Existing",
+ * the model was handed "New &amp; Existing", and once it was told to save the
+ * text exactly as provided it did precisely that, into the note.
+ *
+ * The boundary is still defended, by neutralizing a literal closing tag rather
+ * than by rewriting every ampersand in the person's writing.
+ */
+function fencedRequest(label: string, value: string): string {
+  const guarded = value.replaceAll(`</${label}>`, `<\u200b/${label}>`);
+  return `<${label}>\n${guarded}\n</${label}>`;
+}
+
 function fenced(label: string, value: string): string {
   // Document text is untrusted and may itself contain strings such as
   // </WORKSPACE_CONTENT>. Escape markup characters so it cannot terminate the
@@ -136,6 +154,6 @@ export function nativeAssistantTurnPrompt({
     );
   }
 
-  sections.push(fenced("USER_REQUEST", request.trim()));
+  sections.push(fencedRequest("USER_REQUEST", request.trim()));
   return sections.join("\n\n");
 }
