@@ -650,6 +650,19 @@ in-app assistant, local CLI, or hosted MCP.
   `WebAppWindowController.codexTurnProgress(method:)` names the events that
   restart the clock; the per-tool deadline is a separate 8s and unchanged.
 
+## Browser eval state, all green (2026-08-27)
+
+- Run with `NEXT_PUBLIC_ROOT_DOMAIN=localhost:3000 TEXTTEXT_AI_BASE_URL=http://localhost:3999/v1 npm run dev`
+  plus `node scripts/mock-ai-provider.mjs`. Both matter: without the root
+  domain the tenant subdomain serves the marketing landing (eval:home-layout
+  now says so instead of failing four look checks), and without the mock every
+  assistant turn answers "The assistant could not finish that."
+- Green as of this date: `eval:features`, `eval:home-layout`, `eval:folder-look`,
+  `eval:save-as-look`, `eval:item-type`, `eval:assistant-create`,
+  `eval:turn-receipt`, `eval:turn-progress`.
+- `eval:item-type`'s first run after a recompile can fail two board checks on
+  timing. It passes on a warm server; two consecutive clean runs is the bar.
+
 ## The item-type eval was dead, and why (2026-08-27)
 
 - `npm run eval:item-type` had been failing at its third check for long enough

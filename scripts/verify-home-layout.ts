@@ -178,7 +178,30 @@ async function applyLook(page: Page, name: string): Promise<boolean> {
   return true;
 }
 
+/**
+ * The published page only exists on a tenant subdomain, and the dev server
+ * only serves one when it knows the root domain. Without it every look check
+ * below reads the marketing landing and fails for a reason that has nothing to
+ * do with looks. Say which, once, instead of four times in code.
+ */
+async function requireTenantSubdomain(page: Page, handle: string) {
+  await publicBlogHome(page, handle);
+  const isTenant = await page.evaluate(
+    () =>
+      document.querySelector(".blog-home-empty") !== null ||
+      document.querySelector(".blog-timeline") !== null ||
+      document.querySelector("[data-blog-home]") !== null,
+  );
+  if (isTenant) return;
+  throw new Error(
+    `http://${handle}.localhost:3000/ is not serving a workspace.\n` +
+      "Start the dev server with NEXT_PUBLIC_ROOT_DOMAIN=localhost:3000, or it\n" +
+      "serves the marketing landing there and every look check below fails.",
+  );
+}
+
 async function checkLookGovernsTheBlogPage(page: Page, handle: string) {
+  await requireTenantSubdomain(page, handle);
   await publicBlogHome(page, handle);
   const before = await emptyCopy(page);
   check(
