@@ -324,8 +324,11 @@ const server = http.createServer((req, res) => {
           sendFailedStream(res);
           return;
         }
+        // SLOW_STREAM holds a turn open long enough to be photographed while
+        // it runs. A reply is a handful of events, so the floor has to be high
+        // enough that the whole turn outlasts a screenshot and a few probes.
         const delayMs = transcript.includes("SLOW_STREAM")
-          ? Math.max(STREAM_DELAY_MS, 300)
+          ? Math.max(STREAM_DELAY_MS, 700)
           : STREAM_DELAY_MS;
         sendStream(res, content, delayMs);
         return;

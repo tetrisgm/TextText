@@ -66,6 +66,23 @@ export function cloudTurnOutcome(result: {
   };
 }
 
+/**
+ * The jobs worth listing above a conversation.
+ *
+ * The strip exists so work stays visible from anywhere, which means work the
+ * person cannot otherwise see. A turn running in the thread on screen reports
+ * itself inline, under the message that started it, and its outcome lands in
+ * the transcript; listing it again at the top announced the work in the one
+ * place the person was not looking, and became the only sign of it when the
+ * inline line scrolled away. The launcher's count still covers every job.
+ */
+export function jobsForOtherThreads<Job extends { threadKey: string }>(
+  jobs: readonly Job[],
+  threadKey: string,
+): Job[] {
+  return jobs.filter((job) => job.threadKey !== threadKey);
+}
+
 const MAX_JOBS = 20;
 const STORAGE_KEY = "texttext:assistant-jobs";
 const EMPTY_SERVER_JOBS: AssistantJob[] = [];

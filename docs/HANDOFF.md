@@ -603,6 +603,18 @@ in-app assistant, local CLI, or hosted MCP.
   `window.getSelection()` (blind to textareas), and refreshes on a 60ms
   settle after mouseup/keyup/selectionchange. It once shipped fully dead with
   a green suite: the store had no writer.
+- A running turn reports itself in one place: inline, under the message that
+  started it (`.working`, a pulsing dot and the progress line). The jobs strip
+  above the conversation lists only work the person cannot see, filtered by
+  `jobsForOtherThreads`; the launcher's count still covers every job in the
+  workspace. Listing the current thread's turn at the top announced it in the
+  one place the person was not looking (owner report, 2026-08-26).
+- The transcript follows its own end while the person is within 32px of it,
+  driven by a `ResizeObserver` on the thread and a scroll listener that
+  releases the pin the moment they scroll up. It used to scroll only when a
+  message was added, so a streamed answer grew past the bottom edge and took
+  the working line off screen about two seconds in. `npm run eval:turn-progress`
+  fails on the old behavior with "in in out out out".
 - `/docs/features` documents only exercised behavior, by rule stated on the
   page. `/docs` indexes it.
 

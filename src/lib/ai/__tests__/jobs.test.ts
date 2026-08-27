@@ -138,3 +138,28 @@ describe("cloudTurnOutcome", () => {
     ).toBe("done");
   });
 });
+
+describe("what the jobs strip lists", () => {
+  const job = (id: string, threadKey: string, status: string) =>
+    ({ id, threadKey, status }) as never;
+
+  it("drops the thread on screen, whatever that turn is doing", async () => {
+    const { jobsForOtherThreads } = await import("../jobs");
+    const here = "blog\u001fconversation-1";
+    expect(
+      jobsForOtherThreads(
+        [job("a", here, "running"), job("b", here, "done"), job("c", here, "error")],
+        here,
+      ),
+    ).toEqual([]);
+  });
+
+  it("keeps work started somewhere else, which is what the strip is for", async () => {
+    const { jobsForOtherThreads } = await import("../jobs");
+    const here = "blog\u001fconversation-1";
+    const elsewhere = job("d", "blog\u001fconversation-2", "running");
+    expect(jobsForOtherThreads([job("a", here, "running"), elsewhere], here)).toEqual([
+      elsewhere,
+    ]);
+  });
+});

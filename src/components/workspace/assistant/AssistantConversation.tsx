@@ -14,6 +14,26 @@ import styles from "./AssistantConversation.module.css";
 
 const FALLBACK_STARTER_CONTEXT: StarterContext = { level: "root" };
 
+/** How near the end still counts as watching the newest turn. */
+const PIN_SLACK = 32;
+
+/**
+ * The element the transcript actually scrolls inside.
+ *
+ * The rail owns the scroll box, not this component, and scrollIntoView asks
+ * every scrollable ancestor to move including the page behind the panel.
+ * Finding the one box and setting its scrollTop moves only the transcript.
+ */
+function scrollParent(node: HTMLElement): HTMLElement | null {
+  let parent = node.parentElement;
+  while (parent) {
+    const overflowY = getComputedStyle(parent).overflowY;
+    if (overflowY === "auto" || overflowY === "scroll") return parent;
+    parent = parent.parentElement;
+  }
+  return null;
+}
+
 function displayedMessageText(message: AssistantMessage): string {
   return message.text;
 }
@@ -417,12 +437,55 @@ export function AssistantConversation({
     decision: "approve" | "deny",
   ) => Promise<void> | void;
 }) {
+  const threadRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  /** Whether the person is watching the end of the transcript right now. */
+  const pinnedRef = useRef(true);
+  const followRef = useRef<() => void>(() => {});
   const context = starterContext ?? FALLBACK_STARTER_CONTEXT;
+  const hasMessages = messages.length > 0;
 
+  // Follow the newest turn while the person is at the end of the transcript.
+  //
+  // Scrolling only when a message was added left the answer to grow past the
+  // bottom edge on its own, and it took the working line with it: the one
+  // sign that the turn was alive left the screen a second after it arrived,
+  // and the only remaining sign was the jobs strip at the top, which is the
+  // one place the person was not looking. Watch the height instead of the
+  // message count, and stop following the moment they scroll up to read.
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: "end" });
-  }, [messages.length, submitting]);
+    const thread = threadRef.current;
+    if (!thread) return;
+    const scroller = scrollParent(thread);
+    if (!scroller) return;
+    const follow = () => {
+      if (!pinnedRef.current) return;
+      scroller.scrollTop = scroller.scrollHeight;
+    };
+    followRef.current = follow;
+    const onScroll = () => {
+      pinnedRef.current =
+        scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop <=
+        PIN_SLACK;
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    const observer = new ResizeObserver(follow);
+    observer.observe(thread);
+    follow();
+    return () => {
+      scroller.removeEventListener("scroll", onScroll);
+      observer.disconnect();
+      followRef.current = () => {};
+    };
+  }, [hasMessages]);
+
+  // Sending is an intent to watch the reply, so a submission takes the person
+  // back to the end even if they had scrolled away to read something.
+  useEffect(() => {
+    if (!submitting) return;
+    pinnedRef.current = true;
+    followRef.current();
+  }, [submitting]);
 
   const visibleJobs = (jobs ?? []).slice(0, 6);
   const quickActionBar =
@@ -593,6 +656,7 @@ export function AssistantConversation({
     : undefined;
   return (
     <div
+      ref={threadRef}
       className={styles.thread}
       role="log"
       aria-live="polite"
@@ -804,17 +868,23 @@ export function AssistantConversation({
           </div>
         );
       })}
+      {/* The turn reports itself under the message that started it, with a
+          dot that moves, because a still grey word is not evidence that
+          anything is happening. */}
       {submitting && (
-        <div className={styles.progress} role="status">
-          {latestProgress
-            ? boundedProgressText(
-                latestProgress.text,
-                context,
-                activeCloudProvider,
-              )
-            : activeCloudProvider
-              ? `${progressFallback(context)} with ${activeCloudProvider}`
-              : progressFallback(context)}
+        <div className={styles.working} role="status">
+          <span className={styles.workingDot} aria-hidden="true" />
+          <span>
+            {latestProgress
+              ? boundedProgressText(
+                  latestProgress.text,
+                  context,
+                  activeCloudProvider,
+                )
+              : activeCloudProvider
+                ? `${progressFallback(context)} with ${activeCloudProvider}`
+                : progressFallback(context)}
+          </span>
         </div>
       )}
       <div ref={endRef} aria-hidden="true" />

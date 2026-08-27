@@ -41,6 +41,7 @@
     "eval:mcp:outbound": "node --env-file=.env.local --import tsx scripts/verify-outbound-mcp.ts",
     "sweep": "node --env-file=.env.local --import tsx scripts/sweep-surfaces.ts",
     "eval:turn-receipt": "node --env-file=.env.local --import tsx scripts/verify-turn-receipt.ts",
+    "eval:turn-progress": "node --env-file=.env.local --import tsx scripts/verify-turn-progress.ts",
     "eval:features": "node --env-file=.env.local --import tsx scripts/verify-features-doc.ts",
     "eval:home-layout": "node --env-file=.env.local --import tsx scripts/verify-home-layout.ts",
     "eval:folder-look": "node --env-file=.env.local --import tsx scripts/verify-folder-look.ts",

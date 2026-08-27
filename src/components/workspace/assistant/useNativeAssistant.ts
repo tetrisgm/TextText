@@ -50,6 +50,7 @@ import {
   startAssistantJob,
   subscribeAssistantJobs,
   cloudTurnOutcome,
+  jobsForOtherThreads,
   updateAssistantJob,
 } from "@/lib/ai/jobs";
 import {
@@ -2312,6 +2313,19 @@ export function useNativeAssistant({
     (count, job) => (job.status === "running" ? count + 1 : count),
     0,
   );
+  /**
+   * The strip is for work the person cannot see.
+   *
+   * A turn in the thread on screen already reports itself inline, under the
+   * message that started it, and its outcome lands in the transcript. Listing
+   * it again above the conversation announced the work in the one place the
+   * person was not looking, and read as the only sign anything was happening.
+   * The count on the closed launcher still covers every job in the workspace.
+   */
+  const jobsElsewhere = useMemo(
+    () => jobsForOtherThreads(scopedJobs, threadKey),
+    [scopedJobs, threadKey],
+  );
   const conversations = useMemo(
     () => {
       if (conversationRevision < 0) return [];
@@ -2374,7 +2388,7 @@ export function useNativeAssistant({
     connectNativeAssistant: () => {
       if (ownerScopeReady) requestNativeAssistant("assistantConnect");
     },
-    jobs: scopedJobs,
+    jobs: jobsElsewhere,
     generateItemTypeBlueprint,
     messages: ownerScopeReady ? messages : EMPTY_TRANSCRIPT,
     ownerScopeReady,
