@@ -1482,6 +1482,18 @@ export async function executeMcpTool(
         // Only the private modes need looking up; blog is the fallback below.
         if (mode === "notes" || mode === "bookmarks") {
           destinationPath = captureFolderPath(folders, mode) ?? undefined;
+          if (!destinationPath) {
+            // Name the folder that is missing. Falling through to blog would
+            // reach the kind-versus-mode check below and report an impossible
+            // request instead of an absent folder, which sends the reader
+            // looking at the kind they asked for rather than the folder they
+            // do not have.
+            return errorResult(
+              `This workspace has no accessible ${mode} folder for a ` +
+                `${itemKindForPost({ type: postTypeForItemKind(input.kind) })}. ` +
+                "Create or share that folder, or name a destination.",
+            );
+          }
         }
       }
       const folder = await accessibleFolder(

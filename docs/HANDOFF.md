@@ -650,6 +650,25 @@ in-app assistant, local CLI, or hosted MCP.
   `WebAppWindowController.codexTurnProgress(method:)` names the events that
   restart the clock; the per-tool deadline is a separate 8s and unchanged.
 
+## One rule for where an unplaced item goes (2026-08-27)
+
+- The contract says the UI, the in-app assistant and MCP call ONE
+  workspace-command surface. For "where does an item with no folder go" that
+  was not true: `agent-tools.ts` answered it client-side in
+  `normalizeLegacyNativeArgs` before the request left the browser, so the
+  executor's rule never ran on the native lane. Two copies of a rule is one
+  rule and one bug in waiting, and that is exactly how it went: the same fix
+  had to be made twice, and the client's worse answer was the one that shipped.
+- The adapter no longer decides. It normalizes a folder the person NAMED (so
+  "Notes" and "notes" agree) and passes `kind` through; `mcp/tools.ts` places
+  it, and the adapter reports the destination from the executor's receipt.
+- The good error moved with the rule. The client used to say "No folder at path
+  bookmarks", which is clearer than falling through to blog and hitting the
+  kind-versus-mode check, so the executor says it now instead.
+- Test both lanes after touching this: `eval:native-create` and
+  `eval:assistant-create`. They should agree by construction now, which is the
+  point.
+
 ## The two lanes create items differently (2026-08-27)
 
 - A CLOUD write is staged as a proposal the owner approves; a NATIVE (connected

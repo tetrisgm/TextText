@@ -272,10 +272,12 @@ describe("native workspace tool adapter", () => {
     expect(executeTool).not.toHaveBeenCalled();
   });
 
-  it("sends an explicitly asked-for kind to the folder that accepts it", async () => {
-    // A note named by the person used to be normalized into the Blog folder,
-    // whose mode refuses notes, so the executor rejected the request as
-    // impossible. The destination now follows the kind that was asked for.
+  it("names no folder, so the workspace's one rule places the item", async () => {
+    // This adapter used to answer "where does an unplaced item go" with its own
+    // copy of the rule, and because it ran first the executor's rule never got
+    // a say on this lane: a note nobody placed was addressed to Blog, whose
+    // mode refuses notes. The kind goes through untouched now, and the one
+    // command surface every client calls decides the destination.
     const executeTool = vi
       .fn()
       .mockResolvedValueOnce({
@@ -303,23 +305,23 @@ describe("native workspace tool adapter", () => {
     );
 
     expect(executeTool).toHaveBeenNthCalledWith(1, "create_item", {
-      folder_path: "notes",
       kind: "note",
       title: "Project requirements",
     });
-    // Everything public still lands on Blog, which is what it always wanted.
     expect(executeTool).toHaveBeenNthCalledWith(2, "create_item", {
-      folder_path: "blog",
       kind: "article",
       title: "An essay",
     });
   });
 
-  it("names the missing folder instead of filing a kind where it cannot go", async () => {
-    // This workspace has no bookmarks folder. The old default would have sent
-    // the bookmark to Blog and produced a kind-versus-mode rejection that
-    // described the wrong problem.
-    const executeTool = vi.fn();
+  it("does not invent a destination for a kind whose folder is missing", async () => {
+    // This workspace has no bookmarks folder. Deciding that here is how the two
+    // copies of the rule came to disagree in the first place, so the request
+    // goes through as asked and the executor answers it. Naming the missing
+    // folder is now the executor's job, and its test pins that message.
+    const executeTool = vi
+      .fn()
+      .mockResolvedValueOnce({ item: { id: "b-1", title: "Read later" } });
     const tools = createWorkspaceAgentTools({
       handle: "local",
       getPool: workspacePool,
@@ -327,14 +329,16 @@ describe("native workspace tool adapter", () => {
       refreshPool: async () => {},
     });
 
-    await expect(
-      tools.executor(
-        "create_item",
-        { kind: "bookmark", title: "Read later" },
-        "root-request",
-      ),
-    ).rejects.toThrow("No folder at path bookmarks");
-    expect(executeTool).not.toHaveBeenCalled();
+    await tools.executor(
+      "create_item",
+      { kind: "bookmark", title: "Read later" },
+      "root-request",
+    );
+
+    expect(executeTool).toHaveBeenCalledWith("create_item", {
+      kind: "bookmark",
+      title: "Read later",
+    });
   });
 
   it("still obeys a folder the caller named, whatever the kind", async () => {
@@ -361,10 +365,11 @@ describe("native workspace tool adapter", () => {
     });
   });
 
-  it("defaults root requests to Blog and creates every requested post", async () => {
+  it("reports the destination the workspace chose, and creates every requested post", async () => {
     const executeTool = vi
       .fn()
       .mockResolvedValueOnce({
+        receipt: { saved_to: "blog" },
         item: {
           id: "new-1",
           title: "The top 10 NES games",
@@ -372,6 +377,7 @@ describe("native workspace tool adapter", () => {
         },
       })
       .mockResolvedValueOnce({
+        receipt: { saved_to: "blog" },
         item: {
           id: "new-2",
           title: "Chipzel and modern chiptunes",
@@ -416,14 +422,14 @@ describe("native workspace tool adapter", () => {
       status: "draft",
     });
 
+    // No folder_path: the caller named none, so the executor places it and
+    // says where in its receipt.
     expect(executeTool).toHaveBeenNthCalledWith(1, "create_item", {
-      folder_path: "blog",
       kind: "article",
       title: "The top 10 NES games",
       body: "Complete NES article",
     });
     expect(executeTool).toHaveBeenNthCalledWith(2, "create_item", {
-      folder_path: "blog",
       kind: "article",
       title: "Chipzel and modern chiptunes",
       body: "Complete chiptunes article",
@@ -457,7 +463,6 @@ describe("native workspace tool adapter", () => {
 
     expect(executeTool).toHaveBeenCalledWith("create_item", {
       body: "# A complete draft\n\nFinished body.",
-      folder_path: "blog",
       kind: "article",
       title: "A complete draft",
     });

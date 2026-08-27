@@ -303,14 +303,6 @@ function normalizeLegacyNativeArgs(
   }
   if (
     name === "create_item" &&
-    typeof normalized.capture !== "string" &&
-    (typeof normalized.folder_path !== "string" ||
-      !normalized.folder_path.trim())
-  ) {
-    normalized.folder_path = defaultFolderPathForKind(folders, normalized.kind);
-  }
-  if (
-    name === "create_item" &&
     (typeof normalized.title !== "string" || !normalized.title.trim()) &&
     typeof normalized.body === "string" &&
     normalized.body.trim()
@@ -905,11 +897,16 @@ export function createWorkspaceAgentTools(
 
       case "create_item": {
         const input = args as WorkspaceToolInput<"create_item">;
+        // Where an unplaced item goes is the WORKSPACE's rule, and it lives in
+        // the one command executor every surface calls. This adapter used to
+        // answer it as well, with its own copy, and because the copy ran first
+        // the executor's rule never got a say on this lane: a note the person
+        // never placed was addressed to "blog" here and refused there. Resolve
+        // only a folder the person actually named, so "Notes" and "notes" mean
+        // the same thing, and pass the kind through untouched.
         const folderPath = input.folder_path
           ? normalizeFolderPath(input.folder_path, pool().folders)
-          : input.capture
-            ? undefined
-            : defaultFolderPathForKind(pool().folders, input.kind);
+          : undefined;
         if (
           folderPath &&
           !pool().folders.some((candidate) => candidate.path === folderPath)
@@ -921,7 +918,7 @@ export function createWorkspaceAgentTools(
           : input.markdown
             ? (parsePostMarkdownFile(input.markdown).fields.title ?? "Untitled")
             : (input.title ?? "Untitled");
-        const dedupeKey = `${folderPath ?? "capture"}::${title.toLowerCase()}`;
+        const dedupeKey = `${folderPath ?? input.kind ?? "capture"}::${title.toLowerCase()}`;
         const priorCreates = requestTag ? requestCreates(requestTag) : null;
         const prior = priorCreates?.get(dedupeKey);
         if (prior) {
@@ -936,6 +933,7 @@ export function createWorkspaceAgentTools(
         });
         const item = asRecord(result.item);
         const receipt = asRecord(result.receipt);
+        // The workspace decided where this went, so the workspace says so.
         const savedTo =
           typeof receipt.saved_to === "string"
             ? receipt.saved_to

@@ -380,7 +380,25 @@ async function describedTypeChain(page: Page) {
   await page.screenshot({ path: `${SHOTS}/reading-log.png` });
 }
 
+/**
+ * The mock provider, or every turn answers "The assistant could not finish
+ * that" and sixteen checks fail for a reason that has nothing to do with any
+ * of them. The native lane needs no provider; this one does.
+ */
+async function requireMockProvider() {
+  const reachable = await fetch("http://localhost:3999/v1/models/probe")
+    .then(() => true)
+    .catch(() => false);
+  if (reachable) return;
+  throw new Error(
+    "No mock provider on :3999.\n" +
+      "  node scripts/mock-ai-provider.mjs &\n" +
+      "  TEXTTEXT_AI_BASE_URL=http://localhost:3999/v1 npm run dev",
+  );
+}
+
 async function main() {
+  await requireMockProvider();
   mkdirSync(SHOTS, { recursive: true });
   const browser: Browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({

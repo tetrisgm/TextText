@@ -2609,6 +2609,28 @@ describe("MCP workspace tool adapter", () => {
     );
   });
 
+  it("names the folder a kind needs when the workspace has none", async () => {
+    // The native adapter used to answer this before the request ever arrived,
+    // and its message named the missing folder. Deleting that copy of the rule
+    // would have replaced a clear answer with a confusing one: falling through
+    // to blog reaches the kind-versus-mode check and reports an impossible
+    // request instead of an absent folder. The message moved here with the rule.
+    const blogFolder = { id: "blog", name: "Blog", path: "blog", mode: "blog" };
+    mocks.getAccessibleFolders.mockResolvedValue([blogFolder]);
+
+    const createItem = registrations().find(
+      (entry) => entry.name === "create_item",
+    )!;
+    const result = await createItem.callback(
+      { kind: "bookmark", title: "Read later" },
+      auth(["sync"], "Claude"),
+    );
+
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain("no accessible bookmarks folder");
+    expect(mocks.createDraftInFolder).not.toHaveBeenCalled();
+  });
+
   it("still creates an unplaced article in the blog folder", async () => {
     const blogFolder = { id: "blog", name: "Blog", path: "blog", mode: "blog" };
     const notesFolder = {
