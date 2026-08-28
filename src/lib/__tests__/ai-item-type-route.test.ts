@@ -111,6 +111,31 @@ describe("/api/ai/item-type", () => {
     expect(call.prompt).toContain("Writer request:");
   });
 
+  it("hands the model a worked example near the request", async () => {
+    // The selector is unit tested on its own. This is the other half, and the
+    // half that was missing: proof the block reaches the prompt. Without it,
+    // deleting the call site would leave every test green.
+    mocks.generateText.mockResolvedValue({ text: JSON.stringify(blueprint) });
+    await POST(
+      request({
+        prompt:
+          "Make this a to-do list like Todoist: each task has a checkbox, a due date and a priority.",
+      }),
+    );
+    const { prompt } = mocks.generateText.mock.calls[0][0];
+    expect(prompt).toContain("Item types that already exist here");
+    expect(prompt).toContain("Example: Tasks");
+    expect(prompt).toContain("Fields:");
+  });
+
+  it("says nothing rather than offering a misleading neighbour", async () => {
+    mocks.generateText.mockResolvedValue({ text: JSON.stringify(blueprint) });
+    await POST(request({ prompt: "zzzqqq wibble frobnicate" }));
+    const { prompt } = mocks.generateText.mock.calls[0][0];
+    expect(prompt).not.toContain("Item types that already exist here");
+    expect(prompt).toContain("Writer request:");
+  });
+
   it("passes the current validated design into a refinement", async () => {
     await POST(request({ prompt: "Add priority", current: blueprint }));
     expect(mocks.generateText.mock.calls[0][0].prompt).toContain(

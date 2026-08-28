@@ -969,6 +969,27 @@ in-app assistant, local CLI, or hosted MCP.
 - The agent harness moved to `scripts/eval-agent-harness.ts`, shared by the
   look suite and the verb suite.
 
+## Audit: which new code had a reader, and which only had a writer (2026-08-28)
+
+- After being caught reporting phase 3 done when half of it did not work, I
+  audited every symbol added in this run for call sites versus test files.
+  Three had no proof the path executes:
+  - `installDocumentTemplate`: the route branch is guarded on `access.blogId`,
+    and every existing test's access mock omits it, so the branch was never
+    entered and the suite passed regardless. There is now a test that supplies
+    a blogId, and it fails when the branch is disabled.
+  - `itemTypeExamplesFor`: unit tested in isolation, and nothing asserted the
+    block reached the prompt. Deleting the call site left every test green.
+  - `templatesForPosts` / `templateForPost`: call sites and zero tests, so the
+    route could have stopped resolving a look unnoticed.
+- All three now have tests, and each was verified to FAIL when the production
+  line is removed. A test that cannot fail is worth less than no test, because
+  it is counted.
+- The general shape, third time in two days: code that is written and never
+  read looks exactly like code that works. `capabilities`, then the outbound
+  half of `template.json`, then these. The check is cheap: for anything new,
+  find the read, and make something fail when it goes away.
+
 ## The look travelled out and never back (2026-08-28)
 
 - Shipping `template.json` was called done when only half of it existed. The

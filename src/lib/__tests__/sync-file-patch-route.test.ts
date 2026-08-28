@@ -8,6 +8,7 @@ import {
 } from "@/lib/documents/sync";
 import { documentFromLegacyPost } from "@/lib/documents/legacy";
 import { sanitizePostSlug } from "@/lib/post-slug";
+import { compileItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
 
 const mocks = vi.hoisted(() => ({
   PostConflictError: class PostConflictError extends Error {},
@@ -16,7 +17,11 @@ const mocks = vi.hoisted(() => ({
   getFolderById: vi.fn(),
   // Resolves the look a synced document is pinned to, so the textpack the
   // client receives carries the definition and not just its id.
-  getDocumentTemplateForHandle: vi.fn(async () => null),
+  getDocumentTemplateForHandle: vi.fn(async (): Promise<unknown> => null),
+  // Installs a look that arrived inside an imported textpack.
+  installDocumentTemplate: vi.fn<
+    (input: { blogId: string; definition: unknown }) => Promise<string>
+  >(async () => "installed"),
   movePostFile: vi.fn(),
   resolveItemAccess: vi.fn(),
   resolveSyncWorkspace: vi.fn(),
@@ -34,6 +39,7 @@ vi.mock("@/lib/store", () => ({
     type === "note" ? "notes" : type === "bookmark" ? "bookmarks" : "blog",
   getDocumentTemplateForHandle: mocks.getDocumentTemplateForHandle,
   getFolderById: mocks.getFolderById,
+  installDocumentTemplate: mocks.installDocumentTemplate,
   getPostById: mocks.getPostById,
   markCapturePending: vi.fn(),
   movePostFile: mocks.movePostFile,
@@ -542,6 +548,147 @@ describe("sync file PUT during a live co-editing session", () => {
     const envelope = await response.json();
     expect(envelope.schema).toBe(SYNC_DOCUMENT_SCHEMA);
     expect(envelope.document.content.title).toBe(post.title);
+  });
+
+  it("installs a look that arrived with the file", async () => {
+    // The whole point of inlining a definition: a textpack written elsewhere
+    // brings a look this workspace has never seen. Nothing read it back for a
+    // while, and every test passed, because the access mock had no blogId and
+    // the branch was never entered. This one enters it.
+    mocks.resolveItemAccess.mockResolvedValue({
+      canView: true,
+      canEditContent: true,
+      isOwner: true,
+      blogId: "blog-1",
+    });
+    mocks.savePostContentPatch.mockImplementation(
+      (_handle: string, current: Post, patch: { document: Post["document"] }) =>
+        Promise.resolve({ ...current, document: patch.document, revision: 43 }),
+    );
+    mocks.installDocumentTemplate.mockClear();
+
+    const template = compileItemTypeBlueprint(
+      {
+        name: "Recipe",
+        fields: [{ id: "cookTime", label: "Cook time", type: "number" }],
+        item: { shape: "page" },
+        collection: { layout: "cards" },
+        theme: {},
+      },
+      { id: "custom.recipe" },
+    );
+
+    const response = await PUT(
+      new Request(`https://texttext.example/api/sync/v1/files/${postId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": SYNC_DOCUMENT_CONTENT_TYPE,
+          "If-Match": `"${renderSyncDocumentFile(blog, post).hash}"`,
+        },
+        body: serializeSyncDocumentEnvelope({
+          schema: SYNC_DOCUMENT_SCHEMA,
+          markdown: "---\ntitle: Weeknight dal\n---\n\nReady in 35 minutes.\n",
+          document: {
+            schemaVersion: 1,
+            content: {
+              title: "Weeknight dal",
+              body: "Ready in 35 minutes.",
+              fields: { cookTime: 35 },
+              tags: [],
+              assets: [],
+            },
+            presentation: {
+              template: { id: template.id, version: template.version },
+              theme: {},
+            },
+          },
+          template,
+        }),
+      }),
+      { params: Promise.resolve({ postId }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.installDocumentTemplate).toHaveBeenCalledTimes(1);
+    const call = mocks.installDocumentTemplate.mock.calls[0][0];
+    const definition = call.definition as {
+      id: string;
+      version: number;
+      fields: Array<{ id: string }>;
+    };
+    expect(call.blogId).toBe("blog-1");
+    // At the id and version the document is pinned to, or the pin dangles.
+    expect(definition.id).toBe("custom.recipe");
+    expect(definition.version).toBe(template.version);
+    expect(definition.fields.map((field) => field.id)).toEqual(["cookTime"]);
+  });
+
+  it("saves the words even when the look that came with them is unusable", async () => {
+    mocks.resolveItemAccess.mockResolvedValue({
+      canView: true,
+      canEditContent: true,
+      isOwner: true,
+      blogId: "blog-1",
+    });
+    mocks.savePostContentPatch.mockImplementation(
+      (_handle: string, current: Post, patch: { document: Post["document"] }) =>
+        Promise.resolve({ ...current, document: patch.document, revision: 43 }),
+    );
+    mocks.installDocumentTemplate.mockRejectedValueOnce(new Error("nope"));
+
+    const response = await PUT(structuredMutationRequest("PUT", post), {
+      params: Promise.resolve({ postId }),
+    });
+
+    // A look that will not install must never cost someone their writing.
+    expect(response.status).toBe(200);
+  });
+
+  it("sends the look out with the file, not just its name", async () => {
+    // The outbound half. templatesForPosts and templateForPost had call sites
+    // and no test at all, so the route could have stopped resolving a look and
+    // the suite would not have noticed.
+    const template = compileItemTypeBlueprint(
+      {
+        name: "Recipe",
+        fields: [{ id: "cookTime", label: "Cook time", type: "number" }],
+        item: { shape: "page" },
+        collection: { layout: "cards" },
+        theme: {},
+      },
+      { id: "custom.recipe" },
+    );
+    mocks.getPostById.mockResolvedValue({
+      ...post,
+      document: {
+        ...documentFromLegacyPost(post),
+        presentation: {
+          template: { id: template.id, version: template.version },
+          theme: {},
+        },
+      },
+    });
+    mocks.getDocumentTemplateForHandle.mockResolvedValue(template);
+
+    const response = await GET(
+      new Request(`https://texttext.example/api/sync/v1/files/${postId}`, {
+        headers: { Accept: SYNC_DOCUMENT_CONTENT_TYPE },
+      }),
+      { params: Promise.resolve({ postId }) },
+    );
+
+    expect(response.status).toBe(200);
+    const envelope = await response.json();
+    expect(envelope.template?.id).toBe("custom.recipe");
+    expect(envelope.template.fields.map((f: { id: string }) => f.id)).toEqual([
+      "cookTime",
+    ]);
+    // The reference stays beside it: a workspace that knows the look uses its
+    // own copy, and the pin has to keep matching.
+    expect(envelope.document.presentation.template).toEqual({
+      id: template.id,
+      version: template.version,
+    });
   });
 
   it("preserves structured presentation through a collaborator content save", async () => {
