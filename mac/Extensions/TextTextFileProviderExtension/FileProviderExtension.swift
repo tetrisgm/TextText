@@ -804,6 +804,8 @@ public final class FileProviderExtension: NSObject,
                     // upload immutable assets, then commit the Markdown last.
                     body: hasLocalAssets ? "" : body,
                     documentJSON: hasLocalAssets ? nil : packageContents?.documentJSON,
+                    // The look the incoming bundle brought with it.
+                    templateJSON: hasLocalAssets ? nil : packageContents?.templateJSON,
                     folderId: parentId,
                     representation: representation,
                     idempotencyKey: idempotencyKey
@@ -832,6 +834,7 @@ public final class FileProviderExtension: NSObject,
                         switch await api.putFile(
                             postId: postId, body: canonical.markdown,
                             documentJSON: canonical.documentJSON,
+                            templateJSON: canonical.templateJSON,
                             ifMatch: initialHash
                         ) {
                         case .failure(let error):
@@ -1104,6 +1107,7 @@ public final class FileProviderExtension: NSObject,
 
             var body: String?
             var documentJSON: String?
+            var templateJSON: String?
             if changedFields.contains(.contents) {
                 guard let newContents else {
                     done(nil, Self.unreadableContentsError(nil)); return
@@ -1124,6 +1128,7 @@ public final class FileProviderExtension: NSObject,
                         case .success(let canonical):
                             body = canonical.markdown
                             documentJSON = canonical.documentJSON
+                            templateJSON = canonical.templateJSON
                         }
                     } else {
                         let local = try String(contentsOf: newContents, encoding: .utf8)
@@ -1207,7 +1212,7 @@ public final class FileProviderExtension: NSObject,
             if let body {
                 switch await api.putFile(
                     postId: postId, body: body, documentJSON: documentJSON,
-                    ifMatch: baseHash) {
+                    templateJSON: templateJSON, ifMatch: baseHash) {
                 case .failure(.conflict):
                     await resolveModifyConflict(
                         identifier: .file(handle: handle, id: postId), core: core,
@@ -1333,6 +1338,8 @@ public final class FileProviderExtension: NSObject,
     private struct UploadedPackageContents {
         let markdown: String
         let documentJSON: String?
+        /// Carried through the asset upload so the commit PUT can send it.
+        let templateJSON: String?
     }
 
     private func uploadLocalPackageAssets(
@@ -1376,7 +1383,10 @@ public final class FileProviderExtension: NSObject,
                 local: contents.documentJSON,
                 remoteURLsByFilename: remoteURLsByFilename)
             return .success(UploadedPackageContents(
-                markdown: markdown, documentJSON: documentJSON))
+                markdown: markdown, documentJSON: documentJSON,
+                // Not asset-rewritten: a look binds to content paths, never to
+                // an asset URL of its own.
+                templateJSON: contents.templateJSON))
         } catch {
             return .failure(.decode("document.json could not be canonicalized"))
         }

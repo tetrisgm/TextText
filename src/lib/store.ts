@@ -3663,6 +3663,52 @@ export async function restoreDocumentTemplateVersion(input: {
   });
 }
 
+/**
+ * Install a look that arrived with an imported document, at the exact id and
+ * version the document is pinned to.
+ *
+ * Not createDocumentTemplateVersion, which bumps to the next free version:
+ * the snapshot's presentation.template names an id AND a version, so landing
+ * the definition anywhere else would leave the document pointing at a look
+ * this workspace does not have, which is the failure the whole exercise is
+ * meant to remove.
+ *
+ * Idempotent, and never touches a look already here. A workspace that has its
+ * own version of that id keeps it: the file yields to the workspace, because
+ * the person who edited the look here meant it.
+ */
+export async function installDocumentTemplate(input: {
+  blogId: string;
+  definition: TemplateDefinition;
+  createdById?: string | null;
+}): Promise<"builtin" | "present" | "installed"> {
+  const definition = validateTemplateDefinition(input.definition);
+  // Built-ins resolve everywhere and are never stored per workspace.
+  if (definition.id.startsWith("texttext.")) return "builtin";
+  if (!db) return "present";
+  const existing = await db
+    .select({ version: documentTemplates.version })
+    .from(documentTemplates)
+    .where(
+      and(
+        eq(documentTemplates.blogId, input.blogId),
+        eq(documentTemplates.templateId, definition.id),
+        eq(documentTemplates.version, definition.version),
+      ),
+    )
+    .limit(1);
+  if (existing.length) return "present";
+  await db.insert(documentTemplates).values({
+    blogId: input.blogId,
+    templateId: definition.id,
+    version: definition.version,
+    name: definition.name,
+    definition,
+    createdById: input.createdById ?? null,
+  });
+  return "installed";
+}
+
 export async function createDocumentTemplateVersion(input: {
   blogId: string;
   definition: TemplateDefinition;

@@ -79,6 +79,12 @@ public protocol TextTextSyncAPI: Sendable {
         body: String, documentJSON: String?, folderId: String?,
         representation: TextTextFileRepresentation, idempotencyKey: String?
     ) async -> Result<TextTextManifestItem, TextTextSyncError>
+    /// Same, carrying the look the local bundle holds, so a textpack brought
+    /// in from elsewhere arrives with its design instead of losing it.
+    func createFile(
+        body: String, documentJSON: String?, templateJSON: String?, folderId: String?,
+        representation: TextTextFileRepresentation, idempotencyKey: String?
+    ) async -> Result<TextTextManifestItem, TextTextSyncError>
     /// Legacy create entry point retained while older extension/test clients
     /// roll forward. Its representation is always Markdown.
     func createFile(body: String, folderId: String?, idempotencyKey: String?) async
@@ -88,6 +94,10 @@ public protocol TextTextSyncAPI: Sendable {
         -> Result<TextTextManifestItem, TextTextSyncError>
     func putFile(
         postId: String, body: String, documentJSON: String?, ifMatch hash: String
+    ) async -> Result<TextTextManifestItem, TextTextSyncError>
+    func putFile(
+        postId: String, body: String, documentJSON: String?, templateJSON: String?,
+        ifMatch hash: String
     ) async -> Result<TextTextManifestItem, TextTextSyncError>
     /// PATCH /api/sync/v1/files/{id}: move (folderId), retitle (title), and/or
     /// reslug (slug) without re-sending the body. A Finder rename retitles (the
@@ -140,6 +150,25 @@ public extension TextTextSyncAPI {
         await createFile(
             body: body, folderId: folderId, representation: representation,
             idempotencyKey: idempotencyKey)
+    }
+
+    /// A conformer that has not implemented the look-carrying calls keeps
+    /// working, and drops the look. Only the live client transports it.
+    func createFile(
+        body: String, documentJSON: String?, templateJSON: String?, folderId: String?,
+        representation: TextTextFileRepresentation, idempotencyKey: String?
+    ) async -> Result<TextTextManifestItem, TextTextSyncError> {
+        await createFile(
+            body: body, documentJSON: documentJSON, folderId: folderId,
+            representation: representation, idempotencyKey: idempotencyKey)
+    }
+
+    func putFile(
+        postId: String, body: String, documentJSON: String?, templateJSON: String?,
+        ifMatch hash: String
+    ) async -> Result<TextTextManifestItem, TextTextSyncError> {
+        await putFile(
+            postId: postId, body: body, documentJSON: documentJSON, ifMatch: hash)
     }
 
     func createFile(

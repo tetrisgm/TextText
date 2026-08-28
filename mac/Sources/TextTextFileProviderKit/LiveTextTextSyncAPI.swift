@@ -439,7 +439,8 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
     }
 
     private func createFileRequest(
-        body: String, documentJSON: String?, folderId: String?,
+        body: String, documentJSON: String?, templateJSON: String? = nil,
+        folderId: String?,
         representation: TextTextFileRepresentation, idempotencyKey: String?
     ) async -> Result<TextTextManifestItem, TextTextSyncError> {
         var path = "/api/sync/v1/files"
@@ -449,7 +450,8 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
         if representation.isTextBundleFamily, let documentJSON {
             do {
                 encodedBody = try Self.encodeSyncDocument(
-                    markdown: body, documentJSON: documentJSON)
+                    markdown: body, documentJSON: documentJSON,
+                    templateJSON: templateJSON)
                 contentType = Self.syncDocumentContentType
             } catch {
                 return .failure(.decode(error.localizedDescription))
@@ -509,14 +511,16 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
     }
 
     public func putFile(
-        postId: String, body: String, documentJSON: String?, ifMatch hash: String
+        postId: String, body: String, documentJSON: String?,
+        templateJSON: String? = nil, ifMatch hash: String
     ) async -> Result<TextTextManifestItem, TextTextSyncError> {
         let encodedBody: Data
         let contentType: String
         if let documentJSON {
             do {
                 encodedBody = try Self.encodeSyncDocument(
-                    markdown: body, documentJSON: documentJSON)
+                    markdown: body, documentJSON: documentJSON,
+                    templateJSON: templateJSON)
                 contentType = Self.syncDocumentContentType
             } catch {
                 return .failure(.decode(error.localizedDescription))
@@ -589,7 +593,7 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
     }
 
     private static func encodeSyncDocument(
-        markdown: String, documentJSON: String
+        markdown: String, documentJSON: String, templateJSON: String? = nil
     ) throws -> Data {
         let data = Data(documentJSON.utf8)
         guard
@@ -600,13 +604,23 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
                 domain: "TextTextSync", code: 3,
                 userInfo: [NSLocalizedDescriptionKey: "document.json must contain an object"])
         }
+        var payload: [String: Any] = [
+            "schema": "texttext.sync-document.v1",
+            "markdown": markdown,
+            "document": document,
+        ]
+        // Send the look back too, so a textpack carried in from elsewhere
+        // brings its design with it. Without this the definition only ever
+        // travelled outward and the round trip was half a trip. A malformed
+        // one is dropped rather than failing the write: the words matter more
+        // than the styling.
+        if let templateJSON,
+            let template = try? JSONSerialization.jsonObject(with: Data(templateJSON.utf8))
+                as? [String: Any] {
+            payload["template"] = template
+        }
         return try JSONSerialization.data(
-            withJSONObject: [
-                "schema": "texttext.sync-document.v1",
-                "markdown": markdown,
-                "document": document,
-            ],
-            options: [.prettyPrinted, .sortedKeys])
+            withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
     }
 
     public func deleteFile(postId: String, ifMatch hash: String?) async -> Result<

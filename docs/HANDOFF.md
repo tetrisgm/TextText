@@ -969,6 +969,26 @@ in-app assistant, local CLI, or hosted MCP.
 - The agent harness moved to `scripts/eval-agent-harness.ts`, shared by the
   look suite and the verb suite.
 
+## The look travelled out and never back (2026-08-28)
+
+- Shipping `template.json` was called done when only half of it existed. The
+  definition flowed server to envelope to bundle to file, and nothing read it
+  back: `encodeSyncDocument` never sent a template, the write route never
+  accepted one, and no import path applied one. A textpack carried its look
+  everywhere and the receiving side threw it away.
+- Closed. The Mac sends `template` on create and on both PUT paths, the write
+  route installs it, and `installDocumentTemplate` stores it at the EXACT id
+  and version the document is pinned to. Not `createDocumentTemplateVersion`,
+  which bumps to the next free version and would leave the document pointing
+  at a look the workspace does not have.
+- A look already present wins over the arriving one, and a malformed one is
+  dropped rather than failing the write. The words are what is being saved.
+- The protocol gained the look-carrying calls with forwarding defaults, so the
+  test fakes still conform and only the live client transports it.
+- The lesson is the one from `capabilities` in a new coat: a value written by
+  one side and read by nobody looks exactly like a working feature. Trace the
+  read before believing the write.
+
 ## The look suite, after the measurement was fixed (2026-08-28)
 
 - Every one of the nine briefs now records fields and an index that renders.

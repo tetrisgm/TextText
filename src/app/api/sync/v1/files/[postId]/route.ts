@@ -9,6 +9,7 @@ import {
   SYNC_DOCUMENT_CONTENT_TYPE,
 } from "@/lib/documents/sync";
 import { parsePostMarkdownFile } from "@/lib/markdown-files";
+import type { TemplateDefinition } from "@/lib/presentation/schema";
 import type { EffectiveAccess } from "@/lib/permissions";
 import { resolveItemAccess } from "@/lib/permissions";
 import {
@@ -16,6 +17,7 @@ import {
   folderPathForPostType,
   getFolderById,
   getPostById,
+  installDocumentTemplate,
   markCapturePending,
   movePostFile,
   PostConflictError,
@@ -171,6 +173,7 @@ export async function PUT(request: Request, { params }: Props) {
     post.document,
     `Persisted item ${post.id ?? post.slug}`,
   );
+  let suppliedTemplate: TemplateDefinition | null = null;
   try {
     const body = await readBoundedText(request, MAX_SYNC_FILE_BODY_BYTES);
     if ("error" in body) {
@@ -183,12 +186,33 @@ export async function PUT(request: Request, { params }: Props) {
       const envelope = parseSyncDocumentEnvelope(raw);
       parsed = parsePostMarkdownFile(envelope.markdown);
       suppliedDocument = envelope.document;
+      suppliedTemplate = envelope.template ?? null;
     } else {
       parsed = parsePostMarkdownFile(raw);
     }
   } catch (error) {
     return syncError(400, errorMessage(error, "Could not parse the file"));
   }
+  // The look the file brought with it, installed at the exact id and version
+  // the document is pinned to. Without this the definition travelled out of a
+  // workspace and could never travel into one: a textpack carried its look and
+  // the receiving side threw it away, which is half a round trip.
+  //
+  // Best effort on purpose. A malformed or unwelcome look must not fail the
+  // write: the person's words are the thing being saved, and an item that
+  // lands under the folder's own look is a far better outcome than an item
+  // that does not land.
+  if (suppliedTemplate && access.blogId) {
+    try {
+      await installDocumentTemplate({
+        blogId: access.blogId,
+        definition: suppliedTemplate,
+      });
+    } catch {
+      // Falls back to the folder's look, exactly as before this existed.
+    }
+  }
+
   const document = mergeMarkdownIntoDocument(suppliedDocument, parsed);
   const projection = legacyProjectionFromDocument(document);
 
