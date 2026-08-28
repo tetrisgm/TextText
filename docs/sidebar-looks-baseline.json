@@ -13,34 +13,50 @@
     ],
     "editorInline": [
       "Author",
-      "Cover image"
+      "Cover image",
+      "Story type",
+      "Subtitle"
     ],
     "editorBuried": [
-      "Reading time",
-      "Subtitle"
+      "Reading time"
     ]
   },
   "apple-notes": {
     "applied": true,
     "indexShows": [
-      "caption"
+      "caption",
+      "checkbox"
     ],
     "itemHas": [
       "icon"
     ],
-    "editorInline": [],
+    "editorInline": [
+      "Additional Notes",
+      "Checklist",
+      "Pinned"
+    ],
     "editorBuried": []
   },
   "notion-page": {
     "applied": true,
     "indexShows": [
-      "caption"
+      "badge",
+      "caption",
+      "facts"
     ],
     "itemHas": [
-      "icon"
+      "icon",
+      "metadata"
     ],
-    "editorInline": [],
-    "editorBuried": []
+    "editorInline": [
+      "Owner",
+      "Status",
+      "Summary"
+    ],
+    "editorBuried": [
+      "Category",
+      "Last reviewed"
+    ]
   },
   "todo-list": {
     "applied": true,
@@ -74,8 +90,8 @@
       "icon"
     ],
     "editorInline": [
-      "Description",
-      "Preview image",
+      "Notes",
+      "Picture",
       "Reading status *",
       "Site"
     ],
@@ -108,27 +124,35 @@
       "facts"
     ],
     "itemHas": [
-      "byline",
       "cover",
       "icon"
     ],
     "editorInline": [
-      "Caption *",
-      "Photos *"
+      "Journal caption *",
+      "Lead photo *",
+      "More photos"
     ],
     "editorBuried": [
-      "Date *",
-      "Location"
+      "Date *"
     ]
   },
   "habit-tracker": {
     "applied": true,
-    "indexShows": [],
-    "itemHas": [
-      "metadata"
+    "indexShows": [
+      "badge",
+      "caption",
+      "facts"
     ],
-    "editorInline": [],
-    "editorBuried": []
+    "itemHas": [
+      "icon"
+    ],
+    "editorInline": [
+      "Notes"
+    ],
+    "editorBuried": [
+      "Date *",
+      "Distance *"
+    ]
   },
   "reading-notes": {
     "applied": true,
@@ -141,10 +165,12 @@
       "icon"
     ],
     "editorInline": [
-      "Quotes to keep"
+      "Quotes to Keep"
     ],
     "editorBuried": [
-      "My rating"
+      "Author",
+      "Finished On",
+      "My Rating"
     ]
   }
 }

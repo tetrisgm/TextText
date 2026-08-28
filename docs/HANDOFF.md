@@ -969,6 +969,23 @@ in-app assistant, local CLI, or hosted MCP.
 - The agent harness moved to `scripts/eval-agent-harness.ts`, shared by the
   look suite and the verb suite.
 
+## The look suite, after the measurement was fixed (2026-08-28)
+
+- Every one of the nine briefs now records fields and an index that renders.
+  habit-tracker, which a plan described as producing "no fields at all", records
+  runDate, distance and notes; reading-notes records six. Neither was a model
+  failure. The eval was measuring the folder it seeded while the assistant put
+  its type on a folder of its own.
+- The baseline was re-recorded, which is normally laundering and is not here:
+  the measurement target changed on purpose, so the old numbers describe a
+  different question. The drift it reported was almost entirely additive, more
+  fields visible rather than fewer, which is what a measurement fix looks like.
+- `create_item_type` now applies the same quality bar the studio route applies.
+  A type that promises structure and has no properties is refused with a
+  sentence the model can act on. Until then the tool had no opinion and the
+  studio's revision round existed on only one of the two lanes reaching the
+  same executor. Check both lanes whenever you add a rule to either.
+
 ## Corrections to two things I had wrong (2026-08-28)
 
 - **There are 11 built-in templates, not 29.** Grepping `id: "texttext.*"` in
