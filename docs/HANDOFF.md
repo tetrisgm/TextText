@@ -948,6 +948,47 @@ in-app assistant, local CLI, or hosted MCP.
   passed against code that was no longer there, which reads exactly like a
   toothless test. Twenty seconds plus a request, then run.
 
+## Two loops and a language, built (2026-08-28)
+
+- `docs/render-spec.md` is the template language written down: 22 render nodes,
+  8 collection layouts, 10 field types, 10 theme axes, the closed binding
+  grammar. `render-spec-doc.test.ts` reads the vocabulary back out of the Zod
+  schemas at runtime and checks both directions, so neither the page nor the
+  schema can move alone. Verified it fails by deleting `poll` from the page.
+- `eval:item-verbs` drives a real model with the person's own sentence and then
+  reads the workspace back: add a section without disturbing the prose, retitle
+  without touching the body, summarise three notes into a fourth, tag across
+  items, refuse an item that does not exist. Assertions are on durable state,
+  never on the model's summary.
+- Two failures it found first were the harness, not the product. It cut tool
+  results to 1500 characters where the product sends them whole, so list_items
+  overflowed and ids fell off the end. And a stable per-task email reused the
+  workspace, seeding a second copy of every note, so the model edited the older
+  duplicate while the assertion read the newer: passing alone, failing in a
+  batch. Check that shape before believing a model-driven eval.
+- The agent harness moved to `scripts/eval-agent-harness.ts`, shared by the
+  look suite and the verb suite.
+
+## Corrections to two things I had wrong (2026-08-28)
+
+- **There are 11 built-in templates, not 29.** Grepping `id: "texttext.*"` in
+  templates.ts counts the 18 RETIRED definitions too, which are kept resolvable
+  only so documents pinned to them still render. `BUILTIN_TEMPLATES` is the
+  active set. Anything showing templates to a model must use the active set:
+  the retired ones were taken out of the catalogue at the owner's request.
+- **The textpack already carried the fields and the template reference.**
+  `info.json` does not, which is what I checked, but the bundle also writes
+  `document.json` with the whole `DocumentSnapshot`, and the sync envelope has
+  carried it all along "so presentation-only edits cannot disappear during
+  sync". The real gap was narrower: an id and a version mean nothing outside
+  the workspace that stores the look. `template.json` now sits beside
+  `document.json` with the definition inlined, and the reference stays, so a
+  workspace that knows the look uses its own copy and everyone else renders
+  from the file.
+- Look for the existing mechanism before building one. I had a second copy of
+  presentation-in-frontmatter written and passing tsc before finding the
+  envelope that already did it.
+
 ## The look suite fought the dev server for .next (2026-08-28)
 
 - `npm run evals` reported "12 passed" on 2026-08-27 and could not be made to

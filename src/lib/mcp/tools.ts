@@ -1,3 +1,4 @@
+import { assessItemTypeQuality } from "@/lib/presentation/item-type-quality";
 import type { AuthInfo } from "./types";
 import type { CallToolResult, ToolAnnotations } from "./types";
 import { randomUUID } from "node:crypto";
@@ -819,6 +820,23 @@ export async function executeMcpTool(
       const resolved = await requireWorkspace(extra, true);
       if (isToolResult(resolved)) return resolved;
       if (!resolved.access.blogId) return errorResult("Workspace not found.");
+      // The same quality bar the studio route applies, which until now ran on
+      // only one of the two lanes that reach this executor. The look suite
+      // watched a running tracker be saved with no date, no distance and an
+      // index that errored, because it came through the tool and the tool had
+      // no opinion. An error here is the agent lane's repair loop: the model
+      // reads it and calls again with the properties it forgot.
+      const quality = assessItemTypeQuality(input.blueprint);
+      const blocking = quality.findings.filter(
+        (item) => item.severity === "important",
+      );
+      if (blocking.length) {
+        return errorResult(
+          `This item type is not ready to save. ${blocking
+            .map((item) => item.message)
+            .join(" ")}`,
+        );
+      }
       try {
         const created = await createWorkspaceItemType({
           actor: mcpAuditEntry(

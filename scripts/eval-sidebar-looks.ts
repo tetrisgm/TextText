@@ -460,6 +460,37 @@ const MEASURE_ITEM = `(() => {
 
 // ------------------------------------------------------------- the agent loop
 
+/**
+ * The folder the assistant put its look on, which is not always the one it was
+ * pointed at. A brief that says "notes" may correctly produce notes/running.
+ * Falls back to the seeded folder when nothing new carries a look.
+ */
+async function folderCarryingANewLook(
+  actor: Actor,
+  seededPath: string,
+): Promise<string> {
+  const listed = await callTool(actor, "list_folders", {});
+  if (!listed.ok) return seededPath;
+  let folders: Array<{ path?: string; defaultTemplate?: { id?: string } }> = [];
+  try {
+    folders = (JSON.parse(listed.text) as { folders?: typeof folders }).folders ?? [];
+  } catch {
+    return seededPath;
+  }
+  // A custom look, not one of the built-ins every folder starts with.
+  const custom = folders.filter(
+    (folder) =>
+      folder.path &&
+      folder.defaultTemplate?.id &&
+      !folder.defaultTemplate.id.startsWith("texttext."),
+  );
+  const seeded = custom.find((folder) => folder.path === seededPath);
+  if (seeded?.path) return seeded.path;
+  // Prefer one under the folder the brief named, then any at all.
+  const nested = custom.find((folder) => folder.path?.startsWith(`${seededPath}/`));
+  return nested?.path ?? custom[0]?.path ?? seededPath;
+}
+
 // ------------------------------------------------------------------ the run
 
 /**
@@ -563,16 +594,36 @@ async function main(): Promise<void> {
       note,
     });
 
+    // Measure where the look actually landed.
+    //
+    // The assistant is free to make a folder of its own, and often should: the
+    // running brief produced a Runs type on notes/running with a date, a
+    // distance and a heatmap, entirely correctly. Measuring the seeded folder
+    // reported "no fields at all" for a whole session, and that reading went
+    // into a plan as a defect in the model. It was a defect in this line.
+    const measuredPath = await folderCarryingANewLook(
+      { sub, userId: userId ?? null, handle },
+      folderPath,
+    );
+    let measuredIds = seededIds;
+    if (measuredPath !== folderPath) {
+      note(`  the look landed on ${measuredPath}, measuring there`);
+      // Seed it too, or the index is measured empty and reports the look as
+      // broken when the folder simply has nothing in it yet.
+      measuredIds = await seed({ sub, userId: userId ?? null, handle }, measuredPath);
+    }
+    const folderUrlToMeasure = `${BASE}/@${urlHandle}?folder=${measuredPath}`;
+
     // Give the items the shape the look expects before looking at it.
     const filled = await fillDeclaredFields(
       { sub, userId: userId ?? null, handle },
-      folderPath,
-      seededIds,
+      measuredPath,
+      measuredIds,
     );
     if (filled.length) note(`  filled fields: ${filled.join(", ")}`);
 
     // What a person sees afterwards: the index, an opened item, the editor.
-    await page.goto(folderUrl, { waitUntil: "domcontentloaded" });
+    await page.goto(folderUrlToMeasure, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(2800);
     await page.screenshot({ path: `${OUT}/${brief.key}-2-index.png` });
     const indexMeasure = await page.evaluate(MEASURE_INDEX);
