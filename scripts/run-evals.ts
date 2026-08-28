@@ -42,6 +42,8 @@ const EVALS: Eval[] = [
   { npm: "eval:turn-receipt", needs: ["server", "mock"] },
   { npm: "eval:turn-progress", needs: ["server", "mock"] },
   { npm: "eval:mcp:outbound", needs: ["server", "mock"] },
+  // The everyday verbs, driven by a real model deciding its own tool calls.
+  { npm: "eval:item-verbs", needs: ["server", "cli", "db"] },
   // Reuses the same dev server as everything above rather than spawning
   // `next start` into the same .next the dev server is already writing.
   { npm: "eval:sidebar", needs: ["server", "cli", "db"], env: { SIDEBAR_EVAL_PORT: "3000" } },
