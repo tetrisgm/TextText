@@ -105,6 +105,30 @@ function run(
   });
 }
 
+/**
+ * Compile the routes the browser evals hit before timing anything against them.
+ *
+ * `next dev` compiles on first request, and a first request can take tens of
+ * seconds. eval:item-type and eval:assistant-create both fail on a cold server
+ * and pass on a warm one, so a suite run straight after `npm run dev` reported
+ * two red evals that were nothing of the kind. That is the same confusion this
+ * runner exists to remove, arriving from the other direction: not a missing
+ * precondition reported as a failure, but an unmet one nobody had named.
+ */
+async function warmRoutes(): Promise<void> {
+  const routes = ["/", "/editor"];
+  process.stdout.write("  warming ");
+  for (const route of routes) {
+    try {
+      await fetch(`http://localhost:3000${route}`, { redirect: "manual" });
+      process.stdout.write(".");
+    } catch {
+      process.stdout.write("x");
+    }
+  }
+  console.log(" done");
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const listOnly = args.includes("--list");
@@ -124,6 +148,8 @@ async function main() {
     );
   }
   console.log();
+
+  if (!listOnly && met.server) await warmRoutes();
 
   const chosen = EVALS.filter((entry) => entry.npm.includes(filter));
   const green: string[] = [];

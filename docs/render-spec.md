@@ -9,6 +9,14 @@ authority; this document is checked against it by
 schema gains a primitive this page does not list, or this page lists one the
 schema does not have. Neither can drift alone.
 
+Who this is for: people, and any code that reads or writes a
+`TemplateDefinition` directly. It is deliberately NOT fed to the item-type
+assistant. The only thing a model ever writes is a BLUEPRINT, which is a
+simpler authoring shape that compiles into the vocabulary below; no workspace
+tool accepts a render spec from a model at all. Handing it this page would
+teach it a vocabulary it cannot emit. Examples of blueprints, and of good
+field sets, are what help there: `src/lib/ai/item-type-examples.ts`.
+
 ## What a template is
 
 A template is data, not code. It is one validated `TemplateDefinition`:
