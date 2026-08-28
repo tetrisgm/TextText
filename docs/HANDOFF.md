@@ -969,6 +969,26 @@ in-app assistant, local CLI, or hosted MCP.
 - The agent harness moved to `scripts/eval-agent-harness.ts`, shared by the
   look suite and the verb suite.
 
+## PostWorkspaceShell cannot be split by script (2026-08-28)
+
+- 7,226 lines, 93 top-level definitions. The sidebar looked like a clean seam:
+  lines 1054 to 2198 are entirely sidebar (folder tree, its keyboard nav, the
+  activity strip, the chrome) and all four components are file-local.
+- Extracting it left 49 unresolved names, of which only 14 were local and all
+  of those were sidebar-adjacent leaves that belong in the module. So the seam
+  IS clean and the extraction is worth doing.
+- It was not completed. Five successive attempts at scripted surgery each
+  produced a different wrong edit: a pruner that counted references only inside
+  one file and deleted two components the pages import, then cascaded into a
+  2,789-line one; an import-stripper that ate destructured props; another that
+  ate an aliased import; a prologue extractor that ran past the imports into a
+  function body; and a block-end detector that took a fragment of a neighbouring
+  function, which silently damaged the source file as well as the target.
+- Do this one by hand, or with a tool that parses TypeScript rather than
+  matching text. Every heuristic above looked right on inspection and was wrong
+  on real code, and two of them were caught only because `tsc` failed
+  afterwards. On a file this size, a `tsc`-clean bad edit is entirely possible.
+
 ## What is NOT bloat, checked (2026-08-28)
 
 Owner's scope: create documents with the AI, ask the AI to act, templates,
