@@ -1483,6 +1483,26 @@ export async function executeMcpTool(
           );
         }
       }
+      // An item goes where its TYPE lives.
+      //
+      // template_id was resolved further down, after the destination had
+      // already been chosen, so the thing an item actually is never influenced
+      // where it landed. Only `kind` did, and `kind` is a closed list of five.
+      // That is the wrong shape for a product whose item types are designed by
+      // the assistant: ask for a recipe and the recipe type exists, but the
+      // create still routes as if the only kinds were the five built in.
+      //
+      // The folder using a type is the folder that type was made for, so no
+      // table mapping kinds to folders is needed to find it.
+      if (!destinationPath && input.template_id) {
+        const folders = await getAccessibleFolders(
+          blog.handle,
+          accessUser(extra),
+        );
+        destinationPath = folders.find(
+          (folder) => folder.defaultTemplate?.id === input.template_id,
+        )?.path;
+      }
       if (!destinationPath && input.kind) {
         // Route by the kind that was asked for. Defaulting to "blog" here sent
         // an explicit note into the one folder that refuses notes, and the

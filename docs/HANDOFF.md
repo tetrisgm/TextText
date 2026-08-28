@@ -969,6 +969,22 @@ in-app assistant, local CLI, or hosted MCP.
 - The agent harness moved to `scripts/eval-agent-harness.ts`, shared by the
   look suite and the verb suite.
 
+## An item goes where its type lives (2026-08-28)
+
+- `create_item` chose its destination from `kind`, a closed list of five, and
+  resolved `template_id` further down, AFTER the destination was already
+  decided. So the thing an item actually is never influenced where it landed.
+- That is the wrong shape for a product whose item types are designed by the
+  assistant. Ask for a running log and a Runs type gets made on notes/running,
+  and the next create still routes as if the only kinds were the built-in five.
+- It now looks for the folder whose default look IS that type, and uses it. No
+  table mapping kinds to folders is needed: the folder using a type is the
+  folder that type was made for. The `kind` branch stays as the fallback for
+  callers that pass no type, and is the next thing that can go.
+- Same shape as the visibility change earlier today. Both were asking a closed
+  five-value enum a question only the open world can answer, and in both cases
+  the answer was already sitting on the folder.
+
 ## Visibility comes from the folder now (2026-08-28)
 
 - Owner's design call: item kinds are created by the assistant, so the set is
