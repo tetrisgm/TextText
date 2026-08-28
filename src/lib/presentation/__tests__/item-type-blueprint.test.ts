@@ -157,19 +157,21 @@ describe("compileItemTypeBlueprint", () => {
     expect(template.theme.surface).toBe("system");
   });
 
-  it("rejects a board without a single-select grouping field", () => {
-    expect(() =>
-      compileItemTypeBlueprint(
-        {
-          name: "Broken board",
-          fields: [],
-          item: { shape: "page" },
-          collection: { layout: "board" },
-          theme: {},
-        },
-        { id: "broken-board" },
-      ),
-    ).toThrow("A board needs a groupBy field");
+  // Was: rejected outright. A throw here sent the model back to repair, and it
+  // repaired by deleting the fields as well as the layout, so a request for a
+  // board became a type with nothing in it. Degrading is the better failure.
+  it("shows a list when a board has nothing to make columns from", () => {
+    const template = compileItemTypeBlueprint(
+      {
+        name: "Broken board",
+        fields: [],
+        item: { shape: "page" },
+        collection: { layout: "board" },
+        theme: {},
+      },
+      { id: "broken-board" },
+    );
+    expect(template.collection.layout).toBe("list");
   });
 
   it("keeps every ready-made starting point valid and complete", () => {

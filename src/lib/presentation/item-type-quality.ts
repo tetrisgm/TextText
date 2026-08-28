@@ -73,6 +73,27 @@ export function assessItemTypeQuality(
       ),
     );
   }
+  // A type that promises structure and then has no properties at all. The
+  // check above only fires when the body is hidden too, so a running tracker
+  // came back with no date, no distance and an index that errored, and passed.
+  //
+  // A plain note is exempt, and deliberately: note shape, plain list, nothing
+  // summarised is a legitimate field-less type, which is exactly what the
+  // built-in Note is. Flagging it would spend a revision round inventing
+  // properties nobody asked for.
+  const promisesStructure =
+    blueprint.item.shape !== "note" ||
+    blueprint.collection.layout !== "list" ||
+    blueprint.collection.summaryFields.length > 0;
+  if (blueprint.fields.length === 0 && promisesStructure) {
+    findings.push(
+      finding(
+        "no-fields",
+        "Give this type the properties it is for. A kind of thing with no properties is just a note.",
+        "important",
+      ),
+    );
+  }
 
   const labels = new Set<string>();
   for (const field of blueprint.fields) {

@@ -1036,11 +1036,132 @@ function exampleRows(field: Extract<ItemTypeFieldBlueprint, { type: "rows" }>) {
   );
 }
 
+/**
+ * What was changed to make a blueprint compile, and why.
+ *
+ * Reported rather than silent: a person who asked for a year grid and got a
+ * dated list is owed the sentence explaining it. Silence here would be the
+ * worse half of the old behaviour, not the better half.
+ */
+export type BlueprintAdjustment = { change: string; reason: string };
+
+/** Layouts that cannot render without a field of a particular kind. */
+const LAYOUT_NEEDS = {
+  board: "enum",
+  calendar: "date",
+  heatmap: "date",
+} as const;
+
+/**
+ * Bring a collection into range of the fields it actually has.
+ *
+ * A layout with a hard requirement used to throw, and the model, asked to
+ * repair, would usually drop the layout AND the fields and hand back a type
+ * with nothing in it: a request to track runs as a year grid produced a look
+ * with no fields at all and an index that errored. An empty page is a worse
+ * answer than a dated list, so this reaches for the field the layout needs,
+ * and falls back to a layout the fields can support when there is none.
+ *
+ * Only ever loosens. A blueprint that already validates comes back untouched.
+ */
+export function adaptCollectionToFields(
+  blueprint: ItemTypeBlueprint,
+): { blueprint: ItemTypeBlueprint; adjustments: BlueprintAdjustment[] } {
+  const adjustments: BlueprintAdjustment[] = [];
+  const stored = blueprint.fields.filter((field) => field.type !== "computed");
+  const byId = new Map(stored.map((field) => [field.id, field] as const));
+  const firstDate = stored.find((field) => field.type === "date");
+  const firstSingleEnum = stored.find(
+    (field) => field.type === "enum" && !field.multiple,
+  );
+
+  const adapt = <T extends {
+    layout: ItemTypeBlueprint["collection"]["layout"];
+    groupBy?: string;
+    dateBy?: string;
+  }>(collection: T, where: string): T => {
+    let next = { ...collection };
+
+    // A pointer at a field that is missing or of the wrong kind is dropped
+    // before anything else, so the layout rules below see the truth.
+    if (next.groupBy) {
+      const grouped = byId.get(next.groupBy);
+      if (!grouped || grouped.type !== "enum" || grouped.multiple) {
+        adjustments.push({
+          change: `${where}: ignored grouping by ${next.groupBy}`,
+          reason: "grouping needs a single-select field, and that one is not",
+        });
+        next = { ...next, groupBy: undefined };
+      }
+    }
+    if (next.dateBy) {
+      const dated = byId.get(next.dateBy);
+      if (!dated || dated.type !== "date") {
+        adjustments.push({
+          change: `${where}: ignored date placement by ${next.dateBy}`,
+          reason: "placing items on days needs a date field, and that one is not",
+        });
+        next = { ...next, dateBy: undefined };
+      }
+    }
+
+    const needs = LAYOUT_NEEDS[next.layout as keyof typeof LAYOUT_NEEDS];
+    if (!needs) return next;
+    if (needs === "date" && !next.dateBy) {
+      if (firstDate) {
+        adjustments.push({
+          change: `${where}: placed items by ${firstDate.id}`,
+          reason: `a ${next.layout} needs a date field and none was named`,
+        });
+        next = { ...next, dateBy: firstDate.id };
+      } else {
+        adjustments.push({
+          change: `${where}: showed a list instead of a ${next.layout}`,
+          reason: "there is no date field to place items on",
+        });
+        next = { ...next, layout: "list" as T["layout"] };
+      }
+    }
+    if (needs === "enum" && !next.groupBy) {
+      if (firstSingleEnum) {
+        adjustments.push({
+          change: `${where}: grouped by ${firstSingleEnum.id}`,
+          reason: "a board needs a single-select field and none was named",
+        });
+        next = { ...next, groupBy: firstSingleEnum.id };
+      } else {
+        adjustments.push({
+          change: `${where}: showed a list instead of a board`,
+          reason: "there is no single-select field to make columns from",
+        });
+        next = { ...next, layout: "list" as T["layout"] };
+      }
+    }
+    return next;
+  };
+
+  const collection = {
+    ...adapt(blueprint.collection, "Folder view"),
+    views: blueprint.collection.views.map((view) =>
+      adapt(view, `View "${view.name}"`),
+    ),
+  };
+  return {
+    blueprint: { ...blueprint, collection },
+    adjustments,
+  };
+}
+
 export function compileItemTypeBlueprint(
   value: unknown,
   identity: { id: string; version?: number },
 ): TemplateDefinition {
-  const blueprint = itemTypeBlueprintSchema.parse(value);
+  // Loosened before validation, so a layout the fields cannot support becomes
+  // the nearest thing they can rather than an error the model answers with an
+  // empty type.
+  const { blueprint } = adaptCollectionToFields(
+    itemTypeBlueprintSchema.parse(value),
+  );
   const fieldMap = new Map(blueprint.fields.map((field) => [field.id, field]));
   if (fieldMap.size !== blueprint.fields.length) {
     throw new Error("Item type field ids must be unique.");

@@ -85,3 +85,47 @@ describe("item-type quality", () => {
     );
   });
 });
+
+describe("a type with no properties at all", () => {
+  const base = {
+    name: "Runs",
+    fields: [],
+    item: { shape: "page", showBody: true, showMetadata: false, showTags: false },
+    collection: {
+      layout: "list",
+      columns: 1,
+      summaryFields: [],
+      sortBy: "updatedAt",
+      sortDirection: "desc",
+      views: [],
+    },
+    theme: {},
+  };
+
+  it("is important when the type promises structure", () => {
+    const report = assessItemTypeQuality(itemTypeBlueprintSchema.parse(base));
+    expect(report.findings.some((entry) => entry.code === "no-fields")).toBe(true);
+    expect(report.passes).toBe(false);
+  });
+
+  it("is left alone for a plain note, which is legitimately field-less", () => {
+    const report = assessItemTypeQuality(
+      itemTypeBlueprintSchema.parse({
+        ...base,
+        item: { ...base.item, shape: "note" },
+      }),
+    );
+    expect(report.findings.some((entry) => entry.code === "no-fields")).toBe(false);
+  });
+
+  it("is important for a note shape that still summarises something", () => {
+    const report = assessItemTypeQuality(
+      itemTypeBlueprintSchema.parse({
+        ...base,
+        item: { ...base.item, shape: "note" },
+        collection: { ...base.collection, layout: "cards" },
+      }),
+    );
+    expect(report.findings.some((entry) => entry.code === "no-fields")).toBe(true);
+  });
+});
