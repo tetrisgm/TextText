@@ -3350,6 +3350,23 @@ function capabilityTokenHash(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
 }
 
+/**
+ * A look, for a workspace addressed the way the sync routes address one.
+ *
+ * Sync resolves a workspace by handle and never carries its row id, so
+ * inlining a look into a synced document needed this door rather than a second
+ * lookup at every call site.
+ */
+export async function getDocumentTemplateForHandle(
+  handle: string,
+  reference: TemplateReference,
+): Promise<TemplateDefinition | null> {
+  const builtin = getBuiltinTemplate(reference.id, reference.version);
+  if (builtin) return builtin;
+  if (!db) return null;
+  return getDocumentTemplate(await blogIdFor(handle), reference);
+}
+
 export async function getDocumentTemplate(
   blogId: string,
   reference: TemplateReference,

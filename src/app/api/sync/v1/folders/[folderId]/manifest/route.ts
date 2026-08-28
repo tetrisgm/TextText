@@ -8,6 +8,7 @@ import {
   ifNoneMatchSatisfied,
   renderSyncFolderManifest,
   syncError,
+  templatesForPosts,
 } from "../../../sync";
 
 interface Props {
@@ -37,7 +38,10 @@ export async function GET(request: Request, { params }: Props) {
       exact: true,
     })
   ).filter((post) => Boolean(post.id));
-  const manifest = renderSyncFolderManifest(blog, posts, folder);
+  // Looks resolved once for the whole folder: the manifest's documentHash has
+  // to match what GET files/{id} serves, and both now inline the definition.
+  const templates = await templatesForPosts(blog.handle, posts);
+  const manifest = renderSyncFolderManifest(blog, posts, folder, templates);
 
   const json = JSON.stringify(manifest, null, 2);
   const etag = `"${markdownFileHash(json)}"`;

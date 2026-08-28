@@ -73,6 +73,11 @@ public struct TextTextTextBundleAsset: Equatable, Sendable {
 public struct TextTextTextBundleContents: Equatable, Sendable {
     public let markdown: String
     public let documentJSON: String?
+    /// The look itself, as `template.json`. `document.json` names an id and a
+    /// version, which means nothing outside the workspace that stores it, so a
+    /// textpack could carry a recipe's cook time and still not know how a
+    /// recipe reads. Nil for a bundle written before this existed.
+    public let templateJSON: String?
     public let assets: [TextTextTextBundleAsset]
     public let logicalSize: Int
 }
@@ -110,6 +115,7 @@ public enum TextTextTextBundlePackage {
     public static func materialize(
         canonicalMarkdown: String,
         documentJSON: String? = nil,
+        templateJSON: String? = nil,
         assets: [MaterializedAsset],
         sourceURL: String?,
         in temporaryDirectory: URL
@@ -156,6 +162,15 @@ public enum TextTextTextBundlePackage {
             try documentData.write(
                 to: packageURL.appendingPathComponent("document.json"), options: .atomic)
             logicalSize += documentData.count
+        }
+
+        if let templateJSON {
+            // Not asset-rewritten: a look is a render spec over content
+            // bindings and never holds an asset URL of its own.
+            let templateData = Data(templateJSON.utf8)
+            try templateData.write(
+                to: packageURL.appendingPathComponent("template.json"), options: .atomic)
+            logicalSize += templateData.count
         }
 
         let info = TextTextTextBundleInfo(sourceURL: sourceURL, remoteAssets: mappings)
@@ -233,6 +248,17 @@ public enum TextTextTextBundlePackage {
             documentJSON = decoded
             logicalSize += documentData.count
         }
+        let templateURL = packageRoot.appendingPathComponent("template.json")
+        var templateJSON: String?
+        if FileManager.default.fileExists(atPath: templateURL.path) {
+            let templateData = try Data(contentsOf: templateURL)
+            guard let decoded = String(data: templateData, encoding: .utf8) else {
+                throw TextTextTextBundleError.invalidPackage("template.json is not UTF-8")
+            }
+            _ = try decodedJSONObject(decoded)
+            templateJSON = decoded
+            logicalSize += templateData.count
+        }
         var assets: [TextTextTextBundleAsset] = []
         var remoteURLsByFilename: [String: String] = [:]
         let assetsURL = packageRoot.appendingPathComponent("assets", isDirectory: true)
@@ -269,6 +295,7 @@ public enum TextTextTextBundlePackage {
         return TextTextTextBundleContents(
             markdown: canonicalMarkdown,
             documentJSON: documentJSON,
+            templateJSON: templateJSON,
             assets: assets, logicalSize: logicalSize)
     }
 

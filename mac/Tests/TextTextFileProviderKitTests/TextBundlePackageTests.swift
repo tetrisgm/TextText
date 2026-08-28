@@ -64,6 +64,48 @@ final class TextBundlePackageTests: XCTestCase {
         XCTAssertEqual(decoded.markdown, "# Hello\n\n![Cover](\(remoteURL))\n")
     }
 
+    /// The point of the whole exercise: a textpack handed to someone else has
+    /// to know how it is meant to read. document.json names a template id and
+    /// a version, which means nothing outside the workspace that stores it.
+    func testTemplateDefinitionRoundTripsThroughTextPack() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let templateJSON = #"{"id":"custom.recipe","version":2,"name":"Recipe","fields":[{"id":"cookTime","label":"Cook time","type":"number"}]}"#
+        let package = try TextTextTextBundlePackage.materialize(
+            canonicalMarkdown: "# Dal\n",
+            documentJSON: #"{"schema":1,"content":{"fields":{"cookTime":35}}}"#,
+            templateJSON: templateJSON,
+            assets: [], sourceURL: nil, in: root)
+
+        let textpack = try TextTextTextBundlePackage.zipToTextPack(
+            packageURL: package.url, in: root)
+        let decoded = try TextTextTextBundlePackage.read(from: textpack, in: root)
+
+        let decodedObject = try JSONSerialization.jsonObject(
+            with: Data(try XCTUnwrap(decoded.templateJSON).utf8))
+        let sourceObject = try JSONSerialization.jsonObject(with: Data(templateJSON.utf8))
+        XCTAssertEqual(decodedObject as? NSDictionary, sourceObject as? NSDictionary)
+        XCTAssertTrue(try XCTUnwrap(decoded.documentJSON).contains("cookTime"))
+    }
+
+    /// A bundle written before template.json existed still opens, and reports
+    /// no look rather than failing to read.
+    func testPackageWithoutTemplateStillReads() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let package = try TextTextTextBundlePackage.materialize(
+            canonicalMarkdown: "# No look\n", assets: [], sourceURL: nil, in: root)
+
+        let decoded = try TextTextTextBundlePackage.read(from: package.url, in: root)
+
+        XCTAssertNil(decoded.templateJSON)
+        XCTAssertEqual(decoded.markdown, "# No look\n")
+    }
+
     func testLegacyPackageWithoutDocumentJSONStillReads() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

@@ -18,10 +18,17 @@ public enum TextTextSyncError: Error, Equatable, Sendable {
 public struct TextTextFileContent: Equatable, Sendable {
     public let text: String
     public let documentJSON: String?
+    /// The look itself, when the server sent one. Optional so an older server,
+    /// and a document pinned to a look that has been deleted, both still sync.
+    public let templateJSON: String?
     public let hash: String?
-    public init(text: String, documentJSON: String? = nil, hash: String?) {
+    public init(
+        text: String, documentJSON: String? = nil, templateJSON: String? = nil,
+        hash: String?
+    ) {
         self.text = text
         self.documentJSON = documentJSON
+        self.templateJSON = templateJSON
         self.hash = hash
     }
 }

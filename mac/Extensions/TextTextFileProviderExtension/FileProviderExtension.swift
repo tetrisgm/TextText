@@ -343,6 +343,11 @@ public final class FileProviderExtension: NSObject,
                         let package = try TextTextTextBundlePackage.materialize(
                             canonicalMarkdown: revision.content.text,
                             documentJSON: revision.content.documentJSON,
+                            // The look travels with the file. Without it a
+                            // textpack dragged into Bear, or handed to anyone
+                            // outside this workspace, carries a recipe's cook
+                            // time and no idea how a recipe reads.
+                            templateJSON: revision.content.templateJSON,
                             assets: assets,
                             sourceURL: revision.item.manifestURL,
                             in: dir)

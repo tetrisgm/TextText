@@ -39,6 +39,8 @@ import {
   MAX_SYNC_METADATA_BODY_BYTES,
   syncError,
   syncManifestItem,
+  templateForPost,
+  templatesForPosts,
 } from "../../sync";
 
 interface Props {
@@ -97,7 +99,12 @@ export async function GET(request: Request, { params }: Props) {
 
   const structured = requestAcceptsSyncDocument(request);
   const file = structured
-    ? renderSyncDocumentFile(blog, post, folderPath)
+    ? renderSyncDocumentFile(
+        blog,
+        post,
+        folderPath,
+        templateForPost(post, await templatesForPosts(blog.handle, [post])),
+      )
     : renderSyncFile(blog, post, folderPath);
   const etag = `"${file.hash}"`;
   const headers: Record<string, string> = { ETag: etag };

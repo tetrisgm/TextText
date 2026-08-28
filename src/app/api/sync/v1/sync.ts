@@ -3,6 +3,9 @@
 // all of it is unit-testable; the auth/workspace glue lives in ./auth.ts.
 
 import { blogBaseUrl, locatedPostUrl } from "@/lib/agent-surface";
+import type { TemplateReference } from "@/lib/documents/model";
+import type { TemplateDefinition } from "@/lib/presentation/schema";
+import { getDocumentTemplateForHandle } from "@/lib/store";
 import {
   BLOG_FOLDER_PATH,
   DEFAULT_FILE_REPRESENTATION,
@@ -211,12 +214,50 @@ export function renderSyncDocumentFile(
   blog: Blog,
   post: Post,
   folderPath = BLOG_FOLDER_PATH,
+  template?: TemplateDefinition | null,
 ): { text: string; hash: string } {
   const markdown = renderSyncFile(blog, post, folderPath).text;
   const text = serializeSyncDocumentEnvelope(
-    renderSyncDocumentEnvelope({ markdown, post }),
+    renderSyncDocumentEnvelope({ markdown, post, template }),
   );
   return { text, hash: markdownFileHash(text) };
+}
+
+/**
+ * The looks a set of posts is pinned to, one lookup per distinct version.
+ *
+ * The manifest renders every post in a folder, and resolving per post would
+ * mean a query per item for what is nearly always the same two or three looks.
+ */
+export async function templatesForPosts(
+  handle: string,
+  posts: readonly Post[],
+): Promise<Map<string, TemplateDefinition>> {
+  const wanted = new Map<string, TemplateReference>();
+  for (const post of posts) {
+    const reference = (post.document as { presentation?: { template?: TemplateReference } } | null)
+      ?.presentation?.template;
+    if (reference) wanted.set(`${reference.id}@${reference.version}`, reference);
+  }
+  const resolved = new Map<string, TemplateDefinition>();
+  await Promise.all(
+    [...wanted].map(async ([key, reference]) => {
+      const definition = await getDocumentTemplateForHandle(handle, reference);
+      if (definition) resolved.set(key, definition);
+    }),
+  );
+  return resolved;
+}
+
+/** The look for one post, out of a map built by templatesForPosts. */
+export function templateForPost(
+  post: Post,
+  templates: Map<string, TemplateDefinition>,
+): TemplateDefinition | null {
+  const reference = (post.document as { presentation?: { template?: TemplateReference } } | null)
+    ?.presentation?.template;
+  if (!reference) return null;
+  return templates.get(`${reference.id}@${reference.version}`) ?? null;
 }
 
 export function ifMatchSatisfiedForSyncFile(
@@ -266,6 +307,13 @@ export function renderSyncFolderManifest(
   blog: Blog,
   posts: Post[],
   folder?: Folder,
+  /**
+   * Resolved by the caller with templatesForPosts. Passed in rather than
+   * fetched here so this stays synchronous, and so documentHash agrees with
+   * what GET files/{id} serves: both sides must inline the same definition or
+   * every client re-downloads every file on every manifest.
+   */
+  templates: Map<string, TemplateDefinition> = new Map(),
 ) {
   const manifest = renderFolderManifest(
     blog,
@@ -280,6 +328,7 @@ export function renderSyncFolderManifest(
         blog,
         post,
         folder?.path ?? BLOG_FOLDER_PATH,
+        templateForPost(post, templates),
       );
       return {
         ...item,

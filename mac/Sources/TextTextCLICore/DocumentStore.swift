@@ -241,6 +241,10 @@ public struct DocumentStore: Sendable {
         let package = try TextTextTextBundlePackage.materialize(
             canonicalMarkdown: markdown,
             documentJSON: existing.documentJSON,
+            // Carried, not regenerated. Editing the prose must not silently
+            // strip the look off the file, which is what dropping this here
+            // would have done on every single write.
+            templateJSON: existing.templateJSON,
             assets: assets,
             sourceURL: nil,
             in: temporary)

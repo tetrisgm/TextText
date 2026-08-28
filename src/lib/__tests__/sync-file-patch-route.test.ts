@@ -14,6 +14,9 @@ const mocks = vi.hoisted(() => ({
   deletePostAtomic: vi.fn(),
   getPostById: vi.fn(),
   getFolderById: vi.fn(),
+  // Resolves the look a synced document is pinned to, so the textpack the
+  // client receives carries the definition and not just its id.
+  getDocumentTemplateForHandle: vi.fn(async () => null),
   movePostFile: vi.fn(),
   resolveItemAccess: vi.fn(),
   resolveSyncWorkspace: vi.fn(),
@@ -29,6 +32,7 @@ vi.mock("@/lib/store", () => ({
   deletePostAtomic: mocks.deletePostAtomic,
   folderPathForPostType: (type: string) =>
     type === "note" ? "notes" : type === "bookmark" ? "bookmarks" : "blog",
+  getDocumentTemplateForHandle: mocks.getDocumentTemplateForHandle,
   getFolderById: mocks.getFolderById,
   getPostById: mocks.getPostById,
   markCapturePending: vi.fn(),

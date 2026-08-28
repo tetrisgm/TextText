@@ -188,6 +188,7 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
                     TextTextFileContent(
                         text: decoded.markdown,
                         documentJSON: decoded.documentJSON,
+                        templateJSON: decoded.templateJSON,
                         hash: reply.bareETag))
             } catch {
                 return .failure(.decode(error.localizedDescription))
@@ -558,7 +559,7 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
 
     private static func decodeSyncDocument(
         _ data: Data
-    ) throws -> (markdown: String, documentJSON: String) {
+    ) throws -> (markdown: String, documentJSON: String, templateJSON: String?) {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
             root["schema"] as? String == "texttext.sync-document.v1",
             let markdown = root["markdown"] as? String,
@@ -575,7 +576,16 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
                 domain: "TextTextSync", code: 2,
                 userInfo: [NSLocalizedDescriptionKey: "document is not UTF-8"])
         }
-        return (markdown, documentJSON + "\n")
+        // Optional: an older server does not send it, and a document pinned to
+        // a deleted look has none to send. Absent means the bundle falls back
+        // to the folder's look, exactly as it did before this key existed.
+        var templateJSON: String?
+        if let template = root["template"] as? [String: Any] {
+            let templateData = try JSONSerialization.data(
+                withJSONObject: template, options: [.prettyPrinted, .sortedKeys])
+            templateJSON = String(data: templateData, encoding: .utf8).map { $0 + "\n" }
+        }
+        return (markdown, documentJSON + "\n", templateJSON)
     }
 
     private static func encodeSyncDocument(

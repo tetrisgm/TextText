@@ -9,6 +9,10 @@ import {
   validateDocumentSnapshot,
 } from "@/lib/documents/model";
 import type { ParsedPostMarkdownFile } from "@/lib/markdown-files";
+import {
+  templateDefinitionSchema,
+  type TemplateDefinition,
+} from "@/lib/presentation/schema";
 import { z } from "zod";
 
 export const SYNC_DOCUMENT_SCHEMA = "texttext.sync-document.v1" as const;
@@ -20,6 +24,20 @@ const syncDocumentEnvelopeSchema = z
     schema: z.literal(SYNC_DOCUMENT_SCHEMA),
     markdown: z.string().max(12_000_000),
     document: documentSnapshotSchema,
+    /**
+     * The look itself, not just the reference to it.
+     *
+     * `document.presentation.template` names an id and a version, which is
+     * enough inside the workspace that stores it and nothing at all outside.
+     * A textpack handed to someone else, or opened by another tool, could
+     * carry a recipe's cook time and still not know how a recipe is meant to
+     * read. Inlining the definition is what makes the file self describing,
+     * which is the promise in SPEC.md pillar 1.
+     *
+     * Optional, so an envelope written before this existed still parses, and
+     * so a document pinned to a look that has since been deleted still syncs.
+     */
+    template: templateDefinitionSchema.optional(),
   })
   .strict();
 
@@ -63,9 +81,12 @@ export function serializeSyncDocumentEnvelope(
 export function renderSyncDocumentEnvelope({
   markdown,
   post,
+  template,
 }: {
   markdown: string;
   post: Post;
+  /** Resolved by the caller, which is the only side that can reach the store. */
+  template?: TemplateDefinition | null;
 }): SyncDocumentEnvelope {
   return {
     schema: SYNC_DOCUMENT_SCHEMA,
@@ -74,6 +95,7 @@ export function renderSyncDocumentEnvelope({
       post.document,
       `Persisted item ${post.id ?? post.slug}`,
     ),
+    ...(template ? { template } : {}),
   };
 }
 
