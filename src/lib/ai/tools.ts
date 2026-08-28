@@ -614,7 +614,14 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   create_item_type: defineTool("create_item_type", {
     title: "Create item type",
     description:
-      "Create one reusable item type from a complete blueprint. The blueprint defines the fields, the item page, the folder layout, example content, and safe theme tokens together. Use this when someone asks for a new kind of thing, such as a Medium-like blog, a Notion-like task board, or Apple Notes-like notes. If folder_path is supplied, the new type becomes that folder's look and existing items are restyled by default.",
+      "Create one reusable item type from a complete blueprint. The blueprint defines the fields, the item page, the folder layout, example content, and safe theme tokens together. Use this when someone asks for a new kind of thing, such as a Medium-like blog, a Notion-like task board, or Apple Notes-like notes. If folder_path is supplied, the new type becomes that folder's look and existing items are restyled by default.\n\n" +
+      // Worked example rather than more rules. A type designed with no fields
+      // at all was the most common failure, and a request for a year grid of
+      // runs produced exactly that: the model reached for a layout and forgot
+      // that a layout needs data underneath it.
+      "Every type needs fields a person will actually fill in. This is the shape to aim for, from the built-in Tasks type:\n" +
+      '{"name":"Tasks","description":"A focused list of things to finish.","fields":[{"id":"area","label":"Area","type":"enum","options":[{"value":"work"},{"value":"personal"}]},{"id":"items","label":"Items","type":"rows","fields":[{"id":"task","type":"text"},{"id":"done","type":"boolean"},{"id":"when","type":"date"},{"id":"priority","type":"enum"}]}],"collection":{"layout":"list"}}\n' +
+      "Three to seven fields. A board needs a single-select enum to group by, and a calendar or heatmap needs a date field to place items on: declare that field, or choose a layout the fields you have can support. Never return a type with no fields.",
     inputSchema: z
       .object({
         blueprint: itemTypeBlueprintSchema,

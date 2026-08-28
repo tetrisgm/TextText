@@ -19,6 +19,7 @@ import {
   itemTypeQualityRevisionPrompt,
 } from "@/lib/presentation/item-type-quality";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
+import { itemTypeExamplesFor } from "@/lib/ai/item-type-examples";
 import { readBoundedJson } from "@/lib/http/bounded-json";
 
 export const dynamic = "force-dynamic";
@@ -63,7 +64,6 @@ Rules:
 - Use computed fields for read-only row rollups or numeric progress. Never ask the writer to enter a computed value.
 - Add named collection views when the request implies distinct useful perspectives, such as My tasks, Due soon, Board, or Calendar. Each view may have its own filters, grouping, and sort.
 - Use showWhen for low-frequency detail that should appear only after a boolean or enum choice is set. Keep validation constraints practical.
-- Choose publishable only when the request is clearly for public reading.
 - Product copy uses sentence case and never uses an em dash.
 - The result must feel ready to use, not like a schema exercise.
 
@@ -118,8 +118,13 @@ export async function POST(request: Request) {
     ? itemTypeBlueprintSchema.safeParse(body.current)
     : null;
   const folderName = cleanPrompt(body.folderName).slice(0, 160);
+  // Chosen per request, so it belongs with the prompt rather than in SYSTEM.
+  // Empty when nothing built in is close, which is a real answer and not a
+  // failure: a misleading neighbour is worse than no example.
+  const examples = itemTypeExamplesFor(prompt);
   const designPrompt = [
     folderName ? `Destination folder: ${folderName}` : null,
+    examples || null,
     current?.success
       ? `Current design to revise:\n${JSON.stringify(current.data)}`
       : null,
