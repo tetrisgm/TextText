@@ -14,13 +14,13 @@ export const DEVICE_LINK_TTL_SECONDS = 10 * 60;
 // No vowels and no ambiguous glyphs (0/O, 1/I): the code is read by humans.
 const CODE_ALPHABET = "BCDFGHJKMNPQRSTVWXZ23456789";
 
-export type DeviceLinkStart = {
+type DeviceLinkStart = {
   code: string;
   pollToken: string;
   expiresAt: Date;
 };
 
-export type DeviceLinkPollResult =
+type DeviceLinkPollResult =
   | { status: "pending" }
   | { status: "expired" }
   | { status: "approved"; token: string; tokenName: string };

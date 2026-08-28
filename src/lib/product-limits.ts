@@ -3,7 +3,7 @@
 
 export type PlanTier = "free" | "paid";
 
-export type PlanLimits = {
+type PlanLimits = {
   /** live items per workspace, across folders */
   maxPosts: number;
   allowMediaUploads: boolean;
@@ -13,7 +13,7 @@ export type PlanLimits = {
   allowApiTokens: boolean;
 };
 
-export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
+const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
   free: {
     maxPosts: 200,
     allowMediaUploads: true,

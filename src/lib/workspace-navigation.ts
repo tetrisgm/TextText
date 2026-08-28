@@ -5,7 +5,7 @@ export type WorkspaceSearchLocation = {
   source: "date" | "query" | "tag";
 };
 
-export type WorkspaceHierarchyView =
+type WorkspaceHierarchyView =
   | { level: "root" }
   | ({ level: "search" } & WorkspaceSearchLocation)
   | { level: "settings" }
@@ -18,7 +18,7 @@ export type WorkspaceHierarchyView =
       returnToSearch?: WorkspaceSearchLocation;
     };
 
-export type WorkspaceNavigationTarget =
+type WorkspaceNavigationTarget =
   | { kind: "none" }
   | { kind: "home" }
   | { kind: "folder"; folderPath: string }

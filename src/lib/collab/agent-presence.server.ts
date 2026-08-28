@@ -22,7 +22,7 @@ import { agentIdentity, agentProviderColor } from "@/lib/collab/agent-identity";
 /** Fallback name when a client connects without identifying itself at all. */
 export const UNKNOWN_AGENT_CONNECTION_NAME = "AI agent";
 
-export type AgentPresenceActor = {
+type AgentPresenceActor = {
   /** The raw connection name (OAuth client name, or MCP clientInfo.name). */
   connectionName: string;
   /** The signed-in user this agent is acting for. */

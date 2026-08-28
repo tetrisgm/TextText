@@ -22,10 +22,10 @@ import {
 } from "@/lib/permissions";
 import { getUserIdBySub } from "@/lib/store";
 
-export type ShareRole = ItemShareRole;
-export type WorkspaceShareRole = WorkspaceMemberRole;
+type ShareRole = ItemShareRole;
+type WorkspaceShareRole = WorkspaceMemberRole;
 export type ScopeShareRole = ShareRole | WorkspaceShareRole;
-export type ShareUser = AccessUser & { sub: string; email?: string | null };
+type ShareUser = AccessUser & { sub: string; email?: string | null };
 
 export type ScopeShare = {
   id: string;
@@ -35,8 +35,6 @@ export type ScopeShare = {
   createdAt: string;
 };
 
-export type PostShare = ScopeShare & { role: ShareRole };
-
 type ShareAuditContext = {
   actorType?: AuditActorType;
   actorUserId?: string | null;
@@ -44,11 +42,11 @@ type ShareAuditContext = {
   auditInputSummary?: string;
 };
 
-export function normalizeShareEmail(email: string): string {
+function normalizeShareEmail(email: string): string {
   return normalizeAccessEmail(email);
 }
 
-export function isValidShareEmail(email: string): boolean {
+function isValidShareEmail(email: string): boolean {
   return isValidAccessEmail(email);
 }
 
@@ -264,7 +262,7 @@ export async function revokeScopeShare(
   ] as const);
 }
 
-export async function listSharedWithMe(
+async function listSharedWithMe(
   user: ShareUser | null,
 ): Promise<Array<{ postId: string; role: ShareRole }>> {
   if (!db || !user) return [];

@@ -8,12 +8,12 @@
 
 export const MCP_PROTOCOL_VERSION = "2026-07-28";
 
-export const MAX_TOOLS = 60;
-export const MAX_DESCRIPTION_CHARS = 600;
-export const MAX_RESULT_CHARS = 20_000;
-export const MAX_RESPONSE_CHARS = 2_000_000;
+const MAX_TOOLS = 60;
+const MAX_DESCRIPTION_CHARS = 600;
+const MAX_RESULT_CHARS = 20_000;
+const MAX_RESPONSE_CHARS = 2_000_000;
 /** Longest we will trust a server's own cache hint. */
-export const MAX_CACHE_MS = 60 * 60 * 1000;
+const MAX_CACHE_MS = 60 * 60 * 1000;
 /** Remote tool names we will speak to. Anything else is skipped, not sanitized. */
 export const REMOTE_TOOL_NAME = /^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/;
 
@@ -113,7 +113,7 @@ export function parseReply(raw: string, serverName: string): unknown {
   return payload.result;
 }
 
-export function readCacheHints(result: unknown): { ttlMs: number | null } {
+function readCacheHints(result: unknown): { ttlMs: number | null } {
   const hints = result as { ttlMs?: unknown } | null;
   const ttl = typeof hints?.ttlMs === "number" ? hints.ttlMs : null;
   if (ttl === null || !Number.isFinite(ttl) || ttl <= 0) return { ttlMs: null };

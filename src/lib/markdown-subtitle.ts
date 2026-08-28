@@ -5,7 +5,7 @@ import type { Post } from "@/lib/content";
  * headings, so the representation stays valid Markdown without colliding with
  * an authored block type.
  */
-export const SUBTITLE_MARKDOWN_MARKER = "######";
+const SUBTITLE_MARKDOWN_MARKER = "######";
 
 type SubtitleLine = {
   end: number;

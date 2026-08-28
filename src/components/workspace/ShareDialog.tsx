@@ -19,7 +19,7 @@ import type { ScopeShare, ScopeShareRole } from "@/lib/shares";
 import type { CollaboratorScopeType } from "@/lib/permissions";
 import styles from "./ShareDialog.module.css";
 
-export type ShareDialogProps = {
+type ShareDialogProps = {
   handle: string;
   postId?: string;
   postTitle?: string;

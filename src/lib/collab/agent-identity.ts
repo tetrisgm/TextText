@@ -5,7 +5,7 @@ export type AgentProviderId =
   | "cursor"
   | "agent";
 
-export type AgentIdentity = {
+type AgentIdentity = {
   provider: AgentProviderId;
   displayName: string;
 };

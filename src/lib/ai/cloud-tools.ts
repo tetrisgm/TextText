@@ -26,7 +26,7 @@ import {
 import type { OutboundMcpProposalPreview } from "@/lib/ai/outbound-proposals.server";
 import { runWorkspaceToolForSession } from "@/lib/mcp/tools";
 
-export type CloudAssistantActor = {
+type CloudAssistantActor = {
   sub: string;
   userId: string | null;
   handle: string;

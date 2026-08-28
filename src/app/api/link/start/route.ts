@@ -5,7 +5,6 @@
 
 import { isAuthConfigured } from "@/auth";
 import {
-  DEVICE_LINK_TTL_SECONDS,
   cleanAppName,
   startDeviceLink,
 } from "@/lib/device-link";

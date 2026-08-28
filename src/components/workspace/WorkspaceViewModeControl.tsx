@@ -7,7 +7,7 @@ export type WorkspaceViewMode = "list" | "column" | "grid";
 
 const VIEW_MODE_EVENT = "texttext:workspace-view-mode-changed";
 
-export const WORKSPACE_VIEW_MODE_LABELS: Record<WorkspaceViewMode, string> = {
+const WORKSPACE_VIEW_MODE_LABELS: Record<WorkspaceViewMode, string> = {
   list: "List",
   column: "One column",
   grid: "Cards",

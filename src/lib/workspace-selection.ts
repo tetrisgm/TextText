@@ -1,4 +1,4 @@
-export type WorkspaceSelectionState = {
+type WorkspaceSelectionState = {
   activeId: string | null;
   anchorId: string | null;
   selectedIds: Set<string>;
@@ -16,7 +16,7 @@ export function shouldSuppressNativeItemSelection({
   return ctrlKey || metaKey || shiftKey;
 }
 
-export function orderedSelectionRange(
+function orderedSelectionRange(
   orderedIds: readonly string[],
   anchorId: string,
   targetId: string,
@@ -121,7 +121,7 @@ export type SelectionRectangle = {
   top: number;
 };
 
-export function rectanglesIntersect(
+function rectanglesIntersect(
   left: SelectionRectangle,
   right: SelectionRectangle,
 ): boolean {

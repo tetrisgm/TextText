@@ -25,7 +25,7 @@ export type DocumentRenderMetadata = {
   readingTime?: string;
 };
 
-export type DocumentRenderSlots = {
+type DocumentRenderSlots = {
   /**
    * Editing surfaces for PLAIN bindings, keyed by binding name.
    *

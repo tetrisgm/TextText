@@ -207,7 +207,7 @@ const bindingSchema = z
     "binding must reference a supported content path",
   );
 
-export type ContentBinding = z.infer<typeof bindingSchema>;
+type ContentBinding = z.infer<typeof bindingSchema>;
 
 /** Bindings inside a rows-bound node address the row's sub-fields. */
 const rowBindingSchema = z

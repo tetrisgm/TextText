@@ -2,7 +2,7 @@ import type { ItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
 
 export type StudioRevisionSource = "ai" | "manual" | "starter";
 
-export type StudioRevision = {
+type StudioRevision = {
   id: number;
   label: string;
   source: StudioRevisionSource;
@@ -10,7 +10,7 @@ export type StudioRevision = {
   blueprint: ItemTypeBlueprint;
 };
 
-export type StudioTimeline = {
+type StudioTimeline = {
   revisions: StudioRevision[];
   index: number;
   nextId: number;

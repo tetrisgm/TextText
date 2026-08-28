@@ -26,7 +26,7 @@ export type DraftState = {
 
 export type SaveState = "saved" | "saving" | "error";
 
-export function isUnsetTitle(value: string): boolean {
+function isUnsetTitle(value: string): boolean {
   const normalized = value.trim();
   return normalized === "" || normalized.toLowerCase() === "untitled";
 }

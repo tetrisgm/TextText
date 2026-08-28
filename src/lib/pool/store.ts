@@ -4,7 +4,6 @@ import { useCallback, useMemo, useSyncExternalStore } from "react";
 import {
   persistPool,
   persistPostBody,
-  readPersistedPool,
   readPersistedPostBody,
 } from "@/lib/pool/storage";
 import type {

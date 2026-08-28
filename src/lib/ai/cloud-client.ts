@@ -5,7 +5,7 @@ import { TENANT_HANDLE_RE } from "@/lib/tenants";
 
 export type CloudAssistantProviderLabel = "Anthropic" | "OpenAI";
 
-export type CloudAssistantContext = {
+type CloudAssistantContext = {
   level?: string;
   folderPath?: string;
   postId?: string;
@@ -29,7 +29,7 @@ export type CloudAssistantAttachment = {
   dataUrl: string;
 };
 
-export type CloudAssistantStatus = {
+type CloudAssistantStatus = {
   enabled: boolean;
   provider: CloudAssistantProviderLabel | null;
   model: string | null;
@@ -96,7 +96,7 @@ export type CloudContextItem = {
   operation: "Found" | "Read";
 };
 
-export type CloudAssistantOutcome =
+type CloudAssistantOutcome =
   | {
       text: string;
       provider: CloudAssistantProviderLabel;
@@ -138,7 +138,7 @@ export type CloudAssistantStreamEvent =
       writeProposals?: CloudAssistantWriteProposal[];
     };
 
-export type CloudAssistantTurnOptions = {
+type CloudAssistantTurnOptions = {
   /** Optional per-turn model from the connected provider's allowlisted catalog. */
   model?: string;
   /** Bounded prior user/assistant turns from this exact TextText chat. */

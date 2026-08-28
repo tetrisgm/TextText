@@ -202,7 +202,7 @@ async function rememberLastUsedProvider(provider: string): Promise<void> {
   }
 }
 
-export const authConfig = {
+const authConfig = {
   providers,
   adapter,
   secret: authSecret,

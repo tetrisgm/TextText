@@ -21,7 +21,7 @@ const GENERIC_ZIP_MEDIA_TYPES = new Set([
   "application/x-zip-compressed",
 ]);
 
-export type OfficeAttachmentKind = keyof typeof OFFICE_MEDIA_TYPES;
+type OfficeAttachmentKind = keyof typeof OFFICE_MEDIA_TYPES;
 
 export type OfficeAttachmentFile = {
   arrayBuffer(): Promise<ArrayBuffer>;

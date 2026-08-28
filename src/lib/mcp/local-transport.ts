@@ -11,7 +11,7 @@
 // transport code lets old standalone builds fail honestly without restoring a
 // loopback integration in the product.
 
-export type LocalMcpWindow = Window & {
+type LocalMcpWindow = Window & {
   __TEXTTEXT_APP__?: boolean;
   __TEXTTEXT_EMBEDDED_AGENT__?: boolean;
   webkit?: {

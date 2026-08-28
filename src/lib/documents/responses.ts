@@ -7,7 +7,7 @@
 import type { DocumentSnapshot } from "./model";
 import type { RenderNode, TemplateDefinition } from "@/lib/presentation/schema";
 
-export type PollNodeSpec = Extract<RenderNode, { type: "poll" }>;
+type PollNodeSpec = Extract<RenderNode, { type: "poll" }>;
 
 function walk(node: RenderNode, visit: (node: RenderNode) => void): void {
   visit(node);

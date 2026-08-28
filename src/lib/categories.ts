@@ -6,21 +6,20 @@ import {
 } from "@/lib/store";
 import {
   blogHomePath,
-  tenantHomePath,
   usernameHomePath,
 } from "@/lib/public-paths";
 
-export type CategoryChip = {
+type CategoryChip = {
   href: string;
   label: string;
 };
 
-export type CategoryBreadcrumb = {
+type CategoryBreadcrumb = {
   href: string | null;
   label: string;
 };
 
-export type ResolvedCategory = {
+type ResolvedCategory = {
   folder: Folder;
   folders: Folder[];
   posts: Post[];
@@ -52,7 +51,7 @@ function categoryPathInput(
 // than constructing a traversal-shaped path or a bad redirect target.
 const CATEGORY_SEGMENT_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-export function categorySegmentsToFolderPath(
+function categorySegmentsToFolderPath(
   path: readonly string[],
 ): string | null {
   if (path.length === 0) return null;
@@ -61,7 +60,7 @@ export function categorySegmentsToFolderPath(
   return `${BLOG_ROOT_PATH}/${clean.join("/")}`;
 }
 
-export function categoryPathFromFolderPath(folderPath: string): string | null {
+function categoryPathFromFolderPath(folderPath: string): string | null {
   if (!folderPath.startsWith(BLOG_CATEGORY_PREFIX)) return null;
   const categoryPath = folderPath.slice(BLOG_CATEGORY_PREFIX.length);
   if (!categoryPath || categoryPath.split("/").some((segment) => !segment)) {

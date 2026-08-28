@@ -3,7 +3,7 @@ import type {
   CollectionViewSpec,
 } from "@/lib/presentation/schema";
 
-export type CollectionDisplayMode = "list" | "column" | "grid";
+type CollectionDisplayMode = "list" | "column" | "grid";
 
 /**
  * Resolve one named folder view without mutating the validated template. The

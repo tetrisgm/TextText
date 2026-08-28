@@ -270,7 +270,7 @@ export function groupDocumentsByActivityDate(
   return byDate;
 }
 
-export type CalendarDocumentAction =
+type CalendarDocumentAction =
   { kind: "search"; dateKey: string; postIds: string[] };
 
 export function calendarDocumentAction(

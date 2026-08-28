@@ -47,7 +47,7 @@ function isLoopbackAddress(raw: string): boolean {
 }
 const NAME_RE = /^[a-zA-Z][a-zA-Z0-9 _-]{0,31}$/;
 
-export function cleanConnectionName(value: unknown): string {
+function cleanConnectionName(value: unknown): string {
   const name = typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
   if (!NAME_RE.test(name)) {
     throw new OutboundMcpError(

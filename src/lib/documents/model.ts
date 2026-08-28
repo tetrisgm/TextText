@@ -56,8 +56,6 @@ export const documentContentSchema = z
   })
   .strict();
 
-export type DocumentContent = z.infer<typeof documentContentSchema>;
-
 export const templateReferenceSchema = z
   .object({
     id: z.string().trim().min(1).max(160),
@@ -69,16 +67,12 @@ export type TemplateReference = z.infer<typeof templateReferenceSchema>;
 
 export const documentThemeSchema = themeTokensSchema;
 
-export type DocumentTheme = z.infer<typeof documentThemeSchema>;
-
 export const documentPresentationSchema = z
   .object({
     template: templateReferenceSchema,
     theme: documentThemeSchema.default({}),
   })
   .strict();
-
-export type DocumentPresentation = z.infer<typeof documentPresentationSchema>;
 
 export const documentVisibilitySchema = z.enum(["private", "link", "public"]);
 export type DocumentVisibility = z.infer<typeof documentVisibilitySchema>;

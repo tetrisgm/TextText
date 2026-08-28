@@ -22,7 +22,7 @@ import type {
 import { statusWorkflowOptions } from "@/lib/presentation/workflow";
 import type { WorkspaceReferenceChoice } from "@/lib/presentation/workspace-reference-choices";
 
-export type FieldInputProps = {
+type FieldInputProps = {
   field: DocumentFieldDefinition;
   value: DocumentFieldValue | undefined;
   onChange: (value: DocumentFieldValue) => void;

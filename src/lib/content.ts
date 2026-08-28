@@ -129,8 +129,6 @@ export function isFileRepresentation(
  * belong to the Notes and Bookmarks folders and are always unlisted.
  */
 export type PostType = "article" | "project" | "talk" | "note" | "bookmark";
-export type BlogPostType = "article" | "project" | "talk";
-
 // Product surfaces share the same lower-level content/media/permission
 // primitives, but remain distinct user-facing jobs.
 export type Surface = "blog" | "notes" | "bookmarks" | "feeds" | "group";
@@ -139,7 +137,7 @@ export type Surface = "blog" | "notes" | "bookmarks" | "feeds" | "group";
 export type FolderMode = "blog" | "notes" | "bookmarks";
 export const BLOG_FOLDER_PATH = "blog";
 export const PRIVATE_POST_TYPES = ["note", "bookmark"] as const;
-export type PrivatePostType = (typeof PRIVATE_POST_TYPES)[number];
+type PrivatePostType = (typeof PRIVATE_POST_TYPES)[number];
 
 export function isPrivatePostType(
   type: string | null | undefined,

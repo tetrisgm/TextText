@@ -41,7 +41,7 @@ const syncDocumentEnvelopeSchema = z
   })
   .strict();
 
-export type SyncDocumentEnvelope = z.infer<typeof syncDocumentEnvelopeSchema>;
+type SyncDocumentEnvelope = z.infer<typeof syncDocumentEnvelopeSchema>;
 
 type JsonValue =
   | null

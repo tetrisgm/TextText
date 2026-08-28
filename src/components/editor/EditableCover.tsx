@@ -12,8 +12,8 @@ import {
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { isVideoFile } from "@/lib/content";
 
-export const COVER_HEIGHT_MIN = 220;
-export const COVER_HEIGHT_MAX = 760;
+const COVER_HEIGHT_MIN = 220;
+const COVER_HEIGHT_MAX = 760;
 const COVER_HEIGHT_STEP = 24;
 
 function clampCoverHeight(value: number): number {

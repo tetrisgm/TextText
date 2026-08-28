@@ -14,14 +14,14 @@ export const TEXTTEXT_CLI_VERIFY_COMMAND =
 export const AGENT_CONNECTION_CHECK_PROMPT =
   "Use TextText to capture this private note with a stable idempotency key: Agent connection check, then a new line, then Connected through [your agent name], replacing the brackets with your name. Report the exact receipt title, item id, and saved location. Read that exact item id back, confirm the saved line, and do not publish or share it.";
 
-export type AgentIntegrationStep = {
+type AgentIntegrationStep = {
   /** One sentence, imperative, sentence case. */
   text: string;
   /** Optional value this step hands the person, with a labeled copy action. */
   copy?: { label: string; value: string };
 };
 
-export type AgentIntegration = {
+type AgentIntegration = {
   id: "claude" | "codex" | "mcp";
   name: string;
   company: string;
@@ -157,7 +157,7 @@ export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
   },
 ] as const;
 
-export type AgentWorkflow = {
+type AgentWorkflow = {
   id: string;
   title: string;
   description: string;

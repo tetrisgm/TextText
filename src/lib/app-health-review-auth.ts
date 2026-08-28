@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 
-export type AppHealthReviewAuthorization =
+type AppHealthReviewAuthorization =
   | "authorized"
   | "unauthorized"
   | "unconfigured";

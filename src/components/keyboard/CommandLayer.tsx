@@ -33,7 +33,7 @@ import type {
 import { useWorkspacePool } from "@/lib/pool/store";
 import { disarmWorkspaceHover } from "@/lib/workspace-hover";
 
-export type KeyBinding = CommandShortcut & {
+type KeyBinding = CommandShortcut & {
   label: string;
   group: string;
   when?: () => boolean;

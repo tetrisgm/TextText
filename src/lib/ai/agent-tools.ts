@@ -63,9 +63,6 @@ export const WORKSPACE_AGENT_TOOL_DEFINITIONS = WORKSPACE_TOOL_NAMES.map(
   },
 );
 
-export type WorkspaceAgentToolDefinition =
-  (typeof WORKSPACE_AGENT_TOOL_DEFINITIONS)[number];
-
 type WorkspaceAgentView = {
   level?: string;
   folderPath?: string;

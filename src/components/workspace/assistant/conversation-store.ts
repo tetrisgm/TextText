@@ -40,7 +40,7 @@ type WorkspaceConversationState = StoredWorkspaceConversations & {
 
 const STORE_VERSION = 1;
 const MAX_CONVERSATIONS = MAX_SYNCED_ASSISTANT_CONVERSATIONS;
-export const MAX_MESSAGES_PER_CONVERSATION = MAX_SYNCED_ASSISTANT_MESSAGES;
+const MAX_MESSAGES_PER_CONVERSATION = MAX_SYNCED_ASSISTANT_MESSAGES;
 const DEFAULT_TITLE = "New chat";
 const EMPTY_MESSAGES: AssistantMessage[] = [];
 const EMPTY_SUMMARIES: AssistantConversationSummary[] = [];
@@ -344,7 +344,7 @@ function replaceConversation(
   return true;
 }
 
-export function conversationTitle(prompt: string): string {
+function conversationTitle(prompt: string): string {
   const compact = prompt.replace(/\s+/g, " ").trim();
   if (!compact) return DEFAULT_TITLE;
   if (compact.length <= 56) return compact;

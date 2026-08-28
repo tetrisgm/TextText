@@ -18,7 +18,7 @@ type StoreName = typeof POOL_STORE | typeof BODY_STORE | typeof DRAFT_STORE;
 let poolDbPromise: Promise<IDBDatabase | null> | null = null;
 let lastDraftWriteVersion = 0;
 
-export type PersistedWorkspaceDraft = {
+type PersistedWorkspaceDraft = {
   blogId: string;
   postId: string;
   draft: DraftState;

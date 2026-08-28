@@ -13,7 +13,7 @@ import {
 } from "@/lib/presentation/item-type-blueprint";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 
-export type CreatedItemType = {
+type CreatedItemType = {
   definition: TemplateDefinition;
   folder: null | {
     id: string;

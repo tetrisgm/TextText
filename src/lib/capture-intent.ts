@@ -1,11 +1,11 @@
 import { parseItemInput } from "@/lib/item-creation";
 
-export type CaptureFolder = {
+type CaptureFolder = {
   mode: string;
   path: string;
 };
 
-export type CaptureIntent = {
+type CaptureIntent = {
   body: string;
   kind: "bookmark" | "note";
   preferredFolderMode: "bookmarks" | "notes";

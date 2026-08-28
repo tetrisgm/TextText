@@ -13,7 +13,7 @@ import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { OPEN_KEYBOARD_SHORTCUTS_EVENT } from "@/components/keyboard/CommandPalette";
 import styles from "./WorkspaceMenu.module.css";
 
-export type WorkspaceMenuProps = {
+type WorkspaceMenuProps = {
   blogName: string;
   email: string | null;
   inNativeApp?: boolean;

@@ -20,7 +20,7 @@ export const DEFAULT_TYPE_BY_MODE: Record<FolderMode, PostType> = {
   bookmarks: "bookmark",
 };
 
-export type WikiLink = {
+type WikiLink = {
   raw: string;
   targetId?: string;
   targetSlug?: string;
@@ -35,7 +35,7 @@ export type BacklinkRef = {
 };
 
 /** Manifest-style entry, the shape every listing and mutation tool returns. */
-export type McpItemEntry = {
+type McpItemEntry = {
   id?: string;
   slug: string;
   title: string;

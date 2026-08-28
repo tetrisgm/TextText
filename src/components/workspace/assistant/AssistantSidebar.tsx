@@ -134,7 +134,7 @@ function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
-export function assistantComposerPlaceholder(
+function assistantComposerPlaceholder(
   context: AssistantContext | null | undefined,
 ): string {
   if (context?.kind === "item") return "Ask or change this item";

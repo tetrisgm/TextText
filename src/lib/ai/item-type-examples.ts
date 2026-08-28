@@ -70,7 +70,7 @@ function weightedWords(template: TemplateDefinition): Map<string, number> {
 /** One incidental word is not a genre match. Two weak ones, or one strong, is. */
 const MIN_SCORE = 3;
 
-export type ScoredExample = { template: TemplateDefinition; score: number };
+type ScoredExample = { template: TemplateDefinition; score: number };
 
 /**
  * Rank the ACTIVE built-ins by how much of the request's vocabulary they use.

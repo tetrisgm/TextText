@@ -4,7 +4,7 @@ import {
   MAX_WORKSPACE_AGENT_SKILL_TRIGGER,
 } from "@/lib/ai/agent-instructions";
 
-export const MAX_SKILL_LAUNCHER_RESULTS = 8;
+const MAX_SKILL_LAUNCHER_RESULTS = 8;
 
 export type AssistantSkillMetadata = {
   name: string;
@@ -70,7 +70,7 @@ export function insertAssistantSkillTrigger(trigger: string): string {
   return `/${trigger} `;
 }
 
-export type SkillLauncherKeyAction =
+type SkillLauncherKeyAction =
   | { kind: "dismiss" }
   | { kind: "move"; index: number }
   | { kind: "none" }

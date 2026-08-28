@@ -21,7 +21,7 @@ function devAiBaseUrl(): string | null {
 }
 
 export type { CloudAiProvider } from "@/lib/ai/provider-catalog";
-export type CloudProviderLabel = "Anthropic" | "OpenAI";
+type CloudProviderLabel = "Anthropic" | "OpenAI";
 
 export type WorkspaceAiConfig = {
   provider: CloudAiProvider;
@@ -29,7 +29,7 @@ export type WorkspaceAiConfig = {
   apiKey: string;
 };
 
-export type WorkspaceAiConfigStatus = {
+type WorkspaceAiConfigStatus = {
   configured: boolean;
   provider: CloudAiProvider | null;
   model: string | null;

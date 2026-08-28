@@ -1,6 +1,6 @@
 const MAX_ITEM_TITLE_LENGTH = 120;
 
-export type ParsedItemInput = {
+type ParsedItemInput = {
   body: string;
   sourceUrl: string | null;
   title: string;
@@ -16,7 +16,7 @@ function cappedTitle(value: string): string {
   return `${clean.slice(0, MAX_ITEM_TITLE_LENGTH - 3).trimEnd()}...`;
 }
 
-export function normalizedHttpUrl(value: string): string | null {
+function normalizedHttpUrl(value: string): string | null {
   const raw = value.trim();
   if (!raw || /\s/.test(raw)) return null;
   if (!/^https?:\/\//i.test(raw) && !raw.includes(".")) return null;

@@ -43,7 +43,7 @@ type SearchParamsRecord = Record<string, string | string[] | undefined>;
 
 // Serialize a page's resolved searchParams back into a query string
 // (empty string when there is nothing to carry over).
-export function searchParamsToQuery(
+function searchParamsToQuery(
   searchParams: SearchParamsRecord | undefined,
 ): string {
   if (!searchParams) return "";

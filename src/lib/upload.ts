@@ -1,20 +1,20 @@
 "use client";
 
-export const MEDIA_UPLOAD_ENDPOINT = "/editor/upload";
-export const MEDIA_UPLOAD_FIELD_NAME = "file";
-export const MEDIA_UPLOAD_MAX_SIZE_BYTES = 50 * 1024 * 1024;
+const MEDIA_UPLOAD_ENDPOINT = "/editor/upload";
+const MEDIA_UPLOAD_FIELD_NAME = "file";
+const MEDIA_UPLOAD_MAX_SIZE_BYTES = 50 * 1024 * 1024;
 
 export function mediaUploadEndpointForHandle(handle: string) {
   return `${MEDIA_UPLOAD_ENDPOINT}?handle=${encodeURIComponent(handle)}`;
 }
 
-export interface MediaUploadProgress {
+interface MediaUploadProgress {
   loaded: number;
   total: number;
   percentage: number;
 }
 
-export interface UploadMediaOptions {
+interface UploadMediaOptions {
   endpoint?: string;
   fieldName?: string;
   signal?: AbortSignal;

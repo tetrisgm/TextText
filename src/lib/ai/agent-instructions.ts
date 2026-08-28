@@ -12,7 +12,7 @@ export const MAX_WORKSPACE_AGENT_SKILLS = 12;
 export const MAX_WORKSPACE_AGENT_SKILL_NAME = 48;
 export const MAX_WORKSPACE_AGENT_SKILL_TRIGGER = 32;
 export const MAX_WORKSPACE_AGENT_SKILL_INSTRUCTIONS = 4_000;
-export const MAX_WORKSPACE_AGENT_TOTAL_SKILL_INSTRUCTIONS = 20_000;
+const MAX_WORKSPACE_AGENT_TOTAL_SKILL_INSTRUCTIONS = 20_000;
 
 export type WorkspaceAgentSkill = {
   name: string;
@@ -30,7 +30,7 @@ export const EMPTY_WORKSPACE_AGENT_SETTINGS: WorkspaceAgentSettings = {
   skills: [],
 };
 
-export class WorkspaceAgentInstructionsError extends Error {}
+class WorkspaceAgentInstructionsError extends Error {}
 
 function cleanMultiline(
   value: unknown,
@@ -49,7 +49,7 @@ function cleanMultiline(
   return text;
 }
 
-export function cleanSkillTrigger(value: unknown): string {
+function cleanSkillTrigger(value: unknown): string {
   const trigger =
     typeof value === "string"
       ? value

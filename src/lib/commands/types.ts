@@ -15,9 +15,9 @@ export type CommandShortcut = {
   requiresWorkspace?: boolean;
 };
 
-export type CommandRunResult = void | Promise<void>;
+type CommandRunResult = void | Promise<void>;
 
-export type CommandWorkspaceLevel =
+type CommandWorkspaceLevel =
   | "root"
   | "section"
   | "trash"
@@ -106,5 +106,3 @@ export type AppCommand = {
 };
 
 export type CreatePostKind = Extract<PostType, "article" | "note" | "bookmark">;
-
-export type DynamicCommandFactory = (ctx: CommandContext) => AppCommand[];

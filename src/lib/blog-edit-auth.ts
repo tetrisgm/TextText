@@ -5,7 +5,7 @@
 import { getCurrentUser } from "@/lib/session";
 import { getBlogEditRecord, getUserIdBySub } from "@/lib/store";
 
-export type BlogEditAccess = {
+type BlogEditAccess = {
   canEdit: boolean;
   isOwner: boolean;
   blogId: string | null;

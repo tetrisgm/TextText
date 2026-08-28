@@ -4,15 +4,13 @@ import type {
   DocumentSnapshot,
 } from "@/lib/documents/model";
 
-export const LIVING_BRIEF_TEMPLATE_ID = "texttext.brief";
-export const LIVING_BRIEF_TEMPLATE_VERSION = 1;
-
-export type LivingBriefSourceStatus =
+const LIVING_BRIEF_TEMPLATE_ID = "texttext.brief";
+type LivingBriefSourceStatus =
   "current" | "changed" | "missing" | "unverified";
 
-export type LivingBriefClaimStatus = "supported" | "review" | "unsupported";
+type LivingBriefClaimStatus = "supported" | "review" | "unsupported";
 
-export type LivingBriefSource = {
+type LivingBriefSource = {
   sourceId: string;
   title: string;
   itemId?: string;
@@ -22,7 +20,7 @@ export type LivingBriefSource = {
   note?: string;
 };
 
-export type LivingBriefClaim = {
+type LivingBriefClaim = {
   claimId: string;
   claim: string;
   sourceId: string;
@@ -30,13 +28,13 @@ export type LivingBriefClaim = {
   status: LivingBriefClaimStatus;
 };
 
-export type LivingBriefWritingRule = {
+type LivingBriefWritingRule = {
   instruction: string;
   scope: "document" | "selection" | "publication";
   enabled: boolean;
 };
 
-export type LivingBrief = {
+type LivingBrief = {
   sources: LivingBriefSource[];
   claims: LivingBriefClaim[];
   writingRules: LivingBriefWritingRule[];
@@ -48,7 +46,7 @@ export type CurrentBriefSource = {
   hash: string;
 };
 
-export type LivingBriefSourceReview = LivingBriefSource & {
+type LivingBriefSourceReview = LivingBriefSource & {
   currentHash?: string;
   affectedClaimIds: string[];
 };

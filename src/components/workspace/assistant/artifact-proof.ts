@@ -2,7 +2,7 @@ import { folderPathForPoolPost } from "@/lib/pool/selectors";
 import type { WorkspacePoolPayload, WorkspacePoolPost } from "@/lib/pool/types";
 import { blogWorkspacePostPath } from "@/lib/public-paths";
 
-export type AssistantProofOperation =
+type AssistantProofOperation =
   | "Appended"
   | "Created"
   | "Found"

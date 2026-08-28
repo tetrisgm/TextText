@@ -5,7 +5,7 @@ import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import { syncWorkspaceAssistantConversationHistory } from "@/lib/ai/assistant-conversation-history.server";
 import type { SyncedAssistantConversation } from "@/lib/ai/assistant-conversation-sync";
 
-export type AssistantConversationSyncState = {
+type AssistantConversationSyncState = {
   allowed: boolean;
   conversations: SyncedAssistantConversation[];
 };

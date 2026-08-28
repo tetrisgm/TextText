@@ -33,8 +33,8 @@ import type { TemplateDefinition } from "../presentation/schema";
 // which is the database refusing to be broken. Leave it here.
 export const textTextChangeSequence = pgSequence("texttext_change_seq");
 
-export const postStatus = pgEnum("post_status", ["draft", "published"]);
-export const fileRepresentation = pgEnum("file_representation", [
+const postStatus = pgEnum("post_status", ["draft", "published"]);
+const fileRepresentation = pgEnum("file_representation", [
   "textbundle",
   "markdown",
   "text",
@@ -49,7 +49,7 @@ export const postType = pgEnum("post_type", [
   "note",
   "bookmark",
 ]);
-export const itemCommentAnchorField = pgEnum("item_comment_anchor_field", [
+const itemCommentAnchorField = pgEnum("item_comment_anchor_field", [
   "title",
   "excerpt",
   "body",

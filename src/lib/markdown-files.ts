@@ -20,17 +20,17 @@ import {
   postBodyWithSubtitle,
 } from "@/lib/markdown-subtitle";
 
-export const TEXTTEXT_FOLDER_SCHEMA = "texttext.folder.v1";
-export const TEXTTEXT_MARKDOWN_FILE_SCHEMA = "texttext.markdown-file.v1";
-export const DEFAULT_FOLDER_MODE = "blog";
-export const BLOG_FOLDER_VIEWS = ["timeline", "index", "grid", "single"] as const;
+const TEXTTEXT_FOLDER_SCHEMA = "texttext.folder.v1";
+const TEXTTEXT_MARKDOWN_FILE_SCHEMA = "texttext.markdown-file.v1";
+const DEFAULT_FOLDER_MODE = "blog";
+const BLOG_FOLDER_VIEWS = ["timeline", "index", "grid", "single"] as const;
 // The Blog folder's public vocabulary; Notes and Bookmarks folders each carry
 // their single native kind.
-export const BLOG_ITEM_KINDS = ["article", "media_post", "video_post"] as const;
-export const NOTES_ITEM_KINDS = ["note"] as const;
-export const BOOKMARKS_ITEM_KINDS = ["bookmark"] as const;
+const BLOG_ITEM_KINDS = ["article", "media_post", "video_post"] as const;
+const NOTES_ITEM_KINDS = ["note"] as const;
+const BOOKMARKS_ITEM_KINDS = ["bookmark"] as const;
 
-export type BlogItemKind = (typeof BLOG_ITEM_KINDS)[number];
+type BlogItemKind = (typeof BLOG_ITEM_KINDS)[number];
 /** Every kind the markdown surface can carry across folder modes. */
 export type MarkdownItemKind = BlogItemKind | "note" | "bookmark";
 
@@ -57,7 +57,7 @@ export type MarkdownFolderItem = {
   size: number;
 };
 
-export type MarkdownFolderManifest = {
+type MarkdownFolderManifest = {
   schema: typeof TEXTTEXT_FOLDER_SCHEMA;
   folder: {
     handle: string;
@@ -117,7 +117,7 @@ export function postTypeForItemKind(kind: ItemKind): PostType {
 }
 
 /** The kinds a folder's manifest advertises, by its mode; blog is the default. */
-export function itemKindsForFolderMode(
+function itemKindsForFolderMode(
   mode: FolderMode | undefined,
 ): readonly MarkdownItemKind[] {
   if (mode === "notes") return NOTES_ITEM_KINDS;

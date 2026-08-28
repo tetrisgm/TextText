@@ -3,7 +3,7 @@ import {
   type TemplateDefinition,
 } from "@/lib/presentation/schema";
 
-export type TemplateLibraryScope = "texttext" | "personal" | "workspace";
+type TemplateLibraryScope = "texttext" | "personal" | "workspace";
 
 export type TemplateLibraryVersion = {
   definition: TemplateDefinition;
@@ -26,7 +26,7 @@ export type TemplateLibraryEntry = {
 
 export type TemplateLibraryFilter = "all" | TemplateLibraryScope;
 
-export const TEMPLATE_IMPORT_MAX_BYTES = 1_000_000;
+const TEMPLATE_IMPORT_MAX_BYTES = 1_000_000;
 
 export function filterTemplateLibrary(
   entries: readonly TemplateLibraryEntry[],

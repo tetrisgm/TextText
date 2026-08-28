@@ -613,7 +613,7 @@ export function commandShortcutLabel(command: AppCommand): string | undefined {
   return shortcuts.length > 0 ? shortcuts.join(", ") : undefined;
 }
 
-export function primaryShortcutLabel(command: AppCommand): string | undefined {
+function primaryShortcutLabel(command: AppCommand): string | undefined {
   return shortcutList(command)[0]?.label;
 }
 
@@ -624,7 +624,7 @@ export function shortcutLabelForCommand(id: string): string | undefined {
   return command ? primaryShortcutLabel(command) : undefined;
 }
 
-export type WorkspaceShortcutRow = {
+type WorkspaceShortcutRow = {
   id: string;
   label: string;
   group: string;

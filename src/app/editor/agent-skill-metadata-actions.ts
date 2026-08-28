@@ -7,7 +7,7 @@ import {
   type AssistantSkillMetadata,
 } from "@/components/workspace/assistant/skill-launcher";
 
-export type WorkspaceAgentSkillMetadataState = {
+type WorkspaceAgentSkillMetadataState = {
   allowed: boolean;
   skills: AssistantSkillMetadata[];
 };

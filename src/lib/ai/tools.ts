@@ -1,11 +1,11 @@
 import { z } from "zod";
 import { itemTypeBlueprintSchema } from "@/lib/presentation/item-type-blueprint";
 
-export type WorkspaceToolMutability = "read" | "write";
-export type WorkspaceToolConfirmation = "none" | "destructive" | "audience";
-export type WorkspaceToolRequiredScope = "read" | "sync";
+type WorkspaceToolMutability = "read" | "write";
+type WorkspaceToolConfirmation = "none" | "destructive" | "audience";
+type WorkspaceToolRequiredScope = "read" | "sync";
 
-export type WorkspaceToolAnnotations = {
+type WorkspaceToolAnnotations = {
   title: string;
   readOnlyHint: boolean;
   destructiveHint: boolean;

@@ -35,7 +35,7 @@ export const appHealthCheckSchema = z
   })
   .strict();
 
-export const appHealthReportSchema = z
+const appHealthReportSchema = z
   .object({
     schemaVersion: z.literal(1),
     id: z.string().uuid(),

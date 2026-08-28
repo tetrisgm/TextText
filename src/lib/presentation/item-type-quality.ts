@@ -3,13 +3,13 @@ import type {
   ItemTypeFieldBlueprint,
 } from "@/lib/presentation/item-type-blueprint";
 
-export type ItemTypeQualityFinding = {
+type ItemTypeQualityFinding = {
   code: string;
   message: string;
   severity: "important" | "suggestion";
 };
 
-export type ItemTypeQualityReport = {
+type ItemTypeQualityReport = {
   findings: ItemTypeQualityFinding[];
   passes: boolean;
   score: number;

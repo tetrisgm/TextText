@@ -3,7 +3,7 @@ import type { DocumentFieldDefinition } from "@/lib/presentation/schema";
 type EnumField = Extract<DocumentFieldDefinition, { type: "enum" }>;
 type EnumOption = EnumField["options"][number];
 
-export type StatusWorkflowOptions = {
+type StatusWorkflowOptions = {
   current: EnumOption | { value: string; label: string } | null;
   next: EnumOption[];
   initial: EnumOption | null;

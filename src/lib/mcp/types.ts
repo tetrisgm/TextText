@@ -20,15 +20,15 @@ export type AuthInfo = {
   extra?: Record<string, unknown>;
 };
 
-export type TextContent = { type: "text"; text: string };
+type TextContent = { type: "text"; text: string };
 
-export type ImageContent = {
+type ImageContent = {
   type: "image";
   data: string;
   mimeType: string;
 };
 
-export type ResourceLinkContent = {
+type ResourceLinkContent = {
   type: "resource_link";
   uri: string;
   name?: string;
@@ -36,7 +36,7 @@ export type ResourceLinkContent = {
   mimeType?: string;
 };
 
-export type ContentBlock = TextContent | ImageContent | ResourceLinkContent;
+type ContentBlock = TextContent | ImageContent | ResourceLinkContent;
 
 /** The result of `tools/call`. The transport wraps this with `resultType` and
  * `serverInfo` before it goes on the wire. */

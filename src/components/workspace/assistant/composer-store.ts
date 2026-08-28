@@ -6,7 +6,7 @@ import type {
   AssistantWorkspaceContextItem,
 } from "./AssistantSidebar";
 
-export type AssistantComposerDraft = {
+type AssistantComposerDraft = {
   attachments: readonly AssistantAttachment[];
   text: string;
 };

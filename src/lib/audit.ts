@@ -29,7 +29,7 @@ import { db, type Database } from "./db/client";
 import { actionAudit } from "./db/schema";
 
 export type AuditActorType = "human" | "ai" | "external_agent";
-export type AuditTargetType = "workspace" | "folder" | "item" | "mode";
+type AuditTargetType = "workspace" | "folder" | "item" | "mode";
 
 export type AuditEntry = {
   /** users.id when known; null when no account is attached */

@@ -2,7 +2,7 @@ export type AssistantConfirmationRequest = {
   description: string;
 };
 
-export type AssistantConfirmationController = {
+type AssistantConfirmationController = {
   cancel: () => void;
   confirm: () => void;
   dispose: () => void;

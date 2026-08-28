@@ -1,7 +1,7 @@
-export type BoundedJsonResult<T> =
+type BoundedJsonResult<T> =
   { value: T } | { error: "invalid" | "too_large" };
 
-export type BoundedTextResult = { value: string } | { error: "too_large" };
+type BoundedTextResult = { value: string } | { error: "too_large" };
 
 type BoundedBytesResult = { value: Uint8Array } | { error: "too_large" };
 

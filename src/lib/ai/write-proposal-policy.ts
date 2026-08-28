@@ -1,13 +1,12 @@
 import { z } from "zod";
 import {
   WORKSPACE_TOOL_DEFINITIONS,
-  WORKSPACE_TOOL_NAMES,
   isWorkspaceToolName,
   parseWorkspaceToolInput,
   type WorkspaceToolName,
 } from "@/lib/ai/tools";
 
-export const MAX_WRITE_PROPOSAL_ARGUMENT_BYTES = 1_050_000;
+const MAX_WRITE_PROPOSAL_ARGUMENT_BYTES = 1_050_000;
 export const WRITE_PROPOSAL_TTL_MS = 15 * 60 * 1_000;
 export const MAX_WRITE_PROPOSAL_TTL_MS = 30 * 60 * 1_000;
 
@@ -42,10 +41,6 @@ export function isProposableWorkspaceWrite(
     !definition.annotations.openWorldHint
   );
 }
-
-export const PROPOSABLE_WORKSPACE_WRITE_NAMES = Object.freeze(
-  WORKSPACE_TOOL_NAMES.filter(isProposableWorkspaceWrite),
-);
 
 function serializedByteLength(value: unknown): number {
   try {

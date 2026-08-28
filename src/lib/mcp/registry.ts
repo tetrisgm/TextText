@@ -20,13 +20,13 @@ import { registerAgentSurface } from "./agent-surface";
 import { executeMcpTool, type ToolContext } from "./tools";
 import { invalidParams, methodNotFound } from "./protocol";
 
-export type ResourceHandler = (
+type ResourceHandler = (
   uri: URL,
   variablesOrExtra: unknown,
   maybeExtra?: unknown,
 ) => Promise<{ contents: unknown[] }>;
 
-export type ResourceEntry = {
+type ResourceEntry = {
   name: string;
   uri: string | null;
   uriTemplate: string | null;
@@ -37,7 +37,7 @@ export type ResourceEntry = {
   template: ResourceTemplate | null;
 };
 
-export type PromptEntry = {
+type PromptEntry = {
   name: string;
   title?: string;
   description?: string;

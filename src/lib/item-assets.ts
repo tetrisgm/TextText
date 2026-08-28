@@ -7,7 +7,7 @@ const MAX_REDIRECT_HOPS = 5;
 const FETCH_TIMEOUT_MS = 30_000;
 const MAX_FILENAME_LENGTH = 240;
 
-export type ItemAssetRole =
+type ItemAssetRole =
   | "cover"
   | "body"
   | "gallery"
@@ -16,7 +16,7 @@ export type ItemAssetRole =
   | "capture"
   | "screenshot";
 
-export type ItemAssetReference = {
+type ItemAssetReference = {
   url: string;
   role: ItemAssetRole;
   contentType?: string;
@@ -26,7 +26,7 @@ export type ItemAssetReference = {
   altText?: string;
 };
 
-export type ImportedItemAsset = {
+type ImportedItemAsset = {
   url: string;
   contentType: string;
   filename: string;
@@ -34,7 +34,7 @@ export type ImportedItemAsset = {
   bytes: number;
 };
 
-export type ItemAssetPlacement = "cover" | "body_end" | "gallery";
+type ItemAssetPlacement = "cover" | "body_end" | "gallery";
 
 function normalizedMediaContentType(value: string): string | null {
   const normalized = value.split(";", 1)[0]?.trim().toLowerCase() ?? "";

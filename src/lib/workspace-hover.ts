@@ -1,4 +1,4 @@
-export type WorkspaceHoverTracker = {
+type WorkspaceHoverTracker = {
   disarm: () => void;
   moved: (clientX: number, clientY: number) => boolean;
 };

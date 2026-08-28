@@ -12,7 +12,7 @@ import {
 } from "@/lib/store";
 import { isUuid } from "@/lib/permissions";
 
-export type CollabRequestAccess = {
+type CollabRequestAccess = {
   role: CollabRole | null;
   /** The item exists but is in Trash: a different answer from "no access". */
   trashed: boolean;

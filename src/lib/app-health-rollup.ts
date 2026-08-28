@@ -9,9 +9,9 @@ import {
   type AppHealthReport,
 } from "./app-health";
 
-export const APP_HEALTH_ROLLUP_SCHEMA_VERSION = 1 as const;
+const APP_HEALTH_ROLLUP_SCHEMA_VERSION = 1 as const;
 
-export const appHealthReleaseTargetSchema = z
+const appHealthReleaseTargetSchema = z
   .object({
     appIdentifier: appHealthIdentifierSchema.optional(),
     appVersion: appHealthReleaseValueSchema,
@@ -48,7 +48,7 @@ export type AppHealthRollupRow = z.infer<typeof appHealthRollupRowSchema>;
 type AppHealthStatus = AppHealthReport["status"];
 type AppHealthTrigger = AppHealthReport["trigger"];
 
-export interface AppHealthStatusCounts {
+interface AppHealthStatusCounts {
   total: number;
   pass: number;
   warning: number;
@@ -56,13 +56,13 @@ export interface AppHealthStatusCounts {
   passRate: number;
 }
 
-export interface AppHealthCheckSummary extends AppHealthStatusCounts {
+interface AppHealthCheckSummary extends AppHealthStatusCounts {
   id: string;
   durationP95Milliseconds: number;
   durationMaxMilliseconds: number;
 }
 
-export interface AppHealthVersionBuildSummary {
+interface AppHealthVersionBuildSummary {
   appIdentifier: string;
   appVersion: string;
   buildNumber: string;
@@ -73,7 +73,7 @@ export interface AppHealthVersionBuildSummary {
   checks: AppHealthCheckSummary[];
 }
 
-export interface AppHealthRegressionPolicy {
+interface AppHealthRegressionPolicy {
   minimumCurrentReports: number;
   minimumBaselineReports: number;
   minimumPassRateDrop: number;
@@ -138,14 +138,14 @@ export type AppHealthAlert =
       zScore: number;
     });
 
-export interface AppHealthBaselineSummary {
+interface AppHealthBaselineSummary {
   reportCount: number;
   passRate: number;
   firstReceivedAt: string;
   lastReceivedAt: string;
 }
 
-export interface AppHealthEvaluatedSummary extends AppHealthVersionBuildSummary {
+interface AppHealthEvaluatedSummary extends AppHealthVersionBuildSummary {
   baseline: AppHealthBaselineSummary | null;
 }
 
@@ -161,11 +161,11 @@ export interface AppHealthReleaseEvaluation {
   alerts: AppHealthAlert[];
 }
 
-export type AppHealthOwnerReleaseBlockingCode =
+type AppHealthOwnerReleaseBlockingCode =
   | AppHealthAlert["code"]
   | "exact_release_not_pass";
 
-export interface AppHealthOwnerReleaseGate {
+interface AppHealthOwnerReleaseGate {
   requiredStatus: "pass";
   passed: boolean;
   blockingCodes: AppHealthOwnerReleaseBlockingCode[];

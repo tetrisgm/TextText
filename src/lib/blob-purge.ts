@@ -23,7 +23,7 @@ const DELETE_CHUNK = 100;
 // it, and looping forever against a paid API is the worse failure.
 const MAX_LIST_PAGES = 200;
 
-export type BlobPurgeResult = {
+type BlobPurgeResult = {
   deleted: number;
   failed: number;
   swept: number;
@@ -38,7 +38,7 @@ function safeSegment(value: string): string {
  * load-bearing: without it `documents/ramine/` would also match
  * `documents/ramine-two/`, which is a different person's workspace.
  */
-export function workspaceBlobPrefixes(handle: string): string[] {
+function workspaceBlobPrefixes(handle: string): string[] {
   const raw = handle;
   const safe = safeSegment(handle);
   const prefixes = new Set([

@@ -1,7 +1,7 @@
 import type { Folder } from "@/lib/content";
 import type { WorkspacePoolPost } from "@/lib/pool/types";
 
-export type TrashViewProjection = {
+type TrashViewProjection = {
   rootFolders: Folder[];
   visiblePosts: WorkspacePoolPost[];
 };

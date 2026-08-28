@@ -1,6 +1,6 @@
 export const CAPTURE_RECEIPT_LIMIT = 6;
 
-export type CaptureQueueStatus =
+type CaptureQueueStatus =
   | "saving"
   | "saved"
   | "failed"

@@ -7,7 +7,7 @@ type CoverPost = Pick<
 
 export const NO_COVER_VALUE = "__write_no_cover__";
 
-export type CoverSourceKind =
+type CoverSourceKind =
   | "none"
   | "explicit"
   | "fallback"
@@ -15,7 +15,7 @@ export type CoverSourceKind =
   | "bookmark-screenshot"
   | "bookmark-favicon";
 
-export type CoverSource = {
+type CoverSource = {
   kind: CoverSourceKind;
   src: string;
 };

@@ -273,7 +273,7 @@ export function ifMatchSatisfiedForSyncFile(
   );
 }
 
-export function syncManifestOptions(
+function syncManifestOptions(
   blog: Blog,
   folder?: Folder,
 ): RenderFolderManifestOptions {
@@ -291,7 +291,7 @@ export function syncManifestOptions(
   };
 }
 
-export type SyncManifestItem = MarkdownFolderItem & {
+type SyncManifestItem = MarkdownFolderItem & {
   representation: FileRepresentation;
   /** Hash of the complete structured document envelope for package clients. */
   documentHash: string;

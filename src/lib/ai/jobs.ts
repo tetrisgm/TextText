@@ -8,7 +8,7 @@
 // therefore show what finished and mark an in-flight request as interrupted,
 // instead of making the work disappear while the transcript still exists.
 
-export type AssistantJobStatus = "running" | "done" | "error";
+type AssistantJobStatus = "running" | "done" | "error";
 
 export type AssistantJob = {
   id: string;

@@ -15,7 +15,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { NativeQuickActionId } from "@/lib/ai/quick-actions";
 import styles from "./SelectionActions.module.css";
 
-export type EditorTextSelection = { text: string };
+type EditorTextSelection = { text: string };
 
 /** Only the actions that mean something about a passage of text. */
 export const SELECTION_ACTIONS: ReadonlyArray<{

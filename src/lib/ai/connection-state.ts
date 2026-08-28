@@ -1,6 +1,6 @@
-export type EmbeddedAiSurface = "mac" | "web";
+type EmbeddedAiSurface = "mac" | "web";
 
-export type AiConnectionState =
+type AiConnectionState =
   | "unavailable"
   | "runtime-missing"
   | "signed-out"
@@ -10,7 +10,7 @@ export type AiConnectionState =
   | "incompatible-runtime"
   | "failed";
 
-export type AiConnectionKind = "native-codex" | "api-key" | "external-mcp";
+type AiConnectionKind = "native-codex" | "api-key" | "external-mcp";
 
 export type AiConnectionSnapshot = {
   state: AiConnectionState;
@@ -32,7 +32,7 @@ export type AiConnectionSnapshot = {
     | null;
 };
 
-export type NativeAiCapability = {
+type NativeAiCapability = {
   surface: EmbeddedAiSurface;
   runtimeAvailable: boolean;
   runtimeVersion?: string | null;

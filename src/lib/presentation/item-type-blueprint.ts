@@ -148,7 +148,7 @@ const computedField = z
   })
   .strict();
 
-export const itemTypeFieldBlueprintSchema = z.discriminatedUnion("type", [
+const itemTypeFieldBlueprintSchema = z.discriminatedUnion("type", [
   scalarField,
   rowsField,
   computedField,
@@ -1043,7 +1043,7 @@ function exampleRows(field: Extract<ItemTypeFieldBlueprint, { type: "rows" }>) {
  * dated list is owed the sentence explaining it. Silence here would be the
  * worse half of the old behaviour, not the better half.
  */
-export type BlueprintAdjustment = { change: string; reason: string };
+type BlueprintAdjustment = { change: string; reason: string };
 
 /** Layouts that cannot render without a field of a particular kind. */
 const LAYOUT_NEEDS = {

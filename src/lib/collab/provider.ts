@@ -75,11 +75,11 @@ export type PresencePeer = {
   provider?: string;
 };
 
-export type CollabStartResult =
+type CollabStartResult =
   | { authoritative: true; remoteEmpty: boolean; baselineRevision: number }
   | { authoritative: false; remoteEmpty: false };
 
-export type CollabProviderOptions = {
+type CollabProviderOptions = {
   postId: string;
   userName: string;
   color: string;
@@ -99,7 +99,7 @@ export type CollabProviderOptions = {
 
 /** Transport boundary for the editor. The HTTP relay is the baseline, while a
  * future websocket or local peer fast path can implement the same contract. */
-export interface CollaborationTransport {
+interface CollaborationTransport {
   start(): Promise<CollabStartResult>;
   enqueueCurrentState(): void;
   destroy(): void;

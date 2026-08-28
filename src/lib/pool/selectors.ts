@@ -252,7 +252,7 @@ export function findPoolPostBySlug(
   return pool.posts.find((post) => post.slug === slug) ?? null;
 }
 
-export function resolvePoolWikiLinkTarget(
+function resolvePoolWikiLinkTarget(
   pool: Pick<WorkspacePoolPayload, "posts" | "slugAliases">,
   target: string,
 ): WorkspacePoolPost | null {

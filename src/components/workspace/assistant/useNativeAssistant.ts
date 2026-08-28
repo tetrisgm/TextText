@@ -137,7 +137,7 @@ import {
 
 export type { AssistantViewSnapshot } from "./context";
 
-export type AssistantMessageRole = "user" | "assistant" | "progress" | "error";
+type AssistantMessageRole = "user" | "assistant" | "progress" | "error";
 
 type AssistantProposalBase = {
   itemId: string;
@@ -148,7 +148,7 @@ type AssistantProposalBase = {
   syncPending?: boolean;
 };
 
-export type AssistantProposal = AssistantProposalBase &
+type AssistantProposal = AssistantProposalBase &
   (
     | {
         kind?: "text";
@@ -205,7 +205,7 @@ type AssistantWriteProposalState = {
   receipt?: Record<string, unknown>;
 };
 
-export type AssistantWriteProposal =
+type AssistantWriteProposal =
   | (Omit<
       Extract<CloudAssistantWriteProposal, { kind: "workspace" }>,
       "kind" | "status"

@@ -15,17 +15,17 @@ export type BookmarkCaptureGeneration = {
   screenshotCount?: number;
 };
 
-export type StoredBookmarkCapture = BookmarkCapture & {
+type StoredBookmarkCapture = BookmarkCapture & {
   [PENDING_GENERATION_KEY]?: BookmarkCaptureGeneration;
   [COMPLETED_GENERATION_KEY]?: string;
   htmlUrl?: unknown;
 };
 
-export type CaptureGenerationMutation =
+type CaptureGenerationMutation =
   | { ok: true; storage: StoredBookmarkCapture; generation: BookmarkCaptureGeneration }
   | { ok: false; reason: "stale" | "invalid"; message: string };
 
-export type CaptureGenerationFinalization =
+type CaptureGenerationFinalization =
   | {
       ok: true;
       capture: BookmarkCapture;

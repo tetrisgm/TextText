@@ -104,7 +104,7 @@ export type FolderCreateRequest =
       title?: string;
     };
 
-export type FolderCreateOptions = {
+type FolderCreateOptions = {
   /** Home captures stay in the inbox. Folder creation keeps opening the item. */
   open?: boolean;
   /** Raw inbox input. The shell sends this through the shared create_item command. */
@@ -117,7 +117,7 @@ export type FolderCreateOptions = {
   onFailed?: (error: unknown) => void;
 };
 
-export type FolderCaptureReceipt = {
+type FolderCaptureReceipt = {
   itemId: string;
   savedTo: string;
   title: string;
@@ -130,8 +130,8 @@ export type FolderCreateItem = (
 
 export type FolderDeleteItem = (post: Post) => Promise<void> | void;
 export type FolderCaptureResolved = (post: Post) => void;
-export type FolderViewMode = WorkspaceViewMode;
-export type FolderDeleteFolder = (folder: Folder) => Promise<void> | void;
+type FolderViewMode = WorkspaceViewMode;
+type FolderDeleteFolder = (folder: Folder) => Promise<void> | void;
 
 type InboxCapture = CaptureQueueEntry<FolderCreateRequest, Post>;
 
@@ -283,38 +283,6 @@ function bookmarkUrlParts(rawUrl: string): { href: string; host: string } {
     }
   }
   return { href: raw, host: raw };
-}
-
-function optimisticBookmarkPost({
-  url,
-  title,
-  description,
-}: {
-  url: string;
-  title?: string;
-  description?: string;
-}): Post {
-  const now = new Date().toISOString();
-  const stamp = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  const { href, host } = bookmarkUrlParts(url);
-  const resolvedTitle = title?.trim() || host || "Bookmark";
-  return {
-    id: `optimistic-bookmark-${stamp}`,
-    type: "bookmark",
-    captureStatus: "pending",
-    capture: { url: href },
-    slug: `untitled-${stamp}`,
-    title: resolvedTitle,
-    excerpt: description?.trim() || href,
-    body: "",
-    status: "draft",
-    pinned: false,
-    starred: false,
-    links: [{ label: host || resolvedTitle, href }],
-    date: now.slice(0, 10),
-    createdAt: now,
-    updatedAt: now,
-  };
 }
 
 // One empty state shape: a plain sentence and, when the reader may write

@@ -7,12 +7,12 @@ import {
   officeAttachmentKind,
 } from "./office-attachment-text";
 
-export const ASSISTANT_ATTACHMENT_ACCEPT =
+const ASSISTANT_ATTACHMENT_ACCEPT =
   `image/*,.pdf,.txt,.md,.markdown,.csv,.json,.jsonl,.yaml,.yml,.xml,.html,.htm,${ASSISTANT_OFFICE_ATTACHMENT_ACCEPT}`;
-export const ASSISTANT_TEXT_ATTACHMENT_ACCEPT =
+const ASSISTANT_TEXT_ATTACHMENT_ACCEPT =
   `.txt,.md,.markdown,.csv,.json,.jsonl,.yaml,.yml,.xml,.html,.htm,${ASSISTANT_OFFICE_ATTACHMENT_ACCEPT}`;
 
-export type NativeOcrCapabilities = {
+type NativeOcrCapabilities = {
   ocr?: boolean;
   /** Hosted providers can receive image parts directly over HTTPS. */
   vision?: boolean;

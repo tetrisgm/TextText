@@ -59,7 +59,7 @@ import {
 } from "@/lib/store";
 import { and, eq, isNull } from "drizzle-orm";
 
-export type AccountDeletionStep =
+type AccountDeletionStep =
   | "close"
   | "blobs"
   | "content"
@@ -189,7 +189,7 @@ export async function purgeAccount(
   await completeAccountTombstone(hashAccountSub(summary.sub));
 }
 
-export type AccountDeletionOutcome = {
+type AccountDeletionOutcome = {
   closed: boolean;
   complete: boolean;
 };

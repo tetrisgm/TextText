@@ -3,7 +3,7 @@ import type { SharedWithMeEntry } from "@/lib/shares";
 import { blogPostPath } from "@/lib/public-paths";
 import styles from "./SharedWithMe.module.css";
 
-export type SharedWithMeProps = {
+type SharedWithMeProps = {
   entries: SharedWithMeEntry[];
 };
 

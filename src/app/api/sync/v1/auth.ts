@@ -7,7 +7,7 @@ import type { Blog } from "@/lib/content";
 import { getOwnedBlog } from "@/lib/store";
 import { syncDatabaseUnavailable, syncError } from "./sync";
 
-export type SyncWorkspace = ApiTokenIdentity & { blog: Blog };
+type SyncWorkspace = ApiTokenIdentity & { blog: Blog };
 
 /**
  * The authenticated workspace for a request, or the error Response to return:

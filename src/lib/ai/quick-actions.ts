@@ -1,7 +1,6 @@
 "use client";
 
 import type {
-  WorkspaceItemTextEdit,
   WorkspaceItemTextField,
 } from "@/lib/ai/workspace-item-draft";
 
@@ -41,31 +40,3 @@ export const NATIVE_QUICK_ACTIONS = [
 export type NativeQuickActionId = (typeof NATIVE_QUICK_ACTIONS)[number]["id"];
 export type NativeQuickActionField = WorkspaceItemTextField;
 export type NativeQuickActionScope = "field" | "selection";
-
-export type NativeQuickActionResult =
-  | {
-      kind: "response";
-      text: string;
-    }
-  | {
-      kind: "proposal";
-      field: NativeQuickActionField;
-      label: string;
-      before: string;
-      after: string;
-      source: string;
-      result: string;
-      range: WorkspaceItemTextEdit["range"];
-      scope: NativeQuickActionScope;
-      canApply: boolean;
-      note?: string;
-    }
-  | {
-      kind: "tags-proposal";
-      label: string;
-      beforeTags: string[];
-      afterTags: string[];
-      addedTags: string[];
-      canApply: boolean;
-      note?: string;
-    };

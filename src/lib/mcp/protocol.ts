@@ -36,11 +36,11 @@ export const MCP_SERVER_INFO = {
 // Reserved `_meta` keys
 // ---------------------------------------------------------------------------
 
-export const META_PROTOCOL_VERSION = "io.modelcontextprotocol/protocolVersion";
-export const META_CLIENT_INFO = "io.modelcontextprotocol/clientInfo";
-export const META_CLIENT_CAPABILITIES =
+const META_PROTOCOL_VERSION = "io.modelcontextprotocol/protocolVersion";
+const META_CLIENT_INFO = "io.modelcontextprotocol/clientInfo";
+const META_CLIENT_CAPABILITIES =
   "io.modelcontextprotocol/clientCapabilities";
-export const META_LOG_LEVEL = "io.modelcontextprotocol/logLevel";
+const META_LOG_LEVEL = "io.modelcontextprotocol/logLevel";
 export const META_SERVER_INFO = "io.modelcontextprotocol/serverInfo";
 export const META_SUBSCRIPTION_ID = "io.modelcontextprotocol/subscriptionId";
 
@@ -54,7 +54,7 @@ export const META_SUBSCRIPTION_ID = "io.modelcontextprotocol/subscriptionId";
 // HeaderMismatch moved -32001 -> -32020, MissingRequiredClientCapability
 // -32003 -> -32021, UnsupportedProtocolVersion -32004 -> -32022.
 
-export const JSONRPC_METHOD_NOT_FOUND = -32601;
+const JSONRPC_METHOD_NOT_FOUND = -32601;
 export const JSONRPC_INVALID_PARAMS = -32602;
 export const JSONRPC_INTERNAL_ERROR = -32603;
 export const JSONRPC_PARSE_ERROR = -32700;
@@ -71,21 +71,21 @@ export const MCP_RESOURCE_NOT_FOUND = JSONRPC_INVALID_PARAMS;
 // Result shapes
 // ---------------------------------------------------------------------------
 
-export type McpResultType = "complete" | "input_required";
+type McpResultType = "complete" | "input_required";
 
 /**
  * Every result carries `resultType`. Clients treat a missing one as "complete"
  * for backward compatibility, but we always emit it.
  */
-export type McpResult = Record<string, unknown> & { resultType: McpResultType };
+type McpResult = Record<string, unknown> & { resultType: McpResultType };
 
 /** `ttlMs` and `cacheScope` are REQUIRED on the five cacheable list/read
  * results. They are a freshness hint that lets a client cache instead of poll;
  * `cacheScope: "private"` keeps shared intermediaries from caching a response
  * that is scoped to one workspace token. */
-export type CacheScope = "public" | "private";
+type CacheScope = "public" | "private";
 
-export type CacheHint = { ttlMs: number; cacheScope: CacheScope };
+type CacheHint = { ttlMs: number; cacheScope: CacheScope };
 
 /**
  * Workspace content is per-token and changes when the owner edits, so it is
@@ -143,7 +143,7 @@ export const methodNotFound = (method: string) =>
 export const headerMismatch = (message: string) =>
   new McpError(MCP_HEADER_MISMATCH, `Header mismatch: ${message}`, 400);
 
-export const unsupportedProtocolVersion = (requested: string | null) =>
+const unsupportedProtocolVersion = (requested: string | null) =>
   new McpError(
     MCP_UNSUPPORTED_PROTOCOL_VERSION,
     requested
@@ -163,7 +163,7 @@ export type Implementation = {
   title?: string;
 };
 
-export type RequestMeta = {
+type RequestMeta = {
   protocolVersion: string;
   clientCapabilities: Record<string, unknown>;
   clientInfo: Implementation | null;

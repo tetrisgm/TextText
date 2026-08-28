@@ -14,7 +14,7 @@ import {
 } from "@/lib/presentation/templates";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 
-export type TemplateExample = {
+type TemplateExample = {
   template: TemplateDefinition;
   category: TemplateCategory;
   slug: string;

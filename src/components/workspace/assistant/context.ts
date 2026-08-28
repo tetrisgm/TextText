@@ -6,7 +6,7 @@ import {
 } from "@/lib/ai/workspace-item-draft";
 import { findPoolPostById, folderPathForPoolPost } from "@/lib/pool/selectors";
 
-export type AssistantContextKind = "workspace" | "folder" | "item";
+type AssistantContextKind = "workspace" | "folder" | "item";
 
 export type AssistantContext = {
   label: string;
@@ -21,12 +21,12 @@ export type AssistantViewSnapshot = {
   postId?: string;
 };
 
-export type AssistantWorkspaceView =
+type AssistantWorkspaceView =
   | { level: "root" }
   | { folderPath: string; level: "section" | "trash" | "shared" | "starred" }
   | { folderPath: string; level: "post" | "edit"; postId: string };
 
-export type ResolvedAssistantContext = {
+type ResolvedAssistantContext = {
   chip: AssistantContext;
   contextKey: string;
   view: AssistantViewSnapshot;

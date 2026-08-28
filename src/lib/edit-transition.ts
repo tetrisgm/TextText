@@ -8,7 +8,7 @@ type EditTransitionDataset = {
   textTextEditReadyWithinBudget?: string;
 };
 
-export type EditTransitionResult = {
+type EditTransitionResult = {
   postId: string;
   elapsedMs: number;
   budgetMs: number;

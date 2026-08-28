@@ -73,7 +73,7 @@ type RelativeSelectionState = {
   head: string;
 };
 
-export type UnifiedDocumentEditorProps = {
+type UnifiedDocumentEditorProps = {
   activeAgent?: AssistantAgentIdentity | null;
   onOpenAgent?: () => void;
   active?: boolean;

@@ -9,11 +9,11 @@ import { getBlogCore } from "./blog-core";
 import { db } from "./db/client";
 import { blogs, collaborators, folders, posts, users } from "./db/schema";
 
-export type EffectiveRole = "owner" | "editor" | "commenter" | "viewer";
+type EffectiveRole = "owner" | "editor" | "commenter" | "viewer";
 export type CollaboratorScopeType = "workspace" | "folder" | "item";
 export type ItemShareRole = "editor" | "commenter" | "viewer";
 export type WorkspaceMemberRole = "member" | "guest";
-export type StoredCollaboratorRole =
+type StoredCollaboratorRole =
   | "admin"
   | "member"
   | "guest"
@@ -78,7 +78,7 @@ export function isWorkspaceMemberRole(
   return value === "member" || value === "guest";
 }
 
-export function isStoredCollaboratorRole(
+function isStoredCollaboratorRole(
   value: unknown,
 ): value is StoredCollaboratorRole {
   return (
@@ -101,7 +101,7 @@ export function isValidAccessEmail(email: string): boolean {
   return EMAIL_RE.test(email) && email.length <= 254;
 }
 
-export function maxEffectiveRole(
+function maxEffectiveRole(
   current: EffectiveRole | null,
   next: EffectiveRole | null,
 ): EffectiveRole | null {
@@ -110,7 +110,7 @@ export function maxEffectiveRole(
   return ROLE_RANK[next] > ROLE_RANK[current] ? next : current;
 }
 
-export function roleAtLeast(
+function roleAtLeast(
   role: EffectiveRole | null,
   needed: EffectiveRole,
 ): boolean {

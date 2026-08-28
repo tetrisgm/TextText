@@ -65,7 +65,7 @@ function textNodes(root: HTMLElement): Text[] {
   return nodes;
 }
 
-export function findReaderQuoteRange(
+function findReaderQuoteRange(
   root: HTMLElement,
   quote: string,
 ): Range | null {

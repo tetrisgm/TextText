@@ -25,7 +25,6 @@ import { cache } from "react";
 import {
   BLOG_FOLDER_PATH,
   DEFAULT_FILE_REPRESENTATION,
-  isPrivatePostType,
   isPublishedPublicPost,
   readingTimeMinForWordCount,
   wordCountForMarkdown,
@@ -206,25 +205,25 @@ export type BlogPatch = {
   homeLayout?: BlogHomeView;
   username?: string;
 };
-export type AdjacentPostLink = Pick<Post, "id" | "folderId" | "slug" | "title">;
+type AdjacentPostLink = Pick<Post, "id" | "folderId" | "slug" | "title">;
 export type AdjacentPublishedPosts = {
   previous: AdjacentPostLink | null;
   next: AdjacentPostLink | null;
 };
-export type BlogEditRecord = {
+type BlogEditRecord = {
   id: string;
   handle: string;
   name: string;
   ownerId: string | null;
 };
-export type StoreUser = {
+type StoreUser = {
   sub: string;
   name?: string;
   email?: string;
 };
 
-export type ItemCommentAnchorField = "title" | "excerpt" | "body";
-export type ItemCommentAnchor = {
+type ItemCommentAnchorField = "title" | "excerpt" | "body";
+type ItemCommentAnchor = {
   field: ItemCommentAnchorField;
   exactQuote: string;
   start?: number;
@@ -233,16 +232,16 @@ export type ItemCommentAnchor = {
   startRelative?: string;
   endRelative?: string;
 };
-export type ItemCommentActor = {
+type ItemCommentActor = {
   actorUserId: string | null;
   actorType: AuditActorType;
 };
-export type ItemCommentActorContext = {
+type ItemCommentActorContext = {
   actorUserId?: string | null;
   actorType: AuditActorType;
   actorName?: string | null;
 };
-export type ItemCommentMutationOptions = {
+type ItemCommentMutationOptions = {
   /** Override the default comment audit so an external command can preserve
    * its own attributed action name inside the mutation's atomic statement. */
   audit?: AuditEntry;
@@ -262,37 +261,37 @@ export type ItemComment = {
   createdAt: string;
   updatedAt: string;
 };
-export type ItemCommentListOptions = {
+type ItemCommentListOptions = {
   /** Omit to include both open and resolved comments. */
   resolved?: boolean;
   /** Omit to include top-level comments and replies; null selects roots. */
   parentId?: string | null;
 };
-export type CreateItemCommentInput = {
+type CreateItemCommentInput = {
   itemId: string;
   parentId?: string | null;
   body: string;
   anchor?: ItemCommentAnchor | null;
 };
-export type CreateItemCommentRequest = CreateItemCommentInput & {
+type CreateItemCommentRequest = CreateItemCommentInput & {
   actor: ItemCommentActorContext;
 };
-export type UpdateItemCommentInput = {
+type UpdateItemCommentInput = {
   body?: string;
   /** null removes an existing anchor; omission preserves it. */
   anchor?: ItemCommentAnchor | null;
 };
-export type SetItemCommentResolvedInput = {
+type SetItemCommentResolvedInput = {
   itemId: string;
   commentId: string;
   resolved: boolean;
 };
-export type SetItemCommentResolvedRequest = SetItemCommentResolvedInput & {
+type SetItemCommentResolvedRequest = SetItemCommentResolvedInput & {
   actor: ItemCommentActorContext;
 };
 
-export type DocumentCapabilityRole = "viewer" | "commenter" | "editor";
-export type DocumentCapability = {
+type DocumentCapabilityRole = "viewer" | "commenter" | "editor";
+type DocumentCapability = {
   id: string;
   itemId: string;
   role: DocumentCapabilityRole;
@@ -305,7 +304,7 @@ export type DocumentCapability = {
 export type ResolvedDocumentCapability = DocumentCapability & {
   handle: string;
 };
-export type CreatedDocumentCapability = DocumentCapability & {
+type CreatedDocumentCapability = DocumentCapability & {
   token: string;
 };
 
@@ -578,18 +577,6 @@ async function selectPosts(
   return publishedOnly ? mapped.map(withoutPersonalWorkspaceMetadata) : mapped;
 }
 
-function pinnedFirst(items: Post[]): Post[] {
-  return items
-    .map((post, index) => ({ post, index }))
-    .sort((a, b) => {
-      if (Boolean(a.post.pinned) !== Boolean(b.post.pinned)) {
-        return Number(Boolean(b.post.pinned)) - Number(Boolean(a.post.pinned));
-      }
-      return a.index - b.index;
-    })
-    .map(({ post }) => post);
-}
-
 async function getPostsUncached(handle: string): Promise<Post[]> {
   if (!db) throw new Error(NO_DATABASE);
   return selectPosts(handle, true);
@@ -813,7 +800,7 @@ export type PostSlugResolution =
   | { kind: "history"; post: Post }
   | { kind: "tombstone" | "ambiguous" | "missing" };
 
-export type PublicPostPathResolution =
+type PublicPostPathResolution =
   | { kind: "exact"; folderPath: string; post: Post }
   | { kind: "redirect"; folderPath: string; post: Post }
   | { kind: "missing" };
@@ -1685,11 +1672,11 @@ export async function saveBookmarkCapture(
   return updated[0] ? mapPost(updated[0]) : null;
 }
 
-export type BookmarkCaptureGenerationPreparation =
+type BookmarkCaptureGenerationPreparation =
   | { ok: true; generation: BookmarkCaptureGeneration }
   | { ok: false; reason: "missing" | "stale" | "conflict"; message: string };
 
-export type BookmarkCaptureGenerationSaveResult =
+type BookmarkCaptureGenerationSaveResult =
   | { ok: true; post: Post; finalized: boolean }
   | {
       ok: false;
@@ -1999,7 +1986,7 @@ export function shouldRefreshBookmarkReadable(
   return nextSavedImageCount > currentSavedImageCount;
 }
 
-export function shouldReplaceBookmarkReadableAfterRecapture(
+function shouldReplaceBookmarkReadableAfterRecapture(
   currentBody: string,
   nextBody: string,
   previousCapture: BookmarkCapture | null | undefined,
@@ -2983,7 +2970,7 @@ async function getFolderPostFilesUncached(
 
 const getFolderPostFilesCached = cache(getFolderPostFilesUncached);
 
-export async function getFolderPostFiles(
+async function getFolderPostFiles(
   handle: string,
   folderPath: string,
   opts: { publishedOnly?: boolean; exact?: boolean } = {},
@@ -3066,7 +3053,7 @@ export async function getAccessibleFolders(
   return allFolders.filter((folder) => ids.has(folder.id));
 }
 
-export type AccessibleRecentPost = {
+type AccessibleRecentPost = {
   post: Post;
   folderPath: string;
 };
@@ -3275,7 +3262,7 @@ export async function getPostById(
   return getPostByIdCached(handle, id);
 }
 
-export type PostStoreContext = {
+type PostStoreContext = {
   blogId: string;
   handle: string;
   post: Post;
@@ -3841,66 +3828,6 @@ export async function retireDocumentTemplate(
   return Boolean(
     (result.rows[0] as { template_id?: string } | undefined)?.template_id,
   );
-}
-
-export async function createDocumentCapability(input: {
-  itemId: string;
-  role: DocumentCapabilityRole;
-  label?: string | null;
-  expiresAt?: Date | null;
-  createdById?: string | null;
-  actor: AuditEntry;
-}): Promise<CreatedDocumentCapability> {
-  if (!db) throw new Error("createDocumentCapability requires DATABASE_URL");
-  const token = randomBytes(32).toString("base64url");
-  const rows = await db
-    .insert(documentCapabilityLinks)
-    .values({
-      postId: input.itemId,
-      tokenHash: capabilityTokenHash(token),
-      role: input.role,
-      label: input.label?.trim() || null,
-      expiresAt: input.expiresAt ?? null,
-      createdById: input.createdById ?? null,
-    })
-    .returning();
-  const capability = mapDocumentCapability(rows[0]);
-  await recordAction({
-    ...input.actor,
-    actionName: "create_document_capability",
-    targetType: "item",
-    targetId: input.itemId,
-    outputSummary: `${input.role}:${capability.id}`,
-  });
-  return { ...capability, token };
-}
-
-export async function revokeDocumentCapability(input: {
-  itemId: string;
-  capabilityId: string;
-  actor: AuditEntry;
-}): Promise<boolean> {
-  if (!db) throw new Error("revokeDocumentCapability requires DATABASE_URL");
-  const rows = await db
-    .update(documentCapabilityLinks)
-    .set({ revokedAt: new Date() })
-    .where(
-      and(
-        eq(documentCapabilityLinks.id, input.capabilityId),
-        eq(documentCapabilityLinks.postId, input.itemId),
-        isNull(documentCapabilityLinks.revokedAt),
-      ),
-    )
-    .returning({ id: documentCapabilityLinks.id });
-  if (!rows[0]) return false;
-  await recordAction({
-    ...input.actor,
-    actionName: "revoke_document_capability",
-    targetType: "item",
-    targetId: input.itemId,
-    inputSummary: input.capabilityId,
-  });
-  return true;
 }
 
 export async function resolveDocumentCapability(
@@ -4519,7 +4446,7 @@ export async function deletePostAtomic(
 // returns the same item. Claiming is a single INSERT ... ON CONFLICT DO NOTHING,
 // so even two concurrent retries with one key produce exactly one item.
 
-export type IdempotencyClaim =
+type IdempotencyClaim =
   | { status: "claimed" }
   | { status: "done"; kind: "post" | "folder"; id: string }
   | { status: "inflight" };
@@ -4997,15 +4924,6 @@ export async function permanentlyDeleteFolder(
   await db
     .delete(folders)
     .where(and(eq(folders.blogId, blogId), inArray(folders.id, ids)));
-}
-
-export async function trashBlogPosts(handle: string): Promise<void> {
-  if (!db) throw new Error("trashBlogPosts requires DATABASE_URL");
-  const blogId = await blogIdFor(handle);
-  await db
-    .update(posts)
-    .set({ deletedAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(posts.blogId, blogId), isNull(posts.deletedAt)));
 }
 
 export async function setPostPinned(
@@ -5721,7 +5639,7 @@ export async function listUserIdentities(
     .where(eq(userIdentities.userId, userId));
 }
 
-export function providerForSubject(sub: string, userId: string): string {
+function providerForSubject(sub: string, userId: string): string {
   if (sub.startsWith("google:")) return "google";
   if (sub === userId) return "email";
   return "apple";
@@ -6081,21 +5999,6 @@ export async function updateBlogByHandle(
     if (isBlogsHandleConflict(error)) throw new Error("That handle is taken");
     throw error;
   }
-}
-
-export async function updateBlog(sub: string, patch: BlogPatch): Promise<Blog> {
-  if (!db) throw new Error("updateBlog requires DATABASE_URL");
-  const owned = (
-    await db
-      .select({ handle: blogs.handle })
-      .from(blogs)
-      .leftJoin(users, eq(blogs.ownerId, users.id))
-      .where(and(eq(users.appleSub, sub), isNull(blogs.deletedAt)))
-      .orderBy(asc(blogs.createdAt))
-      .limit(1)
-  )[0];
-  if (!owned) throw new Error("No blog found for this user");
-  return updateBlogByHandle(owned.handle, patch, { allowHandleChange: true });
 }
 
 // Get-or-create the signed-in user's blog. Upserts the user (keyed by Apple sub;

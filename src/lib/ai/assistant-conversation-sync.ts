@@ -1,10 +1,10 @@
 export const MAX_SYNCED_ASSISTANT_CONVERSATIONS = 60;
 export const MAX_SYNCED_ASSISTANT_MESSAGES = 200;
-export const MAX_SYNCED_ASSISTANT_MESSAGE_TEXT = 16_000;
-export const MAX_SYNCED_ASSISTANT_CONVERSATION_BYTES = 512_000;
-export const MAX_SYNCED_ASSISTANT_WORKSPACE_BYTES = 4_000_000;
+const MAX_SYNCED_ASSISTANT_MESSAGE_TEXT = 16_000;
+const MAX_SYNCED_ASSISTANT_CONVERSATION_BYTES = 512_000;
+const MAX_SYNCED_ASSISTANT_WORKSPACE_BYTES = 4_000_000;
 
-export type SyncedAssistantMessage = Record<string, unknown> & {
+type SyncedAssistantMessage = Record<string, unknown> & {
   id: string;
   role: "user" | "assistant" | "progress" | "error";
   text: string;

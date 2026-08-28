@@ -15,7 +15,6 @@ import type {
 import { useRouter } from "next/navigation";
 import {
   createDraftAction,
-  updateBlogAction,
   updateBlogNameAction,
 } from "@/app/editor/actions";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";

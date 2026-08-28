@@ -44,7 +44,7 @@ import { resolveItemAccess, type AccessUser } from "@/lib/permissions";
 import { getPostStoreContext } from "@/lib/store";
 
 export type CollabRole = "editor" | "viewer";
-export type CollabBaseline = {
+type CollabBaseline = {
   epoch: number;
   revision: number;
   update: string;
@@ -64,7 +64,7 @@ export function colorForSub(sub: string): string {
 }
 
 /** Presence rows older than this are treated as gone. */
-export const PRESENCE_STALE_MS = 15_000;
+const PRESENCE_STALE_MS = 15_000;
 
 /**
  * The caller's collab role on a post, or null. Owners and editor

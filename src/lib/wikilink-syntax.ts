@@ -5,7 +5,7 @@ export type WikiLinkReference = {
   label: string;
 };
 
-export type WikiLinkTextPart =
+type WikiLinkTextPart =
   | { kind: "text"; value: string }
   | ({ kind: "wikilink" } & WikiLinkReference);
 

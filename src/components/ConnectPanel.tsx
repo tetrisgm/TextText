@@ -27,7 +27,7 @@ const LOCAL_AGENT_WORKFLOWS = AGENT_WORKFLOWS.filter(
 
 type FreshToken = { id: string; name: string; token: string };
 
-export type TextTextConnectionEdition =
+type TextTextConnectionEdition =
   | "unknown"
   | "standalone"
   | "remote-only";

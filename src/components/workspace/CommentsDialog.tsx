@@ -30,7 +30,7 @@ import styles from "./CommentsDialog.module.css";
 
 export { groupCommentThreads } from "@/components/workspace/comment-threads";
 
-export type CommentsDialogProps = {
+type CommentsDialogProps = {
   canResolve: boolean;
   handle: string;
   open: boolean;

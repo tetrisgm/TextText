@@ -3,7 +3,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "./db/client";
 import { blogs, users } from "./db/schema";
 
-export type BlogCore = {
+type BlogCore = {
   id: string;
   handle: string;
   ownerId: string | null;

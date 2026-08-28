@@ -30,7 +30,6 @@ import {
   WORKSPACE_FOLDER_MODES,
   WORKSPACE_SCOPE_CAPABILITIES,
   WORKSPACE_TOOL_DEFINITIONS,
-  WORKSPACE_TOOL_NAMES,
   parseWorkspaceToolInput,
 } from "@/lib/ai/tools";
 import type { WorkspaceToolInput, WorkspaceToolName } from "@/lib/ai/tools";
@@ -82,10 +81,8 @@ import type { ScopeShareRole } from "@/lib/shares";
 import {
   createItemComment,
   claimIdempotencyKey,
-  createDocumentTemplateVersion,
   createDraftInFolder,
   createSubfolder,
-  deletePost,
   deletePostAtomic,
   getBlog,
   getDocumentTemplate,
@@ -144,7 +141,7 @@ type RegisteredCallback = (
   args: Record<string, unknown>,
   extra: ToolContext,
 ) => Promise<CallToolResult>;
-export type McpScopeAccess = "full" | "read-only" | "none";
+type McpScopeAccess = "full" | "read-only" | "none";
 
 function isReadOnlyScope(scope: string): boolean {
   const normalized = scope.trim().toLowerCase();
@@ -229,7 +226,7 @@ function accessUser(extra: ToolContext): AccessUser {
 // runWorkspaceToolForSession) passes actorType "ai", so its mutations are
 // labelled correctly in action_audit rather than looking like an outside agent.
 /** How the in-app assistant identifies itself as a collaborator. */
-export const ASSISTANT_CONNECTION_NAME = "Assistant";
+const ASSISTANT_CONNECTION_NAME = "Assistant";
 
 function mcpActorType(extra: ToolContext): AuditActorType {
   const value = extra.authInfo?.extra?.actorType;

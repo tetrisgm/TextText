@@ -86,7 +86,7 @@ export function extractWikiLinks(markdown: string): WikiLinkReference[] {
   return links;
 }
 
-export type WikiLinkTargetResolution =
+type WikiLinkTargetResolution =
   | { kind: "exact" | "history"; target: string; post: Post }
   | { kind: "tombstone" | "ambiguous" | "missing"; target: string };
 

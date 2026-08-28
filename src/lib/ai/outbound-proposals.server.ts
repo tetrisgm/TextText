@@ -48,7 +48,7 @@ export type OutboundMcpProposalPreview = {
   expiresAt: string;
 };
 
-export type OutboundMcpProposalDecision =
+type OutboundMcpProposalDecision =
   | { status: "completed"; receipt: AssistantProposalReceipt }
   | { status: "denied"; proposalId: string }
   | { status: "ambiguous"; proposalId: string; message: string }
@@ -130,14 +130,14 @@ function serializedByteLength(value: unknown): number {
   }
 }
 
-export class OutboundProposalValidationError extends Error {
+class OutboundProposalValidationError extends Error {
   constructor(message: string, readonly code: string) {
     super(message);
     this.name = "OutboundProposalValidationError";
   }
 }
 
-export function validateOutboundMcpArguments(
+function validateOutboundMcpArguments(
   remote: RemoteTool,
   input: unknown,
 ): Record<string, unknown> {

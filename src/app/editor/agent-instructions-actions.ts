@@ -13,7 +13,7 @@ import {
   saveWorkspaceAgentSettings,
 } from "@/lib/ai/workspace-agent-instructions.server";
 
-export type WorkspaceAgentSettingsState = WorkspaceAgentSettings & {
+type WorkspaceAgentSettingsState = WorkspaceAgentSettings & {
   allowed: boolean;
 };
 

@@ -46,7 +46,7 @@ export const COLLABORATION_EVALUATION_BASELINE = validateDocumentSnapshot({
   },
 });
 
-export type CollaborationEvaluationResult = {
+type CollaborationEvaluationResult = {
   status: "pass";
   clients: number;
   editOperations: number;

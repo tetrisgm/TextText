@@ -22,7 +22,7 @@ export type WorkspaceWriteProposalActor = {
   handle: string;
 };
 
-export type WorkspaceWriteProposalStatus =
+type WorkspaceWriteProposalStatus =
   | "pending"
   | "executing"
   | "completed"
@@ -52,7 +52,7 @@ export type AssistantProposalReceipt = {
   connection?: { id: string; name: string };
 };
 
-export type WorkspaceWriteReceipt = AssistantProposalReceipt & {
+type WorkspaceWriteReceipt = AssistantProposalReceipt & {
   kind: "workspace";
   tool: WorkspaceToolName;
 };
@@ -133,7 +133,7 @@ export type WorkspaceWriteProposalDependencies = {
   randomId(): string;
 };
 
-export type WorkspaceWriteProposalDecision =
+type WorkspaceWriteProposalDecision =
   | { status: "completed"; receipt: WorkspaceWriteReceipt }
   | { status: "denied"; proposalId: string }
   | { status: "ambiguous"; proposalId: string; message: string }

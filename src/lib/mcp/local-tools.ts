@@ -13,7 +13,7 @@
  * three functions went, the file was one type, a dead private helper, and a
  * re-export nobody imported. The type lives here now, with its only user.
  */
-export type LocalConnection = {
+type LocalConnection = {
   id: string;
   name: string;
   url: string;
@@ -21,7 +21,7 @@ export type LocalConnection = {
 };
 import { isLoopbackUrl } from "@/lib/mcp/local-transport";
 
-export type LocalToolDefinition = {
+type LocalToolDefinition = {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;

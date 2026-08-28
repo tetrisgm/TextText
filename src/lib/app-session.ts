@@ -3,7 +3,7 @@ import type { ApiTokenIdentity } from "@/lib/api-tokens";
 
 const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 
-export type AppSessionCookie = {
+type AppSessionCookie = {
   name: string;
   value: string;
   maxAge: number;

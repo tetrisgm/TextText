@@ -1,6 +1,6 @@
 import type { AiConnectionSnapshot } from "./connection-state";
 
-export type NativeAssistantEvent =
+type NativeAssistantEvent =
   | ({ type: "status" } & Partial<AiConnectionSnapshot>)
   | { type: "text-delta"; text: string; conversationId?: string }
   | { type: "final-text"; text: string; conversationId?: string }
@@ -18,7 +18,7 @@ type NativeWindow = Window & {
   };
 };
 
-export type NativeAssistantHistoryMessage = {
+type NativeAssistantHistoryMessage = {
   role: "user" | "assistant";
   content: string;
 };

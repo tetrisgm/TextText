@@ -11,9 +11,9 @@ import {
   type AppHealthRollupRow,
 } from "./app-health-rollup";
 
-export const APP_HEALTH_MAX_REPORTS = 2_000;
+const APP_HEALTH_MAX_REPORTS = 2_000;
 
-export class AppHealthDataUnavailableError extends Error {
+class AppHealthDataUnavailableError extends Error {
   constructor() {
     super("app health data unavailable");
     this.name = "AppHealthDataUnavailableError";

@@ -22,13 +22,13 @@ export function isSafePostSlug(value: string): boolean {
   return value.length > 0 && sanitizePostSlug(value, "") === value;
 }
 
-export type SlugCandidate = {
+type SlugCandidate = {
   slug: string;
   slugHistory: readonly string[];
   deletedAt: Date | string | null;
 };
 
-export type SlugCandidateResolution<T extends SlugCandidate> =
+type SlugCandidateResolution<T extends SlugCandidate> =
   | { kind: "exact"; row: T }
   | { kind: "history"; row: T }
   | { kind: "tombstone" }

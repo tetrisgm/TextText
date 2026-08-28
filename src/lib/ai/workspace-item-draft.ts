@@ -36,9 +36,9 @@ export type WorkspaceItemTextEdit = {
   result: string;
 };
 
-export type WorkspaceItemTextEditDirection = "apply" | "undo";
+type WorkspaceItemTextEditDirection = "apply" | "undo";
 
-export type WorkspaceItemTextEditResolution =
+type WorkspaceItemTextEditResolution =
   | {
       ok: true;
       expected: WorkspaceItemTextPatch;
@@ -61,7 +61,7 @@ type OpenWorkspaceItemDraftEntry = {
   selection: WorkspaceItemTextSelection | null;
 };
 
-export type OpenWorkspaceItemDraftPatchResult =
+type OpenWorkspaceItemDraftPatchResult =
   | "applied"
   | "missing"
   | "stale";

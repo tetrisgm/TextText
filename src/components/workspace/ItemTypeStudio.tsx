@@ -33,7 +33,7 @@ import styles from "./ItemTypeStudio.module.css";
 
 type StudioFolder = { id: string; name: string; path: string };
 
-export type ItemTypeStudioPreviewDocument = {
+type ItemTypeStudioPreviewDocument = {
   folderPath: string;
   document: DocumentSnapshot;
 };

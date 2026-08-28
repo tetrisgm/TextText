@@ -23,7 +23,6 @@ import {
   createSubfolderAction,
   createWorkspacePostAction,
   deleteEditablePostAction,
-  saveEditablePostAction,
   movePostToFolderAction,
   renameFolderAction,
   toggleEditablePostStarredAction,
@@ -35,7 +34,6 @@ import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { BacklinksPanel } from "@/components/BacklinksPanel";
 import { saveItemAsLookAction } from "@/app/editor/look-actions";
 import { UnifiedDocumentEditor } from "@/components/document/UnifiedDocumentEditor";
-import type { AssistantAgentIdentity } from "@/components/workspace/assistant/agent-identity";
 import { UnifiedDocumentReader } from "@/components/document/UnifiedDocumentReader";
 import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
 import {
@@ -53,12 +51,9 @@ import {
   PostActionBar,
   type BookmarkContentMode,
 } from "@/components/PostActionBar";
-import { PostByline } from "@/components/PostByline";
-import { TagChips, TagEditor } from "@/components/TagChips";
+import { TagChips } from "@/components/TagChips";
 import { WikiLinkAnchor, remarkWikiLinks } from "@/components/WikiLinkMarkdown";
 import {
-  EditableCover as WorkspaceEditableCover,
-  randomCover,
 } from "@/components/editor/EditableCover";
 import { FolderLookPicker } from "@/components/workspace/FolderLookPicker";
 import { ItemTypeStudio } from "@/components/workspace/ItemTypeStudio";
@@ -152,16 +147,11 @@ import { SelectionActions } from "@/components/workspace/assistant/SelectionActi
 import { useNativeAssistant } from "@/components/workspace/assistant/useNativeAssistant";
 import { executeWorkspaceToolRequest } from "@/lib/ai/workspace-tool-client";
 import {
-  createWorkspaceItemTextSelection,
-  locateWorkspaceItemTextSelection,
   openWorkspaceItemDraftRevision,
   patchOpenWorkspaceItemDraftIfCurrent,
   readOpenWorkspaceItemDraft,
   readOpenWorkspaceItemSelection,
-  registerOpenWorkspaceItemDraft,
-  setOpenWorkspaceItemSelection,
   subscribeOpenWorkspaceItemDrafts,
-  type WorkspaceItemTextField,
   type WorkspaceItemTextPatch,
   type WorkspaceItemTextSnapshot,
 } from "@/lib/ai/workspace-item-draft";
@@ -176,11 +166,8 @@ import type {
 import { isVideoFile, plainTextExcerpt } from "@/lib/content";
 import { legacyProjectionFromDocument } from "@/lib/documents/legacy";
 import type { DocumentSnapshot } from "@/lib/documents/model";
-import { isNoCoverValue, NO_COVER_VALUE, resolveCover } from "@/lib/cover";
-import { COVER_PILE } from "@/lib/cover-pile";
 import {
   adjacentPublishedPostsForPool,
-  allTagsInPool,
   backlinksForPost,
   findPoolPostById,
   findPoolPostBySlug,
@@ -191,7 +178,6 @@ import {
   postFromPoolPost,
   starredPoolPosts,
   templateForPoolPost,
-  wikiLinkRenderTargetsForPool,
 } from "@/lib/pool/selectors";
 import {
   addPost,
@@ -289,18 +275,13 @@ import {
   type WorkspaceSearchResult,
 } from "@/lib/workspace-search";
 import {
-  MediaUploadError,
-  mediaUploadEndpointForHandle,
-  uploadMedia,
 } from "@/lib/upload";
 import {
   beginMeasuredEditTransition,
-  finishMeasuredEditTransition,
 } from "@/lib/edit-transition";
 import {
   deletePersistedWorkspaceDraft,
   persistWorkspaceDraft,
-  readPersistedWorkspaceDraft,
 } from "@/lib/pool/storage";
 import { projectTrashView } from "@/lib/trash-view";
 import {
@@ -452,12 +433,6 @@ function mergeDraftIntoWorkspacePost(
     duration: draft.duration || undefined,
     date: draft.date || undefined,
   };
-}
-
-function applySavedWorkspacePost(saved: Post, blogId: string) {
-  const savedPoolPost = narrowPostFromPost(saved, blogId);
-  if (!savedPoolPost?.id) return;
-  updatePost(savedPoolPost.id, savedPoolPost);
 }
 
 function folderWorkspaceHref(
@@ -2335,12 +2310,6 @@ function workspaceActionErrorMessage(error: unknown, fallback: string): string {
     : fallback;
 }
 
-function autoGrowTextarea(node: HTMLTextAreaElement | null) {
-  if (!node) return;
-  node.style.height = "0px";
-  node.style.height = `${node.scrollHeight}px`;
-}
-
 function HighlightSearchText({
   query,
   value,
@@ -2508,13 +2477,8 @@ function WorkspaceRootLanding({
   selectedPostId,
   selectedPostIds,
   selectedSectionPath,
-  assistantConnection,
-  assistantCloudProvider,
-  onConnectAssistant,
-  onOpenAssistant,
   onBuildItemType,
   onFocusCapture,
-  settingsHref,
 }: {
   canManageItems: boolean;
   captureFocusRequestKey: number;
@@ -3578,67 +3542,6 @@ function ErrorBody({ message }: { message: string }) {
   return <p className="workspace-post-body-status">{message}</p>;
 }
 
-function MarkdownBody({
-  allowedRemoteImages,
-  body,
-  hideRemoteImages = false,
-  onWikiLinkNavigate,
-  wikiLinkTargets = {},
-}: {
-  allowedRemoteImages?: Set<string>;
-  body: string;
-  hideRemoteImages?: boolean;
-  onWikiLinkNavigate?: (href: string) => Promise<void> | void;
-  wikiLinkTargets?: WikiLinkRenderTargets;
-}) {
-  return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkWikiLinks(wikiLinkTargets)]}
-      components={{
-        a: (props) => (
-          <WikiLinkAnchor {...props} onNavigate={onWikiLinkNavigate} />
-        ),
-        h1: "h2",
-        img: ({ src, alt }) => {
-          const imageSrc = typeof src === "string" ? src : undefined;
-          if (
-            hideRemoteImages &&
-            isRemoteImageUrl(imageSrc) &&
-            !allowedRemoteImages?.has(imageSrc)
-          ) {
-            return null;
-          }
-          if (imageSrc && isVideoFile(imageSrc)) {
-            return (
-              <span className="reader-figure is-video">
-                <video src={imageSrc} controls playsInline preload="metadata" />
-              </span>
-            );
-          }
-          return (
-            <span className="reader-figure">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={upgradeHttpImageSrc(imageSrc)}
-                alt={alt ?? ""}
-                decoding="async"
-                loading="lazy"
-              />
-              {alt && (
-                <span className="reader-figcaption" aria-hidden="true">
-                  {alt}
-                </span>
-              )}
-            </span>
-          );
-        },
-      }}
-    >
-      {body}
-    </ReactMarkdown>
-  );
-}
-
 function safeBookmarkViewUrl(value: string | undefined): string {
   const raw = value?.trim() ?? "";
   if (!raw) return "";
@@ -3688,7 +3591,6 @@ function WorkspacePostReader({
   homePath,
   onCaptureResolved,
   onNavigate,
-  onOpenTag,
   onSearch,
   searchFocusRequestKey,
   pool,

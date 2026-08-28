@@ -66,7 +66,7 @@ export function releaseZipUrl(): string | null {
   return base ? `${base}/${DOWNLOADS_PREFIX}/TextText.zip` : null;
 }
 
-export interface AdvertisedVersion {
+interface AdvertisedVersion {
   /** marketing version (CFBundleShortVersionString), e.g. "0.2" */
   version: string;
   /** CFBundleVersion, the number Sparkle compares */
