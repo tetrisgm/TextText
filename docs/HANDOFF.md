@@ -969,6 +969,35 @@ in-app assistant, local CLI, or hosted MCP.
 - The agent harness moved to `scripts/eval-agent-harness.ts`, shared by the
   look suite and the verb suite.
 
+## What is NOT bloat, checked (2026-08-28)
+
+Owner's scope: create documents with the AI, ask the AI to act, templates,
+collaboration. Everything measured against that. Four things looked like
+candidates and are not:
+
+- **The seven "unreferenced" API routes** (`files/[id]/assets`, `artifacts`,
+  `collab/materialize`, `collab/presence`, `folders/[id]/manifest`,
+  `post/body`, `items/capture-status`, 936 lines) are all LIVE. The Mac builds
+  those URLs by interpolation, so a literal search for the stripped path finds
+  nothing. Verified by searching the tail segment instead: between 3 and 13
+  call sites each. Deleting on the first result would have removed working
+  API.
+- **`src/lib/pool/`** (1,900 lines) is the workspace payload the UI and the
+  assistant context both read. Core, despite the opaque name.
+- **app-health** (~3,430 lines across TS and Swift) is out of PRODUCT scope,
+  but `release/ship.sh` and `release/promote-local.sh` both consume its
+  attestation and call `verify-app-health.sh`. Removing it breaks shipping.
+  Out of scope is not the same as removable.
+- **The 18 retired templates** (~2,000 lines of templates.ts) are kept
+  resolvable for pinned documents, and every one of them has a pinned document
+  in the local database because the showcase creates one per exemplar. Whether
+  any real document uses them is a production question, and production is the
+  owner's to check.
+- All 32 npm dependencies are imported somewhere.
+
+The rule this keeps proving: search for how a thing is CONSTRUCTED, not how it
+is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
+
 ## Superseded limbs, left attached (2026-08-28)
 
 - Owner's read of the repeated write-with-no-reader failures: the substrate is
