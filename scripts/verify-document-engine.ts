@@ -95,25 +95,25 @@ function verifyFailClosedVisibility(): void {
   assert.equal(
     resolveDocumentVisibility({
       requested: "public",
-      compatibilityType: "note",
+      folderMode: "notes",
     }),
     "private",
   );
   assert.equal(
     resolveDocumentVisibility({
       requested: "public",
-      compatibilityType: "bookmark",
+      folderMode: "bookmarks",
     }),
     "private",
   );
   assert.equal(
-    resolveDocumentVisibility({ compatibilityType: "article" }),
+    resolveDocumentVisibility({ folderMode: "blog" }),
     "private",
   );
   assert.equal(
     resolveDocumentVisibility({
       requested: "link",
-      compatibilityType: "article",
+      folderMode: "blog",
     }),
     "link",
   );

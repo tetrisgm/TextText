@@ -51,7 +51,7 @@ const EVALS: Eval[] = [
 
 const HOW_TO_FIX: Record<Need, string> = {
   server:
-    "NEXT_PUBLIC_ROOT_DOMAIN=localhost:3000 TEXTTEXT_AI_BASE_URL=http://localhost:3999/v1 npm run dev",
+    "NEXT_PUBLIC_ROOT_DOMAIN=localhost:3000 TEXTTEXT_AI_BASE_URL=http://localhost:3999/v1 npm run dev   (a server that 404s everything is wedged: restart it)",
   mock: "node scripts/mock-ai-provider.mjs &",
   cli: "install the codex CLI, or run eval:sidebar with claude",
   db: "point DATABASE_URL at local Postgres in .env.local",
@@ -61,6 +61,27 @@ async function reachable(url: string): Promise<boolean> {
   try {
     const response = await fetch(url, { redirect: "manual" });
     return response.status < 500;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A dev server can answer and still be useless.
+ *
+ * One wedged instance returned 404 for every route including /api/app/build,
+ * and `reachable` said yes, because 404 is under 500. Twelve evals failed and
+ * the failures pointed at everything except the real cause: sign-in forms that
+ * never appeared, "the page may be private", a look suite that could not
+ * build. A precondition that cannot tell a serving server from a dead one is
+ * worse than none, because its "ok" is believed.
+ */
+async function serverActuallyServes(): Promise<boolean> {
+  try {
+    const response = await fetch("http://localhost:3000/api/app/build", {
+      redirect: "manual",
+    });
+    return response.status === 200;
   } catch {
     return false;
   }
@@ -135,7 +156,7 @@ async function main() {
   const filter = args.find((arg) => !arg.startsWith("--")) ?? "";
 
   const met: Record<Need, boolean> = {
-    server: await reachable("http://localhost:3000/"),
+    server: await serverActuallyServes(),
     mock: await reachable("http://localhost:3999/v1/models/probe"),
     cli: await which("codex"),
     db: await localDatabase(),

@@ -969,6 +969,46 @@ in-app assistant, local CLI, or hosted MCP.
 - The agent harness moved to `scripts/eval-agent-harness.ts`, shared by the
   look suite and the verb suite.
 
+## Visibility comes from the folder now (2026-08-28)
+
+- Owner's design call: item kinds are created by the assistant, so the set is
+  open and growing. A person should not be coerced into five fixed types. That
+  makes a closed enum the wrong shape, and it takes the enum's last real job
+  with it.
+- `resolveDocumentVisibility` used to force private when the item's TYPE was
+  note or bookmark, through a parameter the code itself named
+  `compatibilityType`. It now asks the FOLDER. "Is a runs-9eef4c private?" has
+  no answer once kinds are open; "is the folder it lives in private?" always
+  does, and it is the question the person answered when they filed the thing.
+- Fail closed at every step: no folder is private, no request is private, and a
+  private folder overrides an explicit request to publish. Resolved AFTER the
+  folder is loaded in savePost, because the folder is what decides it.
+- ONE BEHAVIOUR CHANGED, deliberately and pinned by a test. A note moved into
+  Blog can now be published. The old rule made it private forever because its
+  type said note. This takes two explicit acts, moving and then publishing, and
+  "notes stay unlisted" still holds: an item moved out of Notes is not in Notes.
+  `setPostFolder` changes only folderId, so moving alone publishes nothing.
+- `posts.type` is still stored and still drives folder placement for new items.
+  Removing the column is the remaining step and needs a migration.
+
+## A wedged dev server passed the precondition (2026-08-28)
+
+- An eval run reported 12 of 13 failing, with symptoms pointing everywhere
+  except the cause: sign-in forms that never appeared, "the page may be
+  private", a look suite that demanded a rebuild. The dev server was returning
+  404 for every route including /api/app/build.
+- The `server` precondition used `reachable()`, which accepts any status under
+  500, so a server that 404s everything reported `ok`. Now it requires a 200
+  from /api/app/build. A precondition that cannot tell serving from dead is
+  worse than none, because its "ok" is believed.
+- I nearly attributed that run to the visibility change. Restarting the server
+  on the same code gave 12 of 13 passing. Check the server before the diff.
+- `eval:item-type` failed once afterwards on the people picker and then passed
+  three consecutive runs at 21 of 21, and passes at HEAD too. Recorded as the
+  known timing flake rather than a regression: the picker does not filter on
+  visibility, and the resolved visibility is identical for every item whose
+  folder and type agree, which is all of them.
+
 ## One concept, four names (2026-08-28)
 
 Owner: if the code cannot be safely changed, simplify the design rather than

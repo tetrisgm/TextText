@@ -75,7 +75,7 @@ describe("unified document boundaries", () => {
 
   it("fails closed when visibility is missing", () => {
     expect(
-      resolveDocumentVisibility({ compatibilityType: "article" }),
+      resolveDocumentVisibility({ folderMode: "blog" }),
     ).toBe("private");
   });
 
@@ -83,13 +83,13 @@ describe("unified document boundaries", () => {
     expect(
       resolveDocumentVisibility({
         requested: "public",
-        compatibilityType: "note",
+        folderMode: "notes",
       }),
     ).toBe("private");
     expect(
       resolveDocumentVisibility({
         requested: "public",
-        compatibilityType: "bookmark",
+        folderMode: "bookmarks",
       }),
     ).toBe("private");
   });

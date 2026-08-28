@@ -5222,12 +5222,13 @@ function canonicalDocumentForSave(
 
 function visibilityForSave(
   post: Post,
-  existingRow?: PostRow,
+  existingRow: PostRow | undefined,
+  folderMode: FolderMode | undefined,
 ): DocumentVisibility {
   return resolveDocumentVisibility({
     requested: post.visibility,
     existing: existingRow?.visibility,
-    compatibilityType: existingRow?.type ?? post.type,
+    folderMode,
   });
 }
 
@@ -5275,11 +5276,7 @@ export async function savePost(
     options.fieldsPatch,
   );
   const projection = legacyProjectionFromDocument(document);
-  const visibility = visibilityForSave(post, existingRow);
   const compatibilityType = existingRow?.type ?? post.type;
-  const status: Post["status"] =
-    visibility === "public" ? "published" : "draft";
-  const wordCount = wordCountForMarkdown(document.content.body);
   // Existing rows keep their folder. New documents use the folder selected by
   // the caller when available, then the template's legacy compatibility root.
   const insertFolder = post.folderId
@@ -5290,6 +5287,13 @@ export async function savePost(
     ? await getFolderById(handle, existingRow.folderId)
     : insertFolder;
   if (!saveFolder) throw new Error("Folder not found");
+  // Resolved AFTER the folder, because the folder is what decides it. An item
+  // kind cannot answer "is this private?" once kinds are open-ended, and the
+  // folder is also where the person actually filed the thing.
+  const visibility = visibilityForSave(post, existingRow, saveFolder.mode);
+  const status: Post["status"] =
+    visibility === "public" ? "published" : "draft";
+  const wordCount = wordCountForMarkdown(document.content.body);
   if (status === "published") {
     await assertPublicPathAvailable(blogId, saveFolder.path, slug, post.id);
   }
