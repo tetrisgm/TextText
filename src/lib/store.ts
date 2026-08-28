@@ -49,6 +49,7 @@ import {
   type AuditEntry,
 } from "./audit";
 import { getBlogCore, getBlogCoreByUsername } from "./blog-core";
+import { folderModeForPostType } from "./markdown-files";
 import { db } from "./db/client";
 import {
   actionAudit,
@@ -1180,10 +1181,16 @@ function starterAgentGuideValues(blogId: string, folderId: string) {
 }
 
 /** The system folder path a post of this type lives in. */
+/**
+ * The system root a kind of item lives under.
+ *
+ * The three roots are named for their modes, so this is the same mapping as
+ * folderModeForPostType and used to be written out twice. Both names are kept
+ * because the intents differ, a path to look up against versus a mode to
+ * branch on, but the mapping now exists once.
+ */
 export function folderPathForPostType(type: PostType): string {
-  if (type === "note") return "notes";
-  if (type === "bookmark") return "bookmarks";
-  return DEFAULT_FOLDER_PATH;
+  return folderModeForPostType(type);
 }
 
 function mapFolder(

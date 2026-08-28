@@ -129,10 +129,6 @@ export function isFileRepresentation(
  * belong to the Notes and Bookmarks folders and are always unlisted.
  */
 export type PostType = "article" | "project" | "talk" | "note" | "bookmark";
-// Product surfaces share the same lower-level content/media/permission
-// primitives, but remain distinct user-facing jobs.
-export type Surface = "blog" | "notes" | "bookmarks" | "feeds" | "group";
-
 /** How a folder renders and edits its items. */
 export type FolderMode = "blog" | "notes" | "bookmarks";
 export const BLOG_FOLDER_PATH = "blog";
@@ -161,14 +157,17 @@ export interface Folder {
   /** null/absent for the three system roots; the parent folder id below them */
   parentId?: string | null;
 }
+/**
+ * What kind of thing an item is. Five values, one per shape the product
+ * actually has. `feed_item` and `group_post` were here for surfaces that were
+ * never built, and appeared nowhere but in this declaration.
+ */
 export type ItemKind =
   | "article"
   | "media_post"
   | "video_post"
   | "note"
-  | "bookmark"
-  | "feed_item"
-  | "group_post";
+  | "bookmark";
 
 /**
  * Everything a completed bookmark capture produced. Binary artifacts live in

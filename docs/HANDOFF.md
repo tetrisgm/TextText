@@ -969,6 +969,35 @@ in-app assistant, local CLI, or hosted MCP.
 - The agent harness moved to `scripts/eval-agent-harness.ts`, shared by the
   look suite and the verb suite.
 
+## One concept, four names (2026-08-28)
+
+Owner: if the code cannot be safely changed, simplify the design rather than
+the tooling. Went looking for concepts that could be one thing.
+
+"What kind of item is this" was spelled four ways:
+
+- `PostType` = article | project | talk | note | bookmark (what is stored)
+- `ItemKind` = article | media_post | video_post | note | bookmark (what is
+  shown, and what the file's `kind:` frontmatter carries)
+- `MarkdownItemKind`, a third name for the same five values
+- `FolderMode` and the folder path, which both restate it again
+
+Two of those are now gone. `ItemKind` also listed `feed_item` and `group_post`,
+and the `Surface` type listed `feeds` and `group`, for surfaces that were never
+built: each appeared exactly once, in its own declaration. With those removed
+`ItemKind` and `MarkdownItemKind` are identical, so the second name went, and
+`Surface` went with them. `folderPathForPostType` and `folderModeForPostType`
+were the same mapping written out twice; both names stay because the intents
+differ, a path to look up against versus a mode to branch on, but the mapping
+exists once now.
+
+STILL OPEN, and the real one: `PostType` and `ItemKind` are the SAME five
+values with two of them renamed, `project` to `media_post` and `talk` to
+`video_post`, and two converter functions exist solely to translate between
+them. 261 occurrences. Collapsing them removes the concept, and it needs the
+owner's word, because `type:` is a stored column and `kind:` is in the
+frontmatter of every file on disk. That is a data migration, not a refactor.
+
 ## PostWorkspaceShell cannot be split by script (2026-08-28)
 
 - 7,226 lines, 93 top-level definitions. The sidebar looked like a clean seam:

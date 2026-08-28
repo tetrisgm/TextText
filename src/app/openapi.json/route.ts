@@ -570,7 +570,7 @@ function openApiDocument(origin: string) {
             },
             itemKinds: {
               type: "array",
-              items: { $ref: "#/components/schemas/MarkdownItemKind" },
+              items: { $ref: "#/components/schemas/ItemKind" },
             },
             activeView: { $ref: "#/components/schemas/BlogHomeLayout" },
             id: { type: "string" },
@@ -587,7 +587,7 @@ function openApiDocument(origin: string) {
               description: "Local markdown file path used by sync clients.",
               example: "posts/hello-world.md",
             },
-            kind: { $ref: "#/components/schemas/MarkdownItemKind" },
+            kind: { $ref: "#/components/schemas/ItemKind" },
             slug: { type: "string", example: "hello-world" },
             title: { type: "string", example: "Hello world" },
             status: { $ref: "#/components/schemas/PostStatus" },
@@ -604,7 +604,7 @@ function openApiDocument(origin: string) {
             hash: { $ref: "#/components/schemas/Sha256Hash" },
           },
         },
-        MarkdownItemKind: {
+        ItemKind: {
           type: "string",
           description:
             "Markdown vocabulary for an item. media_post maps to project " +

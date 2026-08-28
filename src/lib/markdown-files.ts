@@ -30,13 +30,10 @@ const BLOG_ITEM_KINDS = ["article", "media_post", "video_post"] as const;
 const NOTES_ITEM_KINDS = ["note"] as const;
 const BOOKMARKS_ITEM_KINDS = ["bookmark"] as const;
 
-type BlogItemKind = (typeof BLOG_ITEM_KINDS)[number];
-/** Every kind the markdown surface can carry across folder modes. */
-export type MarkdownItemKind = BlogItemKind | "note" | "bookmark";
 
 export type MarkdownFolderItem = {
   file: string;
-  kind: MarkdownItemKind;
+  kind: ItemKind;
   slug: string;
   title: string;
   status: Post["status"];
@@ -64,7 +61,7 @@ type MarkdownFolderManifest = {
     name: string;
     mode: FolderMode;
     views: typeof BLOG_FOLDER_VIEWS;
-    itemKinds: readonly MarkdownItemKind[];
+    itemKinds: readonly ItemKind[];
     activeView: BlogHomeLayout;
     id?: string;
     path?: string;
@@ -100,7 +97,7 @@ export type RenderFolderManifestOptions = {
   renderFileFor?: (post: Post) => string;
 };
 
-export function itemKindForPostType(type: PostType): MarkdownItemKind {
+export function itemKindForPostType(type: PostType): ItemKind {
   if (type === "project") return "media_post";
   if (type === "talk") return "video_post";
   if (type === "note") return "note";
@@ -119,7 +116,7 @@ export function postTypeForItemKind(kind: ItemKind): PostType {
 /** The kinds a folder's manifest advertises, by its mode; blog is the default. */
 function itemKindsForFolderMode(
   mode: FolderMode | undefined,
-): readonly MarkdownItemKind[] {
+): readonly ItemKind[] {
   if (mode === "notes") return NOTES_ITEM_KINDS;
   if (mode === "bookmarks") return BOOKMARKS_ITEM_KINDS;
   return BLOG_ITEM_KINDS;
