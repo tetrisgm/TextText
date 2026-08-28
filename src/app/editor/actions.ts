@@ -1,6 +1,5 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import type {
   Blog,
   Folder,
@@ -43,13 +42,11 @@ import {
 } from "@/lib/store";
 import {
   inviteScopeShare,
-  listPostShares,
   listScopeShares,
-  revokePostShare,
   revokeScopeShare,
   updateScopeShareRole,
 } from "@/lib/shares";
-import type { PostShare, ScopeShare, ScopeShareRole, ShareRole } from "@/lib/shares";
+import type { ScopeShare, ScopeShareRole } from "@/lib/shares";
 import { sendShareInviteEmail } from "@/lib/share-email";
 import {
   type CollaboratorScopeType,
@@ -72,14 +69,7 @@ import {
 import { recordAction, recordSlugChanged } from "@/lib/audit";
 import { markdownSubtitle } from "@/lib/markdown-subtitle";
 import { hasActiveCoEditors, markCollabMaterialized } from "@/lib/collab";
-import { NO_COVER_VALUE } from "@/lib/cover";
 import {
-  attachItemAsset,
-  importItemAssetFromUrl,
-  listItemAssetReferences,
-  removeItemAssetReferences,
-  type ItemAssetPlacement,
-  type ItemAssetReference,
 } from "@/lib/item-assets";
 import { sanitizePostSlug } from "@/lib/post-slug";
 import { normalizeTags } from "@/lib/tags";
@@ -414,10 +404,6 @@ function collaboratorContentPatch(input: unknown, existing: Post): PostContentPa
   };
 }
 
-function blogPath(handle: string, path = ""): string {
-  return `/t/${encodeURIComponent(handle)}${path}`;
-}
-
 function tenantPostEditPath(handle: string, post: Pick<Post, "id" | "slug">): string {
   const params = new URLSearchParams({ edit: "1" });
   if (post.id) params.set("id", post.id);
@@ -568,53 +554,6 @@ export async function resolveWorkspaceHomePath(): Promise<string> {
   const user = await editorUser();
   const blog = await resolveOwnedWorkspace(user);
   return blogHomePath(blog);
-}
-
-export async function savePostAction(post: Post): Promise<Post> {
-  const { handle, access } = await editableHandleFor();
-
-  // The legacy editor sends a whole Post object; run it through the same
-  // sanitization as the inline editor instead of trusting the client shape.
-  if (post.id) {
-    const existing = await getPostById(handle, post.id);
-    if (!existing) throw new Error("Post not found");
-    await refuseWhileCoEdited(existing.id);
-    const patch = editableInput(post, existing, existing.slug);
-    const saved = await savePost(
-      handle,
-      {
-        ...existing,
-        ...patch,
-        pinned: existing.pinned,
-      },
-      { expectedRevision: existing.revision },
-    );
-    await recordSlugChanged({
-      actorUserId: access.isOwner ? access.ownerId : null,
-      actorType: "human",
-      targetId: saved.id,
-      oldSlug: existing.slug,
-      newSlug: saved.slug,
-    });
-    await auditEdit(access, "save_post", "item", saved.id, saved.title);
-    await revalidateBlog(handle, [existing.slug, saved.slug]);
-    return saved;
-  }
-
-  await enforcePostLimit(handle);
-  const created = await createDraft(handle, cleanPostType(post.type));
-  const patch = editableInput(
-    { ...post, id: created.id },
-    created,
-    created.slug,
-  );
-  const saved = await savePost(handle, {
-    ...created,
-    ...patch,
-  });
-  await auditEdit(access, "create_post", "item", saved.id, saved.title);
-  await revalidateBlog(handle, [saved.slug]);
-  return saved;
 }
 
 export async function createDraftAction(
@@ -820,24 +759,6 @@ export async function updateBlogAction(
     await revalidateBlog(updated.handle, [], updated);
   }
   return updated;
-}
-
-export async function createPostAndRedirectAction(formData: FormData) {
-  const handleValue = formData.get("handle");
-  const { handle, access } = await editableHandleFor(
-    typeof handleValue === "string" && handleValue.trim()
-      ? handleValue
-      : undefined,
-  );
-  await enforcePostLimit(handle);
-  const post = await createDraft(handle, cleanPostType(formData.get("type")));
-  await auditEdit(access, "create_post", "item", post.id, post.type);
-  await revalidateBlog(handle, [post.slug]);
-  const blog = await getBlog(handle);
-  const path = blog
-    ? blogPostEditPath(blog, post)
-    : tenantPostEditPath(handle, post);
-  redirect(path);
 }
 
 export async function createArticleDraftPathAction(
@@ -1196,183 +1117,6 @@ export async function recaptureBookmarkAction(
 
 // MARK: Item covers and assets
 
-async function ownedItemForAssets(handleInput: unknown, postIdInput: unknown) {
-  const item = await accessibleItemForComments(handleInput, postIdInput, "view");
-  if (!item.access.isOwner) throw new Error("Only the owner can manage item assets");
-  const post = await getPostById(item.handle, item.postId);
-  if (!post?.id) throw new Error("Item not found");
-  return { ...item, post };
-}
-
-function cleanAssetUrl(value: unknown, label: string): string {
-  if (typeof value !== "string") throw new Error(`${label} is required`);
-  const candidate = value.trim();
-  let url: URL;
-  try {
-    url = new URL(candidate);
-  } catch {
-    throw new Error(`${label} must be a valid URL`);
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error(`${label} must use HTTP or HTTPS`);
-  }
-  return url.toString();
-}
-
-function cleanAssetPlacement(value: unknown): ItemAssetPlacement {
-  if (value === "cover" || value === "body_end" || value === "gallery") {
-    return value;
-  }
-  throw new Error("Asset placement is not supported");
-}
-
-function cleanOptionalAssetText(value: unknown, max: number): string | undefined {
-  if (value === undefined || value === null) return undefined;
-  if (typeof value !== "string") throw new Error("Asset text must be text");
-  return value.replace(/\u0000/g, "").trim().slice(0, max) || undefined;
-}
-
-async function saveAssetPost(
-  handle: string,
-  post: Post,
-  actionName: string,
-  summary?: string,
-): Promise<Post> {
-  const saved = await savePost(handle, post, {
-    preservePublishedAt: true,
-    ...(typeof post.revision === "number"
-      ? { expectedRevision: post.revision }
-      : {}),
-  });
-  const user = await getCurrentUser();
-  await recordAction({
-    actorUserId: user
-      ? user.userId ?? (await getUserIdBySub(user.sub))
-      : null,
-    actorType: "human",
-    actionName,
-    targetType: "item",
-    targetId: saved.id,
-    inputSummary: summary,
-  });
-  await revalidateBlog(handle, [saved.slug]);
-  return saved;
-}
-
-export async function listItemAssetsAction(
-  handleInput: unknown,
-  postIdInput: unknown,
-): Promise<ItemAssetReference[]> {
-  const item = await accessibleItemForComments(handleInput, postIdInput, "view");
-  const post = await getPostById(item.handle, item.postId);
-  if (!post) throw new Error("Item not found");
-  return listItemAssetReferences(post);
-}
-
-export async function addItemAssetAction(
-  handleInput: unknown,
-  postIdInput: unknown,
-  sourceUrlInput: unknown,
-  placementInput: unknown,
-  altTextInput?: unknown,
-  captionInput?: unknown,
-): Promise<{ asset: ItemAssetReference; post: Post }> {
-  const item = await ownedItemForAssets(handleInput, postIdInput);
-  const placement = cleanAssetPlacement(placementInput);
-  const sourceUrl = cleanAssetUrl(sourceUrlInput, "Asset URL");
-  const altText = cleanOptionalAssetText(altTextInput, 500);
-  const caption = cleanOptionalAssetText(captionInput, 2_000);
-  const asset = await importItemAssetFromUrl({
-    handle: item.handle,
-    itemId: item.postId,
-    sourceUrl,
-    media: placement === "cover" ? "image" : "image-or-video",
-  });
-  const saved = await saveAssetPost(
-    item.handle,
-    attachItemAsset(item.post, asset, placement, { altText, caption }),
-    "add_item_asset",
-    `${placement}: ${asset.filename} (${asset.bytes} bytes)`,
-  );
-  return {
-    asset: {
-      url: asset.url,
-      role: placement === "body_end" ? "body" : placement,
-      contentType: asset.contentType,
-      filename: asset.filename,
-      originalUrl: asset.sourceUrl,
-      altText,
-      caption,
-    },
-    post: saved,
-  };
-}
-
-export async function removeItemAssetAction(
-  handleInput: unknown,
-  postIdInput: unknown,
-  assetUrlInput: unknown,
-): Promise<{ changed: boolean; post: Post }> {
-  const item = await ownedItemForAssets(handleInput, postIdInput);
-  const assetUrl = cleanAssetUrl(assetUrlInput, "Asset URL");
-  const removed = removeItemAssetReferences(item.post, assetUrl);
-  if (!removed.changed) return { changed: false, post: item.post };
-  const saved = await saveAssetPost(
-    item.handle,
-    removed.post,
-    "remove_item_asset",
-    assetUrl,
-  );
-  return { changed: true, post: saved };
-}
-
-export async function setItemCoverAction(
-  handleInput: unknown,
-  postIdInput: unknown,
-  sourceInput: unknown,
-  urlInput?: unknown,
-  captionInput?: unknown,
-  heightInput?: unknown,
-): Promise<Post> {
-  const item = await ownedItemForAssets(handleInput, postIdInput);
-  if (sourceInput !== "url" && sourceInput !== "auto" && sourceInput !== "none") {
-    throw new Error("Cover source is not supported");
-  }
-  const url = sourceInput === "url" ? cleanAssetUrl(urlInput, "Cover URL") : undefined;
-  if (
-    url &&
-    !listItemAssetReferences(item.post).some((asset) => asset.url === url)
-  ) {
-    throw new Error("Import or attach that asset before using it as the cover");
-  }
-  const caption =
-    captionInput === null
-      ? undefined
-      : cleanOptionalAssetText(captionInput, 2_000) ?? item.post.coverCaption;
-  const height =
-    heightInput === null
-      ? undefined
-      : typeof heightInput === "number" && Number.isInteger(heightInput)
-        ? Math.min(860, Math.max(180, heightInput))
-        : item.post.coverHeight;
-  return saveAssetPost(
-    item.handle,
-    {
-      ...item.post,
-      cover:
-        sourceInput === "url"
-          ? url
-          : sourceInput === "none"
-            ? NO_COVER_VALUE
-            : undefined,
-      coverCaption: caption,
-      coverHeight: height,
-    },
-    "update_item",
-    String(sourceInput),
-  );
-}
-
 // MARK: Sharing
 
 function cleanScopeType(value: unknown): CollaboratorScopeType {
@@ -1423,12 +1167,6 @@ async function manageableScopeForSharing(
   const post = await getPostById(handle, postId);
   if (!post?.id) throw new Error("Post not found");
   return { handle, scopeType, scopeId: post.id, user, post };
-}
-
-async function ownedPostForSharing(handleInput: unknown, postIdInput: unknown) {
-  const scope = await manageableScopeForSharing(handleInput, "item", postIdInput);
-  if (!scope.post) throw new Error("Post not found");
-  return { handle: scope.handle, post: scope.post };
 }
 
 export async function shareScopeAction(
@@ -1514,39 +1252,6 @@ export async function listScopeSharesAction(
     scopeIdInput,
   );
   return listScopeShares(scope.scopeType, scope.scopeId);
-}
-
-export async function sharePostAction(
-  handleInput: unknown,
-  postIdInput: unknown,
-  emailInput: unknown,
-  roleInput: unknown,
-): Promise<PostShare[]> {
-  const role: ShareRole = roleInput === "editor" ? "editor" : "viewer";
-  await shareScopeAction(handleInput, "item", postIdInput, emailInput, role);
-  const { post } = await ownedPostForSharing(handleInput, postIdInput);
-  return listPostShares(post.id!);
-}
-
-export async function revokePostShareAction(
-  handleInput: unknown,
-  postIdInput: unknown,
-  shareIdInput: unknown,
-): Promise<PostShare[]> {
-  const { post } = await ownedPostForSharing(handleInput, postIdInput);
-  const user = await getCurrentUser();
-  if (!user) throw new Error("Sign in to share");
-  const shareId = cleanPostId(shareIdInput);
-  await revokePostShare(post.id!, shareId, user.sub);
-  return listPostShares(post.id!);
-}
-
-export async function listPostSharesAction(
-  handleInput: unknown,
-  postIdInput: unknown,
-): Promise<PostShare[]> {
-  const { post } = await ownedPostForSharing(handleInput, postIdInput);
-  return listPostShares(post.id!);
 }
 
 // MARK: Folders

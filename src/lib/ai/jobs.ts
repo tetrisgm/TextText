@@ -166,14 +166,6 @@ export function serverAssistantJobs(): AssistantJob[] {
   return EMPTY_SERVER_JOBS;
 }
 
-export function runningAssistantJobCount(): number {
-  loadJobs();
-  return jobs.reduce(
-    (count, job) => (job.status === "running" ? count + 1 : count),
-    0,
-  );
-}
-
 export function startAssistantJob(input: {
   threadKey: string;
   contextKey: string;

@@ -5,7 +5,20 @@
 // local address is not a trust boundary, so the standalone app exposes no
 // local tool definitions until it can use the same durable proposal surface.
 
-import type { LocalConnection } from "@/lib/mcp/local-client";
+/**
+ * A connection only the Mac app can reach.
+ *
+ * Was its own module with a full JSON-RPC client beside it. The loopback
+ * client is retired (agents on this Mac use the texttext CLI), and once its
+ * three functions went, the file was one type, a dead private helper, and a
+ * re-export nobody imported. The type lives here now, with its only user.
+ */
+export type LocalConnection = {
+  id: string;
+  name: string;
+  url: string;
+  token?: string | null;
+};
 import { isLoopbackUrl } from "@/lib/mcp/local-transport";
 
 export type LocalToolDefinition = {

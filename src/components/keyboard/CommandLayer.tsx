@@ -54,10 +54,6 @@ type ToastState = {
 
 let activeEscapeLayerCount = 0;
 
-export function hasActiveEscapeLayer(): boolean {
-  return activeEscapeLayerCount > 0;
-}
-
 type CommandLayerValue = {
   registerKey: (binding: KeyBinding) => () => void;
   pushEscapeLayer: (label: string, close: () => void) => () => void;
@@ -428,8 +424,4 @@ export function useWorkspaceCommandSurface(
     layer.setWorkspaceSurface(surface);
     return () => layer.setWorkspaceSurface(null);
   }, [layer, surface]);
-}
-
-export function useCommandContext() {
-  return useContext(CommandLayerContext);
 }

@@ -346,21 +346,6 @@ function beginEditTransition(postId: string) {
   );
 }
 
-export function finishEditTransition(postId: string) {
-  if (typeof document === "undefined" || typeof performance === "undefined")
-    return;
-  const root = document.documentElement;
-  const result = finishMeasuredEditTransition(
-    root.dataset,
-    postId,
-    performance.now(),
-  );
-  if (!result || typeof window === "undefined") return;
-  window.dispatchEvent(
-    new CustomEvent("texttext:edit-ready", { detail: result }),
-  );
-}
-
 let sidebarCollapsedMemory: boolean | null = null;
 const sidebarCollapsedListeners = new Set<() => void>();
 let sidebarWidthMemory: number | null = null;

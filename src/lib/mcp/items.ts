@@ -244,10 +244,6 @@ export function postSearchScore(post: Post, query: string): number | null {
   );
 }
 
-export function postMatchesQuery(post: Post, query: string): boolean {
-  return postSearchScore(post, query) !== null;
-}
-
 /** A short one-line snippet around the first match, for search results. */
 export function searchSnippet(post: Post, query: string): string {
   const opening = oneLine([post.excerpt ?? "", post.body].filter(Boolean).join(" "));

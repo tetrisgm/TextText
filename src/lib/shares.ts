@@ -6,7 +6,6 @@ import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import {
   auditInsertQuery,
-  recordAction,
   type AuditActorType,
 } from "@/lib/audit";
 import { db, executeAtomicBatch } from "@/lib/db/client";
@@ -20,7 +19,6 @@ import {
   isValidAccessEmail,
   isWorkspaceMemberRole,
   normalizeAccessEmail,
-  resolveItemAccess,
 } from "@/lib/permissions";
 import { getUserIdBySub } from "@/lib/store";
 
@@ -264,21 +262,6 @@ export async function revokeScopeShare(
       inputSummary: audit.auditInputSummary,
     }, database),
   ] as const);
-}
-
-export async function listPostShares(postId: string): Promise<PostShare[]> {
-  return (await listScopeShares("item", postId)).map((share) => ({
-    ...share,
-    role: cleanItemRole(share.role),
-  }));
-}
-
-export async function revokePostShare(
-  postId: string,
-  shareId: string,
-  revokedBySub: string,
-): Promise<void> {
-  return revokeScopeShare("item", postId, shareId, revokedBySub);
 }
 
 export async function listSharedWithMe(

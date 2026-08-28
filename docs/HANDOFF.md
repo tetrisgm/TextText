@@ -969,6 +969,35 @@ in-app assistant, local CLI, or hosted MCP.
 - The agent harness moved to `scripts/eval-agent-harness.ts`, shared by the
   look suite and the verb suite.
 
+## Superseded limbs, left attached (2026-08-28)
+
+- Owner's read of the repeated write-with-no-reader failures: the substrate is
+  convoluted enough that dead code is the ambient condition, so a new piece of
+  it does not stand out. Checked, and it holds.
+- `src/app/editor/actions.ts` carried nine server actions nothing called, each
+  PAIRED with the live one that replaced it: `savePostAction` beside
+  `saveEditablePostAction`, `createPostAndRedirectAction` beside
+  `createWorkspacePostAction`, and a whole `sharePostAction` /
+  `revokePostShareAction` / `listPostSharesAction` trio beside the `*Scope*`
+  ones that superseded them. Every migration added the new limb and left the
+  old one attached. With their now-orphaned helpers that was 297 lines.
+- `src/lib/mcp/local-client.ts` was the loopback MCP client, retired when the
+  contract said agents on this Mac use the CLI. Its three functions were dead;
+  what remained was one type, a dead private helper and a re-export nobody
+  imported. The type moved to its only user and the file is gone.
+- 469 lines removed in total, tests unchanged at 1559, lint warnings 60 -> 58.
+- STILL OUTSTANDING, and the largest single piece: `PostWorkspaceShell.tsx` is
+  7,339 lines with 97 top-level definitions, 178 hook calls, and 31 imports it
+  never uses, including whole components it no longer renders. Not touched
+  here: it is the main workspace UI and splitting it is a change with real
+  risk, not a cleanup.
+- Method note: the first audit reported 26 dead exports and a later run of the
+  SAME script reported 149. The first run had been truncated. Neither number
+  was the answer: 125 of the 149 are merely exported and used only in their own
+  file, and 10 of the remaining 24 were used by scripts/ or mac/, which the
+  src-only search never looked at. The verified figure was 14. Widen the search
+  to the whole repo before calling anything dead.
+
 ## Audit: which new code had a reader, and which only had a writer (2026-08-28)
 
 - After being caught reporting phase 3 done when half of it did not work, I

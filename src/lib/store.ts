@@ -1164,19 +1164,6 @@ The agent creates one reusable type rather than a collection of unrelated stylin
 // Workspaces provisioned before 2026-08-08 were handed a set of explanatory
 // documents. They still exist, and they still must not count against the
 // try-before-signup item cap. New workspaces are provisioned empty.
-const WORKSPACE_STARTER_POST_SLUGS = [
-  "welcome-to-your-blog",
-  "scratch-note",
-  "texttext-ai-setup-guide",
-  ...STARTER_AGENT_GUIDES.map((guide) => guide.slug),
-] as const;
-
-export function isWorkspaceStarterPost(post: Pick<Post, "slug">): boolean {
-  return (WORKSPACE_STARTER_POST_SLUGS as readonly string[]).includes(
-    post.slug,
-  );
-}
-
 function starterAgentGuideValues(blogId: string, folderId: string) {
   return STARTER_AGENT_GUIDES.map((guide) => {
     const document = validateDocumentSnapshot({
@@ -2928,17 +2915,6 @@ async function selectFullPosts(
     );
   const mapped = rows.map((r) => mapPost(r.posts));
   return publishedOnly ? mapped.map(withoutPersonalWorkspaceMetadata) : mapped;
-}
-
-async function getPublishedPostFilesUncached(handle: string): Promise<Post[]> {
-  if (!db) throw new Error(NO_DATABASE);
-  return selectFullPosts(handle, true);
-}
-
-const getPublishedPostFilesCached = cache(getPublishedPostFilesUncached);
-
-export async function getPublishedPostFiles(handle: string): Promise<Post[]> {
-  return getPublishedPostFilesCached(handle);
 }
 
 async function getAllPostFilesUncached(handle: string): Promise<Post[]> {
