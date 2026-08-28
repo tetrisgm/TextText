@@ -25,7 +25,7 @@
 // no dev sign-in in it, and the only symptom was a 30 second wait for a form
 // that was never coming. The preflight below says so instead.
 
-import { spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { chromium, type Page } from "playwright";
 import { ASSISTANT_SYSTEM_PROMPT } from "../src/lib/ai/system-prompt";
@@ -655,16 +655,38 @@ async function converse(
 
 // ------------------------------------------------------------------ the run
 
-const server = spawn("npx", ["next", "start", "-p", String(PORT)], {
-  cwd: process.cwd(),
-  env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
-  stdio: ["ignore", "pipe", "pipe"],
-});
+/**
+ * `next dev` and `next start` share one .next directory, so they cannot both
+ * be right at the same time. The other eleven evals need a dev server; this
+ * one used to spawn `next start` unconditionally and serve whatever .next
+ * happened to hold. A `vercel build --prod` earlier in the day therefore made
+ * it fail with a message blaming the build, on a machine where the suite had
+ * passed hours before. Reuse a server that is already answering; only spawn
+ * one when nothing is there.
+ */
+async function alreadyServing(): Promise<boolean> {
+  try {
+    const response = await fetch(BASE, { redirect: "manual" });
+    return response.status < 500;
+  } catch {
+    return false;
+  }
+}
+
+// Decided inside waitForServer, not here: tsx transforms this file as CJS,
+// where a top-level await is a hard transform error that tsc does not see.
+let server: ChildProcess | null = null;
 let serverLog = "";
-server.stdout.on("data", (d) => (serverLog += d));
-server.stderr.on("data", (d) => (serverLog += d));
 
 async function waitForServer(): Promise<void> {
+  if (await alreadyServing()) return;
+  server = spawn("npx", ["next", "start", "-p", String(PORT)], {
+    cwd: process.cwd(),
+    env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  server.stdout?.on("data", (d) => (serverLog += d));
+  server.stderr?.on("data", (d) => (serverLog += d));
   for (let i = 0; i < 160; i += 1) {
     try {
       const res = await fetch(BASE, { redirect: "manual" });
@@ -684,14 +706,35 @@ async function waitForServer(): Promise<void> {
  * no other trace.
  */
 async function requireDevSignInBuild(): Promise<void> {
-  const html = await fetch(`${BASE}/editor`, { redirect: "manual" })
-    .then((response) => response.text())
-    .catch(() => "");
+  // Two different failures used to arrive as one message: a server that is
+  // not there at all, and a server whose build has no dev sign-in. Catching
+  // the fetch collapsed the first into the second, so the advice was to
+  // rebuild when the real answer was to start something.
+  let reached = false;
+  let html = "";
+  try {
+    const response = await fetch(`${BASE}/editor`, { redirect: "manual" });
+    reached = true;
+    html = await response.text();
+  } catch {
+    reached = false;
+  }
   if (html.includes("ac-devsignin")) return;
+  if (!reached) {
+    throw new Error(
+      `Nothing is answering on ${BASE}, so this eval cannot sign in.\n` +
+        "That is a missing server, not a stale build. Either start one:\n" +
+        "  NEXT_PUBLIC_ROOT_DOMAIN=localhost:3000 npm run dev\n" +
+        "  SIDEBAR_EVAL_PORT=3000 npm run eval:sidebar\n" +
+        "or let this spawn its own, which needs a local build first:\n" +
+        "  npm run build",
+    );
+  }
   throw new Error(
-    `${BASE}/editor has no dev sign-in, so this eval cannot sign in.\n` +
-      "The .next build being served was made without AUTH_DEV_LOGIN=1,\n" +
-      "which is what `vercel build --prod` leaves behind. Rebuild locally:\n" +
+    `${BASE}/editor answered, but with no dev sign-in, so this eval cannot\n` +
+      "sign in. The .next build being served was made without\n" +
+      "AUTH_DEV_LOGIN=1, which is what `vercel build --prod` leaves behind.\n" +
+      "Rebuild locally:\n" +
       "  npm run build",
   );
 }
@@ -905,8 +948,8 @@ main()
   .finally(async () => {
     writeFileSync(`${OUT}/notes.txt`, notes.join("\n"));
     writeFileSync(`${OUT}/server.log`, serverLog.slice(-8000));
-    server.kill("SIGTERM");
+    server?.kill("SIGTERM");
     await sleep(900);
-    if (!server.killed) server.kill("SIGKILL");
+    if (server && !server.killed) server.kill("SIGKILL");
     process.exit(code);
   });

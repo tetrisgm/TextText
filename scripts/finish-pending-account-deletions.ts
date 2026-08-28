@@ -79,4 +79,10 @@ async function main(): Promise<void> {
   console.log(`Finished ${finished} of ${pending.length}.`);
 }
 
-await main();
+// Not `await main()`: tsx transforms this file as CJS, where a top-level
+// await is a transform error, so the documented command above died before it
+// read a single row. tsc did not see it, because tsc checks this as ESM.
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

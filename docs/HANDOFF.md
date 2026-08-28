@@ -740,10 +740,25 @@ in-app assistant, local CLI, or hosted MCP.
   is strict, so a stored look still carrying the key fails to parse once the
   field is gone. It stripped 211 looks from a local dev database; production had
   no stored looks at all.
-- `blueprint.audience` ("private" | "publishable") is now read by no code
-  either. It is KEPT deliberately: it tells the model what kind of thing it is
-  designing and so shapes the rest of the blueprint it writes. That is a real
-  job in the prompt, which capabilities never had anywhere.
+- `blueprint.audience` ("private" | "publishable") went the same way, and the
+  argument for keeping it did not survive being checked. It was defended here as
+  telling the model what it was designing. It had no `.describe()` (unlike
+  `styleReference` directly above it), no mention in any prompt, no UI, and no
+  reader. Its one real job had been deriving the `publish` capability, which the
+  bullet above deleted. Removed from the schema, the three starters, the JSON
+  shape in `ITEM_TYPE_BLUEPRINT_FORMAT`, the mock provider, and six test
+  fixtures.
+- No migration was needed, and the difference from capabilities is worth
+  keeping straight: a blueprint is a transient INPUT that compiles to a
+  `TemplateDefinition` and is then discarded. Nothing stores one, so no stored
+  row can carry a stale key. `itemTypeBlueprintSchema` stays `.strict()`; a
+  model that emits `audience` from habit gets a repair round-trip
+  (`itemTypeBlueprintRepairPrompt`, wired at `api/ai/item-type/route.ts`), which
+  is what makes strictness safe here.
+- The live question this leaves open: when the AI invents a type and no folder
+  is named, nothing about the type itself informs where it lands. Placement
+  comes from folder mode alone. `audience` looked like it answered that and
+  never did.
 - What publishable actually means is still enforced, by folder mode at the
   intent layer ("publishing refuses notes and bookmarks at the intent layer").
 
@@ -932,6 +947,43 @@ in-app assistant, local CLI, or hosted MCP.
   server to rebuild. A six-second wait served a stale bundle and the eval
   passed against code that was no longer there, which reads exactly like a
   toothless test. Twenty seconds plus a request, then run.
+
+## The look suite fought the dev server for .next (2026-08-28)
+
+- `npm run evals` reported "12 passed" on 2026-08-27 and could not be made to
+  do it again from a clean start the next day. The suite was not flaky; it was
+  order-dependent, and nothing recorded the order.
+- `eval:sidebar` spawned its own `next start -p 3180`, which serves whatever
+  `.next` holds. `next dev` on 3000, which the other eleven evals need, writes
+  that same directory. So did `vercel build --prod` during a deploy. Whichever
+  wrote last decided whether the eval could sign in, and the preflight blamed
+  the build every time, including when nothing was listening on 3180 at all.
+  Nothing anywhere documented how a server was supposed to get onto that port.
+- It now reuses a server that is already answering and only spawns one when
+  nothing is there, so its need is "server" and not "build". The preflight
+  tells "nothing is answering" apart from "answered, but the build has no dev
+  sign-in", because those want opposite fixes.
+- `buildHasDevSignIn()` in the runner only checked that `.next/BUILD_ID`
+  existed. It reported `ok build` for a build with no dev sign-in in it, which
+  is the precondition reporting the opposite of the truth. Deleted.
+- Drift in the look baseline does NOT set the exit code, by design: it prints
+  and returns 0. Worth knowing before reading a run as green. On 2026-08-28,
+  seven of nine briefs drifted with no relevant code change, which says the
+  baseline pins the model's field labels rather than the engine's behaviour.
+  Left as-is and not laundered with `--update-baseline`.
+
+## tsc passes files tsx cannot run (2026-08-28)
+
+- `npx tsc --noEmit` checks `scripts/` as ESM. `tsx` runs them as CJS, where a
+  top-level await is a hard transform error. So the gate can be fully green on
+  a script that dies on its first line, and the eval runner reports it as a
+  plain FAIL with an esbuild stack where the reason should be.
+- `src/lib/__tests__/scripts-load-under-tsx.test.ts` transforms every
+  `scripts/*.ts` the way tsx does. On the first run it found
+  `finish-pending-account-deletions.ts`, which ends in `await main()` and could
+  never have run, despite a header documenting the exact command for a human to
+  type. That script finishes interrupted account purges, so the failure was
+  sitting in front of deleting data someone had asked to have deleted.
 
 ## Browser eval state, all green (2026-08-27)
 

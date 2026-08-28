@@ -12,17 +12,23 @@
 // leaves a .next with no dev sign-in in it. Both looked exactly like "nobody
 // has run this yet".
 //
+// eval:sidebar used to spawn its own `next start` on 3180, which meant it
+// served whatever .next held while the dev server on 3000 was writing that
+// same directory. Whichever ran last won, so the suite passed or failed
+// depending on the order of the day rather than on the code. It now reuses
+// the dev server the other eleven already need, which is why its needs list
+// says "server" and not "build".
+//
 // So the third state is the point. A precondition that is not met is NOT a
 // pass and NOT a failure: it is reported as its own thing, with the command
 // that fixes it. Only real failures set the exit code, so this can be trusted
 // on a machine that is not fully set up.
 
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
 
-type Need = "server" | "mock" | "build" | "cli" | "db";
+type Need = "server" | "mock" | "cli" | "db";
 
-type Eval = { npm: string; needs: Need[] };
+type Eval = { npm: string; needs: Need[]; env?: Record<string, string> };
 
 const EVALS: Eval[] = [
   { npm: "eval:features", needs: ["server"] },
@@ -36,14 +42,15 @@ const EVALS: Eval[] = [
   { npm: "eval:turn-receipt", needs: ["server", "mock"] },
   { npm: "eval:turn-progress", needs: ["server", "mock"] },
   { npm: "eval:mcp:outbound", needs: ["server", "mock"] },
-  { npm: "eval:sidebar", needs: ["build", "cli", "db"] },
+  // Reuses the same dev server as everything above rather than spawning
+  // `next start` into the same .next the dev server is already writing.
+  { npm: "eval:sidebar", needs: ["server", "cli", "db"], env: { SIDEBAR_EVAL_PORT: "3000" } },
 ];
 
 const HOW_TO_FIX: Record<Need, string> = {
   server:
     "NEXT_PUBLIC_ROOT_DOMAIN=localhost:3000 TEXTTEXT_AI_BASE_URL=http://localhost:3999/v1 npm run dev",
   mock: "node scripts/mock-ai-provider.mjs &",
-  build: "npm run build   (a vercel build leaves a .next with no dev sign-in)",
   cli: "install the codex CLI, or run eval:sidebar with claude",
   db: "point DATABASE_URL at local Postgres in .env.local",
 };
@@ -55,12 +62,6 @@ async function reachable(url: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-/** The dev sign-in must be IN the build, or a browser eval cannot sign in. */
-async function buildHasDevSignIn(): Promise<boolean> {
-  if (!existsSync(".next/BUILD_ID")) return false;
-  return true;
 }
 
 async function which(name: string): Promise<boolean> {
@@ -82,10 +83,14 @@ async function localDatabase(): Promise<boolean> {
   }
 }
 
-function run(npmScript: string): Promise<{ ok: boolean; tail: string }> {
+function run(
+  npmScript: string,
+  env?: Record<string, string>,
+): Promise<{ ok: boolean; tail: string }> {
   return new Promise((resolve) => {
     const child = spawn("npm", ["run", npmScript], {
       stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, ...(env ?? {}) },
     });
     let out = "";
     child.stdout.on("data", (chunk) => (out += chunk));
@@ -106,7 +111,6 @@ async function main() {
   const met: Record<Need, boolean> = {
     server: await reachable("http://localhost:3000/"),
     mock: await reachable("http://localhost:3999/v1/models/probe"),
-    build: await buildHasDevSignIn(),
     cli: await which("codex"),
     db: await localDatabase(),
   };
@@ -136,7 +140,7 @@ async function main() {
       continue;
     }
     process.stdout.write(`  running ${entry.npm} ... `);
-    const result = await run(entry.npm);
+    const result = await run(entry.npm, entry.env);
     if (result.ok) {
       green.push(entry.npm);
       console.log("pass");
