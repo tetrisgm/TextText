@@ -24,7 +24,6 @@ const blueprint = {
   name: "Project tasks",
   description: "Tasks grouped by progress.",
   styleReference: "Notion",
-  audience: "private",
   fields: [
     {
       id: "status",

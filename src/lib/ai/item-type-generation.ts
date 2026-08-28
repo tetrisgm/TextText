@@ -8,7 +8,6 @@ export const ITEM_TYPE_BLUEPRINT_FORMAT = `Return JSON only, with this shape:
   "name": string,
   "description": string,
   "styleReference": string,
-  "audience": "private" | "publishable",
   "fields": [
     {
       "id": camelCase string,

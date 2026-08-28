@@ -322,7 +322,6 @@ const server = http.createServer((req, res) => {
                   name: "Reading log",
                   description: "One entry per book, with how it landed.",
                   styleReference: "A reading journal",
-                  audience: "publishable",
                   fields: [
                     {
                       id: "verdict",

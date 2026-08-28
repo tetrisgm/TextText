@@ -11,7 +11,6 @@ describe("compileItemTypeBlueprint", () => {
         name: "Essays",
         description: "Long-form writing with a quiet reading experience.",
         styleReference: "Medium",
-        audience: "publishable",
         fields: [
           {
             id: "cover",
@@ -61,7 +60,6 @@ describe("compileItemTypeBlueprint", () => {
       {
         name: "Launch tasks",
         styleReference: "Notion",
-        audience: "private",
         fields: [
           {
             id: "done",
@@ -136,7 +134,6 @@ describe("compileItemTypeBlueprint", () => {
       {
         name: "Notes",
         styleReference: "Apple Notes",
-        audience: "private",
         fields: [],
         item: {
           shape: "note",

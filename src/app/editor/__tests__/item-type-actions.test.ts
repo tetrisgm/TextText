@@ -16,7 +16,6 @@ import { createItemTypeAction } from "@/app/editor/item-type-actions";
 
 const blueprint = {
   name: "Notes",
-  audience: "private",
   fields: [],
   item: { shape: "note", showBody: true, showMetadata: true, showTags: false },
   collection: {

@@ -22,7 +22,6 @@ describe("item-type quality", () => {
   it("finds a structurally valid but unusable board", () => {
     const blueprint = itemTypeBlueprintSchema.parse({
       name: "Work",
-      audience: "private",
       fields: [],
       item: {
         shape: "task",
@@ -51,7 +50,6 @@ describe("item-type quality", () => {
   it("treats polish notes as suggestions rather than blockers", () => {
     const blueprint = itemTypeBlueprintSchema.parse({
       name: "Journal",
-      audience: "private",
       fields: [],
       item: {
         shape: "note",

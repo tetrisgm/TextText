@@ -40,7 +40,6 @@ describe("native item-type design", () => {
       parseNativeItemTypePreviewArguments({
         blueprint_json: JSON.stringify({
           name: "Work",
-          audience: "private",
           fields: [],
           item: {
             shape: "task",

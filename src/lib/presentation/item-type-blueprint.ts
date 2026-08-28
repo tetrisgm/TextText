@@ -219,7 +219,6 @@ export const itemTypeBlueprintSchema = z
       .max(160)
       .optional()
       .describe("A visual reference such as Medium, Notion, or Apple Notes."),
-    audience: z.enum(["private", "publishable"]).default("private"),
     fields: z.array(itemTypeFieldBlueprintSchema).max(40).default([]),
     item: z
       .object({
@@ -284,7 +283,6 @@ export const ITEM_TYPE_STARTERS: ReadonlyArray<{
       name: "Stories",
       description: "Long-form stories with a focused reading experience.",
       styleReference: "Medium",
-      audience: "publishable",
       fields: [
         { id: "coverImage", label: "Cover image", type: "image", display: "cover" },
         { id: "author", label: "Author", type: "text", display: "fact" },
@@ -315,7 +313,6 @@ export const ITEM_TYPE_STARTERS: ReadonlyArray<{
       name: "Project tasks",
       description: "A clear board for planning and finishing work.",
       styleReference: "Notion",
-      audience: "private",
       fields: [
         { id: "status", label: "Status", type: "enum", options: [
           { value: "not-started", label: "Not started", tone: "neutral" },
@@ -388,7 +385,6 @@ export const ITEM_TYPE_STARTERS: ReadonlyArray<{
       name: "Quick notes",
       description: "Fast private notes with almost no ceremony.",
       styleReference: "Apple Notes",
-      audience: "private",
       fields: [
         { id: "topic", label: "Topic", type: "enum", options: [
           { value: "personal", label: "Personal" },
