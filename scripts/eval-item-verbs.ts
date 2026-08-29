@@ -242,6 +242,62 @@ const TASKS: Task[] = [
     },
   },
   {
+    // The owner's own example of what the assistant is for, and it was tested
+    // nowhere: "add some highlights on the important parts". It is a harder
+    // verb than the others because the model has to decide WHICH parts matter
+    // and then change only those, leaving every word it did not choose alone.
+    key: "highlight",
+    ask:
+      'In my note "What the outage taught us", highlight the most important ' +
+      "sentence in bold. Do not add anything or reword anything.",
+    verify: async ({ actor, ids, before }) => {
+      const after = await snapshot(actor, ids.outage);
+      const bolded = [...after.body.matchAll(/\*\*(.+?)\*\*/gs)].map((match) => match[1].trim());
+      // Strip the markers and the text must be what it was. That is the whole
+      // requirement: emphasis is a change to the marks, never to the words.
+      const stripped = after.body.replace(/\*\*(.+?)\*\*/gs, "$1").trim();
+      return [
+        check(bolded.length >= 1, `something was emphasised (${bolded.length} span(s))`),
+        check(bolded.length <= 3, `it chose, rather than bolding everything (${bolded.length})`),
+        check(
+          stripped === before.outage.body.trim(),
+          "with the markers removed the words are exactly as they were",
+        ),
+        check(after.title === before.outage.title, "the title was left alone"),
+      ];
+    },
+  },
+  {
+    // Acting across several items was covered only by tagging, which changes
+    // metadata and never touches a word. This one has to read three different
+    // notes, understand each, and write a different sentence into each.
+    key: "act-across-items",
+    ask:
+      "Every one of my notes should end with a line starting 'Takeaway:' that says " +
+      "in one sentence what that particular note is actually arguing. Add it to each " +
+      "of them, and leave everything already written exactly as it is.",
+    verify: async ({ actor, ids, before }) => {
+      const after = await Promise.all(SEED.map((entry) => snapshot(actor, ids[entry.key])));
+      const takeaways = after.map(
+        (item) => item.body.match(/^\s*(?:[-*]\s*)?(?:\*\*)?Takeaway:?(?:\*\*)?\s*(.+)$/im)?.[1]?.trim() ?? "",
+      );
+      const withOne = takeaways.filter((line) => line.length > 10);
+      return [
+        check(withOne.length === SEED.length, `all three got one (${withOne.length} of 3)`),
+        check(
+          new Set(takeaways.filter(Boolean)).size === withOne.length,
+          "each says something different, rather than the same line pasted three times",
+        ),
+        check(
+          after.every((item, index) =>
+            item.body.includes(before[SEED[index].key].body.trim().split("\n")[0]),
+          ),
+          "every original opening line survived",
+        ),
+      ];
+    },
+  },
+  {
     key: "refuse-missing",
     ask: 'Add a paragraph about rollback procedure to my note "Deployment runbook".',
     verify: async ({ actor, ids, before, transcript }) => {

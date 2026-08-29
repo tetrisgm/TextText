@@ -23,6 +23,7 @@ import {
 import type { BookmarkCapture, GalleryItem, LinkRef } from "../content";
 import type { DocumentSnapshot, DocumentVisibility } from "../documents/model";
 import type { TemplateDefinition } from "../presentation/schema";
+import type { ItemTypeBlueprint } from "../presentation/item-type-blueprint";
 
 // No TypeScript file imports this, and it must still be exported. drizzle-kit
 // builds its model from the objects this module exports, so dropping the
@@ -788,6 +789,21 @@ export const documentTemplates = pgTable(
     version: integer("version").notNull(),
     name: text("name").notNull(),
     definition: jsonb("definition").$type<TemplateDefinition>().notNull(),
+    /**
+     * The blueprint the definition was compiled from, when there was one.
+     *
+     * The definition is a render tree, and the assistant does not write render
+     * trees: it writes a blueprint, which is compiled into one. Storing only
+     * the output threw the source away, so changing a look afterwards meant
+     * re-authoring it blind from compiled output. "Make the date bigger on my
+     * recipe type" had no path at all.
+     *
+     * Nullable, and permanently so. Built-ins are compiled in code, a look
+     * saved from a document was never authored as a blueprint, and every row
+     * that predates this column has none. Absent means "this one is edited by
+     * hand", not "this one is broken".
+     */
+    blueprint: jsonb("blueprint").$type<ItemTypeBlueprint>(),
     createdById: uuid("created_by_id").references(() => users.id, {
       onDelete: "set null",
     }),

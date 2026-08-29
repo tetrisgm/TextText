@@ -1,213 +1,235 @@
 # The two goals, and what stands between us and them
 
-Written 2026-08-29 against the owner's statement of what TextText is for.
+Written 2026-08-29. Revised the same day against an adversarial review by
+gpt-5.6-sol at max reasoning, which found the first draft wrong in four places
+and missing the sharpest gap of all. Corrections are marked; the errors are left
+visible because the reasoning that produced them is the reasoning to distrust.
 
-**Goal one.** A person describes the kind of thing they want to keep - a certain
-kind of blog, a certain kind of note, a bookmark, anything made of text - and
-the assistant builds it: what content it holds, and how it looks. Afterwards
-they can keep changing the look by asking.
+**Goal one.** A person describes the kind of thing they want to keep and the
+assistant builds it: what content it holds, and how it looks. Afterwards they
+can keep changing the look by asking.
 
-**Goal two.** The assistant can read, update and delete anything. Change what is
-in a note, summarise it, write a whole one, highlight the important parts, act
-on one item or on many.
+**Goal two.** The assistant can read, update and delete anything. Change a note,
+summarise it, write a whole one, highlight the important parts, act on one item
+or on many.
 
-Both under three constraints: it stays simple, people can collaborate with each
-other, and people can collaborate with agents.
+Constraints: it stays simple, people collaborate with each other, and people
+collaborate with agents - "if I say I want you or Codex to work on a note, you
+need to be able to do all these actions."
 
-Everything below was measured on `main` at `fb333959`, not remembered. Each
-finding names the command that produced it so a reviewer can re-run it.
+Everything below was measured on `main`, not remembered, and every claim names
+the command that produced it.
 
-## What is already true
+## Finding 0: an agent on this Mac gets five verbs
 
-Worth stating plainly, because the list of problems is longer than the list of
-things that work and that is misleading.
+**The sharpest gap against a stated goal, and the first draft of this plan
+missed it entirely.** It claimed "Codex on this Mac gets all 35" and that was
+simply false.
 
-- 35 workspace commands are one registry (`src/lib/ai/tools.ts`), shared by the
-  UI, the in-app assistant and the MCP server. Create, read, update, append,
-  delete, restore, move, status, comment, share, search, folder and look
-  operations are all there.
-- An external agent over `/api/mcp` gets all 35. Codex on this Mac, through the
-  `texttext` CLI, gets all 35.
-- `npm run eval:item-verbs` drives a real model in plain English and asserts the
-  workspace afterwards, not the model's summary. 21 checks, passing.
-- Collaboration is built: Yjs with awareness, presence routes for humans and for
-  agents, `signalAgentActivity` so an agent's avatar arrives with its edit.
-- The item-type studio designs a type with a real model and previews it before
-  saving.
+`/api/agent/commands` allows exactly five: `search`, `read_item`, `create_item`,
+`update_item`, `append_to_item` (`src/app/api/agent/commands/route.ts:11`). The
+interoperability document states it as a deliberate boundary: the local plugin
+"does not gain comments, publishing, collaborator management, or the rest of the
+hosted MCP surface through this route" (`docs/agent-interoperability.md:61`).
 
-## Finding 1: a look cannot be changed after it is saved
+So "Codex, tidy up my notes folder" cannot move an item, tag one, comment on
+one, change a status, restyle anything, or design a type. Against the owner's
+own sentence about agents working on a note, this is goal two failing in the
+exact surface named.
 
-This is the largest gap against goal one, and it is a whole missing capability
-rather than a quality problem.
+**Fix.** Widen the allowlist to the commands that are neither
+confirmation-gated nor open-world - the same test the browser assistant already
+applies to itself, which is a boundary this project has already reasoned about
+once. That adds the folder, comment, look and organisation verbs and leaves
+delete, publish, share and URL-fetching commands where they are.
 
-The assistant authors a **blueprint**. The blueprint compiles into a
-`TemplateDefinition`. Only the definition is stored: `document_templates` has
-columns for `definition`, `name`, `version` and no column for the blueprint
-(`src/lib/db/schema.ts:781`). The blueprint is discarded at save.
+Not a wholesale removal of the boundary. `delete_item`, `set_item_status`,
+`set_access`, `revoke_access`, `add_item_asset` and `recapture_bookmark` stay
+out, for the reasons the existing filter states.
 
-So afterwards:
+Verification: a route test per newly allowed command, one asserting the still
+excluded ones are refused, and `scripts/verify-agent-interoperability.ts`, which
+already reads this route's allowlist and will need its expectation updated
+deliberately rather than incidentally.
 
-- The studio has no way to open an existing type. Its props are `blogId`,
-  `folders`, `initialFolderPath`, `onCreated` and no template to edit
-  (`ItemTypeStudio.tsx:1`). It only ever opens blank.
-- No agent tool updates one. There is `create_item_type`, `retire_document_template`
-  and `list_document_templates`, and no update. `create_item_type` takes a
-  blueprint and an optional folder path, with no way to name an existing type
-  (`src/lib/ai/tools.ts:614`).
-- `list_document_templates` hands back the compiled definition, which is not the
-  language the model writes in.
+## Finding 1: an authored look cannot be reopened
 
-"Make the date bigger on my recipe type" therefore has no path. The assistant
-must invent a whole new blueprint from scratch, blind to the one that produced
-what the person is looking at, and save it as a separate type.
+Corrected from the first draft, which said "a look cannot be changed after it is
+saved". Too broad: a human can import a compiled look with `mode: "update"` and
+get a new immutable version today
+(`src/app/editor/folder-template-actions.ts:133`). The true claim is narrower
+and still bad:
 
-**Fix.** Store the blueprint next to the definition, and let it be read back and
-recompiled.
+**Nothing can reopen the blueprint an assistant authored, because it is thrown
+away at save.** `document_templates` stores `definition` and has no column for
+the blueprint (`src/lib/db/schema.ts:781`). The studio has no prop for an
+existing type and its save always creates (`ItemTypeStudio.tsx:418`, `:775`).
+There is no `update_item_type` on any surface. `list_document_templates` returns
+the compiled definition, which is not the language the model writes in.
 
-1. Add a nullable `blueprint` jsonb column to `document_templates`. Nullable
-   because every existing row predates it, and built-ins have none.
-2. Write it on create. Nothing reads it yet.
-3. `list_document_templates` returns the blueprint when there is one.
-4. New command `update_item_type`: takes a template id and a full blueprint,
-   writes a new version. Versions stay immutable and documents keep pinning
-   exact ones, so this adds a version rather than mutating one.
-5. The studio opens on an existing type when it has a blueprint, and says
-   plainly when it does not, rather than pretending to edit.
+So "make the date bigger on my recipe type" means re-authoring the whole thing
+blind from compiled output.
 
-This is the cheap half of what an adversarial review called `TemplateV2`: the
-blueprint becomes the durable semantic source, and the render spec becomes an
-intermediate representation. It does not require rewriting the renderer or the
-storage format, and nothing about it is lossy.
+**Fix, revised.** The naked nullable column the first draft proposed is not
+enough. The review found three reasons and each is real:
 
-Verification: a test that creates a type, reads the blueprint back, changes one
-field, updates, and asserts the new version renders differently while the old
-version still renders as before. Plus an `eval:item-verbs` task phrased the way
-a person would phrase it, asserting the workspace afterwards.
+- **Store the normalized blueprint, not the submitted one.**
+  `adaptCollectionToFields` rewrites layouts and field references before
+  compilation (`item-type-blueprint.ts:1117`). Storing what arrived while
+  rendering what compiled would give two different truths.
+- **Version the envelope.** Blueprints carry no schema or compiler version, and
+  the compiler dropped backward compatibility precisely because they were
+  assumed transient (`item-type-blueprint.ts:70`). Persisting one makes that
+  assumption false, so store
+  `{kind, schemaVersion, compilerVersion, blueprint}` and refuse to reopen what
+  a later compiler cannot honour.
+- **Keep it out of `TemplateDefinition`.** That schema is strict and rejects
+  unknown keys (`schema.ts:828`), and definitions travel inside sync envelopes.
+  The authoring source is a sibling column, never a definition field, so no
+  exported bundle changes shape and no older reader is broken.
 
-## Finding 2: an assistant-designed look cannot match a built-in
+`update_item_type` additionally needs a `base_version` so two people editing the
+same base cannot silently create competing successors
+(`store.ts:3694` reads latest and appends), and an explicit application target,
+because a new immutable version changes nothing visible on its own - documents
+pin exact versions by design (`store.ts:3384`).
 
-`src/lib/presentation/styles.ts` carries **166 CSS rules keyed to
-`data-template="texttext.<id>"`**, covering the 11 built-in ids, and that
-section is 54% of the file.
+Honest about what cannot be reopened: built-ins live in code and have no row
+(`store.ts:3330`); a look saved from a document, a duplicate, an import and a
+restored version all carry a definition and never had a blueprint
+(`store.ts:3548`, `:3616`, `:3776`). Those stay editable by hand and must say so
+rather than offering an edit that silently starts from nothing.
 
-    grep -o 'data-template="texttext\.[a-z]*"' src/lib/presentation/styles.ts | wc -l
+## Finding 2: identity CSS, and a live bug it already causes
 
-An assistant-created type gets an id like `runs-9eef4c`. It matches none of
-them. So the visual quality that makes the built-in article look like an article
-is unreachable by anything the assistant designs, however good its blueprint is.
-Reducing the node vocabulary does not touch this.
+`styles.ts` carries **166 selector occurrences** keyed to
+`data-template="texttext.<id>"`. Corrected: the first draft called them 166
+rules, and said they covered the 11 active built-ins. They do not.
 
-**Fix.** Stop keying presentation off identity. Those rules describe a handful of
-recurring intents - a magazine-weight masthead, a card grid with hairlines, a
-reading measure. Give the theme an axis that names the intent, have the renderer
-emit it as a data attribute, and rewrite the id-keyed rules against it. Any
-type, built-in or assistant-designed, can then ask for the same treatment.
+    node --import tsx scripts/../<probe>   # 11 ids styled, but:
+    #   ACTIVE with no id-specific CSS: texttext.timeline
+    #   CSS for a RETIRED id:           texttext.newsletter
 
-Scope honestly: this is the largest item here and it is presentation work with a
-visual regression surface. It is staged after finding 1 and gated on the
-screenshot baseline, and if the sweep cannot be finished safely it is better to
-convert the highest-value families and say which remain than to convert all 166
-carelessly.
+**Timeline is the bug already shipping.** It is Article with a different id -
+"the item is the same article, field for field" (`templates.ts:85`) - and
+because the renderer emits the id, none of Article's styling matches it. A
+person who picks Timeline gets a visibly poorer Article. The same mechanism is
+why `save_item_as_look` on an Article does not preserve the Article look: it
+changes the id (`store.ts:3776`).
 
-Verification: `npm run evals` against the committed screenshot baseline, and a
-new case that gives an assistant-designed type the same intent as a built-in and
-asserts the rendered markup carries the same treatment.
+That is the whole problem in one visible case, and it is the honest reason to
+care about this: not "assistant-designed types could be prettier" but "the
+product already renders one of its own built-ins wrong."
 
-## Finding 3: the browser assistant can do 24 of the 35 things
+**Fix, and its limit.** The review is right that a single intent attribute does
+not solve it. Some rules key off authored structure and node ids - Brief's
+`claims-ledger` and `sources-ledger` (`styles.ts:364`) - and no attribute makes
+those nodes exist. So: convert the families that are genuinely generic, leave
+the structural ones alone, and say which is which.
 
-Three surfaces, three different policies, and only one of them is the one most
-people will use.
+**This step has no verification gate and that is the reason it is last.**
+`npm run evals` sets `process.exitCode = broken.length > 0 ? 1 : 0`, so blocked
+suites exit zero (`run-evals.ts:215`); the sidebar-looks baseline is JSON shape
+data and reports drift without failing; `verify-template-render.ts` checks
+markup, not layout. The first draft cited these as the gate. They are not one.
+Building a real light-and-dark visual check is a prerequisite for this finding,
+not a detail of it.
 
-| Surface | Tools |
-| --- | ---: |
-| External agent over MCP | 35 |
-| Native assistant on this Mac | 35 |
-| Cloud assistant in the browser | **24** |
+## Finding 3: the browser assistant can do 24 of 35, and the first fix was unsafe
 
-The browser assistant cannot delete an item, publish or unpublish one, share
-one, revoke sharing, restore from Trash, retire a look, or add a cover image
-(`src/lib/ai/cloud-tools.ts:66`). Against "the AI can do anything to my items",
-that is the goal failing in the default surface.
+The measurement stands: 24 of 35 (`cloud-tools.ts:66`). No delete, publish,
+share, restore, retire or cover image.
 
-The stated reason is that the web path has no interactive confirmation
-(`src/app/api/ai/route.ts:5`). But a confirmation mechanism already exists: a
-write proposal is staged, the owner sees the exact validated arguments, and
-nothing runs until they approve. The proposal surface then applies the same
-`confirmation === "none"` filter to itself
-(`write-proposal-policy.ts:34`), so it refuses to carry precisely the actions
-that need it. The reasoning is circular.
+**The proposed fix was wrong and the review was right to refuse it.** The first
+draft argued the exclusion was circular because a proposal shows the owner "the
+exact validated arguments". It does not. Workspace proposals truncate strings
+and JSON, hide `if_match_hash` and `idempotency_key`, show at most ten fields,
+and say "Review changed fields" rather than the arguments
+(`AssistantConversation.tsx:238`, `:260`, `:292`). And an id is not a semantic
+preview: `restore_item` takes only an id and can restore an item to public
+(`tools.ts:791`); `revoke_access` takes a grant id, not the person and the role
+(`tools.ts:970`); item hashes are optional, so an omitted one disables the
+stale-state check entirely (`tools.ts:111`).
 
-**Fix.** Let confirmation-gated commands be staged as proposals. A staged
-delete is strictly safer than the native path's, which executes behind a
-callback: the proposal shows the owner the exact arguments and does nothing
-until approved.
+The filter is an intentional trust boundary, not sloppy reasoning, and the
+runbook says so (`docs/agentic-assistant-runbook.md:287`).
 
-Deliberately NOT included: `add_item_asset` and `recapture_bookmark` fetch a
-URL the model chose. Approving a proposal does not make an outbound fetch safe,
-because the danger is in the fetch, not in the write. They stay excluded and the
-comment will say so.
+**Fix, replaced.** Command by command, not by deleting the filter. Freeze a
+semantic preview at staging time - title, path, current audience, collaborator
+and role, affected count - bind it to a state fingerprint, re-resolve at
+approval and fail closed on drift. Begin with soft-deleting one item with a
+mandatory hash, and treat publishing, restoring, folder subtrees and access
+grants as separate designs.
 
-That takes the browser assistant from 24 to 33 of 35.
+Deferred behind Finding 0 and Finding 1, because it is a security design and
+those two are capability work.
 
-Verification: a test per newly proposable command asserting it stages, does
-nothing before approval, and performs exactly the approved arguments after.
+## Finding 4: done
 
-## Finding 4: 110 lines that look like the capability policy and are not
+240 lines of keyword-matching that selected the assistant's tools by regex and
+was never called. Deleted in `aea66bcf`, with the six tests that existed only to
+pin its output. The native assistant registers every definition instead
+(`useNativeAssistant.ts:888`).
 
-`workspaceAgentToolNamesForView` selects tools by matching regexes against the
-person's words - `/\b(delete|remove|trash)\b/i` for `delete_item` and so on
-(`agent-tools.ts:175`). It is assigned into the object `createWorkspaceAgentTools`
-returns and **never called anywhere in the repository**:
+Worth recording why it mattered: reading it, the honest conclusion was that the
+product was broken in its main surface. Seventeen of twenty ordinary phrasings
+lost the tool they needed. I reached that conclusion and had to spend an hour
+disproving it.
 
-    grep -rn "\.toolNamesForView(" --include="*.ts" --include="*.tsx" .   # nothing
+## Finding 5: goal two is missing primitives, not only tests
 
-The native assistant registers every definition instead
-(`useNativeAssistant.ts:888`). Only its own test file keeps it alive.
+Corrected. The first draft proposed evals for highlighting and multi-item work.
+Tests cannot create a capability that does not exist:
 
-It is worse than unused, it is misleading. Run the real phrasings through it and
-17 of 20 lose the tool the request needs: "get rid of that note" gets no
-`delete_item`, "ship it" gets no `set_item_status`, "what do I have about
-caching" gets no `search`. Reading this file, the honest conclusion is that the
-product is broken in a way it is not. I reached that conclusion myself an hour
-ago and had to disprove it.
+- **Highlight has no persistent representation.** The editor knows Markdown
+  strong, emphasis and code (`MarkdownSurface.tsx:93`); the reader renders GFM
+  (`DocumentRenderer.tsx:279`). Either "highlight" means bold, and it should be
+  written down and tested as exact ranges, or it means a durable mark, and the
+  content model, editor, renderer and collaboration path all need work.
+- **There is no batch command.** `update_item` updates one item
+  (`tools.ts:721`).
+- **The browser loop stops at eight steps** (`api/ai/route.ts:56`). List, then
+  one update per item, cannot reach an arbitrary "many".
 
-**Fix.** Delete the function, `PROMPT_TOOL_GROUPS`, `ITEM_AGENT_TOOL_NAMES`,
-`WORKSPACE_BASE_TOOL_NAMES`, `ITEM_EDIT_TOOL_NAMES`, the field on the returned
-object, and the tests that exist only to exercise them.
-
-## Finding 5: goal two is under-evidenced where it matters most
-
-`eval:item-verbs` covers add-section, retitle, summarise-into-note, tag-across
-and a refusal. The owner's own words name things it does not cover: highlighting
-the important parts of a note, and acting across several items in one request
-beyond tagging.
-
-**Fix.** Add tasks for those two, phrased as a person would phrase them, each
-asserting the workspace afterwards. If either fails, that is a finding to fix,
-not a test to soften.
+The two eval tasks are written and stay, because they encode the requirement in
+the person's own words. They are expected to fail until the primitives exist,
+and a failing eval that names a missing capability is worth more than no eval.
 
 ## Order
 
-1. Finding 4, delete the dead gate. No behaviour change, and it clears the
-   misleading map before anyone reads it again.
-2. Finding 3, proposals carry confirmation-gated commands. Self-contained,
-   closes the largest goal-two gap.
-3. Finding 1, persist and update blueprints. The largest goal-one gap.
-4. Finding 5, evals for the uncovered verbs.
-5. Finding 2, presentation by intent instead of identity. Largest and riskiest,
-   last, and reported honestly if it cannot be finished.
+1. **Finding 0.** Widen the local agent allowlist. Bounded, and it is the
+   owner's own stated scenario.
+2. **Finding 1.** Versioned authoring-source envelope, `update_item_type` with
+   base-version compare-and-swap and an explicit application target.
+3. **Timeline.** Fix the one built-in that already renders wrong, as the first
+   and smallest case of Finding 2.
+4. **Finding 5's primitives.** Decide what highlight means; decide what many
+   means.
+5. **Finding 3.** Per-command, starting with soft delete.
+6. **Finding 2 proper.** Only after a real visual gate exists.
 
-Every step ends green: `npx tsc --noEmit`, `npm test`, `npm run lint`, and
-`node --import tsx scripts/verify-template-render.ts` for anything touching
-looks. Nothing is pushed red.
+Each step ends green: `npx tsc --noEmit`, `npm test`, `npm run lint`,
+`scripts/verify-template-render.ts` for anything touching looks, and
+`scripts/verify-agent-interoperability.ts` for anything touching the agent
+surface. Nothing is pushed red.
 
-## What this plan does not do
+## What this plan declines, and what it admits
 
-- It does not rewrite the render spec into a new versioned format. An
-  adversarial review recommended exactly that. Finding 1 takes the part of it
-  that delivers the missing capability, at a fraction of the cost, and leaves
-  the format question open rather than pretending to settle it.
-- It does not reduce the node vocabulary further. The remaining merges need
-  nested unions and buy a smaller grammar that no measurement here shows to be
-  the binding constraint.
-- It does not touch collaboration, which works.
+Declined: the render-format v2 rewrite; further node-vocabulary reduction; any
+change to collaboration.
+
+Admitted limitations this plan does not remove:
+
+- The local CLI stays short of the hosted surface even after Finding 0: delete,
+  publish, share and asset fetching remain out by design.
+- The in-app assistant is owner-only; a collaborator's edit access is not
+  assistant authority (`runbook:58`).
+- Delete means Trash. There is no permanent-delete command
+  (`agent-interoperability.md:246`).
+- There is no Plan mode and no general batch.
+- Built-ins, imports, forks and saved looks cannot be losslessly reopened as
+  blueprints, and will say so rather than pretend.
+- There is no enforceable visual regression gate. The runbook already lists this
+  as a known gap (`runbook:647`).
+- The claim "eval:item-verbs passes" has no dated receipt in the repository. It
+  is re-run, or it is not claimed.
