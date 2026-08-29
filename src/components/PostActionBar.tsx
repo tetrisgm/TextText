@@ -23,7 +23,7 @@ import { shortcutLabelForCommand } from "@/lib/commands/workspace";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import { WorkspaceActionSearch } from "@/components/workspace/WorkspaceActionSearch";
 import { WorkspaceSearchButton } from "@/components/workspace/WorkspaceSearchButton";
-import type { Blog, Folder, Post, PostType } from "@/lib/content";
+import type { Blog, Folder, Post, ItemKind } from "@/lib/content";
 import type { PresencePeer } from "@/lib/collab/provider";
 import { CollaboratorMark } from "@/components/collab/CollaboratorMark";
 import {
@@ -97,17 +97,17 @@ function postSourceVersion(post: Post): string {
 }
 
 const POST_TYPE_OPTIONS: Array<{
-  type: PostType;
+  type: ItemKind;
   label: string;
 }> = [
   { type: "article", label: "Article" },
-  { type: "project", label: "Media post" },
-  { type: "talk", label: "Video post" },
+  { type: "media_post", label: "Media post" },
+  { type: "video_post", label: "Video post" },
 ];
 
 // Notes and bookmarks never change type and never publish; the action bar
 // must not offer either control (the server refuses both anyway).
-function isUnlistedPostType(type: PostType): boolean {
+function isUnlistedPostType(type: ItemKind): boolean {
   return type === "note" || type === "bookmark";
 }
 
@@ -767,7 +767,7 @@ export function PostActionBar(props: Props) {
   }, [props, readDraft, readSave, visibility.next]);
 
   const changeType = useCallback(
-    (type: PostType) => {
+    (type: ItemKind) => {
       if (props.mode !== "edit" || type === activeDraft.type) return;
       // Unlisted kinds are type-locked; the menu never offers this, but keep
       // the guard so no code path can send a doomed request.

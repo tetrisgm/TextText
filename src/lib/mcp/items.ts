@@ -5,16 +5,16 @@
 // conflict currency for updates. Nothing here touches the database.
 
 import { blogBaseUrl, oneLine, postUrl } from "@/lib/agent-surface";
-import type { Blog, FolderMode, ItemKind, Post, PostType } from "@/lib/content";
+import type { Blog, FolderMode, ItemKind, Post } from "@/lib/content";
 import { markdownFileHash } from "@/lib/content-hash";
-import { itemKindForPostType, renderPostMarkdownFile } from "@/lib/markdown-files";
+import { renderPostMarkdownFile } from "@/lib/markdown-files";
 import { normalizeTags } from "@/lib/tags";
 import { extractWikiLinks, resolveTarget } from "@/lib/wikilinks";
 import { serializeWikiLink } from "@/lib/wikilink-syntax";
 import { rankSearchText, searchExcerpt } from "@/lib/workspace-search";
 
 /** What a new item is when the file's frontmatter does not say. */
-export const DEFAULT_TYPE_BY_MODE: Record<FolderMode, PostType> = {
+export const DEFAULT_TYPE_BY_MODE: Record<FolderMode, ItemKind> = {
   blog: "article",
   notes: "note",
   bookmarks: "bookmark",
@@ -61,7 +61,7 @@ type McpItemEntry = {
 };
 
 /** notes and bookmarks are always unlisted: their status never leaves draft. */
-export function isAlwaysDraftType(type: PostType): boolean {
+export function isAlwaysDraftType(type: ItemKind): boolean {
   return type === "note" || type === "bookmark";
 }
 
@@ -72,7 +72,7 @@ export function isAlwaysDraftType(type: PostType): boolean {
  * strand a public post inside the private notes folder and, worse, publish
  * something the owner filed as private.
  */
-export function folderModeForType(type: PostType): FolderMode {
+export function folderModeForType(type: ItemKind): FolderMode {
   if (type === "note") return "notes";
   if (type === "bookmark") return "bookmarks";
   return "blog";
@@ -93,7 +93,7 @@ export function kindsForFolderMode(mode: FolderMode): string {
 export function itemKindForPost(post: Pick<Post, "type">): ItemKind {
   if (post.type === "note") return "note";
   if (post.type === "bookmark") return "bookmark";
-  return itemKindForPostType(post.type);
+  return post.type;
 }
 
 /** Path of a post's markdown file on the sync API (the HTTP twin of MCP). */

@@ -20,11 +20,10 @@ import type {
   WorkspaceItemTextSnapshot,
 } from "@/lib/ai/workspace-item-draft";
 import { isPrivatePostType } from "@/lib/content";
-import type { PostType } from "@/lib/content";
+import type { ItemKind } from "@/lib/content";
 import { normalizeTags } from "@/lib/tags";
 import {
   folderModeForPostType,
-  itemKindForPostType,
   parsePostMarkdownFile,
 } from "@/lib/markdown-files";
 import { parseItemInput } from "@/lib/item-creation";
@@ -328,8 +327,8 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function itemKind(type: PostType) {
-  return itemKindForPostType(type);
+function itemKind(type: ItemKind) {
+  return type;
 }
 
 const createdByRequest = new Map<string, Map<string, unknown>>();

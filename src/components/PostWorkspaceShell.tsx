@@ -161,7 +161,7 @@ import type {
   Folder,
   FolderMode,
   Post,
-  PostType,
+  ItemKind,
 } from "@/lib/content";
 import { isVideoFile, plainTextExcerpt } from "@/lib/content";
 import { legacyProjectionFromDocument } from "@/lib/documents/legacy";
@@ -405,7 +405,7 @@ function persistLocalWorkspaceDraft(
 }
 
 /** Client-safe mirror of store.ts folderPathForPostType. */
-export function sidebarFolderPathForPostType(type: PostType): SidebarFolderId {
+export function sidebarFolderPathForPostType(type: ItemKind): SidebarFolderId {
   if (type === "note") return "notes";
   if (type === "bookmark") return "bookmarks";
   return "blog";

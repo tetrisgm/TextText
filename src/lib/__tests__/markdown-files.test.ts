@@ -53,7 +53,7 @@ const fullArticle: Post = {
 
 const project: Post = {
   id: "post-2",
-  type: "project",
+  type: "media_post",
   slug: "glass-teapot",
   title: "Glass Teapot",
   excerpt: "A see-through kettle.",
@@ -73,7 +73,7 @@ const project: Post = {
 
 const talk: Post = {
   id: "post-3",
-  type: "talk",
+  type: "video_post",
   slug: "why-teapots",
   title: "Why Teapots?",
   body: "Abstract and speaker notes.",
@@ -244,12 +244,12 @@ describe("hand-written human frontmatter", () => {
   it("maps both kind vocabularies onto post types", () => {
     expect(
       parsePostMarkdownFile("---\nkind: media_post\n---\nx").fields.type,
-    ).toBe("project");
+    ).toBe("media_post");
     expect(
       parsePostMarkdownFile("---\nkind: video_post\n---\nx").fields.type,
-    ).toBe("talk");
+    ).toBe("video_post");
     expect(parsePostMarkdownFile("---\ntype: talk\n---\nx").fields.type).toBe(
-      "talk",
+      "video_post",
     );
     // type (the native vocabulary) wins when both are present.
     expect(

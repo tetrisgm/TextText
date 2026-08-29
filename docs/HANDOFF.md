@@ -969,6 +969,35 @@ in-app assistant, local CLI, or hosted MCP.
 - The agent harness moved to `scripts/eval-agent-harness.ts`, shared by the
   look suite and the verb suite.
 
+## PostType is gone; there is one vocabulary (2026-08-28)
+
+- `PostType` and `ItemKind` were the same five values with two spelled
+  differently in storage: `project` was `media_post`, `talk` was `video_post`,
+  and two converter functions existed only to translate between the pair.
+- `scripts/migrate-post-type-to-item-kind.mjs` renames the two enum values.
+  `ALTER TYPE ... RENAME VALUE` is atomic and touches no rows: values keep
+  their identity, only the spelling changes. Locally that was one item each.
+  It refuses rather than guesses if both spellings are somehow present.
+- Run it BEFORE the deploy that removes PostType. A database renamed ahead of
+  the code reads fine on the new code, and it is idempotent.
+- `PostType` now has zero references. The two converters were identity
+  functions once the values matched, and are deleted. `POST_TYPE_BY_VOCAB`
+  still accepts both spellings when parsing a file, so a `.textpack` written
+  before today still imports.
+- 13 of 13 browser evals, 1,571 unit tests.
+
+## Eval flakiness is machine load, not always code (2026-08-28)
+
+- Three evals failed in one suite run, three different ones in the next, and
+  every one of them passed alone. After killing the dev server, the mock and
+  stray Playwright processes and starting fresh: 13 of 13.
+- The signature is failures that MOVE between runs. A regression fails the same
+  check every time. One of the intermediate failures was the model writing a
+  Risks section without bullet points, which is model variance, not a defect.
+- Before believing a suite result, check what else is running. Hours of
+  Playwright browsers and model CLIs leave the machine unable to meet the
+  timeouts these evals assume.
+
 ## An item goes where its type lives (2026-08-28)
 
 - `create_item` chose its destination from `kind`, a closed list of five, and

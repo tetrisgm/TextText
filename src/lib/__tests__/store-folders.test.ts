@@ -10,8 +10,8 @@ import { folderPathForPostType } from "@/lib/store";
 describe("folderPathForPostType", () => {
   it("maps blog kinds to blog and unlisted kinds to their folders", () => {
     expect(folderPathForPostType("article")).toBe("blog");
-    expect(folderPathForPostType("project")).toBe("blog");
-    expect(folderPathForPostType("talk")).toBe("blog");
+    expect(folderPathForPostType("media_post")).toBe("blog");
+    expect(folderPathForPostType("video_post")).toBe("blog");
     expect(folderPathForPostType("note")).toBe("notes");
     expect(folderPathForPostType("bookmark")).toBe("bookmarks");
   });

@@ -124,11 +124,6 @@ export function isFileRepresentation(
   return FILE_REPRESENTATIONS.some((representation) => representation === value);
 }
 
-/**
- * article/project/talk are the Blog folder's public kinds; note and bookmark
- * belong to the Notes and Bookmarks folders and are always unlisted.
- */
-export type PostType = "article" | "project" | "talk" | "note" | "bookmark";
 /** How a folder renders and edits its items. */
 export type FolderMode = "blog" | "notes" | "bookmarks";
 export const BLOG_FOLDER_PATH = "blog";
@@ -236,7 +231,7 @@ export interface Post {
   visibility?: DocumentVisibility;
   /** Pinned immutable template version, repeated for list/query indexes. */
   template?: TemplateReference;
-  type: PostType;
+  type: ItemKind;
   /** bookmark capture pipeline state; only bookmarks ever set these */
   captureStatus?: CaptureStatus;
   capture?: BookmarkCapture;

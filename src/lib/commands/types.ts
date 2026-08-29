@@ -1,4 +1,4 @@
-import type { Blog, PostType } from "@/lib/content";
+import type { Blog, ItemKind } from "@/lib/content";
 import type {
   WorkspacePoolPayload,
   WorkspacePoolPost,
@@ -105,4 +105,4 @@ export type AppCommand = {
   run: (ctx: CommandContext) => CommandRunResult;
 };
 
-export type CreatePostKind = Extract<PostType, "article" | "note" | "bookmark">;
+export type CreatePostKind = Extract<ItemKind, "article" | "note" | "bookmark">;

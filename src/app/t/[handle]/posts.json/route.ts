@@ -10,7 +10,6 @@ import {
   publishedNewestFirst,
 } from "@/lib/agent-surface";
 import {
-  itemKindForPostType,
   markdownFilePathForPost,
 } from "@/lib/markdown-files";
 import { getBlog, getPublicPostLocations } from "@/lib/store";
@@ -44,7 +43,7 @@ export async function GET(_request: Request, { params }: Props) {
       const date = postIsoDate(post);
       return {
         slug: post.slug,
-        kind: itemKindForPostType(post.type),
+        kind: post.type,
         file: markdownFilePathForPost(post),
         title: post.title,
         excerpt: post.excerpt ?? null,

@@ -1,11 +1,11 @@
 "use client";
 
-import type { Post, PostType } from "@/lib/content";
+import type { Post, ItemKind } from "@/lib/content";
 import { isVideoFile } from "@/lib/content";
 import { resolveCoverSource } from "@/lib/cover";
 import type { WorkspacePoolPost } from "@/lib/pool/types";
 
-function ItemTypeIcon({ type }: { type: PostType }) {
+function ItemTypeIcon({ type }: { type: ItemKind }) {
   if (type === "bookmark") {
     return (
       <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -21,7 +21,7 @@ function ItemTypeIcon({ type }: { type: PostType }) {
       </svg>
     );
   }
-  if (type === "talk") {
+  if (type === "video_post") {
     return (
       <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
         <rect x="3.5" y="5" width="13" height="10" rx="2" stroke="currentColor" strokeWidth="1.5" />
@@ -29,7 +29,7 @@ function ItemTypeIcon({ type }: { type: PostType }) {
       </svg>
     );
   }
-  if (type === "project") {
+  if (type === "media_post") {
     return (
       <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
         <rect x="3.5" y="4" width="13" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" />

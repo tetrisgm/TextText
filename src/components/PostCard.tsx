@@ -295,7 +295,7 @@ export function PostCard({
                     loading="lazy"
                   />
                 )}
-                {post.type === "talk" && <PlayBadge />}
+                {post.type === "video_post" && <PlayBadge />}
                 <span className="tvcard-sheen" aria-hidden="true" />
               </span>
             )}

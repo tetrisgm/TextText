@@ -6,7 +6,7 @@ import type {
   GalleryItem,
   LinkRef,
   Post,
-  PostType,
+  ItemKind,
 } from "@/lib/content";
 import type { SharedWithMeEntry } from "@/lib/shares";
 import type { WikiLinkReference } from "@/lib/wikilink-syntax";
@@ -20,7 +20,7 @@ export type WorkspacePoolPost = {
   document?: Post["document"];
   visibility?: Post["visibility"];
   template?: Post["template"];
-  type: PostType;
+  type: ItemKind;
   captureStatus?: CaptureStatus;
   capture?: BookmarkCapture;
   slug: string;

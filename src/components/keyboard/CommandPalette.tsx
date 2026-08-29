@@ -54,8 +54,8 @@ function compactPath(path: string): string {
 function itemKindLabel(type: WorkspacePoolPost["type"]): string {
   if (type === "note") return "Note";
   if (type === "bookmark") return "Bookmark";
-  if (type === "project") return "Project";
-  if (type === "talk") return "Talk";
+  if (type === "media_post") return "Project";
+  if (type === "video_post") return "Talk";
   return "Article";
 }
 

@@ -1,4 +1,4 @@
-import type { Folder, PostType } from "@/lib/content";
+import type { Folder, ItemKind } from "@/lib/content";
 
 export type WorkspaceSearchLocation = {
   query: string;
@@ -164,7 +164,7 @@ export function workspaceHierarchyUpTarget(
 export function workspaceEscapeTarget(
   view: WorkspaceHierarchyView,
   folders: readonly Folder[],
-  postType?: PostType,
+  postType?: ItemKind,
 ): WorkspaceNavigationTarget {
   if (view.level === "edit" && postType !== "note") {
     return {

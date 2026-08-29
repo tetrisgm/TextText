@@ -19,7 +19,7 @@ import {
 } from "@/app/editor/actions";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { BlogHomeShortcuts } from "@/components/PostShortcuts";
-import type { PostType } from "@/lib/content";
+import type { ItemKind } from "@/lib/content";
 
 type ActionError = string | null;
 type NamingFlightStyle = Pick<
@@ -38,10 +38,10 @@ type BlogHomeShellProps = {
   children: ReactNode;
 };
 
-const POST_TYPE_OPTIONS: Array<{ type: PostType; label: string }> = [
+const POST_TYPE_OPTIONS: Array<{ type: ItemKind; label: string }> = [
   { type: "article", label: "Article" },
-  { type: "project", label: "Media post" },
-  { type: "talk", label: "Video post" },
+  { type: "media_post", label: "Media post" },
+  { type: "video_post", label: "Video post" },
 ];
 const NAME_FLIGHT_MS = 520;
 
@@ -186,14 +186,14 @@ export function CreatePostTypePicker({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<ActionError>(null);
-  const [pendingType, setPendingType] = useState<PostType | null>(null);
+  const [pendingType, setPendingType] = useState<ItemKind | null>(null);
   const [, startTransition] = useTransition();
   const pickerRef = useRef<HTMLDivElement>(null);
   const closePicker = useCallback(() => setOpen(false), []);
   useDismissPopover(open, pickerRef, closePicker);
 
   const createPost = useCallback(
-    (type: PostType) => {
+    (type: ItemKind) => {
       setError(null);
       setPendingType(type);
       startTransition(() => {

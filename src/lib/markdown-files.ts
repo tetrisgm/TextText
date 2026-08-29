@@ -7,7 +7,6 @@ import type {
   ItemKind,
   LinkRef,
   Post,
-  PostType,
 } from "@/lib/content";
 import { collectionPageLayout, isSafeLinkHref } from "@/lib/content";
 import { getBuiltinTemplate } from "@/lib/presentation/templates";
@@ -97,22 +96,6 @@ export type RenderFolderManifestOptions = {
   renderFileFor?: (post: Post) => string;
 };
 
-export function itemKindForPostType(type: PostType): ItemKind {
-  if (type === "project") return "media_post";
-  if (type === "talk") return "video_post";
-  if (type === "note") return "note";
-  if (type === "bookmark") return "bookmark";
-  return "article";
-}
-
-export function postTypeForItemKind(kind: ItemKind): PostType {
-  if (kind === "media_post") return "project";
-  if (kind === "video_post") return "talk";
-  if (kind === "note") return "note";
-  if (kind === "bookmark") return "bookmark";
-  return "article";
-}
-
 /** The kinds a folder's manifest advertises, by its mode; blog is the default. */
 function itemKindsForFolderMode(
   mode: FolderMode | undefined,
@@ -127,7 +110,7 @@ export function markdownFilePathForPost(post: Pick<Post, "slug">): string {
 }
 
 /** The folder mode an item's kind belongs to (a note's file says mode notes). */
-export function folderModeForPostType(type: PostType): FolderMode {
+export function folderModeForPostType(type: ItemKind): FolderMode {
   if (type === "note") return "notes";
   if (type === "bookmark") return "bookmarks";
   return "blog";
@@ -161,7 +144,7 @@ export function renderFolderManifest(
         });
       return {
         file: markdownFilePathForPost(post),
-        kind: itemKindForPostType(post.type),
+        kind: post.type,
         slug: post.slug,
         title: post.title,
         status: post.status,
@@ -204,7 +187,7 @@ export function renderPostMarkdownFile({
     // and `mode` below distinguishes Blog/Notes/Bookmarks.)
     workspace: blog.name,
     mode: folderModeForPostType(post.type),
-    kind: itemKindForPostType(post.type),
+    kind: post.type,
     type: post.type,
     slug: post.slug,
     title: post.title,
@@ -292,14 +275,14 @@ const METADATA_KEYS = [
   "syncRevision",
 ];
 
-const POST_TYPE_BY_VOCAB: Record<string, PostType> = {
+const POST_TYPE_BY_VOCAB: Record<string, ItemKind> = {
   article: "article",
-  project: "project",
-  talk: "talk",
+  project: "media_post",
+  talk: "video_post",
   note: "note",
   bookmark: "bookmark",
-  media_post: "project",
-  video_post: "talk",
+  media_post: "media_post",
+  video_post: "video_post",
 };
 
 export function parsePostMarkdownFile(fileText: string): ParsedPostMarkdownFile {
@@ -311,8 +294,8 @@ export function parsePostMarkdownFile(fileText: string): ParsedPostMarkdownFile 
 
   const fields: ParsedPostFields = {};
   const unknownKeys: string[] = [];
-  let kindType: PostType | undefined;
-  let typeType: PostType | undefined;
+  let kindType: ItemKind | undefined;
+  let typeType: ItemKind | undefined;
 
   for (const line of split.lines) {
     if (!line.trim()) continue;
@@ -431,7 +414,7 @@ function fieldText(value: unknown, key: string): string {
   return value.trim();
 }
 
-function fieldPostType(value: unknown, key: string): PostType {
+function fieldPostType(value: unknown, key: string): ItemKind {
   if (typeof value === "string") {
     const type = POST_TYPE_BY_VOCAB[value.trim()];
     if (type) return type;

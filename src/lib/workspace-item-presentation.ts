@@ -1,14 +1,14 @@
-import type { FolderMode, PostType } from "@/lib/content";
+import type { FolderMode, ItemKind } from "@/lib/content";
 
-export const WORKSPACE_ITEM_TYPE_LABELS: Record<PostType, string> = {
+export const WORKSPACE_ITEM_TYPE_LABELS: Record<ItemKind, string> = {
   article: "Article",
-  project: "Media",
-  talk: "Video",
+  media_post: "Media",
+  video_post: "Video",
   note: "Note",
   bookmark: "Bookmark",
 };
 
-export function homeFolderModeForPostType(type: PostType): FolderMode {
+export function homeFolderModeForPostType(type: ItemKind): FolderMode {
   if (type === "note") return "notes";
   if (type === "bookmark") return "bookmarks";
   return "blog";
@@ -20,7 +20,7 @@ export function shouldShowWorkspaceTypeChip({
   virtualLocation = false,
 }: {
   folderMode?: FolderMode | null;
-  postType: PostType;
+  postType: ItemKind;
   virtualLocation?: boolean;
 }): boolean {
   if (virtualLocation || !folderMode) return true;

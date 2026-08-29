@@ -40,7 +40,7 @@ import type {
   FileRepresentation,
   LinkRef,
   Post,
-  PostType,
+  ItemKind,
 } from "./content";
 import {
   auditCteFrom,
@@ -1189,7 +1189,7 @@ function starterAgentGuideValues(blogId: string, folderId: string) {
  * because the intents differ, a path to look up against versus a mode to
  * branch on, but the mapping now exists once.
  */
-export function folderPathForPostType(type: PostType): string {
+export function folderPathForPostType(type: ItemKind): string {
   return folderModeForPostType(type);
 }
 
@@ -2381,7 +2381,7 @@ export async function getFolderById(
 }
 
 /** The public post kind a folder mode files new items as. */
-export function defaultPostTypeForFolderMode(mode: FolderMode): PostType {
+export function defaultPostTypeForFolderMode(mode: FolderMode): ItemKind {
   switch (mode) {
     case "notes":
       return "note";
@@ -2434,10 +2434,10 @@ type CreateDraftOptions = {
   >;
 };
 
-function postTypeBelongsInFolder(type: PostType, mode: FolderMode): boolean {
+function postTypeBelongsInFolder(type: ItemKind, mode: FolderMode): boolean {
   if (mode === "notes") return type === "note";
   if (mode === "bookmarks") return type === "bookmark";
-  return type === "article" || type === "project" || type === "talk";
+  return type === "article" || type === "media_post" || type === "video_post";
 }
 
 /**
@@ -2760,7 +2760,7 @@ export async function backfillWorkspaceAgentGuides(): Promise<{
 // at creation, and older blogs are covered by the backfill migration.
 async function folderForPostType(
   blogId: string,
-  type: PostType,
+  type: ItemKind,
 ): Promise<Folder> {
   const path = folderPathForPostType(type);
   const rows = await db!
@@ -5504,7 +5504,7 @@ export async function savePostContentPatch(
 // folder matching its type: note -> notes, bookmark -> bookmarks, else blog.
 export async function createDraft(
   handle: string,
-  type: PostType = "article",
+  type: ItemKind = "article",
   options: CreateDraftOptions = {},
 ): Promise<Post> {
   if (!db) throw new Error("createDraft requires DATABASE_URL");

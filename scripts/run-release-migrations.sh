@@ -47,6 +47,7 @@ migrations=(
   scripts/migrate-home-layout-default.mjs
   scripts/migrate-drop-card-style.mjs
   scripts/migrate-drop-template-capabilities.mjs
+  scripts/migrate-post-type-to-item-kind.mjs
 )
 
 missing=()

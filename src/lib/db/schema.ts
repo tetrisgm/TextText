@@ -44,8 +44,8 @@ const fileRepresentation = pgEnum("file_representation", [
 // item kinds of the Notes and Bookmarks folders (always unlisted).
 export const postType = pgEnum("post_type", [
   "article",
-  "project",
-  "talk",
+  "media_post",
+  "video_post",
   "note",
   "bookmark",
 ]);

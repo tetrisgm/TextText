@@ -255,7 +255,7 @@ describe("hash stability and sensitivity", () => {
       base: hashOf(post),
       title: hashOf({ ...post, title: "Adversarial!" }),
       slug: hashOf({ ...post, slug: "adversarial-2" }),
-      type: hashOf({ ...post, type: "project" }),
+      type: hashOf({ ...post, type: "media_post" }),
       status: hashOf({ ...post, status: "draft" }),
       excerpt: hashOf({ ...post, excerpt: "B dek." }),
       date: hashOf({ ...post, date: "2026-07-02" }),

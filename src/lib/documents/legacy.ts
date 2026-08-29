@@ -1,4 +1,4 @@
-import type { Post, PostType } from "@/lib/content";
+import type { Post, ItemKind } from "@/lib/content";
 import {
   DOCUMENT_SCHEMA_VERSION,
   type DocumentAsset,
@@ -6,15 +6,15 @@ import {
   validateDocumentSnapshot,
 } from "@/lib/documents/model";
 
-const LEGACY_TEMPLATE: Record<PostType, string> = {
+const LEGACY_TEMPLATE: Record<ItemKind, string> = {
   article: "texttext.article",
-  project: "texttext.gallery",
-  talk: "texttext.talk",
+  media_post: "texttext.gallery",
+  video_post: "texttext.talk",
   note: "texttext.note",
   bookmark: "texttext.bookmark",
 };
 
-export function legacyTemplateId(type: PostType): string {
+export function legacyTemplateId(type: ItemKind): string {
   return LEGACY_TEMPLATE[type];
 }
 

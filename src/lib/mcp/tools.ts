@@ -57,7 +57,6 @@ import { captureFolderPath, captureIntent } from "@/lib/capture-intent";
 import { parseItemInput } from "@/lib/item-creation";
 import {
   parsePostMarkdownFile,
-  postTypeForItemKind,
   slugForNewFile,
 } from "@/lib/markdown-files";
 import {
@@ -1513,7 +1512,7 @@ export async function executeMcpTool(
           blog.handle,
           accessUser(extra),
         );
-        const mode = folderModeForType(postTypeForItemKind(input.kind));
+        const mode = folderModeForType(input.kind);
         // Only the private modes need looking up; blog is the fallback below.
         if (mode === "notes" || mode === "bookmarks") {
           destinationPath = captureFolderPath(folders, mode) ?? undefined;
@@ -1525,7 +1524,7 @@ export async function executeMcpTool(
             // do not have.
             return errorResult(
               `This workspace has no accessible ${mode} folder for a ` +
-                `${itemKindForPost({ type: postTypeForItemKind(input.kind) })}. ` +
+                `${itemKindForPost({ type: input.kind })}. ` +
                 "Create or share that folder, or name a destination.",
             );
           }
@@ -1574,7 +1573,7 @@ export async function executeMcpTool(
                   ? [{ label: captured.title, href: captured.sourceUrl }]
                   : undefined,
                 title: captured.title,
-                type: postTypeForItemKind(captured.kind),
+                type: captured.kind,
               },
               body: captured.body,
               unknownKeys: [],
@@ -1587,7 +1586,7 @@ export async function executeMcpTool(
                   input.title ??
                   (input.body ? parseItemInput(input.body).title : undefined),
                 excerpt: input.excerpt ?? undefined,
-                type: input.kind ? postTypeForItemKind(input.kind) : undefined,
+                type: input.kind ? input.kind : undefined,
               },
               body: input.body ?? "",
               unknownKeys: [],

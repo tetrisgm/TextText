@@ -6,7 +6,7 @@ import type {
   GalleryItem,
   LinkRef,
   Post,
-  PostType,
+  ItemKind,
 } from "@/lib/content";
 import { isSafeLinkHref } from "@/lib/content";
 import { isAuthConfigured } from "@/auth";
@@ -99,20 +99,20 @@ async function editorHandle(): Promise<string> {
 // The Blog folder's public vocabulary; the blog-home Create picker offers
 // exactly these. Notes and bookmarks are created through
 // createFolderItemAction and never through the blog picker.
-const POST_TYPES: PostType[] = ["article", "project", "talk"];
-const ALL_POST_TYPES: PostType[] = [...POST_TYPES, "note", "bookmark"];
-const WORKSPACE_CREATE_TYPES: PostType[] = ["article", "note", "bookmark"];
+const POST_TYPES: ItemKind[] = ["article", "media_post", "video_post"];
+const ALL_POST_TYPES: ItemKind[] = [...POST_TYPES, "note", "bookmark"];
+const WORKSPACE_CREATE_TYPES: ItemKind[] = ["article", "note", "bookmark"];
 
-function cleanPostType(value: unknown): PostType {
-  return POST_TYPES.includes(value as PostType) ? (value as PostType) : "article";
+function cleanPostType(value: unknown): ItemKind {
+  return POST_TYPES.includes(value as ItemKind) ? (value as ItemKind) : "article";
 }
 
 function cleanWorkspaceCreateType(value: unknown): Extract<
-  PostType,
+  ItemKind,
   "article" | "note" | "bookmark"
 > {
-  return WORKSPACE_CREATE_TYPES.includes(value as PostType)
-    ? (value as Extract<PostType, "article" | "note" | "bookmark">)
+  return WORKSPACE_CREATE_TYPES.includes(value as ItemKind)
+    ? (value as Extract<ItemKind, "article" | "note" | "bookmark">)
     : "article";
 }
 
@@ -145,15 +145,15 @@ async function cleanTemplateReference(
 }
 
 // Notes and bookmarks live in their own folders and are always unlisted.
-function isUnlistedPostType(type: PostType): boolean {
+function isUnlistedPostType(type: ItemKind): boolean {
   return type === "note" || type === "bookmark";
 }
 
-function cleanEditablePostType(value: unknown, existing: PostType): PostType {
-  if (!ALL_POST_TYPES.includes(value as PostType)) {
+function cleanEditablePostType(value: unknown, existing: ItemKind): ItemKind {
+  if (!ALL_POST_TYPES.includes(value as ItemKind)) {
     throw new Error("Type must be Article, Media post, or Video post");
   }
-  const next = value as PostType;
+  const next = value as ItemKind;
   // An item never crosses between the blog vocabulary and the unlisted kinds
   // (note <-> bookmark moves are folder moves, not type edits, so they are
   // refused here too). Blog kinds keep their switcher freedom.
@@ -557,7 +557,7 @@ export async function resolveWorkspaceHomePath(): Promise<string> {
 }
 
 export async function createDraftAction(
-  type: PostType = "article",
+  type: ItemKind = "article",
   handleInput?: unknown,
 ): Promise<Post> {
   const { handle, access } = await editableHandleFor(handleInput);
@@ -571,7 +571,7 @@ export async function createDraftAction(
 
 export async function createWorkspacePostAction(
   handleInput: unknown,
-  typeInput: PostType = "article",
+  typeInput: ItemKind = "article",
   folderPathInput?: unknown,
   titleInput?: unknown,
   templateInput?: unknown,
