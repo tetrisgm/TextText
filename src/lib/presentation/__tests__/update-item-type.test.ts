@@ -79,10 +79,12 @@ describe("changing an item type that already exists", () => {
     // A new immutable version is invisible on its own, because folders and
     // documents pin exact ones. An edit nobody can see is not an edit.
     const result = await call();
-    expect(mocks.setFolderTemplate).toHaveBeenCalledWith("shoku", "f-1", {
-      id: "recipes-a1b2c3",
-      version: 4,
-    });
+    expect(mocks.setFolderTemplate).toHaveBeenCalledWith(
+      "shoku",
+      "f-1",
+      { id: "recipes-a1b2c3", version: 4 },
+      { expectedReference: { id: "recipes-a1b2c3", version: 3 } },
+    );
     expect(result.applied).toEqual([
       { path: "recipes", restyledItems: 7, itemsLeft: 0, itemsBeingEdited: 0 },
     ]);
@@ -151,6 +153,18 @@ describe("changing an item type that already exists", () => {
     });
     const result = await call();
     expect(result.applied[0].itemsBeingEdited).toBe(2);
+  });
+
+  it("leaves a folder alone when its look changes during application", async () => {
+    mocks.setFolderTemplate.mockRejectedValueOnce(
+      new Error(
+        "The folder's look changed while this item type was being applied. It was left as it is.",
+      ),
+    );
+    const result = await call();
+    expect(result.applied).toEqual([]);
+    expect(result.conflicted).toEqual([{ path: "recipes" }]);
+    expect(mocks.retemplateFolderItems).not.toHaveBeenCalled();
   });
 
   it("reports the items a restyling pass did not reach", async () => {

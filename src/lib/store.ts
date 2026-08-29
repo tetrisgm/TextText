@@ -1379,7 +1379,11 @@ export async function setFolderTemplate(
   handle: string,
   folderId: string,
   reference: TemplateReference,
-  options: { audit?: AuditEntry } = {},
+  options: {
+    audit?: AuditEntry;
+    /** Apply only if the folder is still pinned to this reference. */
+    expectedReference?: TemplateReference;
+  } = {},
 ): Promise<Folder> {
   if (!db) throw new Error("Setting a folder's look needs a database.");
   const blogId = await blogIdFor(handle);
@@ -1399,6 +1403,15 @@ export async function setFolderTemplate(
         eq(folders.id, folderId),
         eq(folders.blogId, blogId),
         isNull(folders.deletedAt),
+        ...(options.expectedReference
+          ? [
+              eq(folders.defaultTemplateId, options.expectedReference.id),
+              eq(
+                folders.defaultTemplateVersion,
+                options.expectedReference.version,
+              ),
+            ]
+          : []),
       ),
     )
     .returning({ id: folders.id });
@@ -1417,7 +1430,13 @@ export async function setFolderTemplate(
   } else {
     updatedId = (await updateQuery)[0]?.id;
   }
-  if (!updatedId) throw new Error("Folder not found");
+  if (!updatedId) {
+    throw new Error(
+      options.expectedReference
+        ? "The folder's look changed while this item type was being applied. It was left as it is."
+        : "Folder not found",
+    );
+  }
   const [fresh] = await db
     .select()
     .from(folders)

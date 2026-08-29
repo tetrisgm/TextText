@@ -995,12 +995,18 @@ export async function executeMcpTool(
                 .map((entry) => `${entry.path} (version ${entry.pinnedTo})`)
                 .join(", ")}.`
             : "",
+          updated.conflicted.length
+            ? `Left alone because their folder look changed while applying: ${updated.conflicted
+                .map((entry) => entry.path)
+                .join(", ")}.`
+            : "",
         ].filter(Boolean);
         return jsonResult({
           itemType: updated.definition,
           previousVersion: updated.previousVersion,
           applied: updated.applied,
           skipped: updated.skipped,
+          conflicted: updated.conflicted,
           note: notes.join(" "),
         });
       } catch (error) {

@@ -116,6 +116,8 @@ export type ItemTypeUpdateResult = {
   }>;
   /** Folders left where they were because they pin an older version. */
   skipped: Array<{ path: string; pinnedTo: number }>;
+  /** Folders whose look changed or disappeared before this update landed. */
+  conflicted: Array<{ path: string }>;
 };
 
 /**
@@ -211,6 +213,7 @@ export async function updateWorkspaceItemType(input: {
   const skipped = targets
     .filter((folder) => folder.version !== input.baseVersion)
     .map((folder) => ({ path: folder.path, pinnedTo: folder.version }));
+  const conflicted: Array<{ path: string }> = [];
 
   const blueprint = normalizeItemTypeBlueprint(input.blueprint);
   // Same id, so this is a new version of the SAME look rather than a new look
@@ -239,7 +242,25 @@ export async function updateWorkspaceItemType(input: {
   if (input.apply !== false) {
     const reference = { id: created.id, version: created.version };
     for (const folder of applicable) {
-      await setFolderTemplate(input.handle, folder.id, reference);
+      try {
+        await setFolderTemplate(input.handle, folder.id, reference, {
+          expectedReference: {
+            id: input.templateId,
+            version: input.baseVersion,
+          },
+        });
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message.includes(
+            "look changed while this item type was being applied",
+          )
+        ) {
+          conflicted.push({ path: folder.path });
+          continue;
+        }
+        throw error;
+      }
       const restyled =
         input.applyToExisting === false
           ? { changed: 0, contested: 0, remaining: 0 }
@@ -275,5 +296,6 @@ export async function updateWorkspaceItemType(input: {
     previousVersion: current.version,
     applied,
     skipped,
+    conflicted,
   };
 }
