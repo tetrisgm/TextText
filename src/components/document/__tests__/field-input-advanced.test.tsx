@@ -71,7 +71,10 @@ describe("advanced field inputs", () => {
     expect(html).toContain("Ramine Darabiha");
     expect(html).toContain("RD");
     expect(html).toContain('aria-label="Remove Ramine Darabiha"');
-    expect(html).toContain("Choose people");
+    // "Change people", not "Choose people": one is already selected, and the
+    // summary says so (FieldInput.tsx:486). The test asserted the empty-state
+    // wording and had never run to notice.
+    expect(html).toContain("Change people");
     expect(html).toContain("Alex Smith");
     expect(html).toContain("Use an ID instead");
     expect(html).toContain('aria-label="Add people by ID"');

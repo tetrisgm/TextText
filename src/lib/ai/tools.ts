@@ -760,7 +760,10 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   update_item: defineTool("update_item", {
     title: "Update item",
     description:
-      "Update one item's content or metadata: title, body, excerpt, tags, slug, cover, pin, publication date, and custom template fields via the fields map. A full body or markdown replacement requires if_match_hash from read_item. Targeted text_edit and section edits use their own expected-content guards. Cannot publish, unpublish, or move an item.",
+      "Update one item's content or metadata: title, body, excerpt, tags, slug, cover, pin, publication date, and custom template fields via the fields map. A full body or markdown replacement requires if_match_hash from read_item. Targeted text_edit and section edits use their own expected-content guards. Cannot publish, unpublish, or move an item.\n\n" +
+      // Highlighting was asked for and had no syntax, so the model bolded
+      // things instead, which means something else on the page.
+      "To highlight a passage, wrap it in double equals signs: ==like this==. It renders as a real highlight. Bold and italic still mean bold and italic. Use a highlight when someone asks for the important parts to stand out, and mark the few that matter rather than most of the paragraph.",
     inputSchema: updateItemInput,
     mutability: "write",
     destructive: true,

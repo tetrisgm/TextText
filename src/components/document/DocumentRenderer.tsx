@@ -18,6 +18,7 @@ import type {
 } from "@/lib/presentation/schema";
 import { DOCUMENT_ENGINE_CSS } from "@/lib/presentation/styles";
 import { styleFamilyFor } from "@/lib/presentation/templates";
+import { remarkHighlight } from "@/components/document/HighlightMarkdown";
 import { remarkWikiLinks } from "@/components/WikiLinkMarkdown";
 import type { WikiLinkRenderTargets } from "@/lib/wikilinks";
 
@@ -288,8 +289,8 @@ function Markdown({
     <ReactMarkdown
       remarkPlugins={
         wikiLinkTargets
-          ? [remarkGfm, remarkWikiLinks(wikiLinkTargets)]
-          : [remarkGfm]
+          ? [remarkGfm, remarkHighlight, remarkWikiLinks(wikiLinkTargets)]
+          : [remarkGfm, remarkHighlight]
       }
       urlTransform={(url) => safeMediaSource(url)}
       components={{

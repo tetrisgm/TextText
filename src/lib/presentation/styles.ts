@@ -58,6 +58,11 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
    while painting nothing, because the look demo further down the page had
    thrown this sheet over it. Any embedded document must pass the preview prop. */
 .tt-document:not(.tt-collection-item):not([data-preview])::before{content:"";position:fixed;inset:0;z-index:-1;background:var(--paper,#fff);pointer-events:none}
+/* A highlight is a mark on the page, not a recolouring of the words. The tint
+   mixes the accent into the paper, so it darkens with the theme instead of
+   staying a light band under white text, and the text keeps --ink, because the
+   accent never colours body text. */
+.tt-mark{background:color-mix(in srgb,var(--tt-accent,#f5a524) 24%,var(--paper,#fff));color:inherit;border-radius:.2em;padding:0 .14em;box-decoration-break:clone;-webkit-box-decoration-break:clone}
 .tt-prose{width:min(var(--tt-measure),calc(100% - 2rem));margin-inline:auto;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:1.06rem;line-height:1.7}.tt-prose>*:first-child{margin-top:0}
 /* Lists keep the document's left edge. The browser indents a list by 40px,
    which pushed every bullet off the edge the title sets - measured at exactly
