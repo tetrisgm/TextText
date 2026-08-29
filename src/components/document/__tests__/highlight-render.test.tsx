@@ -55,6 +55,16 @@ describe("a highlight in a document body", () => {
     ).toContain("<mark");
   });
 
+  it("can be written literally inside code, which is the only way", () => {
+    // A backslash does not escape it: markdown strips the escape before this
+    // plugin sees the text, so the escaped and unescaped forms are identical
+    // by the time it runs. Inline code is the escape hatch, and it works.
+    expect(render("Write `==x==` to mean the characters.")).not.toContain("<mark");
+    // Stated so the limitation is visible rather than discovered: a backslash
+    // does NOT prevent the highlight.
+    expect(render("A \\==literal== one.")).toContain("<mark");
+  });
+
   it("leaves markdown that merely contains equals signs alone", () => {
     // A table separator, a comparison, a run of equals, and a setext underline
     // are all things a document really contains.

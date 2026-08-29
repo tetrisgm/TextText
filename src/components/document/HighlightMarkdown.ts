@@ -15,6 +15,13 @@
  *
  * The syntax is the one Obsidian and Bear already use, so a person who has
  * highlighted anything before will guess it right.
+ *
+ * A backslash does NOT escape it. Markdown strips the escape before any plugin
+ * sees the text - `\==x==` and `==x==` arrive as the identical text node, with
+ * nothing to tell them apart - so there is no way to fix that from here. To
+ * write the characters themselves, use inline code: `` `==x==` ``, which this
+ * skips. Verified rather than assumed: an earlier draft of this comment
+ * described an escape mechanism that does not exist.
  */
 
 type MarkdownNode = {
@@ -59,8 +66,11 @@ export function remarkHighlight() {
   return function transform(tree: MarkdownNode) {
     const visit = (node: MarkdownNode) => {
       if (!node.children) return;
-      // Not inside code or a link: `==` in a code sample is a comparison
-      // operator, and a URL with `==` in it is a query string, not emphasis.
+      // Not inside code: `==` in a code sample is a comparison operator, not
+      // emphasis. Links ARE descended into, on purpose: "[the ==key== page]"
+      // should highlight inside the link text, and a URL never reaches here as
+      // a text node. An earlier version of this comment said links were
+      // skipped, and they never were.
       if (node.type === "code" || node.type === "inlineCode") return;
       const children: MarkdownNode[] = [];
       for (const child of node.children) {

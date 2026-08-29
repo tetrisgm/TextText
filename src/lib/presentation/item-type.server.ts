@@ -161,8 +161,23 @@ export async function updateWorkspaceItemType(input: {
   // with it, under the same id and name. The docs and the tool description
   // both said this was impossible while the code allowed it.
   if (!current.source) {
+    // Each state is a different thing to tell someone. Saying "was never
+    // designed" about a look they designed, because this build's compiler has
+    // moved on, is a false statement about their own work.
     throw new Error(
-      "That look was not designed from a blueprint, so it cannot be changed this way. It was saved from a document, imported, duplicated, or made before looks kept their design. Save a copy and design that instead.",
+      current.state === "needs-migration"
+        ? "That look was designed with an older version of the designer, and this one would not rebuild it the same way. Changing it here would quietly alter how it renders, so it is left as it is."
+        : current.state === "unreadable"
+          ? "That look's saved design could not be read, so changing it here would replace it with something unrelated. Save a copy and design that instead."
+          : "That look was not designed from a blueprint, so it cannot be changed this way. It was saved from a document, imported, duplicated, or made before looks kept their design. Save a copy and design that instead.",
+    );
+  }
+  // A retired look is one someone chose to stop offering. Editing it would
+  // create a fresh, unretired version and put it back in the pickers, which is
+  // not what "change this" means and not what retiring it meant either.
+  if (current.retired) {
+    throw new Error(
+      "That look was retired. Documents already wearing it still render, but it is no longer offered, so changing it would put it back. Save a copy and change that instead.",
     );
   }
   if (current.version !== input.baseVersion) {

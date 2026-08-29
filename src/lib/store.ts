@@ -140,8 +140,10 @@ import {
   type TemplateDefinition,
 } from "./presentation/schema";
 import {
+  inspectAuthoringSource,
   readAuthoringSource,
   type AuthoringSource,
+  type AuthoringSourceState,
 } from "./presentation/authoring-source";
 import type { ItemTypeBlueprint } from "./presentation/item-type-blueprint";
 import type {
@@ -1468,19 +1470,27 @@ export async function retemplateFolderItems(
     )
     .orderBy(asc(posts.createdAt));
 
+  // Select what still NEEDS restyling before taking a page of it. Slicing the
+  // raw rows meant every pass looked at the same first 500: once those were
+  // done they were skipped, the pass reported hundreds remaining, and running
+  // it again reached exactly the same 500 and changed nothing. The advice to
+  // run it again could never have worked.
+  const pending = rows.filter((row) => {
+    const current = mapPost(row).document;
+    if (!current) return false;
+    return !(
+      current.presentation.template.id === reference.id &&
+      current.presentation.template.version === reference.version
+    );
+  });
+
   let changed = 0;
   /** Items someone else was editing at the same moment, left as they are. */
   let contested = 0;
-  for (const row of rows.slice(0, limit)) {
+  for (const row of pending.slice(0, limit)) {
     const post = mapPost(row);
     const current = post.document;
     if (!current) continue;
-    if (
-      current.presentation.template.id === reference.id &&
-      current.presentation.template.version === reference.version
-    ) {
-      continue;
-    }
     if (post.revision === undefined) {
       // Fail closed. `expectedRevision: undefined` means NO guard, so a row
       // without one would quietly get the unguarded write this exists to
@@ -1515,7 +1525,10 @@ export async function retemplateFolderItems(
   return {
     changed,
     contested,
-    remaining: Math.max(0, rows.length - limit),
+    // What is still waiting after this pass, not "everything past the first
+    // page". A contested item is still pending: its turn comes when whoever
+    // was typing into it stops.
+    remaining: Math.max(0, pending.length - changed),
   };
 }
 
@@ -3730,11 +3743,18 @@ export async function installDocumentTemplate(input: {
 export async function getDocumentTemplateAuthoringSource(
   blogId: string,
   templateId: string,
-): Promise<{ version: number; source: AuthoringSource | null } | null> {
+): Promise<{
+  version: number;
+  retired: boolean;
+  source: AuthoringSource | null;
+  /** WHY there is no source, when there is none. */
+  state: AuthoringSourceState["state"];
+} | null> {
   if (!db) return null;
   const rows = await db
     .select({
       version: documentTemplates.version,
+      retiredAt: documentTemplates.retiredAt,
       authoringSource: documentTemplates.authoringSource,
     })
     .from(documentTemplates)
@@ -3748,7 +3768,17 @@ export async function getDocumentTemplateAuthoringSource(
     .limit(1);
   const row = rows[0];
   if (!row) return null;
-  return { version: row.version, source: readAuthoringSource(row.authoringSource) };
+  // inspect, not read: the four reasons a look cannot be reopened are
+  // different things to say, and collapsing them to null told a person their
+  // designed look "was assembled rather than designed" whenever the compiler
+  // had moved on.
+  const inspected = inspectAuthoringSource(row.authoringSource);
+  return {
+    version: row.version,
+    retired: row.retiredAt !== null,
+    source: inspected.state === "authored" ? inspected.source : null,
+    state: inspected.state,
+  };
 }
 
 /**

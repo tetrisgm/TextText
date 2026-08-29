@@ -51,6 +51,8 @@ describe("changing an item type that already exists", () => {
     vi.clearAllMocks();
     mocks.getDocumentTemplateAuthoringSource.mockResolvedValue({
       version: 3,
+      retired: false,
+      state: "authored",
       source: { kind: "item-type-blueprint", schemaVersion: 1, compilerVersion: 1, blueprint: BLUEPRINT },
     });
     mocks.createDocumentTemplateVersion.mockImplementation(
@@ -91,6 +93,8 @@ describe("changing an item type that already exists", () => {
     // second would silently win a race neither knew about.
     mocks.getDocumentTemplateAuthoringSource.mockResolvedValue({
       version: 5,
+      retired: false,
+      state: "authored",
       source: { kind: "item-type-blueprint", schemaVersion: 1, compilerVersion: 1, blueprint: BLUEPRINT },
     });
     await expect(call({ baseVersion: 3 })).rejects.toThrow(/moved on.*version 3.*now at 5/s);
@@ -105,6 +109,8 @@ describe("changing an item type that already exists", () => {
     // the tool description both said this was impossible.
     mocks.getDocumentTemplateAuthoringSource.mockResolvedValue({
       version: 3,
+      retired: false,
+      state: "assembled",
       source: null,
     });
     await expect(call()).rejects.toThrow(/not designed from a blueprint/);
@@ -155,6 +161,30 @@ describe("changing an item type that already exists", () => {
     expect(result.applied).toEqual([
       { path: "recipes", restyledItems: 500, itemsLeft: 212, itemsBeingEdited: 3 },
     ]);
+  });
+
+  it("says the compiler moved on rather than calling a designed look assembled", async () => {
+    mocks.getDocumentTemplateAuthoringSource.mockResolvedValue({
+      version: 3,
+      retired: false,
+      state: "needs-migration",
+      source: null,
+    });
+    await expect(call()).rejects.toThrow(/older version of the designer/);
+  });
+
+  it("leaves a retired look retired instead of putting it back", async () => {
+    // Editing one would create a fresh unretired version and return it to the
+    // pickers, which is not what "change this" means and not what retiring it
+    // meant either.
+    mocks.getDocumentTemplateAuthoringSource.mockResolvedValue({
+      version: 3,
+      retired: true,
+      state: "authored",
+      source: { kind: "item-type-blueprint", schemaVersion: 1, compilerVersion: 1, blueprint: BLUEPRINT },
+    });
+    await expect(call()).rejects.toThrow(/retired/);
+    expect(mocks.createDocumentTemplateVersion).not.toHaveBeenCalled();
   });
 
   it("refuses to change a built-in", async () => {
