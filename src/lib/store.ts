@@ -3824,12 +3824,11 @@ export async function listFoldersUsingTemplate(
  * A look absent from this list is not broken, it was assembled rather than
  * authored, and the honest thing to tell someone is that it is edited by hand.
  */
-export async function listEditableItemTypes(
-  blogId: string,
-): Promise<
-  Array<{ id: string; version: number; blueprint: ItemTypeBlueprint }>
-> {
-  if (!db) return [];
+export async function listEditableItemTypes(blogId: string): Promise<{
+  editable: Array<{ id: string; version: number; blueprint: ItemTypeBlueprint }>;
+  needsMigration: Array<{ id: string; version: number }>;
+}> {
+  if (!db) return { editable: [], needsMigration: [] };
   const rows = await db
     .select({
       templateId: documentTemplates.templateId,
@@ -3849,19 +3848,31 @@ export async function listEditableItemTypes(
     version: number;
     blueprint: ItemTypeBlueprint;
   }> = [];
+  /**
+   * Designed here, but by a version of the designer this build would not
+   * reproduce. Reported separately because the alternative is silence, and
+   * silence here reads as "this was never designed", which is a false thing to
+   * say about someone's own work.
+   */
+  const needsMigration: Array<{ id: string; version: number }> = [];
   const seen = new Set<string>();
   for (const row of rows) {
     if (seen.has(row.templateId)) continue;
     seen.add(row.templateId);
-    const source = readAuthoringSource(row.authoringSource);
-    if (!source) continue;
-    editable.push({
-      id: row.templateId,
-      version: row.version,
-      blueprint: source.blueprint,
-    });
+    const inspected = inspectAuthoringSource(row.authoringSource);
+    if (inspected.state === "authored") {
+      editable.push({
+        id: row.templateId,
+        version: row.version,
+        blueprint: inspected.source.blueprint,
+      });
+      continue;
+    }
+    if (inspected.state === "needs-migration") {
+      needsMigration.push({ id: row.templateId, version: row.version });
+    }
   }
-  return editable;
+  return { editable, needsMigration };
 }
 
 export async function createDocumentTemplateVersion(input: {

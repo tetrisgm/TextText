@@ -106,6 +106,23 @@ describe("the blueprint stored beside a look", () => {
     expect(source.kind).toBe("item-type-blueprint");
   });
 
+  it("keeps needs-migration separate from never-designed all the way out", () => {
+    // The distinction existed in the helper and collapsed at the store, so a
+    // look designed here was reported to the agent as "assembled rather than
+    // designed" whenever the compiler had moved on. That is a false statement
+    // about someone's own work, and it survived one round of fixing.
+    const good = authoringSourceFor(normalizeItemTypeBlueprint(ALREADY_VALID));
+    const older = { ...good, compilerVersion: ITEM_TYPE_BLUEPRINT_COMPILER_VERSION + 1 };
+    expect(inspectAuthoringSource(older).state).toBe("needs-migration");
+    // readAuthoringSource still answers null for it, which is right for a
+    // caller that only asks "can I reopen this".
+    expect(readAuthoringSource(older)).toBeNull();
+    // The two answers must not be confused: one is a yes-or-no, the other is
+    // the reason, and the reason is what a person is told.
+    expect(inspectAuthoringSource(null).state).toBe("assembled");
+    expect(inspectAuthoringSource(older).state).not.toBe("assembled");
+  });
+
   it("never becomes part of the definition that renders", () => {
     // templateDefinitionSchema is strict and definitions travel inside sync
     // envelopes and exported bundles older builds still read. Authoring

@@ -814,10 +814,11 @@ export async function executeMcpTool(
       // A definition is what renders; a blueprint is what a person or a model
       // edits. Without this the only way to change a look was to re-author it
       // from compiled output, which is not the language anything writes in.
-      const [templates, editable] = await Promise.all([
+      const [templates, authoring] = await Promise.all([
         listDocumentTemplates(resolved.access.blogId),
         listEditableItemTypes(resolved.access.blogId),
       ]);
+      const { editable, needsMigration } = authoring;
       // Summaries, not whole definitions. A definition is a render tree, and
       // handing over eleven of them was 24,000 characters of a vocabulary the
       // model cannot write in, which buried the blueprints it can. What it
@@ -840,9 +841,21 @@ export async function executeMcpTool(
         // fell off the end when this answer was one long list of render trees.
         editable,
         templates: summarised,
-        note: editable.length
-          ? "Types under `editable` can be changed with update_item_type: send its blueprint back with your edit and the version shown. The rest were assembled rather than designed, so they have no blueprint and are edited by hand."
-          : "No type here was designed from a blueprint, so none can be changed with update_item_type.",
+        // Named rather than merely absent. A look designed here that this
+        // build's compiler would no longer reproduce is not the same thing as
+        // one that was never designed, and saying so is not optional.
+        needsMigration,
+        note: [
+          editable.length
+            ? "Types under `editable` can be changed with update_item_type: send its blueprint back with your edit and the version shown."
+            : "No type here can be changed with update_item_type.",
+          needsMigration.length
+            ? `Types under \`needsMigration\` were designed here but with an older version of the designer, so changing them would alter how they render. They are left as they are.`
+            : "",
+          "Anything in neither list was assembled rather than designed - built-ins, imports, duplicates, and looks saved from a document - and is edited by hand.",
+        ]
+          .filter(Boolean)
+          .join(" "),
       });
     }
 
