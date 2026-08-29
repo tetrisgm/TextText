@@ -1083,6 +1083,23 @@ them. 261 occurrences. Collapsing them removes the concept, and it needs the
 owner's word, because `type:` is a stored column and `kind:` is in the
 frontmatter of every file on disk. That is a data migration, not a refactor.
 
+## Two things verified against the database rather than by test (2026-08-29)
+
+There is no database-backed test infrastructure here; store tests cover pure
+functions. Both of these were checked by running against local Postgres, and
+both are the kind of thing a unit test with a mocked store would have asserted
+about the mock rather than about the behaviour.
+
+**The revision guard on restyling.** A write carrying a stale revision matches
+zero rows; the same write without the guard matches one. That second number is
+what used to happen to a collaborator's words.
+
+**Paging through a folder.** With a page size of 2 against a 34-item folder:
+pass one changed 2 and reported 32 left, pass two changed 2 and reported 30.
+Before the fix the second pass changed nothing, because the slice was taken
+from all rows rather than from the ones still needing work, so every pass
+looked at the same first page and skipped it as already done.
+
 ## The two goals, and what it took to move them (2026-08-29)
 
 Plan in `docs/plans/two-goals.md`. Written, torn apart by gpt-5.6-sol at max
