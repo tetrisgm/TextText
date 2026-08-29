@@ -15,6 +15,9 @@ public protocol TextTextCLISyncAPI: Sendable {
         name: String, argumentsJSON: String,
         agentName: String?, agentIntent: String?
     ) async -> Result<TextTextAgentCommandReply, TextTextSyncError>
+    func agentAvailableCommands(
+        agentName: String?, agentIntent: String?
+    ) async -> Result<String, TextTextSyncError>
     func agentReadItem(
         postId: String, agentName: String?, agentIntent: String?
     ) async -> Result<TextTextAgentCommandReply, TextTextSyncError>
@@ -206,6 +209,15 @@ public enum CLIWorkspace: Sendable {
         case .local:
             throw TextTextCLIError.workspaceUnavailable(
                 "workspace commands need the signed-in TextText workspace")
+        }
+    }
+
+    public func availableCommands() async throws -> String {
+        switch self {
+        case .remote(let store): return try await store.availableCommands()
+        case .local:
+            throw TextTextCLIError.workspaceUnavailable(
+                "listing commands needs the signed-in TextText workspace")
         }
     }
 
@@ -508,6 +520,17 @@ public final class RemoteDocumentStore: @unchecked Sendable {
     /// two dozen, and without this there was no way to reach the rest from the
     /// executable, so an agent on this Mac could be told it may move an item or
     /// comment on one and have nothing to say it with.
+    public func availableCommands() async throws -> String {
+        switch await api.agentAvailableCommands(
+            agentName: CLICommandActor.current?.name,
+            agentIntent: CLICommandActor.current?.message)
+        {
+        case .success(let body): return body
+        case .failure(let error):
+            throw TextTextCLIError.workspaceUnavailable(String(describing: error))
+        }
+    }
+
     public func runCommand(
         _ name: String, argumentsJSON: String
     ) async throws -> String {

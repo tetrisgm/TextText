@@ -541,6 +541,13 @@ private actor FakeCLISyncAPI: TextTextCLISyncAPI {
     /// route rather than that a wrapper existed for it.
     var ranCommands: [(name: String, argumentsJSON: String)] = []
 
+    func agentAvailableCommands(
+        agentName: String?, agentIntent: String?
+    ) async -> Result<String, TextTextSyncError> {
+        events.append("commands")
+        return .success(#"{"commands":[{"name":"move_item"}]}"#)
+    }
+
     func agentRunCommand(
         name: String, argumentsJSON: String,
         agentName: String?, agentIntent: String?

@@ -1,4 +1,7 @@
-import type { WorkspaceToolName } from "@/lib/ai/tools";
+import {
+  WORKSPACE_TOOL_DEFINITIONS,
+  type WorkspaceToolName,
+} from "@/lib/ai/tools";
 import {
   LOCAL_AGENT_COMMANDS,
   LOCAL_AGENT_READ_ONLY_COMMANDS,
@@ -71,6 +74,38 @@ function boundedHeader(
     return null;
   }
   return value;
+}
+
+/**
+ * What this connection may ask for.
+ *
+ * An agent had no way to find out. The verbs a local agent may use are decided
+ * in one place and were readable only by reading the source, so the CLI's own
+ * "commands" verb was wired to get_workspace, which lists folders. It said one
+ * thing and did another.
+ */
+export async function GET(request: Request) {
+  const auth = await verifyTextTextApiToken(request);
+  if (!auth) return noStore({ error: "Sign in to TextText on this Mac" }, 401);
+  const scopeAccess = resolveMcpScopeAccess(auth.scopes);
+  if (scopeAccess === "none") {
+    return noStore({ error: "This connection cannot read the workspace" }, 403);
+  }
+  const available = [...LOCAL_AGENT_COMMANDS].filter(
+    (name) => scopeAccess === "full" || LOCAL_AGENT_READ_ONLY_COMMANDS.has(name),
+  );
+  return noStore({
+    commands: available.map((name) => ({
+      name,
+      title: WORKSPACE_TOOL_DEFINITIONS[name].title,
+      description: WORKSPACE_TOOL_DEFINITIONS[name].description,
+      mutability: WORKSPACE_TOOL_DEFINITIONS[name].mutability,
+    })),
+    note:
+      scopeAccess === "full"
+        ? "Run one with: texttext do <name> --args '{...}'"
+        : "This connection may only read. Run one with: texttext do <name> --args '{...}'",
+  });
 }
 
 export async function POST(request: Request) {

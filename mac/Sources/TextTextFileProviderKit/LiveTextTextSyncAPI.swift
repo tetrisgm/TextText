@@ -299,6 +299,30 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
     /// with. Arguments are passed through as JSON because commands like
     /// create_item_type carry nested objects, which the string-map wrapper
     /// cannot express.
+    /// What this connection may ask the workspace to do.
+    ///
+    /// Answered by the route, not by a list compiled into this binary, because
+    /// a list here would be a second copy that drifts the moment the workspace
+    /// changes - which is how the CLI came to be six verbs behind in the first
+    /// place.
+    public func agentAvailableCommands(
+        agentName: String?, agentIntent: String?
+    ) async -> Result<String, TextTextSyncError> {
+        var headers: [String: String] = [:]
+        if let agentName = Self.safeAgentHeader(agentName, maximumLength: 120) {
+            headers["X-TextText-Agent-Name"] = agentName
+        }
+        if let agentIntent = Self.safeAgentHeader(agentIntent, maximumLength: 500) {
+            headers["X-TextText-Agent-Intent"] = agentIntent
+        }
+        switch await send("GET", "/api/agent/commands", headers: headers, body: nil) {
+        case .failure(let error): return .failure(error)
+        case .success(let reply):
+            guard reply.status == 200 else { return .failure(reply.httpError) }
+            return .success(String(decoding: reply.data, as: UTF8.self))
+        }
+    }
+
     public func agentRunCommand(
         name: String, argumentsJSON: String,
         agentName: String?, agentIntent: String?

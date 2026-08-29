@@ -402,7 +402,7 @@ do {
         // and it now allows two dozen; printing them here means an agent can
         // find out rather than guess from the usage block.
         let listed = try await withActor(.open, itemId: nil) {
-            try await store.runCommand("get_workspace", argumentsJSON: "{}")
+            try await store.availableCommands()
         }
         emit(listed)
 
