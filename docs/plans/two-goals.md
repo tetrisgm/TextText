@@ -197,46 +197,61 @@ and a failing eval that names a missing capability is worth more than no eval.
 
 ## What has shipped
 
+Verified by a second adversarial pass, which found real defects in every one of
+the first four commits. Those are fixed and listed below with them.
+
 - **Finding 4** (`aea66bcf`). 240 lines of dead keyword-gating deleted.
-- **Finding 0** (`41d1d56b`). The local agent surface is 24 commands, not five,
-  derived from the same two properties the browser assistant screens itself on.
-  Delete, publish, share and URL-fetching stay out, with a test per exclusion.
-- **Finding 1** (`c14dc7db`). Authoring source persisted in a versioned envelope
-  holding the normalised blueprint; `update_item_type` with base-version
-  compare-and-swap and explicit application; `list_document_templates` reports
-  which looks can be reopened and hands back their blueprints.
-  **Not done: the studio still has no edit entry.** The capability exists
-  through the assistant and through MCP; the UI button does not.
-- **Timeline** (`7865be1b`). Article's fourteen selector occurrences key on a
-  style family both looks carry, so Timeline stops rendering as a degraded
-  Article. The other 152 stay until there is a visual gate.
-- **Highlight** (`41ee5d97`). `==like this==` renders as a mark. Chosen as a
-  Markdown convention so nothing in the content model, the collaboration path
-  or the file format had to change. Found along the way: vitest never collected
-  `.tsx`, so a test file from 2026-08-19 had never run and one of its three
-  tests was failing.
+- **Finding 0** (`41d1d56b`, corrected in `5cf36029`). An agent on this Mac has
+  24 commands, not five. The first version DERIVED the set from
+  `confirmation === "none" && !openWorldHint`, which is wrong because
+  `confirmation` defaults to `"none"`: a command added later would have joined a
+  local agent's authority silently. It is now an explicit decision per command,
+  with a test that fails when a new command is in neither list, and a second
+  test asserting nothing confirmation-gated or URL-fetching is allowed.
+- **Finding 1** (`c14dc7db`, corrected in `716385c5`). Authoring source in a
+  versioned envelope holding the normalised blueprint; `update_item_type`;
+  `list_document_templates` reports what can be reopened. The corrections
+  mattered: the update fetched the authoring source and never read it, so an
+  imported or saved-from-a-document look could be replaced wholesale; it was not
+  compare-and-swap, because the check and the insert read the version
+  separately; the restyling remainder was discarded so a folder of 700 read as
+  finished at 500; folders deliberately pinned to an older version were
+  upgraded anyway; and four different reasons a look could not be reopened were
+  reported as one.
+- **Concurrent writes** (`7d04238e`). Restyling a folder read every row up front
+  and wrote each back from that snapshot with no revision guard, so a
+  collaborator's edit between the scan and the save was silently replaced. Every
+  write is now guarded by the revision it was read at. Verified against the real
+  local database, because there is no database-backed test infrastructure here.
+- **Comment permission** (`ab044254`). `add_comment` resolved an item's access
+  and never looked at it, so read access was permission to write.
+- **Timeline** (`7865be1b`, tests fixed in `716385c5`). Article's styling keys on
+  a family both looks carry. The tests were vacuous: the renderer inlines the
+  stylesheet, the stylesheet now contains the selector, so asserting on the
+  whole output matched the CSS rather than the element.
+- **Highlight** (`41ee5d97`). `==like this==` renders as a mark. A real model,
+  asked only to highlight the important sentence, uses it correctly.
+- **Steps** (`9036b5dd`). The browser assistant stopped at eight steps, which is
+  one short of putting a different line in three notes. Now 24, and reaching the
+  ceiling is reported rather than passed off as a finished answer.
+- **Studio** (`d2d83039`). Opens on an existing look, starts its history from
+  the blueprint that look was built from, and saves a new version. The workspace
+  UI has no button for it yet.
 
-Still open, in order: what "many" means and a bounded batch command; the
-browser assistant's eleven missing commands, per command, starting with soft
-delete; and the identity CSS, which needs a real visual gate first.
+## Order for what is left
 
-## Order
+Revised against the verification pass, which called the previous order wrong.
 
-1. **Finding 0.** Widen the local agent allowlist. Bounded, and it is the
-   owner's own stated scenario.
-2. **Finding 1.** Versioned authoring-source envelope, `update_item_type` with
-   base-version compare-and-swap and an explicit application target.
-3. **Timeline.** Fix the one built-in that already renders wrong, as the first
-   and smallest case of Finding 2.
-4. **Finding 5's primitives.** Decide what highlight means; decide what many
-   means.
-5. **Finding 3.** Per-command, starting with soft delete.
-6. **Finding 2 proper.** Only after a real visual gate exists.
-
-Each step ends green: `npx tsc --noEmit`, `npm test`, `npm run lint`,
-`scripts/verify-template-render.ts` for anything touching looks, and
-`scripts/verify-agent-interoperability.ts` for anything touching the agent
-surface. Nothing is pushed red.
+1. **Test the local CLI end to end**, executable to real executor. The allowlist
+   is explicit and tested; nothing proves the widened commands actually run
+   through the route.
+2. **A soft delete an agent may perform**, with an explicit confirmation on the
+   local and browser surfaces. Delete is the most-wanted of the denied verbs.
+3. **Bounded batch operations** with stated partial-failure semantics. Raising
+   the step ceiling helps small jobs; it is not a batch command.
+4. **A real light and dark visual gate**, and only then the remaining identity
+   CSS. `npm run evals` exits zero when suites are blocked, so there is no gate
+   today.
 
 ## What this plan declines, and what it admits
 
