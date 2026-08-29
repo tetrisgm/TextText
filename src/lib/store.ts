@@ -3923,24 +3923,6 @@ export async function createDocumentTemplateVersion(input: {
     )
     .orderBy(desc(documentTemplates.version))
     .limit(1);
-  // Retirement marks every version of a template id, so a new version has to
-  // inherit it. Without this, adding one to a retired look silently returned
-  // the whole look to the pickers: restoring an old version did it, and so did
-  // the sync installer filling in a missing version from a .textpack. Neither
-  // is what someone meant when they retired it.
-  const retirement = await db
-    .select({ retiredAt: documentTemplates.retiredAt })
-    .from(documentTemplates)
-    .where(
-      and(
-        eq(documentTemplates.blogId, input.blogId),
-        eq(documentTemplates.templateId, candidate.id),
-      ),
-    )
-    .orderBy(desc(documentTemplates.version))
-    .limit(1);
-  const retiredAt = retirement[0]?.retiredAt ?? null;
-
   const nextVersion = (latest[0]?.version ?? 0) + 1;
   // When the caller knows which version it edited, insert exactly the
   // successor to THAT one and let the primary key decide. Reading the latest
@@ -3960,7 +3942,23 @@ export async function createDocumentTemplateVersion(input: {
       definition,
       authoringSource: input.authoringSource ?? null,
       createdById: input.createdById ?? null,
-      retiredAt,
+      /**
+       * Retirement marks every version of a template id, so a new version has
+       * to inherit it. Without this, adding one to a retired look silently
+       * returned the whole look to the pickers: restoring an old version did
+       * it, and so did the sync installer filling in a missing version from a
+       * .textpack. Neither is what someone meant when they retired it.
+       *
+       * Read inside the INSERT rather than before it. Reading first and
+       * inserting second left a window: retirement marks the versions that
+       * exist, so a version created after that read escapes it entirely and
+       * un-retires the look. As a subquery the read happens at the same
+       * statement, against the same snapshot.
+       */
+      retiredAt: sql`(
+        select max(retired_at) from document_templates
+         where blog_id = ${input.blogId} and template_id = ${definition.id}
+      )`,
     });
   } catch (error) {
     // The primary key rejected it, so someone else created this version while
