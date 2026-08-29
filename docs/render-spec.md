@@ -73,7 +73,7 @@ Ten. Each carries `id`, `label`, `required`, `visibility`, `help`, plus its own:
 
 | Type | Adds |
 | --- | --- |
-| `text` | `maxLength` |
+| -> `text` | `maxLength` |
 | `richtext` | `maxLength`. Markdown, edited as styled source. |
 | `image` | `allowedContentTypes` |
 | `date` | |
@@ -82,7 +82,7 @@ Ten. Each carries `id`, `label`, `required`, `visibility`, `help`, plus its own:
 | `number` | `min`, `max`, `step`, `format` |
 | `boolean` | |
 | `reference` | `target`, `multiple`, `semantic` |
-| `rows` | `fields` (sub-fields), `maxRows`. A repeating group: checklist items, ingredients, attendees. |
+| -> `rows` | `fields` (sub-fields), `maxRows`. A repeating group: checklist items, ingredients, attendees. |
 
 A blueprint may also declare a `computed` field. It is not stored as a field; it
 compiles to a `facts` entry `derive` or a `progress` `source`, both of which read
@@ -97,7 +97,7 @@ discriminated union.
 
 | Node | Properties |
 | --- | --- |
-| `stack` | `direction` (vertical, horizontal), `align` (start, center, end, stretch), `gap`, `children` |
+| -> `stack` | `direction` (vertical, horizontal), `align` (start, center, end, stretch), `gap`, `children` |
 | `group` | `gap`, `children` |
 | `masthead` | `gap`, `children`. A group that reads as a document header. |
 | `divider` | `size` |
@@ -186,7 +186,7 @@ Ten axes. Tokens only, so a look can never smuggle in CSS.
 | `titleScale` | `compact`, `standard`, `large` |
 | `bodyScale` | `compact`, `standard`, `relaxed` |
 | `alignment` | `start`, `center` |
-| `media` | `full`, `contained`, `bleed` |
+| -> `media` | `full`, `contained`, `bleed` |
 
 `bodyScale` exists because a look could once say how large its title was and not
 how large its text was, so a reading-first look, which is the entire point of
@@ -211,16 +211,16 @@ thing; only the grammar still spells them apart.
 The target, in the shape a game engine would use: **few primitives, each
 parameterised**, so the grammar is small and the output space is not.
 
-| Primitive | Absorbs | Discriminator |
+| Target primitive | Absorbs | Discriminator |
 | --- | --- | --- |
 | `stack` | `stack`, `group`, `masthead` | `role`, plus the existing direction and align |
 | `media` | `cover`, `image`, `video`, `gallery` | `role`, `columns` |
-| `meta` | `byline`, `metadata` | `variant` |
-| `space` | `divider`, `spacer` | `rule` |
+| -> `meta` | `byline`, `metadata` | `variant` |
+| -> `space` | `divider`, `spacer` | `rule` |
 | `text` | `text`, `quote` | `role`, `attributionBind` |
-| `field` | `badge`, `toggle`, `progress` | `variant` |
+| -> `field` | `badge`, `toggle`, `progress` | `variant` |
 | `rows` | `rows`, `checklist`, `poll` | `variant` |
-| `prose`, `facts`, `callout` | unchanged | |
+| -> `prose`, `facts`, `callout` | unchanged | |
 
 That is 22 down to 10. The first four rows cost nothing: same shape, same
 rendering, one name instead of two or three. The last three are a real trade,
