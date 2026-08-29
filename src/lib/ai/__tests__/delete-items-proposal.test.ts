@@ -95,11 +95,56 @@ describe("staging a deletion for the owner to approve", () => {
       { actor: owner, proposalId: preview.id, decision: "approve" },
       dependencies,
     );
+    // The revisions the owner was shown travel with the approval, so a change
+    // between this check and the executor's own read cannot become the version
+    // that gets deleted.
     expect(execute).toHaveBeenCalledWith(
       "delete_items",
-      { ids: ["a", "b"] },
+      { ids: ["a", "b"], expected_revisions: { a: 11, b: 22 } },
       owner,
     );
+  });
+});
+
+describe("when the record of what was shown is not there", () => {
+  it("refuses rather than running unchecked", () => {
+    // The drift block only ran when the metadata happened to parse, so a
+    // proposal arriving without a preview skipped the check entirely. A
+    // command that must be shown before it runs has to fail closed when there
+    // is no record of it having been shown.
+    return (async () => {
+      const { dependencies, execute, rows } = harness(world());
+      const preview = await createWorkspaceWriteProposal(
+        { actor: owner, tool: "delete_items", arguments: { ids: ["a", "b"] } },
+        dependencies,
+      );
+      const row = rows.get(preview.id)!;
+      row.metadata = null;
+      const decided = await decideWorkspaceWriteProposal(
+        { actor: owner, proposalId: preview.id, decision: "approve" },
+        dependencies,
+      );
+      expect(execute).not.toHaveBeenCalled();
+      expect(decided.status).toBe("failed");
+      expect(String((decided as { message?: string }).message)).toMatch(
+        /was not recorded when it was offered/,
+      );
+    })();
+  });
+
+  it("refuses when the record is there but unreadable", async () => {
+    const { dependencies, execute, rows } = harness(world());
+    const preview = await createWorkspaceWriteProposal(
+      { actor: owner, tool: "delete_items", arguments: { ids: ["a"] } },
+      dependencies,
+    );
+    rows.get(preview.id)!.metadata = { preview: { kind: "something-else" } };
+    const decided = await decideWorkspaceWriteProposal(
+      { actor: owner, proposalId: preview.id, decision: "approve" },
+      dependencies,
+    );
+    expect(execute).not.toHaveBeenCalled();
+    expect(decided.status).toBe("failed");
   });
 });
 
@@ -116,7 +161,11 @@ describe("when the world moves between showing and approving", () => {
       { actor: owner, proposalId: preview.id, decision: "approve" },
       dependencies,
     );
-    expect(execute).toHaveBeenCalledWith("delete_items", { ids: ["b"] }, owner);
+    expect(execute).toHaveBeenCalledWith(
+      "delete_items",
+      { ids: ["b"], expected_revisions: { b: 22 } },
+      owner,
+    );
   });
 
   it("drops an item that became public since it was shown", async () => {
@@ -133,7 +182,11 @@ describe("when the world moves between showing and approving", () => {
       { actor: owner, proposalId: preview.id, decision: "approve" },
       dependencies,
     );
-    expect(execute).toHaveBeenCalledWith("delete_items", { ids: ["b"] }, owner);
+    expect(execute).toHaveBeenCalledWith(
+      "delete_items",
+      { ids: ["b"], expected_revisions: { b: 22 } },
+      owner,
+    );
   });
 
   it("does nothing at all when everything moved", async () => {
@@ -169,6 +222,10 @@ describe("when the world moves between showing and approving", () => {
       { actor: owner, proposalId: preview.id, decision: "approve" },
       dependencies,
     );
-    expect(execute).toHaveBeenCalledWith("delete_items", { ids: ["b"] }, owner);
+    expect(execute).toHaveBeenCalledWith(
+      "delete_items",
+      { ids: ["b"], expected_revisions: { b: 22 } },
+      owner,
+    );
   });
 });

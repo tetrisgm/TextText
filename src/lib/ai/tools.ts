@@ -884,6 +884,12 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
           .min(1)
           .max(50)
           .describe("The items to move to Trash, named one by one."),
+        expected_revisions: z
+          .record(z.string(), z.number().int().nonnegative())
+          .optional()
+          .describe(
+            "Only delete an item if it is still exactly as it was, keyed by id. The approval flow fills this in from what the owner was shown; you do not need to.",
+          ),
       })
       .strict(),
     mutability: "write",

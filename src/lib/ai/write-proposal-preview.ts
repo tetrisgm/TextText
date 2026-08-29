@@ -64,7 +64,10 @@ export function describeFrozenPreview(preview: FrozenProposalPreview): string {
  */
 export function driftedItems(
   frozen: FrozenProposalPreview,
-  now: Map<string, { title: string; visibility: string; revision: number | null }>,
+  now: Map<
+    string,
+    { title: string; folderPath: string; visibility: string; revision: number | null }
+  >,
 ): string[] {
   const drifted: string[] = [];
   for (const item of frozen.items) {
@@ -78,7 +81,10 @@ export function driftedItems(
     if (
       current.revision !== item.revision ||
       current.visibility !== item.visibility ||
-      current.title !== item.title
+      current.title !== item.title ||
+      // The folder was shown and so was approved. A rename or a move changes
+      // what "from notes" meant when the person read it.
+      current.folderPath !== item.folderPath
     ) {
       drifted.push(item.id);
     }

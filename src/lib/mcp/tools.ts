@@ -2501,7 +2501,7 @@ export async function executeMcpTool(
       }> = [];
       const slugs: string[] = [];
       let context: { blog: Blog } | null = null;
-      let destination: { id: string; path: string } | null = null;
+      let destination: { id: string; path: string; mode: string } | null = null;
 
       for (const itemId of input.ids) {
         const resolved = await requirePost(extra, itemId);
@@ -2531,7 +2531,18 @@ export async function executeMcpTool(
             // success, it is a typo.
             return folder;
           }
-          destination = { id: folder.id, path: folder.path };
+          // Reachable is not the same as writable. move_item checks this and
+          // this did not, so a collaborator with edit access to the items
+          // could file them into a folder they may only look at.
+          const targetAccess = await resolveFolderAccess({
+            handle: resolved.blog.handle,
+            folderId: folder.id,
+            user: accessUser(extra),
+          });
+          if (!targetAccess.canEditContent) {
+            return errorResult("You cannot move items into that folder.");
+          }
+          destination = { id: folder.id, path: folder.path, mode: folder.mode };
         }
         const revision = mutationRevision(resolved.post);
         if (typeof revision !== "number") {
@@ -2548,6 +2559,22 @@ export async function executeMcpTool(
           ...before.filter((tag) => !remove.has(tag)),
           ...add,
         ]);
+        // The tool description says the folder must accept their kind, and
+        // nothing checked it. A note filed into the blog folder is a category
+        // error the rest of the product refuses everywhere else.
+        if (
+          destination &&
+          destination.id !== resolved.post.folderId &&
+          folderModeForType(resolved.post.type) !== destination.mode
+        ) {
+          outcomes.push({
+            id: itemId,
+            changed: false,
+            title: resolved.post.title,
+            reason: `a ${itemKindForPost(resolved.post)} does not belong in ${destination.path}`,
+          });
+          continue;
+        }
         const movingTo =
           destination && destination.id !== resolved.post.folderId
             ? destination.id
@@ -2590,6 +2617,8 @@ export async function executeMcpTool(
             // has to expect the new one or it conflicts with itself.
             at = saved.revision ?? at;
           }
+          const tagged = !sameValue(tags, before);
+          let filed = false;
           if (movingTo) {
             const moved = await movePostFile(
               resolved.blog.handle,
@@ -2603,18 +2632,43 @@ export async function executeMcpTool(
                 destination?.path ?? "",
               ),
             );
-            if (moved) slug = moved.post.slug;
+            // A null answer means the item was not there to move. Counting
+            // that as success said "changed" about something that did not
+            // happen.
+            if (moved) {
+              slug = moved.post.slug;
+              filed = true;
+            }
           }
           slugs.push(slug);
-          outcomes.push({ id: itemId, changed: true, title });
+          outcomes.push(
+            movingTo && !filed
+              ? {
+                  id: itemId,
+                  changed: tagged,
+                  title,
+                  // Two commits, so one can land without the other. Saying
+                  // "changed: false" over a tag that did land is a lie about
+                  // the workspace.
+                  reason: tagged
+                    ? "tagged, but it could not be moved"
+                    : "it could not be moved",
+                }
+              : { id: itemId, changed: true, title },
+          );
         } catch (error) {
+          // The tag write and the move are separate commits, so a failure here
+          // may leave the first one applied. Say which.
+          const taggedAlready = !sameValue(tags, before) && movingTo !== null;
           outcomes.push({
             id: itemId,
             changed: false,
             title: resolved.post.title,
             reason:
               error instanceof PostConflictError
-                ? "someone changed it while this was running"
+                ? taggedAlready
+                  ? "someone changed it while this was running; its tags may already have been updated"
+                  : "someone changed it while this was running"
                 : "it could not be saved",
           });
         }
@@ -2670,6 +2724,21 @@ export async function executeMcpTool(
             trashed: false,
             title: resolved.post.title,
             reason: "no revision to check against",
+          });
+          continue;
+        }
+        // When the caller pinned an exact revision - which the approval flow
+        // does, from what the owner was actually shown - honour THAT rather
+        // than whatever this handler has just read. Without it, a change
+        // between the approval's check and this read becomes the version that
+        // gets deleted, which is not the one anyone agreed to.
+        const pinned = input.expected_revisions?.[itemId];
+        if (pinned !== undefined && pinned !== revision) {
+          outcomes.push({
+            id: itemId,
+            trashed: false,
+            title: resolved.post.title,
+            reason: "it changed after this was approved",
           });
           continue;
         }

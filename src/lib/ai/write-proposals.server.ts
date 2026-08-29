@@ -20,7 +20,7 @@ import {
 } from "@/lib/ai/write-proposal-preview";
 import { WORKSPACE_TOOL_DEFINITIONS, type WorkspaceToolName } from "@/lib/ai/tools";
 import { runWorkspaceToolForSession } from "@/lib/mcp/tools";
-import { getAccessibleFolders, getPostById } from "@/lib/store";
+import { getFolders, getPostById } from "@/lib/store";
 import { getBlogEditRecord } from "@/lib/store";
 
 export type WorkspaceWriteProposalActor = {
@@ -596,6 +596,23 @@ export async function decideWorkspaceWriteProposal(
   let approvedArguments = validated.arguments;
   const frozen = (claimed.metadata as { preview?: FrozenProposalPreview } | null)
     ?.preview;
+  // Fails closed. A command that must be shown before it runs, arriving with
+  // no preview or an unreadable one, was simply skipping the check: the drift
+  // block only ran when the metadata happened to parse.
+  if (requiresFrozenPreview(validated.name) && frozen?.kind !== "items") {
+    await dependencies.repository.fail(
+      input.proposalId,
+      owner.binding,
+      "preview_missing",
+      dependencies.now(),
+    );
+    return {
+      status: "failed",
+      proposalId: input.proposalId,
+      message:
+        "That change cannot be approved because what it would do was not recorded when it was offered. Ask again.",
+    };
+  }
   if (frozen?.kind === "items") {
     const current = await dependencies.resolveItems(
       owner.workspace.handle,
@@ -632,9 +649,19 @@ export async function decideWorkspaceWriteProposal(
     // server-side comparison. The narrowing is the only place the payload
     // changes after the claim, and the whole point of this path is that only a
     // payload that passes validation can execute.
+    // Carry the revisions the owner was shown, so what runs is exactly what
+    // they approved. Checking here and letting the executor re-read left a gap
+    // in between where a change could become the version deleted.
+    const expected: Record<string, number> = {};
+    for (const item of frozen.items) {
+      if (stillAgreed.includes(item.id) && item.revision !== null) {
+        expected[item.id] = item.revision;
+      }
+    }
     approvedArguments = validateWorkspaceWriteProposal(validated.name, {
       ...validated.arguments,
       ids: stillAgreed,
+      ...(Object.keys(expected).length ? { expected_revisions: expected } : {}),
     }).arguments;
   }
 
@@ -734,7 +761,11 @@ async function resolveProposalItems(
     { title: string; folderPath: string; visibility: "public" | "private"; revision: number | null }
   >();
   if (!ids.length) return resolved;
-  const folders = await getAccessibleFolders(handle, null);
+  // getFolders, not getAccessibleFolders: that one returns nothing at all for
+  // a null user, so every folder in a frozen preview was blank and the owner
+  // read "from " with a gap where the folder should be. Ownership is already
+  // established before this runs, so there is nothing to filter against.
+  const folders = await getFolders(handle);
   for (const itemId of ids) {
     const post = await getPostById(handle, itemId);
     if (!post) continue;

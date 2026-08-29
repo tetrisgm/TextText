@@ -56,8 +56,8 @@ describe("what the owner is shown before approving a deletion", () => {
 
 describe("whether the world still matches what was approved", () => {
   const unchanged = new Map([
-    ["a", { title: "Half an idea about caching", visibility: "private", revision: 11 }],
-    ["b", { title: "What the outage taught us", visibility: "public", revision: 22 }],
+    ["a", { title: "Half an idea about caching", folderPath: "notes", visibility: "private", revision: 11 }],
+    ["b", { title: "What the outage taught us", folderPath: "blog", visibility: "public", revision: 22 }],
   ]);
 
   it("passes when nothing moved", () => {
@@ -66,7 +66,7 @@ describe("whether the world still matches what was approved", () => {
 
   it("catches an item someone edited since it was shown", () => {
     const edited = new Map(unchanged);
-    edited.set("a", { title: "Half an idea about caching", visibility: "private", revision: 12 });
+    edited.set("a", { title: "Half an idea about caching", folderPath: "notes", visibility: "private", revision: 12 });
     expect(driftedItems(preview, edited)).toEqual(["a"]);
   });
 
@@ -74,14 +74,21 @@ describe("whether the world still matches what was approved", () => {
     // The person approved deleting a draft. Deleting something people can now
     // see is a different act.
     const published = new Map(unchanged);
-    published.set("a", { title: "Half an idea about caching", visibility: "public", revision: 11 });
+    published.set("a", { title: "Half an idea about caching", folderPath: "notes", visibility: "public", revision: 11 });
     expect(driftedItems(preview, published)).toEqual(["a"]);
   });
 
   it("catches a renamed item, because the name is what was approved", () => {
     const renamed = new Map(unchanged);
-    renamed.set("b", { title: "Something else entirely", visibility: "public", revision: 22 });
+    renamed.set("b", { title: "Something else entirely", folderPath: "blog", visibility: "public", revision: 22 });
     expect(driftedItems(preview, renamed)).toEqual(["b"]);
+  });
+
+  it("catches an item whose folder changed since it was shown", () => {
+    // "from notes" was part of what the person read and approved.
+    const moved = new Map(unchanged);
+    moved.set("a", { title: "Half an idea about caching", folderPath: "archive", visibility: "private", revision: 11 });
+    expect(driftedItems(preview, moved)).toEqual(["a"]);
   });
 
   it("does not call an already-deleted item drift", () => {
@@ -93,7 +100,7 @@ describe("whether the world still matches what was approved", () => {
 
   it("drops only what drifted, keeping what the person still agreed to", () => {
     const partly = new Map(unchanged);
-    partly.set("a", { title: "Half an idea about caching", visibility: "private", revision: 99 });
+    partly.set("a", { title: "Half an idea about caching", folderPath: "notes", visibility: "private", revision: 99 });
     expect(driftedItems(preview, partly)).toEqual(["a"]);
   });
 });
