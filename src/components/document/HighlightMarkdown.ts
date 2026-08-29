@@ -47,7 +47,10 @@ type MarkdownNode = {
  *
  * The markers have to flank, the way emphasis does. An opening `==` follows
  * the start, whitespace, or opening punctuation; a closing one is followed by
- * the end, whitespace, or closing punctuation. Without that, prose about code
+ * the end, whitespace, or closing punctuation. Curly quotes and dashes count:
+ * with an ASCII-only set, a phrase a person had wrapped in real quotation
+ * marks or set off with an em dash did not highlight, which is exactly where
+ * someone emphasises something. Without that, prose about code
  * became emphasis: `E==mc== squared` marked "mc", and `arr[i]==arr[j]==arr[k]`
  * marked "arr[j]". Neither is someone asking for a highlight; both are someone
  * writing about equality.
@@ -55,8 +58,12 @@ type MarkdownNode = {
  * And neither end may touch a third equals sign, or `a === b === c` marks
  * "= b " in the middle of a sentence about strict equality.
  */
-const HIGHLIGHT =
-  /(?<![^\s([{"'])(?<!=)==(?![\s=])((?:[^\n=]|=(?!=))+?)==(?!=)(?![^\s)\]}.,;:!?"'])/g;
+const OPENS = '\\s([{"\'\u2018\u201c\u00ab\u2014\u2013\u2026';
+const CLOSES = '\\s)\\]}.,;:!?"\'\u2019\u201d\u00bb\u2014\u2013\u2026';
+const HIGHLIGHT = new RegExp(
+  `(?<![^${OPENS}])(?<!=)==(?![\\s=])((?:[^\\n=]|=(?!=))+?)==(?!=)(?![^${CLOSES}])`,
+  "g",
+);
 
 /**
  * Which highlights in this text node were written with a backslash before them.
@@ -65,11 +72,17 @@ const HIGHLIGHT =
  * identical there. The source does not: the node's position spans it.
  *
  * So rebuild the text the way Markdown will have it - dropping a backslash
- * before punctuation, which is the only thing it escapes - and remember the
- * positions where one was dropped. The rebuilt string is the node's value, so
- * running the same pattern over it gives matches at the same offsets, and a
- * match that starts where a backslash was removed is one a person wrote
- * literally.
+ * before punctuation - and remember the positions where one was dropped.
+ * Running the same pattern over the rebuilt string gives matches at the same
+ * offsets as the node's value, and a match that starts where a backslash was
+ * removed is one a person wrote literally.
+ *
+ * "The same offsets" holds for escapes and not for everything: a character
+ * reference like `&#61;` is also resolved before the node value exists, and
+ * this does not resolve those, so a document mixing entities and escapes can
+ * put a flag on the wrong highlight. Escapes are what people use to mean the
+ * characters; entities are not, and decoding them here would mean carrying a
+ * second copy of Markdown's rules. Stated rather than silently assumed.
  *
  * Matching the raw source instead does not work: the opening marker of
  * `\==x==` is preceded by the backslash, which fails the flanking rule, so

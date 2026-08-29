@@ -24,7 +24,12 @@ export async function createItemTypeAction(
   | {
       ok: true;
       itemType: { id: string; version: number; name: string };
-      folder: { path: string; restyledItems: number } | null;
+      folder: {
+        path: string;
+        restyledItems: number;
+        itemsLeft: number;
+        itemsBeingEdited: number;
+      } | null;
     }
   | { ok: false; error: string }
 > {
@@ -65,6 +70,11 @@ export async function createItemTypeAction(
         ? {
             path: created.folder.path,
             restyledItems: created.folder.restyledItems,
+            // The agent path reports these and this one dropped them, so a
+            // folder larger than one restyling pass looked finished to the
+            // person who asked and finished to nobody else.
+            itemsLeft: created.folder.itemsLeft,
+            itemsBeingEdited: created.folder.itemsBeingEdited,
           }
         : null,
     };

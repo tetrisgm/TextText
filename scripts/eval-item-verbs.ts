@@ -20,7 +20,13 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 
-import { remarkHighlight } from "@/components/document/HighlightMarkdown";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+
+import { DocumentRenderer } from "@/components/document/DocumentRenderer";
+import { getBuiltinTemplate } from "@/lib/presentation/templates";
+
+const NOTE_TEMPLATE = getBuiltinTemplate("texttext.note")!;
 
 import { eq } from "drizzle-orm";
 import { chromium } from "playwright";
@@ -146,19 +152,28 @@ async function snapshot(actor: Actor, id: string): Promise<Snapshot> {
 /**
  * What the reader will actually mark, from the text that was actually saved.
  *
- * The eval asserted the markers were in the file, which is not the same thing:
- * a highlight only renders when its markers flank properly, so a model can
- * write something the file check likes and a person can still see `==`.
+ * Through the real renderer, not a hand-built node. An earlier version made one
+ * text node out of the whole document and ran the transform over it, which
+ * skips Markdown parsing entirely: a highlight inside a fenced code block
+ * passed there while the real page correctly showed none.
  */
-function renderMarks(markdown: string): string[] {
-  const tree = {
-    type: "root",
-    children: [{ type: "paragraph", children: [{ type: "text", value: markdown }] }],
-  };
-  (remarkHighlight() as (node: unknown) => void)(tree);
-  return (tree.children[0].children as Array<{ data?: Record<string, unknown> }>)
-    .filter((node) => (node.data as { hName?: string } | undefined)?.hName === "mark")
-    .map(() => "mark");
+function renderMarks(markdown: string): number {
+  const html = renderToStaticMarkup(
+    createElement(DocumentRenderer, {
+      template: NOTE_TEMPLATE,
+      document: {
+        schemaVersion: 1,
+        content: { title: "", subtitle: "", body: markdown, fields: {}, tags: [], assets: [] },
+        presentation: {
+          template: { id: NOTE_TEMPLATE.id, version: NOTE_TEMPLATE.version },
+          theme: {},
+        },
+      },
+    } as never),
+  );
+  // The stylesheet is inlined and now contains no mark selector by that name,
+  // but count the elements rather than the string to be sure.
+  return (html.replace(/<style[\s\S]*?<\/style>/g, "").match(/<mark/g) ?? []).length;
 }
 
 // ----------------------------------------------------------------- the tasks
@@ -292,13 +307,13 @@ const TASKS: Task[] = [
       // highlight may open and close, so a model can write something this
       // assertion likes and the page can still show the equals signs. Run the
       // real transform over what was actually saved.
-      const rendered = renderMarks(after.body);
+      const renderedMarks = renderMarks(after.body);
       return [
         check(marked.length >= 1, `a passage was highlighted (${marked.length} span(s))`),
         check(marked.length <= 3, `it chose, rather than highlighting everything (${marked.length})`),
         check(
-          rendered.length >= 1,
-          `and it renders as a highlight rather than as equals signs (${rendered.length} mark(s))`,
+          renderedMarks >= 1,
+          `and it renders as a highlight rather than as equals signs (${renderedMarks} mark(s))`,
         ),
         check(
           stripped === before.outage.body.trim(),

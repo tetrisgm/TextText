@@ -94,6 +94,12 @@ describe("==highlight==", () => {
     ["==with punctuation, yes==", ["with punctuation, yes"]],
     ["(==parenthesised==)", ["parenthesised"]],
     ["He said ==this matters==.", ["this matters"]],
+    // Real punctuation, not just ASCII. An ASCII-only flanking set refused a
+    // phrase wrapped in curly quotes or set off with an em dash, which is
+    // exactly where a person emphasises something.
+    ["\u201c==important==\u201d", ["important"]],
+    ["\u2014==important==\u2014", ["important"]],
+    ["It was\u2014==this==\u2014all along", ["this"]],
   ])("marks %s", (text, expected) => {
     expect(marks(text)).toEqual(expected);
   });

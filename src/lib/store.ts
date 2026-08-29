@@ -3723,6 +3723,14 @@ export async function installDocumentTemplate(input: {
     name: definition.name,
     definition,
     createdById: input.createdById ?? null,
+    // Inherit the look's retirement, exactly as createDocumentTemplateVersion
+    // does. This path inserts directly, so it did not, and a .textpack
+    // carrying a version a retired look never had put the whole look back in
+    // the pickers: the picker offers any row whose retiredAt is null.
+    retiredAt: sql`(
+      select max(retired_at) from document_templates
+       where blog_id = ${input.blogId} and template_id = ${definition.id}
+    )`,
   });
   return "installed";
 }

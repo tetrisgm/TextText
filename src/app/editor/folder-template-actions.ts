@@ -214,7 +214,7 @@ export async function setFolderLookAction(
   templateVersionInput: unknown,
   applyToExistingInput: unknown,
 ): Promise<
-  | { ok: true; changed: number; beingEdited: number }
+  | { ok: true; changed: number; beingEdited: number; itemsLeft: number }
   | { ok: false; error: string }
 > {
   try {
@@ -243,9 +243,15 @@ export async function setFolderLookAction(
       targetType: "folder",
       targetId: folder.id,
       inputSummary: `${folder.path} -> ${reference.id}@${reference.version}`,
-      outputSummary: restyled.contested
-        ? `${restyled.changed} items restyled, ${restyled.contested} left alone because someone was editing them`
-        : `${restyled.changed} items restyled`,
+      outputSummary: [
+        `${restyled.changed} items restyled`,
+        restyled.contested
+          ? `${restyled.contested} left alone because someone was editing them`
+          : "",
+        restyled.remaining ? `${restyled.remaining} still to do` : "",
+      ]
+        .filter(Boolean)
+        .join(", "),
     });
     revalidateBlogPaths({ handle: access.handle });
     // contested is surfaced, not swallowed: an item left with its old look
@@ -255,6 +261,9 @@ export async function setFolderLookAction(
       ok: true,
       changed: restyled.changed,
       beingEdited: restyled.contested,
+      // Restyling stops after a bounded number per pass. Returning only what
+      // changed made a folder larger than one pass look finished.
+      itemsLeft: restyled.remaining,
     };
   } catch (error) {
     return {

@@ -118,6 +118,26 @@ export function FolderLookPicker({
               setError(result.error);
               return;
             }
+            // Applying a look to a large folder restyles a bounded number of
+            // items per pass, and can leave alone anything someone is editing.
+            // Closing on that silently told the person it was all done.
+            if (result.itemsLeft > 0 || result.beingEdited > 0) {
+              setError(
+                [
+                  `${result.changed} item(s) now use this look.`,
+                  result.itemsLeft
+                    ? `${result.itemsLeft} still to do - apply it again to continue.`
+                    : "",
+                  result.beingEdited
+                    ? `${result.beingEdited} kept the old look because someone is editing them.`
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join(" "),
+              );
+              onChanged?.();
+              return;
+            }
             onChanged?.();
             onClose();
           } catch {

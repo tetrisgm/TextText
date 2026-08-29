@@ -242,8 +242,19 @@ the first four commits. Those are fixed and listed below with them.
 
 ## Order for what is left
 
-Revised again after a third verification pass, which failed the work and was
-right to. What that pass named is fixed; what it left standing is below.
+Revised after four verification passes. The third and fourth both failed the
+work, and both were right to: each found real defects in the fixes for the
+previous one. The list below is what is left, not a claim that everything named
+has been closed. What is knowingly still open, beyond the numbered items:
+
+- A retired look can still return through the retire-versus-update race, which
+  needs a transaction rather than two statements.
+- Updating an item type commits the new version before it discovers folders, so
+  a folder trashed in between leaves a version nothing wears.
+- The person-facing folder and creation paths still drop the unfinished counts
+  that the agent paths report.
+- Highlight offsets assume escapes are the only thing resolved before a text
+  node exists; character references are not handled.
 
 1. **A confirmation-capable bounded batch mutation.** Explicit targets, a
    revision check per item, stated partial-failure behaviour, and a receipt,

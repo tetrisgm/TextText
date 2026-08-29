@@ -1129,10 +1129,13 @@ was the mistake, not the checking.
   output matches the CSS rather than the element. Everything shipped afterwards
   was mutation-tested - break the guard, watch the test fail - and one that did
   not hold was found that way.
-- Two claims in comments were invented rather than checked. One described a
-  backslash-escape mechanism for `==highlight==`; remark strips the escape
-  before any plugin sees the text, so it cannot exist. The probe took a minute
-  and the comment would have been wrong forever.
+- Two claims in comments were invented rather than checked, and the second
+  correction was also wrong. A comment described a backslash-escape mechanism
+  for `==highlight==` that did not exist. Checking showed remark strips the
+  escape before any plugin sees the TEXT NODE, and I concluded it was therefore
+  impossible - which is false, because the node's position still spans the
+  original source and the VFile still holds the backslash. It works now.
+  Verifying the narrow claim and generalising from it was the error both times.
 - An eval caught what no unit test could: `update_item_type` worked and no
   model could find it, because `list_document_templates` described itself as
   listing templates and answered with 24,000 characters of render trees. Ten

@@ -901,9 +901,10 @@ export async function executeMcpTool(
           handle: resolved.blog.handle,
         });
 
-        const unfinished = created.folder
-          ? created.folder.itemsLeft + created.folder.itemsBeingEdited
-          : 0;
+        // itemsLeft already counts the contested ones: remaining is what is
+        // still pending, and an item someone was editing is still pending.
+        // Adding them counted those items twice.
+        const unfinished = created.folder?.itemsLeft ?? 0;
         return jsonResult({
           itemType: created.definition,
           folder: created.folder,
