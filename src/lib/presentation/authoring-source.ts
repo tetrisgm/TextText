@@ -94,15 +94,3 @@ export function inspectAuthoringSource(value: unknown): AuthoringSourceState {
   }
   return { state: "authored", source: parsed.data };
 }
-
-/**
- * The source when it can be reopened as it stands, and null otherwise.
- *
- * Kept for the callers that only need the yes-or-no. Anything that TELLS a
- * person why should use `inspectAuthoringSource` instead, so "the compiler
- * moved on" is not reported as "this was never designed".
- */
-export function readAuthoringSource(value: unknown): AuthoringSource | null {
-  const inspected = inspectAuthoringSource(value);
-  return inspected.state === "authored" ? inspected.source : null;
-}

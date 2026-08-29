@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   authoringSourceFor,
   inspectAuthoringSource,
-  readAuthoringSource,
   AUTHORING_SOURCE_SCHEMA_VERSION,
 } from "@/lib/presentation/authoring-source";
 import {
@@ -61,16 +60,18 @@ describe("the blueprint stored beside a look", () => {
   it("round trips through the stored envelope", () => {
     const blueprint = normalizeItemTypeBlueprint(ALREADY_VALID);
     const stored = JSON.parse(JSON.stringify(authoringSourceFor(blueprint)));
-    expect(readAuthoringSource(stored)?.blueprint).toEqual(blueprint);
+    const read = inspectAuthoringSource(stored);
+    expect(read.state).toBe("authored");
+    expect(read.state === "authored" ? read.source.blueprint : null).toEqual(blueprint);
   });
 
   it("reads absent as absent rather than throwing", () => {
     // Built-ins, duplicates, imports, restores, looks saved from a document,
     // and every row older than the column. Ordinary answers, not failures.
-    expect(readAuthoringSource(null)).toBeNull();
-    expect(readAuthoringSource(undefined)).toBeNull();
-    expect(readAuthoringSource({})).toBeNull();
-    expect(readAuthoringSource({ kind: "something-else" })).toBeNull();
+    expect(inspectAuthoringSource(null).state).toBe("assembled");
+    expect(inspectAuthoringSource(undefined).state).toBe("assembled");
+    expect(inspectAuthoringSource({}).state).toBe("unreadable");
+    expect(inspectAuthoringSource({ kind: "something-else" }).state).toBe("unreadable");
   });
 
   it("tells the four cases apart instead of calling them all absent", () => {
@@ -96,7 +97,7 @@ describe("the blueprint stored beside a look", () => {
       ...authoringSourceFor(normalizeItemTypeBlueprint(ALREADY_VALID)),
       compilerVersion: ITEM_TYPE_BLUEPRINT_COMPILER_VERSION + 1,
     };
-    expect(readAuthoringSource(stale)).toBeNull();
+    expect(inspectAuthoringSource(stale).state).toBe("needs-migration");
   });
 
   it("stamps the current versions", () => {
@@ -114,9 +115,6 @@ describe("the blueprint stored beside a look", () => {
     const good = authoringSourceFor(normalizeItemTypeBlueprint(ALREADY_VALID));
     const older = { ...good, compilerVersion: ITEM_TYPE_BLUEPRINT_COMPILER_VERSION + 1 };
     expect(inspectAuthoringSource(older).state).toBe("needs-migration");
-    // readAuthoringSource still answers null for it, which is right for a
-    // caller that only asks "can I reopen this".
-    expect(readAuthoringSource(older)).toBeNull();
     // The two answers must not be confused: one is a yes-or-no, the other is
     // the reason, and the reason is what a person is told.
     expect(inspectAuthoringSource(null).state).toBe("assembled");
