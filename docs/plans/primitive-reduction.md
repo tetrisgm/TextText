@@ -1,6 +1,10 @@
 # Reducing the render primitives
 
-Status: plan, not started. Written 2026-08-28.
+Status: plan, not started. Written 2026-08-28, then rewritten against an
+adversarial review by Codex 5.6 Sol at xhigh reasoning, which found the node
+counts wrong by threefold, the parse boundary claim false, step 0 fatal, and
+step 5 permanently unsafe. Its verdict on the first draft was "not safe to
+execute as written". What follows is the corrected version.
 
 ## Why
 
@@ -70,35 +74,28 @@ Nine names, four behaviours.
 
 ## Target grammar
 
-| Target | Absorbs | How the difference is carried |
+Revised after review. The first draft flattened each family into one wide
+object, which lets the type system accept combinations that cannot render:
+`badge` and `toggle` read `bind` (`schema.ts:480`, `:492`) while `progress`
+requires `source` (`schema.ts:577`), so a flattened `field` permits both at
+once. Where a family's members have mutually exclusive required properties,
+the discriminator has to be nested, not a sibling flag.
+
+| Target | Absorbs | Carried by |
 | --- | --- | --- |
-| `stack` | `stack`, `group`, `masthead` | `role: "plain" \| "masthead"`, plus existing `direction`, `align` |
-| `media` | `cover`, `image`, `video`, `gallery` | `role: "cover" \| "inline"`, `columns` for the gallery case |
-| `meta` | `byline`, `metadata` | `variant: "byline" \| "metadata"` |
-| `space` | `divider`, `spacer` | `rule: boolean` |
-| `field` | `badge`, `toggle`, `progress` | `variant: "badge" \| "toggle" \| "progress"` |
-| `rows` | `rows`, `checklist`, `poll` | `variant`, plus the checklist and poll bindings |
-| `text` | `text`, `quote` | `role` gains `quote`; `attributionBind` |
-| `prose`, `facts`, `callout` | unchanged | |
+| `meta` | `byline`, `metadata` | `variant`. Same shape, distinction preserved. Free. |
+| `space` | `divider`, `spacer` | `rule: boolean` plus `size`. Free. |
+| `stack` | `group`, `masthead` | `role: "plain" \| "masthead"`. `.tt-masthead` centres and constrains to the measure while `.tt-stack`/`.tt-group` stretch (`styles.ts:15`), so the role has to survive into the class name. |
+| `media` | `cover`, `image`, `video`, `gallery` | `kind: "image" \| "video" \| "gallery"` AND `role: "cover" \| "inline"`. One flag is not enough: the renderer branches on `type === "video"` (`DocumentRenderer.tsx:333`) and gallery carries `columns`. |
+| `field` | `badge`, `toggle` only | A NESTED union: `{type:"field", spec: {kind:"badge", bind, appearance} \| {kind:"toggle", bind, labelBind?, appearance}}`. `progress` stays out: it reads `source`, not `bind`. |
+| `rows` | `rows`, `checklist` only | Nested union on `variant`. `poll` stays out: it is an authorisation signal for reader responses, not a presentation variant, and `responses.ts` discovers polls by node type. |
+| unchanged | `text`, `prose`, `facts`, `callout`, `quote`, `progress`, `poll` | |
 
-22 names to 10.
+22 names to 13, not 10. `quote` keeps its `block \| pull \| attributed`
+variants (`schema.ts:597`), which a `role: "quote"` on `text` would have lost.
 
-### What each collapse costs
-
-- **Free**: `stack`, `media`, `meta`, `space`. Same shape, same rendering, one
-  name instead of two or three. Nothing about the output changes.
-- **Cheap**: `text` absorbing `quote`. `quote` is unused in every look counted,
-  so this is renaming an unused node into a role that will be used.
-- **A real trade**: `field` and `rows`. Both widen a node's property set to
-  narrow the vocabulary. `rows` absorbing `poll` means `closesBind` and
-  `multiple` ride along on a node that is usually a plain table, and a reader of
-  the schema can no longer tell from the type alone which properties apply.
-  `field` absorbing `progress` is the weakest of the three: `progress` reads a
-  computed `source`, not a `bind`, so the merged node has two mutually
-  exclusive ways of naming its input.
-
-If the trade is judged bad, stopping after the four free ones plus `quote`
-still takes 22 to 16 and costs nothing.
+The four free merges alone take 22 to 18 and cost nothing. Everything past that
+is a judgement about whether a smaller vocabulary is worth a nested union.
 
 ## Sequence
 
@@ -106,16 +103,22 @@ Each step ends green: `npx tsc --noEmit`, `npm test`, `npm run lint`, and for
 anything touching the renderer, `npm run evals` on a freshly restarted dev
 server.
 
-### 0. Delete what nothing uses
+### 0. Delete only `spacer`, and only after step 1
 
-`spacer`, `quote` and `poll` are unused across the built-ins and all 372 stored
-looks. Before deleting, walk the 18 retired definitions too. If they are also
-clear, remove those three from the schema, the renderer and the compiler. This
-is subtraction with no migration and no compatibility layer, and it makes every
-later step smaller.
+WAS: delete `spacer`, `quote` and `poll` first, because they are unused.
+WRONG, and the adversarial review caught it against my own caveat.
 
-Verification: the render-spec doc test fails until the doc drops them, which is
-the intended signal.
+`quote` is in the retired `bookshelf` look (`templates.ts:1022`) and `poll` is
+in retired `texttext.poll` (`templates.ts:3477`) and `texttext.rsvp`
+(`templates.ts:3579`). Those definitions are validated AT MODULE LOAD by
+`legacyDefinitions.map(validateTemplateDefinition)` (`templates.ts:3653`), so
+removing either from the schema throws on import and takes the whole module
+with it, not one page pinned to one look.
+
+`spacer` appears in no active or retired definition and no stored look. Even so
+it moves AFTER step 1: a `.textpack` exported months ago is outside the
+database and has no expiry, so it can still carry one. Delete the emitter and
+the renderer branch; keep accepting the name on input.
 
 ### 1. Accept both spellings at the parse boundary
 
@@ -175,13 +178,46 @@ Verification: run against a copy of the local database first, diff the render
 tree of every stored look before and after, and assert equality. 372 looks is
 small enough to check exhaustively rather than sample.
 
-### 5. Drop the old names
+### 5. Drop legacy EMISSION only, never legacy acceptance
 
-Remove the legacy branches from the schema and the normaliser. Only safe once
-production has been migrated, so this ships in a later deploy than step 4.
+WAS: remove the legacy branches from the schema. That is unsafe permanently,
+not just until production is migrated.
 
-Verification: a query asserting zero stored definitions contain a legacy node
-type, run before the deploy.
+A `.textpack` on disk carries `template.json` with a whole look inside, and the
+Mac treats it as opaque JSON: it validates only that it parses
+(`TextBundlePackage.swift:251`), reads it back from an edited package
+(`FileProviderExtension.swift:1121`), and posts it unchanged into the sync
+envelope (`LiveTextTextSyncAPI.swift:617`). The server then validates the whole
+envelope through the embedded schema (`sync.ts:40`, used at `sync.ts:109`).
+
+So after removing legacy names, a person editing a bundle exported before the
+migration gets HTTP 400 from the PUT route, and the rejection happens BEFORE
+the best-effort template install, so **their prose is not saved either**. A
+zero-row database query cannot prove this safe: the bundles are outside the
+database and never expire.
+
+Legacy spellings stay accepted and normalised at every external parse boundary
+indefinitely. What step 5 removes is legacy EMISSION and the legacy renderer
+branches.
+
+## Consumers the first draft missed
+
+Found by review, each verified against source.
+
+| Consumer | What breaks |
+| --- | --- |
+| `validateTreeBindings` (`schema.ts:855`) | Branches on old node names at 868 to 959. After normalisation it receives target names and silently stops validating bindings. Must change in step 1, not step 2. |
+| Poll discovery (`responses.ts:10`, `:26`) | Finds polls by node type. A `rows` carrying a poll variant is never found and `/api/respond` 404s (`respond/route.ts:69`). This is why `poll` stays its own node. |
+| `verify-template-render.ts:83` | Collects node types but its marker map (93 to 102) holds only legacy names, so target types are silently unchecked. It also loops only ACTIVE built-ins (105), so it would not have caught the retired-look breakage. |
+| `render-spec-doc.test.ts:75` | Asserts more than 15 node types, so a final vocabulary of 13 fails it deliberately. A `.transform()` on `templateDefinitionSchema` also turns it into a pipe and breaks `.shape` introspection at 111 to 114. |
+| Renderer class names (`DocumentRenderer.tsx:332`, `:1010`) | Classes derive from node type, and both the engine CSS and the look eval select on them (`eval-sidebar-looks.ts:378`). Semantic classes must be preserved explicitly, not derived from the new type. |
+| `document-types.md:105` | Enumerates the old vocabulary and is not test-enforced, so it will drift silently. |
+
+Checked and NOT affected: item-type quality reads blueprint field types, not
+render nodes (`item-type-quality.ts:18`); the AI prompt emits the blueprint
+grammar, not render nodes (`item-type-generation.ts:6`); HTML export delegates
+to the renderer (`export.server.tsx:23`); no Swift branches on node type, which
+is exactly why a stale `template.json` survives unchanged.
 
 ## Risks
 
@@ -198,18 +234,23 @@ type, run before the deploy.
 
 Steps 0 and 1 are code-only: revert the commit.
 
-**Steps 2 and 3 are not**, which an earlier draft got wrong. The moment the
-compiler emits target names, every newly designed look is PERSISTED in the new
-grammar, and sync hands those looks out inside `.textpack` files. So durable
-data in the new format exists before step 4 runs, and a rollback of the app
-meets looks it cannot parse. Either ship steps 1 and 2 (accept both, render
-both) and let them soak before step 3, or accept that rollback past step 3
-requires the down-migration too. Step 4 writes to stored looks
-and needs a paired down-migration written at the same time as the up, mapping
-target names back to the legacy ones. It is lossless in that direction because
-the legacy vocabulary is strictly larger.
+**Steps 2 and 3 are not.** Once the compiler emits target names, every newly
+designed look is persisted in the new grammar and handed out inside textpacks,
+so durable new-format data exists before the migration runs.
 
-Step 5 is the point of no return, and only after production data is verified.
+**The rollback floor is the step 1 dual-reader build.** An older build reads
+every stored definition through `validateTemplateDefinition`
+(`store.ts:3358`, `:3420`, `:3481`), and those throws are not caught: public
+item rendering awaits the lookup (`t/[handle]/[slug]/page.tsx:377`) and so does
+sync look resolution (`sync.ts:245`). A migrated custom look therefore becomes
+a page failure and a sync failure on a pre-step-1 build.
+
+- Rolling back to step 3 or 4 code: safe.
+- Rolling back below step 1: run the down-migration FIRST, then send traffic.
+
+The down-migration is only lossless if the target grammar keeps enough
+information to pick the original legacy node. Under the first draft's grammar
+it did not, which is one more reason the collapses below changed.
 
 ## Open questions for the owner
 
@@ -219,3 +260,25 @@ Step 5 is the point of no return, and only after production data is verified.
    separate, or accept two input shapes on one node?
 3. `poll` is unused but a retired built-in is named `texttext.poll`. Delete the
    node, or keep it for a feature that may return?
+
+## Verdict on the first draft, and what changed
+
+The review's ranked findings, and what each did to the plan:
+
+1. **Step 5 permanently rejects old textpacks.** Legacy bundles carry a whole
+   look and never expire; rejection happens before the content is saved, so a
+   person loses their edit. Step 5 now removes emission only.
+2. **The database migration is unsafe against an unrestricted rollback.** The
+   step 1 dual-reader is now named as the rollback floor.
+3. **Step 0 cannot delete `quote` or `poll`.** They are in retired built-ins
+   validated at module load. Only `spacer` goes, and after step 1.
+4. **Several collapses are lossy.** `field` flattening allows `bind` and
+   `source` together; `media` cannot distinguish image, video and gallery with
+   one flag; `text` absorbing `quote` loses three variants. The grammar is now
+   13 names with nested unions, not 10 flat ones.
+5. **Six consumers were missed**, including binding validation and poll
+   discovery, both of which fail silently rather than loudly.
+
+Two things the review got right that I had already written down and then
+contradicted: the caveat that retired definitions were not walked was in the
+first draft, immediately above a step 0 that deleted nodes anyway.
