@@ -1083,6 +1083,46 @@ them. 261 occurrences. Collapsing them removes the concept, and it needs the
 owner's word, because `type:` is a stored column and `kind:` is in the
 frontmatter of every file on disk. That is a data migration, not a refactor.
 
+## The two goals, and what it took to move them (2026-08-29)
+
+Plan in `docs/plans/two-goals.md`. Written, torn apart by gpt-5.6-sol at max
+reasoning, rewritten, built, verified twice more, and repaired after each pass.
+
+**What the reviews were worth.** The first found the sharpest gap against the
+owner's own words - an agent on this Mac had five verbs, and the plan asserted
+it had all of them - plus three fixes that were wrong rather than incomplete.
+The second found real defects in all four commits that followed, including one
+my own test had written down as correct. The third found that the widened
+surface was unreachable from the actual `texttext` binary, so the capability
+was claimed and not delivered.
+
+Every one of those was verified in the code before being acted on, and every
+one held.
+
+**Habits worth keeping.**
+
+- Three test suites shipped this session could not fail. Two were the same
+  mistake: the renderer inlines the stylesheet, so asserting on the whole SSR
+  output matches the CSS rather than the element. Everything shipped afterwards
+  was mutation-tested - break the guard, watch the test fail - and one that did
+  not hold was found that way.
+- Two claims in comments were invented rather than checked. One described a
+  backslash-escape mechanism for `==highlight==`; remark strips the escape
+  before any plugin sees the text, so it cannot exist. The probe took a minute
+  and the comment would have been wrong forever.
+- An eval caught what no unit test could: `update_item_type` worked and no
+  model could find it, because `list_document_templates` described itself as
+  listing templates and answered with 24,000 characters of render trees. Ten
+  tool calls and two failures became two calls and none.
+
+**Where the goals stand.** A person can describe a kind of item, get it, and
+change it afterwards by asking; that is proved end to end by
+`eval:item-verbs -- change-item-type` against a real model. The assistant can
+read, update, highlight, organise and act across items; eight eval tasks cover
+it. It still cannot delete, publish or share from the browser or the local CLI,
+because those need a confirmation flow that does not exist, and there is no
+bounded batch command.
+
 ## eval:item-verbs, dated receipt (2026-08-29)
 
 A review pointed out that "21 checks, passing" appeared in a plan with nothing
