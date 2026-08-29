@@ -62,7 +62,7 @@ describe("changing an item type that already exists", () => {
     mocks.listFoldersUsingTemplate.mockResolvedValue([
       { id: "f-1", path: "recipes", version: 3 },
     ]);
-    mocks.retemplateFolderItems.mockResolvedValue({ changed: 7, remaining: 0 });
+    mocks.retemplateFolderItems.mockResolvedValue({ changed: 7, contested: 0, remaining: 0 });
   });
 
   it("adds a version rather than changing the one documents are pinned to", async () => {
@@ -82,7 +82,7 @@ describe("changing an item type that already exists", () => {
       version: 4,
     });
     expect(result.applied).toEqual([
-      { path: "recipes", restyledItems: 7, itemsLeft: 0 },
+      { path: "recipes", restyledItems: 7, itemsLeft: 0, itemsBeingEdited: 0 },
     ]);
   });
 
@@ -134,13 +134,26 @@ describe("changing an item type that already exists", () => {
     expect(mocks.setFolderTemplate).toHaveBeenCalledTimes(1);
   });
 
+  it("reports the items left alone because someone was editing them", async () => {
+    // The revision guard leaves a contested item with its old look rather than
+    // overwriting what was being typed. Not saying so would be the same silent
+    // half-finish in a different disguise.
+    mocks.retemplateFolderItems.mockResolvedValue({
+      changed: 4,
+      contested: 2,
+      remaining: 0,
+    });
+    const result = await call();
+    expect(result.applied[0].itemsBeingEdited).toBe(2);
+  });
+
   it("reports the items a restyling pass did not reach", async () => {
     // Restyling stops at a bounded number per pass. Reporting only what
     // changed turns a half-finished folder into a finished one.
-    mocks.retemplateFolderItems.mockResolvedValue({ changed: 500, remaining: 212 });
+    mocks.retemplateFolderItems.mockResolvedValue({ changed: 500, contested: 3, remaining: 212 });
     const result = await call();
     expect(result.applied).toEqual([
-      { path: "recipes", restyledItems: 500, itemsLeft: 212 },
+      { path: "recipes", restyledItems: 500, itemsLeft: 212, itemsBeingEdited: 3 },
     ]);
   });
 
@@ -168,7 +181,7 @@ describe("changing an item type that already exists", () => {
     expect(mocks.setFolderTemplate).toHaveBeenCalled();
     expect(mocks.retemplateFolderItems).not.toHaveBeenCalled();
     expect(result.applied).toEqual([
-      { path: "recipes", restyledItems: 0, itemsLeft: 0 },
+      { path: "recipes", restyledItems: 0, itemsLeft: 0, itemsBeingEdited: 0 },
     ]);
   });
 

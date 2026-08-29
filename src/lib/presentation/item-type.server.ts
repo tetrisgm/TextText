@@ -76,7 +76,7 @@ export async function createWorkspaceItemType(input: {
   await setFolderTemplate(input.handle, folder.id, reference);
   const restyled =
     input.applyToExisting === false
-      ? { changed: 0, remaining: 0 }
+      ? { changed: 0, contested: 0, remaining: 0 }
       : await retemplateFolderItems(input.handle, folder.id, reference);
   await recordAction({
     ...input.actor,
@@ -101,7 +101,12 @@ export type ItemTypeUpdateResult = {
   definition: TemplateDefinition;
   previousVersion: number;
   /** Where the new version actually landed, and what it restyled. */
-  applied: Array<{ path: string; restyledItems: number; itemsLeft: number }>;
+  applied: Array<{
+    path: string;
+    restyledItems: number;
+    itemsLeft: number;
+    itemsBeingEdited: number;
+  }>;
   /** Folders left where they were because they pin an older version. */
   skipped: Array<{ path: string; pinnedTo: number }>;
 };
@@ -188,6 +193,7 @@ export async function updateWorkspaceItemType(input: {
     path: string;
     restyledItems: number;
     itemsLeft: number;
+    itemsBeingEdited: number;
   }> = [];
   const skipped: Array<{ path: string; pinnedTo: number }> = [];
   if (input.apply !== false) {
@@ -206,7 +212,7 @@ export async function updateWorkspaceItemType(input: {
       await setFolderTemplate(input.handle, folder.id, reference);
       const restyled =
         input.applyToExisting === false
-          ? { changed: 0, remaining: 0 }
+          ? { changed: 0, contested: 0, remaining: 0 }
           : await retemplateFolderItems(input.handle, folder.id, reference);
       applied.push({
         path: folder.path,
@@ -214,6 +220,10 @@ export async function updateWorkspaceItemType(input: {
         // Restyling stops at a bounded number of items per pass. Reporting
         // only what changed turns a half-finished folder into a finished one.
         itemsLeft: restyled.remaining,
+        // And items someone was editing at that moment keep their old look,
+        // because their words won. Saying nothing would be the same silent
+        // half-finish in a different disguise.
+        itemsBeingEdited: restyled.contested,
       });
     }
     if (applied.length) revalidateBlogPaths({ handle: input.handle });

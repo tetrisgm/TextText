@@ -213,7 +213,10 @@ export async function setFolderLookAction(
   templateIdInput: unknown,
   templateVersionInput: unknown,
   applyToExistingInput: unknown,
-): Promise<{ ok: true; changed: number } | { ok: false; error: string }> {
+): Promise<
+  | { ok: true; changed: number; beingEdited: number }
+  | { ok: false; error: string }
+> {
   try {
     const access = await ownerAccess(handleInput);
     const folder = await getFolderByPath(access.handle, cleanPath(folderPathInput));
@@ -230,7 +233,7 @@ export async function setFolderLookAction(
     await setFolderTemplate(access.handle, folder.id, reference);
     const restyled =
       applyToExistingInput === false
-        ? { changed: 0 }
+        ? { changed: 0, contested: 0, remaining: 0 }
         : await retemplateFolderItems(access.handle, folder.id, reference);
 
     await recordAction({
@@ -240,10 +243,19 @@ export async function setFolderLookAction(
       targetType: "folder",
       targetId: folder.id,
       inputSummary: `${folder.path} -> ${reference.id}@${reference.version}`,
-      outputSummary: `${restyled.changed} items restyled`,
+      outputSummary: restyled.contested
+        ? `${restyled.changed} items restyled, ${restyled.contested} left alone because someone was editing them`
+        : `${restyled.changed} items restyled`,
     });
     revalidateBlogPaths({ handle: access.handle });
-    return { ok: true, changed: restyled.changed };
+    // contested is surfaced, not swallowed: an item left with its old look
+    // because someone was typing into it is a thing the person who asked for
+    // the restyle needs to know, not an internal detail.
+    return {
+      ok: true,
+      changed: restyled.changed,
+      beingEdited: restyled.contested,
+    };
   } catch (error) {
     return {
       ok: false,

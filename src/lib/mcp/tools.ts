@@ -923,6 +923,10 @@ export async function executeMcpTool(
           (total, entry) => total + entry.itemsLeft,
           0,
         );
+        const busy = updated.applied.reduce(
+          (total, entry) => total + entry.itemsBeingEdited,
+          0,
+        );
         const notes = [
           updated.applied.length
             ? `Version ${updated.definition.version} is live in ${updated.applied
@@ -931,6 +935,9 @@ export async function executeMcpTool(
             : `Version ${updated.definition.version} is saved but not applied anywhere yet.`,
           left
             ? `${left} item(s) were not restyled in this pass. Run it again to continue.`
+            : "",
+          busy
+            ? `${busy} item(s) were being edited at that moment and kept their old look, so their words were not overwritten. Run it again when they are done.`
             : "",
           updated.skipped.length
             ? `Left alone because they are pinned to an older version: ${updated.skipped
@@ -1021,7 +1028,7 @@ export async function executeMcpTool(
         // the old look reads as the request not having worked.
         const restyled =
           input.apply_to_existing === false
-            ? { changed: 0, remaining: 0 }
+            ? { changed: 0, contested: 0, remaining: 0 }
             : await retemplateFolderItems(
                 resolved.blog.handle,
                 folder.id,
@@ -1042,6 +1049,9 @@ export async function executeMcpTool(
           folder: updated,
           restyledItems: restyled.changed,
           itemsLeftUnchanged: restyled.remaining,
+          // Items someone was editing at that moment keep their old look
+          // rather than losing what was being typed into them.
+          itemsBeingEdited: restyled.contested,
           template: await getDocumentTemplate(
             resolved.access.blogId,
             reference,
