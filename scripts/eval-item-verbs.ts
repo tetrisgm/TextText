@@ -20,6 +20,8 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 
+import { remarkHighlight } from "@/components/document/HighlightMarkdown";
+
 import { eq } from "drizzle-orm";
 import { chromium } from "playwright";
 
@@ -138,6 +140,25 @@ async function snapshot(actor: Actor, id: string): Promise<Snapshot> {
     tags: parsed.item?.tags ?? [],
     status: parsed.item?.status ?? null,
   };
+}
+
+
+/**
+ * What the reader will actually mark, from the text that was actually saved.
+ *
+ * The eval asserted the markers were in the file, which is not the same thing:
+ * a highlight only renders when its markers flank properly, so a model can
+ * write something the file check likes and a person can still see `==`.
+ */
+function renderMarks(markdown: string): string[] {
+  const tree = {
+    type: "root",
+    children: [{ type: "paragraph", children: [{ type: "text", value: markdown }] }],
+  };
+  (remarkHighlight() as (node: unknown) => void)(tree);
+  return (tree.children[0].children as Array<{ data?: Record<string, unknown> }>)
+    .filter((node) => (node.data as { hName?: string } | undefined)?.hName === "mark")
+    .map(() => "mark");
 }
 
 // ----------------------------------------------------------------- the tasks
@@ -267,9 +288,18 @@ const TASKS: Task[] = [
       // Strip the markers and the text must be what it was. That is the whole
       // requirement: emphasis is a change to the marks, never to the words.
       const stripped = after.body.replace(/==([^\n=]+)==/g, "$1").trim();
+      // Stored is not rendered. The marker rules are strict about where a
+      // highlight may open and close, so a model can write something this
+      // assertion likes and the page can still show the equals signs. Run the
+      // real transform over what was actually saved.
+      const rendered = renderMarks(after.body);
       return [
         check(marked.length >= 1, `a passage was highlighted (${marked.length} span(s))`),
         check(marked.length <= 3, `it chose, rather than highlighting everything (${marked.length})`),
+        check(
+          rendered.length >= 1,
+          `and it renders as a highlight rather than as equals signs (${rendered.length} mark(s))`,
+        ),
         check(
           stripped === before.outage.body.trim(),
           "with the markers removed the words are exactly as they were",
