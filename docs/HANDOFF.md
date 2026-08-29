@@ -1100,6 +1100,30 @@ Before the fix the second pass changed nothing, because the slice was taken
 from all rows rather than from the ones still needing work, so every pass
 looked at the same first page and skipped it as already done.
 
+## What the fifth pass found in the goal-closing work (2026-08-29)
+
+Every one was real, and the shape of them is worth keeping:
+
+- **Every frozen preview had an empty folder.** The resolver asked
+  `getAccessibleFolders(handle, null)`, and that returns nothing at all for a
+  null user, so the owner read "from " with a gap. The proposal is owner-only
+  before it runs, so there was nothing to filter against.
+- **Drift ignored the folder** even though the folder was shown and therefore
+  approved.
+- **A proposal with no preview skipped the drift check** rather than refusing.
+  The block only ran when the metadata happened to parse.
+- **The approval checked revisions and then handed the executor only ids**,
+  which re-read and adopted whatever it found. A change in between became the
+  version deleted rather than conflicting with the one approved.
+- **`organize_items` checked that the destination was reachable, not that it
+  was writable**, which `move_item` has always checked; and its own description
+  promised a folder-kind check that did not exist.
+- **Its receipt lied twice**: a null move counted as success, and an item whose
+  tags landed before the move failed was reported unchanged.
+
+Four of the six are the same mistake in different clothes: a guard that reads
+correctly and is asked the wrong question, or asked at the wrong moment.
+
 ## Both goals closed (2026-08-29)
 
 The plan in `docs/plans/two-goals.md` has the full state. In short:
