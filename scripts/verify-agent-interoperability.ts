@@ -11,6 +11,8 @@ import { repositoryRoot } from "./work-unit";
 import {
   LOCAL_AGENT_COMMANDS,
   LOCAL_AGENT_READ_ONLY_COMMANDS,
+  undecidedLocalCommands,
+  unsafeLocalAllowances,
 } from "../src/lib/agent-command-access";
 
 const requiredTools = [
@@ -315,6 +317,17 @@ assert(
     LOCAL_AGENT_COMMANDS.has(name),
   ),
   "Every read-scoped local command must also be an allowed local command",
+);
+// The boundary is an explicit decision per command, not a side effect of a
+// defaulted annotation. A command nobody has classified must never reach a
+// local agent by being forgotten.
+assert(
+  undecidedLocalCommands().length === 0,
+  `Undecided local commands: ${undecidedLocalCommands().join(", ")}`,
+);
+assert(
+  unsafeLocalAllowances().length === 0,
+  `Local commands allowed despite needing confirmation: ${unsafeLocalAllowances().join(", ")}`,
 );
 assert(
   cliCommandRoute.includes("verifyTextTextApiToken") &&
