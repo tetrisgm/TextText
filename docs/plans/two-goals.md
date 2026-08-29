@@ -240,39 +240,49 @@ the first four commits. Those are fixed and listed below with them.
   the blueprint that look was built from, and saves a new version. The workspace
   UI has no button for it yet.
 
-## Order for what is left
+## Both goals, and where they stand
 
-Revised after four verification passes. The third and fourth both failed the
-work, and both were right to: each found real defects in the fixes for the
-previous one. The list below is what is left, not a claim that everything named
-has been closed. What is knowingly still open, beyond the numbered items:
+**Goal one is met.** A person describes a kind of item and gets it, and changes
+it afterwards by asking, through the assistant, through MCP, and now through
+the workspace: "Change this look" on a folder reads the design, opens the
+studio on it, and saves a version rather than a second look
+(`PostWorkspaceShell.tsx`, `ItemTypeStudio.tsx`). A look that cannot be
+reopened says which of the four reasons applies.
 
-- A retired look can still return through the retire-versus-update race, which
-  needs a transaction rather than two statements.
-- Updating an item type commits the new version before it discovers folders, so
-  a folder trashed in between leaves a version nothing wears.
-- The person-facing folder and creation paths still drop the unfinished counts
-  that the agent paths report.
-- Highlight offsets assume escapes are the only thing resolved before a text
-  node exists; character references are not handled.
+**Goal two is met for read, update and delete, across one item or many.**
 
-1. **A confirmation-capable bounded batch mutation.** Explicit targets, a
-   revision check per item, stated partial-failure behaviour, and a receipt,
-   on both the browser and the local agent. This is one piece of work because
-   it closes deletion and genuine many-item work together, and doing either
-   alone builds half the same machinery. It is the largest remaining gap
-   against goal two, and the reviewer named it as the single most important
-   thing left.
-2. **An entry point in the workspace UI for editing a look.** The server, the
-   action and the studio all take it; nothing offers it to a person. Goal one
-   is true through the assistant and not yet through the interface.
-3. **A real light and dark visual gate**, and only then the remaining identity
-   CSS. `npm run evals` exits zero when suites are blocked, so there is no gate
-   today and no way to verify a presentation change.
+- Delete reached the browser by making a proposal a real confirmation rather
+  than by lifting the rule that kept destructive commands out. Staging freezes
+  a server-resolved preview - each item's title, folder, and whether it is
+  published - and the summary the owner reads is built from that rather than
+  from ids. Approval re-resolves and drops any item whose revision, title or
+  visibility moved since it was shown; if nothing is still as it was, nothing
+  happens (`write-proposal-preview.ts`, `write-proposals.server.ts`).
+- Many is `organize_items` for the uniform case, in one call with a per-item
+  revision check and a per-item answer, and `delete_items` the same way. A real
+  model tags and files three notes in three calls; it was a read-and-update
+  pair per item, which runs out of steps above ten.
 
-Not on this list, and worth saying why: raising the browser's step ceiling and
-the paging fix both make N-item work go further, and neither is a batch
-command. `update_item` still updates one item.
+Nine eval tasks cover it end to end against a real model: add a section,
+retitle, summarise into a new note, tag several, highlight, act across items,
+organise several, change an item type, and refuse a request for something that
+does not exist.
+
+## What is still missing
+
+- **An agent on this Mac cannot delete.** That route executes commands directly
+  and has no confirmation, so deletion stays on its denied list. Reaching it
+  would mean the CLI staging a proposal the owner approves in the app, which is
+  a real design rather than a flag.
+- **The browser assistant cannot publish, share or restore.** Each changes who
+  can see something, and none has a preview a person could judge the way they
+  can judge "move these two notes to Trash". They need their own preview
+  design, one command at a time, which is the shape this one established.
+- **There is no visual gate.** `npm run evals` exits zero when suites are
+  blocked, so no presentation change can be verified, and the remaining 152
+  identity-CSS selectors stay where they are until there is one.
+- **A concurrent re-pin of a folder can be overwritten** during an item type
+  update. The version race is closed; this one is not.
 
 ## What this plan declines, and what it admits
 

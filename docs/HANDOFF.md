@@ -1100,6 +1100,27 @@ Before the fix the second pass changed nothing, because the slice was taken
 from all rows rather than from the ones still needing work, so every pass
 looked at the same first page and skipped it as already done.
 
+## Both goals closed (2026-08-29)
+
+The plan in `docs/plans/two-goals.md` has the full state. In short:
+
+Goal one needed a UI entry point, which existed nowhere: the server action, the
+studio prop and the studio's history all took a look to reopen and nothing
+offered it. "Change this look" sits on a folder's menu now.
+
+Goal two needed deletion and a batch. Deletion reached the browser by making a
+proposal a real confirmation - a frozen, server-resolved preview in words a
+person can judge, and approval that drops anything which moved since they saw
+it - rather than by lifting the rule that kept destructive commands out, which
+is what I tried first and a review correctly called a security regression.
+
+The batch is `organize_items`, and building it found a good bug: the first
+version passed `folderId` to `savePost`, which does not move anything. On an
+update `savePost` keeps the row's existing folder; only an insert takes the one
+it is given. The tags landed, nothing moved, and every unit test passed. The
+eval caught it, because it asked whether the notes were in the folder rather
+than whether the call returned ok.
+
 ## Four adversarial passes, and what survived them (2026-08-29)
 
 gpt-5.6-sol at max reasoning reviewed the plan, then the work, three more
