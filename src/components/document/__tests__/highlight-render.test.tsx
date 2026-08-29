@@ -43,4 +43,29 @@ describe("a highlight in a document body", () => {
     const html = render("Check `if (a ==b)` before running it.");
     expect(html).not.toContain("<mark");
   });
+
+  it("works where a person would actually put one", () => {
+    // Headings, bold, links and table cells all carry text nodes, so a
+    // highlight has to survive each of them rather than only plain paragraphs.
+    expect(render("## The ==important== part")).toContain("<mark");
+    expect(render("**bold with ==a highlight== inside**")).toContain("<mark");
+    expect(render("See [the ==key== page](https://example.com).")).toContain("<mark");
+    expect(
+      render("| a | b |\n| --- | --- |\n| ==marked== | plain |"),
+    ).toContain("<mark");
+  });
+
+  it("leaves markdown that merely contains equals signs alone", () => {
+    // A table separator, a comparison, a run of equals, and a setext underline
+    // are all things a document really contains.
+    for (const body of [
+      "| a | b |\n| --- | --- |\n| x | y |",
+      "Compare a == b for equality.",
+      "A line of ==== signs.",
+      "Heading\n=======\n\nWords.",
+      "The value is 4 ==",
+    ]) {
+      expect(render(body)).not.toContain("<mark");
+    }
+  });
 });
