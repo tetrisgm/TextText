@@ -446,6 +446,63 @@ describe("/api/ai cloud assistant route", () => {
     expect(await res.json()).toMatchObject({ model: "claude-sonnet-5" });
   });
 
+  it("says so when it ran out of steps instead of finishing", async () => {
+    // Reaching the ceiling used to end the turn in silence. On a request that
+    // touches several items that is the worst outcome: some are changed, some
+    // are not, and the answer reads as though the whole thing was done.
+    mocks.streamText.mockReturnValue({
+      fullStream: (async function* () {
+        for (let step = 0; step < 24; step += 1) {
+          yield { type: "start-step" };
+          yield { type: "tool-call", toolName: "update_item" };
+          yield { type: "tool-result", toolName: "update_item" };
+        }
+        yield { type: "text-delta", text: "Updated the first few." };
+        yield { type: "finish" };
+      })(),
+    });
+
+    const res = await POST(
+      new Request("http://x/api/ai", {
+        method: "POST",
+        headers: { Accept: "application/x-ndjson" },
+        body: JSON.stringify({ ...turn, workspaceHandle: "demo-blog", stream: true }),
+      }),
+    );
+    const events = (await res.text())
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const complete = events.find((event) => event.type === "complete");
+    expect(String(complete?.text)).toMatch(/ran out of steps/);
+    expect(String(complete?.text)).toMatch(/saved/);
+    expect(String(complete?.text)).toMatch(/carry on/);
+  });
+
+  it("says nothing extra on a turn that finished on its own", async () => {
+    mocks.streamText.mockReturnValue({
+      fullStream: (async function* () {
+        yield { type: "start-step" };
+        yield { type: "text-delta", text: "Done." };
+        yield { type: "finish" };
+      })(),
+    });
+
+    const res = await POST(
+      new Request("http://x/api/ai", {
+        method: "POST",
+        headers: { Accept: "application/x-ndjson" },
+        body: JSON.stringify({ ...turn, workspaceHandle: "demo-blog", stream: true }),
+      }),
+    );
+    const events = (await res.text())
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const complete = events.find((event) => event.type === "complete");
+    expect(complete?.text).toBe("Done.");
+  });
+
   it("streams progress, text, and a complete receipt over HTTPS", async () => {
     mocks.streamText.mockReturnValue({
       fullStream: (async function* () {

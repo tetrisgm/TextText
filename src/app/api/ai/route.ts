@@ -53,7 +53,22 @@ import { TENANT_HANDLE_RE } from "@/lib/tenants";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const MAX_STEPS = 8;
+/**
+ * How many turns of think-then-act one request may take.
+ *
+ * It was 8, and the route already has two harder bounds: `maxDuration = 60`
+ * kills the request on wall clock whatever the step count, and each owner is
+ * throttled. So this was a third, tighter limit that mostly truncated useful
+ * work: putting a different closing line in three notes takes list, then read
+ * and append for each, which is eight calls and leaves no step to answer in.
+ * Anything across more than two items was out of reach in the browser while
+ * working fine everywhere else.
+ *
+ * Raised to cover ordinary multi-item work. It is not a licence to loop: the
+ * sixty seconds still bind, and reaching this ceiling is now reported rather
+ * than passed off as a finished answer.
+ */
+const MAX_STEPS = 24;
 const MAX_HISTORY = 20;
 // Bound one request's input tokens: a single oversized message cannot balloon
 // the model bill. Generous for a real prompt, small enough to defeat abuse.
@@ -292,6 +307,18 @@ type StreamableAssistantResult = {
   fullStream: AsyncIterable<unknown>;
 };
 
+/**
+ * What to say when the turn ran out of steps rather than finishing.
+ *
+ * Whatever the assistant already did is done and saved: the tools write as
+ * they go. So the honest thing is to say the work is part done and name the
+ * way forward, not to let a half-finished sweep read as a finished one.
+ */
+function truncationNotice(steps: number): string {
+  if (steps < MAX_STEPS) return "";
+  return "\n\nI ran out of steps before finishing this. Whatever I changed above is saved. Ask me to carry on with the rest and I will pick up where I stopped.";
+}
+
 function assistantStreamResponse(
   result: StreamableAssistantResult,
   {
@@ -320,6 +347,11 @@ function assistantStreamResponse(
       let text = "";
       let completed = false;
       let failed = false;
+      // Reaching the step ceiling used to end the turn in silence. On a
+      // request that touches several items that is the worst possible
+      // outcome: some are changed, some are not, and the answer reads as if
+      // the whole thing was done. Count the steps so the person is told.
+      let steps = 0;
       const emit = (event: AssistantStreamEvent) => {
         controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
       };
@@ -337,6 +369,7 @@ function assistantStreamResponse(
             type === "finish-step" ||
             type === "start"
           ) {
+            if (type === "start-step") steps += 1;
             emit({ type: "progress", message: "Thinking" });
           } else if (
             type === "tool-call" &&
@@ -380,6 +413,11 @@ function assistantStreamResponse(
             });
           } else if (type === "finish") {
             completed = true;
+            const cut = truncationNotice(steps);
+            if (cut) {
+              text += cut;
+              emit({ type: "text", text: cut });
+            }
             emit({
               type: "complete",
               text,
@@ -394,6 +432,11 @@ function assistantStreamResponse(
           }
         }
         if (!completed && !failed && !signal.aborted) {
+          const cut = truncationNotice(steps);
+          if (cut) {
+            text += cut;
+            emit({ type: "text", text: cut });
+          }
           emit({
             type: "complete",
             text,
