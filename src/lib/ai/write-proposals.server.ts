@@ -628,7 +628,14 @@ export async function decideWorkspaceWriteProposal(
           "Nothing in that change is still as it was when you saw it, so nothing was done. Ask again to see where things stand now.",
       };
     }
-    approvedArguments = { ...validated.arguments, ids: stillAgreed };
+    // Re-validated even though it is built from already-validated data and a
+    // server-side comparison. The narrowing is the only place the payload
+    // changes after the claim, and the whole point of this path is that only a
+    // payload that passes validation can execute.
+    approvedArguments = validateWorkspaceWriteProposal(validated.name, {
+      ...validated.arguments,
+      ids: stillAgreed,
+    }).arguments;
   }
 
   try {
