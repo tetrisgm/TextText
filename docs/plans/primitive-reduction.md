@@ -1,6 +1,6 @@
 # Reducing the render primitives
 
-Status: plan, not started. Written 2026-08-28, then rewritten against an
+Status: three merges done, the rest STOPPED after review. Was: Written 2026-08-28, then rewritten against an
 adversarial review by Codex 5.6 Sol at xhigh reasoning, which found the node
 counts wrong by threefold, the parse boundary claim false, step 0 fatal, and
 step 5 permanently unsafe. Its verdict on the first draft was "not safe to
@@ -283,3 +283,42 @@ The review's ranked findings, and what each did to the plan:
 Two things the review got right that I had already written down and then
 contradicted: the caveat that retired definitions were not walked was in the
 first draft, immediately above a step 0 that deleted nodes anyway.
+
+
+## Stopped after three, and why (2026-08-29)
+
+`meta`, `space` and `media` are done. The remaining three are not being built,
+on Codex's recommendation and my own measurement, because the premise did not
+survive contact.
+
+**The schema grew, and always will.** 17 union members before, 20 now. Legacy
+spellings must be accepted permanently, because an exported `.textpack` carries
+a whole look and never expires. So "fewer primitives" is unreachable in the
+accepted grammar; only the CANONICAL set the renderer uses shrinks, 22 to 18.
+
+**The AI never sees this vocabulary.** It writes BLUEPRINTS
+(`item-type-generation.ts`), which the compiler turns into render specs.
+`render-spec.md` says so explicitly. So reducing render-node names does nothing
+for the goal of an AI generating document kinds from a simple grammar.
+
+**The two-layer design already exists.** `people` compiles to
+`reference + semantic`, `recurrence` to `enum` with preset options. A small
+primitive set with a richer authoring vocabulary on top is what was asked for,
+and it is what is there.
+
+The remaining three, judged individually:
+
+- `stack` absorbing `group` and `masthead`: NOT behaviour-preserving as
+  proposed. Top-level `.tt-stack` gets page padding, `.tt-group` is measure
+  constrained, `.tt-masthead` centres (`styles.ts:12`, `:81`, `:15`), and only
+  `stack` has direction and align. Preserving that needs three roles plus
+  constraints, which moves the discriminator rather than removing it.
+- `field` absorbing `badge` and `toggle`: adds a permanent accepted spelling
+  and a nested union to disguise two concepts as one, and overloads "field",
+  which already means the stored document schema.
+- `rows` absorbing `checklist`: least unreasonable, but checklist carries
+  required `doneBind`, `labelBind`, mode, rollup and ordering that plain rows
+  does not, and the AI already writes the simpler abstraction.
+
+The work redirected to the blueprint grammar, which is what the model actually
+writes and is transient, so it can change without a migration.

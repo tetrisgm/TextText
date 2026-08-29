@@ -82,7 +82,7 @@ describe("compileItemTypeBlueprint", () => {
             id: "due",
             label: "Due",
             type: "date",
-            display: "fact",
+            display: "auto",
           },
         ],
         item: {

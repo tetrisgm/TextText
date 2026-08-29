@@ -67,8 +67,17 @@ const scalarField = z
     ]),
     required: z.boolean().default(false),
     help: z.string().trim().max(500).optional(),
+    // "fact" is gone. Nothing ever branched on it for a scalar field: a plain
+    // scalar falls through into the facts strip whether it says "fact" or
+    // "auto", so the two produced identical output and the model was being
+    // asked to make a choice that could not change anything.
+    //
+    // Removed rather than aliased, because a blueprint is transient. Saving
+    // compiles it and persists only the TemplateDefinition, so there is no
+    // stored blueprint to stay compatible with. A transform here would also
+    // break the JSON Schema this becomes as a tool argument.
     display: z
-      .enum(["auto", "hidden", "cover", "fact", "badge", "toggle", "section"])
+      .enum(["auto", "hidden", "cover", "badge", "toggle", "section"])
       .default("auto"),
     options: z.array(enumOption).min(1).max(100).optional(),
     multiple: z.boolean().default(false),
@@ -285,15 +294,15 @@ export const ITEM_TYPE_STARTERS: ReadonlyArray<{
       styleReference: "Medium",
       fields: [
         { id: "coverImage", label: "Cover image", type: "image", display: "cover" },
-        { id: "author", label: "Author", type: "text", display: "fact" },
+        { id: "author", label: "Author", type: "text", display: "auto" },
         { id: "category", label: "Category", type: "enum", options: [
           { value: "ideas", label: "Ideas" },
           { value: "culture", label: "Culture" },
           { value: "work", label: "Work" },
         ], display: "badge" },
         { id: "dek", label: "Dek", type: "text", display: "section" },
-        { id: "readingTime", label: "Reading time", type: "number", format: "minutes", display: "fact" },
-        { id: "publishedOn", label: "Published", type: "date", display: "fact" },
+        { id: "readingTime", label: "Reading time", type: "number", format: "minutes", display: "auto" },
+        { id: "publishedOn", label: "Published", type: "date", display: "auto" },
       ],
       item: { shape: "article", icon: "✦", showBody: true, showMetadata: true, showTags: true },
       collection: {
@@ -335,7 +344,7 @@ export const ITEM_TYPE_STARTERS: ReadonlyArray<{
           { value: "high", label: "High", tone: "danger" },
         ], display: "badge" },
         { id: "owner", label: "People", type: "people", multiple: true, display: "badge" },
-        { id: "due", label: "Due", type: "date", display: "fact" },
+        { id: "due", label: "Due", type: "date", display: "auto" },
         { id: "complete", label: "Complete", type: "boolean", display: "toggle" },
       ],
       item: { shape: "task", icon: "✓", showBody: true, showMetadata: false, showTags: false },

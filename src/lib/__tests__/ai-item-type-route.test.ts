@@ -183,7 +183,7 @@ describe("/api/ai/item-type", () => {
           id: "statusNote",
           label: "Status",
           type: "text",
-          display: "fact",
+          display: "auto",
         },
       ],
     };

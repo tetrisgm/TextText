@@ -13,7 +13,7 @@ export const ITEM_TYPE_BLUEPRINT_FORMAT = `Return JSON only, with this shape:
       "id": camelCase string,
       "label": string,
       "type": "text" | "richtext" | "image" | "date" | "url" | "enum" | "number" | "boolean" | "reference" | "people" | "recurrence",
-      "display": "auto" | "hidden" | "cover" | "fact" | "badge" | "toggle" | "section",
+      "display": "auto" | "hidden" | "cover" | "badge" | "toggle" | "section",
       "options": [{ "value": string, "label": string, "tone": "neutral" | "info" | "success" | "warning" | "danger" | "accent" }],
       "multiple": boolean,
       "showWhen": boolean or enum field id,

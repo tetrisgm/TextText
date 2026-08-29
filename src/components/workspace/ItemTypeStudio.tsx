@@ -709,7 +709,7 @@ export function ItemTypeStudio({
                     : newFieldType === "richtext"
                       ? ("section" as const)
                       : newFieldType === "url"
-                        ? ("fact" as const)
+                        ? ("auto" as const)
                         : ("auto" as const),
                 multiple: false,
                 format: "plain" as const,
@@ -761,7 +761,7 @@ export function ItemTypeStudio({
           label: "Date",
           type: "date",
           required: false,
-          display: "fact",
+          display: "auto",
           multiple: false,
           format: "plain",
           target: "document",
