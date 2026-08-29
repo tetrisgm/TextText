@@ -18,11 +18,10 @@ describe("what the browser assistant is offered", () => {
     expect(full).toContain("delete_items");
   });
 
-  it("still cannot publish, share, restore, or fetch a chosen URL", () => {
+  it("still cannot share, restore, or fetch a chosen URL", () => {
     // Each changes who can see something, or reaches outward, and none has a
     // preview a person could judge. Approval does not make a fetch safe.
     for (const name of [
-      "set_item_status",
       "set_access",
       "revoke_access",
       "restore_item",

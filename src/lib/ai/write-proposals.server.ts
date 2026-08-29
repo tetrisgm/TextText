@@ -417,7 +417,10 @@ export async function createWorkspaceWriteProposal(
   // the world still matches.
   let preview: FrozenProposalPreview | null = null;
   if (requiresFrozenPreview(validated.name)) {
-    const ids = Array.isArray((validated.arguments as { ids?: unknown }).ids)
+    const singleId = (validated.arguments as { id?: unknown }).id;
+    const ids = typeof singleId === "string"
+      ? [singleId]
+      : Array.isArray((validated.arguments as { ids?: unknown }).ids)
       ? ((validated.arguments as { ids: string[] }).ids as string[])
       : [];
     const current = await dependencies.resolveItems(owner.workspace.handle, ids);
@@ -433,6 +436,7 @@ export async function createWorkspaceWriteProposal(
               folderPath: found.folderPath,
               visibility: found.visibility,
               revision: found.revision,
+              ...("status" in validated.arguments ? { desiredStatus: (validated.arguments as { status: "draft" | "published" }).status } : {}),
             }
           : {
               id: itemId,
@@ -441,6 +445,7 @@ export async function createWorkspaceWriteProposal(
               visibility: "private" as const,
               revision: null,
               missing: true as const,
+              ...("status" in validated.arguments ? { desiredStatus: (validated.arguments as { status: "draft" | "published" }).status } : {}),
             };
       }),
     };
@@ -667,7 +672,7 @@ export async function decideWorkspaceWriteProposal(
       .map((item) => item.title || item.id);
     approvedArguments = validateWorkspaceWriteProposal(validated.name, {
       ...validated.arguments,
-      ids: stillAgreed,
+      ...(validated.name === "set_item_status" || validated.name === "restore_item" ? { id: stillAgreed[0] } : { ids: stillAgreed }),
       ...(Object.keys(expected).length ? { expected_revisions: expected } : {}),
     }).arguments;
   }

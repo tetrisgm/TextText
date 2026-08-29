@@ -22,6 +22,7 @@ export type FrozenItemPreview = {
   visibility: "public" | "private";
   /** The optimistic-lock token at staging time. Drift means refuse. */
   revision: number | null;
+  desiredStatus?: "draft" | "published";
   /** Set when the item could not be resolved at staging at all. */
   missing?: true;
 };
@@ -37,19 +38,23 @@ export function describeFrozenPreview(preview: FrozenProposalPreview): string {
   const present = preview.items.filter((item) => !item.missing);
   const missing = preview.items.filter((item) => item.missing);
   const publicOnes = present.filter((item) => item.visibility === "public");
+  const status = present[0]?.desiredStatus;
   const lines = [
-    present.length === 1
+    status
+      ? `${present.length === 1 ? "Change" : "Change the status of "}${present.length === 1 ? `\"${present[0].title}\"` : `${present.length} items`} to ${status === "published" ? "published" : "draft"}.`
+      : null,
+    !status && present.length === 1
       ? `Move "${present[0].title}" to Trash, from ${present[0].folderPath}.`
       : `Move ${present.length} items to Trash: ${present
           .map((item) => `"${item.title}"`)
           .join(", ")}.`,
-    publicOnes.length
+    !status && publicOnes.length
       ? `${publicOnes.length} of them ${publicOnes.length === 1 ? "is" : "are"} published and will stop being visible.`
       : "",
     missing.length
       ? `${missing.length} could not be found and will be skipped.`
       : "",
-    "Everything moved to Trash stays restorable.",
+    !status ? "Everything moved to Trash stays restorable." : "The owner can review this audience change before it runs.",
   ];
   return lines.filter(Boolean).join(" ");
 }

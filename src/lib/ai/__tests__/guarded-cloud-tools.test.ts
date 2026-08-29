@@ -96,7 +96,7 @@ describe("guarded cloud assistant tools", () => {
     expect(tools).toHaveProperty("read_item");
     expect(tools).toHaveProperty("update_item");
     expect(tools).not.toHaveProperty("delete_item");
-    expect(tools).not.toHaveProperty("set_item_status");
+    expect(tools).toHaveProperty("set_item_status");
     expect(tools).not.toHaveProperty("add_item_asset");
   });
 

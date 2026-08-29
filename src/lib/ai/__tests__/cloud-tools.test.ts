@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { cloudAssistantToolNames } from "@/lib/ai/cloud-tools";
 
-// The cloud rung runs tools server-side with no interactive confirmation, so the
-// exposed set must exclude both confirmation-gated tools and open-world tools
-// that fetch a model-chosen URL (an exfiltration channel).
+// The cloud rung exposes ordinary tools plus actions with a durable owner
+// preview. Open-world fetches remain excluded.
 describe("cloudAssistantToolNames", () => {
   const names = cloudAssistantToolNames();
 
@@ -13,11 +12,10 @@ describe("cloudAssistantToolNames", () => {
     }
   });
 
-  it("excludes confirmation-gated destructive / sharing / publish tools", () => {
+  it("excludes actions without a confirmation preview", () => {
     for (const gated of [
       "delete_item",
       "restore_item",
-      "set_item_status",
       "set_access",
       "revoke_access",
     ]) {
