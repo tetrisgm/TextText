@@ -606,9 +606,14 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     requiredScope: "sync",
   }),
   list_document_templates: defineTool("list_document_templates", {
-    title: "List document templates",
+    title: "List item types",
     description:
-      "List the immutable built-in and workspace templates available for shaping documents.",
+      "List the kinds of item this workspace has: the built-in ones and any designed here. Each entry says what it is for, what fields it holds, and how a folder of them is laid out.\n\n" +
+      // The description said only "templates available for shaping documents",
+      // so a model asked to change an existing type listed them five times
+      // and never worked out that changing one was possible.
+      "Types under `editable` were designed from a blueprint and can be CHANGED with update_item_type: send that blueprint back with your edit, and the version shown. Everything else was assembled rather than designed - built-ins, imports, duplicates, and looks saved from a document - and has no blueprint to edit.\n\n" +
+      "Call this first whenever someone wants a kind of item to be different.",
     inputSchema: emptyInput(),
   }),
   create_item_type: defineTool("create_item_type", {

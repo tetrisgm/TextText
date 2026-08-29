@@ -818,9 +818,28 @@ export async function executeMcpTool(
         listDocumentTemplates(resolved.access.blogId),
         listEditableItemTypes(resolved.access.blogId),
       ]);
+      // Summaries, not whole definitions. A definition is a render tree, and
+      // handing over eleven of them was 24,000 characters of a vocabulary the
+      // model cannot write in, which buried the blueprints it can. What it
+      // needs to answer "what kinds of thing do I have" is the name, the
+      // purpose, the fields and the folder layout.
+      const summarised = templates.map((template) => ({
+        id: template.id,
+        name: template.name,
+        description: template.description,
+        version: template.version,
+        folderLayout: template.collection.layout,
+        fields: template.fields.map((field) => ({
+          id: field.id,
+          label: field.label,
+          type: field.type,
+        })),
+      }));
       return jsonResult({
-        templates,
+        // Editable first: it is the part a model acts on, and the part that
+        // fell off the end when this answer was one long list of render trees.
         editable,
+        templates: summarised,
         note: editable.length
           ? "Types under `editable` can be changed with update_item_type: send its blueprint back with your edit and the version shown. The rest were assembled rather than designed, so they have no blueprint and are edited by hand."
           : "No type here was designed from a blueprint, so none can be changed with update_item_type.",

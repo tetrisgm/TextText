@@ -152,12 +152,20 @@ type Task = {
   key: string;
   /** The person's own words. Nothing else is given to the model. */
   ask: string;
+  /**
+   * Anything this task needs in the workspace before the model is asked.
+   *
+   * Whatever it returns is handed to verify, so a task that seeds a look can
+   * assert against the exact look it seeded rather than searching for it.
+   */
+  setup?: (actor: Actor) => Promise<Record<string, unknown>>;
   /** Read the workspace and say whether the request was actually carried out. */
   verify: (context: {
     actor: Actor;
     ids: Seeded;
     before: Record<string, Snapshot>;
     transcript: Transcript;
+    setup: Record<string, unknown>;
   }) => Promise<Check[]>;
 };
 
@@ -301,6 +309,68 @@ const TASKS: Task[] = [
     },
   },
   {
+    // Goal one's second half, which nothing covered: a person describes a kind
+    // of thing, then later asks for it to be different. Before looks kept the
+    // blueprint they were designed from, the only way to answer this was to
+    // build a second look that resembled the first.
+    key: "change-item-type",
+    setup: async (actor) => {
+      const made = await callTool(actor, "create_item_type", {
+        blueprint: {
+          name: "Runs",
+          description: "A log of runs, with how far and when.",
+          fields: [
+            { id: "distance", label: "Distance", type: "number" },
+            { id: "ranOn", label: "Ran on", type: "date" },
+          ],
+          collection: { layout: "list" },
+        },
+        folder_path: "notes",
+      });
+      if (!made.ok) throw new Error(`could not seed the item type: ${made.text.slice(0, 300)}`);
+      const parsed = JSON.parse(made.text) as { itemType?: { id: string; version: number } };
+      if (!parsed.itemType?.id) throw new Error("seeded item type had no id");
+      return { templateId: parsed.itemType.id, version: parsed.itemType.version };
+    },
+    ask:
+      "My Runs item type needs somewhere to say how the run felt. Add that to it, " +
+      "and keep everything else about it the same.",
+    verify: async ({ actor, setup }) => {
+      const templateId = String(setup.templateId);
+      const seededVersion = Number(setup.version);
+      const listed = await callTool(actor, "list_document_templates", {});
+      const parsed = JSON.parse(listed.text) as {
+        templates?: Array<{ id: string; version: number; fields?: Array<{ id: string; label: string }> }>;
+        editable?: Array<{ id: string; version: number; blueprint?: { fields?: Array<{ id: string; label: string }> } }>;
+      };
+      const now = parsed.templates?.find((entry) => entry.id === templateId);
+      const editable = parsed.editable?.find((entry) => entry.id === templateId);
+      const fields = now?.fields ?? [];
+      const describes = (needle: RegExp) =>
+        fields.some((field) => needle.test(field.id) || needle.test(field.label));
+      return [
+        check(Boolean(now), `the Runs type is still there (${templateId})`),
+        check(
+          (now?.version ?? 0) > seededVersion,
+          `it is a new version of the same type, not a second type (${seededVersion} -> ${now?.version ?? "?"})`,
+        ),
+        check(
+          (parsed.templates ?? []).filter((entry) => /run/i.test(entry.id)).length === 1,
+          "it did not leave a second Runs type behind",
+        ),
+        check(describes(/feel|felt|effort|how/i), "there is now somewhere to say how it felt"),
+        check(
+          describes(/distance/i) && describes(/ranOn|ran.on|date/i),
+          "the fields it already had are still there",
+        ),
+        check(
+          Boolean(editable?.blueprint),
+          "the new version can be changed again the same way",
+        ),
+      ];
+    },
+  },
+  {
     key: "refuse-missing",
     ask: 'Add a paragraph about rollback procedure to my note "Deployment runbook".',
     verify: async ({ actor, ids, before, transcript }) => {
@@ -380,6 +450,7 @@ async function main(): Promise<void> {
         const before: Record<string, Snapshot> = {};
         for (const entry of SEED) before[entry.key] = await snapshot(actor, ids[entry.key]);
         const auditBefore = userId ? await auditCount(userId) : -1;
+        const setupResult = task.setup ? await task.setup(actor) : {};
 
         const transcript = await converse({
           ask: task.ask,
@@ -391,7 +462,13 @@ async function main(): Promise<void> {
           note,
         });
 
-        const checks = await task.verify({ actor, ids, before, transcript });
+        const checks = await task.verify({
+          actor,
+          ids,
+          before,
+          transcript,
+          setup: setupResult,
+        });
         const auditAfter = userId ? await auditCount(userId) : -1;
         const mutating = task.key !== "refuse-missing";
         if (mutating && auditBefore >= 0) {
