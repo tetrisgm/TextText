@@ -292,6 +292,8 @@ function WriteProposalReview({
   const externalProposal =
     proposal.kind === "outbound_mcp" ? proposal : null;
   const external = Boolean(externalProposal);
+  const destructive = proposal.tool === "delete_items" || proposal.tool === "set_item_status";
+  const stagedFromCli = proposal.arguments.source === "cli" || proposal.arguments.source === "local_cli";
   const fields = writeProposalArguments(proposal.arguments, external);
   const decided =
     proposal.status === "approved" ||
@@ -317,6 +319,10 @@ function WriteProposalReview({
         <span data-status={proposal.terminal ? "ambiguous" : proposal.status}>
           {status}
         </span>
+      </div>
+      <div className={styles.writeProposalBadges} aria-label="Proposal details">
+        {stagedFromCli ? <span className={styles.writeProposalBadge}>Staged from command line</span> : null}
+        {destructive ? <span className={styles.writeProposalBadgeWarning}>Requires your approval</span> : null}
       </div>
       {externalProposal ? (
         <>
@@ -359,7 +365,7 @@ function WriteProposalReview({
           >
             {proposal.deciding === "approve"
               ? external ? "Running" : "Applying"
-              : external ? "Run tool" : "Apply change"}
+              : external ? "Run tool" : destructive ? "Approve and apply" : "Apply change"}
           </button>
           <button
             type="button"

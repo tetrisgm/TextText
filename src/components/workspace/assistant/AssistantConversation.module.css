@@ -790,6 +790,31 @@
   font: 500 var(--ac-fs-caption1) / 1.35 var(--ac-font-text);
 }
 
+.writeProposalBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.writeProposalBadge,
+.writeProposalBadgeWarning {
+  border-radius: 999px;
+  padding: 3px 7px;
+  font: 650 var(--ac-fs-caption1) / 1 var(--ac-font-text);
+}
+
+.writeProposalBadge {
+  color: var(--ac-label-2);
+  background: var(--ac-fill-4);
+  border: 1px solid var(--ac-hairline);
+}
+
+.writeProposalBadgeWarning {
+  color: var(--ac-label);
+  background: color-mix(in srgb, var(--ac-accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ac-accent) 35%, var(--ac-hairline));
+}
+
 .writeProposalRemote {
   margin: 0;
   color: var(--ink-muted);
