@@ -11,6 +11,10 @@ public protocol TextTextCLISyncAPI: Sendable {
     func fileContent(
         postId: String, representation: TextTextFileRepresentation
     ) async -> Result<TextTextFileContent, TextTextSyncError>
+    func agentRunCommand(
+        name: String, argumentsJSON: String,
+        agentName: String?, agentIntent: String?
+    ) async -> Result<TextTextAgentCommandReply, TextTextSyncError>
     func agentReadItem(
         postId: String, agentName: String?, agentIntent: String?
     ) async -> Result<TextTextAgentCommandReply, TextTextSyncError>
@@ -190,6 +194,18 @@ public enum CLIWorkspace: Sendable {
         case .local:
             throw TextTextCLIError.workspaceUnavailable(
                 "search needs the signed-in TextText workspace")
+        }
+    }
+
+    public func runCommand(
+        _ name: String, argumentsJSON: String
+    ) async throws -> String {
+        switch self {
+        case .remote(let store):
+            return try await store.runCommand(name, argumentsJSON: argumentsJSON)
+        case .local:
+            throw TextTextCLIError.workspaceUnavailable(
+                "workspace commands need the signed-in TextText workspace")
         }
     }
 
@@ -484,6 +500,27 @@ public final class RemoteDocumentStore: @unchecked Sendable {
     ) async throws -> CLIDocumentContent {
         let content = try await fetchCommandContent(document)
         return CLIDocumentContent(markdown: content.text, hash: content.hash)
+    }
+
+    /// Run any workspace command the route allows, and hand back its reply.
+    ///
+    /// The named verbs above cover what this CLI grew up with. The route allows
+    /// two dozen, and without this there was no way to reach the rest from the
+    /// executable, so an agent on this Mac could be told it may move an item or
+    /// comment on one and have nothing to say it with.
+    public func runCommand(
+        _ name: String, argumentsJSON: String
+    ) async throws -> String {
+        switch await api.agentRunCommand(
+            name: name, argumentsJSON: argumentsJSON,
+            agentName: CLICommandActor.current?.name,
+            agentIntent: CLICommandActor.current?.message)
+        {
+        case .success(let reply):
+            return reply.message ?? ""
+        case .failure(let error):
+            throw TextTextCLIError.workspaceUnavailable(String(describing: error))
+        }
     }
 
     public func search(_ query: String) async throws -> [TextTextAgentSearchResult] {

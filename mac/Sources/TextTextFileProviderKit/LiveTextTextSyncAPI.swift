@@ -290,8 +290,45 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
             agentName: agentName, agentIntent: agentIntent)
     }
 
+    /// Run any workspace command the route allows, with arbitrary arguments.
+    ///
+    /// The typed wrappers below cover the handful of verbs this CLI grew up
+    /// with. The route now allows two dozen, and without this there was no way
+    /// to reach the rest from the executable: an agent on this Mac could be
+    /// told it may move an item or comment on one, and have nothing to say it
+    /// with. Arguments are passed through as JSON because commands like
+    /// create_item_type carry nested objects, which the string-map wrapper
+    /// cannot express.
+    public func agentRunCommand(
+        name: String, argumentsJSON: String,
+        agentName: String?, agentIntent: String?
+    ) async -> Result<TextTextAgentCommandReply, TextTextSyncError> {
+        let parsed: Any
+        do {
+            parsed = try JSONSerialization.jsonObject(
+                with: Data(argumentsJSON.utf8), options: [])
+        } catch {
+            return .failure(.decode("Arguments must be a JSON object: \(error.localizedDescription)"))
+        }
+        guard let arguments = parsed as? [String: Any] else {
+            return .failure(.decode("Arguments must be a JSON object"))
+        }
+        return await agentCommandJSON(
+            name: name, arguments: arguments,
+            agentName: agentName, agentIntent: agentIntent)
+    }
+
     private func agentCommand(
         name: String, arguments: [String: String],
+        agentName: String?, agentIntent: String?
+    ) async -> Result<TextTextAgentCommandReply, TextTextSyncError> {
+        await agentCommandJSON(
+            name: name, arguments: arguments,
+            agentName: agentName, agentIntent: agentIntent)
+    }
+
+    private func agentCommandJSON(
+        name: String, arguments: [String: Any],
         agentName: String?, agentIntent: String?
     ) async -> Result<TextTextAgentCommandReply, TextTextSyncError> {
         let encoded: Data

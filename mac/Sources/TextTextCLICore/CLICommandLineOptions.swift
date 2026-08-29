@@ -24,6 +24,8 @@ public struct CLICommandLineOptions: Equatable {
     public var idempotencyKey: String?
     public var ifMatchHash: String?
     public var folder: String?
+    /// JSON arguments for `texttext do`, where a command's shape is its own.
+    public var args: String?
     public var json = false
 
     public init() {}
@@ -54,6 +56,7 @@ public struct CLICommandLineOptions: Equatable {
             case "--idempotency-key": options.idempotencyKey = try value()
             case "--if-match-hash": options.ifMatchHash = try value()
             case "--folder": options.folder = try value()
+            case "--args": options.args = try value()
             case "--json": options.json = true
             case "--help", "-h": options.command = "help"
             default:

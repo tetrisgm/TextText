@@ -20,6 +20,8 @@ let usage = """
       texttext new <title> [--folder F]        create a document
       texttext capture [TEXT] [--folder F]     save a thought, passage, or URL
       texttext lint [<doc>]                    check documents are well formed
+      texttext do <command> [--args JSON]      run any workspace command
+      texttext commands                        list the commands you may run
       texttext install                         put texttext on your PATH
 
     OPTIONS
@@ -394,6 +396,29 @@ do {
         } else {
             emit("Saved \(authoritative.title) to \(authoritative.savedTo) (\(relative))")
         }
+
+    case "commands":
+        // What this executable may ask the workspace to do. The route decides,
+        // and it now allows two dozen; printing them here means an agent can
+        // find out rather than guess from the usage block.
+        let listed = try await withActor(.open, itemId: nil) {
+            try await store.runCommand("get_workspace", argumentsJSON: "{}")
+        }
+        emit(listed)
+
+    case "do":
+        // A passthrough, deliberately. Wrapping each command in its own verb
+        // would mean this executable had to be rebuilt and reinstalled every
+        // time the workspace gained one, and an agent on this Mac would be
+        // told it may do something it had no way to say.
+        guard let name = options.positional.first, !name.isEmpty else {
+            fail("usage: texttext do <command> [--args '{\"key\":\"value\"}']")
+        }
+        let arguments = options.args ?? "{}"
+        let reply = try await withActor(.edit, itemId: nil) {
+            try await store.runCommand(name, argumentsJSON: arguments)
+        }
+        emit(reply)
 
     case "lint":
         // Keep the URL `resolve` returned. Round-tripping it through

@@ -96,6 +96,31 @@ final class RemoteDocumentStoreTests: XCTestCase {
         XCTAssertEqual(researchPaths.count, 2)
     }
 
+    /// The route allows two dozen workspace commands. Until `texttext do`
+    /// existed, this executable could issue about six of them, so an agent on
+    /// this Mac could be told it may move an item or comment on one and have
+    /// no way to say it. A verification pass caught the claim before the
+    /// capability.
+    func testRunCommandReachesTheRouteWithItsOwnArguments() async throws {
+        let notes = folder(id: "notes", name: "Notes", path: "Notes", mode: "notes")
+        let api = FakeCLISyncAPI(
+            workspace: workspace(folders: [notes]),
+            manifests: [notes.id: []],
+            contents: [:])
+        let store = RemoteDocumentStore(api: api)
+
+        let reply = try await store.runCommand(
+            "move_item",
+            argumentsJSON: #"{"id":"recent","folder_path":"notes"}"#)
+
+        XCTAssertEqual(reply, "ok")
+        let ran = await api.lastRanCommand()
+        XCTAssertEqual(ran?.name, "move_item")
+        XCTAssertEqual(ran?.argumentsJSON, #"{"id":"recent","folder_path":"notes"}"#)
+        let events = await api.recordedEvents()
+        XCTAssertEqual(events, ["run:move_item"])
+    }
+
     func testSearchUsesSharedCommandAndResultIdReadsBackExactly() async throws {
         let notes = folder(id: "notes", name: "Notes", path: "Notes", mode: "notes")
         let result = TextTextAgentSearchResult(
@@ -512,6 +537,19 @@ private actor FakeCLISyncAPI: TextTextCLISyncAPI {
                 markdown: value.markdown))
     }
 
+    /// What `texttext do` sent, so a test can assert the command reached the
+    /// route rather than that a wrapper existed for it.
+    var ranCommands: [(name: String, argumentsJSON: String)] = []
+
+    func agentRunCommand(
+        name: String, argumentsJSON: String,
+        agentName: String?, agentIntent: String?
+    ) async -> Result<TextTextAgentCommandReply, TextTextSyncError> {
+        events.append("run:\(name)")
+        ranCommands.append((name: name, argumentsJSON: argumentsJSON))
+        return .success(TextTextAgentCommandReply(message: "ok"))
+    }
+
     func agentSearchItems(
         query: String, agentName: String?, agentIntent: String?
     ) async -> Result<TextTextAgentCommandReply, TextTextSyncError> {
@@ -610,6 +648,10 @@ private actor FakeCLISyncAPI: TextTextCLISyncAPI {
     func lastSectionUpdate() -> SectionUpdateRequest? { sectionUpdates.last }
     func commandReadCount() -> Int { readCount }
     func lastSearchQuery() -> String? { searchQueries.last }
+
+    func lastRanCommand() -> (name: String, argumentsJSON: String)? {
+        ranCommands.last
+    }
 
     private static func item(id: String, title: String) -> TextTextManifestItem {
         TextTextManifestItem(

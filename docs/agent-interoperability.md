@@ -76,6 +76,14 @@ collaborator management, or the two commands that fetch a bookmark URL. Those
 carry a confirmation or open-world flag, and this route has no interactive
 confirmation.
 
+The executable reaches them through `texttext do <command> --args JSON`, a
+passthrough rather than a verb per command. Wrapping each one would mean
+rebuilding and reinstalling this binary every time the workspace gained a
+command, and for a while the route allowed two dozen while the CLI could issue
+about six: an agent on this Mac could be told it may move an item or comment on
+one and have nothing to say it with. The named verbs above stay, because they
+are what a person types.
+
 ### Identity, presence, and audit
 
 The device credential authenticates the person and workspace. `--as` is a
