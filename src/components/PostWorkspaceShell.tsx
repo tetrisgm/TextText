@@ -31,6 +31,8 @@ import {
 } from "@/app/editor/actions";
 import { usePresence } from "@/lib/collab/usePresence";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
+import { readItemTypeForEditAction } from "@/app/editor/item-type-actions";
+import type { ItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
 import { BacklinksPanel } from "@/components/BacklinksPanel";
 import { saveItemAsLookAction } from "@/app/editor/look-actions";
 import { UnifiedDocumentEditor } from "@/components/document/UnifiedDocumentEditor";
@@ -1306,6 +1308,7 @@ function FolderTreeNav({
   onSelectFolder,
   onChangeFolderLook,
   onBuildItemType,
+  onChangeItemType,
   onShareFolder,
   homePath,
 }: {
@@ -1320,6 +1323,7 @@ function FolderTreeNav({
   onSelectFolder: (folder: SidebarFolderId) => void;
   onChangeFolderLook: (folder: Folder) => void;
   onBuildItemType?: (folder: Folder) => void;
+  onChangeItemType?: (folder: Folder) => void;
   onShareFolder: (folder: Folder) => void;
   homePath?: string;
 }) {
@@ -1569,6 +1573,19 @@ function FolderTreeNav({
                       role="menuitem"
                       onClick={() => {
                         setMoreOpenFor(null);
+                        onChangeItemType?.(folder);
+                      }}
+                    >
+                      Change this look
+                    </button>
+                  )}
+                  {canManageFolders && (
+                    <button
+                      type="button"
+                      className="folder-action-menu-item"
+                      role="menuitem"
+                      onClick={() => {
+                        setMoreOpenFor(null);
                         setRenamingFolder(folder.path);
                         setRenameName(folder.name);
                         setError(null);
@@ -1691,6 +1708,7 @@ export function PostFolderSidebar({
   onSidebarEmptyPointerDown,
   onSettings,
   onBuildItemType,
+  onChangeItemType,
   onToggleCollapsed,
   sharedCount = 0,
   starredCount = 0,
@@ -1715,6 +1733,7 @@ export function PostFolderSidebar({
   onSidebarEmptyPointerDown?: (nav: HTMLElement) => void;
   onSettings?: () => void;
   onBuildItemType?: (folder: Folder) => void;
+  onChangeItemType?: (folder: Folder) => void;
   onToggleCollapsed: () => void;
   sharedCount?: number;
   starredCount?: number;
@@ -1888,6 +1907,7 @@ export function PostFolderSidebar({
           onSelectFolder={onSelectFolder}
           onChangeFolderLook={setFolderLook}
           onBuildItemType={onBuildItemType}
+          onChangeItemType={onChangeItemType}
           onShareFolder={setSharingFolder}
         />
       </nav>
@@ -1938,6 +1958,7 @@ export function WorkspaceSidebarChrome({
   onSidebarEmptyPointerDown,
   onSettings,
   onBuildItemType,
+  onChangeItemType,
   onSelectRoot,
   prefetchFolders = true,
   onToggleCollapsed,
@@ -1965,6 +1986,7 @@ export function WorkspaceSidebarChrome({
   onSidebarEmptyPointerDown?: (nav: HTMLElement) => void;
   onSettings?: () => void;
   onBuildItemType?: (folder: Folder) => void;
+  onChangeItemType?: (folder: Folder) => void;
   onSelectRoot?: () => void;
   prefetchFolders?: boolean;
   onToggleCollapsed: () => void;
@@ -2126,6 +2148,7 @@ export function WorkspaceSidebarChrome({
           onSelectRoot={selectRoot}
           onSettings={onSettings}
           onBuildItemType={onBuildItemType}
+          onChangeItemType={onChangeItemType}
           prefetchFolders={prefetchFolders}
           onToggleCollapsed={toggleSidebar}
           sharedCount={sharedCount}
@@ -4294,6 +4317,26 @@ function LocalWorkspaceShell({
   const [pendingDeletePostIds, setPendingDeletePostIds] = useState<string[]>(
     [],
   );
+  /**
+   * A look opened to be changed, rather than a new one being made.
+   *
+   * Reading it is a round trip, and it can answer "this one was not designed
+   * here", so the studio opens on what came back rather than on an assumption.
+   */
+  /**
+   * Why a look could not be reopened, when it could not.
+   *
+   * Said out loud rather than by opening an editor on nothing: a built-in, an
+   * import, a duplicate and a look designed by an older version of the
+   * designer each fail for a different reason, and each is a different thing
+   * to tell someone.
+   */
+  const [lookNotice, setLookNotice] = useState<string | null>(null);
+  const [itemTypeStudioEditing, setItemTypeStudioEditing] = useState<{
+    templateId: string;
+    baseVersion: number;
+    blueprint: ItemTypeBlueprint;
+  } | null>(null);
   const [itemTypeStudioFolderPath, setItemTypeStudioFolderPath] = useState<
     string | null
   >(null);
@@ -6748,7 +6791,48 @@ function LocalWorkspaceShell({
           nav.focus({ preventScroll: true });
         }}
         onSettings={navigateSettings}
-        onBuildItemType={(folder) => setItemTypeStudioFolderPath(folder.path)}
+        onBuildItemType={(folder) => {
+          setItemTypeStudioEditing(null);
+          setItemTypeStudioFolderPath(folder.path);
+        }}
+        onChangeItemType={(folder) => {
+          void (async () => {
+            const templateId = folder.defaultTemplate?.id ?? "";
+            if (!templateId || templateId.startsWith("texttext.")) {
+              // Built-ins are compiled in code and have no design to reopen.
+              // Offering an editor here would open one on nothing.
+              setLookNotice(
+                "This folder uses a built-in look. Build one with AI to make a version you can change.",
+              );
+              return;
+            }
+            const read = await readItemTypeForEditAction(
+              displayPool.blog.handle,
+              templateId,
+            );
+            if (!read.ok) {
+              setLookNotice(read.error);
+              return;
+            }
+            if (!read.blueprint) {
+              // Four different reasons, and each is a different thing to say.
+              setLookNotice(
+                read.state === "needs-migration"
+                  ? "This look was designed with an older version of the designer, so changing it here would alter how it renders. Build a new one from it instead."
+                  : read.state === "unreadable"
+                    ? "This look's saved design could not be read, so it cannot be reopened."
+                    : "This look was saved from a document, imported, or duplicated rather than designed, so there is no design to reopen. Build one with AI instead.",
+              );
+              return;
+            }
+            setItemTypeStudioEditing({
+              templateId,
+              baseVersion: read.version,
+              blueprint: read.blueprint,
+            });
+            setItemTypeStudioFolderPath(folder.path);
+          })();
+        }}
         onSelectRoot={navigateRoot}
         onToggleCollapsed={toggleSidebarCollapsed}
         peeking={leftEdgePeeking}
@@ -6936,11 +7020,23 @@ function LocalWorkspaceShell({
               : undefined
           }
           handle={displayPool.blog.handle}
+          editing={itemTypeStudioEditing ?? undefined}
           initialFolderPath={itemTypeStudioFolderPath}
-          onClose={() => setItemTypeStudioFolderPath(null)}
+          onClose={() => {
+            setItemTypeStudioFolderPath(null);
+            setItemTypeStudioEditing(null);
+          }}
           previewDocuments={itemTypeStudioPreviewDocuments}
         />
       ) : null}
+      <ConfirmationDialog
+        open={Boolean(lookNotice)}
+        title="This look cannot be reopened"
+        message={lookNotice ?? ""}
+        confirmLabel="OK"
+        onCancel={() => setLookNotice(null)}
+        onConfirm={() => setLookNotice(null)}
+      />
       <ConfirmationDialog
         open={Boolean(assistantConfirmation)}
         title="Confirm assistant action"
