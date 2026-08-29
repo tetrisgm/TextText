@@ -1083,6 +1083,43 @@ them. 261 occurrences. Collapsing them removes the concept, and it needs the
 owner's word, because `type:` is a stored column and `kind:` is in the
 frontmatter of every file on disk. That is a data migration, not a refactor.
 
+## The render vocabulary is not the one the AI writes (2026-08-29)
+
+- The primitive reduction was aimed at the render nodes. Three merges in, two
+  measurements stopped it.
+- The schema GREW, 17 union members to 20, and always will: legacy spellings
+  must be accepted permanently because an exported `.textpack` carries a whole
+  look and never expires. Only the CANONICAL set the renderer uses shrinks,
+  22 to 18.
+- The AI never sees render nodes. It writes BLUEPRINTS
+  (`item-type-generation.ts`), which the compiler turns into render specs, and
+  `render-spec.md` says the page is deliberately not fed to the model. So
+  reducing render-node names does nothing for "the AI generates document kinds
+  from a simple grammar".
+- The two-layer design was already there: `people` compiles to
+  `reference + semantic`, `recurrence` to `enum` with preset options. Small
+  primitive set, richer authoring vocabulary on top.
+- Work redirected to the BLUEPRINT grammar, which is transient. Saving compiles
+  it and persists only the TemplateDefinition, so it can change with no
+  migration and no compatibility layer. That is the lever the render spec does
+  not have.
+
+## Two dead choices in the authoring grammar (2026-08-29)
+
+- Scalar `display: "fact"` was never branched on. A plain scalar falls into the
+  facts strip whether it says "fact" or "auto". Removed. Computed fields keep
+  their "fact", where it is the meaningful not-"progress" case.
+- Collection `index` is the same layout as `list`: the page renderers map one
+  to the other and say so in `content.ts`. Removed from the blueprint and the
+  studio picker. 34 stored looks still carry `index` and still validate,
+  because `collectionRenderSchema` keeps accepting it. Verified both.
+- The split that makes this safe: reduce what the model is OFFERED, keep what
+  is STORED permissive. Only the transient half can shrink.
+- A `.transform()` was the first attempt at folding "fact" into "auto". It
+  broke 16 test files with "Transforms cannot be represented in JSON Schema":
+  the blueprint schema becomes the tool argument schema handed to agents, so it
+  must stay representable. Removal, not aliasing, is the move there.
+
 ## Every marker in the render gate was vacuous (2026-08-28)
 
 - `scripts/verify-template-render.ts` proves a composed node "left markup" by

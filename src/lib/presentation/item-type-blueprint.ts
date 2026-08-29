@@ -200,11 +200,14 @@ const collectionViewBlueprint = z
   .object({
     id: z.string().regex(/^[a-z][a-z0-9-]{0,79}$/),
     name: z.string().trim().min(1).max(80),
+    // No "index": the page renderers map list to index and say so, "a list of
+    // items and an index of items are the same page" (content.ts). Offering
+    // both asked the model to choose between two spellings of one layout.
+    // Stored looks still carry either; only the authoring grammar drops one.
     layout: z.enum([
       "list",
       "cards",
       "timeline",
-      "index",
       "single",
       "board",
       "calendar",
@@ -245,7 +248,6 @@ export const itemTypeBlueprintSchema = z
           "list",
           "cards",
           "timeline",
-          "index",
           "single",
           "board",
           "calendar",

@@ -1027,7 +1027,6 @@ export function ItemTypeStudio({
                   <option value="board">Board</option>
                   <option value="calendar">Calendar</option>
                   <option value="timeline">Timeline</option>
-                  <option value="index">Index</option>
                   <option value="single">Single focus</option>
                   <option value="heatmap">Heatmap</option>
                 </select>

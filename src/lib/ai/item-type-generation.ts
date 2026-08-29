@@ -49,7 +49,7 @@ export const ITEM_TYPE_BLUEPRINT_FORMAT = `Return JSON only, with this shape:
     "showTags": boolean
   },
   "collection": {
-    "layout": "list" | "cards" | "timeline" | "index" | "single" | "board" | "calendar" | "heatmap",
+    "layout": "list" | "cards" | "timeline" | "single" | "board" | "calendar" | "heatmap",
     "columns": 1 | 2 | 3 | 4,
     "groupBy": field id when layout is board,
     "dateBy": field id when layout is calendar or heatmap,
