@@ -12,7 +12,6 @@ import {
   runWorkspaceToolForAuth,
   type ToolContext,
 } from "@/lib/mcp/tools";
-import { createWorkspaceWriteProposal } from "@/lib/ai/write-proposals.server";
 import { getOwnedBlog } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -151,6 +150,7 @@ export async function POST(request: Request) {
       return noStore({ error: "Proposal arguments must be an object" }, 400);
     }
     try {
+      const { createWorkspaceWriteProposal } = await import("@/lib/ai/write-proposals.server");
       const userId = typeof auth.extra?.userId === "string" ? auth.extra.userId : auth.clientId;
       const sub = typeof auth.extra?.sub === "string" ? auth.extra.sub : userId;
       const blog = await getOwnedBlog(userId);
