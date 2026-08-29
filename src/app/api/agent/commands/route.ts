@@ -1,4 +1,8 @@
 import type { WorkspaceToolName } from "@/lib/ai/tools";
+import {
+  LOCAL_AGENT_COMMANDS,
+  LOCAL_AGENT_READ_ONLY_COMMANDS,
+} from "@/lib/agent-command-access";
 import { verifyTextTextApiToken } from "@/lib/mcp/auth";
 import {
   resolveMcpScopeAccess,
@@ -8,17 +12,6 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const ALLOWED_COMMANDS = new Set<WorkspaceToolName>([
-  "search",
-  "read_item",
-  "create_item",
-  "update_item",
-  "append_to_item",
-]);
-const READ_ONLY_COMMANDS = new Set<WorkspaceToolName>([
-  "search",
-  "read_item",
-]);
 const HEADER_CONTROL_RE = /[\u0000-\u001f\u007f]/;
 const MAX_COMMAND_BODY_BYTES = 1_100_000;
 
@@ -103,7 +96,7 @@ export async function POST(request: Request) {
     return noStore({ error: "Send a JSON body" }, 400);
   }
   const name = typeof body.name === "string" ? body.name : "";
-  if (!ALLOWED_COMMANDS.has(name as WorkspaceToolName)) {
+  if (!LOCAL_AGENT_COMMANDS.has(name as WorkspaceToolName)) {
     return noStore(
       { error: "That command is not available to the local CLI" },
       400,
@@ -114,7 +107,7 @@ export async function POST(request: Request) {
     return noStore({ error: "This connection cannot read the workspace" }, 403);
   }
   if (
-    !READ_ONLY_COMMANDS.has(name as WorkspaceToolName) &&
+    !LOCAL_AGENT_READ_ONLY_COMMANDS.has(name as WorkspaceToolName) &&
     scopeAccess !== "full"
   ) {
     return noStore(

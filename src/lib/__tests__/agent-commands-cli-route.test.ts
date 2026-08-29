@@ -52,6 +52,59 @@ describe("POST /api/agent/commands", () => {
     });
   });
 
+  // The owner's own description of what agents are for: "if I say I want you or
+  // Codex to work on a note, you need to be able to do all these actions."
+  // Five commands could not do them. These are the verbs that were missing.
+  it.each([
+    ["move_item", { id: "item-1", folder_path: "notes" }],
+    ["add_comment", { id: "item-1", body: "Worth expanding this." }],
+    ["set_comment_resolved", { id: "item-1", comment_id: "c-1", resolved: true }],
+    ["create_folder", { path: "recipes", name: "Recipes" }],
+    ["set_folder_template", { folder_path: "notes", template_id: "t-1" }],
+    ["list_items", { folder_path: "notes" }],
+  ])("lets an agent on this Mac call %s", async (name, args) => {
+    const response = await POST(command(name, args));
+    expect(response.status).toBe(200);
+    expect(runWorkspaceToolForAuth).toHaveBeenCalledWith(
+      name,
+      args,
+      expect.anything(),
+    );
+  });
+
+  // The boundary that did not move. Widening the surface must not hand a local
+  // agent deletion, publication, sharing, or a fetch of a URL it chose.
+  it.each([
+    ["delete_item", { id: "item-1" }],
+    ["restore_item", { id: "item-1" }],
+    ["set_item_status", { id: "item-1", status: "published" }],
+    ["set_access", { id: "item-1", email: "someone@example.com", role: "editor" }],
+    ["revoke_access", { id: "item-1", grant_id: "g-1" }],
+    ["add_item_asset", { id: "item-1", url: "https://example.com/a.png" }],
+    ["recapture_bookmark", { id: "item-1" }],
+  ])("still refuses %s from a local agent", async (name, args) => {
+    const response = await POST(command(name, args));
+    expect(response.status).toBe(400);
+    expect(runWorkspaceToolForAuth).not.toHaveBeenCalled();
+  });
+
+  it("lets a read-scoped connection call any read command, not just two", async () => {
+    // The hand-written list allowed exactly search and read_item to a
+    // read-scoped token, so every other read would have been refused with
+    // "cannot change the workspace", which is both wrong and confusing.
+    verifyTextTextApiToken.mockResolvedValue({
+      token: "",
+      clientId: "user-1",
+      scopes: ["read"],
+      extra: { userId: "user-1", sub: "sub-1" },
+    });
+    const listed = await POST(command("list_items", { folder_path: "notes" }));
+    expect(listed.status).toBe(200);
+
+    const moved = await POST(command("move_item", { id: "item-1", folder_path: "notes" }));
+    expect(moved.status).toBe(403);
+  });
+
   it("runs an allowlisted command with token identity and bounded agent metadata", async () => {
     const response = await POST(
       command(

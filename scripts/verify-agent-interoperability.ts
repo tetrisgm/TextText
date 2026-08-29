@@ -8,6 +8,10 @@ import {
   MCP_SUPPORTED_VERSIONS,
 } from "../src/lib/mcp/protocol";
 import { repositoryRoot } from "./work-unit";
+import {
+  LOCAL_AGENT_COMMANDS,
+  LOCAL_AGENT_READ_ONLY_COMMANDS,
+} from "../src/lib/agent-command-access";
 
 const requiredTools = [
   "get_workspace",
@@ -268,18 +272,50 @@ assert(
     cliStore.includes("resolvingSymlinksInPath"),
   "CLI addressing must reject absolute remote paths and contain explicit local paths",
 );
+// Checked against the derived set, not against the route's source text. The
+// previous version asserted that five string literals appeared in the file,
+// which is satisfied by a comment and says nothing about what the route does.
 for (const command of [
   "search",
   "read_item",
   "create_item",
   "update_item",
   "append_to_item",
-]) {
+  // The verbs an agent needs to work on a note the way a person would. They
+  // were absent, so "move this", "comment on this" and "restyle these" were
+  // unreachable from the surface agents use on this machine.
+  "move_item",
+  "add_comment",
+  "create_item_type",
+  "set_folder_template",
+] as const) {
   assert(
-    cliCommandRoute.includes(`"${command}"`),
+    LOCAL_AGENT_COMMANDS.has(command),
     `The authenticated local command route must allow ${command}`,
   );
 }
+// The boundary that stays. Widening the surface must not quietly hand a local
+// agent the ability to delete, publish, share, or fetch a URL it chose.
+for (const command of [
+  "delete_item",
+  "restore_item",
+  "set_item_status",
+  "set_access",
+  "revoke_access",
+  "add_item_asset",
+  "recapture_bookmark",
+] as const) {
+  assert(
+    !LOCAL_AGENT_COMMANDS.has(command),
+    `The local command route must NOT allow ${command}`,
+  );
+}
+assert(
+  [...LOCAL_AGENT_READ_ONLY_COMMANDS].every((name) =>
+    LOCAL_AGENT_COMMANDS.has(name),
+  ),
+  "Every read-scoped local command must also be an allowed local command",
+);
 assert(
   cliCommandRoute.includes("verifyTextTextApiToken") &&
     cliCommandRoute.includes("resolveMcpScopeAccess") &&

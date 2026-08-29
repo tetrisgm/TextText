@@ -58,12 +58,23 @@ or environment variable, and it does not fall back to a File Provider mount.
 Loopback HTTP is accepted only when the saved app state explicitly names a
 development origin.
 
-Workspace and manifest sync routes provide path discovery. Content reads,
-creates, updates, and appends go through the authenticated
-`/api/agent/commands` route, whose allowlist dispatches the matching shared
-workspace commands. The local plugin does not gain comments, publishing,
-collaborator management, or the rest of the hosted MCP surface through this
-route.
+Workspace and manifest sync routes provide path discovery. Content work goes
+through the authenticated `/api/agent/commands` route, whose allowlist
+dispatches the matching shared workspace commands.
+
+That allowlist was five commands - search, read, create, update, append - and
+is now derived rather than listed (`src/lib/agent-command-access.ts`). A
+command is available to a local agent when it is not confirmation-gated and
+does not fetch a URL the model chose, which is the same pair of properties the
+browser assistant screens itself on. So an agent on this Mac can now read the
+workspace, list and move items, work with folders, comment and resolve
+comments, and design and apply looks: the verbs it needs to work on a note the
+way a person would.
+
+The local plugin still does not gain deletion, restoration, publishing,
+collaborator management, or the two commands that fetch a bookmark URL. Those
+carry a confirmation or open-world flag, and this route has no interactive
+confirmation.
 
 ### Identity, presence, and audit
 
