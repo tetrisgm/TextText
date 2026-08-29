@@ -2486,6 +2486,88 @@ export async function executeMcpTool(
       }
     }
 
+    case "delete_items": {
+      const input = args as WorkspaceToolInput<"delete_items">;
+      // Each item on its own, with a per-item answer. All-or-nothing would
+      // mean one item someone had just edited stopped the other nine, and
+      // silently-all would mean a caller could not tell which went.
+      const outcomes: Array<{
+        id: string;
+        trashed: boolean;
+        title?: string;
+        reason?: string;
+      }> = [];
+      const slugs: string[] = [];
+      let blog: Awaited<ReturnType<typeof requirePost>> | null = null;
+      for (const itemId of input.ids) {
+        const resolved = await requirePost(extra, itemId);
+        if (isToolResult(resolved)) {
+          outcomes.push({ id: itemId, trashed: false, reason: "not found" });
+          continue;
+        }
+        blog = resolved;
+        if (!resolved.access.isOwner) {
+          outcomes.push({
+            id: itemId,
+            trashed: false,
+            title: resolved.post.title,
+            reason: "not yours to move to Trash",
+          });
+          continue;
+        }
+        const revision = mutationRevision(resolved.post);
+        if (typeof revision !== "number") {
+          outcomes.push({
+            id: itemId,
+            trashed: false,
+            title: resolved.post.title,
+            reason: "no revision to check against",
+          });
+          continue;
+        }
+        try {
+          await deletePostAtomic(
+            resolved.blog.handle,
+            itemId,
+            revision,
+            mcpAuditEntry(
+              extra,
+              "mcp.delete_items",
+              "item",
+              itemId,
+              resolved.post.title,
+            ),
+          );
+          slugs.push(resolved.post.slug);
+          outcomes.push({ id: itemId, trashed: true, title: resolved.post.title });
+        } catch (error) {
+          outcomes.push({
+            id: itemId,
+            trashed: false,
+            title: resolved.post.title,
+            reason:
+              error instanceof PostConflictError
+                ? "someone changed it while this was running"
+                : "it could not be moved to Trash",
+          });
+        }
+      }
+      if (blog && !isToolResult(blog) && slugs.length) {
+        revalidateBlogPaths(blog.blog, slugs);
+      }
+      const moved = outcomes.filter((entry) => entry.trashed);
+      const left = outcomes.filter((entry) => !entry.trashed);
+      return jsonResult({
+        items: outcomes,
+        trashed: moved.length,
+        note: left.length
+          ? `${moved.length} moved to Trash. ${left.length} left alone: ${left
+              .map((entry) => `${entry.title ?? entry.id} (${entry.reason})`)
+              .join(", ")}.`
+          : `${moved.length} moved to Trash. All restorable.`,
+      });
+    }
+
     case "restore_item": {
       const input = args as WorkspaceToolInput<"restore_item">;
       const resolved = await requireWorkspace(extra, true);

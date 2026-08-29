@@ -835,6 +835,25 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     confirmation: "destructive",
     idempotent: true,
   }),
+  delete_items: defineTool("delete_items", {
+    title: "Move items to Trash",
+    description:
+      "Move several items to Trash in one go. They stay restorable; this never permanently deletes.\n\n" +
+      "Use this when someone asks to get rid of more than one thing. Name every item explicitly by id: there is no \"everything matching\" form, because a request to delete has to say what it is deleting.\n\n" +
+      "Each item is handled on its own. One that has changed since you read it, or that has already gone, is reported and the rest still go. The answer says what happened to each.",
+    inputSchema: z
+      .object({
+        ids: z
+          .array(id)
+          .min(1)
+          .max(50)
+          .describe("The items to move to Trash, named one by one."),
+      })
+      .strict(),
+    mutability: "write",
+    confirmation: "destructive",
+    idempotent: true,
+  }),
   restore_item: defineTool("restore_item", {
     title: "Restore item",
     description: "Restore one item from Trash with its previous status.",

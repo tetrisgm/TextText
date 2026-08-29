@@ -32,6 +32,7 @@ const EXPECTED_NAMES = [
   "set_item_status",
   "move_item",
   "delete_item",
+  "delete_items",
   "restore_item",
   "add_item_asset",
   "remove_item_asset",
@@ -52,6 +53,7 @@ const DESTRUCTIVE_TOOLS = new Set([
   "update_item",
   "move_item",
   "delete_item",
+  "delete_items",
   "set_item_status",
   "revoke_access",
   "set_comment_resolved",
@@ -61,6 +63,7 @@ const DESTRUCTIVE_TOOLS = new Set([
 ]);
 
 const IDEMPOTENT_WRITES = new Set([
+  "delete_items",
   "delete_folder",
   "restore_folder",
   "move_item",
@@ -77,6 +80,7 @@ const IDEMPOTENT_WRITES = new Set([
 ]);
 
 const CONFIRMED_TOOLS = new Set([
+  "delete_items",
   "delete_folder",
   "restore_folder",
   "delete_item",

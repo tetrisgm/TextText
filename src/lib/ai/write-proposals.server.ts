@@ -9,11 +9,18 @@ import {
   MAX_WRITE_PROPOSAL_TTL_MS,
   WRITE_PROPOSAL_TTL_MS,
   validateWorkspaceWriteProposal,
+  requiresFrozenPreview,
   workspaceWriteProposalSummary,
   type WriteProposalValidationError,
 } from "@/lib/ai/write-proposal-policy";
+import {
+  describeFrozenPreview,
+  driftedItems,
+  type FrozenProposalPreview,
+} from "@/lib/ai/write-proposal-preview";
 import { WORKSPACE_TOOL_DEFINITIONS, type WorkspaceToolName } from "@/lib/ai/tools";
 import { runWorkspaceToolForSession } from "@/lib/mcp/tools";
+import { getAccessibleFolders, getPostById } from "@/lib/store";
 import { getBlogEditRecord } from "@/lib/store";
 
 export type WorkspaceWriteProposalActor = {
@@ -131,6 +138,18 @@ export type WorkspaceWriteProposalDependencies = {
   }>;
   now(): Date;
   randomId(): string;
+  /**
+   * What the named items are, right now, for the frozen preview and for the
+   * drift check at approval. Injected so the proposal layer does not have to
+   * know how items are stored, and so a test can move the world underneath an
+   * approval without a database.
+   */
+  resolveItems(
+    handle: string,
+    ids: readonly string[],
+  ): Promise<
+    Map<string, { title: string; folderPath: string; visibility: "public" | "private"; revision: number | null }>
+  >;
 };
 
 type WorkspaceWriteProposalDecision =
@@ -354,6 +373,7 @@ const defaultDependencies: WorkspaceWriteProposalDependencies = {
   execute: runWorkspaceToolForSession,
   now: () => new Date(),
   randomId: randomUUID,
+  resolveItems: resolveProposalItems,
 };
 
 async function proposalBinding(
@@ -391,6 +411,40 @@ export async function createWorkspaceWriteProposal(
   );
   const expiresAt = new Date(now.getTime() + ttl);
   const id = dependencies.randomId();
+  // Freeze what this will do, while the person is looking at it. Ids are not
+  // something anyone can approve; titles, folders and whether a thing is
+  // public are. The revision travels with each one so approval can ask whether
+  // the world still matches.
+  let preview: FrozenProposalPreview | null = null;
+  if (requiresFrozenPreview(validated.name)) {
+    const ids = Array.isArray((validated.arguments as { ids?: unknown }).ids)
+      ? ((validated.arguments as { ids: string[] }).ids as string[])
+      : [];
+    const current = await dependencies.resolveItems(owner.workspace.handle, ids);
+    preview = {
+      kind: "items",
+      tool: validated.name,
+      items: ids.map((itemId) => {
+        const found = current.get(itemId);
+        return found
+          ? {
+              id: itemId,
+              title: found.title,
+              folderPath: found.folderPath,
+              visibility: found.visibility,
+              revision: found.revision,
+            }
+          : {
+              id: itemId,
+              title: "",
+              folderPath: "",
+              visibility: "private" as const,
+              revision: null,
+              missing: true as const,
+            };
+      }),
+    };
+  }
   await dependencies.repository.create({
     id,
     ...owner.binding,
@@ -398,7 +452,7 @@ export async function createWorkspaceWriteProposal(
     connectionId: null,
     toolName: validated.name,
     arguments: validated.arguments,
-    metadata: null,
+    metadata: preview ? { preview } : null,
     status: "pending",
     createdAt: now,
     expiresAt,
@@ -409,10 +463,9 @@ export async function createWorkspaceWriteProposal(
     status: "pending",
     tool: validated.name,
     title: WORKSPACE_TOOL_DEFINITIONS[validated.name].title,
-    summary: workspaceWriteProposalSummary(
-      validated.name,
-      validated.arguments,
-    ),
+    summary: preview
+      ? describeFrozenPreview(preview)
+      : workspaceWriteProposalSummary(validated.name, validated.arguments),
     arguments: validated.arguments,
     createdAt: now.toISOString(),
     expiresAt: expiresAt.toISOString(),
@@ -536,10 +589,52 @@ export async function decideWorkspaceWriteProposal(
     };
   }
 
+  // Approving a preview of five drafts must not delete five things that are
+  // now published, or five that someone has edited since. Ask whether the
+  // world still matches what the person was shown, and drop what moved: the
+  // rest is still exactly what they agreed to.
+  let approvedArguments = validated.arguments;
+  const frozen = (claimed.metadata as { preview?: FrozenProposalPreview } | null)
+    ?.preview;
+  if (frozen?.kind === "items") {
+    const current = await dependencies.resolveItems(
+      owner.workspace.handle,
+      frozen.items.map((item) => item.id),
+    );
+    const drifted = new Set(driftedItems(frozen, current));
+    const stillAgreed = frozen.items
+      .filter(
+        (item) =>
+          !item.missing &&
+          !drifted.has(item.id) &&
+          // Still there. One that has gone since it was shown is not drift to
+          // refuse over, but there is nothing left to do to it either, and
+          // sending it would put a "not found" in the receipt for something
+          // that ended up exactly as the person wanted.
+          current.has(item.id),
+      )
+      .map((item) => item.id);
+    if (!stillAgreed.length) {
+      await dependencies.repository.fail(
+        input.proposalId,
+        owner.binding,
+        "state_drifted",
+        dependencies.now(),
+      );
+      return {
+        status: "failed",
+        proposalId: input.proposalId,
+        message:
+          "Nothing in that change is still as it was when you saw it, so nothing was done. Ask again to see where things stand now.",
+      };
+    }
+    approvedArguments = { ...validated.arguments, ids: stillAgreed };
+  }
+
   try {
     const result = await dependencies.execute(
       validated.name,
-      validated.arguments,
+      approvedArguments,
       input.actor,
     );
     const text = resultText(result);
@@ -609,4 +704,40 @@ export async function decideWorkspaceWriteProposal(
       message: "The approved workspace change failed.",
     };
   }
+}
+
+/**
+ * The items a proposal names, as they are now.
+ *
+ * Used twice: to freeze what the owner is shown, and to ask at approval
+ * whether the world still matches it. One function so the two answers cannot
+ * be computed differently.
+ */
+async function resolveProposalItems(
+  handle: string,
+  ids: readonly string[],
+): Promise<
+  Map<
+    string,
+    { title: string; folderPath: string; visibility: "public" | "private"; revision: number | null }
+  >
+> {
+  const resolved = new Map<
+    string,
+    { title: string; folderPath: string; visibility: "public" | "private"; revision: number | null }
+  >();
+  if (!ids.length) return resolved;
+  const folders = await getAccessibleFolders(handle, null);
+  for (const itemId of ids) {
+    const post = await getPostById(handle, itemId);
+    if (!post) continue;
+    resolved.set(itemId, {
+      title: post.title,
+      folderPath:
+        folders.find((folder) => folder.id === post.folderId)?.path ?? "",
+      visibility: post.status === "published" ? "public" : "private",
+      revision: post.revision ?? null,
+    });
+  }
+  return resolved;
 }

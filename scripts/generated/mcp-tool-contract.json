@@ -26,6 +26,7 @@
     "set_item_status",
     "move_item",
     "delete_item",
+    "delete_items",
     "restore_item",
     "add_item_asset",
     "remove_item_asset",

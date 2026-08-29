@@ -74,6 +74,10 @@ const LOCAL_WRITES: readonly WorkspaceToolName[] = [
 /** Refused here, each for a reason stated above. */
 export const LOCAL_AGENT_DENIED: readonly WorkspaceToolName[] = [
   "delete_item",
+  // Batch deletion is confirmation-gated like the single one. It reaches this
+  // machine through a staged proposal the owner approves in the app, not by
+  // being executed straight off a command the agent sent.
+  "delete_items",
   "restore_item",
   "delete_folder",
   "restore_folder",

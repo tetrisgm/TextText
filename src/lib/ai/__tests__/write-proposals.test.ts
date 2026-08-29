@@ -117,6 +117,7 @@ function harness() {
     execute,
     now: () => new Date(clock),
     randomId: () => "11111111-1111-4111-8111-111111111111",
+    resolveItems: async () => new Map(),
   };
   return {
     repository,

@@ -31,15 +31,40 @@ export class WriteProposalValidationError extends Error {
  * Trash work. Content replacement and moves may be staged because they remain
  * inert until the owner reviews and approves the exact validated arguments.
  */
+/**
+ * Confirmation-gated commands a proposal may carry.
+ *
+ * The rule used to be that nothing confirmation-gated could be staged, which
+ * left the browser assistant unable to delete anything at all. The reasoning
+ * was sound and the conclusion too broad: a proposal IS a confirmation, as
+ * long as the owner is shown what will actually happen rather than a list of
+ * opaque ids, and as long as the world has not moved underneath it by the time
+ * they approve.
+ *
+ * So this is a per-command decision, not a lifted filter. A command earns a
+ * place here by having a preview that resolves ids into things a person
+ * recognises, and a fingerprint that makes approval fail closed on drift.
+ *
+ * Deliberately still absent: publishing and access changes, which alter who
+ * can see something and need their own preview design; restore, which can
+ * return an item to public; and the two commands that fetch a URL the model
+ * chose, where approval does not make the fetch safe.
+ */
+const PREVIEWABLE_DESTRUCTIVE: readonly WorkspaceToolName[] = ["delete_items"];
+
 export function isProposableWorkspaceWrite(
   name: WorkspaceToolName,
 ): boolean {
   const definition = WORKSPACE_TOOL_DEFINITIONS[name];
-  return (
-    definition.mutability === "write" &&
-    definition.confirmation === "none" &&
-    !definition.annotations.openWorldHint
-  );
+  if (definition.mutability !== "write") return false;
+  if (definition.annotations.openWorldHint) return false;
+  if (definition.confirmation === "none") return true;
+  return PREVIEWABLE_DESTRUCTIVE.includes(name);
+}
+
+/** Whether staging this command must freeze a preview of what it will do. */
+export function requiresFrozenPreview(name: WorkspaceToolName): boolean {
+  return PREVIEWABLE_DESTRUCTIVE.includes(name);
 }
 
 function serializedByteLength(value: unknown): number {
