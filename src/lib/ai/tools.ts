@@ -612,7 +612,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
       // The description said only "templates available for shaping documents",
       // so a model asked to change an existing type listed them five times
       // and never worked out that changing one was possible.
-      "Types under `editable` were designed from a blueprint and can be CHANGED with update_item_type: send that blueprint back with your edit, and the version shown. Everything else was assembled rather than designed - built-ins, imports, duplicates, and looks saved from a document - and has no blueprint to edit.\n\n" +
+      "Types under `editable` were designed from a blueprint and can be CHANGED with update_item_type: send that blueprint back with your edit, and the version shown. `needsMigration` and `unreadable` were designed here too but cannot be reopened by this build. Anything in none of those lists was assembled rather than designed - built-ins, imports, duplicates, and looks saved from a document - and has no blueprint to edit.\n\n" +
       "Call this first whenever someone wants a kind of item to be different.",
     inputSchema: emptyInput(),
   }),

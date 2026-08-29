@@ -3800,7 +3800,15 @@ export async function listFoldersUsingTemplate(
     })
     .from(folders)
     .where(
-      and(eq(folders.blogId, blogId), eq(folders.defaultTemplateId, templateId)),
+      and(
+        eq(folders.blogId, blogId),
+        eq(folders.defaultTemplateId, templateId),
+        // Trashed folders are not places to land a new version. Including one
+        // made an update create its successor and THEN fail, because
+        // setFolderTemplate refuses a deleted folder: the version existed, no
+        // folder wore it, and retrying from the old base was refused as stale.
+        isNull(folders.deletedAt),
+      ),
     )
     .orderBy(asc(folders.path));
   return rows.map((row) => ({
@@ -3826,8 +3834,9 @@ export async function listFoldersUsingTemplate(
 export async function listEditableItemTypes(blogId: string): Promise<{
   editable: Array<{ id: string; version: number; blueprint: ItemTypeBlueprint }>;
   needsMigration: Array<{ id: string; version: number }>;
+  unreadable: Array<{ id: string; version: number }>;
 }> {
-  if (!db) return { editable: [], needsMigration: [] };
+  if (!db) return { editable: [], needsMigration: [], unreadable: [] };
   const rows = await db
     .select({
       templateId: documentTemplates.templateId,
@@ -3854,6 +3863,8 @@ export async function listEditableItemTypes(blogId: string): Promise<{
    * say about someone's own work.
    */
   const needsMigration: Array<{ id: string; version: number }> = [];
+  /** Designed here, and the saved design will not parse. Rare and worth saying. */
+  const unreadable: Array<{ id: string; version: number }> = [];
   const seen = new Set<string>();
   for (const row of rows) {
     if (seen.has(row.templateId)) continue;
@@ -3869,9 +3880,13 @@ export async function listEditableItemTypes(blogId: string): Promise<{
     }
     if (inspected.state === "needs-migration") {
       needsMigration.push({ id: row.templateId, version: row.version });
+      continue;
+    }
+    if (inspected.state === "unreadable") {
+      unreadable.push({ id: row.templateId, version: row.version });
     }
   }
-  return { editable, needsMigration };
+  return { editable, needsMigration, unreadable };
 }
 
 export async function createDocumentTemplateVersion(input: {
@@ -3908,6 +3923,24 @@ export async function createDocumentTemplateVersion(input: {
     )
     .orderBy(desc(documentTemplates.version))
     .limit(1);
+  // Retirement marks every version of a template id, so a new version has to
+  // inherit it. Without this, adding one to a retired look silently returned
+  // the whole look to the pickers: restoring an old version did it, and so did
+  // the sync installer filling in a missing version from a .textpack. Neither
+  // is what someone meant when they retired it.
+  const retirement = await db
+    .select({ retiredAt: documentTemplates.retiredAt })
+    .from(documentTemplates)
+    .where(
+      and(
+        eq(documentTemplates.blogId, input.blogId),
+        eq(documentTemplates.templateId, candidate.id),
+      ),
+    )
+    .orderBy(desc(documentTemplates.version))
+    .limit(1);
+  const retiredAt = retirement[0]?.retiredAt ?? null;
+
   const nextVersion = (latest[0]?.version ?? 0) + 1;
   // When the caller knows which version it edited, insert exactly the
   // successor to THAT one and let the primary key decide. Reading the latest
@@ -3927,6 +3960,7 @@ export async function createDocumentTemplateVersion(input: {
       definition,
       authoringSource: input.authoringSource ?? null,
       createdById: input.createdById ?? null,
+      retiredAt,
     });
   } catch (error) {
     // The primary key rejected it, so someone else created this version while

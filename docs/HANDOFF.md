@@ -1113,8 +1113,14 @@ my own test had written down as correct. The third found that the widened
 surface was unreachable from the actual `texttext` binary, so the capability
 was claimed and not delivered.
 
-Every one of those was verified in the code before being acted on, and every
-one held.
+Every one was verified in the code before being acted on. Most held. Three did
+not survive contact with a later pass: the four-state distinction collapsed
+again one layer out, retired looks stayed resurrectable through restore and
+through the sync installer, and I claimed a backslash escape for `==highlight==`
+was impossible after checking only the text node. The node's position still
+spans the original source and the VFile still holds the backslash, so it was
+not impossible; it works now. Verifying the narrow claim and generalising it
+was the mistake, not the checking.
 
 **Habits worth keeping.**
 
@@ -1133,8 +1139,12 @@ one held.
   tool calls and two failures became two calls and none.
 
 **Where the goals stand.** A person can describe a kind of item, get it, and
-change it afterwards by asking; that is proved end to end by
-`eval:item-verbs -- change-item-type` against a real model. The assistant can
+change it afterwards by asking. `eval:item-verbs -- change-item-type` proves
+the CHANGE half against a real model: the type is seeded directly by the task's
+setup, and the model is given only the later "add somewhere to say how it felt"
+request. It asserts fields and versions, not how the page looks. Creation from
+a person's words is covered by the item-type evals; visual output is covered by
+nothing that can fail. The assistant can
 read, update, highlight, organise and act across items; eight eval tasks cover
 it. It still cannot delete, publish or share from the browser or the local CLI,
 because those need a confirmation flow that does not exist, and there is no
@@ -1160,12 +1170,13 @@ else. The model found the syntax from the tool description and marked one
 sentence, leaving every other word identical.
 
 `act-across-items` asks for a different closing line in each of three notes. It
-passes on the agent lane, which allows ten steps, and it used eight tool calls
-to do three notes: list, then read and append per note. **The browser lane caps
-at eight steps** (`src/app/api/ai/route.ts:56`), so the same request is already
-at the ceiling there with three notes and cannot work with more. That is the
-real constraint on "act on many items", not the model's ability, and no batch
-command exists to lift it (`tools.ts:721` updates one item).
+passes on the agent lane and used eight tool calls to do three notes: list,
+then read and append per note. The browser lane capped at eight steps, so the
+same request was already at the ceiling with three notes; that ceiling is 24
+now (`src/app/api/ai/route.ts:56`) and reaching it is reported rather than
+passed off as a finished answer. A raised ceiling is not a batch command
+though: `update_item` still updates one item (`tools.ts:721`), so "act on many"
+is still N calls, and N is still bounded.
 
 ## What a max-effort review found after I called it finished (2026-08-29)
 

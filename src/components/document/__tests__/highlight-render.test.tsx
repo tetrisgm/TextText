@@ -55,14 +55,28 @@ describe("a highlight in a document body", () => {
     ).toContain("<mark");
   });
 
-  it("can be written literally inside code, which is the only way", () => {
-    // A backslash does not escape it: markdown strips the escape before this
-    // plugin sees the text, so the escaped and unescaped forms are identical
-    // by the time it runs. Inline code is the escape hatch, and it works.
+  it("can be written literally, with a backslash or inside code", () => {
+    // Markdown strips the backslash before this plugin sees the TEXT NODE,
+    // which is why an earlier version of this test asserted the escape could
+    // not work. The node's position still spans the original source and the
+    // VFile still holds it, so the plugin can look.
     expect(render("Write `==x==` to mean the characters.")).not.toContain("<mark");
-    // Stated so the limitation is visible rather than discovered: a backslash
-    // does NOT prevent the highlight.
-    expect(render("A \\==literal== one.")).toContain("<mark");
+    expect(render("A \\==literal== one.")).not.toContain("<mark");
+    expect(render("A \\==literal== one.")).toContain("==literal==");
+  });
+
+  it("marks the real one when an escaped one is beside it", () => {
+    const html = render("A \\==literal== and a ==real== one.");
+    expect(html).toContain("<mark");
+    expect((html.match(/<mark/g) ?? []).length).toBe(1);
+    expect(html).toContain("==literal==");
+  });
+
+  it("leaves prose about equality alone", () => {
+    // "a === b === c" used to mark "= b ", which is not emphasis, it is
+    // someone writing about equality.
+    expect(render("Check that a === b === c holds.")).not.toContain("<mark");
+    expect(render("In JS, a === b is strict.")).not.toContain("<mark");
   });
 
   it("leaves markdown that merely contains equals signs alone", () => {

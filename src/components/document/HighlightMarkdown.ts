@@ -16,12 +16,15 @@
  * The syntax is the one Obsidian and Bear already use, so a person who has
  * highlighted anything before will guess it right.
  *
- * A backslash does NOT escape it. Markdown strips the escape before any plugin
- * sees the text - `\==x==` and `==x==` arrive as the identical text node, with
- * nothing to tell them apart - so there is no way to fix that from here. To
- * write the characters themselves, use inline code: `` `==x==` ``, which this
- * skips. Verified rather than assumed: an earlier draft of this comment
- * described an escape mechanism that does not exist.
+ * A backslash escapes it: `\==x==` renders as literal `==x==`.
+ *
+ * That took two tries and both errors are worth keeping. The first version
+ * described an escape mechanism that did not exist. The second checked that
+ * Markdown strips the backslash before any plugin sees the TEXT NODE, which is
+ * true, and concluded it was therefore impossible, which is false: the node's
+ * `position` still spans the original source and the VFile still holds it, so
+ * a transformer that takes `(tree, file)` can look. Verifying the narrow claim
+ * and then generalising it was the mistake, not the checking.
  */
 
 type MarkdownNode = {
@@ -29,6 +32,10 @@ type MarkdownNode = {
   value?: string;
   children?: MarkdownNode[];
   data?: Record<string, unknown>;
+  position?: {
+    start?: { offset?: number };
+    end?: { offset?: number };
+  };
 };
 
 /**
@@ -37,14 +44,45 @@ type MarkdownNode = {
  * Non-greedy so `==a== and ==b==` is two highlights rather than one that
  * swallows the middle. Single-line so an unclosed `==` cannot run to the end of
  * the document and highlight the rest of someone's note.
+ *
+ * Neither end may touch a third equals sign. Without that, prose comparing
+ * things with `===` highlighted the middle of it: `a === b === c` marked
+ * "= b ", which is not emphasis, it is someone writing about equality.
  */
-const HIGHLIGHT = /==(?!\s)([^\n=]|=(?!=))+?==/g;
+const HIGHLIGHT = /(?<!=)==(?![\s=])((?:[^\n=]|=(?!=))+?)==(?!=)/g;
 
-function splitHighlights(text: string): MarkdownNode[] {
+/**
+ * Which highlights in this text node were written with a backslash before them.
+ *
+ * The node's value has the escape stripped, so `\==x==` and `==x==` look
+ * identical there. The source does not: the node's position spans it. Escaping
+ * removes only the backslash, never the `==`, so the Nth highlight-shaped run
+ * in the value is the Nth in the source, and the source says which of them a
+ * person meant literally.
+ */
+function escapedRuns(source: string): boolean[] {
+  const escaped: boolean[] = [];
+  const shape = /==(?:[^\n=]|=(?!=))+?==/g;
+  for (const match of source.matchAll(shape)) {
+    const at = match.index ?? 0;
+    escaped.push(at > 0 && source[at - 1] === "\\");
+  }
+  return escaped;
+}
+
+function splitHighlights(text: string, escaped: boolean[] = []): MarkdownNode[] {
   const out: MarkdownNode[] = [];
   let last = 0;
+  let index = -1;
   for (const match of text.matchAll(HIGHLIGHT)) {
     const start = match.index ?? 0;
+    index += 1;
+    if (escaped[index]) {
+      // Written literally. Keep the characters and drop the highlight.
+      out.push({ type: "text", value: text.slice(last, start + match[0].length) });
+      last = start + match[0].length;
+      continue;
+    }
     if (start > last) out.push({ type: "text", value: text.slice(last, start) });
     out.push({
       // Carried as emphasis so every downstream consumer that walks mdast sees
@@ -62,8 +100,12 @@ function splitHighlights(text: string): MarkdownNode[] {
   return out;
 }
 
+type VFileLike = { value?: unknown };
+
 export function remarkHighlight() {
-  return function transform(tree: MarkdownNode) {
+  // (tree, file), not (tree) alone: the file is where the backslash survives.
+  return function transform(tree: MarkdownNode, file?: VFileLike) {
+    const source = typeof file?.value === "string" ? file.value : "";
     const visit = (node: MarkdownNode) => {
       if (!node.children) return;
       // Not inside code: `==` in a code sample is a comparison operator, not
@@ -83,7 +125,14 @@ export function remarkHighlight() {
           children.push(child);
           continue;
         }
-        children.push(...splitHighlights(child.value));
+        const span = child.position;
+        const slice =
+          source && span?.start?.offset !== undefined && span?.end?.offset !== undefined
+            ? source.slice(span.start.offset, span.end.offset)
+            : "";
+        children.push(
+          ...splitHighlights(child.value, slice ? escapedRuns(slice) : []),
+        );
       }
       node.children = children;
     };

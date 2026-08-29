@@ -24,7 +24,8 @@ the command that produced it.
 
 **The sharpest gap against a stated goal, and the first draft of this plan
 missed it entirely.** It claimed "Codex on this Mac gets all 35" and that was
-simply false.
+simply false. (The registry has since grown to 36; counts below are as
+measured on the day and are marked where they have moved.)
 
 `/api/agent/commands` allows exactly five: `search`, `read_item`, `create_item`,
 `update_item`, `append_to_item` (`src/app/api/agent/commands/route.ts:11`). The
@@ -135,9 +136,10 @@ markup, not layout. The first draft cited these as the gate. They are not one.
 Building a real light-and-dark visual check is a prerequisite for this finding,
 not a detail of it.
 
-## Finding 3: the browser assistant can do 24 of 35, and the first fix was unsafe
+## Finding 3: the browser assistant cannot delete, publish or share, and the first fix was unsafe
 
-The measurement stands: 24 of 35 (`cloud-tools.ts:66`). No delete, publish,
+The measurement was 24 of 35 when taken. It is 25 of 36 now, because
+update_item_type was added and needs no confirmation (`cloud-tools.ts:66`). No delete, publish,
 share, restore, retire or cover image.
 
 **The proposed fix was wrong and the review was right to refuse it.** The first
@@ -202,7 +204,7 @@ the first four commits. Those are fixed and listed below with them.
 
 - **Finding 4** (`aea66bcf`). 240 lines of dead keyword-gating deleted.
 - **Finding 0** (`41d1d56b`, corrected in `5cf36029`). An agent on this Mac has
-  24 commands, not five. The first version DERIVED the set from
+  25 commands, not five. The first version DERIVED the set from
   `confirmation === "none" && !openWorldHint`, which is wrong because
   `confirmation` defaults to `"none"`: a command added later would have joined a
   local agent's authority silently. It is now an explicit decision per command,

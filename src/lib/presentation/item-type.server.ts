@@ -23,6 +23,11 @@ type CreatedItemType = {
     id: string;
     path: string;
     restyledItems: number;
+    /** Items a bounded pass did not reach. Reporting only what changed turns
+     *  a half-restyled folder into a finished one. */
+    itemsLeft: number;
+    /** Items someone was editing, left with their old look and their words. */
+    itemsBeingEdited: number;
   };
 };
 
@@ -93,6 +98,8 @@ export async function createWorkspaceItemType(input: {
       id: folder.id,
       path: folder.path,
       restyledItems: restyled.changed,
+      itemsLeft: restyled.remaining,
+      itemsBeingEdited: restyled.contested,
     },
   };
 }

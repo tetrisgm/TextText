@@ -62,14 +62,20 @@ Workspace and manifest sync routes provide path discovery. Content work goes
 through the authenticated `/api/agent/commands` route, whose allowlist
 dispatches the matching shared workspace commands.
 
-That allowlist was five commands - search, read, create, update, append - and
-is now derived rather than listed (`src/lib/agent-command-access.ts`). A
-command is available to a local agent when it is not confirmation-gated and
-does not fetch a URL the model chose, which is the same pair of properties the
-browser assistant screens itself on. So an agent on this Mac can now read the
-workspace, list and move items, work with folders, comment and resolve
-comments, and design and apply looks: the verbs it needs to work on a note the
-way a person would.
+That allowlist was five commands - search, read, create, update, append. It is
+now an explicit decision per command, in `src/lib/agent-command-access.ts`,
+where every command in the registry appears in exactly one of two lists and a
+test fails when one appears in neither.
+
+It was briefly derived from `confirmation === "none" && !openWorldHint`, which
+reads well and is wrong: `confirmation` defaults to `"none"`, so a command
+added later would have joined a local agent's authority silently. That pair of
+properties is still asserted over the allowed list, as a check rather than as
+the mechanism.
+
+So an agent on this Mac can read the workspace, list and move items, work with
+folders, comment and resolve comments, and design, change and apply looks: the
+verbs it needs to work on a note the way a person would.
 
 The local plugin still does not gain deletion, restoration, publishing,
 collaborator management, or the two commands that fetch a bookmark URL. Those

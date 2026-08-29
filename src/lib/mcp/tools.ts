@@ -818,7 +818,7 @@ export async function executeMcpTool(
         listDocumentTemplates(resolved.access.blogId),
         listEditableItemTypes(resolved.access.blogId),
       ]);
-      const { editable, needsMigration } = authoring;
+      const { editable, needsMigration, unreadable } = authoring;
       // Summaries, not whole definitions. A definition is a render tree, and
       // handing over eleven of them was 24,000 characters of a vocabulary the
       // model cannot write in, which buried the blueprints it can. What it
@@ -845,6 +845,7 @@ export async function executeMcpTool(
         // build's compiler would no longer reproduce is not the same thing as
         // one that was never designed, and saying so is not optional.
         needsMigration,
+        unreadable,
         note: [
           editable.length
             ? "Types under `editable` can be changed with update_item_type: send its blueprint back with your edit and the version shown."
@@ -852,7 +853,10 @@ export async function executeMcpTool(
           needsMigration.length
             ? `Types under \`needsMigration\` were designed here but with an older version of the designer, so changing them would alter how they render. They are left as they are.`
             : "",
-          "Anything in neither list was assembled rather than designed - built-ins, imports, duplicates, and looks saved from a document - and is edited by hand.",
+          unreadable.length
+            ? "Types under `unreadable` were designed here and their saved design will not parse, so they cannot be reopened either."
+            : "",
+          "Anything in none of those lists was assembled rather than designed - built-ins, imports, duplicates, and looks saved from a document - and is edited by hand.",
         ]
           .filter(Boolean)
           .join(" "),
@@ -897,12 +901,26 @@ export async function executeMcpTool(
           handle: resolved.blog.handle,
         });
 
+        const unfinished = created.folder
+          ? created.folder.itemsLeft + created.folder.itemsBeingEdited
+          : 0;
         return jsonResult({
           itemType: created.definition,
           folder: created.folder,
-          note: input.folder_path
-            ? "The reusable type is saved and the folder now uses it."
-            : "The reusable type is saved and available in every look picker.",
+          note: [
+            input.folder_path
+              ? "The reusable type is saved and the folder now uses it."
+              : "The reusable type is saved and available in every look picker.",
+            created.folder?.itemsLeft
+              ? `${created.folder.itemsLeft} item(s) were not restyled in this pass; run set_folder_template on that folder again to continue.`
+              : "",
+            created.folder?.itemsBeingEdited
+              ? `${created.folder.itemsBeingEdited} item(s) were being edited and kept their old look rather than losing what was being typed.`
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" "),
+          unfinishedItems: unfinished,
         });
       } catch (error) {
         return errorResult(
@@ -966,7 +984,7 @@ export async function executeMcpTool(
                 .join(", ")}. Version ${updated.previousVersion} is kept, and anything still on it renders as it did.`
             : `Version ${updated.definition.version} is saved but not applied anywhere yet.`,
           left
-            ? `${left} item(s) were not restyled in this pass. Run it again to continue.`
+            ? `${left} item(s) were not restyled in this pass. Continue with set_folder_template on the same folder and version ${updated.definition.version} - calling update_item_type again would make another version and start over.`
             : "",
           busy
             ? `${busy} item(s) were being edited at that moment and kept their old look, so their words were not overwritten. Run it again when they are done.`

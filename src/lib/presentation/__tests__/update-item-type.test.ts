@@ -156,10 +156,13 @@ describe("changing an item type that already exists", () => {
   it("reports the items a restyling pass did not reach", async () => {
     // Restyling stops at a bounded number per pass. Reporting only what
     // changed turns a half-finished folder into a finished one.
-    mocks.retemplateFolderItems.mockResolvedValue({ changed: 500, contested: 3, remaining: 212 });
+    // 497 changed and 3 contested is 500 attempted, which is the page. The
+    // earlier fixture said 500 changed AND 3 contested, describing 503 items
+    // in a 500-item pass: a number that cannot happen, asserted as if it had.
+    mocks.retemplateFolderItems.mockResolvedValue({ changed: 497, contested: 3, remaining: 215 });
     const result = await call();
     expect(result.applied).toEqual([
-      { path: "recipes", restyledItems: 500, itemsLeft: 212, itemsBeingEdited: 3 },
+      { path: "recipes", restyledItems: 497, itemsLeft: 215, itemsBeingEdited: 3 },
     ]);
   });
 
