@@ -413,6 +413,21 @@ export function createWorkspaceAgentTools(
       );
     }
 
+    if (name === "delete_items") {
+      // Plural, so the singular `id` path below would read "" and throw on a
+      // lookup. Name what is going, because "move 3 items to Trash" is not
+      // something anyone can weigh.
+      const ids = Array.isArray(input.ids) ? (input.ids as string[]) : [];
+      const titles = ids.map((itemId) => requirePost(itemId).title || "Untitled");
+      return await confirmDestructive(
+        titles.length === 1
+          ? `Move "${titles[0]}" to Trash?`
+          : `Move ${titles.length} items to Trash? ${titles
+              .map((title) => `"${title}"`)
+              .join(", ")}`,
+      );
+    }
+
     if (name === "set_access" || name === "revoke_access") {
       const scope = String(input.scope_type ?? "workspace");
       const description =
@@ -1002,6 +1017,46 @@ export function createWorkspaceAgentTools(
           movePost(input.id, previousFolderId);
           throw error;
         }
+      }
+
+      // Straight passthroughs. They were missing entirely, and this switch has
+      // no default, so the assistant on this Mac offered them and answered
+      // undefined: "change my recipe look" listed nothing and applied nothing,
+      // silently. A test now fails when a command is offered without a case.
+      case "review_brief_sources":
+      case "list_responses":
+      case "list_document_templates":
+      case "save_item_as_look":
+      case "set_folder_template":
+      case "retire_document_template":
+      case "set_item_template": {
+        const result = await runRemote(rawName, args as never);
+        if (rawName !== "review_brief_sources" && rawName !== "list_responses") {
+          await refreshPoolAfterMutation();
+        }
+        return { ok: true, ...result };
+      }
+
+      case "delete_items": {
+        const input = args as WorkspaceToolInput<"delete_items">;
+        // Reflected locally first, so the list a person is looking at loses
+        // them at once rather than after the round trip, exactly as the single
+        // delete does.
+        for (const itemId of input.ids) {
+          requirePost(itemId);
+          movePostToTrash(itemId);
+        }
+        const result = await runRemote("delete_items", input);
+        await refreshPoolAfterMutation();
+        return { ok: true, ...result };
+      }
+
+      case "organize_items": {
+        const input = args as WorkspaceToolInput<"organize_items">;
+        for (const itemId of input.ids) requirePost(itemId);
+        const result = await runRemote("organize_items", input);
+        await refreshPoolAfterMutation();
+        return { ok: true, ...result };
       }
 
       case "delete_item": {
