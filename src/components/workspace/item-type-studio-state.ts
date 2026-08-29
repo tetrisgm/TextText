@@ -22,6 +22,27 @@ export const EMPTY_STUDIO_TIMELINE: StudioTimeline = {
   nextId: 1,
 };
 
+/**
+ * A timeline that starts from a look already in the workspace.
+ *
+ * Opening the studio on an existing type has to begin somewhere, and beginning
+ * empty would mean the person watches their own look disappear and rebuilds it
+ * from a blank prompt. The look they are changing IS the first revision, so
+ * undo has somewhere to go back to and the diff panel has something to compare
+ * against from the first edit.
+ */
+export function studioTimelineFrom(
+  blueprint: ItemTypeBlueprint,
+): StudioTimeline {
+  return {
+    revisions: [
+      { id: 1, label: "How it is now", source: "starter", blueprint },
+    ],
+    index: 0,
+    nextId: 2,
+  };
+}
+
 export function currentStudioRevision(
   timeline: StudioTimeline,
 ): StudioRevision | null {

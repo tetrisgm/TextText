@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createItemTypeAction } from "@/app/editor/item-type-actions";
+import {
+  createItemTypeAction,
+  updateItemTypeAction,
+} from "@/app/editor/item-type-actions";
 import {
   DocumentCollectionRenderer,
   DocumentEngineStyles,
@@ -24,6 +27,7 @@ import { assessItemTypeQuality } from "@/lib/presentation/item-type-quality";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import {
   EMPTY_STUDIO_TIMELINE,
+  studioTimelineFrom,
   addStudioRevision,
   currentStudioRevision,
   moveStudioTimeline,
@@ -417,6 +421,7 @@ function PreviewSurface({
 
 export function ItemTypeStudio({
   blogId,
+  editing,
   folders,
   generateWithConnectedAgent,
   handle,
@@ -426,6 +431,20 @@ export function ItemTypeStudio({
   previewDocuments = [],
 }: {
   blogId: string;
+  /**
+   * A look already in this workspace, opened to be changed.
+   *
+   * Absent means a new one. When present the studio starts from the blueprint
+   * that look was built from, and saving adds a version to it rather than
+   * creating a second look that resembles the first. `baseVersion` is the
+   * version that was read, so an edit made against a stale copy is refused
+   * instead of quietly winning a race.
+   */
+  editing?: {
+    templateId: string;
+    baseVersion: number;
+    blueprint: ItemTypeBlueprint;
+  };
   folders: readonly StudioFolder[];
   generateWithConnectedAgent?: (input: {
     current?: ItemTypeBlueprint;
@@ -442,7 +461,11 @@ export function ItemTypeStudio({
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const [prompt, setPrompt] = useState("");
   const [followUp, setFollowUp] = useState("");
-  const [timeline, setTimeline] = useState(EMPTY_STUDIO_TIMELINE);
+  // Editing starts from the look as it is, so undo has somewhere to go and the
+  // person is not made to rebuild what they came here to change.
+  const [timeline, setTimeline] = useState(() =>
+    editing ? studioTimelineFrom(editing.blueprint) : EMPTY_STUDIO_TIMELINE,
+  );
   const [folderPath, setFolderPath] = useState(initialFolderPath);
   const [applyToExisting, setApplyToExisting] = useState(true);
   const [previewMode, setPreviewMode] = useState<"item" | "folder">("item");
@@ -777,16 +800,29 @@ export function ItemTypeStudio({
     setBusy("save");
     setError(null);
     try {
-      const result = await createItemTypeAction(
-        handle,
-        design.blueprint,
-        folderPath,
-        applyToExisting,
-      );
+      // Changing a look adds a version to it. Creating one makes a new look.
+      // Doing the first through the second is how a workspace ends up with
+      // "Recipes", "Recipes 2" and "Recipes final".
+      const result = editing
+        ? await updateItemTypeAction(
+            handle,
+            editing.templateId,
+            editing.baseVersion,
+            design.blueprint,
+            applyToExisting,
+          )
+        : await createItemTypeAction(
+            handle,
+            design.blueprint,
+            folderPath,
+            applyToExisting,
+          );
       if (!result.ok) throw new Error(result.error);
       await refreshWorkspacePool(handle, blogId);
       router.refresh();
-      onCreated?.(result.folder?.path ?? null);
+      onCreated?.(
+        "folder" in result ? (result.folder?.path ?? null) : (result.applied[0]?.path ?? null),
+      );
       onClose();
     } catch (saveError) {
       setError(
