@@ -21,6 +21,7 @@ let usage = """
       texttext capture [TEXT] [--folder F]     save a thought, passage, or URL
       texttext lint [<doc>]                    check documents are well formed
       texttext do <command> [--args JSON]      run any workspace command
+      texttext propose <command> [--args JSON] stage a guarded change for owner approval
       texttext commands                        list the commands you may run
       texttext install                         put texttext on your PATH
 
@@ -417,6 +418,16 @@ do {
         let arguments = options.args ?? "{}"
         let reply = try await withActor(.edit, itemId: nil) {
             try await store.runCommand(name, argumentsJSON: arguments)
+        }
+        emit(reply)
+
+    case "propose":
+        guard let name = options.positional.first, !name.isEmpty else {
+            fail("usage: texttext propose <command> [--args '{\"key\":\"value\"}']")
+        }
+        let arguments = options.args ?? "{}"
+        let reply = try await withActor(.edit, itemId: nil) {
+            try await store.runCommand("proposal:\(name)", argumentsJSON: arguments)
         }
         emit(reply)
 

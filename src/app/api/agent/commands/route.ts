@@ -12,6 +12,8 @@ import {
   runWorkspaceToolForAuth,
   type ToolContext,
 } from "@/lib/mcp/tools";
+import { createWorkspaceWriteProposal } from "@/lib/ai/write-proposals.server";
+import { getOwnedBlog } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -137,7 +139,32 @@ export async function POST(request: Request) {
   if (!body) {
     return noStore({ error: "Send a JSON body" }, 400);
   }
-  const name = typeof body.name === "string" ? body.name : "";
+  const rawName = typeof body.name === "string" ? body.name : "";
+  const proposalMode = body.mode === "proposal" || rawName.startsWith("proposal:");
+  const name = rawName.startsWith("proposal:") ? rawName.slice("proposal:".length) : rawName;
+  if (proposalMode) {
+    if (resolveMcpScopeAccess(auth.scopes) !== "full") {
+      return noStore({ error: "A full sync connection is required to stage changes" }, 403);
+    }
+    const args = body.arguments;
+    if (!args || typeof args !== "object" || Array.isArray(args)) {
+      return noStore({ error: "Proposal arguments must be an object" }, 400);
+    }
+    try {
+      const userId = typeof auth.extra?.userId === "string" ? auth.extra.userId : auth.clientId;
+      const sub = typeof auth.extra?.sub === "string" ? auth.extra.sub : userId;
+      const blog = await getOwnedBlog(userId);
+      if (!blog) return noStore({ error: "Workspace not found" }, 404);
+      const proposal = await createWorkspaceWriteProposal({
+        actor: { sub, userId, handle: blog.handle },
+        tool: name,
+        arguments: args,
+      });
+      return noStore({ proposal, message: "Staged for owner approval in TextText." }, 202);
+    } catch (error) {
+      return noStore({ error: error instanceof Error ? error.message : "Unable to stage proposal" }, 400);
+    }
+  }
   if (!LOCAL_AGENT_COMMANDS.has(name as WorkspaceToolName)) {
     return noStore(
       { error: "That command is not available to the local CLI" },
