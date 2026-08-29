@@ -64,6 +64,9 @@ describe("a highlight in a document body", () => {
       "A line of ==== signs.",
       "Heading\n=======\n\nWords.",
       "The value is 4 ==",
+      // A loose /==(.+?)==/ highlights " b " here. The marker must be followed
+      // by the text it marks, not by a space.
+      "a == b == c",
     ]) {
       expect(render(body)).not.toContain("<mark");
     }
