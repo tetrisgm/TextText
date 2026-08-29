@@ -1435,6 +1435,14 @@ export async function setFolderTemplate(
  * changed and not one article did.
  *
  * Content is untouched. Only `presentation.template` moves.
+ *
+ * Every write is guarded by the revision the item was read at. Without that
+ * guard this read every row up front and then wrote each one back from that
+ * snapshot, so anything a person or an agent typed between the scan and the
+ * save was silently replaced by the stale copy. Restyling a folder of hundreds
+ * takes long enough, and collaboration is live enough, that the window was
+ * real. An item that moved on is left where it is and counted, because
+ * changing how something looks is never worth losing what it says.
  */
 export async function retemplateFolderItems(
   handle: string,
@@ -1444,7 +1452,7 @@ export async function retemplateFolderItems(
     limit?: number;
     audit?: (post: Post) => AuditEntry;
   } = {},
-): Promise<{ changed: number; remaining: number }> {
+): Promise<{ changed: number; contested: number; remaining: number }> {
   if (!db) throw new Error("Retemplating needs a database.");
   const blogId = await blogIdFor(handle);
   const limit = options.limit ?? 500;
@@ -1461,6 +1469,8 @@ export async function retemplateFolderItems(
     .orderBy(asc(posts.createdAt));
 
   let changed = 0;
+  /** Items someone else was editing at the same moment, left as they are. */
+  let contested = 0;
   for (const row of rows.slice(0, limit)) {
     const post = mapPost(row);
     const current = post.document;
@@ -1471,21 +1481,42 @@ export async function retemplateFolderItems(
     ) {
       continue;
     }
-    await savePost(
-      handle,
-      {
-        ...post,
-        document: {
-          ...current,
-          presentation: { ...current.presentation, template: reference },
+    if (post.revision === undefined) {
+      // Fail closed. `expectedRevision: undefined` means NO guard, so a row
+      // without one would quietly get the unguarded write this exists to
+      // prevent. The column is not null with a default, so this should not
+      // happen; if it ever does, leaving the item alone is the safe answer.
+      contested += 1;
+      continue;
+    }
+    try {
+      await savePost(
+        handle,
+        {
+          ...post,
+          document: {
+            ...current,
+            presentation: { ...current.presentation, template: reference },
+          },
+          template: reference,
         },
-        template: reference,
-      },
-      { audit: options.audit?.(post) },
-    );
-    changed += 1;
+        { audit: options.audit?.(post), expectedRevision: post.revision },
+      );
+      changed += 1;
+    } catch (error) {
+      // Someone wrote to this item between the scan and now. Their words win.
+      if (error instanceof PostConflictError) {
+        contested += 1;
+        continue;
+      }
+      throw error;
+    }
   }
-  return { changed, remaining: Math.max(0, rows.length - limit) };
+  return {
+    changed,
+    contested,
+    remaining: Math.max(0, rows.length - limit),
+  };
 }
 
 /**
