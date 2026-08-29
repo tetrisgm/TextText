@@ -14,7 +14,8 @@ export const ITEM_TYPE_BLUEPRINT_FORMAT = `Return JSON only, with this shape:
       "label": string,
       "type": "text" | "richtext" | "image" | "date" | "url" | "enum" | "number" | "boolean" | "reference" | "people" | "recurrence",
       "display": "auto" | "hidden" | "cover" | "badge" | "toggle" | "section",
-      // "cover" only on an image field, "toggle" only on a boolean. Both are
+      // "cover" only on an image field, "toggle" only on a boolean,
+      // "section" only on text or richtext. All three are
       // rejected elsewhere. A conditional rule cannot be expressed in the JSON
       // Schema this becomes as a tool argument, so it is stated here instead
       // of being discovered by having a call refused.

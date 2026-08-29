@@ -526,6 +526,30 @@ describe("display values that only apply to one field type", () => {
     ).not.toThrow();
   });
 
+  it("refuses a section on anything but text or richtext", () => {
+    // It compiled into a prose node and the render validator then threw
+    // "prose cannot consume number binding ...", naming a node the model never
+    // wrote and cannot see. The schema said yes and the compiler said no.
+    expect(() =>
+      itemTypeBlueprintSchema.parse({
+        ...base,
+        fields: [{ id: "cookTime", label: "Cook time", type: "number", display: "section" }],
+      }),
+    ).toThrow(/section.*text or richtext.*cookTime.*number/s);
+  });
+
+  it("still accepts a section on the two types that render one", () => {
+    expect(() =>
+      itemTypeBlueprintSchema.parse({
+        ...base,
+        fields: [
+          { id: "notes", label: "Notes", type: "richtext", display: "section" },
+          { id: "intro", label: "Intro", type: "text", display: "section" },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
   it("leaves the display values that work across types alone", () => {
     // Only cover and toggle are constrained, because only they are strictly
     // bound to one field type in the compiler. The rest are left alone here;
@@ -540,4 +564,54 @@ describe("display values that only apply to one field type", () => {
       ).not.toThrow();
     }
   });
+});
+
+describe("the metadata line appears once", () => {
+  /**
+   * A note with showMetadata emitted two: the header pushes one for every
+   * shape that is not an article, and a second was pushed just before the
+   * header for notes specifically. Found by adversarial review; no test
+   * counted nodes, so two identical lines rendered and nothing complained.
+   */
+  function metaNodes(node: unknown): number {
+    if (!node || typeof node !== "object") return 0;
+    const n = node as { type?: string; children?: unknown[] };
+    let count = ["metadata", "byline", "meta"].includes(n.type ?? "") ? 1 : 0;
+    for (const child of n.children ?? []) count += metaNodes(child);
+    return count;
+  }
+
+  it.each(["note", "article", "page", "task", "reference"] as const)(
+    "emits exactly one for a %s that asks for it",
+    (shape) => {
+      const template = compileItemTypeBlueprint(
+        {
+          name: "Once",
+          fields: [],
+          item: { shape, showMetadata: true },
+          collection: { layout: "list" },
+          theme: {},
+        },
+        { id: "custom.once" },
+      );
+      expect(metaNodes(template.item)).toBe(1);
+    },
+  );
+
+  it.each(["note", "article", "page", "task", "reference"] as const)(
+    "emits none for a %s that does not ask",
+    (shape) => {
+      const template = compileItemTypeBlueprint(
+        {
+          name: "None",
+          fields: [],
+          item: { shape, showMetadata: false },
+          collection: { layout: "list" },
+          theme: {},
+        },
+        { id: "custom.none" },
+      );
+      expect(metaNodes(template.item)).toBe(0);
+    },
+  );
 });

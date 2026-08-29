@@ -37,7 +37,15 @@ const syncDocumentEnvelopeSchema = z
      * Optional, so an envelope written before this existed still parses, and
      * so a document pinned to a look that has since been deleted still syncs.
      */
-    template: templateDefinitionSchema.optional(),
+    // `.catch` so a look the server cannot parse becomes absent instead of
+    // rejecting the envelope. Without it, the strict template was validated as
+    // part of the whole document: an unreadable look threw here, the PUT route
+    // returned 400, and the person lost the words they had just written. The
+    // comment there promised best effort and the code did the opposite.
+    //
+    // This is the ingress boundary for files that live outside the database
+    // and never expire, so it has to degrade rather than refuse.
+    template: templateDefinitionSchema.optional().catch(undefined),
   })
   .strict();
 

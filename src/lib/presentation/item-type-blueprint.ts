@@ -106,6 +106,21 @@ const scalarField = z
         message: `display "cover" only applies to an image field, and ${field.id} is a ${field.type}.`,
       });
     }
+    // "section" routes the field into a prose node, and prose accepts only
+    // text and richtext bindings. On a number, date, boolean or enum the
+    // compile threw with "prose cannot consume number binding ...", naming a
+    // node the model never wrote and cannot see. Say what is actually wrong.
+    if (
+      field.display === "section" &&
+      field.type !== "text" &&
+      field.type !== "richtext"
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["display"],
+        message: `display "section" only applies to a text or richtext field, and ${field.id} is a ${field.type}.`,
+      });
+    }
     if (field.display === "toggle" && field.type !== "boolean") {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -895,9 +910,9 @@ function itemTree(blueprint: ItemTypeBlueprint): RenderNode {
       fit: "cover",
     });
   }
-  if (blueprint.item.shape === "note" && blueprint.item.showMetadata) {
-    children.push({ type: "metadata" });
-  }
+  // No metadata here: the header already emits one when showMetadata is set,
+  // for every shape that is not an article. Pushing a second one gave a note
+  // two metadata lines, one before the header and one inside it.
   children.push(header);
   if (cover && blueprint.item.shape !== "page") {
     children.push({

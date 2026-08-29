@@ -1083,6 +1083,60 @@ them. 261 occurrences. Collapsing them removes the concept, and it needs the
 owner's word, because `type:` is a stored column and `kind:` is in the
 frontmatter of every file on disk. That is a data migration, not a refactor.
 
+## What a max-effort review found after I called it finished (2026-08-29)
+
+gpt-5.6-sol at `max` reasoning, 425k tokens, pointed at my own conclusion that
+the simplification was done. Verdict: "You stopped exactly where the real
+simplification begins." Three concrete bugs, all verified and fixed, plus one
+architectural finding that reframes the whole effort.
+
+**A malformed look destroyed the words.** The embedded template was validated
+as part of the whole sync envelope, so an unreadable look threw in
+`parseSyncDocumentEnvelope`, the PUT route caught it and returned 400, and the
+document never reached the save. The comment at that route promised "a
+malformed or unwelcome look must not fail the write: the person's words are
+the thing being saved" and the code did the opposite. I wrote both. Fixed with
+`.catch(undefined)` on the template so a bad look degrades to no look; four
+tests, three of which fail without it.
+
+**A note showed its metadata line twice.** `headerNode` emits one for every
+shape that is not an article, and a second was pushed just before the header
+for notes. No test counted nodes. Fixed, with a per-shape count pinned.
+
+**`display: "section"` on a number, date, boolean or enum threw at compile
+time** with "prose cannot consume number binding ...", naming a node the model
+never wrote and cannot see. The schema accepted it, the compiler routed it to
+prose, the render validator refused. Guarded like cover and toggle.
+
+**The finding that matters most: the built-ins' distinctiveness is not in the
+grammar, it is in CSS keyed to their ids.** `styles.ts` carries 166 rules
+matching `data-template="texttext.*"` across the 11 built-in ids, and that
+section is 54% of the file. An assistant-created type gets an id like
+`runs-9eef4c`, which matches none of them. So an AI-designed look cannot reach
+the visual quality of a built-in no matter how good the grammar becomes, and
+no amount of primitive reduction changes that. If AI-created documents are
+meant to look as good as the built-ins, this is the thing to fix, not the node
+count.
+
+Corrections to my own reasoning it forced:
+
+- "The AI never sees the render vocabulary" is FALSE for agents.
+  `list_document_templates` returns complete definitions and `create_item_type`
+  returns the compiled one. I had found this myself earlier in the session and
+  then argued the opposite.
+- "Legacy files mean the schema can never shrink" confuses the import boundary
+  with the engine model. `schemaVersion`, `engineVersion` and `formatVersion`
+  all exist and none dispatches anything: they are labels, not a migration
+  system. A v2 is possible; it is expensive, not impossible.
+- "The two-layer design already exists" is FALSE. The blueprint is compiled at
+  save and DISCARDED, so the semantic source is destroyed and the compiled
+  output is what gets stored, exported, imported and handed to agents. That is
+  two public languages with the higher-level one thrown away, not source plus
+  IR.
+- Total public concept surface it counted: ~90, above 110 if layer-specific
+  variants are not deduplicated. The three merges I made removed three names
+  from that.
+
 ## Where the simplification landed (2026-08-29)
 
 Done, verified by 13 of 13 browser evals including nine real-model briefs:
