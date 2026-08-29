@@ -460,6 +460,31 @@ const TASKS: Task[] = [
     },
   },
   {
+    // "Get rid of these" for more than one thing. The single delete would be a
+    // call per item; this is the batch, and Trash means it is reversible.
+    key: "delete-several",
+    ask:
+      'Get rid of my notes "Half an idea about caching" and "Writing for strangers". ' +
+      "Leave the other one alone.",
+    verify: async ({ actor, ids, before }) => {
+      const trash = await callTool(actor, "list_trash", {});
+      const trashed = (
+        JSON.parse(trash.text) as { items?: Array<{ id: string }> }
+      ).items ?? [];
+      const inTrash = (key: string) => trashed.some((item) => item.id === ids[key]);
+      const kept = await snapshot(actor, ids.outage);
+      return [
+        check(inTrash("caching"), "the caching note is in Trash"),
+        check(inTrash("strangers"), "the strangers note is in Trash"),
+        check(!inTrash("outage"), "the one it was told to leave is still there"),
+        check(
+          kept.body.trim() === before.outage.body.trim(),
+          "and untouched",
+        ),
+      ];
+    },
+  },
+  {
     key: "refuse-missing",
     ask: 'Add a paragraph about rollback procedure to my note "Deployment runbook".',
     verify: async ({ actor, ids, before, transcript }) => {
