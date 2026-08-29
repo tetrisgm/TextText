@@ -69,9 +69,14 @@ export function cloudAssistantToolNames(
   return WORKSPACE_TOOL_NAMES.filter((name) => {
     const definition = WORKSPACE_TOOL_DEFINITIONS[name];
     if (mode === "read_only" && definition.mutability !== "read") return false;
-    // Exclude confirmation-gated tools (destructive / sharing / publish): the
-    // web path has no interactive confirmation yet.
-    if (definition.confirmation !== "none") return false;
+    // Confirmation-gated tools are offered only when a proposal can genuinely
+    // stand in for the confirmation: the owner shown what will happen in words
+    // they recognise, and approval failing closed if the world has moved. That
+    // is a per-command judgement and isProposableWorkspaceWrite holds it.
+    // Anything else confirmation-gated stays out, as it always was.
+    if (definition.confirmation !== "none" && !isProposableWorkspaceWrite(name)) {
+      return false;
+    }
     // Exclude open-world tools that fetch a model-chosen URL
     // (add_item_asset, recapture_bookmark). Running headless with no
     // confirmation, they are an outbound exfiltration channel a prompt injection
