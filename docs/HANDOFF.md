@@ -1083,6 +1083,35 @@ them. 261 occurrences. Collapsing them removes the concept, and it needs the
 owner's word, because `type:` is a stored column and `kind:` is in the
 frontmatter of every file on disk. That is a data migration, not a refactor.
 
+## Where the simplification landed (2026-08-29)
+
+Done, verified by 13 of 13 browser evals including nine real-model briefs:
+
+- Render nodes: `meta`, `space` and `media` accepted and rendered; seven legacy
+  spellings normalise into them AT THE RENDERER. Canonical set 22 -> 18. Legacy
+  acceptance is permanent, so the schema itself grew, 17 union members to 20.
+- Authoring grammar: scalar `display: "fact"` and collection `index` removed,
+  both being second names for something already expressible. `cover` and
+  `toggle` now refused on the wrong field type instead of being ignored.
+- The nine-brief look suite ran clean and the new guards never fired, so the
+  repair-convergence risk they introduce is not live in practice.
+
+Left alone on purpose:
+
+- `stack` absorbing `group`/`masthead`: not behaviour-preserving. Three
+  genuinely different CSS treatments; merging moves the discriminator rather
+  than removing it.
+- `field` absorbing `badge`/`toggle`, `rows` absorbing `checklist`: both need
+  nested unions to stay sound, and "field" already means the stored schema.
+- Base collection versus `defaultView`: the compiler does discard base settings
+  when a default view is named, which is real duplication, BUT `FolderPage`
+  uses the presence of `defaultView` to decide whether to offer a separate
+  "Main" entry in the view switcher. It is a product behaviour, not just
+  redundancy, so the fix is a design change rather than a deletion.
+
+The rule that made all of this safe: reduce what the model is OFFERED, keep
+what is STORED permissive. Only the transient half can shrink.
+
 ## The render vocabulary is not the one the AI writes (2026-08-29)
 
 - The primitive reduction was aimed at the render nodes. Three merges in, two
