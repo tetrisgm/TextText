@@ -247,18 +247,21 @@ const TASKS: Task[] = [
     // verb than the others because the model has to decide WHICH parts matter
     // and then change only those, leaving every word it did not choose alone.
     key: "highlight",
+    // The person's own words, with no hint about syntax. Saying "in bold"
+    // would test that the model can follow an instruction; saying "highlight"
+    // tests whether the product can do the thing that was asked for.
     ask:
       'In my note "What the outage taught us", highlight the most important ' +
-      "sentence in bold. Do not add anything or reword anything.",
+      "sentence. Do not add anything or reword anything.",
     verify: async ({ actor, ids, before }) => {
       const after = await snapshot(actor, ids.outage);
-      const bolded = [...after.body.matchAll(/\*\*(.+?)\*\*/gs)].map((match) => match[1].trim());
+      const marked = [...after.body.matchAll(/==([^\n=]+)==/g)].map((match) => match[1].trim());
       // Strip the markers and the text must be what it was. That is the whole
       // requirement: emphasis is a change to the marks, never to the words.
-      const stripped = after.body.replace(/\*\*(.+?)\*\*/gs, "$1").trim();
+      const stripped = after.body.replace(/==([^\n=]+)==/g, "$1").trim();
       return [
-        check(bolded.length >= 1, `something was emphasised (${bolded.length} span(s))`),
-        check(bolded.length <= 3, `it chose, rather than bolding everything (${bolded.length})`),
+        check(marked.length >= 1, `a passage was highlighted (${marked.length} span(s))`),
+        check(marked.length <= 3, `it chose, rather than highlighting everything (${marked.length})`),
         check(
           stripped === before.outage.body.trim(),
           "with the markers removed the words are exactly as they were",

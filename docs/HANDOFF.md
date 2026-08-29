@@ -1083,6 +1083,33 @@ them. 261 occurrences. Collapsing them removes the concept, and it needs the
 owner's word, because `type:` is a stored column and `kind:` is in the
 frontmatter of every file on disk. That is a data migration, not a refactor.
 
+## eval:item-verbs, dated receipt (2026-08-29)
+
+A review pointed out that "21 checks, passing" appeared in a plan with nothing
+in the repository to support it, and that a green `npm run evals` can also mean
+the relevant suites were blocked. So: run against a real model on 2026-08-29,
+all seven tasks passed, every check.
+
+    add-section  retitle  summarize-into-note  tag-several
+    highlight  act-across-items  refuse-missing
+
+Two of those are new, and they were written because the owner's own examples of
+what the assistant is for were not covered anywhere.
+
+`highlight` asks, in a person's words, for the most important sentence to be
+highlighted, and says nothing about syntax. It passes now because `==like
+this==` exists; before that the model bolded things, which means something
+else. The model found the syntax from the tool description and marked one
+sentence, leaving every other word identical.
+
+`act-across-items` asks for a different closing line in each of three notes. It
+passes on the agent lane, which allows ten steps, and it used eight tool calls
+to do three notes: list, then read and append per note. **The browser lane caps
+at eight steps** (`src/app/api/ai/route.ts:56`), so the same request is already
+at the ceiling there with three notes and cannot work with more. That is the
+real constraint on "act on many items", not the model's ability, and no batch
+command exists to lift it (`tools.ts:721` updates one item).
+
 ## What a max-effort review found after I called it finished (2026-08-29)
 
 gpt-5.6-sol at `max` reasoning, 425k tokens, pointed at my own conclusion that

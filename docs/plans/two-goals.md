@@ -195,6 +195,31 @@ The two eval tasks are written and stay, because they encode the requirement in
 the person's own words. They are expected to fail until the primitives exist,
 and a failing eval that names a missing capability is worth more than no eval.
 
+## What has shipped
+
+- **Finding 4** (`aea66bcf`). 240 lines of dead keyword-gating deleted.
+- **Finding 0** (`41d1d56b`). The local agent surface is 24 commands, not five,
+  derived from the same two properties the browser assistant screens itself on.
+  Delete, publish, share and URL-fetching stay out, with a test per exclusion.
+- **Finding 1** (`c14dc7db`). Authoring source persisted in a versioned envelope
+  holding the normalised blueprint; `update_item_type` with base-version
+  compare-and-swap and explicit application; `list_document_templates` reports
+  which looks can be reopened and hands back their blueprints.
+  **Not done: the studio still has no edit entry.** The capability exists
+  through the assistant and through MCP; the UI button does not.
+- **Timeline** (`7865be1b`). Article's fourteen selector occurrences key on a
+  style family both looks carry, so Timeline stops rendering as a degraded
+  Article. The other 152 stay until there is a visual gate.
+- **Highlight** (`41ee5d97`). `==like this==` renders as a mark. Chosen as a
+  Markdown convention so nothing in the content model, the collaboration path
+  or the file format had to change. Found along the way: vitest never collected
+  `.tsx`, so a test file from 2026-08-19 had never run and one of its three
+  tests was failing.
+
+Still open, in order: what "many" means and a bounded batch command; the
+browser assistant's eleven missing commands, per command, starting with soft
+delete; and the identity CSS, which needs a real visual gate first.
+
 ## Order
 
 1. **Finding 0.** Widen the local agent allowlist. Bounded, and it is the
