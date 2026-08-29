@@ -20,6 +20,12 @@ need to be able to do all these actions."
 Everything below was measured on `main`, not remembered, and every claim names
 the command that produced it.
 
+> **Current status (2026-08-29):** The implementation work described here is
+> shipped on `main`. Item-type authoring/reopening, guarded folder application,
+> semantic browser delete, bounded batch organization, and a deterministic
+> light/dark look contract are live. The findings below are historical review
+> record; their old “still missing” wording is not a current regression list.
+
 ## Finding 0: an agent on this Mac gets five verbs
 
 **The sharpest gap against a stated goal, and the first draft of this plan

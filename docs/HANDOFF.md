@@ -17,6 +17,16 @@ unverified until exercised. The Notion-look polish continues, but behavior
 outranks look, and the owner's Notion screenshots set the bar, not the old
 polish ledger.
 
+## Current shipped checkpoint (2026-08-29)
+
+- `main` includes the guarded folder-look CAS fix (`f05e6735`) and the
+  deterministic visual contract gate (`verify:look-contract`).
+- The look gate renders all 29 resolvable templates as item and collection
+  views in system and dark/editorial themes.
+- Remaining deliberate product work is semantic confirmation for browser
+  publish/share/restore/access and an interactive approval path for destructive
+  local-CLI actions. Releases and TestFlight remain owner-triggered.
+
 ## Current AI implementation handoff (2026-08-25)
 
 - The current source boundary is `4118c930` (`Finish guarded agentic
