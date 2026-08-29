@@ -241,6 +241,7 @@ describe("MCP workspace tool adapter", () => {
     mocks.resolveWorkspaceAccess.mockResolvedValue({
       role: "owner",
       canView: true,
+      canComment: true,
       canEditContent: true,
       canManage: true,
       isOwner: true,
@@ -251,6 +252,7 @@ describe("MCP workspace tool adapter", () => {
     mocks.resolveItemAccess.mockResolvedValue({
       role: "owner",
       canView: true,
+      canComment: true,
       canEditContent: true,
       canManage: true,
       isOwner: true,
@@ -261,6 +263,7 @@ describe("MCP workspace tool adapter", () => {
     mocks.resolveFolderAccess.mockResolvedValue({
       role: "owner",
       canView: true,
+      canComment: true,
       canEditContent: true,
       canManage: true,
       isOwner: true,
@@ -2254,6 +2257,36 @@ describe("MCP workspace tool adapter", () => {
       }),
     );
     expect(mocks.recordAction).not.toHaveBeenCalled();
+  });
+
+  it("refuses a comment from someone who may only read", async () => {
+    // add_comment was the one comment handler that checked nothing. Reaching
+    // an item is not permission to write on it, and set_comment_resolved next
+    // door has always checked.
+    // resolveItemAccess is what requirePost reads, so this is the mock that
+    // decides. Setting only the workspace one let the call succeed and the
+    // test passed in isolation for an unrelated reason.
+    mocks.resolveItemAccess.mockResolvedValue({
+      role: "viewer",
+      canView: true,
+      canComment: false,
+      canEditContent: false,
+      canManage: false,
+      isOwner: false,
+      userId: "user-2",
+      blogId: "blog-1",
+      workspaceRole: null,
+    });
+    mocks.createItemComment.mockClear();
+    const addComment = registrations().find(
+      (entry) => entry.name === "add_comment",
+    );
+    const result = await addComment!.callback(
+      { id: "11111111-1111-4111-8111-111111111111", body: "Not allowed." },
+      auth(["sync"], "Claude"),
+    );
+    expect(result.isError).toBe(true);
+    expect(mocks.createItemComment).not.toHaveBeenCalled();
   });
 
   it("lists, adds, and resolves comments with the expected audits", async () => {

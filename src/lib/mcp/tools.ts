@@ -2669,6 +2669,14 @@ export async function executeMcpTool(
       const input = args as WorkspaceToolInput<"add_comment">;
       const resolved = await requirePost(extra, input.id);
       if (isToolResult(resolved)) return resolved;
+      // This was the only comment handler that checked nothing. Reaching an
+      // item is not permission to write on it: canComment is false by default
+      // and true from the commenter role up (permissions.ts:155), and
+      // set_comment_resolved next door has always checked. Someone with read
+      // access alone could leave comments on another person's item.
+      if (!resolved.access.canComment) {
+        return errorResult("You cannot comment on this item.");
+      }
       const comment = await createItemComment(
         {
           itemId: input.id,
