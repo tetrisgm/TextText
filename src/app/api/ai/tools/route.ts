@@ -120,6 +120,14 @@ export async function POST(request: Request) {
   // collaborator command API. Match the exact workspace the session owns
   // before resolving an actor or reaching the shared command executor. UI
   // gating is only presentation; this is the authorization boundary.
+  //
+  // Authorization, and not confirmation. A destructive command reaching here
+  // has been confirmed by a dialog in the app - `confirmTool` in
+  // `agent-tools.ts` - and this route cannot verify that happened. That is why
+  // the cloud lane, where there is no app to ask, routes the same commands
+  // through durable proposals instead. Anything wanting a confirmation the
+  // SERVER can vouch for has to go the proposal way, and moving this transport
+  // onto it is a design decision rather than a flag.
   const ownedWorkspace = await getOwnedBlog(user.sub);
   if (!ownedWorkspace || ownedWorkspace.handle !== body.handle) {
     return jsonError(

@@ -168,6 +168,28 @@ describe("when the world moves between showing and approving", () => {
     );
   });
 
+  it("says in the receipt what it dropped, not only what it did", async () => {
+    // Approving five and reading about three is its own kind of silence.
+    const now = world();
+    const { dependencies } = harness(now);
+    const preview = await createWorkspaceWriteProposal(
+      { actor: owner, tool: "delete_items", arguments: { ids: ["a", "b"] } },
+      dependencies,
+    );
+    now.set("a", { ...now.get("a")!, revision: 99 });
+    const decided = await decideWorkspaceWriteProposal(
+      { actor: owner, proposalId: preview.id, decision: "approve" },
+      dependencies,
+    );
+    const receipt = (decided as { receipt?: { text: string; output: Record<string, unknown> } })
+      .receipt;
+    expect(receipt?.text).toMatch(/Half an idea about caching/);
+    expect(receipt?.text).toMatch(/changed since you saw/);
+    expect(receipt?.output.skippedBecauseChanged).toEqual([
+      "Half an idea about caching",
+    ]);
+  });
+
   it("drops an item that became public since it was shown", async () => {
     // The person approved deleting a draft. Deleting something people can now
     // see is a different act and they have not agreed to it.

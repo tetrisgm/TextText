@@ -594,6 +594,7 @@ export async function decideWorkspaceWriteProposal(
   // world still matches what the person was shown, and drop what moved: the
   // rest is still exactly what they agreed to.
   let approvedArguments = validated.arguments;
+  let droppedFromApproval: string[] = [];
   const frozen = (claimed.metadata as { preview?: FrozenProposalPreview } | null)
     ?.preview;
   // Fails closed. A command that must be shown before it runs, arriving with
@@ -658,6 +659,12 @@ export async function decideWorkspaceWriteProposal(
         expected[item.id] = item.revision;
       }
     }
+    // Remember what was dropped, so the receipt can account for every item the
+    // person approved rather than only the ones that survived. Approving five
+    // and reading about three is its own kind of silence.
+    droppedFromApproval = frozen.items
+      .filter((item) => !item.missing && !stillAgreed.includes(item.id))
+      .map((item) => item.title || item.id);
     approvedArguments = validateWorkspaceWriteProposal(validated.name, {
       ...validated.arguments,
       ids: stillAgreed,
@@ -691,8 +698,18 @@ export async function decideWorkspaceWriteProposal(
       kind: "workspace",
       tool: validated.name,
       status: "completed",
-      text: text || "Done.",
-      output: result.structuredContent ?? {},
+      // Account for everything the person approved, including what approval
+      // dropped. Approving five and reading about three is a silence of the
+      // same kind as a half-restyled folder reported as finished.
+      text: droppedFromApproval.length
+        ? `${text || "Done."} Left alone because ${droppedFromApproval.length === 1 ? "it had" : "they had"} changed since you saw ${droppedFromApproval.length === 1 ? "it" : "them"}: ${droppedFromApproval.join(", ")}.`
+        : text || "Done.",
+      output: {
+        ...(result.structuredContent ?? {}),
+        ...(droppedFromApproval.length
+          ? { skippedBecauseChanged: droppedFromApproval }
+          : {}),
+      },
       completedAt: completedAt.toISOString(),
     };
     try {
