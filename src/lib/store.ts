@@ -3444,26 +3444,34 @@ export async function listDocumentTemplates(
   blogId: string,
 ): Promise<TemplateDefinition[]> {
   if (!db) return [...BUILTIN_TEMPLATES];
+  // Every row of the look, retired or not. Retirement is a property of the
+  // LOOK, which the schema says plainly - it is written onto every version of
+  // an id - so a look is offered only when NONE of its versions is retired.
+  //
+  // Filtering row by row was subtly different and the difference was a hole: a
+  // version that arrived after the retirement, from a .textpack or from a
+  // concurrent update, had no retiredAt of its own and put the whole look back
+  // in the picker. Asking about the look instead of the row closes that
+  // without needing the two writes to serialise.
   const rows = await db
     .select({
       templateId: documentTemplates.templateId,
       definition: documentTemplates.definition,
+      retiredAt: documentTemplates.retiredAt,
     })
     .from(documentTemplates)
-    .where(
-      and(
-        eq(documentTemplates.blogId, blogId),
-        isNull(documentTemplates.retiredAt),
-      ),
-    )
+    .where(eq(documentTemplates.blogId, blogId))
     .orderBy(
       asc(documentTemplates.templateId),
       desc(documentTemplates.version),
     );
+  const retired = new Set(
+    rows.filter((row) => row.retiredAt !== null).map((row) => row.templateId),
+  );
   const latest: TemplateDefinition[] = [];
   const seen = new Set<string>();
   for (const row of rows) {
-    if (seen.has(row.templateId)) continue;
+    if (seen.has(row.templateId) || retired.has(row.templateId)) continue;
     seen.add(row.templateId);
     latest.push(validateTemplateDefinition(row.definition));
   }
@@ -3850,15 +3858,16 @@ export async function listEditableItemTypes(blogId: string): Promise<{
       templateId: documentTemplates.templateId,
       version: documentTemplates.version,
       authoringSource: documentTemplates.authoringSource,
+      retiredAt: documentTemplates.retiredAt,
     })
     .from(documentTemplates)
-    .where(
-      and(
-        eq(documentTemplates.blogId, blogId),
-        isNull(documentTemplates.retiredAt),
-      ),
-    )
+    .where(eq(documentTemplates.blogId, blogId))
     .orderBy(asc(documentTemplates.templateId), desc(documentTemplates.version));
+  // Same rule as the picker: a look with any retired version is retired, so it
+  // is not offered as changeable either.
+  const retiredIds = new Set(
+    rows.filter((row) => row.retiredAt !== null).map((row) => row.templateId),
+  );
   const editable: Array<{
     id: string;
     version: number;
@@ -3875,7 +3884,7 @@ export async function listEditableItemTypes(blogId: string): Promise<{
   const unreadable: Array<{ id: string; version: number }> = [];
   const seen = new Set<string>();
   for (const row of rows) {
-    if (seen.has(row.templateId)) continue;
+    if (seen.has(row.templateId) || retiredIds.has(row.templateId)) continue;
     seen.add(row.templateId);
     const inspected = inspectAuthoringSource(row.authoringSource);
     if (inspected.state === "authored") {

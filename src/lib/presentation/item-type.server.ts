@@ -193,6 +193,25 @@ export async function updateWorkspaceItemType(input: {
     );
   }
 
+  // Find where this will land BEFORE committing anything. Creating the version
+  // first and discovering folders after meant a folder trashed in between left
+  // a committed version that nothing wore, and a base version too stale to
+  // retry from. An immutable version cannot be withdrawn, so whatever can fail
+  // has to fail first.
+  const targets =
+    input.apply === false
+      ? []
+      : await listFoldersUsingTemplate(input.blogId, input.templateId);
+  // A folder deliberately left on an older version stays there. Sharing an id
+  // is not consent to be moved: pinning is how a folder says it wants the look
+  // it already has.
+  const applicable = targets.filter(
+    (folder) => folder.version === input.baseVersion,
+  );
+  const skipped = targets
+    .filter((folder) => folder.version !== input.baseVersion)
+    .map((folder) => ({ path: folder.path, pinnedTo: folder.version }));
+
   const blueprint = normalizeItemTypeBlueprint(input.blueprint);
   // Same id, so this is a new version of the SAME look rather than a new look
   // that happens to resemble it. createDocumentTemplateVersion picks the next
@@ -217,20 +236,9 @@ export async function updateWorkspaceItemType(input: {
     itemsLeft: number;
     itemsBeingEdited: number;
   }> = [];
-  const skipped: Array<{ path: string; pinnedTo: number }> = [];
   if (input.apply !== false) {
     const reference = { id: created.id, version: created.version };
-    for (const folder of await listFoldersUsingTemplate(
-      input.blogId,
-      input.templateId,
-    )) {
-      // A folder deliberately left on an older version stays there. Sharing an
-      // id is not consent to be moved: pinning is how a folder says it wants
-      // the look it already has.
-      if (folder.version !== input.baseVersion) {
-        skipped.push({ path: folder.path, pinnedTo: folder.version });
-        continue;
-      }
+    for (const folder of applicable) {
       await setFolderTemplate(input.handle, folder.id, reference);
       const restyled =
         input.applyToExisting === false

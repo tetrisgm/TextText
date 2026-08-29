@@ -190,6 +190,26 @@ describe("changing an item type that already exists", () => {
     expect(mocks.createDocumentTemplateVersion).not.toHaveBeenCalled();
   });
 
+  it("does not commit a version it cannot land anywhere", async () => {
+    // Creating the version first and discovering folders after meant a folder
+    // trashed in between left a committed version nothing wore, and a base
+    // version too stale to retry from. An immutable version cannot be
+    // withdrawn, so the lookup that can fail happens first.
+    const order: string[] = [];
+    mocks.listFoldersUsingTemplate.mockImplementation(async () => {
+      order.push("looked for folders");
+      return [{ id: "f-1", path: "recipes", version: 3 }];
+    });
+    mocks.createDocumentTemplateVersion.mockImplementation(
+      async ({ definition }: { definition: { id: string } }) => {
+        order.push("created the version");
+        return { ...definition, version: 4 };
+      },
+    );
+    await call();
+    expect(order).toEqual(["looked for folders", "created the version"]);
+  });
+
   it("refuses to change a built-in", async () => {
     await expect(call({ templateId: "texttext.article" })).rejects.toThrow(
       /Built-in looks cannot be changed/,
