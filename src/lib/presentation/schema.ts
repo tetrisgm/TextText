@@ -256,6 +256,17 @@ type RenderNodeInput =
       height?: "compact" | "medium" | "large" | "viewport";
     }
   | {
+      type: "media";
+      id?: string;
+      showWhen?: string;
+      bind: string;
+      /** What the asset is. Carries the class and the video player branch. */
+      kind?: "cover" | "image" | "video";
+      alt?: string;
+      fit?: "cover" | "contain";
+      height?: "compact" | "medium" | "large" | "viewport";
+    }
+  | {
       type: "gallery";
       id?: string;
       showWhen?: string;
@@ -395,6 +406,11 @@ export type RenderNode =
       alt?: ContentBinding;
       showWhen?: ContentBinding;
     })
+  | (Omit<Extract<RenderNodeInput, { type: "media" }>, "bind" | "alt" | "showWhen"> & {
+      bind: ContentBinding;
+      alt?: ContentBinding;
+      showWhen?: ContentBinding;
+    })
   | (Omit<Extract<RenderNodeInput, { type: "gallery" }>, "bind" | "showWhen"> & {
       bind: ContentBinding;
       showWhen?: ContentBinding;
@@ -472,6 +488,12 @@ export function normalizeRenderNode(value: unknown): unknown {
   if ((node.type === "divider" || node.type === "spacer") && !("rule" in node)) {
     return { ...node, type: "space", rule: node.type === "divider" };
   }
+  if (
+    (node.type === "cover" || node.type === "image" || node.type === "video") &&
+    !("kind" in node)
+  ) {
+    return { ...node, type: "media", kind: node.type };
+  }
   return node;
 }
 
@@ -500,9 +522,21 @@ export const renderNodeSchema: z.ZodType<RenderNodeInput> = z.lazy(() =>
       href: bindingSchema.optional(),
     }).strict(),
     z.object({ ...sharedNode, type: z.literal("prose"), bind: bindingSchema }).strict(),
+    // cover, image and video are one node: same properties, one renderer
+    // branch. `media` is the name they normalise to at render time; all four
+    // spellings are accepted, and only these three are emitted today.
     z.object({
       ...sharedNode,
       type: z.enum(["cover", "image", "video"]),
+      bind: bindingSchema,
+      alt: bindingSchema.optional(),
+      fit: z.enum(["cover", "contain"]).default("cover"),
+      height: z.enum(["compact", "medium", "large", "viewport"]).default("medium"),
+    }).strict(),
+    z.object({
+      ...sharedNode,
+      type: z.literal("media"),
+      kind: z.enum(["cover", "image", "video"]).default("image"),
       bind: bindingSchema,
       alt: bindingSchema.optional(),
       fit: z.enum(["cover", "contain"]).default("cover"),
@@ -937,7 +971,16 @@ function validateTreeBindings(
       );
     } else if (node.type === "prose") {
       checkBinding(node.bind, fields, ["richtext", "text"], "prose");
-    } else if (node.type === "cover" || node.type === "image" || node.type === "video") {
+    } else if (
+      node.type === "cover" ||
+      node.type === "image" ||
+      node.type === "video" ||
+      node.type === "media"
+    ) {
+      // media is the name the three normalise to. Without it here a media node
+      // would skip binding validation entirely, which is silent: the look
+      // saves, and the binding is only discovered to be wrong when a reader
+      // opens the page.
       checkBinding(node.bind, fields, ["image", "url"], node.type);
       if (node.alt) checkBinding(node.alt, fields, ["text", "enum", "url"], `${node.type} alt`);
     } else if (node.type === "gallery") {

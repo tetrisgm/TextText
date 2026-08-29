@@ -27,7 +27,7 @@ function look(item: unknown) {
     id: "custom.normalise",
     version: 1,
     name: "Normalise",
-    fields: [],
+    fields: [{ id: "hero", label: "Hero", type: "image" }],
     item,
     collection: {
       layout: "list",
@@ -42,12 +42,17 @@ const STACK = (children: unknown[]) => ({ type: "stack", children });
 describe("parse emits nothing new", () => {
   it("keeps a legacy node exactly as written", () => {
     const parsed = validateTemplateDefinition(
-      look(STACK([{ type: "byline" }, { type: "divider", size: "lg" }])),
+      look(STACK([
+        { type: "byline" },
+        { type: "divider", size: "lg" },
+        { type: "cover", bind: "content.fields.hero" },
+      ])),
     );
     const kids = (parsed.item as { children: Array<Record<string, unknown>> }).children;
-    // If these ever come back as meta/space, step 1 has started emitting the
-    // new vocabulary and the rollback floor has moved without anyone saying so.
-    expect(kids.map((k) => k.type)).toEqual(["byline", "divider"]);
+    // If these ever come back as meta/space/media, step 1 has started emitting
+    // the new vocabulary and the rollback floor has moved without anyone
+    // saying so.
+    expect(kids.map((k) => k.type)).toEqual(["byline", "divider", "cover"]);
   });
 
   it("accepts the target spellings too, so step 3 can switch", () => {
@@ -100,6 +105,21 @@ describe("the mapping the renderer applies", () => {
       size: "sm",
       rule: false,
     });
+  });
+
+  it("turns cover, image and video into media, keeping which it was", () => {
+    // The kind carries both the CSS class (tt-cover / tt-image / tt-video) and
+    // the video player branch, so the rendered output is unchanged.
+    for (const kind of ["cover", "image", "video"] as const) {
+      expect(
+        normalizeRenderNode({ type: kind, bind: "content.assets", height: "large" }),
+      ).toEqual({ type: "media", kind, bind: "content.assets", height: "large" });
+    }
+  });
+
+  it("refuses a media-family node that already carries a kind", () => {
+    const bad = { type: "cover", bind: "content.assets", kind: "video" };
+    expect(normalizeRenderNode(bad)).toBe(bad);
   });
 
   it("passes anything else through untouched, by identity", () => {

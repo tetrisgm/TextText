@@ -322,7 +322,7 @@ function BoundMedia({
   document,
   preview,
 }: {
-  node: Extract<RenderNode, { type: "cover" | "image" | "video" }>;
+  node: Extract<RenderNode, { type: "media" }>;
   document: DocumentSnapshot;
   preview?: boolean;
 }) {
@@ -330,8 +330,10 @@ function BoundMedia({
   if (!src) return null;
   const alt = node.alt ? scalarText(resolveDocumentBinding(document, node.alt)) : document.content.title;
   const style = { "--tt-media-fit": node.fit } as CSSProperties;
-  const className = `tt-${node.type} tt-height-${node.height}`;
-  if (node.type === "video") {
+  // tt-cover / tt-image / tt-video exactly as before: the CSS and the look
+  // eval select on these, so the class is the kind, never the node type.
+  const className = `tt-${node.kind} tt-height-${node.height}`;
+  if (node.kind === "video") {
     if (preview) {
       return (
         <div className={`${className} tt-media-still`} style={style}>
@@ -1053,9 +1055,8 @@ function NodeRenderer({
       const value = scalarText(resolveDocumentBinding(document, node.bind));
       return value ? <div className="tt-prose"><Markdown value={value} wikiLinkTargets={wikiLinkTargets} /></div> : null;
     }
-    case "cover":
-    case "image":
-    case "video": {
+    // cover, image and video normalise to media before they reach here.
+    case "media": {
       const slot = slots?.bindings?.[node.bind];
       return slot !== undefined ? (
         slot

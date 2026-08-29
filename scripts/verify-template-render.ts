@@ -18,6 +18,7 @@ import type {
   RowSubFieldDefinition,
   TemplateDefinition,
 } from "../src/lib/presentation/schema";
+import { validateTemplateDefinition } from "../src/lib/presentation/schema";
 import {
   validateDocumentSnapshot,
   type DocumentFieldValue,
@@ -69,7 +70,18 @@ function sampleDocument(template: TemplateDefinition) {
         template.fields.map((field) => [field.id, sampleValue(field)]),
       ),
       tags: ["sample", "verify"],
-      assets: [],
+      // One asset, so a gallery renders instead of returning null. With an
+      // empty list the gallery node composed nothing, and the marker check
+      // could not tell that apart from a renderer that had stopped handling
+      // it. Two looks were exercising a node that produced no markup at all.
+      assets: [
+        {
+          id: "sample-asset",
+          kind: "image" as const,
+          src: "https://example.com/sample.jpg",
+          alt: "A sample image",
+        },
+      ],
     },
     presentation: {
       template: { id: template.id, version: template.version },
@@ -80,16 +92,15 @@ function sampleDocument(template: TemplateDefinition) {
 
 /** Node types composed in the template's item spec, so we can assert each one
  * left a trace in the HTML. */
-function composedTypes(node: unknown, into = new Set<string>()): Set<string> {
-  if (typeof node !== "object" || node === null) return into;
-  const record = node as { type?: string; children?: unknown[] };
-  if (record.type) into.add(record.type);
-  for (const child of record.children ?? []) composedTypes(child, into);
-  return into;
-}
-
-/** The CSS class each wave-1 node emits; presence proves the renderer handled
- * it rather than silently skipping an unknown type. */
+/**
+ * The CSS classes a spec's nodes must produce.
+ *
+ * Derived per NODE, not per type. An earlier version collected type names and
+ * looked each up in a fixed map, so `media` was assumed to mean `tt-image`: a
+ * renderer emitting `tt-image` for a cover would have passed, and a correct
+ * one emitting `tt-cover` would have failed. The class depends on the node's
+ * own properties, so the expectation has to be read from the node.
+ */
 const NODE_MARKERS: Record<string, string> = {
   badge: "tt-badge",
   facts: "tt-facts",
@@ -99,17 +110,33 @@ const NODE_MARKERS: Record<string, string> = {
   poll: "tt-poll",
   callout: "tt-callout",
   quote: "tt-quote",
-  // byline/metadata and divider/spacer normalise at the renderer, so the
-  // marker is the class the OUTPUT carries, not the input's name. An earlier
-  // attempt used "tt-" for both, which every render contains via
-  // class="tt-document", so the check always passed and proved nothing.
+  gallery: "tt-gallery",
   byline: "tt-byline",
   metadata: "tt-metadata",
   divider: "tt-divider",
   spacer: "tt-spacer",
-  meta: "tt-byline",
-  space: "tt-divider",
+  cover: "tt-cover",
+  image: "tt-image",
+  video: "tt-video",
 };
+
+function expectedMarkers(node: unknown, into = new Set<string>()): Set<string> {
+  if (typeof node !== "object" || node === null) return into;
+  const n = node as {
+    type?: string;
+    kind?: string;
+    variant?: string;
+    rule?: boolean;
+    children?: unknown[];
+  };
+  if (n.type === "media") into.add(`tt-${n.kind ?? "image"}`);
+  else if (n.type === "meta")
+    into.add(n.variant === "metadata" ? "tt-metadata" : "tt-byline");
+  else if (n.type === "space") into.add(n.rule ? "tt-divider" : "tt-spacer");
+  else if (n.type && NODE_MARKERS[n.type]) into.add(NODE_MARKERS[n.type]);
+  for (const child of n.children ?? []) expectedMarkers(child, into);
+  return into;
+}
 
 let failures = 0;
 // Retired looks are still resolvable, so a document pinned to one still has
@@ -142,8 +169,9 @@ for (const template of ALL_RESOLVABLE_TEMPLATES) {
   // rule for every other marker, so `html.includes("tt-badge")` was true for
   // every template whatever the renderer did. Every marker in this gate was
   // vacuous, and had been since it was written.
-  const rendered = (marker: string) =>
+  const inMarkup = (html: string, marker: string) =>
     new RegExp(`class="[^"]*\\b${marker}\\b`).test(html);
+
   // collection.item is rendered by a different component and was never walked
   // here, so a node that only appears in a folder view went unchecked.
   let collectionHtml = "";
@@ -161,14 +189,10 @@ for (const template of ALL_RESOLVABLE_TEMPLATES) {
     failures += 1;
     continue;
   }
-  const renderedInCollection = (marker: string) =>
-    new RegExp(`class="[^"]*\\b${marker}\\b`).test(collectionHtml);
   const missing = [
-    ...[...composedTypes(template.item)].filter(
-      (type) => NODE_MARKERS[type] && !rendered(NODE_MARKERS[type]),
-    ),
-    ...[...composedTypes(template.collection.item)].filter(
-      (type) => NODE_MARKERS[type] && !renderedInCollection(NODE_MARKERS[type]),
+    ...[...expectedMarkers(template.item)].filter((m) => !inMarkup(html, m)),
+    ...[...expectedMarkers(template.collection.item)].filter(
+      (m) => !inMarkup(collectionHtml, m),
     ),
   ];
   if (missing.length > 0) {
@@ -179,6 +203,56 @@ for (const template of ALL_RESOLVABLE_TEMPLATES) {
     continue;
   }
   console.log(`ok   ${template.id} (${html.length} chars)`);
+}
+
+// The built-ins only emit legacy spellings, so nothing above renders a media,
+// meta or space node. Render one of each directly, or the target half of the
+// grammar ships with no render coverage at all.
+for (const [label, node, marker] of [
+  ["media cover", { type: "media", kind: "cover", bind: "content.fields.hero" }, "tt-cover"],
+  ["media image", { type: "media", kind: "image", bind: "content.fields.hero" }, "tt-image"],
+  ["media video", { type: "media", kind: "video", bind: "content.fields.hero" }, "tt-video"],
+  ["meta byline", { type: "meta", variant: "byline" }, "tt-byline"],
+  ["meta metadata", { type: "meta", variant: "metadata" }, "tt-metadata"],
+  ["space rule", { type: "space", rule: true }, "tt-divider"],
+  ["space gap", { type: "space", rule: false }, "tt-spacer"],
+] as const) {
+  const template = validateTemplateDefinition({
+    schemaVersion: 1,
+    engineVersion: 1,
+    id: "verify.target-grammar",
+    version: 1,
+    name: "Target grammar",
+    fields: [{ id: "hero", label: "Hero", type: "image" }],
+    item: { type: "stack", children: [node] },
+    collection: {
+      layout: "list",
+      item: { type: "stack", children: [{ type: "text", bind: "content.title", role: "title" }] },
+    },
+    theme: {},
+  });
+  const document = sampleDocument(template);
+  let html = "";
+  try {
+    html = renderToStaticMarkup(
+      React.createElement(DocumentRenderer, {
+        document,
+        documentId: `verify-${label.replace(/\s/g, "-")}`,
+        template,
+        metadata: { author: "Verifier", date: "Jul 15, 2026" },
+      }),
+    );
+  } catch (error) {
+    console.error(`FAIL ${label}: renderer threw: ${error}`);
+    failures += 1;
+    continue;
+  }
+  if (!new RegExp(`class="[^"]*\\b${marker}\\b`).test(html)) {
+    console.error(`FAIL ${label}: expected ${marker} in the markup`);
+    failures += 1;
+    continue;
+  }
+  console.log(`ok   ${label} (${marker})`);
 }
 
 if (failures > 0) {

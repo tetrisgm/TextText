@@ -69,6 +69,32 @@ function documents(word: string): boolean {
   return new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(DOC);
 }
 
+/**
+ * The render-node half of the page only.
+ *
+ * Searching the whole document let a node name pass on an unrelated mention:
+ * `media` matched the THEME axis of the same name, so the node could have gone
+ * undocumented and the test would still have been green.
+ */
+const NODE_SECTION = DOC.slice(
+  DOC.indexOf("## Render nodes"),
+  DOC.indexOf("## Collections"),
+);
+
+/**
+ * A node counts as documented only when it has its own TABLE ROW in that
+ * section. Accepting a mention anywhere was still too loose: prose explaining
+ * that `cover` normalises to `media` was enough to satisfy the check for
+ * `media`, so the node could have been dropped from the table unnoticed.
+ */
+function documentsNode(word: string): boolean {
+  const row = new RegExp(
+    `^\\| \`${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\` \\|`,
+    "m",
+  );
+  return row.test(NODE_SECTION);
+}
+
 describe("docs/render-spec.md matches the schema", () => {
   const nodeTypes = unionOptions(renderNodeSchema)
     .flatMap((option) => discriminatorValues(option.shape.type))
@@ -86,7 +112,7 @@ describe("docs/render-spec.md matches the schema", () => {
   });
 
   it.each(nodeTypes)("documents the %s node", (type) => {
-    expect(documents(type)).toBe(true);
+    expect(documentsNode(type)).toBe(true);
   });
 
   it.each(fieldTypes)("documents the %s field type", (type) => {

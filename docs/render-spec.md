@@ -73,7 +73,7 @@ Ten. Each carries `id`, `label`, `required`, `visibility`, `help`, plus its own:
 
 | Type | Adds |
 | --- | --- |
-| -> `text` | `maxLength` |
+| `text` | `maxLength` |
 | `richtext` | `maxLength`. Markdown, edited as styled source. |
 | `image` | `allowedContentTypes` |
 | `date` | |
@@ -82,7 +82,7 @@ Ten. Each carries `id`, `label`, `required`, `visibility`, `help`, plus its own:
 | `number` | `min`, `max`, `step`, `format` |
 | `boolean` | |
 | `reference` | `target`, `multiple`, `semantic` |
-| -> `rows` | `fields` (sub-fields), `maxRows`. A repeating group: checklist items, ingredients, attendees. |
+| `rows` | `fields` (sub-fields), `maxRows`. A repeating group: checklist items, ingredients, attendees. |
 
 A blueprint may also declare a `computed` field. It is not stored as a field; it
 compiles to a `facts` entry `derive` or a `progress` `source`, both of which read
@@ -97,7 +97,7 @@ discriminated union.
 
 | Node | Properties |
 | --- | --- |
-| -> `stack` | `direction` (vertical, horizontal), `align` (start, center, end, stretch), `gap`, `children` |
+| `stack` | `direction` (vertical, horizontal), `align` (start, center, end, stretch), `gap`, `children` |
 | `group` | `gap`, `children` |
 | `masthead` | `gap`, `children`. A group that reads as a document header. |
 | `space` | `size`, `rule`. True draws a rule, false leaves the gap empty. `divider` and `spacer` normalise into it. |
@@ -121,9 +121,11 @@ plays and the theme decides how that role sets.
 
 | Node | Properties |
 | --- | --- |
-| `cover` | `bind`, `alt`, `fit` (cover, contain), `height` (compact, medium, large, viewport) |
-| `image` | same |
-| `video` | same. Gives a video asset a real player. |
+| `media` | `kind` (cover, image, video), `bind`, `alt`, `fit` (cover, contain), `height` (compact, medium, large, viewport). The kind sets the class and gives a video asset a real player. |
+
+`cover`, `image` and `video` are still accepted and normalise to `media` at
+render time, like `byline`/`metadata` and `divider`/`spacer`. They are the
+spellings still emitted today.
 | `gallery` | `bind`, `columns` (1 to 4) |
 
 ### Data
@@ -152,6 +154,23 @@ format through the field's own `format`, which includes `currency`, `percent`,
 before anything downstream sees them. They are not removed, and will not be: a
 `.textpack` exported at any time in the past carries a whole look inside it,
 lives outside the database, and never expires.
+
+### Accepted spellings
+
+Older names the schema still accepts. Each normalises to the node above it at
+render time. They are what the built-in looks and the blueprint compiler emit
+today, and they are accepted permanently: a `.textpack` exported at any point
+in the past carries a whole look inside it and never expires.
+
+| Node | Normalises to |
+| --- | --- |
+| `byline` | `meta` with `variant: "byline"` |
+| `metadata` | `meta` with `variant: "metadata"` |
+| `divider` | `space` with `rule: true` |
+| `spacer` | `space` with `rule: false` |
+| `cover` | `media` with `kind: "cover"` |
+| `image` | `media` with `kind: "image"` |
+| `video` | `media` with `kind: "video"` |
 
 ## Collections
 
@@ -189,7 +208,7 @@ Ten axes. Tokens only, so a look can never smuggle in CSS.
 | `titleScale` | `compact`, `standard`, `large` |
 | `bodyScale` | `compact`, `standard`, `relaxed` |
 | `alignment` | `start`, `center` |
-| -> `media` | `full`, `contained`, `bleed` |
+| `media` | `full`, `contained`, `bleed` |
 
 `bodyScale` exists because a look could once say how large its title was and not
 how large its text was, so a reading-first look, which is the entire point of
@@ -197,8 +216,8 @@ something like Medium, could not be expressed.
 
 ## The reduction this grammar is heading for
 
-The schema accepts **24 spellings** today: 22 original names plus `meta` and
-`space`, the first two targets. Nothing emits the new ones yet.
+The schema accepts **25 spellings** today: 22 original names plus `meta`,
+`space` and `media`, the first three targets. Nothing emits the new ones yet.
 
 **Reader first.** `meta` and `space` are accepted and rendered, and
 `byline`/`metadata` and `divider`/`spacer` normalise into them AT THE RENDERER,
