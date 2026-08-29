@@ -242,18 +242,26 @@ the first four commits. Those are fixed and listed below with them.
 
 ## Order for what is left
 
-Revised against the verification pass, which called the previous order wrong.
+Revised again after a third verification pass, which failed the work and was
+right to. What that pass named is fixed; what it left standing is below.
 
-1. **Test the local CLI end to end**, executable to real executor. The allowlist
-   is explicit and tested; nothing proves the widened commands actually run
-   through the route.
-2. **A soft delete an agent may perform**, with an explicit confirmation on the
-   local and browser surfaces. Delete is the most-wanted of the denied verbs.
-3. **Bounded batch operations** with stated partial-failure semantics. Raising
-   the step ceiling helps small jobs; it is not a batch command.
-4. **A real light and dark visual gate**, and only then the remaining identity
+1. **A confirmation-capable bounded batch mutation.** Explicit targets, a
+   revision check per item, stated partial-failure behaviour, and a receipt,
+   on both the browser and the local agent. This is one piece of work because
+   it closes deletion and genuine many-item work together, and doing either
+   alone builds half the same machinery. It is the largest remaining gap
+   against goal two, and the reviewer named it as the single most important
+   thing left.
+2. **An entry point in the workspace UI for editing a look.** The server, the
+   action and the studio all take it; nothing offers it to a person. Goal one
+   is true through the assistant and not yet through the interface.
+3. **A real light and dark visual gate**, and only then the remaining identity
    CSS. `npm run evals` exits zero when suites are blocked, so there is no gate
-   today.
+   today and no way to verify a presentation change.
+
+Not on this list, and worth saying why: raising the browser's step ceiling and
+the paging fix both make N-item work go further, and neither is a batch
+command. `update_item` still updates one item.
 
 ## What this plan declines, and what it admits
 
