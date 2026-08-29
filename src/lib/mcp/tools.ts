@@ -2486,6 +2486,154 @@ export async function executeMcpTool(
       }
     }
 
+    case "organize_items": {
+      const input = args as WorkspaceToolInput<"organize_items">;
+      // Filing and labelling only. Nothing here touches what an item says, so
+      // there is no content hash to check: the guard that matters is the
+      // revision, so a concurrent edit is refused rather than overwritten.
+      const add = normalizeTags(input.add_tags ?? []);
+      const remove = new Set(normalizeTags(input.remove_tags ?? []));
+      const outcomes: Array<{
+        id: string;
+        changed: boolean;
+        title?: string;
+        reason?: string;
+      }> = [];
+      const slugs: string[] = [];
+      let context: { blog: Blog } | null = null;
+      let destination: { id: string; path: string } | null = null;
+
+      for (const itemId of input.ids) {
+        const resolved = await requirePost(extra, itemId);
+        if (isToolResult(resolved)) {
+          outcomes.push({ id: itemId, changed: false, reason: "not found" });
+          continue;
+        }
+        context = { blog: resolved.blog };
+        if (!resolved.access.canEditContent) {
+          outcomes.push({
+            id: itemId,
+            changed: false,
+            title: resolved.post.title,
+            reason: "not yours to change",
+          });
+          continue;
+        }
+        if (input.folder_path && !destination) {
+          const folder = await accessibleFolder(
+            resolved.blog,
+            extra,
+            input.folder_path,
+          );
+          if (isToolResult(folder)) {
+            // One bad destination stops the whole thing, because moving some
+            // items into a folder that does not exist is not a partial
+            // success, it is a typo.
+            return folder;
+          }
+          destination = { id: folder.id, path: folder.path };
+        }
+        const revision = mutationRevision(resolved.post);
+        if (typeof revision !== "number") {
+          outcomes.push({
+            id: itemId,
+            changed: false,
+            title: resolved.post.title,
+            reason: "no revision to check against",
+          });
+          continue;
+        }
+        const before = normalizeTags(resolved.post.tags);
+        const tags = normalizeTags([
+          ...before.filter((tag) => !remove.has(tag)),
+          ...add,
+        ]);
+        const movingTo =
+          destination && destination.id !== resolved.post.folderId
+            ? destination.id
+            : null;
+        if (sameValue(tags, before) && !movingTo) {
+          outcomes.push({
+            id: itemId,
+            changed: false,
+            title: resolved.post.title,
+            reason: "already as asked",
+          });
+          continue;
+        }
+        try {
+          // Two different writes. savePost does not move anything: on an
+          // update it keeps the row's existing folder, and only an insert
+          // takes the folder from the object it is given. Moving goes through
+          // movePostFile, which is also where the move audit is written.
+          let title = resolved.post.title;
+          let slug = resolved.post.slug;
+          let at = revision;
+          if (!sameValue(tags, before)) {
+            const saved = await savePost(
+              resolved.blog.handle,
+              { ...resolved.post, tags },
+              {
+                expectedRevision: at,
+                audit: mcpAuditEntry(
+                  extra,
+                  "mcp.organize_items",
+                  "item",
+                  itemId,
+                  resolved.post.title,
+                ),
+              },
+            );
+            title = saved.title;
+            slug = saved.slug;
+            // The tag write moved the revision on, so the move that follows
+            // has to expect the new one or it conflicts with itself.
+            at = saved.revision ?? at;
+          }
+          if (movingTo) {
+            const moved = await movePostFile(
+              resolved.blog.handle,
+              itemId,
+              { folderId: movingTo, expectedRevision: at },
+              mcpAuditEntry(
+                extra,
+                "mcp.organize_items",
+                "item",
+                itemId,
+                destination?.path ?? "",
+              ),
+            );
+            if (moved) slug = moved.post.slug;
+          }
+          slugs.push(slug);
+          outcomes.push({ id: itemId, changed: true, title });
+        } catch (error) {
+          outcomes.push({
+            id: itemId,
+            changed: false,
+            title: resolved.post.title,
+            reason:
+              error instanceof PostConflictError
+                ? "someone changed it while this was running"
+                : "it could not be saved",
+          });
+        }
+      }
+
+      if (context && slugs.length) revalidateBlogPaths(context.blog, slugs);
+      const done = outcomes.filter((entry) => entry.changed);
+      const left = outcomes.filter((entry) => !entry.changed);
+      return jsonResult({
+        items: outcomes,
+        changed: done.length,
+        note: left.length
+          ? `${done.length} changed. ${left.length} not: ${left
+              .map((entry) => `${entry.title ?? entry.id} (${entry.reason})`)
+              .join(", ")}.`
+          : `${done.length} changed.`,
+      });
+    }
+
     case "delete_items": {
       const input = args as WorkspaceToolInput<"delete_items">;
       // Each item on its own, with a per-item answer. All-or-nothing would

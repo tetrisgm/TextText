@@ -31,6 +31,7 @@ const EXPECTED_NAMES = [
   "append_to_item",
   "set_item_status",
   "move_item",
+  "organize_items",
   "delete_item",
   "delete_items",
   "restore_item",
@@ -52,6 +53,7 @@ const DESTRUCTIVE_TOOLS = new Set([
   "delete_folder",
   "update_item",
   "move_item",
+  "organize_items",
   "delete_item",
   "delete_items",
   "set_item_status",
@@ -63,6 +65,7 @@ const DESTRUCTIVE_TOOLS = new Set([
 ]);
 
 const IDEMPOTENT_WRITES = new Set([
+  "organize_items",
   "delete_items",
   "delete_folder",
   "restore_folder",

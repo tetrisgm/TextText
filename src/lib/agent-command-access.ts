@@ -60,6 +60,9 @@ const LOCAL_WRITES: readonly WorkspaceToolName[] = [
   "update_item",
   "append_to_item",
   "move_item",
+  // Tagging and filing many at once. It changes how items are labelled and
+  // where they live, never what they say, and every write is revision-guarded.
+  "organize_items",
   "create_folder",
   "rename_folder",
   "add_comment",

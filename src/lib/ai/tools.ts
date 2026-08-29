@@ -826,6 +826,42 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     destructive: true,
     idempotent: true,
   }),
+  organize_items: defineTool("organize_items", {
+    title: "Organise several items",
+    description:
+      "Tag or move several items in one go. Say what to do once and name the items it applies to.\n\n" +
+      "Use this instead of repeating update_item when the same change goes to more than one thing: 'tag all of these review', 'move these into Ideas'. A turn has a limited number of steps, so doing twenty items one at a time runs out before it finishes and leaves the job half done.\n\n" +
+      "This changes how items are filed and labelled. It never touches what they say, so it needs no content hash. For a change that differs per item - a different sentence in each - read and update them one at a time.\n\n" +
+      "Each item is handled on its own and the answer says what happened to each.",
+    inputSchema: z
+      .object({
+        ids: z.array(id).min(1).max(50).describe("The items to change."),
+        add_tags: z
+          .array(z.string().trim().min(1).max(60))
+          .max(20)
+          .optional()
+          .describe("Tags to add. Ones already there are left as they are."),
+        remove_tags: z
+          .array(z.string().trim().min(1).max(60))
+          .max(20)
+          .optional()
+          .describe("Tags to take off. Ones not there are ignored."),
+        folder_path: folderPath
+          .optional()
+          .describe("Move them all into this folder. It must accept their kind."),
+      })
+      .strict()
+      .refine(
+        (value) =>
+          Boolean(value.add_tags?.length) ||
+          Boolean(value.remove_tags?.length) ||
+          Boolean(value.folder_path),
+        { message: "Say what to change: tags to add or remove, or a folder to move into." },
+      ),
+    mutability: "write",
+    destructive: true,
+    idempotent: true,
+  }),
   delete_item: defineTool("delete_item", {
     title: "Move item to Trash",
     description:

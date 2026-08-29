@@ -25,6 +25,7 @@
     "append_to_item",
     "set_item_status",
     "move_item",
+    "organize_items",
     "delete_item",
     "delete_items",
     "restore_item",

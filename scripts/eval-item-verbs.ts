@@ -416,6 +416,50 @@ const TASKS: Task[] = [
     },
   },
   {
+    // "Do this to all of them" in one breath. Before organize_items this was N
+    // read-and-update pairs, which runs out of steps in the browser somewhere
+    // above ten items and leaves the job half done.
+    key: "organize-several",
+    ask:
+      "Put all three of my notes in a folder called Archive, and tag them all archived. " +
+      "Do not change a word of what they say.",
+    verify: async ({ actor, ids, before, transcript }) => {
+      const after = await Promise.all(SEED.map((entry) => snapshot(actor, ids[entry.key])));
+      const tagged = after.filter((item) =>
+        item.tags.some((tag) => tag.toLowerCase() === "archived"),
+      );
+      // Find the folder by name rather than guessing its path: the model
+      // chooses where to nest it, and asserting a path tests my guess.
+      const folders = await callTool(actor, "list_folders", {});
+      const archive = (
+        JSON.parse(folders.text) as { folders?: Array<{ path: string; name: string }> }
+      ).folders?.find((folder) => /archive/i.test(folder.name) || /archive/i.test(folder.path));
+      const listed = archive
+        ? await callTool(actor, "list_items", { folder_path: archive.path, limit: 50 })
+        : { ok: false, text: "{}" };
+      const inArchive = archive
+        ? ((JSON.parse(listed.text) as { items?: Array<{ id: string }> }).items ?? [])
+        : [];
+      const calls = transcript.filter((entry) => entry.tool !== "(done)").length;
+      return [
+        check(tagged.length === SEED.length, `all three carry the tag (${tagged.length} of 3)`),
+        check(Boolean(archive), `a folder called Archive exists (${archive?.path ?? "none"})`),
+        check(
+          inArchive.length === SEED.length,
+          `all three are in it (${inArchive.length} of 3)`,
+        ),
+        check(
+          after.every((item, index) => item.body.trim() === before[SEED[index].key].body.trim()),
+          "not a word of any of them changed",
+        ),
+        check(
+          calls <= 6,
+          `it did the lot in a handful of calls rather than one pair per item (${calls})`,
+        ),
+      ];
+    },
+  },
+  {
     key: "refuse-missing",
     ask: 'Add a paragraph about rollback procedure to my note "Deployment runbook".',
     verify: async ({ actor, ids, before, transcript }) => {

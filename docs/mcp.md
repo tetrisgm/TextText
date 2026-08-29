@@ -13,7 +13,7 @@ agents used with that channel connect through this hosted endpoint instead. See
 endpoint was retired in `0.146`.
 
 <!-- generated:tool-source -->
-`src/lib/ai/tools.ts` is the source of truth for the 37 tool
+`src/lib/ai/tools.ts` is the source of truth for the 38 tool
 names, schemas, mutability, confirmation requirements, and MCP
 annotations. The MCP adapter registers those definitions in
 `src/lib/mcp/tools.ts`.
@@ -110,7 +110,7 @@ Manual tokens currently carry `sync` access and remain valid until revoked.
 | Scope | Access |
 |-------|--------|
 | `read` | Call the 11 read-scope tools: `get_workspace`, `list_folders`, `list_items`, `read_item`, `review_brief_sources`, `open_item`, `search`, `list_trash`, `list_comments`, `list_responses`, `list_document_templates`. |
-| `sync` | Call all 37 tools, including the 26 that mutate content or read administration data. It also grants every `read` operation. |
+| `sync` | Call all 38 tools, including the 27 that mutate content or read administration data. It also grants every `read` operation. |
 <!-- /generated:scope-table -->
 
 A mutation attempted with a `read` token returns `403 insufficient_scope` and
@@ -140,7 +140,7 @@ or workspace selector that could cross that boundary.
   cover and asset references use the same audited command surface.
 
 <!-- generated:tool-table -->
-## Tools (37)
+## Tools (38)
 
 | Tool | Scope | Effect |
 |------|-------|--------|
@@ -167,6 +167,7 @@ or workspace selector that could cross that boundary.
 | `append_to_item` | `sync` | Append a markdown block to the end of one item's body without touching its metadata. Pass the text as `markdown`. Automated clients should pass an idempotency_key derived from the source event or commit. |
 | `set_item_status` | `sync` | Publish or unpublish one blog item. Notes and bookmarks can never be published. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
 | `move_item` | `sync` | Move one item to another folder of the same mode. |
+| `organize_items` | `sync` | Tag or move several items in one go. Say what to do once and name the items it applies to. Use this instead of repeating update_item when the same change goes to more than one thing: 'tag all of these review', 'move these into Ideas'. A turn has a limited number of steps, so doing twenty items one at a time runs out before it finishes and leaves the job half done. This changes how items are filed and labelled. It never touches what they say, so it needs no content hash. For a change that differs per item - a different sentence in each - read and update them one at a time. Each item is handled on its own and the answer says what happened to each. |
 | `delete_item` | `sync` | Move one item to Trash. It stays restorable; this never permanently deletes. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it. |
 | `delete_items` | `sync` | Move several items to Trash in one go. They stay restorable; this never permanently deletes. Use this when someone asks to get rid of more than one thing. Name every item explicitly by id: there is no "everything matching" form, because a request to delete has to say what it is deleting. Each item is handled on its own. One that has changed since you read it, or that has already gone, is reported and the rest still go. The answer says what happened to each. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it. |
 | `restore_item` | `sync` | Restore one item from Trash with its previous status. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
