@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   WORKSPACE_AGENT_TOOL_DEFINITIONS,
   createWorkspaceAgentTools,
-  workspaceAgentToolNamesForView,
   type WorkspaceAgentToolsOptions,
 } from "@/lib/ai/agent-tools";
 import { WORKSPACE_TOOL_NAMES } from "@/lib/ai/tools";
@@ -118,118 +117,6 @@ describe("native workspace tool adapter", () => {
         itemAssets: true,
       },
     });
-  });
-
-  it("keeps creation at folder level and narrows an open item to requested actions", () => {
-    expect(workspaceAgentToolNamesForView({ level: "section" })).toEqual([
-      "get_workspace",
-      "list_folders",
-      "create_item_type",
-      "create_item",
-    ]);
-    const itemTools = workspaceAgentToolNamesForView(
-      {
-        level: "post",
-        folderPath: "blog",
-        postId: "post-1",
-      },
-      "Make this into a haiku",
-    );
-    expect(itemTools).toContain("update_item");
-    expect(itemTools).toContain("append_to_item");
-    expect(itemTools).not.toContain("read_item");
-    expect(itemTools).not.toContain("create_item");
-    expect(itemTools).not.toContain("create_folder");
-    expect(itemTools).not.toContain("delete_folder");
-    expect(itemTools).not.toContain("delete_item");
-    expect(itemTools).not.toContain("set_access");
-  });
-
-  it("keeps styled workspace creation small enough for constrained providers", () => {
-    expect(
-      workspaceAgentToolNamesForView(
-        { level: "workspace" },
-        "Create an article with a Medium-style editorial look",
-      ),
-    ).toEqual([
-      "get_workspace",
-      "list_folders",
-      "list_document_templates",
-      "create_item_type",
-      "save_item_as_look",
-      "set_folder_template",
-      "set_item_template",
-      "create_item",
-    ]);
-  });
-
-  it("adds only prompt-relevant tools for an open item", () => {
-    const itemTools = workspaceAgentToolNamesForView(
-      {
-        level: "post",
-        folderPath: "bookmarks",
-        postId: "post-1",
-      },
-      "Recapture this bookmark and change its cover image",
-    );
-
-    expect(itemTools).toEqual([
-      "update_item",
-      "append_to_item",
-      "add_item_asset",
-      "remove_item_asset",
-      "recapture_bookmark",
-    ]);
-  });
-
-  it("describes references to the open item as edits, not creation", () => {
-    const tools = createWorkspaceAgentTools({
-      handle: "local",
-      getPool: workspacePool,
-    });
-
-    expect(
-      tools.describeContext({ level: "post", postId: "post-1" }),
-    ).toContain('"add a section" modify this item');
-  });
-
-  it("offers the current-item mutation tools for transformation requests", () => {
-    const itemTools = workspaceAgentToolNamesForView(
-      { level: "edit", folderPath: "notes", postId: "note-1" },
-      "Turn this into a structured project brief and extract its fields",
-    );
-    expect(itemTools).toEqual(["update_item", "append_to_item"]);
-  });
-
-  it("offers grounding tools for a sourced brief without widening every turn", () => {
-    expect(
-      workspaceAgentToolNamesForView(
-        { level: "workspace" },
-        "Turn the recent notes into a cited brief with supported claims",
-      ),
-    ).toEqual([
-      "get_workspace",
-      "list_folders",
-      "list_items",
-      "read_item",
-      "review_brief_sources",
-      "search",
-      "create_item_type",
-      "create_item",
-    ]);
-
-    expect(
-      workspaceAgentToolNamesForView(
-        { level: "post", folderPath: "blog", postId: "post-1" },
-        "Check this brief's sources and unsupported claims",
-      ),
-    ).toEqual([
-      "read_item",
-      "review_brief_sources",
-      "search",
-      "update_item",
-      "append_to_item",
-    ]);
   });
 
   it("normalizes the current native bridge's folder alias before validation", async () => {

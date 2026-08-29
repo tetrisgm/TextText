@@ -68,134 +68,6 @@ type WorkspaceAgentView = {
   postId?: string;
 };
 
-const ITEM_AGENT_TOOL_NAMES = new Set<WorkspaceToolName>([
-  "get_workspace",
-  "read_item",
-  "review_brief_sources",
-  "open_item",
-  "search",
-  "list_comments",
-  "list_access",
-  "list_document_templates",
-  "create_item_type",
-  "save_item_as_look",
-  "set_folder_template",
-  "set_item_template",
-  "update_item",
-  "append_to_item",
-  "set_item_status",
-  "move_item",
-  "delete_item",
-  "add_item_asset",
-  "remove_item_asset",
-  "recapture_bookmark",
-  "add_comment",
-  "set_comment_resolved",
-  "set_access",
-  "revoke_access",
-]);
-
-const ITEM_EDIT_TOOL_NAMES: WorkspaceToolName[] = [
-  "update_item",
-  "append_to_item",
-];
-
-const WORKSPACE_BASE_TOOL_NAMES: WorkspaceToolName[] = [
-  "get_workspace",
-  "list_folders",
-  "create_item",
-  "create_item_type",
-];
-
-const PROMPT_TOOL_GROUPS: Array<{
-  pattern: RegExp;
-  tools: WorkspaceToolName[];
-}> = [
-  {
-    pattern: /\b(delete|remove|trash)\b/i,
-    tools: ["delete_item"],
-  },
-  {
-    pattern: /\b(publish|unpublish|draft|status)\b/i,
-    tools: ["set_item_status"],
-  },
-  {
-    pattern: /\b(move|folder)\b/i,
-    tools: ["move_item"],
-  },
-  {
-    pattern: /\b(comment|resolve)\b/i,
-    tools: ["list_comments", "add_comment", "set_comment_resolved"],
-  },
-  {
-    pattern: /\b(share|access|permission|invite|viewer|editor)\b/i,
-    tools: ["list_access", "set_access", "revoke_access"],
-  },
-  {
-    pattern: /\b(cover|image|asset|photo|picture)\b/i,
-    tools: ["add_item_asset", "remove_item_asset"],
-  },
-  {
-    pattern: /\b(recapture|capture bookmark)\b/i,
-    tools: ["recapture_bookmark"],
-  },
-  {
-    // A look is asked for in ordinary words ("make my blog look like Medium"),
-    // so the words that reach for one are broader than "template". Applying it
-    // to the FOLDER is what makes the request finish: without
-    // set_folder_template the model can author a look and restyle one item,
-    // and the blog it was asked about stays exactly as it was.
-    pattern:
-      /\b(template|look|looks|layout|design|style|theme|blog|magazine|gallery|board|feed)\b/i,
-    tools: [
-      "list_document_templates",
-      "create_item_type",
-      "save_item_as_look",
-      "set_folder_template",
-      "set_item_template",
-    ],
-  },
-  {
-    pattern: /\b(search|find)\b/i,
-    tools: ["search"],
-  },
-  {
-    pattern:
-      /\b(source|sources|evidence|claim|claims|citation|cited|grounded|fact.check)\b/i,
-    tools: [
-      "list_items",
-      "search",
-      "read_item",
-      "review_brief_sources",
-      "create_item",
-    ],
-  },
-];
-
-export function workspaceAgentToolNamesForView(
-  view?: WorkspaceAgentView,
-  prompt = "",
-): WorkspaceToolName[] {
-  if (view?.postId && (view.level === "post" || view.level === "edit")) {
-    const selected = new Set<WorkspaceToolName>(ITEM_EDIT_TOOL_NAMES);
-    for (const group of PROMPT_TOOL_GROUPS) {
-      if (group.pattern.test(prompt)) {
-        for (const name of group.tools) selected.add(name);
-      }
-    }
-    return WORKSPACE_TOOL_NAMES.filter(
-      (name) => ITEM_AGENT_TOOL_NAMES.has(name) && selected.has(name),
-    );
-  }
-  const selected = new Set<WorkspaceToolName>(WORKSPACE_BASE_TOOL_NAMES);
-  for (const group of PROMPT_TOOL_GROUPS) {
-    if (group.pattern.test(prompt)) {
-      for (const name of group.tools) selected.add(name);
-    }
-  }
-  return WORKSPACE_TOOL_NAMES.filter((name) => selected.has(name));
-}
-
 type ToolArgs = Record<string, unknown>;
 
 export type WorkspaceAgentToolsOptions = {
@@ -375,10 +247,6 @@ export function createWorkspaceAgentTools(
 ): {
   executor: WorkspaceAgentToolExecutor;
   toolNames: WorkspaceToolName[];
-  toolNamesForView: (
-    view?: WorkspaceAgentView,
-    prompt?: string,
-  ) => WorkspaceToolName[];
   toolDefinitions: typeof WORKSPACE_AGENT_TOOL_DEFINITIONS;
   describeContext: (view?: WorkspaceAgentView) => string;
 } {
@@ -1269,7 +1137,6 @@ export function createWorkspaceAgentTools(
   return {
     executor,
     toolNames: [...WORKSPACE_TOOL_NAMES],
-    toolNamesForView: workspaceAgentToolNamesForView,
     toolDefinitions: WORKSPACE_AGENT_TOOL_DEFINITIONS,
     describeContext: (view) => {
       if (!view || view.level === "root" || !view.level) {
