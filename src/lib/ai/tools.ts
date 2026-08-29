@@ -636,6 +636,45 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
       .strict(),
     mutability: "write",
   }),
+  update_item_type: defineTool("update_item_type", {
+    title: "Change an item type",
+    description:
+      "Change an item type that already exists, by editing the blueprint it was built from. Use this when someone wants their existing kind of thing to be different: another field, a different folder view, a bigger title, a new accent. list_document_templates returns the blueprint and the version for every type that can be changed this way.\n\n" +
+      "Send the WHOLE blueprint, not only the part you changed: it replaces the old one. Send base_version exactly as list_document_templates reported it, so an edit made against a stale copy is refused instead of quietly overwriting someone else's.\n\n" +
+      "The old version is kept and the items already using it keep rendering as they were. By default the new version is applied to every folder using this type and the items in them are restyled, which is what someone asking for their look to change means.\n\n" +
+      "Built-in types cannot be changed. Neither can a look that was saved from a document, imported, or duplicated: those were assembled rather than designed, so they have no blueprint to edit and list_document_templates will not list them as changeable.",
+    inputSchema: z
+      .object({
+        template_id: z
+          .string()
+          .trim()
+          .min(1)
+          .max(160)
+          .describe("The id of the type to change, as list_document_templates reported it."),
+        base_version: z
+          .number()
+          .int()
+          .positive()
+          .describe(
+            "The version you read before editing. If the type has moved on since, the change is refused rather than applied on top.",
+          ),
+        blueprint: itemTypeBlueprintSchema,
+        apply: z
+          .boolean()
+          .default(true)
+          .describe(
+            "Apply the new version to the folders already using this type. False creates the version and changes nothing anyone can see.",
+          ),
+        apply_to_existing: z
+          .boolean()
+          .default(true)
+          .describe(
+            "Restyle the items already in those folders. Content is never changed.",
+          ),
+      })
+      .strict(),
+    mutability: "write",
+  }),
   save_item_as_look: defineTool("save_item_as_look", {
     title: "Save this item's look",
     description:

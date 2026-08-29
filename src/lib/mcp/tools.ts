@@ -70,7 +70,10 @@ import {
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import { blogPostEditPath, blogPostPath } from "@/lib/public-paths";
 import { normalizeTags } from "@/lib/tags";
-import { createWorkspaceItemType } from "@/lib/presentation/item-type.server";
+import {
+  createWorkspaceItemType,
+  updateWorkspaceItemType,
+} from "@/lib/presentation/item-type.server";
 import {
   inviteScopeShare,
   listScopeShares,
@@ -96,6 +99,7 @@ import {
   getTrashedPosts,
   listItemComments,
   listDocumentTemplates,
+  listEditableItemTypes,
   retireDocumentTemplate,
   saveDocumentAsLook,
   markCapturePending,
@@ -806,8 +810,20 @@ export async function executeMcpTool(
       const resolved = await requireWorkspace(extra);
       if (isToolResult(resolved)) return resolved;
       if (!resolved.access.blogId) return errorResult("Workspace not found.");
+      // The blueprints come back BESIDE the definitions, never inside them.
+      // A definition is what renders; a blueprint is what a person or a model
+      // edits. Without this the only way to change a look was to re-author it
+      // from compiled output, which is not the language anything writes in.
+      const [templates, editable] = await Promise.all([
+        listDocumentTemplates(resolved.access.blogId),
+        listEditableItemTypes(resolved.access.blogId),
+      ]);
       return jsonResult({
-        templates: await listDocumentTemplates(resolved.access.blogId),
+        templates,
+        editable,
+        note: editable.length
+          ? "Types under `editable` can be changed with update_item_type: send its blueprint back with your edit and the version shown. The rest were assembled rather than designed, so they have no blueprint and are edited by hand."
+          : "No type here was designed from a blueprint, so none can be changed with update_item_type.",
       });
     }
 
@@ -861,6 +877,61 @@ export async function executeMcpTool(
           error instanceof Error
             ? error.message
             : "The item type could not be created.",
+        );
+      }
+    }
+
+    case "update_item_type": {
+      const input = args as WorkspaceToolInput<"update_item_type">;
+      const resolved = await requireWorkspace(extra, true);
+      if (isToolResult(resolved)) return resolved;
+      if (!resolved.access.blogId) return errorResult("Workspace not found.");
+      // The same bar creation is held to. An edit that strips a type back to
+      // nothing is as bad as creating one that way, and worse if it restyles
+      // the items already wearing it.
+      const quality = assessItemTypeQuality(input.blueprint);
+      const blocking = quality.findings.filter(
+        (item) => item.severity === "important",
+      );
+      if (blocking.length) {
+        return errorResult(
+          `This change would leave the item type unusable. ${blocking
+            .map((item) => item.message)
+            .join(" ")}`,
+        );
+      }
+      try {
+        const updated = await updateWorkspaceItemType({
+          actor: mcpAuditEntry(
+            extra,
+            "mcp.update_item_type",
+            "mode",
+            undefined,
+            input.blueprint.name,
+          ),
+          apply: input.apply,
+          applyToExisting: input.apply_to_existing,
+          baseVersion: input.base_version,
+          blogId: resolved.access.blogId,
+          blueprint: input.blueprint,
+          handle: resolved.blog.handle,
+          templateId: input.template_id,
+        });
+        return jsonResult({
+          itemType: updated.definition,
+          previousVersion: updated.previousVersion,
+          applied: updated.applied,
+          note: updated.applied.length
+            ? `Version ${updated.definition.version} is live in ${updated.applied
+                .map((entry) => entry.path)
+                .join(", ")}. Version ${updated.previousVersion} is kept, and anything still on it renders as it did.`
+            : `Version ${updated.definition.version} is saved but not applied anywhere yet.`,
+        });
+      } catch (error) {
+        return errorResult(
+          error instanceof Error
+            ? error.message
+            : "The item type could not be changed.",
         );
       }
     }

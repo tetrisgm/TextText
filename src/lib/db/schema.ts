@@ -23,7 +23,7 @@ import {
 import type { BookmarkCapture, GalleryItem, LinkRef } from "../content";
 import type { DocumentSnapshot, DocumentVisibility } from "../documents/model";
 import type { TemplateDefinition } from "../presentation/schema";
-import type { ItemTypeBlueprint } from "../presentation/item-type-blueprint";
+import type { AuthoringSource } from "../presentation/authoring-source";
 
 // No TypeScript file imports this, and it must still be exported. drizzle-kit
 // builds its model from the objects this module exports, so dropping the
@@ -790,7 +790,7 @@ export const documentTemplates = pgTable(
     name: text("name").notNull(),
     definition: jsonb("definition").$type<TemplateDefinition>().notNull(),
     /**
-     * The blueprint the definition was compiled from, when there was one.
+     * How this look was authored, when it was authored rather than assembled.
      *
      * The definition is a render tree, and the assistant does not write render
      * trees: it writes a blueprint, which is compiled into one. Storing only
@@ -803,7 +803,7 @@ export const documentTemplates = pgTable(
      * that predates this column has none. Absent means "this one is edited by
      * hand", not "this one is broken".
      */
-    blueprint: jsonb("blueprint").$type<ItemTypeBlueprint>(),
+    authoringSource: jsonb("authoring_source").$type<AuthoringSource>(),
     createdById: uuid("created_by_id").references(() => users.id, {
       onDelete: "set null",
     }),

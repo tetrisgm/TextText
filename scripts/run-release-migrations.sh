@@ -48,6 +48,7 @@ migrations=(
   scripts/migrate-drop-card-style.mjs
   scripts/migrate-drop-template-capabilities.mjs
   scripts/migrate-post-type-to-item-kind.mjs
+  scripts/migrate-add-template-authoring-source.mjs
 )
 
 missing=()

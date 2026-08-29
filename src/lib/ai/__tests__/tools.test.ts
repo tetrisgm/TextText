@@ -21,6 +21,7 @@ const EXPECTED_NAMES = [
   "list_access",
   "list_document_templates",
   "create_item_type",
+  "update_item_type",
   "save_item_as_look",
   "set_folder_template",
   "retire_document_template",

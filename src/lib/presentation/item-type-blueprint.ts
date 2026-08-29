@@ -1202,6 +1202,38 @@ export function adaptCollectionToFields(
   };
 }
 
+/**
+ * The compiler's own version, stamped onto any blueprint that gets stored.
+ *
+ * Blueprints were transient: written by the model, compiled, discarded. The
+ * compiler dropped backward compatibility on that assumption, and it was a
+ * reasonable one while nothing kept them. Storing one so a look can be reopened
+ * makes it false, so a stored blueprint says which compiler produced it and a
+ * later compiler can refuse to reopen what it can no longer honour rather than
+ * silently compiling it into something else.
+ *
+ * Bump when a change to this file would give an existing blueprint a different
+ * meaning. Not for additions a previous blueprint simply does not use.
+ */
+export const ITEM_TYPE_BLUEPRINT_COMPILER_VERSION = 1 as const;
+
+/**
+ * The blueprint as the compiler actually sees it, after loosening.
+ *
+ * `adaptCollectionToFields` rewrites a layout the fields cannot support into
+ * one they can. Storing what the model SENT while rendering what compiled would
+ * leave two different truths on disk, and reopening the look would show the
+ * person a layout their type does not have. So normalise once, store that, and
+ * compile from it.
+ *
+ * Idempotent, and the property is pinned by test: normalising twice gives the
+ * same blueprint, and compiling the normalised form gives the same definition
+ * as compiling the original.
+ */
+export function normalizeItemTypeBlueprint(value: unknown): ItemTypeBlueprint {
+  return adaptCollectionToFields(itemTypeBlueprintSchema.parse(value)).blueprint;
+}
+
 export function compileItemTypeBlueprint(
   value: unknown,
   identity: { id: string; version?: number },

@@ -571,6 +571,13 @@ export function createWorkspaceAgentTools(
         return { ok: true, ...result };
       }
 
+      case "update_item_type": {
+        const input = args as WorkspaceToolInput<"update_item_type">;
+        const result = await runRemote("update_item_type", input);
+        await refreshPoolAfterMutation();
+        return { ok: true, ...result };
+      }
+
       case "rename_folder": {
         const input = args as WorkspaceToolInput<"rename_folder">;
         const folder = requireFolder(input.folder_id);

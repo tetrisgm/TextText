@@ -139,6 +139,11 @@ import {
   validateTemplateDefinition,
   type TemplateDefinition,
 } from "./presentation/schema";
+import {
+  readAuthoringSource,
+  type AuthoringSource,
+} from "./presentation/authoring-source";
+import type { ItemTypeBlueprint } from "./presentation/item-type-blueprint";
 import type {
   TemplateLibraryEntry,
   TemplateLibraryImpact,
@@ -3679,11 +3684,136 @@ export async function installDocumentTemplate(input: {
   return "installed";
 }
 
+/**
+ * The latest version of a workspace look, and how it was authored.
+ *
+ * Two things together because an update needs both: the blueprint to reopen,
+ * and the version to check against so two people editing the same base cannot
+ * silently create competing successors.
+ *
+ * `source` is null whenever the look was not authored from a blueprint - a
+ * built-in, a duplicate, an import, a restore, a look saved from a document, or
+ * anything stored before the column existed. That is an ordinary answer and
+ * callers must say "edit this one by hand" rather than starting from nothing.
+ */
+export async function getDocumentTemplateAuthoringSource(
+  blogId: string,
+  templateId: string,
+): Promise<{ version: number; source: AuthoringSource | null } | null> {
+  if (!db) return null;
+  const rows = await db
+    .select({
+      version: documentTemplates.version,
+      authoringSource: documentTemplates.authoringSource,
+    })
+    .from(documentTemplates)
+    .where(
+      and(
+        eq(documentTemplates.blogId, blogId),
+        eq(documentTemplates.templateId, templateId),
+      ),
+    )
+    .orderBy(desc(documentTemplates.version))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  return { version: row.version, source: readAuthoringSource(row.authoringSource) };
+}
+
+/**
+ * Every folder currently rendering from a look, whatever version it pinned.
+ *
+ * A new immutable version changes nothing on its own: folders and documents
+ * pin exact versions by design. So an update has to be told where to land, and
+ * this is how it finds the places already wearing the look being changed.
+ */
+export async function listFoldersUsingTemplate(
+  blogId: string,
+  templateId: string,
+): Promise<Array<{ id: string; path: string; version: number }>> {
+  if (!db) return [];
+  const rows = await db
+    .select({
+      id: folders.id,
+      path: folders.path,
+      version: folders.defaultTemplateVersion,
+    })
+    .from(folders)
+    .where(
+      and(eq(folders.blogId, blogId), eq(folders.defaultTemplateId, templateId)),
+    )
+    .orderBy(asc(folders.path));
+  return rows.map((row) => ({
+    id: row.id,
+    path: row.path,
+    version: row.version ?? 1,
+  }));
+}
+
+/**
+ * The looks in this workspace that can be reopened and changed, with the
+ * blueprint to change and the version to change it from.
+ *
+ * Returned beside the definitions rather than inside them: a
+ * `TemplateDefinition` is strict, rejects unknown keys, and travels inside sync
+ * envelopes and exported bundles that older builds still read. Authoring
+ * provenance has no business in a format that has already left this machine.
+ *
+ * Only the latest version of each look, and only where a blueprint was stored.
+ * A look absent from this list is not broken, it was assembled rather than
+ * authored, and the honest thing to tell someone is that it is edited by hand.
+ */
+export async function listEditableItemTypes(
+  blogId: string,
+): Promise<
+  Array<{ id: string; version: number; blueprint: ItemTypeBlueprint }>
+> {
+  if (!db) return [];
+  const rows = await db
+    .select({
+      templateId: documentTemplates.templateId,
+      version: documentTemplates.version,
+      authoringSource: documentTemplates.authoringSource,
+    })
+    .from(documentTemplates)
+    .where(
+      and(
+        eq(documentTemplates.blogId, blogId),
+        isNull(documentTemplates.retiredAt),
+      ),
+    )
+    .orderBy(asc(documentTemplates.templateId), desc(documentTemplates.version));
+  const editable: Array<{
+    id: string;
+    version: number;
+    blueprint: ItemTypeBlueprint;
+  }> = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (seen.has(row.templateId)) continue;
+    seen.add(row.templateId);
+    const source = readAuthoringSource(row.authoringSource);
+    if (!source) continue;
+    editable.push({
+      id: row.templateId,
+      version: row.version,
+      blueprint: source.blueprint,
+    });
+  }
+  return editable;
+}
+
 export async function createDocumentTemplateVersion(input: {
   blogId: string;
   definition: TemplateDefinition;
   actor: AuditEntry;
   createdById?: string | null;
+  /**
+   * How the definition was authored, when it was authored rather than
+   * assembled. Absent for a duplicate, an import, a restore, or a look saved
+   * from a document: those carry a definition and never had a blueprint.
+   */
+  authoringSource?: AuthoringSource | null;
 }): Promise<TemplateDefinition> {
   if (!db)
     throw new Error("createDocumentTemplateVersion requires DATABASE_URL");
@@ -3712,6 +3842,7 @@ export async function createDocumentTemplateVersion(input: {
     version: definition.version,
     name: definition.name,
     definition,
+    authoringSource: input.authoringSource ?? null,
     createdById: input.createdById ?? null,
   });
   await recordAction({
