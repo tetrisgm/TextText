@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   compileItemTypeBlueprint,
+  itemTypeBlueprintSchema,
   ITEM_TYPE_STARTERS,
 } from "@/lib/presentation/item-type-blueprint";
 
@@ -478,5 +479,65 @@ describe("compileItemTypeBlueprint", () => {
         { id: "broken-computed" },
       ),
     ).toThrow("needs a rows source");
+  });
+});
+
+describe("display values that only apply to one field type", () => {
+  const base = {
+    name: "Guarded",
+    item: { shape: "page" as const },
+    collection: { layout: "list" as const },
+    theme: {},
+  };
+
+  /**
+   * The compiler honours `cover` only for images and `toggle` only for
+   * booleans, and silently ignored them everywhere else. A model asking for a
+   * cover on a text field got a plain fact and no explanation, which is the
+   * one outcome it cannot learn from.
+   */
+  it("refuses a cover on anything but an image, and says which field", () => {
+    expect(() =>
+      itemTypeBlueprintSchema.parse({
+        ...base,
+        fields: [{ id: "headline", label: "Headline", type: "text", display: "cover" }],
+      }),
+    ).toThrow(/cover.*image.*headline.*text/s);
+  });
+
+  it("refuses a toggle on anything but a boolean", () => {
+    expect(() =>
+      itemTypeBlueprintSchema.parse({
+        ...base,
+        fields: [{ id: "status", label: "Status", type: "date", display: "toggle" }],
+      }),
+    ).toThrow(/toggle.*boolean.*status.*date/s);
+  });
+
+  it("still accepts each on the type it was made for", () => {
+    expect(() =>
+      itemTypeBlueprintSchema.parse({
+        ...base,
+        fields: [
+          { id: "hero", label: "Hero", type: "image", display: "cover" },
+          { id: "done", label: "Done", type: "boolean", display: "toggle" },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it("leaves the display values that work across types alone", () => {
+    // Only cover and toggle are constrained, because only they are strictly
+    // bound to one field type in the compiler. The rest are left alone here;
+    // whether every one of them is honoured for every type is a separate
+    // question this does not claim to answer.
+    for (const display of ["badge", "section", "hidden", "auto"] as const) {
+      expect(() =>
+        itemTypeBlueprintSchema.parse({
+          ...base,
+          fields: [{ id: "note", label: "Note", type: "text", display }],
+        }),
+      ).not.toThrow();
+    }
   });
 });

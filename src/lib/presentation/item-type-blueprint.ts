@@ -89,7 +89,31 @@ const scalarField = z
     validation: fieldValidation.optional(),
     workflow: workflow.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((field, ctx) => {
+    // Two display values are honoured for exactly one field type each, and
+    // were silently ignored everywhere else: the compiler tests
+    // `type === "image" && display === "cover"` and
+    // `type === "boolean" && display === "toggle"`. A model asking for a
+    // cover on a text field got a plain fact and no explanation.
+    //
+    // Saying so is the point. A rejected blueprint goes back through the
+    // repair loop with the reason; a silently dropped instruction does not.
+    if (field.display === "cover" && field.type !== "image") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["display"],
+        message: `display "cover" only applies to an image field, and ${field.id} is a ${field.type}.`,
+      });
+    }
+    if (field.display === "toggle" && field.type !== "boolean") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["display"],
+        message: `display "toggle" only applies to a boolean field, and ${field.id} is a ${field.type}.`,
+      });
+    }
+  });
 
 const rowSubField = z
   .object({

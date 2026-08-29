@@ -1104,6 +1104,24 @@ frontmatter of every file on disk. That is a data migration, not a refactor.
   migration and no compatibility layer. That is the lever the render spec does
   not have.
 
+## Silently ignored beats wrongly rejected, but not by much (2026-08-29)
+
+- The compiler honours `display: "cover"` only when the field is an image and
+  `display: "toggle"` only when it is a boolean. Anywhere else it fell through
+  and the instruction vanished. A model asking for a cover on a text field got
+  a plain fact and no explanation, which is the one outcome it cannot learn
+  from.
+- Both are refused now, naming the field and its type. Codex confirmed the
+  message reaches BOTH paths: the studio's repair prompt carries it verbatim,
+  and `create_item_type` returns it as `arguments_invalid`.
+- The cost, and it is real: a generation that used to succeed with a silently
+  downgraded field can now end in a visible failure if repair does not converge
+  within its bounded retries. That is the trade, taken deliberately.
+- The rule cannot live in the emitted JSON Schema, because a conditional is not
+  expressible there and `superRefine` is dropped from the generated schema. So
+  it is stated in `ITEM_TYPE_BLUEPRINT_FORMAT` as well. Without that, a
+  tool-using model learns the rule only by having a call refused.
+
 ## Two dead choices in the authoring grammar (2026-08-29)
 
 - Scalar `display: "fact"` was never branched on. A plain scalar falls into the
