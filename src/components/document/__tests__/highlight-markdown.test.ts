@@ -66,6 +66,38 @@ describe("==highlight==", () => {
     expect(marks("== ==")).toEqual([]);
   });
 
+  it.each([
+    "a === b",
+    "a === b === c",
+    "if (x == y) then",
+    "x == y and y == z",
+    "====",
+    "== ==",
+    "a == b == c",
+    // Prose about code. These marked "mc" and "arr[j]" until the markers had
+    // to flank the way emphasis does.
+    "The formula is E==mc== squared?",
+    "arr[i]==arr[j]==arr[k]",
+    "x==y",
+    "sep: ==========",
+    "5 == 5 is true, and 6 == 6 is too",
+    "a ==",
+    "== b",
+  ])("leaves %s alone", (text) => {
+    expect(marks(text)).toEqual([]);
+  });
+
+  it.each([
+    ["==one==", ["one"]],
+    ["a ==key point== here", ["key point"]],
+    ["==first== and ==second==", ["first", "second"]],
+    ["==with punctuation, yes==", ["with punctuation, yes"]],
+    ["(==parenthesised==)", ["parenthesised"]],
+    ["He said ==this matters==.", ["this matters"]],
+  ])("marks %s", (text, expected) => {
+    expect(marks(text)).toEqual(expected);
+  });
+
   it("leaves text with no marker untouched", () => {
     const nodes = run("Nothing marked at all.");
     expect(nodes).toHaveLength(1);
