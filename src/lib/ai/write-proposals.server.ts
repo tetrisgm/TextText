@@ -20,7 +20,7 @@ import {
 } from "@/lib/ai/write-proposal-preview";
 import { WORKSPACE_TOOL_DEFINITIONS, type WorkspaceToolName } from "@/lib/ai/tools";
 import { runWorkspaceToolForSession } from "@/lib/mcp/tools";
-import { getFolders, getPostById } from "@/lib/store";
+import { getFolders, getPostById, getTrashedPosts } from "@/lib/store";
 import { getBlogEditRecord } from "@/lib/store";
 
 export type WorkspaceWriteProposalActor = {
@@ -437,6 +437,7 @@ export async function createWorkspaceWriteProposal(
               visibility: found.visibility,
               revision: found.revision,
               ...("status" in validated.arguments ? { desiredStatus: (validated.arguments as { status: "draft" | "published" }).status } : {}),
+              ...(validated.name === "restore_item" ? { restore: true as const } : {}),
             }
           : {
               id: itemId,
@@ -446,6 +447,7 @@ export async function createWorkspaceWriteProposal(
               revision: null,
               missing: true as const,
               ...("status" in validated.arguments ? { desiredStatus: (validated.arguments as { status: "draft" | "published" }).status } : {}),
+              ...(validated.name === "restore_item" ? { restore: true as const } : {}),
             };
       }),
     };
@@ -788,8 +790,9 @@ async function resolveProposalItems(
   // read "from " with a gap where the folder should be. Ownership is already
   // established before this runs, so there is nothing to filter against.
   const folders = await getFolders(handle);
+  const trashed = await getTrashedPosts(handle);
   for (const itemId of ids) {
-    const post = await getPostById(handle, itemId);
+    const post = await getPostById(handle, itemId) ?? trashed.find((candidate) => candidate.id === itemId);
     if (!post) continue;
     resolved.set(itemId, {
       title: post.title,

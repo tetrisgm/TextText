@@ -18,18 +18,22 @@ describe("what the browser assistant is offered", () => {
     expect(full).toContain("delete_items");
   });
 
-  it("still cannot share, restore, or fetch a chosen URL", () => {
+  it("still cannot share or fetch a chosen URL", () => {
     // Each changes who can see something, or reaches outward, and none has a
     // preview a person could judge. Approval does not make a fetch safe.
     for (const name of [
       "set_access",
       "revoke_access",
-      "restore_item",
       "add_item_asset",
       "recapture_bookmark",
     ] as const) {
       expect(full).not.toContain(name);
     }
+  });
+
+  it("offers restore through the same owner-reviewed proposal path", () => {
+    expect(full).toContain("restore_item");
+    expect(isProposableWorkspaceWrite("restore_item")).toBe(true);
   });
 
   it("offers no write it could not actually stage", () => {
