@@ -1100,6 +1100,36 @@ Before the fix the second pass changed nothing, because the slice was taken
 from all rows rather than from the ones still needing work, so every pass
 looked at the same first page and skipped it as already done.
 
+## Four adversarial passes, and what survived them (2026-08-29)
+
+gpt-5.6-sol at max reasoning reviewed the plan, then the work, three more
+times. The second, third and fourth passes each opened by failing it, and each
+was right: every pass found real defects in the fixes for the previous one.
+
+The pattern worth carrying forward is that the defects got smaller and more
+specific each round, and none of them was found by the tests. They were found
+by someone reading the code against a claim. Specifically:
+
+- Two fixes were correct in the store and collapsed one layer out, at the
+  boundary where a person or an agent is actually told something.
+- One fix was correct for the path it was written for and skipped by a second
+  path that inserts directly.
+- One "fix" introduced a double count in the same commit that was about
+  counting honestly.
+- One comment claimed something was impossible after I verified only the narrow
+  case. It was not impossible; it works now.
+
+What is knowingly still open, rather than believed closed:
+
+- A concurrent re-pin of a folder can be overwritten during an update. The
+  version race is closed; this one is not.
+- Nothing offers a person the reopen-a-look path. The server, the action and
+  the studio all take it; the workspace UI has no entry point.
+- Highlight offsets assume escapes are the only thing resolved before a text
+  node exists. Character references are not handled, and are stated as such.
+- `a ==b== c` marks "b". That is the syntax working as written, not a defect:
+  the fix would refuse `a ==key== word`, which is what people actually type.
+
 ## The two goals, and what it took to move them (2026-08-29)
 
 Plan in `docs/plans/two-goals.md`. Written, torn apart by gpt-5.6-sol at max
