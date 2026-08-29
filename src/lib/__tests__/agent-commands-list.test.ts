@@ -14,6 +14,11 @@ vi.mock("@/lib/mcp/tools", () => ({
   runWorkspaceToolForAuth: mocks.runWorkspaceToolForAuth,
 }));
 
+import {
+  WORKSPACE_TOOL_DEFINITIONS,
+  type WorkspaceToolName,
+} from "@/lib/ai/tools";
+
 const { GET } = await import("@/app/api/agent/commands/route");
 
 function request(): Request {
@@ -58,12 +63,23 @@ describe("GET /api/agent/commands", () => {
   });
 
   it("offers a read-scoped connection only what it can actually run", async () => {
+    // "mutability === read" is the wrong predicate and this test used to bless
+    // it. list_access reads and also declares requiredScope "sync", so it was
+    // offered to a read-scoped connection and then refused by the executor:
+    // a discovery list that sends an agent to be rejected.
     mocks.resolveMcpScopeAccess.mockReturnValue("read");
     const body = (await (await GET(request())).json()) as {
       commands?: Array<{ name: string; mutability: string }>;
     };
-    expect(body.commands?.length).toBeGreaterThan(0);
-    expect(body.commands?.every((entry) => entry.mutability === "read")).toBe(true);
+    const names = (body.commands ?? []).map((entry) => entry.name);
+    expect(names.length).toBeGreaterThan(0);
+    expect(names).toContain("read_item");
+    expect(names).not.toContain("list_access");
+    for (const name of names) {
+      const definition = WORKSPACE_TOOL_DEFINITIONS[name as WorkspaceToolName];
+      expect(definition.mutability).toBe("read");
+      expect(definition.requiredScope).not.toBe("sync");
+    }
   });
 
   it("refuses without a token", async () => {

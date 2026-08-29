@@ -83,17 +83,29 @@ export async function createItemTypeAction(
  * Reopen a look that was designed here, so it can be changed by describing the
  * change rather than by building a second look that resembles the first.
  *
- * Returns null when the look was assembled rather than designed. Built-ins live
- * in code; a look saved from a document, a duplicate, an import and a restored
- * version each carry a compiled definition and never had a blueprint. Those are
- * edited by hand, and saying so is better than opening an editor that silently
- * starts from nothing.
+ * Carries WHY there is no blueprint, when there is none, because there are
+ * four different reasons and they are four different things to tell a person.
+ * An earlier version returned `blueprint | null` and said null meant the look
+ * was assembled rather than designed, which is a false thing to say about a
+ * look someone designed with a version of the designer this build has moved
+ * past.
+ *
+ * No caller yet: the workspace UI has no entry point for editing a look, and
+ * that is the remaining half of this. The assistant and MCP paths do not go
+ * through here.
  */
 export async function readItemTypeForEditAction(
   handleInput: unknown,
   templateIdInput: unknown,
 ): Promise<
-  | { ok: true; version: number; blueprint: ItemTypeBlueprint | null }
+  | {
+      ok: true;
+      version: number;
+      blueprint: ItemTypeBlueprint | null;
+      /** "authored" | "assembled" | "needs-migration" | "unreadable" */
+      state: string;
+      retired: boolean;
+    }
   | { ok: false; error: string }
 > {
   try {
@@ -114,6 +126,8 @@ export async function readItemTypeForEditAction(
       ok: true,
       version: current.version,
       blueprint: current.source?.blueprint ?? null,
+      state: current.state,
+      retired: current.retired,
     };
   } catch (error) {
     return {

@@ -42,6 +42,8 @@ describe("reopening a look from the studio", () => {
   it("hands back the blueprint and the version it was read at", async () => {
     mocks.getDocumentTemplateAuthoringSource.mockResolvedValue({
       version: 3,
+      retired: false,
+      state: "authored",
       source: { kind: "item-type-blueprint", blueprint },
     });
     const result = await readItemTypeForEditAction("shoku", "recipes-a1b2c3");
@@ -54,10 +56,12 @@ describe("reopening a look from the studio", () => {
     // look like the look had been wiped.
     mocks.getDocumentTemplateAuthoringSource.mockResolvedValue({
       version: 2,
+      retired: false,
+      state: "assembled",
       source: null,
     });
     const result = await readItemTypeForEditAction("shoku", "saved-look-9");
-    expect(result).toMatchObject({ ok: true, version: 2, blueprint: null });
+    expect(result).toMatchObject({ ok: true, version: 2, blueprint: null, state: "assembled" });
   });
 
   it("refuses someone who does not own the workspace", async () => {

@@ -91,9 +91,16 @@ export async function GET(request: Request) {
   if (scopeAccess === "none") {
     return noStore({ error: "This connection cannot read the workspace" }, 403);
   }
-  const available = [...LOCAL_AGENT_COMMANDS].filter(
-    (name) => scopeAccess === "full" || LOCAL_AGENT_READ_ONLY_COMMANDS.has(name),
-  );
+  // Two conditions, not one. A read-scoped connection may call a command that
+  // reads AND does not declare requiredScope "sync" - list_access reads and
+  // declares it, so offering it here promised something the executor then
+  // refused. A discovery list that names commands the caller cannot run is
+  // worse than no list: it sends an agent to be rejected.
+  const available = [...LOCAL_AGENT_COMMANDS].filter((name) => {
+    if (scopeAccess === "full") return true;
+    if (!LOCAL_AGENT_READ_ONLY_COMMANDS.has(name)) return false;
+    return WORKSPACE_TOOL_DEFINITIONS[name].requiredScope !== "sync";
+  });
   return noStore({
     commands: available.map((name) => ({
       name,
