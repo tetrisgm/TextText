@@ -1083,6 +1083,38 @@ them. 261 occurrences. Collapsing them removes the concept, and it needs the
 owner's word, because `type:` is a stored column and `kind:` is in the
 frontmatter of every file on disk. That is a data migration, not a refactor.
 
+## Every marker in the render gate was vacuous (2026-08-28)
+
+- `scripts/verify-template-render.ts` proves a composed node "left markup" by
+  searching the rendered HTML for its class. Every render embeds the whole
+  engine stylesheet, which contains a rule for each of those classes, so
+  `html.includes("tt-badge")` was true for every template whatever the renderer
+  did. All ten markers, since the gate was written.
+- Found while adding two more and testing whether they had teeth. They did not,
+  and neither did the originals.
+- It matches `class="..."` now. Verified by disabling renderer normalisation:
+  7 templates fail, and 0 with it back. It also renders `collection.item`
+  through `DocumentCollectionRenderer`, which was never walked, and covers all
+  29 resolvable looks rather than the 11 active ones.
+- The lesson generalises past this file: a substring check against a document
+  that carries its own stylesheet proves nothing. Anchor on markup.
+
+## Reader first, or the rollback floor moves under you (2026-08-28)
+
+- Step 1 of the primitive reduction first normalised legacy node names ON
+  PARSE. Codex's review of the diff found that this rewrites the object every
+  serializer downstream then writes out, so sync, look export and newly
+  compiled item types would all have begun emitting the new vocabulary at once.
+- A `.textpack` exported after that cannot be read by an earlier build, and no
+  database migration reaches a bundle already on someone's disk. The rollback
+  floor would have moved without anyone saying so.
+- Normalisation happens at the RENDERER now. Both spellings are accepted and
+  both render; nothing new is emitted. Reverting the commit leaves nothing
+  behind that an older build cannot read.
+- The compatibility floor is therefore permanent. A later step removes legacy
+  EMISSION, never legacy acceptance.
+- Reviewing the plan did not find this. Reviewing the diff did.
+
 ## PostWorkspaceShell cannot be split by script (2026-08-28)
 
 - 7,226 lines, 93 top-level definitions. The sidebar looked like a clean seam:

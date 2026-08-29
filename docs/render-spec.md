@@ -100,8 +100,7 @@ discriminated union.
 | -> `stack` | `direction` (vertical, horizontal), `align` (start, center, end, stretch), `gap`, `children` |
 | `group` | `gap`, `children` |
 | `masthead` | `gap`, `children`. A group that reads as a document header. |
-| `divider` | `size` |
-| `spacer` | `size` |
+| `space` | `size`, `rule`. True draws a rule, false leaves the gap empty. `divider` and `spacer` normalise into it. |
 
 Spacing tokens everywhere: `none`, `xs`, `sm`, `md`, `lg`, `xl`.
 
@@ -147,8 +146,12 @@ format through the field's own `format`, which includes `currency`, `percent`,
 
 | Node | Properties |
 | --- | --- |
-| `byline` | Author and date, drawn from the document. |
-| `metadata` | The document's own metadata line. |
+| `meta` | `variant` (byline, metadata). The byline is author and date; the metadata line is the document's own. |
+
+`byline` and `metadata` are still accepted on input and normalise to `meta`
+before anything downstream sees them. They are not removed, and will not be: a
+`.textpack` exported at any time in the past carries a whole look inside it,
+lives outside the database, and never expires.
 
 ## Collections
 
@@ -194,46 +197,25 @@ something like Medium, could not be expressed.
 
 ## The reduction this grammar is heading for
 
-Measured, not guessed: 22 node type names carry **17 distinct property
-shapes**, and four groups are byte-identical in shape AND already share a
-branch in the renderer, which falls through between them.
+The schema accepts **24 spellings** today: 22 original names plus `meta` and
+`space`, the first two targets. Nothing emits the new ones yet.
 
-| Names today | Shape | Renderer |
-| --- | --- | --- |
-| `cover`, `image`, `video` | `bind, alt, fit, height` | `cover` and `image` fall through into `video` |
-| `group`, `masthead` | `gap, children` | `group` falls through into `masthead` |
-| `byline`, `metadata` | nothing but `id`, `showWhen` | two lines each |
-| `divider`, `spacer` | `size` | two lines each |
+**Reader first.** `meta` and `space` are accepted and rendered, and
+`byline`/`metadata` and `divider`/`spacer` normalise into them AT THE RENDERER,
+not on parse. Normalising on parse would rewrite the object every serializer
+downstream writes out, so sync, look export and newly compiled types would all
+start emitting the new names immediately, and a `.textpack` exported after that
+could not be read by an earlier build. No database migration reaches a bundle
+already on someone's disk. Reading both and writing neither keeps a rollback
+safe.
 
-Nine names for four behaviours. The engine already knows they are the same
-thing; only the grammar still spells them apart.
+The legacy spellings are accepted permanently, not until a migration finishes,
+for the same reason.
 
-The target, in the shape a game engine would use: **few primitives, each
-parameterised**, so the grammar is small and the output space is not.
-
-| Target primitive | Absorbs | Discriminator |
-| --- | --- | --- |
-| `stack` | `stack`, `group`, `masthead` | `role`, plus the existing direction and align |
-| `media` | `cover`, `image`, `video`, `gallery` | `role`, `columns` |
-| -> `meta` | `byline`, `metadata` | `variant` |
-| -> `space` | `divider`, `spacer` | `rule` |
-| `text` | `text`, `quote` | `role`, `attributionBind` |
-| -> `field` | `badge`, `toggle`, `progress` | `variant` |
-| `rows` | `rows`, `checklist`, `poll` | `variant` |
-| -> `prose`, `facts`, `callout` | unchanged | |
-
-That is 22 down to 10. The first four rows cost nothing: same shape, same
-rendering, one name instead of two or three. The last three are a real trade,
-widening a node's properties to narrow the vocabulary, and `rows` absorbing
-`poll` means `closesBind` rides along on a node that is often a plain table.
-
-Not done yet, deliberately. It rewrites the schema, the renderer, the blueprint
-compiler, all eleven built-in looks, and every stored `TemplateDefinition`,
-which is a migration of user data. The safe order is: accept both spellings at
-the parse boundary, emit only the new ones, migrate stored looks, then drop the
-old names. Do it with fresh attention, and not with text-matching scripts: see
-the note in HANDOFF.md about five failed attempts at scripted surgery on a file
-this size.
+The remaining merges, and what each costs, are in
+`docs/plans/primitive-reduction.md`. The target is 13 names, not 10: `field`
+and `rows` need nested unions rather than flat flags, and `quote`, `progress`
+and `poll` stay separate.
 
 ## What is not in the language
 

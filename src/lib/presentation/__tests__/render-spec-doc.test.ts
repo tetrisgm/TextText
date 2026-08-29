@@ -39,7 +39,16 @@ function discriminatorValues(shapeType: unknown): string[] {
 
 function unionOptions(schema: unknown): Array<{ shape: Record<string, unknown> }> {
   const node = schema as { _def?: Def; options?: unknown[] };
-  const def = (node._def ?? {}) as { getter?: () => unknown; options?: unknown[] };
+  const def = (node._def ?? {}) as {
+    getter?: () => unknown;
+    options?: unknown[];
+    out?: unknown;
+  };
+  // renderNodeSchema is wrapped in z.preprocess so legacy node spellings
+  // normalise on parse. That makes it a pipe, whose `out` holds the real
+  // union. Unwrap it, or this reads zero types and every check below passes
+  // vacuously, which is exactly what the guard above caught.
+  if (def.out) return unionOptions(def.out);
   if (def.getter) return unionOptions(def.getter());
   return (node.options ?? def.options ?? []) as Array<{ shape: Record<string, unknown> }>;
 }

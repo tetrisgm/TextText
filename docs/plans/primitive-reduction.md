@@ -232,25 +232,26 @@ is exactly why a stale `template.json` survives unchanged.
 
 ## Rollback
 
-Steps 0 and 1 are code-only: revert the commit.
+**Step 1 as built emits nothing new**, so it is genuinely code-only: revert the
+commit and nothing on disk or in the database is in a vocabulary an older build
+cannot read. That is why normalisation happens at the renderer rather than on
+parse. An earlier attempt normalised on parse, which rewrites the object every
+serializer downstream writes out; the review of the diff caught that where the
+review of the plan had not.
 
-**Steps 2 and 3 are not.** Once the compiler emits target names, every newly
-designed look is persisted in the new grammar and handed out inside textpacks,
-so durable new-format data exists before the migration runs.
+**Steps 3 onward are not.** Once anything emits the target names, they reach
+stored looks AND exported `.textpack` bundles. A database migration can rewrite
+the former and can never reach the latter: a bundle sits on someone's disk with
+no expiry, and the Mac hands its `template.json` back verbatim.
 
-**The rollback floor is the step 1 dual-reader build.** An older build reads
-every stored definition through `validateTemplateDefinition`
-(`store.ts:3358`, `:3420`, `:3481`), and those throws are not caught: public
-item rendering awaits the lookup (`t/[handle]/[slug]/page.tsx:377`) and so does
-sync look resolution (`sync.ts:245`). A migrated custom look therefore becomes
-a page failure and a sync failure on a pre-step-1 build.
+So the compatibility floor is permanent, not temporary. Legacy spellings must
+be accepted for as long as any bundle might exist, which is forever. What a
+later step removes is legacy EMISSION, never legacy acceptance.
 
-- Rolling back to step 3 or 4 code: safe.
-- Rolling back below step 1: run the down-migration FIRST, then send traffic.
-
-The down-migration is only lossless if the target grammar keeps enough
-information to pick the original legacy node. Under the first draft's grammar
-it did not, which is one more reason the collapses below changed.
+- Rolling back to any step: safe, as long as legacy acceptance never shipped
+  removed.
+- There is no "down-migrate then roll back below step 1" path for exported
+  bundles, and an earlier draft that offered one was wrong.
 
 ## Open questions for the owner
 

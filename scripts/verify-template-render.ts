@@ -11,8 +11,8 @@
 
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { DocumentRenderer } from "../src/components/document/DocumentRenderer";
-import { BUILTIN_TEMPLATES } from "../src/lib/presentation/templates";
+import { DocumentCollectionRenderer, DocumentRenderer } from "../src/components/document/DocumentRenderer";
+import { ALL_RESOLVABLE_TEMPLATES } from "../src/lib/presentation/templates";
 import type {
   DocumentFieldDefinition,
   RowSubFieldDefinition,
@@ -99,10 +99,23 @@ const NODE_MARKERS: Record<string, string> = {
   poll: "tt-poll",
   callout: "tt-callout",
   quote: "tt-quote",
+  // byline/metadata and divider/spacer normalise at the renderer, so the
+  // marker is the class the OUTPUT carries, not the input's name. An earlier
+  // attempt used "tt-" for both, which every render contains via
+  // class="tt-document", so the check always passed and proved nothing.
+  byline: "tt-byline",
+  metadata: "tt-metadata",
+  divider: "tt-divider",
+  spacer: "tt-spacer",
+  meta: "tt-byline",
+  space: "tt-divider",
 };
 
 let failures = 0;
-for (const template of BUILTIN_TEMPLATES) {
+// Retired looks are still resolvable, so a document pinned to one still has
+// to render. Walking only the active set is how a break in Wiki or Newsletter
+// would ship unnoticed.
+for (const template of ALL_RESOLVABLE_TEMPLATES) {
   const document = sampleDocument(template);
   let html = "";
   try {
@@ -124,8 +137,40 @@ for (const template of BUILTIN_TEMPLATES) {
     failures += 1;
     continue;
   }
-  const missing = [...composedTypes(template.item)]
-    .filter((type) => NODE_MARKERS[type] && !html.includes(NODE_MARKERS[type]));
+  // Look for the class in MARKUP, not anywhere in the string. Every render
+  // embeds the whole engine stylesheet, which contains `.tt-badge{...}` and a
+  // rule for every other marker, so `html.includes("tt-badge")` was true for
+  // every template whatever the renderer did. Every marker in this gate was
+  // vacuous, and had been since it was written.
+  const rendered = (marker: string) =>
+    new RegExp(`class="[^"]*\\b${marker}\\b`).test(html);
+  // collection.item is rendered by a different component and was never walked
+  // here, so a node that only appears in a folder view went unchecked.
+  let collectionHtml = "";
+  try {
+    collectionHtml = renderToStaticMarkup(
+      React.createElement(DocumentCollectionRenderer, {
+        document,
+        documentId: `verify-collection-${template.id}`,
+        template,
+        metadata: { author: "Verifier", date: "Jul 15, 2026" },
+      }),
+    );
+  } catch (error) {
+    console.error(`FAIL ${template.id}: collection renderer threw: ${error}`);
+    failures += 1;
+    continue;
+  }
+  const renderedInCollection = (marker: string) =>
+    new RegExp(`class="[^"]*\\b${marker}\\b`).test(collectionHtml);
+  const missing = [
+    ...[...composedTypes(template.item)].filter(
+      (type) => NODE_MARKERS[type] && !rendered(NODE_MARKERS[type]),
+    ),
+    ...[...composedTypes(template.collection.item)].filter(
+      (type) => NODE_MARKERS[type] && !renderedInCollection(NODE_MARKERS[type]),
+    ),
+  ];
   if (missing.length > 0) {
     console.error(
       `FAIL ${template.id}: composed node(s) left no markup: ${missing.join(", ")}`,
@@ -141,5 +186,5 @@ if (failures > 0) {
   process.exit(1);
 }
 console.log(
-  JSON.stringify({ status: "pass", templates: BUILTIN_TEMPLATES.length }),
+  JSON.stringify({ status: "pass", templates: ALL_RESOLVABLE_TEMPLATES.length }),
 );

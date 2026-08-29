@@ -3655,6 +3655,13 @@ const legacyDefinitions = [
 export const BUILTIN_TEMPLATES: readonly TemplateDefinition[] =
   Object.freeze(activeDefinitions);
 
+/**
+ * Active plus retired. A document pinned to a retired look still renders, so
+ * anything that checks rendering has to walk these, not just the catalogue.
+ */
+export const ALL_RESOLVABLE_TEMPLATES: readonly TemplateDefinition[] =
+  Object.freeze([...activeDefinitions, ...legacyDefinitions]);
+
 const templatesByKey = new Map(
   [...activeDefinitions, ...legacyDefinitions].map((template) => [
     `${template.id}@${template.version}`,

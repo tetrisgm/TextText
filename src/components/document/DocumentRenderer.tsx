@@ -9,6 +9,7 @@ import type {
 import { isSafeLinkHref, isVideoFile, isYouTube, youtubeEmbedUrl } from "@/lib/content";
 import { pollClosed, pollOptionLabels } from "@/lib/documents/responses";
 import { PollWidget } from "./PollWidget";
+import { normalizeRenderNode } from "@/lib/presentation/schema";
 import type {
   DocumentFieldDefinition,
   RenderNode,
@@ -983,6 +984,11 @@ function NodeRenderer({
   wikiLinkTargets?: WikiLinkRenderTargets;
   preview?: boolean;
 }): ReactNode {
+  // Legacy spellings normalise HERE, not on parse. Rewriting on parse would
+  // make every serializer downstream emit the new names, and a textpack
+  // exported after that could not be read by an earlier build. Reading both
+  // and writing neither keeps a rollback safe.
+  node = normalizeRenderNode(node) as RenderNode;
   const nodeSlot = node.id ? slots?.nodes?.[node.id] : undefined;
   if (nodeSlot !== undefined) return nodeSlot;
   const bindingSlot = "bind" in node ? slots?.bindings?.[node.bind] : undefined;
@@ -1076,14 +1082,21 @@ function NodeRenderer({
         />
       );
     }
-    case "byline":
-      return slots?.byline ?? <DefaultByline metadata={metadata} />;
-    case "metadata":
-      return slots?.metadata ?? <DefaultMetadata metadata={metadata} />;
-    case "divider":
-      return <hr {...attrs} className="tt-divider" />;
-    case "spacer":
-      return <div {...attrs} className={`tt-spacer tt-gap-${node.size}`} aria-hidden="true" />;
+    // byline/metadata and divider/spacer arrive here as meta and space: the
+    // schema normalises the legacy spellings on parse. The class names keep
+    // the old words because the engine CSS and the look eval select on them.
+    //
+
+    case "meta":
+      return node.variant === "metadata"
+        ? (slots?.metadata ?? <DefaultMetadata metadata={metadata} />)
+        : (slots?.byline ?? <DefaultByline metadata={metadata} />);
+    case "space":
+      return node.rule ? (
+        <hr {...attrs} className="tt-divider" />
+      ) : (
+        <div {...attrs} className={`tt-spacer tt-gap-${node.size}`} aria-hidden="true" />
+      );
     case "badge": {
       const slot = slots?.bindings?.[node.bind];
       if (slot !== undefined) return slot;

@@ -264,10 +264,24 @@ type RenderNodeInput =
     }
   | { type: "byline" | "metadata"; id?: string; showWhen?: string }
   | {
+      type: "meta";
+      id?: string;
+      showWhen?: string;
+      variant?: "byline" | "metadata";
+    }
+  | {
       type: "divider" | "spacer";
       id?: string;
       showWhen?: string;
       size?: (typeof SPACING_TOKENS)[number];
+    }
+  | {
+      type: "space";
+      id?: string;
+      showWhen?: string;
+      size?: (typeof SPACING_TOKENS)[number];
+      /** True draws a rule, false leaves the gap empty. */
+      rule?: boolean;
     }
   | {
       type: "badge";
@@ -385,6 +399,12 @@ export type RenderNode =
       bind: ContentBinding;
       showWhen?: ContentBinding;
     })
+  | (Omit<Extract<RenderNodeInput, { type: "meta" }>, "showWhen"> & {
+      showWhen?: ContentBinding;
+    })
+  | (Omit<Extract<RenderNodeInput, { type: "space" }>, "showWhen"> & {
+      showWhen?: ContentBinding;
+    })
   | (Omit<Extract<RenderNodeInput, { type: "byline" | "metadata" }>, "showWhen"> & {
       showWhen?: ContentBinding;
     })
@@ -427,6 +447,34 @@ export type RenderNode =
       showWhen?: ContentBinding;
     });
 
+/**
+ * Rewrite a legacy node spelling into the one the engine keeps.
+ *
+ * Applied at the RENDERER, not on parse. Normalising on parse rewrites the
+ * object every serializer downstream then writes out, so from the moment it
+ * shipped, sync, look export and newly compiled types would all emit the new
+ * names. A textpack exported after that cannot be read by an earlier build,
+ * and no database migration can reach a bundle already on someone's disk.
+ * Reading both and writing neither keeps a rollback safe.
+ *
+ * One exported mapping, so the renderer today and the migration later cannot
+ * disagree about what a legacy node becomes.
+ */
+export function normalizeRenderNode(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const node = value as Record<string, unknown>;
+  // Only rewrite a node that is ACTUALLY the legacy shape. One already
+  // carrying a target-only key is a faulty producer, and overwriting it would
+  // accept input the strict schemas reject.
+  if ((node.type === "byline" || node.type === "metadata") && !("variant" in node)) {
+    return { ...node, type: "meta", variant: node.type };
+  }
+  if ((node.type === "divider" || node.type === "spacer") && !("rule" in node)) {
+    return { ...node, type: "space", rule: node.type === "divider" };
+  }
+  return node;
+}
+
 export const renderNodeSchema: z.ZodType<RenderNodeInput> = z.lazy(() =>
   z.discriminatedUnion("type", [
     z.object({
@@ -466,11 +514,26 @@ export const renderNodeSchema: z.ZodType<RenderNodeInput> = z.lazy(() =>
       bind: bindingSchema,
       columns: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).default(3),
     }).strict(),
+    // byline and metadata are the same node with one difference. Both spellings
+    // are still accepted on input and normalised to `meta` before anything
+    // downstream sees them; see normalizeRenderNode below.
     z.object({ ...sharedNode, type: z.enum(["byline", "metadata"]) }).strict(),
+    z.object({
+      ...sharedNode,
+      type: z.literal("meta"),
+      variant: z.enum(["byline", "metadata"]).default("byline"),
+    }).strict(),
+    // divider and spacer differ only in whether a rule is drawn.
     z.object({
       ...sharedNode,
       type: z.enum(["divider", "spacer"]),
       size: z.enum(SPACING_TOKENS).default("md"),
+    }).strict(),
+    z.object({
+      ...sharedNode,
+      type: z.literal("space"),
+      size: z.enum(SPACING_TOKENS).default("md"),
+      rule: z.boolean().default(false),
     }).strict(),
     // --- Wave-1 nodes from the document-types research. Each earns its place
     // by serving several templates; none accepts user markup or color. ---
