@@ -192,6 +192,49 @@ Ten axes. Tokens only, so a look can never smuggle in CSS.
 how large its text was, so a reading-first look, which is the entire point of
 something like Medium, could not be expressed.
 
+## The reduction this grammar is heading for
+
+Measured, not guessed: 22 node type names carry **17 distinct property
+shapes**, and four groups are byte-identical in shape AND already share a
+branch in the renderer, which falls through between them.
+
+| Names today | Shape | Renderer |
+| --- | --- | --- |
+| `cover`, `image`, `video` | `bind, alt, fit, height` | `cover` and `image` fall through into `video` |
+| `group`, `masthead` | `gap, children` | `group` falls through into `masthead` |
+| `byline`, `metadata` | nothing but `id`, `showWhen` | two lines each |
+| `divider`, `spacer` | `size` | two lines each |
+
+Nine names for four behaviours. The engine already knows they are the same
+thing; only the grammar still spells them apart.
+
+The target, in the shape a game engine would use: **few primitives, each
+parameterised**, so the grammar is small and the output space is not.
+
+| Primitive | Absorbs | Discriminator |
+| --- | --- | --- |
+| `stack` | `stack`, `group`, `masthead` | `role`, plus the existing direction and align |
+| `media` | `cover`, `image`, `video`, `gallery` | `role`, `columns` |
+| `meta` | `byline`, `metadata` | `variant` |
+| `space` | `divider`, `spacer` | `rule` |
+| `text` | `text`, `quote` | `role`, `attributionBind` |
+| `field` | `badge`, `toggle`, `progress` | `variant` |
+| `rows` | `rows`, `checklist`, `poll` | `variant` |
+| `prose`, `facts`, `callout` | unchanged | |
+
+That is 22 down to 10. The first four rows cost nothing: same shape, same
+rendering, one name instead of two or three. The last three are a real trade,
+widening a node's properties to narrow the vocabulary, and `rows` absorbing
+`poll` means `closesBind` rides along on a node that is often a plain table.
+
+Not done yet, deliberately. It rewrites the schema, the renderer, the blueprint
+compiler, all eleven built-in looks, and every stored `TemplateDefinition`,
+which is a migration of user data. The safe order is: accept both spellings at
+the parse boundary, emit only the new ones, migrate stored looks, then drop the
+old names. Do it with fresh attention, and not with text-matching scripts: see
+the note in HANDOFF.md about five failed attempts at scripted surgery on a file
+this size.
+
 ## What is not in the language
 
 No HTML, CSS, JavaScript, or component names. No expressions, no loops, no
