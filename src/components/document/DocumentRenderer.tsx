@@ -17,6 +17,7 @@ import type {
   TemplateDefinition,
 } from "@/lib/presentation/schema";
 import { DOCUMENT_ENGINE_CSS } from "@/lib/presentation/styles";
+import { styleFamilyFor } from "@/lib/presentation/templates";
 import { remarkWikiLinks } from "@/components/WikiLinkMarkdown";
 import type { WikiLinkRenderTargets } from "@/lib/wikilinks";
 
@@ -1219,6 +1220,7 @@ export function DocumentRenderer({
       id={scopeId}
       className={["tt-document", className].filter(Boolean).join(" ")}
       data-template={template.id}
+      data-style-family={styleFamilyFor(template.id)}
       data-preview={preview ? "true" : undefined}
       data-typography={theme.typography ?? "system"}
       data-density={theme.density ?? "comfortable"}
@@ -1258,6 +1260,7 @@ export function DocumentCollectionRenderer({
         .filter(Boolean)
         .join(" ")}
       data-template={template.id}
+      data-style-family={styleFamilyFor(template.id)}
       data-typography={theme.typography ?? "system"}
       data-density={theme.density ?? "comfortable"}
       data-measure="full"

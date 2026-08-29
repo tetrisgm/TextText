@@ -3652,6 +3652,33 @@ const legacyDefinitions = [
   rsvp,
 ].map((entry) => validateTemplateDefinition(entry));
 
+/**
+ * Which built-in's presentation a look wears.
+ *
+ * Presentation was keyed to the template ID, so a look got the built-in
+ * treatment only if it WAS that built-in. Timeline is Article with a different
+ * id - the same document field for field, listed as a timeline instead of as
+ * cards - and because the renderer emits the id, none of Article's styling
+ * matched it. Anyone choosing Timeline got a visibly poorer Article.
+ *
+ * Derived here rather than stored on the definition. A `TemplateDefinition` is
+ * strict and travels inside sync envelopes and exported bundles that older
+ * builds still read, so adding a field to it would change a format that has
+ * already left this machine, to fix something the renderer can answer on its
+ * own.
+ *
+ * Only the families that are actually shared. A look with no entry keys on
+ * nothing and gets the shared base treatment, which is what it got before.
+ */
+const STYLE_FAMILIES: Record<string, string> = {
+  "texttext.article": "article",
+  "texttext.timeline": "article",
+};
+
+export function styleFamilyFor(templateId: string): string | undefined {
+  return STYLE_FAMILIES[templateId];
+}
+
 export const BUILTIN_TEMPLATES: readonly TemplateDefinition[] =
   Object.freeze(activeDefinitions);
 

@@ -179,25 +179,25 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
    masthead is centred and the body is not; the display face is a serif and
    the body is the system sans, which is the combination the reference uses
    and the reason it reads as an article rather than a blog post. */
-.tt-document[data-template="texttext.article"]{--tt-accent:#1a8917;--tt-measure:44rem}
-.tt-document:not(.tt-collection-item)[data-template="texttext.article"]>.tt-stack{gap:2.25rem;padding:clamp(2.5rem,7vw,5rem) 0 5rem}
-.tt-document:not(.tt-collection-item)[data-template="texttext.article"] .tt-masthead{gap:.85rem}
-.tt-document[data-template="texttext.article"] .tt-text-title{font-family:Charter,"Iowan Old Style","Palatino Linotype",Palatino,serif;font-size:clamp(2.1rem,3.6vw,3rem);font-weight:700;line-height:1.08;letter-spacing:-.022em;text-wrap:balance}
-.tt-document[data-template="texttext.article"] .tt-text-subtitle{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:1.02rem;line-height:1.45;color:var(--muted,#6e6e73)}
+.tt-document[data-style-family="article"]{--tt-accent:#1a8917;--tt-measure:44rem}
+.tt-document:not(.tt-collection-item)[data-style-family="article"]>.tt-stack{gap:2.25rem;padding:clamp(2.5rem,7vw,5rem) 0 5rem}
+.tt-document:not(.tt-collection-item)[data-style-family="article"] .tt-masthead{gap:.85rem}
+.tt-document[data-style-family="article"] .tt-text-title{font-family:Charter,"Iowan Old Style","Palatino Linotype",Palatino,serif;font-size:clamp(2.1rem,3.6vw,3rem);font-weight:700;line-height:1.08;letter-spacing:-.022em;text-wrap:balance}
+.tt-document[data-style-family="article"] .tt-text-subtitle{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:1.02rem;line-height:1.45;color:var(--muted,#6e6e73)}
 /* A hairline closes the masthead, the way a rule separates the title block
    from the story in the reference. It is drawn on the masthead so it only
    exists where there is a masthead to close. */
-.tt-document:not(.tt-collection-item)[data-template="texttext.article"] .tt-masthead::after{content:"";width:min(26rem,58%);height:1px;margin:1.1rem auto 0;background:color-mix(in srgb,var(--ink,#1d1d1f) 17%,transparent)}
-.tt-document[data-template="texttext.article"] .tt-prose{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:1.15rem;line-height:1.62}
+.tt-document:not(.tt-collection-item)[data-style-family="article"] .tt-masthead::after{content:"";width:min(26rem,58%);height:1px;margin:1.1rem auto 0;background:color-mix(in srgb,var(--ink,#1d1d1f) 17%,transparent)}
+.tt-document[data-style-family="article"] .tt-prose{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:1.15rem;line-height:1.62}
 /* The byline is metadata, not the first line of the story. Left in the
    editorial serif at body size it read as an opening sentence. */
-.tt-document[data-template="texttext.article"] .tt-byline{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:.875rem;line-height:1.45;letter-spacing:0;color:var(--muted,#6e6e73)}
+.tt-document[data-style-family="article"] .tt-byline{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:.875rem;line-height:1.45;letter-spacing:0;color:var(--muted,#6e6e73)}
 /* Section headings are centred serif, which is what makes a long piece feel
    set rather than typed. */
-.tt-document[data-template="texttext.article"] .tt-prose h2,.tt-document[data-template="texttext.article"] .tt-prose h3{font-family:Charter,"Iowan Old Style","Palatino Linotype",Palatino,serif;text-align:center;font-size:1.32rem;letter-spacing:-.008em;margin:2.4em 0 .8em}
-.tt-document[data-template="texttext.article"] .tt-cover{width:min(52rem,calc(100% - 2rem));height:auto;aspect-ratio:16/10;border-radius:.85rem}
-.tt-document.tt-collection-item[data-template="texttext.article"] .tt-text-title{font-size:1.55rem;line-height:1.12;letter-spacing:-.01em}
-.tt-document.tt-collection-item[data-template="texttext.article"] .tt-text-subtitle{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:.94rem;line-height:1.45}
+.tt-document[data-style-family="article"] .tt-prose h2,.tt-document[data-style-family="article"] .tt-prose h3{font-family:Charter,"Iowan Old Style","Palatino Linotype",Palatino,serif;text-align:center;font-size:1.32rem;letter-spacing:-.008em;margin:2.4em 0 .8em}
+.tt-document[data-style-family="article"] .tt-cover{width:min(52rem,calc(100% - 2rem));height:auto;aspect-ratio:16/10;border-radius:.85rem}
+.tt-document.tt-collection-item[data-style-family="article"] .tt-text-title{font-size:1.55rem;line-height:1.12;letter-spacing:-.01em}
+.tt-document.tt-collection-item[data-style-family="article"] .tt-text-subtitle{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:.94rem;line-height:1.45}
 
 /* Note */
 /* Apple Notes is white paper. The yellow lives in the app's chrome, never
@@ -386,7 +386,7 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document[data-template="texttext.newsletter"] .tt-rows-tile-value{font-family:Georgia,"Iowan Old Style",serif;font-size:1.2rem}
 .tt-document.tt-collection-item[data-template="texttext.newsletter"] .tt-text-title{font-size:1.5rem}
 
-@media(max-width:720px){.tt-stack[data-direction="horizontal"]{flex-direction:column}.tt-text-title{font-size:clamp(2.3rem,13vw,4rem)}.tt-height-large{height:38vh}.tt-document[data-template="texttext.gallery"] [data-tt-node="gallery-media"]{grid-template-columns:repeat(2,minmax(0,1fr))}.tt-document[data-template="texttext.article"] .tt-prose,.tt-document[data-template="texttext.bookmark"] .tt-prose,.tt-document[data-template="texttext.newsletter"] .tt-prose{font-size:1.08rem}.tt-document[data-template="texttext.todo"] .tt-checklist{border-radius:0}.tt-document[data-template="texttext.brief"]{--tt-measure:100%}.tt-document[data-template="texttext.brief"] .tt-rows-table{min-width:42rem}}
+@media(max-width:720px){.tt-stack[data-direction="horizontal"]{flex-direction:column}.tt-text-title{font-size:clamp(2.3rem,13vw,4rem)}.tt-height-large{height:38vh}.tt-document[data-template="texttext.gallery"] [data-tt-node="gallery-media"]{grid-template-columns:repeat(2,minmax(0,1fr))}.tt-document[data-style-family="article"] .tt-prose,.tt-document[data-template="texttext.bookmark"] .tt-prose,.tt-document[data-template="texttext.newsletter"] .tt-prose{font-size:1.08rem}.tt-document[data-template="texttext.todo"] .tt-checklist{border-radius:0}.tt-document[data-template="texttext.brief"]{--tt-measure:100%}.tt-document[data-template="texttext.brief"] .tt-rows-table{min-width:42rem}}
 @media(prefers-color-scheme:dark){
   .tt-document{--ink:#f5f5f7;--paper:#1c1c1e;--muted:#a1a1a6;--tt-tone-neutral:#98989d;--tt-tone-info:#409cff;--tt-tone-success:#30d158;--tt-tone-warning:#ffd60a;--tt-tone-danger:#ff453a}
   /* Neutral, not the warm brown a cream paper turns into when it is darkened.
