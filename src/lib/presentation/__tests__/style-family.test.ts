@@ -1,9 +1,14 @@
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+
+import { DocumentRenderer } from "@/components/document/DocumentRenderer";
 
 import { DOCUMENT_ENGINE_CSS } from "@/lib/presentation/styles";
 import {
   ALL_RESOLVABLE_TEMPLATES,
   BUILTIN_TEMPLATES,
+  getBuiltinTemplate,
   styleFamilyFor,
 } from "@/lib/presentation/templates";
 
@@ -16,10 +21,60 @@ import {
  * none of Article's fourteen style rules matched it. Anyone choosing Timeline
  * got a visibly poorer Article, and had since the look was added.
  */
+
+/**
+ * The rendered markup with the embedded stylesheet removed.
+ *
+ * The renderer inlines DOCUMENT_ENGINE_CSS, which now CONTAINS
+ * [data-style-family="article"] as a selector. So asserting on the whole
+ * output matched the stylesheet rather than the element, and the test passed
+ * with the attribute deleted from the renderer. That is the second time the
+ * embedded stylesheet has made a marker assertion vacuous in this repository.
+ */
+function markupOnly(html: string): string {
+  return html.replace(/<style[\s\S]*?<\/style>/g, "");
+}
+
+function renderDocument(id: string, extra: Record<string, unknown> = {}): string {
+  const template = getBuiltinTemplate(id)!;
+  return markupOnly(
+    renderToStaticMarkup(
+      React.createElement(DocumentRenderer, {
+        template,
+        document: {
+          schemaVersion: 1,
+          content: { title: "T", subtitle: "", body: "Words.", fields: {}, tags: [], assets: [] },
+          presentation: { template: { id, version: template.version }, theme: {} },
+        },
+        ...extra,
+      } as never),
+    ),
+  );
+}
+
 describe("style families", () => {
   it("gives Timeline the same family as Article", () => {
     expect(styleFamilyFor("texttext.timeline")).toBe("article");
     expect(styleFamilyFor("texttext.article")).toBe("article");
+  });
+
+  it.each(["texttext.article", "texttext.timeline"])(
+    "puts the family on the %s element, not just in the map",
+    (id) => {
+      expect(renderDocument(id)).toContain('data-style-family="article"');
+    },
+  );
+
+  it("puts it on a collection entry too, where a folder index draws it", () => {
+    expect(renderDocument("texttext.timeline", { collection: true })).toContain(
+      'data-style-family="article"',
+    );
+  });
+
+  it("does not claim a family for a look that has none", () => {
+    // Guards the assertion itself: if markupOnly were stripping too much, or
+    // the attribute were hard-coded, this would fail.
+    expect(renderDocument("texttext.brief")).not.toContain("data-style-family");
   });
 
   it("leaves a look with no shared family alone", () => {
@@ -60,8 +115,10 @@ describe("style families", () => {
     const resolvable = new Set(
       ALL_RESOLVABLE_TEMPLATES.map((template) => template.id),
     );
+    // [a-z] alone truncated an id like texttext.article-old to
+    // texttext.article, which resolves, so a dead selector passed.
     const styled = [
-      ...DOCUMENT_ENGINE_CSS.matchAll(/data-template="(texttext\.[a-z]+)"/g),
+      ...DOCUMENT_ENGINE_CSS.matchAll(/data-template="(texttext\.[a-z0-9.-]+)"/g),
     ].map((match) => match[1]);
     expect([...new Set(styled)].filter((id) => !resolvable.has(id))).toEqual([]);
   });

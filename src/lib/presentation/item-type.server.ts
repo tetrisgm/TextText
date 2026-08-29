@@ -101,7 +101,9 @@ export type ItemTypeUpdateResult = {
   definition: TemplateDefinition;
   previousVersion: number;
   /** Where the new version actually landed, and what it restyled. */
-  applied: Array<{ path: string; restyledItems: number }>;
+  applied: Array<{ path: string; restyledItems: number; itemsLeft: number }>;
+  /** Folders left where they were because they pin an older version. */
+  skipped: Array<{ path: string; pinnedTo: number }>;
 };
 
 /**
@@ -148,6 +150,16 @@ export async function updateWorkspaceItemType(input: {
     input.templateId,
   );
   if (!current) throw new Error("That item type could not be found.");
+  // Refuse a look that was never designed from a blueprint. This was fetched
+  // and then not read, so an imported, duplicated or saved-from-a-document
+  // look could be replaced wholesale by a blueprint that had nothing to do
+  // with it, under the same id and name. The docs and the tool description
+  // both said this was impossible while the code allowed it.
+  if (!current.source) {
+    throw new Error(
+      "That look was not designed from a blueprint, so it cannot be changed this way. It was saved from a document, imported, duplicated, or made before looks kept their design. Save a copy and design that instead.",
+    );
+  }
   if (current.version !== input.baseVersion) {
     throw new Error(
       `That item type has moved on: you edited version ${input.baseVersion} and it is now at ${current.version}. Read it again and reapply your change.`,
@@ -167,21 +179,42 @@ export async function updateWorkspaceItemType(input: {
     actor: input.actor,
     createdById: input.createdById ?? null,
     authoringSource: authoringSourceFor(blueprint),
+    // Insert exactly the successor to the version that was edited, so a
+    // concurrent edit loses to the primary key instead of landing on top.
+    expectedNextVersion: input.baseVersion + 1,
   });
 
-  const applied: Array<{ path: string; restyledItems: number }> = [];
+  const applied: Array<{
+    path: string;
+    restyledItems: number;
+    itemsLeft: number;
+  }> = [];
+  const skipped: Array<{ path: string; pinnedTo: number }> = [];
   if (input.apply !== false) {
     const reference = { id: created.id, version: created.version };
     for (const folder of await listFoldersUsingTemplate(
       input.blogId,
       input.templateId,
     )) {
+      // A folder deliberately left on an older version stays there. Sharing an
+      // id is not consent to be moved: pinning is how a folder says it wants
+      // the look it already has.
+      if (folder.version !== input.baseVersion) {
+        skipped.push({ path: folder.path, pinnedTo: folder.version });
+        continue;
+      }
       await setFolderTemplate(input.handle, folder.id, reference);
       const restyled =
         input.applyToExisting === false
           ? { changed: 0, remaining: 0 }
           : await retemplateFolderItems(input.handle, folder.id, reference);
-      applied.push({ path: folder.path, restyledItems: restyled.changed });
+      applied.push({
+        path: folder.path,
+        restyledItems: restyled.changed,
+        // Restyling stops at a bounded number of items per pass. Reporting
+        // only what changed turns a half-finished folder into a finished one.
+        itemsLeft: restyled.remaining,
+      });
     }
     if (applied.length) revalidateBlogPaths({ handle: input.handle });
   }
@@ -197,5 +230,10 @@ export async function updateWorkspaceItemType(input: {
       : "version created, not applied",
   });
 
-  return { definition: created, previousVersion: current.version, applied };
+  return {
+    definition: created,
+    previousVersion: current.version,
+    applied,
+    skipped,
+  };
 }

@@ -917,15 +917,33 @@ export async function executeMcpTool(
           handle: resolved.blog.handle,
           templateId: input.template_id,
         });
-        return jsonResult({
-          itemType: updated.definition,
-          previousVersion: updated.previousVersion,
-          applied: updated.applied,
-          note: updated.applied.length
+        // Everything that did not happen is said out loud. A half-restyled
+        // folder reported as a finished one is the failure this is for.
+        const left = updated.applied.reduce(
+          (total, entry) => total + entry.itemsLeft,
+          0,
+        );
+        const notes = [
+          updated.applied.length
             ? `Version ${updated.definition.version} is live in ${updated.applied
                 .map((entry) => entry.path)
                 .join(", ")}. Version ${updated.previousVersion} is kept, and anything still on it renders as it did.`
             : `Version ${updated.definition.version} is saved but not applied anywhere yet.`,
+          left
+            ? `${left} item(s) were not restyled in this pass. Run it again to continue.`
+            : "",
+          updated.skipped.length
+            ? `Left alone because they are pinned to an older version: ${updated.skipped
+                .map((entry) => `${entry.path} (version ${entry.pinnedTo})`)
+                .join(", ")}.`
+            : "",
+        ].filter(Boolean);
+        return jsonResult({
+          itemType: updated.definition,
+          previousVersion: updated.previousVersion,
+          applied: updated.applied,
+          skipped: updated.skipped,
+          note: notes.join(" "),
         });
       } catch (error) {
         return errorResult(

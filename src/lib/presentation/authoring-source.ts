@@ -58,23 +58,51 @@ export function authoringSourceFor(
 }
 
 /**
- * Read a stored source back, or answer null.
+ * Why a stored source cannot be reopened, when it cannot.
  *
- * Null is an ordinary answer, not a failure: built-ins are compiled in code and
- * have no row at all, and a look saved from a document, a duplicate, an import
- * and a restored version each carry a definition that was never authored as a
- * blueprint. Every row written before this column existed is null too.
+ * Four different situations used to collapse into one null: nothing stored,
+ * something unreadable, something from a compiler this build cannot honour,
+ * and a look that was never designed at all. They need different words. Telling
+ * someone their designed look "was assembled rather than designed" because the
+ * compiler moved on is not a smaller lie for being convenient.
+ */
+export type AuthoringSourceState =
+  | { state: "authored"; source: AuthoringSource }
+  /** Never designed from a blueprint: a built-in, duplicate, import, restore,
+   *  a look saved from a document, or a row older than this column. */
+  | { state: "assembled" }
+  /** Designed, but by a compiler whose output this build would not reproduce.
+   *  Reopening it would compile the same blueprint into a different look. */
+  | { state: "needs-migration"; compilerVersion: number }
+  /** Stored and unreadable. Rare, and worth saying out loud rather than
+   *  filing under "was never designed". */
+  | { state: "unreadable" };
+
+export function inspectAuthoringSource(value: unknown): AuthoringSourceState {
+  if (value === null || value === undefined) return { state: "assembled" };
+  const parsed = authoringSourceSchema.safeParse(value);
+  if (!parsed.success) {
+    // A compiler version this build does not know still parses as a number, so
+    // an unreadable envelope is genuinely malformed rather than merely old.
+    return { state: "unreadable" };
+  }
+  if (parsed.data.compilerVersion !== ITEM_TYPE_BLUEPRINT_COMPILER_VERSION) {
+    return {
+      state: "needs-migration",
+      compilerVersion: parsed.data.compilerVersion,
+    };
+  }
+  return { state: "authored", source: parsed.data };
+}
+
+/**
+ * The source when it can be reopened as it stands, and null otherwise.
  *
- * A source a later compiler cannot honour also reads as null. That is the point
- * of storing the version: reopening it would compile the same blueprint into a
- * different look, so the honest answer is that this one is edited by hand.
+ * Kept for the callers that only need the yes-or-no. Anything that TELLS a
+ * person why should use `inspectAuthoringSource` instead, so "the compiler
+ * moved on" is not reported as "this was never designed".
  */
 export function readAuthoringSource(value: unknown): AuthoringSource | null {
-  if (!value) return null;
-  const parsed = authoringSourceSchema.safeParse(value);
-  if (!parsed.success) return null;
-  if (parsed.data.compilerVersion !== ITEM_TYPE_BLUEPRINT_COMPILER_VERSION) {
-    return null;
-  }
-  return parsed.data;
+  const inspected = inspectAuthoringSource(value);
+  return inspected.state === "authored" ? inspected.source : null;
 }

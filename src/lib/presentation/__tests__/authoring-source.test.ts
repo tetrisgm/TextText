@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   authoringSourceFor,
+  inspectAuthoringSource,
   readAuthoringSource,
   AUTHORING_SOURCE_SCHEMA_VERSION,
 } from "@/lib/presentation/authoring-source";
@@ -70,6 +71,21 @@ describe("the blueprint stored beside a look", () => {
     expect(readAuthoringSource(undefined)).toBeNull();
     expect(readAuthoringSource({})).toBeNull();
     expect(readAuthoringSource({ kind: "something-else" })).toBeNull();
+  });
+
+  it("tells the four cases apart instead of calling them all absent", () => {
+    // They used to collapse into one null, so a look designed by an older
+    // compiler was reported as "assembled rather than designed". Telling
+    // someone their designed look was never designed is not a smaller lie for
+    // being convenient.
+    const good = authoringSourceFor(normalizeItemTypeBlueprint(ALREADY_VALID));
+    expect(inspectAuthoringSource(good)).toMatchObject({ state: "authored" });
+    expect(inspectAuthoringSource(null)).toEqual({ state: "assembled" });
+    expect(inspectAuthoringSource(undefined)).toEqual({ state: "assembled" });
+    expect(inspectAuthoringSource({ nonsense: true })).toEqual({ state: "unreadable" });
+    expect(
+      inspectAuthoringSource({ ...good, compilerVersion: ITEM_TYPE_BLUEPRINT_COMPILER_VERSION + 1 }),
+    ).toMatchObject({ state: "needs-migration" });
   });
 
   it("refuses a blueprint a later compiler can no longer honour", () => {

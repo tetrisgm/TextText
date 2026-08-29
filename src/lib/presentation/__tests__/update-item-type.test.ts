@@ -51,7 +51,7 @@ describe("changing an item type that already exists", () => {
     vi.clearAllMocks();
     mocks.getDocumentTemplateAuthoringSource.mockResolvedValue({
       version: 3,
-      source: null,
+      source: { kind: "item-type-blueprint", schemaVersion: 1, compilerVersion: 1, blueprint: BLUEPRINT },
     });
     mocks.createDocumentTemplateVersion.mockImplementation(
       async ({ definition }: { definition: { id: string } }) => ({
@@ -81,7 +81,9 @@ describe("changing an item type that already exists", () => {
       id: "recipes-a1b2c3",
       version: 4,
     });
-    expect(result.applied).toEqual([{ path: "recipes", restyledItems: 7 }]);
+    expect(result.applied).toEqual([
+      { path: "recipes", restyledItems: 7, itemsLeft: 0 },
+    ]);
   });
 
   it("refuses an edit made against a version that has moved on", async () => {
@@ -89,10 +91,57 @@ describe("changing an item type that already exists", () => {
     // second would silently win a race neither knew about.
     mocks.getDocumentTemplateAuthoringSource.mockResolvedValue({
       version: 5,
-      source: null,
+      source: { kind: "item-type-blueprint", schemaVersion: 1, compilerVersion: 1, blueprint: BLUEPRINT },
     });
     await expect(call({ baseVersion: 3 })).rejects.toThrow(/moved on.*version 3.*now at 5/s);
     expect(mocks.createDocumentTemplateVersion).not.toHaveBeenCalled();
+  });
+
+
+  it("refuses a look that was never designed from a blueprint", async () => {
+    // The source was fetched and never read, so an imported, duplicated or
+    // saved-from-a-document look could be replaced wholesale by a blueprint
+    // that had nothing to do with it, under the same id and name. The docs and
+    // the tool description both said this was impossible.
+    mocks.getDocumentTemplateAuthoringSource.mockResolvedValue({
+      version: 3,
+      source: null,
+    });
+    await expect(call()).rejects.toThrow(/not designed from a blueprint/);
+    expect(mocks.createDocumentTemplateVersion).not.toHaveBeenCalled();
+  });
+
+  it("insists on the exact successor version rather than whatever is next", async () => {
+    // Checking the version and then letting the insert pick its own number is
+    // not compare-and-swap: two editors who both read 3 can both pass the
+    // check, and the later insert lands on top of a version it never saw.
+    await call({ baseVersion: 3 });
+    expect(mocks.createDocumentTemplateVersion).toHaveBeenCalledWith(
+      expect.objectContaining({ expectedNextVersion: 4 }),
+    );
+  });
+
+  it("leaves a folder deliberately pinned to an older version alone", async () => {
+    // Sharing an id is not consent to be moved. Pinning is how a folder says
+    // it wants the look it already has.
+    mocks.listFoldersUsingTemplate.mockResolvedValue([
+      { id: "f-1", path: "recipes", version: 3 },
+      { id: "f-2", path: "archive/recipes", version: 1 },
+    ]);
+    const result = await call();
+    expect(result.applied.map((entry) => entry.path)).toEqual(["recipes"]);
+    expect(result.skipped).toEqual([{ path: "archive/recipes", pinnedTo: 1 }]);
+    expect(mocks.setFolderTemplate).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports the items a restyling pass did not reach", async () => {
+    // Restyling stops at a bounded number per pass. Reporting only what
+    // changed turns a half-finished folder into a finished one.
+    mocks.retemplateFolderItems.mockResolvedValue({ changed: 500, remaining: 212 });
+    const result = await call();
+    expect(result.applied).toEqual([
+      { path: "recipes", restyledItems: 500, itemsLeft: 212 },
+    ]);
   });
 
   it("refuses to change a built-in", async () => {
@@ -118,7 +167,9 @@ describe("changing an item type that already exists", () => {
     const result = await call({ applyToExisting: false });
     expect(mocks.setFolderTemplate).toHaveBeenCalled();
     expect(mocks.retemplateFolderItems).not.toHaveBeenCalled();
-    expect(result.applied).toEqual([{ path: "recipes", restyledItems: 0 }]);
+    expect(result.applied).toEqual([
+      { path: "recipes", restyledItems: 0, itemsLeft: 0 },
+    ]);
   });
 
   it("stores the blueprint that compiled, not the one that arrived", async () => {

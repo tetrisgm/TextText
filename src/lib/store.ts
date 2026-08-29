@@ -3814,6 +3814,11 @@ export async function createDocumentTemplateVersion(input: {
    * from a document: those carry a definition and never had a blueprint.
    */
   authoringSource?: AuthoringSource | null;
+  /**
+   * The exact version to insert, when the caller is editing a known one.
+   * A duplicate is a lost race, not a retryable error, and is reported as one.
+   */
+  expectedNextVersion?: number;
 }): Promise<TemplateDefinition> {
   if (!db)
     throw new Error("createDocumentTemplateVersion requires DATABASE_URL");
@@ -3832,19 +3837,38 @@ export async function createDocumentTemplateVersion(input: {
     )
     .orderBy(desc(documentTemplates.version))
     .limit(1);
-  const definition = validateTemplateDefinition({
-    ...candidate,
-    version: (latest[0]?.version ?? 0) + 1,
-  });
-  await db.insert(documentTemplates).values({
-    blogId: input.blogId,
-    templateId: definition.id,
-    version: definition.version,
-    name: definition.name,
-    definition,
-    authoringSource: input.authoringSource ?? null,
-    createdById: input.createdById ?? null,
-  });
+  const nextVersion = (latest[0]?.version ?? 0) + 1;
+  // When the caller knows which version it edited, insert exactly the
+  // successor to THAT one and let the primary key decide. Reading the latest
+  // version and then inserting latest+1 is not compare-and-swap: two editors
+  // who both read version 3 can both pass a pre-check, and the second one to
+  // arrive lands version 5 on top of a version 4 it never saw. Inserting a
+  // fixed number makes the database the arbiter, because
+  // (blog, template, version) is the primary key.
+  const version = input.expectedNextVersion ?? nextVersion;
+  const definition = validateTemplateDefinition({ ...candidate, version });
+  try {
+    await db.insert(documentTemplates).values({
+      blogId: input.blogId,
+      templateId: definition.id,
+      version: definition.version,
+      name: definition.name,
+      definition,
+      authoringSource: input.authoringSource ?? null,
+      createdById: input.createdById ?? null,
+    });
+  } catch (error) {
+    // The primary key rejected it, so someone else created this version while
+    // this edit was being made. Say that, rather than surfacing a constraint
+    // name to a person who was changing how their recipes look.
+    const message = error instanceof Error ? error.message : "";
+    if (input.expectedNextVersion && /duplicate key|unique/i.test(message)) {
+      throw new Error(
+        `Someone else changed this item type while you were editing it, and version ${definition.version} already exists. Read it again and reapply your change.`,
+      );
+    }
+    throw error;
+  }
   await recordAction({
     ...input.actor,
     actionName: "create_document_template_version",
