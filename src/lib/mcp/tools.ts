@@ -87,8 +87,8 @@ import {
   createSubfolder,
   deletePostAtomic,
   getAccessibleAllPosts,
-  getAccessibleAllPostFiles,
   searchAccessibleWorkspacePostFiles,
+  getAccessibleWorkspaceWikiLinkSources,
   getAccessibleFolderCounts,
   getAccessibleFolderPostFiles,
   getAccessibleFolders,
@@ -1479,17 +1479,27 @@ export async function executeMcpTool(
       const resolved = await requirePost(extra, input.id);
       if (isToolResult(resolved)) return resolved;
       const rendered = renderItemFile(resolved.blog, resolved.post);
-      const [livePosts, aliases] = await Promise.all([
-        getAccessibleAllPostFiles(resolved.blog.handle, accessUser(extra)),
+      const [livePosts, wikiLinkSources, aliases] = await Promise.all([
+        getAccessibleAllPosts(resolved.blog.handle, accessUser(extra)),
+        getAccessibleWorkspaceWikiLinkSources(
+          resolved.blog.handle,
+          accessUser(extra),
+        ),
         getPostSlugAliases(resolved.blog.handle),
       ]);
       const resolveWikiLinkTarget = createWikiLinkTargetResolver(
         livePosts,
         aliases,
       );
+      const wikiLinkBodyById = new Map(
+        wikiLinkSources.map((source) => [source.id, source.body]),
+      );
       const backlinks = itemBacklinks(
         resolved.post,
-        livePosts,
+        livePosts.map((post) => ({
+          ...post,
+          body: post.id ? (wikiLinkBodyById.get(post.id) ?? "") : "",
+        })),
         resolveWikiLinkTarget,
       );
       return jsonResult({

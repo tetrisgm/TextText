@@ -720,6 +720,29 @@ export async function getWorkspaceWikiLinkSources(
     );
 }
 
+export async function getAccessibleWorkspaceWikiLinkSources(
+  handle: string,
+  user: AccessUser | null,
+): Promise<WorkspaceWikiLinkSource[]> {
+  if (!db || !user) return [];
+  const visiblePostIds = await accessiblePostIdsForUser(handle, user);
+  if (visiblePostIds === "all") return getWorkspaceWikiLinkSources(handle);
+  if (visiblePostIds.size === 0) return [];
+  return db
+    .select({ id: posts.id, body: posts.body })
+    .from(posts)
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .where(
+      and(
+        eq(blogs.handle, handle),
+        isNull(blogs.deletedAt),
+        isNull(posts.deletedAt),
+        inArray(posts.id, [...visiblePostIds]),
+        like(posts.body, "%[[%"),
+      ),
+    );
+}
+
 /**
  * Fetch only the bounded full documents that can match a workspace search.
  * Access and token filtering happen in Postgres; callers perform their exact
@@ -3043,51 +3066,6 @@ export async function getFolderPosts(
   return getFolderPostsCached(handle, folderPath, opts.publishedOnly ?? false);
 }
 
-async function selectFullPosts(
-  handle: string,
-  publishedOnly: boolean,
-): Promise<Post[]> {
-  const rows = await db!
-    .select()
-    .from(posts)
-    .innerJoin(blogs, eq(posts.blogId, blogs.id))
-    .where(
-      publishedOnly
-        ? and(
-            eq(blogs.handle, handle),
-            eq(posts.visibility, "public"),
-            eq(posts.status, "published"),
-            ne(posts.type, "note"),
-            ne(posts.type, "bookmark"),
-            isNull(blogs.deletedAt),
-            isNull(posts.deletedAt),
-          )
-        : and(
-            eq(blogs.handle, handle),
-            isNull(blogs.deletedAt),
-            isNull(posts.deletedAt),
-          ),
-    )
-    .orderBy(
-      desc(posts.pinned),
-      publishedOnly ? desc(posts.publishedAt) : desc(posts.updatedAt),
-      desc(posts.createdAt),
-    );
-  const mapped = rows.map((r) => mapPost(r.posts));
-  return publishedOnly ? mapped.map(withoutPersonalWorkspaceMetadata) : mapped;
-}
-
-async function getAllPostFilesUncached(handle: string): Promise<Post[]> {
-  if (!db) throw new Error(NO_DATABASE);
-  return selectFullPosts(handle, false);
-}
-
-const getAllPostFilesCached = cache(getAllPostFilesUncached);
-
-export async function getAllPostFiles(handle: string): Promise<Post[]> {
-  return getAllPostFilesCached(handle);
-}
-
 async function getFolderPostFilesUncached(
   handle: string,
   folderPath: string,
@@ -3326,17 +3304,6 @@ export async function getAccessibleAllPosts(
 ): Promise<Post[]> {
   if (!db || !user) return [];
   const allPosts = await getAllPosts(handle);
-  const ids = await accessiblePostIdsForUser(handle, user);
-  if (ids === "all") return allPosts;
-  return allPosts.filter((post) => Boolean(post.id && ids.has(post.id)));
-}
-
-export async function getAccessibleAllPostFiles(
-  handle: string,
-  user: AccessUser | null,
-): Promise<Post[]> {
-  if (!db || !user) return [];
-  const allPosts = await getAllPostFiles(handle);
   const ids = await accessiblePostIdsForUser(handle, user);
   if (ids === "all") return allPosts;
   return allPosts.filter((post) => Boolean(post.id && ids.has(post.id)));

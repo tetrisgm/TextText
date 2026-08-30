@@ -16,8 +16,8 @@ const mocks = vi.hoisted(() => ({
   deletePostAtomic: vi.fn(),
   getAccessibleFolders: vi.fn(),
   getAccessibleAllPosts: vi.fn(),
-  getAccessibleAllPostFiles: vi.fn(),
   searchAccessibleWorkspacePostFiles: vi.fn(),
+  getAccessibleWorkspaceWikiLinkSources: vi.fn(),
   getAccessibleFolderPostFiles: vi.fn(),
   getBlog: vi.fn(),
   getDocumentTemplate: vi.fn(),
@@ -94,10 +94,11 @@ vi.mock("@/lib/store", () => ({
   createSubfolder: mocks.createSubfolder,
   deletePost: mocks.deletePost,
   deletePostAtomic: mocks.deletePostAtomic,
-  getAccessibleAllPostFiles: mocks.getAccessibleAllPostFiles,
   getAccessibleAllPosts: mocks.getAccessibleAllPosts,
   searchAccessibleWorkspacePostFiles:
     mocks.searchAccessibleWorkspacePostFiles,
+  getAccessibleWorkspaceWikiLinkSources:
+    mocks.getAccessibleWorkspaceWikiLinkSources,
   getAccessibleFolderCounts: vi.fn(async () => ({})),
   getAccessibleFolderPostFiles: mocks.getAccessibleFolderPostFiles,
   getAccessibleFolders: mocks.getAccessibleFolders,
@@ -223,7 +224,7 @@ describe("MCP workspace tool adapter", () => {
     mocks.resolveIdempotencyKey.mockResolvedValue(undefined);
     mocks.getAccessibleFolders.mockResolvedValue([]);
     mocks.getAccessibleAllPosts.mockResolvedValue([]);
-    mocks.getAccessibleAllPostFiles.mockResolvedValue([]);
+    mocks.getAccessibleWorkspaceWikiLinkSources.mockResolvedValue([]);
     mocks.getAccessibleFolderPostFiles.mockResolvedValue([]);
     mocks.getPostSlugAliases.mockResolvedValue({});
     mocks.getTrashedFolders.mockResolvedValue([]);
@@ -702,7 +703,7 @@ describe("MCP workspace tool adapter", () => {
       title: "Target",
     };
     mocks.getPostById.mockResolvedValue(post);
-    mocks.getAccessibleAllPostFiles.mockResolvedValue([
+    mocks.getAccessibleAllPosts.mockResolvedValue([
       post,
       target,
       {
@@ -710,6 +711,13 @@ describe("MCP workspace tool adapter", () => {
         id: "13131313-1313-4313-8313-131313131313",
         slug: "source",
         title: "Source",
+        body: "Links to [[tagged]].",
+      },
+    ]);
+    mocks.getAccessibleWorkspaceWikiLinkSources.mockResolvedValue([
+      { id: post.id, body: post.body },
+      {
+        id: "13131313-1313-4313-8313-131313131313",
         body: "Links to [[tagged]].",
       },
     ]);
