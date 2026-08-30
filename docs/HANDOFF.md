@@ -35,6 +35,44 @@ polish ledger.
 - Settings now has an integrations gallery showing TextText AI, Codex,
   Claude/Codex clients, and MCP connections without exposing provider secrets.
 
+## First-run and AI activation checkpoint (2026-08-30)
+
+- An owner whose workspace contains only the two private Documentation guides
+  now sees one dismissible Start here card on Library Home. It leads directly
+  to quick capture, the AI item-type studio, AI connection or a prefilled
+  project-tracker request, and the concise Welcome guide. It disappears after
+  the owner creates working content or dismisses it; existing workspaces do not
+  gain another onboarding surface.
+- The root assistant starters now demonstrate the product claim instead of
+  generic chat: sourced synthesis, a reusable project-tracker item type, and a
+  reviewable organization proposal. Trash exposes the already guarded Empty
+  Trash workflow.
+- Settings shows an honest connection inventory and exposes Verify connection
+  whenever the in-app assistant can run. The action returns to Home with the
+  canonical connection-proof prompt prefilled; it does not require a localhost
+  bridge or a separate diagnostic tool. The local Codex card appears only when
+  the standalone Mac host reports that capability; browser and Store surfaces
+  do not advertise a local runtime they cannot use.
+- Pending assistant proposals are counted across the entire owner workspace.
+  The closed launcher shows the count, and the open header exposes each chat
+  waiting for approval. Choosing one activates its durable conversation and
+  navigates back to the item or workspace place where the proposal began.
+- Release migrations update the two starter guides only when their title,
+  canonical note snapshot, and body hash still exactly match a previously
+  shipped version. A changed title, body, field, tag, asset, theme, template, or
+  concurrent revision leaves the user's guide untouched. New workspaces still
+  receive only Welcome to TextText and Connect an AI.
+- Observed in the signed-in `/@visual-demo` running build: the Settings
+  inventory rendered configured provider, client, MCP, and sign-in state plus
+  Verify connection; a fresh assistant chat rendered the three new workspace
+  workflows. The demo already contains working documents, so the empty-library
+  Start here condition is covered by the UI contract test rather than claimed
+  as observed there.
+- Verification passed: 210 web test files with 1,753 tests, 537 Swift tests,
+  the production Next build, the standalone Swift build, TypeScript, and lint
+  with zero errors. Existing lint warnings remain. No TestFlight build, store
+  upload, deployment, release record, or installation occurred.
+
 ## Current AI implementation handoff (2026-08-25)
 
 - The current source boundary is `4118c930` (`Finish guarded agentic

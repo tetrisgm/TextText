@@ -1044,6 +1044,14 @@ const STARTER_AGENT_GUIDES = [
   {
     slug: "welcome-to-texttext",
     title: "Welcome to TextText",
+    // Release migrations refresh only exact, previously shipped starter text.
+    // Add the outgoing body hash here before changing this guide again.
+    knownBodyHashes: [
+      "6d55b7f0e1a7f32728133ccee167180c9e446adaa5cd48421f8d301e76488c1f",
+      "2aa7c7ad7d26b45023a75089694378d27cee7046701775c180d601c758a54dd1",
+      "0287e6e47f8d07bc307d4a3c9f6b080aa27bb1c22999ac7603e353aa736a9e6c",
+      "c55d3c7e650b2941fe3c96477524e38e807f22c22af75a2c833a60e14eb9941e",
+    ],
     body: `TextText is a notes app you and your AI tools can work in together.
 
 Capture a thought, paste a link, or start writing. Your work stays in real documents that you can read, edit, share, and keep.
@@ -1082,6 +1090,11 @@ Open **Notes** to begin. Read **Connect an AI** when you want another AI tool to
   {
     slug: "connect-your-ai-tools",
     title: "Connect an AI",
+    knownBodyHashes: [
+      "a076b94e514f48d3268d51864397e9bdaff05ae3e3fd7bbd9ce79bc58dd08267",
+      "30954a3d74f05fa117116066a21f79b00c3e3ec673da60e4814ab22de753f6a5",
+      "a6339d329d5137a0b83c7ebed3e130051bf3fbf8d10fb966a83ee5baa6870543",
+    ],
     body: `Open **Settings → Connections**. TextText shows the connection methods available in your version of the app.
 
 - **TextText AI** adds an assistant beside your documents.
@@ -2733,11 +2746,13 @@ async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
 export async function backfillWorkspaceAgentGuides(): Promise<{
   workspaces: number;
   inserted: number;
+  updated: number;
 }> {
-  if (!db) return { workspaces: 0, inserted: 0 };
+  if (!db) return { workspaces: 0, inserted: 0, updated: 0 };
 
   const workspaceRows = await db.select({ id: blogs.id }).from(blogs);
   let inserted = 0;
+  let updated = 0;
 
   for (const workspace of workspaceRows) {
     const workspaceFolders = await ensureWorkspaceFolders(workspace.id);
@@ -2757,19 +2772,93 @@ export async function backfillWorkspaceAgentGuides(): Promise<{
       })
       .returning({ id: posts.id });
 
-    if (added.length > 0) {
-      inserted += added.length;
+    inserted += added.length;
+
+    const guideValues = starterAgentGuideValues(workspace.id, documentationFolder.id);
+    const guideBySlug = new Map<string, (typeof guideValues)[number]>(
+      guideValues.map((guide) => [guide.slug, guide]),
+    );
+    const starterBySlug = new Map<
+      string,
+      (typeof STARTER_AGENT_GUIDES)[number]
+    >(STARTER_AGENT_GUIDES.map((guide) => [guide.slug, guide]));
+    const existingGuides = await db
+      .select({
+        id: posts.id,
+        slug: posts.slug,
+        title: posts.title,
+        body: posts.body,
+        document: posts.document,
+        revision: posts.revision,
+      })
+      .from(posts)
+      .where(
+        and(
+          eq(posts.folderId, documentationFolder.id),
+          inArray(posts.slug, STARTER_AGENT_GUIDES.map((guide) => guide.slug)),
+          isNull(posts.deletedAt),
+        ),
+      );
+
+    let workspaceUpdated = 0;
+    for (const existing of existingGuides) {
+      const starter = starterBySlug.get(existing.slug);
+      const current = guideBySlug.get(existing.slug);
+      if (!starter || !current || existing.body === current.body) continue;
+
+      const content = existing.document.content;
+      const untouchedSnapshot =
+        existing.title === starter.title &&
+        content.title === existing.title &&
+        content.body === existing.body &&
+        content.subtitle === undefined &&
+        Object.keys(content.fields).length === 0 &&
+        content.tags.length === 0 &&
+        content.assets.length === 0 &&
+        existing.document.presentation.template.id === "texttext.note" &&
+        existing.document.presentation.template.version === 1 &&
+        Object.keys(existing.document.presentation.theme).length === 0;
+      const existingBodyHash = createHash("sha256")
+        .update(existing.body)
+        .digest("hex");
+      const knownBody = starter.knownBodyHashes.some(
+        (hash) => hash === existingBodyHash,
+      );
+      if (!untouchedSnapshot || !knownBody) continue;
+
+      const refreshed = await db
+        .update(posts)
+        .set({
+          document: current.document,
+          title: current.title,
+          body: current.body,
+          wordCount: current.wordCount,
+          revision: sql`nextval('texttext_change_seq')`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(posts.id, existing.id),
+            eq(posts.revision, existing.revision),
+          ),
+        )
+        .returning({ id: posts.id });
+      workspaceUpdated += refreshed.length;
+    }
+    updated += workspaceUpdated;
+
+    if (added.length > 0 || workspaceUpdated > 0) {
       await recordAction({
         actorType: "external_agent",
         actionName: "backfill_workspace_agent_guides",
         targetType: "workspace",
         targetId: workspace.id,
-        inputSummary: `${added.length} private AI guide notes`,
+        inputSummary: `${added.length} inserted, ${workspaceUpdated} refreshed private AI guide notes`,
       });
     }
   }
 
-  return { workspaces: workspaceRows.length, inserted };
+  return { workspaces: workspaceRows.length, inserted, updated };
 }
 
 // The system folder a post of this type belongs in. New blogs are provisioned

@@ -7,7 +7,7 @@ async function main() {
   const result = await backfillWorkspaceAgentGuides();
 
   console.log(
-    `AI guide notes: ${result.inserted} inserted across ${result.workspaces} workspaces`,
+    `AI guide notes: ${result.inserted} inserted, ${result.updated} refreshed across ${result.workspaces} workspaces`,
   );
 }
 
