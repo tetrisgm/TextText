@@ -267,24 +267,6 @@ function compatibilityTypeForTemplate(
   return "article";
 }
 
-function bookmarkUrlParts(rawUrl: string): { href: string; host: string } {
-  const raw = rawUrl.trim();
-  const candidates = [raw, `https://${raw}`];
-  for (const candidate of candidates) {
-    try {
-      const url = new URL(candidate);
-      if (url.protocol !== "http:" && url.protocol !== "https:") continue;
-      return {
-        href: url.toString(),
-        host: url.hostname.replace(/^www\./, ""),
-      };
-    } catch {
-      // Try the next forgiving candidate.
-    }
-  }
-  return { href: raw, host: raw };
-}
-
 // One empty state shape: a plain sentence and, when the reader may write
 // here, the single action that starts an item.
 function FolderEmptyCard({
@@ -1547,12 +1529,17 @@ function UniversalFolderContents({
                             src={cover}
                             muted
                             playsInline
-                            preload="metadata"
+                            preload="none"
                           />
                         ) : (
                           // User media can be remote, so plain img avoids config.
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={cover} alt="" decoding="async" />
+                          <img
+                            src={cover}
+                            alt=""
+                            decoding="async"
+                            loading="lazy"
+                          />
                         )}
                       </span>
                     )}

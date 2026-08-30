@@ -3668,6 +3668,7 @@ function BookmarkViewBody({ post }: { post: Post }) {
             src={tile.url}
             alt={tile.index === 0 ? `Full-page capture of ${title}` : ""}
             decoding="async"
+            loading={tile.index === 0 ? "eager" : "lazy"}
           />
         ))}
       </section>
