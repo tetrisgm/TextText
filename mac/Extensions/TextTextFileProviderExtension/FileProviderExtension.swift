@@ -117,8 +117,8 @@ public final class FileProviderExtension: NSObject,
     }
 
     public func invalidate() {
-        // Nothing long-lived to tear down: the API client is re-created per
-        // request and its URLSession is ephemeral.
+        // Nothing extension-owned to tear down: API clients are lightweight and
+        // share the process-wide session managed by LiveTextTextSyncAPI.
     }
 
     // MARK: Metadata

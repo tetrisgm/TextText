@@ -118,6 +118,13 @@ public struct TextTextAgentCommandReply: Decodable, Sendable {
 public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
     private static let syncDocumentContentType =
         "application/vnd.texttext.document+json"
+    private static let sharedSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 40
+        config.timeoutIntervalForResource = 120
+        config.httpAdditionalHeaders = ["User-Agent": "TextText-FileProvider"]
+        return URLSession(configuration: config)
+    }()
     private let origin: URL
     private let token: String
     private let session: URLSession
@@ -130,11 +137,7 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
         if let session {
             self.session = session
         } else {
-            let config = URLSessionConfiguration.ephemeral
-            config.timeoutIntervalForRequest = 40
-            config.timeoutIntervalForResource = 120
-            config.httpAdditionalHeaders = ["User-Agent": "TextText-FileProvider"]
-            self.session = URLSession(configuration: config)
+            self.session = Self.sharedSession
         }
     }
 
