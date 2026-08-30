@@ -28,8 +28,8 @@ import {
 } from "@/lib/markdown-files";
 import { parseItemInput } from "@/lib/item-creation";
 import {
-  ensurePostBody,
-  getCachedWorkspacePostBody,
+  ensurePostDocument,
+  getCachedWorkspacePostDocument,
   moveFolderToTrash,
   movePost,
   movePostToTrash,
@@ -38,7 +38,7 @@ import {
   restorePostFromTrash,
   updateFolder,
   updatePost,
-  updatePostBody,
+  updatePostDocument,
 } from "@/lib/pool/store";
 import {
   findPoolPostById,
@@ -220,15 +220,26 @@ function requestCreates(tag: string): Map<string, unknown> {
 }
 
 async function readBody(blogId: string, postId: string): Promise<string> {
-  const cached = getCachedWorkspacePostBody(blogId, postId);
-  if (cached) return cached.body;
-  await ensurePostBody(blogId, postId);
+  const cached = getCachedWorkspacePostDocument(blogId, postId);
+  if (cached) return cached.document.content.body;
+  await ensurePostDocument(blogId, postId);
   for (let attempt = 0; attempt < 40; attempt += 1) {
-    const entry = getCachedWorkspacePostBody(blogId, postId);
-    if (entry) return entry.body;
+    const entry = getCachedWorkspacePostDocument(blogId, postId);
+    if (entry) return entry.document.content.body;
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
   throw new Error("Could not load the item body");
+}
+
+function updateCachedBody(blogId: string, postId: string, body: string): void {
+  const cached = getCachedWorkspacePostDocument(blogId, postId);
+  if (!cached) {
+    throw new Error(`Cannot update item ${postId} before its document loads`);
+  }
+  updatePostDocument(blogId, postId, {
+    ...cached.document,
+    content: { ...cached.document.content, body },
+  });
 }
 
 function searchSnippet(text: string, query: string): string {
@@ -366,7 +377,7 @@ export function createWorkspaceAgentTools(
     };
     updatePost(poolPost.id, { title, excerpt, tags });
     if (patch.body !== undefined) {
-      updatePostBody(pool().blogId, poolPost.id, body);
+      updateCachedBody(pool().blogId, poolPost.id, body);
     }
     try {
       await runRemote("update_item", {
@@ -380,7 +391,7 @@ export function createWorkspaceAgentTools(
     } catch (error) {
       updatePost(poolPost.id, previousPost);
       if (patch.body !== undefined) {
-        updatePostBody(pool().blogId, poolPost.id, current.body);
+        updateCachedBody(pool().blogId, poolPost.id, current.body);
       }
       throw error;
     }
@@ -926,7 +937,7 @@ export function createWorkspaceAgentTools(
           : undefined;
         updatePost(input.id, optimistic);
         if (replacesWholeBody && input.body !== undefined) {
-          updatePostBody(pool().blogId, input.id, input.body);
+          updateCachedBody(pool().blogId, input.id, input.body);
         }
         let result: Record<string, unknown>;
         try {
@@ -934,7 +945,7 @@ export function createWorkspaceAgentTools(
         } catch (error) {
           updatePost(input.id, previousPost);
           if (previousBody !== undefined) {
-            updatePostBody(pool().blogId, input.id, previousBody);
+            updateCachedBody(pool().blogId, input.id, previousBody);
           }
           throw error;
         }
