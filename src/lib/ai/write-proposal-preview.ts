@@ -32,10 +32,15 @@ export type FrozenProposalPreview = {
   kind: "items";
   tool: WorkspaceToolName;
   items: FrozenItemPreview[];
+} | {
+  kind: "trash";
+  tool: WorkspaceToolName;
+  trashCount: number;
 };
 
 /** The sentence the owner is shown, built from the frozen preview. */
 export function describeFrozenPreview(preview: FrozenProposalPreview): string {
+  if (preview.kind === "trash") return `Permanently delete all ${preview.trashCount ?? 0} items and folders in Trash. This cannot be undone.`;
   const present = preview.items.filter((item) => !item.missing);
   const missing = preview.items.filter((item) => item.missing);
   const publicOnes = present.filter((item) => item.visibility === "public");
@@ -80,6 +85,7 @@ export function driftedItems(
     { title: string; folderPath: string; visibility: string; revision: number | null }
   >,
 ): string[] {
+  if (frozen.kind !== "items") return [];
   const drifted: string[] = [];
   for (const item of frozen.items) {
     if (item.missing) continue;

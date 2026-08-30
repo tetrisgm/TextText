@@ -40,6 +40,7 @@ import {
   requireDocumentSnapshot,
   validateDocumentSnapshot,
 } from "@/lib/documents/model";
+import { emptyTrash } from "@/lib/store";
 import {
   isLivingBrief,
   parseLivingBrief,
@@ -2789,6 +2790,14 @@ export async function executeMcpTool(
               .join(", ")}.`
           : `${moved.length} moved to Trash. All restorable.`,
       });
+    }
+
+    case "empty_trash": {
+      const resolved = await requireWorkspace(extra, true);
+      if (isToolResult(resolved)) return resolved;
+      if (!resolved.access.isOwner) return errorResult("Only the workspace owner can empty Trash.");
+      const removed = await emptyTrash(resolved.blog.handle);
+      return jsonResult({ removed, note: `Permanently deleted ${removed} trashed items.` });
     }
 
     case "restore_item": {

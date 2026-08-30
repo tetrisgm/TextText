@@ -896,6 +896,14 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     confirmation: "destructive",
     idempotent: true,
   }),
+  empty_trash: defineTool("empty_trash", {
+    title: "Empty Trash",
+    description: "Permanently delete every item and folder currently in Trash. This cannot be undone and always requires owner approval.",
+    inputSchema: z.object({}).strict(),
+    mutability: "write",
+    confirmation: "destructive",
+    idempotent: true,
+  }),
   restore_item: defineTool("restore_item", {
     title: "Restore item",
     description: "Restore one item from Trash with its previous status.",

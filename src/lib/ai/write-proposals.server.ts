@@ -20,7 +20,7 @@ import {
 } from "@/lib/ai/write-proposal-preview";
 import { WORKSPACE_TOOL_DEFINITIONS, type WorkspaceToolName } from "@/lib/ai/tools";
 import { runWorkspaceToolForSession } from "@/lib/mcp/tools";
-import { getFolders, getPostById, getTrashedPosts } from "@/lib/store";
+import { getFolders, getPostById, getTrashedFolders, getTrashedPosts } from "@/lib/store";
 import { getBlogEditRecord } from "@/lib/store";
 
 export type WorkspaceWriteProposalActor = {
@@ -417,6 +417,13 @@ export async function createWorkspaceWriteProposal(
   // the world still matches.
   let preview: FrozenProposalPreview | null = null;
   if (requiresFrozenPreview(validated.name)) {
+    if (validated.name === "empty_trash") {
+      const [posts, folders] = await Promise.all([
+        getTrashedPosts(owner.workspace.handle),
+        getTrashedFolders(owner.workspace.handle),
+      ]);
+      preview = { kind: "trash", tool: validated.name, trashCount: posts.length + folders.length };
+    } else {
     const singleId = (validated.arguments as { id?: unknown }).id;
     const ids = typeof singleId === "string"
       ? [singleId]
@@ -451,6 +458,7 @@ export async function createWorkspaceWriteProposal(
             };
       }),
     };
+    }
   }
   await dependencies.repository.create({
     id,
@@ -621,7 +629,17 @@ export async function decideWorkspaceWriteProposal(
         "That change cannot be approved because what it would do was not recorded when it was offered. Ask again.",
     };
   }
-  if (frozen?.kind === "items") {
+  if (frozen?.kind === "trash") {
+    const [posts, folders] = await Promise.all([
+      getTrashedPosts(owner.workspace.handle),
+      getTrashedFolders(owner.workspace.handle),
+    ]);
+    const count = posts.length + folders.length;
+    if (count !== frozen.trashCount) {
+      await dependencies.repository.fail(input.proposalId, owner.binding, "state_drifted", dependencies.now());
+      return { status: "failed", proposalId: input.proposalId, message: "Trash changed since approval was offered, so nothing was permanently deleted. Ask again to review the current Trash." };
+    }
+  } else if (frozen?.kind === "items") {
     const current = await dependencies.resolveItems(
       owner.workspace.handle,
       frozen.items.map((item) => item.id),
