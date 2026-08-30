@@ -108,5 +108,15 @@ final class WorkspaceIntentServerBackedTests: XCTestCase {
                 item: item, folder: archive, workspace: workspace),
             AppDelegate.spotlightSignature(
                 item: item, folder: archive, workspace: renamed))
+
+        let rehandled = Workspace(
+            blog: WorkspaceBlog(
+                handle: "renamed-handle", name: "Demo", username: nil),
+            folders: workspace.folders)
+        XCTAssertNotEqual(
+            AppDelegate.spotlightSignature(
+                item: item, folder: archive, workspace: workspace),
+            AppDelegate.spotlightSignature(
+                item: item, folder: archive, workspace: rehandled))
     }
 }

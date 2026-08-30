@@ -1,21 +1,44 @@
 import CoreSpotlight
 import Foundation
 import UniformTypeIdentifiers
-import TextTextWorkspaceCore
 
 public struct WorkspaceSpotlightDocument: Equatable {
     public var textTextId: String
-    public var entry: IndexEntry
+    public var workspaceHandle: String
+    public var title: String
+    public var kind: String
+    public var status: String
+    public var canonicalURL: String?
     public var relativePath: String
     public var fileURL: URL
-    public var markdown: String
+    public var textContent: String
+    public var keywords: [String]
+    public var modifiedAt: Date?
 
-    public init(textTextId: String, entry: IndexEntry, relativePath: String, fileURL: URL, markdown: String) {
+    public init(
+        textTextId: String,
+        workspaceHandle: String,
+        title: String,
+        kind: String,
+        status: String,
+        canonicalURL: String? = nil,
+        relativePath: String,
+        fileURL: URL,
+        textContent: String = "",
+        keywords: [String] = [],
+        modifiedAt: Date? = nil
+    ) {
         self.textTextId = textTextId
-        self.entry = entry
+        self.workspaceHandle = workspaceHandle
+        self.title = title
+        self.kind = kind
+        self.status = status
+        self.canonicalURL = canonicalURL
         self.relativePath = relativePath
         self.fileURL = fileURL
-        self.markdown = markdown
+        self.textContent = textContent
+        self.keywords = keywords
+        self.modifiedAt = modifiedAt
     }
 }
 
@@ -68,7 +91,7 @@ public final class WorkspaceSpotlightIndexer {
     }
 
     public static func searchableItem(for document: WorkspaceSpotlightDocument) -> CSSearchableItem? {
-        guard !WorkspaceLayout.isInternal(relativePath: document.relativePath) else { return nil }
+        guard !isInternal(relativePath: document.relativePath) else { return nil }
         let attributes = attributeSet(for: document)
         let item = CSSearchableItem(
             uniqueIdentifier: document.textTextId,
@@ -80,49 +103,40 @@ public final class WorkspaceSpotlightIndexer {
     }
 
     public static func attributeSet(for document: WorkspaceSpotlightDocument) -> CSSearchableItemAttributeSet {
-        let parsed = SpotlightParsedMarkdown(markdown: document.markdown)
-        let title = parsed.frontMatter["title"] ?? document.fileURL.deletingPathExtension().lastPathComponent
-        let kind = document.entry.kind ?? parsed.frontMatter["kind"] ?? parsed.frontMatter["type"] ?? "document"
         let folderPath = deletingLastPathComponent(document.relativePath)
-        let blogHandle = blogHandle(for: document.relativePath)
-        let status = parsed.frontMatter["status"] ?? "draft"
-        let publishedURL = parsed.frontMatter["published_url"]
-            ?? parsed.frontMatter["canonical_url"]
-            ?? parsed.frontMatter["url"]
-        let modifiedDate = document.entry.fileMtime.map(Date.init(timeIntervalSince1970:))
 
         let attributes = CSSearchableItemAttributeSet(contentType: .plainText)
-        attributes.title = title
-        attributes.displayName = title
-        attributes.subject = title
-        attributes.contentDescription = parsed.body
-        attributes.textContent = parsed.body
+        attributes.title = document.title
+        attributes.displayName = document.title
+        attributes.subject = document.title
+        attributes.contentDescription = document.textContent
+        attributes.textContent = document.textContent
         attributes.contentType = UTType.plainText.identifier
         attributes.contentURL = document.fileURL
         attributes.path = document.fileURL.path
         attributes.relatedUniqueIdentifier = document.textTextId
-        attributes.metadataModificationDate = modifiedDate
-        attributes.contentModificationDate = modifiedDate
-        attributes.kind = kind
+        attributes.metadataModificationDate = document.modifiedAt
+        attributes.contentModificationDate = document.modifiedAt
+        attributes.kind = document.kind
         attributes.creator = "TextText"
         attributes.containerIdentifier = folderPath
         attributes.containerTitle = folderPath
         attributes.url = URL(string: "texttext-app://item/\(document.textTextId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? document.textTextId)")
 
         var keywords = Set<String>()
-        keywords.insert(kind)
-        keywords.insert(status)
+        keywords.insert(document.kind)
+        keywords.insert(document.status)
         if !folderPath.isEmpty { keywords.insert(folderPath) }
-        if let blogHandle { keywords.insert(blogHandle) }
-        for tag in parsed.tags {
-            keywords.insert(tag)
+        if !document.workspaceHandle.isEmpty { keywords.insert(document.workspaceHandle) }
+        for keyword in document.keywords where !keyword.isEmpty {
+            keywords.insert(keyword)
         }
         attributes.keywords = Array(keywords).sorted()
 
-        setCustomValue(blogHandle, key: CustomKeys.blogHandle, attributes: attributes)
+        setCustomValue(document.workspaceHandle, key: CustomKeys.blogHandle, attributes: attributes)
         setCustomValue(folderPath, key: CustomKeys.folderPath, attributes: attributes)
-        setCustomValue(status, key: CustomKeys.publicationState, attributes: attributes)
-        setCustomValue(publishedURL, key: CustomKeys.publishedURL, attributes: attributes)
+        setCustomValue(document.status, key: CustomKeys.publicationState, attributes: attributes)
+        setCustomValue(document.canonicalURL, key: CustomKeys.publishedURL, attributes: attributes)
         return attributes
     }
 
@@ -138,77 +152,13 @@ public final class WorkspaceSpotlightIndexer {
         attributes.setValue(value as NSString, forCustomKey: key)
     }
 
-    private static func blogHandle(for relativePath: String) -> String? {
-        let parts = relativePath.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
-        guard parts.count >= 2, parts[0] == "Blogs" else { return nil }
-        return parts[1]
+    private static func isInternal(relativePath: String) -> Bool {
+        let first = relativePath.split(separator: "/", omittingEmptySubsequences: true).first
+        return first == ".texttext" || first == ".texttext-local.nosync"
     }
 
     private static func deletingLastPathComponent(_ path: String) -> String {
         let value = (path as NSString).deletingLastPathComponent
         return value == "." ? "" : value
-    }
-}
-
-private struct SpotlightParsedMarkdown {
-    var frontMatter: [String: String]
-    var body: String
-    var tags: [String]
-
-    init(markdown: String) {
-        guard markdown.hasPrefix("---\n") || markdown.hasPrefix("---\r\n"),
-              let firstBreak = markdown.firstIndex(of: "\n") else {
-            self.frontMatter = [:]
-            self.body = markdown
-            self.tags = []
-            return
-        }
-        var cursor = markdown.index(after: firstBreak)
-        var values: [String: String] = [:]
-        while cursor < markdown.endIndex {
-            let lineStart = cursor
-            let nextBreak = markdown[cursor...].firstIndex(of: "\n") ?? markdown.endIndex
-            let rawLine = markdown[lineStart..<nextBreak]
-            let line = rawLine.last == "\r" ? rawLine.dropLast() : rawLine[...]
-            if line.trimmingCharacters(in: .whitespaces) == "---" {
-                let bodyStart = nextBreak == markdown.endIndex ? markdown.endIndex : markdown.index(after: nextBreak)
-                self.frontMatter = values
-                self.body = String(markdown[bodyStart...]).trimmingCharacters(in: .newlines)
-                self.tags = Self.parseTags(values["tags"] ?? values["keywords"])
-                return
-            }
-            if let colon = line.firstIndex(of: ":") {
-                let key = line[..<colon].trimmingCharacters(in: .whitespaces)
-                let rawValue = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
-                if !key.isEmpty { values[key] = Self.parseValue(rawValue) }
-            }
-            cursor = nextBreak == markdown.endIndex ? markdown.endIndex : markdown.index(after: nextBreak)
-        }
-        self.frontMatter = values
-        self.body = markdown
-        self.tags = Self.parseTags(values["tags"] ?? values["keywords"])
-    }
-
-    private static func parseValue(_ raw: String) -> String {
-        if let data = raw.data(using: .utf8),
-           let string = try? JSONSerialization.jsonObject(with: data) as? String {
-            return string
-        }
-        return raw.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-    }
-
-    private static func parseTags(_ raw: String?) -> [String] {
-        guard let raw else { return [] }
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.hasPrefix("["),
-           trimmed.hasSuffix("]"),
-           let data = trimmed.data(using: .utf8),
-           let tags = try? JSONSerialization.jsonObject(with: data) as? [String] {
-            return tags
-        }
-        return trimmed
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
     }
 }

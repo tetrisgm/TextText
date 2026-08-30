@@ -1294,10 +1294,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                     item: item, folder: folder, workspace: workspace,
                     foldersById: foldersById)
                 documents.append(makeSpotlightDocument(
-                    item: item, folder: folder, relativePath: relativePath,
-                    mountRoot: mountRoot))
+                    item: item, workspaceHandle: workspace.blog.handle,
+                    relativePath: relativePath, mountRoot: mountRoot))
                 signatures[id] = Self.spotlightSignature(
-                    item: item, folder: folder, relativePath: relativePath)
+                    item: item, folder: folder,
+                    workspaceHandle: workspace.blog.handle,
+                    relativePath: relativePath)
             }
         }
 
@@ -1329,33 +1331,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         }
     }
 
-    /// Build a Spotlight document from a manifest item. Its markdown is the
-    /// frontmatter the indexer expects, synthesized from the authoritative
-    /// manifest (title/kind/status/slug); a Spotlight click routes by textTextId to
-    /// openTextTextItem(id:), so no on-disk body or resolved URL is required.
+    /// Build typed Spotlight metadata directly from the authoritative manifest.
+    /// A Spotlight click routes by textTextId to openTextTextItem(id:), so no
+    /// on-disk body or resolved URL is required.
     private func makeSpotlightDocument(
-        item: ManifestItem, folder: WorkspaceFolder, relativePath: String,
-        mountRoot: URL?
+        item: ManifestItem, workspaceHandle: String,
+        relativePath: String, mountRoot: URL?
     ) -> WorkspaceSpotlightDocument {
         let fileURL = (mountRoot ?? URL(fileURLWithPath: "/"))
             .appendingPathComponent(relativePath)
-        let markdown = """
-        ---
-        title: \(jsonEncodedString(item.title))
-        kind: \(jsonEncodedString(item.kind))
-        status: \(jsonEncodedString(item.status))
-        slug: \(jsonEncodedString(item.slug))
-        canonical_url: \(jsonEncodedString(item.canonicalUrl ?? ""))
-        ---
-        """
         return WorkspaceSpotlightDocument(
             textTextId: item.id ?? "",
-            entry: IndexEntry(
-                hash: item.hash, relativePath: relativePath,
-                fileMtime: nil, folderId: folder.id, kind: item.kind),
+            workspaceHandle: workspaceHandle,
+            title: item.title,
+            kind: item.kind,
+            status: item.status,
+            canonicalURL: item.canonicalUrl,
             relativePath: relativePath,
-            fileURL: fileURL,
-            markdown: markdown)
+            fileURL: fileURL)
     }
 
     /// Spotlight metadata changes when an item moves even if its Markdown hash
@@ -1366,16 +1359,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     ) -> String {
         spotlightSignature(
             item: item, folder: folder,
+            workspaceHandle: workspace.blog.handle,
             relativePath: spotlightRelativePath(
                 item: item, folder: folder, workspace: workspace))
     }
 
     private static func spotlightSignature(
-        item: ManifestItem, folder: WorkspaceFolder, relativePath: String
+        item: ManifestItem, folder: WorkspaceFolder,
+        workspaceHandle: String, relativePath: String
     ) -> String {
         [
             item.hash, item.title, item.kind, item.status, item.slug,
-            item.canonicalUrl ?? "", folder.id, relativePath,
+            item.canonicalUrl ?? "", folder.id, workspaceHandle, relativePath,
         ].map { "\($0.utf8.count):\($0)" }.joined()
     }
 
@@ -1410,12 +1405,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         let workspaceName = TextTextFilename.encodeComponent(workspace.blog.name)
         return ([workspaceName] + Array(chain.reversed()) + [filename])
             .joined(separator: "/")
-    }
-
-    private func jsonEncodedString(_ value: String) -> String {
-        if let data = try? JSONEncoder().encode(value),
-           let string = String(data: data, encoding: .utf8) { return string }
-        return "\"\(value)\""
     }
 
     /// Main thread. Resolution happens off-main and only through the known

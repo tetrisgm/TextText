@@ -76,7 +76,6 @@ let package = Package(
         ),
         .target(
             name: "TextTextSpotlight",
-            dependencies: ["TextTextWorkspaceCore"],
             path: "Sources/TextTextSpotlight"
         ),
         .target(
