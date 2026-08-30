@@ -22,6 +22,7 @@ import { WORKSPACE_TOOL_DEFINITIONS, type WorkspaceToolName } from "@/lib/ai/too
 import { runWorkspaceToolForSession } from "@/lib/mcp/tools";
 import { getFolders, getPostById, getTrashedFolders, getTrashedPosts } from "@/lib/store";
 import { getBlogEditRecord } from "@/lib/store";
+import { listScopeShares } from "@/lib/shares";
 
 export type WorkspaceWriteProposalActor = {
   sub: string;
@@ -150,6 +151,7 @@ export type WorkspaceWriteProposalDependencies = {
   ): Promise<
     Map<string, { title: string; folderPath: string; visibility: "public" | "private"; revision: number | null }>
   >;
+  resolveAccess?(scopeType: string, scopeId: string): Promise<Array<{ id: string; email: string; role: string }>>;
 };
 
 type WorkspaceWriteProposalDecision =
@@ -374,6 +376,7 @@ const defaultDependencies: WorkspaceWriteProposalDependencies = {
   now: () => new Date(),
   randomId: randomUUID,
   resolveItems: resolveProposalItems,
+  resolveAccess: async (scopeType, scopeId) => listScopeShares(scopeType as never, scopeId),
 };
 
 async function proposalBinding(
@@ -423,6 +426,11 @@ export async function createWorkspaceWriteProposal(
         getTrashedFolders(owner.workspace.handle),
       ]);
       preview = { kind: "trash", tool: validated.name, trashCount: posts.length + folders.length };
+    } else if (validated.name === "set_access" || validated.name === "revoke_access") {
+      const a = validated.arguments as { scope_type: string; scope_id: string; email?: string; role?: string; access_id?: string };
+      const shares = await (dependencies.resolveAccess?.(a.scope_type, a.scope_id) ?? []);
+      const target = a.access_id ? shares.find((s) => s.id === a.access_id) : shares.find((s) => s.email.toLowerCase() === a.email?.toLowerCase());
+      preview = { kind: "access", tool: validated.name, scopeType: a.scope_type, scopeId: a.scope_id, email: a.email ?? target?.email, role: a.role, accessId: a.access_id ?? target?.id, currentRole: target?.role, fingerprint: JSON.stringify(shares.map((s) => [s.id, s.email, s.role])) };
     } else {
     const singleId = (validated.arguments as { id?: unknown }).id;
     const ids = typeof singleId === "string"
@@ -615,7 +623,7 @@ export async function decideWorkspaceWriteProposal(
   // Fails closed. A command that must be shown before it runs, arriving with
   // no preview or an unreadable one, was simply skipping the check: the drift
   // block only ran when the metadata happened to parse.
-  if (requiresFrozenPreview(validated.name) && frozen?.kind !== "items") {
+  if (requiresFrozenPreview(validated.name) && frozen?.kind !== "items" && frozen?.kind !== "access" && frozen?.kind !== "trash") {
     await dependencies.repository.fail(
       input.proposalId,
       owner.binding,
@@ -629,7 +637,16 @@ export async function decideWorkspaceWriteProposal(
         "That change cannot be approved because what it would do was not recorded when it was offered. Ask again.",
     };
   }
-  if (frozen?.kind === "trash") {
+  if (frozen?.kind === "access") {
+    const a = validated.arguments as { scope_type: string; scope_id: string; access_id?: string; email?: string };
+    const shares = await (dependencies.resolveAccess?.(a.scope_type, a.scope_id) ?? []);
+    const fingerprint = JSON.stringify(shares.map((s) => [s.id, s.email, s.role]));
+    const target = a.access_id ? shares.find((s) => s.id === a.access_id) : shares.find((s) => s.email.toLowerCase() === a.email?.toLowerCase());
+    if (fingerprint !== frozen.fingerprint || !target || (frozen.tool === "set_access" && target.role !== frozen.currentRole)) {
+      await dependencies.repository.fail(input.proposalId, owner.binding, "state_drifted", dependencies.now());
+      return { status: "failed", proposalId: input.proposalId, message: "The access list changed since approval was offered, so nothing was changed. Ask again to review the current access." };
+    }
+  } else if (frozen?.kind === "trash") {
     const [posts, folders] = await Promise.all([
       getTrashedPosts(owner.workspace.handle),
       getTrashedFolders(owner.workspace.handle),

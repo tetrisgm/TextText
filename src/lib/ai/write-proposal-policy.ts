@@ -50,7 +50,7 @@ export class WriteProposalValidationError extends Error {
  * return an item to public; and the two commands that fetch a URL the model
  * chose, where approval does not make the fetch safe.
  */
-const PREVIEWABLE_DESTRUCTIVE: readonly WorkspaceToolName[] = ["delete_items", "set_item_status", "restore_item", "empty_trash"];
+const PREVIEWABLE_DESTRUCTIVE: readonly WorkspaceToolName[] = ["delete_items", "set_item_status", "restore_item", "empty_trash", "set_access", "revoke_access"];
 
 export function isProposableWorkspaceWrite(
   name: WorkspaceToolName,

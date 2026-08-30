@@ -36,11 +36,27 @@ export type FrozenProposalPreview = {
   kind: "trash";
   tool: WorkspaceToolName;
   trashCount: number;
+} | {
+  kind: "access";
+  tool: WorkspaceToolName;
+  scopeType: string;
+  scopeId: string;
+  email?: string;
+  role?: string;
+  accessId?: string;
+  currentRole?: string;
+  /** Fingerprint of the access list at staging time. */
+  fingerprint: string;
 };
 
 /** The sentence the owner is shown, built from the frozen preview. */
 export function describeFrozenPreview(preview: FrozenProposalPreview): string {
   if (preview.kind === "trash") return `Permanently delete all ${preview.trashCount ?? 0} items and folders in Trash. This cannot be undone.`;
+  if (preview.kind === "access") {
+    const target = `${preview.scopeType} ${preview.scopeId}`;
+    if (preview.tool === "revoke_access") return `Remove ${preview.email ? `"${preview.email}"` : "this person's"} access to ${target}. The change takes effect immediately.`;
+    return `Give ${preview.email ? `"${preview.email}"` : "this person"} ${preview.role} access to ${target}. The change takes effect immediately.`;
+  }
   const present = preview.items.filter((item) => !item.missing);
   const missing = preview.items.filter((item) => item.missing);
   const publicOnes = present.filter((item) => item.visibility === "public");
