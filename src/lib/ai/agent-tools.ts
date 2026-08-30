@@ -1051,6 +1051,12 @@ export function createWorkspaceAgentTools(
         return { ok: true, ...result };
       }
 
+      case "empty_trash": {
+        const result = await runRemote("empty_trash", {});
+        await refreshPoolAfterMutation();
+        return { ok: true, ...result };
+      }
+
       case "organize_items": {
         const input = args as WorkspaceToolInput<"organize_items">;
         for (const itemId of input.ids) requirePost(itemId);

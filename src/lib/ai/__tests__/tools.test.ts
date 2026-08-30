@@ -34,6 +34,7 @@ const EXPECTED_NAMES = [
   "organize_items",
   "delete_item",
   "delete_items",
+  "empty_trash",
   "restore_item",
   "add_item_asset",
   "remove_item_asset",
@@ -62,6 +63,7 @@ const DESTRUCTIVE_TOOLS = new Set([
   "recapture_bookmark",
   "remove_item_asset",
   "retire_document_template",
+  "empty_trash",
 ]);
 
 const IDEMPOTENT_WRITES = new Set([
@@ -80,9 +82,11 @@ const IDEMPOTENT_WRITES = new Set([
   "set_folder_template",
   "retire_document_template",
   "set_item_template",
+  "empty_trash",
 ]);
 
 const CONFIRMED_TOOLS = new Set([
+  "empty_trash",
   "delete_items",
   "delete_folder",
   "restore_folder",
