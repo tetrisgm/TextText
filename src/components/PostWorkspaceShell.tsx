@@ -15,6 +15,7 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
   createFolderItemAction,
@@ -53,14 +54,12 @@ import {
 } from "@/components/PostActionBar";
 import { TagChips } from "@/components/TagChips";
 import { FolderLookPicker } from "@/components/workspace/FolderLookPicker";
-import { ItemTypeStudio } from "@/components/workspace/ItemTypeStudio";
 import { UpdatedBuildNotice } from "@/components/workspace/UpdatedBuildNotice";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import { ReaderComments } from "@/components/workspace/ReaderComments";
 import { ReaderFindHighlights } from "@/components/workspace/ReaderFindHighlights";
 import { WorkspaceActionSearch } from "@/components/workspace/WorkspaceActionSearch";
 import { WorkspaceMenuMount } from "@/components/workspace/WorkspaceMenuMount";
-import { WorkspaceSettings } from "@/components/workspace/WorkspaceSettings";
 import { SharedWithMe } from "@/components/workspace/SharedWithMe";
 import { WorkspaceSearchButton } from "@/components/workspace/WorkspaceSearchButton";
 import {
@@ -69,6 +68,18 @@ import {
 } from "@/components/workspace/WorkspaceItemActions";
 import { WorkspaceItemThumbnail } from "@/components/workspace/WorkspaceItemThumbnail";
 import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
+
+const ItemTypeStudio = dynamic(() =>
+  import("@/components/workspace/ItemTypeStudio").then(
+    (module) => module.ItemTypeStudio,
+  ),
+);
+
+const WorkspaceSettings = dynamic(() =>
+  import("@/components/workspace/WorkspaceSettings").then(
+    (module) => module.WorkspaceSettings,
+  ),
+);
 
 type TrashApiOperation =
   | "empty"
