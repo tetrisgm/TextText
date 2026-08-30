@@ -20,6 +20,7 @@ import { resolveCoverSource } from "@/lib/cover";
 import { blogPostPath } from "@/lib/public-paths";
 import { WORKSPACE_ITEM_TYPE_LABELS } from "@/lib/workspace-item-presentation";
 import { postSubtitle } from "@/lib/markdown-subtitle";
+import { shouldActivateVideoCover } from "@/lib/video-cover-policy";
 
 function PlayBadge() {
   return (
@@ -84,7 +85,11 @@ export function PostCard({
   variant?: "card" | "expanded";
 }) {
   const ref = useRef<HTMLAnchorElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const [videoReady, setVideoReady] = useState(false);
+  const [videoNearViewport, setVideoNearViewport] = useState(false);
+  const [pageVisible, setPageVisible] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(false);
   const [hovered, setHovered] = useState(false);
 
   const title = postTitle(post);
@@ -99,11 +104,66 @@ export function PostCard({
   const showPinned = Boolean(post.pinned);
 
   const attachVideo = useCallback((node: HTMLVideoElement | null) => {
+    videoRef.current = node;
     if (node) {
       node.muted = true;
       node.defaultMuted = true;
     }
   }, []);
+
+  useEffect(() => {
+    if (!isVideoCover) return;
+    const card = ref.current;
+    if (!card) return;
+    if (typeof IntersectionObserver === "undefined") {
+      const fallback = window.setTimeout(() => setVideoNearViewport(true), 0);
+      return () => window.clearTimeout(fallback);
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => setVideoNearViewport(Boolean(entry?.isIntersecting)),
+      { rootMargin: "500px 0px" },
+    );
+    observer.observe(card);
+    return () => observer.disconnect();
+  }, [isVideoCover]);
+
+  useEffect(() => {
+    if (!isVideoCover) return;
+    const update = () => setPageVisible(document.visibilityState !== "hidden");
+    update();
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, [isVideoCover]);
+
+  useEffect(() => {
+    if (!isVideoCover) return;
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReducedMotion(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, [isVideoCover]);
+
+  const videoActive = shouldActivateVideoCover({
+    nearViewport: videoNearViewport,
+    pageVisible,
+    reducedMotion,
+  });
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    setVideoReady(false);
+    if (!videoActive) {
+      video.pause();
+      video.load();
+      return;
+    }
+    video.load();
+    void video.play().catch(() => {
+      // The cover remains a still media surface if autoplay is unavailable.
+    });
+  }, [videoActive]);
 
   // Desktop hover tilt: ease the tilt toward the cursor every animation frame (a
   // lerp), with no CSS transition. This tracks tightly and stays smooth between
@@ -274,15 +334,17 @@ export function PostCard({
                     ref={attachVideo}
                     className="tvcard-cover"
                     data-ready={videoReady ? "true" : undefined}
-                    autoPlay
+                    autoPlay={videoActive}
                     muted
                     loop
                     playsInline
-                    preload="auto"
+                    preload={videoActive ? "metadata" : "none"}
                     aria-hidden="true"
                     onCanPlay={() => setVideoReady(true)}
                   >
-                    <source src={cover} type={videoMimeType(cover)} />
+                    {videoActive && (
+                      <source src={cover} type={videoMimeType(cover)} />
+                    )}
                   </video>
                 ) : (
                   // User media can be remote, so plain img avoids next/image config.
