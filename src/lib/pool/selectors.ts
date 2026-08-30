@@ -50,7 +50,7 @@ export function narrowPostFromPost(
     excerpt: postSubtitle(post) || undefined,
     bodyPreview:
       post.bodyPreview ??
-      (post.type === "note" ? post.body : post.body.slice(0, 2048) || undefined),
+      (post.body.slice(0, 2048) || undefined),
     accent: post.accent,
     cover: post.cover,
     coverCaption: post.coverCaption,
@@ -154,11 +154,6 @@ export function workspacePoolFromParts({
   outboundLinks?: WorkspacePoolPayload["outboundLinks"];
   slugAliases?: WorkspacePoolPayload["slugAliases"];
 }): WorkspacePoolPayload {
-  const initialBodies = posts.flatMap((post) =>
-    post.id && post.type === "note"
-      ? [{ postId: post.id, body: post.body, updatedAt: post.updatedAt }]
-      : [],
-  );
   return {
     version: 1,
     blogId,
@@ -174,7 +169,7 @@ export function workspacePoolFromParts({
     trashedFolders,
     sharedEntries,
     templates,
-    initialBodies,
+    initialBodies: [],
     outboundLinks,
     slugAliases,
     fetchedAt: new Date().toISOString(),

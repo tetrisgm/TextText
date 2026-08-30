@@ -36,6 +36,20 @@ const blog: Blog = {
 };
 
 describe("wikilink extraction and backlinks", () => {
+  it("keeps the workspace pool body warm-up empty and previews bounded", () => {
+    const body = "n".repeat(10_000);
+    const pool = workspacePoolFromParts({
+      blog,
+      blogId: "blog-1",
+      counts: {},
+      folders: [],
+      posts: [post({ id: "note", type: "note", body })],
+    });
+
+    expect(pool.initialBodies).toEqual([]);
+    expect(pool.posts[0]?.bodyPreview).toHaveLength(2048);
+  });
+
   it("extracts prose links while ignoring inline and fenced code", () => {
     const markdown = [
       "See [[field-notes|Field notes]] and [[next-step]].",
