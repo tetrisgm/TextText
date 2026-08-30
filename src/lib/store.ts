@@ -1050,6 +1050,25 @@ Capture a thought, paste a link, or start writing. Your work stays in real docum
 
 A connected AI can find those documents, improve them, organize them, or keep one current while you work together. Its changes appear in TextText. Risky actions wait for your approval, and ordinary deletes go to Trash.
 
+## Make the kind of item you need
+
+Start with a note, bookmark, article, gallery, or talk. Or describe your own reusable item type:
+
+> Make a recipe type with ingredients, steps, prep time, and a photo. Show the folder as a card collection.
+
+> Make a project tracker with status, owner, priority, and due date. Group the folder by status.
+
+The AI creates the fields, writing page, and folder view together. You can keep refining the same type by asking for changes.
+
+## Ask the AI to do the work
+
+- Capture a thought, link, conversation, or source as a document.
+- Find and read related items, then summarize or compare them.
+- Write, rewrite, append, retitle, tag, highlight, or move content.
+- Apply the same organization change to several named items.
+- Build or revise an item type and its look.
+- Publish, share, restore, or empty Trash after you approve the preview.
+
 Try asking:
 
 > Save this conversation as a note and tell me where you put it.
