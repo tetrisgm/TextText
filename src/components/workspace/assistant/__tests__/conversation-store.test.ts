@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   activateAssistantConversation,
   activeAssistantConversation,
+  activeAssistantConversationId,
   appendAssistantConversationMessage,
   assistantConversationMessages,
   assistantConversationSyncPayload,
@@ -107,6 +108,10 @@ describe("assistant conversation history", () => {
     browserStorage();
     const first = activeAssistantConversation("writer", "folder:drafts");
     expect(first).not.toBeNull();
+    const controllerId = activeAssistantConversationId(
+      "writer",
+      "folder:drafts",
+    );
     appendAssistantConversationMessage("writer", first!.id, {
       id: "first-user",
       role: "user",
@@ -117,6 +122,9 @@ describe("assistant conversation history", () => {
       role: "assistant",
       text: "The middle section repeats the positioning claim.",
     });
+    expect(activeAssistantConversationId("writer", "folder:drafts")).toBe(
+      controllerId,
+    );
 
     const secondId = createAssistantConversation("writer", "folder:drafts");
     appendAssistantConversationMessage("writer", secondId, {
@@ -126,6 +134,9 @@ describe("assistant conversation history", () => {
     });
 
     expect(secondId).not.toBe(first!.id);
+    expect(activeAssistantConversationId("writer", "folder:drafts")).toBe(
+      secondId,
+    );
     expect(activeAssistantConversation("writer", "folder:drafts")?.id).toBe(
       secondId,
     );

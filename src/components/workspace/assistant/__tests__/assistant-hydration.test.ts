@@ -23,6 +23,10 @@ vi.mock("@/app/editor/agent-skill-metadata-actions", () => ({
 }));
 
 import { AssistantSidebar } from "@/components/workspace/assistant/AssistantSidebar";
+import {
+  AssistantConversationState,
+  type AssistantConversationView,
+} from "@/components/workspace/assistant/AssistantConversationState";
 import { useNativeAssistant } from "@/components/workspace/assistant/useNativeAssistant";
 import { resetAssistantConversationStore } from "@/components/workspace/assistant/conversation-store";
 
@@ -37,19 +41,30 @@ function HydrationTranscriptSidebar() {
     applyItemPatch: () => {},
   });
 
-  return React.createElement(AssistantSidebar, {
-    state: "pinned",
-    onStateChange: () => {},
-    width: 360,
-    onWidthChange: () => {},
-    composerValue: "Draft kept while access resolves",
-    onComposerChange: () => {},
-    onSubmit: () => {},
-    onFilesSelected: () => {},
-    onRemoveAttachment: () => {},
-    onNewConversation: assistant.startNewConversation,
-    hasConversation: assistant.messages.length > 0,
-    submitDisabled: !assistant.ownerScopeReady,
+  // A render function is the state boundary's public child API. This test is
+  // plain `.ts`, so JSX cannot express it as nested content.
+  // eslint-disable-next-line react/no-children-prop
+  return React.createElement(AssistantConversationState, {
+    activeConversationId: assistant.activeConversationId,
+    contextKey: assistant.conversationContextKey,
+    handle: "hydration-writer",
+    ownerScopeReady: assistant.ownerScopeReady,
+    storeKey: assistant.conversationStoreKey,
+    children: (conversation: AssistantConversationView) =>
+      React.createElement(AssistantSidebar, {
+        state: "pinned",
+        onStateChange: () => {},
+        width: 360,
+        onWidthChange: () => {},
+        composerValue: "Draft kept while access resolves",
+        onComposerChange: () => {},
+        onSubmit: () => {},
+        onFilesSelected: () => {},
+        onRemoveAttachment: () => {},
+        onNewConversation: assistant.startNewConversation,
+        hasConversation: conversation.messages.length > 0,
+        submitDisabled: !assistant.ownerScopeReady,
+      }),
   });
 }
 

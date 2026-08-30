@@ -103,18 +103,12 @@ import {
 } from "./artifact-proof";
 import {
   activateAssistantConversation,
-  activeAssistantConversation,
+  activeAssistantConversationId,
   appendAssistantConversationMessage,
   assistantConversationMessages,
-  assistantConversationRevision,
-  assistantConversationSyncPayload,
   assistantConversationSummaries,
   createAssistantConversation,
-  mergeSyncedAssistantConversations,
   migrateAssistantConversationOwnerScope,
-  pendingAssistantConversationSummaries,
-  pendingAssistantProposalCount,
-  serverAssistantConversationRevision,
   subscribeAssistantConversations,
   toggleAssistantConversationPinned,
   updateAssistantConversationMessage,
@@ -138,7 +132,6 @@ import {
 import { getWorkspaceAgentPromptAction } from "@/app/editor/agent-instructions-actions";
 import {
   getAssistantConversationCacheScopeAction,
-  syncAssistantConversationsAction,
 } from "@/app/editor/assistant-conversation-actions";
 
 export type { AssistantViewSnapshot } from "./context";
@@ -674,24 +667,15 @@ export function useNativeAssistant({
     handle,
     ownerScopeKey: conversationStoreKey,
   };
-  const conversationRevision = useSyncExternalStore(
+  const activeConversationId = useSyncExternalStore(
     subscribeAssistantConversations,
     () =>
       conversationStoreKey
-        ? assistantConversationRevision(conversationStoreKey)
-        : -1,
-    serverAssistantConversationRevision,
+        ? activeAssistantConversationId(conversationStoreKey, contextKey)
+        : null,
+    () => null,
   );
-  const activeConversation = useMemo(
-    () => {
-      if (conversationRevision < 0) return null;
-      return conversationStoreKey
-        ? activeAssistantConversation(conversationStoreKey, contextKey)
-        : null;
-    },
-    [contextKey, conversationRevision, conversationStoreKey],
-  );
-  const threadKey = `${conversationStoreKey ?? "server"}\u001f${activeConversation?.id ?? "server"}`;
+  const threadKey = `${conversationStoreKey ?? "server"}\u001f${activeConversationId ?? "server"}`;
 
   const cancelNativeTurnForScopeChange = useCallback((message: string) => {
     const fence = nativeTurnFenceRef.current;
@@ -794,36 +778,6 @@ export function useNativeAssistant({
     };
   }, [handle]);
 
-  useEffect(() => {
-    if (conversationRevision < 0 || !conversationStoreKey) return;
-    const timeout = window.setTimeout(() => {
-      const local = assistantConversationSyncPayload(conversationStoreKey);
-      void syncAssistantConversationsAction(handle, local)
-        .then((result) => {
-          if (result.allowed) {
-            mergeSyncedAssistantConversations(
-              conversationStoreKey,
-              result.conversations,
-            );
-          }
-        })
-        .catch(() => {
-          // The local replica remains fully usable while offline.
-        });
-    }, 900);
-    return () => window.clearTimeout(timeout);
-  }, [conversationRevision, conversationStoreKey, handle]);
-
-  const messages = useSyncExternalStore(
-    subscribeAssistantConversations,
-    () => threadFor(threadKey),
-    // The server cannot see localStorage. Hydration must replay that same
-    // empty snapshot before React switches to the live client snapshot, which
-    // restores the saved transcript. Reading storage here made the client add
-    // the New chat control while it was hydrating markup that only had the
-    // close control.
-    () => EMPTY_TRANSCRIPT,
-  );
   const submitting = useSyncExternalStore(
     subscribe,
     () => busyThreads.has(threadKey),
@@ -1580,7 +1534,7 @@ export function useNativeAssistant({
             }),
             ownerPrompt,
           );
-          const nativeConversationId = activeConversation?.id;
+          const nativeConversationId = activeConversationId;
           if (
             nativeConversationId &&
             !nativeConversationRef.current
@@ -1819,7 +1773,7 @@ export function useNativeAssistant({
       conversationStoreKey,
       handle,
       nativeConnection,
-      activeConversation?.id,
+      activeConversationId,
       ownerScopeReady,
       selectedCloudModel,
       setCloudProvider,
@@ -2447,30 +2401,6 @@ export function useNativeAssistant({
     () => jobsForOtherThreads(scopedJobs, threadKey),
     [scopedJobs, threadKey],
   );
-  const conversations = useMemo(
-    () => {
-      if (conversationRevision < 0) return [];
-      return conversationStoreKey
-        ? assistantConversationSummaries(conversationStoreKey, contextKey)
-        : [];
-    },
-    [contextKey, conversationRevision, conversationStoreKey],
-  );
-  const pendingProposalCount = useMemo(
-    () => {
-      void conversationRevision;
-      return conversationStoreKey
-        ? pendingAssistantProposalCount(conversationStoreKey)
-        : 0;
-    },
-    [conversationRevision, conversationStoreKey],
-  );
-  const pendingConversations = useMemo(() => {
-    void conversationRevision;
-    return conversationStoreKey
-      ? pendingAssistantConversationSummaries(conversationStoreKey)
-      : [];
-  }, [conversationRevision, conversationStoreKey]);
   const modelChoices = useMemo(
     () => assistantModelChoices(cloudProvider),
     [cloudProvider],
@@ -2483,10 +2413,9 @@ export function useNativeAssistant({
 
   return {
     activeCloudProvider: ownerScopeReady ? activeCloudProvider : null,
-    activeConversationId: activeConversation?.id ?? null,
-    conversations,
-    pendingConversations,
-    pendingProposalCount,
+    activeConversationId,
+    conversationContextKey: contextKey,
+    conversationStoreKey,
     searchConversations: (query: string) =>
       conversationStoreKey
         ? assistantConversationSummaries(conversationStoreKey, contextKey, query)
@@ -2537,7 +2466,6 @@ export function useNativeAssistant({
     },
     jobs: jobsElsewhere,
     generateItemTypeBlueprint,
-    messages: ownerScopeReady ? messages : EMPTY_TRANSCRIPT,
     ownerScopeReady,
     ownerScopeStatus,
     quickActions,

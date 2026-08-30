@@ -414,6 +414,20 @@ export function activeAssistantConversation(
     : null;
 }
 
+/**
+ * Stable selector for controllers that only need to address the active chat.
+ *
+ * Message streaming changes the conversation revision and summary on every
+ * visible flush. Returning only the id lets `useSyncExternalStore` skip those
+ * updates while still waking the controller when the person changes chats.
+ */
+export function activeAssistantConversationId(
+  handle: string,
+  contextKey: string,
+): string | null {
+  return ensureActiveConversation(handle, contextKey)?.id ?? null;
+}
+
 export function assistantConversationMessages(
   handle: string,
   conversationId: string,

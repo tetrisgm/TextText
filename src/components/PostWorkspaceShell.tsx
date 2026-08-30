@@ -139,6 +139,7 @@ import {
   type AssistantSidebarState,
 } from "@/components/workspace/assistant";
 import { AssistantConversation } from "@/components/workspace/assistant/AssistantConversation";
+import { AssistantConversationState } from "@/components/workspace/assistant/AssistantConversationState";
 import { TRY_AI_IN_TEXTTEXT_EVENT } from "@/components/workspace/AiConnectionSettings";
 import { useAssistantComposerDraft } from "@/components/workspace/assistant/composer-store";
 import {
@@ -7093,6 +7094,14 @@ function LocalWorkspaceShell({
           }}
         />
 
+        <AssistantConversationState
+          activeConversationId={assistant.activeConversationId}
+          contextKey={assistant.conversationContextKey}
+          handle={displayPool.blog.handle}
+          ownerScopeReady={assistant.ownerScopeReady}
+          storeKey={assistant.conversationStoreKey}
+        >
+          {(conversation) => (
         <AssistantSidebar
           workspaceHandle={displayPool.blog.handle}
           agent={assistantAgentIdentity(
@@ -7102,9 +7111,9 @@ function LocalWorkspaceShell({
             assistant.runningJobs > 0,
           )}
           onNewConversation={assistant.startNewConversation}
-          hasConversation={assistant.messages.length > 0}
+          hasConversation={conversation.messages.length > 0}
           activeConversationId={assistant.activeConversationId}
-          conversations={assistant.conversations}
+          conversations={conversation.conversations}
           onOpenConversation={assistant.openConversation}
           onSearchConversations={assistant.searchConversations}
           onToggleConversationPinned={assistant.toggleConversationPinned}
@@ -7142,8 +7151,8 @@ function LocalWorkspaceShell({
           submitting={assistant.submitting}
           submitDisabled={!assistant.ownerScopeReady}
           launcherBusy={assistant.runningJobs > 0}
-          pendingCount={assistant.pendingProposalCount}
-          pendingConversations={assistant.pendingConversations}
+          pendingCount={conversation.pendingProposalCount}
+          pendingConversations={conversation.pendingConversations}
           onOpenPendingConversation={(conversation) => {
             assistant.openConversationInContext(
               conversation.contextKey,
@@ -7185,7 +7194,7 @@ function LocalWorkspaceShell({
             onRateAnswer={assistant.rateAnswer}
             onWriteProposalDecision={assistant.decideWriteProposal}
             jobs={assistant.jobs}
-            messages={assistant.messages}
+            messages={conversation.messages}
             starterContext={starterContextFromChip(assistantContext)}
             viewerName={blog.author}
             quickActions={assistant.quickActions}
@@ -7207,6 +7216,8 @@ function LocalWorkspaceShell({
             onUndoProposal={assistant.undoProposal}
           />
         </AssistantSidebar>
+          )}
+        </AssistantConversationState>
       </div>
       <UpdatedBuildNotice />
       {itemTypeStudioFolderPath !== null ? (
