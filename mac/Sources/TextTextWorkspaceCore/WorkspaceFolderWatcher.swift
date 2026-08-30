@@ -3,15 +3,11 @@ import Foundation
 
 public final class WorkspaceFolderWatcher {
     private var stream: FSEventStreamRef?
-    private var metadataQuery: NSMetadataQuery?
-    private var metadataObservers: [NSObjectProtocol] = []
-    private let queue: DispatchQueue
     private let onChange: () -> Void
     private let rootPath: String
     public private(set) var fseventsStarted = false
 
-    public init?(path: String, queue: DispatchQueue, includeUbiquitousItems: Bool = true, latency: CFTimeInterval = 1.0, onChange: @escaping () -> Void) {
-        self.queue = queue
+    public init?(path: String, queue: DispatchQueue, latency: CFTimeInterval = 1.0, onChange: @escaping () -> Void) {
         self.onChange = onChange
         self.rootPath = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL.path
         let retainCallback: CFAllocatorRetainCallBack = { info in
@@ -57,21 +53,9 @@ public final class WorkspaceFolderWatcher {
             FSEventStreamInvalidate(stream)
             FSEventStreamRelease(stream)
         }
-
-        if includeUbiquitousItems {
-            startMetadataQuery(path: self.rootPath)
-        }
     }
 
     public func stop() {
-        if let metadataQuery {
-            metadataQuery.stop()
-            for observer in metadataObservers {
-                NotificationCenter.default.removeObserver(observer)
-            }
-            metadataObservers.removeAll()
-            self.metadataQuery = nil
-        }
         guard let stream else { return }
         FSEventStreamStop(stream)
         FSEventStreamInvalidate(stream)
@@ -86,34 +70,6 @@ public final class WorkspaceFolderWatcher {
 
     deinit {
         stop()
-    }
-
-    private func startMetadataQuery(path: String) {
-        let query = NSMetadataQuery()
-        query.searchScopes = [path]
-        query.predicate = Self.metadataPredicate()
-        let center = NotificationCenter.default
-        let update = center.addObserver(forName: .NSMetadataQueryDidUpdate, object: query, queue: nil) { [weak self] _ in
-            guard let self else { return }
-            self.queue.async { self.onChange() }
-        }
-        let finish = center.addObserver(forName: .NSMetadataQueryDidFinishGathering, object: query, queue: nil) { [weak self] _ in
-            guard let self else { return }
-            self.queue.async { self.onChange() }
-        }
-        metadataObservers = [update, finish]
-        metadataQuery = query
-        if !query.start() {
-            for observer in metadataObservers {
-                center.removeObserver(observer)
-            }
-            metadataObservers.removeAll()
-            metadataQuery = nil
-        }
-    }
-
-    static func metadataPredicate() -> NSPredicate {
-        NSPredicate(format: "%K LIKE[c] %@", NSMetadataItemFSNameKey, "*.md")
     }
 
     func shouldHandleEventPathsForTesting(_ paths: [String]) -> Bool {

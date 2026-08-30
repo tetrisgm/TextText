@@ -947,8 +947,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         shareInboxWatcher?.stop()
         shareInboxWatcher = WorkspaceFolderWatcher(
             path: inboxURL.path,
-            queue: shareInboxQueue,
-            includeUbiquitousItems: false
+            queue: shareInboxQueue
         ) { [weak self] in
             self?.scheduleShareInboxDrain(containerURL: container)
         }
@@ -969,8 +968,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         else { return }
         shareContainerAppearanceWatcher = WorkspaceFolderWatcher(
             path: ours.path,
-            queue: shareInboxQueue,
-            includeUbiquitousItems: false
+            queue: shareInboxQueue
         ) { [weak self] in
             guard let self, self.shareInboxContainerURL() != nil else { return }
             DispatchQueue.main.async {

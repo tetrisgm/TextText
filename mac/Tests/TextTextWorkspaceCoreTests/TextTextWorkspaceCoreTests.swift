@@ -148,8 +148,7 @@ final class TextTextWorkspaceCoreTests: XCTestCase {
         let fired = DispatchSemaphore(value: 0)
         let watcher = try XCTUnwrap(WorkspaceFolderWatcher(
             path: root.path,
-            queue: queue,
-            includeUbiquitousItems: false
+            queue: queue
         ) {
             fired.signal()
         })
@@ -174,23 +173,11 @@ final class TextTextWorkspaceCoreTests: XCTestCase {
         XCTAssertTrue(received)
     }
 
-    func testMetadataQueryStartsWithWatcherPredicateWithoutCrashing() throws {
-        let root = try temporaryDirectory()
-        let query = NSMetadataQuery()
-        query.searchScopes = [root.path]
-        query.predicate = WorkspaceFolderWatcher.metadataPredicate()
-
-        _ = query.start()
-        _ = RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.1))
-        query.stop()
-    }
-
     func testFolderWatcherFiltersCFEventPathsWithoutCrashing() throws {
         let root = try temporaryDirectory()
         let watcher = try XCTUnwrap(WorkspaceFolderWatcher(
             path: root.path,
-            queue: DispatchQueue(label: "TextTextWorkspaceCoreTests.cf-event-paths"),
-            includeUbiquitousItems: false
+            queue: DispatchQueue(label: "TextTextWorkspaceCoreTests.cf-event-paths")
         ) {})
         defer { watcher.stop() }
 
