@@ -3,7 +3,6 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import {
   deletePersistedPostBody,
-  persistPool,
   persistPostBody,
   readPersistedPostBody,
 } from "@/lib/pool/storage";
@@ -101,7 +100,8 @@ function setBodyEntry(blogId: string, postId: string, entry: BodyCacheEntry) {
 
 function removeBodyEntry(blogId: string, postId: string) {
   const key = bodyKey(blogId, postId);
-  const { [key]: _removed, ...bodies } = state.bodies;
+  const bodies = { ...state.bodies };
+  delete bodies[key];
   state = { ...state, bodies };
   bodyFetches.delete(key);
   bodyMutationGenerations.delete(key);
@@ -240,7 +240,6 @@ export function seedWorkspacePool(
     const nextPool = mergeIncomingPool(pool);
     state = { ...state, pool: nextPool, error: null };
     emitPool();
-    void persistPool(nextPool);
   }
 
   const initialBodies = initialBody
@@ -298,7 +297,6 @@ async function performWorkspacePoolRefresh(handle: string, blogId: string) {
 
       const nextPool = mergeIncomingPool(pool);
       setState({ pool: nextPool, refreshing: false, error: null });
-      void persistPool(nextPool);
       for (const initial of nextPool.initialBodies ?? []) {
         const key = bodyKey(blogId, initial.postId);
         const current = state.bodies[key];
@@ -514,7 +512,6 @@ export function addPost(post: WorkspacePoolPost) {
       fetchedAt: new Date().toISOString(),
     },
   });
-  if (state.pool) void persistPool(state.pool);
 }
 
 export function replacePost(previousId: string, post: WorkspacePoolPost) {
@@ -538,7 +535,6 @@ export function replacePost(previousId: string, post: WorkspacePoolPost) {
       fetchedAt: new Date().toISOString(),
     },
   });
-  if (state.pool) void persistPool(state.pool);
 }
 
 export function updatePost(postId: string, patch: Partial<WorkspacePoolPost>) {
@@ -558,7 +554,6 @@ export function updatePost(postId: string, patch: Partial<WorkspacePoolPost>) {
       fetchedAt: new Date().toISOString(),
     },
   });
-  if (state.pool) void persistPool(state.pool);
 }
 
 export function markPostDirty(postId: string) {
@@ -582,7 +577,6 @@ export function updateWorkspaceBlog(
       fetchedAt: new Date().toISOString(),
     },
   });
-  if (state.pool) void persistPool(state.pool);
 }
 
 export function updatePostBody(blogId: string, postId: string, body: string) {
@@ -633,7 +627,6 @@ export function removePost(postId: string) {
       fetchedAt: new Date().toISOString(),
     },
   });
-  if (state.pool) void persistPool(state.pool);
 }
 
 export function movePostToTrash(postId: string): WorkspacePoolPost | null {
@@ -658,7 +651,6 @@ export function movePostToTrash(postId: string): WorkspacePoolPost | null {
       fetchedAt: new Date().toISOString(),
     },
   });
-  if (state.pool) void persistPool(state.pool);
   return post;
 }
 
@@ -680,7 +672,6 @@ export function restorePostFromTrash(postId: string): WorkspacePoolPost | null {
       fetchedAt: new Date().toISOString(),
     },
   });
-  if (state.pool) void persistPool(state.pool);
   return post;
 }
 
@@ -700,7 +691,6 @@ export function removeTrashedPost(postId: string) {
       fetchedAt: new Date().toISOString(),
     },
   });
-  if (state.pool) void persistPool(state.pool);
 }
 
 export function moveFolderToTrash(folderId: string) {
@@ -739,7 +729,6 @@ export function moveFolderToTrash(folderId: string) {
       fetchedAt: new Date().toISOString(),
     },
   });
-  if (state.pool) void persistPool(state.pool);
 }
 
 export function restoreFolderFromTrash(folderId: string) {
@@ -772,7 +761,6 @@ export function restoreFolderFromTrash(folderId: string) {
       fetchedAt: new Date().toISOString(),
     },
   });
-  if (state.pool) void persistPool(state.pool);
 }
 
 export function removeTrashedFolder(folderId: string) {
@@ -799,7 +787,6 @@ export function removeTrashedFolder(folderId: string) {
       fetchedAt: new Date().toISOString(),
     },
   });
-  if (state.pool) void persistPool(state.pool);
 }
 
 export function movePost(postId: string, folderId: string | undefined) {
@@ -820,5 +807,4 @@ export function updateFolder(folderId: string, patch: Partial<Folder>) {
       fetchedAt: new Date().toISOString(),
     },
   });
-  if (state.pool) void persistPool(state.pool);
 }

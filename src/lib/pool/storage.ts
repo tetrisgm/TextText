@@ -1,19 +1,15 @@
 "use client";
 
-import type {
-  WorkspacePoolPayload,
-  WorkspacePostBodyPayload,
-} from "@/lib/pool/types";
+import type { WorkspacePostBodyPayload } from "@/lib/pool/types";
 import type { DraftState } from "@/lib/post-edit-draft";
 
 const DB_NAME = "texttext-workspace-pool";
 const DB_VERSION = 2;
-const POOL_STORE = "pools";
 const BODY_STORE = "bodies";
 const DRAFT_STORE = "drafts";
 const DRAFT_LOCAL_PREFIX = "texttext:workspace-draft:v1:";
 
-type StoreName = typeof POOL_STORE | typeof BODY_STORE | typeof DRAFT_STORE;
+type StoreName = typeof BODY_STORE | typeof DRAFT_STORE;
 
 let poolDbPromise: Promise<IDBDatabase | null> | null = null;
 let lastDraftWriteVersion = 0;
@@ -54,9 +50,6 @@ function openPoolDb(): Promise<IDBDatabase | null> {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(POOL_STORE)) {
-        db.createObjectStore(POOL_STORE);
-      }
       if (!db.objectStoreNames.contains(BODY_STORE)) {
         db.createObjectStore(BODY_STORE);
       }
@@ -171,20 +164,6 @@ function publicDraftSnapshot(
     baseUpdatedAt: record.baseUpdatedAt,
     persistedAt: record.persistedAt,
   };
-}
-
-export async function readPersistedPool(
-  blogId: string,
-): Promise<WorkspacePoolPayload | null> {
-  return withStore<WorkspacePoolPayload>(POOL_STORE, "readonly", (store) =>
-    store.get(blogId),
-  );
-}
-
-export async function persistPool(pool: WorkspacePoolPayload): Promise<void> {
-  await withStore<IDBValidKey>(POOL_STORE, "readwrite", (store) =>
-    store.put(pool, pool.blogId),
-  );
 }
 
 export async function readPersistedPostBody(

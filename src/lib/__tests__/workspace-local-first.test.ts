@@ -5,9 +5,7 @@ import type { Post } from "@/lib/content";
 
 vi.mock("@/lib/pool/storage", () => ({
   deletePersistedPostBody: vi.fn(async () => undefined),
-  persistPool: vi.fn(async () => undefined),
   persistPostBody: vi.fn(async () => undefined),
-  readPersistedPool: vi.fn(async () => null),
   readPersistedPostBody: vi.fn(async () => null),
 }));
 
