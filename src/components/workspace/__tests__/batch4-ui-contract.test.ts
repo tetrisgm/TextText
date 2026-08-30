@@ -54,7 +54,7 @@ describe("batch 4 workspace UI contract", () => {
   it("uses anchored reader comments without mounting the retired sheet", () => {
     expect(shellSource).toContain("<ReaderComments");
     expect(shellSource).toContain("usePresence(optimistic ? null : poolPost.id)");
-    expect(shellSource).toContain("post.id && !optimistic && entry.status");
+    expect(shellSource).toContain("post.id && !optimistic && document");
     expect(actionBarSource).not.toContain("CommentsDialog");
     expect(actionBarSource).not.toContain("post-comments-button");
   });
