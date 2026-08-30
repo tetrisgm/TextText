@@ -190,12 +190,9 @@ import {
 import {
   addPost,
   acknowledgePost,
-  acknowledgePostBody,
   acknowledgePostDocument,
-  ensurePostBody,
   ensurePostDocument,
   getCachedWorkspacePostDocument,
-  getCachedWorkspacePostBody,
   getWorkspacePost,
   markPostDirty,
   moveFolderToTrash,
@@ -210,7 +207,6 @@ import {
   replacePost,
   updatePost,
   updateFolder,
-  updatePostBody,
   updatePostDocument,
   useWorkspacePool,
   useWorkspacePostDocument,
@@ -433,6 +429,30 @@ function mergeDraftIntoWorkspacePost(
     duration: draft.duration || undefined,
     date: draft.date || undefined,
   };
+}
+
+function documentWithUpdatedBody(
+  document: DocumentSnapshot,
+  body: string,
+): DocumentSnapshot {
+  return {
+    ...document,
+    content: { ...document.content, body },
+  };
+}
+
+function updateCachedDocumentBody(
+  blogId: string,
+  postId: string,
+  body: string,
+): DocumentSnapshot {
+  const document = getCachedWorkspacePostDocument(blogId, postId)?.document;
+  if (!document) {
+    throw new Error(`Cannot update item ${postId} before its document loads`);
+  }
+  const nextDocument = documentWithUpdatedBody(document, body);
+  updatePostDocument(blogId, postId, nextDocument);
+  return nextDocument;
 }
 
 function folderWorkspaceHref(
@@ -4869,7 +4889,8 @@ function LocalWorkspaceShell({
       // posts feel instant; the URL still mirrors the canonical edit route.
       const currentPool = displayPoolRef.current;
       const warmedBody =
-        getCachedWorkspacePostBody(currentPool.blogId, post.id)?.body ??
+        getCachedWorkspacePostDocument(currentPool.blogId, post.id)?.document
+          .content.body ??
         currentPool.initialDocuments?.find(
           (document) => document.postId === post.id,
         )?.document.content.body;
@@ -5200,7 +5221,15 @@ function LocalWorkspaceShell({
                 temp.id,
                 previousKey,
               );
-              updatePostBody(pool.blogId, merged.id, liveDraft.body);
+              const mergedDocument = merged.document;
+              if (!mergedDocument) {
+                throw new Error("Created item did not retain its document");
+              }
+              updatePostDocument(
+                pool.blogId,
+                merged.id,
+                documentWithUpdatedBody(mergedDocument, liveDraft.body),
+              );
             }
             localWorkspaceServerRevisions.delete(temp.id);
             replacePost(temp.id, merged);
@@ -5656,16 +5685,21 @@ function LocalWorkspaceShell({
       const poolPost = findPoolPostById(currentPool, postId);
       if (!poolPost) throw new Error("This item is no longer available.");
 
-      let body = getCachedWorkspacePostBody(currentPool.blogId, postId)?.body;
-      if (body === undefined) {
-        await ensurePostBody(currentPool.blogId, postId);
-        body =
-          getCachedWorkspacePostBody(currentPool.blogId, postId)?.body ??
+      let document = getCachedWorkspacePostDocument(
+        currentPool.blogId,
+        postId,
+      )?.document;
+      if (!document) {
+        await ensurePostDocument(currentPool.blogId, postId);
+        document =
+          getCachedWorkspacePostDocument(currentPool.blogId, postId)
+            ?.document ??
           currentPool.initialDocuments?.find(
             (candidate) => candidate.postId === postId,
-          )?.document.content.body ??
-          "";
+          )?.document;
       }
+      if (!document) throw new Error("Could not load the item document");
+      const body = document.content.body;
       return {
         title: poolPost.title,
         excerpt: markdownSubtitle(body) || poolPost.excerpt || "",
@@ -5745,7 +5779,7 @@ function LocalWorkspaceShell({
         updatedAt: new Date().toISOString(),
       });
       if (patch.body !== undefined || patch.excerpt !== undefined) {
-        updatePostBody(currentPool.blogId, postId, nextDraft.body);
+        updateCachedDocumentBody(currentPool.blogId, postId, nextDraft.body);
       }
       persistLocalWorkspaceDraft(
         currentPool.blogId,
@@ -5780,12 +5814,19 @@ function LocalWorkspaceShell({
           localWorkspacePendingSaveIds.delete(postId);
           localWorkspaceDraftSessions.delete(postId);
           acknowledgePost(postId);
-          acknowledgePostBody(
+          const document = getCachedWorkspacePostDocument(
             currentPool.blogId,
             postId,
-            nextDraft.body,
-            savedAt,
-          );
+          )?.document;
+          if (document) {
+            acknowledgePostDocument(
+              currentPool.blogId,
+              postId,
+              documentWithUpdatedBody(document, nextDraft.body),
+              poolPost.revision,
+              savedAt,
+            );
+          }
           void deletePersistedWorkspaceDraft(
             currentPool.blogId,
             postId,
@@ -5818,13 +5859,18 @@ function LocalWorkspaceShell({
               tags: currentText.tags ?? poolPost.tags,
               updatedAt: poolPost.updatedAt,
             });
-            updatePostBody(currentPool.blogId, postId, currentText.body);
+            const restoredDocument = updateCachedDocumentBody(
+              currentPool.blogId,
+              postId,
+              currentText.body,
+            );
             if (!existingDraft) {
               acknowledgePost(postId);
-              acknowledgePostBody(
+              acknowledgePostDocument(
                 currentPool.blogId,
                 postId,
-                currentText.body,
+                restoredDocument,
+                poolPost.revision,
                 poolPost.updatedAt,
               );
             }
