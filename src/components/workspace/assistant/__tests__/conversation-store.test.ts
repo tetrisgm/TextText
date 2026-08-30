@@ -19,11 +19,14 @@ import {
 function browserStorage(initialSession: Record<string, string> = {}) {
   const local = new Map<string, string>();
   const session = new Map(Object.entries(initialSession));
+  const setLocalItem = vi.fn((key: string, value: string) =>
+    local.set(key, value),
+  );
   vi.stubGlobal("window", {
     localStorage: {
       getItem: (key: string) => local.get(key) ?? null,
       removeItem: (key: string) => local.delete(key),
-      setItem: (key: string, value: string) => local.set(key, value),
+      setItem: setLocalItem,
     },
     sessionStorage: {
       getItem: (key: string) => session.get(key) ?? null,
@@ -31,7 +34,7 @@ function browserStorage(initialSession: Record<string, string> = {}) {
       setItem: (key: string, value: string) => session.set(key, value),
     },
   });
-  return { local, session };
+  return { local, session, setLocalItem };
 }
 
 beforeEach(() => {
@@ -40,6 +43,7 @@ beforeEach(() => {
 
 afterEach(() => {
   resetAssistantConversationStore();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -134,6 +138,51 @@ describe("assistant conversation history", () => {
     expect(assistantConversationMessages("writer", first!.id)).toHaveLength(2);
   });
 
+  it("bounds streaming persistence and flushes terminal state immediately", () => {
+    vi.useFakeTimers();
+    const { setLocalItem } = browserStorage();
+    const active = activeAssistantConversation("writer", "root")!;
+    appendAssistantConversationMessage("writer", active.id, {
+      id: "answer",
+      role: "assistant",
+      text: "first",
+    });
+    setLocalItem.mockClear();
+
+    for (let index = 0; index < 100; index += 1) {
+      updateAssistantConversationMessage(
+        "writer",
+        active.id,
+        "answer",
+        (message) => ({ ...message, text: `${message.text}x` }),
+        { deferredPersistence: true },
+      );
+    }
+    expect(setLocalItem).not.toHaveBeenCalled();
+    expect(
+      assistantConversationMessages("writer", active.id)[0]?.text,
+    ).toBe(`first${"x".repeat(100)}`);
+    vi.advanceTimersByTime(1000);
+    expect(setLocalItem).toHaveBeenCalledTimes(1);
+
+    updateAssistantConversationMessage(
+      "writer",
+      active.id,
+      "answer",
+      (message) => ({ ...message, text: `${message.text}!` }),
+      { deferredPersistence: true },
+    );
+    updateAssistantConversationMessage(
+      "writer",
+      active.id,
+      "answer",
+      (message) => message,
+    );
+    expect(setLocalItem).toHaveBeenCalledTimes(2);
+    vi.runAllTimers();
+    expect(setLocalItem).toHaveBeenCalledTimes(2);
+  });
+
   it("merges a remote owner replica without changing the active chat", () => {
     browserStorage();
     const active = activeAssistantConversation("writer", "root")!;
@@ -205,10 +254,8 @@ describe("assistant conversation history", () => {
     const remote = {
       ...local,
       messages: local.messages.map((message) => {
-        const { writeProposals: _dropped, ...rest } = message as Record<
-          string,
-          unknown
-        >;
+        const rest = { ...message } as Record<string, unknown>;
+        delete rest.writeProposals;
         return rest as typeof message;
       }),
     };

@@ -448,6 +448,7 @@ function updateThreadMessage(
   threadKey: string,
   messageId: string,
   update: (message: AssistantMessage) => AssistantMessage,
+  options: { deferredPersistence?: boolean } = {},
 ) {
   const { handle, conversationId } = conversationAddress(threadKey);
   updateAssistantConversationMessage(
@@ -455,6 +456,7 @@ function updateThreadMessage(
     conversationId,
     messageId,
     update,
+    options,
   );
 }
 
@@ -980,10 +982,15 @@ export function useNativeAssistant({
               messageId,
               threadKey: eventThread,
               buffer: createAssistantTextDeltaBuffer((text) => {
-                updateThreadMessage(eventThread, messageId, (message) => ({
-                  ...message,
-                  text: message.text + text,
-                }));
+                updateThreadMessage(
+                  eventThread,
+                  messageId,
+                  (message) => ({
+                    ...message,
+                    text: message.text + text,
+                  }),
+                  { deferredPersistence: true },
+                );
               }),
             };
             nativeTextBufferRef.current = pending;
@@ -1162,6 +1169,16 @@ export function useNativeAssistant({
       } else if (event.type === "turn-completed") {
         nativeTextBufferRef.current?.buffer.finish();
         nativeTextBufferRef.current = null;
+        if (
+          nativeMessageRef.current &&
+          !nativeFinalTextReceivedRef.current
+        ) {
+          updateThreadMessage(
+            eventThread,
+            nativeMessageRef.current,
+            (message) => message,
+          );
+        }
         const itemTypeDesign = nativeItemTypeDesignRef.current;
         if (itemTypeDesign) {
           clearTimeout(itemTypeDesign.timeout);
@@ -1675,10 +1692,15 @@ export function useNativeAssistant({
               const messageId = cloudMessageId;
               cloudTextBuffer.current ??= createAssistantTextDeltaBuffer(
                 (text) => {
-                  updateThreadMessage(thread, messageId, (message) => ({
-                    ...message,
-                    text: `${message.text}${text}`,
-                  }));
+                  updateThreadMessage(
+                    thread,
+                    messageId,
+                    (message) => ({
+                      ...message,
+                      text: `${message.text}${text}`,
+                    }),
+                    { deferredPersistence: true },
+                  );
                 },
               );
               cloudTextBuffer.current.push(event.text);

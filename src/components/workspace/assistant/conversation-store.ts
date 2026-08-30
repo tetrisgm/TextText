@@ -50,6 +50,10 @@ const EMPTY_MESSAGES: AssistantMessage[] = [];
 const EMPTY_SUMMARIES: AssistantConversationSummary[] = [];
 
 const workspaces = new Map<string, WorkspaceConversationState>();
+const pendingWorkspaceSaveTimers = new Map<
+  string,
+  ReturnType<typeof setTimeout>
+>();
 const legacyHandlesByScope = new Map<string, string>();
 const listeners = new Set<() => void>();
 let fallbackId = 0;
@@ -193,6 +197,27 @@ function saveWorkspace(handle: string, state: WorkspaceConversationState) {
   }
 }
 
+function persistWorkspace(
+  handle: string,
+  state: WorkspaceConversationState,
+  deferred: boolean,
+) {
+  if (!deferred) {
+    const pending = pendingWorkspaceSaveTimers.get(handle);
+    if (pending) clearTimeout(pending);
+    pendingWorkspaceSaveTimers.delete(handle);
+    saveWorkspace(handle, state);
+    return;
+  }
+  if (pendingWorkspaceSaveTimers.has(handle)) return;
+  const timer = setTimeout(() => {
+    pendingWorkspaceSaveTimers.delete(handle);
+    const current = workspaces.get(handle);
+    if (current) saveWorkspace(handle, current);
+  }, 1000);
+  pendingWorkspaceSaveTimers.set(handle, timer);
+}
+
 function notify() {
   for (const listener of listeners) listener();
 }
@@ -332,6 +357,7 @@ function replaceConversation(
   handle: string,
   id: string,
   update: (conversation: AssistantConversation) => AssistantConversation,
+  options: { deferredPersistence?: boolean } = {},
 ): boolean {
   const state = loadWorkspace(handle);
   let changed = false;
@@ -343,7 +369,7 @@ function replaceConversation(
   if (!changed) return false;
   state.conversations = conversations;
   markChanged(state);
-  saveWorkspace(handle, state);
+  persistWorkspace(handle, state, options.deferredPersistence === true);
   notify();
   return true;
 }
@@ -556,19 +582,25 @@ export function updateAssistantConversationMessage(
   conversationId: string,
   messageId: string,
   update: (message: AssistantMessage) => AssistantMessage,
+  options: { deferredPersistence?: boolean } = {},
 ) {
-  replaceConversation(handle, conversationId, (conversation) => {
-    const timestamp = now();
-    return {
-      ...conversation,
-      updatedAt: timestamp,
-      messages: conversation.messages.map((message) =>
-        message.id === messageId
-          ? { ...update(message), updatedAt: timestamp }
-          : message,
-      ),
-    };
-  });
+  replaceConversation(
+    handle,
+    conversationId,
+    (conversation) => {
+      const timestamp = now();
+      return {
+        ...conversation,
+        updatedAt: timestamp,
+        messages: conversation.messages.map((message) =>
+          message.id === messageId
+            ? { ...update(message), updatedAt: timestamp }
+            : message,
+        ),
+      };
+    },
+    options,
+  );
 }
 
 /** Bounded, credential-scrubbed snapshot suitable for owner-only sync. */
@@ -654,6 +686,8 @@ export function mergeSyncedAssistantConversations(
 
 /** Test-only reset for the module cache. */
 export function resetAssistantConversationStore() {
+  for (const timer of pendingWorkspaceSaveTimers.values()) clearTimeout(timer);
+  pendingWorkspaceSaveTimers.clear();
   workspaces.clear();
   legacyHandlesByScope.clear();
   listeners.clear();
