@@ -91,12 +91,17 @@ describe("workspace local authority", () => {
     const storage = await import("@/lib/pool/storage");
     const original = post();
     store.seedWorkspacePool(pool("2026-07-10T10:00:00.000Z", [original]));
-    store.acknowledgePostBody("blog-1", original.id, "cached body");
+    store.acknowledgePostDocument("blog-1", original.id, {
+      ...original.document!,
+      content: { ...original.document!.content, body: "cached body" },
+    });
     store.movePostToTrash(original.id);
 
     store.removeTrashedPost(original.id);
 
-    expect(store.getCachedWorkspacePostBody("blog-1", original.id)).toBeNull();
+    expect(
+      store.getCachedWorkspacePostDocument("blog-1", original.id),
+    ).toBeNull();
     expect(storage.deletePersistedPostDocument).toHaveBeenCalledWith(
       "blog-1",
       original.id,
@@ -288,8 +293,14 @@ describe("workspace local authority", () => {
       ),
     );
 
-    const request = store.ensurePostBody("blog-1", "post-1", { force: true });
-    store.updatePostBody("blog-1", "post-1", "Newest local body");
+    const request = store.ensurePostDocument("blog-1", "post-1", {
+      force: true,
+    });
+    const localDocument = post().document!;
+    store.updatePostDocument("blog-1", "post-1", {
+      ...localDocument,
+      content: { ...localDocument.content, body: "Newest local body" },
+    });
     resolveRequest(
       new Response(
         JSON.stringify({
@@ -309,9 +320,10 @@ describe("workspace local authority", () => {
     );
     await request;
 
-    expect(store.getCachedWorkspacePostBody("blog-1", "post-1")?.body).toBe(
-      "Newest local body",
-    );
+    expect(
+      store.getCachedWorkspacePostDocument("blog-1", "post-1")?.document
+        .content.body,
+    ).toBe("Newest local body");
   });
 });
 

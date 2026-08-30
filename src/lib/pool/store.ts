@@ -8,11 +8,9 @@ import {
   readPersistedPostDocument,
 } from "@/lib/pool/storage";
 import type {
-  WorkspaceInitialBody,
   WorkspaceInitialDocument,
   WorkspacePoolPayload,
   WorkspacePoolPost,
-  WorkspacePostBodyPayload,
   WorkspacePostDocumentPayload,
 } from "@/lib/pool/types";
 import type { Folder } from "@/lib/content";
@@ -184,7 +182,6 @@ function documentPayload(
     revision: options.revision,
     updatedAt: options.updatedAt,
     fetchedAt: options.fetchedAt ?? new Date().toISOString(),
-    body: document.content.body,
   };
 }
 
@@ -565,68 +562,8 @@ export function useWorkspacePostDocument(
   return { entry, load, stale };
 }
 
-/** Compatibility view while body-only call sites migrate to canonical documents. */
-export function useWorkspacePostBody(
-  blogId: string,
-  postId: string,
-  initialBody?: WorkspaceInitialBody | null,
-) {
-  const snapshot = useWorkspacePool();
-  const poolPost = snapshot.pool?.posts.find((post) => post.id === postId);
-  const initialDocument =
-    initialBody && poolPost?.document
-      ? {
-          postId,
-          document: {
-            ...poolPost.document,
-            content: { ...poolPost.document.content, body: initialBody.body },
-          },
-          revision: poolPost.revision,
-          updatedAt: initialBody.updatedAt,
-        }
-      : null;
-  const result = useWorkspacePostDocument(blogId, postId, initialDocument);
-  const entry =
-    result.entry.status === "ready"
-      ? ({
-          status: "ready",
-          body: {
-            blogId,
-            postId,
-            body: result.entry.document.document.content.body,
-            updatedAt: result.entry.document.updatedAt,
-            fetchedAt: result.entry.document.fetchedAt,
-          },
-        } as const)
-      : result.entry;
-  return { ...result, entry };
-}
-
-export async function ensurePostBody(
-  blogId: string,
-  postId: string,
-  options: { force?: boolean } = {},
-): Promise<void> {
-  await ensurePostDocument(blogId, postId, options);
-}
-
 export function getWorkspacePost(postId: string): WorkspacePoolPost | null {
   return state.pool?.posts.find((post) => post.id === postId) ?? null;
-}
-
-export function getCachedWorkspacePostBody(
-  blogId: string,
-  postId: string,
-): WorkspacePostBodyPayload | null {
-  const entry = state.bodies[bodyKey(blogId, postId)];
-  if (entry?.status !== "ready") return null;
-  return {
-    blogId,
-    postId,
-    body: entry.document.document.content.body,
-    updatedAt: entry.document.updatedAt,
-    fetchedAt: entry.document.fetchedAt,
-  };
 }
 
 export function getCachedWorkspacePostDocument(
@@ -757,42 +694,6 @@ export function acknowledgePostDocument(
     document: nextDocument,
   });
   void persistPostDocument(nextDocument);
-}
-
-function documentWithBody(
-  blogId: string,
-  postId: string,
-  body: string,
-): DocumentSnapshot {
-  const canonical =
-    getCachedWorkspacePostDocument(blogId, postId)?.document ??
-    poolPostForDocument(postId)?.document;
-  if (!canonical) {
-    throw new Error(`Cannot update item ${postId} without a canonical document`);
-  }
-  return {
-    ...canonical,
-    content: { ...canonical.content, body },
-  };
-}
-
-export function updatePostBody(blogId: string, postId: string, body: string) {
-  updatePostDocument(blogId, postId, documentWithBody(blogId, postId, body));
-}
-
-export function acknowledgePostBody(
-  blogId: string,
-  postId: string,
-  body: string,
-  updatedAt?: string,
-) {
-  acknowledgePostDocument(
-    blogId,
-    postId,
-    documentWithBody(blogId, postId, body),
-    poolPostForDocument(postId)?.revision,
-    updatedAt,
-  );
 }
 
 export function removePost(postId: string) {

@@ -72,14 +72,6 @@ export type WorkspacePoolPayload = {
   fetchedAt: string;
 };
 
-export type WorkspacePostBodyPayload = {
-  blogId: string;
-  postId: string;
-  body: string;
-  updatedAt?: string;
-  fetchedAt: string;
-};
-
 /** Canonical document returned by the lazy item endpoint. */
 export type WorkspacePostDocumentPayload = {
   blogId: string;
@@ -88,14 +80,6 @@ export type WorkspacePostDocumentPayload = {
   revision?: number;
   updatedAt?: string;
   fetchedAt: string;
-  /** Temporary compatibility field for body-only clients during migration. */
-  body: string;
-};
-
-export type WorkspaceInitialBody = {
-  postId: string;
-  body: string;
-  updatedAt?: string;
 };
 
 /** One server-rendered canonical document used to seed the client cache. */

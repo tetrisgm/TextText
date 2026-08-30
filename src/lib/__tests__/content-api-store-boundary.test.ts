@@ -71,7 +71,6 @@ describe("content API store boundary", () => {
     await expect(response.json()).resolves.toMatchObject({
       blogId: "blog-id",
       postId,
-      body: "Private body",
       revision: 17,
       document: {
         schemaVersion: 1,

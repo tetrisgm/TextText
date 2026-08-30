@@ -44,7 +44,6 @@ export async function GET(
       postId: id,
       document,
       revision: item.post.revision,
-      body: document.content.body,
       updatedAt: item.post.updatedAt,
       fetchedAt: new Date().toISOString(),
     },

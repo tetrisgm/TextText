@@ -3,7 +3,6 @@
 import { documentSnapshotSchema } from "@/lib/documents/model";
 import type { DocumentSnapshot } from "@/lib/documents/model";
 import type {
-  WorkspacePostBodyPayload,
   WorkspacePostDocumentPayload,
 } from "@/lib/pool/types";
 import type { DraftState } from "@/lib/post-edit-draft";
@@ -180,8 +179,9 @@ export function normalizeStoredPostDocument(
   },
 ): WorkspacePostDocumentPayload | null {
   if (!value || typeof value !== "object") return null;
-  const stored = value as Partial<WorkspacePostDocumentPayload> &
-    Partial<WorkspacePostBodyPayload>;
+  const stored = value as Partial<WorkspacePostDocumentPayload> & {
+    body?: unknown;
+  };
   if (stored.blogId !== expected.blogId || stored.postId !== expected.postId) {
     return null;
   }
@@ -212,7 +212,6 @@ export function normalizeStoredPostDocument(
       typeof stored.fetchedAt === "string"
         ? stored.fetchedAt
         : new Date().toISOString(),
-    body: document.content.body,
   };
 }
 
