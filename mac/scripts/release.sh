@@ -57,7 +57,6 @@ INSTALLED_BUILD_FOR_BUMP=0
 BUMP_INSTALLED_APP="${TEXTTEXT_INSTALLED_APP_PATH:-}"
 if [ -z "$BUMP_INSTALLED_APP" ]; then
   for candidate in \
-    /Applications/TextText.app "$HOME/Applications/TextText.app" \
     /Applications/TextText.app "$HOME/Applications/TextText.app"; do
     if [ -d "$candidate" ]; then BUMP_INSTALLED_APP="$candidate"; break; fi
   done
@@ -139,7 +138,6 @@ EXPECTED_ZIP_URL="$BLOB_BASE/downloads/TextText-$VERSION.zip"
 INSTALLED_APP="${TEXTTEXT_INSTALLED_APP_PATH:-}"
 if [ -z "$INSTALLED_APP" ]; then
   for candidate in \
-    /Applications/TextText.app "$HOME/Applications/TextText.app" \
     /Applications/TextText.app "$HOME/Applications/TextText.app"; do
     if [ -d "$candidate" ]; then
       INSTALLED_APP="$candidate"

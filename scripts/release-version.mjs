@@ -2,6 +2,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const root = new URL("../", import.meta.url);
@@ -92,7 +93,7 @@ async function nextVersion() {
     generated.version,
     plistVersion(new URL("mac/Info.plist", root)),
     plistVersion("/Applications/TextText.app/Contents/Info.plist"),
-    plistVersion("/Applications/TextText.app/Contents/Info.plist"),
+    plistVersion(`${homedir()}/Applications/TextText.app/Contents/Info.plist`),
   ].filter(Boolean);
   let candidate = incrementVersion(
     candidates.reduce((latest, version) =>

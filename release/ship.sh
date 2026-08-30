@@ -281,7 +281,6 @@ if [ -n "$ORIGIN" ]; then
   [ -n "$PUBLIC_SIGNATURE" ] || { echo "Public appcast enclosure is missing sparkle:edSignature." >&2; exit 1; }
   curl -fsSI "$PUBLIC_ZIP_URL" >/dev/null
   curl -fsSI "$ORIGIN/download/TextText.zip" >/dev/null
-  curl -fsSI "$ORIGIN/download/TextText.zip" >/dev/null
   [ "$API_VERSION" = "$VERSION" ] || { echo "Public app version API is $API_VERSION, expected $VERSION." >&2; exit 1; }
   [ "$API_BUILD" = "$EXPECTED_BUILD" ] || { echo "Public app build API is $API_BUILD, expected $EXPECTED_BUILD." >&2; exit 1; }
   # The way in is signing in. This used to smoke-test /try and a production
