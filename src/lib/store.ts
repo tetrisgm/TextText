@@ -436,10 +436,7 @@ function withoutPersonalWorkspaceMetadata(post: Post): Post {
 const BODY_PREVIEW_LENGTH = 2048;
 
 function bodyPreviewSql(): SQL<string | null> {
-  return sql<string | null>`case
-    when ${posts.type} = 'note' then nullif(${posts.body}, '')
-    else nullif(left(${posts.body}, ${BODY_PREVIEW_LENGTH}), '')
-  end`;
+  return sql<string | null>`nullif(left(${posts.body}, ${BODY_PREVIEW_LENGTH}), '')`;
 }
 
 function wordCountSql(): SQL<number | null> {
