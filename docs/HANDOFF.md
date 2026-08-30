@@ -23,9 +23,11 @@ polish ledger.
   deterministic visual contract gate (`verify:look-contract`).
 - The look gate renders all 29 resolvable templates as item and collection
   views in system and dark/editorial themes.
-- Remaining deliberate product work is semantic confirmation for browser
-  publish/share/restore/access and an interactive approval path for destructive
-  local-CLI actions. Releases and TestFlight remain owner-triggered.
+- Semantic confirmation is shipped for browser publish/unpublish and restore;
+  CLI destructive actions can now stage owner-reviewable proposals, and the
+  assistant UI labels their origin and approval action. Remaining product work
+  is semantic confirmation for sharing/access changes. Releases and TestFlight
+  remain owner-triggered.
 
 ## Current AI implementation handoff (2026-08-25)
 
