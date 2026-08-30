@@ -109,9 +109,6 @@ import {
 } from "./bookmark-capture-generation";
 import {
   AGENT_CONNECTION_CHECK_PROMPT,
-  CLAUDE_PLUGIN_INSTALL_COMMAND,
-  CODEX_PLUGIN_INSTALL_COMMAND,
-  TEXTTEXT_HOSTED_MCP_URL,
 } from "./agent-integrations";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { normalizeTag, normalizeTags } from "./tags";
@@ -1047,11 +1044,13 @@ const STARTER_AGENT_GUIDES = [
   {
     slug: "welcome-to-texttext",
     title: "Welcome to TextText",
-    body: `TextText is a fast, durable text canvas for you and the AI tools you already use.
+    body: `TextText is a notes app you and your AI tools can work in together.
 
-Capture a thought, paste a link, or start a document. Then ask a connected AI to find it, improve it, organize it, or keep it current. The document stays the source of truth.
+Capture a thought, paste a link, or start writing. Your work stays in real documents that you can read, edit, share, and keep.
 
-Try one:
+A connected AI can find those documents, improve them, organize them, or keep one current while you work together. Its changes appear in TextText. Risky actions wait for your approval, and ordinary deletes go to Trash.
+
+Try asking:
 
 > Save this conversation as a note and tell me where you put it.
 
@@ -1059,53 +1058,28 @@ Try one:
 
 > Use this document as our live canvas and keep it current as we work.
 
-Agent changes appear in TextText. Risky actions wait for your approval, ordinary deletes go to Trash, and newer human edits are protected.
-
-Open **Notes** to write, or read **Connect an AI** for the one connection guide.`,
+Open **Notes** to begin. Read **Connect an AI** when you want another AI tool to work with your documents.`,
   },
   {
     slug: "connect-your-ai-tools",
     title: "Connect an AI",
-    body: `Use the in-app assistant from any document, or connect Claude, Codex, or another MCP client. Settings shows every connection and lets you disconnect it.
+    body: `Open **Settings → Connections**. TextText shows the connection methods available in your version of the app.
 
-## Claude or Codex on this Mac
+- **TextText AI** adds an assistant beside your documents.
+- **Claude or Codex** can use the TextText connection offered in Settings.
+- **MCP** connects another compatible AI client with a revocable workspace token.
 
-Keep the standalone TextText app in Applications and sign in once. The plugins use its signed-in command, with no copied workspace token or local server setup.
-
-## Claude
-
-Install the TextText plugin from Terminal:
-
-\`\`\`text
-${CLAUDE_PLUGIN_INSTALL_COMMAND}
-\`\`\`
-
-Then paste this verification prompt into Claude:
-
-> ${AGENT_CONNECTION_CHECK_PROMPT}
-
-## Codex
-
-Install the TextText plugin from Terminal:
-
-\`\`\`text
-${CODEX_PLUGIN_INSTALL_COMMAND}
-\`\`\`
-
-Then paste this verification prompt into Codex:
-
-> ${AGENT_CONNECTION_CHECK_PROMPT}
-
-## Remote MCP clients
-
-Add ${TEXTTEXT_HOSTED_MCP_URL} only to a client that supports remote MCP with a bearer credential. Create a workspace token at **Connect**, save it in the client's protected credential field, and give the connection a descriptive name. If the client offers no bearer-token field, use the local Claude or Codex plugin instead.
+Choose a connection and follow its setup steps. Secrets stay hidden after they are saved, and you can disconnect or revoke access from the same screen.
 
 ## Check it worked
 
-The connection is verified when **Agent connection check** appears in Notes and
-the agent can read the saved line back. Keep the private note or move it to Trash.
+Paste this into the AI you connected:
 
-Agents can search, read, create, edit, organize, publish, and manage sharing. Actions that change visibility, access, restore content, or empty Trash show a specific preview and wait for your approval. Revoke any connection from Settings.`,
+> ${AGENT_CONNECTION_CHECK_PROMPT}
+
+The connection works when **Agent connection check** appears in Notes and the AI can read the saved line back. Keep the private note or move it to Trash.
+
+Connected AIs can search, read, create, edit, and organize documents. Changes to visibility, sharing, restored content, or emptying Trash show you a preview and wait for approval.`,
   },
 ] as const;
 
