@@ -15,6 +15,26 @@ export type WikiLinkRenderTarget = {
 };
 
 export type WikiLinkRenderTargets = Record<string, WikiLinkRenderTarget>;
+export type WikiLinkTargetResolver = (target: string) => Post | null;
+
+/**
+ * Resolve links from one already-authorized post snapshot and the workspace's
+ * authoritative alias snapshot. Alias absence is meaningful (missing,
+ * ambiguous, or tombstoned), so this deliberately never guesses by consulting
+ * the visible post map directly.
+ */
+export function createWikiLinkTargetResolver(
+  visiblePosts: readonly Post[],
+  aliases: Readonly<Record<string, string>>,
+): WikiLinkTargetResolver {
+  const visibleBySlug = new Map(
+    visiblePosts.map((post) => [post.slug, post] as const),
+  );
+  return (target) => {
+    const canonicalSlug = aliases[target];
+    return canonicalSlug ? (visibleBySlug.get(canonicalSlug) ?? null) : null;
+  };
+}
 
 function fenceMarker(
   line: string,

@@ -11,6 +11,7 @@ import {
 import { workspaceWikiLinkMetadata } from "@/lib/pool/server";
 import type { Blog, Post } from "@/lib/content";
 import {
+  createWikiLinkTargetResolver,
   extractWikiLinks,
   publicWikiLinkRenderTargets,
   renderTargetForResolution,
@@ -36,6 +37,24 @@ const blog: Blog = {
 };
 
 describe("wikilink extraction and backlinks", () => {
+  it("resolves only authoritative aliases into the visible snapshot", () => {
+    const visible = post({
+      id: "visible",
+      slug: "current",
+      title: "Current",
+    });
+    const resolve = createWikiLinkTargetResolver([visible], {
+      current: "current",
+      previous: "current",
+      secret: "inaccessible",
+    });
+
+    expect(resolve("current")).toBe(visible);
+    expect(resolve("previous")).toBe(visible);
+    expect(resolve("secret")).toBeNull();
+    expect(resolve("missing")).toBeNull();
+  });
+
   it("keeps the workspace pool body warm-up empty and previews bounded", () => {
     const body = "n".repeat(10_000);
     const pool = workspacePoolFromParts({

@@ -9,7 +9,10 @@ import type { Blog, FolderMode, ItemKind, Post } from "@/lib/content";
 import { markdownFileHash } from "@/lib/content-hash";
 import { renderPostMarkdownFile } from "@/lib/markdown-files";
 import { normalizeTags } from "@/lib/tags";
-import { extractWikiLinks, resolveTarget } from "@/lib/wikilinks";
+import {
+  extractWikiLinks,
+  type WikiLinkTargetResolver,
+} from "@/lib/wikilinks";
 import { serializeWikiLink } from "@/lib/wikilink-syntax";
 import { rankSearchText, searchExcerpt } from "@/lib/workspace-search";
 
@@ -117,69 +120,49 @@ export function renderItemFile(
   return { text, hash: markdownFileHash(text) };
 }
 
-async function resolvedWikiLinks(
-  blog: Blog,
+function resolvedWikiLinks(
   post: Post,
-  visiblePosts: readonly Post[],
-): Promise<WikiLink[]> {
-  const visibleIds = new Set(
-    visiblePosts.flatMap((candidate) => (candidate.id ? [candidate.id] : [])),
-  );
-  const visibleSlugs = new Set(visiblePosts.map((candidate) => candidate.slug));
-  return Promise.all(
-    extractWikiLinks(post.body).map(async (reference) => {
-      const resolution = await resolveTarget(blog.handle, reference.target);
-      if (
-        (resolution.kind === "exact" || resolution.kind === "history") &&
-        (resolution.post.id
-          ? visibleIds.has(resolution.post.id)
-          : visibleSlugs.has(resolution.post.slug))
-      ) {
-        return {
-          raw: serializeWikiLink(reference),
-          ...(resolution.post.id ? { targetId: resolution.post.id } : {}),
-          targetSlug: resolution.post.slug,
-          title: resolution.post.title,
-          resolved: true,
-        };
-      }
+  resolveTarget: WikiLinkTargetResolver,
+): WikiLink[] {
+  return extractWikiLinks(post.body).map((reference) => {
+    const target = resolveTarget(reference.target);
+    if (target) {
       return {
         raw: serializeWikiLink(reference),
-        targetSlug: reference.target,
-        resolved: false,
+        ...(target.id ? { targetId: target.id } : {}),
+        targetSlug: target.slug,
+        title: target.title,
+        resolved: true,
       };
-    }),
-  );
+    }
+    return {
+      raw: serializeWikiLink(reference),
+      targetSlug: reference.target,
+      resolved: false,
+    };
+  });
 }
 
 /**
- * Find live items whose prose resolves to this item. getAllPosts excludes
- * trashed rows, and resolveTarget excludes missing, ambiguous, and tombstoned
- * targets, so deleted content cannot pollute the backlink graph.
+ * Find live items whose prose resolves to this item. The caller supplies one
+ * access-filtered resolver snapshot, so missing, inaccessible, ambiguous, and
+ * tombstoned targets cannot pollute the backlink graph.
  */
-export async function itemBacklinks(
-  blog: Blog,
+export function itemBacklinks(
   post: Post,
   livePosts: Post[],
-): Promise<BacklinkRef[]> {
-  const cache = new Map<string, ReturnType<typeof resolveTarget>>();
+  resolveWikiLinkTarget: WikiLinkTargetResolver,
+): BacklinkRef[] {
   const backlinks: BacklinkRef[] = [];
 
   for (const source of livePosts) {
     if (!source.id || source.id === post.id) continue;
     let linksHere = false;
     for (const reference of extractWikiLinks(source.body)) {
-      let pending = cache.get(reference.target);
-      if (!pending) {
-        pending = resolveTarget(blog.handle, reference.target);
-        cache.set(reference.target, pending);
-      }
-      const resolution = await pending;
+      const target = resolveWikiLinkTarget(reference.target);
       if (
-        (resolution.kind === "exact" || resolution.kind === "history") &&
-        (post.id
-          ? resolution.post.id === post.id
-          : resolution.post.slug === post.slug)
+        target &&
+        (post.id ? target.id === post.id : target.slug === post.slug)
       ) {
         linksHere = true;
         break;
@@ -199,7 +182,7 @@ export async function itemEntry(
   options: {
     hash?: string;
     backlinks?: BacklinkRef[];
-    visiblePosts?: readonly Post[];
+    resolveWikiLinkTarget?: WikiLinkTargetResolver;
   } = {},
 ): Promise<McpItemEntry> {
   return {
@@ -222,7 +205,10 @@ export async function itemEntry(
     ...(post.document && Object.keys(post.document.content.fields).length > 0
       ? { fields: post.document.content.fields }
       : {}),
-    wikilinks: await resolvedWikiLinks(blog, post, options.visiblePosts ?? []),
+    wikilinks: resolvedWikiLinks(
+      post,
+      options.resolveWikiLinkTarget ?? (() => null),
+    ),
     ...(options.backlinks ? { backlinks: options.backlinks } : {}),
   };
 }

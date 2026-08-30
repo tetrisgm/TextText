@@ -1,8 +1,7 @@
 import { assessItemTypeQuality } from "@/lib/presentation/item-type-quality";
 import type { AuthInfo } from "./types";
-import type { CallToolResult, ToolAnnotations } from "./types";
+import type { CallToolResult } from "./types";
 import { randomUUID } from "node:crypto";
-import type { z } from "zod";
 import {
   recordAction,
   type AuditActorType,
@@ -87,14 +86,16 @@ import {
   createDraftInFolder,
   createSubfolder,
   deletePostAtomic,
-  getBlog,
-  getDocumentTemplate,
+  getAccessibleAllPosts,
   getAccessibleAllPostFiles,
   getAccessibleFolderCounts,
   getAccessibleFolderPostFiles,
   getAccessibleFolders,
+  getBlog,
+  getDocumentTemplate,
   getFolderByPath,
   getPostById,
+  getPostSlugAliases,
   getPostStoreContext,
   getTrashedFolders,
   getTrashedPosts,
@@ -119,6 +120,10 @@ import {
   signalWorkspaceChange,
   trashFolder,
 } from "@/lib/store";
+import {
+  createWikiLinkTargetResolver,
+  type WikiLinkTargetResolver,
+} from "@/lib/wikilinks";
 import { workspaceBlog } from "./auth";
 import {
   type BacklinkRef,
@@ -141,10 +146,6 @@ const CLIENT_SAVE_ERRORS = new Set(["That URL is already used"]);
 
 export type ToolContext = { authInfo?: AuthInfo };
 type ToolTargetType = "workspace" | "folder" | "item" | "mode";
-type RegisteredCallback = (
-  args: Record<string, unknown>,
-  extra: ToolContext,
-) => Promise<CallToolResult>;
 type McpScopeAccess = "full" | "read-only" | "none";
 
 function isReadOnlyScope(scope: string): boolean {
@@ -569,13 +570,18 @@ async function mcpItemEntry(
   options: {
     hash?: string;
     backlinks?: BacklinkRef[];
-    visiblePosts?: Post[];
+    resolveWikiLinkTarget?: WikiLinkTargetResolver;
   } = {},
 ) {
-  const visiblePosts =
-    options.visiblePosts ??
-    (await getAccessibleAllPostFiles(blog.handle, accessUser(extra)));
-  return itemEntry(blog, post, { ...options, visiblePosts });
+  let resolveWikiLinkTarget = options.resolveWikiLinkTarget;
+  if (!resolveWikiLinkTarget) {
+    const [visiblePosts, aliases] = await Promise.all([
+      getAccessibleAllPosts(blog.handle, accessUser(extra)),
+      getPostSlugAliases(blog.handle),
+    ]);
+    resolveWikiLinkTarget = createWikiLinkTargetResolver(visiblePosts, aliases);
+  }
+  return itemEntry(blog, post, { ...options, resolveWikiLinkTarget });
 }
 
 async function accessTarget(
@@ -1401,21 +1407,28 @@ export async function executeMcpTool(
       const path = input.folder_path ?? "blog";
       const folder = await accessibleFolder(blog, extra, path);
       if (isToolResult(folder)) return folder;
-      const [posts, visiblePosts] = await Promise.all([
+      const [posts, visiblePosts, aliases] = await Promise.all([
         getAccessibleFolderPostFiles(
           blog.handle,
           folder.path,
           accessUser(extra),
         ),
-        getAccessibleAllPostFiles(blog.handle, accessUser(extra)),
+        getAccessibleAllPosts(blog.handle, accessUser(extra)),
+        getPostSlugAliases(blog.handle),
       ]);
+      const resolveWikiLinkTarget = createWikiLinkTargetResolver(
+        visiblePosts,
+        aliases,
+      );
       return jsonResult({
         folder: folderSummary(folder),
         items: await Promise.all(
           posts
             .filter((post) => post.id)
             .slice(0, input.limit ?? 50)
-            .map((post) => mcpItemEntry(extra, blog, post, { visiblePosts })),
+            .map((post) =>
+              mcpItemEntry(extra, blog, post, { resolveWikiLinkTarget }),
+            ),
         ),
       });
     }
@@ -1423,11 +1436,16 @@ export async function executeMcpTool(
     case "list_trash": {
       const resolved = await requireWorkspace(extra, true);
       if (isToolResult(resolved)) return resolved;
-      const [posts, folders, visiblePosts] = await Promise.all([
+      const [posts, folders, visiblePosts, aliases] = await Promise.all([
         getTrashedPosts(resolved.blog.handle),
         getTrashedFolders(resolved.blog.handle),
-        getAccessibleAllPostFiles(resolved.blog.handle, accessUser(extra)),
+        getAccessibleAllPosts(resolved.blog.handle, accessUser(extra)),
+        getPostSlugAliases(resolved.blog.handle),
       ]);
+      const resolveWikiLinkTarget = createWikiLinkTargetResolver(
+        visiblePosts,
+        aliases,
+      );
       const trashedFolderIds = new Set(folders.map((folder) => folder.id));
       const folderUnits = folders.filter(
         (folder) => !folder.parentId || !trashedFolderIds.has(folder.parentId),
@@ -1439,7 +1457,7 @@ export async function executeMcpTool(
           )
           .map(async (post) => {
             const entry = await mcpItemEntry(extra, resolved.blog, post, {
-              visiblePosts,
+              resolveWikiLinkTarget,
             });
             return {
               ...entry,
@@ -1459,20 +1477,24 @@ export async function executeMcpTool(
       const resolved = await requirePost(extra, input.id);
       if (isToolResult(resolved)) return resolved;
       const rendered = renderItemFile(resolved.blog, resolved.post);
-      const livePosts = await getAccessibleAllPostFiles(
-        resolved.blog.handle,
-        accessUser(extra),
+      const [livePosts, aliases] = await Promise.all([
+        getAccessibleAllPostFiles(resolved.blog.handle, accessUser(extra)),
+        getPostSlugAliases(resolved.blog.handle),
+      ]);
+      const resolveWikiLinkTarget = createWikiLinkTargetResolver(
+        livePosts,
+        aliases,
       );
-      const backlinks = await itemBacklinks(
-        resolved.blog,
+      const backlinks = itemBacklinks(
         resolved.post,
         livePosts,
+        resolveWikiLinkTarget,
       );
       return jsonResult({
         item: await mcpItemEntry(extra, resolved.blog, resolved.post, {
           hash: rendered.hash,
           backlinks,
-          visiblePosts: livePosts,
+          resolveWikiLinkTarget,
         }),
         markdown: rendered.text,
         assets: listItemAssetReferences(resolved.post),
@@ -1586,10 +1608,12 @@ export async function executeMcpTool(
       const blog = await requireBlog(extra);
       if (isToolResult(blog)) return blog;
       const user = accessUser(extra);
-      const [posts, folders] = await Promise.all([
+      const [posts, folders, aliases] = await Promise.all([
         getAccessibleAllPostFiles(blog.handle, user),
         getAccessibleFolders(blog.handle, user),
+        getPostSlugAliases(blog.handle),
       ]);
+      const resolveWikiLinkTarget = createWikiLinkTargetResolver(posts, aliases);
       const folderPathById = new Map(
         folders.map((folder) => [folder.id, folder.path]),
       );
@@ -1607,7 +1631,9 @@ export async function executeMcpTool(
           )
           .slice(0, input.limit ?? 25)
           .map(async ({ post }) => ({
-            ...(await mcpItemEntry(extra, blog, post, { visiblePosts: posts })),
+            ...(await mcpItemEntry(extra, blog, post, {
+              resolveWikiLinkTarget,
+            })),
             folder_path: post.folderId
               ? (folderPathById.get(post.folderId) ?? null)
               : "blog",

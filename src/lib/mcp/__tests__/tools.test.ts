@@ -15,11 +15,14 @@ const mocks = vi.hoisted(() => ({
   deletePost: vi.fn(),
   deletePostAtomic: vi.fn(),
   getAccessibleFolders: vi.fn(),
+  getAccessibleAllPosts: vi.fn(),
   getAccessibleAllPostFiles: vi.fn(),
+  getAccessibleFolderPostFiles: vi.fn(),
   getBlog: vi.fn(),
   getDocumentTemplate: vi.fn(),
   getOwnedBlog: vi.fn(),
   getPostById: vi.fn(),
+  getPostSlugAliases: vi.fn(),
   getPostStoreContext: vi.fn(),
   getTrashedFolders: vi.fn(),
   getTrashedPosts: vi.fn(),
@@ -91,13 +94,15 @@ vi.mock("@/lib/store", () => ({
   deletePost: mocks.deletePost,
   deletePostAtomic: mocks.deletePostAtomic,
   getAccessibleAllPostFiles: mocks.getAccessibleAllPostFiles,
+  getAccessibleAllPosts: mocks.getAccessibleAllPosts,
   getAccessibleFolderCounts: vi.fn(async () => ({})),
-  getAccessibleFolderPostFiles: vi.fn(),
+  getAccessibleFolderPostFiles: mocks.getAccessibleFolderPostFiles,
   getAccessibleFolders: mocks.getAccessibleFolders,
   getBlog: mocks.getBlog,
   getDocumentTemplate: mocks.getDocumentTemplate,
   getOwnedBlog: mocks.getOwnedBlog,
   getPostById: mocks.getPostById,
+  getPostSlugAliases: mocks.getPostSlugAliases,
   getPostStoreContext: mocks.getPostStoreContext,
   getTrashedFolders: mocks.getTrashedFolders,
   getTrashedPosts: mocks.getTrashedPosts,
@@ -214,7 +219,10 @@ describe("MCP workspace tool adapter", () => {
     mocks.releaseIdempotencyKey.mockResolvedValue(undefined);
     mocks.resolveIdempotencyKey.mockResolvedValue(undefined);
     mocks.getAccessibleFolders.mockResolvedValue([]);
+    mocks.getAccessibleAllPosts.mockResolvedValue([]);
     mocks.getAccessibleAllPostFiles.mockResolvedValue([]);
+    mocks.getAccessibleFolderPostFiles.mockResolvedValue([]);
+    mocks.getPostSlugAliases.mockResolvedValue({});
     mocks.getTrashedFolders.mockResolvedValue([]);
     mocks.getTrashedPosts.mockResolvedValue([]);
     mocks.listItemAssetReferences.mockReturnValue([]);
@@ -702,23 +710,10 @@ describe("MCP workspace tool adapter", () => {
         body: "Links to [[tagged]].",
       },
     ]);
-    mocks.resolvePostSlug.mockImplementation(async (_handle, slug) => {
-      if (slug === "target") {
-        return { kind: "exact", post: target };
-      }
-      if (slug === "secret") {
-        return {
-          kind: "exact",
-          post: {
-            ...post,
-            id: "15151515-1515-4515-8515-151515151515",
-            slug: "secret",
-            title: "Private title",
-          },
-        };
-      }
-      if (slug === "tagged") return { kind: "exact", post };
-      return { kind: "missing" };
+    mocks.getPostSlugAliases.mockResolvedValue({
+      tagged: "tagged",
+      target: "target",
+      secret: "secret",
     });
     mocks.savePost.mockResolvedValue({
       ...post,
@@ -731,6 +726,7 @@ describe("MCP workspace tool adapter", () => {
 
     const read = await readItem.callback({ id }, auth(["read"]));
     expect(read.isError).not.toBe(true);
+    expect(mocks.resolvePostSlug).not.toHaveBeenCalled();
     expect(JSON.parse(toolText(read))).toMatchObject({
       item: {
         hash: persistedHash(post),
@@ -773,6 +769,66 @@ describe("MCP workspace tool adapter", () => {
         }),
       }),
     );
+  });
+
+  it("loads one alias snapshot for a multi-item listing", async () => {
+    const target: Post = {
+      id: "14141414-1414-4414-8414-141414141414",
+      folderId: "blog",
+      type: "article",
+      slug: "target",
+      title: "Target",
+      body: "",
+      status: "draft",
+      revision: 1,
+    };
+    const sources: Post[] = ["one", "two"].map((slug, index) => ({
+      id: `12121212-1212-4212-8212-12121212121${index}`,
+      folderId: "blog",
+      type: "article",
+      slug,
+      title: slug,
+      body: "[[target]] and [[target]]",
+      status: "draft",
+      revision: 1,
+    }));
+    mocks.getAccessibleFolders.mockResolvedValue([
+      { id: "blog", name: "Blog", path: "blog", mode: "blog" },
+    ]);
+    mocks.getAccessibleFolderPostFiles.mockResolvedValue(sources);
+    mocks.getAccessibleAllPosts.mockResolvedValue([...sources, target]);
+    mocks.getPostSlugAliases.mockResolvedValue({
+      one: "one",
+      two: "two",
+      target: "target",
+    });
+    const listItems = registrations().find(
+      (entry) => entry.name === "list_items",
+    )!;
+
+    const result = await listItems.callback(
+      { folder_path: "blog" },
+      auth(["read"]),
+    );
+
+    expect(result.isError).not.toBe(true);
+    expect(mocks.getPostSlugAliases).toHaveBeenCalledTimes(1);
+    expect(mocks.getAccessibleAllPosts).toHaveBeenCalledTimes(1);
+    expect(mocks.resolvePostSlug).not.toHaveBeenCalled();
+    expect(JSON.parse(toolText(result)).items).toEqual([
+      expect.objectContaining({
+        wikilinks: [
+          expect.objectContaining({ targetSlug: "target", resolved: true }),
+          expect.objectContaining({ targetSlug: "target", resolved: true }),
+        ],
+      }),
+      expect.objectContaining({
+        wikilinks: [
+          expect.objectContaining({ targetSlug: "target", resolved: true }),
+          expect.objectContaining({ targetSlug: "target", resolved: true }),
+        ],
+      }),
+    ]);
   });
 
   it("rejects a whole-body overwrite while the document is co-edited", async () => {
