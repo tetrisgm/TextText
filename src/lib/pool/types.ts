@@ -11,6 +11,7 @@ import type {
 import type { SharedWithMeEntry } from "@/lib/shares";
 import type { WikiLinkReference } from "@/lib/wikilink-syntax";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
+import type { DocumentSnapshot } from "@/lib/documents/model";
 
 export type WorkspacePoolPost = {
   id: string;
@@ -46,6 +47,8 @@ export type WorkspacePoolPost = {
   starred?: boolean;
   createdAt?: string;
   updatedAt?: string;
+  /** Monotonic compare-and-swap version for the canonical document. */
+  revision?: number;
 };
 
 export type WorkspacePoolPayload = {
@@ -77,8 +80,28 @@ export type WorkspacePostBodyPayload = {
   fetchedAt: string;
 };
 
+/** Canonical document returned by the lazy item endpoint. */
+export type WorkspacePostDocumentPayload = {
+  blogId: string;
+  postId: string;
+  document: DocumentSnapshot;
+  revision?: number;
+  updatedAt?: string;
+  fetchedAt: string;
+  /** Temporary compatibility field for body-only clients during migration. */
+  body: string;
+};
+
 export type WorkspaceInitialBody = {
   postId: string;
   body: string;
+  updatedAt?: string;
+};
+
+/** One server-rendered canonical document used to seed the client cache. */
+export type WorkspaceInitialDocument = {
+  postId: string;
+  document: DocumentSnapshot;
+  revision?: number;
   updatedAt?: string;
 };

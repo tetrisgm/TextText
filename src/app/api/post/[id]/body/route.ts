@@ -1,6 +1,7 @@
 import { isUuid, resolveItemAccess } from "@/lib/permissions";
 import { getCurrentUser } from "@/lib/session";
 import { getPostStoreContext } from "@/lib/store";
+import { requireDocumentSnapshot } from "@/lib/documents/model";
 
 export const dynamic = "force-dynamic";
 
@@ -32,11 +33,18 @@ export async function GET(
   });
   if (!access.isOwner) return notFound();
 
+  const document = requireDocumentSnapshot(
+    item.post.document,
+    `Post ${id}`,
+  );
+
   return Response.json(
     {
       blogId: item.blogId,
       postId: id,
-      body: item.post.body,
+      document,
+      revision: item.post.revision,
+      body: document.content.body,
       updatedAt: item.post.updatedAt,
       fetchedAt: new Date().toISOString(),
     },

@@ -34,11 +34,26 @@ beforeEach(() => {
       slug: "saved-link",
       title: "Saved link",
       body: "Private body",
+      document: {
+        schemaVersion: 1,
+        content: {
+          title: "Saved link",
+          body: "Private body",
+          fields: {},
+          tags: [],
+          assets: [],
+        },
+        presentation: {
+          template: { id: "texttext.bookmark", version: 1 },
+          theme: {},
+        },
+      },
       status: "draft",
       captureStatus: "captured",
       capture: { url: "https://example.com" },
       cover: "https://example.com/cover.jpg",
       updatedAt: "2026-07-17T10:00:00.000Z",
+      revision: 17,
       wordCount: 2,
     },
   });
@@ -57,6 +72,11 @@ describe("content API store boundary", () => {
       blogId: "blog-id",
       postId,
       body: "Private body",
+      revision: 17,
+      document: {
+        schemaVersion: 1,
+        content: { title: "Saved link", body: "Private body" },
+      },
       updatedAt: "2026-07-17T10:00:00.000Z",
     });
   });

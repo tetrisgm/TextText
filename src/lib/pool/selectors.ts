@@ -70,6 +70,7 @@ export function narrowPostFromPost(
     starred: post.starred,
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,
+    revision: post.revision,
   };
 }
 
@@ -113,6 +114,7 @@ export function postFromPoolPost(
     folderId: post.folderId,
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,
+    revision: post.revision,
   };
 }
 
