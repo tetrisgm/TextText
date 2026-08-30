@@ -21,6 +21,7 @@ import { blogPostPath } from "@/lib/public-paths";
 import { WORKSPACE_ITEM_TYPE_LABELS } from "@/lib/workspace-item-presentation";
 import { postSubtitle } from "@/lib/markdown-subtitle";
 import { shouldActivateVideoCover } from "@/lib/video-cover-policy";
+import "@/styles/cards.css";
 
 function PlayBadge() {
   return (

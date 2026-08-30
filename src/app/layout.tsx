@@ -3,7 +3,6 @@ import localFont from "next/font/local";
 import { rootDomainUrl } from "@/lib/site-url";
 import "../styles/tokens.css";
 import "../styles/broadsheet.css";
-import "../styles/cards.css";
 import "../styles/talk.css";
 import "../styles/apple.css";
 import "../styles/workspace.css";
