@@ -92,6 +92,7 @@ import {
 import {
   classifySlugCandidates,
   isSafePostSlug,
+  resolvableSlugAliases,
   sanitizePostSlug,
 } from "./post-slug";
 import { RESERVED_HANDLES, TENANT_HANDLE_RE } from "./tenants";
@@ -967,33 +968,20 @@ export async function getPostSlugAliases(
 ): Promise<Record<string, string>> {
   if (!db) throw new Error(NO_DATABASE);
   const rows = await db
-    .select({ slug: posts.slug, slugHistory: posts.slugHistory })
+    .select({
+      slug: posts.slug,
+      slugHistory: posts.slugHistory,
+      deletedAt: posts.deletedAt,
+    })
     .from(posts)
     .innerJoin(blogs, eq(posts.blogId, blogs.id))
     .where(
       and(
         eq(blogs.handle, handle),
         isNull(blogs.deletedAt),
-        isNull(posts.deletedAt),
       ),
     );
-  const current = new Set(rows.map((row) => row.slug));
-  const owners = new Map<string, Set<string>>();
-  for (const row of rows) {
-    for (const alias of row.slugHistory) {
-      const aliases = owners.get(alias) ?? new Set<string>();
-      aliases.add(row.slug);
-      owners.set(alias, aliases);
-    }
-  }
-  const aliases: Record<string, string> = Object.fromEntries(
-    rows.map((row) => [row.slug, row.slug]),
-  );
-  for (const [alias, candidates] of owners) {
-    if (current.has(alias) || candidates.size !== 1) continue;
-    aliases[alias] = [...candidates][0]!;
-  }
-  return aliases;
+  return resolvableSlugAliases(rows);
 }
 
 async function blogIdFor(handle: string): Promise<string> {

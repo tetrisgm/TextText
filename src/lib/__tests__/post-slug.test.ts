@@ -3,6 +3,7 @@ import {
   POST_SLUG_MAX_LENGTH,
   classifySlugCandidates,
   isSafePostSlug,
+  resolvableSlugAliases,
   sanitizePostSlug,
 } from "@/lib/post-slug";
 
@@ -62,6 +63,35 @@ describe("classifySlugCandidates", () => {
         row("trashed", "current", ["old"], new Date()),
       ]),
     ).toEqual({ kind: "missing" });
+  });
+});
+
+describe("resolvableSlugAliases", () => {
+  it("builds current and unique historical lookups in one snapshot", () => {
+    expect(
+      resolvableSlugAliases([
+        row("one", "current", ["previous"]),
+        row("two", "other"),
+      ]),
+    ).toEqual({ current: "current", other: "other", previous: "current" });
+  });
+
+  it("fails closed for ambiguous aliases and trashed current slugs", () => {
+    expect(
+      resolvableSlugAliases([
+        row("one", "one-current", ["shared", "reserved"]),
+        row("two", "two-current", ["shared"]),
+        row("trashed", "reserved", [], new Date("2026-07-13T00:00:00Z")),
+      ]),
+    ).toEqual({ "one-current": "one-current", "two-current": "two-current" });
+  });
+
+  it("does not expose aliases owned only by trashed rows", () => {
+    expect(
+      resolvableSlugAliases([
+        row("trashed", "current", ["previous"], new Date()),
+      ]),
+    ).toEqual({});
   });
 });
 

@@ -28,6 +28,36 @@ type SlugCandidate = {
   deletedAt: Date | string | null;
 };
 
+/**
+ * Build the bulk form of slug resolution for callers that already hold a
+ * tenant snapshot. Live current slugs resolve to themselves, and a historical
+ * slug resolves only when exactly one live row owns it. Any current slug,
+ * including one held by a trashed row, blocks historical reuse.
+ */
+export function resolvableSlugAliases<T extends SlugCandidate>(
+  rows: readonly T[],
+): Record<string, string> {
+  const currentSlugs = new Set(rows.map((row) => row.slug));
+  const historicalOwners = new Map<string, Set<string>>();
+  const aliases: Record<string, string> = {};
+
+  for (const row of rows) {
+    if (row.deletedAt != null) continue;
+    aliases[row.slug] = row.slug;
+    for (const alias of row.slugHistory) {
+      const owners = historicalOwners.get(alias) ?? new Set<string>();
+      owners.add(row.slug);
+      historicalOwners.set(alias, owners);
+    }
+  }
+
+  for (const [alias, owners] of historicalOwners) {
+    if (currentSlugs.has(alias) || owners.size !== 1) continue;
+    aliases[alias] = [...owners][0]!;
+  }
+  return aliases;
+}
+
 type SlugCandidateResolution<T extends SlugCandidate> =
   | { kind: "exact"; row: T }
   | { kind: "history"; row: T }
