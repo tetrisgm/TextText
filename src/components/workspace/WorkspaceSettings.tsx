@@ -35,6 +35,7 @@ import DeleteAccountDialog, {
   type DeleteAccountStage,
 } from "./DeleteAccountDialog";
 import { ShareDialog } from "./ShareDialog";
+import { ConnectionGallery } from "./ConnectionGallery";
 import styles from "./WorkspaceSettings.module.css";
 
 export function WorkspaceSettings({
@@ -392,6 +393,13 @@ export function WorkspaceSettings({
             </li>
           </ul>
         </section>
+
+        <ConnectionGallery
+          cloudConfigured={Boolean(aiSettings?.configured)}
+          nativeReady={nativeConnection?.state === "ready"}
+          clientCount={tokensVisible ? tokens.length : null}
+          mcpCount={mcpCount}
+        />
 
         {aiSettings?.allowed && (
           <section className={styles.section} aria-labelledby="settings-ai">
