@@ -41,6 +41,13 @@ const nextConfig: NextConfig = {
   env: { NEXT_PUBLIC_BUILD_ID: buildId },
   allowedDevOrigins: devOrigin ? [devOrigin, `*.${devOrigin}`] : [],
   devIndicators: false,
+  // Yjs guards against loading more than one copy in the same JavaScript
+  // realm. Turbopack otherwise embeds it independently in several server
+  // route and SSR chunks, which makes page-data workers evaluate the guard
+  // more than once even though npm has only one physical Yjs installation.
+  // Keep Yjs and its awareness peer external together so every server import
+  // resolves through Node's single module cache. Client bundles are unchanged.
+  serverExternalPackages: ["yjs", "y-protocols"],
   async headers() {
     if (process.env.NODE_ENV !== "development") return [];
 
