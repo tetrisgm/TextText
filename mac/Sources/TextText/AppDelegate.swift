@@ -1273,6 +1273,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
         var documents: [WorkspaceSpotlightDocument] = []
         var signatures: [String: String] = [:]
+        let foldersById = Dictionary(
+            uniqueKeysWithValues: workspace.folders.map { ($0.id, $0) })
         // A degenerate empty folder list must never compute removed = everything.
         var healthy = !workspace.folders.isEmpty
         for folder in workspace.folders {
@@ -1293,11 +1295,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             }
             for item in items {
                 guard let id = item.id, !id.isEmpty else { continue }
-                documents.append(makeSpotlightDocument(
+                let relativePath = Self.spotlightRelativePath(
                     item: item, folder: folder, workspace: workspace,
+                    foldersById: foldersById)
+                documents.append(makeSpotlightDocument(
+                    item: item, folder: folder, relativePath: relativePath,
                     mountRoot: mountRoot))
                 signatures[id] = Self.spotlightSignature(
-                    item: item, folder: folder, workspace: workspace)
+                    item: item, folder: folder, relativePath: relativePath)
             }
         }
 
@@ -1334,11 +1339,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     /// manifest (title/kind/status/slug); a Spotlight click routes by textTextId to
     /// openTextTextItem(id:), so no on-disk body or resolved URL is required.
     private func makeSpotlightDocument(
-        item: ManifestItem, folder: WorkspaceFolder, workspace: Workspace,
+        item: ManifestItem, folder: WorkspaceFolder, relativePath: String,
         mountRoot: URL?
     ) -> WorkspaceSpotlightDocument {
-        let relativePath = Self.spotlightRelativePath(
-            item: item, folder: folder, workspace: workspace)
         let fileURL = (mountRoot ?? URL(fileURLWithPath: "/"))
             .appendingPathComponent(relativePath)
         let markdown = """
@@ -1366,10 +1369,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     static func spotlightSignature(
         item: ManifestItem, folder: WorkspaceFolder, workspace: Workspace
     ) -> String {
+        spotlightSignature(
+            item: item, folder: folder,
+            relativePath: spotlightRelativePath(
+                item: item, folder: folder, workspace: workspace))
+    }
+
+    private static func spotlightSignature(
+        item: ManifestItem, folder: WorkspaceFolder, relativePath: String
+    ) -> String {
         [
             item.hash, item.title, item.kind, item.status, item.slug,
-            item.canonicalUrl ?? "", folder.id,
-            spotlightRelativePath(item: item, folder: folder, workspace: workspace),
+            item.canonicalUrl ?? "", folder.id, relativePath,
         ].map { "\($0.utf8.count):\($0)" }.joined()
     }
 
@@ -1381,6 +1392,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     ) -> String {
         let foldersById = Dictionary(
             uniqueKeysWithValues: workspace.folders.map { ($0.id, $0) })
+        return spotlightRelativePath(
+            item: item, folder: folder, workspace: workspace,
+            foldersById: foldersById)
+    }
+
+    private static func spotlightRelativePath(
+        item: ManifestItem, folder: WorkspaceFolder, workspace: Workspace,
+        foldersById: [String: WorkspaceFolder]
+    ) -> String {
         var chain: [String] = []
         var current: WorkspaceFolder? = folder
         var visited = Set<String>()
