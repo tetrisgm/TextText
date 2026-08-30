@@ -143,6 +143,10 @@ export function startersFor(context: StarterContext): Starter[] {
           label: "Anything worth keeping?",
           prompt: "Look through Trash for anything that looks worth restoring, and say why.",
         },
+        {
+          label: "Empty Trash",
+          prompt: "Show me exactly what is in Trash, then offer to empty it permanently for my approval.",
+        },
       ];
     case "shared":
       return [
@@ -155,15 +159,15 @@ export function startersFor(context: StarterContext): Starter[] {
         {
           label: "Turn recent notes into a sourced brief",
           prompt:
-            "Read my recent notes and create a Living brief with a visible source ledger, evidence-backed claims, and clear writing rules.",
+            "Read my recent notes and create one clear brief with a visible source ledger linking every item you used.",
         },
         {
-          label: "Find related writing",
-          prompt: "Find documents that cover related ideas and explain how they connect.",
+          label: "Build a project tracker",
+          prompt: "Build a reusable project tracker item type with status, owner, priority, due date, and a folder view grouped by status. Show me the structure before applying it.",
         },
         {
-          label: "Continue an unfinished draft",
-          prompt: "Find one unfinished draft, tell me what it needs, and suggest the next paragraph.",
+          label: "Organize my recent notes",
+          prompt: "Review my recent notes, identify a useful organization, and propose the exact tags or folder moves before changing anything.",
         },
       ];
   }

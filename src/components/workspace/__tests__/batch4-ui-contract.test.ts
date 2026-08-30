@@ -35,6 +35,16 @@ const spatialCardSource = readFileSync(
 );
 
 describe("batch 4 workspace UI contract", () => {
+  it("gives an empty workspace a dismissible path into capture, item types, AI, and the welcome guide", () => {
+    expect(shellSource).toContain('aria-label="Start here"');
+    expect(shellSource).toContain("Capture a thought");
+    expect(shellSource).toContain("Build an item type");
+    expect(shellSource).toContain("Try the assistant");
+    expect(shellSource).toContain("Connect an AI");
+    expect(shellSource).toContain("See what it can do");
+    expect(shellSource).toContain("texttext:start-here:");
+  });
+
   it("keeps reader prose selectable instead of starting marquee selection", () => {
     expect(shellSource).toContain(
       ".reader, .reader-prose, [data-static-prose]",

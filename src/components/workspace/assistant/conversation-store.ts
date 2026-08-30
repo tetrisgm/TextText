@@ -19,6 +19,10 @@ export type AssistantConversationSummary = {
   messageCount: number;
 };
 
+export type AssistantPendingConversationSummary = AssistantConversationSummary & {
+  pendingProposalCount: number;
+};
+
 type AssistantConversation = Omit<
   AssistantConversationSummary,
   "messageCount"
@@ -393,6 +397,42 @@ export function assistantConversationMessages(
       (conversation) => conversation.id === conversationId,
     )?.messages ?? EMPTY_MESSAGES
   );
+}
+
+/** Pending owner decisions across every context in this workspace. */
+export function pendingAssistantProposalCount(handle: string): number {
+  if (typeof window === "undefined") return 0;
+  return pendingAssistantConversationSummaries(handle).reduce(
+    (total, conversation) => total + conversation.pendingProposalCount,
+    0,
+  );
+}
+
+/** Chats with live proposals, regardless of where in the workspace they began. */
+export function pendingAssistantConversationSummaries(
+  handle: string,
+): AssistantPendingConversationSummary[] {
+  if (typeof window === "undefined") return [];
+  return loadWorkspace(handle).conversations
+    .map((conversation) => ({
+      id: conversation.id,
+      title: conversation.title,
+      contextKey: conversation.contextKey,
+      pinned: conversation.pinned,
+      createdAt: conversation.createdAt,
+      updatedAt: conversation.updatedAt,
+      messageCount: conversation.messages.length,
+      pendingProposalCount: conversation.messages.reduce(
+        (total, message) =>
+          total +
+          (message.writeProposals?.filter(
+            (proposal) => proposal.status === "pending" && !proposal.terminal,
+          ).length ?? 0),
+        0,
+      ),
+    }))
+    .filter((conversation) => conversation.pendingProposalCount > 0)
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
 export function assistantConversationSummaries(

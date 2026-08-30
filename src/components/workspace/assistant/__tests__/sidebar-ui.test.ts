@@ -20,6 +20,57 @@ import {
 import { AssistantConversation } from "@/components/workspace/assistant/AssistantConversation";
 
 describe("assistant sidebar UI", () => {
+  it("keeps waiting approvals visible while the assistant is closed", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantSidebar, {
+        state: "hidden",
+        onStateChange: () => {},
+        width: 360,
+        onWidthChange: () => {},
+        composerValue: "",
+        onComposerChange: () => {},
+        onSubmit: () => {},
+        onFilesSelected: () => {},
+        onRemoveAttachment: () => {},
+        pendingCount: 3,
+      }),
+    );
+
+    expect(html).toContain("Open assistant, 3 approvals waiting");
+    expect(html).toContain(">3</span>");
+  });
+
+  it("makes waiting approvals openable from the assistant header", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantSidebar, {
+        state: "pinned",
+        onStateChange: () => {},
+        width: 360,
+        onWidthChange: () => {},
+        composerValue: "",
+        onComposerChange: () => {},
+        onSubmit: () => {},
+        onFilesSelected: () => {},
+        onRemoveAttachment: () => {},
+        pendingCount: 1,
+        pendingConversations: [{
+          id: "approval-chat",
+          title: "Publish the launch note",
+          contextKey: "item:note-1",
+          pinned: false,
+          createdAt: "2026-08-30T12:00:00.000Z",
+          updatedAt: "2026-08-30T12:00:00.000Z",
+          messageCount: 2,
+          pendingProposalCount: 1,
+        }],
+        onOpenPendingConversation: () => {},
+      }),
+    );
+
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain("1 approval</button>");
+  });
+
   it("keeps a draft but disables submission while owner access is unresolved", () => {
     const html = renderToStaticMarkup(
       React.createElement(AssistantSidebar, {

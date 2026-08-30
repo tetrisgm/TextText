@@ -112,6 +112,8 @@ import {
   createAssistantConversation,
   mergeSyncedAssistantConversations,
   migrateAssistantConversationOwnerScope,
+  pendingAssistantConversationSummaries,
+  pendingAssistantProposalCount,
   serverAssistantConversationRevision,
   subscribeAssistantConversations,
   toggleAssistantConversationPinned,
@@ -2379,6 +2381,21 @@ export function useNativeAssistant({
     },
     [contextKey, conversationRevision, conversationStoreKey],
   );
+  const pendingProposalCount = useMemo(
+    () => {
+      void conversationRevision;
+      return conversationStoreKey
+        ? pendingAssistantProposalCount(conversationStoreKey)
+        : 0;
+    },
+    [conversationRevision, conversationStoreKey],
+  );
+  const pendingConversations = useMemo(() => {
+    void conversationRevision;
+    return conversationStoreKey
+      ? pendingAssistantConversationSummaries(conversationStoreKey)
+      : [];
+  }, [conversationRevision, conversationStoreKey]);
   const modelChoices = useMemo(
     () => assistantModelChoices(cloudProvider),
     [cloudProvider],
@@ -2393,6 +2410,8 @@ export function useNativeAssistant({
     activeCloudProvider: ownerScopeReady ? activeCloudProvider : null,
     activeConversationId: activeConversation?.id ?? null,
     conversations,
+    pendingConversations,
+    pendingProposalCount,
     searchConversations: (query: string) =>
       conversationStoreKey
         ? assistantConversationSummaries(conversationStoreKey, contextKey, query)
@@ -2402,6 +2421,15 @@ export function useNativeAssistant({
         ? createAssistantConversation(conversationStoreKey, contextKey)
         : "",
     openConversation: (conversationId: string) =>
+      Boolean(
+        conversationStoreKey &&
+          activateAssistantConversation(
+            conversationStoreKey,
+            contextKey,
+            conversationId,
+          ),
+      ),
+    openConversationInContext: (contextKey: string, conversationId: string) =>
       Boolean(
         conversationStoreKey &&
           activateAssistantConversation(

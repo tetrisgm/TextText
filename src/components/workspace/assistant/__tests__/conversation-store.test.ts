@@ -9,6 +9,8 @@ import {
   createAssistantConversation,
   mergeSyncedAssistantConversations,
   migrateAssistantConversationOwnerScope,
+  pendingAssistantConversationSummaries,
+  pendingAssistantProposalCount,
   resetAssistantConversationStore,
   toggleAssistantConversationPinned,
   updateAssistantConversationMessage,
@@ -314,6 +316,67 @@ describe("assistant conversation history", () => {
     expect(
       assistantConversationMessages("writer", active.id)[0]?.writeProposals,
     ).toMatchObject([{ id: "proposal-1", status: "pending" }]);
+  });
+
+  it("counts only live approvals across every workspace context", () => {
+    browserStorage();
+    const root = activeAssistantConversation("writer", "root")!;
+    appendAssistantConversationMessage("writer", root.id, {
+      id: "root-proposals",
+      role: "assistant",
+      text: "Review these changes.",
+      writeProposals: [
+        {
+          id: "pending-root", status: "pending", tool: "update_item",
+          title: "Update item", summary: "Update the introduction",
+          arguments: { id: "post-1", body: "New introduction" },
+          createdAt: "2026-08-24T12:00:00.000Z",
+          expiresAt: "2026-08-24T12:10:00.000Z",
+        },
+        {
+          id: "already-approved", status: "approved", tool: "update_item",
+          title: "Update item", summary: "Already approved",
+          arguments: { id: "post-2", body: "Done" },
+          createdAt: "2026-08-24T12:00:00.000Z",
+          expiresAt: "2026-08-24T12:10:00.000Z",
+        },
+        {
+          id: "terminal-pending", status: "pending", terminal: true,
+          tool: "update_item", title: "Update item",
+          summary: "Cannot be retried",
+          arguments: { id: "post-3", body: "Uncertain" },
+          createdAt: "2026-08-24T12:00:00.000Z",
+          expiresAt: "2026-08-24T12:10:00.000Z",
+        },
+      ],
+    });
+
+    const folder = createAssistantConversation("writer", "folder:notes");
+    appendAssistantConversationMessage("writer", folder, {
+      id: "folder-proposal", role: "assistant",
+      text: "Review the folder change.",
+      writeProposals: [{
+        id: "pending-folder", status: "pending", tool: "move_item",
+        title: "Move item", summary: "Move one note",
+        arguments: { id: "post-4", folder_path: "projects" },
+        createdAt: "2026-08-24T12:00:00.000Z",
+        expiresAt: "2026-08-24T12:10:00.000Z",
+      }],
+    });
+
+    expect(pendingAssistantProposalCount("writer")).toBe(2);
+    expect(pendingAssistantConversationSummaries("writer")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          contextKey: "folder:notes",
+          pendingProposalCount: 1,
+        }),
+        expect.objectContaining({
+          contextKey: "root",
+          pendingProposalCount: 1,
+        }),
+      ]),
+    );
   });
 
   it("bounds each transcript to the most recent 200 messages", () => {

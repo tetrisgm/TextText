@@ -2500,8 +2500,12 @@ function WorkspaceRootLanding({
   selectedPostId,
   selectedPostIds,
   selectedSectionPath,
+  assistantConnection,
+  assistantCloudProvider,
   onBuildItemType,
   onFocusCapture,
+  onUseAssistantPrompt,
+  settingsHref,
 }: {
   canManageItems: boolean;
   captureFocusRequestKey: number;
@@ -2528,6 +2532,7 @@ function WorkspaceRootLanding({
   onOpenAssistant: () => void;
   onBuildItemType: () => void;
   onFocusCapture: () => void;
+  onUseAssistantPrompt: (prompt: string) => void;
   settingsHref: string;
 }) {
   const searchRef = useRef<HTMLInputElement>(null);
@@ -2542,6 +2547,7 @@ function WorkspaceRootLanding({
     pool.blog.homeLayout,
   );
   const [homeViewError, setHomeViewError] = useState<string | null>(null);
+  const [showStartHere, setShowStartHere] = useState(false);
   const commitHomeView = useCallback(
     (homeLayout: BlogHomeView) => {
       const previous = recentViewMode;
@@ -2632,6 +2638,42 @@ function WorkspaceRootLanding({
     }),
     [pool.posts],
   );
+  const hasPersonalItems = useMemo(
+    () =>
+      pool.posts.some(
+        (post) => folderPathForPoolPost(pool, post) !== "documentation",
+      ),
+    [pool],
+  );
+  const welcomePost = useMemo(
+    () =>
+      pool.posts.find(
+        (post) =>
+          post.slug === "welcome-to-texttext" &&
+          folderPathForPoolPost(pool, post) === "documentation",
+      ) ?? null,
+    [pool],
+  );
+  const assistantReady =
+    Boolean(assistantCloudProvider) || assistantConnection?.state === "ready";
+
+  useEffect(() => {
+    const hydrate = window.setTimeout(() => {
+      setShowStartHere(
+        window.localStorage.getItem(`texttext:start-here:${pool.blog.handle}`) !==
+          "dismissed",
+      );
+    }, 0);
+    return () => window.clearTimeout(hydrate);
+  }, [pool.blog.handle]);
+
+  const dismissStartHere = useCallback(() => {
+    window.localStorage.setItem(
+      `texttext:start-here:${pool.blog.handle}`,
+      "dismissed",
+    );
+    setShowStartHere(false);
+  }, [pool.blog.handle]);
 
   useEffect(() => {
     const hydrate = window.setTimeout(() => {
@@ -2944,6 +2986,36 @@ function WorkspaceRootLanding({
             <header className="workspace-library-header">
               <h1 id="workspace-root-title">Library</h1>
             </header>
+            {canManageItems && showStartHere && !hasPersonalItems ? (
+              <section className="workspace-start-here" aria-label="Start here">
+                <div>
+                  <strong>Make TextText yours</strong>
+                  <span>
+                    Capture something, or ask AI to build and organize the kind
+                    of writing you keep.
+                    {welcomePost ? (
+                      <button
+                        type="button"
+                        className="workspace-start-here-guide"
+                        onClick={() => onOpenPost(welcomePost.id)}
+                      >
+                        See what it can do
+                      </button>
+                    ) : null}
+                  </span>
+                </div>
+                <div className="workspace-start-here-actions">
+                  <button type="button" onClick={onFocusCapture}>Capture a thought</button>
+                  <button type="button" onClick={onBuildItemType}>Build an item type</button>
+                  {assistantReady ? (
+                    <button type="button" onClick={() => onUseAssistantPrompt("Build a reusable project tracker with status, owner, priority, due date, and a folder view grouped by status. Show me the structure before applying it.")}>Try the assistant</button>
+                  ) : (
+                    <a href={`${settingsHref}#settings-connection-gallery`}>Connect an AI</a>
+                  )}
+                </div>
+                <button type="button" className="workspace-start-here-dismiss" aria-label="Dismiss Start here" onClick={dismissStartHere}>Done</button>
+              </section>
+            ) : null}
             {canManageItems && creationFolder ? (
               <section
                 className="workspace-root-create"
@@ -3982,6 +4054,7 @@ function LocalWorkspaceContent({
   onOpenAssistant,
   onBuildItemType,
   onFocusCapture,
+  onUseAssistantPrompt,
 }: {
   blog: Blog;
   canCommentPost: boolean;
@@ -4023,6 +4096,7 @@ function LocalWorkspaceContent({
   onOpenAssistant: () => void;
   onBuildItemType: (folderPath?: string) => void;
   onFocusCapture: () => void;
+  onUseAssistantPrompt: (prompt: string) => void;
 }) {
   let page: ReactNode;
   let activePost: WorkspacePoolPost | null = null;
@@ -4053,6 +4127,7 @@ function LocalWorkspaceContent({
       onOpenAssistant={onOpenAssistant}
       onBuildItemType={() => onBuildItemType()}
       onFocusCapture={onFocusCapture}
+      onUseAssistantPrompt={onUseAssistantPrompt}
       settingsHref={workspaceSettingsHref(homePath)}
     />
   );
@@ -6741,6 +6816,10 @@ function LocalWorkspaceShell({
       assistantCloudProvider={assistant.cloudProvider}
       onConnectAssistant={assistant.connectNativeAssistant}
       onOpenAssistant={() => changeAssistantState("pinned")}
+      onUseAssistantPrompt={(prompt) => {
+        assistantComposer.setText(prompt);
+        changeAssistantState("pinned");
+      }}
       onBuildItemType={(folderPath = "") =>
         setItemTypeStudioFolderPath(folderPath)
       }
@@ -6958,6 +7037,21 @@ function LocalWorkspaceShell({
           submitting={assistant.submitting}
           submitDisabled={!assistant.ownerScopeReady}
           launcherBusy={assistant.runningJobs > 0}
+          pendingCount={assistant.pendingProposalCount}
+          pendingConversations={assistant.pendingConversations}
+          onOpenPendingConversation={(conversation) => {
+            assistant.openConversationInContext(
+              conversation.contextKey,
+              conversation.id,
+            );
+            if (conversation.contextKey.startsWith("item:")) {
+              openPostId(conversation.contextKey.slice("item:".length));
+              return;
+            }
+            if (conversation.contextKey.startsWith("place:")) {
+              navigatePath(conversation.contextKey.slice("place:".length));
+            }
+          }}
           composerPlaceholder={
             assistant.ownerScopeStatus === "checking"
               ? "Checking assistant access"

@@ -17,7 +17,10 @@ import styles from "./AssistantSidebar.module.css";
 import { CollaboratorMark } from "@/components/collab/CollaboratorMark";
 import type { AssistantAgentIdentity } from "./agent-identity";
 import { AssistantConversationHistory } from "./AssistantConversationHistory";
-import type { AssistantConversationSummary } from "./conversation-store";
+import type {
+  AssistantConversationSummary,
+  AssistantPendingConversationSummary,
+} from "./conversation-store";
 import type { AssistantModelChoice } from "./model-preference";
 import { WorkspaceAssistantSkillLauncher } from "./AssistantSkillLauncher";
 
@@ -106,6 +109,12 @@ export type AssistantSidebarProps = {
   submitting?: boolean;
   /** Shows a pulsing badge on the launcher while background jobs run. */
   launcherBusy?: boolean;
+  /** Owner decisions waiting anywhere in this workspace. */
+  pendingCount?: number;
+  pendingConversations?: readonly AssistantPendingConversationSummary[];
+  onOpenPendingConversation?: (
+    conversation: AssistantPendingConversationSummary,
+  ) => void;
   panelId?: string;
   className?: string;
   style?: CSSProperties;
@@ -263,6 +272,9 @@ export function AssistantSidebar({
   submitDisabled = false,
   submitting = false,
   launcherBusy = false,
+  pendingCount = 0,
+  pendingConversations = [],
+  onOpenPendingConversation,
   panelId: panelIdProp,
   className,
   style,
@@ -285,6 +297,7 @@ export function AssistantSidebar({
   const [viewportWidth, setViewportWidth] = useState<number | null>(null);
   const [contextPickerOpen, setContextPickerOpen] = useState(false);
   const [contextQuery, setContextQuery] = useState("");
+  const [pendingOpen, setPendingOpen] = useState(false);
 
   const { resolvedMaxWidth, resolvedMinWidth, resolvedWidth } =
     resolveAssistantSidebarDimensions({
@@ -335,6 +348,7 @@ export function AssistantSidebar({
   }, [onStateChange]);
 
   const hideAssistant = useCallback(() => {
+    setPendingOpen(false);
     onStateChange("hidden");
   }, [onStateChange]);
 
@@ -506,7 +520,7 @@ export function AssistantSidebar({
       {state === "hidden" && (
         <ShortcutTooltip
           className={styles.launcherWrap}
-          label={launcherBusy ? "Assistant is working" : agent ? `Chat with ${agent.name}` : "Open assistant"}
+          label={pendingCount > 0 ? `${pendingCount} assistant ${pendingCount === 1 ? "approval" : "approvals"} waiting` : launcherBusy ? "Assistant is working" : agent ? `Chat with ${agent.name}` : "Open assistant"}
           keys="⌘⇧A"
           placement="top"
         >
@@ -518,7 +532,7 @@ export function AssistantSidebar({
             aria-expanded="false"
             aria-keyshortcuts="Meta+Shift+A Control+Shift+A"
             aria-label={
-              launcherBusy ? "Open assistant (working)" : agent ? `Chat with ${agent.name}` : "Open assistant"
+              pendingCount > 0 ? `Open assistant, ${pendingCount} ${pendingCount === 1 ? "approval" : "approvals"} waiting` : launcherBusy ? "Open assistant (working)" : agent ? `Chat with ${agent.name}` : "Open assistant"
             }
             onClick={showAssistant}
           >
@@ -526,6 +540,9 @@ export function AssistantSidebar({
             {launcherBusy && (
               <span className={styles.launcherBusy} aria-hidden="true" />
             )}
+            {pendingCount > 0 ? (
+              <span className={styles.launcherPending} aria-hidden="true">{pendingCount > 9 ? "9+" : pendingCount}</span>
+            ) : null}
           </button>
         </ShortcutTooltip>
       )}
@@ -568,6 +585,38 @@ export function AssistantSidebar({
             <h2 id={titleId} className={styles.title}>
               {agent ? `Chat with ${agent.name}` : title}
             </h2>
+            {pendingCount > 0 && onOpenPendingConversation ? (
+              <div className={styles.pendingMenu}>
+                <button
+                  type="button"
+                  className={styles.pendingLabel}
+                  aria-expanded={pendingOpen}
+                  onClick={() => setPendingOpen((current) => !current)}
+                >
+                  {pendingCount} {pendingCount === 1 ? "approval" : "approvals"}
+                </button>
+                {pendingOpen ? (
+                  <section className={styles.pendingPopover} aria-label="Waiting for approval">
+                    <strong>Waiting for approval</strong>
+                    <ul>
+                      {pendingConversations.map((conversation) => (
+                        <li key={conversation.id}>
+                          <button type="button" onClick={() => {
+                            setPendingOpen(false);
+                            onOpenPendingConversation(conversation);
+                          }}>
+                            <span>{conversation.title}</span>
+                            <small>{conversation.pendingProposalCount}</small>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ) : null}
+              </div>
+            ) : pendingCount > 0 ? (
+              <span className={styles.pendingLabel}>{pendingCount} {pendingCount === 1 ? "approval" : "approvals"}</span>
+            ) : null}
             <div className={styles.headerActions}>
               {onModelChange && modelChoices.length > 1 ? (
                 <select

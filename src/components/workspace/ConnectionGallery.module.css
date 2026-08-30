@@ -1,6 +1,8 @@
 .section { display: grid; gap: 14px; padding: 24px 0 28px; border-top: 1px solid var(--ac-separator); }
 .header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
 .header > div { display: grid; gap: 5px; }
+.headerActions { display: flex; align-items: center; gap: 10px; }
+.headerActions button { border: 0; border-radius: 999px; padding: 7px 11px; background: var(--ac-accent); color: white; font: 650 12px/1.2 var(--ac-font-text); cursor: pointer; }
 .header h2 { margin: 0; color: var(--ac-label); font: 650 17px/1.2 var(--ac-font-text); }
 .header p { margin: 0; color: var(--ac-label-2); font: 500 13px/1.45 var(--ac-font-text); }
 .docs { color: var(--ac-accent); font: 600 12px/1.2 var(--ac-font-text); white-space: nowrap; }
@@ -12,4 +14,4 @@
 .card a { color: var(--ac-accent); font: 650 12px/1.2 var(--ac-font-text); text-decoration: none; }
 .status, .connected { color: var(--ac-label-2); font: 600 11px/1.2 var(--ac-font-text); }
 .connected { color: var(--ac-success, #237a4b); }
-@media (max-width: 620px) { .header { display: grid; } .grid { grid-template-columns: 1fr; } }
+@media (max-width: 620px) { .header { display: grid; } .headerActions { justify-content: space-between; } .grid { grid-template-columns: 1fr; } }

@@ -189,6 +189,67 @@
   margin: 0 0 28px;
 }
 
+.workspace-start-here {
+  position: relative;
+  display: grid;
+  gap: 0.85rem;
+  margin: 0 0 1rem;
+  padding: 1rem 3.5rem 1rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--paper) 94%, var(--accent) 6%);
+}
+
+.workspace-start-here > div:first-child {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.workspace-start-here > div:first-child span {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.workspace-start-here-guide {
+  margin-left: 0.45rem;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
+}
+
+.workspace-start-here-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.workspace-start-here-actions button,
+.workspace-start-here-actions a,
+.workspace-start-here-dismiss {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  padding: 0.48rem 0.72rem;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.workspace-start-here-dismiss {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
 .workspace-build-type-button {
   display: inline-flex;
   align-items: center;

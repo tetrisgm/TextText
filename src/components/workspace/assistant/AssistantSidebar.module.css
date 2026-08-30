@@ -250,6 +250,82 @@
   white-space: nowrap;
 }
 
+.pendingLabel {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: var(--ac-accent-soft, rgba(10, 132, 255, 0.14));
+  color: var(--ac-accent, #0a84ff);
+  font: 650 11px/1.2 var(--ac-font-text, -apple-system, sans-serif);
+}
+
+button.pendingLabel {
+  border: 0;
+  cursor: pointer;
+}
+
+.pendingMenu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.pendingPopover {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(260px, calc(100vw - 32px));
+  padding: 10px;
+  border: 1px solid var(--ac-hairline, rgba(0, 0, 0, 0.12));
+  border-radius: 10px;
+  background: var(--ac-bg, #fff);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.2);
+}
+
+.pendingPopover > strong {
+  display: block;
+  padding: 2px 4px 8px;
+  font-size: 12px;
+}
+
+.pendingPopover ul {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pendingPopover li button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 0;
+  border-radius: 7px;
+  padding: 8px;
+  background: transparent;
+  color: var(--ac-label, #1d1d1f);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pendingPopover li button:hover {
+  background: var(--ac-fill-4, rgba(118, 118, 128, 0.08));
+}
+
+.pendingPopover span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pendingPopover small {
+  color: var(--ac-label-2, rgba(60, 60, 67, 0.72));
+}
+
 .headerActions {
   display: inline-flex;
   flex: 0 0 auto;
@@ -772,6 +848,22 @@
   border: 1.5px solid var(--ac-mat-bg, rgba(246, 246, 246, 0.96));
   background: var(--ac-accent, #0a84ff);
   animation: assistant-launcher-pulse 1.2s ease-in-out infinite;
+}
+
+.launcherPending {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  padding: 0 4px;
+  border: 2px solid var(--ac-bg, #fff);
+  border-radius: 999px;
+  background: var(--ac-accent, #0a84ff);
+  color: #fff;
+  font: 700 10px/1 var(--ac-font-text, -apple-system, sans-serif);
 }
 
 @keyframes assistant-launcher-pulse {
