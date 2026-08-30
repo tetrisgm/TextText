@@ -905,20 +905,17 @@ export async function POST(request: Request) {
     (proposal) => writeProposals.push(proposal),
   );
   const toolMode = cloudToolMode(messages, body.context);
-  const workspaceAgentPrompt = await workspaceAgentPromptForOwner(
-    user.sub,
-    messages,
-  ).catch(() => "");
-  const recentContext = await recentWorkspaceContext({
-    context: body.context,
-    handle: workspace.handle,
-    messages,
-    user,
-  }).catch(() => ({ note: "", items: [] }));
-  const relatedContext = await relatedWorkspaceContext(
-    body.context,
-    workspace.handle,
-  ).catch(() => []);
+  const [workspaceAgentPrompt, recentContext, relatedContext] =
+    await Promise.all([
+      workspaceAgentPromptForOwner(user.sub, messages).catch(() => ""),
+      recentWorkspaceContext({
+        context: body.context,
+        handle: workspace.handle,
+        messages,
+        user,
+      }).catch(() => ({ note: "", items: [] })),
+      relatedWorkspaceContext(body.context, workspace.handle).catch(() => []),
+    ]);
   const contextItems = [
     ...recentContext.items,
     ...relatedContext.map((item) => ({
