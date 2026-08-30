@@ -237,9 +237,11 @@ public enum TextTextItemMapper {
         for entry: TextTextManifestItem, inFolder folderId: String, handle: String, readOnly: Bool
     ) -> TextTextItem? {
         guard let id = entry.id, !id.isEmpty else { return nil }
+        // Finder's delete callback still targets the permanent-delete endpoint.
+        // Do not advertise deletion until that callback moves items to Trash.
         let caps: TextTextItemCapabilities = readOnly
             ? .readOnlyFile
-            : [.reading, .writing, .renaming, .deleting, .reparenting]
+            : [.reading, .writing, .renaming, .reparenting]
         // Finder shows the post's TITLE, not its slug ("untitled-abc123" is the
         // URL identity, never a name a person should see). The identifier still
         // anchors on the stable post id, so the title is pure display metadata.

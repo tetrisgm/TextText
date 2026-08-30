@@ -235,7 +235,9 @@ final class WorkspaceEnumeratorTests: XCTestCase {
             return XCTFail()
         }
         XCTAssertTrue(file.capabilities.contains(.writing))
-        XCTAssertTrue(file.capabilities.contains(.deleting))
+        XCTAssertTrue(file.capabilities.contains(.renaming))
+        XCTAssertTrue(file.capabilities.contains(.reparenting))
+        XCTAssertFalse(file.capabilities.contains(.deleting))
     }
 
     // MARK: Change cursor
