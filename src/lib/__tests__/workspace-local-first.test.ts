@@ -280,6 +280,40 @@ describe("workspace local authority", () => {
     expect(store.getWorkspacePost("post-1")?.title).toBe("Optimistic title");
   });
 
+  it("moves a canonical document cache entry across an optimistic ID handoff", async () => {
+    const store = await import("@/lib/pool/store");
+    const storage = await import("@/lib/pool/storage");
+    const optimistic = { ...post("Draft"), id: "optimistic-note-1" };
+    store.seedWorkspacePool(
+      pool("2026-07-10T10:00:00.000Z", [optimistic]),
+    );
+    store.updatePostDocument("blog-1", optimistic.id, {
+      ...optimistic.document!,
+      content: {
+        ...optimistic.document!.content,
+        body: "Typed before the server replied",
+      },
+    });
+
+    store.replacePost(optimistic.id, {
+      ...optimistic,
+      id: "saved-note-1",
+      slug: "draft",
+    });
+
+    expect(
+      store.getCachedWorkspacePostDocument("blog-1", optimistic.id),
+    ).toBeNull();
+    expect(
+      store.getCachedWorkspacePostDocument("blog-1", "saved-note-1")
+        ?.document.content.body,
+    ).toBe("Typed before the server replied");
+    expect(storage.deletePersistedPostDocument).toHaveBeenCalledWith(
+      "blog-1",
+      optimistic.id,
+    );
+  });
+
   it("does not let an older document response replace a newer local edit", async () => {
     const store = await import("@/lib/pool/store");
     store.seedWorkspacePool(pool("2026-07-10T10:00:00.000Z", [post()]));

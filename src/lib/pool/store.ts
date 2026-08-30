@@ -589,6 +589,38 @@ export function addPost(post: WorkspacePoolPost) {
   });
 }
 
+function reconcileDocumentIdentity(
+  blogId: string,
+  previousId: string,
+  postId: string,
+): void {
+  if (previousId === postId) return;
+  const previousKey = bodyKey(blogId, previousId);
+  const nextKey = bodyKey(blogId, postId);
+  const previous = state.bodies[previousKey];
+  const bodies = { ...state.bodies };
+  delete bodies[previousKey];
+
+  let transferred: WorkspacePostDocumentPayload | null = null;
+  if (!bodies[nextKey] && previous?.status === "ready") {
+    transferred = { ...previous.document, postId };
+    bodies[nextKey] = { status: "ready", document: transferred };
+    advanceBodyMutationGeneration(nextKey);
+  }
+  // Fence any response already in flight for the temporary identity. Keeping
+  // the generation marker is intentional: deleting it would let generation 0
+  // match again when that response eventually resolves.
+  advanceBodyMutationGeneration(previousKey);
+  bodyFetches.delete(previousKey);
+  const wasDirty = locallyDirtyBodies.delete(previousKey);
+  if (wasDirty) locallyDirtyBodies.add(nextKey);
+  state = { ...state, bodies };
+  emitBody(previousKey);
+  emitBody(nextKey);
+  if (transferred) void persistPostDocument(transferred);
+  void deletePersistedPostDocument(blogId, previousId);
+}
+
 export function replacePost(previousId: string, post: WorkspacePoolPost) {
   if (!state.pool || state.pool.blogId !== post.blogId) return;
   markPoolMutation();
@@ -598,6 +630,7 @@ export function replacePost(previousId: string, post: WorkspacePoolPost) {
   const optimisticPatch = optimisticPostPatches.get(previousId);
   optimisticPostPatches.delete(previousId);
   if (optimisticPatch) optimisticPostPatches.set(post.id, optimisticPatch);
+  reconcileDocumentIdentity(post.blogId, previousId, post.id);
   setState({
     pool: {
       ...state.pool,
