@@ -109,7 +109,6 @@ protocol SyncClient {
         idempotencyKey: String?
     ) -> Result<SaveReply, ClientFailure>
     func deleteFile(postId: String, ifMatch hash: String?) -> Result<Void, ClientFailure>
-    func advertisedAppVersion() -> String?
 }
 
 extension SyncClient {
@@ -320,18 +319,6 @@ final class ServerClient: SyncClient {
             if reply.status == 204 || reply.status == 404 { return .success(()) }
             return .failure(httpFailure(reply))
         }
-    }
-
-    /// GET /api/app/version -> {version}. The route is being built in
-    /// parallel; a 404 (or anything else odd) is quietly nil.
-    func advertisedAppVersion() -> String? {
-        guard case .success(let reply) = send("GET", "/api/app/version"),
-              reply.status == 200,
-              let object = try? JSONSerialization.jsonObject(with: reply.data) as? [String: Any],
-              let version = object["version"] as? String else {
-            return nil
-        }
-        return version
     }
 
     // MARK: Plumbing

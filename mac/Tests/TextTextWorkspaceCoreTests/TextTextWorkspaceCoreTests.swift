@@ -6,14 +6,8 @@ final class TextTextWorkspaceCoreTests: XCTestCase {
     func testLayoutCreatesCanonicalWorkspaceShape() throws {
         let root = try temporaryDirectory()
         let workspace = fixtureWorkspace()
-        let location = WorkspaceLocation(
-            url: root,
-            kind: .injected,
-            iCloudAvailable: false,
-            statusMessage: "test"
-        )
 
-        try WorkspaceLayout.ensureSkeleton(at: root, workspace: workspace, location: location)
+        try WorkspaceLayout.ensureSkeleton(at: root, workspace: workspace)
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("Blogs/demo/Posts").path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("Blogs/demo/Media").path))
@@ -277,11 +271,6 @@ final class TextTextWorkspaceCoreTests: XCTestCase {
             Data("server".utf8), to: url, ifUnchangedFrom: current)
         XCTAssertEqual(written, .written)
         XCTAssertEqual(try Data(contentsOf: url), Data("server".utf8))
-    }
-
-    func testFallbackRootAvoidsTCCGatedDocumentsFolder() throws {
-        let fallback = WorkspaceRootResolver.documentsFallbackWriteRoot()
-        XCTAssertEqual(fallback, FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("TextText Local", isDirectory: true))
     }
 
     private func fixtureWorkspace() -> WorkspaceDescriptor {

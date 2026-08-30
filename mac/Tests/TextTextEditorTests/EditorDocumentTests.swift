@@ -242,7 +242,7 @@ final class EditorDocumentTests: XCTestCase {
         XCTAssertTrue(recoveryURL.path.contains(WorkspaceLayout.localMetadataDirectoryName))
     }
 
-    func testEditorFollowsSyncEngineRename() throws {
+    func testEditorFollowsExternalRename() throws {
         let root = try temporaryDirectory()
         let url = root.appendingPathComponent("Notes/original-name.md")
         let identified = """

@@ -6,8 +6,8 @@
 #
 # Extensions are sandboxed and use an app group, which is a restricted
 # entitlement: each .appex must embed a Developer ID provisioning profile that
-# authorizes the group. Drop the two profiles in mac/profiles/ (see
-# docs/apple-workspace.md). If they are absent this script is a no-op, so
+# authorizes the group. Drop the profiles in mac/profiles/ (see
+# docs/file-provider.md). If they are absent this script is a no-op, so
 # builds without them still succeed (the extensions just are not embedded).
 set -euo pipefail
 cd "$(dirname "$0")/.."

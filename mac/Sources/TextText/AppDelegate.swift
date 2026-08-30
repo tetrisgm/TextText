@@ -164,13 +164,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         NSApp.mainMenu = buildMainMenu()
 
         linkController = LinkController(store: store)
-        // Sole-writer cutover: the File Provider mount is the ONLY sync path in
-        // the GUI. There is no legacy `~/TextText` mirror engine here anymore (it
-        // survives only for the headless CLI, which builds its own SyncEngine in
-        // Headless.swift). Sign-in seeds+registers the domain; the extension owns
-        // create/rename/move/delete/body; a remote change re-materializes the
-        // mount. This removes the double-writer and the races that let a stray
-        // engine pass re-create the iCloud mirror.
+        // The File Provider mount is the only document sync path. Sign-in
+        // seeds and registers the domain; the extension owns file operations,
+        // and remote changes re-materialize the mount.
 
         linkController.onChange = { [weak self] in self?.refreshUI() }
         linkController.onActivity = { [weak self] message in self?.appendActivity(message) }
@@ -210,9 +206,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         changeListener.onRemoteChange = { [weak self] in
             guard let self else { return }
             self.captureAgent.poke()
-            // The File Provider mount is the sole writer: a remote change means
-            // re-materialize it and refresh the workspace metadata the retired
-            // SyncEngine used to keep current.
+            // A remote change re-materializes the File Provider mount and
+            // refreshes the account metadata shared with the extension.
             self.refreshWorkspaceMetadataAfterRemoteChange()
         }
         changeListener.start()
@@ -1649,9 +1644,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     // MARK: File Provider domain
 
     /// Signal content immediately, then refresh account.json from the server.
-    /// The GUI no longer runs SyncEngine, so without this refresh newly-created
-    /// folders and workspace renames remain absent from Spotlight and the File
-    /// Provider handoff until the app relaunches.
+    /// Keep newly-created folders and workspace renames visible to Spotlight
+    /// and the File Provider handoff without waiting for an app relaunch.
     private func refreshWorkspaceMetadataAfterRemoteChange() {
         signalFileProviderChange(serverReachable: true)
         guard let credentials = store.loadCredentials() else { return }

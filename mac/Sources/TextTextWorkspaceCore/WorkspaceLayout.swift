@@ -81,7 +81,6 @@ public enum WorkspaceLayout {
     public static func ensureSkeleton(
         at root: URL,
         workspace: WorkspaceDescriptor?,
-        location: WorkspaceLocation? = nil,
         fileManager: FileManager = .default
     ) throws {
         let directories = [
@@ -107,7 +106,7 @@ public enum WorkspaceLayout {
                                         withIntermediateDirectories: true)
         try fileManager.createDirectory(at: blogRoot.appendingPathComponent("Media", isDirectory: true),
                                         withIntermediateDirectories: true)
-        try writeWorkspaceMetadata(root: root, workspace: workspace, location: location, fileManager: fileManager)
+        try writeWorkspaceMetadata(root: root, workspace: workspace, fileManager: fileManager)
         try writeBlogMetadata(root: root, workspace: workspace, fileManager: fileManager)
         for folder in workspace.folders {
             let directory = root.appendingPathComponent(directoryRelativePath(for: folder, workspace: workspace),
@@ -243,7 +242,6 @@ public enum WorkspaceLayout {
     private static func writeWorkspaceMetadata(
         root: URL,
         workspace: WorkspaceDescriptor,
-        location: WorkspaceLocation?,
         fileManager: FileManager
     ) throws {
         var lines = [
@@ -251,10 +249,6 @@ public enum WorkspaceLayout {
             "blogHandle: \(yamlScalar(workspace.blog.handle))",
             "blogName: \(yamlScalar(workspace.blog.name))",
         ]
-        if let location {
-            lines.append("storage: \(location.kind.rawValue)")
-            lines.append("iCloudAvailable: \(location.iCloudAvailable ? "true" : "false")")
-        }
         lines.append("")
         let url = root.appendingPathComponent(".texttext/workspace.yaml")
         try writeIfChanged(Data(lines.joined(separator: "\n").utf8), to: url, fileManager: fileManager)

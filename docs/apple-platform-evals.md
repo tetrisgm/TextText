@@ -101,7 +101,6 @@ The Swift suite retains detailed behavioral coverage:
 - `WritingToolsProtectionEvalTests`
 - `IntentBehaviorGoldenEvalTests`
 - `WorkspaceSpotlightIndexerTests`
-- `SyncEngineRegressionTests`
 - `TextTextShareCoreTests`
 - `EditorDocumentTests`
 - `WorkspaceEnumeratorTests`

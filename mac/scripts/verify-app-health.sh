@@ -18,11 +18,10 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 ROOT="$(mktemp -d -t texttext-app-health)"
 trap 'rm -rf "$ROOT"' EXIT
-mkdir -p "$ROOT/state" "$ROOT/workspace"
+mkdir -p "$ROOT/state"
 REPORT="$ROOT/report.json"
 
 TEXTTEXT_STATE_DIR="$ROOT/state" \
-TEXTTEXT_SYNC_ROOT="$ROOT/workspace" \
 TEXTTEXT_HEALTH_CHECK=1 \
   "$APP/Contents/MacOS/TextText" > "$REPORT"
 

@@ -1,18 +1,11 @@
 # TextText for Mac
 
-A native markdown sync client for the TextText platform. Pure AppKit, SwiftPM
-only (no .xcodeproj), one dependency (Sparkle), and supported on Apple silicon
-with macOS 14 or later. It mirrors your workspace's folders to a local
-directory:
-
-    ~/TextText/
-      blog/my-first-post.md
-      notes/an-idea.md
-      bookmarks/a-good-read.md
-
-Edit the files with anything; the app pushes changes to your blog and pulls
-the server's edits back, with conflicted copies (never silent overwrites)
-when both sides moved.
+A native macOS shell and File Provider for TextText. It is pure AppKit and
+SwiftPM, has one dependency (Sparkle), and supports Apple silicon Macs running
+macOS 14 or later. The signed-in workspace appears as one Finder location.
+Files stay available locally, while reads and writes use the same guarded sync
+API as the web app and external agents. There is no second `~/TextText` mirror
+or background mirror watcher.
 
 ## Dev loop
 
@@ -103,45 +96,20 @@ The shipped bundle binary is still `TextText.app/Contents/MacOS/TextText`;
 `build-app.sh` copies `TextTextApp` into that name, so `CFBundleExecutable` is
 unchanged and nothing about a release build moves.
 
-### Headless verify mode (CI, agents)
-
-One real sync pass through the real engine, one JSON line, exit 0/1:
-
-    TEXTTEXT_HEADLESS=1 \
-    TEXTTEXT_TOKEN=wsk_... \
-    TEXTTEXT_SERVER=http://localhost:3000 \
-    TEXTTEXT_SYNC_ROOT=/tmp/texttext-sync \
-    TEXTTEXT_STATE_DIR=/tmp/texttext-state \
-      swift run --package-path mac
-    # -> {"pulled":3,"pushed":0,"conflicts":0,"errors":0}
-
-Mint the token by approving a device link (or via the link flow itself:
-`POST /api/link/start`, approve in a signed-in browser, `POST /api/link/poll`).
-
 ## How sync works
 
-- The index (`index.json` in the state dir) records, per post, the last
-  hash both sides agreed on. Every decision is a three-way compare of the
-  remote hash (folder manifest), the indexed hash, and the local file hash.
-- Pull: new remote files are written locally; remote-only changes overwrite
-  clean local files; when both sides changed, the server copy takes the
-  filename and your edit is preserved next to it as
-  `name (conflicted copy yyyy-mm-dd hhmm).md` (never auto-pushed).
-- Push: local edits go up with a content-hash precondition so the server can
-  refuse stale writes (412 becomes the same conflicted-copy dance). `PUT` and
-  `DELETE` use `If-Match`; hosted metadata `PATCH` uses
-  `X-TextText-If-Match` because Vercel otherwise consumes the standard header
-  before TextText's route runs. New `.md` files are created on the server; files
-  deleted locally are deleted there. Files the server deletes move to the
-  state dir's `trash/`, never `rm`.
-- The server's slug is authoritative: renames on the server rename local
-  files. A file dropped into `notes/` without a `kind` becomes a note, and
-  so on per folder.
-- Full pass every 60s, on wake, and on demand; file changes trigger a
-  debounced push pass (FSEvents, 2s).
-- The default sync root is `~/TextText`. Desktop, Documents, and Downloads are
-  deliberately avoided as defaults (macOS privacy prompts); any folder the
-  user picks via the Change button works.
+- One replicated File Provider domain represents each signed-in workspace.
+  Finder enumerates folders and files from the server-backed workspace API.
+- Reads fetch a revision-consistent manifest and document. TextText asks macOS
+  to download files eagerly and keep them available offline.
+- Creates, edits, renames, and moves carry content hashes or revisions. A stale
+  write returns a conflict instead of silently overwriting newer work.
+- Notes and bookmarks remain private. Folder identity determines the kind of a
+  newly created file, so a Finder write cannot accidentally publish one.
+- Finder deletion is not advertised until it maps to TextText Trash. Permanent
+  removal remains an explicit Empty Trash action in the app or agent surface.
+- Remote-change signals refresh the domain and Spotlight metadata. The File
+  Provider extension is the sole filesystem writer.
 
 ## Release ritual (owner's Mac, no CI secrets)
 
@@ -187,15 +155,18 @@ the .app, never to the committed `mac/Info.plist`.
    release: bundle id stability is load-bearing for Sparkle, login items,
    and user defaults.
 5. Server routes to add when shipping: `/appcast.xml` and `/download/*`
-   (302 to Vercel Blob) and `GET /api/app/version` -> `{version}` for the
-   push-triggered update check (the client tolerates its absence).
-6. Icon: `mac/scripts/make-icon.sh` renders `mac/AppIcon.icns` (a quiet
-   serif W, ink on paper).
+   (302 to Vercel Blob), plus `GET /api/app/version` -> `{version}` as the
+   deployed release-identity check.
+6. Icon: `mac/scripts/make-icon.sh` renders the newspaper emoji publishing mark
+   into `mac/AppIcon.icns` and the asset catalog.
 
-## Verify on a real Mac (headless cannot)
+## Verify on a real Mac
 
 - Fresh-Mac first run: download, open, zero permission prompts.
-- `~/TextText` creation triggers no dialog; a picked folder works too.
+- Signing in creates exactly one TextText Finder location with no folder picker
+  or Full Disk Access prompt.
+- Create, edit, rename, and move a file in Finder; verify each change appears in
+  the web workspace and survives relaunch and an offline retry.
 - Link round trip: code in app matches browser, token mints, workspace 200s.
 - Sparkle N to N+1 in place, passwordless, in `~/Applications`.
 - Login item enrolled exactly once; System Settings toggle works.

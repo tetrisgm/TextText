@@ -630,7 +630,6 @@ private final class QuickCaptureSyncClient: SyncClient {
         return deleteResults.removeFirst()
     }
 
-    func advertisedAppVersion() -> String? { nil }
 }
 
 private func workspace(

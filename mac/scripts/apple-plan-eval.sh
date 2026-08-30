@@ -58,7 +58,6 @@ for suite in \
   "WritingToolsProtectionEvalTests:Phase 2 Writing Tools protection golden evals" \
   "IntentBehaviorGoldenEvalTests:Phase 3 App Intents behavior golden evals" \
   "WorkspaceSpotlightIndexerTests:Phase 3 Spotlight mapping + eviction evals" \
-  "SyncEngineRegressionTests:Phase 1/5 sync data-safety evals" \
   "TextTextShareCoreTests:Phase 4 share inbox + Quick Look evals" \
   "EditorDocumentTests:Phase 2 editor round-trip + conflict evals" \
   "WorkspaceEnumeratorTests:File Provider enumeration + change-cursor evals" \
@@ -103,19 +102,19 @@ check "p4.quicklook" "Phase 4: Quick Look markdown renderer present" \
 check "p4.appex-sources" "Phase 4: extension sources present" \
   "test -f '$MAC/Extensions/TextTextShareExtension/ShareViewController.swift' && test -f '$MAC/Extensions/TextTextQuickLookPreview/PreviewProvider.swift'"
 
-# --- Phase 5: publishing via local files ---
-check "p5.ifmatch" "Phase 5: conflicts resolved with If-Match" \
-  "grep -q 'ifMatch' '$MAC/Sources/TextText/SyncEngine.swift'"
-check "p5.offline" "Phase 5: backend failure never mutates local files (mass-delete breaker present)" \
-  "grep -q 'paused server deletes' '$MAC/Sources/TextText/SyncEngine.swift'"
+# --- File Provider write safety ---
+check "p5.ifmatch" "File Provider: structured writes use the document hash as If-Match" \
+  "grep -q 'testStructuredPutUsesDocumentHashAsIfMatch' '$MAC/Tests/TextTextFileProviderKitTests/LiveTextTextSyncAPITests.swift'"
+check "p5.offline" "File Provider: offline writes leave remote content unchanged and retry" \
+  "grep -q 'bodyBeforeOfflineAttempt' '$MAC/Tests/TextTextFileProviderExtensionCoreTests/FinderReliabilitySoakTests.swift'"
 
 # --- Privacy invariants (AGENTS.md) ---
 check "inv.unlisted" "Invariant: publishing refuses notes and bookmarks at the intent layer" \
   "grep -q 'unlistedKind' '$MAC/Sources/TextTextAppIntents/WorkspaceIntentActions.swift'"
 check "inv.bookmark-links" "Invariant: bookmarks store the URL in the links list, not a dropped url: key" \
   "grep -q 'links: ' '$MAC/Sources/TextTextAppIntents/WorkspaceIntentActions.swift'"
-check "inv.local-authority" "Invariant: local edits win races with server downloads" \
-  "grep -q 'changed while it was downloading' '$MAC/Sources/TextText/SyncEngine.swift'"
+check "inv.local-authority" "Invariant: compound writes advance from the exact saved revision" \
+  "grep -q 'testCompoundModifyPatchesWithPutReturnedHash' '$MAC/Tests/TextTextFileProviderExtensionCoreTests/FileProviderExtensionTests.swift'"
 
 # --- File Provider (TextText as a Finder sidebar location; see docs/file-provider.md) ---
 check "fp.kit" "File Provider: pure-Swift kit (enumerator + item model + sync client) present" \
@@ -157,7 +156,7 @@ check "nongoal.cloudkit" "Non-goal: no CloudKit document storage" \
 
 # --- House rule: no em dashes in the Apple / File Provider docs ---
 check "style.no-em-dash" "Style: no em dashes in Apple platform + File Provider docs" \
-  "! grep -lq $'\\u2014' '$ROOT/docs/apple-workspace.md' '$ROOT/docs/apple-platform-evals.md' '$ROOT/docs/file-provider.md' '$ROOT/docs/file-provider-portal-step.md' 2>/dev/null"
+  "! grep -lq $'\\u2014' '$ROOT/docs/apple-platform-evals.md' '$ROOT/docs/file-provider.md' '$ROOT/docs/file-provider-portal-step.md' 2>/dev/null"
 
 echo
 echo "=== Apple platform plan acceptance matrix ==="

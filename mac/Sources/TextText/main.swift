@@ -14,14 +14,6 @@ if ProcessInfo.processInfo.environment["TEXTTEXT_HEALTH_CHECK"] == "1" {
     exit(AppHealthCLI.run())
 }
 
-// Headless verify mode (CI/agents, and the seed of a future CLI): no UI at
-// all, one real sync pass through the same engine the app uses, a one-line
-// JSON summary on stdout, exit 0/1.
-if ProcessInfo.processInfo.environment["TEXTTEXT_HEADLESS"] == "1" {
-    NSApplication.shared.setActivationPolicy(.prohibited)
-    exit(Headless.run())
-}
-
 // AppKit entry point (no @main so lifecycle control stays explicit).
 let app = NSApplication.shared
 // SwiftPM executables do not get the application activation policy that an

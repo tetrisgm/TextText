@@ -76,5 +76,4 @@ private final class RepresentationCapturingSyncClient: SyncClient {
         .failure(.badResponse("unused"))
     }
 
-    func advertisedAppVersion() -> String? { nil }
 }
