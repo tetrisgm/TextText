@@ -28,6 +28,9 @@ polish ledger.
   assistant UI labels their origin and approval action. Remaining product work
   is semantic confirmation for sharing/access changes. Releases and TestFlight
   remain owner-triggered.
+- Product decision: TextText does not need a separate Plan mode. The app is a
+  fast notes workspace; proposals and previews are the right confirmation
+  mechanism for risky actions.
 
 ## Current AI implementation handoff (2026-08-25)
 

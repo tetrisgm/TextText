@@ -303,7 +303,9 @@ Admitted limitations this plan does not remove:
   assistant authority (`runbook:58`).
 - Delete means Trash. There is no permanent-delete command
   (`agent-interoperability.md:246`).
-- There is no Plan mode and no general batch.
+- There is intentionally no Plan mode: TextText is a fast notes app, and
+  proposal previews cover the small set of risky actions. There is no
+  unbounded arbitrary batch command.
 - Built-ins, imports, forks and saved looks cannot be losslessly reopened as
   blueprints, and will say so rather than pretend.
 - There is no enforceable visual regression gate. The runbook already lists this
