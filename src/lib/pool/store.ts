@@ -197,22 +197,10 @@ function poolPostForDocument(postId: string): WorkspacePoolPost | undefined {
 
 function initialDocumentPayload(
   pool: WorkspacePoolPayload,
-  initial: WorkspaceInitialBody | WorkspaceInitialDocument,
+  initial: WorkspaceInitialDocument,
 ): WorkspacePostDocumentPayload | null {
-  const poolPost = pool.posts.find((post) => post.id === initial.postId);
-  const canonical =
-    "document" in initial ? initial.document : poolPost?.document;
-  if (!canonical) return null;
-  const document =
-    "body" in initial
-      ? {
-          ...canonical,
-          content: { ...canonical.content, body: initial.body },
-        }
-      : canonical;
-  return documentPayload(pool.blogId, initial.postId, document, {
-    revision:
-      "revision" in initial ? initial.revision : poolPost?.revision,
+  return documentPayload(pool.blogId, initial.postId, initial.document, {
+    revision: initial.revision,
     updatedAt: initial.updatedAt,
     fetchedAt: pool.fetchedAt,
   });
@@ -296,7 +284,7 @@ function mergeIncomingPool(pool: WorkspacePoolPayload): WorkspacePoolPayload {
 
 export function seedWorkspacePool(
   pool: WorkspacePoolPayload,
-  initialBody?: WorkspaceInitialBody | null,
+  initialDocument?: WorkspaceInitialDocument | null,
 ) {
   const current = state.pool;
   const shouldReplace =
@@ -309,15 +297,15 @@ export function seedWorkspacePool(
     emitPool();
   }
 
-  const initialBodies = initialBody
+  const initialDocuments = initialDocument
     ? [
-        ...(pool.initialBodies ?? []).filter(
-          (body) => body.postId !== initialBody.postId,
+        ...(pool.initialDocuments ?? []).filter(
+          (document) => document.postId !== initialDocument.postId,
         ),
-        initialBody,
+        initialDocument,
       ]
-    : (pool.initialBodies ?? []);
-  for (const initial of initialBodies) {
+    : (pool.initialDocuments ?? []);
+  for (const initial of initialDocuments) {
     const document = initialDocumentPayload(pool, initial);
     if (!document) continue;
     const key = bodyKey(pool.blogId, initial.postId);
@@ -364,7 +352,7 @@ async function performWorkspacePoolRefresh(handle: string, blogId: string) {
 
       const nextPool = mergeIncomingPool(pool);
       setState({ pool: nextPool, refreshing: false, error: null });
-      for (const initial of nextPool.initialBodies ?? []) {
+      for (const initial of nextPool.initialDocuments ?? []) {
         const document = initialDocumentPayload(nextPool, initial);
         if (!document) continue;
         const key = bodyKey(blogId, initial.postId);

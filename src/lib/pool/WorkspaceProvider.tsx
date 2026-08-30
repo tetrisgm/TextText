@@ -5,22 +5,22 @@ import {
   seedWorkspacePool,
 } from "@/lib/pool/store";
 import type {
-  WorkspaceInitialBody,
+  WorkspaceInitialDocument,
   WorkspacePoolPayload,
 } from "@/lib/pool/types";
 
 export function WorkspaceProvider({
   children,
-  initialBody,
+  initialDocument,
   initialPool,
 }: {
   children: ReactNode;
-  initialBody?: WorkspaceInitialBody | null;
+  initialDocument?: WorkspaceInitialDocument | null;
   initialPool: WorkspacePoolPayload;
 }) {
   useLayoutEffect(() => {
-    seedWorkspacePool(initialPool, initialBody);
-  }, [initialBody, initialPool]);
+    seedWorkspacePool(initialPool, initialDocument);
+  }, [initialDocument, initialPool]);
 
   return <>{children}</>;
 }

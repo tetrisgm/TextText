@@ -31,7 +31,7 @@ function pool(
     trashedFolders: [],
     counts: {},
     templates: [],
-    initialBodies: [],
+    initialDocuments: [],
   };
 }
 

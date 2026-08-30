@@ -63,8 +63,8 @@ export type WorkspacePoolPayload = {
   trashedPosts?: WorkspacePoolPost[];
   trashedFolders?: Folder[];
   sharedEntries?: SharedWithMeEntry[];
-  /** Bodies worth warming with the workspace shell, currently every note. */
-  initialBodies?: WorkspaceInitialBody[];
+  /** Canonical documents explicitly seeded by the server-rendered route. */
+  initialDocuments?: WorkspaceInitialDocument[];
   /** Full-body extraction keyed by source post id. */
   outboundLinks?: Record<string, WikiLinkReference[]>;
   /** Unambiguous historical slug to current slug mappings. */

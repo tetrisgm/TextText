@@ -59,7 +59,7 @@ function pool(posts: WorkspacePoolPost[]): WorkspacePoolPayload {
     trashedFolders: [],
     sharedEntries: [],
     templates: [],
-    initialBodies: [],
+    initialDocuments: [],
     fetchedAt: "2026-07-23T00:00:00.000Z",
   };
 }

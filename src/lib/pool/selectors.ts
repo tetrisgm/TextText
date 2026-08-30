@@ -171,7 +171,7 @@ export function workspacePoolFromParts({
     trashedFolders,
     sharedEntries,
     templates,
-    initialBodies: [],
+    initialDocuments: [],
     outboundLinks,
     slugAliases,
     fetchedAt: new Date().toISOString(),

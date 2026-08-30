@@ -62,6 +62,7 @@ import {
 import { tenantFromHost } from "@/lib/tenants";
 import { documentCapabilityCookieName } from "@/lib/document-capability";
 import { legacyTemplateId } from "@/lib/documents/legacy";
+import { requireDocumentSnapshot } from "@/lib/documents/model";
 import { requireBuiltinTemplate } from "@/lib/presentation/templates";
 
 interface Props {
@@ -377,6 +378,14 @@ export async function PostPageForHandle({
       ? await getDocumentTemplate(postContext.blogId, templateReference)
       : null) ??
     requireBuiltinTemplate(legacyTemplateId(post.type));
+  const initialPostDocument = post.id
+    ? {
+        postId: post.id,
+        document: requireDocumentSnapshot(post.document, `Post ${post.id}`),
+        revision: post.revision,
+        updatedAt: post.updatedAt,
+      }
+    : null;
 
   // Any signed-in editor joins the same Yjs document; collabAccess enforces
   // the same effective item resolver on every poll and push.
@@ -427,11 +436,7 @@ export async function PostPageForHandle({
           initialMode="edit"
           initialSidebarCollapsed={initialSidebarCollapsed}
           initialPool={initialPool}
-          initialPostBody={
-            post.id
-              ? { postId: post.id, body: post.body, updatedAt: post.updatedAt }
-              : null
-          }
+          initialPostDocument={initialPostDocument}
           post={post}
           postPath={currentPostPath}
         >
@@ -502,11 +507,7 @@ export async function PostPageForHandle({
           homePath={homePath}
           initialSidebarCollapsed={initialSidebarCollapsed}
           initialPool={initialPool}
-          initialPostBody={
-            post.id
-              ? { postId: post.id, body: post.body, updatedAt: post.updatedAt }
-              : null
-          }
+          initialPostDocument={initialPostDocument}
           post={post}
           postPath={currentPostPath}
         >

@@ -41,7 +41,7 @@ function emptyPool(): WorkspacePoolPayload {
     trashedFolders: [],
     counts: {},
     templates: [],
-    initialBodies: [],
+    initialDocuments: [],
   };
 }
 

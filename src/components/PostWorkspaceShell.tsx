@@ -191,7 +191,9 @@ import {
   addPost,
   acknowledgePost,
   acknowledgePostBody,
+  acknowledgePostDocument,
   ensurePostBody,
+  getCachedWorkspacePostDocument,
   getCachedWorkspacePostBody,
   getWorkspacePost,
   markPostDirty,
@@ -208,13 +210,14 @@ import {
   updatePost,
   updateFolder,
   updatePostBody,
+  updatePostDocument,
   useWorkspacePool,
-  useWorkspacePostBody,
+  useWorkspacePostDocument,
 } from "@/lib/pool/store";
 import { WorkspaceProvider } from "@/lib/pool/WorkspaceProvider";
 import { useWorkspaceLiveSync } from "@/lib/pool/useWorkspaceLiveSync";
 import type {
-  WorkspaceInitialBody,
+  WorkspaceInitialDocument,
   WorkspacePoolPayload,
   WorkspacePoolPost,
 } from "@/lib/pool/types";
@@ -2575,8 +2578,9 @@ function WorkspaceRootLanding({
   const bodies = useMemo(() => {
     void bodyRevision;
     const indexed: Record<string, string> = {};
-    for (const body of pool.initialBodies ?? [])
-      indexed[body.postId] = body.body;
+    for (const document of pool.initialDocuments ?? []) {
+      indexed[document.postId] = document.document.content.body;
+    }
     for (const post of pool.posts) {
       const cached = getCachedWorkspacePostBody(pool.blogId, post.id)?.body;
       if (cached !== undefined) indexed[post.id] = cached;
@@ -3698,12 +3702,14 @@ function WorkspacePostReader({
   poolPost: WorkspacePoolPost;
   returnToSearch?: WorkspaceSearchLocation;
 }) {
-  const initialBody =
-    pool.initialBodies?.find((body) => body.postId === poolPost.id) ?? null;
-  const { entry, load, stale } = useWorkspacePostBody(
+  const initialDocument =
+    pool.initialDocuments?.find(
+      (document) => document.postId === poolPost.id,
+    ) ?? null;
+  const { entry, load, stale } = useWorkspacePostDocument(
     pool.blogId,
     poolPost.id,
-    initialBody,
+    initialDocument,
   );
   const [bookmarkContentState, setBookmarkContentState] = useState<{
     mode: BookmarkContentMode;
@@ -3736,10 +3742,14 @@ function WorkspacePostReader({
     if (entry.status === "idle" || stale) load(stale);
   }, [entry.status, load, poolPost.document, stale]);
 
-  const body =
-    poolPost.document?.content.body ??
-    (entry.status === "ready" ? entry.body.body : "");
-  const post = postFromPoolPost(poolPost, body);
+  const document =
+    poolPost.document ??
+    (entry.status === "ready" ? entry.document.document : undefined);
+  const body = document?.content.body ?? "";
+  const post = useMemo(
+    () => ({ ...postFromPoolPost(poolPost, body), document }),
+    [body, document, poolPost],
+  );
   const bodyImageReplacements = new Map(
     (post.capture?.assets ?? [])
       .filter((asset) => asset.originalUrl && asset.url)
@@ -3762,9 +3772,18 @@ function WorkspacePostReader({
     }),
     [bodyMarkdown, post],
   );
-  const backlinks = backlinksForPost(pool, poolPost);
-  const template = templateForPoolPost(pool, poolPost);
-  const adjacent = adjacentPublishedPostsForPool(pool, post.id ?? post.slug);
+  const backlinks = useMemo(
+    () => backlinksForPost(pool, poolPost),
+    [pool, poolPost],
+  );
+  const template = useMemo(
+    () => templateForPoolPost(pool, poolPost),
+    [pool, poolPost],
+  );
+  const adjacent = useMemo(
+    () => adjacentPublishedPostsForPool(pool, post.id ?? post.slug),
+    [pool, post.id, post.slug],
+  );
   const adjacentPath = (link: NonNullable<typeof adjacent.previous>) => {
     const adjacentPost = link.id ? findPoolPostById(pool, link.id) : null;
     return adjacentPost
@@ -3821,7 +3840,7 @@ function WorkspacePostReader({
       />
       {post.type === "bookmark" && bookmarkContentMode === "capture" ? (
         <BookmarkViewBody post={post} />
-      ) : poolPost.document || entry.status === "ready" ? (
+      ) : document ? (
         <UnifiedDocumentReader
           blog={blog}
           post={readablePost}
@@ -3833,7 +3852,7 @@ function WorkspacePostReader({
         <LoadingBody />
       )}
       <ReaderFindHighlights query={findQuery} />
-      {canCommentPost && post.id && !optimistic && entry.status === "ready" && (
+      {canCommentPost && post.id && !optimistic && document && (
         <ReaderComments
           key={post.id}
           canResolve={canManagePost}
@@ -3896,32 +3915,42 @@ function LocalUnifiedWorkspacePostEditor({
   // editor now refuses to mount until the body entry resolves; an empty
   // baseline may only mean "this item is empty", never "the fetch had not
   // happened yet".
-  const bodyState = useWorkspacePostBody(pool.blogId, poolPost.id);
-  const poolBody = poolPost.document?.content.body;
-  const cachedBody = getCachedWorkspacePostBody(pool.blogId, poolPost.id)?.body;
+  const initialDocument =
+    pool.initialDocuments?.find(
+      (candidate) => candidate.postId === poolPost.id,
+    ) ?? null;
+  const documentState = useWorkspacePostDocument(
+    pool.blogId,
+    poolPost.id,
+    initialDocument,
+  );
+  const poolDocument = poolPost.document ?? initialDocument?.document;
+  const cachedDocument = getCachedWorkspacePostDocument(
+    pool.blogId,
+    poolPost.id,
+  )?.document;
   // Hydration-safe: the server and the first client render may consult only
   // what the RSC payload carries (poolBody). The body cache and fetch entry
   // are client module state; letting them into the first render made the
   // server and client disagree and hydration fail. After mount, the client
   // may know more.
   const bodySourcesMounted = useClientHydrated();
-  const bodyKnown =
-    poolBody != null ||
-    (bodySourcesMounted &&
-      (cachedBody != null ||
-        bodyState.entry.status === "ready" ||
-        bodyState.entry.status === "error"));
+  const document =
+    poolDocument ??
+    (bodySourcesMounted
+      ? (cachedDocument ??
+        (documentState.entry.status === "ready"
+          ? documentState.entry.document.document
+          : undefined))
+      : undefined);
   useEffect(() => {
-    if (poolBody == null && cachedBody == null) bodyState.load();
+    if (!poolDocument && !cachedDocument) documentState.load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pool.blogId, poolPost.id]);
-  const post = postFromPoolPost(
-    poolPost,
-    poolBody ??
-      cachedBody ??
-      (bodyState.entry.status === "ready" ? bodyState.entry.body.body : "") ??
-      "",
-  );
+  const post = {
+    ...postFromPoolPost(poolPost, document?.content.body ?? ""),
+    document,
+  };
   const containingFolderPath = folderPathForPoolPost(pool, poolPost);
   const containingFolderHref = returnToSearch
     ? workspaceSearchHref(homePath, returnToSearch)
@@ -3951,21 +3980,32 @@ function LocalUnifiedWorkspacePostEditor({
         venue: projection.venue ?? undefined,
         duration: projection.duration ?? undefined,
       });
-      updatePostBody(pool.blogId, poolPost.id, nextDocument.content.body);
+      updatePostDocument(pool.blogId, poolPost.id, nextDocument);
     },
     [pool.blogId, poolPost.id],
   );
 
   const acknowledgeMaterialized = useCallback(
-    (nextDocument: DocumentSnapshot) => {
+    (nextDocument: DocumentSnapshot, revision?: number) => {
       updateLocalDocument(nextDocument);
       acknowledgePost(poolPost.id);
-      acknowledgePostBody(pool.blogId, poolPost.id, nextDocument.content.body);
+      acknowledgePostDocument(
+        pool.blogId,
+        poolPost.id,
+        nextDocument,
+        revision,
+      );
     },
     [pool.blogId, poolPost.id, updateLocalDocument],
   );
 
-  if (!bodyKnown) return null;
+  if (!document) {
+    return documentState.entry.status === "error" ? (
+      <ErrorBody message={documentState.entry.error} />
+    ) : (
+      <LoadingBody />
+    );
+  }
 
   return (
     <UnifiedDocumentEditor
@@ -4805,8 +4845,9 @@ function LocalWorkspaceShell({
       const currentPool = displayPoolRef.current;
       const warmedBody =
         getCachedWorkspacePostBody(currentPool.blogId, post.id)?.body ??
-        currentPool.initialBodies?.find((body) => body.postId === post.id)
-          ?.body;
+        currentPool.initialDocuments?.find(
+          (document) => document.postId === post.id,
+        )?.document.content.body;
       const nextMode =
         mode === "read" && shouldOpenWorkspacePostInEdit(post, warmedBody)
           ? "edit"
@@ -5595,9 +5636,9 @@ function LocalWorkspaceShell({
         await ensurePostBody(currentPool.blogId, postId);
         body =
           getCachedWorkspacePostBody(currentPool.blogId, postId)?.body ??
-          currentPool.initialBodies?.find(
+          currentPool.initialDocuments?.find(
             (candidate) => candidate.postId === postId,
-          )?.body ??
+          )?.document.content.body ??
           "";
       }
       return {
@@ -7275,7 +7316,7 @@ export function PostReadWorkspaceShell({
   homePath,
   initialSidebarCollapsed = false,
   initialPool,
-  initialPostBody,
+  initialPostDocument,
   initialMode = "read",
   post,
   postPath,
@@ -7291,7 +7332,7 @@ export function PostReadWorkspaceShell({
   homePath: string;
   initialSidebarCollapsed?: boolean;
   initialPool?: WorkspacePoolPayload | null;
-  initialPostBody?: WorkspaceInitialBody | null;
+  initialPostDocument?: WorkspaceInitialDocument | null;
   initialMode?: "read" | "edit";
   post: Post;
   postPath: string;
@@ -7300,17 +7341,17 @@ export function PostReadWorkspaceShell({
   const { sidebarCollapsed, toggleSidebarCollapsed } =
     useWorkspaceSidebarCollapsed(initialSidebarCollapsed);
   const localInitialPool = useMemo(() => {
-    if (!initialPool || !initialPostBody) return initialPool;
+    if (!initialPool || !initialPostDocument) return initialPool;
     return {
       ...initialPool,
-      initialBodies: [
-        ...(initialPool.initialBodies ?? []).filter(
-          (body) => body.postId !== initialPostBody.postId,
+      initialDocuments: [
+        ...(initialPool.initialDocuments ?? []).filter(
+          (document) => document.postId !== initialPostDocument.postId,
         ),
-        initialPostBody,
+        initialPostDocument,
       ],
     };
-  }, [initialPool, initialPostBody]);
+  }, [initialPool, initialPostDocument]);
   const localInitialPost =
     localInitialPool && post.id
       ? findPoolPostById(localInitialPool, post.id)
@@ -7318,7 +7359,10 @@ export function PostReadWorkspaceShell({
   const localInitialMode =
     initialMode === "edit" ||
     (localInitialPost &&
-      shouldOpenWorkspacePostInEdit(localInitialPost, initialPostBody?.body))
+      shouldOpenWorkspacePostInEdit(
+        localInitialPost,
+        initialPostDocument?.document.content.body,
+      ))
       ? "edit"
       : "read";
 
@@ -7333,7 +7377,7 @@ export function PostReadWorkspaceShell({
     return (
       <WorkspaceProvider
         initialPool={localInitialPool}
-        initialBody={initialPostBody}
+        initialDocument={initialPostDocument}
       >
         <LocalWorkspaceShell
           blog={blog}

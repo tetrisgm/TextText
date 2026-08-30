@@ -65,7 +65,7 @@ describe("wikilink extraction and backlinks", () => {
       posts: [post({ id: "note", type: "note", body })],
     });
 
-    expect(pool.initialBodies).toEqual([]);
+    expect(pool.initialDocuments).toEqual([]);
     expect(pool.posts[0]?.bodyPreview).toHaveLength(2048);
   });
 
