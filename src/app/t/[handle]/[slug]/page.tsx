@@ -11,7 +11,7 @@ import {
   getAccessibleAllPosts,
   getAccessibleFolderCounts,
   getAccessibleFolders,
-  getAllPostFiles,
+  getAllPosts,
   getBlog,
   getFolderCounts,
   getFolderById,
@@ -23,6 +23,7 @@ import {
   getPostByFolderPath,
   getPostStoreContext,
   getPostSlugAliases,
+  getWorkspaceWikiLinkSources,
   getDocumentTemplate,
   listDocumentTemplates,
   resolveDocumentCapability,
@@ -320,12 +321,14 @@ export async function PostPageForHandle({
   let folders: Awaited<ReturnType<typeof getFolders>>;
   let counts: Record<string, number>;
   let slugAliases: Record<string, string> = {};
+  let wikiLinkSources: Awaited<ReturnType<typeof getWorkspaceWikiLinkSources>> = [];
   if (canEdit) {
-    [allPosts, folders, counts, slugAliases] = await Promise.all([
-      getAllPostFiles(handle),
+    [allPosts, folders, counts, slugAliases, wikiLinkSources] = await Promise.all([
+      getAllPosts(handle),
       getFolders(handle),
       getFolderCounts(handle),
       getPostSlugAliases(handle),
+      getWorkspaceWikiLinkSources(handle),
     ]);
   } else {
     const [accessiblePosts, accessibleFolders, accessibleAliases] =
@@ -363,7 +366,7 @@ export async function PostPageForHandle({
           trashedPosts,
           sharedEntries,
           templates: workspaceTemplates,
-          ...workspaceWikiLinkMetadata(allPosts, slugAliases),
+          ...workspaceWikiLinkMetadata(wikiLinkSources, slugAliases),
         })
       : null;
   const templateReference =

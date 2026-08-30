@@ -691,6 +691,34 @@ export async function getAllPosts(handle: string): Promise<Post[]> {
   return getAllPostsCached(handle);
 }
 
+export type WorkspaceWikiLinkSource = {
+  id: string;
+  body: string;
+};
+
+/**
+ * The smallest source projection needed to build the workspace backlink
+ * index. Most documents contain no wiki links, so filter them in Postgres and
+ * avoid loading every canonical JSON document merely to inspect markdown.
+ */
+export async function getWorkspaceWikiLinkSources(
+  handle: string,
+): Promise<WorkspaceWikiLinkSource[]> {
+  if (!db) throw new Error(NO_DATABASE);
+  return db
+    .select({ id: posts.id, body: posts.body })
+    .from(posts)
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .where(
+      and(
+        eq(blogs.handle, handle),
+        isNull(blogs.deletedAt),
+        isNull(posts.deletedAt),
+        like(posts.body, "%[[%"),
+      ),
+    );
+}
+
 export async function countAllPosts(handle: string): Promise<number> {
   if (!db) throw new Error(NO_DATABASE);
   const rows = await db

@@ -26,7 +26,7 @@ import {
   blogJsonFeedHref,
 } from "@/lib/feed-links";
 import {
-  getAllPostFiles,
+  getAllPosts,
   getAccessibleFolderCounts,
   getAccessibleFolderPosts,
   getAccessibleFolders,
@@ -42,6 +42,7 @@ import {
   getPostSlugAliases,
   getPostStoreContext,
   getPublicPostLocations,
+  getWorkspaceWikiLinkSources,
   listDocumentTemplates,
 } from "@/lib/store";
 import { workspaceWikiLinkMetadata } from "@/lib/pool/server";
@@ -475,6 +476,7 @@ export async function BlogHomeForHandle({
       folders,
       counts,
       posts,
+      wikiLinkSources,
       slugAliases,
       trashedFolders,
       trashedPosts,
@@ -484,7 +486,8 @@ export async function BlogHomeForHandle({
       await Promise.all([
         getFolders(handle),
         getFolderCounts(handle),
-        getAllPostFiles(handle),
+        getAllPosts(handle),
+        getWorkspaceWikiLinkSources(handle),
         getPostSlugAliases(handle),
         getTrashedFolders(handle),
         getTrashedPosts(handle),
@@ -501,7 +504,7 @@ export async function BlogHomeForHandle({
       trashedPosts,
       sharedEntries,
       templates,
-      ...workspaceWikiLinkMetadata(posts, slugAliases),
+      ...workspaceWikiLinkMetadata(wikiLinkSources, slugAliases),
     });
   })();
   const canManageSharing = access.isOwner || Boolean(workspaceAccess?.canManage);

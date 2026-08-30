@@ -1,12 +1,13 @@
 import { resolveWorkspaceAccess, type AccessUser } from "@/lib/permissions";
 import {
-  getAllPostFiles,
+  getAllPosts,
   getBlog,
   getFolderCounts,
   getFolders,
   getTrashedFolders,
   getTrashedPosts,
   getPostSlugAliases,
+  getWorkspaceWikiLinkSources,
   listDocumentTemplates,
 } from "@/lib/store";
 import { workspacePoolFromParts } from "@/lib/pool/selectors";
@@ -16,7 +17,7 @@ import type { Post } from "@/lib/content";
 import { extractWikiLinks } from "@/lib/wikilinks";
 
 export function workspaceWikiLinkMetadata(
-  fullPosts: readonly Post[],
+  fullPosts: readonly Pick<Post, "body" | "id">[],
   slugAliases: Record<string, string>,
 ): Pick<WorkspacePoolPayload, "outboundLinks" | "slugAliases"> {
   return {
@@ -43,6 +44,7 @@ export async function getWorkspacePoolForOwner(
     folders,
     counts,
     posts,
+    wikiLinkSources,
     slugAliases,
     trashedFolders,
     trashedPosts,
@@ -51,14 +53,15 @@ export async function getWorkspacePoolForOwner(
   ] = await Promise.all([
     getFolders(handle),
     getFolderCounts(handle),
-    getAllPostFiles(handle),
+    getAllPosts(handle),
+    getWorkspaceWikiLinkSources(handle),
     getPostSlugAliases(handle),
     getTrashedFolders(handle),
     getTrashedPosts(handle),
     getSharedPostsForUser(user?.sub ? { ...user, sub: user.sub } : null),
     listDocumentTemplates(access.blogId),
   ]);
-  const wikiLinks = workspaceWikiLinkMetadata(posts, slugAliases);
+  const wikiLinks = workspaceWikiLinkMetadata(wikiLinkSources, slugAliases);
 
   return workspacePoolFromParts({
     blog,
