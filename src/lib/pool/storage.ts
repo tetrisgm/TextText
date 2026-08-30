@@ -1,6 +1,11 @@
 "use client";
 
-import type { WorkspacePostBodyPayload } from "@/lib/pool/types";
+import { documentSnapshotSchema } from "@/lib/documents/model";
+import type { DocumentSnapshot } from "@/lib/documents/model";
+import type {
+  WorkspacePostBodyPayload,
+  WorkspacePostDocumentPayload,
+} from "@/lib/pool/types";
 import type { DraftState } from "@/lib/post-edit-draft";
 
 const DB_NAME = "texttext-workspace-pool";
@@ -166,24 +171,79 @@ function publicDraftSnapshot(
   };
 }
 
-export async function readPersistedPostBody(
+export function normalizeStoredPostDocument(
+  value: unknown,
+  expected: {
+    blogId: string;
+    postId: string;
+    fallbackDocument?: DocumentSnapshot;
+  },
+): WorkspacePostDocumentPayload | null {
+  if (!value || typeof value !== "object") return null;
+  const stored = value as Partial<WorkspacePostDocumentPayload> &
+    Partial<WorkspacePostBodyPayload>;
+  if (stored.blogId !== expected.blogId || stored.postId !== expected.postId) {
+    return null;
+  }
+
+  const parsedDocument = documentSnapshotSchema.safeParse(stored.document);
+  const document = parsedDocument.success
+    ? parsedDocument.data
+    : typeof stored.body === "string" && expected.fallbackDocument
+      ? {
+          ...expected.fallbackDocument,
+          content: {
+            ...expected.fallbackDocument.content,
+            body: stored.body,
+          },
+        }
+      : null;
+  if (!document) return null;
+
+  return {
+    blogId: expected.blogId,
+    postId: expected.postId,
+    document,
+    revision:
+      typeof stored.revision === "number" ? stored.revision : undefined,
+    updatedAt:
+      typeof stored.updatedAt === "string" ? stored.updatedAt : undefined,
+    fetchedAt:
+      typeof stored.fetchedAt === "string"
+        ? stored.fetchedAt
+        : new Date().toISOString(),
+    body: document.content.body,
+  };
+}
+
+export async function readPersistedPostDocument(
   blogId: string,
   postId: string,
-): Promise<WorkspacePostBodyPayload | null> {
-  return withStore<WorkspacePostBodyPayload>(BODY_STORE, "readonly", (store) =>
+  fallbackDocument?: DocumentSnapshot,
+): Promise<WorkspacePostDocumentPayload | null> {
+  const stored = await withStore<unknown>(BODY_STORE, "readonly", (store) =>
     store.get(bodyKey(blogId, postId)),
   );
+  const document = normalizeStoredPostDocument(stored, {
+    blogId,
+    postId,
+    fallbackDocument,
+  });
+  if (document && !(stored as { document?: unknown } | null)?.document) {
+    void persistPostDocument(document);
+  }
+  return document;
 }
 
-export async function persistPostBody(
-  body: WorkspacePostBodyPayload,
+export async function persistPostDocument(
+  document: WorkspacePostDocumentPayload,
 ): Promise<void> {
   await withStore<IDBValidKey>(BODY_STORE, "readwrite", (store) =>
-    store.put(body, bodyKey(body.blogId, body.postId)),
+    store.put(document, bodyKey(document.blogId, document.postId)),
   );
 }
 
-export async function deletePersistedPostBody(
+export async function deletePersistedPostDocument(
   blogId: string,
   postId: string,
 ): Promise<void> {

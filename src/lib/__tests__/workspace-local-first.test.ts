@@ -4,9 +4,9 @@ import { initialDraft } from "@/lib/post-edit-draft";
 import type { Post } from "@/lib/content";
 
 vi.mock("@/lib/pool/storage", () => ({
-  deletePersistedPostBody: vi.fn(async () => undefined),
-  persistPostBody: vi.fn(async () => undefined),
-  readPersistedPostBody: vi.fn(async () => null),
+  deletePersistedPostDocument: vi.fn(async () => undefined),
+  persistPostDocument: vi.fn(async () => undefined),
+  readPersistedPostDocument: vi.fn(async () => null),
 }));
 
 function pool(
@@ -42,6 +42,14 @@ function post(title = "Local title"): WorkspacePoolPayload["posts"][number] {
     type: "article",
     slug: "local-title",
     title,
+    document: {
+      schemaVersion: 1,
+      content: { title, body: "", fields: {}, tags: [], assets: [] },
+      presentation: {
+        template: { id: "texttext.article", version: 1 },
+        theme: {},
+      },
+    },
     status: "draft",
     pinned: false,
     createdAt: "2026-07-10T10:00:00.000Z",
@@ -89,7 +97,7 @@ describe("workspace local authority", () => {
     store.removeTrashedPost(original.id);
 
     expect(store.getCachedWorkspacePostBody("blog-1", original.id)).toBeNull();
-    expect(storage.deletePersistedPostBody).toHaveBeenCalledWith(
+    expect(storage.deletePersistedPostDocument).toHaveBeenCalledWith(
       "blog-1",
       original.id,
     );
@@ -267,23 +275,38 @@ describe("workspace local authority", () => {
     expect(store.getWorkspacePost("post-1")?.title).toBe("Optimistic title");
   });
 
-  it("does not let a failed older body request replace a newer local body", async () => {
+  it("does not let an older document response replace a newer local edit", async () => {
     const store = await import("@/lib/pool/store");
     store.seedWorkspacePool(pool("2026-07-10T10:00:00.000Z", [post()]));
-    let rejectRequest: (reason: Error) => void = () => undefined;
+    let resolveRequest: (response: Response) => void = () => undefined;
     vi.stubGlobal(
       "fetch",
       vi.fn(
-        () =>
-          new Promise<Response>((_resolve, reject) => {
-            rejectRequest = reject;
+        () => new Promise<Response>((resolve) => {
+            resolveRequest = resolve;
           }),
       ),
     );
 
     const request = store.ensurePostBody("blog-1", "post-1", { force: true });
     store.updatePostBody("blog-1", "post-1", "Newest local body");
-    rejectRequest(new Error("stale request failed"));
+    resolveRequest(
+      new Response(
+        JSON.stringify({
+          blogId: "blog-1",
+          postId: "post-1",
+          document: {
+            ...post().document,
+            content: { ...post().document?.content, body: "Stale server body" },
+          },
+          revision: 1,
+          updatedAt: "2026-07-10T10:00:01.000Z",
+          fetchedAt: "2026-07-10T10:00:01.000Z",
+          body: "Stale server body",
+        }),
+        { status: 200 },
+      ),
+    );
     await request;
 
     expect(store.getCachedWorkspacePostBody("blog-1", "post-1")?.body).toBe(

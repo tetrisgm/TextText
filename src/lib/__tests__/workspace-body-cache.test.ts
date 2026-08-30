@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isWorkspacePostBodyStale } from "@/lib/pool/store";
+import {
+  isWorkspacePostBodyStale,
+  isWorkspacePostDocumentStale,
+} from "@/lib/pool/store";
+import { normalizeStoredPostDocument } from "@/lib/pool/storage";
 import { shouldRefreshBookmarkReadable } from "@/lib/store";
 
 describe("workspace body freshness", () => {
@@ -19,6 +23,71 @@ describe("workspace body freshness", () => {
         "2026-07-09T12:00:00.000Z",
       ),
     ).toBe(false);
+  });
+
+  it("prefers monotonic revisions over timestamps", () => {
+    expect(
+      isWorkspacePostDocumentStale(
+        9,
+        "2026-07-09T12:00:00.000Z",
+        8,
+        "2026-07-09T12:01:00.000Z",
+      ),
+    ).toBe(true);
+    expect(
+      isWorkspacePostDocumentStale(
+        8,
+        "2026-07-09T12:01:00.000Z",
+        9,
+        "2026-07-09T12:00:00.000Z",
+      ),
+    ).toBe(false);
+  });
+
+  it("never turns a legacy body into a document without a canonical fallback", () => {
+    const stored = {
+      blogId: "blog-1",
+      postId: "post-1",
+      body: "Legacy body",
+      fetchedAt: "2026-07-09T12:00:00.000Z",
+    };
+    expect(
+      normalizeStoredPostDocument(stored, {
+        blogId: "blog-1",
+        postId: "post-1",
+      }),
+    ).toBeNull();
+
+    const migrated = normalizeStoredPostDocument(stored, {
+      blogId: "blog-1",
+      postId: "post-1",
+      fallbackDocument: {
+        schemaVersion: 1,
+        content: {
+          title: "Kept title",
+          body: "Server body",
+          fields: { mood: "good" },
+          tags: ["kept"],
+          assets: [],
+        },
+        presentation: {
+          template: { id: "texttext.note", version: 1 },
+          theme: { accent: "#123456" },
+        },
+      },
+    });
+    expect(migrated?.document).toMatchObject({
+      content: {
+        title: "Kept title",
+        body: "Legacy body",
+        fields: { mood: "good" },
+        tags: ["kept"],
+      },
+      presentation: {
+        template: { id: "texttext.note", version: 1 },
+        theme: { accent: "#123456" },
+      },
+    });
   });
 });
 

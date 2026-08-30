@@ -2,22 +2,26 @@
 
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import {
-  deletePersistedPostBody,
-  persistPostBody,
-  readPersistedPostBody,
+  deletePersistedPostDocument,
+  normalizeStoredPostDocument,
+  persistPostDocument,
+  readPersistedPostDocument,
 } from "@/lib/pool/storage";
 import type {
   WorkspaceInitialBody,
+  WorkspaceInitialDocument,
   WorkspacePoolPayload,
   WorkspacePoolPost,
   WorkspacePostBodyPayload,
+  WorkspacePostDocumentPayload,
 } from "@/lib/pool/types";
 import type { Folder } from "@/lib/content";
+import type { DocumentSnapshot } from "@/lib/documents/model";
 
 type BodyCacheEntry =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "ready"; body: WorkspacePostBodyPayload }
+  | { status: "ready"; document: WorkspacePostDocumentPayload }
   | { status: "error"; error: string };
 
 const IDLE_BODY_ENTRY: BodyCacheEntry = { status: "idle" };
@@ -151,6 +155,69 @@ export function isWorkspacePostBodyStale(
   );
 }
 
+export function isWorkspacePostDocumentStale(
+  postRevision: number | undefined,
+  postUpdatedAt: string | undefined,
+  documentRevision: number | undefined,
+  documentUpdatedAt: string | undefined,
+): boolean {
+  if (postRevision !== undefined && documentRevision !== undefined) {
+    return postRevision > documentRevision;
+  }
+  return isWorkspacePostBodyStale(postUpdatedAt, documentUpdatedAt);
+}
+
+function documentPayload(
+  blogId: string,
+  postId: string,
+  document: DocumentSnapshot,
+  options: {
+    revision?: number;
+    updatedAt?: string;
+    fetchedAt?: string;
+  } = {},
+): WorkspacePostDocumentPayload {
+  return {
+    blogId,
+    postId,
+    document,
+    revision: options.revision,
+    updatedAt: options.updatedAt,
+    fetchedAt: options.fetchedAt ?? new Date().toISOString(),
+    body: document.content.body,
+  };
+}
+
+function poolPostForDocument(postId: string): WorkspacePoolPost | undefined {
+  return (
+    state.pool?.posts.find((post) => post.id === postId) ??
+    state.pool?.trashedPosts?.find((post) => post.id === postId)
+  );
+}
+
+function initialDocumentPayload(
+  pool: WorkspacePoolPayload,
+  initial: WorkspaceInitialBody | WorkspaceInitialDocument,
+): WorkspacePostDocumentPayload | null {
+  const poolPost = pool.posts.find((post) => post.id === initial.postId);
+  const canonical =
+    "document" in initial ? initial.document : poolPost?.document;
+  if (!canonical) return null;
+  const document =
+    "body" in initial
+      ? {
+          ...canonical,
+          content: { ...canonical.content, body: initial.body },
+        }
+      : canonical;
+  return documentPayload(pool.blogId, initial.postId, document, {
+    revision:
+      "revision" in initial ? initial.revision : poolPost?.revision,
+    updatedAt: initial.updatedAt,
+    fetchedAt: pool.fetchedAt,
+  });
+}
+
 function isOptimisticPost(post: WorkspacePoolPost): boolean {
   return post.id.startsWith("optimistic-");
 }
@@ -251,27 +318,27 @@ export function seedWorkspacePool(
       ]
     : (pool.initialBodies ?? []);
   for (const initial of initialBodies) {
+    const document = initialDocumentPayload(pool, initial);
+    if (!document) continue;
     const key = bodyKey(pool.blogId, initial.postId);
     const existing = state.bodies[key];
     if (locallyDirtyBodies.has(key)) continue;
     if (
       existing?.status === "ready" &&
-      !isWorkspacePostBodyStale(initial.updatedAt, existing.body.updatedAt)
+      !isWorkspacePostDocumentStale(
+        document.revision,
+        document.updatedAt,
+        existing.document.revision,
+        existing.document.updatedAt,
+      )
     ) {
       continue;
     }
-    const body: WorkspacePostBodyPayload = {
-      blogId: pool.blogId,
-      postId: initial.postId,
-      body: initial.body,
-      updatedAt: initial.updatedAt,
-      fetchedAt: new Date().toISOString(),
-    };
     setBodyEntry(pool.blogId, initial.postId, {
       status: "ready",
-      body,
+      document,
     });
-    void persistPostBody(body);
+    void persistPostDocument(document);
   }
 }
 
@@ -298,24 +365,27 @@ async function performWorkspacePoolRefresh(handle: string, blogId: string) {
       const nextPool = mergeIncomingPool(pool);
       setState({ pool: nextPool, refreshing: false, error: null });
       for (const initial of nextPool.initialBodies ?? []) {
+        const document = initialDocumentPayload(nextPool, initial);
+        if (!document) continue;
         const key = bodyKey(blogId, initial.postId);
         const current = state.bodies[key];
         if (locallyDirtyBodies.has(key)) continue;
         if (
           current?.status === "ready" &&
-          !isWorkspacePostBodyStale(initial.updatedAt, current.body.updatedAt)
+          !isWorkspacePostDocumentStale(
+            document.revision,
+            document.updatedAt,
+            current.document.revision,
+            current.document.updatedAt,
+          )
         ) {
           continue;
         }
-        const body: WorkspacePostBodyPayload = {
-          blogId,
-          postId: initial.postId,
-          body: initial.body,
-          updatedAt: initial.updatedAt,
-          fetchedAt: new Date().toISOString(),
-        };
-        setBodyEntry(blogId, initial.postId, { status: "ready", body });
-        void persistPostBody(body);
+        setBodyEntry(blogId, initial.postId, {
+          status: "ready",
+          document,
+        });
+        void persistPostDocument(document);
       }
       return;
     }
@@ -346,7 +416,7 @@ export function refreshWorkspacePool(
   return promise;
 }
 
-export async function ensurePostBody(
+export async function ensurePostDocument(
   blogId: string,
   postId: string,
   options: { force?: boolean } = {},
@@ -364,21 +434,33 @@ export async function ensurePostBody(
 
   try {
     if (!options.force) {
-      const cached = await readPersistedPostBody(blogId, postId);
+      const poolPost = poolPostForDocument(postId);
+      const cached = await readPersistedPostDocument(
+        blogId,
+        postId,
+        poolPost?.document,
+      );
       if (
         requestGeneration !== bodyMutationGeneration(key) ||
         locallyDirtyBodies.has(key)
       ) {
         return;
       }
-      const postUpdatedAt = state.pool?.posts.find(
-        (post) => post.id === postId,
-      )?.updatedAt;
+      const postRevision = poolPost?.revision;
+      const postUpdatedAt = poolPost?.updatedAt;
       if (
         cached &&
-        !isWorkspacePostBodyStale(postUpdatedAt, cached.updatedAt)
+        !isWorkspacePostDocumentStale(
+          postRevision,
+          postUpdatedAt,
+          cached.revision,
+          cached.updatedAt,
+        )
       ) {
-        setBodyEntry(blogId, postId, { status: "ready", body: cached });
+        setBodyEntry(blogId, postId, {
+          status: "ready",
+          document: cached,
+        });
         return;
       }
     }
@@ -390,10 +472,13 @@ export async function ensurePostBody(
         headers: { Accept: "application/json" },
       },
     );
-    if (!response.ok) throw new Error("Could not load the body");
-    const body = (await response.json()) as WorkspacePostBodyPayload;
-    if (body.blogId !== blogId || body.postId !== postId) {
-      throw new Error("Body response mismatch");
+    if (!response.ok) throw new Error("Could not load the item");
+    const document = normalizeStoredPostDocument(await response.json(), {
+      blogId,
+      postId,
+    });
+    if (!document) {
+      throw new Error("Document response mismatch");
     }
     if (
       requestGeneration !== bodyMutationGeneration(key) ||
@@ -401,8 +486,8 @@ export async function ensurePostBody(
     ) {
       return;
     }
-    setBodyEntry(blogId, postId, { status: "ready", body });
-    void persistPostBody(body);
+    setBodyEntry(blogId, postId, { status: "ready", document });
+    void persistPostDocument(document);
   } catch (error) {
     if (existing?.status !== "ready") {
       if (
@@ -441,10 +526,10 @@ export function useWorkspacePool(initialPool?: WorkspacePoolPayload) {
   return useSyncExternalStore(subscribe, getSnapshot, serverSnapshot);
 }
 
-export function useWorkspacePostBody(
+export function useWorkspacePostDocument(
   blogId: string,
   postId: string,
-  initialBody?: WorkspaceInitialBody | null,
+  initialDocument?: WorkspaceInitialDocument | null,
 ) {
   const snapshot = useWorkspacePool();
   const key = bodyKey(blogId, postId);
@@ -453,38 +538,88 @@ export function useWorkspacePostBody(
     useCallback(() => state.bodies[key] ?? IDLE_BODY_ENTRY, [key]),
     useCallback(() => state.bodies[key] ?? IDLE_BODY_ENTRY, [key]),
   );
-  const initialPayload = initialBody
-    ? {
-        blogId,
-        postId,
-        body: initialBody.body,
-        updatedAt: initialBody.updatedAt,
+  const initialPayload = initialDocument
+    ? documentPayload(blogId, postId, initialDocument.document, {
+        revision: initialDocument.revision,
+        updatedAt: initialDocument.updatedAt,
         fetchedAt: snapshot.pool?.fetchedAt ?? "",
-      }
+      })
     : null;
   const entry =
     initialPayload &&
     !locallyDirtyBodies.has(key) &&
     (cachedEntry?.status !== "ready" ||
-      isWorkspacePostBodyStale(
+      isWorkspacePostDocumentStale(
+        initialPayload.revision,
         initialPayload.updatedAt,
-        cachedEntry.body.updatedAt,
+        cachedEntry.document.revision,
+        cachedEntry.document.updatedAt,
       ))
-      ? ({ status: "ready", body: initialPayload } as const)
+      ? ({ status: "ready", document: initialPayload } as const)
       : cachedEntry;
-  const postUpdatedAt = snapshot.pool?.posts.find(
+  const poolPost = snapshot.pool?.posts.find(
     (post) => post.id === postId,
-  )?.updatedAt;
+  );
   const stale =
     entry.status === "ready" &&
-    isWorkspacePostBodyStale(postUpdatedAt, entry.body.updatedAt);
+    isWorkspacePostDocumentStale(
+      poolPost?.revision,
+      poolPost?.updatedAt,
+      entry.document.revision,
+      entry.document.updatedAt,
+    );
   const load = useCallback(
     (force = stale) => {
-      void ensurePostBody(blogId, postId, { force });
+      void ensurePostDocument(blogId, postId, { force });
     },
     [blogId, postId, stale],
   );
   return { entry, load, stale };
+}
+
+/** Compatibility view while body-only call sites migrate to canonical documents. */
+export function useWorkspacePostBody(
+  blogId: string,
+  postId: string,
+  initialBody?: WorkspaceInitialBody | null,
+) {
+  const snapshot = useWorkspacePool();
+  const poolPost = snapshot.pool?.posts.find((post) => post.id === postId);
+  const initialDocument =
+    initialBody && poolPost?.document
+      ? {
+          postId,
+          document: {
+            ...poolPost.document,
+            content: { ...poolPost.document.content, body: initialBody.body },
+          },
+          revision: poolPost.revision,
+          updatedAt: initialBody.updatedAt,
+        }
+      : null;
+  const result = useWorkspacePostDocument(blogId, postId, initialDocument);
+  const entry =
+    result.entry.status === "ready"
+      ? ({
+          status: "ready",
+          body: {
+            blogId,
+            postId,
+            body: result.entry.document.document.content.body,
+            updatedAt: result.entry.document.updatedAt,
+            fetchedAt: result.entry.document.fetchedAt,
+          },
+        } as const)
+      : result.entry;
+  return { ...result, entry };
+}
+
+export async function ensurePostBody(
+  blogId: string,
+  postId: string,
+  options: { force?: boolean } = {},
+): Promise<void> {
+  await ensurePostDocument(blogId, postId, options);
 }
 
 export function getWorkspacePost(postId: string): WorkspacePoolPost | null {
@@ -496,7 +631,22 @@ export function getCachedWorkspacePostBody(
   postId: string,
 ): WorkspacePostBodyPayload | null {
   const entry = state.bodies[bodyKey(blogId, postId)];
-  return entry?.status === "ready" ? entry.body : null;
+  if (entry?.status !== "ready") return null;
+  return {
+    blogId,
+    postId,
+    body: entry.document.document.content.body,
+    updatedAt: entry.document.updatedAt,
+    fetchedAt: entry.document.fetchedAt,
+  };
+}
+
+export function getCachedWorkspacePostDocument(
+  blogId: string,
+  postId: string,
+): WorkspacePostDocumentPayload | null {
+  const entry = state.bodies[bodyKey(blogId, postId)];
+  return entry?.status === "ready" ? entry.document : null;
 }
 
 export function addPost(post: WorkspacePoolPost) {
@@ -579,19 +729,67 @@ export function updateWorkspaceBlog(
   });
 }
 
-export function updatePostBody(blogId: string, postId: string, body: string) {
+export function updatePostDocument(
+  blogId: string,
+  postId: string,
+  document: DocumentSnapshot,
+) {
   const key = bodyKey(blogId, postId);
   advanceBodyMutationGeneration(key);
   locallyDirtyBodies.add(key);
-  const nextBody: WorkspacePostBodyPayload = {
-    blogId,
-    postId,
-    body,
+  const current = getCachedWorkspacePostDocument(blogId, postId);
+  const poolPost = poolPostForDocument(postId);
+  const nextDocument = documentPayload(blogId, postId, document, {
+    revision: current?.revision ?? poolPost?.revision,
     updatedAt: new Date().toISOString(),
-    fetchedAt: new Date().toISOString(),
+  });
+  setBodyEntry(blogId, postId, {
+    status: "ready",
+    document: nextDocument,
+  });
+  void persistPostDocument(nextDocument);
+}
+
+export function acknowledgePostDocument(
+  blogId: string,
+  postId: string,
+  document: DocumentSnapshot,
+  revision?: number,
+  updatedAt?: string,
+) {
+  const key = bodyKey(blogId, postId);
+  advanceBodyMutationGeneration(key);
+  locallyDirtyBodies.delete(key);
+  const nextDocument = documentPayload(blogId, postId, document, {
+    revision,
+    updatedAt,
+  });
+  setBodyEntry(blogId, postId, {
+    status: "ready",
+    document: nextDocument,
+  });
+  void persistPostDocument(nextDocument);
+}
+
+function documentWithBody(
+  blogId: string,
+  postId: string,
+  body: string,
+): DocumentSnapshot {
+  const canonical =
+    getCachedWorkspacePostDocument(blogId, postId)?.document ??
+    poolPostForDocument(postId)?.document;
+  if (!canonical) {
+    throw new Error(`Cannot update item ${postId} without a canonical document`);
+  }
+  return {
+    ...canonical,
+    content: { ...canonical.content, body },
   };
-  setBodyEntry(blogId, postId, { status: "ready", body: nextBody });
-  void persistPostBody(nextBody);
+}
+
+export function updatePostBody(blogId: string, postId: string, body: string) {
+  updatePostDocument(blogId, postId, documentWithBody(blogId, postId, body));
 }
 
 export function acknowledgePostBody(
@@ -600,18 +798,13 @@ export function acknowledgePostBody(
   body: string,
   updatedAt?: string,
 ) {
-  const key = bodyKey(blogId, postId);
-  advanceBodyMutationGeneration(key);
-  locallyDirtyBodies.delete(key);
-  const nextBody: WorkspacePostBodyPayload = {
+  acknowledgePostDocument(
     blogId,
     postId,
-    body,
+    documentWithBody(blogId, postId, body),
+    poolPostForDocument(postId)?.revision,
     updatedAt,
-    fetchedAt: new Date().toISOString(),
-  };
-  setBodyEntry(blogId, postId, { status: "ready", body: nextBody });
-  void persistPostBody(nextBody);
+  );
 }
 
 export function removePost(postId: string) {
@@ -681,7 +874,7 @@ export function removeTrashedPost(postId: string) {
   markPoolMutation();
   locallyTrashedPosts.delete(postKey(blogId, postId));
   removeBodyEntry(blogId, postId);
-  void deletePersistedPostBody(blogId, postId);
+  void deletePersistedPostDocument(blogId, postId);
   setState({
     pool: {
       ...state.pool,
