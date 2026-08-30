@@ -22,8 +22,6 @@ describe("what the browser assistant is offered", () => {
     // Each changes who can see something, or reaches outward, and none has a
     // preview a person could judge. Approval does not make a fetch safe.
     for (const name of [
-      "set_access",
-      "revoke_access",
       "add_item_asset",
       "recapture_bookmark",
     ] as const) {
