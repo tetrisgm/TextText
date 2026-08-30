@@ -9,8 +9,6 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import type {
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
@@ -54,9 +52,6 @@ import {
   type BookmarkContentMode,
 } from "@/components/PostActionBar";
 import { TagChips } from "@/components/TagChips";
-import { WikiLinkAnchor, remarkWikiLinks } from "@/components/WikiLinkMarkdown";
-import {
-} from "@/components/editor/EditableCover";
 import { FolderLookPicker } from "@/components/workspace/FolderLookPicker";
 import { ItemTypeStudio } from "@/components/workspace/ItemTypeStudio";
 import { UpdatedBuildNotice } from "@/components/workspace/UpdatedBuildNotice";
@@ -165,7 +160,7 @@ import type {
   Post,
   ItemKind,
 } from "@/lib/content";
-import { isVideoFile, plainTextExcerpt } from "@/lib/content";
+import { plainTextExcerpt } from "@/lib/content";
 import { legacyProjectionFromDocument } from "@/lib/documents/legacy";
 import type { DocumentSnapshot } from "@/lib/documents/model";
 import {
@@ -232,11 +227,7 @@ import type { SpatialDirection } from "@/lib/commands/types";
 import { shortcutLabelForCommand } from "@/lib/commands/workspace";
 import type { AgentFocusEvent } from "@/lib/collab/agent-focus";
 import type { AdjacentPublishedPosts } from "@/lib/store";
-import type { WikiLinkRenderTargets } from "@/lib/wikilinks";
-import {
-  isRemoteImageUrl,
-  localizeRemoteMarkdownImages,
-} from "@/lib/markdown-images";
+import { localizeRemoteMarkdownImages } from "@/lib/markdown-images";
 import {
   markdownSubtitle,
   replaceMarkdownSubtitle,
@@ -276,11 +267,7 @@ import {
   workspaceSearchHandoffIndex,
   type WorkspaceSearchResult,
 } from "@/lib/workspace-search";
-import {
-} from "@/lib/upload";
-import {
-  beginMeasuredEditTransition,
-} from "@/lib/edit-transition";
+import { beginMeasuredEditTransition } from "@/lib/edit-transition";
 import {
   deletePersistedWorkspaceDraft,
   persistWorkspaceDraft,
@@ -313,11 +300,6 @@ import {
 export type SidebarFolderId = string;
 
 type AdjacentPosts = AdjacentPublishedPosts;
-
-function upgradeHttpImageSrc(src: string | undefined): string {
-  const value = src ?? "";
-  return value.startsWith("http://") ? `https://${value.slice(7)}` : value;
-}
 
 function beginEditTransition(postId: string) {
   if (typeof document === "undefined" || typeof performance === "undefined")
