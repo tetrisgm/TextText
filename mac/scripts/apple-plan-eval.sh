@@ -69,12 +69,12 @@ for suite in \
 done
 
 # --- Phase 1: canonical files, readable outside TextText, no opaque-DB-only content ---
-check "p1.layout" "Phase 1: canonical folder layout is defined" \
-  "grep -q 'Blogs' '$MAC/Sources/TextTextWorkspaceCore/WorkspaceLayout.swift' && grep -q 'Bookmarks' '$MAC/Sources/TextTextWorkspaceCore/WorkspaceLayout.swift'"
+check "p1.layout" "Phase 1: canonical Finder hierarchy is covered by File Provider evals" \
+  "grep -q 'testWorkspaceListsOnlyTopLevelFolders' '$MAC/Tests/TextTextFileProviderKitTests/WorkspaceEnumeratorTests.swift' && grep -q 'testFolderListsSubfoldersThenFiles' '$MAC/Tests/TextTextFileProviderKitTests/WorkspaceEnumeratorTests.swift'"
 check "p1.identity" "Phase 1: markdown identity round-trips (front matter is plain text)" \
   "grep -q 'textTextId' '$MAC/Sources/TextTextWorkspaceCore/MarkdownIdentity.swift'"
-check "p1.local-state" "Phase 1: device-local state stays out of iCloud (.texttext-local.nosync)" \
-  "grep -q 'texttext-local.nosync' '$MAC/Sources/TextTextWorkspaceCore/WorkspaceLayout.swift'"
+check "p1.local-state" "Phase 1: private device state stays in app support or the app group" \
+  "grep -q 'groupContainer.appendingPathComponent(\"TextText\"' '$MAC/Sources/TextText/StateStore.swift' && grep -q 'applicationSupportDirectory' '$MAC/Sources/TextText/StateStore.swift'"
 
 # --- Phase 3: manifest + generator + intents + spotlight + deep links ---
 check "p3.manifest" "Phase 3: capability manifest present" \

@@ -2,6 +2,10 @@ import CoreServices
 import Foundation
 
 public final class WorkspaceFolderWatcher {
+    private static let ignoredTopLevelDirectories: Set<Substring> = [
+        ".texttext",
+        ".texttext-local.nosync",
+    ]
     private var stream: FSEventStreamRef?
     private let onChange: () -> Void
     private let rootPath: String
@@ -93,7 +97,6 @@ public final class WorkspaceFolderWatcher {
         if normalized == rootPath { return false }
         let start = normalized.index(normalized.startIndex, offsetBy: rootPath.count + 1)
         let first = normalized[start...].split(separator: "/", omittingEmptySubsequences: true).first
-        return first == Substring(WorkspaceLayout.metadataDirectoryName)
-            || first == Substring(WorkspaceLayout.localMetadataDirectoryName)
+        return first.map(Self.ignoredTopLevelDirectories.contains) ?? false
     }
 }

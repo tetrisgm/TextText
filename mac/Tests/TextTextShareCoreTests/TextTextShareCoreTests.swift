@@ -5,7 +5,6 @@ import TextTextFileProviderKit
 import TextTextQuickLookCore
 import TextTextShareCore
 import TextTextShareExtensionCore
-import TextTextWorkspaceCore
 
 final class TextTextShareCoreTests: XCTestCase {
     func testInboxRoundTripAndConsume() throws {
@@ -284,9 +283,5 @@ final class TextTextShareCoreTests: XCTestCase {
     private func write(_ text: String, to url: URL) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data(text.utf8).write(to: url)
-    }
-
-    private func relative(_ url: URL, root: URL) -> String {
-        WorkspaceLayout.relativePath(for: url, under: root) ?? url.path
     }
 }
