@@ -233,7 +233,28 @@ const PROPOSAL_ARGUMENT_LABELS: Record<string, string> = {
   slug: "URL name",
   tags: "Tags",
   title: "Title",
+  email: "Person",
+  role: "Role",
+  access_id: "Access record",
 };
+
+function accessProposalDetails(
+  tool: string,
+  args: Record<string, unknown>,
+): { action: string; target: string; recipient: string; role?: string } | null {
+  if (tool !== "set_access" && tool !== "revoke_access") return null;
+  const action = tool === "set_access" ? "Give access" : "Remove access";
+  const target = [args.title, args.folder_path, args.folder_id, args.id]
+    .find((value) => typeof value === "string" && value.trim()) as string | undefined;
+  const recipient = typeof args.email === "string" ? args.email.trim() : null;
+  const role = typeof args.role === "string" ? args.role.trim() : undefined;
+  return {
+    action,
+    target: target || "the selected workspace content",
+    recipient: recipient || (typeof args.access_id === "string" ? `Access record ${args.access_id}` : "the selected person"),
+    role,
+  };
+}
 
 function proposalArgumentText(value: unknown, exact = false): string {
   if (typeof value === "string") {
@@ -292,7 +313,8 @@ function WriteProposalReview({
   const externalProposal =
     proposal.kind === "outbound_mcp" ? proposal : null;
   const external = Boolean(externalProposal);
-  const destructive = proposal.tool === "delete_items" || proposal.tool === "set_item_status";
+  const destructive = ["delete_items", "set_item_status", "set_access", "revoke_access"].includes(proposal.tool);
+  const accessDetails = accessProposalDetails(proposal.tool, proposal.arguments);
   const stagedFromCli = proposal.arguments.source === "cli" || proposal.arguments.source === "local_cli";
   const fields = writeProposalArguments(proposal.arguments, external);
   const decided =
@@ -338,6 +360,15 @@ function WriteProposalReview({
         </>
       ) : null}
       <p className={styles.writeProposalSummary}>{proposal.summary}</p>
+      {accessDetails ? (
+        <div className={styles.writeProposalAccess} aria-label="Access change preview">
+          <strong>{accessDetails.action}</strong>
+          <span><b>Person</b> {accessDetails.recipient}</span>
+          <span><b>Target</b> {accessDetails.target}</span>
+          {accessDetails.role ? <span><b>Role</b> {accessDetails.role}</span> : null}
+          <small>Nothing changes until you approve this request.</small>
+        </div>
+      ) : null}
       {fields.length > 0 ? (
         <details className={styles.writeProposalDetails} open={fields.length <= 3}>
           <summary>

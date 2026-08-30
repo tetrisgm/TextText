@@ -350,6 +350,72 @@ describe("assistant sidebar UI", () => {
     expect(html).not.toContain("Dismiss");
   });
 
+  it("previews exactly who will gain access to which target", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        messages: [{
+          id: "access-preview",
+          role: "assistant",
+          text: "Review this access change.",
+          writeProposals: [{
+            id: "proposal-access",
+            kind: "workspace",
+            status: "pending",
+            tool: "set_access",
+            title: "Set access",
+            summary: "Set access: Project notes",
+            arguments: {
+              id: "item-1",
+              title: "Project notes",
+              email: "person@example.com",
+              role: "editor",
+            },
+            createdAt: "2026-08-24T12:00:00.000Z",
+            expiresAt: "2026-08-24T12:15:00.000Z",
+          }],
+        }],
+        submitting: false,
+        onWriteProposalDecision: () => {},
+      }),
+    );
+    expect(html).toContain('aria-label="Access change preview"');
+    expect(html).toContain("Give access");
+    expect(html).toContain("person@example.com");
+    expect(html).toContain("Project notes");
+    expect(html).toContain("editor");
+    expect(html).toContain("Nothing changes until you approve this request.");
+    expect(html).toContain("Approve and apply");
+  });
+
+  it("previews revocation without inventing a recipient", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        messages: [{
+          id: "revoke-preview",
+          role: "assistant",
+          text: "Review this access change.",
+          writeProposals: [{
+            id: "proposal-revoke",
+            kind: "workspace",
+            status: "pending",
+            tool: "revoke_access",
+            title: "Revoke access",
+            summary: "Revoke access",
+            arguments: { folder_path: "Shared/Plans", access_id: "access-7" },
+            createdAt: "2026-08-24T12:00:00.000Z",
+            expiresAt: "2026-08-24T12:15:00.000Z",
+          }],
+        }],
+        submitting: false,
+        onWriteProposalDecision: () => {},
+      }),
+    );
+    expect(html).toContain("Remove access");
+    expect(html).toContain("Access record access-7");
+    expect(html).toContain("Shared/Plans");
+    expect(html).toContain("Requires your approval");
+  });
+
   it("labels a dismissal as dismissal while the decision is pending", () => {
     const html = renderToStaticMarkup(
       React.createElement(AssistantConversation, {
