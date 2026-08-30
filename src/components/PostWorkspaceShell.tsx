@@ -280,6 +280,7 @@ import {
   searchWorkspace,
   workspaceRootBodyMode,
   workspaceSearchHandoffIndex,
+  type WorkspaceDeepSearchMatch,
   type WorkspaceSearchResult,
 } from "@/lib/workspace-search";
 import { beginMeasuredEditTransition } from "@/lib/edit-transition";
@@ -2533,8 +2534,10 @@ function WorkspaceRootLanding({
   settingsHref: string;
 }) {
   const searchRef = useRef<HTMLInputElement>(null);
-  const requestedBodiesRef = useRef(new Set<string>());
-  const [bodyRevision, setBodyRevision] = useState(0);
+  const [deepSearch, setDeepSearch] = useState<{
+    query: string;
+    matches: WorkspaceDeepSearchMatch[];
+  }>({ query: "", matches: [] });
   const [sort, setSort] = useState<SidebarDocumentSort>("recent");
   // Home's layout is the workspace's one stored layout choice, so it travels
   // with the workspace instead of with the browser that set it. Every folder
@@ -2576,29 +2579,17 @@ function WorkspaceRootLanding({
     : selectedPostId
       ? `workspace-root-post-${domSafeId(selectedPostId)}`
       : undefined;
-  const bodies = useMemo(() => {
-    void bodyRevision;
-    const indexed: Record<string, string> = {};
-    for (const document of pool.initialDocuments ?? []) {
-      indexed[document.postId] = document.document.content.body;
-    }
-    for (const post of pool.posts) {
-      const cached = getCachedWorkspacePostBody(pool.blogId, post.id)?.body;
-      if (cached !== undefined) indexed[post.id] = cached;
-    }
-    return indexed;
-    // bodyRevision intentionally refreshes this synchronous cache after a lazy
-    // IndexedDB or body fetch finishes.
-  }, [bodyRevision, pool]);
+  const cleanSearchQuery = query.trim().toLocaleLowerCase();
   const results = useMemo(
     () =>
       searchWorkspace({
-        bodies,
+        deepMatches:
+          deepSearch.query === cleanSearchQuery ? deepSearch.matches : [],
         folders: pool.folders,
         posts: pool.posts,
         query,
       }),
-    [bodies, pool.folders, pool.posts, query],
+    [cleanSearchQuery, deepSearch, pool.folders, pool.posts, query],
   );
   const dateKey = parseWorkspaceDateQuery(query);
   const bodyMode = source === "tag" ? "tag" : workspaceRootBodyMode(query);
@@ -2696,24 +2687,46 @@ function WorkspaceRootLanding({
   }, [pool.blog.handle]);
 
   useEffect(() => {
-    const clean = query.trim().toLocaleLowerCase();
-    if (clean.length < 3 || dateKey || source === "tag") return;
-    const pending = pool.posts
-      .filter((post) => {
-        if (requestedBodiesRef.current.has(post.id) || bodies[post.id]) {
-          return false;
-        }
-        return !`${post.title}\n${post.excerpt ?? ""}\n${post.bodyPreview ?? ""}`
-          .toLocaleLowerCase()
-          .includes(clean);
+    if (cleanSearchQuery.length < 3 || dateKey || source === "tag") return;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      const params = new URLSearchParams({
+        handle: pool.blog.handle,
+        query: cleanSearchQuery,
+      });
+      void fetch(`/api/workspace/search?${params.toString()}`, {
+        signal: controller.signal,
       })
-      .slice(0, 10);
-    if (pending.length === 0) return;
-    for (const post of pending) requestedBodiesRef.current.add(post.id);
-    void Promise.all(
-      pending.map((post) => ensurePostBody(pool.blogId, post.id)),
-    ).then(() => setBodyRevision((current) => current + 1));
-  }, [bodies, dateKey, pool.blogId, pool.posts, query, source]);
+        .then(async (response) => {
+          if (!response.ok) return null;
+          return (await response.json()) as { matches?: unknown };
+        })
+        .then((payload) => {
+          if (!payload || !Array.isArray(payload.matches)) return;
+          const matches = payload.matches.filter(
+            (candidate): candidate is WorkspaceDeepSearchMatch =>
+              Boolean(
+                candidate &&
+                  typeof candidate === "object" &&
+                  typeof (candidate as WorkspaceDeepSearchMatch).postId ===
+                    "string" &&
+                  typeof (candidate as WorkspaceDeepSearchMatch).detail ===
+                    "string" &&
+                  typeof (candidate as WorkspaceDeepSearchMatch).score ===
+                    "number",
+              ),
+          );
+          setDeepSearch({ query: cleanSearchQuery, matches });
+        })
+        .catch(() => {
+          // Search stays useful from its bounded local index while offline.
+        });
+    }, 150);
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [cleanSearchQuery, dateKey, pool.blog.handle, source]);
 
   const changeQuery = (nextQuery: string) => {
     onQueryChange(nextQuery);

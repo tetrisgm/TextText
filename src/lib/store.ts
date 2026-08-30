@@ -12,6 +12,7 @@ import {
   desc,
   eq,
   inArray,
+  ilike,
   isNotNull,
   isNull,
   like,
@@ -717,6 +718,54 @@ export async function getWorkspaceWikiLinkSources(
         like(posts.body, "%[[%"),
       ),
     );
+}
+
+export type AccessibleWorkspaceBodySearchCandidate = {
+  postId: string;
+  title: string;
+  body: string;
+};
+
+/**
+ * Fetch a bounded set of full-body candidates for workspace search. Access is
+ * resolved before the query and every normalized token must occur in the body;
+ * ranking and excerpting happen at the route boundary so full text never goes
+ * over the wire.
+ */
+export async function searchAccessibleWorkspaceBodies(
+  handle: string,
+  user: AccessUser | null,
+  tokens: readonly string[],
+  limit = 72,
+): Promise<AccessibleWorkspaceBodySearchCandidate[]> {
+  if (!db || !user) return [];
+  const cleanTokens = [...new Set(tokens)]
+    .map((token) => token.trim().toLocaleLowerCase())
+    .filter((token) => /^[\p{L}\p{N}]+$/u.test(token))
+    .slice(0, 8);
+  if (cleanTokens.length === 0) return [];
+
+  const visiblePostIds = await accessiblePostIdsForUser(handle, user);
+  if (visiblePostIds !== "all" && visiblePostIds.size === 0) return [];
+  const boundedLimit = Math.max(1, Math.min(100, Math.trunc(limit) || 72));
+  const rows = await db
+    .select({ postId: posts.id, title: posts.title, body: posts.body })
+    .from(posts)
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .where(
+      and(
+        eq(blogs.handle, handle),
+        isNull(blogs.deletedAt),
+        isNull(posts.deletedAt),
+        visiblePostIds === "all"
+          ? undefined
+          : inArray(posts.id, [...visiblePostIds]),
+        ...cleanTokens.map((token) => ilike(posts.body, `%${token}%`)),
+      ),
+    )
+    .orderBy(desc(posts.updatedAt), desc(posts.createdAt), desc(posts.id))
+    .limit(boundedLimit);
+  return rows;
 }
 
 export async function countAllPosts(handle: string): Promise<number> {

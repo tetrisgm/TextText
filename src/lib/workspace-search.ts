@@ -20,6 +20,12 @@ export type WorkspaceSearchResult =
       score: number;
     };
 
+export type WorkspaceDeepSearchMatch = {
+  postId: string;
+  detail: string;
+  score: number;
+};
+
 const MONTHS = new Map<string, number>(
   [
     ["jan", 1],
@@ -116,7 +122,7 @@ export function normalizeSearchText(value: string): string {
     .replace(/\s+/g, " ");
 }
 
-function queryTokens(query: string): string[] {
+export function workspaceSearchTokens(query: string): string[] {
   return [...new Set(normalizeSearchText(query).split(" ").filter(Boolean))];
 }
 
@@ -141,7 +147,7 @@ export function rankSearchText(
   query: string,
 ): number | null {
   const normalizedQuery = normalizeSearchText(query);
-  const tokens = queryTokens(query);
+  const tokens = workspaceSearchTokens(query);
   if (!normalizedQuery || tokens.length === 0) return null;
 
   const normalizedTitle = normalizeSearchText(title);
@@ -168,7 +174,7 @@ export function rankSearchText(
 export function searchExcerpt(value: string, query: string): string {
   const clean = cleanText(value);
   if (!clean) return "";
-  const tokens = queryTokens(query);
+  const tokens = workspaceSearchTokens(query);
   const lowered = normalizeSearchText(clean);
   const indices = tokens
     .map((token) => lowered.indexOf(token))
@@ -189,6 +195,7 @@ function updatedTimestamp(post: WorkspacePoolPost): number {
 
 export function searchWorkspace({
   bodies = {},
+  deepMatches = [],
   folders,
   limit = 12,
   now = new Date(),
@@ -196,6 +203,7 @@ export function searchWorkspace({
   query,
 }: {
   bodies?: Readonly<Record<string, string>>;
+  deepMatches?: readonly WorkspaceDeepSearchMatch[];
   folders: readonly Folder[];
   limit?: number;
   now?: Date;
@@ -221,6 +229,9 @@ export function searchWorkspace({
   }
 
   const results: WorkspaceSearchResult[] = [];
+  const deepMatchesByPostId = new Map(
+    deepMatches.map((match) => [match.postId, match]),
+  );
   for (const folder of folders) {
     const score = rankSearchText(folder.name, folder.path, cleanQuery);
     if (score === null) continue;
@@ -240,14 +251,18 @@ export function searchWorkspace({
     const preview = cleanText(post.bodyPreview);
     const body = cleanText(bodies[post.id]);
     const content = [excerpt, preview, body].filter(Boolean).join(" ");
-    const score = rankSearchText(title, content, cleanQuery);
+    const localScore = rankSearchText(title, content, cleanQuery);
+    const deepMatch = deepMatchesByPostId.get(post.id);
+    const score = localScore ?? deepMatch?.score ?? null;
     if (score === null) continue;
     results.push({
       kind: "post",
       id: `post:${post.id}`,
       postId: post.id,
       title,
-      detail: searchExcerpt(content, cleanQuery) || post.type,
+      detail:
+        (localScore === null ? deepMatch?.detail : searchExcerpt(content, cleanQuery)) ||
+        post.type,
       score,
     });
   }

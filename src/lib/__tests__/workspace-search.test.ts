@@ -116,6 +116,32 @@ describe("workspace search", () => {
     ]);
   });
 
+  it("merges bounded server body matches without exposing full bodies", () => {
+    const results = searchWorkspace({
+      folders,
+      posts: [
+        post("deep", "Old planning note", "2026-07-13T12:00:00.000Z"),
+        post("local", "Cedar outline", "2026-07-14T12:00:00.000Z"),
+      ],
+      deepMatches: [
+        {
+          postId: "deep",
+          detail: "...the cedar decision from last winter...",
+          score: 118,
+        },
+      ],
+      query: "cedar",
+    });
+
+    expect(results.map((result) => result.id)).toEqual([
+      "post:local",
+      "post:deep",
+    ]);
+    expect(results[1]).toMatchObject({
+      detail: "...the cedar decision from last winter...",
+    });
+  });
+
   it("parses named and ISO dates and rejects impossible dates", () => {
     const now = new Date(2026, 6, 17, 12);
     expect(parseWorkspaceDateQuery("jul 13", now)).toBe("2026-07-13");
