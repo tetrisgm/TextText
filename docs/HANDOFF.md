@@ -31,6 +31,10 @@ polish ledger.
 - Product decision: TextText does not need a separate Plan mode. The app is a
   fast notes workspace; proposals and previews are the right confirmation
   mechanism for risky actions.
+- Trash is reversible by default. `empty_trash` is the explicit,
+  owner-confirmed permanent purge available through agent surfaces.
+- Settings now has an integrations gallery showing TextText AI, Codex,
+  Claude/Codex clients, and MCP connections without exposing provider secrets.
 
 ## Current AI implementation handoff (2026-08-25)
 
