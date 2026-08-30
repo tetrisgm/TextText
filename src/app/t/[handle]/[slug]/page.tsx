@@ -23,6 +23,7 @@ import {
   getPostByFolderPath,
   getPostStoreContext,
   getPostSlugAliases,
+  getPublicWorkspaceWikiLinkSources,
   getWorkspaceWikiLinkSources,
   getDocumentTemplate,
   listDocumentTemplates,
@@ -460,13 +461,20 @@ export async function PostPageForHandle({
     );
   }
 
+  const [publicPosts, publicWikiLinkSources] = !canEdit
+    ? await Promise.all([
+        getPosts(handle),
+        getPublicWorkspaceWikiLinkSources(handle),
+      ])
+    : [[], []];
+
   // Public wiki links: targets come only from the same published-public feed
   // the blog lists, plus aliases that resolve to a post in that feed. Anything
   // else fails closed and renders as plain text.
   const wikiLinkTargets = !canEdit
     ? publicWikiLinkRenderTargets({
         blog,
-        posts: await getPosts(handle),
+        posts: publicPosts,
         slugAliases,
       })
     : undefined;
@@ -483,11 +491,17 @@ export async function PostPageForHandle({
   // Public "Linked from": sourced from the same published-public feed the
   // blog itself lists, so nothing private can ever appear here. The
   // workspace shell computes its own richer panel from the pool.
+  const publicWikiLinkBodyById = new Map(
+    publicWikiLinkSources.map((source) => [source.id, source.body]),
+  );
   const publicBacklinks = !canEdit
-    ? (await getPosts(handle))
+    ? publicPosts
         .filter((source) => {
           if (source.slug === post.slug) return false;
-          return extractWikiLinks(source.body ?? "").some(
+          const body = source.id
+            ? (publicWikiLinkBodyById.get(source.id) ?? "")
+            : "";
+          return extractWikiLinks(body).some(
             (link) =>
               link.target === post.slug ||
               slugAliases[link.target] === post.slug,

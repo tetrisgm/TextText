@@ -720,6 +720,28 @@ export async function getWorkspaceWikiLinkSources(
     );
 }
 
+export async function getPublicWorkspaceWikiLinkSources(
+  handle: string,
+): Promise<WorkspaceWikiLinkSource[]> {
+  if (!db) throw new Error(NO_DATABASE);
+  return db
+    .select({ id: posts.id, body: posts.body })
+    .from(posts)
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .where(
+      and(
+        eq(blogs.handle, handle),
+        eq(posts.visibility, "public"),
+        eq(posts.status, "published"),
+        ne(posts.type, "note"),
+        ne(posts.type, "bookmark"),
+        isNull(blogs.deletedAt),
+        isNull(posts.deletedAt),
+        like(posts.body, "%[[%"),
+      ),
+    );
+}
+
 export async function getAccessibleWorkspaceWikiLinkSources(
   handle: string,
   user: AccessUser | null,
