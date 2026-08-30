@@ -30,6 +30,21 @@ function fallbackFolderPathForType(type: WorkspacePoolPost["type"]): string {
   return BLOG_FOLDER_PATH;
 }
 
+// Folder paths are read throughout the shell (lists, breadcrumbs, commands,
+// search, and action menus). Looking up every post with Array.find made those
+// renders O(posts * folders). Pool updates replace the folders array, so a
+// weakly-held index gives every consumer O(1) lookup without adding serialized
+// index data to the pool payload or retaining old workspaces.
+const folderPathsByFolderArray = new WeakMap<Folder[], Map<string, string>>();
+
+function folderPathIndex(folders: Folder[]): Map<string, string> {
+  const cached = folderPathsByFolderArray.get(folders);
+  if (cached) return cached;
+  const index = new Map(folders.map((folder) => [folder.id, folder.path]));
+  folderPathsByFolderArray.set(folders, index);
+  return index;
+}
+
 export function narrowPostFromPost(
   post: Post,
   blogId: string,
@@ -200,10 +215,10 @@ export function folderPathForPoolPost(
   pool: Pick<WorkspacePoolPayload, "folders">,
   post: Pick<WorkspacePoolPost, "folderId" | "type">,
 ): string {
-  const folder = post.folderId
-    ? pool.folders.find((entry) => entry.id === post.folderId)
+  const folderPath = post.folderId
+    ? folderPathIndex(pool.folders).get(post.folderId)
     : null;
-  return folder?.path ?? fallbackFolderPathForType(post.type);
+  return folderPath ?? fallbackFolderPathForType(post.type);
 }
 
 export function poolPostsForFolder(
