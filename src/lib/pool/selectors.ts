@@ -39,7 +39,6 @@ export function narrowPostFromPost(
     id: post.id,
     blogId,
     folderId: post.folderId,
-    document: post.document,
     visibility: post.visibility,
     template: post.template,
     type: post.type,

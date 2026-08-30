@@ -9,6 +9,7 @@ import {
   workspacePoolFromParts,
 } from "@/lib/pool/selectors";
 import { workspaceWikiLinkMetadata } from "@/lib/pool/server";
+import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import type { Blog, Post } from "@/lib/content";
 import {
   createWikiLinkTargetResolver,
@@ -55,17 +56,23 @@ describe("wikilink extraction and backlinks", () => {
     expect(resolve("missing")).toBeNull();
   });
 
-  it("keeps the workspace pool body warm-up empty and previews bounded", () => {
+  it("keeps canonical documents out of list payloads and previews bounded", () => {
     const body = "n".repeat(10_000);
+    const document = emptyDocumentSnapshot({
+      id: "texttext.note",
+      version: 1,
+    });
+    document.content.body = body;
     const pool = workspacePoolFromParts({
       blog,
       blogId: "blog-1",
       counts: {},
       folders: [],
-      posts: [post({ id: "note", type: "note", body })],
+      posts: [post({ id: "note", type: "note", body, document })],
     });
 
     expect(pool.initialDocuments).toEqual([]);
+    expect(pool.posts[0]?.document).toBeUndefined();
     expect(pool.posts[0]?.bodyPreview).toHaveLength(2048);
   });
 

@@ -193,6 +193,7 @@ import {
   acknowledgePostBody,
   acknowledgePostDocument,
   ensurePostBody,
+  ensurePostDocument,
   getCachedWorkspacePostDocument,
   getCachedWorkspacePostBody,
   getWorkspacePost,
@@ -3964,7 +3965,6 @@ function LocalUnifiedWorkspacePostEditor({
     (nextDocument: DocumentSnapshot) => {
       const projection = legacyProjectionFromDocument(nextDocument);
       updatePost(poolPost.id, {
-        document: nextDocument,
         template: nextDocument.presentation.template,
         title: projection.title,
         excerpt: projection.excerpt || undefined,
@@ -4357,21 +4357,32 @@ function LocalWorkspaceShell({
           },
     [sourcePool],
   );
-  const itemTypeStudioPreviewDocuments = useMemo(
-    () =>
-      displayPool.posts.flatMap((post) =>
-        post.document
-          ? [
-              {
-                folderPath: folderPathForPoolPost(displayPool, post),
-                document: post.document,
-              },
-            ]
-          : [],
-      ),
-    [displayPool],
-  );
   const displayPoolRef = useRef(displayPool);
+  const loadItemTypeStudioPreviewDocuments = useCallback(
+    async (folderPath: string) => {
+      const currentPool = displayPoolRef.current;
+      const candidates = currentPool.posts
+        .filter(
+          (post) => folderPathForPoolPost(currentPool, post) === folderPath,
+        )
+        .slice(0, 12);
+      await Promise.all(
+        candidates.map((post) =>
+          ensurePostDocument(currentPool.blogId, post.id),
+        ),
+      );
+      return candidates.flatMap((post) => {
+        const cached = getCachedWorkspacePostDocument(
+          currentPool.blogId,
+          post.id,
+        );
+        return cached
+          ? [{ folderPath, document: cached.document }]
+          : [];
+      });
+    },
+    [],
+  );
   const contentRef = useRef<HTMLDivElement | null>(null);
   const pendingScrollRestoreRef = useRef<{
     left: number;
@@ -7154,7 +7165,7 @@ function LocalWorkspaceShell({
             setItemTypeStudioFolderPath(null);
             setItemTypeStudioEditing(null);
           }}
-          previewDocuments={itemTypeStudioPreviewDocuments}
+          loadPreviewDocuments={loadItemTypeStudioPreviewDocuments}
         />
       ) : null}
       <ConfirmationDialog

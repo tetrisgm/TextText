@@ -426,6 +426,7 @@ export function ItemTypeStudio({
   generateWithConnectedAgent,
   handle,
   initialFolderPath = "",
+  loadPreviewDocuments,
   onClose,
   onCreated,
   previewDocuments = [],
@@ -453,6 +454,9 @@ export function ItemTypeStudio({
   }) => Promise<ItemTypeBlueprint>;
   handle: string;
   initialFolderPath?: string;
+  loadPreviewDocuments?: (
+    folderPath: string,
+  ) => Promise<readonly ItemTypeStudioPreviewDocument[]>;
   onClose: () => void;
   onCreated?: (folderPath: string | null) => void;
   previewDocuments?: readonly ItemTypeStudioPreviewDocument[];
@@ -478,6 +482,9 @@ export function ItemTypeStudio({
   const [newFieldType, setNewFieldType] = useState<NewFieldType>("text");
   const [busy, setBusy] = useState<"generate" | "save" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadedPreviewDocuments, setLoadedPreviewDocuments] = useState<
+    readonly ItemTypeStudioPreviewDocument[]
+  >([]);
 
   const revision = currentStudioRevision(timeline);
   const design = useMemo(
@@ -515,12 +522,34 @@ export function ItemTypeStudio({
     };
   }, [onClose]);
 
+  useEffect(() => {
+    if (
+      previewContentMode !== "folder" ||
+      !folderPath ||
+      !loadPreviewDocuments
+    ) {
+      return;
+    }
+    let active = true;
+    void loadPreviewDocuments(folderPath).then(
+      (documents) => {
+        if (active) setLoadedPreviewDocuments(documents);
+      },
+      () => {
+        if (active) setLoadedPreviewDocuments([]);
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [folderPath, loadPreviewDocuments, previewContentMode]);
+
   const selectedFolderDocuments = useMemo(
     () =>
-      previewDocuments
+      [...previewDocuments, ...loadedPreviewDocuments]
         .filter((entry) => entry.folderPath === folderPath)
         .map((entry) => entry.document),
-    [folderPath, previewDocuments],
+    [folderPath, loadedPreviewDocuments, previewDocuments],
   );
   const effectivePreviewContentMode =
     previewContentMode === "folder" && selectedFolderDocuments.length === 0

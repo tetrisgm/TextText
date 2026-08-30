@@ -42,12 +42,15 @@ describe("item type studio experience", () => {
     );
   });
 
-  it("passes canonical folder documents into the preview", () => {
-    expect(shellSource).toContain("itemTypeStudioPreviewDocuments");
-    expect(shellSource).toContain("folderPathForPoolPost(displayPool, post)");
+  it("loads a bounded set of canonical folder documents only on demand", () => {
+    expect(shellSource).toContain("loadItemTypeStudioPreviewDocuments");
+    expect(shellSource).toContain(".slice(0, 12)");
+    expect(shellSource).toContain("ensurePostDocument(currentPool.blogId, post.id)");
     expect(shellSource).toContain(
-      "previewDocuments={itemTypeStudioPreviewDocuments}",
+      "loadPreviewDocuments={loadItemTypeStudioPreviewDocuments}",
     );
+    expect(studioSource).toContain('previewContentMode !== "folder"');
+    expect(studioSource).toContain("loadPreviewDocuments(folderPath)");
   });
 
   it("uses one scrolling surface at phone width", () => {
