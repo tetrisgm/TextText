@@ -1183,7 +1183,35 @@ A connected agent can create the same complete type. Try:
 
 > Build a Notion-like project board in my Notes folder with status, priority, due date, and completion fields. Make each item a focused task page and group the folder by status.
 
-The agent creates one reusable type rather than a collection of unrelated styling changes.`,
+    The agent creates one reusable type rather than a collection of unrelated styling changes.`,
+  },
+  {
+    slug: "connect-with-mcp",
+    title: "Connect with MCP",
+    body: `MCP lets an AI client such as Claude, Codex, or another compatible tool read and change your TextText workspace through an authenticated connection.
+
+## Hosted MCP
+
+Open **Connect** in TextText, create a workspace token, and add the hosted MCP address to a client that supports bearer credentials. Give the connection a descriptive name and keep the token in the client's protected credential store.
+
+## What the connection can do
+
+Agents can search, read, create, update, organize, and discuss documents. Actions that change an audience, restore content, share access, or empty Trash show you a specific preview and wait for approval. Ordinary deletion moves content to Trash so it can be undone.
+
+TextText never shows provider secrets in the app. Revoke a connection any time from Settings, and use the private **Agent connection check** note to verify a new setup.`,
+  },
+  {
+    slug: "how-agent-changes-stay-safe",
+    title: "How agent changes stay safe",
+    body: `TextText keeps your document as the source of truth while connected agents help you work.
+
+- Every read is scoped to your workspace and names the item or folder it used.
+- Content edits use revision checks so a collaborator's newer writing is not overwritten.
+- Risky actions show the exact target and proposed change before anything happens.
+- Delete means move to Trash. Restore is available, and **empty Trash** is a separate permanent action that always requires your approval.
+- Every mutation records which connection or agent performed it.
+
+If a proposal is stale because someone changed the item, TextText refuses to guess. Read the current item and ask the agent to propose the change again.`,
   },
 ] as const;
 
