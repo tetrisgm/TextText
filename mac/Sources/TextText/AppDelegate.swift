@@ -2357,12 +2357,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            if let image = NSImage(systemSymbolName: "square.and.pencil", accessibilityDescription: appName) {
-                image.isTemplate = true
-                button.image = image
-            } else {
-                button.title = "T"
-            }
+            // Keep the menu-bar identity aligned with the app icon: publishing
+            // and text, not a generic compose control.
+            button.image = nil
+            button.title = "📰"
             button.toolTip = appName
         }
         let menu = NSMenu()
