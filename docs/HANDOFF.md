@@ -19,6 +19,16 @@ polish ledger.
 
 ## Current shipped checkpoint (2026-08-29)
 
+### Publishing app icon (2026-08-30)
+
+- Replaced the former serif `W` mark with the actual newspaper emoji `📰`,
+  matching the owner's convention for app logos and making publishing and
+  text the first visual signal rather than notes.
+- Regenerated every macOS AppIcon PNG size and `mac/AppIcon.icns` from the
+  checked-in renderer, and updated the Next.js favicon and Apple touch icon.
+- `npm run lint`, `npm run build`, and `npm run mac:build` pass after the icon
+  change. No release or TestFlight action was performed.
+
 - `main` includes the guarded folder-look CAS fix (`f05e6735`) and the
   deterministic visual contract gate (`verify:look-contract`).
 - The look gate renders all 29 resolvable templates as item and collection

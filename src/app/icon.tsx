@@ -19,8 +19,8 @@ export default async function Icon() {
       <div
         style={{
           alignItems: "center",
-          background: "#f8f5ee",
-          border: "1px solid #d9d2c7",
+          background: "#dcecff",
+          border: "1px solid #b8d2ed",
           borderRadius: 14,
           color: "#181510",
           display: "flex",
@@ -30,29 +30,7 @@ export default async function Icon() {
           width: "100%",
         }}
       >
-        <div
-          style={{
-            background: "#065ec6",
-            borderRadius: 2,
-            bottom: 10,
-            height: 3,
-            left: 14,
-            position: "absolute",
-            right: 14,
-          }}
-        />
-        <div
-          style={{
-            display: "flex",
-            fontFamily: "Fraunces",
-            fontSize: 42,
-            letterSpacing: 0,
-            lineHeight: 1,
-            marginTop: -4,
-          }}
-        >
-          W
-        </div>
+        <div style={{ display: "flex", fontFamily: "Apple Color Emoji", fontSize: 40, lineHeight: 1 }}>📰</div>
       </div>
     ),
     {

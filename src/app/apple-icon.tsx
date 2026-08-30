@@ -19,8 +19,8 @@ export default async function AppleIcon() {
       <div
         style={{
           alignItems: "center",
-          background: "#f8f5ee",
-          border: "1px solid #d9d2c7",
+          background: "#dcecff",
+          border: "1px solid #b8d2ed",
           borderRadius: 40,
           color: "#181510",
           display: "flex",
@@ -30,29 +30,7 @@ export default async function AppleIcon() {
           width: "100%",
         }}
       >
-        <div
-          style={{
-            background: "#065ec6",
-            borderRadius: 4,
-            bottom: 31,
-            height: 8,
-            left: 42,
-            position: "absolute",
-            right: 42,
-          }}
-        />
-        <div
-          style={{
-            display: "flex",
-            fontFamily: "Fraunces",
-            fontSize: 116,
-            letterSpacing: 0,
-            lineHeight: 1,
-            marginTop: -11,
-          }}
-        >
-          W
-        </div>
+        <div style={{ display: "flex", fontFamily: "Apple Color Emoji", fontSize: 112, lineHeight: 1 }}>📰</div>
       </div>
     ),
     {
