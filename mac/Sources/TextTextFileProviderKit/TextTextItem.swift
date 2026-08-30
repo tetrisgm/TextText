@@ -160,14 +160,17 @@ public struct TextTextItem: Equatable, Sendable {
 
 public enum TextTextItemMapper {
     private static let iso = ISO8601DateFormatter()
+    private static let fractionalISO: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
 
     static func date(_ raw: String?) -> Date? {
         guard let raw, !raw.isEmpty else { return nil }
         if let d = iso.date(from: raw) { return d }
         // The server also emits fractional-second timestamps; try that too.
-        let withFraction = ISO8601DateFormatter()
-        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return withFraction.date(from: raw)
+        return fractionalISO.date(from: raw)
     }
 
     /// The synthetic container for one workspace, a child of the domain root.
