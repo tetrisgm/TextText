@@ -126,6 +126,10 @@ import {
 } from "./model-preference";
 import { appendNativeOwnerPrompt } from "./native-owner-prompt";
 import {
+  createAssistantTextDeltaBuffer,
+  type AssistantTextDeltaBuffer,
+} from "./text-delta-buffer";
+import {
   assistantOwnerScopeMatches,
   nativeEventMatchesTurnFence,
   type AssistantOwnerScope,
@@ -615,6 +619,13 @@ export function useNativeAssistant({
    */
   const nativeFailuresRef = useRef<string[]>([]);
   const nativeMessageRef = useRef<string | null>(null);
+  const nativeTextBufferRef = useRef<{
+    conversationId: string;
+    messageId: string;
+    threadKey: string;
+    buffer: AssistantTextDeltaBuffer;
+  } | null>(null);
+  const nativeFinalTextReceivedRef = useRef(false);
   const nativeThreadRef = useRef<string | null>(null);
   const nativeConversationRef = useRef<string | null>(null);
   const nativeTurnFenceRef = useRef<NativeTurnFence | null>(null);
@@ -704,6 +715,9 @@ export function useNativeAssistant({
       });
     }
     nativeJobRef.current = null;
+    nativeTextBufferRef.current?.buffer.finish();
+    nativeTextBufferRef.current = null;
+    nativeFinalTextReceivedRef.current = false;
     nativeMessageRef.current = null;
     nativeProofsRef.current = [];
     nativeFailuresRef.current = [];
@@ -950,15 +964,31 @@ export function useNativeAssistant({
 
       if (event.type === "text-delta") {
         if (nativeItemTypeDesignRef.current) return;
+        if (nativeFinalTextReceivedRef.current) return;
         if (nativeMessageRef.current) {
-          updateThreadMessage(
-            eventThread,
-            nativeMessageRef.current,
-            (message) => ({
-              ...message,
-              text: message.text + event.text,
-            }),
-          );
+          const messageId = nativeMessageRef.current;
+          let pending = nativeTextBufferRef.current;
+          if (
+            !pending ||
+            pending.conversationId !== fence.conversationId ||
+            pending.messageId !== messageId ||
+            pending.threadKey !== eventThread
+          ) {
+            pending?.buffer.finish();
+            pending = {
+              conversationId: fence.conversationId,
+              messageId,
+              threadKey: eventThread,
+              buffer: createAssistantTextDeltaBuffer((text) => {
+                updateThreadMessage(eventThread, messageId, (message) => ({
+                  ...message,
+                  text: message.text + text,
+                }));
+              }),
+            };
+            nativeTextBufferRef.current = pending;
+          }
+          pending.buffer.push(event.text);
         } else {
           nativeMessageRef.current = appendToThread(
             eventThread,
@@ -972,6 +1002,9 @@ export function useNativeAssistant({
         }
       } else if (event.type === "final-text") {
         if (nativeItemTypeDesignRef.current) return;
+        nativeTextBufferRef.current?.buffer.finish();
+        nativeTextBufferRef.current = null;
+        nativeFinalTextReceivedRef.current = true;
         if (nativeMessageRef.current) {
           updateThreadMessage(
             eventThread,
@@ -1127,6 +1160,8 @@ export function useNativeAssistant({
           }
         })();
       } else if (event.type === "turn-completed") {
+        nativeTextBufferRef.current?.buffer.finish();
+        nativeTextBufferRef.current = null;
         const itemTypeDesign = nativeItemTypeDesignRef.current;
         if (itemTypeDesign) {
           clearTimeout(itemTypeDesign.timeout);
@@ -1189,6 +1224,7 @@ export function useNativeAssistant({
         }
         nativeJobRef.current = null;
         nativeMessageRef.current = null;
+        nativeFinalTextReceivedRef.current = false;
         nativeProofsRef.current = [];
         nativeFailuresRef.current = [];
         nativeTurnFenceRef.current = null;
@@ -1196,6 +1232,8 @@ export function useNativeAssistant({
         nativeConversationRef.current = null;
         setThreadBusy(eventThread, false);
       } else if (event.type === "error") {
+        nativeTextBufferRef.current?.buffer.finish();
+        nativeTextBufferRef.current = null;
         const itemTypeDesign = nativeItemTypeDesignRef.current;
         if (itemTypeDesign) {
           clearTimeout(itemTypeDesign.timeout);
@@ -1237,6 +1275,7 @@ export function useNativeAssistant({
           updateAssistantJob(nativeJobRef.current, { status: "error" });
         nativeJobRef.current = null;
         nativeMessageRef.current = null;
+        nativeFinalTextReceivedRef.current = false;
         nativeProofsRef.current = [];
         nativeFailuresRef.current = [];
         nativeTurnFenceRef.current = null;
@@ -1435,8 +1474,11 @@ export function useNativeAssistant({
        * showed nothing at all for the whole turn: no working line, no dot, and
        * the person watched an empty panel while the agent worked. A native turn
        * is settled by its own turn-completed and error handlers instead.
-       */
+      */
       let handedToNativeAgent = false;
+      const cloudTextBuffer: { current: AssistantTextDeltaBuffer | null } = {
+        current: null,
+      };
       const jobId = startAssistantJob({
         threadKey: thread,
         contextKey,
@@ -1554,6 +1596,9 @@ export function useNativeAssistant({
             nativeThreadRef.current = thread;
             nativeConversationRef.current = nativeConversationId;
             nativeJobRef.current = jobId;
+            nativeTextBufferRef.current?.buffer.cancel();
+            nativeTextBufferRef.current = null;
+            nativeFinalTextReceivedRef.current = false;
             nativeMessageRef.current = null;
             const started = submitNativeAssistantTurn(
               nativePrompt,
@@ -1627,10 +1672,16 @@ export function useNativeAssistant({
                 }));
               }
             } else {
-              updateThreadMessage(thread, cloudMessageId, (message) => ({
-                ...message,
-                text: `${message.text}${event.text}`,
-              }));
+              const messageId = cloudMessageId;
+              cloudTextBuffer.current ??= createAssistantTextDeltaBuffer(
+                (text) => {
+                  updateThreadMessage(thread, messageId, (message) => ({
+                    ...message,
+                    text: `${message.text}${text}`,
+                  }));
+                },
+              );
+              cloudTextBuffer.current.push(event.text);
             }
           }
         };
@@ -1652,6 +1703,7 @@ export function useNativeAssistant({
           signal: cloudAbortController.signal,
           onEvent: onCloudEvent,
         });
+        cloudTextBuffer.current?.finish();
         if ("disabled" in result) {
           const message = "Connect Anthropic or OpenAI in Workspace Settings.";
           appendToThread(
@@ -1733,6 +1785,7 @@ export function useNativeAssistant({
         appendToThread(thread, "error", message);
         updateAssistantJob(jobId, { status: "error", activity: message });
       } finally {
+        cloudTextBuffer.current?.finish();
         activeCloudAbortRef.current = null;
         setThreadCloudProvider(thread, null);
         if (!handedToNativeAgent) setThreadBusy(thread, false);

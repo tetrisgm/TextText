@@ -365,7 +365,9 @@ export function createWorkspaceAgentTools(
       tags: poolPost.tags,
     };
     updatePost(poolPost.id, { title, excerpt, tags });
-    updatePostBody(pool().blogId, poolPost.id, body);
+    if (patch.body !== undefined) {
+      updatePostBody(pool().blogId, poolPost.id, body);
+    }
     try {
       await runRemote("update_item", {
         id: poolPost.id,
@@ -377,7 +379,9 @@ export function createWorkspaceAgentTools(
       });
     } catch (error) {
       updatePost(poolPost.id, previousPost);
-      updatePostBody(pool().blogId, poolPost.id, current.body);
+      if (patch.body !== undefined) {
+        updatePostBody(pool().blogId, poolPost.id, current.body);
+      }
       throw error;
     }
     await refreshPoolAfterMutation();
