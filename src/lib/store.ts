@@ -1005,7 +1005,7 @@ async function blogIdFor(handle: string): Promise<string> {
   return id;
 }
 
-// Every workspace has these three system folders. Provisioning creates them,
+// Every workspace has these system folders. Provisioning creates them,
 // and the migration backfills older workspaces so reads never write.
 const WORKSPACE_FOLDERS: ReadonlyArray<Omit<Folder, "id">> = [
   {
@@ -1029,11 +1029,43 @@ const WORKSPACE_FOLDERS: ReadonlyArray<Omit<Folder, "id">> = [
     defaultTemplate: { id: "texttext.bookmark", version: 1 },
     position: 2,
   },
+  {
+    name: "Documentation",
+    path: "documentation",
+    // Documentation is a notes-mode folder so its pages stay private and
+    // editable, while the distinct path keeps product guidance out of the
+    // user's working Notes folder.
+    mode: "notes",
+    defaultTemplate: { id: "texttext.note", version: 1 },
+    position: 3,
+  },
 ];
 
 const DEFAULT_FOLDER_PATH = BLOG_FOLDER_PATH;
 
 const STARTER_AGENT_GUIDES = [
+  {
+    slug: "welcome-to-texttext",
+    title: "Welcome to TextText",
+    body: `TextText is the fast, durable text canvas for people and the AI tools they use.
+
+Write or capture something quickly, keep it in a real document, and let a connected AI find, organize, and improve it without losing the source of truth.
+
+## The product in one sentence
+
+TextText is the agentic document workspace equivalent of Paper or pen.dev: a fast, durable text canvas where supported AIs can capture, retrieve, change, and safely review real documents.
+
+## How it works
+
+- **Capture:** write a note, save a useful conversation, or ask an AI to create a document.
+- **Find:** ask an AI to search your workspace and read the relevant items before acting.
+- **Change:** ask for a focused edit, append, organization change, or reusable item type.
+- **Review:** risky actions show a clear preview and wait for your approval. Deletes go to Trash and can be undone.
+
+Your documents remain the source of truth. TextText preserves your content, records who changed it, and keeps privacy boundaries in place whether the change comes from the app, the in-app assistant, Claude, Codex, or another connected client.
+
+Start by opening **Notes**, writing something you want to keep, or reading **Connect your AI tools** in this Documentation folder.`,
+  },
   {
     slug: "connect-your-ai-tools",
     title: "Connect your AI tools",
@@ -1157,7 +1189,8 @@ The agent creates one reusable type rather than a collection of unrelated stylin
 
 // Workspaces provisioned before 2026-08-08 were handed a set of explanatory
 // documents. They still exist, and they still must not count against the
-// try-before-signup item cap. New workspaces are provisioned empty.
+// try-before-signup item cap. New workspaces receive only these private
+// product-documentation starters; the user's working folders remain empty.
 function starterAgentGuideValues(blogId: string, folderId: string) {
   return STARTER_AGENT_GUIDES.map((guide) => {
     const document = validateDocumentSnapshot({
@@ -2744,13 +2777,14 @@ async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
   );
   const blogFolderId = folderIdByPath.get(folderPathForPostType("article"));
   const notesFolderId = folderIdByPath.get(folderPathForPostType("note"));
+  const documentationFolderId = folderIdByPath.get("documentation");
   const bookmarksFolderId = folderIdByPath.get(
     folderPathForPostType("bookmark"),
   );
-  if (!blogFolderId || !notesFolderId || !bookmarksFolderId) {
+  if (!blogFolderId || !notesFolderId || !bookmarksFolderId || !documentationFolderId) {
     throw new Error("failed to resolve the workspace folders");
   }
-  // A new workspace starts with the AI guides in Notes (owner decision
+  // A new workspace starts with the AI guides in Documentation (owner decision
   // 2026-08-14, reversing the empty-by-default of 2026-08-08): the paths for
   // connecting an AI must be discoverable from the very first Library view,
   // not only from the docs site. They are private notes, they are marked as
@@ -2760,7 +2794,7 @@ async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
   void bookmarksFolderId;
   await db!
     .insert(posts)
-    .values(starterAgentGuideValues(blogId, notesFolderId))
+    .values(starterAgentGuideValues(blogId, documentationFolderId))
     .onConflictDoNothing({
       target: [posts.folderId, posts.slug],
       where: sql`${posts.deletedAt} is null`,
@@ -2792,16 +2826,16 @@ export async function backfillWorkspaceAgentGuides(): Promise<{
 
   for (const workspace of workspaceRows) {
     const workspaceFolders = await ensureWorkspaceFolders(workspace.id);
-    const notesFolder = workspaceFolders.find(
-      (folder) => folder.path === folderPathForPostType("note"),
+    const documentationFolder = workspaceFolders.find(
+      (folder) => folder.path === "documentation",
     );
-    if (!notesFolder) {
-      throw new Error(`notes folder missing for workspace ${workspace.id}`);
+    if (!documentationFolder) {
+      throw new Error(`documentation folder missing for workspace ${workspace.id}`);
     }
 
     const added = await db
       .insert(posts)
-      .values(starterAgentGuideValues(workspace.id, notesFolder.id))
+      .values(starterAgentGuideValues(workspace.id, documentationFolder.id))
       .onConflictDoNothing({
         target: [posts.folderId, posts.slug],
         where: sql`${posts.deletedAt} is null`,
