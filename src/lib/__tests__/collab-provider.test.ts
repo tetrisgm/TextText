@@ -418,6 +418,74 @@ describe("CollabProvider startup and outbox", () => {
     provider.destroy();
   });
 
+  it("pauses collaboration traffic while hidden and resumes it when visible", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("navigator", { sendBeacon: vi.fn(() => true) });
+
+    let visibilityState: "hidden" | "visible" = "hidden";
+    const visibilityListeners = new Set<() => void>();
+    vi.stubGlobal("document", {
+      get visibilityState() {
+        return visibilityState;
+      },
+      addEventListener: (event: string, listener: () => void) => {
+        if (event === "visibilitychange") visibilityListeners.add(listener);
+      },
+      removeEventListener: (event: string, listener: () => void) => {
+        if (event === "visibilitychange") visibilityListeners.delete(listener);
+      },
+    });
+
+    let caughtUp = false;
+    const longPollSignals: AbortSignal[] = [];
+    const presenceMethods: string[] = [];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        const url = String(input);
+        if (url.endsWith("/presence")) {
+          presenceMethods.push(init?.method ?? "GET");
+          return jsonResponse({ presence: [] });
+        }
+        if (!caughtUp) {
+          caughtUp = true;
+          return catchUpResponse();
+        }
+        longPollSignals.push(init?.signal as AbortSignal);
+        return new Promise<Response>(() => {});
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = providerFor(new Y.Doc(), "visibility-lifecycle");
+    await provider.start();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    visibilityState = "visible";
+    for (const listener of visibilityListeners) listener();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(longPollSignals).toHaveLength(1);
+    expect(presenceMethods.sort()).toEqual(["GET", "POST"]);
+
+    visibilityState = "hidden";
+    for (const listener of visibilityListeners) listener();
+    expect(longPollSignals[0].aborted).toBe(true);
+    const requestsAtPause = fetchMock.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetchMock).toHaveBeenCalledTimes(requestsAtPause);
+
+    visibilityState = "visible";
+    for (const listener of visibilityListeners) listener();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(longPollSignals).toHaveLength(2);
+    expect(presenceMethods.filter((method) => method === "GET")).toHaveLength(2);
+    expect(presenceMethods.filter((method) => method === "POST")).toHaveLength(2);
+
+    provider.destroy();
+  });
+
   it("delivers queued edits over sendBeacon on pagehide", async () => {
     vi.useFakeTimers();
     const beacons: string[] = [];

@@ -426,7 +426,9 @@ export class CollabProvider implements CollaborationTransport {
   private outbox: Outbox | null = null;
   // Aborts the in-flight 25s long-poll immediately on teardown so a destroyed
   // provider does not hold a connection open for up to the full wait window.
-  private readonly abort = new AbortController();
+  private abort = new AbortController();
+  private networkActive = false;
+  private networkGeneration = 0;
   private pollRetries = 0;
   private baselineApplied = false;
 
@@ -439,6 +441,7 @@ export class CollabProvider implements CollaborationTransport {
     this.onDocUpdate = this.onDocUpdate.bind(this);
     this.onAwarenessUpdate = this.onAwarenessUpdate.bind(this);
     this.onPageHide = this.onPageHide.bind(this);
+    this.onVisibilityChange = this.onVisibilityChange.bind(this);
     this.opts.awareness?.setLocalStateField("user", {
       name: opts.userName,
       color: opts.color,
@@ -462,6 +465,9 @@ export class CollabProvider implements CollaborationTransport {
     // pagehide gives any queued edits one last delivery that survives unload.
     if (this.opts.canPush && typeof window !== "undefined") {
       window.addEventListener("pagehide", this.onPageHide);
+    }
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", this.onVisibilityChange);
     }
 
     const outbox = outboxFor(this.opts.postId, this.base);
@@ -522,6 +528,49 @@ export class CollabProvider implements CollaborationTransport {
     // A tab close / bfcache navigation aborts the async flush; sendBeacon is
     // the only push that survives unload.
     this.flushPendingViaBeacon();
+  }
+
+  private pageIsHidden(): boolean {
+    return (
+      typeof document !== "undefined" &&
+      document.visibilityState === "hidden"
+    );
+  }
+
+  private clearPresenceLoops(): void {
+    if (this.presenceTimer) clearInterval(this.presenceTimer);
+    if (this.presencePollTimer) clearInterval(this.presencePollTimer);
+    this.presenceTimer = null;
+    this.presencePollTimer = null;
+  }
+
+  private pauseNetworkLoops(): void {
+    if (!this.networkActive) return;
+    this.networkActive = false;
+    this.networkGeneration += 1;
+    this.clearPresenceLoops();
+    this.abort.abort();
+  }
+
+  private resumeNetworkLoops(): void {
+    if (this.stopped || this.networkActive || this.pageIsHidden()) return;
+    this.networkActive = true;
+    this.networkGeneration += 1;
+    const generation = this.networkGeneration;
+    this.abort = new AbortController();
+    void this.pollLoop(generation, this.abort.signal);
+    void this.heartbeat();
+    void this.pollPresence();
+    this.presenceTimer = setInterval(() => void this.heartbeat(), 8000);
+    this.presencePollTimer = setInterval(
+      () => void this.pollPresence(),
+      PRESENCE_POLL_MS,
+    );
+  }
+
+  private onVisibilityChange(): void {
+    if (this.pageIsHidden()) this.pauseNetworkLoops();
+    else this.resumeNetworkLoops();
   }
 
   /** Last-resort delivery of queued edits over sendBeacon (survives page
@@ -604,20 +653,21 @@ export class CollabProvider implements CollaborationTransport {
     if (typeof window !== "undefined") {
       window.removeEventListener("pagehide", this.onPageHide);
     }
+    if (typeof document !== "undefined") {
+      document.removeEventListener(
+        "visibilitychange",
+        this.onVisibilityChange,
+      );
+    }
+    this.networkActive = false;
+    this.networkGeneration += 1;
     if (this.started) this.doc.off("update", this.onDocUpdate);
     this.opts.awareness?.off("update", this.onAwarenessUpdate);
     if (this.awarenessTimer) {
       clearTimeout(this.awarenessTimer);
       this.awarenessTimer = null;
     }
-    if (this.presenceTimer) {
-      clearInterval(this.presenceTimer);
-      this.presenceTimer = null;
-    }
-    if (this.presencePollTimer) {
-      clearInterval(this.presencePollTimer);
-      this.presencePollTimer = null;
-    }
+    this.clearPresenceLoops();
     if (this.outbox) {
       this.outbox.subscribers.delete(this.outboxSubscriber);
       releaseOutbox(this.opts.postId, this.outbox);
@@ -643,7 +693,13 @@ export class CollabProvider implements CollaborationTransport {
     _changes: unknown,
     origin: unknown,
   ): void {
-    if (this.stopped || origin === REMOTE_AWARENESS_ORIGIN) return;
+    if (
+      this.stopped ||
+      !this.networkActive ||
+      origin === REMOTE_AWARENESS_ORIGIN
+    ) {
+      return;
+    }
     if (this.awarenessTimer) clearTimeout(this.awarenessTimer);
     this.awarenessTimer = setTimeout(() => {
       this.awarenessTimer = null;
@@ -680,14 +736,7 @@ export class CollabProvider implements CollaborationTransport {
       : caughtUp;
 
     if (this.stopped) return result;
-    void this.pollLoop();
-    void this.heartbeat();
-    this.presenceTimer = setInterval(() => void this.heartbeat(), 8000);
-    void this.pollPresence();
-    this.presencePollTimer = setInterval(
-      () => void this.pollPresence(),
-      PRESENCE_POLL_MS,
-    );
+    this.resumeNetworkLoops();
     return result;
   }
 
@@ -836,11 +885,15 @@ export class CollabProvider implements CollaborationTransport {
     return new Promise((r) => setTimeout(r, ms));
   }
 
-  private async pollLoop() {
-    while (!this.stopped) {
+  private async pollLoop(generation: number, signal: AbortSignal) {
+    while (
+      !this.stopped &&
+      this.networkActive &&
+      generation === this.networkGeneration
+    ) {
       try {
         const res = await fetch(`${this.base}?since=${this.lastSeq}&wait=25`, {
-          signal: this.abort.signal,
+          signal,
         });
         if (isAccessLoss(res.status)) {
           this.opts.onError?.(accessLossMessage(res.status));
@@ -891,7 +944,13 @@ export class CollabProvider implements CollaborationTransport {
         for (const row of data.updates) this.applyRow(row);
       } catch (error) {
         // A torn-down provider's aborted fetch is expected, not a failure.
-        if (this.stopped || (error as { name?: string })?.name === "AbortError") return;
+        if (
+          this.stopped ||
+          generation !== this.networkGeneration ||
+          (error as { name?: string })?.name === "AbortError"
+        ) {
+          return;
+        }
         this.pollRetries += 1;
         await this.sleep(backoff(this.pollRetries, POLL_RETRY_MS, POLL_MAX_RETRY_MS));
       }
@@ -899,6 +958,7 @@ export class CollabProvider implements CollaborationTransport {
   }
 
   private async heartbeat() {
+    if (this.stopped || !this.networkActive || this.pageIsHidden()) return;
     try {
       const awareness = this.opts.awareness;
       const awarenessPayload = awareness
@@ -937,6 +997,7 @@ export class CollabProvider implements CollaborationTransport {
    * writer for the people watching, not just for the people typing.
    */
   private async pollPresence() {
+    if (this.stopped || !this.networkActive || this.pageIsHidden()) return;
     try {
       const res = await fetch(`${this.base}/presence`, {
         method: "GET",
