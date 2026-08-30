@@ -88,6 +88,7 @@ import {
   deletePostAtomic,
   getAccessibleAllPosts,
   getAccessibleAllPostFiles,
+  searchAccessibleWorkspacePostFiles,
   getAccessibleFolderCounts,
   getAccessibleFolderPostFiles,
   getAccessibleFolders,
@@ -124,6 +125,7 @@ import {
   createWikiLinkTargetResolver,
   type WikiLinkTargetResolver,
 } from "@/lib/wikilinks";
+import { workspaceSearchTokens } from "@/lib/workspace-search";
 import { workspaceBlog } from "./auth";
 import {
   type BacklinkRef,
@@ -1608,8 +1610,14 @@ export async function executeMcpTool(
       const blog = await requireBlog(extra);
       if (isToolResult(blog)) return blog;
       const user = accessUser(extra);
+      const tokens = workspaceSearchTokens(input.query);
       const [posts, folders, aliases] = await Promise.all([
-        getAccessibleAllPostFiles(blog.handle, user),
+        searchAccessibleWorkspacePostFiles(
+          blog.handle,
+          user,
+          tokens,
+          Math.min(100, Math.max(24, (input.limit ?? 25) * 4)),
+        ),
         getAccessibleFolders(blog.handle, user),
         getPostSlugAliases(blog.handle),
       ]);

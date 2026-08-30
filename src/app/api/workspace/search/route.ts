@@ -1,5 +1,5 @@
 import { getCurrentUser } from "@/lib/session";
-import { searchAccessibleWorkspaceBodies } from "@/lib/store";
+import { searchAccessibleWorkspacePostFiles } from "@/lib/store";
 import {
   rankSearchText,
   searchExcerpt,
@@ -27,7 +27,7 @@ export async function GET(request: Request) {
 
   const tokens = workspaceSearchTokens(query);
   if (tokens.length === 0) return Response.json({ matches: [] });
-  const candidates = await searchAccessibleWorkspaceBodies(
+  const candidates = await searchAccessibleWorkspacePostFiles(
     handle,
     await getCurrentUser(),
     tokens,
@@ -39,7 +39,7 @@ export async function GET(request: Request) {
         ? []
         : [
             {
-              postId: candidate.postId,
+              postId: candidate.id!,
               detail: searchExcerpt(candidate.body, query),
               score,
             },

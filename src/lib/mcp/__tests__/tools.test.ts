@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   getAccessibleFolders: vi.fn(),
   getAccessibleAllPosts: vi.fn(),
   getAccessibleAllPostFiles: vi.fn(),
+  searchAccessibleWorkspacePostFiles: vi.fn(),
   getAccessibleFolderPostFiles: vi.fn(),
   getBlog: vi.fn(),
   getDocumentTemplate: vi.fn(),
@@ -95,6 +96,8 @@ vi.mock("@/lib/store", () => ({
   deletePostAtomic: mocks.deletePostAtomic,
   getAccessibleAllPostFiles: mocks.getAccessibleAllPostFiles,
   getAccessibleAllPosts: mocks.getAccessibleAllPosts,
+  searchAccessibleWorkspacePostFiles:
+    mocks.searchAccessibleWorkspacePostFiles,
   getAccessibleFolderCounts: vi.fn(async () => ({})),
   getAccessibleFolderPostFiles: mocks.getAccessibleFolderPostFiles,
   getAccessibleFolders: mocks.getAccessibleFolders,
@@ -319,7 +322,7 @@ describe("MCP workspace tool adapter", () => {
       pinned: false,
       revision: 1,
     };
-    mocks.getAccessibleAllPostFiles.mockResolvedValue([post]);
+    mocks.searchAccessibleWorkspacePostFiles.mockResolvedValue([post]);
     mocks.getAccessibleFolders.mockResolvedValue([
       {
         id: "research",
@@ -375,7 +378,7 @@ describe("MCP workspace tool adapter", () => {
       title: "Launch brief",
       excerpt: "No supporting material yet.",
     };
-    mocks.getAccessibleAllPostFiles.mockResolvedValue([
+    mocks.searchAccessibleWorkspacePostFiles.mockResolvedValue([
       tokenBody,
       partial,
       exactTitle,

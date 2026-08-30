@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getCurrentUser: vi.fn(),
-  searchAccessibleWorkspaceBodies: vi.fn(),
+  searchAccessibleWorkspacePostFiles: vi.fn(),
 }));
 
 vi.mock("@/lib/session", () => ({ getCurrentUser: mocks.getCurrentUser }));
 vi.mock("@/lib/store", () => ({
-  searchAccessibleWorkspaceBodies: mocks.searchAccessibleWorkspaceBodies,
+  searchAccessibleWorkspacePostFiles: mocks.searchAccessibleWorkspacePostFiles,
 }));
 
 import { GET } from "@/app/api/workspace/search/route";
@@ -15,9 +15,9 @@ import { GET } from "@/app/api/workspace/search/route";
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.getCurrentUser.mockResolvedValue({ sub: "owner-sub" });
-  mocks.searchAccessibleWorkspaceBodies.mockResolvedValue([
+  mocks.searchAccessibleWorkspacePostFiles.mockResolvedValue([
     {
-      postId: "deep-match",
+      id: "deep-match",
       title: "Planning note",
       body: `${"private preface ".repeat(300)}cedar launch decision`,
     },
@@ -36,7 +36,7 @@ describe("workspace deep-search API", () => {
     };
 
     expect(response.status).toBe(200);
-    expect(mocks.searchAccessibleWorkspaceBodies).toHaveBeenCalledWith(
+    expect(mocks.searchAccessibleWorkspacePostFiles).toHaveBeenCalledWith(
       "garden",
       { sub: "owner-sub" },
       ["cedar"],
@@ -61,6 +61,6 @@ describe("workspace deep-search API", () => {
 
     expect(missingHandle.status).toBe(400);
     expect(shortQuery.status).toBe(400);
-    expect(mocks.searchAccessibleWorkspaceBodies).not.toHaveBeenCalled();
+    expect(mocks.searchAccessibleWorkspacePostFiles).not.toHaveBeenCalled();
   });
 });
