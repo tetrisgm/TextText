@@ -76,7 +76,7 @@ polish ledger.
   TypeScript, lint, 30 migrations, agent integration verification, and the
   outbound MCP evaluation. The documentation pass reran all 1,260 web tests.
 - “Everything is done” is not an accurate product claim. The deliberate gaps
-  remain the connector gallery and indexed external services, semantic
+  include indexed external services, semantic
   workspace retrieval and answer-level citations, broader media and document
   computation, team or page-backed skills, rendered-output inspection,
   unattended export verification, Plan mode, and custom background agents.
