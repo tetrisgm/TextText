@@ -1047,35 +1047,30 @@ const STARTER_AGENT_GUIDES = [
   {
     slug: "welcome-to-texttext",
     title: "Welcome to TextText",
-    body: `TextText is the fast, durable text canvas for people and the AI tools they use.
+    body: `TextText is a fast, durable text canvas for you and the AI tools you already use.
 
-Write or capture something quickly, keep it in a real document, and let a connected AI find, organize, and improve it without losing the source of truth.
+Capture a thought, paste a link, or start a document. Then ask a connected AI to find it, improve it, organize it, or keep it current. The document stays the source of truth.
 
-## The product in one sentence
+Try one:
 
-TextText is the agentic document workspace equivalent of Paper or pen.dev: a fast, durable text canvas where supported AIs can capture, retrieve, change, and safely review real documents.
+> Save this conversation as a note and tell me where you put it.
 
-## How it works
+> Find my notes about the launch and summarize the decisions.
 
-- **Capture:** write a note, save a useful conversation, or ask an AI to create a document.
-- **Find:** ask an AI to search your workspace and read the relevant items before acting.
-- **Change:** ask for a focused edit, append, organization change, or reusable item type.
-- **Review:** risky actions show a clear preview and wait for your approval. Deletes go to Trash and can be undone.
+> Use this document as our live canvas and keep it current as we work.
 
-Your documents remain the source of truth. TextText preserves your content, records who changed it, and keeps privacy boundaries in place whether the change comes from the app, the in-app assistant, Claude, Codex, or another connected client.
+Agent changes appear in TextText. Risky actions wait for your approval, ordinary deletes go to Trash, and newer human edits are protected.
 
-Start by opening **Notes**, writing something you want to keep, or reading **Connect your AI tools** in this Documentation folder.`,
+Open **Notes** to write, or read **Connect an AI** for the one connection guide.`,
   },
   {
     slug: "connect-your-ai-tools",
-    title: "Connect your AI tools",
-    body: `TextText works beside the AI tools you already use. The in-app assistant stays beside the document, while local Claude and Codex plugins work through the signed-in TextText CLI.
+    title: "Connect an AI",
+    body: `Use the in-app assistant from any document, or connect Claude, Codex, or another MCP client. Settings shows every connection and lets you disconnect it.
 
-## Connect Claude Code or Codex securely
+## Claude or Codex on this Mac
 
-The local plugins use the TextText command bundled with the standalone Mac app.
-Keep TextText in Applications and sign in once. Local work needs no workspace
-token and no server setup.
+Keep the standalone TextText app in Applications and sign in once. The plugins use its signed-in command, with no copied workspace token or local server setup.
 
 ## Claude
 
@@ -1088,10 +1083,6 @@ ${CLAUDE_PLUGIN_INSTALL_COMMAND}
 Then paste this verification prompt into Claude:
 
 > ${AGENT_CONNECTION_CHECK_PROMPT}
-
-For a Claude surface that permits person-supplied bearer credentials, add
-${TEXTTEXT_HOSTED_MCP_URL}, then give it a workspace token from **Connect**.
-An OAuth-only connector cannot use TextText's current token-only endpoint.
 
 ## Codex
 
@@ -1112,106 +1103,9 @@ Add ${TEXTTEXT_HOSTED_MCP_URL} only to a client that supports remote MCP with a 
 ## Check it worked
 
 The connection is verified when **Agent connection check** appears in Notes and
-the agent can read the saved line back. Keep the private note as a working
-scratchpad or move it to Trash.
+the agent can read the saved line back. Keep the private note or move it to Trash.
 
-## What agents can do
-
-The API-key in-app assistant can create and find documents, update or append content, organize items, and use other tools that do not need a confirmation gate. The standalone native assistant and hosted MCP add guarded publishing, access management, and comments. The local Claude and Codex plugin handles document create, read, update, and append unless hosted MCP is connected separately. Privacy and audit rules apply no matter which client performs the action.`,
-  },
-  {
-    slug: "use-texttext-as-a-live-ai-canvas",
-    title: "Use TextText as a live AI canvas",
-    body: `Keep a TextText document open beside Claude, Codex, or another supported agent. The document stays the main surface. The agent assists inside it.
-
-## Start with one document
-
-Tell the agent:
-
-> Use TextText as the live canvas for this task. Find the matching document or create it once, tell me which document to open, and keep that same item current as our work develops. Preserve my concurrent edits, reconcile conflicts, and use stable idempotency keys for every append that may retry.
-
-Open the item in TextText. The agent writes into that same document. Read back each completed change before continuing, and ask for a smaller correction when needed.
-
-## Capture useful AI conversations
-
-Tell the agent:
-
-> Save the useful decisions from this conversation as a TextText note. Include the source context and verify the saved note.
-
-## Maintain a project changelog
-
-Tell the agent:
-
-> Find the changelog for this project and append today's shipped user-facing changes exactly once. Create it only if it does not exist, keep using the same item, and derive a stable idempotency key from the source commit or release.
-
-## Work safely
-
-Ask the agent to find an existing item before creating one. For repeated automation, require a stable idempotency key. Keep the target document open when you want to watch and edit alongside the agent. Use sharing controls to decide who can view, comment, or edit.`,
-  },
-  {
-    slug: "build-item-types-with-ai",
-    title: "Build item types with AI",
-    body: `Turn the way you describe your work into a reusable item type. One item type controls both the page you write in and the folder that organizes those pages.
-
-## Start from Home
-
-Open Home and choose **Build an item type**. Describe what you want in ordinary language, such as:
-
-> Make a Medium-like publication with a headline, subtitle, hero image, author, and publish date. Show the folder as a clean editorial index.
-
-You can also begin with Editorial publication, Project board, or Quick notes. These starters work without connecting an AI provider.
-
-## Shape the type
-
-Refine the design in conversation or adjust it directly. Every change becomes a design version, so Undo, Redo, the history menu, and Compare can move between complete directions without touching the workspace.
-
-Choose the fields people will fill in. TextText supports people and relation references, recurrence, guarded status workflows, validation, conditional fields, and read-only computed facts. Switch between **Item** and **Folder** to see both parts of the design before saving.
-
-## Test the real result
-
-Preview an item or its folder with built-in samples, the selected folder's own documents, an empty state, or deliberately long stress-test content. Use the wide, tablet, and phone frames to catch narrow-layout problems. The quality preflight names important structural gaps and blocks Done only when the type would be incomplete.
-
-A folder can carry several named views over the same items. Each view may choose its own layout, columns, grouping, filters, and sort. The Project board starter demonstrates Board, Open tasks, and Schedule.
-
-## Save and reuse it
-
-Choose **Done** once. The item type is saved to the Look gallery, applied to the folder you chose, and used by new items in that folder. Existing items are updated only when you leave that option on.
-
-## Ask an agent instead
-
-A connected agent can create the same complete type. Try:
-
-> Build a Notion-like project board in my Notes folder with status, priority, due date, and completion fields. Make each item a focused task page and group the folder by status.
-
-    The agent creates one reusable type rather than a collection of unrelated styling changes.`,
-  },
-  {
-    slug: "connect-with-mcp",
-    title: "Connect with MCP",
-    body: `MCP lets an AI client such as Claude, Codex, or another compatible tool read and change your TextText workspace through an authenticated connection.
-
-## Hosted MCP
-
-Open **Connect** in TextText, create a workspace token, and add the hosted MCP address to a client that supports bearer credentials. Give the connection a descriptive name and keep the token in the client's protected credential store.
-
-## What the connection can do
-
-Agents can search, read, create, update, organize, and discuss documents. Actions that change an audience, restore content, share access, or empty Trash show you a specific preview and wait for approval. Ordinary deletion moves content to Trash so it can be undone.
-
-TextText never shows provider secrets in the app. Revoke a connection any time from Settings, and use the private **Agent connection check** note to verify a new setup.`,
-  },
-  {
-    slug: "how-agent-changes-stay-safe",
-    title: "How agent changes stay safe",
-    body: `TextText keeps your document as the source of truth while connected agents help you work.
-
-- Every read is scoped to your workspace and names the item or folder it used.
-- Content edits use revision checks so a collaborator's newer writing is not overwritten.
-- Risky actions show the exact target and proposed change before anything happens.
-- Delete means move to Trash. Restore is available, and **empty Trash** is a separate permanent action that always requires your approval.
-- Every mutation records which connection or agent performed it.
-
-If a proposal is stale because someone changed the item, TextText refuses to guess. Read the current item and ask the agent to propose the change again.`,
+Agents can search, read, create, edit, organize, publish, and manage sharing. Actions that change visibility, access, restore content, or empty Trash show a specific preview and wait for your approval. Revoke any connection from Settings.`,
   },
 ] as const;
 
