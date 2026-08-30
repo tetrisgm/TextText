@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import {
+  deletePersistedPostBody,
   persistPool,
   persistPostBody,
   readPersistedPostBody,
@@ -96,6 +97,16 @@ function setBodyEntry(blogId: string, postId: string, entry: BodyCacheEntry) {
     },
   };
   emitBody(bodyKey(blogId, postId));
+}
+
+function removeBodyEntry(blogId: string, postId: string) {
+  const key = bodyKey(blogId, postId);
+  const { [key]: _removed, ...bodies } = state.bodies;
+  state = { ...state, bodies };
+  bodyFetches.delete(key);
+  bodyMutationGenerations.delete(key);
+  locallyDirtyBodies.delete(key);
+  emitBody(key);
 }
 
 function subscribe(listener: () => void): () => void {
@@ -675,8 +686,11 @@ export function restorePostFromTrash(postId: string): WorkspacePoolPost | null {
 
 export function removeTrashedPost(postId: string) {
   if (!state.pool) return;
+  const blogId = state.pool.blogId;
   markPoolMutation();
-  locallyTrashedPosts.delete(postKey(state.pool.blogId, postId));
+  locallyTrashedPosts.delete(postKey(blogId, postId));
+  removeBodyEntry(blogId, postId);
+  void deletePersistedPostBody(blogId, postId);
   setState({
     pool: {
       ...state.pool,

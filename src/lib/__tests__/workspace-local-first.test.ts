@@ -4,6 +4,7 @@ import { initialDraft } from "@/lib/post-edit-draft";
 import type { Post } from "@/lib/content";
 
 vi.mock("@/lib/pool/storage", () => ({
+  deletePersistedPostBody: vi.fn(async () => undefined),
   persistPool: vi.fn(async () => undefined),
   persistPostBody: vi.fn(async () => undefined),
   readPersistedPool: vi.fn(async () => null),
@@ -77,6 +78,23 @@ describe("workspace local authority", () => {
     store.seedWorkspacePool(pool("2026-07-10T10:01:00.000Z", []));
 
     expect(store.getWorkspacePost("post-1")?.title).toBe("Local title");
+  });
+
+  it("removes a permanently deleted item's memory and IndexedDB body", async () => {
+    const store = await import("@/lib/pool/store");
+    const storage = await import("@/lib/pool/storage");
+    const original = post();
+    store.seedWorkspacePool(pool("2026-07-10T10:00:00.000Z", [original]));
+    store.acknowledgePostBody("blog-1", original.id, "cached body");
+    store.movePostToTrash(original.id);
+
+    store.removeTrashedPost(original.id);
+
+    expect(store.getCachedWorkspacePostBody("blog-1", original.id)).toBeNull();
+    expect(storage.deletePersistedPostBody).toHaveBeenCalledWith(
+      "blog-1",
+      original.id,
+    );
   });
 
   it("does not let a newer same-ID snapshot roll back a dirty local edit", async () => {

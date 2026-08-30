@@ -204,6 +204,15 @@ export async function persistPostBody(
   );
 }
 
+export async function deletePersistedPostBody(
+  blogId: string,
+  postId: string,
+): Promise<void> {
+  await withStore<undefined>(BODY_STORE, "readwrite", (store) =>
+    store.delete(bodyKey(blogId, postId)),
+  );
+}
+
 export async function readPersistedWorkspaceDraft(
   blogId: string,
   postId: string,
