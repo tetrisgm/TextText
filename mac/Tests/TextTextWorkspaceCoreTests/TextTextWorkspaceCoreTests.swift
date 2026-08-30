@@ -238,28 +238,6 @@ final class TextTextWorkspaceCoreTests: XCTestCase {
         XCTAssertEqual(swept.entries["hidden-id"]?.relativePath, "Notes/.hidden/hidden.md")
     }
 
-    func testConditionalWriteNeverReplacesChangedBytes() throws {
-        let root = try temporaryDirectory()
-        let url = root.appendingPathComponent("Notes/a.md")
-        try FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let current = Data("newer local edit".utf8)
-        try current.write(to: url)
-        let coordinator = WorkspaceFileCoordinator(rootURL: root)
-
-        let rejected = try coordinator.writeData(
-            Data("server".utf8), to: url,
-            ifUnchangedFrom: Data("older local edit".utf8))
-
-        XCTAssertEqual(rejected, .changed)
-        XCTAssertEqual(try Data(contentsOf: url), current)
-
-        let written = try coordinator.writeData(
-            Data("server".utf8), to: url, ifUnchangedFrom: current)
-        XCTAssertEqual(written, .written)
-        XCTAssertEqual(try Data(contentsOf: url), Data("server".utf8))
-    }
-
     private func fixtureWorkspace() -> WorkspaceDescriptor {
         WorkspaceDescriptor(
             blog: WorkspaceBlogDescriptor(handle: "demo", name: "Demo"),

@@ -55,11 +55,9 @@ fi
 
 # --- Named eval suites exist and are wired in ---
 for suite in \
-  "WritingToolsProtectionEvalTests:Phase 2 Writing Tools protection golden evals" \
   "IntentBehaviorGoldenEvalTests:Phase 3 App Intents behavior golden evals" \
   "WorkspaceSpotlightIndexerTests:Phase 3 Spotlight mapping + eviction evals" \
   "TextTextShareCoreTests:Phase 4 share inbox + Quick Look evals" \
-  "EditorDocumentTests:Phase 2 editor round-trip + conflict evals" \
   "WorkspaceEnumeratorTests:File Provider enumeration + change-cursor evals" \
   "TextTextItemMapperTests:File Provider item model + capability evals" \
   "BridgeTests:File Provider NSFileProviderItem bridging evals" \
@@ -77,12 +75,6 @@ check "p1.identity" "Phase 1: markdown identity round-trips (front matter is pla
   "grep -q 'textTextId' '$MAC/Sources/TextTextWorkspaceCore/MarkdownIdentity.swift'"
 check "p1.local-state" "Phase 1: device-local state stays out of iCloud (.texttext-local.nosync)" \
   "grep -q 'texttext-local.nosync' '$MAC/Sources/TextTextWorkspaceCore/WorkspaceLayout.swift'"
-
-# --- Phase 2: TextKit editor + Writing Tools ---
-check "p2.textkit" "Phase 2: editor uses TextKit 2 NSTextView" \
-  "grep -q 'usingTextLayoutManager: true' '$MAC/Sources/TextTextEditor/EditorWindowController.swift'"
-check "p2.writingtools" "Phase 2: Writing Tools enabled behind availability" \
-  "grep -q 'writingToolsBehavior' '$MAC/Sources/TextTextEditor/EditorWindowController.swift'"
 
 # --- Phase 3: manifest + generator + intents + spotlight + deep links ---
 check "p3.manifest" "Phase 3: capability manifest present" \

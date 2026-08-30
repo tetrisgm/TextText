@@ -98,22 +98,19 @@ architecture claim.
 
 The Swift suite retains detailed behavioral coverage:
 
-- `WritingToolsProtectionEvalTests`
 - `IntentBehaviorGoldenEvalTests`
 - `WorkspaceSpotlightIndexerTests`
 - `TextTextShareCoreTests`
-- `EditorDocumentTests`
 - `WorkspaceEnumeratorTests`
 - `TextTextItemMapperTests`
 - `BridgeTests`
 - `EnumeratorAdapterTests`
 - `FileProviderExtensionTests`
 
-The acceptance matrix also checks the canonical folder layout, TextKit editor,
-Writing Tools, capability generation, App Intents metadata, deep links, Share
-and Quick Look extensions, optimistic local-write safety, publishing privacy,
-eager File Provider materialization, health wiring, and the absence of CloudKit
-document storage.
+The acceptance matrix also checks the canonical folder layout, capability
+generation, App Intents metadata, deep links, Share and Quick Look extensions,
+optimistic local-write safety, publishing privacy, eager File Provider
+materialization, health wiring, and the absence of CloudKit document storage.
 
 ## Safety rules
 

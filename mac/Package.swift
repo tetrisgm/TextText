@@ -34,7 +34,6 @@ let package = Package(
     products: [
         .library(name: "TextTextWorkspaceCore", targets: ["TextTextWorkspaceCore"]),
         .library(name: "TextTextShareCore", targets: ["TextTextShareCore"]),
-        .library(name: "TextTextEditor", targets: ["TextTextEditor"]),
         .library(name: "TextTextAppIntents", targets: ["TextTextAppIntents"]),
         .library(name: "TextTextSpotlight", targets: ["TextTextSpotlight"]),
         .library(name: "TextTextShareExtensionCore", targets: ["TextTextShareExtensionCore"]),
@@ -59,11 +58,6 @@ let package = Package(
         .target(
             name: "TextTextShareCore",
             path: "Sources/TextTextShareCore"
-        ),
-        .target(
-            name: "TextTextEditor",
-            dependencies: ["TextTextWorkspaceCore"],
-            path: "Sources/TextTextEditor"
         ),
         .target(
             name: "TextTextCapabilitySpec",
@@ -154,11 +148,6 @@ let package = Package(
             name: "TextTextWorkspaceCoreTests",
             dependencies: ["TextTextWorkspaceCore"],
             path: "Tests/TextTextWorkspaceCoreTests"
-        ),
-        .testTarget(
-            name: "TextTextEditorTests",
-            dependencies: ["TextTextEditor"],
-            path: "Tests/TextTextEditorTests"
         ),
         .testTarget(
             name: "TextTextAppIntentsTests",
