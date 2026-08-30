@@ -1826,9 +1826,10 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   `.textpack`, `.textbundle`, `.md`, and `.txt`, and skips the auxiliary `Data`
   tree. An isolated CLI round trip proved list, read, append, lint, and reread
   against a real `.textpack` without touching owner data.
-- The GUI does not own `sync.index`; File Provider is the sole sync owner. A
-  missing legacy index is a passing transition state. A surviving index must
-  still decode or health fails.
+- The GUI does not own a local sync index; File Provider is the sole sync owner.
+  The obsolete index schema and transition health check were removed on
+  2026-08-30. Existing legacy index and trash bytes are left untouched and
+  ignored.
 - A File Provider status with zero pending errors is not proof that Finder is
   usable. For a linked account whose domain is enabled or unknown,
   `finder.provider` passes only after the real CloudStorage root enumerates and

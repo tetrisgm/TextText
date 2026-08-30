@@ -88,6 +88,26 @@ final class StateStoreLocationTests: XCTestCase {
         XCTAssertEqual(kept, #"{"token":"current"}"#)
     }
 
+    func testObsoleteIndexAndTrashBytesRemainUntouched() throws {
+        let container = try makeContainer()
+        let state = container.appendingPathComponent("TextText", isDirectory: true)
+        let trash = state.appendingPathComponent("trash", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: trash, withIntermediateDirectories: true)
+        let indexURL = state.appendingPathComponent("index.json")
+        let trashedURL = trash.appendingPathComponent("recovered.md")
+        let indexBytes = Data("retired-index-bytes".utf8)
+        let trashedBytes = Data("preserved document".utf8)
+        try indexBytes.write(to: indexURL)
+        try trashedBytes.write(to: trashedURL)
+
+        let store = StateStore(groupContainer: container, cliCredentialsURL: nil)
+        store.deleteCredentials()
+
+        XCTAssertEqual(try Data(contentsOf: indexURL), indexBytes)
+        XCTAssertEqual(try Data(contentsOf: trashedURL), trashedBytes)
+    }
+
     func testCredentialsStayPrivateAfterTheCarryForward() throws {
         let fm = FileManager.default
         let source = root.appendingPathComponent("legacy", isDirectory: true)

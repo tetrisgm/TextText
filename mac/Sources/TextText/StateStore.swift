@@ -1,12 +1,9 @@
 import Foundation
-import TextTextWorkspaceCore
 
 /// All on-disk app state, partyparty-faithful:
 ///   <app group container>/TextText/           (0700)
 ///     credentials.json  (0600)  the linked token
 ///     account.json               cached workspace (offline reuse)
-///     index.json                 the sync index
-///     trash/                     server-deleted files land here, never rm'd
 /// The group container is used because it is the one place both the Developer
 /// ID and the Mac App Store editions can read; see AppGroupContainer. Without
 /// one (a development build with the placeholder unsubstituted) this falls back
@@ -52,7 +49,6 @@ final class StateStore {
         try? fm.createDirectory(at: baseDir, withIntermediateDirectories: true,
                                 attributes: [.posixPermissions: 0o700])
         try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: baseDir.path)
-        try? fm.createDirectory(at: trashDir, withIntermediateDirectories: true)
 
         if migrateFromLegacy {
             Self.adoptLegacyState(from: legacyDir, into: baseDir, fileManager: fm)
@@ -132,8 +128,6 @@ final class StateStore {
 
     var credentialsURL: URL { baseDir.appendingPathComponent("credentials.json") }
     var accountURL: URL { baseDir.appendingPathComponent("account.json") }
-    var indexURL: URL { baseDir.appendingPathComponent("index.json") }
-    var trashDir: URL { baseDir.appendingPathComponent("trash", isDirectory: true) }
 
     // MARK: Credentials
 
@@ -207,51 +201,4 @@ final class StateStore {
         return try? decoder.decode(Workspace.self, from: data)
     }
 
-    // MARK: Sync index
-
-    func loadIndex() -> SyncIndex {
-        guard let data = try? Data(contentsOf: indexURL),
-              let index = try? decoder.decode(SyncIndex.self, from: data) else {
-            return SyncIndex()
-        }
-        return index
-    }
-
-    func saveIndex(_ index: SyncIndex) {
-        guard let data = try? encoder.encode(index) else { return }
-        if let existing = try? Data(contentsOf: indexURL), existing == data { return }
-        try? data.write(to: indexURL, options: .atomic)
-    }
-
-    func clearIndex() {
-        saveIndex(SyncIndex())
-    }
-
-    /// Move a file into the state trash under a timestamped name; never lose
-    /// user bytes to a server-side delete.
-    @discardableResult
-    func moveToTrash(_ url: URL, mover: ((URL, URL) throws -> Void)? = nil) -> URL? {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: url.path) else { return nil }
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "en_US_POSIX")
-        df.dateFormat = "yyyyMMdd-HHmmss"
-        let stamp = df.string(from: Date())
-        var target = trashDir.appendingPathComponent("\(stamp)-\(url.lastPathComponent)")
-        var n = 2
-        while fm.fileExists(atPath: target.path) {
-            target = trashDir.appendingPathComponent("\(stamp)-\(n)-\(url.lastPathComponent)")
-            n += 1
-        }
-        do {
-            if let mover {
-                try mover(url, target)
-            } else {
-                try fm.moveItem(at: url, to: target)
-            }
-            return target
-        } catch {
-            return nil
-        }
-    }
 }

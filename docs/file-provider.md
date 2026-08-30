@@ -118,10 +118,8 @@ or loading access controls.
 ## Release and runtime checks
 
 The app-owned health suite checks release identity and update configuration,
-embedded extensions, private state persistence, any surviving legacy sync
-index, enumerable workspace storage, and Finder provider status. The GUI's sole
-sync owner is File Provider, so an absent legacy `sync.index` passes. A surviving
-index must still decode. The same checks run:
+embedded extensions, private state persistence, enumerable workspace storage,
+and Finder provider status. The same checks run:
 
 - against the staged app before release publication
 - on first launch of every version

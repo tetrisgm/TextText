@@ -1615,7 +1615,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         // Local-only by design: the server-side revoke route may not exist
         // yet; degrade gracefully. The folder and its files stay put.
         store.deleteCredentials()
-        store.clearIndex()
         removeFileProviderDomain()
         appendActivity("Signed out; local files kept")
         // Take the window somewhere that says what happened. Clearing the

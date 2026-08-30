@@ -17,7 +17,6 @@
     "workflow.bookmark_recapture",
     "workflow.cover_assets",
     "state.persistence",
-    "sync.index",
     "workspace.storage",
     "finder.provider"
   ],

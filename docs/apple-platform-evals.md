@@ -68,7 +68,6 @@ version, daily, and on demand. The production-safe unit-style checks include:
 - `workflow.cover_assets`: list, import, remove, and cover contracts retain
   media placement, URL, confirmation, and concurrency constraints.
 - `state.persistence`: private local state is writable with restricted modes.
-- `sync.index`: the local sync index is decodable.
 - `workspace.storage`: the local workspace is readable and writable.
 - `finder.provider`: Finder integration reports a healthy, working, or failed
   native status.

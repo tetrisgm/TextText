@@ -18,7 +18,6 @@ final class AppHealthReporterTests: XCTestCase {
         }
 
         let store = StateStore()
-        store.clearIndex()
         let reporter = AppHealthReporter(
             stateStore: store,
             syncRootProvider: { root },
@@ -85,62 +84,6 @@ final class AppHealthReporterTests: XCTestCase {
                 $0.id == TextTextWorkflowHealth.folderTrashRestore
             })?.status,
             .pass)
-    }
-
-    func testCorruptIndexIsAHealthFailure() throws {
-        let root = try temporaryDirectory(name: "workspace")
-        let state = try temporaryDirectory(name: "state")
-        let bundle = try releaseBundle()
-        let previous = ProcessInfo.processInfo.environment["TEXTTEXT_STATE_DIR"]
-        setenv("TEXTTEXT_STATE_DIR", state.path, 1)
-        defer {
-            if let previous {
-                setenv("TEXTTEXT_STATE_DIR", previous, 1)
-            } else {
-                unsetenv("TEXTTEXT_STATE_DIR")
-            }
-        }
-        let store = StateStore()
-        try Data("not-json".utf8).write(to: store.indexURL)
-        let report = AppHealthReporter(
-            stateStore: store,
-            syncRootProvider: { root },
-            finderStatusProvider: { .healthyFixture },
-            bundle: bundle
-        ).run(trigger: .manual)
-
-        XCTAssertEqual(report.status, .fail)
-        XCTAssertEqual(
-            report.checks.first(where: { $0.id == "sync.index" })?.status,
-            .fail)
-    }
-
-    func testMissingLegacyIndexPassesForFileProviderOnlyApp() throws {
-        let root = try temporaryDirectory(name: "workspace-no-index")
-        let state = try temporaryDirectory(name: "state-no-index")
-        let bundle = try releaseBundle()
-        let previous = ProcessInfo.processInfo.environment["TEXTTEXT_STATE_DIR"]
-        setenv("TEXTTEXT_STATE_DIR", state.path, 1)
-        defer {
-            if let previous {
-                setenv("TEXTTEXT_STATE_DIR", previous, 1)
-            } else {
-                unsetenv("TEXTTEXT_STATE_DIR")
-            }
-        }
-
-        let report = AppHealthReporter(
-            stateStore: StateStore(),
-            syncRootProvider: { root },
-            finderStatusProvider: { .healthyFixture },
-            bundle: bundle
-        ).run(trigger: .manual)
-        let check = try XCTUnwrap(
-            report.checks.first(where: { $0.id == "sync.index" }))
-
-        XCTAssertEqual(check.status, .pass)
-        XCTAssertEqual(check.metrics["present"], 0)
-        XCTAssertEqual(check.metrics["decodable"], 1)
     }
 
     func testFinderHealthPassesAfterBoundedWorkingStateSettles() throws {

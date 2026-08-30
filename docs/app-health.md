@@ -60,11 +60,6 @@ the extension and mount xattrs exist but no active File Provider domain serves
 items. `workspace.storage` separately requires directory enumeration to succeed;
 POSIX readable and writable flags alone are not treated as a Finder proof.
 
-`sync.index` is a transition check, not a requirement that the installed GUI
-create an index. The File Provider extension is the GUI's sole sync owner, so
-an absent legacy `index.json` passes. If an index from the retired headless
-mirror remains, the check still requires it to decode successfully.
-
 Web-owned workflows use signed capability receipts rather than production
 mutation probes. `mac/scripts/verify-workflow-capabilities.sh` evaluates the
 typed command schemas, scope requirements, confirmation semantics, and

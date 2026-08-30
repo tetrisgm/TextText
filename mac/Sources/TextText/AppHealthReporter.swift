@@ -86,7 +86,6 @@ enum TextTextHealthChecks {
         TextTextWorkflowHealth.bookmarkRecapture,
         TextTextWorkflowHealth.coverAssets,
         "state.persistence",
-        "sync.index",
         "workspace.storage",
         "finder.provider",
     ]
@@ -444,7 +443,6 @@ final class AppHealthReporter {
                 checkAttestedWorkflow(id: TextTextWorkflowHealth.coverAssets)
             },
             timedCheck(id: "state.persistence", operation: checkStatePersistence),
-            timedCheck(id: "sync.index", operation: checkSyncIndex),
             timedCheck(id: "workspace.storage", operation: checkWorkspaceStorage),
             timedCheck(id: "finder.provider", operation: checkFinderProvider),
         ]
@@ -820,26 +818,6 @@ final class AppHealthReporter {
         ])
     }
 
-    private func checkSyncIndex() -> (TextTextHealthStatus, [String: Double]) {
-        // The GUI's sole sync owner is the File Provider extension. index.json
-        // belongs only to the legacy headless mirror, so a normal installed app
-        // does not create it. If an older index remains, still decode it to catch
-        // corruption during the transition, but absence is the healthy state.
-        guard FileManager.default.fileExists(atPath: stateStore.indexURL.path) else {
-            return (.pass, ["present": 0, "decodable": 1, "entry_count": 0])
-        }
-        guard let data = try? Data(contentsOf: stateStore.indexURL),
-              let index = try? JSONDecoder.textTextHealthDecoder.decode(SyncIndex.self, from: data)
-        else {
-            return (.fail, ["present": 1, "decodable": 0, "entry_count": 0])
-        }
-        return (.pass, [
-            "present": 1,
-            "decodable": 1,
-            "entry_count": Double(index.entries.count),
-        ])
-    }
-
     private func checkWorkspaceStorage() -> (TextTextHealthStatus, [String: Double]) {
         // The workspace's on-disk home is the File Provider mount (the legacy
         // mirror is retired). A nil root means the mount is not resolved here
@@ -1028,10 +1006,9 @@ enum AppHealthCLI {
     static func run() -> Int32 {
         let stateStore = StateStore()
         // Release verification runs in a fresh, isolated workspace with no
-        // registered File Provider domain. The GUI has no sync index to seed:
-        // the extension owns sync and sync.index treats an absent legacy index
-        // as healthy. Extension embedding and the real Finder lifecycle are
-        // verified independently by this report and the release test suite.
+        // registered File Provider domain. Extension embedding and the real
+        // Finder lifecycle are verified independently by this report and the
+        // release test suite.
         // The workspace's on-disk home is the File Provider mount; resolve the
         // registered domain's user-visible root (blocking is fine in the CLI).
         // nil on a machine with no domain (signed out / isolated CI), which
@@ -1076,13 +1053,5 @@ enum AppHealthCLI {
         }
         _ = semaphore.wait(timeout: .now() + 10)
         return (resolved, userEnabled)
-    }
-}
-
-private extension JSONDecoder {
-    static var textTextHealthDecoder: JSONDecoder {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return decoder
     }
 }
