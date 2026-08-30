@@ -2169,6 +2169,76 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
 - No TestFlight build, store upload, release record, deployment, installation,
   or public release action was performed in this pass.
 
+## Deep architecture and performance review (source, 2026-08-30)
+
+- Source checkpoint `9d501bef` is the end of a repository-wide review covering
+  canonical content loading, workspace queries, browser runtime work, assistant
+  rendering and persistence, collaboration traffic, native mirror remnants,
+  CSS ownership, and production bundling. The work landed as small commits on
+  `main`; no release, deployment, installation, TestFlight action, App Store
+  Connect change, or release record was made.
+- Workspace list payloads no longer carry full canonical documents. The lazy
+  item endpoint and IndexedDB cache carry one validated `DocumentSnapshot` plus
+  its revision. Reader, editor, workspace actions, and agent tools now use that
+  canonical cache directly. The temporary body-only facade and response field
+  were deleted after its final callers migrated. Optimistic item IDs transfer
+  their canonical cache entry to the durable server ID and fence late responses.
+- Workspace pages no longer query every canonical JSON document to build their
+  list or wiki-link index. List metadata comes from the bounded list projection;
+  wiki-link extraction selects only `id` and `body`, and only rows containing
+  wiki-link syntax. Public backlink extraction uses the complete body of only
+  published public link sources, so links beyond the 2 KB list preview work
+  without exposing private sources.
+- Browser search keeps the immediate title, excerpt, and 2 KB preview index,
+  then issues one 150 ms debounced, access-filtered server query for deeper body
+  matches. It receives at most short excerpts, never whole private documents.
+  MCP search uses the same bounded candidate query, and `read_item` combines
+  compact accessible metadata with only the accessible bodies containing wiki
+  links. The former full-workspace document loaders are deleted.
+- Repeated folder resolution now builds one weakly held folder-ID index per pool
+  instead of scanning folders for every item and render. Folder and capture
+  images are lazy, videos use no preload, public video covers acquire a source
+  only near the viewport, and reader/editor collaboration polling and presence
+  stop while the page is hidden and resume immediately when visible.
+- Assistant text deltas are coalesced on a 50 ms boundary, conversation storage
+  writes are capped at once per second while streaming and flush immediately at
+  terminal state, and bounded history is persisted. Transcript/history sync now
+  lives in `AssistantConversationState`; the workspace shell observes only the
+  stable active conversation ID, so streamed tokens do not redraw the library,
+  editor, and navigation tree. Native and cloud confirmation behavior and the
+  900 ms hosted conversation sync cadence are unchanged.
+- The Mac app has one workspace watcher, FSEvents. Typed Spotlight metadata
+  replaced the old synthesized Markdown/reparse path. The retired mirror sync
+  engine, orphaned native editor product, `WorkspaceFileCoordinator`,
+  `WorkspaceLayout`, `WorkspaceChangeScanner`, `WorkspaceIndexStore`,
+  `WorkspaceSyncIndex`, obsolete StateStore index/trash helpers, and the stale
+  `sync.index` health check are gone. A regression proves arbitrary legacy
+  `index.json` and trash bytes survive StateStore initialization and sign-out;
+  no on-disk user data was removed or rewritten.
+- `cards.css` now loads with `PostCard`, and `workspace.css` loads only under the
+  `/t/*` and `/u/*` workspace layouts. Non-workspace routes shed 30,317 minified
+  CSS bytes and 5,180 gzip bytes; the remaining root CSS measured 189,883 raw
+  and 33,025 gzip. Manifest tests lock both ownership boundaries and retain the
+  original cascade and light/dark rules.
+- The duplicate-Yjs warning was one physical Yjs install embedded into five
+  independent Turbopack server/SSR chunks. `yjs` and `y-protocols` are paired in
+  `serverExternalPackages`, so all server imports use Node's module cache. The
+  final production build has no duplicate warning and no server source map that
+  embeds Yjs. Client bundles remain route-owned and unchanged.
+- Final independent verification passed 220 web test files with 1,785 tests,
+  461 Swift tests, TypeScript, lint with zero errors, the 43-point Apple
+  acceptance matrix, and the 45-page Next production build. Lint still reports
+  14 non-blocking warnings, including existing script dead-code warnings, three
+  editor hook-dependency warnings, two intentional raw-image warnings, one tag
+  input ARIA warning, and three old store declarations.
+- Measured remaining limits are explicit. Deep body search uses a bounded SQL
+  token candidate query rather than a dedicated full-text index, so a very large
+  workspace may eventually warrant a normalized search column or Postgres FTS.
+  `PostWorkspaceShell.tsx` remains a large component even though assistant
+  transcript churn is isolated. The residual global CSS is still sizeable, but
+  the next blocks did not yet have a proven single route owner and were not
+  moved speculatively.
+
 ## Resolved episodes (one line each, dates in git log)
 
 - Apple consent screen "write app": appleid.apple.com caches its own copy;
