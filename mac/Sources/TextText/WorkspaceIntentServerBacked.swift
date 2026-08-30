@@ -7,6 +7,13 @@ import TextTextFileProviderKit
 /// what makes App Intents create and resolve items through the SERVER (the
 /// source of truth) instead of scanning or writing the File Provider mount.
 struct ServerBackedWorkspaceIntentServer: WorkspaceIntentServer {
+    private static let fractionalISO: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    private static let plainISO = ISO8601DateFormatter()
+
     let client: SyncClient
 
     func folders() throws -> [WorkspaceServerFolder] {
@@ -126,12 +133,7 @@ struct ServerBackedWorkspaceIntentServer: WorkspaceIntentServer {
 
     private static func parseDate(_ raw: String?) -> Date? {
         guard let raw, !raw.isEmpty else { return nil }
-        let withFraction = ISO8601DateFormatter()
-        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = withFraction.date(from: raw) { return date }
-        let plain = ISO8601DateFormatter()
-        plain.formatOptions = [.withInternetDateTime]
-        return plain.date(from: raw)
+        return fractionalISO.date(from: raw) ?? plainISO.date(from: raw)
     }
 }
 

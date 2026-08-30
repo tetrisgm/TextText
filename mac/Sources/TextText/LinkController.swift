@@ -11,6 +11,13 @@ import Foundation
 ///   4. Persist the credential, cache the workspace.
 /// The app is never walled behind sign-in; this is a banner, not a gate.
 final class LinkController {
+    private static let fractionalISO: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    private static let plainISO = ISO8601DateFormatter()
+
     enum State {
         case idle
         case starting
@@ -198,10 +205,6 @@ final class LinkController {
     }
 
     private static func parseISO(_ raw: String) -> Date? {
-        let withFraction = ISO8601DateFormatter()
-        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = withFraction.date(from: raw) { return date }
-        let plain = ISO8601DateFormatter()
-        return plain.date(from: raw)
+        fractionalISO.date(from: raw) ?? plainISO.date(from: raw)
     }
 }
