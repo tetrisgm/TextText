@@ -23,11 +23,10 @@ polish ledger.
   deterministic visual contract gate (`verify:look-contract`).
 - The look gate renders all 29 resolvable templates as item and collection
   views in system and dark/editorial themes.
-- Semantic confirmation is shipped for browser publish/unpublish and restore;
-  CLI destructive actions can now stage owner-reviewable proposals, and the
-  assistant UI labels their origin and approval action. Remaining product work
-  is semantic confirmation for sharing/access changes. Releases and TestFlight
-  remain owner-triggered.
+- Semantic confirmation is shipped for browser publish/unpublish, restore, and
+  sharing/access changes; CLI destructive actions stage owner-reviewable
+  proposals, and the assistant UI labels their origin and approval action.
+  Releases and TestFlight remain owner-triggered.
 - Product decision: TextText does not need a separate Plan mode. The app is a
   fast notes workspace; proposals and previews are the right confirmation
   mechanism for risky actions.
