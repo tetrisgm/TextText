@@ -168,7 +168,11 @@ describe("native workspace tool adapter", () => {
     const executeTool = vi
       .fn()
       .mockResolvedValueOnce({
-        item: { id: "note-new", title: "Project requirements", status: "draft" },
+        item: {
+          id: "note-new",
+          title: "Project requirements",
+          status: "draft",
+        },
       })
       .mockResolvedValueOnce({
         item: { id: "post-new", title: "An essay", status: "draft" },
@@ -787,7 +791,7 @@ describe("external agent presence signalling", () => {
         actor,
       ),
     ).resolves.toMatchObject({ ok: true });
-    expect(applyItemPatch).toHaveBeenCalled();
+    expect(applyItemPatch).not.toHaveBeenCalled();
   });
 
   it("does not signal presence for the person at the keyboard", async () => {

@@ -966,36 +966,19 @@ export function createWorkspaceAgentTools(
         const input = args as WorkspaceToolInput<"append_to_item">;
         const post = requirePost(input.id);
         await signalActivity(post.id, { kind: "edit", field: "body" }, actor);
-        const body = (await currentText(post)).body;
-        // Either spelling, same as the MCP rung.
-        const fragment = (
-          input.markdown ??
-          input.markdown_fragment ??
-          ""
-        ).trim();
-        if (!fragment)
-          throw new Error("Pass the text to append as `markdown`.");
-        const joined = body.trim()
-          ? `${body.replace(/\s+$/, "")}\n\n${fragment}`
-          : fragment;
-        if (!applyItemPatch) {
-          const result = await runRemote("append_to_item", input);
-          await refreshPoolAfterMutation();
-          return {
-            ok: true,
-            id: input.id,
-            queued: false,
-            sync_status: "acknowledged",
-            ...result,
-          };
-        }
-        const saved = await saveDraftPatch(post, { body: joined });
-        const acknowledged = saved.synced && !saved.queued;
+        // Preserve append as a first-class guarded command. Converting it to a
+        // whole-body update made the model's read hash describe a different
+        // payload from the one the editor later serialized, so a valid append
+        // could fail as stale. The server owns the atomic append and its
+        // idempotency key; refreshing reconciles the collaboration document.
+        const result = await runRemote("append_to_item", input);
+        await refreshPoolAfterMutation();
         return {
-          ok: acknowledged,
+          ok: true,
           id: input.id,
-          queued: saved.queued,
-          sync_status: acknowledged ? "acknowledged" : "queued_locally",
+          queued: false,
+          sync_status: "acknowledged",
+          ...result,
         };
       }
 
