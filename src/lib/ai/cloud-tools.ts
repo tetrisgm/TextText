@@ -18,6 +18,7 @@ import {
   WORKSPACE_TOOL_NAMES,
   type WorkspaceToolName,
   workspaceToolModelSchema,
+  workspaceToolModelDescription,
 } from "@/lib/ai/tools";
 import { isProposableWorkspaceWrite } from "@/lib/ai/write-proposal-policy";
 import {
@@ -61,8 +62,7 @@ export type CloudAssistantWorkspaceCall = {
 export type CloudAssistantToolMode = "full" | "read_only";
 
 export type CloudAssistantWriteProposal =
-  | WorkspaceWriteProposalPreview
-  | OutboundMcpProposalPreview;
+  WorkspaceWriteProposalPreview | OutboundMcpProposalPreview;
 
 export function cloudAssistantToolNames(
   mode: CloudAssistantToolMode = "full",
@@ -75,7 +75,10 @@ export function cloudAssistantToolNames(
     // they recognise, and approval failing closed if the world has moved. That
     // is a per-command judgement and isProposableWorkspaceWrite holds it.
     // Anything else confirmation-gated stays out, as it always was.
-    if (definition.confirmation !== "none" && !isProposableWorkspaceWrite(name)) {
+    if (
+      definition.confirmation !== "none" &&
+      !isProposableWorkspaceWrite(name)
+    ) {
       return false;
     }
     // Exclude open-world tools that fetch a model-chosen URL
@@ -106,7 +109,7 @@ export function cloudAssistantTools(
   for (const name of cloudAssistantToolNames(mode)) {
     const definition = WORKSPACE_TOOL_DEFINITIONS[name];
     tools[name] = tool({
-      description: definition.description,
+      description: workspaceToolModelDescription(name),
       // The canonical JSON schema (uniform type) rather than the per-tool Zod
       // union, so the dynamic tool map typechecks; the executor re-validates.
       inputSchema: jsonSchema(workspaceToolModelSchema(name)),
@@ -165,7 +168,7 @@ export function guardedCloudAssistantTools(
       continue;
     }
     tools[name] = tool({
-      description: definition.description,
+      description: workspaceToolModelDescription(name),
       inputSchema: jsonSchema(workspaceToolModelSchema(name)),
       execute: async (args: unknown) => {
         const commandArgs = (args ?? {}) as Record<string, unknown>;

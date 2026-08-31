@@ -7,6 +7,7 @@ import {
   isWorkspaceToolName,
   parseWorkspaceToolInput,
   workspaceToolModelSchema,
+  workspaceToolModelDescription,
 } from "@/lib/ai/tools";
 import type { WorkspaceToolInput, WorkspaceToolName } from "@/lib/ai/tools";
 import type {
@@ -54,7 +55,7 @@ export const WORKSPACE_AGENT_TOOL_DEFINITIONS = WORKSPACE_TOOL_NAMES.map(
     return Object.freeze({
       name,
       title: definition.title,
-      description: definition.description,
+      description: workspaceToolModelDescription(name),
       inputSchema: workspaceToolModelSchema(name),
       mutability: definition.mutability,
       confirmation: definition.confirmation,
@@ -434,7 +435,9 @@ export function createWorkspaceAgentTools(
       // lookup. Name what is going, because "move 3 items to Trash" is not
       // something anyone can weigh.
       const ids = Array.isArray(input.ids) ? (input.ids as string[]) : [];
-      const titles = ids.map((itemId) => requirePost(itemId).title || "Untitled");
+      const titles = ids.map(
+        (itemId) => requirePost(itemId).title || "Untitled",
+      );
       return await confirmDestructive(
         titles.length === 1
           ? `Move "${titles[0]}" to Trash?`
@@ -1047,7 +1050,10 @@ export function createWorkspaceAgentTools(
       case "retire_document_template":
       case "set_item_template": {
         const result = await runRemote(rawName, args as never);
-        if (rawName !== "review_brief_sources" && rawName !== "list_responses") {
+        if (
+          rawName !== "review_brief_sources" &&
+          rawName !== "list_responses"
+        ) {
           await refreshPoolAfterMutation();
         }
         return { ok: true, ...result };

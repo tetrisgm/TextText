@@ -655,7 +655,9 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
           .trim()
           .min(1)
           .max(160)
-          .describe("The id of the type to change, as list_document_templates reported it."),
+          .describe(
+            "The id of the type to change, as list_document_templates reported it.",
+          ),
         base_version: z
           .number()
           .int()
@@ -848,7 +850,9 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
           .describe("Tags to take off. Ones not there are ignored."),
         folder_path: folderPath
           .optional()
-          .describe("Move them all into this folder. It must accept their kind."),
+          .describe(
+            "Move them all into this folder. It must accept their kind.",
+          ),
       })
       .strict()
       .refine(
@@ -856,7 +860,10 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
           Boolean(value.add_tags?.length) ||
           Boolean(value.remove_tags?.length) ||
           Boolean(value.folder_path),
-        { message: "Say what to change: tags to add or remove, or a folder to move into." },
+        {
+          message:
+            "Say what to change: tags to add or remove, or a folder to move into.",
+        },
       ),
     mutability: "write",
     destructive: true,
@@ -875,7 +882,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     title: "Move items to Trash",
     description:
       "Move several items to Trash in one go. They stay restorable; this never permanently deletes.\n\n" +
-      "Use this when someone asks to get rid of more than one thing. Name every item explicitly by id: there is no \"everything matching\" form, because a request to delete has to say what it is deleting.\n\n" +
+      'Use this when someone asks to get rid of more than one thing. Name every item explicitly by id: there is no "everything matching" form, because a request to delete has to say what it is deleting.\n\n' +
       "Each item is handled on its own. One that has changed since you read it, or that has already gone, is reported and the rest still go. The answer says what happened to each.",
     inputSchema: z
       .object({
@@ -898,7 +905,8 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   }),
   empty_trash: defineTool("empty_trash", {
     title: "Empty Trash",
-    description: "Permanently delete every item and folder currently in Trash. This cannot be undone and always requires owner approval.",
+    description:
+      "Permanently delete every item and folder currently in Trash. This cannot be undone and always requires owner approval.",
     inputSchema: z.object({}).strict(),
     mutability: "write",
     confirmation: "destructive",
@@ -1132,6 +1140,19 @@ export function workspaceToolModelSchema(
     ...schema,
     required: [...new Set([...required, "if_match_hash"])],
   };
+}
+
+export function workspaceToolModelDescription(name: WorkspaceToolName): string {
+  const description = WORKSPACE_TOOL_DEFINITIONS[name].description;
+  if (name !== "update_item") return description;
+  return (
+    "Update one item's metadata or make a targeted content edit. For content, " +
+    "use text_edit or section_edits with their expected-content guards. Full " +
+    "body and markdown replacement are not available to models. Use " +
+    "append_to_item after read_item when adding content to the end. Cannot " +
+    "publish, unpublish, or move an item.\n\n" +
+    "To highlight a passage, wrap it in double equals signs: ==like this==."
+  );
 }
 
 export type WorkspaceToolInput<Name extends WorkspaceToolName> = z.output<

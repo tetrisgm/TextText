@@ -6,6 +6,7 @@ import {
   WORKSPACE_TOOL_NAMES,
   parseWorkspaceToolInput,
   workspaceToolModelSchema,
+  workspaceToolModelDescription,
 } from "@/lib/ai/tools";
 
 const EXPECTED_NAMES = [
@@ -151,6 +152,12 @@ describe("workspace tool contract", () => {
     expect(
       WORKSPACE_TOOL_DEFINITIONS.append_to_item.jsonSchema.required,
     ).not.toContain("if_match_hash");
+    expect(workspaceToolModelDescription("update_item")).toContain(
+      "Full body and markdown replacement are not available to models",
+    );
+    expect(workspaceToolModelDescription("create_item")).toBe(
+      WORKSPACE_TOOL_DEFINITIONS.create_item.description,
+    );
   });
 
   it("exposes workspace identity and scoped access capabilities", () => {
