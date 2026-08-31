@@ -5,6 +5,7 @@ import {
   WORKSPACE_TOOL_DEFINITIONS,
   WORKSPACE_TOOL_NAMES,
   parseWorkspaceToolInput,
+  workspaceToolModelSchema,
 } from "@/lib/ai/tools";
 
 const EXPECTED_NAMES = [
@@ -134,6 +135,17 @@ describe("workspace tool contract", () => {
       if (CONFIRMED_TOOLS.has(name)) {
         expect(definition.description).toContain("explicit human confirmation");
       }
+    }
+  });
+
+  it("makes broad content-write hashes required in model-facing schemas", () => {
+    for (const name of ["update_item", "append_to_item"] as const) {
+      expect(workspaceToolModelSchema(name).required).toContain(
+        "if_match_hash",
+      );
+      expect(WORKSPACE_TOOL_DEFINITIONS[name].jsonSchema.required).not.toContain(
+        "if_match_hash",
+      );
     }
   });
 

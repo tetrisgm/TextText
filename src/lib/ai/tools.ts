@@ -1102,6 +1102,25 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
 } as const;
 
 export type WorkspaceToolName = keyof typeof WORKSPACE_TOOL_DEFINITIONS;
+
+/**
+ * The canonical parser permits hashless targeted metadata edits, but a model
+ * cannot express that conditional requirement faithfully in JSON Schema. Make
+ * the concurrency guard structurally required on broad content-writing tools
+ * shown to models. Non-model clients keep the canonical compatibility surface.
+ */
+export function workspaceToolModelSchema(
+  name: WorkspaceToolName,
+): Record<string, unknown> {
+  const schema = WORKSPACE_TOOL_DEFINITIONS[name].jsonSchema;
+  if (name !== "update_item" && name !== "append_to_item") return schema;
+  const required = Array.isArray(schema.required) ? schema.required : [];
+  return {
+    ...schema,
+    required: [...new Set([...required, "if_match_hash"])],
+  };
+}
+
 export type WorkspaceToolInput<Name extends WorkspaceToolName> = z.output<
   (typeof WORKSPACE_TOOL_DEFINITIONS)[Name]["inputSchema"]
 >;

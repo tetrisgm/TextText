@@ -6,6 +6,7 @@ import {
   WORKSPACE_TOOL_NAMES,
   isWorkspaceToolName,
   parseWorkspaceToolInput,
+  workspaceToolModelSchema,
 } from "@/lib/ai/tools";
 import type { WorkspaceToolInput, WorkspaceToolName } from "@/lib/ai/tools";
 import type {
@@ -54,7 +55,7 @@ export const WORKSPACE_AGENT_TOOL_DEFINITIONS = WORKSPACE_TOOL_NAMES.map(
       name,
       title: definition.title,
       description: definition.description,
-      inputSchema: definition.jsonSchema,
+      inputSchema: workspaceToolModelSchema(name),
       mutability: definition.mutability,
       confirmation: definition.confirmation,
       annotations: definition.annotations,

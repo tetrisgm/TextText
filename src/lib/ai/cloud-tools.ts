@@ -17,6 +17,7 @@ import {
   WORKSPACE_TOOL_DEFINITIONS,
   WORKSPACE_TOOL_NAMES,
   type WorkspaceToolName,
+  workspaceToolModelSchema,
 } from "@/lib/ai/tools";
 import { isProposableWorkspaceWrite } from "@/lib/ai/write-proposal-policy";
 import {
@@ -108,7 +109,7 @@ export function cloudAssistantTools(
       description: definition.description,
       // The canonical JSON schema (uniform type) rather than the per-tool Zod
       // union, so the dynamic tool map typechecks; the executor re-validates.
-      inputSchema: jsonSchema(definition.jsonSchema),
+      inputSchema: jsonSchema(workspaceToolModelSchema(name)),
       execute: async (args: unknown) => {
         const commandArgs = (args ?? {}) as Record<string, unknown>;
         const result = await runWorkspaceToolForSession(
@@ -165,7 +166,7 @@ export function guardedCloudAssistantTools(
     }
     tools[name] = tool({
       description: definition.description,
-      inputSchema: jsonSchema(definition.jsonSchema),
+      inputSchema: jsonSchema(workspaceToolModelSchema(name)),
       execute: async (args: unknown) => {
         const commandArgs = (args ?? {}) as Record<string, unknown>;
         if (definition.mutability === "write") {
