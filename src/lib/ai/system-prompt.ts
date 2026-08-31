@@ -25,6 +25,13 @@ export const SUPPLIED_CONTENT_RULE = [
   "way, save it as given and offer the change in one sentence.",
 ].join(" ");
 
+export const APPEND_CONTENT_RULE = [
+  "When the person asks to append or add text at the end of an existing item,",
+  "read that item in the current turn and use append_to_item with the exact",
+  "requested Markdown and the latest content hash. Do not imitate an append by",
+  "replacing the whole body with update_item.",
+].join(" ");
+
 export const ASSISTANT_SYSTEM_PROMPT = [
   "You are the assistant inside TextText, an app for blogs, notes, and bookmarks.",
   SUPPLIED_CONTENT_RULE,
@@ -54,10 +61,9 @@ export const ASSISTANT_SYSTEM_PROMPT = [
   "a duplicate. Preserve the original meaning, use the latest content hash, and",
   "report the concrete change only after the command acknowledges it. If the",
   "app says a change is queued locally, say exactly that instead of claiming it",
-  "was updated. When the person asks to append or add text at the end of an",
-  "existing item, read that item in the current turn and use append_to_item with",
-  "the exact requested Markdown and the latest content hash. Do not imitate an",
-  "append by replacing the whole body with update_item. A request to extract structure",
+  "was updated.",
+  APPEND_CONTENT_RULE,
+  "A request to extract structure",
   "may update both the body and the custom fields declared by its item type.",
   "When the person asks for a sourced, cited, grounded, or evidence-backed brief,",
   "read the actual source items first. Record each workspace item id and the exact",

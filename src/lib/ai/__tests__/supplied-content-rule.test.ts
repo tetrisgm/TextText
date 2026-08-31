@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  APPEND_CONTENT_RULE,
   ASSISTANT_SYSTEM_PROMPT,
   SUPPLIED_CONTENT_RULE,
 } from "@/lib/ai/system-prompt";
@@ -24,12 +25,21 @@ describe("the person's text is the person's", () => {
   });
 
   it("routes append requests through the guarded append tool", () => {
-    expect(ASSISTANT_SYSTEM_PROMPT).toMatch(
-      /read that item in the current turn and use append_to_item/i,
+    expect(APPEND_CONTENT_RULE).toMatch(/use append_to_item/i);
+    expect(APPEND_CONTENT_RULE).toMatch(
+      /Do not imitate an append by replacing the whole body with update_item/i,
     );
-    expect(ASSISTANT_SYSTEM_PROMPT).toMatch(
-      /Do not imitate an\s+append by replacing the whole body with update_item/i,
-    );
+    expect(ASSISTANT_SYSTEM_PROMPT).toContain(APPEND_CONTENT_RULE);
+
+    const prompt = nativeAssistantTurnPrompt({
+      context: "The user is at the workspace root.",
+      item: null,
+      request: "Append this to a note",
+      relatedItems: [],
+      selection: null,
+      workspaceIndex: null,
+    });
+    expect(prompt).toContain(APPEND_CONTENT_RULE);
   });
 
   it("reaches the connected agent", () => {
