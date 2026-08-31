@@ -138,15 +138,19 @@ describe("workspace tool contract", () => {
     }
   });
 
-  it("makes broad content-write hashes required in model-facing schemas", () => {
-    for (const name of ["update_item", "append_to_item"] as const) {
-      expect(workspaceToolModelSchema(name).required).toContain(
-        "if_match_hash",
-      );
-      expect(WORKSPACE_TOOL_DEFINITIONS[name].jsonSchema.required).not.toContain(
-        "if_match_hash",
-      );
-    }
+  it("makes model-facing content writes structurally safe", () => {
+    const update = workspaceToolModelSchema("update_item");
+    expect(update.properties).not.toHaveProperty("body");
+    expect(update.properties).not.toHaveProperty("markdown");
+    expect(
+      WORKSPACE_TOOL_DEFINITIONS.update_item.jsonSchema.properties,
+    ).toHaveProperty("body");
+
+    const append = workspaceToolModelSchema("append_to_item");
+    expect(append.required).toContain("if_match_hash");
+    expect(
+      WORKSPACE_TOOL_DEFINITIONS.append_to_item.jsonSchema.required,
+    ).not.toContain("if_match_hash");
   });
 
   it("exposes workspace identity and scoped access capabilities", () => {
