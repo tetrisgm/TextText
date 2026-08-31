@@ -29,7 +29,10 @@ import {
 } from "./AiConnectionSettings";
 import { McpConnections } from "./McpConnections";
 import { AgentInstructionsSettings } from "./AgentInstructionsSettings";
-import { connectApple, connectGoogle } from "@/app/editor/connect-provider-actions";
+import {
+  connectApple,
+  connectGoogle,
+} from "@/app/editor/connect-provider-actions";
 import DeleteAccountDialog, {
   type AccountOverview,
   type DeleteAccountStage,
@@ -56,10 +59,10 @@ export function WorkspaceSettings({
   const [deletePending, setDeletePending] = useState(false);
   const [deleteStage, setDeleteStage] = useState<DeleteAccountStage>("idle");
 
-  const [aiSettings, setAiSettings] =
-    useState<WorkspaceAiSettingsState | null>(null);
-  const [aiProvider, setAiProvider] =
-    useState<CloudAiProvider>("anthropic");
+  const [aiSettings, setAiSettings] = useState<WorkspaceAiSettingsState | null>(
+    null,
+  );
+  const [aiProvider, setAiProvider] = useState<CloudAiProvider>("anthropic");
   const [aiKey, setAiKey] = useState("");
   const [aiModel, setAiModel] = useState(defaultCloudAiModel("anthropic"));
   const [aiEditing, setAiEditing] = useState(false);
@@ -73,6 +76,7 @@ export function WorkspaceSettings({
   );
   const [tokensLoading, setTokensLoading] = useState(false);
   const [tokensVisible, setTokensVisible] = useState(false);
+  const [allTokensVisible, setAllTokensVisible] = useState(false);
   const [mcpCount, setMcpCount] = useState<number | null>(null);
   const [nativeConnection, setNativeConnection] =
     useState<AiConnectionSnapshot | null>(null);
@@ -270,11 +274,11 @@ export function WorkspaceSettings({
         ? "Codex is connecting"
         : nativeConnection?.state === "rate-limited"
           ? "Codex is rate-limited"
-        : aiSettings === null
-          ? "Checking"
-          : aiSettings.configured
-            ? `${aiSettings.provider === "anthropic" ? "Anthropic" : "OpenAI"}${aiSettings.model ? ` · ${aiSettings.model}` : ""}`
-            : "Not configured";
+          : aiSettings === null
+            ? "Checking"
+            : aiSettings.configured
+              ? `${aiSettings.provider === "anthropic" ? "Anthropic" : "OpenAI"}${aiSettings.model ? ` · ${aiSettings.model}` : ""}`
+              : "Not configured";
 
   const revokeToken = async (tokenId: string) => {
     setTokensError(null);
@@ -301,7 +305,10 @@ export function WorkspaceSettings({
           <h1 id="workspace-settings-title">Settings</h1>
         </header>
 
-        <section className={styles.section} aria-labelledby="settings-workspace">
+        <section
+          className={styles.section}
+          aria-labelledby="settings-workspace"
+        >
           <div className={styles.sectionHeader}>
             <div>
               <h2 id="settings-workspace">Workspace</h2>
@@ -355,8 +362,8 @@ export function WorkspaceSettings({
             <div>
               <h2 id="settings-connections-overview">Connections</h2>
               <p>
-                Everything that can access this workspace, with a direct path
-                to its controls.
+                Everything that can access this workspace, with a direct path to
+                its controls.
               </p>
             </div>
           </div>
@@ -396,11 +403,17 @@ export function WorkspaceSettings({
 
         <ConnectionGallery
           cloudConfigured={Boolean(aiSettings?.configured)}
-          nativeAvailable={Boolean(nativeConnection && nativeConnection.state !== "unavailable")}
+          nativeAvailable={Boolean(
+            nativeConnection && nativeConnection.state !== "unavailable",
+          )}
           nativeReady={nativeConnection?.state === "ready"}
           clientCount={tokensVisible ? tokens.length : null}
           mcpCount={mcpCount}
-          onVerify={aiSettings?.configured || nativeConnection?.state === "ready" ? tryAiInTextText : undefined}
+          onVerify={
+            aiSettings?.configured || nativeConnection?.state === "ready"
+              ? tryAiInTextText
+              : undefined
+          }
         />
 
         {aiSettings?.allowed && (
@@ -408,9 +421,7 @@ export function WorkspaceSettings({
             <div className={styles.sectionHeader}>
               <div>
                 <h2 id="settings-ai">AI</h2>
-                <p>
-                  Choose how an agent works with your TextText workspace.
-                </p>
+                <p>Choose how an agent works with your TextText workspace.</p>
               </div>
             </div>
             <AiConnectionSettings
@@ -422,7 +433,8 @@ export function WorkspaceSettings({
               API key connections
             </h3>
             <p className={styles.aiNotConfigured}>
-              These advanced connections use your provider API account. Keys are encrypted and scoped to this workspace.
+              These advanced connections use your provider API account. Keys are
+              encrypted and scoped to this workspace.
             </p>
             {aiSettings.configured && !aiEditing ? (
               <div className={styles.aiStatus}>
@@ -489,9 +501,7 @@ export function WorkspaceSettings({
                   <span>Model</span>
                   <select
                     value={aiModel}
-                    onChange={(event) =>
-                      setAiModel(event.currentTarget.value)
-                    }
+                    onChange={(event) => setAiModel(event.currentTarget.value)}
                   >
                     {CLOUD_AI_CATALOG[aiProvider].models.map((model) => (
                       <option key={model.id} value={model.id}>
@@ -593,58 +603,73 @@ export function WorkspaceSettings({
               <p className={styles.aiNotConfigured}>Loading clients.</p>
             ) : tokens.length > 0 ? (
               <ul className={styles.connectionList}>
-                {tokens.map((token) => (
-                  <li className={styles.connectionRow} key={token.id}>
-                    <div className={styles.connectionMain}>
-                      <span className={styles.connectionName}>
-                        {token.name}
-                      </span>
-                      <span className={styles.connectionMeta}>
-                        {apiTokenKindLabel(token.kind)} · {" "}
-                        Created {formatTokenDate(token.createdAt)} · Last used{" "}
-                        {token.lastUsedAt
-                          ? formatTokenDate(token.lastUsedAt)
-                          : "never"}
-                      </span>
-                    </div>
-                    <div className={styles.connectionActions}>
-                      {confirmingTokenId === token.id ? (
-                        <>
-                          <button
-                            type="button"
-                            className="ac-btn ac-btn-plain"
-                            onClick={() => setConfirmingTokenId(null)}
-                          >
-                            Cancel
-                          </button>
+                {(allTokensVisible ? tokens : tokens.slice(0, 8)).map(
+                  (token) => (
+                    <li className={styles.connectionRow} key={token.id}>
+                      <div className={styles.connectionMain}>
+                        <span className={styles.connectionName}>
+                          {token.name}
+                        </span>
+                        <span className={styles.connectionMeta}>
+                          {apiTokenKindLabel(token.kind)} · Created{" "}
+                          {formatTokenDate(token.createdAt)} · Last used{" "}
+                          {token.lastUsedAt
+                            ? formatTokenDate(token.lastUsedAt)
+                            : "never"}
+                        </span>
+                      </div>
+                      <div className={styles.connectionActions}>
+                        {confirmingTokenId === token.id ? (
+                          <>
+                            <button
+                              type="button"
+                              className="ac-btn ac-btn-plain"
+                              onClick={() => setConfirmingTokenId(null)}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              className="ac-btn ac-btn-plain ac-danger"
+                              disabled={revokingToken === token.id}
+                              onClick={() => void revokeToken(token.id)}
+                            >
+                              {revokingToken === token.id
+                                ? "Revoking"
+                                : "Confirm revoke"}
+                            </button>
+                          </>
+                        ) : (
                           <button
                             type="button"
                             className="ac-btn ac-btn-plain ac-danger"
-                            disabled={revokingToken === token.id}
-                            onClick={() => void revokeToken(token.id)}
+                            onClick={() => setConfirmingTokenId(token.id)}
                           >
-                            {revokingToken === token.id
-                              ? "Revoking"
-                              : "Confirm revoke"}
+                            Revoke
                           </button>
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          className="ac-btn ac-btn-plain ac-danger"
-                          onClick={() => setConfirmingTokenId(token.id)}
-                        >
-                          Revoke
-                        </button>
-                      )}
-                    </div>
-                  </li>
-                ))}
+                        )}
+                      </div>
+                    </li>
+                  ),
+                )}
               </ul>
             ) : (
               <p className={styles.aiNotConfigured}>
                 No connected clients yet.
               </p>
+            )}
+
+            {tokens.length > 8 && (
+              <button
+                type="button"
+                className="ac-btn ac-btn-plain"
+                aria-expanded={allTokensVisible}
+                onClick={() => setAllTokensVisible((visible) => !visible)}
+              >
+                {allTokensVisible
+                  ? "Show fewer clients"
+                  : `Show all ${tokens.length} clients`}
+              </button>
             )}
 
             {tokensError && (
@@ -696,10 +721,14 @@ export function WorkspaceSettings({
                       {connected ? (
                         <span className={styles.identityOn}>Connected</span>
                       ) : provider === "email" ? (
-                        <span className={styles.identityOff}>Not connected</span>
+                        <span className={styles.identityOff}>
+                          Not connected
+                        </span>
                       ) : (
                         <form
-                          action={provider === "apple" ? connectApple : connectGoogle}
+                          action={
+                            provider === "apple" ? connectApple : connectGoogle
+                          }
                         >
                           <button type="submit" className="ac-btn ac-btn-plain">
                             Connect
@@ -718,8 +747,9 @@ export function WorkspaceSettings({
                 name. The sentence says what happens; the button does it. */}
             <div className={styles.dangerBlock}>
               <p>
-                Deleting removes your account, the workspace {account.workspaceName},
-                and everything in it. This cannot be undone.
+                Deleting removes your account, the workspace{" "}
+                {account.workspaceName}, and everything in it. This cannot be
+                undone.
               </p>
               <button
                 type="button"
