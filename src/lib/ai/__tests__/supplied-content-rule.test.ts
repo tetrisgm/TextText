@@ -23,6 +23,15 @@ describe("the person's text is the person's", () => {
     expect(ASSISTANT_SYSTEM_PROMPT).toContain(SUPPLIED_CONTENT_RULE);
   });
 
+  it("routes append requests through the guarded append tool", () => {
+    expect(ASSISTANT_SYSTEM_PROMPT).toMatch(
+      /read that item in the current turn and use append_to_item/i,
+    );
+    expect(ASSISTANT_SYSTEM_PROMPT).toMatch(
+      /Do not imitate an\s+append by replacing the whole body with update_item/i,
+    );
+  });
+
   it("reaches the connected agent", () => {
     const prompt = nativeAssistantTurnPrompt({
       context: "The user is at the workspace root.",
