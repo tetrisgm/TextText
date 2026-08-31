@@ -107,7 +107,6 @@ export function cloudAssistantTools(
 ): Record<string, Tool> {
   const tools: Record<string, Tool> = {};
   for (const name of cloudAssistantToolNames(mode)) {
-    const definition = WORKSPACE_TOOL_DEFINITIONS[name];
     tools[name] = tool({
       description: workspaceToolModelDescription(name),
       // The canonical JSON schema (uniform type) rather than the per-tool Zod

@@ -17,6 +17,44 @@ unverified until exercised. The Notion-look polish continues, but behavior
 outranks look, and the owner's Notion screenshots set the bar, not the old
 polish ledger.
 
+## MVP release-readiness checkpoint (2026-08-30)
+
+- Production serves `texttext-afdd73eb-1788148937` from
+  `https://write-8obeiqitq-shoku-s-projects.vercel.app`. Its canonical-domain
+  verification passed for the landing page, sign-in, app version, appcast,
+  session exchange, client chunk, and deployment identity.
+- A signed sandboxed TestFlight candidate is prepared at
+  `/Users/shokunin/Downloads/TextText-0.181-190-MVP-TestFlight.pkg`: version
+  `0.181 (190)`, arm64 main app plus Share, Quick Look, and File Provider
+  extensions, Apple Distribution application signature, and 3rd Party Mac
+  Developer Installer package signature. SHA-256 is
+  `3ecab355f1f7b40ec82d391485cc50a25c05b1011082baa6b1231eff26675b9b`.
+  It was not uploaded or installed.
+- Observed in the signed-in standalone app against production: quick capture,
+  body editing, quit/reopen persistence, AI search and read with a proof
+  receipt, and an exact AI append with an `Appended` proof receipt and visible
+  persisted text. The append defect found during this pass is fixed: model
+  tools no longer offer whole-body replacement, their descriptions name the
+  targeted alternatives, and native append stays an atomic guarded workspace
+  command instead of being reserialized as a whole-document update.
+- Observed Settings showed the provider connection, disconnect path, MCP
+  connection area, Apple and Google identity state, and connected client
+  history. Client history now shows eight entries initially with an explicit
+  Show all action instead of rendering all 197 historical tokens.
+- Observed sharing showed the current role, people, general access, and invite
+  form. No invitation or access change was sent. Observed Trash showed Restore,
+  Delete permanently, and Empty Trash; Empty Trash correctly required explicit
+  confirmation naming all 55 items and irreversibility, and the confirmation
+  was cancelled.
+- Final web gates passed: 221 files and 1,788 tests, TypeScript, production
+  build with 45 pages, and lint with zero errors (14 pre-existing warnings).
+  The latest unchanged native baseline also passed 461 Swift tests and the
+  43/43 Apple matrix. Package fixture and install-preparation fixture passed.
+- The remaining owner/device checks are deliberately external: upload build
+  190 to TestFlight, install that TestFlight copy, then exercise Touch ID and
+  the exact packaged sign-in UI. No App Store Connect upload, TestFlight
+  install, release record, or public Mac update was performed in this pass.
+
 ## Current shipped checkpoint (2026-08-29)
 
 ### Publishing app icon (2026-08-30)
