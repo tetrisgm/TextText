@@ -284,15 +284,16 @@ export async function PostPageForHandle({
       );
     }
   }
-  if (redirectClaimed && blog.username && tenantHandle !== blog.handle) {
+  if (
+    redirectClaimed &&
+    blog.username &&
+    tenantHandle !== blog.handle &&
+    !editMode
+  ) {
     const path = blogPostPath(blog, post);
     if (!canonicalUsernameRoute) {
       redirect(
-        editMode
-          ? blogPostEditPath(blog, post)
-          : editRequested
-            ? `${path}?edit=1`
-            : path,
+        editRequested ? `${path}?edit=1` : path,
       );
     }
   }
