@@ -1457,6 +1457,33 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   min-height: 48px;
   display: inline-flex;
   align-items: center;
+  gap: 9px;
+  padding: 0 18px;
+  border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.texttext-github-button:hover,
+.texttext-github-button:focus-visible {
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+}
+.texttext-github-button svg {
+  width: 19px;
+  height: 19px;
+  flex: none;
+  fill: currentColor;
+}
+.texttext-github-star-count {
+  min-width: 1.25ch;
+  padding-left: 9px;
+  border-left: 1px solid color-mix(in srgb, var(--ink) 24%, transparent);
+  font-variant-numeric: tabular-nums;
 }
 .texttext-landing-primary,
 .texttext-landing-secondary {

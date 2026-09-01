@@ -1,8 +1,8 @@
 import Link from "next/link";
-import Script from "next/script";
 import { getCurrentUser } from "@/lib/session";
 import { LandingHeader } from "@/components/LandingHeader";
 import { LandingFooter } from "@/components/LandingFooter";
+import { GitHubStarButton } from "@/components/GitHubStarButton";
 import {
   DocumentEngineStyles,
   DocumentRenderer,
@@ -47,8 +47,6 @@ const previewFiles = [
 ];
 
 const actionHref = "/start";
-const githubHref = "https://github.com/tetrisgm/TextText";
-
 function PrimaryAction({ signedIn }: { signedIn: boolean }) {
   return (
     <Link
@@ -299,19 +297,7 @@ export default async function Home() {
           </p>
           <div className="texttext-landing-actions">
             <PrimaryAction signedIn={Boolean(user)} />
-            <span className="texttext-github-button">
-              <a
-                className="github-button"
-                href={githubHref}
-                data-color-scheme=""
-                data-icon="octicon-star"
-                data-size="large"
-                data-show-count="true"
-                aria-label="Star TextText on GitHub"
-              >
-                Star
-              </a>
-            </span>
+            <GitHubStarButton />
           </div>
         </div>
 
@@ -320,10 +306,6 @@ export default async function Home() {
 
       <LandingSections />
       <LandingFooter />
-      <Script
-        src="https://buttons.github.io/buttons.js"
-        strategy="afterInteractive"
-      />
     </main>
   );
 }

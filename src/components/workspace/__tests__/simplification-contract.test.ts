@@ -20,6 +20,10 @@ const landingSource = readFileSync(
   new URL("../../../app/page.tsx", import.meta.url),
   "utf8",
 );
+const githubButtonSource = readFileSync(
+  new URL("../../GitHubStarButton.tsx", import.meta.url),
+  "utf8",
+);
 const headerSource = readFileSync(
   new URL("../../LandingHeader.tsx", import.meta.url),
   "utf8",
@@ -87,10 +91,12 @@ describe("workspace simplification contract", () => {
     // link is informational and does not create a competing product path.
     expect(headerSource).not.toContain('href="/try"');
     expect(landingSource).toContain("texttext-landing-primary");
-    expect(landingSource).toContain('className="github-button"');
-    expect(landingSource).toContain('data-show-count="true"');
-    expect(landingSource).toContain("https://buttons.github.io/buttons.js");
-    expect(landingSource).toContain("https://github.com/tetrisgm/TextText");
+    expect(landingSource).toContain("<GitHubStarButton />");
+    expect(githubButtonSource).toContain("texttext-github-button");
+    expect(githubButtonSource).toContain("stargazers_count");
+    expect(githubButtonSource).toContain('cache: "no-store"');
+    expect(githubButtonSource).toContain("https://github.com/tetrisgm/TextText");
+    expect(landingSource).not.toContain("https://buttons.github.io/buttons.js");
     expect(landingSource).not.toContain('"/try"');
     expect(landingSource).not.toContain("/@demo");
   });
