@@ -2277,6 +2277,51 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   the next blocks did not yet have a proven single route owner and were not
   moved speculatively.
 
+## Hacker News and Product Hunt launch pass (in progress, 2026-09-01)
+
+- The active objective is launch readiness for Hacker News and Product Hunt,
+  not TestFlight or the App Store. The launch scope is the public repository,
+  direct Mac download, landing page, first-run workspace flow, agentic proof,
+  performance and production checks, launch copy, and reproducible evidence.
+- GitHub is public at `github.com/tetrisgm/TextText`. Repository description,
+  homepage, topics, README, MCP documentation, secret scanning, and push
+  protection are current. Source licensing is intentionally not invented: no
+  third-party reuse license is granted until the owner chooses one.
+- Direct release 0.182 build 1002 is live. The Developer ID archive is signed,
+  notarized, stapled, independently downloaded, and accepted by Gatekeeper.
+  SHA-256 is
+  `c3d83a911d7e6310fcb39c5c5c1dca1be156d57c0b1d7a48982b595803681ba2`.
+  Download, appcast, and release URLs are `texttext.app/download`,
+  `texttext.app/appcast.xml`, and GitHub release `v0.182`.
+- Launch copy, the HN post, Product Hunt listing and maker comment, concise demo
+  script, gallery order, FAQ, go/no-go list, links, and deliberate nonclaims are
+  in `docs/launch/launch-kit.md` at commit `3d890502`.
+- A real Codex model evaluation passed before this handoff: one summary turn in
+  5.298 seconds with zero tools and one provider-failure turn in 4.544 seconds
+  with exactly one failed tool call and no retry or tool escape. The public
+  landing page and live GitHub star count were visually checked in the browser.
+- The first-run production browser check found a real routing chain that the
+  automated gate did not catch. Commits `38c1ca4f`, `e8192e58`, and `eb24e711`
+  now keep edit URLs on authenticated tenant routes, preserve the item's folder
+  path, and forward edit query parameters through catch-all folder routes.
+  Commit `01ff6aa5` makes the current identity table authoritative over a stale
+  JWT `userId` for workspace ownership. Production tracing proved the item
+  exists, its folder is `blog`, resolution is exact, and the pre-fix rejection
+  was specifically `canEdit: false`. The temporary trace was removed before
+  commit.
+- Commit `7e51bdfa` prevents the claimed-username public redirect from running
+  in authenticated edit mode. It is deployed as
+  `texttext-7e51bdfa-1788285343` at
+  `write-nlncjvqbz-shoku-s-projects.vercel.app`; deployment verification passed.
+  The signed-in browser still reports `ERR_TOO_MANY_REDIRECTS` for `/start`
+  ending at `/t/leshokunin/blog/untitled-mti8r6t5?edit=1&id=...`. This is the
+  current blocker. Do not call first-run launch-ready until the remaining
+  redirect is identified and the exact production flow visibly opens the
+  editor.
+- Every coherent routing fix above was pushed to `main`. The latest full source
+  gate passed 221 web test files with 1,790 tests, 461 Swift tests, and
+  TypeScript. The production deploy verifier passed all seven probes.
+
 ## Resolved episodes (one line each, dates in git log)
 
 - Apple consent screen "write app": appleid.apple.com caches its own copy;
