@@ -13,7 +13,7 @@ agents used with that channel connect through this hosted endpoint instead. See
 endpoint was retired in `0.146`.
 
 <!-- generated:tool-source -->
-`src/lib/ai/tools.ts` is the source of truth for the 38 tool
+`src/lib/ai/tools.ts` is the source of truth for the 39 tool
 names, schemas, mutability, confirmation requirements, and MCP
 annotations. The MCP adapter registers those definitions in
 `src/lib/mcp/tools.ts`.
@@ -110,7 +110,7 @@ Manual tokens currently carry `sync` access and remain valid until revoked.
 | Scope | Access |
 |-------|--------|
 | `read` | Call the 11 read-scope tools: `get_workspace`, `list_folders`, `list_items`, `read_item`, `review_brief_sources`, `open_item`, `search`, `list_trash`, `list_comments`, `list_responses`, `list_document_templates`. |
-| `sync` | Call all 38 tools, including the 27 that mutate content or read administration data. It also grants every `read` operation. |
+| `sync` | Call all 39 tools, including the 28 that mutate content or read administration data. It also grants every `read` operation. |
 <!-- /generated:scope-table -->
 
 A mutation attempted with a `read` token returns `403 insufficient_scope` and
@@ -140,7 +140,7 @@ or workspace selector that could cross that boundary.
   cover and asset references use the same audited command surface.
 
 <!-- generated:tool-table -->
-## Tools (38)
+## Tools (39)
 
 | Tool | Scope | Effect |
 |------|-------|--------|
@@ -170,6 +170,7 @@ or workspace selector that could cross that boundary.
 | `organize_items` | `sync` | Tag or move several items in one go. Say what to do once and name the items it applies to. Use this instead of repeating update_item when the same change goes to more than one thing: 'tag all of these review', 'move these into Ideas'. A turn has a limited number of steps, so doing twenty items one at a time runs out before it finishes and leaves the job half done. This changes how items are filed and labelled. It never touches what they say, so it needs no content hash. For a change that differs per item - a different sentence in each - read and update them one at a time. Each item is handled on its own and the answer says what happened to each. |
 | `delete_item` | `sync` | Move one item to Trash. It stays restorable; this never permanently deletes. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it. |
 | `delete_items` | `sync` | Move several items to Trash in one go. They stay restorable; this never permanently deletes. Use this when someone asks to get rid of more than one thing. Name every item explicitly by id: there is no "everything matching" form, because a request to delete has to say what it is deleting. Each item is handled on its own. One that has changed since you read it, or that has already gone, is reported and the rest still go. The answer says what happened to each. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it. |
+| `empty_trash` | `sync` | Permanently delete every item and folder currently in Trash. This cannot be undone and always requires owner approval. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it. |
 | `restore_item` | `sync` | Restore one item from Trash with its previous status. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
 | `add_item_asset` | `sync` | Import one public image or video URL into TextText and attach it as cover, body, or gallery. |
 | `remove_item_asset` | `sync` | Remove references to one asset URL from an item's cover, body, and gallery. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it. |

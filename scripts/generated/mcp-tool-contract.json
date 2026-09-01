@@ -28,6 +28,7 @@
     "organize_items",
     "delete_item",
     "delete_items",
+    "empty_trash",
     "restore_item",
     "add_item_asset",
     "remove_item_asset",

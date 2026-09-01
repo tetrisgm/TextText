@@ -39,7 +39,7 @@ and that runbook are the canonical entry point for future implementation work.
   but no permanent delete.
 
 <!-- generated:tool-contract -->
-## Shared 38-tool contract
+## Shared 39-tool contract
 
 The 11 read-scope tools are:
 
@@ -55,7 +55,7 @@ The 11 read-scope tools are:
 10. `list_responses`
 11. `list_document_templates`
 
-The 27 sync-scope tools are:
+The 28 sync-scope tools are:
 
 1. `list_access`
 2. `create_item_type`
@@ -72,18 +72,19 @@ The 27 sync-scope tools are:
 13. `organize_items`
 14. `delete_item`
 15. `delete_items`
-16. `restore_item`
-17. `add_item_asset`
-18. `remove_item_asset`
-19. `recapture_bookmark`
-20. `add_comment`
-21. `set_comment_resolved`
-22. `create_folder`
-23. `rename_folder`
-24. `delete_folder`
-25. `restore_folder`
-26. `set_access`
-27. `revoke_access`
+16. `empty_trash`
+17. `restore_item`
+18. `add_item_asset`
+19. `remove_item_asset`
+20. `recapture_bookmark`
+21. `add_comment`
+22. `set_comment_resolved`
+23. `create_folder`
+24. `rename_folder`
+25. `delete_folder`
+26. `restore_folder`
+27. `set_access`
+28. `revoke_access`
 <!-- /generated:tool-contract -->
 
 `list_access` is read-only but requires `sync` because membership information is
