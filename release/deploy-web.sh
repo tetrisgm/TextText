@@ -48,7 +48,7 @@ DATABASE_URL="$DATABASE_URL" "$ROOT/scripts/run-release-migrations.sh"
 # A local dev server writes .next while this build wants to. The first run of
 # this script deployed an output built alongside `npm run dev` and Vercel
 # rejected it with no message at all.
-if lsof -nP -iTCP:3000 -sTCP:LISTEN >/dev/null 2>&1; then
+if nc -z 127.0.0.1 3000 >/dev/null 2>&1; then
   echo "A dev server is running on :3000 and writes .next while this builds." >&2
   echo "Stop it, then run this again." >&2
   exit 1
