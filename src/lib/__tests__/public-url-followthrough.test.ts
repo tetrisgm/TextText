@@ -6,6 +6,7 @@ const { accountDeletionConsequences } = await import(
   "@/lib/account-deletion-copy"
 );
 const {
+  blogPostEditPath,
   platformReportUrl,
   workspacePublicBaseUrl,
 } = await import("@/lib/public-paths");
@@ -66,6 +67,15 @@ describe("public URL migration follow-through", () => {
     expect(workspacePublicBaseUrl("alice")).toBe(
       "http://alice.localhost:3100",
     );
+  });
+
+  it("opens drafts through the authenticated workspace even with a username", () => {
+    expect(
+      blogPostEditPath(
+        { handle: "clear-slate", username: "writer" },
+        { id: "post-id", slug: "untitled-draft" },
+      ),
+    ).toBe("/t/clear-slate/untitled-draft?edit=1&id=post-id");
   });
 
   it("keeps shipped examples and health checks off retired public shapes", () => {

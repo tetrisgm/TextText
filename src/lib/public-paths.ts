@@ -51,6 +51,15 @@ export function tenantPostPath(handle: string, slug: string): string {
   return `${tenantHomePath(handle)}/${encodeURIComponent(slug)}`;
 }
 
+export function tenantPostEditPath(
+  handle: string,
+  post: Pick<Post, "id" | "slug">,
+): string {
+  const params = new URLSearchParams({ edit: "1" });
+  if (post.id) params.set("id", post.id);
+  return `${tenantPostPath(handle, post.slug)}?${params.toString()}`;
+}
+
 export function tenantTagPath(handle: string, tag: string): string {
   return `${tenantHomePath(handle)}/tags/${encodeURIComponent(tag)}`;
 }
@@ -152,9 +161,11 @@ export function blogPostEditPath(
   blog: Pick<Blog, "handle" | "username">,
   post: Pick<Post, "id" | "slug">,
 ): string {
-  const params = new URLSearchParams({ edit: "1" });
-  if (post.id) params.set("id", post.id);
-  return `${blogPostPath(blog, post)}?${params.toString()}`;
+  // Editing is an authenticated workspace operation. A person's /@username
+  // route is a sessionless publication surface, so sending a draft there can
+  // only produce a 404. Keep public reading on the username URL and always
+  // enter the editor through the canonical tenant workspace route.
+  return tenantPostEditPath(blog.handle, post);
 }
 
 export function usernameFromAtPath(pathname: string): {
