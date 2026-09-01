@@ -376,6 +376,16 @@ function conversationAddress(threadKey: string): {
       };
 }
 
+/**
+ * The conversation a job reports into, for click-to-open. A job row that
+ * only navigated to the job's place looked dead when the person was already
+ * standing there; opening the job means opening its conversation.
+ */
+export function conversationIdFromThreadKey(threadKey: string): string | null {
+  const { conversationId } = conversationAddress(threadKey);
+  return conversationId && conversationId !== "server" ? conversationId : null;
+}
+
 function threadFor(threadKey: string): AssistantMessage[] {
   const { handle, conversationId } = conversationAddress(threadKey);
   return handle

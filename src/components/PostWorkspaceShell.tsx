@@ -153,7 +153,10 @@ import {
 import { starterContextFromChip } from "@/components/workspace/assistant/starters";
 import { assistantAgentIdentity } from "@/components/workspace/assistant/agent-identity";
 import { SelectionActions } from "@/components/workspace/assistant/SelectionActions";
-import { useNativeAssistant } from "@/components/workspace/assistant/useNativeAssistant";
+import {
+  conversationIdFromThreadKey,
+  useNativeAssistant,
+} from "@/components/workspace/assistant/useNativeAssistant";
 import { executeWorkspaceToolRequest } from "@/lib/ai/workspace-tool-client";
 import {
   openWorkspaceItemDraftRevision,
@@ -7201,8 +7204,17 @@ function LocalWorkspaceShell({
             submitting={assistant.submitting}
             onApplyProposal={assistant.applyProposal}
             onOpenJob={(job) => {
-              // Jump to the context the job reports into: items open directly,
-              // places navigate by their stored URL.
+              // Open the conversation the job reports into, then jump to its
+              // context: items open directly, places navigate by their stored
+              // URL. Without the conversation switch, clicking a job that ran
+              // in the place already on screen visibly did nothing.
+              const conversationId = conversationIdFromThreadKey(job.threadKey);
+              if (conversationId) {
+                assistant.openConversationInContext(
+                  job.contextKey,
+                  conversationId,
+                );
+              }
               if (job.contextKey.startsWith("item:")) {
                 openPostId(job.contextKey.slice("item:".length));
                 return;

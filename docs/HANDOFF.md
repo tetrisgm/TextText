@@ -2387,6 +2387,28 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   gallery tests plus TypeScript pass. No production credential was revoked as
   part of this change.
 
+## Usability pass (owner pivot, 2026-09-01)
+
+- The owner paused further launch-goal work. The active objective is making
+  the app more usable day to day. The owner named three frictions, in order:
+  the AI rail reads as garbage and scary messages next to Notion's and
+  Lovable's assistants, AI creation of new item types is messy and poor, and
+  connecting an agent to the app is messy.
+- `c442364b` quiets the transcript: the owner-scope check retries and
+  rechecks on focus before showing "Assistant unavailable" (a transient
+  failure right after sign-in used to brand the rail unavailable for the
+  actual owner until reload); the "Answered by" receipt appears only when
+  the producer changes; only the newest failure keeps Try again and Verify
+  connection while older ones compact to a muted line; failure ink mixes
+  toward body ink; the jobs strip lists finished work for five minutes
+  instead of pinning twenty stale jobs with red dots forever.
+- Open papercut: clicking a jobs-strip row for a finished job in the same
+  place but another conversation visibly does nothing; it should activate
+  that conversation the way the pending-proposal chooser does.
+- The mock provider's FAIL_STREAM trigger matches the whole transcript, so
+  one failed test prompt poisons every later turn of that conversation.
+  Start a fresh chat when evaluating with the mock.
+
 ## Resolved episodes (one line each, dates in git log)
 
 - Apple consent screen "write app": appleid.apple.com caches its own copy;
