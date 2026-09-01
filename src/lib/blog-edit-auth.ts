@@ -21,7 +21,12 @@ export async function getBlogEditAccess(
   }
 
   const user = await getCurrentUser();
-  const userId = user ? user.userId ?? (await getUserIdBySub(user.sub)) : null;
+  // The identity table is authoritative. A JWT can outlive an account-linking
+  // change, so its embedded userId is only a compatibility fallback when the
+  // current subject has no database mapping yet.
+  const userId = user
+    ? (await getUserIdBySub(user.sub)) ?? user.userId ?? null
+    : null;
   const isOwner = userId === record.ownerId;
   return {
     canEdit: isOwner,

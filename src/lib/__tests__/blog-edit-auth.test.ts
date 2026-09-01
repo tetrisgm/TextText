@@ -30,13 +30,16 @@ describe("getBlogEditAccess", () => {
       sub: "google:linked-provider-subject",
       userId: "owner-id",
     });
+    mocks.getUserIdBySub.mockResolvedValue("owner-id");
 
     await expect(getBlogEditAccess("workspace")).resolves.toMatchObject({
       canEdit: true,
       isOwner: true,
       ownerId: "owner-id",
     });
-    expect(mocks.getUserIdBySub).not.toHaveBeenCalled();
+    expect(mocks.getUserIdBySub).toHaveBeenCalledWith(
+      "google:linked-provider-subject",
+    );
   });
 
   it("resolves the stable user id for a session minted before userId claims", async () => {
@@ -59,10 +62,24 @@ describe("getBlogEditAccess", () => {
       sub: "different-provider-subject",
       userId: "different-user-id",
     });
+    mocks.getUserIdBySub.mockResolvedValue("different-user-id");
 
     await expect(getBlogEditAccess("workspace")).resolves.toMatchObject({
       canEdit: false,
       isOwner: false,
+    });
+  });
+
+  it("prefers the current identity mapping over a stale session claim", async () => {
+    mocks.getCurrentUser.mockResolvedValue({
+      sub: "newly-linked-provider-subject",
+      userId: "stale-user-id",
+    });
+    mocks.getUserIdBySub.mockResolvedValue("owner-id");
+
+    await expect(getBlogEditAccess("workspace")).resolves.toMatchObject({
+      canEdit: true,
+      isOwner: true,
     });
   });
 });
