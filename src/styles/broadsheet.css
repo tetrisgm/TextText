@@ -1456,8 +1456,15 @@ body:has(.reader):not(:has(.post-editor-shell)) {
 .texttext-landing-action-icon {
   width: 18px;
   height: 18px;
-  margin-right: 8px;
   flex: none;
+}
+.texttext-github-star {
+  gap: 8px;
+}
+.texttext-github-star-count {
+  padding-left: 8px;
+  border-left: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  font-variant-numeric: tabular-nums;
 }
 .texttext-landing-primary,
 .texttext-landing-secondary {

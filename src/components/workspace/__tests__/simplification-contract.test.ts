@@ -88,7 +88,10 @@ describe("workspace simplification contract", () => {
     expect(headerSource).not.toContain('href="/try"');
     expect(landingSource).toContain("texttext-landing-primary");
     expect(landingSource).toContain("texttext-landing-secondary");
-    expect(landingSource).toContain("View on GitHub");
+    expect(landingSource).toContain("getGitHubStarCount");
+    expect(landingSource).toContain("stargazers_count");
+    expect(landingSource).toContain("texttext-github-star-count");
+    expect(landingSource).toContain("<span>Star</span>");
     expect(landingSource).toContain("https://github.com/tetrisgm/TextText");
     expect(landingSource).not.toContain('"/try"');
     expect(landingSource).not.toContain("/@demo");
