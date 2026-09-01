@@ -44,9 +44,9 @@ import {
   blogHomePath,
   blogPostEditPath,
   blogPostPath,
-  blogWorkspacePostEditPath,
   blogWorkspacePostPath,
   platformReportUrl,
+  tenantWorkspacePostEditPath,
   workspacePublicPostUrl,
 } from "@/lib/public-paths";
 import {
@@ -102,7 +102,7 @@ function postEditPathForRequest(
   folderPath?: string,
 ): string {
   if (folderPath && tenantHandle !== blog.handle) {
-    return blogWorkspacePostEditPath(blog, folderPath, post);
+    return tenantWorkspacePostEditPath(blog.handle, folderPath, post);
   }
   if (tenantHandle !== blog.handle) return blogPostEditPath(blog, post);
   const params = new URLSearchParams({ edit: "1" });

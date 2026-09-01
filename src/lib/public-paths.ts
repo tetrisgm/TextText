@@ -60,6 +60,18 @@ export function tenantPostEditPath(
   return `${tenantPostPath(handle, post.slug)}?${params.toString()}`;
 }
 
+export function tenantWorkspacePostEditPath(
+  handle: string,
+  folderPath: string,
+  post: Pick<Post, "id" | "slug">,
+): string {
+  const folder = publicFolderPath(folderPath);
+  if (!folder) return tenantPostEditPath(handle, post);
+  const params = new URLSearchParams({ edit: "1" });
+  if (post.id) params.set("id", post.id);
+  return `${tenantHomePath(handle)}/${folder}/${encodeURIComponent(post.slug)}?${params.toString()}`;
+}
+
 export function tenantTagPath(handle: string, tag: string): string {
   return `${tenantHomePath(handle)}/tags/${encodeURIComponent(tag)}`;
 }
@@ -143,9 +155,7 @@ export function blogWorkspacePostEditPath(
   folderPath: string,
   post: Pick<Post, "id" | "slug">,
 ): string {
-  const params = new URLSearchParams({ edit: "1" });
-  if (post.id) params.set("id", post.id);
-  return `${blogWorkspacePostPath(blog, folderPath, post)}?${params}`;
+  return tenantWorkspacePostEditPath(blog.handle, folderPath, post);
 }
 
 export function blogTagPath(

@@ -7,6 +7,7 @@ const { accountDeletionConsequences } = await import(
 );
 const {
   blogPostEditPath,
+  tenantWorkspacePostEditPath,
   platformReportUrl,
   workspacePublicBaseUrl,
 } = await import("@/lib/public-paths");
@@ -76,6 +77,13 @@ describe("public URL migration follow-through", () => {
         { id: "post-id", slug: "untitled-draft" },
       ),
     ).toBe("/t/clear-slate/untitled-draft?edit=1&id=post-id");
+    expect(
+      tenantWorkspacePostEditPath(
+        "clear-slate",
+        "blog",
+        { id: "post-id", slug: "untitled-draft" },
+      ),
+    ).toBe("/t/clear-slate/blog/untitled-draft?edit=1&id=post-id");
   });
 
   it("keeps shipped examples and health checks off retired public shapes", () => {

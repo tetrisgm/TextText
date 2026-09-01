@@ -63,8 +63,8 @@ import type { PlanTier } from "@/lib/product-limits";
 import { TENANT_HANDLE_RE } from "@/lib/tenants";
 import {
   blogHomePath,
-  blogPostEditPath,
-  tenantPostPath,
+  tenantPostEditPath,
+  tenantWorkspacePostEditPath,
 } from "@/lib/public-paths";
 import { recordAction, recordSlugChanged } from "@/lib/audit";
 import { markdownSubtitle } from "@/lib/markdown-subtitle";
@@ -404,10 +404,17 @@ function collaboratorContentPatch(input: unknown, existing: Post): PostContentPa
   };
 }
 
-function tenantPostEditPath(handle: string, post: Pick<Post, "id" | "slug">): string {
-  const params = new URLSearchParams({ edit: "1" });
-  if (post.id) params.set("id", post.id);
-  return `${tenantPostPath(handle, post.slug)}?${params.toString()}`;
+async function authenticatedPostEditPath(
+  handle: string,
+  post: Pick<Post, "folderId" | "id" | "slug">,
+): Promise<string> {
+  if (!post.folderId) return tenantPostEditPath(handle, post);
+  const folder = (await getFolders(handle)).find(
+    (candidate) => candidate.id === post.folderId,
+  );
+  return folder
+    ? tenantWorkspacePostEditPath(handle, folder.path, post)
+    : tenantPostEditPath(handle, post);
 }
 
 async function revalidateBlog(
@@ -491,9 +498,7 @@ async function ensureFirstArticleDraftPath(handle: string): Promise<string> {
   }
 
   await revalidateBlog(handle, [post.slug]);
-  const blog = await getBlog(handle);
-  if (blog) return blogPostEditPath(blog, post);
-  return tenantPostEditPath(handle, post);
+  return authenticatedPostEditPath(handle, post);
 }
 
 export async function createStarterDraftPath(): Promise<string> {
@@ -544,9 +549,7 @@ export async function createTemplateDraftPath(
     seed ? `template ${template.id} with example` : `template ${template.id}`,
   );
   await revalidateBlog(handle, [post.slug]);
-  const blog = await getBlog(handle);
-  if (blog) return blogPostEditPath(blog, post);
-  return tenantPostEditPath(handle, post);
+  return authenticatedPostEditPath(handle, post);
 }
 
 // The signed-in user's workspace home.
@@ -769,10 +772,7 @@ export async function createArticleDraftPathAction(
   const post = await createDraft(handle, "article");
   await auditEdit(access, "create_post", "item", post.id, post.type);
   await revalidateBlog(handle, [post.slug]);
-  const blog = await getBlog(handle);
-  return blog
-    ? blogPostEditPath(blog, post)
-    : tenantPostEditPath(handle, post);
+  return authenticatedPostEditPath(handle, post);
 }
 
 export async function saveEditablePostAction(
@@ -1447,4 +1447,3 @@ export async function updateBlogNameAction(
     return { ok: false, error: actionErrorMessage(error, "Could not save") };
   }
 }
-

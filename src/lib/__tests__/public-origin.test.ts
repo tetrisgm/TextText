@@ -77,7 +77,7 @@ describe("sessionless workspace origins", () => {
       "/@writer/blog/research-notes/index",
     );
     expect(blogWorkspacePostEditPath(blog, "blog/research-notes", post)).toBe(
-      "/@writer/blog/research-notes/index?edit=1&id=post-id",
+      "/t/clear-slate/blog/research-notes/index?edit=1&id=post-id",
     );
   });
 
