@@ -2335,8 +2335,25 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   was tested and rejected. TextText never supplies the vulnerable raw message,
   remote file, transport name, OAuth2 token-fetch, or user-controlled envelope
   options. Revisit when Auth.js declares Nodemailer 9 support instead of hiding
-  the peer mismatch with a forced install. Commit `361a0799` is not deployed
-  yet at this checkpoint.
+  the peer mismatch with a forced install. The dependency set is deployed in
+  production deployment `texttext-7cc8d74b-1788286011` at
+  `write-5xeggrsg6-shoku-s-projects.vercel.app`; all seven deployment probes
+  passed. In a fresh signed-in browser, `/signin` returned to the workspace and
+  `/start` opened the folder-qualified editor after the upgrade.
+- The 21-case live MCP workflow verifier passed against a local production
+  server and removed its isolated scratch workspace. It covered folder Trash
+  and restore, rename, item creation, living briefs and source versions,
+  comments, cover assets, sharing role changes and revocation, bookmark
+  recapture, and mutation audit rows. The token-free agent integration verifier
+  also passed five skills, two Claude commands, the Claude parser, the Codex
+  manifest contract, and explicit hosted MCP.
+- Five uncached samples of each public launch surface all returned 200. Maximum
+  total times observed from this Mac were 176 ms for `/`, 503 ms for `/signin`
+  including its cold sample, 178 ms for `/download`, 316 ms for `/docs/ai`
+  including its cold sample, and 275 ms for `/.well-known/mcp.json`. The local
+  app-health database had zero reports, so it cannot serve as release evidence;
+  the deployed verifier and live browser checks are the current production
+  evidence.
 
 ## Resolved episodes (one line each, dates in git log)
 
