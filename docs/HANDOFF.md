@@ -2377,6 +2377,15 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   contract regression test. The focused test and `tsc --noEmit` pass. These
   three explicitly labeled documents are disposable launch-demo content; they
   have not been deleted or moved to Trash.
+- Production Settings exposed another launch-facing truth problem while the
+  gallery was being captured: 197 rotated `OAuth: Codex` credentials were
+  described as 197 active clients. The credentials remain intact, but Settings
+  now groups live tokens by client name and kind, presents the logical client
+  once, and makes Disconnect revoke every live credential in that group after
+  its existing inline confirmation. Counts now say connected clients rather
+  than treating credential rotations as separate apps. Focused grouping and
+  gallery tests plus TypeScript pass. No production credential was revoked as
+  part of this change.
 
 ## Resolved episodes (one line each, dates in git log)
 

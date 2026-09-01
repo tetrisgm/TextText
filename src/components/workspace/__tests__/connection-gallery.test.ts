@@ -18,7 +18,7 @@ describe("connection gallery", () => {
     );
 
     expect(html).toContain("Verify connection");
-    expect(html).toContain("1 active client");
+    expect(html).toContain("1 connected client");
     expect(html).toContain("0 connected servers");
     expect(html).not.toContain("Codex with ChatGPT");
     expect(html).not.toContain("never sees provider secrets");

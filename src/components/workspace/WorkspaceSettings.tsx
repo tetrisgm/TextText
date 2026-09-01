@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { updateBlogNameAction } from "@/app/editor/actions";
 import {
   listApiTokensAction,
@@ -15,6 +15,10 @@ import {
 import type { Blog } from "@/lib/content";
 import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
 import type { ApiTokenSummary } from "@/lib/api-tokens";
+import {
+  groupApiTokenClients,
+  type ApiTokenClient,
+} from "@/lib/api-token-clients";
 import { apiTokenKindLabel } from "@/lib/api-token-kinds";
 import {
   CLOUD_AI_CATALOG,
@@ -80,6 +84,7 @@ export function WorkspaceSettings({
   const [mcpCount, setMcpCount] = useState<number | null>(null);
   const [nativeConnection, setNativeConnection] =
     useState<AiConnectionSnapshot | null>(null);
+  const tokenClients = useMemo(() => groupApiTokenClients(tokens), [tokens]);
 
   function formatTokenDate(value: string | null): string {
     if (!value) return "Never used";
@@ -280,18 +285,26 @@ export function WorkspaceSettings({
               ? `${aiSettings.provider === "anthropic" ? "Anthropic" : "OpenAI"}${aiSettings.model ? ` · ${aiSettings.model}` : ""}`
               : "Not configured";
 
-  const revokeToken = async (tokenId: string) => {
+  const revokeClient = async (client: ApiTokenClient) => {
     setTokensError(null);
-    setRevokingToken(tokenId);
-    try {
-      await revokeApiTokenAction(tokenId);
-      setTokens((previous) => previous.filter((token) => token.id !== tokenId));
+    setRevokingToken(client.key);
+    const results = await Promise.allSettled(
+      client.tokenIds.map((tokenId) => revokeApiTokenAction(tokenId)),
+    );
+    const revokedIds = new Set(
+      client.tokenIds.filter(
+        (_, index) => results[index]?.status === "fulfilled",
+      ),
+    );
+    setTokens((previous) =>
+      previous.filter((token) => !revokedIds.has(token.id)),
+    );
+    if (results.every((result) => result.status === "fulfilled")) {
       setConfirmingTokenId(null);
-    } catch {
-      setTokensError("Could not revoke this token.");
-    } finally {
-      setRevokingToken(null);
+    } else {
+      setTokensError("Some credentials could not be revoked. Try again.");
     }
+    setRevokingToken(null);
   };
 
   return (
@@ -378,7 +391,7 @@ export function WorkspaceSettings({
                 {tokensLoading
                   ? "Loading"
                   : tokensVisible
-                    ? `${tokens.length} active ${tokens.length === 1 ? "client" : "clients"}`
+                    ? `${tokenClients.length} connected ${tokenClients.length === 1 ? "client" : "clients"}`
                     : "Sign in to manage"}
               </span>
             </li>
@@ -407,7 +420,7 @@ export function WorkspaceSettings({
             nativeConnection && nativeConnection.state !== "unavailable",
           )}
           nativeReady={nativeConnection?.state === "ready"}
-          clientCount={tokensVisible ? tokens.length : null}
+          clientCount={tokensVisible ? tokenClients.length : null}
           mcpCount={mcpCount}
           onVerify={
             aiSettings?.configured || nativeConnection?.state === "ready"
@@ -599,59 +612,60 @@ export function WorkspaceSettings({
               </a>
             </div>
 
-            {tokensLoading && !tokens.length ? (
+            {tokensLoading && !tokenClients.length ? (
               <p className={styles.aiNotConfigured}>Loading clients.</p>
-            ) : tokens.length > 0 ? (
+            ) : tokenClients.length > 0 ? (
               <ul className={styles.connectionList}>
-                {(allTokensVisible ? tokens : tokens.slice(0, 8)).map(
-                  (token) => (
-                    <li className={styles.connectionRow} key={token.id}>
-                      <div className={styles.connectionMain}>
-                        <span className={styles.connectionName}>
-                          {token.name}
-                        </span>
-                        <span className={styles.connectionMeta}>
-                          {apiTokenKindLabel(token.kind)} · Created{" "}
-                          {formatTokenDate(token.createdAt)} · Last used{" "}
-                          {token.lastUsedAt
-                            ? formatTokenDate(token.lastUsedAt)
-                            : "never"}
-                        </span>
-                      </div>
-                      <div className={styles.connectionActions}>
-                        {confirmingTokenId === token.id ? (
-                          <>
-                            <button
-                              type="button"
-                              className="ac-btn ac-btn-plain"
-                              onClick={() => setConfirmingTokenId(null)}
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              type="button"
-                              className="ac-btn ac-btn-plain ac-danger"
-                              disabled={revokingToken === token.id}
-                              onClick={() => void revokeToken(token.id)}
-                            >
-                              {revokingToken === token.id
-                                ? "Revoking"
-                                : "Confirm revoke"}
-                            </button>
-                          </>
-                        ) : (
+                {(allTokensVisible
+                  ? tokenClients
+                  : tokenClients.slice(0, 8)
+                ).map((client) => (
+                  <li className={styles.connectionRow} key={client.key}>
+                    <div className={styles.connectionMain}>
+                      <span className={styles.connectionName}>
+                        {client.name}
+                      </span>
+                      <span className={styles.connectionMeta}>
+                        {apiTokenKindLabel(client.kind)} · Connected{" "}
+                        {formatTokenDate(client.createdAt)} · Last used{" "}
+                        {client.lastUsedAt
+                          ? formatTokenDate(client.lastUsedAt)
+                          : "never"}
+                      </span>
+                    </div>
+                    <div className={styles.connectionActions}>
+                      {confirmingTokenId === client.key ? (
+                        <>
+                          <button
+                            type="button"
+                            className="ac-btn ac-btn-plain"
+                            onClick={() => setConfirmingTokenId(null)}
+                          >
+                            Cancel
+                          </button>
                           <button
                             type="button"
                             className="ac-btn ac-btn-plain ac-danger"
-                            onClick={() => setConfirmingTokenId(token.id)}
+                            disabled={revokingToken === client.key}
+                            onClick={() => void revokeClient(client)}
                           >
-                            Revoke
+                            {revokingToken === client.key
+                              ? "Disconnecting"
+                              : "Confirm disconnect"}
                           </button>
-                        )}
-                      </div>
-                    </li>
-                  ),
-                )}
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="ac-btn ac-btn-plain ac-danger"
+                          onClick={() => setConfirmingTokenId(client.key)}
+                        >
+                          Disconnect
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                ))}
               </ul>
             ) : (
               <p className={styles.aiNotConfigured}>
@@ -659,7 +673,7 @@ export function WorkspaceSettings({
               </p>
             )}
 
-            {tokens.length > 8 && (
+            {tokenClients.length > 8 && (
               <button
                 type="button"
                 className="ac-btn ac-btn-plain"
@@ -668,7 +682,7 @@ export function WorkspaceSettings({
               >
                 {allTokensVisible
                   ? "Show fewer clients"
-                  : `Show all ${tokens.length} clients`}
+                  : `Show all ${tokenClients.length} clients`}
               </button>
             )}
 
