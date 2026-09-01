@@ -162,4 +162,44 @@ describe("what the jobs strip lists", () => {
       elsewhere,
     ]);
   });
+
+  it("lists finished work only briefly, never as a permanent ledger", async () => {
+    const { jobsWorthListing, FINISHED_JOB_LISTING_MS } = await import(
+      "../jobs"
+    );
+    const here = "here-thread";
+    const there = "there-thread";
+    const now = Date.now();
+    const finished = (id: string, status: string, finishedAt: number) =>
+      ({ id, threadKey: there, status, finishedAt }) as never;
+    const running = job("running", there, "running");
+    const justDone = finished("just-done", "done", now - 1_000);
+    const justFailed = finished("just-failed", "error", now - 1_000);
+    const oldDone = finished(
+      "old-done",
+      "done",
+      now - FINISHED_JOB_LISTING_MS - 1,
+    );
+    const oldFailed = finished(
+      "old-failed",
+      "error",
+      now - FINISHED_JOB_LISTING_MS - 1,
+    );
+    const restoredWithoutTimestamp = job("restored", there, "error");
+
+    expect(
+      jobsWorthListing(
+        [
+          running,
+          justDone,
+          justFailed,
+          oldDone,
+          oldFailed,
+          restoredWithoutTimestamp,
+        ],
+        here,
+        now,
+      ),
+    ).toEqual([running, justDone, justFailed]);
+  });
 });

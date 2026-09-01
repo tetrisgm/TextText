@@ -50,7 +50,7 @@ import {
   startAssistantJob,
   subscribeAssistantJobs,
   cloudTurnOutcome,
-  jobsForOtherThreads,
+  jobsWorthListing,
   updateAssistantJob,
 } from "@/lib/ai/jobs";
 import {
@@ -760,21 +760,54 @@ export function useNativeAssistant({
 
   useEffect(() => {
     let cancelled = false;
-    void getAssistantConversationCacheScopeAction(handle)
-      .then((scope) => {
-        if (cancelled) return;
-        if (scope) {
-          const scopedKey = `${handle}:${scope}`;
-          migrateAssistantConversationOwnerScope(scopedKey, handle);
-        }
-        setConversationOwnerScope({ handle, scope });
-      })
-      .catch(() => {
-        // An unverified account never receives a local owner-history scope.
-        if (!cancelled) setConversationOwnerScope({ handle, scope: null });
-      });
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
+    let ownerScopeArrived = false;
+    // One failed answer right after sign-in used to brand the rail
+    // "Assistant unavailable" for the actual owner, permanently: the check
+    // ran once, a transient rejection or unsettled session read as a denial,
+    // and nothing ever asked again. Confirm a denial before showing it, and
+    // ask again when the person returns to the tab.
+    const check = () => {
+      void getAssistantConversationCacheScopeAction(handle)
+        .then((scope) => {
+          if (cancelled) return;
+          if (scope) {
+            ownerScopeArrived = true;
+            const scopedKey = `${handle}:${scope}`;
+            migrateAssistantConversationOwnerScope(scopedKey, handle);
+            setConversationOwnerScope({ handle, scope });
+            return;
+          }
+          attempt += 1;
+          if (attempt < 3) {
+            timer = setTimeout(check, attempt * 1500);
+            return;
+          }
+          setConversationOwnerScope({ handle, scope: null });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          attempt += 1;
+          if (attempt < 5) {
+            timer = setTimeout(check, Math.min(attempt * 2000, 8000));
+            return;
+          }
+          setConversationOwnerScope({ handle, scope: null });
+        });
+    };
+    const recheckOnFocus = () => {
+      if (ownerScopeArrived) return;
+      if (timer) clearTimeout(timer);
+      attempt = 0;
+      check();
+    };
+    window.addEventListener("focus", recheckOnFocus);
+    check();
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
+      window.removeEventListener("focus", recheckOnFocus);
     };
   }, [handle]);
 
@@ -2398,7 +2431,7 @@ export function useNativeAssistant({
    * The count on the closed launcher still covers every job in the workspace.
    */
   const jobsElsewhere = useMemo(
-    () => jobsForOtherThreads(scopedJobs, threadKey),
+    () => jobsWorthListing(scopedJobs, threadKey),
     [scopedJobs, threadKey],
   );
   const modelChoices = useMemo(

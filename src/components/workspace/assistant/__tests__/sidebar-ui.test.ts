@@ -271,7 +271,7 @@ describe("assistant sidebar UI", () => {
     expect(html).toContain('title="Summarize selected text with Anthropic"');
     expect(html).toContain('role="log"');
     expect(html).toContain("Summarize");
-    expect(html).toContain("title selection, source offsets 0 to 5");
+    expect(html).toContain("Selected text · title");
     expect(html).toContain("Original");
     expect(html).toContain("Draft");
     expect(html).toContain("Replacement");
@@ -532,6 +532,62 @@ describe("assistant sidebar UI", () => {
     expect(html).toContain("Image: tracker");
     expect(html).not.toContain("tracker.example");
     expect(html).not.toContain("**Strong**");
+  });
+
+  it("names the provider once until what produced the answer changes", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        messages: [
+          {
+            id: "a-1",
+            role: "assistant",
+            text: "First answer",
+            provider: "Anthropic",
+            model: "claude-sonnet-5",
+          },
+          { id: "u-1", role: "user", text: "Follow up" },
+          {
+            id: "a-2",
+            role: "assistant",
+            text: "Second answer",
+            provider: "Anthropic",
+            model: "claude-sonnet-5",
+          },
+          {
+            id: "a-3",
+            role: "assistant",
+            text: "Different producer",
+            provider: "OpenAI",
+          },
+        ],
+        submitting: false,
+      }),
+    );
+
+    expect(html.match(/Answered by Anthropic/g)).toHaveLength(1);
+    expect(html).toContain("Answered by OpenAI");
+  });
+
+  it("keeps retry actions only on the failure the conversation is at", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        aiSettingsHref: "#settings-ai",
+        onRetry: () => {},
+        messages: [
+          { id: "u-1", role: "user", text: "First ask" },
+          { id: "e-1", role: "error", text: "The provider timed out." },
+          { id: "u-2", role: "user", text: "Second ask" },
+          { id: "e-2", role: "error", text: "The provider failed again." },
+        ],
+        submitting: false,
+      }),
+    );
+
+    expect(html).toContain("The provider timed out.");
+    expect(html).toContain("The provider failed again.");
+    expect(html.match(/Try again/g)).toHaveLength(1);
+    expect(html.match(/Verify connection/g)).toHaveLength(1);
+    expect(html.match(/data-stale/g)).toHaveLength(1);
   });
 
   it("offers a first-class save receipt for useful answers", () => {

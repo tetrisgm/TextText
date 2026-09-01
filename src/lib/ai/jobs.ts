@@ -83,6 +83,30 @@ export function jobsForOtherThreads<Job extends { threadKey: string }>(
   return jobs.filter((job) => job.threadKey !== threadKey);
 }
 
+/**
+ * How long a finished job stays in the strip. Long enough to be seen by
+ * someone returning from another part of the workspace, short enough that
+ * the strip never becomes a permanent ledger of every old failure.
+ */
+export const FINISHED_JOB_LISTING_MS = 5 * 60_000;
+
+/**
+ * A finished job's outcome already lives in its own thread's transcript, so
+ * the strip lists it only briefly as a "this finished while you were away"
+ * notice. Before this rule, up to twenty done and failed jobs from past
+ * sessions sat pinned above every conversation with red dots, and the rail
+ * opened on a wall of stale alarms instead of the person's own chat.
+ */
+export function jobsWorthListing<
+  Job extends { threadKey: string; status: string; finishedAt?: number },
+>(jobs: readonly Job[], threadKey: string, now = Date.now()): Job[] {
+  return jobsForOtherThreads(jobs, threadKey).filter(
+    (job) =>
+      job.status === "running" ||
+      (job.finishedAt ?? 0) > now - FINISHED_JOB_LISTING_MS,
+  );
+}
+
 const MAX_JOBS = 20;
 const STORAGE_KEY = "texttext:assistant-jobs";
 const EMPTY_SERVER_JOBS: AssistantJob[] = [];

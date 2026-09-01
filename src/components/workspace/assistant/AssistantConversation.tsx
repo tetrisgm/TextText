@@ -712,11 +712,7 @@ export function AssistantConversation({
           const scopeLabel = tagProposal
             ? "Item tags"
             : proposal.scope === "selection"
-              ? `${proposal.field} selection${
-                  proposal.range
-                    ? `, source offsets ${proposal.range.start} to ${proposal.range.end}`
-                    : ""
-                }`
+              ? `Selected text · ${proposal.field}`
               : proposal.field;
           return (
             <div key={message.id} className={styles.proposal}>
@@ -811,27 +807,52 @@ export function AssistantConversation({
             .slice(0, messageIndex)
             .reverse()
             .find((candidate) => candidate.role === "user");
+          // Only the newest failure is actionable. An old failure the
+          // conversation has moved past keeps its one line of history, but
+          // repeating Try again and Verify connection under every stale
+          // error made the transcript read like a wall of alarms.
+          const actionable = messageIndex === visibleMessages.length - 1;
           return (
-            <div key={message.id} role="alert" className={styles.errorTurn}>
+            <div
+              key={message.id}
+              role={actionable ? "alert" : undefined}
+              className={styles.errorTurn}
+              data-stale={actionable ? undefined : true}
+            >
               <span>{boundedFailureText(displayedMessageText(message))}</span>
-              <div className={styles.errorActions}>
-                {precedingUserMessage && onRetry ? (
-                  <button
-                    type="button"
-                    onClick={() => void onRetry(precedingUserMessage.text)}
-                  >
-                    Try again
-                  </button>
-                ) : null}
-                {aiSettingsHref ? (
-                  <a href={aiSettingsHref} onClick={onOpenAiSettings}>
-                    Verify connection
-                  </a>
-                ) : null}
-              </div>
+              {actionable ? (
+                <div className={styles.errorActions}>
+                  {precedingUserMessage && onRetry ? (
+                    <button
+                      type="button"
+                      onClick={() => void onRetry(precedingUserMessage.text)}
+                    >
+                      Try again
+                    </button>
+                  ) : null}
+                  {aiSettingsHref ? (
+                    <a href={aiSettingsHref} onClick={onOpenAiSettings}>
+                      Verify connection
+                    </a>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           );
         }
+        // The receipt stays truthful without repeating itself: naming the
+        // provider on every answer read as a wall of banners, so the label
+        // appears on the first answer and again only when what produced the
+        // answer changes.
+        const previousProvided = visibleMessages
+          .slice(0, messageIndex)
+          .reverse()
+          .find((candidate) => candidate.role === "assistant" && candidate.provider);
+        const showProvider =
+          Boolean(message.provider) &&
+          (!previousProvided ||
+            previousProvided.provider !== message.provider ||
+            previousProvided.model !== message.model);
         return (
           <div
             key={message.id}
@@ -839,7 +860,7 @@ export function AssistantConversation({
               message.role === "user" ? styles.userTurn : styles.assistantTurn
             }
           >
-            {message.provider && (
+            {showProvider && (
               <span className={styles.providerLabel}>
                 Answered by {message.provider}
                 {message.model ? ` · ${message.model}` : ""}

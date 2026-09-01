@@ -546,13 +546,23 @@
   background: var(--ac-fill-3);
 }
 
+/* A failure is information, not an alarm. The words say what failed; the
+   ink stays body ink, mixed only far enough toward red to read as a status
+   in both themes without turning the transcript into a wall of warnings. */
 .errorTurn {
   display: grid;
   gap: 8px;
   justify-self: start;
   border: 1px solid var(--ac-hairline);
   background: var(--ac-fill-4);
-  color: var(--ac-red);
+  color: color-mix(in srgb, var(--ac-red) 45%, var(--ac-label));
+}
+
+/* A failure the conversation has moved past keeps its line of history and
+   loses its buttons; it should read as the past, not as a standing alert. */
+.errorTurn[data-stale] {
+  color: var(--ac-label-2);
+  font-size: var(--ac-fs-caption1);
 }
 
 .errorActions {
