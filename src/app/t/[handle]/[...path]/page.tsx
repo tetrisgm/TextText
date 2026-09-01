@@ -27,6 +27,7 @@ import {
 
 interface Props {
   params: Promise<{ handle: string; path: string[] }>;
+  searchParams?: Promise<{ edit?: string | string[]; id?: string | string[] }>;
 }
 
 function locationFrom(path: readonly string[]): {
@@ -78,7 +79,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default async function WorkspacePublicPost({ params }: Props) {
+export default async function WorkspacePublicPost({ params, searchParams }: Props) {
   const { handle, path } = await params;
   const requested = locationFrom(path);
   if (!requested) notFound();
@@ -87,6 +88,7 @@ export default async function WorkspacePublicPost({ params }: Props) {
       <PostPageForHandle
         handle={handle}
         folderPath={requested.folderPath}
+        searchParams={searchParams}
         slug={requested.slug}
       />
     );
