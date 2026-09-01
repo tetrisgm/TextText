@@ -2366,6 +2366,17 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   frames from that run, and performs the launch-day sign-in and AI smoke test.
   Do not fabricate those assets from mocks or move a Keychain secret through an
   agent log. The source-license choice is separate and remains with the owner.
+- A real external-agent launch-demo workspace now exists in the signed-in
+  account under `documentation`: `Launch demo: source notes`, `Launch demo:
+  user feedback`, and `Launch brief`. Codex created and revised these through
+  the installed signed TextText CLI, not through a mock or the in-app
+  assistant. Opening `Launch brief` in production exposed a sidebar defect:
+  its actual Documentation folder was ignored and Notes was highlighted from
+  the generic note template. `PostReadWorkspaceShell` now derives its initial
+  folder and return path from the pool post's persisted `folderId`, with a UI
+  contract regression test. The focused test and `tsc --noEmit` pass. These
+  three explicitly labeled documents are disposable launch-demo content; they
+  have not been deleted or moved to Trash.
 
 ## Resolved episodes (one line each, dates in git log)
 

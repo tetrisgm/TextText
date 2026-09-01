@@ -57,6 +57,16 @@ describe("workspace simplification contract", () => {
     expect(shellSource).not.toContain("TemplatesIcon");
   });
 
+  it("highlights an opened item's actual folder instead of its template fallback", () => {
+    expect(shellSource).toContain(
+      "folderPathForPoolPost(localInitialPool!, localInitialPost)",
+    );
+    expect(shellSource).toContain("folderPath: localInitialFolderPath");
+    expect(shellSource).not.toContain(
+      "folderPath: sidebarFolderPathForPostType(post.type)",
+    );
+  });
+
   it("has no second in-app template surface", () => {
     expect(
       existsSync(new URL("../../WorkspaceTemplateStrip.tsx", import.meta.url)),

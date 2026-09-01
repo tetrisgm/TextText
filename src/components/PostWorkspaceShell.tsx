@@ -7447,6 +7447,9 @@ export function PostReadWorkspaceShell({
       ))
       ? "edit"
       : "read";
+  const localInitialFolderPath = localInitialPost
+    ? folderPathForPoolPost(localInitialPool!, localInitialPost)
+    : sidebarFolderPathForPostType(post.type);
 
   const selectSidebarFolder = useCallback(
     (folder: SidebarFolderId) => {
@@ -7475,7 +7478,7 @@ export function PostReadWorkspaceShell({
               ? {
                   level: localInitialMode === "edit" ? "edit" : "post",
                   postId: post.id,
-                  folderPath: sidebarFolderPathForPostType(post.type),
+                  folderPath: localInitialFolderPath,
                 }
               : { level: "root" }
           }
@@ -7489,7 +7492,7 @@ export function PostReadWorkspaceShell({
             adjacent={adjacent}
             homePath={folderWorkspaceHref(
               homePath,
-              sidebarFolderPathForPostType(post.type),
+              localInitialFolderPath,
             )}
             postPath={postPath}
           />
