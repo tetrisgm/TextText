@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Script from "next/script";
 import { getCurrentUser } from "@/lib/session";
 import { LandingHeader } from "@/components/LandingHeader";
 import { LandingFooter } from "@/components/LandingFooter";
@@ -47,25 +48,6 @@ const previewFiles = [
 
 const actionHref = "/start";
 const githubHref = "https://github.com/tetrisgm/TextText";
-
-async function getGitHubStarCount(): Promise<number> {
-  try {
-    const response = await fetch(
-      "https://api.github.com/repos/tetrisgm/TextText",
-      {
-        headers: { Accept: "application/vnd.github+json" },
-        next: { revalidate: 300 },
-      },
-    );
-    if (!response.ok) return 0;
-    const repository = (await response.json()) as { stargazers_count?: unknown };
-    return typeof repository.stargazers_count === "number"
-      ? repository.stargazers_count
-      : 0;
-  } catch {
-    return 0;
-  }
-}
 
 function PrimaryAction({ signedIn }: { signedIn: boolean }) {
   return (
@@ -302,7 +284,6 @@ export default async function Home() {
   // The landing reflects the session: a signed-in writer gets straight back
   // into their workspace instead of being asked to sign in again.
   const user = await getCurrentUser();
-  const githubStarCount = await getGitHubStarCount();
 
   return (
     <main className="texttext-landing">
@@ -318,28 +299,19 @@ export default async function Home() {
           </p>
           <div className="texttext-landing-actions">
             <PrimaryAction signedIn={Boolean(user)} />
-            <a
-              className="texttext-landing-secondary texttext-github-star"
-              href={githubHref}
-              target="_blank"
-              rel="noreferrer"
-              aria-label={`Star TextText on GitHub. ${githubStarCount.toLocaleString()} stars`}
-            >
-              <svg
-                aria-hidden="true"
-                className="texttext-landing-action-icon"
-                viewBox="0 0 24 24"
+            <span className="texttext-github-button">
+              <a
+                className="github-button"
+                href={githubHref}
+                data-color-scheme=""
+                data-icon="octicon-star"
+                data-size="large"
+                data-show-count="true"
+                aria-label="Star TextText on GitHub"
               >
-                <path
-                  fill="currentColor"
-                  d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2.24c-3.22.7-3.9-1.37-3.9-1.37-.52-1.34-1.28-1.7-1.28-1.7-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.57-.29-5.27-1.28-5.27-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.47.11-3.05 0 0 .96-.31 3.16 1.18A10.94 10.94 0 0 1 12 6.1c.98 0 1.95.13 2.86.38 2.2-1.49 3.16-1.18 3.16-1.18.63 1.58.23 2.76.12 3.05.73.81 1.17 1.83 1.17 3.09 0 4.41-2.71 5.38-5.29 5.67.42.36.78 1.07.78 2.16v3.28c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z"
-                />
-              </svg>
-              <span>Star</span>
-              <span className="texttext-github-star-count">
-                {githubStarCount.toLocaleString()}
-              </span>
-            </a>
+                Star
+              </a>
+            </span>
           </div>
         </div>
 
@@ -348,6 +320,10 @@ export default async function Home() {
 
       <LandingSections />
       <LandingFooter />
+      <Script
+        src="https://buttons.github.io/buttons.js"
+        strategy="afterInteractive"
+      />
     </main>
   );
 }

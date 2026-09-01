@@ -87,11 +87,9 @@ describe("workspace simplification contract", () => {
     // link is informational and does not create a competing product path.
     expect(headerSource).not.toContain('href="/try"');
     expect(landingSource).toContain("texttext-landing-primary");
-    expect(landingSource).toContain("texttext-landing-secondary");
-    expect(landingSource).toContain("getGitHubStarCount");
-    expect(landingSource).toContain("stargazers_count");
-    expect(landingSource).toContain("texttext-github-star-count");
-    expect(landingSource).toContain("<span>Star</span>");
+    expect(landingSource).toContain('className="github-button"');
+    expect(landingSource).toContain('data-show-count="true"');
+    expect(landingSource).toContain("https://buttons.github.io/buttons.js");
     expect(landingSource).toContain("https://github.com/tetrisgm/TextText");
     expect(landingSource).not.toContain('"/try"');
     expect(landingSource).not.toContain("/@demo");

@@ -1453,18 +1453,10 @@ body:has(.reader):not(:has(.post-editor-shell)) {
 .texttext-landing-actions {
   margin-top: 4px;
 }
-.texttext-landing-action-icon {
-  width: 18px;
-  height: 18px;
-  flex: none;
-}
-.texttext-github-star {
-  gap: 8px;
-}
-.texttext-github-star-count {
-  padding-left: 8px;
-  border-left: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
-  font-variant-numeric: tabular-nums;
+.texttext-github-button {
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
 }
 .texttext-landing-primary,
 .texttext-landing-secondary {
@@ -6437,8 +6429,12 @@ body:has(.reader):not(:has(.post-editor-shell)) {
     max-width: 340px;
   }
   .texttext-landing-primary,
-  .texttext-landing-secondary {
+  .texttext-landing-secondary,
+  .texttext-github-button {
     width: 100%;
+  }
+  .texttext-github-button {
+    justify-content: center;
   }
   .texttext-landing-product {
     grid-template-columns: 1fr;
