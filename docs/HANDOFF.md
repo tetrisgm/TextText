@@ -2313,11 +2313,13 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   in authenticated edit mode. It is deployed as
   `texttext-7e51bdfa-1788285343` at
   `write-nlncjvqbz-shoku-s-projects.vercel.app`; deployment verification passed.
-  The signed-in browser still reports `ERR_TOO_MANY_REDIRECTS` for `/start`
-  ending at `/t/leshokunin/blog/untitled-mti8r6t5?edit=1&id=...`. This is the
-  current blocker. Do not call first-run launch-ready until the remaining
-  redirect is identified and the exact production flow visibly opens the
-  editor.
+  The original browser tab retained its previous redirect chain and reported
+  `ERR_TOO_MANY_REDIRECTS`. A fresh browser tab then opened the authenticated
+  folder-qualified editor directly, and a fresh `/start` request completed the
+  same route end to end. Visible proof included folder navigation, the title
+  and body editors, local save status, and the assistant panel. The first-run
+  routing blocker is resolved; reuse a fresh tab when verifying redirect
+  changes so an old browser error document does not masquerade as production.
 - Every coherent routing fix above was pushed to `main`. The latest full source
   gate passed 221 web test files with 1,790 tests, 461 Swift tests, and
   TypeScript. The production deploy verifier passed all seven probes.
