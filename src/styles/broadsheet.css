@@ -1453,6 +1453,12 @@ body:has(.reader):not(:has(.post-editor-shell)) {
 .texttext-landing-actions {
   margin-top: 4px;
 }
+.texttext-landing-action-icon {
+  width: 18px;
+  height: 18px;
+  margin-right: 8px;
+  flex: none;
+}
 .texttext-landing-primary,
 .texttext-landing-secondary {
   min-height: 48px;

@@ -80,16 +80,16 @@ describe("workspace simplification contract", () => {
     expect(shellSource).toContain("Show all items");
   });
 
-  it("offers exactly one action on the landing surface", () => {
-    // There is one way in and it is signing in. The secondary action used to
-    // be "Try it without an account", a throwaway guest workspace; it and the
-    // seeded /@demo blog were removed, so the hero has no competing click and
-    // the nav has nothing to compete with.
+  it("offers one way into the product and a quiet repository link", () => {
+    // There is one way into the product and it is signing in. The secondary
+    // action used to be "Try it without an account", a throwaway guest
+    // workspace; it and the seeded /@demo blog stay removed. The repository
+    // link is informational and does not create a competing product path.
     expect(headerSource).not.toContain('href="/try"');
     expect(landingSource).toContain("texttext-landing-primary");
-    expect(landingSource.match(/texttext-landing-secondary/g) ?? []).toHaveLength(
-      0,
-    );
+    expect(landingSource).toContain("texttext-landing-secondary");
+    expect(landingSource).toContain("View on GitHub");
+    expect(landingSource).toContain("https://github.com/tetrisgm/TextText");
     expect(landingSource).not.toContain('"/try"');
     expect(landingSource).not.toContain("/@demo");
   });
