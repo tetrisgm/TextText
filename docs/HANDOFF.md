@@ -2323,6 +2323,20 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
 - Every coherent routing fix above was pushed to `main`. The latest full source
   gate passed 221 web test files with 1,790 tests, 461 Swift tests, and
   TypeScript. The production deploy verifier passed all seven probes.
+- Launch security audit found critical Auth.js advisories and high Next.js
+  request-boundary advisories in the previous lockfile. Commit `361a0799`
+  upgrades Next.js from 16.2.10 to 16.3.4, NextAuth beta 31 to beta 32, Auth
+  core to 0.41.3, Nodemailer 7.0.13 to the newest peer-supported 8.0.11, and
+  the paired ESLint config to 16.3.4. TypeScript, all 1,790 web tests, the
+  47-page production build, lint with zero errors, and all 461 Swift tests pass
+  on that dependency set. The audit has no critical advisory left. It still
+  reports high Nodemailer advisories because the patched 9.1 release is outside
+  Auth.js 0.41.3's declared peer range; forcing that unsupported combination
+  was tested and rejected. TextText never supplies the vulnerable raw message,
+  remote file, transport name, OAuth2 token-fetch, or user-controlled envelope
+  options. Revisit when Auth.js declares Nodemailer 9 support instead of hiding
+  the peer mismatch with a forced install. Commit `361a0799` is not deployed
+  yet at this checkpoint.
 
 ## Resolved episodes (one line each, dates in git log)
 
