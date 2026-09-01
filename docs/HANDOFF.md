@@ -2354,6 +2354,18 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   app-health database had zero reports, so it cannot serve as release evidence;
   the deployed verifier and live browser checks are the current production
   evidence.
+- The installed `texttext:project-changelog` skill was applied. The configured
+  changelog path `Shoku's Space/My Notes/TextText Changelog.textpack` is not in
+  the current signed-in workspace, and exact search found no matching changelog.
+  Per the repository contract, no duplicate repository or workspace changelog
+  was created.
+- `docs/launch/launch-kit.md` now has the final launch status. Engineering and
+  distribution are ready, but the public HN or Product Hunt post is a no-go
+  until the owner connects the intended production AI provider, records the
+  real 45 to 60 second disposable-content workflow, exports the five 16:10
+  frames from that run, and performs the launch-day sign-in and AI smoke test.
+  Do not fabricate those assets from mocks or move a Keychain secret through an
+  agent log. The source-license choice is separate and remains with the owner.
 
 ## Resolved episodes (one line each, dates in git log)
 

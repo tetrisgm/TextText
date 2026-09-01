@@ -176,6 +176,28 @@ Launch only when every item below is true on the public production build.
 - One person is available to watch errors, answer comments, and pause the
   launch if sign-in, AI, or download health regresses.
 
+### Current readiness, 2026-09-01
+
+Engineering and distribution are ready: the public site, documentation,
+download, appcast, GitHub release, signed and notarized Mac build, production
+onboarding route, authenticated editor, agent integrations, 21-case live
+workflow suite, and launch-critical dependency patches are deployed and
+verified. Exact evidence and deployment identifiers live in `docs/HANDOFF.md`.
+
+Do not post the launch yet. The owner must complete the three visible checks
+that cannot be truthfully generated from an unconnected production workspace:
+
+1. Connect the production workspace to the AI provider intended for the demo.
+2. Record the continuous 45 to 60 second workflow above with disposable,
+   non-private content, then export the five 16:10 gallery frames from that
+   same real run.
+3. Perform one final launch-day sign-in and AI run, then remain available to
+   watch errors and answer launch comments.
+
+Choosing a source license is an independent owner decision. It does not block a
+source-visible launch because the FAQ already states that reuse rights are not
+granted, but it should be decided before describing TextText as open source.
+
 ## Deliberately not claimed
 
 - No TestFlight or App Store release yet.
