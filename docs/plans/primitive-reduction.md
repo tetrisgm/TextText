@@ -166,9 +166,9 @@ type, and the look suite again.
 
 ### 4. Migrate stored looks
 
-`scripts/migrate-render-nodes-to-reduced-grammar.mjs`, in the release order,
-rewriting `item` and `collection.item` in `document_templates.definition`.
-Pure JSON transform, idempotent, reporting how many looks and nodes changed.
+A release-ordered migration would rewrite `item` and `collection.item` in
+`document_templates.definition`. It would be a pure JSON transform,
+idempotent, reporting how many looks and nodes changed.
 
 The transform is the same function used in step 1's parse normalisation, so
 there is one implementation of the mapping and the migration cannot disagree

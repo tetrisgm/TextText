@@ -1591,7 +1591,7 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   `revokePostShareAction` / `listPostSharesAction` trio beside the `*Scope*`
   ones that superseded them. Every migration added the new limb and left the
   old one attached. With their now-orphaned helpers that was 297 lines.
-- `src/lib/mcp/local-client.ts` was the loopback MCP client, retired when the
+- The former loopback MCP client file was retired when the
   contract said agents on this Mac use the CLI. Its three functions were dead;
   what remained was one type, a dead private helper and a re-export nobody
   imported. The type moved to its only user and the file is gone.
