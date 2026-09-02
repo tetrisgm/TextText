@@ -1153,6 +1153,13 @@ export function UnifiedDocumentEditor({
            varies with its density, so looks stay distinct while writing. */
         .tt-document.tt-document-editor[data-template]:not(.tt-collection-item)>.tt-stack{gap:var(--tt-gap-md)}
         .tt-md-surface{min-height:36vh;outline:0;white-space:pre-wrap;overflow-wrap:anywhere;text-align:start;caret-color:var(--tt-accent,#0071e3)}
+        /* Each line is its own block so a keystroke relayouts one line, not
+           the document: one giant inline formatting context cost ~1.9s to lay
+           out at a 900kB body, which was the entire input lag. The literal
+           newline character stays in the text (every offset depends on it)
+           but renders zero-height, because the block break already shows it. */
+        .tt-md-surface>[data-tt-ln]{display:block;content-visibility:auto;contain-intrinsic-size:auto 1.5em}
+        .tt-md-nl{font-size:0;line-height:0}
         .tt-md-surface[data-empty="true"]::before{content:attr(data-placeholder);color:var(--muted,#6e6e73);pointer-events:none}
         /* Syntax the styling already speaks for shows only on the line you are
            writing on. The markers stay in the DOM, so textContent is still

@@ -49,9 +49,18 @@ const nextConfig: NextConfig = {
   // resolves through Node's single module cache. Client bundles are unchanged.
   serverExternalPackages: ["yjs", "y-protocols"],
   async headers() {
-    if (process.env.NODE_ENV !== "development") return [];
+    // Chromium disables the JS self-profiling API (`new Profiler()`) unless
+    // the document itself opts in with this header. Opting in costs nothing
+    // until a profiler is started and makes real keystroke/interaction
+    // profiles collectable in the running app instead of guessed at.
+    const profiling = {
+      source: "/:path*",
+      headers: [{ key: "Document-Policy", value: "js-profiling" }],
+    };
+    if (process.env.NODE_ENV !== "development") return [profiling];
 
     return [
+      profiling,
       {
         source: "/_next/static/:path*",
         headers: [

@@ -226,7 +226,12 @@ async function main(): Promise<void> {
     // Ada creates the item they will share.
     const startProbe = await ada.request.get(`${BASE}/start`, { maxRedirects: 0 });
     const itemLocation = startProbe.headers().location ?? "";
-    const itemMatch = itemLocation.match(/^\/@[^/]+\/([^?]+)(\?.*)?$/);
+    // Since the 2026-09-01 routing fixes, /start sends edit URLs to the
+    // authenticated /t/ tenant route directly; the older /@handle shape is
+    // kept accepted so the harness outlives either form.
+    const itemMatch = itemLocation.match(
+      /^\/(?:@|t\/)[^/]+\/([^?]+)(\?.*)?$/,
+    );
     if (!itemMatch) throw new Error(`unexpected starter location: ${itemLocation}`);
     const itemPath = `/t/ada-live-collab/${itemMatch[1]}${itemMatch[2] ?? ""}`;
     await ada.goto(`${BASE}${itemPath}`, { waitUntil: "domcontentloaded" });
