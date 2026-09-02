@@ -822,39 +822,33 @@ function fieldNodes(blueprint: ItemTypeBlueprint): RenderNode[] {
         fit: "cover",
         ...(showWhen ? { showWhen } : {}),
       });
-    } else if (
-      field.type === "enum" ||
-      field.type === "recurrence" ||
-      field.type === "people" ||
-      field.display === "badge"
-    ) {
-      nodes.push({
-        type: "badge",
-        bind: binding(field.id),
-        variant: field.multiple ? "chips" : "pill",
-        showIcon: true,
-        ...(showWhen ? { showWhen } : {}),
-      });
     } else if (field.type === "boolean" && field.display === "toggle") {
       nodes.push({
         type: "toggle",
         bind: binding(field.id),
         variant: "circle",
+        label: field.label,
         ...(showWhen ? { showWhen } : {}),
       });
     } else if (showWhen) {
       nodes.push({
         type: "facts",
-        variant: "strip",
+        variant: "table",
         entries: [{ bind: binding(field.id), label: field.label }],
         showWhen,
       });
     } else {
+      // Every simple field, enums and people included, lands in one labeled
+      // properties table. Emitting each enum as its own unlabeled badge node
+      // stacked bare pills down the page ("Not started", "Low") with nothing
+      // saying which property each one was, which is the built-in templates'
+      // opposite: they open with a facts table. The table's cells still
+      // render enum values as their tinted pills.
       facts.push({ bind: binding(field.id), label: field.label });
     }
   }
   if (facts.length > 0) {
-    nodes.unshift({ type: "facts", variant: "strip", entries: facts.slice(0, 12) });
+    nodes.unshift({ type: "facts", variant: "table", entries: facts.slice(0, 12) });
   }
   return nodes;
 }

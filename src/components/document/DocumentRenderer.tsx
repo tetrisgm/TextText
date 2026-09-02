@@ -547,12 +547,13 @@ function FactsNode({
   attrs: NodeAttrs;
 }) {
   const variant = node.variant ?? "strip";
-  const items: { label: string; value: string }[] = [];
+  const items: { label: string; value: string; rich?: ReactNode }[] = [];
   for (const entry of node.entries) {
     const definition = resolveFieldDefinition(entry.bind, fields);
     const raw = resolveDocumentBinding(document, entry.bind);
     if (!hasValue(raw)) continue;
     let value: string;
+    let rich: ReactNode;
     if (entry.derive) {
       const records = rowRecords(raw);
       if (records.length === 0) continue;
@@ -575,10 +576,15 @@ function FactsNode({
       value = entry.format
         ? formatDatedValue(raw, entry.format)
         : formatFieldValue(raw, definition);
+      // The table variant keeps a field's own presentation: an enum stays a
+      // tinted pill, a URL a link, instead of both flattening to plain text.
+      if (!entry.format && (definition?.type === "enum" || definition?.type === "url")) {
+        rich = <CellValue value={raw} definition={definition} />;
+      }
     }
     if (!value.trim()) continue;
     const label = entry.label ?? definition?.label ?? entry.bind.split(".").pop() ?? "";
-    items.push({ label, value });
+    items.push({ label, value, rich });
   }
   if (items.length === 0) return null;
   if (variant === "table") {
@@ -587,7 +593,7 @@ function FactsNode({
         {items.map((item, index) => (
           <Fragment key={index}>
             <dt>{item.label}</dt>
-            <dd>{item.value}</dd>
+            <dd>{item.rich ?? item.value}</dd>
           </Fragment>
         ))}
       </dl>
@@ -1114,7 +1120,7 @@ function NodeRenderer({
             resolveDocumentBinding(document, node.labelBind),
             resolveFieldDefinition(node.labelBind, fields),
           )
-        : "";
+        : (node.label ?? "");
       return (
         <span
           {...attrs}

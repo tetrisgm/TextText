@@ -308,6 +308,7 @@ type RenderNodeInput =
       showWhen?: string;
       bind: string;
       labelBind?: string;
+      label?: string;
       variant?: "circle" | "square";
     }
   | {
@@ -592,6 +593,12 @@ export const renderNodeSchema: z.ZodType<RenderNodeInput> = z.lazy(() =>
       bind: z.union([bindingSchema, rowBindingSchema]),
       /** Text beside the mark. Usually the thing being ticked off. */
       labelBind: z.union([bindingSchema, rowBindingSchema]).optional(),
+      /**
+       * Fixed text beside the mark, for a standalone flag ("Complete"). A
+       * bare circle floating on a page tells nobody what it means; labelBind
+       * wins when both are present.
+       */
+      label: z.string().max(80).optional(),
       variant: z.enum(["circle", "square"]).default("circle"),
     }).strict(),
     // facts: the labeled metadata header. table | strip | pills; empty
