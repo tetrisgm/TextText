@@ -2588,12 +2588,27 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   Chromium DROPS newlines from execCommand insertText in this structure;
   a long-hidden Browser pane intensively throttles timers (use
   MessageChannel ticks to settle React) and never fires rAF.
-- STILL OPEN on the workspace route: ~10 DB round trips per signed-in
-  workspace-home render (React cache() dedupe + parallelization per the
-  perf skill, the production TTFB multiplier over Neon); the READ view of
-  a huge document still costs ~2.8s SSR (reader render of the whole
-  body); local perf fixtures perf-100kb / perf-1mb live in the dev
-  database under visual-demo/documentation.
+- RESOLVED (f78777ef): the workspace-home queries ran in four serial
+  waves, not as duplicates - username lookup, blog core, viewer
+  identity, then the nine-query pool batch; over Neon each wave is a
+  full HTTPS round trip. The username lookup now seeds the handle-keyed
+  core cache, getBlogEditAccess resolves record and identity in
+  parallel, resolveWorkspaceAccess is skipped for the owner, and the
+  pool fires optimistically once the JWT names the owner. Two waves
+  remain (the /@ route's username hop is inherent). Local prod TTFB
+  89ms to 21ms. `TEXTTEXT_DB_TRACE=1` on any run stamps query issue
+  times to stderr - that is how waves are found.
+- RESOLVED (689e4aca): the owner's READ view of a huge document SSR'd
+  the full reader as children that LocalWorkspaceShell DROPS (it
+  declares children in its prop type and never destructures them - the
+  same finding as the edit-mode branch, one level wider), and the
+  shell's `post` prop serialized the body and snapshot two more times.
+  Reader skipped and post slimmed whenever the pool shell takes over:
+  900kB fixture read view 3.27s to 0.12s TTFB, response 6.8MB to
+  1.14MB. Public reader and plain owner shell unchanged. Collab eval
+  24/24, suite green.
+- Local perf fixtures perf-100kb / perf-1mb live in the dev database
+  under visual-demo/documentation (owner visual-demo@texttext.local).
 
 ## Resolved episodes (one line each, dates in git log)
 
