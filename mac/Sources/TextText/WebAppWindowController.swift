@@ -17,6 +17,46 @@ private final class WeakScriptHandler: NSObject, WKScriptMessageHandler {
     }
 }
 
+/// What the window shows while the web content is still loading on a cold
+/// launch. A WKWebView paints white until its first content arrives, so the
+/// window used to open as a blank white rectangle for as long as the network
+/// took, which reads as a slow, broken launch. This paints the app's own
+/// surface with a dimmed app icon instead, so the window looks like the app
+/// the instant it appears. It draws in `draw(_:)` (not a static layer color)
+/// so it follows a light/dark change while it is up.
+private final class LaunchPlaceholderView: NSView {
+    override var isFlipped: Bool { true }
+    override var wantsUpdateLayer: Bool { false }
+
+    private let icon: NSImageView = {
+        let view = NSImageView()
+        view.image = NSApp.applicationIconImage
+        view.imageScaling = .scaleProportionallyUpOrDown
+        view.alphaValue = 0.85
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+
+    init() {
+        super.init(frame: .zero)
+        addSubview(icon)
+        NSLayoutConstraint.activate([
+            icon.centerXAnchor.constraint(equalTo: centerXAnchor),
+            icon.centerYAnchor.constraint(equalTo: centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 96),
+            icon.heightAnchor.constraint(equalToConstant: 96),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) unavailable") }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.windowBackgroundColor.setFill()
+        dirtyRect.fill()
+    }
+}
+
 /// Keeps a Finder-opened item from being overwritten by the asynchronous app
 /// cookie setup that precedes the first web navigation on a cold launch.
 struct WebAppStartupNavigation {
@@ -53,6 +93,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
 
     private let origin: URL
     private var webView: WKWebView!
+    private weak var launchPlaceholder: NSView?
     /// Called with (token, origin) when the web view links this Mac.
     private let onLinked: (String, URL) -> Void
     /// Starts the system-browser account and device approval flow.
@@ -225,7 +266,19 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             backing: .buffered, defer: false)
         window.title = "TextText"
         window.minSize = NSSize(width: 720, height: 480)
-        window.contentView = webView
+        // The web view lives inside a container so a launch placeholder can sit
+        // over it until the first content paints, instead of the window opening
+        // as a blank white rectangle for the length of the load.
+        let container = NSView(frame: webView.frame)
+        webView.frame = container.bounds
+        webView.autoresizingMask = [.width, .height]
+        container.addSubview(webView)
+        let placeholder = LaunchPlaceholderView()
+        placeholder.frame = container.bounds
+        placeholder.autoresizingMask = [.width, .height]
+        container.addSubview(placeholder)
+        launchPlaceholder = placeholder
+        window.contentView = container
         window.setFrameAutosaveName("TextTextMainWindow")
         // Summoned by a global shortcut, the window should appear on whatever
         // Space is in front, not drag the person to the Space it was last on.
@@ -1544,9 +1597,28 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         }
     }
 
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        // First content is about to paint; lift the launch placeholder. A
+        // server-rendered page has real content at commit, so this hands off
+        // to the web view rather than to a white gap.
+        dismissLaunchPlaceholder()
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        dismissLaunchPlaceholder() // backstop if didCommit was missed
         window?.title = webView.title?.isEmpty == false ? webView.title! : "TextText"
         logLayoutDiagnostics(webView)
+    }
+
+    private func dismissLaunchPlaceholder() {
+        guard let placeholder = launchPlaceholder else { return }
+        launchPlaceholder = nil
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.18
+            placeholder.animator().alphaValue = 0
+        } completionHandler: {
+            placeholder.removeFromSuperview()
+        }
     }
 
     /// Dev builds only: one line of layout truth per load, because the class
