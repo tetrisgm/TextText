@@ -33,29 +33,9 @@ private final class LaunchPlaceholderView: NSView {
     override var isFlipped: Bool { true }
     override var wantsUpdateLayer: Bool { false }
 
-    private let icon: NSImageView = {
-        let view = NSImageView()
-        view.image = NSApp.applicationIconImage
-        view.imageScaling = .scaleProportionallyUpOrDown
-        view.alphaValue = 0.85
-        view.translatesAutoresizingMaskIntoConstraints = false
-        return view
-    }()
-
-    init() {
-        super.init(frame: .zero)
-        addSubview(icon)
-        NSLayoutConstraint.activate([
-            icon.centerXAnchor.constraint(equalTo: centerXAnchor),
-            icon.centerYAnchor.constraint(equalTo: centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 96),
-            icon.heightAnchor.constraint(equalToConstant: 96),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) unavailable") }
-
+    // Nothing but the surface, by owner ruling (2026-09-02): a big dimmed app
+    // icon in an empty window was one more thing to look at before the app.
+    // The placeholder's whole job is to not be white.
     override func draw(_ dirtyRect: NSRect) {
         NSColor.windowBackgroundColor.setFill()
         dirtyRect.fill()
@@ -113,6 +93,14 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     /// app-token exchange this launch skipped.
     private var directSessionLoadPending = false
     private var directSessionLoadPath = "/start?to=home"
+    /// The signed-in workspace home ("/@handle"), when the app knows it from
+    /// the cached workspace. Lets the cookie fast path skip the /start
+    /// redirect hop and land on the workspace in one request.
+    private let workspaceHomePath: String?
+    /// Set while a direct workspace-home load still needs its signed-in
+    /// probe: the public reader at the same URL answers 200 for a signed-out
+    /// session, so a redirect check alone cannot tell the two apart.
+    private var directHomeProbePending = false
     private let ocrBridge = NativeOCRBridge()
     private var codexServer: CodexAppServerController?
     private var codexRequestCounter = 0
@@ -164,6 +152,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         origin: URL,
         startPath: String,
         appToken: String?,
+        workspaceHomePath: String? = nil,
         onSystemSignInRequested: @escaping () -> Void,
         onSignOutRequested: @escaping () -> Void,
         onLinked: @escaping (String, URL) -> Void
@@ -174,6 +163,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         self.onSignOutRequested = onSignOutRequested
         self.startupNavigation = WebAppStartupNavigation(path: startPath)
         self.appToken = appToken
+        self.workspaceHomePath = workspaceHomePath
 
         Self.configureURLCacheForStartup()
 
@@ -333,7 +323,19 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                     if hasWebSession {
                         self.directSessionLoadPending = true
                         self.directSessionLoadPath = path
-                        self.webView.load(self.request(for: path))
+                        // Land on the workspace itself when we know where it
+                        // is, skipping the /start redirect hop entirely. The
+                        // public reader answers the same URL with 200 for a
+                        // dead session, so this variant is verified by a
+                        // signed-in probe on didFinish instead of by
+                        // watching for a redirect.
+                        if path == "/start?to=home",
+                           let home = self.workspaceHomePath {
+                            self.directHomeProbePending = true
+                            self.webView.load(self.request(for: home))
+                        } else {
+                            self.webView.load(self.request(for: path))
+                        }
                     } else {
                         self.webView.load(Self.sessionRequest(
                             origin: self.origin, token: appToken, nextPath: path))
@@ -1659,8 +1661,11 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         // The direct load reached a real signed-in page; the fallback bet is
-        // settled and must not fire on later navigations to "/".
-        if directSessionLoadPending, let path = webView.url?.path,
+        // settled and must not fire on later navigations to "/". A pending
+        // workspace-home probe keeps the flag: its URL commits with 200 for
+        // signed-out sessions too, and only the probe can settle that bet.
+        if directSessionLoadPending, !directHomeProbePending,
+           let path = webView.url?.path,
            path != "/signin", path != "/" {
             directSessionLoadPending = false
         }
@@ -1673,7 +1678,44 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         dismissLaunchPlaceholder() // backstop if didCommit was missed
         window?.title = webView.title?.isEmpty == false ? webView.title! : "TextText"
+        if directHomeProbePending {
+            directHomeProbePending = false
+            verifyDirectHomeLandedSignedIn(attempt: 0)
+        }
         logLayoutDiagnostics(webView)
+    }
+
+    /// The direct workspace-home load bet the last session cookie was alive.
+    /// A dead one serves the PUBLIC reader at the same URL with 200, which in
+    /// the native shell reads as the app silently signing the person out. The
+    /// workspace shell's sidebar is the tell; a couple of retries ride out
+    /// client hydration before concluding, and a wrong conclusion only costs
+    /// the session exchange this launch skipped.
+    private func verifyDirectHomeLandedSignedIn(attempt: Int) {
+        let probe = """
+        !!document.querySelector(
+          '.workspace-sidebar, [class*="workspace-sidebar"], [data-assistant-sidebar]')
+        """
+        webView.evaluateJavaScript(probe) { [weak self] result, _ in
+            guard let self else { return }
+            if result as? Bool == true {
+                self.directSessionLoadPending = false
+                return
+            }
+            if attempt < 2 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    [weak self] in
+                    self?.verifyDirectHomeLandedSignedIn(attempt: attempt + 1)
+                }
+                return
+            }
+            guard self.directSessionLoadPending, let appToken = self.appToken
+            else { return }
+            self.directSessionLoadPending = false
+            self.webView.load(Self.sessionRequest(
+                origin: self.origin, token: appToken,
+                nextPath: self.directSessionLoadPath))
+        }
     }
 
     private func dismissLaunchPlaceholder() {

@@ -158,9 +158,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
         if terminateIfAnotherInstanceIsAlreadyRunning() { return }
 
-        linkAgentCLIIfNeeded()
-
         WebAppWindowController.configureURLCacheForStartup()
+
+        // The first network request is the launch's critical path; everything
+        // else in this method can wait the few milliseconds it takes to start
+        // it. Warming here rather than after the updater, menu, and
+        // controllers puts the workspace request on the wire first.
+        //
+        // A user launch reveals the window as soon as the app becomes active
+        // (right away when someone opens it); a login launch stays in the
+        // background, so its window waits warm and hidden until the person
+        // presses the summon shortcut. Either way the web content is already
+        // loading, so the first time the window appears it is not a cold
+        // start.
+        warmMainWindow()
+
+        linkAgentCLIIfNeeded()
 
         // Only when the build carries a real feed + key; otherwise the
         // updater stays dormant and invisible (no Sparkle, no launch alert).
@@ -190,16 +203,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             self?.handleSignedIn(credentials)
         }
 
-        // Warm the workspace window before starting sync, indexing, capture,
-        // and health services. Those systems are intentionally independent of
-        // the visible launch path and continue initializing below.
-        //
-        // A user launch reveals it as soon as the app becomes active (which
-        // happens right away when someone opens it); a login launch stays in
-        // the background, so its window waits warm and hidden until the person
-        // presses the summon shortcut. Either way the web content is already
-        // loading, so the first time the window appears it is not a cold start.
-        warmMainWindow()
         applyLoginItemDefaultIfNeeded()
         if NSApp.isActive {
             showMainWindow()
@@ -2726,10 +2729,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         if webWindow == nil {
             let credentials = store.loadCredentials()
             let origin = resolveServerOrigin(credentials: credentials)
+            let cachedHandle = store.cachedWorkspace()?.blog.handle
             webWindow = WebAppWindowController(
                 origin: origin,
                 startPath: path ?? "/start?to=home",
                 appToken: credentials?.token,
+                // Lets the cookie fast path land on the workspace directly
+                // instead of paying the /start redirect hop.
+                workspaceHomePath: cachedHandle.flatMap {
+                    $0.isEmpty ? nil : "/@\($0)"
+                },
                 onSystemSignInRequested: { [weak self] in
                     self?.signIn()
                 },
