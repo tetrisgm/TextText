@@ -2722,6 +2722,20 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   empty action bar (first in document order). Check every matching
   surface for text, not the first. All four first rows open in
   44-107ms in both engines.
+- Owner follow-ups (2026-09-02, `7c804523`, deployed): swipe
+  back/forward churn was the URL-to-view parser taking the FIRST path
+  segment as the slug - every folder-scoped item URL parsed as unknown
+  and fell to root, then a URL sync corrected it (forward literally
+  never rendered the item in the harness; now 12-19ms). The left
+  sidebar was unresizable (handle inherited pointer-events:none AND
+  the region's overflow clip left a ~5px sliver; now a fixed sibling
+  on the width variable), both sidebar drags are imperative with one
+  store commit on release (per-move commits re-rendered the shell per
+  mouse position = the choppiness), and the width variable must be
+  written on .post-editor-shell too (its stylesheet default shadows a
+  root write). Item opens are gated on local document availability -
+  skeletons are BANNED (LoadingBody deleted); a cold open holds the
+  current view for the fetch and swaps atomically.
 - Owner follow-ups (2026-09-02, `14b065da`, deployed; app build 1008
   installed): click-drag from a document's margins now starts native
   text selection - the workspace marquee (whose preventDefault killed
