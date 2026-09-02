@@ -2722,6 +2722,26 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   empty action bar (first in document order). Check every matching
   surface for text, not the first. All four first rows open in
   44-107ms in both engines.
+- Structural pass (2026-09-02, `f4082713`, deployed), after the owner
+  pushed past symptom fixes: the two architectural leaks were (1)
+  UNSTABLE IDENTITY - the shell built FolderPage's items array fresh
+  every render, busting every downstream useMemo per keystroke (the
+  general lesson: identity is the contract; a fresh .map() at a
+  component boundary silently defeats all memoization below it), and
+  (2) UNBOUNDED MOUNTS - a folder mounted every row (~0.5ms each,
+  linear in workspace size). FolderPage's blog-feed and list layouts
+  now render through WindowedRows (viewport + overscan between
+  measured spacers; the window follows selection like the editor
+  follows the caret; grid/calendar still full-mount). Proven on a
+  seeded 300-item workspace: 24 rows mounted instead of 300,
+  switch-in size-independent, WebKit worst-case j/k halved. Scale
+  fixtures: workspace scale-test (dev DB, owner
+  scale-test@texttext.local, 300 notes); benches accept
+  BENCH_EMAIL/BENCH_HANDLE. The remaining known monolith debt:
+  LocalWorkspaceShell still holds all state in one component - a
+  selection store with self-subscribing rows would shrink the
+  re-render blast radius to the rows that changed; not yet needed at
+  measured sizes.
 - Whole-app performance pass (2026-09-02, `3e71e2e4`, deployed), owner
   ruling: no interaction may unfold a performance surprise, and bloat -
   code recomputing what it already had - is the disease. A ranked audit
