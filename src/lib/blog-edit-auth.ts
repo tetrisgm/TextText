@@ -15,18 +15,20 @@ type BlogEditAccess = {
 export async function getBlogEditAccess(
   handle: string,
 ): Promise<BlogEditAccess> {
-  const record = await getBlogEditRecord(handle);
+  // The edit record and the viewer identity are independent lookups; issuing
+  // them serially cost the workspace home a database round trip per render.
+  const [record, userId] = await Promise.all([
+    getBlogEditRecord(handle),
+    // The identity table is authoritative. A JWT can outlive an
+    // account-linking change, so its embedded userId is only a compatibility
+    // fallback when the current subject has no database mapping yet.
+    getCurrentUser().then(async (user) =>
+      user ? (await getUserIdBySub(user.sub)) ?? user.userId ?? null : null,
+    ),
+  ]);
   if (!record || !record.ownerId) {
     return { canEdit: false, isOwner: false, blogId: record?.id ?? null, ownerId: null };
   }
-
-  const user = await getCurrentUser();
-  // The identity table is authoritative. A JWT can outlive an account-linking
-  // change, so its embedded userId is only a compatibility fallback when the
-  // current subject has no database mapping yet.
-  const userId = user
-    ? (await getUserIdBySub(user.sub)) ?? user.userId ?? null
-    : null;
   const isOwner = userId === record.ownerId;
   return {
     canEdit: isOwner,

@@ -33,8 +33,16 @@ const blogCoreSelection = {
   ownerPlan: users.plan,
 };
 
+// A username lookup returns the same row a later handle lookup would fetch
+// again, and the /@username route always resolves the username first. Seeding
+// the handle side from it saves the signed-in workspace home one database
+// round trip, which over Neon HTTP is a full HTTPS request.
+const coreByHandleSeed = cache(() => new Map<string, BlogCore>());
+
 async function getBlogCoreUncached(handle: string): Promise<BlogCore | null> {
   if (!db) return null;
+  const seeded = coreByHandleSeed().get(handle);
+  if (seeded) return seeded;
   const rows = await db
     .select(blogCoreSelection)
     .from(blogs)
@@ -54,7 +62,9 @@ async function getBlogCoreByUsernameUncached(
     .innerJoin(users, eq(blogs.ownerId, users.id))
     .where(and(eq(users.username, username), isNull(blogs.deletedAt)))
     .limit(1);
-  return rows[0] ?? null;
+  const row = rows[0] ?? null;
+  if (row) coreByHandleSeed().set(row.handle, row);
+  return row;
 }
 
 export const getBlogCore = cache(getBlogCoreUncached);

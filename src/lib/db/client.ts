@@ -26,16 +26,30 @@ type BatchResults<T extends readonly AwaitableQuery[]> = {
 const url = process.env.DATABASE_URL;
 let localPool: Pool | null = null;
 
+// TEXTTEXT_DB_TRACE=1 stamps every query's issue time to stderr, which is how
+// serial round-trip waves in a render are found. Never on in production.
+const traceQueries = process.env.TEXTTEXT_DB_TRACE === "1";
+const traceLogger = traceQueries
+  ? {
+      logQuery(query: string): void {
+        process.stderr.write(
+          `[db ${performance.now().toFixed(1)}] ${query.replace(/\s+/g, " ").slice(0, 120)}\n`,
+        );
+      },
+    }
+  : undefined;
+
 function makeDb(): Database | null {
   if (!url) return null;
   if (/neon\.tech/i.test(url)) {
-    return drizzleNeon(neon(url), { schema });
+    return drizzleNeon(neon(url), { schema, logger: traceLogger });
   }
   // Local Postgres exposes the same Drizzle query API for everything store.ts
   // uses, so treat it as the same Db type.
   localPool = new Pool({ connectionString: url });
   return drizzlePg(localPool, {
     schema,
+    logger: traceLogger,
   }) as unknown as Database;
 }
 

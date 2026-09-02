@@ -6003,6 +6003,12 @@ export async function getOwnedBlog(sub: string): Promise<Blog | null> {
  * practice this second query only runs for a subject that belongs to nobody.
  */
 export async function getUserIdBySub(sub: string): Promise<string | null> {
+  return getUserIdBySubCached(sub);
+}
+
+const getUserIdBySubCached = cache(getUserIdBySubUncached);
+
+async function getUserIdBySubUncached(sub: string): Promise<string | null> {
   if (!db) return null;
   const linked = await db
     .select({ id: userIdentities.userId })

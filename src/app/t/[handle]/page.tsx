@@ -27,6 +27,7 @@ import {
 } from "@/lib/feed-links";
 import {
   getAllPosts,
+  getBlogEditRecord,
   getAccessibleFolderCounts,
   getAccessibleFolderPosts,
   getAccessibleFolders,
@@ -83,6 +84,50 @@ import {
 interface Props {
   params: Promise<{ handle: string }>;
   searchParams?: Promise<BlogHomeQuery>;
+}
+
+/**
+ * The nine reads behind the signed-in workspace pool, issued as one parallel
+ * wave. Kept as a function so the render can start it optimistically (once the
+ * JWT names the owner) without waiting for the authoritative identity check.
+ */
+async function loadWorkspacePoolParts(
+  handle: string,
+  blogId: string,
+  viewer: Awaited<ReturnType<typeof getCurrentUser>>,
+) {
+  const [
+    folders,
+    counts,
+    posts,
+    wikiLinkSources,
+    slugAliases,
+    trashedFolders,
+    trashedPosts,
+    sharedEntries,
+    templates,
+  ] = await Promise.all([
+    getFolders(handle),
+    getFolderCounts(handle),
+    getAllPosts(handle),
+    getWorkspaceWikiLinkSources(handle),
+    getPostSlugAliases(handle),
+    getTrashedFolders(handle),
+    getTrashedPosts(handle),
+    getSharedPostsForUser(viewer),
+    listDocumentTemplates(blogId),
+  ]);
+  return {
+    folders,
+    counts,
+    posts,
+    wikiLinkSources,
+    slugAliases,
+    trashedFolders,
+    trashedPosts,
+    sharedEntries,
+    templates,
+  };
 }
 type BlogHomeQuery = {
   date?: string | string[];
@@ -430,17 +475,32 @@ export async function BlogHomeForHandle({
 }) {
   const queryPromise: Promise<BlogHomeQuery> =
     searchParams ?? Promise.resolve({});
-  const [blog, access, query, cookieStore, viewer] = await Promise.all([
+  const accessPromise = getBlogEditAccess(handle);
+  const [blog, query, cookieStore, viewer, editRecord] = await Promise.all([
     getBlog(handle),
-    getBlogEditAccess(handle),
     queryPromise,
     cookies(),
     getCurrentUser(),
+    getBlogEditRecord(handle),
   ]);
   if (!blog) notFound();
-  const workspaceAccess = viewer
-    ? await resolveWorkspaceAccess({ handle, user: viewer })
-    : null;
+  // Fire the workspace pool while the authoritative identity check inside
+  // getBlogEditAccess is still in flight. The JWT's embedded userId names the
+  // owner in the ordinary case; if the identity table disagrees, the result is
+  // discarded below and nothing from it renders.
+  const optimisticPoolParts =
+    editRecord?.ownerId && viewer?.userId === editRecord.ownerId
+      ? loadWorkspacePoolParts(handle, editRecord.id, viewer)
+      : null;
+  // A discarded optimistic fetch must not surface as an unhandled rejection.
+  optimisticPoolParts?.catch(() => {});
+  const access = await accessPromise;
+  // The owner needs no collaborator-grant resolution: every place the result
+  // is consulted short-circuits on ownership.
+  const workspaceAccess =
+    viewer && !access.isOwner
+      ? await resolveWorkspaceAccess({ handle, user: viewer })
+      : null;
   if (!access.canEdit && !workspaceAccess?.canView) {
     redirect(workspacePublicBaseUrl(handle));
   }
@@ -472,39 +532,19 @@ export async function BlogHomeForHandle({
   const canEdit = access.canEdit;
   const initialPool = await (async () => {
     if (!canEdit || !access.blogId) return null;
-    const [
-      folders,
-      counts,
-      posts,
-      wikiLinkSources,
-      slugAliases,
-      trashedFolders,
-      trashedPosts,
-      sharedEntries,
-      templates,
-    ] =
-      await Promise.all([
-        getFolders(handle),
-        getFolderCounts(handle),
-        getAllPosts(handle),
-        getWorkspaceWikiLinkSources(handle),
-        getPostSlugAliases(handle),
-        getTrashedFolders(handle),
-        getTrashedPosts(handle),
-        getSharedPostsForUser(viewer),
-        listDocumentTemplates(access.blogId),
-      ]);
+    const parts = await (optimisticPoolParts ??
+      loadWorkspacePoolParts(handle, access.blogId, viewer));
     return workspacePoolFromParts({
       blog,
       blogId: access.blogId,
-      folders,
-      counts,
-      posts,
-      trashedFolders,
-      trashedPosts,
-      sharedEntries,
-      templates,
-      ...workspaceWikiLinkMetadata(wikiLinkSources, slugAliases),
+      folders: parts.folders,
+      counts: parts.counts,
+      posts: parts.posts,
+      trashedFolders: parts.trashedFolders,
+      trashedPosts: parts.trashedPosts,
+      sharedEntries: parts.sharedEntries,
+      templates: parts.templates,
+      ...workspaceWikiLinkMetadata(parts.wikiLinkSources, parts.slugAliases),
     });
   })();
   const canManageSharing = access.isOwner || Boolean(workspaceAccess?.canManage);
