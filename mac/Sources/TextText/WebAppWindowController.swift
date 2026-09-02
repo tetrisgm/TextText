@@ -20,13 +20,29 @@ private final class WeakScriptHandler: NSObject, WKScriptMessageHandler {
 /// What the window shows while the web content is still loading on a cold
 /// launch. A WKWebView paints white until its first content arrives, so the
 /// window used to open as a blank white rectangle for as long as the network
-/// took, which reads as a slow, broken launch. This paints the app's own
-/// surface with a dimmed app icon instead, so the window looks like the app
-/// the instant it appears. It draws in `draw(_:)` (not a static layer color)
-/// so it follows a light/dark change while it is up.
+/// took, which reads as a slow, broken launch.
+///
+/// On a linked Mac this is not merely a splash: it is a working capture
+/// composer, focused and ready the instant the window appears. Typing starts
+/// immediately, Return files the note through the same durable quick-capture
+/// outbox the floating panel uses, and the workspace takes over underneath
+/// when it is ready. The surface never yanks itself away mid-thought: web
+/// content arriving only dismisses it while the composer is empty.
+///
+/// The background draws in `draw(_:)` (not a static layer color) so it
+/// follows a light/dark change while it is up.
 private final class LaunchPlaceholderView: NSView {
     override var isFlipped: Bool { true }
     override var wantsUpdateLayer: Bool { false }
+
+    /// Asks the controller to reveal the web content beneath.
+    var onFinished: (() -> Void)?
+
+    private let capture: ((QuickCaptureIntent) throws -> Void)?
+    private let textView = QuickCaptureTextView()
+    private let statusLabel = NSTextField(labelWithString: "")
+    private var webContentReady = false
+    private var composerRetired = false
 
     private let icon: NSImageView = {
         let view = NSImageView()
@@ -37,15 +53,28 @@ private final class LaunchPlaceholderView: NSView {
         return view
     }()
 
-    init() {
+    /// `capture` nil (an unlinked Mac, or no outbox) means a plain icon
+    /// splash; a sink means the ready-to-type composer.
+    init(capture: ((QuickCaptureIntent) throws -> Void)?) {
+        self.capture = capture
         super.init(frame: .zero)
         addSubview(icon)
-        NSLayoutConstraint.activate([
-            icon.centerXAnchor.constraint(equalTo: centerXAnchor),
-            icon.centerYAnchor.constraint(equalTo: centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 96),
-            icon.heightAnchor.constraint(equalToConstant: 96),
-        ])
+        if capture != nil {
+            buildComposer()
+            NSLayoutConstraint.activate([
+                icon.centerXAnchor.constraint(equalTo: centerXAnchor),
+                icon.bottomAnchor.constraint(equalTo: centerYAnchor, constant: -104),
+                icon.widthAnchor.constraint(equalToConstant: 56),
+                icon.heightAnchor.constraint(equalToConstant: 56),
+            ])
+        } else {
+            NSLayoutConstraint.activate([
+                icon.centerXAnchor.constraint(equalTo: centerXAnchor),
+                icon.centerYAnchor.constraint(equalTo: centerYAnchor),
+                icon.widthAnchor.constraint(equalToConstant: 96),
+                icon.heightAnchor.constraint(equalToConstant: 96),
+            ])
+        }
     }
 
     @available(*, unavailable)
@@ -54,6 +83,133 @@ private final class LaunchPlaceholderView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         NSColor.windowBackgroundColor.setFill()
         dirtyRect.fill()
+    }
+
+    /// Idle means dismissing would lose nothing: no unfiled typing.
+    private var composerIdle: Bool {
+        composerRetired || capture == nil
+            || textView.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// The web view beneath has content. Reveal it now if nothing typed here
+    /// would be lost; otherwise wait for the person to save or dismiss.
+    func noteWebContentReady() {
+        webContentReady = true
+        if composerIdle { onFinished?() }
+    }
+
+    func focusComposer() {
+        guard capture != nil, !composerRetired else { return }
+        window?.makeFirstResponder(textView)
+    }
+
+    private func buildComposer() {
+        let card = NSView()
+        card.wantsLayer = true
+        card.layer?.cornerRadius = 10
+        card.layer?.borderWidth = 1
+        card.translatesAutoresizingMaskIntoConstraints = false
+        // Colors that follow the appearance are applied per-draw for the
+        // background; the card resolves its two colors on appearance change.
+        card.layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
+        card.layer?.borderColor = NSColor.separatorColor.cgColor
+
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.allowsUndo = true
+        textView.drawsBackground = false
+        textView.font = .systemFont(ofSize: 16, weight: .regular)
+        textView.textColor = .labelColor
+        textView.insertionPointColor = .labelColor
+        textView.textContainerInset = NSSize(width: 14, height: 14)
+        textView.placeholder = "Save a thought, note, link, or AI answer"
+        textView.save = { [weak self] in self?.saveComposer() }
+        textView.dismiss = { [weak self] in self?.retireComposer() }
+
+        let scrollView = NSScrollView()
+        scrollView.documentView = textView
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.borderType = .noBorder
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+
+        statusLabel.font = .systemFont(ofSize: 11, weight: .medium)
+        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let shortcutLabel = NSTextField(
+            labelWithString: "Save ↩    New line ⇧↩    Skip Esc")
+        shortcutLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        shortcutLabel.textColor = .secondaryLabelColor
+        shortcutLabel.alignment = .right
+        shortcutLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        card.addSubview(scrollView)
+        addSubview(card)
+        addSubview(statusLabel)
+        addSubview(shortcutLabel)
+
+        NSLayoutConstraint.activate([
+            card.centerXAnchor.constraint(equalTo: centerXAnchor),
+            card.centerYAnchor.constraint(equalTo: centerYAnchor),
+            card.widthAnchor.constraint(equalToConstant: 560),
+            card.heightAnchor.constraint(equalToConstant: 180),
+            scrollView.topAnchor.constraint(equalTo: card.topAnchor, constant: 4),
+            scrollView.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 4),
+            scrollView.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -4),
+            scrollView.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -4),
+            statusLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 2),
+            statusLabel.topAnchor.constraint(equalTo: card.bottomAnchor, constant: 10),
+            shortcutLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -2),
+            shortcutLabel.topAnchor.constraint(equalTo: card.bottomAnchor, constant: 10),
+        ])
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        for subview in subviews where subview.layer?.borderWidth == 1 {
+            subview.layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
+            subview.layer?.borderColor = NSColor.separatorColor.cgColor
+        }
+        needsDisplay = true
+    }
+
+    private func saveComposer() {
+        guard let capture else { return }
+        let text = textView.string
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let intent = QuickCaptureIntent(text) else {
+            NSSound.beep()
+            return
+        }
+        do {
+            try capture(intent)
+            textView.string = ""
+            textView.needsDisplay = true
+            textView.isEditable = false
+            statusLabel.textColor = .systemGreen
+            statusLabel.stringValue = "Queued safely"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) { [weak self] in
+                self?.retireComposer()
+            }
+        } catch {
+            statusLabel.textColor = .systemRed
+            statusLabel.stringValue = "Failed to queue. Your text is still here."
+            NSSound.beep()
+        }
+    }
+
+    /// Esc, or the settle after a save. If the web content is ready this
+    /// reveals it; until then the surface stays as a quiet splash rather
+    /// than exposing a half-loaded white web view.
+    private func retireComposer() {
+        composerRetired = true
+        if webContentReady {
+            onFinished?()
+        } else {
+            for view in subviews where view !== icon { view.isHidden = true }
+        }
     }
 }
 
@@ -93,7 +249,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
 
     private let origin: URL
     private var webView: WKWebView!
-    private weak var launchPlaceholder: NSView?
+    private weak var launchPlaceholder: LaunchPlaceholderView?
     /// Called with (token, origin) when the web view links this Mac.
     private let onLinked: (String, URL) -> Void
     /// Starts the system-browser account and device approval flow.
@@ -102,6 +258,11 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     private let onSignOutRequested: () -> Void
     private var startupNavigation: WebAppStartupNavigation
     private var appToken: String?
+    /// Set while the launch is betting that the last run's web session cookie
+    /// still works, so landing on a signed-out page can fall back to the
+    /// app-token exchange this launch skipped.
+    private var directSessionLoadPending = false
+    private var directSessionLoadPath = "/start?to=home"
     private let ocrBridge = NativeOCRBridge()
     private var codexServer: CodexAppServerController?
     private var codexRequestCounter = 0
@@ -153,6 +314,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         origin: URL,
         startPath: String,
         appToken: String?,
+        onQuickCapture: ((QuickCaptureIntent) throws -> Void)? = nil,
         onSystemSignInRequested: @escaping () -> Void,
         onSignOutRequested: @escaping () -> Void,
         onLinked: @escaping (String, URL) -> Void
@@ -273,7 +435,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         webView.frame = container.bounds
         webView.autoresizingMask = [.width, .height]
         container.addSubview(webView)
-        let placeholder = LaunchPlaceholderView()
+        let placeholder = LaunchPlaceholderView(capture: onQuickCapture)
         placeholder.frame = container.bounds
         placeholder.autoresizingMask = [.width, .height]
         container.addSubview(placeholder)
@@ -286,6 +448,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         window.tabbingMode = .disallowed
 
         super.init(window: window)
+        placeholder.onFinished = { [weak self] in self?.dismissLaunchPlaceholder() }
         // Registered AFTER super.init so self is available; the weak proxy
         // keeps the retain cycle from pinning the window open.
         ucc.add(WeakScriptHandler(self), name: "textTextApp")
@@ -300,14 +463,42 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         setAppCookie(on: webView.configuration.websiteDataStore.httpCookieStore) {
             [weak self] in
             guard let self else { return }
-            let path = self.startupNavigation.begin()
-            if let appToken {
-                self.webView.load(Self.sessionRequest(
-                    origin: self.origin, token: appToken, nextPath: path))
-            } else {
-                self.webView.load(self.request(for: path))
+            guard let appToken else {
+                self.webView.load(self.request(for: self.startupNavigation.begin()))
+                return
             }
+            // The session exchange is an uncacheable POST plus its redirects
+            // at the very front of every launch, paid even though the web
+            // session cookie from the last run is almost always still valid.
+            // When that cookie is present, load the destination directly and
+            // keep the exchange as the fallback: landing on a signed-out page
+            // (see decidePolicyFor) reruns this launch through the token.
+            self.webView.configuration.websiteDataStore.httpCookieStore
+                .getAllCookies { [weak self] cookies in
+                    guard let self else { return }
+                    let path = self.startupNavigation.begin()
+                    let hasWebSession = cookies.contains { cookie in
+                        Self.isAuthSessionCookieName(cookie.name)
+                            && self.cookieMatchesOrigin(cookie)
+                            && (cookie.expiresDate.map { $0 > Date() } ?? true)
+                    }
+                    if hasWebSession {
+                        self.directSessionLoadPending = true
+                        self.directSessionLoadPath = path
+                        self.webView.load(self.request(for: path))
+                    } else {
+                        self.webView.load(Self.sessionRequest(
+                            origin: self.origin, token: appToken, nextPath: path))
+                    }
+                }
         }
+    }
+
+    private func cookieMatchesOrigin(_ cookie: HTTPCookie) -> Bool {
+        guard let host = origin.host?.lowercased() else { return false }
+        let domain = cookie.domain.lowercased()
+        return domain == host || domain == "." + host
+            || (domain.hasPrefix(".") && host.hasSuffix(domain))
     }
 
     // Minting runs entirely client-side; the token is bound to the signed-in
@@ -444,6 +635,9 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         NSApp.activate(ignoringOtherApps: true)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
+        // While the launch capture surface is up, the keyboard belongs to it:
+        // summoning the app and typing must work with zero clicks.
+        launchPlaceholder?.focusComposer()
         observeVisibilityForRepaint()
     }
 
@@ -1519,6 +1713,27 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
+        // The optimistic direct load bet that the last run's web session
+        // cookie still worked. Being routed to the sign-in or signed-out
+        // landing page means it did not: cancel and run the app-token
+        // exchange this launch skipped, instead of showing a sign-in form to
+        // a Mac that holds a perfectly good credential.
+        if directSessionLoadPending,
+           let url = navigationAction.request.url,
+           navigationAction.targetFrame?.isMainFrame != false,
+           isInApp(url),
+           url.path == "/signin" || url.path == "/",
+           let appToken {
+            directSessionLoadPending = false
+            decisionHandler(.cancel)
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.webView.load(Self.sessionRequest(
+                    origin: self.origin, token: appToken,
+                    nextPath: self.directSessionLoadPath))
+            }
+            return
+        }
         if let url = navigationAction.request.url,
            navigationAction.targetFrame?.isMainFrame != false,
            isAuthenticationHost(url) {
@@ -1598,14 +1813,20 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-        // First content is about to paint; lift the launch placeholder. A
-        // server-rendered page has real content at commit, so this hands off
-        // to the web view rather than to a white gap.
-        dismissLaunchPlaceholder()
+        // The direct load reached a real signed-in page; the fallback bet is
+        // settled and must not fire on later navigations to "/".
+        if directSessionLoadPending, let path = webView.url?.path,
+           path != "/signin", path != "/" {
+            directSessionLoadPending = false
+        }
+        // First content is about to paint. The launch surface decides whether
+        // to lift now (a server-rendered page has real content at commit) or
+        // to stay because the person is mid-capture in its composer.
+        launchPlaceholder?.noteWebContentReady()
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        dismissLaunchPlaceholder() // backstop if didCommit was missed
+        launchPlaceholder?.noteWebContentReady() // backstop if didCommit was missed
         window?.title = webView.title?.isEmpty == false ? webView.title! : "TextText"
         logLayoutDiagnostics(webView)
     }

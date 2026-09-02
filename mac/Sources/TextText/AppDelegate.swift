@@ -2696,6 +2696,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                 origin: origin,
                 startPath: path ?? "/start?to=home",
                 appToken: credentials?.token,
+                // A linked Mac gets the ready-to-type launch composer; on an
+                // unlinked one a capture would sit in the queue with nowhere
+                // to go, so it shows the quiet splash instead.
+                onQuickCapture: credentials == nil
+                    ? nil
+                    : { [weak self] capture in
+                        guard let self, let outbox = self.quickCaptureOutbox else {
+                            throw QuickCaptureOutboxError.couldNotPersist(
+                                "The capture outbox is unavailable")
+                        }
+                        try outbox.enqueue(
+                            capture,
+                            workspaceHandle: self.store.cachedWorkspace()?.blog.handle)
+                        self.refreshQuickCaptureFeedback()
+                        self.retryQuickCaptureDrain()
+                    },
                 onSystemSignInRequested: { [weak self] in
                     self?.signIn()
                 },
