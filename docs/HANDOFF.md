@@ -2425,6 +2425,22 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   fields for briefed data, e.g. todo-list due date not inline), which
   needs a live-model `eval:sidebar` run to judge; the deterministic
   quality preflight already covers blueprint-level gaps.
+- `8c891bec` makes the Mac app a launcher-style summon, per owner ask
+  ("boot faster, available on a keypress like Raycast"). Launch at login
+  is now on by default for an installed build (`applyLoginItemDefaultIfNeeded`
+  in AppDelegate, applied once via `TextTextLoginItemDefaultApplied`,
+  guarded to `isInstalled` so dev/Downloads builds never register a login
+  item). The window is warmed at launch (`warmMainWindow`) and revealed
+  once, on first `applicationDidBecomeActive`; a login launch stays warm
+  and hidden in the background until summoned. The window gains
+  `.moveToActiveSpace` so it appears on the current Space. Hotkeys
+  rebound: Cmd+Shift+Space summons/dismisses the window (dismiss only when
+  it is the front key window), quick capture moved to Cmd+Shift+C. This is
+  a user-facing shortcut change (Cmd+Shift+Space was quick capture).
+  Compiles; 461 Swift tests pass. NOT verified live in the running app:
+  the owner declined desktop control this session, so the Space-switch,
+  summon toggle, and login-launch-hidden behaviors are unobserved and
+  should be eyeballed in a real build before release.
 - The mock provider's FAIL_STREAM trigger matches the whole transcript, so
   one failed test prompt poisons every later turn of that conversation.
   Start a fresh chat when evaluating with the mock.
