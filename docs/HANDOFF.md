@@ -2402,9 +2402,29 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   connection while older ones compact to a muted line; failure ink mixes
   toward body ink; the jobs strip lists finished work for five minutes
   instead of pinning twenty stale jobs with red dots forever.
-- Open papercut: clicking a jobs-strip row for a finished job in the same
-  place but another conversation visibly does nothing; it should activate
-  that conversation the way the pending-proposal chooser does.
+- `a647e658` fixes the jobs-strip papercut: a row now activates the
+  conversation the job reports into before navigating.
+- `0ad54682` adds durable chat deletion. The history picker gained a
+  per-row delete with inline confirm. Deletion is a tombstone because the
+  conversation sync is a union merge by id: a plain removal came back from
+  the server replica within one cycle. Tombstones shed title and messages,
+  win the merge in both directions, and are bounded separately from live
+  chats. Verified across a reload and sync round trip.
+- `66b5e3e9` fixes the loudest item-type mess: generated types rendered
+  each enum and people field as its own unlabeled badge, so item pages
+  opened on bare stacked pills. Simple fields now compile into one labeled
+  facts table (the built-in templates' shape); table cells keep enum tints
+  and URL links; a standalone boolean toggle now carries its field label
+  ("◯ Complete"). The AI look suite's committed baseline measures the
+  rendered page, so expect deliberate drift on its next live run.
+- `7bee386f` collapses the stacked connection sections in Settings: the
+  four-tile Connections overview is deleted, the gallery is the one entry
+  surface and carries provider · model status, and the RECOMMENDED card
+  reads Connected with Try in TextText once a key is saved.
+- Remaining item-type quality work is model-output quality (missing
+  fields for briefed data, e.g. todo-list due date not inline), which
+  needs a live-model `eval:sidebar` run to judge; the deterministic
+  quality preflight already covers blueprint-level gaps.
 - The mock provider's FAIL_STREAM trigger matches the whole transcript, so
   one failed test prompt poisons every later turn of that conversation.
   Start a fresh chat when evaluating with the mock.
