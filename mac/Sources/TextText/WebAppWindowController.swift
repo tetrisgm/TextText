@@ -3,6 +3,47 @@ import WebKit
 import TextTextWorkspaceCore
 import os
 
+/// The app's web view, with a context menu that belongs to an app.
+///
+/// WKWebView's default menu on the page background is browser chrome - Back
+/// and Reload - which means nothing inside TextText and read as a glitch
+/// (owner, 2026-09-02). WebKit's own text, selection and link items stay;
+/// the navigation items go; and the menu is never left empty, because a
+/// right-click that does nothing at all feels broken too. A bespoke menu
+/// with real actions can replace this later; this is the "normal behavior"
+/// floor.
+final class AppWebView: WKWebView {
+    private static let browserChromeIdentifiers: Set<String> = [
+        "WKMenuItemIdentifierGoBack",
+        "WKMenuItemIdentifierGoForward",
+        "WKMenuItemIdentifierReload",
+    ]
+
+    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        for item in menu.items.reversed() {
+            if let identifier = item.identifier,
+               Self.browserChromeIdentifiers.contains(identifier.rawValue) {
+                menu.removeItem(item)
+            }
+        }
+        while let first = menu.items.first, first.isSeparatorItem {
+            menu.removeItem(first)
+        }
+        while let last = menu.items.last, last.isSeparatorItem {
+            menu.removeItem(last)
+        }
+        if menu.items.isEmpty {
+            let selectAll = NSMenuItem(
+                title: "Select All",
+                action: #selector(NSText.selectAll(_:)),
+                keyEquivalent: "")
+            selectAll.target = self
+            menu.addItem(selectAll)
+        }
+        super.willOpenMenu(menu, with: event)
+    }
+}
+
 // WKUserContentController retains its message handler STRONGLY; adding the
 // controller directly would cycle (controller -> webView -> config -> ucc ->
 // controller) and the window could never deallocate. This weak proxy breaks
@@ -250,7 +291,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         config.userContentController = ucc
 
-        let webView = WKWebView(
+        let webView = AppWebView(
             frame: NSRect(x: 0, y: 0, width: 1100, height: 760), configuration: config)
         webView.allowsBackForwardNavigationGestures = true
         // A development build pointed at a local server is the only place the

@@ -6906,6 +6906,13 @@ function LocalWorkspaceShell({
 
   const beginBackgroundSelection = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
+      // A document view has no items to marquee-select, and the
+      // preventDefault below is exactly what killed native click-drag text
+      // selection from the page margins ("like reading an article in a
+      // browser" - owner, 2026-09-02). Reading and writing views keep the
+      // browser's own drag, selection and context-menu behavior untouched.
+      const level = viewRef.current.level;
+      if (level === "post" || level === "edit") return;
       const target = event.target;
       const insideInteractive =
         target instanceof Element &&
