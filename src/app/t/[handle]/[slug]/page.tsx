@@ -421,13 +421,13 @@ export async function PostPageForHandle({
 
   if (editMode) {
     if (initialPool && canEdit) {
-      const reader = (
-        <UnifiedDocumentReader
-          blog={blog}
-          post={post}
-          template={template}
-        />
-      );
+      // No server-side reader render here: the shell opens straight into the
+      // editor (initialView level "edit"), and every later view change is
+      // client-rendered from the pool, so the SSR'd reader was never shown.
+      // It was also the single largest cost of opening a document to edit:
+      // rendering a 900kB body through the reader took ~2.8s of TTFB for
+      // markup the person never saw.
+      const reader = null;
       return (
         <PostReadWorkspaceShell
           adjacent={adjacent}
