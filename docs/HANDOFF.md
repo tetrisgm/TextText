@@ -2688,6 +2688,21 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   scrolling. Fixture reader-images lives in the dev DB (raw insert:
   opens via the workspace list; direct slug URL 404s because raw
   inserts skip the slug index the app writes).
+- Owner follow-up 3 (2026-09-02, `393b109d`, deployed): held Space did
+  not repeat and fast paging made the page jump. The command layer
+  swallowed key auto-repeat (preventDefault + return on event.repeat)
+  and replaced native scrolling with hard window-style jumps; Space and
+  Shift+Space now DEFER to the browser when the reader scroller is
+  focused (CommandShortcut.nativeWhenReaderFocused - verified native in
+  Chromium and WebKit, defaultPrevented false, presses accumulate), and
+  held Ctrl-D/U + j/k/arrows honor repeat (CommandShortcut.repeats).
+  The jumping was also real layout shift: lazy reader images had no
+  dimensions and WebKit has NO scroll anchoring. Images now take
+  width/height from their document asset when it carries them (the
+  ReactMarkdown components map is WeakMap-cached per dimensions map -
+  createContext is not available in shared RSC modules, and component
+  identity must stay stable or images remount); undimensioned images
+  loading above the viewport compensate scrollTop by their height.
 
 ## Resolved episodes (one line each, dates in git log)
 
