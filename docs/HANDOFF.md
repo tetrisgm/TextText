@@ -2657,6 +2657,20 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
 - WebKit here is Playwright WebKit: per the browser-verification
   contract it proves engine timing, not real-Safari behavior. The Mac
   app after deploy is the real check.
+- Owner follow-up after typing in the app (2026-09-02): a skeleton
+  flash on document open, and an FPS drop while moving the mouse over
+  buttons. Fixed (`5e9660ae`, deployed): document bodies prefetch on
+  row hover/focus/selection and the eight most recent warm on idle
+  (open click-to-content worst case 401ms to ~110ms, skeleton gone for
+  hover-opens); the left-edge peek handler no longer runs
+  getComputedStyle/getSelection/matchMedia on every window pointermove
+  (now one coordinate compare, unbound entirely when the sidebar is
+  expanded); the spatial tilt handler no longer dirties style per move
+  on list rows (grid-only, checked once per hover).
+  scripts/bench-workspace-interaction.ts is the lane. The hover jank
+  was reported in the real app; the local harness already ran at max
+  FPS before the fix, so the removed costs are attributed by code, not
+  by a reproduced regression - re-verify by feel in the app.
 
 ## Resolved episodes (one line each, dates in git log)
 
