@@ -2721,6 +2721,16 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   empty action bar (first in document order). Check every matching
   surface for text, not the first. All four first rows open in
   44-107ms in both engines.
+- Owner follow-ups (2026-09-02, `73ea85c1`, deployed): the assistant
+  rail popped in after the document painted (SSR snapshot hard-coded
+  "hidden"). wr_assistant_state/width cookies are a FACT CACHE - the
+  client records what it last resolved, SSR paints it first; the
+  never-persist-the-window-default semantics are untouched
+  (src/lib/workspace-assistant-prefs.ts). And wheel over the pinned
+  rail's empty background scrolled nothing (reads as page margin);
+  unconsumable wheel now forwards to .post-editor-content. Sweep-
+  verified: zero dead wheel positions across the window in both
+  engines.
 
 ## Resolved episodes (one line each, dates in git log)
 
