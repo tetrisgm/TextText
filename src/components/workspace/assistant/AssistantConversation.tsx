@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { AssistantMessage } from "./useNativeAssistant";
@@ -43,25 +43,31 @@ function displayedMessageText(message: AssistantMessage): string {
  * default; the image override also prevents a reply from loading a tracking
  * URL merely because it was rendered in the sidebar.
  */
+// Module-level component map: inline functions here are new component types
+// on every render, which unmounts and remounts their DOM (see the same fix in
+// DocumentRenderer's Markdown).
+const assistantMarkdownComponents = {
+  a: ({ href, children }: { href?: string; children?: ReactNode }) => (
+    <a href={href} target="_blank" rel="noreferrer noopener">
+      {children}
+    </a>
+  ),
+  h1: ({ children }: { children?: ReactNode }) => <h3>{children}</h3>,
+  h2: ({ children }: { children?: ReactNode }) => <h3>{children}</h3>,
+  img: ({ alt }: { alt?: string }) => (
+    <span className={styles.assistantImagePlaceholder}>
+      {alt ? `Image: ${alt}` : "Image omitted"}
+    </span>
+  ),
+};
+const assistantMarkdownPlugins = [remarkGfm];
+
 function AssistantMarkdown({ text }: { text: string }) {
   return (
     <div className={styles.assistantMarkdown}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noreferrer noopener">
-              {children}
-            </a>
-          ),
-          h1: ({ children }) => <h3>{children}</h3>,
-          h2: ({ children }) => <h3>{children}</h3>,
-          img: ({ alt }) => (
-            <span className={styles.assistantImagePlaceholder}>
-              {alt ? `Image: ${alt}` : "Image omitted"}
-            </span>
-          ),
-        }}
+        remarkPlugins={assistantMarkdownPlugins}
+        components={assistantMarkdownComponents}
       >
         {text}
       </ReactMarkdown>

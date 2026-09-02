@@ -1,5 +1,6 @@
-import { Fragment, type CSSProperties, type ReactNode } from "react";
+import { Fragment, memo, useMemo, type CSSProperties, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
+import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {
   DocumentAsset,
@@ -278,46 +279,76 @@ function DefaultMetadata({ metadata }: { metadata: DocumentRenderMetadata }) {
   return <div className="tt-metadata">{values.join(" · ")}</div>;
 }
 
-function Markdown({
+// The component map and its entries must be MODULE-LEVEL constants. React
+// matches elements by type identity: an inline function recreated per render
+// is a brand-new component type, so every image and link unmounted and
+// remounted on any re-render of the reader - visible as all images blinking
+// (and nudging layout while they re-decoded) on every click in the workspace.
+function MarkdownImage({ src, alt }: { src?: unknown; alt?: string }) {
+  const safe = safeMediaSource(typeof src === "string" ? src : "");
+  if (!safe) return null;
+  if (isVideoFile(safe)) return <video src={safe} controls playsInline preload="metadata" />;
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={safe} alt={alt ?? ""} loading="lazy" decoding="async" />;
+}
+
+function MarkdownLink({
+  href,
+  children,
+  className,
+}: {
+  href?: string;
+  children?: ReactNode;
+  className?: string;
+}) {
+  const safe = typeof href === "string" && isSafeLinkHref(href) ? href : "";
+  return safe ? (
+    <a href={safe} className={className}>
+      {children}
+    </a>
+  ) : (
+    <span>{children}</span>
+  );
+}
+
+const markdownComponents: Components = {
+  h1: "h2",
+  img: MarkdownImage,
+  a: MarkdownLink,
+};
+
+const basePlugins = [remarkGfm, remarkHighlight];
+
+function markdownUrlTransform(url: string): string {
+  return safeMediaSource(url);
+}
+
+/** Memoized: the reader re-renders with every workspace interaction, and
+ * re-parsing an unchanged body (plus the remount hazard above) is wasted. */
+const Markdown = memo(function Markdown({
   value,
   wikiLinkTargets,
 }: {
   value: string;
   wikiLinkTargets?: WikiLinkRenderTargets;
 }) {
+  const plugins = useMemo(
+    () =>
+      wikiLinkTargets
+        ? [...basePlugins, remarkWikiLinks(wikiLinkTargets)]
+        : basePlugins,
+    [wikiLinkTargets],
+  );
   return (
     <ReactMarkdown
-      remarkPlugins={
-        wikiLinkTargets
-          ? [remarkGfm, remarkHighlight, remarkWikiLinks(wikiLinkTargets)]
-          : [remarkGfm, remarkHighlight]
-      }
-      urlTransform={(url) => safeMediaSource(url)}
-      components={{
-        h1: "h2",
-        img: ({ src, alt }) => {
-          const safe = safeMediaSource(typeof src === "string" ? src : "");
-          if (!safe) return null;
-          if (isVideoFile(safe)) return <video src={safe} controls playsInline preload="metadata" />;
-          // eslint-disable-next-line @next/next/no-img-element
-          return <img src={safe} alt={alt ?? ""} loading="lazy" decoding="async" />;
-        },
-        a: ({ href, children, className }) => {
-          const safe = typeof href === "string" && isSafeLinkHref(href) ? href : "";
-          return safe ? (
-            <a href={safe} className={className}>
-              {children}
-            </a>
-          ) : (
-            <span>{children}</span>
-          );
-        },
-      }}
+      remarkPlugins={plugins}
+      urlTransform={markdownUrlTransform}
+      components={markdownComponents}
     >
       {value}
     </ReactMarkdown>
   );
-}
+});
 
 function BoundMedia({
   node,

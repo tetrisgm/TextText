@@ -4717,6 +4717,29 @@ function LocalWorkspaceShell({
     recordWorkspaceDocumentOpened(displayPool.blog.handle, openedPostId);
   }, [displayPool.blog.handle, openedPostId]);
 
+  // Reading keys work like the browser's: Space, Shift+Space, PageUp/Down,
+  // Home/End and the arrows scroll natively only when the scrolling element
+  // itself has focus. Opening a READ view leaves focus on the clicked list
+  // row (where Space would re-activate the button); hand it to the scroller.
+  // Edit views keep their own focus - the editor claims the caret.
+  const readViewPostId = view.level === "post" ? view.postId : null;
+  useEffect(() => {
+    if (!readViewPostId) return;
+    const content = contentRef.current;
+    if (!content) return;
+    const active = document.activeElement;
+    // Never steal focus from a field the person is typing in.
+    if (
+      active instanceof HTMLElement &&
+      (active.isContentEditable ||
+        active.tagName === "INPUT" ||
+        active.tagName === "TEXTAREA")
+    ) {
+      return;
+    }
+    content.focus({ preventScroll: true });
+  }, [readViewPostId]);
+
   useEffect(() => {
     selectedSectionPathRef.current = selectedSectionPath;
   }, [selectedSectionPath]);
@@ -6607,17 +6630,20 @@ function LocalWorkspaceShell({
   const scrollReader = useCallback(
     (direction: "up" | "down", amount: "line" | "half" | "page") => {
       if (typeof window === "undefined" || readerScrollBlocked()) return;
-      const viewport = window.innerHeight || 800;
+      // The workspace scrolls in .post-editor-content, never the window; the
+      // window variant of these commands ran and moved nothing, which is why
+      // Space "did not work" in the reader.
+      const scroller = contentRef.current;
+      const viewport = scroller?.clientHeight || window.innerHeight || 800;
       const step =
         amount === "line"
           ? Math.max(64, Math.round(viewport * 0.16))
           : amount === "half"
             ? Math.round(viewport * 0.5)
             : Math.round(viewport * 0.9);
-      window.scrollBy({
-        top: direction === "down" ? step : -step,
-        behavior: "auto",
-      });
+      const top = direction === "down" ? step : -step;
+      if (scroller) scroller.scrollBy({ top, behavior: "auto" });
+      else window.scrollBy({ top, behavior: "auto" });
     },
     [readerScrollBlocked],
   );
@@ -6625,6 +6651,13 @@ function LocalWorkspaceShell({
   const scrollReaderEdge = useCallback(
     (edge: "top" | "bottom") => {
       if (typeof window === "undefined" || readerScrollBlocked()) return;
+      const scroller = contentRef.current;
+      if (scroller) {
+        const top =
+          edge === "top" ? 0 : scroller.scrollHeight - scroller.clientHeight;
+        scroller.scrollTo({ top: Math.max(0, top), behavior: "auto" });
+        return;
+      }
       const top =
         edge === "top"
           ? 0
