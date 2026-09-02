@@ -24,9 +24,7 @@ enum QuickCaptureKeyAction: Equatable {
     }
 }
 
-/// Shared by the floating quick-capture panel and the main window's launch
-/// capture surface, so Return/Shift-Return/Esc mean the same thing on both.
-final class QuickCaptureTextView: NSTextView {
+private final class QuickCaptureTextView: NSTextView {
     var save: (() -> Void)?
     var dismiss: (() -> Void)?
     var placeholder = ""

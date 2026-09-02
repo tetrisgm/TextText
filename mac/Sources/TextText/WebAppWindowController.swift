@@ -20,29 +20,18 @@ private final class WeakScriptHandler: NSObject, WKScriptMessageHandler {
 /// What the window shows while the web content is still loading on a cold
 /// launch. A WKWebView paints white until its first content arrives, so the
 /// window used to open as a blank white rectangle for as long as the network
-/// took, which reads as a slow, broken launch.
-///
-/// On a linked Mac this is not merely a splash: it is a working capture
-/// composer, focused and ready the instant the window appears. Typing starts
-/// immediately, Return files the note through the same durable quick-capture
-/// outbox the floating panel uses, and the workspace takes over underneath
-/// when it is ready. The surface never yanks itself away mid-thought: web
-/// content arriving only dismisses it while the composer is empty.
-///
+/// took, which reads as a slow, broken launch. This paints the app's own
+/// surface with a dimmed app icon instead, so the window looks like the app
+/// the instant it appears. It is ONLY that: a paint-over, lifted the moment
+/// content commits. A capture composer lived here briefly and was removed by
+/// owner ruling (2026-09-02): with launch-at-login and the session fast path
+/// the workspace arrives almost immediately, so the composer read as a
+/// pointless extra step flashing before the real app, not a head start.
 /// The background draws in `draw(_:)` (not a static layer color) so it
 /// follows a light/dark change while it is up.
 private final class LaunchPlaceholderView: NSView {
     override var isFlipped: Bool { true }
     override var wantsUpdateLayer: Bool { false }
-
-    /// Asks the controller to reveal the web content beneath.
-    var onFinished: (() -> Void)?
-
-    private let capture: ((QuickCaptureIntent) throws -> Void)?
-    private let textView = QuickCaptureTextView()
-    private let statusLabel = NSTextField(labelWithString: "")
-    private var webContentReady = false
-    private var composerRetired = false
 
     private let icon: NSImageView = {
         let view = NSImageView()
@@ -53,28 +42,15 @@ private final class LaunchPlaceholderView: NSView {
         return view
     }()
 
-    /// `capture` nil (an unlinked Mac, or no outbox) means a plain icon
-    /// splash; a sink means the ready-to-type composer.
-    init(capture: ((QuickCaptureIntent) throws -> Void)?) {
-        self.capture = capture
+    init() {
         super.init(frame: .zero)
         addSubview(icon)
-        if capture != nil {
-            buildComposer()
-            NSLayoutConstraint.activate([
-                icon.centerXAnchor.constraint(equalTo: centerXAnchor),
-                icon.bottomAnchor.constraint(equalTo: centerYAnchor, constant: -104),
-                icon.widthAnchor.constraint(equalToConstant: 56),
-                icon.heightAnchor.constraint(equalToConstant: 56),
-            ])
-        } else {
-            NSLayoutConstraint.activate([
-                icon.centerXAnchor.constraint(equalTo: centerXAnchor),
-                icon.centerYAnchor.constraint(equalTo: centerYAnchor),
-                icon.widthAnchor.constraint(equalToConstant: 96),
-                icon.heightAnchor.constraint(equalToConstant: 96),
-            ])
-        }
+        NSLayoutConstraint.activate([
+            icon.centerXAnchor.constraint(equalTo: centerXAnchor),
+            icon.centerYAnchor.constraint(equalTo: centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 96),
+            icon.heightAnchor.constraint(equalToConstant: 96),
+        ])
     }
 
     @available(*, unavailable)
@@ -84,134 +60,8 @@ private final class LaunchPlaceholderView: NSView {
         NSColor.windowBackgroundColor.setFill()
         dirtyRect.fill()
     }
-
-    /// Idle means dismissing would lose nothing: no unfiled typing.
-    private var composerIdle: Bool {
-        composerRetired || capture == nil
-            || textView.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    /// The web view beneath has content. Reveal it now if nothing typed here
-    /// would be lost; otherwise wait for the person to save or dismiss.
-    func noteWebContentReady() {
-        webContentReady = true
-        if composerIdle { onFinished?() }
-    }
-
-    func focusComposer() {
-        guard capture != nil, !composerRetired else { return }
-        window?.makeFirstResponder(textView)
-    }
-
-    private func buildComposer() {
-        let card = NSView()
-        card.wantsLayer = true
-        card.layer?.cornerRadius = 10
-        card.layer?.borderWidth = 1
-        card.translatesAutoresizingMaskIntoConstraints = false
-        // Colors that follow the appearance are applied per-draw for the
-        // background; the card resolves its two colors on appearance change.
-        card.layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
-        card.layer?.borderColor = NSColor.separatorColor.cgColor
-
-        textView.isRichText = false
-        textView.importsGraphics = false
-        textView.allowsUndo = true
-        textView.drawsBackground = false
-        textView.font = .systemFont(ofSize: 16, weight: .regular)
-        textView.textColor = .labelColor
-        textView.insertionPointColor = .labelColor
-        textView.textContainerInset = NSSize(width: 14, height: 14)
-        textView.placeholder = "Save a thought, note, link, or AI answer"
-        textView.save = { [weak self] in self?.saveComposer() }
-        textView.dismiss = { [weak self] in self?.retireComposer() }
-
-        let scrollView = NSScrollView()
-        scrollView.documentView = textView
-        scrollView.drawsBackground = false
-        scrollView.hasVerticalScroller = true
-        scrollView.scrollerStyle = .overlay
-        scrollView.borderType = .noBorder
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-
-        statusLabel.font = .systemFont(ofSize: 11, weight: .medium)
-        statusLabel.textColor = .secondaryLabelColor
-        statusLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        let shortcutLabel = NSTextField(
-            labelWithString: "Save ↩    New line ⇧↩    Skip Esc")
-        shortcutLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        shortcutLabel.textColor = .secondaryLabelColor
-        shortcutLabel.alignment = .right
-        shortcutLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        card.addSubview(scrollView)
-        addSubview(card)
-        addSubview(statusLabel)
-        addSubview(shortcutLabel)
-
-        NSLayoutConstraint.activate([
-            card.centerXAnchor.constraint(equalTo: centerXAnchor),
-            card.centerYAnchor.constraint(equalTo: centerYAnchor),
-            card.widthAnchor.constraint(equalToConstant: 560),
-            card.heightAnchor.constraint(equalToConstant: 180),
-            scrollView.topAnchor.constraint(equalTo: card.topAnchor, constant: 4),
-            scrollView.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 4),
-            scrollView.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -4),
-            scrollView.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -4),
-            statusLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 2),
-            statusLabel.topAnchor.constraint(equalTo: card.bottomAnchor, constant: 10),
-            shortcutLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -2),
-            shortcutLabel.topAnchor.constraint(equalTo: card.bottomAnchor, constant: 10),
-        ])
-    }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        for subview in subviews where subview.layer?.borderWidth == 1 {
-            subview.layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
-            subview.layer?.borderColor = NSColor.separatorColor.cgColor
-        }
-        needsDisplay = true
-    }
-
-    private func saveComposer() {
-        guard let capture else { return }
-        let text = textView.string
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              let intent = QuickCaptureIntent(text) else {
-            NSSound.beep()
-            return
-        }
-        do {
-            try capture(intent)
-            textView.string = ""
-            textView.needsDisplay = true
-            textView.isEditable = false
-            statusLabel.textColor = .systemGreen
-            statusLabel.stringValue = "Queued safely"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) { [weak self] in
-                self?.retireComposer()
-            }
-        } catch {
-            statusLabel.textColor = .systemRed
-            statusLabel.stringValue = "Failed to queue. Your text is still here."
-            NSSound.beep()
-        }
-    }
-
-    /// Esc, or the settle after a save. If the web content is ready this
-    /// reveals it; until then the surface stays as a quiet splash rather
-    /// than exposing a half-loaded white web view.
-    private func retireComposer() {
-        composerRetired = true
-        if webContentReady {
-            onFinished?()
-        } else {
-            for view in subviews where view !== icon { view.isHidden = true }
-        }
-    }
 }
+
 
 /// Keeps a Finder-opened item from being overwritten by the asynchronous app
 /// cookie setup that precedes the first web navigation on a cold launch.
@@ -314,7 +164,6 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         origin: URL,
         startPath: String,
         appToken: String?,
-        onQuickCapture: ((QuickCaptureIntent) throws -> Void)? = nil,
         onSystemSignInRequested: @escaping () -> Void,
         onSignOutRequested: @escaping () -> Void,
         onLinked: @escaping (String, URL) -> Void
@@ -435,7 +284,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         webView.frame = container.bounds
         webView.autoresizingMask = [.width, .height]
         container.addSubview(webView)
-        let placeholder = LaunchPlaceholderView(capture: onQuickCapture)
+        let placeholder = LaunchPlaceholderView()
         placeholder.frame = container.bounds
         placeholder.autoresizingMask = [.width, .height]
         container.addSubview(placeholder)
@@ -448,7 +297,6 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         window.tabbingMode = .disallowed
 
         super.init(window: window)
-        placeholder.onFinished = { [weak self] in self?.dismissLaunchPlaceholder() }
         // Registered AFTER super.init so self is available; the weak proxy
         // keeps the retain cycle from pinning the window open.
         ucc.add(WeakScriptHandler(self), name: "textTextApp")
@@ -635,9 +483,6 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         NSApp.activate(ignoringOtherApps: true)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
-        // While the launch capture surface is up, the keyboard belongs to it:
-        // summoning the app and typing must work with zero clicks.
-        launchPlaceholder?.focusComposer()
         observeVisibilityForRepaint()
     }
 
@@ -1819,14 +1664,14 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
            path != "/signin", path != "/" {
             directSessionLoadPending = false
         }
-        // First content is about to paint. The launch surface decides whether
-        // to lift now (a server-rendered page has real content at commit) or
-        // to stay because the person is mid-capture in its composer.
-        launchPlaceholder?.noteWebContentReady()
+        // First content is about to paint; lift the launch placeholder. A
+        // server-rendered page has real content at commit, so this hands off
+        // to the web view rather than to a white gap.
+        dismissLaunchPlaceholder()
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        launchPlaceholder?.noteWebContentReady() // backstop if didCommit was missed
+        dismissLaunchPlaceholder() // backstop if didCommit was missed
         window?.title = webView.title?.isEmpty == false ? webView.title! : "TextText"
         logLayoutDiagnostics(webView)
     }
