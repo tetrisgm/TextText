@@ -29,9 +29,12 @@ function nativeEditionSnapshot(): TextTextEdition {
 }
 
 export function AiConnectionSettings({
+  cloudConfigured = false,
   onTryInTextText,
   onConnectionChange,
 }: {
+  /** Whether this workspace already has a provider key saved. */
+  cloudConfigured?: boolean;
   onTryInTextText?: () => void;
   onConnectionChange?: (connection: AiConnectionSnapshot) => void;
 }) {
@@ -90,14 +93,22 @@ export function AiConnectionSettings({
     >
       <article className={styles.primaryCard}>
         <div>
-          <p className={styles.kicker}>Recommended</p>
+          {/* Pitching "Recommended: set it up" at someone who already set it
+              up reads as a page that does not know its own state. */}
+          <p className={styles.kicker}>
+            {ready || (!embeddedAgent && cloudConfigured)
+              ? "Connected"
+              : "Recommended"}
+          </p>
           <h3 id="ai-connection-heading">Write with AI inside TextText</h3>
           <p>
             {embeddedAgent
               ? ready
                 ? `Connected${connection?.accountEmail ? ` as ${connection.accountEmail}` : ""}. The agent is ready in the right sidebar.`
                 : "Connect once, then ask the agent to read or change the document you have open."
-              : "Add one provider key, then ask the agent to read or change the document you have open."}
+              : cloudConfigured
+                ? "The assistant is ready in the right sidebar. Ask it to read or change the document you have open."
+                : "Add one provider key, then ask the agent to read or change the document you have open."}
           </p>
           {ready && connection?.lastHealthCheckAt ? (
             <p className={styles.verification}>
@@ -129,6 +140,14 @@ export function AiConnectionSettings({
               </button>
             )}
           </div>
+        ) : cloudConfigured ? (
+          <button
+            type="button"
+            className={styles.primary}
+            onClick={() => onTryInTextText?.()}
+          >
+            Try in TextText
+          </button>
         ) : (
           <a className={styles.secondary} href="#api-key-connections">
             Set up the in-app assistant

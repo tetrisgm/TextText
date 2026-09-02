@@ -4,6 +4,8 @@ import styles from "./ConnectionGallery.module.css";
 
 export type ConnectionGalleryProps = {
   cloudConfigured: boolean;
+  /** Specific state for the TextText AI card ("Anthropic · claude-sonnet-5"). */
+  cloudStatusLabel?: string;
   nativeAvailable: boolean;
   nativeReady: boolean;
   clientCount: number | null;
@@ -14,6 +16,7 @@ export type ConnectionGalleryProps = {
 /** A small, honest directory of ways an agent can reach this workspace. */
 export function ConnectionGallery({
   cloudConfigured,
+  cloudStatusLabel,
   nativeAvailable,
   nativeReady,
   clientCount,
@@ -24,7 +27,10 @@ export function ConnectionGallery({
     {
       name: "TextText AI",
       description: "Use Anthropic or OpenAI with an encrypted workspace key.",
-      status: cloudConfigured ? "Connected" : "Not connected",
+      status: cloudConfigured
+        ? (cloudStatusLabel ?? "Connected")
+        : "Not connected",
+      connected: cloudConfigured,
       href: "#settings-ai",
       action: cloudConfigured ? "Manage" : "Connect",
     },
@@ -35,6 +41,7 @@ export function ConnectionGallery({
             description:
               "The standalone Mac agent, embedded in the right sidebar.",
             status: nativeReady ? "Connected" : "Available",
+            connected: nativeReady,
             href: "#settings-ai",
             action: nativeReady ? "Manage" : "Learn more",
           },
@@ -47,6 +54,7 @@ export function ConnectionGallery({
         clientCount === null
           ? "Checking"
           : `${clientCount} connected ${clientCount === 1 ? "client" : "clients"}`,
+      connected: (clientCount ?? 0) > 0,
       href: "#settings-connected-clients",
       action: "Manage clients",
     },
@@ -57,6 +65,7 @@ export function ConnectionGallery({
         mcpCount === null
           ? "Checking"
           : `${mcpCount} connected ${mcpCount === 1 ? "server" : "servers"}`,
+      connected: (mcpCount ?? 0) > 0,
       href: "#settings-mcp",
       action: "Manage servers",
     },
@@ -88,11 +97,7 @@ export function ConnectionGallery({
           <li className={styles.card} key={card.name}>
             <div className={styles.cardTop}>
               <h3>{card.name}</h3>
-              <span
-                className={
-                  card.status === "Connected" ? styles.connected : styles.status
-                }
-              >
+              <span className={card.connected ? styles.connected : styles.status}>
                 {card.status}
               </span>
             </div>

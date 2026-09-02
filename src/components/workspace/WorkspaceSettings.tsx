@@ -367,55 +367,14 @@ export function WorkspaceSettings({
           )}
         </section>
 
-        <section
-          className={styles.section}
-          aria-labelledby="settings-connections-overview"
-        >
-          <div className={styles.sectionHeader}>
-            <div>
-              <h2 id="settings-connections-overview">Connections</h2>
-              <p>
-                Everything that can access this workspace, with a direct path to
-                its controls.
-              </p>
-            </div>
-          </div>
-          <ul className={styles.connectionOverview}>
-            <li>
-              <a href="#settings-ai">TextText AI</a>
-              <span>{aiOverviewLabel}</span>
-            </li>
-            <li>
-              <a href="#settings-connected-clients">AI and app clients</a>
-              <span>
-                {tokensLoading
-                  ? "Loading"
-                  : tokensVisible
-                    ? `${tokenClients.length} connected ${tokenClients.length === 1 ? "client" : "clients"}`
-                    : "Sign in to manage"}
-              </span>
-            </li>
-            <li>
-              <a href="#settings-mcp">Other MCP servers</a>
-              <span>
-                {mcpCount === null
-                  ? "Loading"
-                  : `${mcpCount} connected ${mcpCount === 1 ? "server" : "servers"}`}
-              </span>
-            </li>
-            <li>
-              <a href="#settings-account">Sign-in methods</a>
-              <span>
-                {account
-                  ? `${account.identities.length} connected ${account.identities.length === 1 ? "method" : "methods"}`
-                  : "Workspace owner only"}
-              </span>
-            </li>
-          </ul>
-        </section>
-
+        {/* One entry surface for connections. A four-tile "Connections"
+            overview used to sit above this gallery repeating the same three
+            subjects with jump links; three generations of connection UI had
+            stacked instead of replacing each other. The gallery carries the
+            status detail the overview held. */}
         <ConnectionGallery
           cloudConfigured={Boolean(aiSettings?.configured)}
+          cloudStatusLabel={aiOverviewLabel}
           nativeAvailable={Boolean(
             nativeConnection && nativeConnection.state !== "unavailable",
           )}
@@ -438,6 +397,7 @@ export function WorkspaceSettings({
               </div>
             </div>
             <AiConnectionSettings
+              cloudConfigured={Boolean(aiSettings.configured)}
               onTryInTextText={tryAiInTextText}
               onConnectionChange={setNativeConnection}
             />
