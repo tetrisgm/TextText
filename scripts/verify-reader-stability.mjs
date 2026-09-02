@@ -23,7 +23,7 @@ await page.goto(`${ORIGIN}/@visual-demo`);
 await page.waitForSelector(".workspace-item-option", { timeout: 20000 });
 await page.waitForTimeout(1500);
 await page.locator(".workspace-item-option", { hasText: "Reader images fixture" }).first().click();
-await page.waitForSelector("img[alt=first]", { timeout: 20000 });
+await page.waitForSelector(".unified-document-reader img, .tt-prose img", { timeout: 20000 });
 await page.waitForTimeout(2000);
 
 await page.evaluate("globalThis.__name = (fn) => fn");

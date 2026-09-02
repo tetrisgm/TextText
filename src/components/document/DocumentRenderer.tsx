@@ -284,12 +284,46 @@ function DefaultMetadata({ metadata }: { metadata: DocumentRenderMetadata }) {
 // is a brand-new component type, so every image and link unmounted and
 // remounted on any re-render of the reader - visible as all images blinking
 // (and nudging layout while they re-decoded) on every click in the workspace.
-function MarkdownImage({ src, alt }: { src?: unknown; alt?: string }) {
-  const safe = safeMediaSource(typeof src === "string" ? src : "");
-  if (!safe) return null;
-  if (isVideoFile(safe)) return <video src={safe} controls playsInline preload="metadata" />;
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={safe} alt={alt ?? ""} loading="lazy" decoding="async" />;
+
+type AssetDimensions = ReadonlyMap<string, { width: number; height: number }>;
+
+/**
+ * A lazy image finishing its load above the visible region grows the content
+ * and pushes what the reader is looking at. Chromium's scroll anchoring
+ * compensates on its own; WebKit has none, and the Mac app runs WebKit, so
+ * fast paging through an image-heavy document made the page visibly jump.
+ * Images with known dimensions never need this - their space is reserved.
+ */
+function compensateAboveViewportImageLoad(
+  event: React.SyntheticEvent<HTMLImageElement>,
+) {
+  const image = event.currentTarget;
+  const scroller = image.closest(".post-editor-content");
+  if (!(scroller instanceof HTMLElement)) return;
+  const rect = image.getBoundingClientRect();
+  const viewTop = scroller.getBoundingClientRect().top;
+  if (rect.bottom <= viewTop) scroller.scrollTop += rect.height;
+}
+
+function markdownImageFor(dimensions: AssetDimensions | null) {
+  return function MarkdownImage({ src, alt }: { src?: unknown; alt?: string }) {
+    const safe = safeMediaSource(typeof src === "string" ? src : "");
+    if (!safe) return null;
+    if (isVideoFile(safe)) return <video src={safe} controls playsInline preload="metadata" />;
+    const size = dimensions?.get(safe);
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={safe}
+        alt={alt ?? ""}
+        loading="lazy"
+        decoding="async"
+        width={size?.width}
+        height={size?.height}
+        onLoad={size ? undefined : compensateAboveViewportImageLoad}
+      />
+    );
+  };
 }
 
 function MarkdownLink({
@@ -313,9 +347,25 @@ function MarkdownLink({
 
 const markdownComponents: Components = {
   h1: "h2",
-  img: MarkdownImage,
+  img: markdownImageFor(null),
   a: MarkdownLink,
 };
+
+// One components map per dimensions map, cached by identity: the entries must
+// keep the SAME component identity across renders (a fresh function is a new
+// element type and React would remount every image - the blink bug). This is
+// a server-safe stand-in for context, which shared RSC modules cannot use.
+const componentsByDimensions = new WeakMap<object, Components>();
+
+function markdownComponentsFor(dimensions: AssetDimensions | null): Components {
+  if (!dimensions) return markdownComponents;
+  let cached = componentsByDimensions.get(dimensions);
+  if (!cached) {
+    cached = { ...markdownComponents, img: markdownImageFor(dimensions) };
+    componentsByDimensions.set(dimensions, cached);
+  }
+  return cached;
+}
 
 const basePlugins = [remarkGfm, remarkHighlight];
 
@@ -328,9 +378,11 @@ function markdownUrlTransform(url: string): string {
 const Markdown = memo(function Markdown({
   value,
   wikiLinkTargets,
+  assets,
 }: {
   value: string;
   wikiLinkTargets?: WikiLinkRenderTargets;
+  assets?: readonly DocumentAsset[];
 }) {
   const plugins = useMemo(
     () =>
@@ -339,11 +391,21 @@ const Markdown = memo(function Markdown({
         : basePlugins,
     [wikiLinkTargets],
   );
+  const dimensions = useMemo(() => {
+    if (!assets?.length) return null;
+    const map = new Map<string, { width: number; height: number }>();
+    for (const asset of assets) {
+      if (asset.width && asset.height) {
+        map.set(asset.src, { width: asset.width, height: asset.height });
+      }
+    }
+    return map.size > 0 ? map : null;
+  }, [assets]);
   return (
     <ReactMarkdown
       remarkPlugins={plugins}
       urlTransform={markdownUrlTransform}
-      components={markdownComponents}
+      components={markdownComponentsFor(dimensions)}
     >
       {value}
     </ReactMarkdown>
@@ -1092,7 +1154,7 @@ function NodeRenderer({
       const slot = slots?.prose?.[node.bind] ?? slots?.bindings?.[node.bind];
       if (slot !== undefined) return <div className="tt-prose">{slot}</div>;
       const value = scalarText(resolveDocumentBinding(document, node.bind));
-      return value ? <div className="tt-prose"><Markdown value={value} wikiLinkTargets={wikiLinkTargets} /></div> : null;
+      return value ? <div className="tt-prose"><Markdown value={value} wikiLinkTargets={wikiLinkTargets} assets={document.content.assets} /></div> : null;
     }
     // cover, image and video normalise to media before they reach here.
     case "media": {

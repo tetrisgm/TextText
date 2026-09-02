@@ -6793,6 +6793,12 @@ function LocalWorkspaceShell({
       toggleStarSelected,
       scrollReader,
       scrollReaderEdge,
+      readerScrollerFocused: () =>
+        Boolean(
+          contentRef.current &&
+            document.activeElement instanceof Node &&
+            contentRef.current.contains(document.activeElement),
+        ),
       readerTapG,
       openAdjacentPost: (direction: 1 | -1) => selectRelativePost(direction),
       createItem: createItemFromCommand,

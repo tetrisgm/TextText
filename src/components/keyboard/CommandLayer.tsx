@@ -243,8 +243,17 @@ export function CommandLayer({ children }: { children: ReactNode }) {
         if (!shortcut) continue;
         if (typingTarget && !shortcut.allowTypingTarget) continue;
         if (shortcut.requiresWorkspace && !ctx.workspace) continue;
+        // Space in a focused reader belongs to the browser: native key
+        // scrolling auto-repeats while held and animates like every other
+        // page, where interception produced one hard jump per press.
+        if (
+          shortcut.nativeWhenReaderFocused &&
+          ctx.workspace?.readerScrollerFocused()
+        ) {
+          return false;
+        }
         event.preventDefault();
-        if (event.repeat) return true;
+        if (event.repeat && !shortcut.repeats) return true;
         runCommand(() => command.run(ctx));
         return true;
       }

@@ -13,6 +13,13 @@ export type CommandShortcut = {
   label: string;
   allowTypingTarget?: boolean;
   requiresWorkspace?: boolean;
+  /** Run again on key auto-repeat (holding j keeps scrolling). Without it a
+   * held key fires once and further repeats are swallowed. */
+  repeats?: boolean;
+  /** Do not intercept while the reader's scroller is focused: the browser's
+   * own key scrolling (with native auto-repeat and animation) is the exact
+   * behavior wanted, and interception replaced it with single jumps. */
+  nativeWhenReaderFocused?: boolean;
 };
 
 type CommandRunResult = void | Promise<void>;
@@ -63,6 +70,9 @@ export type CommandWorkspaceSurface = {
   toggleStarSelected: () => void;
   scrollReader: (direction: "up" | "down", amount: "line" | "half" | "page") => void;
   scrollReaderEdge: (edge: "top" | "bottom") => void;
+  /** True while the reader's scroll container holds focus, so shortcuts
+   * marked nativeWhenReaderFocused can defer to native key scrolling. */
+  readerScrollerFocused: () => boolean;
   readerTapG: () => void;
   openAdjacentPost: (direction: 1 | -1) => void;
   createItem?: (kind: CreatePostKind) => void;
