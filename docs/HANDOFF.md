@@ -2607,8 +2607,56 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   900kB fixture read view 3.27s to 0.12s TTFB, response 6.8MB to
   1.14MB. Public reader and plain owner shell unchanged. Collab eval
   24/24, suite green.
-- Local perf fixtures perf-100kb / perf-1mb live in the dev database
-  under visual-demo/documentation (owner visual-demo@texttext.local).
+- Local perf fixtures perf-100kb / perf-1mb / perf-8mb and
+  windowed-integrity live in the dev database under
+  visual-demo/documentation (owner visual-demo@texttext.local).
+- Editor performance, 2026-09-02 (`31792a05`, `a7bcf49a`), owner ruling
+  "as little overhead as possible, max FPS, instant keystrokes": an
+  honest harness (scripts/bench-editor-input.ts, real typed keys,
+  input-to-paint, Chromium AND WebKit vs a plain-textarea baseline)
+  showed the previously claimed "textarea parity" was fiction - 149ms
+  per keystroke / 15fps scroll in Chromium at 1MB, and 12 SECONDS per
+  keystroke in WebKit, the engine the Mac app runs. After the fixes:
+  1MB types at 7.3ms p50 / 119fps in Chromium (the textarea itself:
+  10.2ms) and 23ms / 59fps in WebKit (textarea: 52ms); 8MB at 11ms /
+  25ms; keystroke cost no longer scales with buffer size.
+- What it was, in causal order (each isolated by a no-JS structure
+  bench, CDP CPU profile, or devtools trace - never guessed):
+  content-visibility:auto on the line rows (4s/keystroke in WebKit and
+  13fps scroll in Chromium with ZERO JS on the page; removed, never
+  bring it back); our own Selection.removeAllRanges/addRange caret
+  restore on every keystroke (a third of the burst; now skipped when
+  the line's fresh wrapper isEqualNode the live one); a second full
+  snapshot rebuild + React render per keystroke from the local-origin
+  Yjs echo; the whole-document contenteditable's native editing cost
+  (~30ms/key at 1MB, the article's point - fixed by windowing: past
+  150k chars only viewport-adjacent lines materialize between two
+  contenteditable=false spacers, prefix + editable text + suffix IS the
+  source); then the O(document)-per-keystroke stragglers: value
+  re-split (now incremental line splice), Y.Text.toString (now a
+  mirror), per-char diff scans (now blockwise memcmp), eager
+  encodeStateAsUpdate+base64 per keystroke in scheduleMaterialization
+  (now encoded at flush; this alone was ~half the 8MB burst as GC), and
+  markdownSubtitle regex-splitting the entire body per draft merge.
+- Windowed correctness is proven by scripts/verify-windowed-surface.ts:
+  edits at top/middle/bottom with scroll jumps round-trip BYTE-EXACT
+  through publish -> Yjs -> materialize -> reload, and select-all
+  copies the whole document. Reset the fixture between runs (body +
+  collab_state + collab_updates), or the previous run's edits fail it.
+- Editor measurement traps, new batch: the Event Timing API drops
+  events under 16ms (silence can mean "fast"); the hidden Browser pane
+  reports visibilityState "hidden" so rAF-based latency probes record
+  NOTHING there - Playwright headless composites frames and is the
+  honest harness; macOS Home/End scroll without moving the caret;
+  MarkdownSurface used to carry a literal NUL and \x01 as string-key
+  separators, which made the FILE read as binary (grep goes silent,
+  Edit tools miss) - they are gone, do not reintroduce invisible bytes.
+- Schema v1 caps content.body at 10,000,000 chars: a 38MB fixture 500s
+  at validation, fail-closed. Raising the cap is an owner decision;
+  within the cap the editor holds its numbers (8MB measured).
+- WebKit here is Playwright WebKit: per the browser-verification
+  contract it proves engine timing, not real-Safari behavior. The Mac
+  app after deploy is the real check.
 
 ## Resolved episodes (one line each, dates in git log)
 
