@@ -2621,7 +2621,8 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   10.2ms) and 23ms / 59fps in WebKit (textarea: 52ms); 8MB at 11ms /
   25ms; keystroke cost no longer scales with buffer size.
 - What it was, in causal order (each isolated by a no-JS structure
-  bench, CDP CPU profile, or devtools trace - never guessed):
+  bench, a CDP CPU profile via scripts/bench-editor-profile.ts, or a
+  devtools trace via scripts/bench-editor-trace.ts - never guessed):
   content-visibility:auto on the line rows (4s/keystroke in WebKit and
   13fps scroll in Chromium with ZERO JS on the page; removed, never
   bring it back); our own Selection.removeAllRanges/addRange caret
