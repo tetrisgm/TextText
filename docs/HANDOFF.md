@@ -2703,6 +2703,24 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   createContext is not available in shared RSC modules, and component
   identity must stay stable or images remount); undimensioned images
   loading above the viewport compensate scrollTop by their height.
+- Owner ruling (2026-09-02, `c01b5102`, deployed): keyboard behavior is
+  native-grade BY POLICY, not per-key - the target is Raycast/Sublime/
+  Superhuman. CommandShortcut repeat is now default-on; only commands
+  that misfire on repeat carry `once: true` (create/delete/star/edit/
+  open/dialogs/palette/saves). Never swallow a key: a repeat on a
+  one-shot is still preventDefaulted, nothing else is eaten. Measured
+  j/k selection keystroke-to-paint: 6.4ms Chromium / 11ms WebKit p50
+  (bench-workspace-interaction.ts now measures it).
+- Same ruling: the "updated - reload?" notice is BANNED. A stale build
+  reloads itself: instantly when the window is hidden, else after 15s
+  hands-off idle (UpdatedBuildNotice.tsx renders null and does exactly
+  this; pagehide flushes saves so nothing is lost). Do not bring the
+  prompt back.
+- Bench honesty note: the 20s "slow open" for the article fixture was
+  the BENCH's readiness check matching the hidden warm-editor pane's
+  empty action bar (first in document order). Check every matching
+  surface for text, not the first. All four first rows open in
+  44-107ms in both engines.
 
 ## Resolved episodes (one line each, dates in git log)
 
