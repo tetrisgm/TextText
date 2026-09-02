@@ -14,15 +14,23 @@ type SubtitleLine = {
 };
 
 function subtitleLine(markdown: string): SubtitleLine | null {
-  const lines = markdown.match(/.*(?:\r?\n|$)/g) ?? [];
+  // Walk lines with indexOf and stop at the first non-blank one. This runs on
+  // every draft merge and pool build; regex-splitting the entire body first
+  // made it O(document) per call, which at multi-megabyte bodies dominated a
+  // typing burst's allocations.
   let offset = 0;
-
-  for (const entry of lines) {
-    if (!entry) continue;
-    const line = entry.replace(/\r?\n$/, "");
+  const length = markdown.length;
+  while (offset < length) {
+    const newline = markdown.indexOf("\n", offset);
+    const entryEnd = newline === -1 ? length : newline + 1;
+    let contentEnd = newline === -1 ? length : newline;
+    if (contentEnd > offset && markdown.charCodeAt(contentEnd - 1) === 13) {
+      contentEnd -= 1;
+    }
+    const line = markdown.slice(offset, contentEnd);
     // Skip leading blank lines: the subtitle must be the FIRST content block.
     if (line.trim() === "") {
-      offset += entry.length;
+      offset = entryEnd;
       continue;
     }
     // The first non-blank block decides. A leading H6 is the subtitle; anything
@@ -34,7 +42,7 @@ function subtitleLine(markdown: string): SubtitleLine | null {
     if (match) {
       return {
         start: offset,
-        end: offset + entry.length,
+        end: entryEnd,
         markdown: (match[1] ?? "").replace(/[ \t]+#+[ \t]*$/, "").trim(),
       };
     }

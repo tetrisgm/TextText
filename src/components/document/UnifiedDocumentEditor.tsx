@@ -135,9 +135,15 @@ export function overlayPreReadyEdits(
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
+  // Chunked fromCharCode: the one-char-at-a-time loop built the binary
+  // string with one allocation per byte, megabytes of GC churn per save of a
+  // large document.
   let binary = "";
-  for (let index = 0; index < bytes.length; index += 1) {
-    binary += String.fromCharCode(bytes[index]);
+  const CHUNK = 0x8000;
+  for (let index = 0; index < bytes.length; index += CHUNK) {
+    binary += String.fromCharCode(
+      ...bytes.subarray(index, Math.min(index + CHUNK, bytes.length)),
+    );
   }
   return btoa(binary);
 }
@@ -151,26 +157,80 @@ function base64ToBytes(value: string): Uint8Array {
   return bytes;
 }
 
-function replaceYText(target: Y.Text, value: string, origin: unknown): void {
-  const current = target.toString();
-  if (current === value) return;
+/**
+ * Mirror of one Y.Text's current string, maintained so the per-keystroke
+ * replaceYText need not walk the whole CRDT (Y.Text.toString() is O(document)
+ * and was a per-keystroke cost at large bodies). `applying` marks the update
+ * events replaceYText itself causes; every other update to the doc must
+ * invalidate the mirror (see the doc-level subscription in the editor).
+ */
+type YTextMirror = { value?: string; applying: boolean };
+
+function replaceYText(
+  target: Y.Text,
+  value: string,
+  origin: unknown,
+  mirror?: YTextMirror,
+): void {
+  const current = mirror?.value ?? target.toString();
+  if (current === value) {
+    if (mirror) mirror.value = value;
+    return;
+  }
+  // Blockwise prefix/suffix scans: slice comparison is a memcmp, where the
+  // per-character loop walked a multi-megabyte body one char per iteration on
+  // every keystroke. The per-char step only runs inside the one block that
+  // straddles the edit.
+  const BLOCK = 2048;
   let prefix = 0;
   const sharedLength = Math.min(current.length, value.length);
-  while (prefix < sharedLength && current[prefix] === value[prefix]) prefix += 1;
+  while (prefix < sharedLength) {
+    const step = Math.min(BLOCK, sharedLength - prefix);
+    if (
+      step > 16 &&
+      current.slice(prefix, prefix + step) === value.slice(prefix, prefix + step)
+    ) {
+      prefix += step;
+      continue;
+    }
+    if (current[prefix] === value[prefix]) {
+      prefix += 1;
+      continue;
+    }
+    break;
+  }
   let currentSuffix = current.length;
   let valueSuffix = value.length;
-  while (
-    currentSuffix > prefix &&
-    valueSuffix > prefix &&
-    current[currentSuffix - 1] === value[valueSuffix - 1]
-  ) {
-    currentSuffix -= 1;
-    valueSuffix -= 1;
+  while (currentSuffix > prefix && valueSuffix > prefix) {
+    const step = Math.min(BLOCK, currentSuffix - prefix, valueSuffix - prefix);
+    if (
+      step > 16 &&
+      current.slice(currentSuffix - step, currentSuffix) ===
+        value.slice(valueSuffix - step, valueSuffix)
+    ) {
+      currentSuffix -= step;
+      valueSuffix -= step;
+      continue;
+    }
+    if (current[currentSuffix - 1] === value[valueSuffix - 1]) {
+      currentSuffix -= 1;
+      valueSuffix -= 1;
+      continue;
+    }
+    break;
   }
-  target.doc?.transact(() => {
-    if (currentSuffix > prefix) target.delete(prefix, currentSuffix - prefix);
-    if (valueSuffix > prefix) target.insert(prefix, value.slice(prefix, valueSuffix));
-  }, origin);
+  if (mirror) mirror.applying = true;
+  try {
+    target.doc?.transact(() => {
+      if (currentSuffix > prefix) target.delete(prefix, currentSuffix - prefix);
+      if (valueSuffix > prefix) target.insert(prefix, value.slice(prefix, valueSuffix));
+    }, origin);
+  } finally {
+    if (mirror) {
+      mirror.applying = false;
+      mirror.value = value;
+    }
+  }
 }
 
 function selectionForField(
@@ -445,6 +505,22 @@ export function UnifiedDocumentEditor({
     }
     return next;
   });
+  /** Body-text mirror for replaceYText; see YTextMirror. */
+  const bodyMirrorRef = useRef<YTextMirror>({ applying: false });
+  useEffect(() => {
+    // Any update replaceYText did not make itself (a remote edit, a baseline
+    // merge, an applyDocumentSnapshot) can change the body text behind the
+    // mirror's back. Drop it; the next keystroke re-reads once.
+    const invalidate = () => {
+      if (!bodyMirrorRef.current.applying) {
+        bodyMirrorRef.current.value = undefined;
+      }
+    };
+    doc.on("update", invalidate);
+    return () => {
+      doc.off("update", invalidate);
+    };
+  }, [doc]);
   const [awareness] = useState(() => new Awareness(doc));
   const [peers, setPeers] = useState<PresencePeer[]>([]);
   const [remoteRevision, setRemoteRevision] = useState(0);
@@ -592,9 +668,12 @@ export function UnifiedDocumentEditor({
   const scheduleMaterialization = useCallback(() => {
     if (!networkEnabled || !collab.canEdit) return;
     localMaterializationVersionRef.current += 1;
-    pendingMaterializationStateRef.current = bytesToBase64(
-      Y.encodeStateAsUpdate(doc),
-    );
+    // Encode at FLUSH time, never here: this runs on every keystroke, and
+    // encoding + base64ing the whole doc state per keystroke was the largest
+    // allocation source at multi-megabyte bodies (nearly half the typing
+    // burst went to GC). The flush encodes the latest state, which is at
+    // least as new as what was scheduled.
+    pendingMaterializationStateRef.current = null;
     setSaveState("local");
     if (materializeTimerRef.current) clearTimeout(materializeTimerRef.current);
     materializeTimerRef.current = setTimeout(() => {
@@ -636,15 +715,23 @@ export function UnifiedDocumentEditor({
 
     const handleDocumentUpdate = (_update: Uint8Array, origin: unknown) => {
       if (!hasDocumentSnapshot(doc)) return;
+      const local = origin === localOrigin.current;
+      if (local) {
+        // A local edit was published to React BEFORE it was applied to the
+        // doc (updateText/updateDocumentSnapshot), so rebuilding the snapshot
+        // from the doc and publishing it again only re-rendered the editor a
+        // second time per keystroke - with a full Y.Text walk on top. Only
+        // the save needs scheduling.
+        scheduleMaterialization();
+        return;
+      }
       try {
         const next = documentSnapshotFromYDoc(doc);
-        const local = origin === localOrigin.current;
         const localSavePending =
           localMaterializationVersionRef.current >
           savedMaterializationVersionRef.current;
-        if (!local && localSavePending) return;
+        if (localSavePending) return;
         publishDocument(next);
-        if (local) scheduleMaterialization();
       } catch {
         setError("This document contains unsupported data.");
       }
@@ -737,7 +824,12 @@ export function UnifiedDocumentEditor({
         setSaveState("local");
         return;
       }
-      replaceYText(documentText(doc, field), normalized, localOrigin.current);
+      replaceYText(
+        documentText(doc, field),
+        normalized,
+        localOrigin.current,
+        field === "body" ? bodyMirrorRef.current : undefined,
+      );
       if (!ready || !networkEnabled) setSaveState("local");
     },
     [currentLocalDocument, doc, networkEnabled, publishDocument, ready],
@@ -1158,7 +1250,7 @@ export function UnifiedDocumentEditor({
            out at a 900kB body, which was the entire input lag. The literal
            newline character stays in the text (every offset depends on it)
            but renders zero-height, because the block break already shows it. */
-        .tt-md-surface>[data-tt-ln]{display:block;content-visibility:auto;contain-intrinsic-size:auto 1.5em}
+        .tt-md-surface>[data-tt-ln]{display:block}
         .tt-md-nl{font-size:0;line-height:0}
         .tt-md-surface[data-empty="true"]::before{content:attr(data-placeholder);color:var(--muted,#6e6e73);pointer-events:none}
         /* Syntax the styling already speaks for shows only on the line you are
