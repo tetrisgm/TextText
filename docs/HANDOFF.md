@@ -2567,11 +2567,13 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   keystroke at 900kB, textarea-parity in Chromium, live styling kept.
   Verified: markdown-surface eval passes, collaboration browser eval
   21/24 (humans, carets, agents, three-way merge all green).
-- The 3 failing collab checks are the sidebar assistant executor
-  answering 403 "Only the workspace owner can run assistant commands"
-  for the eval's dev-login owner - suspect the 01ff6aa5 identity change;
-  spawned as a separate task. The eval harness also learned the /t/
-  edit-URL shape from the 2026-09-01 routing fixes.
+- RESOLVED: the 3 failing collab checks were the eval HARNESS parsing
+  the workspace handle from the item URL as the literal "t" under the
+  2026-09-01 /t/ routing, so the executor correctly 403'd a nonexistent
+  workspace. 01ff6aa5 is innocent (a curl repro as the dev-login owner
+  passed the owner check). With the handle extraction fixed the eval is
+  24/24. Second trap re-hit: deploy-web.sh leaves .next without dev
+  sign-in; run `npm run build` before any browser eval.
 - Workspace route, `0f3eaff7`, deployed: opening a document in edit mode
   SSR'd the full reader render as shell children that the shell never
   shows (it opens straight into the editor; later views are

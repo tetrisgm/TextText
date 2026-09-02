@@ -688,7 +688,12 @@ async function main(): Promise<void> {
     // it is /api/ai/tools, session-authenticated and shared with MCP. Driving
     // that executor from Ada's own browser session proves the sidebar's edit
     // path without standing up a paid model.
-    const handle = new URL(itemUrl).pathname.split("/")[1].replace(/^@/, "");
+    // The editor lives on /t/<handle>/... since the 2026-09-01 routing fixes
+    // (previously /@<handle>/...). Splitting on "/" blindly yielded the
+    // literal handle "t", and the executor's 403 for that nonexistent
+    // workspace read as an assistant regression.
+    const handleMatch = new URL(itemUrl).pathname.match(/^\/(?:t\/|@)([^/]+)/);
+    const handle = handleMatch?.[1] ?? "";
     // Clear every agent first, so anything that appears next is attributable
     // to the assistant rather than left over from the Codex legs above.
     await agentPresence(token, itemId, "Codex", false);
