@@ -2474,6 +2474,46 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   one failed test prompt poisons every later turn of that conversation.
   Start a fresh chat when evaluating with the mock.
 
+## Local install of build 1004 and the sync poisoning (2026-09-02)
+
+- Build 0.182 (1004) with the instant-typing launch work is installed at
+  /Applications and running, HAND-SWAPPED past install-local's runtime
+  health gate with the owner's knowledge. The previous 1002 bundle is
+  preserved in the session scratchpad as TextText-1002-previous.app for
+  rollback. The full release gate, attestation, Developer ID signature,
+  and pre-install health (18 checks) all passed; only the runtime
+  finder.provider check blocked, and it blocks the SHIPPED 1002 equally.
+- Root cause chain, so nobody re-derives it: dev instances launched via
+  `swift run` share the canonical StateStore and credentials, and
+  `syncFileProviderDomain` persists a File Provider handoff whose origin
+  comes from `resolveServerOrigin`, so a dev run with
+  TEXTTEXT_SERVER=http://localhost:3000 rewrote the REAL extension's
+  handoff to localhost. When the dev server stopped, every content fetch
+  failed FP -1004 and pending items went into hour-long backoff.
+  Relaunching the installed app re-persists the production handoff, and
+  `sudo pkill fileproviderd` (owner-approved) cleared the wedged daemon.
+- GUARD WORTH BUILDING: the app should refuse to write the File Provider
+  handoff or touch the domain when TEXTTEXT_SERVER is set and the bundle
+  is not installed. A dev preview must never repoint the real mount.
+- OPEN BUG, server side: after the daemon restart the extension reaches
+  production but materialization fails with "Document assets changed
+  during materialization": `consistentFetch`'s revision content hash
+  disagrees with `documentArtifacts`' manifest hash for ~17 of the
+  owner's documents, both fetched live from the same origin. Until that
+  settles, finder.provider reports working/warning forever and
+  install-local cannot pass on this Mac for ANY build. Needs its own
+  investigation against production data.
+- A registered app bundle under mac/build gets elected by pluginkit for
+  the File Provider extension and fights the /Applications copy during
+  installs; `lsregister -u` the build path and keep install sources
+  outside the repo. Also `docs.no_rot` requires mac/build/TextText.app to
+  exist because scripts name that path, so the built bundle must be
+  restored there after an install.
+- `5edfb259` widened the Finder readiness probe from ~5s to up to 60s
+  (exits when settled); a post-update extension restart legitimately
+  syncs longer than 5s, so launch health always sampled out mid-sync and
+  install-local rolled updates back.
+
 ## Resolved episodes (one line each, dates in git log)
 
 - Apple consent screen "write app": appleid.apple.com caches its own copy;
