@@ -2492,17 +2492,29 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   failed FP -1004 and pending items went into hour-long backoff.
   Relaunching the installed app re-persists the production handoff, and
   `sudo pkill fileproviderd` (owner-approved) cleared the wedged daemon.
-- GUARD WORTH BUILDING: the app should refuse to write the File Provider
-  handoff or touch the domain when TEXTTEXT_SERVER is set and the bundle
-  is not installed. A dev preview must never repoint the real mount.
-- OPEN BUG, server side: after the daemon restart the extension reaches
-  production but materialization fails with "Document assets changed
-  during materialization": `consistentFetch`'s revision content hash
-  disagrees with `documentArtifacts`' manifest hash for ~17 of the
-  owner's documents, both fetched live from the same origin. Until that
-  settles, finder.provider reports working/warning forever and
-  install-local cannot pass on this Mac for ANY build. Needs its own
-  investigation against production data.
+- FIXED `d9c1232e`: a run with TEXTTEXT_SERVER set now refuses to write
+  the File Provider handoff, register/remove the domain, or unregister on
+  sign-out; TEXTTEXT_DEV_FILEPROVIDER=1 is the escape hatch for actual
+  File Provider work against a local server. Pure decision function with
+  tests.
+- FIXED `47054661`, deployed as `texttext-47054661-1788339962` (all seven
+  probes passed): the "Document assets changed during materialization"
+  wedge was four sync hash sites rendering WITHOUT the post's folder path
+  and inlined look while the file GET renders WITH them: the artifacts
+  manifest, structured PUT If-Match, and the shared If-Match helper used
+  by PATCH and DELETE. Any templated document could therefore never
+  match, so guarded writes 412'd and the File Provider refused to
+  materialize it forever. All four sites now render with GET's exact
+  inputs; regression tests pin the agreement (artifacts manifest, PATCH,
+  DELETE, structured PUT for a templated document off the blog folder).
+  Verified against production: all 17 previously stuck documents fetch
+  OK from the mount, pending-indexable is 0. This also means the strict
+  install-local health gate should pass again once the old backoff retry
+  records drain.
+- Note for test authors: sync-file-patch-route.test.ts has order-dependent
+  mock leakage (clearAllMocks keeps implementations); new describe blocks
+  belong at the end of the file or must reset every implementation they
+  can inherit.
 - A registered app bundle under mac/build gets elected by pluginkit for
   the File Provider extension and fights the /Applications copy during
   installs; `lsregister -u` the build path and keep install sources
