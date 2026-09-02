@@ -2476,13 +2476,20 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
 
 ## Local install of build 1004 and the sync poisoning (2026-09-02)
 
-- Build 0.182 (1004) with the instant-typing launch work is installed at
-  /Applications and running, HAND-SWAPPED past install-local's runtime
+- SUPERSEDED by 0.182 (1005): after both fixes below landed and the sync
+  validator fix was deployed, the PROPER gated install passed end to end
+  ("runtime health: pass, installed, launched, and verified"), replacing
+  the hand-swapped 1004 with 1005 built from `d9c3e9aa`. The runtime
+  report shows overall pass with finder.provider settling after 41
+  readiness samples (~20s), which the old 11-sample probe budget would
+  have failed. The hand-swap paragraph below is history.
+- Build 0.182 (1004) with the instant-typing launch work was installed at
+  /Applications, HAND-SWAPPED past install-local's runtime
   health gate with the owner's knowledge. The previous 1002 bundle is
   preserved in the session scratchpad as TextText-1002-previous.app for
   rollback. The full release gate, attestation, Developer ID signature,
   and pre-install health (18 checks) all passed; only the runtime
-  finder.provider check blocked, and it blocks the SHIPPED 1002 equally.
+  finder.provider check blocked, and it blocked the SHIPPED 1002 equally.
 - Root cause chain, so nobody re-derives it: dev instances launched via
   `swift run` share the canonical StateStore and credentials, and
   `syncFileProviderDomain` persists a File Provider handoff whose origin
