@@ -8,6 +8,8 @@ import {
   renderSyncDocumentFile,
   renderSyncFile,
   syncError,
+  templateForPost,
+  templatesForPosts,
 } from "../../../sync";
 
 interface Props {
@@ -52,12 +54,23 @@ export async function GET(request: Request, { params }: Props) {
   });
   if (!access.canView) return syncError(404, "Post not found");
 
+  // The document hash must be computed with the same inputs the file GET
+  // renders with, the pinned look included. Omitting the template made this
+  // manifest disagree with the revision the client just fetched for every
+  // templated document, and the File Provider's consistency guard then
+  // refused to materialize it, forever.
+  const template = templateForPost(
+    post,
+    await templatesForPosts(workspace.blog.handle, [post]),
+  );
   return Response.json(
     {
       postId,
       slug: post.slug,
       fileHash: renderSyncFile(workspace.blog, post, folder.path).hash,
-      documentHash: renderSyncDocumentFile(workspace.blog, post, folder.path).hash,
+      documentHash: renderSyncDocumentFile(
+        workspace.blog, post, folder.path, template,
+      ).hash,
       artifacts: inlineArtifacts(post, workspace.blog.handle, postId),
     },
     { headers: { "Cache-Control": "private, no-store" } },

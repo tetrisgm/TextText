@@ -356,11 +356,17 @@ describe("sync file PATCH", () => {
     });
 
     const response = await PATCH(
-      patchRequest({
-        folder: targetFolderId,
-        slug: unsafeSlug,
-        title: renamed.title,
-      }),
+      patchRequest(
+        {
+          folder: targetFolderId,
+          slug: unsafeSlug,
+          title: renamed.title,
+        },
+        // The validator a real client holds: the hash of the file GET served,
+        // which renders with the post's resolved folder path, not the blog
+        // default. The If-Match check compares against exactly that now.
+        `"${renderSyncFile(blog, post, "blog/mutable-path").hash}"`,
+      ),
       { params: Promise.resolve({ postId }) },
     );
 
@@ -692,6 +698,11 @@ describe("sync file PUT during a live co-editing session", () => {
   });
 
   it("preserves structured presentation through a collaborator content save", async () => {
+    // Self-contained state: the previous test's templated post and resolved
+    // look otherwise leak in (clearAllMocks keeps implementations), and the
+    // If-Match below is computed for the plain post.
+    mocks.getPostById.mockResolvedValue(post);
+    mocks.getDocumentTemplateForHandle.mockResolvedValue(null);
     mocks.resolveItemAccess.mockResolvedValue({
       canView: true,
       canEditContent: true,
@@ -726,5 +737,127 @@ describe("sync file PUT during a live co-editing session", () => {
       },
       { expectedRevision: post.revision },
     );
+  });
+});
+
+describe("If-Match for a templated document off the blog folder", () => {
+  // The regression behind "Document assets changed during materialization":
+  // every guarded operation must accept exactly the validator GET serves,
+  // which renders with the post's real folder path and its inlined look.
+  const look = compileItemTypeBlueprint(
+    {
+      name: "Brief",
+      fields: [{ id: "status", label: "Status", type: "text" }],
+      item: { shape: "page" },
+      collection: { layout: "list" },
+      theme: {},
+    },
+    { id: "custom.brief" },
+  );
+  const templatedPost: Post = {
+    ...post,
+    document: {
+      ...documentFromLegacyPost(legacyPost),
+      presentation: {
+        template: { id: look.id, version: look.version },
+        theme: {},
+      },
+    },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.resolveSyncWorkspace.mockResolvedValue({ blog, userId: "owner-id" });
+    mocks.getPostById.mockResolvedValue(templatedPost);
+    mocks.getFolderById.mockResolvedValue({
+      id: folderId,
+      path: "documentation",
+    });
+    mocks.getDocumentTemplateForHandle.mockResolvedValue(look);
+    mocks.resolveItemAccess.mockResolvedValue({
+      canView: true,
+      canEditContent: true,
+      isOwner: true,
+    });
+    mocks.hasActiveCoEditors.mockResolvedValue(false);
+  });
+
+  it("PATCH accepts the document hash GET serves", async () => {
+    const renamed = { ...templatedPost, title: "Renamed", revision: 43 };
+    mocks.movePostFile.mockResolvedValue({
+      post: renamed,
+      changed: true,
+      previousSlug: templatedPost.slug,
+    });
+
+    const served = renderSyncDocumentFile(
+      blog, templatedPost, "documentation", look,
+    ).hash;
+    const response = await PATCH(
+      patchRequest({ title: "Renamed" }, `"${served}"`),
+      { params: Promise.resolve({ postId }) },
+    );
+
+    expect(response.status).toBe(200);
+  });
+
+  it("DELETE accepts the document hash GET serves", async () => {
+    mocks.deletePostAtomic.mockResolvedValue(undefined);
+
+    const served = renderSyncDocumentFile(
+      blog, templatedPost, "documentation", look,
+    ).hash;
+    const response = await DELETE(
+      mutationRequest("DELETE", `"${served}"`),
+      { params: Promise.resolve({ postId }) },
+    );
+
+    expect([200, 204]).toContain(response.status);
+  });
+
+  it("structured PUT accepts the document hash GET serves", async () => {
+    mocks.savePostContentPatch.mockImplementation(
+      (_handle: string, current: Post, patch: { document: Post["document"] }) =>
+        Promise.resolve({ ...current, document: patch.document, revision: 43 }),
+    );
+    mocks.resolveItemAccess.mockResolvedValue({
+      canView: true,
+      canEditContent: true,
+      isOwner: false,
+    });
+
+    const served = renderSyncDocumentFile(
+      blog, templatedPost, "documentation", look,
+    ).hash;
+    const response = await PUT(
+      new Request(`https://texttext.example/api/sync/v1/files/${postId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": SYNC_DOCUMENT_CONTENT_TYPE,
+          "If-Match": `"${served}"`,
+        },
+        body: serializeSyncDocumentEnvelope({
+          schema: SYNC_DOCUMENT_SCHEMA,
+          markdown: "---\ntitle: Edited\n---\n\nEdited body\n",
+          document: {
+            schemaVersion: 1,
+            content: {
+              title: "Edited",
+              body: "Edited body",
+              fields: {},
+              tags: [],
+              assets: [],
+            },
+            presentation: {
+              template: { id: look.id, version: look.version },
+              theme: {},
+            },
+          },
+        }),
+      }),
+      { params: Promise.resolve({ postId }) },
+    );
+
+    expect(response.status).toBe(200);
   });
 });

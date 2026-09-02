@@ -146,8 +146,15 @@ export async function PUT(request: Request, { params }: Props) {
     return syncError(412, "A specific If-Match validator is required");
   }
   const structured = requestUsesSyncDocument(request);
+  // Render with the same inputs GET used, the pinned look included, or a
+  // faithful client editing a templated document can never satisfy If-Match.
   const current = structured
-    ? renderSyncDocumentFile(blog, post, folderPath)
+    ? renderSyncDocumentFile(
+        blog,
+        post,
+        folderPath,
+        templateForPost(post, await templatesForPosts(blog.handle, [post])),
+      )
     : renderSyncFile(blog, post, folderPath);
   if (!ifMatchSatisfied(ifMatch, `"${current.hash}"`)) {
     return syncError(412, "The post changed since this file was fetched");
@@ -302,7 +309,7 @@ export async function PUT(request: Request, { params }: Props) {
 export async function DELETE(request: Request, { params }: Props) {
   const resolved = await resolveWorkspacePost(request, params);
   if (resolved instanceof Response) return resolved;
-  const { blog, post, postId, userId, access } = resolved;
+  const { blog, post, postId, userId, access, folderPath } = resolved;
   if (!access.isOwner) {
     return syncError(403, "Only the owner can delete files");
   }
@@ -315,7 +322,10 @@ export async function DELETE(request: Request, { params }: Props) {
   if (ifMatch.trim() === "*") {
     return syncError(412, "A specific If-Match validator is required");
   }
-  if (!ifMatchSatisfiedForSyncFile(ifMatch, blog, post)) {
+  if (!ifMatchSatisfiedForSyncFile(
+    ifMatch, blog, post, folderPath,
+    templateForPost(post, await templatesForPosts(blog.handle, [post])),
+  )) {
     return syncError(412, "The post changed since this file was fetched");
   }
 
@@ -356,7 +366,7 @@ export async function DELETE(request: Request, { params }: Props) {
 export async function PATCH(request: Request, { params }: Props) {
   const resolved = await resolveWorkspacePost(request, params);
   if (resolved instanceof Response) return resolved;
-  const { blog, post, postId, userId, access } = resolved;
+  const { blog, post, postId, userId, access, folderPath } = resolved;
   if (!access.isOwner) {
     return syncError(403, "Only the owner can move or rename files");
   }
@@ -404,7 +414,10 @@ export async function PATCH(request: Request, { params }: Props) {
   if (ifMatch.trim() === "*") {
     return syncError(412, "A specific If-Match validator is required");
   }
-  if (!ifMatchSatisfiedForSyncFile(ifMatch, blog, post)) {
+  if (!ifMatchSatisfiedForSyncFile(
+    ifMatch, blog, post, folderPath,
+    templateForPost(post, await templatesForPosts(blog.handle, [post])),
+  )) {
     return syncError(412, "The post changed since this file was fetched");
   }
   if (post.revision === undefined) {

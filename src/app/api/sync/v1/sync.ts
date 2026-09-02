@@ -260,13 +260,26 @@ export function templateForPost(
   return templates.get(`${reference.id}@${reference.version}`) ?? null;
 }
 
+/**
+ * Whether the client's validator matches the file the server would serve NOW.
+ *
+ * The comparison must render with exactly the inputs GET renders with: the
+ * post's real folder path and its inlined look. This used to render with the
+ * Blog default path and no template, so for a document pinned to a look the
+ * validator a client faithfully carried from GET could never match, every
+ * guarded write or delete answered 412, and the File Provider refused to
+ * materialize the document ("assets changed during materialization"): the
+ * hash it fetched disagreed with the hash the artifacts manifest computed.
+ */
 export function ifMatchSatisfiedForSyncFile(
   headerValue: string,
   blog: Blog,
   post: Post,
+  folderPath = BLOG_FOLDER_PATH,
+  template?: TemplateDefinition | null,
 ): boolean {
-  const markdown = renderSyncFile(blog, post);
-  const document = renderSyncDocumentFile(blog, post);
+  const markdown = renderSyncFile(blog, post, folderPath);
+  const document = renderSyncDocumentFile(blog, post, folderPath, template);
   return (
     ifMatchSatisfied(headerValue, `"${markdown.hash}"`) ||
     ifMatchSatisfied(headerValue, `"${document.hash}"`)

@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  getDocumentTemplateForHandle: vi.fn(),
   getFolderById: vi.fn(),
   getPostById: vi.fn(),
   put: vi.fn(),
@@ -15,6 +16,7 @@ vi.mock("@/lib/permissions", () => ({
   resolveItemAccess: mocks.resolveItemAccess,
 }));
 vi.mock("@/lib/store", () => ({
+  getDocumentTemplateForHandle: mocks.getDocumentTemplateForHandle,
   getFolderById: mocks.getFolderById,
   getPostById: mocks.getPostById,
 }));
@@ -30,6 +32,7 @@ import {
 } from "@/app/api/sync/v1/sync";
 import type { Blog, Post } from "@/lib/content";
 import { documentFromLegacyPost } from "@/lib/documents/legacy";
+import { compileItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
 
 const postId = "0b4f6a52-8c1d-4e3a-9b7f-2d5e8a1c3f60";
 const folderId = "beec8d18-b602-4cd3-bc2b-640e067c01c8";
@@ -62,6 +65,7 @@ const savedBlobToken = process.env.BLOB_READ_WRITE_TOKEN;
 beforeEach(() => {
   for (const mock of Object.values(mocks)) mock.mockReset();
   process.env.BLOB_READ_WRITE_TOKEN = "blob-token";
+  mocks.getDocumentTemplateForHandle.mockResolvedValue(null);
   mocks.resolveSyncWorkspace.mockResolvedValue({ blog, userId: "user-1" });
   mocks.resolveItemAccess.mockResolvedValue({
     canView: true,
@@ -210,6 +214,54 @@ describe("sync file artifact GET", () => {
     );
 
     expect(response.status).toBe(404);
+  });
+
+  it("computes the document hash exactly as the file GET does, look included", async () => {
+    // The regression behind "Document assets changed during materialization":
+    // this manifest rendered the document WITHOUT the pinned look while the
+    // file GET rendered WITH it, so for every templated document the client's
+    // freshly fetched revision hash never matched the manifest, and the File
+    // Provider's consistency guard refused to materialize the file forever.
+    const look = compileItemTypeBlueprint(
+      {
+        name: "Brief",
+        fields: [{ id: "status", label: "Status", type: "text" }],
+        item: { shape: "page" },
+        collection: { layout: "list" },
+        theme: {},
+      },
+      { id: "custom.brief" },
+    );
+    const templatedPost: Post = {
+      ...basePost,
+      document: {
+        ...documentFromLegacyPost(legacyBasePost),
+        presentation: {
+          template: { id: look.id, version: look.version },
+          theme: {},
+        },
+      },
+    };
+    mocks.getPostById.mockResolvedValue(templatedPost);
+    mocks.getFolderById.mockResolvedValue({
+      id: folderId,
+      path: "documentation",
+    });
+    mocks.getDocumentTemplateForHandle.mockResolvedValue(look);
+
+    const response = await GET(
+      new Request(`https://texttext.example/api/sync/v1/files/${postId}/artifacts`),
+      { params: Promise.resolve({ postId }) },
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.documentHash).toBe(
+      renderSyncDocumentFile(blog, templatedPost, "documentation", look).hash,
+    );
+    expect(body.fileHash).toBe(
+      renderSyncFile(blog, templatedPost, "documentation").hash,
+    );
   });
 });
 
