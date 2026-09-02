@@ -2551,6 +2551,48 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   syncs longer than 5s, so launch health always sampled out mid-sync and
   install-local rolled updates back.
 
+## Editor and workspace-route performance pass (2026-09-02)
+
+- Owner ask: profile the workspace route and fix editor input lag on
+  large buffers (most editors lag past 10kB, die at 1MB).
+- Editor, `987d4251`, deployed: a keystroke used to rebuild the whole
+  surface (129k spans at 1MB) inside ONE inline formatting context whose
+  full layout cost 1.9s, giving ~1,050ms/keystroke at 900kB and 17ms at
+  88kB. Now: per-line block rows spliced by a line diff
+  (lineSplice/lineOverlaySignatures, tested), literal newlines kept but
+  zero-height, content-visibility:auto rows, bare text nodes for plain
+  runs, native beforeinput interception for structural edits (React's
+  onBeforeInput is a shim without inputType - never use it for this),
+  offset-exact copy/cut, spellcheck off past 40kB. Result: 53ms p50 per
+  keystroke at 900kB, textarea-parity in Chromium, live styling kept.
+  Verified: markdown-surface eval passes, collaboration browser eval
+  21/24 (humans, carets, agents, three-way merge all green).
+- The 3 failing collab checks are the sidebar assistant executor
+  answering 403 "Only the workspace owner can run assistant commands"
+  for the eval's dev-login owner - suspect the 01ff6aa5 identity change;
+  spawned as a separate task. The eval harness also learned the /t/
+  edit-URL shape from the 2026-09-01 routing fixes.
+- Workspace route, `0f3eaff7`, deployed: opening a document in edit mode
+  SSR'd the full reader render as shell children that the shell never
+  shows (it opens straight into the editor; later views are
+  client-rendered from the pool). Cutting it took 900kB-doc edit TTFB
+  from 4,279ms to 280ms on the production build locally.
+- `Document-Policy: js-profiling` now ships on all responses, so `new
+  Profiler()` works in the running app; that is how the keystroke time
+  was attributed (90% native, no JS stack) after DevTools-free bisection.
+- Measurement traps that burned time here: curl against /t/ item URLs
+  returns a __next_error__ shell (16kB) with a 200 - benchmark item SSR
+  in a real browser; execCommand fires input but NOT beforeinput and
+  Chromium DROPS newlines from execCommand insertText in this structure;
+  a long-hidden Browser pane intensively throttles timers (use
+  MessageChannel ticks to settle React) and never fires rAF.
+- STILL OPEN on the workspace route: ~10 DB round trips per signed-in
+  workspace-home render (React cache() dedupe + parallelization per the
+  perf skill, the production TTFB multiplier over Neon); the READ view of
+  a huge document still costs ~2.8s SSR (reader render of the whole
+  body); local perf fixtures perf-100kb / perf-1mb live in the dev
+  database under visual-demo/documentation.
+
 ## Resolved episodes (one line each, dates in git log)
 
 - Apple consent screen "write app": appleid.apple.com caches its own copy;
