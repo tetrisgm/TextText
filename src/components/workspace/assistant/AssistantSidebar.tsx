@@ -290,6 +290,39 @@ export function AssistantSidebar({
   const launcherRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLElement>(null);
+
+  // Wheel over the rail's empty background must not go dead: when nothing
+  // inside the rail can consume the scroll, hand it to the document pane.
+  // "Wherever I am in the body is actionable" (owner, 2026-09-02) - a
+  // mostly-empty pinned rail beside the document reads as page margin, and a
+  // wheel that does nothing there feels broken.
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const onWheel = (event: WheelEvent) => {
+      if (!event.deltaY) return;
+      let el: Element | null =
+        event.target instanceof Element ? event.target : null;
+      while (el && panel.contains(el)) {
+        if (el.scrollHeight > el.clientHeight + 1) {
+          const canUp = event.deltaY < 0 && el.scrollTop > 0;
+          const canDown =
+            event.deltaY > 0 &&
+            el.scrollTop < el.scrollHeight - el.clientHeight - 1;
+          if (canUp || canDown) return;
+        }
+        if (el === panel) break;
+        el = el.parentElement;
+      }
+      const reader = document.querySelector(".post-editor-content");
+      if (reader instanceof HTMLElement) {
+        reader.scrollTop +=
+          event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
+      }
+    };
+    panel.addEventListener("wheel", onWheel, { passive: true });
+    return () => panel.removeEventListener("wheel", onWheel);
+  }, []);
   const previousStateRef = useRef(state);
   const focusOnOpenRef = useRef(true);
   const pointerWithinRef = useRef(false);

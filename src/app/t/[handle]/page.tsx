@@ -72,6 +72,12 @@ import { isPublicOriginRequest } from "@/lib/public-origin";
 import { publicSocialMetadata } from "@/lib/public-metadata";
 import { publishedPublicLocations } from "@/lib/agent-surface";
 import {
+  WORKSPACE_ASSISTANT_STATE_COOKIE,
+  WORKSPACE_ASSISTANT_WIDTH_COOKIE,
+  parseAssistantStateCookie,
+  parseAssistantWidthCookie,
+} from "@/lib/workspace-assistant-prefs";
+import {
   WORKSPACE_SIDEBAR_COOKIE,
   parseWorkspaceSidebarCollapsed,
 } from "@/lib/workspace-sidebar-state";
@@ -511,6 +517,16 @@ export async function BlogHomeForHandle({
   const inTextTextApp = cookieStore.get("wr_app")?.value === "1";
   const sidebarCookie = cookieStore.get(WORKSPACE_SIDEBAR_COOKIE)?.value;
   const initialSidebarCollapsed = parseWorkspaceSidebarCollapsed(sidebarCookie);
+  // First paint of the assistant rail matches what this browser last
+  // resolved, so opening a document never pops the rail in afterwards.
+  const initialAssistantState =
+    parseAssistantStateCookie(
+      cookieStore.get(WORKSPACE_ASSISTANT_STATE_COOKIE)?.value,
+    ) ?? undefined;
+  const initialAssistantWidth =
+    parseAssistantWidthCookie(
+      cookieStore.get(WORKSPACE_ASSISTANT_WIDTH_COOKIE)?.value,
+    ) ?? undefined;
   if (redirectClaimed && blog.username) {
     const redirectParams = new URLSearchParams();
     for (const key of [
@@ -743,6 +759,8 @@ export async function BlogHomeForHandle({
       folders={folders}
       homePath={blogHomePath(blog)}
       initialSidebarCollapsed={initialSidebarCollapsed}
+      initialAssistantState={initialAssistantState}
+      initialAssistantWidth={initialAssistantWidth}
       initialSearchQuery={
         queryValue(query.date) ??
         queryValue(query.tag) ??

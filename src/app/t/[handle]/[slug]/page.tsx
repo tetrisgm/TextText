@@ -58,6 +58,12 @@ import {
   publicWikiLinkRenderTargets,
 } from "@/lib/wikilinks";
 import {
+  WORKSPACE_ASSISTANT_STATE_COOKIE,
+  WORKSPACE_ASSISTANT_WIDTH_COOKIE,
+  parseAssistantStateCookie,
+  parseAssistantWidthCookie,
+} from "@/lib/workspace-assistant-prefs";
+import {
   WORKSPACE_SIDEBAR_COOKIE,
   parseWorkspaceSidebarCollapsed,
 } from "@/lib/workspace-sidebar-state";
@@ -196,6 +202,14 @@ export async function PostPageForHandle({
   const initialSidebarCollapsed = parseWorkspaceSidebarCollapsed(
     cookieStore.get(WORKSPACE_SIDEBAR_COOKIE)?.value,
   );
+  const initialAssistantState =
+    parseAssistantStateCookie(
+      cookieStore.get(WORKSPACE_ASSISTANT_STATE_COOKIE)?.value,
+    ) ?? undefined;
+  const initialAssistantWidth =
+    parseAssistantWidthCookie(
+      cookieStore.get(WORKSPACE_ASSISTANT_WIDTH_COOKIE)?.value,
+    ) ?? undefined;
   const canEdit = access.canEdit;
   const editRequested = queryValue(query.edit) === "1";
   const editId = queryValue(query.id);
@@ -449,6 +463,8 @@ export async function PostPageForHandle({
           homePath={homePath}
           initialMode="edit"
           initialSidebarCollapsed={initialSidebarCollapsed}
+          initialAssistantState={initialAssistantState}
+          initialAssistantWidth={initialAssistantWidth}
           initialPool={initialPool}
           initialPostDocument={initialPostDocument}
           post={shellPost}
@@ -539,6 +555,8 @@ export async function PostPageForHandle({
           folders={folders}
           homePath={homePath}
           initialSidebarCollapsed={initialSidebarCollapsed}
+          initialAssistantState={initialAssistantState}
+          initialAssistantWidth={initialAssistantWidth}
           initialPool={initialPool}
           initialPostDocument={initialPostDocument}
           post={shellPost}

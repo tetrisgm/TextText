@@ -249,6 +249,11 @@ import {
   replaceMarkdownSubtitle,
 } from "@/lib/markdown-subtitle";
 import {
+  WORKSPACE_ASSISTANT_COOKIE_MAX_AGE,
+  WORKSPACE_ASSISTANT_STATE_COOKIE,
+  WORKSPACE_ASSISTANT_WIDTH_COOKIE,
+} from "@/lib/workspace-assistant-prefs";
+import {
   WORKSPACE_SIDEBAR_COOKIE,
   WORKSPACE_SIDEBAR_COOKIE_MAX_AGE,
   WORKSPACE_SIDEBAR_STORAGE_KEY,
@@ -849,17 +854,38 @@ function setWorkspaceAssistantWidth(next: number) {
   emitAssistantPreferences();
 }
 
-function useWorkspaceAssistantPreferences() {
+function writeAssistantFactCookies(
+  state: AssistantSidebarState,
+  width: number,
+) {
+  if (typeof document === "undefined") return;
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  const suffix = `; Path=/; Max-Age=${WORKSPACE_ASSISTANT_COOKIE_MAX_AGE}; SameSite=Lax${secure}`;
+  document.cookie = `${WORKSPACE_ASSISTANT_STATE_COOKIE}=${
+    state === "pinned" ? "pinned" : "hidden"
+  }${suffix}`;
+  document.cookie = `${WORKSPACE_ASSISTANT_WIDTH_COOKIE}=${Math.round(width)}${suffix}`;
+}
+
+function useWorkspaceAssistantPreferences(
+  initialState?: AssistantSidebarState,
+  initialWidth?: number,
+) {
   const state = useSyncExternalStore(
     subscribeAssistantPreferences,
     readAssistantState,
-    () => "hidden" as AssistantSidebarState,
+    () => initialState ?? ("hidden" as AssistantSidebarState),
   );
   const width = useSyncExternalStore(
     subscribeAssistantPreferences,
     readAssistantWidth,
-    () => ASSISTANT_SIDEBAR_DEFAULT_WIDTH,
+    () => initialWidth ?? ASSISTANT_SIDEBAR_DEFAULT_WIDTH,
   );
+  // Keep the first-paint fact cache current so the next SSR paints the rail
+  // exactly as this window resolved it - no pop-in, no resize.
+  useEffect(() => {
+    writeAssistantFactCookies(state, clampAssistantWidth(width));
+  }, [state, width]);
   return { state, width };
 }
 
@@ -4363,6 +4389,8 @@ function LocalWorkspaceShell({
   homePath,
   initialPool,
   initialSidebarCollapsed,
+  initialAssistantState,
+  initialAssistantWidth,
   initialSearchQuery,
   initialView,
 }: {
@@ -4375,6 +4403,8 @@ function LocalWorkspaceShell({
   homePath: string;
   initialPool: WorkspacePoolPayload;
   initialSidebarCollapsed: boolean;
+  initialAssistantState?: AssistantSidebarState;
+  initialAssistantWidth?: number;
   initialSearchQuery?: string;
   initialView: LocalWorkspaceView;
 }) {
@@ -4536,7 +4566,7 @@ function LocalWorkspaceShell({
     string | null
   >(null);
   const { state: assistantState, width: assistantWidth } =
-    useWorkspaceAssistantPreferences();
+    useWorkspaceAssistantPreferences(initialAssistantState, initialAssistantWidth);
   useSyncExternalStore(
     subscribeOpenWorkspaceItemDrafts,
     openWorkspaceItemDraftRevision,
@@ -7394,6 +7424,8 @@ export function BlogHomeWorkspaceShell({
   folders,
   homePath,
   initialSidebarCollapsed = false,
+  initialAssistantState,
+  initialAssistantWidth,
   initialSearchQuery = "",
   initialSearchSource = "query",
   initialSettingsOpen = false,
@@ -7409,6 +7441,8 @@ export function BlogHomeWorkspaceShell({
   folders: Folder[];
   homePath: string;
   initialSidebarCollapsed?: boolean;
+  initialAssistantState?: AssistantSidebarState;
+  initialAssistantWidth?: number;
   initialSearchQuery?: string;
   initialSearchSource?: WorkspaceSearchLocation["source"];
   initialSettingsOpen?: boolean;
@@ -7437,6 +7471,8 @@ export function BlogHomeWorkspaceShell({
           homePath={homePath}
           initialPool={initialPool}
           initialSidebarCollapsed={initialSidebarCollapsed}
+          initialAssistantState={initialAssistantState}
+          initialAssistantWidth={initialAssistantWidth}
           initialSearchQuery={initialSearchQuery}
           initialView={
             initialSettingsOpen
@@ -7505,6 +7541,8 @@ export function PostReadWorkspaceShell({
   folders,
   homePath,
   initialSidebarCollapsed = false,
+  initialAssistantState,
+  initialAssistantWidth,
   initialPool,
   initialPostDocument,
   initialMode = "read",
@@ -7521,6 +7559,8 @@ export function PostReadWorkspaceShell({
   folders: Folder[];
   homePath: string;
   initialSidebarCollapsed?: boolean;
+  initialAssistantState?: AssistantSidebarState;
+  initialAssistantWidth?: number;
   initialPool?: WorkspacePoolPayload | null;
   initialPostDocument?: WorkspaceInitialDocument | null;
   initialMode?: "read" | "edit";
@@ -7581,6 +7621,8 @@ export function PostReadWorkspaceShell({
           homePath={homePath}
           initialPool={localInitialPool}
           initialSidebarCollapsed={initialSidebarCollapsed}
+          initialAssistantState={initialAssistantState}
+          initialAssistantWidth={initialAssistantWidth}
           initialView={
             post.id
               ? {
