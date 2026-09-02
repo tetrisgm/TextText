@@ -2441,6 +2441,22 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   the owner declined desktop control this session, so the Space-switch,
   summon toggle, and login-launch-hidden behaviors are unobserved and
   should be eyeballed in a real build before release.
+- Cold-start measurement (owner clarified "starts faster" = the launch
+  itself, not summoning a resident app). Debug build against a warm
+  localhost server, timed with a temporary BootTrace probe (since removed):
+  process main to end of `didFinishLaunching` ~150ms with the window
+  already warmed at ~139ms; web content committed/painted ~280ms after
+  that. The native path is not the bottleneck; the WKWebView load
+  dominates, and over the network rendering the real signed-in workspace
+  is larger still. Not measured: the signed-in workspace load (the
+  isolated dev app is unlinked and lands on `/`), which is the heaviest
+  real case and is web-app work (Next.js bundle + data), not native boot.
+- `57d11e48` removes the blank-white-webview flash at launch: the web view
+  now sits under a `LaunchPlaceholderView` painting `windowBackgroundColor`
+  plus a dimmed app icon, lifted on first `didCommit` (didFinish backstop).
+  Native only; the actual web load time is unchanged, this fixes perceived
+  startup. Verified: launches clean, 461 Swift tests pass. Not eyeballed
+  live (owner declined desktop control).
 - The mock provider's FAIL_STREAM trigger matches the whole transcript, so
   one failed test prompt poisons every later turn of that conversation.
   Start a fresh chat when evaluating with the mock.
