@@ -730,6 +730,25 @@ function subscribeSidebarWidth(listener: () => void): () => void {
   };
 }
 
+/**
+ * Write the sidebar width everywhere the variable is scoped: the root, every
+ * .post-editor-shell (whose stylesheet redeclares a default that would shadow
+ * the root value), and the sidebar region's own inline declaration.
+ */
+function applySidebarWidthVariable(width: number) {
+  if (typeof document === "undefined") return;
+  const value = `${width}px`;
+  document.documentElement.style.setProperty(
+    "--workspace-sidebar-width",
+    value,
+  );
+  for (const el of document.querySelectorAll<HTMLElement>(
+    ".post-editor-shell, .post-workspace-sidebar-region",
+  )) {
+    el.style.setProperty("--workspace-sidebar-width", value);
+  }
+}
+
 function setWorkspaceSidebarWidth(next: number) {
   sidebarWidthMemory = clampSidebarWidth(next);
   if (typeof window !== "undefined") {
@@ -2050,10 +2069,7 @@ export function WorkspaceSidebarChrome({
   const { width: sidebarWidth, setWidth: setSidebarWidth } =
     useWorkspaceSidebarWidth();
   useLayoutEffect(() => {
-    document.documentElement.style.setProperty(
-      "--workspace-sidebar-width",
-      `${sidebarWidth}px`,
-    );
+    applySidebarWidthVariable(sidebarWidth);
   }, [sidebarWidth]);
   const selectFolder = useCallback(
     (folder: SidebarFolderId) => {
@@ -2117,19 +2133,25 @@ export function WorkspaceSidebarChrome({
       const startWidth = sidebarWidth;
       const target = event.currentTarget;
       target.setPointerCapture(event.pointerId);
+      // Drag writes the layout variable directly; the store (and the React
+      // re-render it triggers) commits once on release, so the drag itself
+      // is pure style work.
+      let lastWidth = startWidth;
       const onPointerMove = (moveEvent: PointerEvent) => {
         const viewportLimit = Math.max(
           WORKSPACE_SIDEBAR_MIN_WIDTH,
           window.innerWidth - 360,
         );
-        setSidebarWidth(
+        lastWidth = clampSidebarWidth(
           Math.min(viewportLimit, startWidth + moveEvent.clientX - startX),
         );
+        applySidebarWidthVariable(lastWidth);
       };
       const finish = () => {
         window.removeEventListener("pointermove", onPointerMove);
         window.removeEventListener("pointerup", finish);
         window.removeEventListener("pointercancel", finish);
+        setSidebarWidth(lastWidth);
       };
       window.addEventListener("pointermove", onPointerMove);
       window.addEventListener("pointerup", finish, { once: true });
@@ -2204,21 +2226,24 @@ export function WorkspaceSidebarChrome({
           starredCount={starredCount}
           trashCount={trashCount}
         />
-        {!collapsed && (
-          <div
-            className="post-sidebar-resize-handle"
-            role="separator"
-            tabIndex={0}
-            aria-label="Resize sidebar"
-            aria-orientation="vertical"
-            aria-valuemin={WORKSPACE_SIDEBAR_MIN_WIDTH}
-            aria-valuemax={WORKSPACE_SIDEBAR_MAX_WIDTH}
-            aria-valuenow={sidebarWidth}
-            onPointerDown={beginResize}
-            onKeyDown={resizeWithKeyboard}
-          />
-        )}
       </div>
+      {/* Outside the sidebar region: its overflow clip cut the handle's
+          hit area to a ~5px sliver, which read as "impossible to resize".
+          Fixed-positioned on the width variable, it tracks a drag live. */}
+      {!collapsed && (
+        <div
+          className="post-sidebar-resize-handle"
+          role="separator"
+          tabIndex={0}
+          aria-label="Resize sidebar"
+          aria-orientation="vertical"
+          aria-valuemin={WORKSPACE_SIDEBAR_MIN_WIDTH}
+          aria-valuemax={WORKSPACE_SIDEBAR_MAX_WIDTH}
+          aria-valuenow={sidebarWidth}
+          onPointerDown={beginResize}
+          onKeyDown={resizeWithKeyboard}
+        />
+      )}
       {collapsed && !mobileOpen && (
         <div className="workspace-sidebar-reveal-chrome ac-chrome">
           <SidebarToggleControl collapsed onToggleCollapsed={openSidebar} />
@@ -2319,9 +2344,15 @@ function viewFromUrl(
   }
 
   const rest = pathname.slice(matchingHome.length + 1);
-  const [encodedSlug = ""] = rest.split("/");
-  if (!encodedSlug || encodedSlug === "c") return { level: "root" };
-  const slug = decodeURIComponent(encodedSlug);
+  // Item URLs are folder-scoped ("documentation/reader-images", nested
+  // folders included): the SLUG is the last segment. Taking the first
+  // segment here made every history navigation to an item parse as an
+  // unknown slug and fall back to the root view, so a forward swipe drew
+  // the list and then a later URL sync corrected it - the redraw churn
+  // reported on swipe navigation.
+  const segments = rest.split("/").map((part) => decodeURIComponent(part));
+  const slug = segments[segments.length - 1] ?? "";
+  if (!slug || segments[0] === "c") return { level: "root" };
   const editRequested = url.searchParams.get("edit") === "1";
   const editId = url.searchParams.get("id");
   const post =
@@ -2329,10 +2360,15 @@ function viewFromUrl(
       ? (findPoolPostById(pool, editId) ?? findPoolPostBySlug(pool, slug))
       : findPoolPostBySlug(pool, slug);
   if (!post) return { level: "root" };
+  const urlFolderPath = segments.slice(0, -1).join("/");
+  const folderPath =
+    urlFolderPath && pool.folders.some((folder) => folder.path === urlFolderPath)
+      ? urlFolderPath
+      : folderPathForPoolPost(pool, post);
   return {
     level: editRequested || post.type === "note" ? "edit" : "post",
     postId: post.id,
-    folderPath: folderPathForPoolPost(pool, post),
+    folderPath,
     returnToSearch: workspaceSearchReturnFromUrl(url),
   };
 }
@@ -3674,30 +3710,6 @@ function WorkspaceSelectionToolbar({
   );
 }
 
-function LoadingBody() {
-  return (
-    <div
-      className="workspace-post-body-status"
-      aria-label="Loading body"
-      role="status"
-      style={{ display: "grid", gap: 12, width: "min(100%, 520px)" }}
-    >
-      {[92, 84, 68].map((width) => (
-        <span
-          key={width}
-          aria-hidden="true"
-          style={{
-            background: "color-mix(in srgb, var(--muted) 18%, transparent)",
-            borderRadius: 999,
-            display: "block",
-            height: 12,
-            width: `${width}%`,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
 
 function ErrorBody({ message }: { message: string }) {
   return <p className="workspace-post-body-status">{message}</p>;
@@ -3918,9 +3930,10 @@ function WorkspacePostReader({
         />
       ) : entry.status === "error" ? (
         <ErrorBody message={entry.error} />
-      ) : (
-        <LoadingBody />
-      )}
+      ) : // Never a skeleton: the view only switches here once the document
+      // is locally available (openPoolPost gates on it), so this branch is
+      // a sub-frame transient at most and must paint nothing.
+      null}
       <ReaderFindHighlights query={findQuery} />
       {canCommentPost && post.id && !optimistic && document && (
         <ReaderComments
@@ -4069,11 +4082,12 @@ function LocalUnifiedWorkspacePostEditor({
   );
 
   if (!document) {
+    // See the gate in openPoolPost: skeleton placeholders are banned (they
+    // read as ghosting); reaching here without a document is a sub-frame
+    // transient or an error.
     return documentState.entry.status === "error" ? (
       <ErrorBody message={documentState.entry.error} />
-    ) : (
-      <LoadingBody />
-    );
+    ) : null;
   }
 
   return (
@@ -4992,14 +5006,24 @@ function LocalWorkspaceShell({
     [homePath, navigateToView],
   );
 
+  const pendingOpenTokenRef = useRef(0);
   const openPoolPost = useCallback(
     (
       post: WorkspacePoolPost,
       folderPath?: string,
       mode: "read" | "edit" = "read",
+      force = false,
     ) => {
       // Keep edit transitions inside the workspace shell so existing notes and
       // posts feel instant; the URL still mirrors the canonical edit route.
+      //
+      // The view switches ONLY once the document is locally available, so an
+      // opened item always appears fully formed - never a skeleton, never an
+      // empty surface that populates a beat later (owner, 2026-09-02: that
+      // reads as ghosting). Hover/selection prefetch and the idle warm make
+      // the ready path the common one; a cold document holds the current
+      // view for the fetch (typically well under 100ms) and then swaps
+      // atomically.
       const currentPool = displayPoolRef.current;
       const warmedBody =
         getCachedWorkspacePostDocument(currentPool.blogId, post.id)?.document
@@ -5007,6 +5031,22 @@ function LocalWorkspaceShell({
         currentPool.initialDocuments?.find(
           (document) => document.postId === post.id,
         )?.document.content.body;
+      const documentLocallyAvailable =
+        warmedBody !== undefined ||
+        Boolean(post.document) ||
+        isOptimisticPostId(post.id);
+      if (!documentLocallyAvailable && !force) {
+        const token = ++pendingOpenTokenRef.current;
+        void ensurePostDocument(currentPool.blogId, post.id)
+          .catch(() => {})
+          .then(() => {
+            if (pendingOpenTokenRef.current !== token) return;
+            // force: a failed fetch must still open (the error body says
+            // why) rather than silently eating the click.
+            openPoolPostNowRef.current?.(post, folderPath, mode, true);
+          });
+        return;
+      }
       const nextMode =
         mode === "read" && shouldOpenWorkspacePostInEdit(post, warmedBody)
           ? "edit"
@@ -5059,6 +5099,10 @@ function LocalWorkspaceShell({
     },
     [homePath, navigateToView],
   );
+  const openPoolPostNowRef = useRef<typeof openPoolPost | null>(null);
+  useEffect(() => {
+    openPoolPostNowRef.current = openPoolPost;
+  }, [openPoolPost]);
 
   const openCreatedPost = useCallback(
     (post: WorkspacePoolPost) => {

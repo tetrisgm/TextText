@@ -124,6 +124,7 @@ export type AssistantSidebarProps = {
 };
 
 type ResizeSession = {
+  lastWidth: number | null;
   pointerId: number;
   startWidth: number;
   startX: number;
@@ -445,6 +446,7 @@ export function AssistantSidebar({
 
     event.preventDefault();
     resizeSessionRef.current = {
+      lastWidth: null,
       pointerId: event.pointerId,
       startWidth: resolvedWidth,
       startX: event.clientX,
@@ -453,12 +455,32 @@ export function AssistantSidebar({
     setResizing(true);
   };
 
+  // Dragging writes the layout variable directly and commits the width to
+  // the store ONCE on release. Committing per pointermove re-rendered the
+  // whole workspace shell (and re-wrote localStorage and a cookie) for every
+  // mouse position, which is exactly the resize choppiness reported.
+  const applyDragWidth = (next: number) => {
+    const clamped = Math.round(clamp(next, resolvedMinWidth, resolvedMaxWidth));
+    const shell = panelRef.current?.closest<HTMLElement>(".post-editor-shell");
+    (shell ?? document.documentElement).style.setProperty(
+      "--workspace-assistant-width",
+      `${clamped}px`,
+    );
+    return clamped;
+  };
+
   const continueResize = (event: ReactPointerEvent<HTMLDivElement>) => {
     const session = resizeSessionRef.current;
     if (!session || session.pointerId !== event.pointerId) return;
 
     event.preventDefault();
-    requestWidth(session.startWidth + session.startX - event.clientX);
+    session.lastWidth = applyDragWidth(
+      session.startWidth + session.startX - event.clientX,
+    );
+  };
+
+  const commitResize = (session: ResizeSession) => {
+    if (session.lastWidth !== null) onWidthChange(session.lastWidth);
   };
 
   const finishResize = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -467,15 +489,18 @@ export function AssistantSidebar({
 
     resizeSessionRef.current = null;
     setResizing(false);
+    commitResize(session);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
   };
 
   const loseResizeCapture = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (resizeSessionRef.current?.pointerId !== event.pointerId) return;
+    const session = resizeSessionRef.current;
+    if (session?.pointerId !== event.pointerId) return;
     resizeSessionRef.current = null;
     setResizing(false);
+    commitResize(session);
   };
 
   const resizeFromKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {

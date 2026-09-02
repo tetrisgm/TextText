@@ -3070,12 +3070,17 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   display: none;
 }
 .post-sidebar-resize-handle {
-  position: absolute;
-  inset: 0 -5px 0 auto;
+  /* A sibling of the sidebar region, not a child: the region's overflow
+     clip reduced the interactive band to a ~5px sliver, which made the
+     sidebar effectively impossible to resize. Fixed on the width variable
+     so it follows the drag live. */
+  position: fixed;
+  inset: 0 auto 0 calc(var(--workspace-sidebar-width, 248px) - 5px);
   z-index: 206;
   width: 10px;
   cursor: col-resize;
   touch-action: none;
+  pointer-events: auto;
 }
 .post-sidebar-resize-handle::after {
   content: "";
