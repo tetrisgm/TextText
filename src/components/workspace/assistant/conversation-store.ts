@@ -29,6 +29,8 @@ type AssistantConversation = Omit<
 > & {
   metadataUpdatedAt: string;
   messages: AssistantMessage[];
+  /** Deletion tombstone; kept so the server merge cannot resurrect the chat. */
+  deletedAt?: string;
 };
 
 type StoredWorkspaceConversations = {
@@ -105,6 +107,22 @@ function cleanConversation(value: unknown): AssistantConversation | null {
     return null;
   }
   const conversationUpdatedAt = conversation.updatedAt;
+  if (typeof conversation.deletedAt === "string") {
+    return {
+      id: conversation.id,
+      contextKey: conversation.contextKey,
+      title: "Deleted chat",
+      pinned: false,
+      metadataUpdatedAt:
+        typeof conversation.metadataUpdatedAt === "string"
+          ? conversation.metadataUpdatedAt
+          : conversation.updatedAt,
+      createdAt: conversation.createdAt,
+      updatedAt: conversation.updatedAt,
+      messages: [],
+      deletedAt: conversation.deletedAt,
+    };
+  }
   return {
     id: conversation.id,
     contextKey: conversation.contextKey,
@@ -304,13 +322,23 @@ function createConversationRecord(
 function trimConversations(
   conversations: AssistantConversation[],
 ): AssistantConversation[] {
-  if (conversations.length <= MAX_CONVERSATIONS) return conversations;
-  return [...conversations]
-    .sort((left, right) => {
-      if (left.pinned !== right.pinned) return left.pinned ? -1 : 1;
-      return right.updatedAt.localeCompare(left.updatedAt);
-    })
-    .slice(0, MAX_CONVERSATIONS);
+  // Live chats and deletion tombstones are trimmed separately so a burst of
+  // deletions cannot evict live history, and vice versa.
+  const live = conversations.filter((conversation) => !conversation.deletedAt);
+  const deleted = conversations.filter((conversation) =>
+    Boolean(conversation.deletedAt),
+  );
+  const byRecency = (left: AssistantConversation, right: AssistantConversation) => {
+    if (left.pinned !== right.pinned) return left.pinned ? -1 : 1;
+    return right.updatedAt.localeCompare(left.updatedAt);
+  };
+  if (live.length <= MAX_CONVERSATIONS && deleted.length <= MAX_CONVERSATIONS) {
+    return conversations;
+  }
+  return [
+    ...[...live].sort(byRecency).slice(0, MAX_CONVERSATIONS),
+    ...[...deleted].sort(byRecency).slice(0, MAX_CONVERSATIONS),
+  ];
 }
 
 function ensureActiveConversation(
@@ -322,12 +350,17 @@ function ensureActiveConversation(
   const activeId = state.activeByContext[contextKey];
   const active = state.conversations.find(
     (conversation) =>
-      conversation.id === activeId && conversation.contextKey === contextKey,
+      conversation.id === activeId &&
+      conversation.contextKey === contextKey &&
+      !conversation.deletedAt,
   );
   if (active) return active;
 
   const existing = state.conversations
-    .filter((conversation) => conversation.contextKey === contextKey)
+    .filter(
+      (conversation) =>
+        conversation.contextKey === contextKey && !conversation.deletedAt,
+    )
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
   if (existing) {
     state.activeByContext = {
@@ -483,7 +516,10 @@ export function assistantConversationSummaries(
   if (typeof window === "undefined") return EMPTY_SUMMARIES;
   const normalizedQuery = query.trim().toLocaleLowerCase();
   return loadWorkspace(handle).conversations
-    .filter((conversation) => conversation.contextKey === contextKey)
+    .filter(
+      (conversation) =>
+        conversation.contextKey === contextKey && !conversation.deletedAt,
+    )
     .filter(
       (conversation) =>
         !normalizedQuery ||
@@ -534,7 +570,9 @@ export function activateAssistantConversation(
   const state = loadWorkspace(handle);
   const conversation = state.conversations.find(
     (candidate) =>
-      candidate.id === conversationId && candidate.contextKey === contextKey,
+      candidate.id === conversationId &&
+      candidate.contextKey === contextKey &&
+      !candidate.deletedAt,
   );
   if (!conversation) return false;
   state.activeByContext = {
@@ -547,11 +585,56 @@ export function activateAssistantConversation(
   return true;
 }
 
+/**
+ * Deletes a chat by leaving a tombstone in its place. The synced replica is a
+ * union merge, so a plain removal would come back from the server within a
+ * sync cycle; the tombstone survives the merge and sheds the chat's title and
+ * messages everywhere. If the deleted chat was active anywhere, the pointer
+ * is dropped so the next look at that context lands on a live chat.
+ */
+export function deleteAssistantConversation(
+  handle: string,
+  conversationId: string,
+): boolean {
+  const state = loadWorkspace(handle);
+  const target = state.conversations.find(
+    (conversation) =>
+      conversation.id === conversationId && !conversation.deletedAt,
+  );
+  if (!target) return false;
+  const timestamp = now();
+  state.conversations = state.conversations.map((conversation) =>
+    conversation.id === conversationId
+      ? {
+          id: conversation.id,
+          contextKey: conversation.contextKey,
+          title: "Deleted chat",
+          pinned: false,
+          metadataUpdatedAt: timestamp,
+          createdAt: conversation.createdAt,
+          updatedAt: timestamp,
+          messages: [],
+          deletedAt: timestamp,
+        }
+      : conversation,
+  );
+  state.activeByContext = Object.fromEntries(
+    Object.entries(state.activeByContext).filter(
+      ([, activeId]) => activeId !== conversationId,
+    ),
+  );
+  markChanged(state);
+  saveWorkspace(handle, state);
+  notify();
+  return true;
+}
+
 export function toggleAssistantConversationPinned(
   handle: string,
   conversationId: string,
 ): boolean {
   return replaceConversation(handle, conversationId, (conversation) => {
+    if (conversation.deletedAt) return conversation;
     const timestamp = now();
     return {
       ...conversation,

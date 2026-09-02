@@ -8,6 +8,7 @@ import {
   assistantConversationSyncPayload,
   assistantConversationSummaries,
   createAssistantConversation,
+  deleteAssistantConversation,
   mergeSyncedAssistantConversations,
   migrateAssistantConversationOwnerScope,
   pendingAssistantConversationSummaries,
@@ -147,6 +148,53 @@ describe("assistant conversation history", () => {
       first!.id,
     );
     expect(assistantConversationMessages("writer", first!.id)).toHaveLength(2);
+  });
+
+  it("deletes a chat so thoroughly the server merge cannot bring it back", () => {
+    browserStorage();
+    const doomed = activeAssistantConversation("writer", "folder:drafts");
+    appendAssistantConversationMessage("writer", doomed!.id, {
+      id: "garbage-user",
+      role: "user",
+      text: "FAIL_STREAM test garbage",
+    });
+    // The pre-deletion replica, as the server would still hold it.
+    const remoteCopy = JSON.parse(
+      JSON.stringify(assistantConversationSyncPayload("writer")),
+    );
+
+    expect(deleteAssistantConversation("writer", doomed!.id)).toBe(true);
+
+    // The chat is gone from every listing, and its content is gone from the
+    // sync payload; only a contentless tombstone remains.
+    expect(
+      assistantConversationSummaries("writer", "folder:drafts"),
+    ).toHaveLength(0);
+    expect(assistantConversationMessages("writer", doomed!.id)).toHaveLength(0);
+    const payload = assistantConversationSyncPayload("writer");
+    const tombstone = payload.find(
+      (conversation) => conversation.id === doomed!.id,
+    );
+    expect(tombstone).toMatchObject({ title: "Deleted chat", messages: [] });
+    expect(tombstone?.deletedAt).toBeTruthy();
+
+    // The next look at the context lands on a fresh live chat.
+    expect(activeAssistantConversationId("writer", "folder:drafts")).not.toBe(
+      doomed!.id,
+    );
+    expect(
+      activateAssistantConversation("writer", "folder:drafts", doomed!.id),
+    ).toBe(false);
+
+    // A stale server replica that still carries the live copy merges back in
+    // without resurrecting the chat.
+    mergeSyncedAssistantConversations("writer", remoteCopy);
+    expect(
+      assistantConversationSummaries("writer", "folder:drafts").filter(
+        (conversation) => conversation.id === doomed!.id,
+      ),
+    ).toHaveLength(0);
+    expect(assistantConversationMessages("writer", doomed!.id)).toHaveLength(0);
   });
 
   it("bounds streaming persistence and flushes terminal state immediately", () => {

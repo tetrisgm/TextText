@@ -73,6 +73,7 @@ export type AssistantSidebarProps = {
     query: string,
   ) => readonly AssistantConversationSummary[];
   onToggleConversationPinned?: (conversationId: string) => void;
+  onDeleteConversation?: (conversationId: string) => void;
   modelChoices?: readonly AssistantModelChoice[];
   selectedModel?: string | null;
   onModelChange?: (model: string) => void;
@@ -237,6 +238,7 @@ export function AssistantSidebar({
   onOpenConversation,
   onSearchConversations,
   onToggleConversationPinned,
+  onDeleteConversation,
   modelChoices = [],
   selectedModel = null,
   onModelChange,
@@ -640,6 +642,7 @@ export function AssistantSidebar({
                 <AssistantConversationHistory
                   activeConversationId={activeConversationId}
                   conversations={conversations}
+                  onDeleteConversation={onDeleteConversation}
                   onNewConversation={onNewConversation}
                   onOpenConversation={onOpenConversation}
                   onSearchConversations={onSearchConversations}

@@ -20,7 +20,34 @@ export type SyncedAssistantConversation = {
   createdAt: string;
   updatedAt: string;
   messages: SyncedAssistantMessage[];
+  /**
+   * A deletion tombstone. The merge is a union by id, so removing a
+   * conversation from one replica would be resurrected by every other copy
+   * within a sync cycle. A tombstone survives the merge, wins over any later
+   * edit, and carries no title or messages, so a deleted chat's content stops
+   * existing everywhere instead of merely hiding on one device.
+   */
+  deletedAt?: string;
 };
+
+const DELETED_TITLE = "Deleted chat";
+
+function tombstone(
+  conversation: SyncedAssistantConversation,
+  deletedAt: string,
+): SyncedAssistantConversation {
+  return {
+    id: conversation.id,
+    contextKey: conversation.contextKey,
+    title: DELETED_TITLE,
+    pinned: false,
+    metadataUpdatedAt: conversation.metadataUpdatedAt,
+    createdAt: conversation.createdAt,
+    updatedAt: conversation.updatedAt,
+    messages: [],
+    deletedAt,
+  };
+}
 
 const SECRET_KEY =
   /(?:authorization|credential|password|secret|api[_-]?key|access[_-]?token|refresh[_-]?token)/i;
@@ -181,7 +208,7 @@ function cleanConversation(value: unknown): SyncedAssistantConversation | null {
   const fallback = new Date(0).toISOString();
   const createdAt = validTimestamp(record.createdAt, fallback);
   const updatedAt = validTimestamp(record.updatedAt, createdAt);
-  return {
+  const cleaned: SyncedAssistantConversation = {
     id: record.id.slice(0, 128),
     contextKey: record.contextKey.slice(0, 512),
     title: record.title.trim().replace(SECRET_VALUE, "[redacted]").slice(0, 80) || "New chat",
@@ -196,6 +223,10 @@ function cleanConversation(value: unknown): SyncedAssistantConversation | null {
         .slice(-MAX_SYNCED_ASSISTANT_MESSAGES),
     ),
   };
+  if (typeof record.deletedAt === "string") {
+    return tombstone(cleaned, validTimestamp(record.deletedAt, updatedAt));
+  }
+  return cleaned;
 }
 
 function conversationOrder(
@@ -208,14 +239,30 @@ function conversationOrder(
 }
 
 function boundWorkspace(conversations: SyncedAssistantConversation[]) {
+  // Tombstones are bounded separately from live chats: a burst of deletions
+  // must not evict live history from the cap, and live history must not push
+  // out the tombstones that keep those deletions from resurrecting.
+  const live = conversations.filter((conversation) => !conversation.deletedAt);
+  const deleted = conversations.filter((conversation) =>
+    Boolean(conversation.deletedAt),
+  );
   const bounded: SyncedAssistantConversation[] = [];
   let bytes = 2;
-  for (const conversation of [...conversations].sort(conversationOrder)) {
+  for (const conversation of [...live].sort(conversationOrder)) {
     if (bounded.length >= MAX_SYNCED_ASSISTANT_CONVERSATIONS) break;
     const nextBytes = utf8Bytes(JSON.stringify(conversation)) + 1;
     if (bytes + nextBytes > MAX_SYNCED_ASSISTANT_WORKSPACE_BYTES) break;
     bounded.push(conversation);
     bytes += nextBytes;
+  }
+  let tombstones = 0;
+  for (const conversation of [...deleted].sort(conversationOrder)) {
+    if (tombstones >= MAX_SYNCED_ASSISTANT_CONVERSATIONS) break;
+    const nextBytes = utf8Bytes(JSON.stringify(conversation)) + 1;
+    if (bytes + nextBytes > MAX_SYNCED_ASSISTANT_WORKSPACE_BYTES) break;
+    bounded.push(conversation);
+    bytes += nextBytes;
+    tombstones += 1;
   }
   return bounded;
 }
@@ -229,7 +276,12 @@ export function cleanAssistantConversationSyncPayload(
     const conversation = cleanConversation(entry);
     if (!conversation) continue;
     const existing = unique.get(conversation.id);
-    if (!existing || canonical(conversation) > canonical(existing)) {
+    if (
+      !existing ||
+      (Boolean(conversation.deletedAt) !== Boolean(existing.deletedAt)
+        ? Boolean(conversation.deletedAt)
+        : canonical(conversation) > canonical(existing))
+    ) {
       unique.set(conversation.id, conversation);
     }
   }
@@ -267,6 +319,34 @@ function mergeConversation(
   left: SyncedAssistantConversation,
   right: SyncedAssistantConversation,
 ): SyncedAssistantConversation {
+  // Deletion is final: a tombstone on either side wins over any concurrent
+  // edit, using the earliest deletion time so the merge stays commutative.
+  if (left.deletedAt || right.deletedAt) {
+    const deletedAt =
+      left.deletedAt && right.deletedAt
+        ? left.deletedAt < right.deletedAt
+          ? left.deletedAt
+          : right.deletedAt
+        : (left.deletedAt ?? right.deletedAt!);
+    return tombstone(
+      {
+        ...left,
+        createdAt:
+          left.createdAt < right.createdAt ? left.createdAt : right.createdAt,
+        updatedAt:
+          left.updatedAt > right.updatedAt ? left.updatedAt : right.updatedAt,
+        metadataUpdatedAt:
+          left.metadataUpdatedAt > right.metadataUpdatedAt
+            ? left.metadataUpdatedAt
+            : right.metadataUpdatedAt,
+        contextKey:
+          left.contextKey === right.contextKey
+            ? left.contextKey
+            : [left.contextKey, right.contextKey].sort()[0]!,
+      },
+      deletedAt,
+    );
+  }
   const rightMetadataWins =
     right.metadataUpdatedAt > left.metadataUpdatedAt ||
     (right.metadataUpdatedAt === left.metadataUpdatedAt &&

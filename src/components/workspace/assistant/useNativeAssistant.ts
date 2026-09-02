@@ -103,6 +103,7 @@ import {
 } from "./artifact-proof";
 import {
   activateAssistantConversation,
+  deleteAssistantConversation,
   activeAssistantConversationId,
   appendAssistantConversationMessage,
   assistantConversationMessages,
@@ -2489,6 +2490,11 @@ export function useNativeAssistant({
       Boolean(
         conversationStoreKey &&
           toggleAssistantConversationPinned(conversationStoreKey, conversationId),
+      ),
+    deleteConversation: (conversationId: string) =>
+      Boolean(
+        conversationStoreKey &&
+          deleteAssistantConversation(conversationStoreKey, conversationId),
       ),
     attachmentAccept,
     attachmentsAvailable,

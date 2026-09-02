@@ -4,7 +4,8 @@
 
 .trigger,
 .newButton,
-.pinButton {
+.pinButton,
+.deleteButton {
   width: 28px;
   height: 28px;
   display: inline-flex;
@@ -20,6 +21,7 @@
 .trigger:hover,
 .newButton:hover,
 .pinButton:hover,
+.deleteButton:hover,
 .pinButton[aria-pressed="true"] {
   background: var(--ac-fill-3, rgba(118, 118, 128, 0.12));
   color: var(--ac-label, #1d1d1f);
@@ -28,6 +30,8 @@
 .trigger:focus-visible,
 .newButton:focus-visible,
 .pinButton:focus-visible,
+.deleteButton:focus-visible,
+.deleteConfirm:focus-visible,
 .openButton:focus-visible,
 .search input:focus-visible {
   outline: none;
@@ -36,7 +40,8 @@
 
 .trigger svg,
 .newButton svg,
-.pinButton svg {
+.pinButton svg,
+.deleteButton svg {
   width: 17px;
   height: 17px;
   stroke: currentColor;
@@ -107,9 +112,10 @@
 .row {
   min-height: 48px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 32px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   border-radius: 7px;
+  padding-right: 4px;
 }
 
 .row:hover,
@@ -148,14 +154,35 @@
   font-size: 10px;
 }
 
-.pinButton {
+.pinButton,
+.deleteButton {
   opacity: 0;
 }
 
 .row:hover .pinButton,
+.row:hover .deleteButton,
 .pinButton:focus-visible,
+.deleteButton:focus-visible,
 .pinButton[aria-pressed="true"] {
   opacity: 1;
+}
+
+/* The armed confirm stays visible whether or not the pointer is still on the
+   row, so the question cannot vanish out from under the second click. */
+.deleteConfirm {
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--ac-fill-3, rgba(118, 118, 128, 0.12));
+  color: color-mix(in srgb, var(--ac-red, #d70015) 62%, var(--ac-label, #1d1d1f));
+  font: 600 11px/1 inherit;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.deleteConfirm:hover {
+  background: var(--ac-fill-2, rgba(118, 118, 128, 0.2));
 }
 
 .empty {
@@ -181,13 +208,20 @@
 @media (prefers-color-scheme: dark) {
   .trigger,
   .newButton,
-  .pinButton {
+  .pinButton,
+  .deleteButton {
     color: var(--ac-label-2, rgba(235, 235, 245, 0.6));
+  }
+
+  .deleteConfirm {
+    background: var(--ac-fill-3, rgba(118, 118, 128, 0.24));
+    color: color-mix(in srgb, var(--ac-red, #ff453a) 62%, var(--ac-label, #f5f5f7));
   }
 
   .trigger:hover,
   .newButton:hover,
   .pinButton:hover,
+  .deleteButton:hover,
   .pinButton[aria-pressed="true"],
   .row:hover,
   .row[data-active="true"] {

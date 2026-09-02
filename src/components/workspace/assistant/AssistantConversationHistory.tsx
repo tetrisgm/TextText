@@ -7,6 +7,7 @@ import styles from "./AssistantConversationHistory.module.css";
 type AssistantConversationHistoryProps = {
   activeConversationId: string | null;
   conversations: readonly AssistantConversationSummary[];
+  onDeleteConversation?: (conversationId: string) => void;
   onNewConversation: () => void;
   onOpenConversation: (conversationId: string) => void;
   onSearchConversations?: (
@@ -37,6 +38,14 @@ function PinIcon({ pinned }: { pinned: boolean }) {
   );
 }
 
+function DeleteIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
+      <path d="M4.75 6h10.5M8.25 6V4.5h3.5V6M6 6l.6 9.5h6.8L14 6M8.5 8.75v4.5M11.5 8.75v4.5" />
+    </svg>
+  );
+}
+
 function NewChatIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
@@ -57,6 +66,7 @@ function conversationDate(value: string): string {
 export function AssistantConversationHistory({
   activeConversationId,
   conversations,
+  onDeleteConversation,
   onNewConversation,
   onOpenConversation,
   onSearchConversations,
@@ -65,6 +75,11 @@ export function AssistantConversationHistory({
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  // Deleting asks once, inline: the first click turns the row's delete
+  // control into a confirm, and any other interaction lets it lapse.
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(
+    null,
+  );
   const visibleConversations = useMemo(() => {
     if (onSearchConversations) return onSearchConversations(query);
     const normalized = query.trim().toLocaleLowerCase();
@@ -181,6 +196,31 @@ export function AssistantConversationHistory({
                   >
                     <PinIcon pinned={conversation.pinned} />
                   </button>
+                  {onDeleteConversation ? (
+                    confirmingDeleteId === conversation.id ? (
+                      <button
+                        className={styles.deleteConfirm}
+                        type="button"
+                        aria-label={`Confirm delete chat ${conversation.title}`}
+                        onClick={() => {
+                          setConfirmingDeleteId(null);
+                          onDeleteConversation(conversation.id);
+                        }}
+                      >
+                        Delete?
+                      </button>
+                    ) : (
+                      <button
+                        className={styles.deleteButton}
+                        type="button"
+                        aria-label={`Delete chat ${conversation.title}`}
+                        title="Delete chat"
+                        onClick={() => setConfirmingDeleteId(conversation.id)}
+                      >
+                        <DeleteIcon />
+                      </button>
+                    )
+                  ) : null}
                 </li>
               ))}
             </ul>

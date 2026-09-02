@@ -7120,6 +7120,7 @@ function LocalWorkspaceShell({
           onOpenConversation={assistant.openConversation}
           onSearchConversations={assistant.searchConversations}
           onToggleConversationPinned={assistant.toggleConversationPinned}
+          onDeleteConversation={assistant.deleteConversation}
           modelChoices={assistant.modelChoices}
           selectedModel={assistant.selectedCloudModel}
           onModelChange={assistant.selectCloudModel}

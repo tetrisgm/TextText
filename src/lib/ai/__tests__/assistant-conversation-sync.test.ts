@@ -103,6 +103,65 @@ describe("assistant conversation replica merge", () => {
     });
   });
 
+  it("lets a deletion tombstone win the merge in both directions", () => {
+    const live = [
+      chat("chat-1", {
+        title: "Garbage chat",
+        updatedAt: "2026-08-24T14:00:00.000Z",
+        messages: [
+          {
+            id: "message-a",
+            role: "user",
+            text: "Old content that should stop existing",
+            updatedAt: "2026-08-24T14:00:00.000Z",
+          },
+        ],
+      }),
+    ];
+    const deleted = [
+      {
+        ...chat("chat-1", { updatedAt: "2026-08-24T13:00:00.000Z" }),
+        deletedAt: "2026-08-24T13:00:00.000Z",
+      },
+    ];
+
+    const forward = mergeAssistantConversationSyncPayloads(live, deleted);
+    const reverse = mergeAssistantConversationSyncPayloads(deleted, live);
+
+    expect(forward).toEqual(reverse);
+    expect(forward).toHaveLength(1);
+    expect(forward[0]).toMatchObject({
+      id: "chat-1",
+      title: "Deleted chat",
+      deletedAt: "2026-08-24T13:00:00.000Z",
+      messages: [],
+    });
+  });
+
+  it("keeps tombstones from evicting live chats and vice versa", () => {
+    const live = Array.from({ length: 60 }, (_, index) =>
+      chat(`live-${index.toString().padStart(2, "0")}`, {
+        updatedAt: `2026-08-24T12:${index.toString().padStart(2, "0")}:00.000Z`,
+      }),
+    );
+    const tombstones = Array.from({ length: 10 }, (_, index) => ({
+      ...chat(`gone-${index}`, { updatedAt: "2026-08-24T14:00:00.000Z" }),
+      deletedAt: "2026-08-24T14:00:00.000Z",
+    }));
+
+    const cleaned = cleanAssistantConversationSyncPayload([
+      ...tombstones,
+      ...live,
+    ]);
+
+    expect(
+      cleaned.filter((conversation) => !conversation.deletedAt),
+    ).toHaveLength(60);
+    expect(
+      cleaned.filter((conversation) => conversation.deletedAt),
+    ).toHaveLength(10);
+  });
+
   it("enforces 60 chats and 200 messages", () => {
     const conversations = Array.from({ length: 65 }, (_, chatIndex) =>
       chat(`chat-${chatIndex.toString().padStart(2, "0")}`, {
