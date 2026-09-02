@@ -2476,6 +2476,16 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
 
 ## Local install of build 1004 and the sync poisoning (2026-09-02)
 
+- Splash refinement + launch cuts (`194e3ce8`, installed as 0.182 1007,
+  gated install "runtime health: pass"): the splash is a bare
+  window-background surface, no icon (owner ruling). The cookie fast path
+  lands on "/@handle" directly, skipping the /start redirect hop, guarded
+  by a signed-in probe on didFinish (the public reader answers the same
+  URL with 200, so only the workspace sidebar's presence settles the
+  bet; fallback is the token exchange). warmMainWindow moved to the top
+  of didFinishLaunching so the workspace request goes on the wire before
+  updater/menu/controller setup. Remaining launch cost is workspace SSR
+  TTFB plus hydration, which is web-side work.
 - OWNER RULING (2026-09-02): NO launch capture composer. On first open of
   1005 the mini "save a note" card read as a useless step flashing before
   the item list, because launch-at-login plus the session fast path make
