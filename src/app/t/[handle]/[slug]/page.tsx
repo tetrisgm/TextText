@@ -391,6 +391,15 @@ export async function PostPageForHandle({
         updatedAt: post.updatedAt,
       }
     : null;
+  // The pool shell reads only identity fields from its `post` prop (the
+  // content it shows comes from the pool and initialPostDocument), yet the
+  // full body and document snapshot were serialized into the flight payload
+  // with it - a third and fourth copy of a large document. Strip them for the
+  // pool branches only; the plain shell and the public reader render from the
+  // real post.
+  const shellPost: Post = initialPool
+    ? { ...post, body: "", document: undefined }
+    : post;
 
   // Any signed-in editor joins the same Yjs document; collabAccess enforces
   // the same effective item resolver on every poll and push.
@@ -442,7 +451,7 @@ export async function PostPageForHandle({
           initialSidebarCollapsed={initialSidebarCollapsed}
           initialPool={initialPool}
           initialPostDocument={initialPostDocument}
-          post={post}
+          post={shellPost}
           postPath={currentPostPath}
         >
           {reader}
@@ -480,14 +489,20 @@ export async function PostPageForHandle({
       })
     : undefined;
 
-  const reader = (
-    <UnifiedDocumentReader
-      blog={blog}
-      post={post}
-      template={template}
-      wikiLinkTargets={wikiLinkTargets}
-    />
-  );
+  // No server-side reader render for the pool path: LocalWorkspaceShell
+  // renders the post view client-side from the pool and drops its children,
+  // so the SSR'd reader was serialized markup nobody ever saw. Same finding
+  // as the edit-mode branch above; for a 900kB body it was ~3s of TTFB and
+  // most of the response size.
+  const reader =
+    canEdit && initialPool ? null : (
+      <UnifiedDocumentReader
+        blog={blog}
+        post={post}
+        template={template}
+        wikiLinkTargets={wikiLinkTargets}
+      />
+    );
 
   // Public "Linked from": sourced from the same published-public feed the
   // blog itself lists, so nothing private can ever appear here. The
@@ -526,7 +541,7 @@ export async function PostPageForHandle({
           initialSidebarCollapsed={initialSidebarCollapsed}
           initialPool={initialPool}
           initialPostDocument={initialPostDocument}
-          post={post}
+          post={shellPost}
           postPath={currentPostPath}
         >
           {reader}
