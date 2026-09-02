@@ -2732,12 +2732,13 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   scripts/bench-workspace-matrix.ts: 13 interactions timed
   trigger-to-paint in both engines; current table all ~15-110ms real
   (driver floor row calibrates). Run it after workspace changes.
-- STILL OPEN from that pass: the CSS + React-identity audit half
-  (":has()" invalidation cost, box-shadow/filter transitions on hover
-  paths, non-memo'd list rows re-rendering on every shell interaction,
-  inline component types) was cancelled mid-run; the editor-side
-  per-event fixes landed but nobody has swept the stylesheet or the
-  render-identity surface yet.
+- The CSS + React-identity half completed by hand (`b6..` see git):
+  list rows are memo'd (the widest re-render fan-out; win scales with
+  workspace size). The stylesheet sweep found no cheap safe wins - no
+  transition:all, :has() is structural not per-interaction, grid-card
+  shadow transitions fire on enter/leave only, and backdrop-filter
+  chrome holds 60fps under the scroll benches. ReactMarkdown components
+  maps were the only inline-type instances and both are fixed.
 - Owner follow-ups (2026-09-02, `7c804523`, deployed): swipe
   back/forward churn was the URL-to-view parser taking the FIRST path
   segment as the slug - every folder-scoped item URL parsed as unknown
