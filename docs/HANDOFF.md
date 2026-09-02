@@ -2722,6 +2722,16 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   empty action bar (first in document order). Check every matching
   surface for text, not the first. All four first rows open in
   44-107ms in both engines.
+- Owner follow-ups (2026-09-02, `14b065da`, deployed; app build 1008
+  installed): click-drag from a document's margins now starts native
+  text selection - the workspace marquee (whose preventDefault killed
+  it) runs only in list views. The Mac app's right-click menu lost
+  WKWebView's Back/Reload browser chrome (AppWebView.willOpenMenu
+  strips nav items, keeps WebKit text/selection/link items, floors at
+  Select All so a right-click never does nothing); a bespoke action
+  menu can replace that floor later. The 10px sidebar resize handle at
+  the pane edge is NOT the reader margin - a probe 40px left of the
+  prose lands on it; measure geometry before blaming selection.
 - Owner follow-ups (2026-09-02, `73ea85c1`, deployed): the assistant
   rail popped in after the document painted (SSR snapshot hard-coded
   "hidden"). wr_assistant_state/width cookies are a FACT CACHE - the
