@@ -401,6 +401,19 @@ export function refreshWorkspacePool(
   return promise;
 }
 
+/**
+ * Speculative document warm-up for an item the person is about to open: on
+ * row hover or selection, the body fetch starts while the mouse is still
+ * travelling, so the click lands on a local document instead of a skeleton.
+ * Idempotent and silent - ensurePostDocument dedupes in-flight fetches, and a
+ * miss costs one read the open would have paid anyway.
+ */
+export function prefetchPostDocument(postId: string): void {
+  const pool = state.pool;
+  if (!pool || !postId) return;
+  void ensurePostDocument(pool.blogId, postId).catch(() => {});
+}
+
 export async function ensurePostDocument(
   blogId: string,
   postId: string,

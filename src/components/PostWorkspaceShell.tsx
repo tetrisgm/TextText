@@ -196,6 +196,7 @@ import {
   acknowledgePost,
   acknowledgePostDocument,
   ensurePostDocument,
+  prefetchPostDocument,
   getCachedWorkspacePostDocument,
   getWorkspacePost,
   markPostDirty,
@@ -2441,7 +2442,11 @@ function WorkspacePostOption({
       aria-selected={selected}
       tabIndex={active ? 0 : -1}
       title={showUpdatedAt ? sidebarDocumentTitle(post) : undefined}
-      onFocus={() => onSelect(post.id)}
+      onFocus={() => {
+        onSelect(post.id);
+        prefetchPostDocument(post.id);
+      }}
+      onPointerEnter={() => prefetchPostDocument(post.id)}
       onPointerMove={updateSpatialCardTilt}
       onPointerLeave={resetSpatialCardTilt}
     >
@@ -4429,6 +4434,39 @@ function LocalWorkspaceShell({
   const cancelledOptimisticPostIdsRef = useRef(new Set<string>());
   const gTapRef = useRef(0);
   const initialUrlSyncedRef = useRef(false);
+  // Warm the documents the person is most likely to open next, off the
+  // critical path. Opening an item whose body is not local shows a skeleton
+  // for a network round trip; after this, the recent items open with their
+  // content already in hand. ensurePostDocument dedupes, so overlap with the
+  // hover prefetch costs nothing.
+  useEffect(() => {
+    const warm = () => {
+      const recent = [...initialPool.posts]
+        .sort((left, right) =>
+          (right.updatedAt ?? "").localeCompare(left.updatedAt ?? ""),
+        )
+        .slice(0, 8);
+      for (const post of recent) prefetchPostDocument(post.id);
+    };
+    const idle = (
+      window as unknown as {
+        requestIdleCallback?: (fn: () => void, opts?: { timeout: number }) => number;
+      }
+    ).requestIdleCallback;
+    const handle = idle
+      ? idle(warm, { timeout: 3000 })
+      : window.setTimeout(warm, 1200);
+    return () => {
+      if (idle) {
+        (window as unknown as { cancelIdleCallback?: (h: number) => void })
+          .cancelIdleCallback?.(handle as number);
+      } else {
+        window.clearTimeout(handle as number);
+      }
+    };
+    // One warm pass per workspace; the pool identity is stable per mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPool.blogId]);
   const mounted = typeof window !== "undefined";
   const viewRef = useRef(view);
   const initialSelectedPostId = selectedPostIdForView(initialPool, initialView);
@@ -4515,39 +4553,57 @@ function LocalWorkspaceShell({
     useWorkspaceSidebarCollapsed(initialSidebarCollapsed);
 
   useEffect(() => {
-    const clearPeeks = () => {
-      setLeftEdgePeeking(false);
+    // Peeking only exists for a collapsed sidebar; the cleanup below clears
+    // it whenever the sidebar expands and this binding unwinds.
+    if (!sidebarCollapsed) return;
+    let peeking = false;
+    let sidebarWidth = WORKSPACE_SIDEBAR_DEFAULT_WIDTH;
+    const setPeeking = (next: boolean) => {
+      if (peeking === next) return;
+      peeking = next;
+      setLeftEdgePeeking(next);
     };
     const trackEdges = (event: PointerEvent) => {
-      const selection = window.getSelection();
+      // The common case - mouse anywhere but the left edge, not peeking -
+      // must cost nothing. This handler runs on EVERY pointermove, and it
+      // used to read getComputedStyle (a forced style recalculation),
+      // getSelection and matchMedia each time; on a 120Hz pointer that was a
+      // steady tax on hover framerate.
+      if (!peeking && event.clientX > 24) return;
       if (
-        window.matchMedia(WORKSPACE_COMPACT_MEDIA_QUERY).matches ||
         event.buttons !== 0 ||
         marqueeRectangle ||
-        Boolean(selection && !selection.isCollapsed)
+        window.matchMedia(WORKSPACE_COMPACT_MEDIA_QUERY).matches
       ) {
-        clearPeeks();
+        setPeeking(false);
         return;
       }
-      const sidebarWidth =
-        Number.parseFloat(
-          getComputedStyle(document.documentElement).getPropertyValue(
-            "--workspace-sidebar-width",
-          ),
-        ) || WORKSPACE_SIDEBAR_DEFAULT_WIDTH;
-      setLeftEdgePeeking(
-        (current) =>
-          sidebarCollapsed &&
-          (event.clientX <= 24 || (current && event.clientX <= sidebarWidth)),
+      const selection = window.getSelection();
+      if (selection && !selection.isCollapsed) {
+        setPeeking(false);
+        return;
+      }
+      if (!peeking) {
+        sidebarWidth =
+          Number.parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue(
+              "--workspace-sidebar-width",
+            ),
+          ) || WORKSPACE_SIDEBAR_DEFAULT_WIDTH;
+      }
+      setPeeking(
+        event.clientX <= 24 || (peeking && event.clientX <= sidebarWidth),
       );
     };
+    const clearPeeks = () => setPeeking(false);
     window.addEventListener("pointermove", trackEdges, { passive: true });
     window.addEventListener("blur", clearPeeks);
     return () => {
       window.removeEventListener("pointermove", trackEdges);
       window.removeEventListener("blur", clearPeeks);
+      setLeftEdgePeeking(false);
     };
-  }, [assistantState, assistantWidth, marqueeRectangle, sidebarCollapsed]);
+  }, [marqueeRectangle, sidebarCollapsed]);
 
   const changeAssistantState = useCallback(
     (next: AssistantSidebarState) => setWorkspaceAssistantState(next),
