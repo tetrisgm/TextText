@@ -89,7 +89,14 @@ struct FileProviderReadinessProbe {
     private let wait: (TimeInterval) -> Void
 
     init(
-        maximumSamples: Int = 11,
+        // Up to a minute for a syncing provider to settle, exiting the moment
+        // it does. The old ~5 second budget was shorter than the one startup
+        // this probe exists for: right after an update swaps the bundle, the
+        // restarted extension revalidates the mount against the server for
+        // tens of seconds, so launch health always sampled out mid-sync,
+        // reported warning, and the installer rolled the update back. The
+        // probe runs on the health queue, never the main thread.
+        maximumSamples: Int = 120,
         interval: TimeInterval = 0.5,
         wait: @escaping (TimeInterval) -> Void = Thread.sleep(forTimeInterval:)
     ) {
