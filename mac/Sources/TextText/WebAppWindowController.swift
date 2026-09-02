@@ -227,6 +227,9 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         window.minSize = NSSize(width: 720, height: 480)
         window.contentView = webView
         window.setFrameAutosaveName("TextTextMainWindow")
+        // Summoned by a global shortcut, the window should appear on whatever
+        // Space is in front, not drag the person to the Space it was last on.
+        window.collectionBehavior.insert(.moveToActiveSpace)
         window.tabbingMode = .disallowed
 
         super.init(window: window)

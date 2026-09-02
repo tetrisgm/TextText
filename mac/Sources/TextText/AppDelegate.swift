@@ -27,6 +27,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     // must advertise documentSize; see TextTextItem).
     static let fileProviderSchemaVersion = 13
     private static let fileProviderSchemaVersionKey = "TextTextFileProviderSchemaVersion"
+    // Set once we have applied the launch-at-login default, so turning it off
+    // in the menu is never overridden by the default on a later launch.
+    private static let loginItemDefaultAppliedKey = "TextTextLoginItemDefaultApplied"
 
     private let store = StateStore()
     private var changeListener: ChangeListener!
@@ -73,6 +76,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private let shareInboxQueue = DispatchQueue(label: "com.example.texttext.mac.share-inbox", qos: .utility)
     private var activityLog: [String] = []
     private var wasBusy = false
+    // The workspace window is warmed at launch but revealed only once, when
+    // the app first becomes active. A login launch stays in the background, so
+    // its window waits warm and hidden until the person summons it.
+    private var hasRevealedInitialWindow = false
     // The one File Provider domain registered for the signed-in workspace, if any.
     private var registeredFileProviderDomain: NSFileProviderDomain?
     private var pendingItemLinks = PendingTextTextItemLinks()
@@ -183,10 +190,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             self?.handleSignedIn(credentials)
         }
 
-        // Present the workspace before starting sync, indexing, capture, and
-        // health services. Those systems are intentionally independent of the
-        // visible launch path and continue initializing below.
-        showMainWindow()
+        // Warm the workspace window before starting sync, indexing, capture,
+        // and health services. Those systems are intentionally independent of
+        // the visible launch path and continue initializing below.
+        //
+        // A user launch reveals it as soon as the app becomes active (which
+        // happens right away when someone opens it); a login launch stays in
+        // the background, so its window waits warm and hidden until the person
+        // presses the summon shortcut. Either way the web content is already
+        // loading, so the first time the window appears it is not a cold start.
+        warmMainWindow()
+        applyLoginItemDefaultIfNeeded()
+        if NSApp.isActive {
+            showMainWindow()
+        }
 
         setupStatusItem()
         configureQuickCapture()
@@ -530,6 +547,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private var lastForegroundCheck = Date.distantPast
     private var lastBackgroundRecoveryUptime: TimeInterval?
     func applicationDidBecomeActive(_ notification: Notification) {
+        // The first activation is the signal that this launch was the person
+        // opening the app, not the login system starting it in the background.
+        // Reveal the warm window exactly once here; later activations (Cmd-Tab
+        // back, Dock click) must not re-summon a window the person just hid.
+        if !hasRevealedInitialWindow {
+            showMainWindow()
+        }
         recoverBackgroundSync()
         healthReporter?.runIfNeededAsync()
         guard Date().timeIntervalSince(lastForegroundCheck) > 300 else { return }
@@ -585,8 +609,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             appendActivity(error.localizedDescription)
         }
 
+        // Cmd+Shift+Space summons the workspace window, the way a launcher
+        // opens on one chord. Quick capture moves to Cmd+Shift+C so the two
+        // do not share a key.
         do {
-            quickCaptureHotKey = try GlobalHotKey { [weak self] in
+            quickCaptureHotKey = try GlobalHotKey(keyCode: UInt32(kVK_ANSI_C)) {
+                [weak self] in
                 DispatchQueue.main.async { self?.presentQuickCapture() }
             }
         } catch {
@@ -598,7 +626,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                 self?.newBookmarkAction()
             }
         toggleWindowHotKey = registerQuickCaptureHotKey(
-            keyCode: UInt32(kVK_ANSI_W)) { [weak self] in
+            keyCode: UInt32(kVK_Space)) { [weak self] in
                 self?.toggleMainWindowAction()
             }
         clipboardCaptureHotKey = registerQuickCaptureHotKey(
@@ -2340,6 +2368,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     /// General > Login Items without ever asking.
     private var loginItemEnabled: Bool { SMAppService.mainApp.status == .enabled }
 
+    /// Launch at login is on by default so the app is already resident and its
+    /// window warm when the person first presses the summon shortcut, the way
+    /// a launcher is always ready. Applied once: a person who turns it off in
+    /// the menu is not overridden on the next launch. Only for a real install,
+    /// never a dev build or a copy still running from Downloads, where a login
+    /// item would point at a path that should not persist.
+    private func applyLoginItemDefaultIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: Self.loginItemDefaultAppliedKey) else { return }
+        guard isInstalled else { return }
+        defaults.set(true, forKey: Self.loginItemDefaultAppliedKey)
+        guard SMAppService.mainApp.status != .enabled else { return }
+        do {
+            try SMAppService.mainApp.register()
+        } catch {
+            appendActivity(
+                "Could not enable launch at login: \(error.localizedDescription)")
+        }
+    }
+
     @objc private func toggleLoginItem() {
         do {
             if loginItemEnabled {
@@ -2444,11 +2492,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         menu.addItem(item(
             windowVisible ? "Hide TextText" : "Open TextText",
             #selector(toggleMainWindowAction),
-            keyEquivalent: "w",
+            keyEquivalent: " ",
             modifiers: [.command, .shift]))
         menu.addItem(item(
             "Quick capture", #selector(quickCaptureAction),
-            keyEquivalent: " ", modifiers: [.command, .shift]))
+            keyEquivalent: "c", modifiers: [.command, .shift]))
         menu.addItem(item(
             "Capture link", #selector(newBookmarkAction),
             keyEquivalent: "b", modifiers: [.command, .shift]))
@@ -2583,7 +2631,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     @objc private func showMainWindowAction() { showMainWindow() }
 
     @objc private func toggleMainWindowAction() {
-        if webWindow?.window?.isVisible == true {
+        // Hide only when the window is actually in front of the person: it is
+        // visible, the app is active, and it is the key window. Otherwise the
+        // press is a summon, whether the app was in the background, on another
+        // Space, or behind another window. Hiding a window the person cannot
+        // see would make the shortcut feel dead every other press.
+        let window = webWindow?.window
+        let inFront = window?.isVisible == true
+            && NSApp.isActive
+            && window?.isKeyWindow == true
+        if inFront {
             webWindow?.hide()
         } else {
             showMainWindow()
@@ -2622,6 +2679,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     /// expired installation completes account sign-in and approval in the
     /// system browser before returning here.
     private func showMainWindow(path: String? = nil) {
+        warmMainWindow(path: path)
+        hasRevealedInitialWindow = true
+        webWindow?.present()
+    }
+
+    /// Builds the workspace window and starts loading its content without
+    /// bringing it to the front. Called at launch so the first summon shows a
+    /// window that is already warm, and so a login launch can wait hidden in
+    /// the background instead of stealing focus the moment the session starts.
+    private func warmMainWindow(path: String? = nil) {
         if webWindow == nil {
             let credentials = store.loadCredentials()
             let origin = resolveServerOrigin(credentials: credentials)
@@ -2641,7 +2708,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         } else if let path {
             webWindow?.load(path: path)
         }
-        webWindow?.present()
     }
 
     /// The web view minted a sync token in the background: store it and start
