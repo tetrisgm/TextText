@@ -2671,6 +2671,23 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   was reported in the real app; the local harness already ran at max
   FPS before the fix, so the removed costs are attributed by code, not
   by a reproduced regression - re-verify by feel in the app.
+- Owner follow-up 2 (2026-09-02): "everything blinks and moves a
+  little on any action" in the reader. Root cause (`2f8cfd8f`,
+  deployed): the components map passed to ReactMarkdown was rebuilt
+  per render, so its inline img/a renderers were NEW COMPONENT TYPES
+  every time and React remounted all reader media on any workspace
+  re-render (reproduced: 0/2 img DOM nodes survived a click; now 2/2,
+  scripts/verify-reader-stability.mjs is the lane). Component maps for
+  ReactMarkdown must be module-level constants - the assistant
+  transcript had the same bug. Markdown is also memo()d so unchanged
+  bodies are not re-parsed per interaction.
+- Reading keys, same commit: Space/Shift+Space commands scrolled the
+  WINDOW but the workspace scrolls .post-editor-content, so they did
+  nothing; they and g/G now target the real scroller, and opening a
+  read view focuses it so PageUp/Down/arrows are native browser
+  scrolling. Fixture reader-images lives in the dev DB (raw insert:
+  opens via the workspace list; direct slug URL 404s because raw
+  inserts skip the slug index the app writes).
 
 ## Resolved episodes (one line each, dates in git log)
 
