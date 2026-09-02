@@ -76,6 +76,8 @@ export function SelectionActions({
   onRunAction: (id: NativeQuickActionId) => void;
 }) {
   const [anchor, setAnchor] = useState<SelectionAnchor | null>(null);
+  const anchorRef = useRef<SelectionAnchor | null>(null);
+  anchorRef.current = anchor;
   // Where the pointer last let go: the anchor a textarea cannot give us.
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -131,7 +133,11 @@ export function SelectionActions({
     // selectionchange fires for textarea selections too, which covers the
     // paths that have no convenient final event of their own.
     const onSelectionChange = () => scheduleRefresh();
-    const dismiss = () => setAnchor(null);
+    // Guarded: this rides capture-phase scroll from EVERY scroller; a
+    // setState per scroll event (even a bail-out one) is scheduler noise.
+    const dismiss = () => {
+      if (anchorRef.current) setAnchor(null);
+    };
     document.addEventListener("mouseup", onMouseUp);
     document.addEventListener("keyup", onKeyUp);
     document.addEventListener("selectionchange", onSelectionChange);

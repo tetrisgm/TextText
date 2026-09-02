@@ -1548,11 +1548,7 @@ function FolderTreeNav({
             aria-current={selected ? "true" : undefined}
             title={collapsed ? folder.name : undefined}
             onFocus={() => prefetchFolder(folder.path)}
-            onMouseMove={(event) => {
-              if (workspaceMouseMoved(event.clientX, event.clientY)) {
-                prefetchFolder(folder.path);
-              }
-            }}
+            onMouseEnter={() => prefetchFolder(folder.path)}
             onClick={() => onSelectFolder(folder.path)}
           >
             <span className="post-editor-folder-icon" aria-hidden="true">
@@ -6989,6 +6985,16 @@ function LocalWorkspaceShell({
       clearPostSelection();
       setSelectedSectionPath(null);
 
+      // Item geometry is measured ONCE when the drag crosses the threshold:
+      // rect-reading every row on every pointermove forced one layout per
+      // item per event. Items do not move during a marquee drag (the list
+      // does not scroll under it), and the selection state only writes when
+      // the id set actually changed.
+      let items: { id: string; rectangle: SelectionRectangle }[] | null = null;
+      let lastSelectionKey = "";
+      let frame = 0;
+      let latestX = startX;
+      let latestY = startY;
       const move = (moveEvent: PointerEvent) => {
         if (
           !dragging &&
@@ -6997,44 +7003,54 @@ function LocalWorkspaceShell({
           return;
         }
         dragging = true;
-        const rectangle: SelectionRectangle = {
-          left: Math.min(startX, moveEvent.clientX),
-          right: Math.max(startX, moveEvent.clientX),
-          top: Math.min(startY, moveEvent.clientY),
-          bottom: Math.max(startY, moveEvent.clientY),
-        };
-        setMarqueeRectangle(rectangle);
-        const items = visibleWorkspaceItems("data-workspace-post-id").flatMap(
-          (element) => {
-            const id = element.dataset.workspacePostId;
-            if (!id) return [];
-            const bounds = element.getBoundingClientRect();
-            return [
-              {
-                id,
-                rectangle: {
-                  left: bounds.left,
-                  right: bounds.right,
-                  top: bounds.top,
-                  bottom: bounds.bottom,
+        latestX = moveEvent.clientX;
+        latestY = moveEvent.clientY;
+        if (frame) return;
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          const rectangle: SelectionRectangle = {
+            left: Math.min(startX, latestX),
+            right: Math.max(startX, latestX),
+            top: Math.min(startY, latestY),
+            bottom: Math.max(startY, latestY),
+          };
+          setMarqueeRectangle(rectangle);
+          items ??= visibleWorkspaceItems("data-workspace-post-id").flatMap(
+            (element) => {
+              const id = element.dataset.workspacePostId;
+              if (!id) return [];
+              const bounds = element.getBoundingClientRect();
+              return [
+                {
+                  id,
+                  rectangle: {
+                    left: bounds.left,
+                    right: bounds.right,
+                    top: bounds.top,
+                    bottom: bounds.bottom,
+                  },
                 },
-              },
-            ];
-          },
-        );
-        const next = marqueeSelectionIds({
-          additiveIds: baseIds,
-          items,
-          rectangle,
-        });
-        const activeId = Array.from(next).at(-1) ?? null;
-        applyPostSelection({
-          activeId,
-          anchorId: Array.from(next)[0] ?? null,
-          selectedIds: next,
+              ];
+            },
+          );
+          const next = marqueeSelectionIds({
+            additiveIds: baseIds,
+            items,
+            rectangle,
+          });
+          const ordered = Array.from(next);
+          const selectionKey = ordered.join("|");
+          if (selectionKey === lastSelectionKey) return;
+          lastSelectionKey = selectionKey;
+          applyPostSelection({
+            activeId: ordered.at(-1) ?? null,
+            anchorId: ordered[0] ?? null,
+            selectedIds: next,
+          });
         });
       };
       const finish = () => {
+        if (frame) cancelAnimationFrame(frame);
         setMarqueeRectangle(null);
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", finish);

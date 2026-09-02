@@ -205,33 +205,68 @@ export function ReaderComments({
     };
   }, [handle, postId]);
 
+  // Quote Ranges are resolved ONCE per thread set and reused: resolving one
+  // walks the entire article text, and doing that per thread on every scroll
+  // frame was the reader's costliest listener. A frame now only reads rects,
+  // and identical positions skip the state write entirely.
+  const quoteRangesRef = useRef<{ key: string; ranges: Map<string, Range> } | null>(
+    null,
+  );
   const updateThreadPositions = useCallback(() => {
     const root = readerProse(rootRef.current);
     if (!root) return;
-    const rootRect = root.getBoundingClientRect();
-    const next = threads
-      .filter((thread) => !thread.root.resolved && thread.root.anchor?.field === "body")
-      .map((thread) => {
+    const anchored = threads.filter(
+      (thread) => !thread.root.resolved && thread.root.anchor?.field === "body",
+    );
+    const key = `${sourceBody.length}:${anchored
+      .map((thread) => thread.root.id)
+      .join("|")}`;
+    let cache = quoteRangesRef.current;
+    const stale =
+      !cache ||
+      cache.key !== key ||
+      [...cache.ranges.values()].some(
+        (range) => !root.contains(range.startContainer),
+      );
+    if (stale) {
+      const ranges = new Map<string, Range>();
+      for (const thread of anchored) {
         const range = findReaderQuoteRange(
           root,
           thread.root.anchor?.exactQuote ?? "",
         );
-        const rect = range?.getBoundingClientRect();
-        return rect && (rect.width || rect.height)
-          ? {
-              id: thread.root.id,
-              left: clamp(rootRect.right + 8, 8, window.innerWidth - 38),
-              top: rect.top + rect.height / 2,
-            }
-          : null;
-      })
-      .filter((value): value is ThreadPosition => Boolean(value))
-      .map((value) => ({
-        ...value,
-        top: clamp(value.top, rootRect.top + 12, rootRect.bottom - 12),
-      }));
-    setThreadPositions(next);
-  }, [threads]);
+        if (range) ranges.set(thread.root.id, range);
+      }
+      cache = { key, ranges };
+      quoteRangesRef.current = cache;
+    }
+    const rootRect = root.getBoundingClientRect();
+    const next: ThreadPosition[] = [];
+    for (const thread of anchored) {
+      const rect = cache!.ranges.get(thread.root.id)?.getBoundingClientRect();
+      if (!rect || (!rect.width && !rect.height)) continue;
+      next.push({
+        id: thread.root.id,
+        left: clamp(rootRect.right + 8, 8, window.innerWidth - 38),
+        top: clamp(
+          rect.top + rect.height / 2,
+          rootRect.top + 12,
+          rootRect.bottom - 12,
+        ),
+      });
+    }
+    setThreadPositions((current) =>
+      current.length === next.length &&
+      current.every(
+        (position, index) =>
+          position.id === next[index].id &&
+          position.left === next[index].left &&
+          position.top === next[index].top,
+      )
+        ? current
+        : next,
+    );
+  }, [sourceBody.length, threads]);
 
   useEffect(() => {
     let frame = 0;

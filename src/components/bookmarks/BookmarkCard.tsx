@@ -326,6 +326,7 @@ export function BookmarkCard({
       onFocus={onSelect}
       onMouseMove={(event) => {
         if (
+          !selected &&
           !event.metaKey &&
           !event.ctrlKey &&
           !event.shiftKey &&

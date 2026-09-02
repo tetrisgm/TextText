@@ -396,10 +396,24 @@ export function AssistantSidebar({
   useEscapeLayer(visible && focusWithin, "Assistant", hideAssistant);
 
   useEffect(() => {
-    const updateViewportWidth = () => setViewportWidth(window.innerWidth);
-    updateViewportWidth();
+    let raf = 0;
+    let last = -1;
+    const apply = () => {
+      raf = 0;
+      const next = window.innerWidth;
+      if (next === last) return;
+      last = next;
+      setViewportWidth(next);
+    };
+    const updateViewportWidth = () => {
+      if (!raf) raf = requestAnimationFrame(apply);
+    };
+    apply();
     window.addEventListener("resize", updateViewportWidth);
-    return () => window.removeEventListener("resize", updateViewportWidth);
+    return () => {
+      window.removeEventListener("resize", updateViewportWidth);
+      if (raf) cancelAnimationFrame(raf);
+    };
   }, []);
 
   useEffect(() => {

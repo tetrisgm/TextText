@@ -873,11 +873,21 @@ export function UnifiedDocumentEditor({
       } else {
         const start = Math.min(anchor, head);
         const end = Math.max(anchor, head);
+        // The live text is already in memory on the snapshot; walking the
+        // Y.Text into a fresh string on EVERY caret move made a multi-MB
+        // allocation per keystroke and arrow press.
+        const content = currentLocalDocument().content;
+        const fieldText =
+          (field === "title"
+            ? content.title
+            : field === "subtitle"
+              ? content.subtitle
+              : content.body) ?? "";
         setOpenWorkspaceItemSelection(collab.postId, {
           field: draftField,
           start,
           end,
-          text: documentText(doc, field).toString().slice(start, end),
+          text: fieldText.slice(start, end),
         });
       }
       if (!ready || anchor < 0 || head < 0) {
@@ -900,7 +910,7 @@ export function UnifiedDocumentEditor({
       };
       awareness.setLocalStateField("selection", selection);
     },
-    [awareness, doc, ready],
+    [awareness, collab.postId, currentLocalDocument, doc, ready],
   );
 
   const remoteSelections = useMemo(

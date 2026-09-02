@@ -95,14 +95,27 @@ export function ReaderFindHighlights({ query }: { query: string }) {
     }
 
     let frame = 0;
+    // The text walk + match scan + Range construction depend only on the
+    // query and the prose content; a scroll frame only needs fresh rects.
+    // Re-running the whole pipeline per scroll frame was the cost.
+    let cachedRanges: Range[] | null = null;
+    const resolveRanges = () => {
+      const { segments, text } = readerText(prose);
+      return rangesForMatches(segments, findReaderTextMatches(text, query));
+    };
+    const invalidate = () => {
+      cachedRanges = null;
+    };
     const update = () => {
       window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
-        const { segments, text } = readerText(prose);
-        const ranges = rangesForMatches(
-          segments,
-          findReaderTextMatches(text, query),
-        );
+        if (
+          cachedRanges &&
+          cachedRanges.some((range) => !prose.contains(range.startContainer))
+        ) {
+          cachedRanges = null;
+        }
+        const ranges = (cachedRanges ??= resolveRanges());
         const nextRects = ranges.flatMap((range, rangeIndex) =>
           Array.from(range.getClientRects())
             .filter((rect) => rect.width > 0 && rect.height > 0)
@@ -135,7 +148,12 @@ export function ReaderFindHighlights({ query }: { query: string }) {
 
     update();
     const observer =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            invalidate();
+            update();
+          });
     observer?.observe(prose);
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);

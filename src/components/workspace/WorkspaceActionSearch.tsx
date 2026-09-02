@@ -49,12 +49,17 @@ export function WorkspaceActionSearch({
       host.closest<HTMLElement>(".post-editor-content") ??
       host.closest<HTMLElement>(".local-workspace-surface") ??
       document.documentElement;
-    const update = () => {
-      setCompact(surface.getBoundingClientRect().width < INLINE_SEARCH_MIN_WIDTH);
+    // The observer already carries the size; measuring inside its callback
+    // forces layout and risks a resize loop.
+    const apply = (width: number) => {
+      setCompact(width < INLINE_SEARCH_MIN_WIDTH);
     };
-    update();
+    apply(surface.getBoundingClientRect().width);
     if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(update);
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (typeof width === "number") apply(width);
+    });
     observer.observe(surface);
     return () => observer.disconnect();
   }, []);

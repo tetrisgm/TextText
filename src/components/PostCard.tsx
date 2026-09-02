@@ -211,12 +211,16 @@ export function PostCard({
     if (!tiltRaf.current) tiltRaf.current = requestAnimationFrame(tiltLoop);
   };
 
-  const setHoverTarget = (clientX: number, clientY: number) => {
-    const el = ref.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    const px = (clientX - r.left) / r.width;
-    const py = (clientY - r.top) / r.height;
+  const setHoverTargetWithin = (
+    r: { left: number; right: number; top: number; bottom: number },
+    clientX: number,
+    clientY: number,
+  ) => {
+    const width = r.right - r.left;
+    const height = r.bottom - r.top;
+    if (width <= 0 || height <= 0) return;
+    const px = (clientX - r.left) / width;
+    const py = (clientY - r.top) / height;
     const tiltStrength = 0.5;
     tiltTarget.current = {
       rx: (0.5 - py) * 33 * tiltStrength,
@@ -234,6 +238,7 @@ export function PostCard({
   );
 
   const endHover = () => {
+    baseRectRef.current = null;
     setHovered(false);
     tiltTarget.current = { ...NEUTRAL };
     wakeTilt();
@@ -274,12 +279,19 @@ export function PostCard({
     y >= r.top + HOVER_INSET &&
     y <= r.bottom - HOVER_INSET;
 
+  // Geometry is measured once per hover, not per move: baseRectOf forces a
+  // style recalc AND a layout (getComputedStyle + rects + offset reads), and
+  // running it at pointer rate on every card the mouse crossed was a steady
+  // hover-framerate tax. The base rect only changes with layout, which ends
+  // the hover anyway.
+  const baseRectRef = useRef<ReturnType<typeof baseRectOf> | null>(null);
+
   const onPointerMove = (e: PointerEvent<HTMLAnchorElement>) => {
     if (e.pointerType !== "mouse") return;
     if (document.documentElement.classList.contains("hover-frozen")) return;
     const el = ref.current;
     if (!el) return;
-    const base = baseRectOf(el);
+    const base = (baseRectRef.current ??= baseRectOf(el));
     if (!hovered) {
       if (!insideHoverRegion(base, e.clientX, e.clientY)) return;
       setHovered(true);
@@ -287,8 +299,13 @@ export function PostCard({
       endHover();
       return;
     }
-    setHoverTarget(e.clientX, e.clientY);
+    setHoverTargetWithin(base, e.clientX, e.clientY);
     wakeTilt();
+  };
+
+  const onPointerEnter = (e: PointerEvent<HTMLAnchorElement>) => {
+    if (e.pointerType !== "mouse") return;
+    baseRectRef.current = null;
   };
 
   const onPointerLeave = (e: PointerEvent<HTMLAnchorElement>) => {
@@ -318,6 +335,7 @@ export function PostCard({
         className={className}
         style={cardAccentStyle(blog, post)}
         onClick={onOpen}
+        onPointerEnter={onPointerEnter}
         onPointerMove={onPointerMove}
         onPointerLeave={onPointerLeave}
         aria-label={title}
