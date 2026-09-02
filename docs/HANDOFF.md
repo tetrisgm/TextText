@@ -2476,6 +2476,14 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
 
 ## Local install of build 1004 and the sync poisoning (2026-09-02)
 
+- OWNER RULING (2026-09-02): NO launch capture composer. On first open of
+  1005 the mini "save a note" card read as a useless step flashing before
+  the item list, because launch-at-login plus the session fast path make
+  the workspace arrive almost immediately. `c506a161` removes it; launch
+  shows only the quiet splash (app surface + dimmed icon over the white
+  webview) straight into the workspace. Do not re-add a launch-time
+  input surface. 0.182 (1006) with the removal passed the full gated
+  install ("runtime health: pass") and is the installed canonical app.
 - SUPERSEDED by 0.182 (1005): after both fixes below landed and the sync
   validator fix was deployed, the PROPER gated install passed end to end
   ("runtime health: pass, installed, launched, and verified"), replacing
