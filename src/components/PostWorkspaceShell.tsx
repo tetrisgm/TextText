@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -2462,7 +2463,11 @@ function itemPreview(post: { excerpt?: string; bodyPreview?: string }): string {
   return plainTextExcerpt(post.excerpt) || plainTextExcerpt(post.bodyPreview);
 }
 
-function WorkspacePostOption({
+// memo: list rows are the widest fan-out in the shell - every selection
+// move or unrelated shell state change re-rendered every row. With stable
+// props (pool post identity, shell-level useCallback handlers) only the rows
+// whose active/selected actually changed re-render.
+const WorkspacePostOption = memo(function WorkspacePostOption({
   active,
   blog,
   folderPath,
@@ -2563,7 +2568,7 @@ function WorkspacePostOption({
       />
     </div>
   );
-}
+});
 
 function WorkspaceRootLanding({
   canManageItems,
