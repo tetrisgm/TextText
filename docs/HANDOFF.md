@@ -2457,6 +2457,19 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   Native only; the actual web load time is unchanged, this fixes perceived
   startup. Verified: launches clean, 461 Swift tests pass. Not eyeballed
   live (owner declined desktop control).
+- `829be8b3` closes the owner's real ask ("open from zero and start typing
+  a note basically instantly, like Apple Notes"). The launch surface on a
+  linked Mac is now a focused capture composer using the shared
+  `QuickCaptureTextView` semantics (Return saves through the durable
+  outbox, Shift-Return newline, Esc skips); web content lifts it only when
+  the composer is empty, and a save or Esc before the web is ready leaves
+  the quiet splash. Launch also skips the uncacheable session-exchange
+  POST when the last run's auth cookie is still present, loading the
+  destination directly with an automatic fallback to the token exchange if
+  it lands on /signin or "/". Compiles, launches clean unlinked, 461 Swift
+  tests pass. The linked-Mac composer, the cookie fast path against
+  production, and the fallback all still need a signed-in build eyeballed;
+  none were observable in this session's unlinked isolated app.
 - The mock provider's FAIL_STREAM trigger matches the whole transcript, so
   one failed test prompt poisons every later turn of that conversation.
   Start a fresh chat when evaluating with the mock.
