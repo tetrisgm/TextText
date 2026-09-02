@@ -1,5 +1,117 @@
 "use client";
 
+/**
+ * Windowed rows for the folder's long list layouts: only the viewport's rows
+ * (plus overscan) are mounted, between two spacer divs sized from a measured
+ * average row height. Mounting every row made switching into a large folder
+ * pay ~0.5ms per item, and every re-render walk the full set. The selected
+ * row is always materialized - the window follows selection the way the
+ * editor's window follows the caret. content-visibility is NOT an
+ * alternative here; it is banned in this codebase for cause.
+ */
+function WindowedRows<T>({
+  items,
+  selectedIndex,
+  overscan = 10,
+  children,
+}: {
+  items: readonly T[];
+  selectedIndex: number | null;
+  overscan?: number;
+  children: (item: T, index: number) => ReactNode;
+}) {
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const rowPxRef = useRef(72);
+  const [span, setSpan] = useState({ start: 0, end: Math.min(items.length, 40) });
+  // Derived-state correction during render: the selected row must exist in
+  // the DOM before the shell's scroll-into-view effect looks for it.
+  if (selectedIndex !== null && items.length > 0) {
+    const width = Math.max(span.end - span.start, 30);
+    if (selectedIndex < span.start || selectedIndex >= span.end) {
+      const start = Math.max(0, selectedIndex - Math.floor(width / 2));
+      setSpan({ start, end: Math.min(items.length, start + width) });
+    }
+  }
+  if (span.end > items.length) {
+    setSpan({
+      start: Math.max(0, Math.min(span.start, items.length - 1)),
+      end: items.length,
+    });
+  }
+  useEffect(() => {
+    const anchor = anchorRef.current;
+    if (!anchor) return;
+    const scroller = anchor.closest(".post-editor-content");
+    if (!(scroller instanceof HTMLElement)) return;
+    let raf = 0;
+    const recompute = () => {
+      raf = 0;
+      const px = rowPxRef.current;
+      const listTop =
+        anchor.getBoundingClientRect().top +
+        scroller.scrollTop -
+        scroller.getBoundingClientRect().top;
+      const first = Math.max(
+        0,
+        Math.floor((scroller.scrollTop - listTop) / px),
+      );
+      const visible = Math.ceil(scroller.clientHeight / px) + 1;
+      const start = Math.max(0, first - overscan);
+      const end = Math.min(items.length, first + visible + overscan);
+      setSpan((current) =>
+        current.start === start && current.end === end
+          ? current
+          : { start, end },
+      );
+    };
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(recompute);
+    };
+    recompute();
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      scroller.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [items.length, overscan]);
+  // Refine the estimate from what actually rendered; the spacers re-size on
+  // the next window move, and being an average, drift self-corrects.
+  useEffect(() => {
+    const anchor = anchorRef.current;
+    const parent = anchor?.parentElement;
+    if (!anchor || !parent) return;
+    const nodes = parent.children;
+    const anchorIndex = Array.prototype.indexOf.call(nodes, anchor);
+    const firstRow = nodes[anchorIndex + 1];
+    const lastRow = nodes[nodes.length - 2];
+    const count = span.end - span.start;
+    if (!firstRow || !lastRow || count < 1 || firstRow === lastRow) return;
+    const top = firstRow.getBoundingClientRect().top;
+    const bottom = lastRow.getBoundingClientRect().bottom;
+    const px = (bottom - top) / count;
+    if (px > 8 && Number.isFinite(px)) rowPxRef.current = px;
+  });
+  const px = rowPxRef.current;
+  return (
+    <>
+      <div
+        ref={anchorRef}
+        aria-hidden="true"
+        style={{ height: Math.round(span.start * px) }}
+      />
+      {items.slice(span.start, span.end).map((item, offset) =>
+        children(item, span.start + offset),
+      )}
+      <div
+        aria-hidden="true"
+        style={{ height: Math.round((items.length - span.end) * px) }}
+      />
+    </>
+  );
+}
+
 // The workspace view of a folder: a quiet list rendered per folder mode inside
 // the home workspace shell. Notes and bookmarks stay unlisted; sharing only
 // grants named collaborators access.
@@ -1273,6 +1385,12 @@ function UniversalFolderContents({
   // A calendar folder places items on a month grid by the template's dateBy
   // date field. The offset is which month is showing, relative to now.
   const [calendarOffset, setCalendarOffset] = useState(0);
+  const selectedRowIndex = useMemo(() => {
+    if (!selectedPostId) return null;
+    const index = sorted.findIndex((post) => post.id === selectedPostId);
+    return index === -1 ? null : index;
+  }, [selectedPostId, sorted]);
+
   const calendar = useMemo(() => {
     const collection = activeCollection;
     if (!collection || collection.layout !== "calendar" || !collection.dateBy) {
@@ -1452,7 +1570,8 @@ function UniversalFolderContents({
             aria-label="Blog posts"
             aria-activedescendant={postOptionId(selectedPostId)}
           >
-            {sorted.map((post) => {
+            <WindowedRows items={sorted} selectedIndex={selectedRowIndex}>
+              {(post) => {
               const selected = Boolean(
                 post.id &&
                 (selectedPostIds?.has(post.id) ?? post.id === selectedPostId),
@@ -1564,7 +1683,8 @@ function UniversalFolderContents({
                   )}
                 </article>
               );
-            })}
+              }}
+            </WindowedRows>
           </div>
         ) : viewMode === "list" && usesBuiltInLook ? (
           <div
@@ -1573,7 +1693,8 @@ function UniversalFolderContents({
             aria-label="Folder items"
             aria-activedescendant={postOptionId(selectedPostId)}
           >
-            {sorted.map((post) => {
+            <WindowedRows items={sorted} selectedIndex={selectedRowIndex}>
+              {(post) => {
               const preview = previewLine(
                 post.excerpt || postBodyPreview(post),
               );
@@ -1654,7 +1775,8 @@ function UniversalFolderContents({
                   )}
                 </div>
               );
-            })}
+              }}
+            </WindowedRows>
           </div>
         ) : (
           (() => {

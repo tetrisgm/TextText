@@ -12,7 +12,8 @@
 import { chromium, webkit, type Browser, type Page } from "playwright";
 
 const ORIGIN = "http://localhost:3131";
-const OWNER_EMAIL = "visual-demo@texttext.local";
+const HANDLE = process.env.BENCH_HANDLE ?? "visual-demo";
+const OWNER_EMAIL = process.env.BENCH_EMAIL ?? "visual-demo@texttext.local";
 const REPS = 3;
 
 type Row = { name: string; samples: number[] };
@@ -39,7 +40,7 @@ async function settled(page: Page): Promise<void> {
 }
 
 async function goHome(page: Page): Promise<void> {
-  await page.goto(`${ORIGIN}/@visual-demo`);
+  await page.goto(`${ORIGIN}/@${HANDLE}`);
   await page.locator(".workspace-item-option").first().waitFor({ timeout: 20000 });
   await page.waitForTimeout(900);
 }

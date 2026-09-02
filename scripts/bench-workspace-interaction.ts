@@ -6,7 +6,8 @@
 import { chromium, webkit, type Browser, type Page } from "playwright";
 
 const ORIGIN = "http://localhost:3131";
-const OWNER_EMAIL = "visual-demo@texttext.local";
+const HANDLE = process.env.BENCH_HANDLE ?? "visual-demo";
+const OWNER_EMAIL = process.env.BENCH_EMAIL ?? "visual-demo@texttext.local";
 
 function quantile(sorted: number[], q: number): number {
   return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))];
@@ -126,7 +127,7 @@ async function openLatency(page: Page, label: string): Promise<void> {
   // the editor surface carries real body text.
   const samples: number[] = [];
   for (let i = 0; i < 4; i += 1) {
-    await page.goto(`${ORIGIN}/@visual-demo`);
+    await page.goto(`${ORIGIN}/@${HANDLE}`);
     await page.locator(".workspace-item-option").first().waitFor({ timeout: 20000 });
     await page.waitForTimeout(1200);
     const row = page.locator(".workspace-item-option").nth(i);
@@ -183,7 +184,7 @@ async function run(): Promise<void> {
     const context = await browser.newContext();
     const page = await context.newPage();
     await signIn(page);
-    await page.goto(`${ORIGIN}/@visual-demo`);
+    await page.goto(`${ORIGIN}/@${HANDLE}`);
     await page.locator(".workspace-item-option").first().waitFor({ timeout: 20000 });
     await page.waitForTimeout(1500);
     await installFrameProbe(page);

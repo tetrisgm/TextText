@@ -4215,6 +4215,21 @@ function LocalWorkspaceContent({
   onFocusCapture: () => void;
   onUseAssistantPrompt: (prompt: string) => void;
 }) {
+  // Stable identity for the section's items: FolderPage memoizes its sort,
+  // collection shaping and calendar off this array, and handing it a fresh
+  // `.map()` result every shell render busted every one of those memos - a
+  // full re-sort and re-shape of the whole folder per selection keystroke.
+  const sectionItems = useMemo(() => {
+    if (view.level !== "section") return null;
+    const folder = pool.folders.find(
+      (entry) => entry.path === view.folderPath,
+    );
+    if (!folder) return null;
+    return poolPostsForFolder(pool, folder.path).map((post) =>
+      postFromPoolPost(post),
+    );
+  }, [pool, view]);
+
   let page: ReactNode;
   let activePost: WorkspacePoolPost | null = null;
   const rootPage = (
@@ -4303,9 +4318,7 @@ function LocalWorkspaceContent({
     if (!folder) {
       page = rootPage;
     } else {
-      const items = poolPostsForFolder(pool, folder.path).map((post) =>
-        postFromPoolPost(post),
-      );
+      const items = sectionItems ?? [];
       activePost = selectedPostId
         ? itemIdentity.resolvePost(pool, selectedPostId)
         : null;
