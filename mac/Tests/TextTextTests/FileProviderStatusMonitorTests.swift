@@ -286,3 +286,32 @@ private final class FakeFileProviderStatusProvider: FileProviderStatusProviding 
         request.completion(pendingCount, error)
     }
 }
+
+final class FileProviderDomainWriteGuardTests: XCTestCase {
+    func testNormalRunsMayTouchTheDomain() {
+        XCTAssertTrue(AppDelegate.fileProviderDomainWritesAllowed(environment: [:]))
+        XCTAssertTrue(AppDelegate.fileProviderDomainWritesAllowed(
+            environment: ["TEXTTEXT_SERVER": ""]))
+    }
+
+    func testDevServerOverrideMayNotTouchTheRealMount() {
+        // The accident this guards: a dev run sharing the canonical state
+        // store rewrote the real extension's handoff to localhost, and every
+        // Finder fetch failed once that dev server stopped.
+        XCTAssertFalse(AppDelegate.fileProviderDomainWritesAllowed(
+            environment: ["TEXTTEXT_SERVER": "http://localhost:3000"]))
+        XCTAssertFalse(AppDelegate.fileProviderDomainWritesAllowed(
+            environment: [
+                "TEXTTEXT_SERVER": "http://localhost:3000",
+                "TEXTTEXT_DEV_FILEPROVIDER": "0",
+            ]))
+    }
+
+    func testDeliberateFileProviderDevelopmentKeepsAnEscapeHatch() {
+        XCTAssertTrue(AppDelegate.fileProviderDomainWritesAllowed(
+            environment: [
+                "TEXTTEXT_SERVER": "http://localhost:3000",
+                "TEXTTEXT_DEV_FILEPROVIDER": "1",
+            ]))
+    }
+}

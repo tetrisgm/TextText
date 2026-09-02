@@ -1748,6 +1748,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     /// The app holds one workspace token today, so the handoff carries a
     /// one-element workspace list; the extension already fans out per handle, so
     /// joining more workspaces later just appends descriptors.
+    /// Whether this process may write the File Provider handoff or touch the
+    /// registered domain. The mount is one shared resource on this Mac, and
+    /// the handoff origin comes from `resolveServerOrigin`, so a development
+    /// run with TEXTTEXT_SERVER set would repoint the REAL extension at a dev
+    /// server that will later stop existing: that exact accident broke Finder
+    /// sync on the owner's Mac on 2026-09-02, with every fetch failing once
+    /// the dev server was gone. A dev preview keeps its hands off the domain
+    /// entirely; TEXTTEXT_DEV_FILEPROVIDER=1 is the deliberate escape hatch
+    /// for working on the File Provider itself against a local server.
+    static func fileProviderDomainWritesAllowed(
+        environment: [String: String]
+    ) -> Bool {
+        guard let override = environment["TEXTTEXT_SERVER"],
+              !override.isEmpty else { return true }
+        return environment["TEXTTEXT_DEV_FILEPROVIDER"] == "1"
+    }
+
     private func syncFileProviderDomain(
         signalExistingDomain: Bool = false
     ) {
@@ -1756,6 +1773,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                 self?.syncFileProviderDomain(
                     signalExistingDomain: signalExistingDomain)
             }
+            return
+        }
+        guard Self.fileProviderDomainWritesAllowed(
+            environment: ProcessInfo.processInfo.environment
+        ) else {
+            appendActivity(
+                "Dev server override: leaving the File Provider mount alone")
             return
         }
         guard let credentials = store.loadCredentials() else {
@@ -2055,6 +2079,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private func removeFileProviderDomain() {
         if !Thread.isMainThread {
             DispatchQueue.main.async { [weak self] in self?.removeFileProviderDomain() }
+            return
+        }
+        // A dev-server run may not remove the real mount either: signing out
+        // of a preview instance must not unregister the installed app's
+        // Finder domain.
+        guard Self.fileProviderDomainWritesAllowed(
+            environment: ProcessInfo.processInfo.environment
+        ) else {
+            appendActivity(
+                "Dev server override: leaving the File Provider mount alone")
             return
         }
         guard !fileProviderRemovalInFlight else { return }
