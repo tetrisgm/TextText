@@ -253,7 +253,7 @@ export function CommandLayer({ children }: { children: ReactNode }) {
           return false;
         }
         event.preventDefault();
-        if (event.repeat && !shortcut.repeats) return true;
+        if (event.repeat && shortcut.once) return true;
         runCommand(() => command.run(ctx));
         return true;
       }

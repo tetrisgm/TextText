@@ -13,9 +13,12 @@ export type CommandShortcut = {
   label: string;
   allowTypingTarget?: boolean;
   requiresWorkspace?: boolean;
-  /** Run again on key auto-repeat (holding j keeps scrolling). Without it a
-   * held key fires once and further repeats are swallowed. */
-  repeats?: boolean;
+  /** One-shot: do NOT run again on key auto-repeat. The DEFAULT is that a
+   * held key repeats, like every native app; only commands that would misfire
+   * on repeat (create, delete, toggles, dialogs) opt out. Keys must never be
+   * swallowed silently - a repeat on a one-shot is still preventDefaulted so
+   * the browser does not act on it either, but nothing else is eaten. */
+  once?: boolean;
   /** Do not intercept while the reader's scroller is focused: the browser's
    * own key scrolling (with native auto-repeat and animation) is the exact
    * behavior wanted, and interception replaced it with single jumps. */

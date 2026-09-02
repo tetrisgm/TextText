@@ -1,20 +1,24 @@
 "use client";
 
-// "This page is out of date" — said once, quietly, by the page itself.
+// A stale page reloads ITSELF - the person is never asked.
 //
 // A Mac window keeps the bundle it loaded, so a deploy never reaches an app
-// that is already open. On 2026-08-27 a fix shipped at 12:33, the deployed
-// artifact demonstrably contained it, and a window open since before that was
-// still showing the old behaviour at 14:15. The person reported a fixed bug as
-// broken, which was entirely fair: nothing on screen could have told them.
+// that is already open. This used to show a "reload?" notice; the owner ruled
+// that unacceptable (2026-09-02): the app must simply be current, the way a
+// website is. So when a newer build is detected the page reloads at the first
+// moment that cannot cost anyone anything:
 //
-// Deliberately quiet. It checks when the window is brought back to the front,
-// which is when a person returns to an app they left open, and otherwise on a
-// slow timer. It never reloads on its own: a reload during writing would throw
-// away whatever is not yet saved, and this is not urgent enough to take that
-// risk on someone's behalf.
+//   - immediately, if the window is hidden (the reload is invisible, and the
+//     next summon opens the new build), or
+//   - once the person has been hands-off for a short idle window.
+//
+// Unsaved work is why this is safe rather than reckless: editors flush
+// pending saves on pagehide (keepalive), and collaborative documents push
+// their state continuously, so a reload at an idle moment loses nothing. The
+// idle gate exists so the ground never shifts mid-thought - a reload happens
+// between interactions, never during one.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   RUNNING_BUILD_ID,
   compareBuild,
@@ -23,59 +27,92 @@ import {
 
 /** Slow: this is a courtesy, not a heartbeat. */
 const CHECK_EVERY_MS = 10 * 60 * 1000;
+/** Hands-off this long counts as between-thoughts. */
+const IDLE_BEFORE_RELOAD_MS = 15 * 1000;
 
 export function UpdatedBuildNotice() {
-  const [stale, setStale] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
+  const staleRef = useRef(false);
+  const lastInputRef = useRef(0);
+  const idleTimerRef = useRef<number | null>(null);
+
+  const reloadNow = useCallback(() => {
+    // pagehide flushes editor saves; nothing else to do here.
+    window.location.reload();
+  }, []);
+
+  const scheduleIdleReload = useCallback(() => {
+    if (idleTimerRef.current !== null) return;
+    const tick = () => {
+      idleTimerRef.current = null;
+      if (!staleRef.current) return;
+      if (document.visibilityState === "hidden") {
+        reloadNow();
+        return;
+      }
+      const idleFor = Date.now() - lastInputRef.current;
+      if (idleFor >= IDLE_BEFORE_RELOAD_MS) {
+        reloadNow();
+        return;
+      }
+      idleTimerRef.current = window.setTimeout(
+        tick,
+        IDLE_BEFORE_RELOAD_MS - idleFor + 250,
+      );
+    };
+    idleTimerRef.current = window.setTimeout(tick, 250);
+  }, [reloadNow]);
 
   const check = useCallback(async () => {
-    if (!comparableBuild(RUNNING_BUILD_ID)) return;
+    if (staleRef.current || !comparableBuild(RUNNING_BUILD_ID)) return;
     try {
       const response = await fetch("/api/app/build", { cache: "no-store" });
       if (!response.ok) return;
       const answer = await response.json();
       if (compareBuild(RUNNING_BUILD_ID, answer).state === "stale") {
-        setStale(true);
+        staleRef.current = true;
+        if (document.visibilityState === "hidden") reloadNow();
+        else scheduleIdleReload();
       }
     } catch {
       // Offline, or the origin is between deployments. Say nothing.
     }
-  }, []);
+  }, [reloadNow, scheduleIdleReload]);
 
   useEffect(() => {
     if (!comparableBuild(RUNNING_BUILD_ID)) return;
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void check();
+    lastInputRef.current = Date.now();
+    const noteInput = () => {
+      lastInputRef.current = Date.now();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        // The invisible moment: reload a stale window while nobody watches.
+        if (staleRef.current) reloadNow();
+        return;
+      }
+      void check();
     };
     // No check on mount: a page that has just loaded came from the origin it
     // would be asking about, so it cannot be behind. The interesting moment is
     // returning to a window that has been sitting open.
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", onVisibility);
+    window.addEventListener("keydown", noteInput, { capture: true, passive: true });
+    window.addEventListener("pointerdown", noteInput, { capture: true, passive: true });
+    window.addEventListener("wheel", noteInput, { capture: true, passive: true });
     const timer = window.setInterval(() => void check(), CHECK_EVERY_MS);
     return () => {
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", onVisibility);
+      window.removeEventListener("keydown", noteInput, { capture: true });
+      window.removeEventListener("pointerdown", noteInput, { capture: true });
+      window.removeEventListener("wheel", noteInput, { capture: true });
       window.clearInterval(timer);
+      if (idleTimerRef.current !== null) {
+        window.clearTimeout(idleTimerRef.current);
+      }
     };
-  }, [check]);
+  }, [check, reloadNow]);
 
-  if (!stale || dismissed) return null;
-
-  return (
-    <div className="workspace-build-notice" role="status">
-      <span>TextText updated since you opened this.</span>
-      <button type="button" onClick={() => window.location.reload()}>
-        Reload
-      </button>
-      <button
-        type="button"
-        className="workspace-build-notice-dismiss"
-        aria-label="Dismiss update notice"
-        onClick={() => setDismissed(true)}
-      >
-        Not now
-      </button>
-    </div>
-  );
+  return null;
 }

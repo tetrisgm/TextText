@@ -280,8 +280,8 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     label: "Open command palette",
     group: "Command bar",
     shortcut: [
-      { key: "k", meta: true, label: "⌘K", allowTypingTarget: true },
-      { key: "k", ctrl: true, label: "Ctrl K", allowTypingTarget: true },
+      { key: "k", meta: true, label: "⌘K", allowTypingTarget: true, once: true },
+      { key: "k", ctrl: true, label: "Ctrl K", allowTypingTarget: true, once: true },
     ],
     when: () => true,
     run: (ctx) => ctx.openPalette(),
@@ -290,7 +290,7 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     id: "workspace.search",
     label: "Search workspace",
     group: "Command bar",
-    shortcut: { key: "/", label: "/", requiresWorkspace: true },
+    shortcut: { key: "/", label: "/", requiresWorkspace: true, once: true },
     when: (ctx) => Boolean(ctx.workspace),
     run: (ctx) => ctx.workspace?.focusSearch(),
   },
@@ -298,7 +298,7 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     id: "command.shortcuts",
     label: "Keyboard shortcuts",
     group: "Command bar",
-    shortcut: { key: "?", label: "?" },
+    shortcut: { key: "?", label: "?", once: true },
     when: () => true,
     run: (ctx) => ctx.openShortcuts(),
   },
@@ -306,7 +306,7 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     id: "create.current",
     label: "Create in context",
     group: "Create",
-    shortcut: { key: "c", label: "C" },
+    shortcut: { key: "c", label: "C", once: true },
     when: (ctx) => Boolean(ctx.workspace?.canCreate),
     run: (ctx) => {
       const kind = currentCreateKind(ctx);
@@ -337,8 +337,8 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     label: "Move up",
     group: "Navigate",
     shortcut: [
-      { key: "ArrowUp", label: "↑", repeats: true },
-      { key: "k", label: "K", repeats: true },
+      { key: "ArrowUp", label: "↑" },
+      { key: "k", label: "K" },
     ],
     when: (ctx) => Boolean(ctx.workspace),
     run: (ctx) => ctx.workspace?.selectSpatial("up"),
@@ -348,8 +348,8 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     label: "Move down",
     group: "Navigate",
     shortcut: [
-      { key: "ArrowDown", label: "↓", repeats: true },
-      { key: "j", label: "J", repeats: true },
+      { key: "ArrowDown", label: "↓" },
+      { key: "j", label: "J" },
     ],
     when: (ctx) => Boolean(ctx.workspace),
     run: (ctx) => ctx.workspace?.selectSpatial("down"),
@@ -374,7 +374,7 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     id: "selection.open",
     label: "Open focused item",
     group: "Navigate",
-    shortcut: { key: "Enter", label: "Enter" },
+    shortcut: { key: "Enter", label: "Enter", once: true },
     when: (ctx) =>
       Boolean(
         ctx.workspace &&
@@ -387,7 +387,7 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     id: "navigation.escape",
     label: "Close current view",
     group: "Navigate",
-    shortcut: { key: "Escape", label: "Esc", allowTypingTarget: true },
+    shortcut: { key: "Escape", label: "Esc", allowTypingTarget: true, once: true },
     when: (ctx) => Boolean(ctx.workspace && ctx.workspace.viewLevel !== "root"),
     run: (ctx) => {
       ctx.workspace?.escapeCurrent();
@@ -397,7 +397,7 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     id: "navigation.up",
     label: "Go up one level",
     group: "Navigate",
-    shortcut: { key: "Backspace", label: "Backspace" },
+    shortcut: { key: "Backspace", label: "Backspace", once: true },
     // Keep this available at home so Backspace is consumed instead of falling
     // through to the browser's history navigation.
     when: (ctx) => Boolean(ctx.workspace),
@@ -423,7 +423,7 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     id: `navigation.item.${index + 1}`,
     label: `Open visible item ${index + 1}`,
     group: "Navigate",
-    shortcut: { key: String(index + 1), label: String(index + 1) },
+    shortcut: { key: String(index + 1), label: String(index + 1), once: true },
     when: (ctx) => {
       const workspace = ctx.workspace;
       if (!workspace) return false;
@@ -455,7 +455,7 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     id: "read.half-down",
     label: "Half page down",
     group: "Read",
-    shortcut: { key: "d", ctrl: true, label: "Ctrl D", repeats: true },
+    shortcut: { key: "d", ctrl: true, label: "Ctrl D" },
     when: (ctx) => ctx.workspace?.viewLevel === "post",
     run: (ctx) => ctx.workspace?.scrollReader("down", "half"),
   },
@@ -463,7 +463,7 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     id: "read.half-up",
     label: "Half page up",
     group: "Read",
-    shortcut: { key: "u", ctrl: true, label: "Ctrl U", repeats: true },
+    shortcut: { key: "u", ctrl: true, label: "Ctrl U" },
     when: (ctx) => ctx.workspace?.viewLevel === "post",
     run: (ctx) => ctx.workspace?.scrollReader("up", "half"),
   },
@@ -504,8 +504,8 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     label: "Stop editing",
     group: "Edit",
     shortcut: [
-      { key: "Enter", meta: true, label: "⌘Enter", allowTypingTarget: true },
-      { key: "Enter", ctrl: true, label: "Ctrl Enter", allowTypingTarget: true },
+      { key: "Enter", meta: true, label: "⌘Enter", allowTypingTarget: true, once: true },
+      { key: "Enter", ctrl: true, label: "Ctrl Enter", allowTypingTarget: true, once: true },
     ],
     when: (ctx) => ctx.workspace?.viewLevel === "edit",
     run: (ctx) => ctx.workspace?.stopEditing(),
@@ -515,8 +515,8 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     label: "Edit current page",
     group: "Act",
     shortcut: [
-      { key: "e", label: "E" },
-      { key: "F2", label: "F2" },
+      { key: "e", label: "E", once: true },
+      { key: "F2", label: "F2", once: true },
     ],
     when: (ctx) => Boolean(ctx.workspace?.canEdit && ctx.workspace.viewLevel !== "edit"),
     run: (ctx) => ctx.workspace?.editCurrent(),
@@ -526,9 +526,9 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     label: "Move focused item to Trash",
     group: "Act",
     shortcut: [
-      { key: "Delete", label: "Del" },
-      { key: "Backspace", meta: true, label: "⌘Delete" },
-      { key: "Delete", ctrl: true, label: "Ctrl Delete" },
+      { key: "Delete", label: "Del", once: true },
+      { key: "Backspace", meta: true, label: "⌘Delete", once: true },
+      { key: "Delete", ctrl: true, label: "Ctrl Delete", once: true },
     ],
     when: (ctx) => Boolean(commandTargetPost(ctx) && ctx.workspace?.canManagePost),
     run: (ctx) =>
@@ -538,7 +538,7 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     id: "post.star",
     label: "Star or unstar focused item",
     group: "Act",
-    shortcut: { key: "s", label: "S" },
+    shortcut: { key: "s", label: "S", once: true },
     when: (ctx) => Boolean(commandTargetPost(ctx) && ctx.workspace?.canManagePost),
     run: toggleStarSelected,
   },
@@ -547,8 +547,8 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     label: "Show save status",
     group: "Edit",
     shortcut: [
-      { key: "s", meta: true, label: "⌘S", allowTypingTarget: true },
-      { key: "s", ctrl: true, label: "Ctrl S", allowTypingTarget: true },
+      { key: "s", meta: true, label: "⌘S", allowTypingTarget: true, once: true },
+      { key: "s", ctrl: true, label: "Ctrl S", allowTypingTarget: true, once: true },
     ],
     when: (ctx) => Boolean(ctx.workspace),
     run: (ctx) => ctx.toast("Already saved"),
@@ -557,7 +557,7 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     id: "post.move",
     label: "Move focused item",
     group: "Act",
-    shortcut: { key: "m", label: "M" },
+    shortcut: { key: "m", label: "M", once: true },
     when: (ctx) => Boolean(commandTargetPost(ctx) && ctx.workspace?.canManagePost),
     run: (ctx) => ctx.openPalette("/move "),
   },

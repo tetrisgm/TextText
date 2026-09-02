@@ -85,6 +85,42 @@ async function hoverSweep(page: Page, label: string): Promise<void> {
   );
 }
 
+async function keyNavLatency(page: Page, label: string): Promise<void> {
+  // j/k selection movement: keydown to the frame after the selection paints.
+  await page.locator(".workspace-item-option").first().click();
+  await page.waitForTimeout(300);
+  await page.evaluate(() => {
+    const w = window as unknown as { __keyLat: number[] };
+    w.__keyLat = [];
+    window.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.key !== "j" && event.key !== "k") return;
+        const start = event.timeStamp;
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            w.__keyLat.push(performance.now() - start);
+          });
+        });
+      },
+      true,
+    );
+  });
+  for (let i = 0; i < 12; i += 1) {
+    await page.keyboard.press(i % 3 === 2 ? "k" : "j");
+    await page.waitForTimeout(70);
+  }
+  await page.waitForTimeout(300);
+  const lat = (
+    await page.evaluate(
+      () => (window as unknown as { __keyLat: number[] }).__keyLat,
+    )
+  ).sort((a, b) => a - b);
+  console.log(
+    `${label.padEnd(30)} j/k select p50 ${quantile(lat, 0.5).toFixed(1)}ms p95 ${quantile(lat, 0.95).toFixed(1)}ms max ${lat[lat.length - 1]?.toFixed(1)}ms (n=${lat.length})`,
+  );
+}
+
 async function openLatency(page: Page, label: string): Promise<void> {
   // Click each of the first rows once (cold), measuring click to the moment
   // the editor surface carries real body text.
@@ -100,18 +136,37 @@ async function openLatency(page: Page, label: string): Promise<void> {
     await page
       .waitForFunction(
         () => {
-          const surface = document.querySelector(
-            ".tt-md-surface, .workspace-post-reader, .unified-document-reader",
+          // The hidden warm-editor pane renders an EMPTY action bar earlier
+          // in document order; require any content-bearing surface.
+          const surfaces = Array.from(
+            document.querySelectorAll(
+              ".tt-md-surface, .tt-prose, .post-back-action-bar",
+            ),
           );
           const status = document.querySelector(".workspace-post-body-status");
-          return Boolean(surface && surface.textContent && surface.textContent.length > 0) && !status;
+          return (
+            surfaces.some((s) => (s.textContent?.length ?? 0) > 0) && !status
+          );
         },
         undefined,
         { timeout: 20000 },
       )
       .catch(() => {});
-    samples.push(Date.now() - t0);
-    void title;
+    const elapsed = Date.now() - t0;
+    samples.push(elapsed);
+    if (elapsed > 5000) {
+      const debug = await page.evaluate(() => {
+        const surface = document.querySelector(
+          ".tt-md-surface, .tt-prose, .post-back-action-bar",
+        );
+        return {
+          surface: surface?.className?.slice(0, 30) ?? null,
+          textLen: surface?.textContent?.length ?? -1,
+          status: document.querySelectorAll(".workspace-post-body-status").length,
+        };
+      });
+      console.log(`  slow open: "${title}" ${elapsed}ms`, JSON.stringify(debug));
+    }
   }
   const sorted = [...samples].sort((a, b) => a - b);
   console.log(
@@ -133,6 +188,7 @@ async function run(): Promise<void> {
     await page.waitForTimeout(1500);
     await installFrameProbe(page);
     await hoverSweep(page, `${engineName} list hover sweep`);
+    await keyNavLatency(page, `${engineName}`);
     await openLatency(page, `${engineName}`);
     await browser.close();
   }

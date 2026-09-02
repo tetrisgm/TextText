@@ -47,7 +47,7 @@ describe("workspace commands", () => {
       "Ctrl K",
     ]);
     expect(shortcutList(search!)).toEqual([
-      { key: "/", label: "/", requiresWorkspace: true },
+      { key: "/", label: "/", requiresWorkspace: true, once: true },
     ]);
   });
 
@@ -168,7 +168,7 @@ describe("workspace commands", () => {
     };
 
     command!.run(context({ ...base, selectedPostIds: [post.id] }));
-    expect(shortcutList(command!)).toEqual([{ key: "s", label: "S" }]);
+    expect(shortcutList(command!)).toEqual([{ key: "s", label: "S", once: true }]);
     expect(toggleEditablePostStarredAction).toHaveBeenCalledWith(
       "writer",
       post.id,
@@ -212,9 +212,9 @@ describe("workspace commands", () => {
       "post-3",
     ]);
     expect(shortcutList(command!)).toEqual([
-      { key: "Delete", label: "Del" },
-      { key: "Backspace", meta: true, label: "⌘Delete" },
-      { key: "Delete", ctrl: true, label: "Ctrl Delete" },
+      { key: "Delete", label: "Del", once: true },
+      { key: "Backspace", meta: true, label: "⌘Delete", once: true },
+      { key: "Delete", ctrl: true, label: "Ctrl Delete", once: true },
     ]);
   });
 
