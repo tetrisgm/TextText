@@ -2722,6 +2722,22 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   empty action bar (first in document order). Check every matching
   surface for text, not the first. All four first rows open in
   44-107ms in both engines.
+- Whole-app performance pass (2026-09-02, `3e71e2e4`, deployed), owner
+  ruling: no interaction may unfold a performance surprise, and bloat -
+  code recomputing what it already had - is the disease. A ranked audit
+  of every high-frequency listener produced 13 findings; the fixes are
+  deletions of redundant work (see the commit). Worst: the editor
+  walked the ENTIRE body out of the CRDT into a fresh string on every
+  caret move for the draft-store selection slice. The permanent lane is
+  scripts/bench-workspace-matrix.ts: 13 interactions timed
+  trigger-to-paint in both engines; current table all ~15-110ms real
+  (driver floor row calibrates). Run it after workspace changes.
+- STILL OPEN from that pass: the CSS + React-identity audit half
+  (":has()" invalidation cost, box-shadow/filter transitions on hover
+  paths, non-memo'd list rows re-rendering on every shell interaction,
+  inline component types) was cancelled mid-run; the editor-side
+  per-event fixes landed but nobody has swept the stylesheet or the
+  render-identity surface yet.
 - Owner follow-ups (2026-09-02, `7c804523`, deployed): swipe
   back/forward churn was the URL-to-view parser taking the FIRST path
   segment as the slug - every folder-scoped item URL parsed as unknown
