@@ -64,3 +64,50 @@ export function writeNavTrail(scope: string, trail: NavTrail): void {
     /* private mode, quota, or no storage: the trail is a convenience */
   }
 }
+
+// Remembered scroll positions, keyed by the same view keys the shell uses
+// (list views by section, items by post id). Persisted so reopening an item
+// after a quit resumes where the reading left off.
+const SCROLL_PREFIX = "texttext:scroll-memory:";
+/** Enough for a long session; oldest entries fall off first. */
+const MAX_SCROLL_ENTRIES = 120;
+
+export function readScrollMemory(scope: string): Record<string, number> {
+  try {
+    const raw = window.localStorage.getItem(`${SCROLL_PREFIX}${scope}`);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    const out: Record<string, number> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+        out[key] = value;
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export function writeScrollMemory(
+  scope: string,
+  entries: Record<string, number>,
+): void {
+  try {
+    let pairs = Object.entries(entries).filter(
+      ([, top]) => Number.isFinite(top) && top > 0,
+    );
+    if (pairs.length > MAX_SCROLL_ENTRIES) {
+      pairs = pairs.slice(pairs.length - MAX_SCROLL_ENTRIES);
+    }
+    window.localStorage.setItem(
+      `${SCROLL_PREFIX}${scope}`,
+      JSON.stringify(Object.fromEntries(pairs)),
+    );
+  } catch {
+    /* private mode or quota: scroll memory is a convenience */
+  }
+}

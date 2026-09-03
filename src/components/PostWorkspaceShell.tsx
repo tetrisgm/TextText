@@ -200,7 +200,9 @@ import { registerWorkspaceRowCommands } from "@/lib/workspace/command-bus";
 import { buildIsStale } from "@/lib/deployed-build";
 import {
   readNavTrail,
+  readScrollMemory,
   writeNavTrail,
+  writeScrollMemory,
 } from "@/lib/workspace/nav-history";
 import { useWorkspaceSidebarWidth } from "@/components/workspace/WorkspaceSidebarChrome";
 import {
@@ -399,10 +401,10 @@ function runViewTransition(direction: "push" | "pop" | null, apply: () => void) 
 /** Which list views keep a remembered scroll position (item views manage
  * their own). Search memory is per query so a new search starts at the top. */
 function viewScrollMemoryKey(view: LocalWorkspaceView): string | null {
-  // Item views manage their own scroll on mount (the editor/reader scrolls
-  // to caret/top), which overrides a shell-level restore, so persisting the
-  // reading position needs component cooperation - deferred. List views only.
-  if (view.level === "post" || view.level === "edit") return null;
+  // Read and edit share the item's one scroll surface, so a reopened item
+  // resumes at the reading position either way.
+  if (view.level === "post" || view.level === "edit")
+    return `item:${view.postId}`;
   if (view.level === "root") return "root";
   if (view.level === "search") return `search:${view.source}:${view.query}`;
   if (view.level === "settings") return "settings";
@@ -497,6 +499,7 @@ function LocalWorkspaceShell({
   // WebKit's swipe snapshot reads as a full page refresh.
   const contentScrollMemoryRef = useRef(new Map<string, number>());
   const scrollRestorePendingRef = useRef(false);
+  const scrollMemorySeededRef = useRef(false);
   // Our position in the session's history, so the swipe drag knows whether a
   // back target (index > 0) or forward target (index < max) exists before it
   // commits to a direction. Every pushState carries the index in state.
@@ -975,6 +978,15 @@ function LocalWorkspaceShell({
   useEffect(() => {
     const content = contentRef.current;
     if (!content) return;
+    if (!scrollMemorySeededRef.current) {
+      scrollMemorySeededRef.current = true;
+      for (const [key, top] of Object.entries(readScrollMemory(homePath))) {
+        if (!contentScrollMemoryRef.current.has(key)) {
+          contentScrollMemoryRef.current.set(key, top);
+        }
+      }
+    }
+    let flush = 0;
     const record = () => {
       // While a restore is settling, the scroller's own mount-time reset to
       // 0 fires scroll events; recording them would clobber the position we
@@ -984,10 +996,22 @@ function LocalWorkspaceShell({
       if (!key) return;
       if (content.scrollHeight <= content.clientHeight + 4) return;
       contentScrollMemoryRef.current.set(key, content.scrollTop);
+      // Persist off the scroll path: one write after the scrolling settles,
+      // never one per event.
+      window.clearTimeout(flush);
+      flush = window.setTimeout(() => {
+        writeScrollMemory(
+          homePath,
+          Object.fromEntries(contentScrollMemoryRef.current),
+        );
+      }, 400);
     };
     content.addEventListener("scroll", record, { passive: true });
-    return () => content.removeEventListener("scroll", record);
-  }, []);
+    return () => {
+      content.removeEventListener("scroll", record);
+      window.clearTimeout(flush);
+    };
+  }, [homePath]);
 
   // Put a returning view back where it was. List views settle in a couple of
   // frames; an item's scroller (windowed editor / long reader) grows its
@@ -997,30 +1021,55 @@ function LocalWorkspaceShell({
   useLayoutEffect(() => {
     const key = viewScrollMemoryKey(view);
     if (!key) return;
+    if (!scrollMemorySeededRef.current) {
+      // Seed here, not only in the recording effect: a layout effect runs
+      // before that one, so a launch straight into an item would otherwise
+      // find an empty map and skip its own restore.
+      scrollMemorySeededRef.current = true;
+      for (const [k, top] of Object.entries(readScrollMemory(homePath))) {
+        if (!contentScrollMemoryRef.current.has(k)) {
+          contentScrollMemoryRef.current.set(k, top);
+        }
+      }
+    }
     const saved = contentScrollMemoryRef.current.get(key);
-    if (saved === undefined || saved === 0) return;
+    if (saved === undefined || saved <= 0) return;
+    const content = contentRef.current;
+    if (!content) return;
+    // HOLD the target rather than setting it once. An item's scroller
+    // (windowed editor, long reader) mounts short, grows its height over
+    // many frames, and resets to 0 as it does - a single successful set is
+    // immediately undone. So keep re-applying for a window, and yield the
+    // instant the person actually scrolls, so we never fight a live gesture.
+    const isItem = view.level === "post" || view.level === "edit";
+    const holdMs = isItem ? 900 : 250;
     scrollRestorePendingRef.current = true;
     const started = performance.now();
     let frame = 0;
-    const attempt = () => {
-      const content = contentRef.current;
-      if (!content) {
-        scrollRestorePendingRef.current = false;
-        return;
-      }
-      content.scrollTop = saved;
-      const stuck = Math.abs(content.scrollTop - saved) <= 1;
-      if (stuck || performance.now() - started > 700) {
-        scrollRestorePendingRef.current = false;
-        return;
-      }
-      frame = requestAnimationFrame(attempt);
-    };
-    attempt();
-    return () => {
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
       cancelAnimationFrame(frame);
+      content.removeEventListener("wheel", release);
+      content.removeEventListener("pointerdown", release);
+      window.removeEventListener("keydown", release);
       scrollRestorePendingRef.current = false;
     };
+    const hold = () => {
+      if (released) return;
+      if (Math.abs(content.scrollTop - saved) > 1) content.scrollTop = saved;
+      if (performance.now() - started > holdMs) {
+        release();
+        return;
+      }
+      frame = requestAnimationFrame(hold);
+    };
+    content.addEventListener("wheel", release, { passive: true });
+    content.addEventListener("pointerdown", release, { passive: true });
+    window.addEventListener("keydown", release);
+    hold();
+    return release;
   }, [view]);
 
   const openedPostId =

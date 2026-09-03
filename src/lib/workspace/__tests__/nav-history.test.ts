@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readNavTrail, writeNavTrail } from "@/lib/workspace/nav-history";
+import {
+  readNavTrail,
+  readScrollMemory,
+  writeNavTrail,
+  writeScrollMemory,
+} from "@/lib/workspace/nav-history";
 
 function memoryStorage(): Storage {
   const map = new Map<string, string>();
@@ -49,5 +54,33 @@ describe("nav-history trail", () => {
     expect(back?.entries.length).toBe(50);
     // The current entry is still addressed and is still the last one.
     expect(back?.entries[back.index]).toBe("/@s/59");
+  });
+});
+
+describe("scroll memory", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("round-trips positions per scope and drops non-positive ones", () => {
+    vi.stubGlobal("window", { localStorage: memoryStorage() });
+    writeScrollMemory("/@a", { "item:1": 1400, "section:notes": 220, "item:2": 0 });
+    expect(readScrollMemory("/@a")).toEqual({
+      "item:1": 1400,
+      "section:notes": 220,
+    });
+    expect(readScrollMemory("/@b")).toEqual({});
+  });
+
+  it("ignores malformed storage rather than throwing", () => {
+    const storage = memoryStorage();
+    vi.stubGlobal("window", { localStorage: storage });
+    storage.setItem("texttext:scroll-memory:/@bad", "{nope");
+    expect(readScrollMemory("/@bad")).toEqual({});
+    storage.setItem(
+      "texttext:scroll-memory:/@arr",
+      JSON.stringify(["not", "an", "object"]),
+    );
+    expect(readScrollMemory("/@arr")).toEqual({});
   });
 });
