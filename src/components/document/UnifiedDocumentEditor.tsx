@@ -543,7 +543,6 @@ export function UnifiedDocumentEditor({
   const materializeQueueRef = useRef(Promise.resolve());
   const localMaterializationVersionRef = useRef(0);
   const savedMaterializationVersionRef = useRef(0);
-  const pendingMaterializationStateRef = useRef<string | null>(null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const subtitleRef = useRef<HTMLTextAreaElement>(null);
   const bodySurfaceRef = useRef<HTMLDivElement>(null);
@@ -613,11 +612,22 @@ export function UnifiedDocumentEditor({
       if (localVersion <= savedMaterializationVersionRef.current) {
         return Promise.resolve();
       }
-      const state = pendingMaterializationStateRef.current ?? bytesToBase64(Y.encodeStateAsUpdate(doc));
       setSaveState("saving");
       const request = materializeQueueRef.current
         .catch(() => undefined)
         .then(async () => {
+          // Encode in an idle slot, never on the input path: the debounce
+          // timer can fire in the middle of a typing burst, and encoding a
+          // multi-megabyte doc there is a visible hitch. Idle time encodes
+          // the latest state, which is at least as new as what was
+          // scheduled. keepalive flushes (pagehide/unmount) cannot wait for
+          // idle time that may never come, so they encode immediately.
+          if (!keepalive && typeof requestIdleCallback === "function") {
+            await new Promise<void>((resolve) => {
+              requestIdleCallback(() => resolve(), { timeout: 1000 });
+            });
+          }
+          const state = bytesToBase64(Y.encodeStateAsUpdate(doc));
           const response = await fetch(
             `/api/collab/${encodeURIComponent(collab.postId)}/materialize`,
             {
@@ -641,9 +651,6 @@ export function UnifiedDocumentEditor({
             savedMaterializationVersionRef.current,
             localVersion,
           );
-          if (localMaterializationVersionRef.current === localVersion) {
-            pendingMaterializationStateRef.current = null;
-          }
           setSaveState("saved");
           setError(null);
         })
@@ -668,12 +675,6 @@ export function UnifiedDocumentEditor({
   const scheduleMaterialization = useCallback(() => {
     if (!networkEnabled || !collab.canEdit) return;
     localMaterializationVersionRef.current += 1;
-    // Encode at FLUSH time, never here: this runs on every keystroke, and
-    // encoding + base64ing the whole doc state per keystroke was the largest
-    // allocation source at multi-megabyte bodies (nearly half the typing
-    // burst went to GC). The flush encodes the latest state, which is at
-    // least as new as what was scheduled.
-    pendingMaterializationStateRef.current = null;
     setSaveState("local");
     if (materializeTimerRef.current) clearTimeout(materializeTimerRef.current);
     materializeTimerRef.current = setTimeout(() => {
