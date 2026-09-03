@@ -548,10 +548,10 @@ describe("assistant conversation history", () => {
     );
   });
 
-  it("bounds each transcript to the most recent 200 messages", () => {
+  it("bounds each transcript to the most recent 2000 messages", () => {
     browserStorage();
     const active = activeAssistantConversation("writer", "root")!;
-    for (let index = 0; index < 205; index += 1) {
+    for (let index = 0; index < 2_005; index += 1) {
       appendAssistantConversationMessage("writer", active.id, {
         id: `message-${index}`,
         role: index % 2 === 0 ? "user" : "assistant",
@@ -560,14 +560,14 @@ describe("assistant conversation history", () => {
     }
 
     const messages = assistantConversationMessages("writer", active.id);
-    expect(messages).toHaveLength(200);
+    expect(messages).toHaveLength(2_000);
     expect(messages[0]?.id).toBe("message-5");
-    expect(messages.at(-1)?.id).toBe("message-204");
+    expect(messages.at(-1)?.id).toBe("message-2004");
   });
 
-  it("bounds stored history to 60 conversations", () => {
+  it("keeps far more history than the old sixty-chat cap", () => {
     browserStorage();
-    for (let index = 0; index < 65; index += 1) {
+    for (let index = 0; index < 120; index += 1) {
       const active = activeAssistantConversation("writer", "root")!;
       appendAssistantConversationMessage("writer", active.id, {
         id: `user-${index}`,
@@ -577,6 +577,65 @@ describe("assistant conversation history", () => {
       createAssistantConversation("writer", "root");
     }
 
-    expect(assistantConversationSummaries("writer", "root")).toHaveLength(60);
+    // Every one of these is still reachable; the old build dropped the
+    // oldest sixty.
+    expect(assistantConversationSummaries("writer", "root")).toHaveLength(121);
+  });
+
+  it("bounds stored history to 500 conversations", () => {
+    browserStorage();
+    for (let index = 0; index < 505; index += 1) {
+      const active = activeAssistantConversation("writer", "root")!;
+      appendAssistantConversationMessage("writer", active.id, {
+        id: `user-${index}`,
+        role: "user",
+        text: `Conversation ${index}`,
+      });
+      createAssistantConversation("writer", "root");
+    }
+
+    expect(assistantConversationSummaries("writer", "root")).toHaveLength(500);
+  });
+
+  it("evicts the oldest unpinned chats rather than failing a large write", () => {
+    // The counts are generous, so a storage budget is what really bounds
+    // history. It must shed the oldest unpinned chats and keep writing,
+    // never throw the whole history away.
+    const storage = browserStorage();
+    const pinnedId = activeAssistantConversation("writer", "root")!.id;
+    appendAssistantConversationMessage("writer", pinnedId, {
+      id: "pinned-message",
+      role: "user",
+      text: "keep me",
+    });
+    toggleAssistantConversationPinned("writer", pinnedId);
+
+    // ~40KB per chat: enough of them to pass the 3MB storage budget.
+    const filler = "x".repeat(40_000);
+    for (let index = 0; index < 90; index += 1) {
+      const id = createAssistantConversation("writer", "root");
+      appendAssistantConversationMessage("writer", id, {
+        id: `filler-${index}`,
+        role: "user",
+        text: filler,
+      });
+    }
+
+    const raw = storage.local.get(
+      [...storage.local.keys()].find((key) =>
+        key.startsWith("texttext:assistant-conversations:"),
+      )!,
+    )!;
+    expect(raw.length).toBeLessThanOrEqual(3_000_000);
+    // The pinned chat survives the eviction, and the newest filler does too.
+    const stored = JSON.parse(raw) as {
+      conversations: { id: string; pinned: boolean }[];
+    };
+    expect(stored.conversations.some((c) => c.id === pinnedId)).toBe(true);
+    expect(stored.conversations.length).toBeGreaterThan(1);
+    // In-memory history is untouched by the storage budget.
+    expect(
+      assistantConversationSummaries("writer", "root").length,
+    ).toBeGreaterThan(stored.conversations.length);
   });
 });

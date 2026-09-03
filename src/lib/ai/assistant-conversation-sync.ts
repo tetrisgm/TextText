@@ -1,5 +1,8 @@
-export const MAX_SYNCED_ASSISTANT_CONVERSATIONS = 60;
-export const MAX_SYNCED_ASSISTANT_MESSAGES = 200;
+// Generous counts, because losing an old discussion is worse than holding
+// it: the real protection is the byte budget below (and the store's own
+// storage budget), which evicts by recency instead of an arbitrary count.
+export const MAX_SYNCED_ASSISTANT_CONVERSATIONS = 500;
+export const MAX_SYNCED_ASSISTANT_MESSAGES = 2_000;
 const MAX_SYNCED_ASSISTANT_MESSAGE_TEXT = 16_000;
 const MAX_SYNCED_ASSISTANT_CONVERSATION_BYTES = 512_000;
 const MAX_SYNCED_ASSISTANT_WORKSPACE_BYTES = 4_000_000;

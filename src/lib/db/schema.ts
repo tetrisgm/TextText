@@ -355,7 +355,7 @@ export const workspaceAssistantConversationHistories = pgTable(
     ),
     check(
       "workspace_assistant_conversation_history_count",
-      sql`jsonb_array_length(${t.conversations}) <= 60`,
+      sql`jsonb_array_length(${t.conversations}) <= 500`,
     ),
     check(
       "workspace_assistant_conversation_history_size",

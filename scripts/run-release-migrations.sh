@@ -23,6 +23,7 @@ migrations=(
   scripts/migrate-add-workspace-ai-config.mjs
   scripts/migrate-add-workspace-agent-config.mjs
   scripts/migrate-add-assistant-conversation-history.mjs
+  scripts/migrate-raise-assistant-history-limits.mjs
   scripts/migrate-add-app-health.mjs
   scripts/migrate-add-oauth-token-lifecycle.mjs
   scripts/migrate-add-item-comments.mjs

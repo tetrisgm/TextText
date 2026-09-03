@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_SYNCED_ASSISTANT_CONVERSATIONS,
+  MAX_SYNCED_ASSISTANT_MESSAGES,
   cleanAssistantConversationSyncPayload,
   mergeAssistantConversationSyncPayloads,
 } from "@/lib/ai/assistant-conversation-sync";
@@ -162,11 +164,11 @@ describe("assistant conversation replica merge", () => {
     ).toHaveLength(10);
   });
 
-  it("enforces 60 chats and 200 messages", () => {
-    const conversations = Array.from({ length: 65 }, (_, chatIndex) =>
-      chat(`chat-${chatIndex.toString().padStart(2, "0")}`, {
-        updatedAt: `2026-08-24T12:${chatIndex.toString().padStart(2, "0")}:00.000Z`,
-        messages: Array.from({ length: 205 }, (_, messageIndex) => ({
+  it("enforces the chat and message ceilings", () => {
+    const conversations = Array.from({ length: 505 }, (_, chatIndex) =>
+      chat(`chat-${chatIndex.toString().padStart(3, "0")}`, {
+        updatedAt: `2026-08-24T12:00:00.${chatIndex.toString().padStart(3, "0")}Z`,
+        messages: Array.from({ length: 5 }, (_, messageIndex) => ({
           id: `message-${messageIndex}`,
           role: messageIndex % 2 ? "assistant" : "user",
           text: `Message ${messageIndex}`,
@@ -177,8 +179,37 @@ describe("assistant conversation replica merge", () => {
 
     const cleaned = cleanAssistantConversationSyncPayload(conversations);
 
-    expect(cleaned).toHaveLength(60);
-    expect(cleaned.every((conversation) => conversation.messages.length <= 200)).toBe(true);
+    expect(cleaned).toHaveLength(MAX_SYNCED_ASSISTANT_CONVERSATIONS);
+    expect(
+      cleaned.every(
+        (conversation) =>
+          conversation.messages.length <= MAX_SYNCED_ASSISTANT_MESSAGES,
+      ),
+    ).toBe(true);
+  });
+
+  it("bounds one transcript to the message ceiling", () => {
+    const [cleaned] = cleanAssistantConversationSyncPayload([
+      chat("long", {
+        messages: Array.from(
+          { length: MAX_SYNCED_ASSISTANT_MESSAGES + 5 },
+          (_, messageIndex) => ({
+            id: `message-${messageIndex}`,
+            role: messageIndex % 2 ? "assistant" : "user",
+            text: `Message ${messageIndex}`,
+            updatedAt: `2026-08-24T12:00:00.${messageIndex
+              .toString()
+              .padStart(4, "0")}Z`,
+          }),
+        ),
+      }),
+    ]);
+
+    expect(cleaned.messages).toHaveLength(MAX_SYNCED_ASSISTANT_MESSAGES);
+    // The most recent turns are the ones kept.
+    expect(cleaned.messages.at(-1)?.id).toBe(
+      `message-${MAX_SYNCED_ASSISTANT_MESSAGES + 4}`,
+    );
   });
 
   it("removes credential fields and redacts token-shaped text", () => {

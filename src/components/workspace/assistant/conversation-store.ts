@@ -201,17 +201,80 @@ function loadWorkspace(handle: string): WorkspaceConversationState {
   return state;
 }
 
-function saveWorkspace(handle: string, state: WorkspaceConversationState) {
-  if (typeof window === "undefined") return;
-  try {
-    const stored: StoredWorkspaceConversations = {
+/**
+ * What the browser will hold for one workspace's history. The conversation
+ * and message counts are deliberately generous, so this budget - not an
+ * arbitrary count - is what actually bounds storage, and it evicts the
+ * oldest unpinned chats rather than failing the write. Without it a large
+ * history would exceed the origin's quota, setItem would throw, and the
+ * whole history would silently stop persisting.
+ */
+const MAX_STORED_BYTES = 3_000_000;
+
+/** Oldest-first eviction order: pinned last, then least recently updated. */
+function evictionOrder(
+  conversations: AssistantConversation[],
+): AssistantConversation[] {
+  return [...conversations].sort((left, right) => {
+    if (left.pinned !== right.pinned) return left.pinned ? 1 : -1;
+    return left.updatedAt.localeCompare(right.updatedAt);
+  });
+}
+
+function serializeWithinBudget(
+  state: WorkspaceConversationState,
+  budget: number,
+): string {
+  const encode = (conversations: AssistantConversation[]) =>
+    JSON.stringify({
       version: STORE_VERSION,
       activeByContext: state.activeByContext,
-      conversations: state.conversations,
-    };
-    window.localStorage.setItem(storageKey(handle), JSON.stringify(stored));
+      conversations,
+    } satisfies StoredWorkspaceConversations);
+
+  let conversations = state.conversations;
+  let payload = encode(conversations);
+  if (payload.length <= budget) return payload;
+
+  // Drop tombstones first (they carry no content anyone can read), then the
+  // oldest unpinned live chats, until the payload fits.
+  const droppable = evictionOrder(conversations).sort((left, right) => {
+    const leftDeleted = left.deletedAt ? 0 : 1;
+    const rightDeleted = right.deletedAt ? 0 : 1;
+    if (leftDeleted !== rightDeleted) return leftDeleted - rightDeleted;
+    return 0;
+  });
+  const doomed = new Set<string>();
+  for (const conversation of droppable) {
+    doomed.add(conversation.id);
+    conversations = state.conversations.filter(
+      (candidate) => !doomed.has(candidate.id),
+    );
+    payload = encode(conversations);
+    if (payload.length <= budget) break;
+  }
+  return payload;
+}
+
+function saveWorkspace(handle: string, state: WorkspaceConversationState) {
+  if (typeof window === "undefined") return;
+  const write = (budget: number) => {
+    window.localStorage.setItem(
+      storageKey(handle),
+      serializeWithinBudget(state, budget),
+    );
+  };
+  try {
+    write(MAX_STORED_BYTES);
   } catch {
-    // The in-memory history remains usable when storage is unavailable.
+    // Quota is per origin and shared, so the budget can still be too
+    // generous on a full profile. Give up half of it once before falling
+    // back to memory alone, so a long history keeps persisting something.
+    try {
+      write(Math.floor(MAX_STORED_BYTES / 2));
+    } catch {
+      // The in-memory history remains usable when storage is unavailable.
+    }
   }
 }
 
