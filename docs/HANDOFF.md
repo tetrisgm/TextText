@@ -2974,6 +2974,20 @@ collab_state/collab_updates rows, then start the server.
   ttNavIndex in history.state so the drag knows if a back/forward
   target exists. navAnimationSuppressed keeps the drag's own popstate
   from double-animating. Feel is the owner's trackpad to judge.
+- The gesture is RECOGNIZED NATIVELY (build 1011): the web wheel
+  stream cannot track a finger (scroll deltas, not position; no
+  fingers-up signal; ~1s momentum tail), which made the drag flick to
+  an instant commit then latch. AppWebView.scrollWheel reads NSEvent
+  phase + scrollingDeltaX (what Safari uses), treats a
+  horizontal-dominant swipe as navigation, forwards begin/move/end
+  plus cumulative travel to window.__ttNavSwipe, and hands
+  vertical/diagonal gestures back to the web view as normal scroll
+  (momentum after fingers-up is consumed). The page translates the
+  clone 1:1. Sign convention assumes natural scrolling (swipe right =
+  back = positive scrollingDeltaX); flip in AppWebView and the
+  __ttNavSwipe begin branch if a user has natural scrolling off.
+  Cancel corrects to the recorded ttNavIndex so a fast flick cannot
+  strand the view.
 
 ## Resolved episodes (one line each, dates in git log)
 
