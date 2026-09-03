@@ -43,6 +43,92 @@
   backdrop-filter: saturate(180%) blur(24px);
 }
 
+/* Navigation slides (view transitions). Only the content region carries a
+   view-transition-name, so the sidebar and rail hold still; everything
+   else in the root pair is pinned to animation:none so the swap outside
+   the content region is instant. Push: the new view slides in from the
+   right over the old view easing left underneath - drill-in. Pop: the old
+   view slides out to the right revealing the new beneath - drill-out.
+   Driven by html[data-nav-transition], set only by the workspace shell. */
+.post-editor-content {
+  view-transition-name: workspace-content;
+}
+html[data-nav-transition]::view-transition-old(root),
+html[data-nav-transition]::view-transition-new(root) {
+  animation: none;
+}
+/* The snapshots translate within the content region only; without the clip
+   the outgoing view slides across the sidebar. */
+html[data-nav-transition]::view-transition-image-pair(workspace-content) {
+  overflow: clip;
+}
+html[data-nav-transition]::view-transition-old(workspace-content),
+html[data-nav-transition]::view-transition-new(workspace-content) {
+  animation-duration: 240ms;
+  animation-timing-function: cubic-bezier(0.2, 0.75, 0.25, 1);
+  animation-fill-mode: both;
+}
+/* Both directions keep the default stacking (new above old): WebKit does
+   not honor z-index reordering of the transition pseudos, so the incoming
+   view always rides on top - from the right going deeper, from the left
+   coming back - while the outgoing view eases away underneath. */
+html[data-nav-transition="push"]::view-transition-new(workspace-content) {
+  animation-name: workspace-nav-enter-right;
+  box-shadow: -24px 0 48px -24px rgba(0, 0, 0, 0.35);
+}
+html[data-nav-transition="push"]::view-transition-old(workspace-content) {
+  animation-name: workspace-nav-settle-left;
+}
+html[data-nav-transition="pop"]::view-transition-new(workspace-content) {
+  animation-name: workspace-nav-enter-left;
+  box-shadow: 24px 0 48px -24px rgba(0, 0, 0, 0.35);
+}
+html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
+  animation-name: workspace-nav-settle-right;
+}
+@keyframes workspace-nav-enter-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes workspace-nav-settle-left {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(-24%);
+    opacity: 0.72;
+  }
+}
+@keyframes workspace-nav-enter-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes workspace-nav-settle-right {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(24%);
+    opacity: 0.72;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-nav-transition]::view-transition-old(workspace-content),
+  html[data-nav-transition]::view-transition-new(workspace-content) {
+    animation: none;
+  }
+}
+
 /* While the sidebar is being dragged: no eased margin chasing the pointer
    (continuous reflow smears text pixels in WebKit) and no live blur layer
    (moving backdrop-filter leaves repaint artifacts). Removing the class on

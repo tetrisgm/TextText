@@ -15,6 +15,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { flushSync } from "react-dom";
 import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
@@ -262,6 +263,40 @@ export function sidebarFolderPathForPostType(type: ItemKind): SidebarFolderId {
   if (type === "note") return "notes";
   if (type === "bookmark") return "bookmarks";
   return "blog";
+}
+
+/**
+ * Run a view change inside a sliding view transition when the platform has
+ * the API: push slides the new view in from the right over the old one,
+ * pop slides the old view out to the right revealing the new beneath -
+ * the native drill-in/drill-out grammar. Direction null (same depth, e.g.
+ * folder switch or read/edit mode change) and reduced motion apply the
+ * change instantly. The pseudo-element animations live in workspace.css
+ * under html[data-nav-transition].
+ */
+function runViewTransition(direction: "push" | "pop" | null, apply: () => void) {
+  const doc = document as Document & {
+    startViewTransition?: (update: () => void) => { finished: Promise<void> };
+  };
+  if (
+    !direction ||
+    typeof doc.startViewTransition !== "function" ||
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  ) {
+    apply();
+    return;
+  }
+  document.documentElement.dataset.navTransition = direction;
+  const transition = doc.startViewTransition(() => {
+    flushSync(apply);
+  });
+  void transition.finished
+    .catch(() => {})
+    .then(() => {
+      if (document.documentElement.dataset.navTransition === direction) {
+        delete document.documentElement.dataset.navTransition;
+      }
+    });
 }
 
 /** Which list views keep a remembered scroll position (item views manage
@@ -785,46 +820,37 @@ function LocalWorkspaceShell({
         window.dispatchEvent(new Event(STOP_LOCAL_EDITING_EVENT));
       }
       window.history.pushState(null, "", href);
-      viewRef.current = nextView;
-      setView(nextView);
-      const nextSelectedPostId =
-        "selectedPostId" in options
-          ? (options.selectedPostId ?? null)
-          : selectedPostIdForView(displayPoolRef.current, nextView);
-      setSelectedPostId(nextSelectedPostId);
-      setWorkspaceSelection({ anchorId: nextSelectedPostId });
-      setSelectedPostIds(
-        new Set(nextSelectedPostId ? [nextSelectedPostId] : []),
-      );
-      if ("selectedSectionPath" in options) {
-        setSelectedSectionPath(
-          validRootSectionPath(
-            displayPoolRef.current,
-            options.selectedSectionPath ?? null,
-          ),
-        );
-      } else if (nextView.level === "root" || nextView.level === "search") {
-        setSelectedSectionPath(null);
-      }
       const previousDepth = localWorkspaceViewDepth(previousView);
       const nextDepth = localWorkspaceViewDepth(nextView);
-      if (
-        previousDepth !== nextDepth &&
-        !window.matchMedia("(prefers-reduced-motion: reduce)").matches
-      ) {
-        window.requestAnimationFrame(() => {
-          contentRef.current?.animate(
-            [
-              {
-                opacity: 0.78,
-                transform: `translateX(${nextDepth > previousDepth ? 22 : -22}px)`,
-              },
-              { opacity: 1, transform: "translateX(0)" },
-            ],
-            { duration: 170, easing: "cubic-bezier(.2,.75,.25,1)" },
+      const direction =
+        nextDepth > previousDepth
+          ? ("push" as const)
+          : nextDepth < previousDepth
+            ? ("pop" as const)
+            : null;
+      runViewTransition(direction, () => {
+        viewRef.current = nextView;
+        setView(nextView);
+        const nextSelectedPostId =
+          "selectedPostId" in options
+            ? (options.selectedPostId ?? null)
+            : selectedPostIdForView(displayPoolRef.current, nextView);
+        setSelectedPostId(nextSelectedPostId);
+        setWorkspaceSelection({ anchorId: nextSelectedPostId });
+        setSelectedPostIds(
+          new Set(nextSelectedPostId ? [nextSelectedPostId] : []),
+        );
+        if ("selectedSectionPath" in options) {
+          setSelectedSectionPath(
+            validRootSectionPath(
+              displayPoolRef.current,
+              options.selectedSectionPath ?? null,
+            ),
           );
-        });
-      }
+        } else if (nextView.level === "root" || nextView.level === "search") {
+          setSelectedSectionPath(null);
+        }
+      });
     },
     [itemIdentity],
   );
@@ -2677,21 +2703,31 @@ function LocalWorkspaceShell({
       ) {
         window.dispatchEvent(new Event(STOP_LOCAL_EDITING_EVENT));
       }
-      viewRef.current = nextView;
-      setView(nextView);
-      const nextSelectedPostId = selectedPostIdForView(displayPool, nextView);
-      setWorkspaceSelection({ anchorId: nextSelectedPostId });
-      setSelectedPostId(nextSelectedPostId);
-      setSelectedPostIds(
-        new Set(nextSelectedPostId ? [nextSelectedPostId] : []),
-      );
-      if (nextView.level === "root" || nextView.level === "search") {
-        setSelectedSectionPath(null);
-        setSearchQuery(nextView.level === "search" ? nextView.query : "");
-      } else {
-        setSelectedSectionPath(null);
-        setSearchQuery("");
-      }
+      const previousDepth = localWorkspaceViewDepth(previousView);
+      const nextDepth = localWorkspaceViewDepth(nextView);
+      const direction =
+        nextDepth > previousDepth
+          ? ("push" as const)
+          : nextDepth < previousDepth
+            ? ("pop" as const)
+            : null;
+      runViewTransition(direction, () => {
+        viewRef.current = nextView;
+        setView(nextView);
+        const nextSelectedPostId = selectedPostIdForView(displayPool, nextView);
+        setWorkspaceSelection({ anchorId: nextSelectedPostId });
+        setSelectedPostId(nextSelectedPostId);
+        setSelectedPostIds(
+          new Set(nextSelectedPostId ? [nextSelectedPostId] : []),
+        );
+        if (nextView.level === "root" || nextView.level === "search") {
+          setSelectedSectionPath(null);
+          setSearchQuery(nextView.level === "search" ? nextView.query : "");
+        } else {
+          setSelectedSectionPath(null);
+          setSearchQuery("");
+        }
+      });
     };
     const onPopState = () => {
       disarmWorkspaceHover();
@@ -2773,23 +2809,10 @@ function LocalWorkspaceShell({
         return;
       }
       fired = true;
-      const goingBack = sumX < 0;
-      if (goingBack) window.history.back();
+      // The popstate handler animates the change (view transition), so the
+      // recognizer only drives history.
+      if (sumX < 0) window.history.back();
       else window.history.forward();
-      if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-        window.requestAnimationFrame(() => {
-          contentRef.current?.animate(
-            [
-              {
-                opacity: 0.78,
-                transform: `translateX(${goingBack ? -22 : 22}px)`,
-              },
-              { opacity: 1, transform: "translateX(0)" },
-            ],
-            { duration: 170, easing: "cubic-bezier(.2,.75,.25,1)" },
-          );
-        });
-      }
     };
     window.addEventListener("wheel", onWheel, { passive: true });
     return () => {
