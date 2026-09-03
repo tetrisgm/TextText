@@ -485,6 +485,29 @@ function LocalWorkspaceShell({
   // commits to a direction. Every pushState carries the index in state.
   const navIndexRef = useRef(0);
   const navMaxRef = useRef(0);
+  // Static snapshots of each view keyed by history index - our equivalent of
+  // the page snapshots iOS uses for its interactive back-swipe. Captured as a
+  // view is left, they let a swipe reveal the destination WITHOUT navigating
+  // mid-gesture: the drag shows a snapshot, and real navigation happens only
+  // on commit, so a cancelled swipe touches nothing and cannot redraw.
+  const navSnapshotsRef = useRef(new Map<number, { clone: HTMLElement; scrollTop: number }>());
+  const suppressSnapshotCaptureRef = useRef(false);
+  const captureNavSnapshot = useCallback((index: number) => {
+    if (suppressSnapshotCaptureRef.current) return;
+    const content = contentRef.current;
+    if (!content) return;
+    const rect = content.getBoundingClientRect();
+    if (rect.width < 1) return;
+    const clone = content.cloneNode(true) as HTMLElement;
+    clone.removeAttribute("id");
+    const cache = navSnapshotsRef.current;
+    cache.set(index, { clone, scrollTop: content.scrollTop });
+    // Keep only the neighbourhood of the current index; document clones can
+    // be large.
+    for (const key of cache.keys()) {
+      if (Math.abs(key - index) > 2) cache.delete(key);
+    }
+  }, []);
   const cancelledOptimisticPostIdsRef = useRef(new Set<string>());
   const gTapRef = useRef(0);
   const initialUrlSyncedRef = useRef(false);
@@ -918,8 +941,10 @@ function LocalWorkspaceShell({
       ) {
         window.dispatchEvent(new Event(STOP_LOCAL_EDITING_EVENT));
       }
+      captureNavSnapshot(navIndexRef.current);
       navIndexRef.current += 1;
       navMaxRef.current = navIndexRef.current;
+      navSnapshotsRef.current.delete(navIndexRef.current);
       window.history.pushState({ ttNavIndex: navIndexRef.current }, "", href);
       const previousDepth = localWorkspaceViewDepth(previousView);
       const nextDepth = localWorkspaceViewDepth(nextView);
@@ -2834,7 +2859,13 @@ function LocalWorkspaceShell({
       disarmWorkspaceHover();
       const landedIndex = (window.history.state as { ttNavIndex?: number } | null)
         ?.ttNavIndex;
-      if (typeof landedIndex === "number") navIndexRef.current = landedIndex;
+      if (
+        typeof landedIndex === "number" &&
+        landedIndex !== navIndexRef.current
+      ) {
+        captureNavSnapshot(navIndexRef.current);
+        navIndexRef.current = landedIndex;
+      }
       const nextView = currentLocalView(displayPool, homePath);
       // History traversal into an item must hold the current view until the
       // document is local, exactly like a click-open: switching immediately
@@ -2869,23 +2900,23 @@ function LocalWorkspaceShell({
     return () => window.removeEventListener("popstate", onPopState);
   }, [displayPool, homePath]);
 
-  // Interactive back/forward swipe. The Mac shell (AppWebView.scrollWheel)
-  // recognizes the gesture from NSEvent - real phase and per-frame finger
-  // translation, which the DOM wheel stream lacks - and calls
-  // window.__ttNavSwipe with begin/move/end plus cumulative finger travel in
-  // points. The page paints the reveal with iOS/Safari layering:
-  //   back (item -> home): the item is ON TOP and slides away to the right,
-  //     uncovering home, which sits still underneath.
-  //   forward (home -> item): the item slides IN from the right ON TOP of
-  //     home, which stays put.
-  // So the layer that moves and its stacking differ by direction; both clone
-  // the OUTGOING view once (cheap) and navigate so the destination is live.
+  // Interactive back/forward swipe, the way iOS and Ionic do it: both views
+  // are present the whole time (the destination as a static snapshot - see
+  // navSnapshotsRef), the finger scrubs the reveal, and REAL navigation
+  // happens only on commit. Nothing navigates mid-gesture, so a cancelled
+  // swipe removes one overlay and touches nothing else - no redraw. The Mac
+  // shell (AppWebView.scrollWheel) recognizes the gesture from NSEvent and
+  // calls window.__ttNavSwipe(begin|move|end, dx, velocity); dx is finger
+  // travel in points, velocity points/sec.
+  //   back (item -> home): the item (real content) slides away to the right,
+  //     uncovering the home snapshot underneath.
+  //   forward (home -> item): the item snapshot slides in from the right over
+  //     home (real content), which stays put.
   useEffect(() => {
     if (!(window as { __TEXTTEXT_APP__?: boolean }).__TEXTTEXT_APP__) return;
 
-    // How far (fraction of width) the finger must travel to commit. Kept low
-    // so a natural swipe completes without an aggressive flick.
-    const COMMIT_FRACTION = 0.3;
+    const COMMIT_FRACTION = 0.35;
+    const FLICK_VELOCITY = 600;
 
     let lastPointer = { x: 0, y: 0 };
     const onPointer = (event: PointerEvent) => {
@@ -2896,10 +2927,9 @@ function LocalWorkspaceShell({
     let drag: {
       direction: "back" | "forward";
       width: number;
-      clone: HTMLElement;
+      snapshot: HTMLElement;
       real: HTMLElement;
       translate: number;
-      startIndex: number;
     } | null = null;
     let inertGesture = false;
     let holdTimer = 0;
@@ -2916,81 +2946,75 @@ function LocalWorkspaceShell({
       return false;
     };
 
-    // On forward the incoming item IS the real content, lifted above a frozen
-    // home clone and translated; clear those inline styles when done.
-    const clearRealDragStyles = (real: HTMLElement) => {
-      real.style.transform = "";
-      real.style.position = "";
-      real.style.zIndex = "";
-      real.style.willChange = "";
-    };
-    const restoreRealOverflow = (real: HTMLElement) => {
-      real.style.overflow = "";
-    };
-
     const paint = () => {
       if (!drag) return;
       if (drag.direction === "back") {
         const x = Math.max(0, Math.min(drag.width, drag.translate));
-        drag.clone.style.transform = `translateX(${x}px)`;
+        drag.real.style.transform = `translateX(${x}px)`;
       } else {
         const x = Math.max(0, Math.min(drag.width, drag.width + drag.translate));
-        drag.real.style.transform = `translateX(${x}px)`;
+        drag.snapshot.style.transform = `translateX(${x}px)`;
       }
     };
 
-    const beginDrag = (direction: "back" | "forward"): boolean => {
+    const beginDrag = (direction: "back" | "forward", dx: number): boolean => {
       const content = contentRef.current;
       if (!content) return false;
       const rect = content.getBoundingClientRect();
       if (rect.width < 1) return false;
-      const clone = content.cloneNode(true) as HTMLElement;
-      clone.removeAttribute("id");
-      clone.style.position = "fixed";
-      clone.style.left = `${rect.left}px`;
-      clone.style.top = `${rect.top}px`;
-      clone.style.width = `${rect.width}px`;
-      clone.style.height = `${rect.height}px`;
-      clone.style.margin = "0";
-      clone.style.pointerEvents = "none";
-      clone.style.overflow = "hidden";
-      clone.style.background = "var(--bg)";
-      clone.style.willChange = "transform";
-      clone.style.transform = "translateX(0)";
-      clone.setAttribute("aria-hidden", "true");
+      const destIndex =
+        direction === "back" ? navIndexRef.current - 1 : navIndexRef.current + 1;
+      const snap = navSnapshotsRef.current.get(destIndex);
+      if (!snap) return false;
+      // Freshen the current view's snapshot so the reverse swipe is accurate.
+      captureNavSnapshot(navIndexRef.current);
+
+      const snapshot = snap.clone.cloneNode(true) as HTMLElement;
+      snapshot.style.position = "fixed";
+      snapshot.style.left = `${rect.left}px`;
+      snapshot.style.top = `${rect.top}px`;
+      snapshot.style.width = `${rect.width}px`;
+      snapshot.style.height = `${rect.height}px`;
+      snapshot.style.margin = "0";
+      snapshot.style.pointerEvents = "none";
+      snapshot.style.overflow = "hidden";
+      snapshot.style.background = "var(--bg)";
+      snapshot.style.willChange = "transform";
+      snapshot.setAttribute("aria-hidden", "true");
       try {
-        clone.scrollTop = content.scrollTop;
+        snapshot.scrollTop = snap.scrollTop;
       } catch {
-        /* nested scroll fidelity is best-effort */
+        /* best-effort */
       }
-      // No live scrollbar on the content that swaps underneath the clone.
-      content.style.overflow = "hidden";
+
       if (direction === "back") {
-        // Item clone rides on top and slides away to reveal home underneath.
-        clone.style.zIndex = "60";
-      } else {
-        // Home clone is frozen underneath; the real content (about to become
-        // the item) is lifted above it and slid in from the right.
-        clone.style.zIndex = "1";
+        // Home snapshot sits still underneath; the real item is lifted above
+        // it and slid away to the right.
+        snapshot.style.zIndex = "1";
+        snapshot.style.transform = "translateX(0)";
         content.style.position = "relative";
         content.style.zIndex = "2";
         content.style.willChange = "transform";
-        content.style.transform = `translateX(${rect.width}px)`;
+        content.style.overflow = "hidden";
+        content.style.transform = "translateX(0)";
+      } else {
+        // Item snapshot rides on top and slides in from the right; home (real)
+        // stays exactly where it is.
+        snapshot.style.zIndex = "60";
+        snapshot.style.transform = `translateX(${rect.width}px)`;
       }
-      document.body.appendChild(clone);
-      navAnimationSuppressed = true;
-      const startIndex = navIndexRef.current;
-      if (direction === "back") window.history.back();
-      else window.history.forward();
-      drag = {
-        direction,
-        width: rect.width,
-        clone,
-        real: content,
-        translate: 0,
-        startIndex,
-      };
+      document.body.appendChild(snapshot);
+      drag = { direction, width: rect.width, snapshot, real: content, translate: dx };
+      paint();
       return true;
+    };
+
+    const restoreRealStyles = (real: HTMLElement) => {
+      real.style.transform = "";
+      real.style.position = "";
+      real.style.zIndex = "";
+      real.style.willChange = "";
+      real.style.overflow = "";
     };
 
     const finishDrag = (commit: boolean) => {
@@ -2999,115 +3023,85 @@ function LocalWorkspaceShell({
       drag = null;
       window.clearTimeout(holdTimer);
 
-      const mover = active.direction === "back" ? active.clone : active.real;
+      const mover =
+        active.direction === "back" ? active.real : active.snapshot;
       const from = mover.style.transform || "translateX(0)";
-      const to =
-        active.direction === "back"
-          ? commit
-            ? `translateX(${active.width}px)`
-            : "translateX(0)"
-          : commit
-            ? "translateX(0)"
-            : `translateX(${active.width}px)`;
+      const to = commit
+        ? active.direction === "back"
+          ? `translateX(${active.width}px)`
+          : "translateX(0)"
+        : active.direction === "back"
+          ? "translateX(0)"
+          : `translateX(${active.width}px)`;
 
-      const restoreIndex = () => {
-        // Correcting to the recorded index (not a blind reverse) self-heals a
-        // fast flick where the start move had not settled yet.
-        const delta = active.startIndex - navIndexRef.current;
-        if (delta !== 0) window.history.go(delta);
-      };
-
-      let finished = false;
+      let done = false;
       const settle = () => {
-        if (finished) return;
-        finished = true;
-        // Cancel the WAAPI animation and pin the resting transform as an
-        // inline style. A fill:forwards animation keeps applying its last
-        // frame even after the inline style is cleared, which stranded the
-        // real content off-screen and painted a blank view.
+        if (done) return;
+        done = true;
         try {
           animation.cancel();
         } catch {
           /* already gone */
         }
-        if (active.direction === "back") {
-          if (!commit) restoreIndex();
-          active.clone.remove();
-          restoreRealOverflow(active.real);
-          window.setTimeout(() => {
-            navAnimationSuppressed = false;
-          }, 80);
+        if (!commit) {
+          // Nothing navigated; just undo the visual and drop the snapshot.
+          restoreRealStyles(active.real);
+          active.snapshot.remove();
           return;
         }
-        // Forward. On commit the real content IS the item; settle it at 0 and
-        // drop the clone. On cancel, navigate back to home while the real
-        // content (still the item) is held off-screen behind the frozen home
-        // clone, then clear once home has rendered - so no item flashes at
-        // the home URL and nothing is left stranded.
-        if (commit) {
-          clearRealDragStyles(active.real);
-          restoreRealOverflow(active.real);
-          active.clone.remove();
-          window.setTimeout(() => {
-            navAnimationSuppressed = false;
-          }, 80);
-        } else {
+        // Commit: navigate for real, exactly once. Suppress the popstate's
+        // own slide and snapshot capture during this transition.
+        navAnimationSuppressed = true;
+        suppressSnapshotCaptureRef.current = true;
+        if (active.direction === "back") {
+          // Keep the item held off-screen (via the finished animation frame
+          // pinned inline) while home replaces it underneath, then restore.
           active.real.style.transform = `translateX(${active.width}px)`;
-          restoreIndex();
+          window.history.back();
           window.setTimeout(() => {
-            if (navIndexRef.current !== active.startIndex) {
-              window.history.go(active.startIndex - navIndexRef.current);
-            }
-            clearRealDragStyles(active.real);
-            restoreRealOverflow(active.real);
-            active.clone.remove();
-            window.setTimeout(() => {
-              navAnimationSuppressed = false;
-            }, 80);
-          }, 90);
+            restoreRealStyles(active.real);
+            active.snapshot.remove();
+            suppressSnapshotCaptureRef.current = false;
+            navAnimationSuppressed = false;
+          }, 110);
+        } else {
+          // Item snapshot is settled at 0 on top; navigate so the real item
+          // renders underneath it, then drop the snapshot.
+          window.history.forward();
+          window.setTimeout(() => {
+            active.snapshot.remove();
+            suppressSnapshotCaptureRef.current = false;
+            navAnimationSuppressed = false;
+          }, 140);
         }
       };
 
       const animation = mover.animate(
         [{ transform: from }, { transform: to }],
-        { duration: 220, easing: "cubic-bezier(.32,.72,0,1)", fill: "forwards" },
+        { duration: 240, easing: "cubic-bezier(.32,.72,0,1)", fill: "forwards" },
       );
       animation.addEventListener("finish", settle, { once: true });
-      // Guarantee settle even if the animation clock is throttled.
-      window.setTimeout(settle, 300);
+      window.setTimeout(settle, 320);
     };
-
-    // A flick commits even on short travel when the release is fast enough
-    // in the swipe direction - the momentum feel a distance-only threshold
-    // misses. Velocity is points/sec from the native layer.
-    const FLICK_VELOCITY = 650;
 
     const bridge = (phase: "begin" | "move" | "end", dx: number, velocity = 0) => {
       if (phase === "begin") {
         inertGesture = false;
-        // NSEvent scrollingDeltaX (natural scrolling): swipe right, going
-        // back, is positive; swipe left, forward, negative.
         const direction: "back" | "forward" = dx > 0 ? "back" : "forward";
         const canBack = navIndexRef.current > 0;
         const canForward = navIndexRef.current < navMaxRef.current;
         if (
           (direction === "back" ? !canBack : !canForward) ||
-          overHorizontalScroller()
+          overHorizontalScroller() ||
+          !beginDrag(direction, dx)
         ) {
           inertGesture = true;
-          return;
-        }
-        if (beginDrag(direction)) {
-          drag!.translate = dx;
-          paint();
         }
         return;
       }
       if (phase === "move") {
         if (!drag) return;
         window.clearTimeout(holdTimer);
-        // If the fingers stop and the release event never arrives (a gesture
-        // the user abandons), do not sit half-dragged: cancel after a pause.
         holdTimer = window.setTimeout(() => finishDrag(false), 500);
         drag.translate = dx;
         paint();
@@ -3123,7 +3117,7 @@ function LocalWorkspaceShell({
       const flicked =
         Math.abs(velocity) > FLICK_VELOCITY &&
         Math.sign(velocity) === Math.sign(drag.translate) &&
-        Math.abs(drag.translate) > 20;
+        Math.abs(drag.translate) > 16;
       finishDrag(past || flicked);
     };
 
@@ -3133,14 +3127,14 @@ function LocalWorkspaceShell({
       window.clearTimeout(holdTimer);
       delete (window as { __ttNavSwipe?: typeof bridge }).__ttNavSwipe;
       if (drag) {
-        if (drag.direction === "forward") clearRealDragStyles(drag.real);
-        restoreRealOverflow(drag.real);
-        drag.clone.remove();
+        restoreRealStyles(drag.real);
+        drag.snapshot.remove();
         drag = null;
         navAnimationSuppressed = false;
+        suppressSnapshotCaptureRef.current = false;
       }
     };
-  }, []);
+  }, [captureNavSnapshot]);
 
   const readerScrollBlocked = useCallback(() => {
     if (typeof document === "undefined") return true;
