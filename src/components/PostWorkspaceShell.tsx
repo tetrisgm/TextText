@@ -198,6 +198,10 @@ import {
 } from "@/lib/workspace/draft-sessions";
 import { registerWorkspaceRowCommands } from "@/lib/workspace/command-bus";
 import { buildIsStale } from "@/lib/deployed-build";
+import {
+  readNavTrail,
+  writeNavTrail,
+} from "@/lib/workspace/nav-history";
 import { useWorkspaceSidebarWidth } from "@/components/workspace/WorkspaceSidebarChrome";
 import {
   WORKSPACE_COMPACT_MEDIA_QUERY,
@@ -494,6 +498,16 @@ function LocalWorkspaceShell({
   // commits to a direction. Every pushState carries the index in state.
   const navIndexRef = useRef(0);
   const navMaxRef = useRef(0);
+  // The visited-href trail, mirrored to localStorage so the back/forward
+  // stack survives a full app quit and reopen (see lib/workspace/nav-history).
+  const navTrailRef = useRef<string[]>([]);
+  const currentHref = () => window.location.pathname + window.location.search;
+  const persistNavTrail = useCallback(() => {
+    writeNavTrail(homePath, {
+      entries: navTrailRef.current,
+      index: navIndexRef.current,
+    });
+  }, [homePath]);
   // Static snapshots of each view keyed by history index - our equivalent of
   // the page snapshots iOS uses for its interactive back-swipe. Captured as a
   // view is left, they let a swipe reveal the destination WITHOUT navigating
@@ -858,14 +872,36 @@ function LocalWorkspaceShell({
   useEffect(() => {
     if (initialUrlSyncedRef.current) return;
     initialUrlSyncedRef.current = true;
+    const here = currentHref();
     const existingIndex = (window.history.state as { ttNavIndex?: number } | null)
       ?.ttNavIndex;
-    if (typeof existingIndex === "number") {
+    const trail = readNavTrail(homePath);
+    if (
+      // A fresh launch (no ttNavIndex in state) whose loaded URL is exactly
+      // where the person left off: rebuild the back-stack from the trail so
+      // the swipe walks their real steps. A reload keeps its ttNavIndex and
+      // its intact back-stack, so it takes the branch below instead.
+      typeof existingIndex !== "number" &&
+      trail &&
+      trail.index > 0 &&
+      trail.entries[trail.index] === here
+    ) {
+      window.history.replaceState({ ttNavIndex: 0 }, "", trail.entries[0]);
+      for (let i = 1; i <= trail.index; i += 1) {
+        window.history.pushState({ ttNavIndex: i }, "", trail.entries[i]);
+      }
+      navTrailRef.current = trail.entries.slice(0, trail.index + 1);
+      navIndexRef.current = trail.index;
+      navMaxRef.current = trail.index;
+    } else if (typeof existingIndex === "number") {
       navIndexRef.current = existingIndex;
       navMaxRef.current = Math.max(navMaxRef.current, existingIndex);
+      navTrailRef.current[existingIndex] = here;
     } else {
-      window.history.replaceState({ ttNavIndex: 0 }, "");
+      window.history.replaceState({ ttNavIndex: 0 }, "", here);
+      navTrailRef.current = [here];
     }
+    persistNavTrail();
     const urlView = currentLocalView(displayPool, homePath);
     const current = viewRef.current;
     if (
@@ -1006,6 +1042,9 @@ function LocalWorkspaceShell({
       navMaxRef.current = navIndexRef.current;
       navSnapshotsRef.current.delete(navIndexRef.current);
       window.history.pushState({ ttNavIndex: navIndexRef.current }, "", href);
+      navTrailRef.current = navTrailRef.current.slice(0, navIndexRef.current);
+      navTrailRef.current[navIndexRef.current] = href;
+      persistNavTrail();
       const previousDepth = localWorkspaceViewDepth(previousView);
       const nextDepth = localWorkspaceViewDepth(nextView);
       const direction =
@@ -1064,6 +1103,8 @@ function LocalWorkspaceShell({
         };
       }
       window.history.replaceState({ ttNavIndex: navIndexRef.current }, "", href);
+      navTrailRef.current[navIndexRef.current] = href;
+      persistNavTrail();
       viewRef.current = nextView;
       setView(nextView);
       const nextSelectedPostId =
@@ -2929,6 +2970,8 @@ function LocalWorkspaceShell({
       ) {
         captureNavSnapshot(navIndexRef.current);
         navIndexRef.current = landedIndex;
+        navTrailRef.current[landedIndex] = currentHref();
+        persistNavTrail();
       }
       const nextView = currentLocalView(displayPool, homePath);
       // History traversal into an item must hold the current view until the
@@ -3053,13 +3096,18 @@ function LocalWorkspaceShell({
       const destIndex = direction === "back" ? baseIndex - 1 : baseIndex + 1;
       const snap = navSnapshotsRef.current.get(destIndex);
 
-      // No cached destination (a freshly loaded or reopened window): a back
-      // swipe still works by sliding the current view away and, on commit,
-      // navigating UP the hierarchy - item to its folder, folder to home -
-      // which the pool renders instantly. Forward has nowhere to go without
-      // a snapshot, so it stays inert.
+      // No cached destination (a freshly loaded or reopened window): the back
+      // swipe still works by sliding a clone of the current view away. On
+      // commit it either walks real history - the trail rebuilt from the
+      // persisted stack on launch - when a back entry exists, or, at the very
+      // first entry, navigates UP the hierarchy (item to folder to home).
+      // Forward has nothing to reveal without a snapshot, so it stays inert.
       if (!snap) {
-        if (direction !== "back" || !hierarchyUpAvailableRef.current) {
+        const canHistoryBack = baseIndex > 0;
+        if (
+          direction !== "back" ||
+          (!canHistoryBack && !hierarchyUpAvailableRef.current)
+        ) {
           return false;
         }
         captureNavSnapshot(navIndexRef.current);
@@ -3102,7 +3150,10 @@ function LocalWorkspaceShell({
           shell: clip,
           real: content,
           moverEl: moving,
-          upNavigate: true,
+          // A real back entry (in-session or rebuilt from the persisted
+          // trail) walks history; only the very first entry falls back to
+          // the hierarchy-up navigation.
+          upNavigate: !canHistoryBack,
           translate: dx,
           baseIndex,
         };
