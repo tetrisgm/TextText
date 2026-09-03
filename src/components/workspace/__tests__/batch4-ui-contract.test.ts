@@ -17,10 +17,17 @@ const rendererSource = readFileSync(
   new URL("../../document/DocumentRenderer.tsx", import.meta.url),
   "utf8",
 );
-const shellSource = readFileSync(
-  new URL("../../PostWorkspaceShell.tsx", import.meta.url),
-  "utf8",
-);
+const shellSource = [
+  "../../PostWorkspaceShell.tsx",
+  "../WorkspaceSidebarChrome.tsx",
+  "../WorkspaceRootPages.tsx",
+  "../WorkspaceSpecialPages.tsx",
+  "../WorkspaceItemViews.tsx",
+  "../../../lib/workspace/local-view.ts",
+  "../../../lib/workspace/draft-sessions.ts",
+]
+  .map((p) => readFileSync(new URL(p, import.meta.url), "utf8"))
+  .join("\n");
 // The workspace list row moved out of the shell monolith.
 const rowSource = readFileSync(
   new URL("../WorkspacePostOption.tsx", import.meta.url),

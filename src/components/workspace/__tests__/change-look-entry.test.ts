@@ -9,10 +9,17 @@ import { describe, expect, it } from "vitest";
  * reachable only through the shell, which no test can mount here, so this
  * checks the wiring exists rather than leaving it to be discovered missing.
  */
-const SHELL = readFileSync(
-  new URL("../../PostWorkspaceShell.tsx", import.meta.url),
-  "utf8",
-);
+const SHELL = [
+  "../../PostWorkspaceShell.tsx",
+  "../WorkspaceSidebarChrome.tsx",
+  "../WorkspaceRootPages.tsx",
+  "../WorkspaceSpecialPages.tsx",
+  "../WorkspaceItemViews.tsx",
+  "../../../lib/workspace/local-view.ts",
+  "../../../lib/workspace/draft-sessions.ts",
+]
+  .map((p) => readFileSync(new URL(p, import.meta.url), "utf8"))
+  .join("\n");
 
 describe("changing a look from the workspace", () => {
   it("offers it on a folder, beside building one", () => {

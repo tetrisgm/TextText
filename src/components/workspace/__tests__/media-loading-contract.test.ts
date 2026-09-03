@@ -5,10 +5,17 @@ const folderSource = readFileSync(
   new URL("../../FolderPage.tsx", import.meta.url),
   "utf8",
 );
-const shellSource = readFileSync(
-  new URL("../../PostWorkspaceShell.tsx", import.meta.url),
-  "utf8",
-);
+const shellSource = [
+  "../../PostWorkspaceShell.tsx",
+  "../WorkspaceSidebarChrome.tsx",
+  "../WorkspaceRootPages.tsx",
+  "../WorkspaceSpecialPages.tsx",
+  "../WorkspaceItemViews.tsx",
+  "../../../lib/workspace/local-view.ts",
+  "../../../lib/workspace/draft-sessions.ts",
+]
+  .map((p) => readFileSync(new URL(p, import.meta.url), "utf8"))
+  .join("\n");
 
 describe("workspace media loading", () => {
   it("does not eagerly fetch offscreen folder-feed media", () => {

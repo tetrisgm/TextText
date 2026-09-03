@@ -1,10 +1,17 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const workspaceShell = readFileSync(
-  new URL("../../PostWorkspaceShell.tsx", import.meta.url),
-  "utf8",
-);
+const workspaceShell = [
+  "../../PostWorkspaceShell.tsx",
+  "../WorkspaceSidebarChrome.tsx",
+  "../WorkspaceRootPages.tsx",
+  "../WorkspaceSpecialPages.tsx",
+  "../WorkspaceItemViews.tsx",
+  "../../../lib/workspace/local-view.ts",
+  "../../../lib/workspace/draft-sessions.ts",
+]
+  .map((p) => readFileSync(new URL(p, import.meta.url), "utf8"))
+  .join("\n");
 
 describe("canonical workspace document guard", () => {
   it("never treats a failed document request as an empty editor baseline", () => {
