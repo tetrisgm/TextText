@@ -3148,6 +3148,39 @@ collab_state/collab_updates rows, then start the server.
   first: with the pointer at 0,0 `overHorizontalScroller()` can refuse a
   gesture and look like a navigation bug.
 
+## One back path, depth, and landing (2026-09-03)
+
+- **There is exactly one way back: `navigateBack`.** Swipe, its
+  no-snapshot path, Backspace and Escape all call it. Do not reach for
+  `navigateUp` from a key binding: it is an ordinary forward navigation,
+  so it pushes an entry and truncates the forward stack. `navigateUp`
+  survives only for after-delete, where returning to the deleted item
+  would be wrong. Escape still leaves edit mode directly (`kind: "read"`
+  is not a history step). `j`/`k` are list selection, not history.
+- **Snapshot depth is a memory question, navigation depth is not.**
+  Measured on a production build: a 300-item workspace list snapshot is
+  ~540 nodes / 48KB of markup (the list is windowed, so it does NOT grow
+  with item count), an opened item ~677 nodes / 122KB, and `cloneNode`
+  costs 0.55ms. `NAV_SNAPSHOT_RADIUS = 15` is 31 clones, ~3.8MB of
+  markup worst case. Past the window a gesture still commits without the
+  live reveal, so raising it buys smoothness, never reach. The persisted
+  trail (`MAX_ENTRIES = 200`, URLs only) is what decides how far a
+  relaunched app can walk.
+- **The landing flash was the overlay lifting too early.** It lifted when
+  its slide finished, while the destination was still arriving: images in
+  a freshly mounted view have to decode (the bookmark card's picture
+  "suddenly appearing"), and a remembered scroll position is applied
+  after the first paint, so the view jumped and the scrollbar snapped to
+  size. `afterLanded` existed but was dead code; it now gates the lift on
+  `destinationReady` - every `img.complete`, plus `scrollSettledRef`,
+  which the scroll restore sets the first time the target actually
+  sticks. Capped at 500ms, and skipped for a back slide with no cached
+  snapshot, which would otherwise hold an empty panel.
+- Measuring a flash: screenshot a clip of the content region in a tight
+  loop through the landing and diff consecutive frames. After the fix
+  every frame past the slide is 0% changed, including the frame the
+  overlay lifts on. A flash shows as a late spike.
+
 ## Resolved episodes (one line each, dates in git log)
 
 - Apple consent screen "write app": appleid.apple.com caches its own copy;
