@@ -46,6 +46,28 @@ describe("nav-history trail", () => {
     expect(readNavTrail("/@oob")).toBeNull();
   });
 
+  it("refuses to overwrite a good trail with a sparse one", () => {
+    vi.stubGlobal("window", { localStorage: memoryStorage() });
+    const good = { entries: ["/@a", "/@a/x", "/@a/y"], index: 2 };
+    writeNavTrail("/@a", good);
+    // What a reload used to hand us: an array whose only filled slot is the
+    // current index. JSON writes the holes as null, readNavTrail then rejects
+    // the whole thing, and the person's history is gone.
+    const sparse: string[] = [];
+    sparse[2] = "/@a/y";
+    writeNavTrail("/@a", { entries: sparse, index: 2 });
+    expect(readNavTrail("/@a")).toEqual(good);
+  });
+
+  it("refuses a trail whose index does not address an entry", () => {
+    vi.stubGlobal("window", { localStorage: memoryStorage() });
+    writeNavTrail("/@a", { entries: ["/@a"], index: 0 });
+    writeNavTrail("/@a", { entries: ["/@a", "/@a/x"], index: 7 });
+    expect(readNavTrail("/@a")).toEqual({ entries: ["/@a"], index: 0 });
+    writeNavTrail("/@a", { entries: [], index: 0 });
+    expect(readNavTrail("/@a")).toEqual({ entries: ["/@a"], index: 0 });
+  });
+
   it("keeps the recent window and re-bases the index when the trail is long", () => {
     vi.stubGlobal("window", { localStorage: memoryStorage() });
     const entries = Array.from({ length: 60 }, (_, i) => `/@s/${i}`);

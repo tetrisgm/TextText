@@ -48,6 +48,24 @@ export function readNavTrail(scope: string): NavTrail | null {
 
 export function writeNavTrail(scope: string, trail: NavTrail): void {
   try {
+    // A sparse or malformed trail must NEVER overwrite a good stored one.
+    // JSON turns an array hole into null, readNavTrail rejects null entries,
+    // and the person's whole back/forward history is gone. That happened on
+    // every reload: the in-memory trail starts empty and only the current
+    // index gets filled in, leaving holes in front of it. Refuse the write
+    // instead, and let the next real navigation rebuild a dense trail.
+    // Index-read the array rather than .some(): some() SKIPS holes.
+    for (let i = 0; i < trail.entries.length; i += 1) {
+      if (typeof trail.entries[i] !== "string") return;
+    }
+    if (
+      trail.entries.length === 0 ||
+      !Number.isInteger(trail.index) ||
+      trail.index < 0 ||
+      trail.index >= trail.entries.length
+    ) {
+      return;
+    }
     // Keep the most recent window if the trail grows long, re-basing the
     // index so it still points at the current entry.
     let { entries, index } = trail;

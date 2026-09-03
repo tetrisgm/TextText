@@ -398,6 +398,9 @@ function runViewTransition(direction: "push" | "pop" | null, apply: () => void) 
     });
 }
 
+/** How far either side of the current entry snapshots are kept. */
+const NAV_SNAPSHOT_RADIUS = 8;
+
 /**
  * Re-apply the inner scroll offsets a snapshot recorded at capture time.
  * Must run AFTER the overlay is in the document: a detached node has no
@@ -523,6 +526,42 @@ function LocalWorkspaceShell({
   // stack survives a full app quit and reopen (see lib/workspace/nav-history).
   const navTrailRef = useRef<string[]>([]);
   const currentHref = () => window.location.pathname + window.location.search;
+  // The traversal we asked for and are still waiting on, so a popstate whose
+  // state has lost our index can still tell back from forward.
+  const pendingTraversalRef = useRef<number | null>(null);
+  // Next.js owns history.state: it re-creates its own state for entries it
+  // restores, which DROPS a foreign key. Measured after a reload: every entry
+  // except the current one came back with only Next's __NA and internals-tree
+  // keys, so ttNavIndex was gone and the swipe refused every gesture after
+  // the first. Read it defensively and re-stamp it, MERGING rather than
+  // replacing so the router keeps its own tree.
+  const readNavIndex = (): number | null => {
+    const raw = (window.history.state as { ttNavIndex?: number } | null)
+      ?.ttNavIndex;
+    return typeof raw === "number" ? raw : null;
+  };
+  const stampNavIndex = (index: number, verify = true) => {
+    try {
+      window.history.replaceState(
+        { ...(window.history.state ?? {}), ttNavIndex: index },
+        "",
+      );
+    } catch {
+      /* best-effort: the index still lives in navIndexRef */
+    }
+    // Next's router rewrites history.state asynchronously as it finishes a
+    // transition, which can drop the stamp we just wrote (measured on the
+    // first popstate after a reload). Check once it has settled: the stamp
+    // on the CURRENT entry is what a later reload reads to rebuild the trail.
+    if (!verify) return;
+    for (const delay of [200, 700]) {
+      window.setTimeout(() => {
+        if (navIndexRef.current === index && readNavIndex() === null) {
+          stampNavIndex(index, false);
+        }
+      }, delay);
+    }
+  };
   const persistNavTrail = useCallback(() => {
     writeNavTrail(homePath, {
       entries: navTrailRef.current,
@@ -541,6 +580,7 @@ function LocalWorkspaceShell({
   // snapshot (a freshly loaded or reopened window) still goes somewhere
   // sensible - the item's folder, then home - instead of doing nothing.
   const navigateUpRef = useRef<() => boolean>(() => false);
+  const navigateUpAsBackRef = useRef<() => boolean>(() => false);
   const hierarchyUpAvailableRef = useRef(false);
   const captureNavSnapshot = useCallback((index: number) => {
     if (suppressSnapshotCaptureRef.current) return;
@@ -617,10 +657,12 @@ function LocalWorkspaceShell({
     });
     const cache = navSnapshotsRef.current;
     cache.set(index, { clone, scrollTop: content.scrollTop });
-    // Keep only the neighbourhood of the current index; document clones can
-    // be large.
+    // Keep a neighbourhood of the current index; document clones can be
+    // large, but a window of 2 silently capped the forward swipe at two
+    // steps (forward REQUIRES the destination snapshot), which read as
+    // "it stops before the item I opened last".
     for (const key of cache.keys()) {
-      if (Math.abs(key - index) > 2) cache.delete(key);
+      if (Math.abs(key - index) > NAV_SNAPSHOT_RADIUS) cache.delete(key);
     }
   }, []);
   const cancelledOptimisticPostIdsRef = useRef(new Set<string>());
@@ -959,6 +1001,23 @@ function LocalWorkspaceShell({
       "none";
   }, [view]);
 
+  // The stamp only has to be correct at one instant: when the page is about
+  // to go away, because a reload reads it back to rebuild the trail. Racing
+  // Next's async state rewrites with timers is best-effort; this is exact.
+  useEffect(() => {
+    const stampBeforeLeaving = () => {
+      if (readNavIndex() !== navIndexRef.current) {
+        stampNavIndex(navIndexRef.current, false);
+      }
+    };
+    window.addEventListener("pagehide", stampBeforeLeaving);
+    window.addEventListener("beforeunload", stampBeforeLeaving);
+    return () => {
+      window.removeEventListener("pagehide", stampBeforeLeaving);
+      window.removeEventListener("beforeunload", stampBeforeLeaving);
+    };
+  }, []);
+
   useEffect(() => {
     if (initialUrlSyncedRef.current) return;
     initialUrlSyncedRef.current = true;
@@ -976,7 +1035,11 @@ function LocalWorkspaceShell({
       trail.index > 0 &&
       trail.entries[trail.index] === here
     ) {
-      window.history.replaceState({ ttNavIndex: 0 }, "", trail.entries[0]);
+      window.history.replaceState(
+        { ...(window.history.state ?? {}), ttNavIndex: 0 },
+        "",
+        trail.entries[0],
+      );
       for (let i = 1; i <= trail.index; i += 1) {
         window.history.pushState({ ttNavIndex: i }, "", trail.entries[i]);
       }
@@ -984,11 +1047,31 @@ function LocalWorkspaceShell({
       navIndexRef.current = trail.index;
       navMaxRef.current = trail.index;
     } else if (typeof existingIndex === "number") {
+      // A reload (Cmd+R, or the auto-update reload) keeps its ttNavIndex and
+      // its real back-stack. Adopt the stored trail when it still describes
+      // this position: that restores the FORWARD entries too, and it stops
+      // the trail being rebuilt from an empty array with holes in front of
+      // the current index - holes JSON writes as null, which readNavTrail
+      // then rejects, losing the whole history on the next launch.
       navIndexRef.current = existingIndex;
-      navMaxRef.current = Math.max(navMaxRef.current, existingIndex);
-      navTrailRef.current[existingIndex] = here;
+      if (trail && trail.entries[existingIndex] === here) {
+        navTrailRef.current = trail.entries.slice();
+        navMaxRef.current = Math.max(existingIndex, trail.entries.length - 1);
+      } else {
+        // Nothing consistent to adopt. Keep the trail DENSE anyway (the
+        // unknown prefix repeats this href) so persistence stays legal; it
+        // self-heals on the next real navigation.
+        navTrailRef.current = Array.from({ length: existingIndex + 1 }, (_, i) =>
+          typeof trail?.entries[i] === "string" ? trail.entries[i] : here,
+        );
+        navMaxRef.current = Math.max(navMaxRef.current, existingIndex);
+      }
     } else {
-      window.history.replaceState({ ttNavIndex: 0 }, "", here);
+      window.history.replaceState(
+        { ...(window.history.state ?? {}), ttNavIndex: 0 },
+        "",
+        here,
+      );
       navTrailRef.current = [here];
     }
     persistNavTrail();
@@ -1260,7 +1343,11 @@ function LocalWorkspaceShell({
           top: window.scrollY,
         };
       }
-      window.history.replaceState({ ttNavIndex: navIndexRef.current }, "", href);
+      window.history.replaceState(
+        { ...(window.history.state ?? {}), ttNavIndex: navIndexRef.current },
+        "",
+        href,
+      );
       navTrailRef.current[navIndexRef.current] = href;
       persistNavTrail();
       viewRef.current = nextView;
@@ -3064,9 +3151,49 @@ function LocalWorkspaceShell({
     [applyNavigationTarget],
   );
 
+  // The hierarchy fallback for a back SWIPE, used only at index 0 where the
+  // session has nothing behind it. navigateUp() cannot serve here: it is an
+  // ordinary forward navigation, so it PUSHED a new entry and truncated the
+  // forward stack - the "it writes new history as I swipe" the owner saw, and
+  // why a forward swipe could never return to the item afterwards. Manufacture
+  // the missing entry instead: rewrite index 0 as the parent, push the view we
+  // are on as index 1, then go back. The result is a real back step whose
+  // forward direction returns exactly where we came from.
+  const navigateUpAsBack = useCallback(() => {
+    const target = workspaceHierarchyUpTarget(
+      viewRef.current,
+      displayPoolRef.current.folders,
+    );
+    const parentHref =
+      target.kind === "home"
+        ? workspaceRootHref(homePath)
+        : target.kind === "folder"
+          ? folderWorkspaceHref(homePath, target.folderPath)
+          : target.kind === "search"
+            ? workspaceSearchHref(homePath, target)
+            : null;
+    if (!parentHref) return false;
+    const here = currentHref();
+    if (parentHref === here) return false;
+    window.history.replaceState(
+      { ...(window.history.state ?? {}), ttNavIndex: 0 },
+      "",
+      parentHref,
+    );
+    window.history.pushState({ ttNavIndex: 1 }, "", here);
+    navIndexRef.current = 1;
+    navMaxRef.current = 1;
+    navTrailRef.current = [parentHref, here];
+    persistNavTrail();
+    pendingTraversalRef.current = -1;
+    window.history.back();
+    return true;
+  }, [homePath, persistNavTrail]);
+
   useEffect(() => {
     navigateUpRef.current = navigateUp;
-  }, [navigateUp]);
+    navigateUpAsBackRef.current = navigateUpAsBack;
+  }, [navigateUp, navigateUpAsBack]);
 
   const escapeCurrent = useCallback(() => {
     const current = viewRef.current;
@@ -3128,14 +3255,22 @@ function LocalWorkspaceShell({
     };
     const onPopState = () => {
       disarmWorkspaceHover();
-      const landedIndex = (window.history.state as { ttNavIndex?: number } | null)
-        ?.ttNavIndex;
-      if (
-        typeof landedIndex === "number" &&
-        landedIndex !== navIndexRef.current
-      ) {
+      const expected = pendingTraversalRef.current;
+      pendingTraversalRef.current = null;
+      const stamped = readNavIndex();
+      // No stamp means Next re-created this entry's state (every restored
+      // entry after a reload). Fall back to the traversal we asked for, then
+      // write our index back so the entry is trustworthy from here on.
+      const landedIndex =
+        stamped ??
+        (expected === null
+          ? null
+          : Math.max(0, navIndexRef.current + expected));
+      if (landedIndex !== null && stamped === null) stampNavIndex(landedIndex);
+      if (landedIndex !== null && landedIndex !== navIndexRef.current) {
         captureNavSnapshot(navIndexRef.current);
         navIndexRef.current = landedIndex;
+        navMaxRef.current = Math.max(navMaxRef.current, landedIndex);
         navTrailRef.current[landedIndex] = currentHref();
         persistNavTrail();
       }
@@ -3454,9 +3589,8 @@ function LocalWorkspaceShell({
         window.setTimeout(() => {
           suppressSnapshotCaptureRef.current = false;
           navAnimationSuppressed = false;
-          const landed = (window.history.state as { ttNavIndex?: number } | null)
-            ?.ttNavIndex;
-          if (typeof landed === "number") navIndexRef.current = landed;
+          const landed = readNavIndex();
+          if (landed !== null) navIndexRef.current = landed;
         }, 80);
       };
       if (commit && active.direction === "back") {
@@ -3465,8 +3599,12 @@ function LocalWorkspaceShell({
         // trail one real step per swipe.
         navAnimationSuppressed = true;
         suppressSnapshotCaptureRef.current = true;
-        if (active.upNavigate) navigateUpRef.current();
-        else window.history.back();
+        if (active.upNavigate) {
+          navigateUpAsBackRef.current();
+        } else {
+          pendingTraversalRef.current = -1;
+          window.history.back();
+        }
         settleGuards();
       }
 
@@ -3491,6 +3629,7 @@ function LocalWorkspaceShell({
         if (active.direction === "forward") {
           navAnimationSuppressed = true;
           suppressSnapshotCaptureRef.current = true;
+          pendingTraversalRef.current = 1;
           window.history.forward();
           settleGuards();
         }
@@ -3505,9 +3644,11 @@ function LocalWorkspaceShell({
       window.setTimeout(settle, duration + 350);
     };
 
+    let blindGesture: "back" | "forward" | null = null;
     const bridge = (phase: "begin" | "move" | "end", dx: number, velocity = 0) => {
       if (phase === "begin") {
         inertGesture = false;
+        blindGesture = null;
         window.clearTimeout(staleReloadTimer);
         // A previous swipe's slide may still be animating (its overlay is
         // detached and self-cleans); a new gesture is allowed immediately so
@@ -3518,22 +3659,28 @@ function LocalWorkspaceShell({
           return;
         }
         const direction: "back" | "forward" = dx > 0 ? "back" : "forward";
-        const truthIndex = (
-          window.history.state as { ttNavIndex?: number } | null
-        )?.ttNavIndex;
-        if (typeof truthIndex !== "number") {
-          inertGesture = true;
-          return;
-        }
+        // Prefer the entry's own stamp, but a missing one is NOT a reason to
+        // refuse the gesture: Next drops it from restored entries, and
+        // refusing here is what made every swipe after a reload do nothing.
+        const stamped = readNavIndex();
+        const truthIndex = stamped ?? navIndexRef.current;
+        if (stamped === null) stampNavIndex(truthIndex);
         navIndexRef.current = truthIndex;
         const canBack = truthIndex > 0 || hierarchyUpAvailableRef.current;
         const canForward = truthIndex < navMaxRef.current;
         if (
           (direction === "back" ? !canBack : !canForward) ||
-          overHorizontalScroller() ||
-          !beginDrag(direction, dx, truthIndex)
+          overHorizontalScroller()
         ) {
           inertGesture = true;
+          return;
+        }
+        if (!beginDrag(direction, dx, truthIndex)) {
+          // There IS a destination, but no snapshot to scrub against (the
+          // cache does not reach this far back). Refusing outright is the
+          // worst answer - the gesture appears to do nothing - so let the
+          // release navigate without the live reveal.
+          blindGesture = direction;
         }
         return;
       }
@@ -3548,6 +3695,32 @@ function LocalWorkspaceShell({
       // end
       if (inertGesture) {
         inertGesture = false;
+        return;
+      }
+      if (blindGesture) {
+        const direction = blindGesture;
+        blindGesture = null;
+        const width =
+          contentRef.current?.getBoundingClientRect().width ||
+          window.innerWidth;
+        const passed =
+          Math.abs(dx) > width * COMMIT_FRACTION ||
+          (Math.abs(velocity) > FLICK_VELOCITY &&
+            Math.sign(velocity) === Math.sign(dx));
+        if (passed) {
+          navAnimationSuppressed = true;
+          suppressSnapshotCaptureRef.current = true;
+          pendingTraversalRef.current = direction === "back" ? -1 : 1;
+          if (direction === "back") window.history.back();
+          else window.history.forward();
+          window.setTimeout(() => {
+            suppressSnapshotCaptureRef.current = false;
+            navAnimationSuppressed = false;
+            const landed = readNavIndex();
+            if (landed !== null) navIndexRef.current = landed;
+          }, 80);
+        }
+        requestStaleReloadWhenIdle();
         return;
       }
       if (!drag) return;
