@@ -64,7 +64,7 @@ for forbidden in (
     if forbidden in source:
         raise SystemExit(f"non-publishing promotion invokes forbidden lane: {forbidden}")
 
-if 'PROMOTION_ID="tt-${BUILD}-${SOURCE_COMMIT:0:8}-$(date -u +%s)-$$"' not in source:
+if 'PROMOTION_ID="tt-${BUILD}-${SOURCE_COMMIT:0:8}-$(printf \'%x\' "$(date -u +%s)")"' not in source:
     raise SystemExit("deployment identity is not unique per promotion attempt")
 if '${#PROMOTION_ID} > 32' not in source:
     raise SystemExit("deployment identity no longer enforces Vercel's length limit")

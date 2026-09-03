@@ -128,7 +128,10 @@ for candidate in "${installed_candidates[@]}"; do
   (( candidate_build > MAX_BUILD )) && MAX_BUILD="$candidate_build"
 done
 BUILD=$((MAX_BUILD + 1))
-PROMOTION_ID="tt-${BUILD}-${SOURCE_COMMIT:0:8}-$(date -u +%s)-$$"
+# Hex epoch instead of decimal epoch + pid: the old suffix overran Vercel's
+# 32-char identity limit whenever the pid had five digits. The delivery lock
+# serializes promotions, so one identity per second is unique enough.
+PROMOTION_ID="tt-${BUILD}-${SOURCE_COMMIT:0:8}-$(printf '%x' "$(date -u +%s)")"
 if (( ${#PROMOTION_ID} > 32 )); then
   echo "Refusing: promotion identity exceeds Vercel's 32-character limit." >&2
   exit 1
