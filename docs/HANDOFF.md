@@ -3104,6 +3104,50 @@ collab_state/collab_updates rows, then start the server.
   coverage to the same view's pre-drag baseline, never to an absolute
   threshold.
 
+## Navigation history: what actually owns the index (2026-09-03)
+
+- **Next owns `history.state`, and it DROPS foreign keys on restore.**
+  Measured after a reload: every entry except the current one comes back
+  with only `__NA` and `__PRIVATE_NEXTJS_INTERNALS_TREE`; our
+  `ttNavIndex` is gone. The swipe used to refuse any gesture whose entry
+  had no stamp, so after a refresh nothing navigated at all. The shell's
+  own `navIndexRef` is the truth now; the stamp is an optimization,
+  re-written by MERGING into whatever state is there.
+- **Never pass a bare state object to `replaceState`/`pushState`.**
+  Dropping Next's keys makes the router treat the entry as foreign, and
+  traversing onto it does a FULL DOCUMENT LOAD. That is what reset the
+  client mid-swipe and emptied `navSnapshotsRef`, after which every
+  forward swipe went blind. Symptom to recognize: a `page.on("load")`
+  counter ticking during a same-document back.
+- `stampNavIndex` also fires on `pagehide`/`beforeunload`. Timers racing
+  Next's async state rewrites are best-effort; the stamp only has to be
+  correct at the instant the page goes away, because that is what the
+  next load reads back to rebuild the trail.
+- **The hierarchy fallback must not use `navigateUp`.** It is an ordinary
+  forward navigation, so it pushed an entry and truncated the forward
+  stack - the phantom history the owner saw, and why a forward swipe
+  could never return to the item. `navigateUpAsBack` manufactures the
+  missing entry instead (parent at 0, current at 1, then `back()`), so
+  the fallback is a real back step with a working forward direction.
+- **Forward REQUIRES the destination snapshot**, so the +/-2 prune radius
+  silently capped forward at two steps ("it stops before the item I
+  opened last"). Radius is `NAV_SNAPSHOT_RADIUS = 8`; past it the
+  gesture navigates on release rather than doing nothing, because a
+  refused gesture reads as a broken app.
+- **A hole in the trail array destroyed the stored history.** A reload
+  rebuilt the in-memory trail from an empty array and filled only the
+  current index; JSON writes holes as `null`, `readNavTrail` rejects
+  null entries, so every reload wiped the trail. `writeNavTrail` now
+  refuses a sparse or unaddressed trail - INDEX-READ the array, because
+  `.some()` skips holes - and a reload adopts the stored trail rather
+  than rebuilding it, which restores the forward entries too.
+- Verification recipe (all on a production build, `npm run build` first):
+  click four sidebar folders, then read `history.state.ttNavIndex`, the
+  `texttext:nav-trail:` value, and a `page.on("load")` counter after
+  every synthetic `__ttNavSwipe` step. Park the mouse inside the content
+  first: with the pointer at 0,0 `overHorizontalScroller()` can refuse a
+  gesture and look like a navigation bug.
+
 ## Resolved episodes (one line each, dates in git log)
 
 - Apple consent screen "write app": appleid.apple.com caches its own copy;
