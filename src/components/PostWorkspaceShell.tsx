@@ -276,6 +276,28 @@ export function sidebarFolderPathForPostType(type: ItemKind): SidebarFolderId {
  */
 let viewTransitionsBroken = false;
 
+/**
+ * The single-layer slide: the live content element eases in from the
+ * incoming direction. Used where the two-layer view transition cannot run -
+ * notably the Mac app, whose WKWebView exposes startViewTransition and
+ * swaps correctly but never runs the pseudo-element animations (measured:
+ * an 800ms transition "finishes" in 7ms), so the API path looks exactly
+ * like no animation at all.
+ */
+function animateContentSlide(direction: "push" | "pop") {
+  const content = document.querySelector<HTMLElement>(".post-editor-content");
+  content?.animate(
+    [
+      {
+        transform: `translateX(${direction === "push" ? 96 : -96}px)`,
+        opacity: 0.55,
+      },
+      { transform: "translateX(0)", opacity: 1 },
+    ],
+    { duration: 220, easing: "cubic-bezier(.2,.75,.25,1)" },
+  );
+}
+
 function runViewTransition(direction: "push" | "pop" | null, apply: () => void) {
   const doc = document as Document & {
     startViewTransition?: (update: () => void) => {
@@ -283,13 +305,21 @@ function runViewTransition(direction: "push" | "pop" | null, apply: () => void) 
       skipTransition?: () => void;
     };
   };
+  if (!direction) {
+    apply();
+    return;
+  }
+  // Deliberately NOT gated on prefers-reduced-motion: the owner runs
+  // macOS with Reduce Motion on and wants these slides anyway (owner
+  // decision, 2026-09-02). The navigation slide is spatial feedback, not
+  // decoration.
   if (
-    !direction ||
     viewTransitionsBroken ||
     typeof doc.startViewTransition !== "function" ||
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    (window as { __TEXTTEXT_APP__?: boolean }).__TEXTTEXT_APP__ === true
   ) {
     apply();
+    animateContentSlide(direction);
     return;
   }
   // Navigation must NEVER depend on the transition machinery. Everything

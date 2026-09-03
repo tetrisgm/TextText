@@ -122,13 +122,6 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
     opacity: 0.72;
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  html[data-nav-transition]::view-transition-old(workspace-content),
-  html[data-nav-transition]::view-transition-new(workspace-content) {
-    animation: none;
-  }
-}
-
 /* While the sidebar is being dragged: no eased margin chasing the pointer
    (continuous reflow smears text pixels in WebKit) and no live blur layer
    (moving backdrop-filter leaves repaint artifacts). Removing the class on
