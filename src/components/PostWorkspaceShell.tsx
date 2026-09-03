@@ -3037,7 +3037,10 @@ function LocalWorkspaceShell({
         clip.style.height = `${rect.height}px`;
         clip.style.overflow = "hidden";
         clip.style.pointerEvents = "none";
-        clip.style.zIndex = "60";
+        // Above the fixed top action bars (z 210): the snapshot carries its
+        // own copy of the destination's bar, so the outgoing bar must not
+        // stay painted on top of the slide and then swap at landing.
+        clip.style.zIndex = "300";
         clip.setAttribute("aria-hidden", "true");
         snapshot.style.position = "absolute";
         snapshot.style.left = "0";
@@ -3072,6 +3075,7 @@ function LocalWorkspaceShell({
       real.style.position = "";
       real.style.zIndex = "";
       real.style.willChange = "";
+      real.style.visibility = "";
     };
 
     // Lift a mask with a short fade rather than a pop: even when the real
@@ -3180,6 +3184,11 @@ function LocalWorkspaceShell({
           // has landed - not on a timer, so its scrollbar appears once, at
           // its final size, instead of blinking out and back.
           active.real.style.transform = `translateX(${active.width}px)`;
+          // visibility, not just the transform: home renders into this
+          // container while it is still translated, and its fixed action
+          // bar (contained by the transform) would paint at the shifted
+          // position above the snapshot for a frame, then snap into place.
+          active.real.style.visibility = "hidden";
           window.history.back();
           navIndexRef.current = destIndex;
           afterLanded(
