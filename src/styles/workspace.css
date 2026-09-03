@@ -160,7 +160,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   font-weight: 500;
 }
 
-.post-editor-folder-row:hover {
+.is-pointer-live .post-editor-folder-row:hover {
   background: var(--control-bg);
 }
 
@@ -747,7 +747,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   box-shadow: none;
 }
 
-.workspace-trash-row:hover,
+.is-pointer-live .workspace-trash-row:hover,
 .workspace-trash-row.is-command-selected {
   background: var(--control-bg);
 }

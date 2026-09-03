@@ -3528,7 +3528,7 @@ body:has(.reader):not(:has(.post-editor-shell)) {
     box-shadow 0.18s var(--ease);
 }
 .workspace-search-folder-option:hover,
-.workspace-item-option:hover .workspace-item-option-main {
+.is-pointer-live .workspace-item-option:hover .workspace-item-option-main {
   background: color-mix(in srgb, var(--accent) 10%, var(--bg-soft));
 }
 .workspace-item-option,
@@ -4375,7 +4375,7 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   opacity: 0;
   transition: opacity 0.18s var(--ease);
 }
-.post-folder-row-shell:hover .folder-item-actions-trigger,
+.is-pointer-live .post-folder-row-shell:hover .folder-item-actions-trigger,
 .post-folder-row-shell:focus-within .folder-item-actions-trigger,
 .post-folder-row-shell.is-command-selected .folder-item-actions-trigger,
 .folder-item-actions-trigger[aria-expanded="true"] {
@@ -4493,18 +4493,18 @@ body:has(.reader):not(:has(.post-editor-shell)) {
 .workspace-item-star[aria-pressed="true"],
 .workspace-item-actions:focus-within .workspace-item-star,
 .workspace-item-actions:focus-within .workspace-item-actions-trigger,
-.workspace-item-option:hover .workspace-item-star,
-.workspace-item-option:hover .workspace-item-actions-trigger,
+.is-pointer-live .workspace-item-option:hover .workspace-item-star,
+.is-pointer-live .workspace-item-option:hover .workspace-item-actions-trigger,
 .workspace-item-option.is-command-selected .workspace-item-star,
 .workspace-item-option.is-command-selected .workspace-item-actions-trigger,
-.post-folder-row-shell:hover .workspace-item-star,
-.post-folder-row-shell:hover .workspace-item-actions-trigger,
+.is-pointer-live .post-folder-row-shell:hover .workspace-item-star,
+.is-pointer-live .post-folder-row-shell:hover .workspace-item-actions-trigger,
 .post-folder-row-shell.is-command-selected .workspace-item-star,
 .post-folder-row-shell.is-command-selected .workspace-item-actions-trigger,
 .post-folder-row-shell:focus-within .workspace-item-star,
 .post-folder-row-shell:focus-within .workspace-item-actions-trigger,
-.post-folder-card-option:hover .workspace-item-star,
-.post-folder-card-option:hover .workspace-item-actions-trigger,
+.is-pointer-live .post-folder-card-option:hover .workspace-item-star,
+.is-pointer-live .post-folder-card-option:hover .workspace-item-actions-trigger,
 .post-folder-card-option.is-command-selected .workspace-item-star,
 .post-folder-card-option.is-command-selected .workspace-item-actions-trigger,
 .post-folder-card-option:focus-within .workspace-item-star,
@@ -7152,7 +7152,7 @@ body:has(.reader):not(:has(.post-editor-shell)) {
 .universal-item-card {
   background: var(--bg);
 }
-.universal-item-card:hover {
+.is-pointer-live .universal-item-card:hover {
   border-color: color-mix(in srgb, var(--ink) 24%, var(--hairline));
   background: var(--bg-soft);
 }
@@ -7223,7 +7223,7 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   border: 0;
   border-radius: 0;
 }
-.workspace-recent.is-view-grid .workspace-item-option:hover .workspace-item-option-main {
+.is-pointer-live .workspace-recent.is-view-grid .workspace-item-option:hover .workspace-item-option-main {
   background: var(--bg);
 }
 .workspace-recent.is-view-grid .workspace-item-option-copy strong {

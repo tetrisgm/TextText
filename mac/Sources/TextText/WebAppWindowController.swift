@@ -36,6 +36,9 @@ final class AppWebView: WKWebView {
     private var swipeY: CGFloat = 0
     private var swipeLastTime: TimeInterval = 0
     private var swipeVelocity: CGFloat = 0  // points/sec, smoothed
+    // Absorb the momentum tail ONLY after a navigation swipe: consuming all
+    // momentum in .idle killed every ordinary scroll's glide app-wide.
+    private var absorbMomentum = false
 
     private func swipeJS(_ phase: String, _ dx: CGFloat, _ velocity: CGFloat = 0) {
         evaluateJavaScript(
@@ -58,6 +61,7 @@ final class AppWebView: WKWebView {
             swipeY = 0
             swipeVelocity = 0
             swipeLastTime = event.timestamp
+            absorbMomentum = false
         }
 
         switch swipeState {
@@ -93,21 +97,24 @@ final class AppWebView: WKWebView {
                 // finger travel was short (the Safari momentum feel).
                 swipeJS("end", swipeX, swipeVelocity)
                 swipeState = .idle
+                absorbMomentum = true
             }
             // Momentum after the fingers lift is consumed (not scrolled, not
             // forwarded): the gesture already ended on .ended above.
 
         case .passing:
             super.scrollWheel(with: event)
-            if event.phase.contains(.ended) || event.phase.contains(.cancelled)
-                || event.momentumPhase.contains(.ended) {
+            // Stay in .passing through the momentum tail so it scrolls
+            // normally (glide); a new gesture's .began resets the state.
+            if event.phase.contains(.cancelled) || event.momentumPhase.contains(.ended) {
                 swipeState = .idle
             }
 
         case .idle:
-            // Momentum tail of a finished navigation swipe, or a stray event.
-            if event.momentumPhase != [] {
-                // consume: do not scroll the page with leftover momentum
+            if event.momentumPhase != [] && absorbMomentum {
+                // The tail of a finished NAVIGATION swipe must not scroll
+                // the page it navigated away from.
+                if event.momentumPhase.contains(.ended) { absorbMomentum = false }
             } else {
                 super.scrollWheel(with: event)
             }

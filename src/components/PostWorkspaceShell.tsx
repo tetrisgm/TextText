@@ -399,6 +399,9 @@ function runViewTransition(direction: "push" | "pop" | null, apply: () => void) 
 /** Which list views keep a remembered scroll position (item views manage
  * their own). Search memory is per query so a new search starts at the top. */
 function viewScrollMemoryKey(view: LocalWorkspaceView): string | null {
+  // Item views manage their own scroll on mount (the editor/reader scrolls
+  // to caret/top), which overrides a shell-level restore, so persisting the
+  // reading position needs component cooperation - deferred. List views only.
   if (view.level === "post" || view.level === "edit") return null;
   if (view.level === "root") return "root";
   if (view.level === "search") return `search:${view.source}:${view.query}`;
@@ -493,6 +496,7 @@ function LocalWorkspaceShell({
   // forward returns to that spot instead of the top; a top reset behind
   // WebKit's swipe snapshot reads as a full page refresh.
   const contentScrollMemoryRef = useRef(new Map<string, number>());
+  const scrollRestorePendingRef = useRef(false);
   // Our position in the session's history, so the swipe drag knows whether a
   // back target (index > 0) or forward target (index < max) exists before it
   // commits to a direction. Every pushState carries the index in state.
@@ -668,8 +672,12 @@ function LocalWorkspaceShell({
     "folderPath" in initialView ? initialView.folderPath : "",
   );
 
-  const [marqueeRectangle, setMarqueeRectangle] =
-    useState<SelectionRectangle | null>(null);
+  // Only WHETHER a marquee drag is active is React state (two renders per
+  // drag); the rectangle itself is drawn imperatively - updating it through
+  // state re-rendered the whole shell on every pointer frame, which is what
+  // made rectangle-select feel terrible.
+  const [marqueeDragging, setMarqueeDragging] = useState(false);
+  const marqueeElRef = useRef<HTMLDivElement | null>(null);
   const [leftEdgePeeking, setLeftEdgePeeking] = useState(false);
   const [selectedSectionPath, setSelectedSectionPath] = useState<string | null>(
     null,
@@ -756,7 +764,7 @@ function LocalWorkspaceShell({
       if (!peeking && event.clientX > 24) return;
       if (
         event.buttons !== 0 ||
-        marqueeRectangle ||
+        marqueeDragging ||
         window.matchMedia(WORKSPACE_COMPACT_MEDIA_QUERY).matches
       ) {
         setPeeking(false);
@@ -787,7 +795,7 @@ function LocalWorkspaceShell({
       window.removeEventListener("blur", clearPeeks);
       setLeftEdgePeeking(false);
     };
-  }, [marqueeRectangle, sidebarCollapsed]);
+  }, [marqueeDragging, sidebarCollapsed]);
 
   const changeAssistantState = useCallback(
     (next: AssistantSidebarState) => setWorkspaceAssistantState(next),
@@ -861,6 +869,38 @@ function LocalWorkspaceShell({
     () => () => assistantConfirmationController.dispose(),
     [assistantConfirmationController],
   );
+
+  // Hover highlight is earned by MOVING the pointer. Scrolling clears it,
+  // and content arriving under a stationary cursor does not light up until
+  // the mouse actually moves (rows gate their :hover styles on this class).
+  useEffect(() => {
+    const root = document.documentElement;
+    let live = false;
+    let lastX = Number.NaN;
+    let lastY = Number.NaN;
+    const setLive = (next: boolean) => {
+      if (live === next) return;
+      live = next;
+      root.classList.toggle("is-pointer-live", next);
+    };
+    const onMove = (event: PointerEvent) => {
+      if (event.clientX === lastX && event.clientY === lastY) return;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      setLive(true);
+    };
+    const quiet = () => setLive(false);
+    window.addEventListener("pointermove", onMove, { passive: true, capture: true });
+    window.addEventListener("wheel", quiet, { passive: true, capture: true });
+    window.addEventListener("scroll", quiet, { passive: true, capture: true });
+    setLive(true);
+    return () => {
+      window.removeEventListener("pointermove", onMove, { capture: true });
+      window.removeEventListener("wheel", quiet, { capture: true });
+      window.removeEventListener("scroll", quiet, { capture: true });
+      root.classList.remove("is-pointer-live");
+    };
+  }, []);
 
   useEffect(() => {
     viewRef.current = view;
@@ -936,6 +976,10 @@ function LocalWorkspaceShell({
     const content = contentRef.current;
     if (!content) return;
     const record = () => {
+      // While a restore is settling, the scroller's own mount-time reset to
+      // 0 fires scroll events; recording them would clobber the position we
+      // are trying to return to.
+      if (scrollRestorePendingRef.current) return;
       const key = viewScrollMemoryKey(viewRef.current);
       if (!key) return;
       if (content.scrollHeight <= content.clientHeight + 4) return;
@@ -945,26 +989,38 @@ function LocalWorkspaceShell({
     return () => content.removeEventListener("scroll", record);
   }, []);
 
-  // Put a returning list view back where it was, before paint. If the
-  // surface is still collapsed on the first attempt (a hidden-surface swap
-  // settling), retry across a few frames rather than losing the position.
+  // Put a returning view back where it was. List views settle in a couple of
+  // frames; an item's scroller (windowed editor / long reader) grows its
+  // height over many frames after mount and resets to 0 as it does, so the
+  // restore holds the target - recording suppressed - until it sticks or a
+  // short deadline passes.
   useLayoutEffect(() => {
     const key = viewScrollMemoryKey(view);
     if (!key) return;
     const saved = contentScrollMemoryRef.current.get(key);
     if (saved === undefined || saved === 0) return;
-    let tries = 0;
+    scrollRestorePendingRef.current = true;
+    const started = performance.now();
     let frame = 0;
     const attempt = () => {
       const content = contentRef.current;
-      if (!content) return;
+      if (!content) {
+        scrollRestorePendingRef.current = false;
+        return;
+      }
       content.scrollTop = saved;
-      if (Math.abs(content.scrollTop - saved) <= 1 || tries >= 3) return;
-      tries += 1;
+      const stuck = Math.abs(content.scrollTop - saved) <= 1;
+      if (stuck || performance.now() - started > 700) {
+        scrollRestorePendingRef.current = false;
+        return;
+      }
       frame = requestAnimationFrame(attempt);
     };
     attempt();
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+      scrollRestorePendingRef.current = false;
+    };
   }, [view]);
 
   const openedPostId =
@@ -1059,7 +1115,13 @@ function LocalWorkspaceShell({
         const nextSelectedPostId =
           "selectedPostId" in options
             ? (options.selectedPostId ?? null)
-            : selectedPostIdForView(displayPoolRef.current, nextView);
+            : selectedPostIdForView(
+                displayPoolRef.current,
+                nextView,
+                previousView.level === "post" || previousView.level === "edit"
+                  ? previousView.postId
+                  : undefined,
+              );
         setSelectedPostId(nextSelectedPostId);
         setWorkspaceSelection({ anchorId: nextSelectedPostId });
         setSelectedPostIds(
@@ -2945,7 +3007,15 @@ function LocalWorkspaceShell({
       runViewTransition(direction, () => {
         viewRef.current = nextView;
         setView(nextView);
-        const nextSelectedPostId = selectedPostIdForView(displayPool, nextView);
+        const cameFromPostId =
+          previousView.level === "post" || previousView.level === "edit"
+            ? previousView.postId
+            : undefined;
+        const nextSelectedPostId = selectedPostIdForView(
+          displayPool,
+          nextView,
+          cameFromPostId,
+        );
         setWorkspaceSelection({ anchorId: nextSelectedPostId });
         setSelectedPostId(nextSelectedPostId);
         setSelectedPostIds(
@@ -3120,11 +3190,6 @@ function LocalWorkspaceShell({
         moving.style.width = "100%";
         moving.style.height = "100%";
         moving.style.transform = "translateX(0)";
-        try {
-          moving.scrollTop = cur.scrollTop;
-        } catch {
-          /* best-effort */
-        }
         const clip = document.createElement("div");
         clip.style.position = "fixed";
         clip.style.left = `${rect.left}px`;
@@ -3140,6 +3205,13 @@ function LocalWorkspaceShell({
         const host =
           content.closest<HTMLElement>(".post-editor-shell") ?? document.body;
         host.appendChild(clip);
+        try {
+          // Only after attach: a detached element has no layout, so setting
+          // scrollTop earlier was a no-op and the slide started at the top.
+          moving.scrollTop = cur.scrollTop;
+        } catch {
+          /* best-effort */
+        }
         // Hide the live view so the clone sliding off does not sit on a
         // duplicate of itself; the destination replaces it on commit.
         content.style.visibility = "hidden";
@@ -3819,7 +3891,19 @@ function LocalWorkspaceShell({
         ) {
           return;
         }
-        dragging = true;
+        if (!dragging) {
+          dragging = true;
+          setMarqueeDragging(true);
+          const el = document.createElement("div");
+          el.className = "workspace-selection-marquee";
+          el.setAttribute("aria-hidden", "true");
+          el.style.pointerEvents = "none";
+          (
+            contentRef.current?.closest<HTMLElement>(".post-editor-shell") ??
+            document.body
+          ).appendChild(el);
+          marqueeElRef.current = el;
+        }
         latestX = moveEvent.clientX;
         latestY = moveEvent.clientY;
         if (frame) return;
@@ -3831,7 +3915,13 @@ function LocalWorkspaceShell({
             top: Math.min(startY, latestY),
             bottom: Math.max(startY, latestY),
           };
-          setMarqueeRectangle(rectangle);
+          const el = marqueeElRef.current;
+          if (el) {
+            el.style.left = `${rectangle.left}px`;
+            el.style.top = `${rectangle.top}px`;
+            el.style.width = `${rectangle.right - rectangle.left}px`;
+            el.style.height = `${rectangle.bottom - rectangle.top}px`;
+          }
           items ??= visibleWorkspaceItems("data-workspace-post-id").flatMap(
             (element) => {
               const id = element.dataset.workspacePostId;
@@ -3868,7 +3958,9 @@ function LocalWorkspaceShell({
       };
       const finish = () => {
         if (frame) cancelAnimationFrame(frame);
-        setMarqueeRectangle(null);
+        marqueeElRef.current?.remove();
+        marqueeElRef.current = null;
+        setMarqueeDragging(false);
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", finish);
         window.removeEventListener("pointercancel", finish);
@@ -3953,7 +4045,7 @@ function LocalWorkspaceShell({
       className={`post-editor-shell applecms has-sidebar ${className}${
         effectiveSidebarCollapsed ? " is-sidebar-collapsed" : ""
       } is-active-region-${activeRegion}${
-        marqueeRectangle ? " is-marquee-dragging" : ""
+        marqueeDragging ? " is-marquee-dragging" : ""
       } assistant-is-${assistantState}${
         assistantState === "pinned" ? " has-assistant-pinned" : ""
       }${assistantState !== "hidden" ? " has-assistant-open" : ""}`}
@@ -4072,18 +4164,7 @@ function LocalWorkspaceShell({
         >
           {content}
         </div>
-        {marqueeRectangle && (
-          <div
-            className="workspace-selection-marquee"
-            aria-hidden="true"
-            style={{
-              left: marqueeRectangle.left,
-              top: marqueeRectangle.top,
-              width: marqueeRectangle.right - marqueeRectangle.left,
-              height: marqueeRectangle.bottom - marqueeRectangle.top,
-            }}
-          />
-        )}
+
         <WorkspaceSelectionToolbar
           blog={displayPool.blog}
           folders={displayPool.folders}

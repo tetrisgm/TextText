@@ -243,6 +243,14 @@ export function selectedPostIdForView(
     }
     return null;
   }
+  if (view.level === "root") {
+    // Coming back from an item, the keyboard cursor should land on that
+    // item's row, not on nothing.
+    if (preferred && pool.posts.some((post) => post.id === preferred)) {
+      return preferred;
+    }
+    return null;
+  }
   if (view.level !== "section") return null;
   const posts = poolPostsForFolder(pool, view.folderPath);
   if (preferred && posts.some((post) => post.id === preferred)) {
