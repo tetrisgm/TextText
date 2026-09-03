@@ -2524,7 +2524,7 @@ body:has(.reader):not(:has(.post-editor-shell)) {
    behavior people expect from a serious writing app. */
 @media (min-width: 901px) {
   .post-editor-shell {
-    --workspace-sidebar-width: 248px;
+    --workspace-sidebar-width: 252px;
   }
 
   .post-editor-sidebar,

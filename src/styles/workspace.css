@@ -32,7 +32,11 @@
 }
 
 .post-editor-sidebar {
-  width: var(--sidebar-width);
+  /* The drag system owns --workspace-sidebar-width (root + shell inline
+     writes). Pinning this to the static token made the card ignore drags
+     while the content margin followed them: every dragged pixel past the
+     token became white gap between sidebar and content. */
+  width: var(--workspace-sidebar-width, var(--sidebar-width));
   border-right: 1px solid var(--hairline);
   background: var(--sidebar-bg);
   -webkit-backdrop-filter: saturate(180%) blur(24px);
