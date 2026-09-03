@@ -2988,6 +2988,22 @@ collab_state/collab_updates rows, then start the server.
   __ttNavSwipe begin branch if a user has natural scrolling off.
   Cancel corrects to the recorded ttNavIndex so a fast flick cannot
   strand the view.
+- Hardening (build 1013): the interactive drag navigates at gesture
+  START so the destination renders live under the clone, which is what
+  makes the reveal possible but also the source of its failure modes.
+  Fixed: (a) forward cancel animated real content off-screen with
+  fill:forwards then cleared the inline transform - the fill kept
+  applying, stranding it blank; settle now cancels the animation and
+  pins the resting transform, and forward cancel holds the item off
+  behind the frozen home clone until home renders (no flash). (b) a
+  hold timer cancels an abandoned gesture (fingers stop, no release).
+  (c) release velocity from the native layer (points/sec, smoothed)
+  lets a flick commit on short travel (FLICK_VELOCITY). (d) the
+  content that swaps under the clone has overflow:hidden for the drag
+  so its scrollbar does not flicker. Settle is 220ms decel ease.
+  Remaining inherent cost of navigate-at-start: a start-then-hold has
+  navigated underneath (clone + hidden scrollbar hide it); only a
+  true dual-mount would avoid the nav entirely, deliberately not built.
 
 ## Resolved episodes (one line each, dates in git log)
 
