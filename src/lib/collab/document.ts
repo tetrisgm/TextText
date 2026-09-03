@@ -221,6 +221,17 @@ function root(doc: Y.Doc): Y.Map<unknown> {
   return doc.getMap(ROOT_KEY);
 }
 
+/**
+ * The document's root map. `doc.getMap` always returns the same instance and
+ * the map itself is never replaced, so this is the one stable handle on the
+ * document - unlike the Y.Texts inside it, which `text()` creates on demand
+ * and a remote baseline can supersede. Anything that must watch the whole
+ * document for its lifetime (undo, for one) has to hold THIS.
+ */
+export function documentRoot(doc: Y.Doc): Y.Map<unknown> {
+  return root(doc);
+}
+
 function text(rootMap: Y.Map<unknown>, key: string): Y.Text {
   const existing = rootMap.get(key);
   if (existing instanceof Y.Text) return existing;

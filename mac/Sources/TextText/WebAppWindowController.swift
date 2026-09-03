@@ -682,6 +682,21 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         webView.reloadFromOrigin()
     }
 
+    /// Edit menu Undo/Redo. The main window is entirely a web view whose
+    /// editable surface is rendered from the document source, so AppKit's
+    /// `undo:` down the responder chain reaches WebKit's own undo stack and
+    /// can only corrupt it. Raise the app's document-history events instead;
+    /// see lib/document-history-events.ts for the names.
+    func editHistory(_ direction: String) {
+        let name = direction == "redo"
+            ? "texttext:document-redo"
+            : "texttext:document-undo"
+        webView.evaluateJavaScript(
+            "window.dispatchEvent(new Event('\(name)'))",
+            completionHandler: nil
+        )
+    }
+
     /// History menu Back/Forward. This goes through the SAME one way back and
     /// forward the swipe and the keys use, so the menu cannot drift into its
     /// own behaviour. WKWebView's own goBack() would bypass all of it.

@@ -2692,6 +2692,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
     @objc private func reloadWebWindowAction() { webWindow?.reloadFromOrigin() }
 
+    @objc private func undoAction() { webWindow?.editHistory("undo") }
+
+    @objc private func redoAction() { webWindow?.editHistory("redo") }
+
     @objc private func goBackAction() { webWindow?.navigateHistory("back") }
 
     @objc private func goForwardAction() { webWindow?.navigateHistory("forward") }
@@ -2937,8 +2941,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         main.addItem(editItem)
         let edit = NSMenu(title: "Edit")
         editItem.submenu = edit
-        _ = edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-        _ = edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        let undo = edit.addItem(withTitle: "Undo", action: #selector(undoAction), keyEquivalent: "z")
+        undo.target = self
+        let redo = edit.addItem(withTitle: "Redo", action: #selector(redoAction), keyEquivalent: "Z")
+        redo.target = self
         edit.addItem(.separator())
         _ = edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         _ = edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")

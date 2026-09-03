@@ -16,6 +16,11 @@ import type {
   UIEvent,
 } from "react";
 import * as Y from "yjs";
+import {
+  DOCUMENT_REDO_EVENT,
+  DOCUMENT_UNDO_EVENT,
+  registerDocumentHistory,
+} from "@/lib/document-history-events";
 import { Awareness } from "y-protocols/awareness";
 import { formatArticleDate } from "@/lib/content";
 import type { Blog, Post } from "@/lib/content";
@@ -30,6 +35,7 @@ import {
   applyDocumentBaseline,
   applyDocumentSnapshot,
   documentSnapshotFromYDoc,
+  documentRoot,
   documentText,
   hasDocumentSnapshot,
 } from "@/lib/collab/document";
@@ -482,6 +488,11 @@ export function UnifiedDocumentEditor({
     collab.postId,
   );
   const localOrigin = useRef(Symbol("unified-document-editor"));
+  // A SEPARATE origin for edits the person actually made, so undo can track
+  // those and nothing else. localOrigin also tags seeding and the pre-ready
+  // reconciliation - tracking it would let the first Cmd+Z undo the seed and
+  // empty the document.
+  const userEditOrigin = useRef(Symbol("unified-document-editor:user-edit"));
   /**
    * Local edits made BEFORE the provider is ready, kept where an incoming
    * remote update cannot clobber them. documentRef mirrors whatever was
@@ -507,6 +518,46 @@ export function UnifiedDocumentEditor({
   });
   /** Body-text mirror for replaceYText; see YTextMirror. */
   const bodyMirrorRef = useRef<YTextMirror>({ applying: false });
+  // Undo, from the CRDT rather than the browser. The editable surface is
+  // rendered by React from the source string, so the browser's own undo would
+  // mutate DOM that React immediately rewrites - it cannot work here. Yjs
+  // also gives the thing hand-rolled undo cannot: tracking ONLY this client's
+  // edits, so undo never reaches through a collaborator's work.
+  const undoManager = useMemo(
+    () =>
+      // The ROOT map, not the three Y.Texts. text() creates a Y.Text on
+      // demand when the document is still empty, and a remote baseline
+      // arriving afterwards supersedes it - so instances captured at mount
+      // are orphaned by the time anyone types, and undo silently does
+      // nothing. The root map is never replaced.
+      new Y.UndoManager(
+        documentRoot(doc),
+        {
+          trackedOrigins: new Set([userEditOrigin.current]),
+          // Typing coalesces into one step per short burst, the way an editor
+          // does, instead of one step per keystroke.
+          captureTimeout: 400,
+        },
+      ),
+    [doc],
+  );
+  const undoManagerRef = useRef(undoManager);
+  useEffect(() => {
+    undoManagerRef.current = undoManager;
+    return () => undoManager.destroy();
+  }, [undoManager]);
+  useEffect(() => {
+    const undo = () => undoManagerRef.current?.undo();
+    const redo = () => undoManagerRef.current?.redo();
+    window.addEventListener(DOCUMENT_UNDO_EVENT, undo);
+    window.addEventListener(DOCUMENT_REDO_EVENT, redo);
+    const release = registerDocumentHistory();
+    return () => {
+      window.removeEventListener(DOCUMENT_UNDO_EVENT, undo);
+      window.removeEventListener(DOCUMENT_REDO_EVENT, redo);
+      release();
+    };
+  }, []);
   useEffect(() => {
     // Any update replaceYText did not make itself (a remote edit, a baseline
     // merge, an applyDocumentSnapshot) can change the body text behind the
@@ -716,7 +767,21 @@ export function UnifiedDocumentEditor({
 
     const handleDocumentUpdate = (_update: Uint8Array, origin: unknown) => {
       if (!hasDocumentSnapshot(doc)) return;
-      const local = origin === localOrigin.current;
+      if (origin === undoManagerRef.current) {
+        // Undo/redo rewrote the CRDT under React. Republish unconditionally -
+        // the remote branch below skips publishing while a local save is in
+        // flight, which would leave the person's undo invisible - and save it.
+        try {
+          publishDocument(documentSnapshotFromYDoc(doc));
+        } catch {
+          setError("This document contains unsupported data.");
+          return;
+        }
+        scheduleMaterialization();
+        return;
+      }
+      const local =
+        origin === localOrigin.current || origin === userEditOrigin.current;
       if (local) {
         // A local edit was published to React BEFORE it was applied to the
         // doc (updateText/updateDocumentSnapshot), so rebuilding the snapshot
@@ -828,7 +893,7 @@ export function UnifiedDocumentEditor({
       replaceYText(
         documentText(doc, field),
         normalized,
-        localOrigin.current,
+        userEditOrigin.current,
         field === "body" ? bodyMirrorRef.current : undefined,
       );
       if (!ready || !networkEnabled) setSaveState("local");

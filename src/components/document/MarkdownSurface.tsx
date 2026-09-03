@@ -580,6 +580,13 @@ export function MarkdownSurface({
     const from = Math.min(at.anchor, at.head);
     const to = Math.max(at.anchor, at.head);
     const type = native.inputType;
+    if (type === "historyUndo" || type === "historyRedo") {
+      // The browser's own undo would rewrite DOM that React re-renders from
+      // the source string a moment later, so it can only corrupt this
+      // surface. Stop it; the Cmd+Z binding drives the CRDT's undo instead.
+      native.preventDefault();
+      return;
+    }
     const spansRows = value.slice(from, to).includes("\n");
     if (type === "insertParagraph" || type === "insertLineBreak") {
       native.preventDefault();

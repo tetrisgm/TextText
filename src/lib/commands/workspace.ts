@@ -1,6 +1,11 @@
 "use client";
 
 import {
+  documentHistoryAvailable,
+  requestDocumentRedo,
+  requestDocumentUndo,
+} from "@/lib/document-history-events";
+import {
   createWorkspacePostAction,
   movePostToFolderAction,
   setEditablePostStatusAction,
@@ -391,6 +396,38 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     when: (ctx) => Boolean(ctx.workspace && ctx.workspace.viewLevel !== "root"),
     run: (ctx) => {
       ctx.workspace?.escapeCurrent();
+    },
+  },
+  {
+    id: "document.undo",
+    label: "Undo",
+    group: "Act",
+    // allowTypingTarget, because undo is pressed WHILE writing - and the
+    // editable surface is React-rendered from the source, so the browser's
+    // native undo cannot serve here (see MarkdownSurface).
+    shortcut: { key: "z", meta: true, label: "⌘Z", allowTypingTarget: true },
+    when: () => documentHistoryAvailable(),
+    run: () => {
+      requestDocumentUndo();
+    },
+  },
+  {
+    id: "document.redo",
+    label: "Redo",
+    group: "Act",
+    shortcut: [
+      {
+        key: "z",
+        meta: true,
+        shift: true,
+        label: "⇧⌘Z",
+        allowTypingTarget: true,
+      },
+      { key: "y", meta: true, label: "⌘Y", allowTypingTarget: true },
+    ],
+    when: () => documentHistoryAvailable(),
+    run: () => {
+      requestDocumentRedo();
     },
   },
   {

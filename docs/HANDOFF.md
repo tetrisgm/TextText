@@ -3235,6 +3235,49 @@ collab_state/collab_updates rows, then start the server.
   exercised end to end - the create shortcut did not open an item in the
   headless harness - so confirm it by hand if you are in this code.
 
+## Undo and redo, from the CRDT (2026-09-03)
+
+- **The browser's undo cannot work on this editor.** The surface is a
+  `contentEditable="plaintext-only"` rendered by React from the source
+  string, so native undo mutates DOM that React rewrites a moment later.
+  MarkdownSurface now intercepts `historyUndo`/`historyRedo` in
+  `beforeinput` and preventDefaults them; the binding drives
+  `Y.UndoManager` instead. The Mac Edit menu's `undo:` selector had the
+  same problem - it reached WebKit's own stack - and now raises the
+  app's document-history events.
+- **Track the ROOT MAP, never the Y.Texts.** `text()` creates a Y.Text on
+  demand when the document is still empty, and a remote baseline
+  arriving afterwards supersedes it, so instances captured at mount are
+  orphaned by the time anyone types and undo silently does nothing
+  (measured: this exact bug, undo appearing dead on a real document).
+  `documentRoot(doc)` is exported for this; `doc.getMap` always returns
+  the same instance and the map is never replaced.
+- **`localOrigin` tags seeding as well as edits, so undo must NOT track
+  it.** There is now a separate `userEditOrigin` on the typing path only.
+  Tracking `localOrigin` would let the second Cmd+Z undo the document
+  seed and empty the document - there is a test for exactly that
+  (`collab/__tests__/document-undo.test.ts`), plus one proving undo does
+  not reach through a collaborator's work, which is the whole reason to
+  use Yjs for this rather than hand-rolling a stack.
+- Undo republishes explicitly. `handleDocumentUpdate`'s remote branch
+  skips publishing while a local save is in flight, which would have
+  left an undo invisible, so the UndoManager's own origin gets its own
+  branch that publishes and schedules the save.
+- The shortcut is gated on `documentHistoryAvailable()` - whether an
+  editor is mounted - not on `viewLevel === "edit"`. Notes edit in
+  place and the root view has its own composer, so the view level is the
+  wrong question; and with no editor mounted Cmd+Z should fall through
+  so plain fields keep their native undo.
+- Verified end to end on `/@visual-demo/documentation/reader-images?edit=1`
+  (a 7.7KB body): Cmd+Z removes the typing, Cmd+Shift+Z restores it, and
+  sixteen undos past the beginning leave the document intact. All 24
+  live collaboration checks still pass, which is the lane that matters
+  after touching CRDT origins.
+- STILL TEXT ONLY. Structural changes (template swap, move, trash) go
+  through `updateDocumentSnapshot` on `localOrigin` and are deliberately
+  not undoable yet; making them undoable means deciding what a
+  cross-document undo stack even means.
+
 ## Resolved episodes (one line each, dates in git log)
 
 - Apple consent screen "write app": appleid.apple.com caches its own copy;
