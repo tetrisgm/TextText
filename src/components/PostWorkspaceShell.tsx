@@ -398,6 +398,20 @@ function runViewTransition(direction: "push" | "pop" | null, apply: () => void) 
     });
 }
 
+/**
+ * Re-apply the inner scroll offsets a snapshot recorded at capture time.
+ * Must run AFTER the overlay is in the document: a detached node has no
+ * layout, so assigning scrollTop earlier silently does nothing.
+ */
+function applyRecordedScrollOffsets(root: HTMLElement): void {
+  for (const el of root.querySelectorAll<HTMLElement>("[data-tt-scroll-top]")) {
+    const top = Number(el.dataset.ttScrollTop);
+    const left = Number(el.dataset.ttScrollLeft);
+    if (Number.isFinite(top)) el.scrollTop = top;
+    if (Number.isFinite(left)) el.scrollLeft = left;
+  }
+}
+
 /** Which list views keep a remembered scroll position (item views manage
  * their own). Search memory is per query so a new search starts at the top. */
 function viewScrollMemoryKey(view: LocalWorkspaceView): string | null {
@@ -536,6 +550,39 @@ function LocalWorkspaceShell({
     if (rect.width < 1) return;
     const clone = content.cloneNode(true) as HTMLElement;
     clone.removeAttribute("id");
+    // cloneNode copies attributes, not properties: a textarea's or input's
+    // CURRENT text lives in .value, so an item open in the editor cloned to
+    // an empty box - the white page the owner saw mid-swipe. Copy the live
+    // values across, and the scroll offsets with them.
+    const liveFields = content.querySelectorAll<
+      HTMLTextAreaElement | HTMLInputElement
+    >("textarea, input");
+    const cloneFields = clone.querySelectorAll<
+      HTMLTextAreaElement | HTMLInputElement
+    >("textarea, input");
+    liveFields.forEach((live, index) => {
+      const copy = cloneFields[index];
+      if (!copy) return;
+      if (copy instanceof HTMLTextAreaElement && live instanceof HTMLTextAreaElement) {
+        // textContent is what a detached textarea actually renders.
+        copy.textContent = live.value;
+        copy.value = live.value;
+      } else if (copy instanceof HTMLInputElement && live instanceof HTMLInputElement) {
+        copy.setAttribute("value", live.value);
+        copy.value = live.value;
+        copy.checked = live.checked;
+      }
+    });
+    // Inner scrollers (the editor surface, code blocks) keep their offsets.
+    const liveScrollers = content.querySelectorAll<HTMLElement>("*");
+    const cloneScrollers = clone.querySelectorAll<HTMLElement>("*");
+    liveScrollers.forEach((live, index) => {
+      if (live.scrollTop === 0 && live.scrollLeft === 0) return;
+      const copy = cloneScrollers[index];
+      if (!copy) return;
+      copy.dataset.ttScrollTop = String(live.scrollTop);
+      copy.dataset.ttScrollLeft = String(live.scrollLeft);
+    });
     // The action bars are position:fixed. Live, they lay out against the
     // viewport; inside a body-appended snapshot they lay out against the
     // snapshot box (different math - the bar landed ~70px off and snapped
@@ -3268,6 +3315,7 @@ function LocalWorkspaceShell({
           clip.appendChild(underlay);
           try {
             underlay.scrollTop = destSnap.scrollTop;
+            applyRecordedScrollOffsets(underlay);
           } catch {
             /* best-effort */
           }
@@ -3280,12 +3328,10 @@ function LocalWorkspaceShell({
         overlayHost.appendChild(clip);
         try {
           moving.scrollTop = cur.scrollTop;
+          applyRecordedScrollOffsets(moving);
         } catch {
           /* best-effort */
         }
-        // Hide the live view: the overlays cover the content region, and it
-        // is about to be navigated underneath them.
-        content.style.visibility = "hidden";
         drag = {
           direction,
           width: rect.width,
@@ -3316,6 +3362,7 @@ function LocalWorkspaceShell({
       overlayHost.appendChild(clip);
       try {
         snapshot.scrollTop = snap.scrollTop;
+        applyRecordedScrollOffsets(snapshot);
       } catch {
         /* best-effort */
       }
