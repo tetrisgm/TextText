@@ -3077,6 +3077,33 @@ collab_state/collab_updates rows, then start the server.
   client state; click the row's handler instead when testing
   client-side navigation.
 
+- Swipe white page, THIRD and final cause (`9e53e58a`): two bugs in the
+  snapshot clone, both proven on a production build with a pixel
+  coverage probe (sample the content region, count non-white).
+  (1) `cloneNode` copies ATTRIBUTES, not PROPERTIES - a textarea's or
+  input's current text lives in `.value` and did not come across, so an
+  item open in the editor cloned to an empty box. Copy the live values
+  (`textContent` is what a DETACHED textarea renders, `.value` alone is
+  not enough), plus inner scroll offsets recorded to
+  `data-tt-scroll-top/left` and re-applied AFTER attach - a detached
+  node has no layout, so assigning `scrollTop` before insertion is a
+  silent no-op. (2) the back drag set `content.style.visibility =
+  "hidden"`; with no destination snapshot cached (a RELOAD empties
+  navSnapshotsRef while ttNavIndex survives - exactly the owner's short
+  swipe after an auto-update) the strip the moving clone uncovered had
+  nothing behind it, so it showed white. The overlays already cover the
+  content region, so hiding the real view bought nothing. Measured
+  after: mid-drag coverage equals the pre-drag baseline (26% vs 26%,
+  previously pure white at every sample), the cached case still
+  underlays real destination rows, and an abandoned short swipe leaves
+  the URL unchanged with ZERO page loads.
+- Measurement trap that cost a cycle: a one-line note's page is
+  legitimately ~96% white, so "mostly white" proves nothing there.
+  Repro clone fidelity against a CONTENT-RICH item
+  (visual-demo/documentation "Reader images") and compare mid-drag
+  coverage to the same view's pre-drag baseline, never to an absolute
+  threshold.
+
 ## Resolved episodes (one line each, dates in git log)
 
 - Apple consent screen "write app": appleid.apple.com caches its own copy;
