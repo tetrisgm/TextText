@@ -31,6 +31,10 @@ export type AssistantConversationView = {
   messages: AssistantMessage[];
   pendingConversations: AssistantPendingConversationSummary[];
   pendingProposalCount: number;
+  /** The remembered transcript has not been read back yet. Distinct from an
+   * empty conversation, so the rail can wait instead of greeting someone who
+   * already has a discussion on this view. */
+  hydrating: boolean;
 };
 
 type AssistantConversationStateProps = {
@@ -93,6 +97,7 @@ export function AssistantConversationState({
         messages: EMPTY_MESSAGES,
         pendingConversations: EMPTY_PENDING_CONVERSATIONS,
         pendingProposalCount: 0,
+        hydrating: true,
       };
     }
     return {
@@ -100,6 +105,7 @@ export function AssistantConversationState({
       messages: assistantConversationMessages(storeKey, activeConversationId),
       pendingConversations: pendingAssistantConversationSummaries(storeKey),
       pendingProposalCount: pendingAssistantProposalCount(storeKey),
+      hydrating: false,
     };
   }, [
     activeConversationId,

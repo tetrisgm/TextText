@@ -150,6 +150,69 @@ describe("assistant conversation history", () => {
     expect(assistantConversationMessages("writer", first!.id)).toHaveLength(2);
   });
 
+  it("keeps a separate remembered chat per item and reopens each one", () => {
+    // Walking between items is the common case: every view carries its own
+    // discussion, and coming back to one shows that discussion again rather
+    // than a blank thread or the neighbour's.
+    const storage = browserStorage();
+    const itemA = "item:post-a";
+    const itemB = "item:post-b";
+
+    const first = activeAssistantConversation("writer", itemA);
+    appendAssistantConversationMessage("writer", first!.id, {
+      id: "a-user",
+      role: "user",
+      text: "Tighten the opening paragraph",
+    });
+    appendAssistantConversationMessage("writer", first!.id, {
+      id: "a-answer",
+      role: "assistant",
+      text: "The first two sentences make the same promise.",
+    });
+
+    // Move to another item: a fresh thread, not the previous item's.
+    const second = activeAssistantConversation("writer", itemB);
+    expect(second!.id).not.toBe(first!.id);
+    expect(assistantConversationMessages("writer", second!.id)).toHaveLength(0);
+    appendAssistantConversationMessage("writer", second!.id, {
+      id: "b-user",
+      role: "user",
+      text: "What is missing from this outline?",
+    });
+
+    // Back to the first item: its own transcript, intact.
+    const reopened = activeAssistantConversation("writer", itemA);
+    expect(reopened!.id).toBe(first!.id);
+    expect(assistantConversationMessages("writer", first!.id)).toHaveLength(2);
+    expect(assistantConversationMessages("writer", second!.id)).toHaveLength(1);
+    expect(
+      assistantConversationSummaries("writer", itemA).map(
+        (conversation) => conversation.id,
+      ),
+    ).toEqual([first!.id]);
+
+    // And after the app is closed and reopened (module cache gone, browser
+    // storage kept), each item still has its own discussion.
+    resetAssistantConversationStore();
+    browserStorage();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => storage.local.get(key) ?? null,
+        removeItem: (key: string) => storage.local.delete(key),
+        setItem: (key: string, value: string) => storage.local.set(key, value),
+      },
+      sessionStorage: {
+        getItem: () => null,
+        removeItem: () => {},
+        setItem: () => {},
+      },
+    });
+    expect(activeAssistantConversation("writer", itemA)?.id).toBe(first!.id);
+    expect(assistantConversationMessages("writer", first!.id)).toHaveLength(2);
+    expect(activeAssistantConversation("writer", itemB)?.id).toBe(second!.id);
+    expect(assistantConversationMessages("writer", second!.id)).toHaveLength(1);
+  });
+
   it("deletes a chat so thoroughly the server merge cannot bring it back", () => {
     browserStorage();
     const doomed = activeAssistantConversation("writer", "folder:drafts");

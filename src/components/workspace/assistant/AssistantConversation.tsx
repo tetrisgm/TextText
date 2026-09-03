@@ -422,6 +422,7 @@ export function AssistantConversation({
   accessState = "ready",
   activeCloudProvider,
   cloudProvider,
+  hydrating = false,
   jobs,
   messages,
   starterContext,
@@ -447,6 +448,7 @@ export function AssistantConversation({
   activeCloudProvider?: CloudAssistantProviderLabel | null;
   cloudProvider?: CloudAssistantProviderLabel | null;
   jobs?: AssistantJob[];
+  hydrating?: boolean;
   messages: AssistantMessage[];
   /** Where the person is, so the starters can name it. */
   starterContext?: StarterContext;
@@ -600,6 +602,22 @@ export function AssistantConversation({
     );
   }
 
+  if (messages.length === 0 && hydrating) {
+    // A remembered discussion is still being read back. Greeting someone who
+    // already has a conversation on this view reads as losing their work, so
+    // hold this quiet line until the transcript arrives.
+    return (
+      <div className={styles.empty}>
+        <div className={styles.emptyCenter}>
+          <div className={styles.emptyLede}>
+            <p className={styles.emptyBody} aria-live="polite">
+              Loading this conversation
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (messages.length === 0) {
     const connected =
       Boolean(cloudProvider) || nativeConnection?.state === "ready";

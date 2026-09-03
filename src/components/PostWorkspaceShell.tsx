@@ -4244,6 +4244,7 @@ function LocalWorkspaceShell({
             onWriteProposalDecision={assistant.decideWriteProposal}
             jobs={assistant.jobs}
             messages={conversation.messages}
+            hydrating={conversation.hydrating}
             starterContext={starterContextFromChip(assistantContext)}
             viewerName={blog.author}
             quickActions={assistant.quickActions}
