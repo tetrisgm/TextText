@@ -2955,6 +2955,25 @@ collab_state/collab_updates rows, then start the server.
   it. Navigation slides deliberately ignore prefers-reduced-motion
   (owner runs Reduce Motion on system-wide and wants them; owner
   decision 2026-09-02).
+- TESTING TRAP (cost several rounds): a background/non-active
+  WKWebView window FREEZES its animation + rAF clock - getAnimations
+  reports playState "running" while currentTime stays 0 and no
+  transform paints. So a headless Swift WKWebView harness proves
+  NOTHING about animation visibility (the earlier "view transitions
+  are inert / finish in 7ms" reads were this artifact, not real
+  behavior). Same family as the hidden-Browser-pane rAF trap. Judge
+  animation in the focused app or a Playwright page (those tick), or
+  on the owner's screen.
+- Back/forward in the app is an INTERACTIVE finger-tracking drag
+  (owner ask, chose it over auto-slide). See runViewTransition and
+  the app-only wheel drag effect in PostWorkspaceShell: a cloneNode
+  of the outgoing view overlays the content region, history moves so
+  the destination renders underneath, and the clone tracks the swipe
+  to reveal it (both views on screen, Safari-style). Release >45%
+  commits, else snaps back and undoes the move. History entries carry
+  ttNavIndex in history.state so the drag knows if a back/forward
+  target exists. navAnimationSuppressed keeps the drag's own popstate
+  from double-animating. Feel is the owner's trackpad to judge.
 
 ## Resolved episodes (one line each, dates in git log)
 
