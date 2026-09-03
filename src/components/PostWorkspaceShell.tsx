@@ -2930,9 +2930,16 @@ function LocalWorkspaceShell({
       snapshot: HTMLElement;
       real: HTMLElement;
       translate: number;
+      baseIndex: number;
     } | null = null;
     let inertGesture = false;
     let holdTimer = 0;
+    // A commit's history traversal is async; issuing another traversal before
+    // it lands gets silently dropped by WebKit, and any bookkeeping done on
+    // the assumption it happened is then a lie that can walk history right
+    // out of the app. One traversal at a time; begins during the (tens of
+    // ms) landing window are refused rather than corrupted.
+    let traversalPending = false;
 
     const overHorizontalScroller = (): boolean => {
       let el = document.elementFromPoint(lastPointer.x, lastPointer.y);
@@ -2957,13 +2964,16 @@ function LocalWorkspaceShell({
       }
     };
 
-    const beginDrag = (direction: "back" | "forward", dx: number): boolean => {
+    const beginDrag = (
+      direction: "back" | "forward",
+      dx: number,
+      baseIndex: number,
+    ): boolean => {
       const content = contentRef.current;
       if (!content) return false;
       const rect = content.getBoundingClientRect();
       if (rect.width < 1) return false;
-      const destIndex =
-        direction === "back" ? navIndexRef.current - 1 : navIndexRef.current + 1;
+      const destIndex = direction === "back" ? baseIndex - 1 : baseIndex + 1;
       const snap = navSnapshotsRef.current.get(destIndex);
       if (!snap) return false;
       // Freshen the current view's snapshot so the reverse swipe is accurate.
@@ -2995,7 +3005,6 @@ function LocalWorkspaceShell({
         content.style.position = "relative";
         content.style.zIndex = "2";
         content.style.willChange = "transform";
-        content.style.overflow = "hidden";
         content.style.transform = "translateX(0)";
       } else {
         // Item snapshot rides on top and slides in from the right; home (real)
@@ -3004,7 +3013,14 @@ function LocalWorkspaceShell({
         snapshot.style.transform = `translateX(${rect.width}px)`;
       }
       document.body.appendChild(snapshot);
-      drag = { direction, width: rect.width, snapshot, real: content, translate: dx };
+      drag = {
+        direction,
+        width: rect.width,
+        snapshot,
+        real: content,
+        translate: dx,
+        baseIndex,
+      };
       paint();
       return true;
     };
@@ -3014,7 +3030,24 @@ function LocalWorkspaceShell({
       real.style.position = "";
       real.style.zIndex = "";
       real.style.willChange = "";
-      real.style.overflow = "";
+    };
+
+    // Wait until the destination has genuinely landed (predicate) plus two
+    // frames of paint before lifting an overlay. Fixed timers removed the
+    // mask while the destination was still mounting (the item view can defer
+    // behind its document gate), which read as a blink on landing.
+    const afterLanded = (predicate: () => boolean, then: () => void) => {
+      const started = performance.now();
+      const tick = () => {
+        if (predicate() || performance.now() - started > 900) {
+          window.requestAnimationFrame(() =>
+            window.requestAnimationFrame(then),
+          );
+          return;
+        }
+        window.requestAnimationFrame(tick);
+      };
+      tick();
     };
 
     const finishDrag = (commit: boolean) => {
@@ -3034,6 +3067,16 @@ function LocalWorkspaceShell({
           ? "translateX(0)"
           : `translateX(${active.width}px)`;
 
+      if (commit) {
+        // The traversal itself happens AFTER the settle animation, but the
+        // decision is now. Guard from here: a gesture begun during the
+        // animation window would read pre-traversal history truth, commit a
+        // second traversal on top, and the stacked backs could walk history
+        // straight out of the app (observed as about:blank).
+        traversalPending = true;
+        navAnimationSuppressed = true;
+        suppressSnapshotCaptureRef.current = true;
+      }
       let done = false;
       const settle = () => {
         if (done) return;
@@ -3049,30 +3092,60 @@ function LocalWorkspaceShell({
           active.snapshot.remove();
           return;
         }
-        // Commit: navigate for real, exactly once. Suppress the popstate's
-        // own slide and snapshot capture during this transition.
-        navAnimationSuppressed = true;
-        suppressSnapshotCaptureRef.current = true;
+        // Commit: navigate for real, exactly once (guards engaged at
+        // decision time above).
+        const destIndex =
+          active.direction === "back"
+            ? active.baseIndex - 1
+            : active.baseIndex + 1;
+        // Whatever happened (landed, dropped, or timed out), the browser's
+        // history.state is the truth; the optimistic index is only a bridge
+        // until it speaks.
+        const resyncIndex = () => {
+          const landed = (window.history.state as { ttNavIndex?: number } | null)
+            ?.ttNavIndex;
+          if (typeof landed === "number") navIndexRef.current = landed;
+        };
         if (active.direction === "back") {
-          // Keep the item held off-screen (via the finished animation frame
-          // pinned inline) while home replaces it underneath, then restore.
+          // Keep the item held off-screen (via the pinned inline transform)
+          // while home replaces it underneath, then restore the moment home
+          // has landed - not on a timer, so its scrollbar appears once, at
+          // its final size, instead of blinking out and back.
           active.real.style.transform = `translateX(${active.width}px)`;
           window.history.back();
-          window.setTimeout(() => {
-            restoreRealStyles(active.real);
-            active.snapshot.remove();
-            suppressSnapshotCaptureRef.current = false;
-            navAnimationSuppressed = false;
-          }, 110);
+          navIndexRef.current = destIndex;
+          afterLanded(
+            () =>
+              (window.history.state as { ttNavIndex?: number } | null)
+                ?.ttNavIndex === destIndex,
+            () => {
+              resyncIndex();
+              restoreRealStyles(active.real);
+              active.snapshot.remove();
+              suppressSnapshotCaptureRef.current = false;
+              navAnimationSuppressed = false;
+              traversalPending = false;
+            },
+          );
         } else {
-          // Item snapshot is settled at 0 on top; navigate so the real item
-          // renders underneath it, then drop the snapshot.
+          // Item snapshot is settled at 0 on top; navigate, then keep the
+          // snapshot masking until the real item view has applied and
+          // painted underneath (its document gate can defer the apply well
+          // past the popstate).
           window.history.forward();
-          window.setTimeout(() => {
-            active.snapshot.remove();
-            suppressSnapshotCaptureRef.current = false;
-            navAnimationSuppressed = false;
-          }, 140);
+          navIndexRef.current = destIndex;
+          afterLanded(
+            () =>
+              viewRef.current.level === "post" ||
+              viewRef.current.level === "edit",
+            () => {
+              resyncIndex();
+              active.snapshot.remove();
+              suppressSnapshotCaptureRef.current = false;
+              navAnimationSuppressed = false;
+              traversalPending = false;
+            },
+          );
         }
       };
 
@@ -3087,13 +3160,25 @@ function LocalWorkspaceShell({
     const bridge = (phase: "begin" | "move" | "end", dx: number, velocity = 0) => {
       if (phase === "begin") {
         inertGesture = false;
+        if (drag || traversalPending) {
+          inertGesture = true;
+          return;
+        }
         const direction: "back" | "forward" = dx > 0 ? "back" : "forward";
-        const canBack = navIndexRef.current > 0;
-        const canForward = navIndexRef.current < navMaxRef.current;
+        const truthIndex = (
+          window.history.state as { ttNavIndex?: number } | null
+        )?.ttNavIndex;
+        if (typeof truthIndex !== "number") {
+          inertGesture = true;
+          return;
+        }
+        navIndexRef.current = truthIndex;
+        const canBack = truthIndex > 0;
+        const canForward = truthIndex < navMaxRef.current;
         if (
           (direction === "back" ? !canBack : !canForward) ||
           overHorizontalScroller() ||
-          !beginDrag(direction, dx)
+          !beginDrag(direction, dx, truthIndex)
         ) {
           inertGesture = true;
         }
