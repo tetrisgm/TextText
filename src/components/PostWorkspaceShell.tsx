@@ -320,14 +320,22 @@ function runViewTransition(direction: "push" | "pop" | null, apply: () => void) 
     applyOnce();
     return;
   }
+  // Two hang modes, two verdicts. A callback that never ran means the
+  // navigation itself was eaten - skip, apply, and stop trusting the
+  // implementation for this session. A callback that ran but whose finish
+  // lags just means a busy main thread (hydration, a heavy first paint);
+  // clean up the direction attribute and let it settle - one slow frame
+  // must not cost the whole session its slides.
   const watchdog = window.setTimeout(() => {
-    viewTransitionsBroken = true;
-    try {
-      transition.skipTransition?.();
-    } catch {
-      /* teardown is best-effort */
+    if (!applied) {
+      viewTransitionsBroken = true;
+      try {
+        transition.skipTransition?.();
+      } catch {
+        /* teardown is best-effort */
+      }
+      applyOnce();
     }
-    applyOnce();
     cleanup();
   }, 600);
   void transition.finished
@@ -2817,11 +2825,13 @@ function LocalWorkspaceShell({
     let sumX = 0;
     let sumY = 0;
     let fired = false;
+    let firedDirection = 0;
     let resetTimer = 0;
     const reset = () => {
       sumX = 0;
       sumY = 0;
       fired = false;
+      firedDirection = 0;
     };
     const scrollsHorizontally = (start: EventTarget | null): boolean => {
       let el = start instanceof Element ? start : null;
@@ -2837,7 +2847,22 @@ function LocalWorkspaceShell({
     const onWheel = (event: WheelEvent) => {
       window.clearTimeout(resetTimer);
       resetTimer = window.setTimeout(reset, 250);
-      if (fired) return;
+      if (fired) {
+        // A real trackpad swipe trails ~1s of momentum events that keep
+        // the silence timer alive, so "wait for silence" alone latched the
+        // recognizer and swallowed an opposite swipe made right after
+        // (swipe back, then swipe forward: nothing). Momentum never
+        // reverses sign; a firm opposite delta IS the next gesture.
+        if (
+          firedDirection !== 0 &&
+          Math.sign(event.deltaX) === -firedDirection &&
+          Math.abs(event.deltaX) > 4
+        ) {
+          reset();
+        } else {
+          return;
+        }
+      }
       sumX += event.deltaX;
       sumY += event.deltaY;
       // A scroll, not a swipe: vertical dominance, or not far enough yet.
@@ -2846,9 +2871,11 @@ function LocalWorkspaceShell({
       // A gesture over horizontally scrollable content belongs to it.
       if (scrollsHorizontally(event.target)) {
         fired = true;
+        firedDirection = Math.sign(sumX);
         return;
       }
       fired = true;
+      firedDirection = Math.sign(sumX);
       // The popstate handler animates the change (view transition), so the
       // recognizer only drives history.
       if (sumX < 0) window.history.back();
