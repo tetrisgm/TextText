@@ -264,6 +264,16 @@ export function sidebarFolderPathForPostType(type: ItemKind): SidebarFolderId {
   return "blog";
 }
 
+/** Which list views keep a remembered scroll position (item views manage
+ * their own). Search memory is per query so a new search starts at the top. */
+function viewScrollMemoryKey(view: LocalWorkspaceView): string | null {
+  if (view.level === "post" || view.level === "edit") return null;
+  if (view.level === "root") return "root";
+  if (view.level === "search") return `search:${view.source}:${view.query}`;
+  if (view.level === "settings") return "settings";
+  return `${view.level}:${view.folderPath}`;
+}
+
 function LocalWorkspaceShell({
   blog,
   canCommentPost,
@@ -345,6 +355,10 @@ function LocalWorkspaceShell({
     left: number;
     top: number;
   } | null>(null);
+  // Where each list view's scroller sat when the person left it. Back or
+  // forward returns to that spot instead of the top; a top reset behind
+  // WebKit's swipe snapshot reads as a full page refresh.
+  const contentScrollMemoryRef = useRef(new Map<string, number>());
   const cancelledOptimisticPostIdsRef = useRef(new Set<string>());
   const gTapRef = useRef(0);
   const initialUrlSyncedRef = useRef(false);
@@ -666,6 +680,46 @@ function LocalWorkspaceShell({
       top: pending.top,
       behavior: "auto",
     });
+  }, [view]);
+
+  // Record list scroll continuously rather than at navigation time: opening
+  // a note swaps the folder surface for the warmed editor surface, which
+  // collapses the scroller and clamps scrollTop to 0 before any
+  // navigation-time read could see the real position. The clamp guard skips
+  // exactly that state (nothing scrollable = nothing worth remembering).
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    const record = () => {
+      const key = viewScrollMemoryKey(viewRef.current);
+      if (!key) return;
+      if (content.scrollHeight <= content.clientHeight + 4) return;
+      contentScrollMemoryRef.current.set(key, content.scrollTop);
+    };
+    content.addEventListener("scroll", record, { passive: true });
+    return () => content.removeEventListener("scroll", record);
+  }, []);
+
+  // Put a returning list view back where it was, before paint. If the
+  // surface is still collapsed on the first attempt (a hidden-surface swap
+  // settling), retry across a few frames rather than losing the position.
+  useLayoutEffect(() => {
+    const key = viewScrollMemoryKey(view);
+    if (!key) return;
+    const saved = contentScrollMemoryRef.current.get(key);
+    if (saved === undefined || saved === 0) return;
+    let tries = 0;
+    let frame = 0;
+    const attempt = () => {
+      const content = contentRef.current;
+      if (!content) return;
+      content.scrollTop = saved;
+      if (Math.abs(content.scrollTop - saved) <= 1 || tries >= 3) return;
+      tries += 1;
+      frame = requestAnimationFrame(attempt);
+    };
+    attempt();
+    return () => cancelAnimationFrame(frame);
   }, [view]);
 
   const openedPostId =
@@ -2615,9 +2669,7 @@ function LocalWorkspaceShell({
   }, [applyNavigationTarget]);
 
   useEffect(() => {
-    const onPopState = () => {
-      disarmWorkspaceHover();
-      const nextView = currentLocalView(displayPool, homePath);
+    const applyPopStateView = (nextView: LocalWorkspaceView) => {
       const previousView = viewRef.current;
       if (
         previousView.level === "edit" &&
@@ -2640,6 +2692,38 @@ function LocalWorkspaceShell({
         setSelectedSectionPath(null);
         setSearchQuery("");
       }
+    };
+    const onPopState = () => {
+      disarmWorkspaceHover();
+      const nextView = currentLocalView(displayPool, homePath);
+      // History traversal into an item must hold the current view until the
+      // document is local, exactly like a click-open: switching immediately
+      // rendered the reader's nothing-yet branch, which is a white page for
+      // however long the fetch takes (a swipe-forward in the Mac app made
+      // this a visible, sometimes long, blank).
+      if (nextView.level === "post" || nextView.level === "edit") {
+        const post = findPoolPostById(displayPool, nextView.postId);
+        const warmed =
+          getCachedWorkspacePostDocument(displayPool.blogId, nextView.postId) ??
+          displayPool.initialDocuments?.find(
+            (document) => document.postId === nextView.postId,
+          );
+        const documentLocallyAvailable =
+          Boolean(warmed) ||
+          Boolean(post?.document) ||
+          isOptimisticPostId(nextView.postId);
+        if (post && !documentLocallyAvailable) {
+          const token = ++pendingOpenTokenRef.current;
+          void ensurePostDocument(displayPool.blogId, nextView.postId)
+            .catch(() => {})
+            .then(() => {
+              if (pendingOpenTokenRef.current !== token) return;
+              applyPopStateView(nextView);
+            });
+          return;
+        }
+      }
+      applyPopStateView(nextView);
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
