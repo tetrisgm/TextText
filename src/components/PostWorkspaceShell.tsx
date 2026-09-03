@@ -3040,6 +3040,8 @@ function LocalWorkspaceShell({
       snapshot.setAttribute("aria-hidden", "true");
 
       let shell: HTMLElement;
+      const overlayHost =
+        content.closest<HTMLElement>(".post-editor-shell") ?? document.body;
       if (direction === "back") {
         // Home snapshot sits still underneath; the real item is lifted above
         // it and slid away to the right (the grid clips it under the rail).
@@ -3055,7 +3057,7 @@ function LocalWorkspaceShell({
         content.style.willChange = "transform";
         content.style.transform = "translateX(0)";
         shell = snapshot;
-        document.body.appendChild(snapshot);
+        overlayHost.appendChild(snapshot);
       } else {
         // Item snapshot slides in from the right INSIDE a clip container
         // bounded to the content region, so it emerges from under the
@@ -3082,7 +3084,7 @@ function LocalWorkspaceShell({
         snapshot.style.transform = `translateX(${rect.width}px)`;
         clip.appendChild(snapshot);
         shell = clip;
-        document.body.appendChild(clip);
+        overlayHost.appendChild(clip);
       }
       try {
         snapshot.scrollTop = snap.scrollTop;
