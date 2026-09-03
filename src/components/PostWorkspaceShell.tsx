@@ -3106,6 +3106,7 @@ function LocalWorkspaceShell({
       width: number;
       snapshot: HTMLElement;
       shell: HTMLElement;
+      underlay: HTMLElement | null;
       real: HTMLElement;
       moverEl: HTMLElement;
       upNavigate: boolean;
@@ -3131,7 +3132,6 @@ function LocalWorkspaceShell({
     // the assumption it happened is then a lie that can walk history right
     // out of the app. One traversal at a time; begins during the (tens of
     // ms) landing window are refused rather than corrupted.
-    let traversalPending = false;
 
     const overHorizontalScroller = (): boolean => {
       let el = document.elementFromPoint(lastPointer.x, lastPointer.y);
@@ -3164,32 +3164,10 @@ function LocalWorkspaceShell({
       const rect = content.getBoundingClientRect();
       if (rect.width < 1) return false;
       const destIndex = direction === "back" ? baseIndex - 1 : baseIndex + 1;
-      const snap = navSnapshotsRef.current.get(destIndex);
+      const overlayHost =
+        content.closest<HTMLElement>(".post-editor-shell") ?? document.body;
 
-      // No cached destination (a freshly loaded or reopened window): the back
-      // swipe still works by sliding a clone of the current view away. On
-      // commit it either walks real history - the trail rebuilt from the
-      // persisted stack on launch - when a back entry exists, or, at the very
-      // first entry, navigates UP the hierarchy (item to folder to home).
-      // Forward has nothing to reveal without a snapshot, so it stays inert.
-      if (!snap) {
-        const canHistoryBack = baseIndex > 0;
-        if (
-          direction !== "back" ||
-          (!canHistoryBack && !hierarchyUpAvailableRef.current)
-        ) {
-          return false;
-        }
-        captureNavSnapshot(navIndexRef.current);
-        const cur = navSnapshotsRef.current.get(navIndexRef.current);
-        if (!cur) return false;
-        const moving = cur.clone.cloneNode(true) as HTMLElement;
-        moving.style.position = "absolute";
-        moving.style.left = "0";
-        moving.style.top = "0";
-        moving.style.width = "100%";
-        moving.style.height = "100%";
-        moving.style.transform = "translateX(0)";
+      const makeClip = (): HTMLElement => {
         const clip = document.createElement("div");
         clip.style.position = "fixed";
         clip.style.left = `${rect.left}px`;
@@ -3201,30 +3179,72 @@ function LocalWorkspaceShell({
         clip.style.zIndex = "300";
         clip.style.background = "var(--bg)";
         clip.setAttribute("aria-hidden", "true");
+        return clip;
+      };
+      const fillClone = (el: HTMLElement) => {
+        el.style.position = "absolute";
+        el.style.left = "0";
+        el.style.top = "0";
+        el.style.width = "100%";
+        el.style.height = "100%";
+        el.style.margin = "0";
+        el.style.transform = "translateX(0)";
+      };
+
+      if (direction === "back") {
+        // A back swipe slides a CLONE of the current view away while the
+        // destination shows underneath. Navigation fires immediately on
+        // release (see finishDrag), decoupled from the slide, so a rapid
+        // burst walks the trail one real step per swipe. The clip is
+        // TRANSPARENT and bounds both layers under the rail; the opaque
+        // clone rides on top, an optional destination snapshot beneath.
+        const canHistoryBack = baseIndex > 0;
+        if (!canHistoryBack && !hierarchyUpAvailableRef.current) return false;
+        captureNavSnapshot(navIndexRef.current);
+        const cur = navSnapshotsRef.current.get(navIndexRef.current);
+        if (!cur) return false;
+        const clip = makeClip();
+        clip.style.background = "transparent";
+        // The destination preview (home/folder), if we have it, sits still
+        // beneath the sliding clone so the reveal shows real-looking content
+        // rather than a blank gap during the live drag.
+        let underlay: HTMLElement | null = null;
+        const destSnap = navSnapshotsRef.current.get(destIndex);
+        if (destSnap) {
+          underlay = destSnap.clone.cloneNode(true) as HTMLElement;
+          underlay.setAttribute("aria-hidden", "true");
+          fillClone(underlay);
+          underlay.style.background = "var(--bg)";
+          underlay.style.zIndex = "1";
+          clip.appendChild(underlay);
+          try {
+            underlay.scrollTop = destSnap.scrollTop;
+          } catch {
+            /* best-effort */
+          }
+        }
+        const moving = cur.clone.cloneNode(true) as HTMLElement;
+        fillClone(moving);
+        moving.style.background = "var(--bg)";
+        moving.style.zIndex = "2";
         clip.appendChild(moving);
-        const host =
-          content.closest<HTMLElement>(".post-editor-shell") ?? document.body;
-        host.appendChild(clip);
+        overlayHost.appendChild(clip);
         try {
-          // Only after attach: a detached element has no layout, so setting
-          // scrollTop earlier was a no-op and the slide started at the top.
           moving.scrollTop = cur.scrollTop;
         } catch {
           /* best-effort */
         }
-        // Hide the live view so the clone sliding off does not sit on a
-        // duplicate of itself; the destination replaces it on commit.
+        // Hide the live view: the overlays cover the content region, and it
+        // is about to be navigated underneath them.
         content.style.visibility = "hidden";
         drag = {
           direction,
           width: rect.width,
           snapshot: moving,
           shell: clip,
+          underlay,
           real: content,
           moverEl: moving,
-          // A real back entry (in-session or rebuilt from the persisted
-          // trail) walks history; only the very first entry falls back to
-          // the hierarchy-up navigation.
           upNavigate: !canHistoryBack,
           translate: dx,
           baseIndex,
@@ -3232,64 +3252,19 @@ function LocalWorkspaceShell({
         paint();
         return true;
       }
-      // Freshen the current view's snapshot so the reverse swipe is accurate.
+
+      // Forward: the destination item slides IN from the right over the
+      // stationary current view. It needs the destination's snapshot.
+      const snap = navSnapshotsRef.current.get(destIndex);
+      if (!snap) return false;
       captureNavSnapshot(navIndexRef.current);
-
       const snapshot = snap.clone.cloneNode(true) as HTMLElement;
-      snapshot.style.margin = "0";
-      snapshot.style.pointerEvents = "none";
-      snapshot.style.overflow = "hidden";
-      snapshot.style.background = "var(--bg)";
-      snapshot.style.willChange = "transform";
       snapshot.setAttribute("aria-hidden", "true");
-
-      let shell: HTMLElement;
-      const overlayHost =
-        content.closest<HTMLElement>(".post-editor-shell") ?? document.body;
-      if (direction === "back") {
-        // Home snapshot sits still underneath; the real item is lifted above
-        // it and slid away to the right (the grid clips it under the rail).
-        snapshot.style.position = "fixed";
-        snapshot.style.left = `${rect.left}px`;
-        snapshot.style.top = `${rect.top}px`;
-        snapshot.style.width = `${rect.width}px`;
-        snapshot.style.height = `${rect.height}px`;
-        snapshot.style.zIndex = "1";
-        snapshot.style.transform = "translateX(0)";
-        content.style.position = "relative";
-        content.style.zIndex = "2";
-        content.style.willChange = "transform";
-        content.style.transform = "translateX(0)";
-        shell = snapshot;
-        overlayHost.appendChild(snapshot);
-      } else {
-        // Item snapshot slides in from the right INSIDE a clip container
-        // bounded to the content region, so it emerges from under the
-        // assistant rail - the same elegant clipping the back direction
-        // gets for free from the grid - instead of floating above it.
-        const clip = document.createElement("div");
-        clip.style.position = "fixed";
-        clip.style.left = `${rect.left}px`;
-        clip.style.top = `${rect.top}px`;
-        clip.style.width = `${rect.width}px`;
-        clip.style.height = `${rect.height}px`;
-        clip.style.overflow = "hidden";
-        clip.style.pointerEvents = "none";
-        // Above the fixed top action bars (z 210): the snapshot carries its
-        // own copy of the destination's bar, so the outgoing bar must not
-        // stay painted on top of the slide and then swap at landing.
-        clip.style.zIndex = "300";
-        clip.setAttribute("aria-hidden", "true");
-        snapshot.style.position = "absolute";
-        snapshot.style.left = "0";
-        snapshot.style.top = "0";
-        snapshot.style.width = "100%";
-        snapshot.style.height = "100%";
-        snapshot.style.transform = `translateX(${rect.width}px)`;
-        clip.appendChild(snapshot);
-        shell = clip;
-        overlayHost.appendChild(clip);
-      }
+      fillClone(snapshot);
+      snapshot.style.transform = `translateX(${rect.width}px)`;
+      const clip = makeClip();
+      clip.appendChild(snapshot);
+      overlayHost.appendChild(clip);
       try {
         snapshot.scrollTop = snap.scrollTop;
       } catch {
@@ -3299,11 +3274,10 @@ function LocalWorkspaceShell({
         direction,
         width: rect.width,
         snapshot,
-        shell,
+        shell: clip,
+        underlay: null,
         real: content,
-        // Back moves the real content (grid-clipped under the rail);
-        // forward moves the incoming snapshot.
-        moverEl: direction === "back" ? content : snapshot,
+        moverEl: snapshot,
         upNavigate: false,
         translate: dx,
         baseIndex,
@@ -3367,8 +3341,6 @@ function LocalWorkspaceShell({
         : active.direction === "back"
           ? "translateX(0)"
           : `translateX(${active.width}px)`;
-      // Travel-proportional duration: a 50px return should not take as long
-      // as a full-width slide (a fixed duration read as an instant pop).
       const fromX = Number(/([-\d.]+)px/.exec(from)?.[1] ?? 0);
       const toX = Number(/([-\d.]+)px/.exec(to)?.[1] ?? 0);
       const travel = Math.abs(toX - fromX);
@@ -3377,130 +3349,56 @@ function LocalWorkspaceShell({
         Math.min(280, Math.round((280 * travel) / Math.max(1, active.width))),
       );
 
-      if (commit) {
-        // The traversal itself happens AFTER the settle animation, but the
-        // decision is now. Guard from here: a gesture begun during the
-        // animation window would read pre-traversal history truth, commit a
-        // second traversal on top, and the stacked backs could walk history
-        // straight out of the app (observed as about:blank).
-        traversalPending = true;
+      // Navigate NOW, on the commit decision - not after the slide. The
+      // slide is pure decoration on a detached overlay; decoupling it is
+      // what lets rapid swipes each move as they happen. Back reads the
+      // browser's live index every time, so consecutive swipes walk the
+      // trail one real step each.
+      const settleGuards = () => {
+        window.setTimeout(() => {
+          suppressSnapshotCaptureRef.current = false;
+          navAnimationSuppressed = false;
+          const landed = (window.history.state as { ttNavIndex?: number } | null)
+            ?.ttNavIndex;
+          if (typeof landed === "number") navIndexRef.current = landed;
+        }, 80);
+      };
+      if (commit && active.direction === "back") {
+        // Back navigates NOW: the real content becomes the destination
+        // underneath while the clone slides off, so a rapid burst walks the
+        // trail one real step per swipe.
         navAnimationSuppressed = true;
         suppressSnapshotCaptureRef.current = true;
+        if (active.upNavigate) navigateUpRef.current();
+        else window.history.back();
+        settleGuards();
       }
+
       let done = false;
       const settle = () => {
         if (done) return;
         done = true;
-        // Pin the resting transform BEFORE cancelling the animation, so a
-        // safety-timer settle can never cancel mid-flight and visibly jump.
         mover.style.transform = to;
         try {
           animation.cancel();
         } catch {
           /* already gone */
         }
+        // The real view was hidden for a back slide; reveal it (now the
+        // destination) and drop the overlay. Forward left the real view in
+        // place, so just drop the incoming snapshot once it has settled.
+        restoreRealStyles(active.real);
         if (!commit) {
-          // Nothing navigated; just undo the visual and drop the snapshot.
-          restoreRealStyles(active.real);
           active.shell.remove();
           return;
         }
-        // Commit: navigate for real, exactly once (guards engaged at
-        // decision time above).
-        if (active.upNavigate) {
-          // Slide the clone fully off, then navigate up; the destination
-          // renders from the pool underneath and the clone fades away.
-          navigateUpRef.current();
-          afterLanded(
-            () =>
-              viewRef.current.level !== "post" &&
-              viewRef.current.level !== "edit",
-            () => {
-              const landed = (
-                window.history.state as { ttNavIndex?: number } | null
-              )?.ttNavIndex;
-              if (typeof landed === "number") navIndexRef.current = landed;
-              restoreRealStyles(active.real);
-              fadeOutAndRemove(active.shell);
-              suppressSnapshotCaptureRef.current = false;
-              navAnimationSuppressed = false;
-              traversalPending = false;
-            },
-          );
-          return;
-        }
-        const destIndex =
-          active.direction === "back"
-            ? active.baseIndex - 1
-            : active.baseIndex + 1;
-        // Whatever happened (landed, dropped, or timed out), the browser's
-        // history.state is the truth; the optimistic index is only a bridge
-        // until it speaks.
-        const resyncIndex = () => {
-          const landed = (window.history.state as { ttNavIndex?: number } | null)
-            ?.ttNavIndex;
-          if (typeof landed === "number") navIndexRef.current = landed;
-        };
-        if (active.direction === "back") {
-          // Keep the item held off-screen (via the pinned inline transform)
-          // while home replaces it underneath, then restore the moment home
-          // has landed - not on a timer, so its scrollbar appears once, at
-          // its final size, instead of blinking out and back.
-          active.real.style.transform = `translateX(${active.width}px)`;
-          // visibility, not just the transform: home renders into this
-          // container while it is still translated, and its fixed action
-          // bar (contained by the transform) would paint at the shifted
-          // position above the snapshot for a frame, then snap into place.
-          active.real.style.visibility = "hidden";
-          window.history.back();
-          navIndexRef.current = destIndex;
-          afterLanded(
-            () =>
-              (window.history.state as { ttNavIndex?: number } | null)
-                ?.ttNavIndex === destIndex,
-            () => {
-              resyncIndex();
-              restoreRealStyles(active.real);
-              fadeOutAndRemove(active.shell);
-              suppressSnapshotCaptureRef.current = false;
-              navAnimationSuppressed = false;
-              traversalPending = false;
-            },
-          );
-        } else {
-          // Item snapshot is settled at 0 on top; navigate, then keep the
-          // snapshot masking until the real item view has applied and
-          // painted underneath (its document gate can defer the apply well
-          // past the popstate).
+        if (active.direction === "forward") {
+          navAnimationSuppressed = true;
+          suppressSnapshotCaptureRef.current = true;
           window.history.forward();
-          navIndexRef.current = destIndex;
-          // Re-allow gestures as soon as history has MOVED, not when the
-          // item finishes loading: a forward into an item holds behind its
-          // document gate, and blocking new swipes for that whole fetch is
-          // what made rapid swiping feel stuck.
-          afterLanded(
-            () =>
-              (window.history.state as { ttNavIndex?: number } | null)
-                ?.ttNavIndex === destIndex,
-            () => {
-              traversalPending = false;
-            },
-          );
-          // Lift the mask only once the item has actually painted, so it
-          // never blinks in from behind the snapshot.
-          afterLanded(
-            () =>
-              viewRef.current.level === "post" ||
-              viewRef.current.level === "edit",
-            () => {
-              resyncIndex();
-              fadeOutAndRemove(active.shell);
-              suppressSnapshotCaptureRef.current = false;
-              navAnimationSuppressed = false;
-              traversalPending = false;
-            },
-          );
+          settleGuards();
         }
+        fadeOutAndRemove(active.shell);
       };
 
       const animation = mover.animate(
@@ -3515,7 +3413,11 @@ function LocalWorkspaceShell({
       if (phase === "begin") {
         inertGesture = false;
         window.clearTimeout(staleReloadTimer);
-        if (drag || traversalPending) {
+        // A previous swipe's slide may still be animating (its overlay is
+        // detached and self-cleans); a new gesture is allowed immediately so
+        // rapid swipes are never refused. Only an in-progress live drag
+        // blocks (one finger gesture at a time).
+        if (drag) {
           inertGesture = true;
           return;
         }
