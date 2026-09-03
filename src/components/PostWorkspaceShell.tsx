@@ -3001,6 +3001,18 @@ function LocalWorkspaceShell({
     } | null = null;
     let inertGesture = false;
     let holdTimer = 0;
+    // A stale build must never reload in the middle of a swipe flurry (that
+    // wiped the page to gray and dropped history mid-gesture). Arm a short
+    // timer on a stale commit and reset it on every new gesture, so the
+    // update lands only once the swiping actually stops.
+    let staleReloadTimer = 0;
+    const requestStaleReloadWhenIdle = () => {
+      if (!buildIsStale()) return;
+      window.clearTimeout(staleReloadTimer);
+      staleReloadTimer = window.setTimeout(() => {
+        if (buildIsStale()) window.location.reload();
+      }, 1500);
+    };
     // A commit's history traversal is async; issuing another traversal before
     // it lands gets silently dropped by WebKit, and any bookkeeping done on
     // the assumption it happened is then a lie that can walk history right
@@ -3206,7 +3218,7 @@ function LocalWorkspaceShell({
     const afterLanded = (predicate: () => boolean, then: () => void) => {
       const started = performance.now();
       const tick = () => {
-        if (predicate() || performance.now() - started > 900) {
+        if (predicate() || performance.now() - started > 500) {
           window.requestAnimationFrame(() =>
             window.requestAnimationFrame(then),
           );
@@ -3290,7 +3302,6 @@ function LocalWorkspaceShell({
               suppressSnapshotCaptureRef.current = false;
               navAnimationSuppressed = false;
               traversalPending = false;
-              if (buildIsStale()) window.location.reload();
             },
           );
           return;
@@ -3331,11 +3342,6 @@ function LocalWorkspaceShell({
               suppressSnapshotCaptureRef.current = false;
               navAnimationSuppressed = false;
               traversalPending = false;
-              // The swipe has fully settled at its destination URL; if a
-              // newer build is waiting, take it now - swipes never pass
-              // through navigateToView, so without this a person who
-              // navigates by trackpad never receives an update.
-              if (buildIsStale()) window.location.reload();
             },
           );
         } else {
@@ -3345,6 +3351,20 @@ function LocalWorkspaceShell({
           // past the popstate).
           window.history.forward();
           navIndexRef.current = destIndex;
+          // Re-allow gestures as soon as history has MOVED, not when the
+          // item finishes loading: a forward into an item holds behind its
+          // document gate, and blocking new swipes for that whole fetch is
+          // what made rapid swiping feel stuck.
+          afterLanded(
+            () =>
+              (window.history.state as { ttNavIndex?: number } | null)
+                ?.ttNavIndex === destIndex,
+            () => {
+              traversalPending = false;
+            },
+          );
+          // Lift the mask only once the item has actually painted, so it
+          // never blinks in from behind the snapshot.
           afterLanded(
             () =>
               viewRef.current.level === "post" ||
@@ -3355,7 +3375,6 @@ function LocalWorkspaceShell({
               suppressSnapshotCaptureRef.current = false;
               navAnimationSuppressed = false;
               traversalPending = false;
-              if (buildIsStale()) window.location.reload();
             },
           );
         }
@@ -3372,6 +3391,7 @@ function LocalWorkspaceShell({
     const bridge = (phase: "begin" | "move" | "end", dx: number, velocity = 0) => {
       if (phase === "begin") {
         inertGesture = false;
+        window.clearTimeout(staleReloadTimer);
         if (drag || traversalPending) {
           inertGesture = true;
           return;
@@ -3416,12 +3436,16 @@ function LocalWorkspaceShell({
         Math.sign(velocity) === Math.sign(drag.translate) &&
         Math.abs(drag.translate) > 16;
       finishDrag(past || flicked);
+      // The gesture is over; if a newer build is waiting, reload once the
+      // swiping actually stops (each new begin resets this).
+      requestStaleReloadWhenIdle();
     };
 
     (window as { __ttNavSwipe?: typeof bridge }).__ttNavSwipe = bridge;
     return () => {
       window.removeEventListener("pointermove", onPointer);
       window.clearTimeout(holdTimer);
+      window.clearTimeout(staleReloadTimer);
       delete (window as { __ttNavSwipe?: typeof bridge }).__ttNavSwipe;
       if (drag) {
         restoreRealStyles(drag.real);
