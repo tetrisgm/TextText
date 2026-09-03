@@ -2879,6 +2879,41 @@ collab_state on graceful shutdown, so a reset must SIGKILL :3131
 FIRST, then update posts.document/body + delete the post's
 collab_state/collab_updates rows, then start the server.
 
+## Owner follow-ups after build 1009 (2026-09-02)
+
+- The "giant white padding" left of an opened item: workspace.css (the
+  last-word CSS layer) pinned the sidebar CARD to the static 260px
+  token while the content margin, region and fixed chrome followed the
+  draggable --workspace-sidebar-width - dragging the sidebar wider
+  than 260 turned every extra pixel into white gap. One variable now
+  sizes all of it. Lesson: when a width is user-draggable, grep every
+  stylesheet layer for competing width declarations on the same
+  element; workspace.css intentionally out-cascades broadsheet.css.
+- Swipe back "giant refresh": the inner scroller had no cross-view
+  scroll memory, so back landed at the top of a freshly painted list.
+  List views now remember scroll continuously (scroll listener with a
+  collapsed-surface guard; navigation-time reads are unreliable
+  because selecting a note swaps in the warmed editor surface and
+  clamps the scroller to 0 first). Restore retries a few frames if
+  the surface is still collapsed.
+- Swipe forward "white page": popstate switched the view immediately;
+  a cold document rendered the reader's deliberate nothing-yet branch
+  for the whole fetch. History traversal into an item now uses the
+  same hold-then-swap gate as click-opens.
+- Bookmark reading page redesigned source-first (owner: "closer to
+  Raindrop"): domain eyebrow above the title (host text, full URL in
+  the link + title attr), tighter masthead, and display-time stripping
+  of readable-body opening blocks that repeat the masthead
+  (src/lib/bookmark-display.ts). The renderer shows the host for any
+  field bound as both its own text and href.
+- Caveat honored from the browser-verification contract: popstate
+  behavior is proven in Playwright WebKit; the trackpad gesture feel
+  itself needs the owner's hands on the deployed build.
+- Dev fixture: visual-demo/bookmarks/probe-bookmark-capture (cloned
+  capture bookmark, id 11111111-2222-4333-8444-555555555501) exists
+  for bookmark-reader work. Folder rows select on click and open on
+  Enter; home rows open on click.
+
 ## Resolved episodes (one line each, dates in git log)
 
 - Apple consent screen "write app": appleid.apple.com caches its own copy;
