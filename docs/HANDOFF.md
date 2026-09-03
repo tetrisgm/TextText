@@ -2722,6 +2722,22 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   empty action bar (first in document order). Check every matching
   surface for text, not the first. All four first rows open in
   44-107ms in both engines.
+- Selection store (2026-09-02, `c21efd2b`, deployed): selection moved
+  out of shell React state into src/lib/workspace/selection-store.ts;
+  WorkspacePostOption extracted to its own module and self-subscribed
+  to its two bits (selected/active props deleted at all sites). j/k at
+  300 items: 6.4ms Chromium / 6.0ms WebKit p50 (WebKit was 11).
+  DELIBERATELY NOT DONE: removing the shell's own subscription - the
+  profiler puts the remaining shell render at ~3-4ms vs ~6ms native
+  paint, and cutting it requires converting effectiveSelectedPostId(s)
+  consumers (assistant context memo, command-surface objects at the
+  setWorkspaceSurface sites, delete/move callbacks,
+  LocalWorkspaceContent props) to lazy store reads + leaf
+  subscriptions. The dependency map is in this entry; do it when a
+  measured workspace makes those 3-4ms matter. The monster file is
+  7,700 lines after the extraction: split further only along real
+  seams (LocalWorkspaceContent, sidebar chrome, the editor wrappers) -
+  never split for line count alone.
 - Structural pass (2026-09-02, `f4082713`, deployed), after the owner
   pushed past symptom fixes: the two architectural leaks were (1)
   UNSTABLE IDENTITY - the shell built FolderPage's items array fresh
