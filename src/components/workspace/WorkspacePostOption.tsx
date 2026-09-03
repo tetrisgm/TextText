@@ -9,13 +9,11 @@
 // prop change (rows are the widest fan-out in the workspace).
 
 import { memo } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
 import { TagChips } from "@/components/TagChips";
 import {
   WorkspaceItemActions,
   WorkspaceItemStar,
 } from "@/components/workspace/WorkspaceItemActions";
-import type { FolderDeleteItem } from "@/components/FolderPage";
 import { WorkspaceItemThumbnail } from "@/components/workspace/WorkspaceItemThumbnail";
 import {
   resetSpatialCardTilt,
@@ -28,6 +26,7 @@ import { blogWorkspacePostPath } from "@/lib/public-paths";
 import { sidebarDocumentTitle } from "@/lib/workspace-activity";
 import { shouldSuppressNativeItemSelection } from "@/lib/workspace-selection";
 import { useWorkspacePostSelection } from "@/lib/workspace/selection-store";
+import { workspaceRowCommands } from "@/lib/workspace/command-bus";
 import { plainTextExcerpt } from "@/lib/content";
 import type { Blog } from "@/lib/content";
 
@@ -50,11 +49,6 @@ export const WorkspacePostOption = memo(function WorkspacePostOption({
   blog,
   folderPath,
   handle,
-  onDeletePost,
-  onItemClick,
-  onOpen,
-  onOpenTag,
-  onSelect,
   owner,
   post,
   showUpdatedAt = false,
@@ -62,11 +56,6 @@ export const WorkspacePostOption = memo(function WorkspacePostOption({
   blog: Blog;
   folderPath: string;
   handle: string;
-  onDeletePost?: FolderDeleteItem;
-  onItemClick: (postId: string, event: ReactMouseEvent<HTMLElement>) => boolean;
-  onOpen: (postId: string) => void;
-  onOpenTag?: (tag: string) => void;
-  onSelect: (postId: string) => void;
   owner: boolean;
   post: WorkspacePoolPost;
   showUpdatedAt?: boolean;
@@ -82,7 +71,7 @@ export const WorkspacePostOption = memo(function WorkspacePostOption({
       tabIndex={active ? 0 : -1}
       title={showUpdatedAt ? sidebarDocumentTitle(post) : undefined}
       onFocus={() => {
-        onSelect(post.id);
+        workspaceRowCommands()?.selectPost(post.id);
         prefetchPostDocument(post.id);
       }}
       onPointerEnter={() => prefetchPostDocument(post.id)}
@@ -101,7 +90,9 @@ export const WorkspacePostOption = memo(function WorkspacePostOption({
           if (shouldSuppressNativeItemSelection(event)) event.preventDefault();
         }}
         onClick={(event) => {
-          if (onItemClick(post.id, event)) onOpen(post.id);
+          const bus = workspaceRowCommands();
+          if (!bus) return;
+          if (bus.itemClick(post.id, event)) bus.openPost(post.id);
         }}
       >
         <WorkspaceItemThumbnail post={post} />
@@ -131,14 +122,16 @@ export const WorkspacePostOption = memo(function WorkspacePostOption({
       <TagChips
         blog={blog}
         className="workspace-item-option-tags"
-        onOpenTag={onOpenTag}
+        onOpenTag={(tag) => workspaceRowCommands()?.openTag(tag)}
         tags={post.tags}
       />
       <WorkspaceItemActions
         blog={blog}
         handle={handle}
         href={blogWorkspacePostPath(blog, folderPath, post)}
-        onDeletePost={onDeletePost}
+        onDeletePost={(target) =>
+          workspaceRowCommands()?.requestDeletePost?.(target)
+        }
         owner={owner}
         post={postFromPoolPost(post)}
       />

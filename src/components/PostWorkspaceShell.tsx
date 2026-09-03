@@ -195,6 +195,7 @@ import {
   transferLocalDraftRevision,
   updateCachedDocumentBody,
 } from "@/lib/workspace/draft-sessions";
+import { registerWorkspaceRowCommands } from "@/lib/workspace/command-bus";
 import {
   WORKSPACE_COMPACT_MEDIA_QUERY,
   WORKSPACE_SIDEBAR_DEFAULT_WIDTH,
@@ -2100,6 +2101,47 @@ function LocalWorkspaceShell({
     },
     [applyPostSelection, selectedPostIds, visiblePostIdsInDocumentOrder],
   );
+
+  // Row-level commands as a bus: rows call these at event time instead of
+  // receiving them as props through three layers (see command-bus.ts).
+  // Latest-refs because several handlers are defined later in this
+  // component; the bus registration itself happens once.
+  const handleItemClickRef = useRef(handleItemClick);
+  const openPostIdRef = useRef<(postId: string, mode?: "read" | "edit") => void>(
+    () => {},
+  );
+  const activatePostSelectionRef = useRef<(postId: string) => void>(() => {});
+  const navigateTagRef = useRef<(tag: string) => void>(() => {});
+  const deleteWorkspaceItemRef = useRef<
+    ((post: Post) => void | Promise<void>) | null
+  >(null);
+  const activateRegionRef = useRef<(region: WorkspaceActiveRegion) => void>(
+    () => {},
+  );
+  useEffect(
+    () =>
+      registerWorkspaceRowCommands({
+        itemClick: (postId, event) => handleItemClickRef.current(postId, event),
+        openPost: (postId, mode) => openPostIdRef.current(postId, mode),
+        selectPost: (postId) => {
+          activateRegionRef.current("body");
+          activatePostSelectionRef.current(postId);
+        },
+        openTag: (tag) => navigateTagRef.current(tag),
+        requestDeletePost: (post) => deleteWorkspaceItemRef.current?.(post),
+      }),
+    // Registered once; handlers dereference live refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  useEffect(() => {
+    handleItemClickRef.current = handleItemClick;
+    openPostIdRef.current = openPostId;
+    activatePostSelectionRef.current = activatePostSelection;
+    navigateTagRef.current = navigateTag;
+    deleteWorkspaceItemRef.current = deleteWorkspaceItem;
+    activateRegionRef.current = activateRegion;
+  });
 
   const extendPostSelection = useCallback(
     (direction: -1 | 1) => {

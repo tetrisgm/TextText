@@ -149,9 +149,7 @@ export function WorkspaceRootLanding({
   onEditCreatedPost,
   onOpenPost,
   onOpenSection,
-  onOpenTag,
   onDeletePost,
-  onItemClick,
   onQueryChange,
   onSelectPost,
   onSelectSection,
@@ -174,9 +172,7 @@ export function WorkspaceRootLanding({
   onEditCreatedPost: (postId: string) => void;
   onOpenPost: (postId: string) => void;
   onOpenSection: (folderPath: string) => void;
-  onOpenTag: (tag: string) => void;
   onDeletePost?: FolderDeleteItem;
-  onItemClick: (postId: string, event: ReactMouseEvent<HTMLElement>) => boolean;
   onQueryChange: (query: string) => void;
   onSelectPost: (postId: string) => void;
   onSelectSection: (folderPath: string) => void;
@@ -501,11 +497,6 @@ export function WorkspaceRootLanding({
                     folderPath={folderPathForPoolPost(pool, post)}
                     handle={pool.blog.handle}
                     post={post}
-                    onDeletePost={onDeletePost}
-                    onItemClick={onItemClick}
-                    onOpen={onOpenPost}
-                    onOpenTag={onOpenTag}
-                    onSelect={onSelectPost}
                     owner={canManageItems}
                   />
                 ))
@@ -540,11 +531,6 @@ export function WorkspaceRootLanding({
                           folderPath={folderPathForPoolPost(pool, post)}
                           handle={pool.blog.handle}
                           post={post}
-                          onDeletePost={onDeletePost}
-                          onItemClick={onItemClick}
-                          onOpen={onOpenPost}
-                          onOpenTag={onOpenTag}
-                          onSelect={onSelectPost}
                           owner={canManageItems}
                         />
                       ))}
@@ -562,11 +548,6 @@ export function WorkspaceRootLanding({
                           folderPath={folderPathForPoolPost(pool, post)}
                           handle={pool.blog.handle}
                           post={post}
-                          onDeletePost={onDeletePost}
-                          onItemClick={onItemClick}
-                          onOpen={onOpenPost}
-                          onOpenTag={onOpenTag}
-                          onSelect={onSelectPost}
                           owner={canManageItems}
                         />
                       ))}
@@ -600,11 +581,6 @@ export function WorkspaceRootLanding({
                         folderPath={folderPathForPoolPost(pool, post)}
                         handle={pool.blog.handle}
                         post={post}
-                        onDeletePost={onDeletePost}
-                        onItemClick={onItemClick}
-                        onOpen={onOpenPost}
-                        onOpenTag={onOpenTag}
-                        onSelect={onSelectPost}
                         owner={canManageItems}
                       />
                     );
@@ -817,11 +793,6 @@ export function WorkspaceRootLanding({
                       handle={pool.blog.handle}
                       post={post}
                       showUpdatedAt
-                      onDeletePost={onDeletePost}
-                      onItemClick={onItemClick}
-                      onOpen={onOpenPost}
-                      onOpenTag={onOpenTag}
-                      onSelect={onSelectPost}
                       owner={canManageItems}
                     />
                   ))}
@@ -947,9 +918,7 @@ export function LocalWorkspaceContent({
       onEditCreatedPost={(postId) => onOpenPostId(postId, "edit")}
       onOpenPost={onOpenPostId}
       onOpenSection={onOpenSection}
-      onOpenTag={onOpenTag}
       onDeletePost={onDeleteItem}
-      onItemClick={onItemClick}
       onQueryChange={onQueryChange}
       onSelectPost={onSelectPost}
       onSelectSection={onSelectSection}
@@ -1006,15 +975,7 @@ export function LocalWorkspaceContent({
     page = (
       <>
         <WorkspaceSearchActionBar onSearch={onSearch} />
-        <StarredPage
-          pool={pool}
-          onDeletePost={onDeleteItem}
-          onItemClick={onItemClick}
-          onOpenPost={onOpenPostId}
-          onOpenTag={onOpenTag}
-          onSelectPost={onSelectPost}
-          owner={canManagePost}
-        />
+        <StarredPage pool={pool} owner={canManagePost} />
       </>
     );
   } else if (view.level === "section") {

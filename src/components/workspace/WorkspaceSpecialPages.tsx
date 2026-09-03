@@ -7,14 +7,8 @@ import {
   useCallback,
   useState,
 } from "react";
-import type {
-  MouseEvent as ReactMouseEvent,
-} from "react";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
-import {
-  type FolderDeleteItem,
-} from "@/components/FolderPage";
 import { SharedWithMe } from "@/components/workspace/SharedWithMe";
 import {
   WorkspacePostOption,
@@ -333,19 +327,9 @@ export function SharedPage({ pool }: { pool: WorkspacePoolPayload }) {
 }
 
 export function StarredPage({
-  onDeletePost,
-  onItemClick,
-  onOpenPost,
-  onOpenTag,
-  onSelectPost,
   owner,
   pool,
 }: {
-  onDeletePost?: FolderDeleteItem;
-  onItemClick: (postId: string, event: ReactMouseEvent<HTMLElement>) => boolean;
-  onOpenPost: (postId: string) => void;
-  onOpenTag: (tag: string) => void;
-  onSelectPost: (postId: string) => void;
   owner: boolean;
   pool: WorkspacePoolPayload;
 }) {
@@ -373,11 +357,6 @@ export function StarredPage({
               handle={pool.blog.handle}
               post={post}
               showUpdatedAt
-              onDeletePost={onDeletePost}
-              onItemClick={onItemClick}
-              onOpen={onOpenPost}
-              onOpenTag={onOpenTag}
-              onSelect={onSelectPost}
               owner={owner}
             />
           ))}
