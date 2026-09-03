@@ -2943,6 +2943,18 @@ collab_state/collab_updates rows, then start the server.
   a Playwright compositing artifact, but confirm pop in the real app
   before trusting it. Animated paths cost ~180ms to content in the
   matrix (capture + deferred update), a deliberate trade.
+- PLATFORM FACT (measured 2026-09-02, on-screen WKWebView probe in
+  scratch Swift): this macOS's WKWebView exposes
+  document.startViewTransition, runs the callback and swaps content,
+  but NEVER runs the pseudo-element animations - an 800ms transition
+  "finishes" in 7ms. Safari has the full feature; WKWebView's flag
+  set lags, and enabling it needs private API (App Store risk). So
+  the app uses a live-element slide (animateContentSlide, 220ms WAAPI
+  on .post-editor-content) and browsers keep the two-layer view
+  transition. Re-test the probe before assuming a newer macOS fixed
+  it. Navigation slides deliberately ignore prefers-reduced-motion
+  (owner runs Reduce Motion on system-wide and wants them; owner
+  decision 2026-09-02).
 
 ## Resolved episodes (one line each, dates in git log)
 
