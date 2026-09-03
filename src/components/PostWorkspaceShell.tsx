@@ -501,6 +501,12 @@ function LocalWorkspaceShell({
   // on commit, so a cancelled swipe touches nothing and cannot redraw.
   const navSnapshotsRef = useRef(new Map<number, { clone: HTMLElement; scrollTop: number }>());
   const suppressSnapshotCaptureRef = useRef(false);
+  // The swipe effect subscribes once; these refs give it the current
+  // hierarchy-up target and a way to take it, so a back swipe with no cached
+  // snapshot (a freshly loaded or reopened window) still goes somewhere
+  // sensible - the item's folder, then home - instead of doing nothing.
+  const navigateUpRef = useRef<() => boolean>(() => false);
+  const hierarchyUpAvailableRef = useRef(false);
   const captureNavSnapshot = useCallback((index: number) => {
     if (suppressSnapshotCaptureRef.current) return;
     const content = contentRef.current;
@@ -844,6 +850,9 @@ function LocalWorkspaceShell({
 
   useEffect(() => {
     viewRef.current = view;
+    hierarchyUpAvailableRef.current =
+      workspaceHierarchyUpTarget(view, displayPoolRef.current.folders).kind !==
+      "none";
   }, [view]);
 
   useEffect(() => {
@@ -2856,6 +2865,10 @@ function LocalWorkspaceShell({
     [applyNavigationTarget],
   );
 
+  useEffect(() => {
+    navigateUpRef.current = navigateUp;
+  }, [navigateUp]);
+
   const escapeCurrent = useCallback(() => {
     const current = viewRef.current;
     const post =
@@ -2981,6 +2994,8 @@ function LocalWorkspaceShell({
       snapshot: HTMLElement;
       shell: HTMLElement;
       real: HTMLElement;
+      moverEl: HTMLElement;
+      upNavigate: boolean;
       translate: number;
       baseIndex: number;
     } | null = null;
@@ -3007,13 +3022,11 @@ function LocalWorkspaceShell({
 
     const paint = () => {
       if (!drag) return;
-      if (drag.direction === "back") {
-        const x = Math.max(0, Math.min(drag.width, drag.translate));
-        drag.real.style.transform = `translateX(${x}px)`;
-      } else {
-        const x = Math.max(0, Math.min(drag.width, drag.width + drag.translate));
-        drag.snapshot.style.transform = `translateX(${x}px)`;
-      }
+      const x =
+        drag.direction === "back"
+          ? Math.max(0, Math.min(drag.width, drag.translate))
+          : Math.max(0, Math.min(drag.width, drag.width + drag.translate));
+      drag.moverEl.style.transform = `translateX(${x}px)`;
     };
 
     const beginDrag = (
@@ -3027,7 +3040,63 @@ function LocalWorkspaceShell({
       if (rect.width < 1) return false;
       const destIndex = direction === "back" ? baseIndex - 1 : baseIndex + 1;
       const snap = navSnapshotsRef.current.get(destIndex);
-      if (!snap) return false;
+
+      // No cached destination (a freshly loaded or reopened window): a back
+      // swipe still works by sliding the current view away and, on commit,
+      // navigating UP the hierarchy - item to its folder, folder to home -
+      // which the pool renders instantly. Forward has nowhere to go without
+      // a snapshot, so it stays inert.
+      if (!snap) {
+        if (direction !== "back" || !hierarchyUpAvailableRef.current) {
+          return false;
+        }
+        captureNavSnapshot(navIndexRef.current);
+        const cur = navSnapshotsRef.current.get(navIndexRef.current);
+        if (!cur) return false;
+        const moving = cur.clone.cloneNode(true) as HTMLElement;
+        moving.style.position = "absolute";
+        moving.style.left = "0";
+        moving.style.top = "0";
+        moving.style.width = "100%";
+        moving.style.height = "100%";
+        moving.style.transform = "translateX(0)";
+        try {
+          moving.scrollTop = cur.scrollTop;
+        } catch {
+          /* best-effort */
+        }
+        const clip = document.createElement("div");
+        clip.style.position = "fixed";
+        clip.style.left = `${rect.left}px`;
+        clip.style.top = `${rect.top}px`;
+        clip.style.width = `${rect.width}px`;
+        clip.style.height = `${rect.height}px`;
+        clip.style.overflow = "hidden";
+        clip.style.pointerEvents = "none";
+        clip.style.zIndex = "300";
+        clip.style.background = "var(--bg)";
+        clip.setAttribute("aria-hidden", "true");
+        clip.appendChild(moving);
+        const host =
+          content.closest<HTMLElement>(".post-editor-shell") ?? document.body;
+        host.appendChild(clip);
+        // Hide the live view so the clone sliding off does not sit on a
+        // duplicate of itself; the destination replaces it on commit.
+        content.style.visibility = "hidden";
+        drag = {
+          direction,
+          width: rect.width,
+          snapshot: moving,
+          shell: clip,
+          real: content,
+          moverEl: moving,
+          upNavigate: true,
+          translate: dx,
+          baseIndex,
+        };
+        paint();
+        return true;
+      }
       // Freshen the current view's snapshot so the reverse swipe is accurate.
       captureNavSnapshot(navIndexRef.current);
 
@@ -3097,6 +3166,10 @@ function LocalWorkspaceShell({
         snapshot,
         shell,
         real: content,
+        // Back moves the real content (grid-clipped under the rail);
+        // forward moves the incoming snapshot.
+        moverEl: direction === "back" ? content : snapshot,
+        upNavigate: false,
         translate: dx,
         baseIndex,
       };
@@ -3150,8 +3223,7 @@ function LocalWorkspaceShell({
       drag = null;
       window.clearTimeout(holdTimer);
 
-      const mover =
-        active.direction === "back" ? active.real : active.snapshot;
+      const mover = active.moverEl;
       const from = mover.style.transform || "translateX(0)";
       const to = commit
         ? active.direction === "back"
@@ -3200,6 +3272,29 @@ function LocalWorkspaceShell({
         }
         // Commit: navigate for real, exactly once (guards engaged at
         // decision time above).
+        if (active.upNavigate) {
+          // Slide the clone fully off, then navigate up; the destination
+          // renders from the pool underneath and the clone fades away.
+          navigateUpRef.current();
+          afterLanded(
+            () =>
+              viewRef.current.level !== "post" &&
+              viewRef.current.level !== "edit",
+            () => {
+              const landed = (
+                window.history.state as { ttNavIndex?: number } | null
+              )?.ttNavIndex;
+              if (typeof landed === "number") navIndexRef.current = landed;
+              restoreRealStyles(active.real);
+              fadeOutAndRemove(active.shell);
+              suppressSnapshotCaptureRef.current = false;
+              navAnimationSuppressed = false;
+              traversalPending = false;
+              if (buildIsStale()) window.location.reload();
+            },
+          );
+          return;
+        }
         const destIndex =
           active.direction === "back"
             ? active.baseIndex - 1
@@ -3290,7 +3385,7 @@ function LocalWorkspaceShell({
           return;
         }
         navIndexRef.current = truthIndex;
-        const canBack = truthIndex > 0;
+        const canBack = truthIndex > 0 || hierarchyUpAvailableRef.current;
         const canForward = truthIndex < navMaxRef.current;
         if (
           (direction === "back" ? !canBack : !canForward) ||
