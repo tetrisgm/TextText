@@ -2722,6 +2722,18 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   empty action bar (first in document order). Check every matching
   surface for text, not the first. All four first rows open in
   44-107ms in both engines.
+- Monolith split (2026-09-02, `60912212`, deployed):
+  PostWorkspaceShell.tsx went 7,773 -> 3,779 lines along real seams:
+  lib/workspace/local-view.ts (URL<->view + pure helpers),
+  lib/workspace/draft-sessions.ts (open editors' unsaved state),
+  WorkspaceSidebarChrome.tsx (sidebar + assistant-pref stores, tree,
+  resize), WorkspaceRootPages.tsx (root/search/tag + content router),
+  WorkspaceSpecialPages.tsx (trash/shared/starred + toolbar),
+  WorkspaceItemViews.tsx (open item read/edit views),
+  lib/use-client-hydrated.ts. External surface unchanged (pages import
+  only the two shells). The source-contract tests read shell + split
+  modules as one corpus - keep new extractions in that list. All
+  benches at baseline; the split is organization, not behavior.
 - Selection store (2026-09-02, `c21efd2b`, deployed): selection moved
   out of shell React state into src/lib/workspace/selection-store.ts;
   WorkspacePostOption extracted to its own module and self-subscribed
