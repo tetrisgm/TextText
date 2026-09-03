@@ -34,10 +34,12 @@ final class AppWebView: WKWebView {
     private var swipeState: SwipeState = .idle
     private var swipeX: CGFloat = 0
     private var swipeY: CGFloat = 0
+    private var swipeLastTime: TimeInterval = 0
+    private var swipeVelocity: CGFloat = 0  // points/sec, smoothed
 
-    private func swipeJS(_ phase: String, _ dx: CGFloat) {
+    private func swipeJS(_ phase: String, _ dx: CGFloat, _ velocity: CGFloat = 0) {
         evaluateJavaScript(
-            "window.__ttNavSwipe && window.__ttNavSwipe('\(phase)', \(Int(dx)))",
+            "window.__ttNavSwipe && window.__ttNavSwipe('\(phase)', \(Int(dx)), \(Int(velocity)))",
             completionHandler: nil)
     }
 
@@ -54,6 +56,8 @@ final class AppWebView: WKWebView {
             swipeState = .deciding
             swipeX = 0
             swipeY = 0
+            swipeVelocity = 0
+            swipeLastTime = event.timestamp
         }
 
         switch swipeState {
@@ -76,9 +80,18 @@ final class AppWebView: WKWebView {
 
         case .navigating:
             swipeX += event.scrollingDeltaX
+            let dt = event.timestamp - swipeLastTime
+            if dt > 0 {
+                // Exponential smoothing so one stray frame does not spike it.
+                let instant = event.scrollingDeltaX / CGFloat(dt)
+                swipeVelocity = swipeVelocity * 0.6 + instant * 0.4
+            }
+            swipeLastTime = event.timestamp
             swipeJS("move", swipeX)
             if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
-                swipeJS("end", swipeX)
+                // Release velocity lets a quick flick commit even when the
+                // finger travel was short (the Safari momentum feel).
+                swipeJS("end", swipeX, swipeVelocity)
                 swipeState = .idle
             }
             // Momentum after the fingers lift is consumed (not scrolled, not

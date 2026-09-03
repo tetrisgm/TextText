@@ -2902,6 +2902,7 @@ function LocalWorkspaceShell({
       startIndex: number;
     } | null = null;
     let inertGesture = false;
+    let holdTimer = 0;
 
     const overHorizontalScroller = (): boolean => {
       let el = document.elementFromPoint(lastPointer.x, lastPointer.y);
@@ -2922,6 +2923,9 @@ function LocalWorkspaceShell({
       real.style.position = "";
       real.style.zIndex = "";
       real.style.willChange = "";
+    };
+    const restoreRealOverflow = (real: HTMLElement) => {
+      real.style.overflow = "";
     };
 
     const paint = () => {
@@ -2959,6 +2963,8 @@ function LocalWorkspaceShell({
       } catch {
         /* nested scroll fidelity is best-effort */
       }
+      // No live scrollbar on the content that swaps underneath the clone.
+      content.style.overflow = "hidden";
       if (direction === "back") {
         // Item clone rides on top and slides away to reveal home underneath.
         clone.style.zIndex = "60";
@@ -2991,6 +2997,7 @@ function LocalWorkspaceShell({
       if (!drag) return;
       const active = drag;
       drag = null;
+      window.clearTimeout(holdTimer);
 
       const mover = active.direction === "back" ? active.clone : active.real;
       const from = mover.style.transform || "translateX(0)";
@@ -3003,51 +3010,79 @@ function LocalWorkspaceShell({
             ? "translateX(0)"
             : `translateX(${active.width}px)`;
 
-      const animation = mover.animate(
-        [{ transform: from }, { transform: to }],
-        { duration: 200, easing: "cubic-bezier(.25,.8,.35,1)", fill: "forwards" },
-      );
+      const restoreIndex = () => {
+        // Correcting to the recorded index (not a blind reverse) self-heals a
+        // fast flick where the start move had not settled yet.
+        const delta = active.startIndex - navIndexRef.current;
+        if (delta !== 0) window.history.go(delta);
+      };
 
-      const cleanup = () => {
-        // Return to the pre-drag entry when cancelling; correcting to the
-        // recorded index self-heals a fast flick where the start move had
-        // not settled yet.
-        const restoreIndex = () => {
-          const delta = active.startIndex - navIndexRef.current;
-          if (delta !== 0) window.history.go(delta);
-        };
+      let finished = false;
+      const settle = () => {
+        if (finished) return;
+        finished = true;
+        // Cancel the WAAPI animation and pin the resting transform as an
+        // inline style. A fill:forwards animation keeps applying its last
+        // frame even after the inline style is cleared, which stranded the
+        // real content off-screen and painted a blank view.
+        try {
+          animation.cancel();
+        } catch {
+          /* already gone */
+        }
         if (active.direction === "back") {
           if (!commit) restoreIndex();
           active.clone.remove();
-        } else {
-          if (!commit) restoreIndex();
-          clearRealDragStyles(active.real);
-          active.clone.remove();
-        }
-        window.setTimeout(() => {
-          if (!commit && navIndexRef.current !== active.startIndex) {
-            window.history.go(active.startIndex - navIndexRef.current);
-          }
+          restoreRealOverflow(active.real);
           window.setTimeout(() => {
             navAnimationSuppressed = false;
           }, 80);
-        }, 60);
+          return;
+        }
+        // Forward. On commit the real content IS the item; settle it at 0 and
+        // drop the clone. On cancel, navigate back to home while the real
+        // content (still the item) is held off-screen behind the frozen home
+        // clone, then clear once home has rendered - so no item flashes at
+        // the home URL and nothing is left stranded.
+        if (commit) {
+          clearRealDragStyles(active.real);
+          restoreRealOverflow(active.real);
+          active.clone.remove();
+          window.setTimeout(() => {
+            navAnimationSuppressed = false;
+          }, 80);
+        } else {
+          active.real.style.transform = `translateX(${active.width}px)`;
+          restoreIndex();
+          window.setTimeout(() => {
+            if (navIndexRef.current !== active.startIndex) {
+              window.history.go(active.startIndex - navIndexRef.current);
+            }
+            clearRealDragStyles(active.real);
+            restoreRealOverflow(active.real);
+            active.clone.remove();
+            window.setTimeout(() => {
+              navAnimationSuppressed = false;
+            }, 80);
+          }, 90);
+        }
       };
 
-      animation.addEventListener("finish", cleanup, { once: true });
-      window.setTimeout(() => {
-        if (active.clone.isConnected) {
-          try {
-            animation.cancel();
-          } catch {
-            /* already gone */
-          }
-          cleanup();
-        }
-      }, 280);
+      const animation = mover.animate(
+        [{ transform: from }, { transform: to }],
+        { duration: 220, easing: "cubic-bezier(.32,.72,0,1)", fill: "forwards" },
+      );
+      animation.addEventListener("finish", settle, { once: true });
+      // Guarantee settle even if the animation clock is throttled.
+      window.setTimeout(settle, 300);
     };
 
-    const bridge = (phase: "begin" | "move" | "end", dx: number) => {
+    // A flick commits even on short travel when the release is fast enough
+    // in the swipe direction - the momentum feel a distance-only threshold
+    // misses. Velocity is points/sec from the native layer.
+    const FLICK_VELOCITY = 650;
+
+    const bridge = (phase: "begin" | "move" | "end", dx: number, velocity = 0) => {
       if (phase === "begin") {
         inertGesture = false;
         // NSEvent scrollingDeltaX (natural scrolling): swipe right, going
@@ -3070,6 +3105,10 @@ function LocalWorkspaceShell({
       }
       if (phase === "move") {
         if (!drag) return;
+        window.clearTimeout(holdTimer);
+        // If the fingers stop and the release event never arrives (a gesture
+        // the user abandons), do not sit half-dragged: cancel after a pause.
+        holdTimer = window.setTimeout(() => finishDrag(false), 500);
         drag.translate = dx;
         paint();
         return;
@@ -3080,15 +3119,22 @@ function LocalWorkspaceShell({
         return;
       }
       if (!drag) return;
-      finishDrag(Math.abs(drag.translate) > drag.width * COMMIT_FRACTION);
+      const past = Math.abs(drag.translate) > drag.width * COMMIT_FRACTION;
+      const flicked =
+        Math.abs(velocity) > FLICK_VELOCITY &&
+        Math.sign(velocity) === Math.sign(drag.translate) &&
+        Math.abs(drag.translate) > 20;
+      finishDrag(past || flicked);
     };
 
     (window as { __ttNavSwipe?: typeof bridge }).__ttNavSwipe = bridge;
     return () => {
       window.removeEventListener("pointermove", onPointer);
+      window.clearTimeout(holdTimer);
       delete (window as { __ttNavSwipe?: typeof bridge }).__ttNavSwipe;
       if (drag) {
         if (drag.direction === "forward") clearRealDragStyles(drag.real);
+        restoreRealOverflow(drag.real);
         drag.clone.remove();
         drag = null;
         navAnimationSuppressed = false;
