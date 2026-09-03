@@ -64,10 +64,10 @@ final class AppWebView: WKWebView {
             // horizontal-dominant swipe becomes a navigation; anything else
             // is a scroll and is handed back to the web view untouched for
             // the rest of this gesture.
-            if abs(swipeX) >= 12, abs(swipeX) > abs(swipeY) * 1.5 {
+            if abs(swipeX) >= 18, abs(swipeX) > abs(swipeY) * 1.8 {
                 swipeState = .navigating
                 swipeJS("begin", swipeX)
-            } else if abs(swipeY) >= 12 || abs(swipeX) >= 12 {
+            } else if abs(swipeY) >= 12 || abs(swipeX) >= 18 {
                 swipeState = .passing
                 super.scrollWheel(with: event)
             }

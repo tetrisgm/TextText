@@ -2869,19 +2869,24 @@ function LocalWorkspaceShell({
     return () => window.removeEventListener("popstate", onPopState);
   }, [displayPool, homePath]);
 
-  // Interactive back/forward swipe. The gesture itself is recognized in the
-  // Mac shell (AppWebView.scrollWheel), which has the real NSEvent phase and
-  // per-frame finger translation the DOM wheel stream lacks, and calls the
-  // window.__ttNavSwipe bridge below with begin/move/end plus cumulative
-  // finger travel in points. The page paints the tracked reveal: a static
-  // clone of the view being left overlays the content region, history is
-  // moved so the destination renders live underneath, and the clone is
-  // translated 1:1 with the fingers. Release past ~40% of the width commits;
-  // short of it snaps back and undoes the move.
+  // Interactive back/forward swipe. The Mac shell (AppWebView.scrollWheel)
+  // recognizes the gesture from NSEvent - real phase and per-frame finger
+  // translation, which the DOM wheel stream lacks - and calls
+  // window.__ttNavSwipe with begin/move/end plus cumulative finger travel in
+  // points. The page paints the reveal with iOS/Safari layering:
+  //   back (item -> home): the item is ON TOP and slides away to the right,
+  //     uncovering home, which sits still underneath.
+  //   forward (home -> item): the item slides IN from the right ON TOP of
+  //     home, which stays put.
+  // So the layer that moves and its stacking differ by direction; both clone
+  // the OUTGOING view once (cheap) and navigate so the destination is live.
   useEffect(() => {
     if (!(window as { __TEXTTEXT_APP__?: boolean }).__TEXTTEXT_APP__) return;
 
-    const COMMIT_FRACTION = 0.4;
+    // How far (fraction of width) the finger must travel to commit. Kept low
+    // so a natural swipe completes without an aggressive flick.
+    const COMMIT_FRACTION = 0.3;
+
     let lastPointer = { x: 0, y: 0 };
     const onPointer = (event: PointerEvent) => {
       lastPointer = { x: event.clientX, y: event.clientY };
@@ -2892,6 +2897,7 @@ function LocalWorkspaceShell({
       direction: "back" | "forward";
       width: number;
       clone: HTMLElement;
+      real: HTMLElement;
       translate: number;
       startIndex: number;
     } | null = null;
@@ -2909,8 +2915,24 @@ function LocalWorkspaceShell({
       return false;
     };
 
+    // On forward the incoming item IS the real content, lifted above a frozen
+    // home clone and translated; clear those inline styles when done.
+    const clearRealDragStyles = (real: HTMLElement) => {
+      real.style.transform = "";
+      real.style.position = "";
+      real.style.zIndex = "";
+      real.style.willChange = "";
+    };
+
     const paint = () => {
-      if (drag) drag.clone.style.transform = `translateX(${drag.translate}px)`;
+      if (!drag) return;
+      if (drag.direction === "back") {
+        const x = Math.max(0, Math.min(drag.width, drag.translate));
+        drag.clone.style.transform = `translateX(${x}px)`;
+      } else {
+        const x = Math.max(0, Math.min(drag.width, drag.width + drag.translate));
+        drag.real.style.transform = `translateX(${x}px)`;
+      }
     };
 
     const beginDrag = (direction: "back" | "forward"): boolean => {
@@ -2926,24 +2948,42 @@ function LocalWorkspaceShell({
       clone.style.width = `${rect.width}px`;
       clone.style.height = `${rect.height}px`;
       clone.style.margin = "0";
-      clone.style.zIndex = "60";
       clone.style.pointerEvents = "none";
       clone.style.overflow = "hidden";
       clone.style.background = "var(--bg)";
       clone.style.willChange = "transform";
       clone.style.transform = "translateX(0)";
       clone.setAttribute("aria-hidden", "true");
-      document.body.appendChild(clone);
       try {
         clone.scrollTop = content.scrollTop;
       } catch {
         /* nested scroll fidelity is best-effort */
       }
+      if (direction === "back") {
+        // Item clone rides on top and slides away to reveal home underneath.
+        clone.style.zIndex = "60";
+      } else {
+        // Home clone is frozen underneath; the real content (about to become
+        // the item) is lifted above it and slid in from the right.
+        clone.style.zIndex = "1";
+        content.style.position = "relative";
+        content.style.zIndex = "2";
+        content.style.willChange = "transform";
+        content.style.transform = `translateX(${rect.width}px)`;
+      }
+      document.body.appendChild(clone);
       navAnimationSuppressed = true;
       const startIndex = navIndexRef.current;
       if (direction === "back") window.history.back();
       else window.history.forward();
-      drag = { direction, width: rect.width, clone, translate: 0, startIndex };
+      drag = {
+        direction,
+        width: rect.width,
+        clone,
+        real: content,
+        translate: 0,
+        startIndex,
+      };
       return true;
     };
 
@@ -2951,45 +2991,49 @@ function LocalWorkspaceShell({
       if (!drag) return;
       const active = drag;
       drag = null;
-      const target = commit
-        ? active.direction === "back"
-          ? active.width
-          : -active.width
-        : 0;
-      const animation = active.clone.animate(
-        [
-          { transform: active.clone.style.transform },
-          { transform: `translateX(${target}px)` },
-        ],
-        { duration: 180, easing: "cubic-bezier(.2,.75,.25,1)", fill: "forwards" },
+
+      const mover = active.direction === "back" ? active.clone : active.real;
+      const from = mover.style.transform || "translateX(0)";
+      const to =
+        active.direction === "back"
+          ? commit
+            ? `translateX(${active.width}px)`
+            : "translateX(0)"
+          : commit
+            ? "translateX(0)"
+            : `translateX(${active.width}px)`;
+
+      const animation = mover.animate(
+        [{ transform: from }, { transform: to }],
+        { duration: 200, easing: "cubic-bezier(.25,.8,.35,1)", fill: "forwards" },
       );
+
       const cleanup = () => {
-        if (!commit) {
-          // Return to exactly where the drag began. Correcting to the
-          // recorded index (rather than a blind forward/back) self-heals if
-          // the start move's popstate has not settled yet on a fast flick.
-          const settle = () => {
-            const delta = active.startIndex - navIndexRef.current;
-            if (delta !== 0) window.history.go(delta);
-          };
-          settle();
-          // One more correction on the next task, after any in-flight
-          // popstate applies, in case the first correction was a no-op.
-          window.setTimeout(() => {
-            if (navIndexRef.current !== active.startIndex) {
-              window.history.go(active.startIndex - navIndexRef.current);
-            }
-            window.setTimeout(() => {
-              navAnimationSuppressed = false;
-            }, 80);
-          }, 60);
+        // Return to the pre-drag entry when cancelling; correcting to the
+        // recorded index self-heals a fast flick where the start move had
+        // not settled yet.
+        const restoreIndex = () => {
+          const delta = active.startIndex - navIndexRef.current;
+          if (delta !== 0) window.history.go(delta);
+        };
+        if (active.direction === "back") {
+          if (!commit) restoreIndex();
+          active.clone.remove();
         } else {
+          if (!commit) restoreIndex();
+          clearRealDragStyles(active.real);
+          active.clone.remove();
+        }
+        window.setTimeout(() => {
+          if (!commit && navIndexRef.current !== active.startIndex) {
+            window.history.go(active.startIndex - navIndexRef.current);
+          }
           window.setTimeout(() => {
             navAnimationSuppressed = false;
           }, 80);
-        }
-        active.clone.remove();
+        }, 60);
       };
+
       animation.addEventListener("finish", cleanup, { once: true });
       window.setTimeout(() => {
         if (active.clone.isConnected) {
@@ -3000,7 +3044,7 @@ function LocalWorkspaceShell({
           }
           cleanup();
         }
-      }, 240);
+      }, 280);
     };
 
     const bridge = (phase: "begin" | "move" | "end", dx: number) => {
@@ -3019,17 +3063,14 @@ function LocalWorkspaceShell({
           return;
         }
         if (beginDrag(direction)) {
-          drag!.translate = Math.max(
-            -drag!.width,
-            Math.min(drag!.width, dx),
-          );
+          drag!.translate = dx;
           paint();
         }
         return;
       }
       if (phase === "move") {
         if (!drag) return;
-        drag.translate = Math.max(-drag.width, Math.min(drag.width, dx));
+        drag.translate = dx;
         paint();
         return;
       }
@@ -3047,6 +3088,7 @@ function LocalWorkspaceShell({
       window.removeEventListener("pointermove", onPointer);
       delete (window as { __ttNavSwipe?: typeof bridge }).__ttNavSwipe;
       if (drag) {
+        if (drag.direction === "forward") clearRealDragStyles(drag.real);
         drag.clone.remove();
         drag = null;
         navAnimationSuppressed = false;
