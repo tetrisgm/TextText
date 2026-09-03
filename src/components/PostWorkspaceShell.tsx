@@ -2869,37 +2869,36 @@ function LocalWorkspaceShell({
     return () => window.removeEventListener("popstate", onPopState);
   }, [displayPool, homePath]);
 
-  // In the Mac app the two-finger back/forward swipe is an INTERACTIVE drag,
-  // recognized here from wheel deltas (WKWebView's native gesture is off - it
-  // renders empty snapshots for our pushState history and slid a white page).
-  // The page tracks the fingers: a static clone of the view being left is laid
-  // over the content region, history is moved so the destination renders live
-  // underneath, and the clone is translated by the accumulated swipe so the
-  // destination is revealed as you drag. Release past ~45% commits; short of it
-  // snaps back and undoes the move. There is no finger-up event in a wheel
-  // stream, so a short silence ends the gesture; trailing momentum in the swipe
-  // direction only biases a deliberate swipe toward commit.
+  // Interactive back/forward swipe. The gesture itself is recognized in the
+  // Mac shell (AppWebView.scrollWheel), which has the real NSEvent phase and
+  // per-frame finger translation the DOM wheel stream lacks, and calls the
+  // window.__ttNavSwipe bridge below with begin/move/end plus cumulative
+  // finger travel in points. The page paints the tracked reveal: a static
+  // clone of the view being left overlays the content region, history is
+  // moved so the destination renders live underneath, and the clone is
+  // translated 1:1 with the fingers. Release past ~40% of the width commits;
+  // short of it snaps back and undoes the move.
   useEffect(() => {
     if (!(window as { __TEXTTEXT_APP__?: boolean }).__TEXTTEXT_APP__) return;
 
-    const START_THRESHOLD = 24;
-    const COMMIT_FRACTION = 0.45;
-    const SILENCE_MS = 90;
+    const COMMIT_FRACTION = 0.4;
+    let lastPointer = { x: 0, y: 0 };
+    const onPointer = (event: PointerEvent) => {
+      lastPointer = { x: event.clientX, y: event.clientY };
+    };
+    window.addEventListener("pointermove", onPointer, { passive: true });
 
-    let sumX = 0;
-    let sumY = 0;
-    let decided = false;
     let drag: {
       direction: "back" | "forward";
       width: number;
       clone: HTMLElement;
       translate: number;
-      released: boolean;
+      startIndex: number;
     } | null = null;
-    let silenceTimer = 0;
+    let inertGesture = false;
 
-    const scrollsHorizontally = (start: EventTarget | null): boolean => {
-      let el = start instanceof Element ? start : null;
+    const overHorizontalScroller = (): boolean => {
+      let el = document.elementFromPoint(lastPointer.x, lastPointer.y);
       while (el && el !== document.body) {
         if (el.scrollWidth > el.clientWidth + 4) {
           const overflowX = getComputedStyle(el).overflowX;
@@ -2910,10 +2909,8 @@ function LocalWorkspaceShell({
       return false;
     };
 
-    const resetAccumulator = () => {
-      sumX = 0;
-      sumY = 0;
-      decided = false;
+    const paint = () => {
+      if (drag) drag.clone.style.transform = `translateX(${drag.translate}px)`;
     };
 
     const beginDrag = (direction: "back" | "forward"): boolean => {
@@ -2921,9 +2918,6 @@ function LocalWorkspaceShell({
       if (!content) return false;
       const rect = content.getBoundingClientRect();
       if (rect.width < 1) return false;
-      // A static snapshot of the view being left. cloneNode carries the
-      // markup and classes, so the stylesheets repaint it identically; it
-      // needs no React tree of its own.
       const clone = content.cloneNode(true) as HTMLElement;
       clone.removeAttribute("id");
       clone.style.position = "fixed";
@@ -2945,18 +2939,12 @@ function LocalWorkspaceShell({
       } catch {
         /* nested scroll fidelity is best-effort */
       }
-      // Move history so the destination renders live behind the clone. The
-      // popstate is async; the clone covers the swap until the drag reveals it.
       navAnimationSuppressed = true;
+      const startIndex = navIndexRef.current;
       if (direction === "back") window.history.back();
       else window.history.forward();
-      drag = { direction, width: rect.width, clone, translate: 0, released: false };
+      drag = { direction, width: rect.width, clone, translate: 0, startIndex };
       return true;
-    };
-
-    const paint = () => {
-      if (!drag) return;
-      drag.clone.style.transform = `translateX(${drag.translate}px)`;
     };
 
     const finishDrag = (commit: boolean) => {
@@ -2964,30 +2952,45 @@ function LocalWorkspaceShell({
       const active = drag;
       drag = null;
       const target = commit
-        ? (active.direction === "back" ? active.width : -active.width)
+        ? active.direction === "back"
+          ? active.width
+          : -active.width
         : 0;
       const animation = active.clone.animate(
         [
           { transform: active.clone.style.transform },
           { transform: `translateX(${target}px)` },
         ],
-        { duration: 190, easing: "cubic-bezier(.2,.75,.25,1)", fill: "forwards" },
+        { duration: 180, easing: "cubic-bezier(.2,.75,.25,1)", fill: "forwards" },
       );
       const cleanup = () => {
         if (!commit) {
-          // Undo the start-of-drag history move; still suppressed so no slide.
-          if (active.direction === "back") window.history.forward();
-          else window.history.back();
+          // Return to exactly where the drag began. Correcting to the
+          // recorded index (rather than a blind forward/back) self-heals if
+          // the start move's popstate has not settled yet on a fast flick.
+          const settle = () => {
+            const delta = active.startIndex - navIndexRef.current;
+            if (delta !== 0) window.history.go(delta);
+          };
+          settle();
+          // One more correction on the next task, after any in-flight
+          // popstate applies, in case the first correction was a no-op.
+          window.setTimeout(() => {
+            if (navIndexRef.current !== active.startIndex) {
+              window.history.go(active.startIndex - navIndexRef.current);
+            }
+            window.setTimeout(() => {
+              navAnimationSuppressed = false;
+            }, 80);
+          }, 60);
+        } else {
+          window.setTimeout(() => {
+            navAnimationSuppressed = false;
+          }, 80);
         }
         active.clone.remove();
-        // Let the pending popstate (the start move, or the cancel's undo
-        // move) apply before re-enabling slides; both are async tasks.
-        window.setTimeout(() => {
-          navAnimationSuppressed = false;
-        }, 80);
       };
       animation.addEventListener("finish", cleanup, { once: true });
-      // Guarantee cleanup even if the animation clock is throttled.
       window.setTimeout(() => {
         if (active.clone.isConnected) {
           try {
@@ -2997,57 +3000,52 @@ function LocalWorkspaceShell({
           }
           cleanup();
         }
-      }, 260);
+      }, 240);
     };
 
-    const endGesture = () => {
-      if (!drag) return;
-      const past = Math.abs(drag.translate) > drag.width * COMMIT_FRACTION;
-      finishDrag(past);
-      resetAccumulator();
-    };
-
-    const onWheel = (event: WheelEvent) => {
-      window.clearTimeout(silenceTimer);
-      silenceTimer = window.setTimeout(endGesture, SILENCE_MS);
-
-      if (drag) {
-        // -deltaX so a rightward (back) swipe moves the clone right.
-        drag.translate -= event.deltaX;
-        drag.translate = Math.max(
-          -drag.width,
-          Math.min(drag.width, drag.translate),
-        );
+    const bridge = (phase: "begin" | "move" | "end", dx: number) => {
+      if (phase === "begin") {
+        inertGesture = false;
+        // NSEvent scrollingDeltaX (natural scrolling): swipe right, going
+        // back, is positive; swipe left, forward, negative.
+        const direction: "back" | "forward" = dx > 0 ? "back" : "forward";
+        const canBack = navIndexRef.current > 0;
+        const canForward = navIndexRef.current < navMaxRef.current;
+        if (
+          (direction === "back" ? !canBack : !canForward) ||
+          overHorizontalScroller()
+        ) {
+          inertGesture = true;
+          return;
+        }
+        if (beginDrag(direction)) {
+          drag!.translate = Math.max(
+            -drag!.width,
+            Math.min(drag!.width, dx),
+          );
+          paint();
+        }
+        return;
+      }
+      if (phase === "move") {
+        if (!drag) return;
+        drag.translate = Math.max(-drag.width, Math.min(drag.width, dx));
         paint();
         return;
       }
-      if (decided) return;
-
-      sumX += event.deltaX;
-      sumY += event.deltaY;
-      if (Math.abs(sumX) < START_THRESHOLD) return;
-      if (Math.abs(sumX) < Math.abs(sumY) * 1.4) return;
-      decided = true;
-      if (scrollsHorizontally(event.target)) return;
-
-      const direction = sumX < 0 ? "back" : "forward";
-      const canBack = navIndexRef.current > 0;
-      const canForward = navIndexRef.current < navMaxRef.current;
-      if (direction === "back" ? !canBack : !canForward) return;
-      if (beginDrag(direction)) {
-        drag!.translate = -sumX;
-        drag!.translate = Math.max(
-          -drag!.width,
-          Math.min(drag!.width, drag!.translate),
-        );
-        paint();
+      // end
+      if (inertGesture) {
+        inertGesture = false;
+        return;
       }
+      if (!drag) return;
+      finishDrag(Math.abs(drag.translate) > drag.width * COMMIT_FRACTION);
     };
 
-    window.addEventListener("wheel", onWheel, { passive: true });
+    (window as { __ttNavSwipe?: typeof bridge }).__ttNavSwipe = bridge;
     return () => {
-      window.removeEventListener("wheel", onWheel);
-      window.clearTimeout(silenceTimer);
+      window.removeEventListener("pointermove", onPointer);
+      delete (window as { __ttNavSwipe?: typeof bridge }).__ttNavSwipe;
       if (drag) {
         drag.clone.remove();
         drag = null;

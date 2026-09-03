@@ -19,6 +19,88 @@ final class AppWebView: WKWebView {
         "WKMenuItemIdentifierReload",
     ]
 
+    // Interactive back/forward swipe, driven at the AppKit layer.
+    //
+    // The web layer cannot do this: a DOM wheel event carries scroll deltas,
+    // not finger position, never says when the fingers lift, and trails ~1s
+    // of momentum - so a web-side recognizer overshoots to a commit on the
+    // first flick and then latches on the momentum tail. NSEvent has what
+    // Safari itself uses: a real gesture phase (.began/.changed/.ended) and
+    // precise per-frame finger translation in `scrollingDeltaX`. We read a
+    // horizontal-dominant swipe here and forward begin/move/end to the page,
+    // which paints the tracked reveal. WKWebView's own back/forward gesture
+    // stays off (it renders empty snapshots for our pushState history).
+    private enum SwipeState { case idle, deciding, navigating, passing }
+    private var swipeState: SwipeState = .idle
+    private var swipeX: CGFloat = 0
+    private var swipeY: CGFloat = 0
+
+    private func swipeJS(_ phase: String, _ dx: CGFloat) {
+        evaluateJavaScript(
+            "window.__ttNavSwipe && window.__ttNavSwipe('\(phase)', \(Int(dx)))",
+            completionHandler: nil)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        // Only trackpad gestures carry phase; a mouse wheel has phase .none
+        // in both fields and must always scroll normally.
+        let hasPhase = event.phase != [] || event.momentumPhase != []
+        guard hasPhase else {
+            super.scrollWheel(with: event)
+            return
+        }
+
+        if event.phase.contains(.began) {
+            swipeState = .deciding
+            swipeX = 0
+            swipeY = 0
+        }
+
+        switch swipeState {
+        case .deciding:
+            swipeX += event.scrollingDeltaX
+            swipeY += event.scrollingDeltaY
+            // Decide direction once the movement is clearly one axis. A
+            // horizontal-dominant swipe becomes a navigation; anything else
+            // is a scroll and is handed back to the web view untouched for
+            // the rest of this gesture.
+            if abs(swipeX) >= 12, abs(swipeX) > abs(swipeY) * 1.5 {
+                swipeState = .navigating
+                swipeJS("begin", swipeX)
+            } else if abs(swipeY) >= 12 || abs(swipeX) >= 12 {
+                swipeState = .passing
+                super.scrollWheel(with: event)
+            }
+            // Undecided: swallow the tiny initial deltas so a nascent
+            // horizontal swipe does not scroll the page a few pixels first.
+
+        case .navigating:
+            swipeX += event.scrollingDeltaX
+            swipeJS("move", swipeX)
+            if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
+                swipeJS("end", swipeX)
+                swipeState = .idle
+            }
+            // Momentum after the fingers lift is consumed (not scrolled, not
+            // forwarded): the gesture already ended on .ended above.
+
+        case .passing:
+            super.scrollWheel(with: event)
+            if event.phase.contains(.ended) || event.phase.contains(.cancelled)
+                || event.momentumPhase.contains(.ended) {
+                swipeState = .idle
+            }
+
+        case .idle:
+            // Momentum tail of a finished navigation swipe, or a stray event.
+            if event.momentumPhase != [] {
+                // consume: do not scroll the page with leftover momentum
+            } else {
+                super.scrollWheel(with: event)
+            }
+        }
+    }
+
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
         for item in menu.items.reversed() {
             if let identifier = item.identifier,
