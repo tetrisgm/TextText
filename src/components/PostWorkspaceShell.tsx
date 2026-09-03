@@ -274,28 +274,68 @@ export function sidebarFolderPathForPostType(type: ItemKind): SidebarFolderId {
  * change instantly. The pseudo-element animations live in workspace.css
  * under html[data-nav-transition].
  */
+let viewTransitionsBroken = false;
+
 function runViewTransition(direction: "push" | "pop" | null, apply: () => void) {
   const doc = document as Document & {
-    startViewTransition?: (update: () => void) => { finished: Promise<void> };
+    startViewTransition?: (update: () => void) => {
+      finished: Promise<void>;
+      skipTransition?: () => void;
+    };
   };
   if (
     !direction ||
+    viewTransitionsBroken ||
     typeof doc.startViewTransition !== "function" ||
     window.matchMedia("(prefers-reduced-motion: reduce)").matches
   ) {
     apply();
     return;
   }
+  // Navigation must NEVER depend on the transition machinery. Everything
+  // below is arranged so that a broken implementation (a callback that
+  // never runs, a finished promise that never settles, a compositor that
+  // freezes on the captured snapshot - WKWebView is not Safari) costs one
+  // watchdog interval once, applies the change anyway, and turns the
+  // decoration off for the rest of the session.
+  let applied = false;
+  const applyOnce = () => {
+    if (applied) return;
+    applied = true;
+    apply();
+  };
+  const cleanup = () => {
+    if (document.documentElement.dataset.navTransition === direction) {
+      delete document.documentElement.dataset.navTransition;
+    }
+  };
   document.documentElement.dataset.navTransition = direction;
-  const transition = doc.startViewTransition(() => {
-    flushSync(apply);
-  });
+  let transition: { finished: Promise<void>; skipTransition?: () => void };
+  try {
+    transition = doc.startViewTransition(() => {
+      flushSync(applyOnce);
+    });
+  } catch {
+    cleanup();
+    applyOnce();
+    return;
+  }
+  const watchdog = window.setTimeout(() => {
+    viewTransitionsBroken = true;
+    try {
+      transition.skipTransition?.();
+    } catch {
+      /* teardown is best-effort */
+    }
+    applyOnce();
+    cleanup();
+  }, 600);
   void transition.finished
     .catch(() => {})
     .then(() => {
-      if (document.documentElement.dataset.navTransition === direction) {
-        delete document.documentElement.dataset.navTransition;
-      }
+      window.clearTimeout(watchdog);
+      applyOnce();
+      cleanup();
     });
 }
 
