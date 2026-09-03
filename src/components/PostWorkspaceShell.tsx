@@ -310,6 +310,11 @@ function runViewTransition(direction: "push" | "pop" | null, apply: () => void) 
     };
   };
   if (!direction || navAnimationSuppressed) {
+    // Consumed on use: the swipe's one navigation apply may be deferred
+    // well past its settle (the item view waits for its document), and a
+    // timer-cleared flag let that late apply run its own slide-in on top
+    // of an already-landed swipe.
+    navAnimationSuppressed = false;
     apply();
     return;
   }
@@ -2928,6 +2933,7 @@ function LocalWorkspaceShell({
       direction: "back" | "forward";
       width: number;
       snapshot: HTMLElement;
+      shell: HTMLElement;
       real: HTMLElement;
       translate: number;
       baseIndex: number;
@@ -2980,43 +2986,65 @@ function LocalWorkspaceShell({
       captureNavSnapshot(navIndexRef.current);
 
       const snapshot = snap.clone.cloneNode(true) as HTMLElement;
-      snapshot.style.position = "fixed";
-      snapshot.style.left = `${rect.left}px`;
-      snapshot.style.top = `${rect.top}px`;
-      snapshot.style.width = `${rect.width}px`;
-      snapshot.style.height = `${rect.height}px`;
       snapshot.style.margin = "0";
       snapshot.style.pointerEvents = "none";
       snapshot.style.overflow = "hidden";
       snapshot.style.background = "var(--bg)";
       snapshot.style.willChange = "transform";
       snapshot.setAttribute("aria-hidden", "true");
-      try {
-        snapshot.scrollTop = snap.scrollTop;
-      } catch {
-        /* best-effort */
-      }
 
+      let shell: HTMLElement;
       if (direction === "back") {
         // Home snapshot sits still underneath; the real item is lifted above
-        // it and slid away to the right.
+        // it and slid away to the right (the grid clips it under the rail).
+        snapshot.style.position = "fixed";
+        snapshot.style.left = `${rect.left}px`;
+        snapshot.style.top = `${rect.top}px`;
+        snapshot.style.width = `${rect.width}px`;
+        snapshot.style.height = `${rect.height}px`;
         snapshot.style.zIndex = "1";
         snapshot.style.transform = "translateX(0)";
         content.style.position = "relative";
         content.style.zIndex = "2";
         content.style.willChange = "transform";
         content.style.transform = "translateX(0)";
+        shell = snapshot;
+        document.body.appendChild(snapshot);
       } else {
-        // Item snapshot rides on top and slides in from the right; home (real)
-        // stays exactly where it is.
-        snapshot.style.zIndex = "60";
+        // Item snapshot slides in from the right INSIDE a clip container
+        // bounded to the content region, so it emerges from under the
+        // assistant rail - the same elegant clipping the back direction
+        // gets for free from the grid - instead of floating above it.
+        const clip = document.createElement("div");
+        clip.style.position = "fixed";
+        clip.style.left = `${rect.left}px`;
+        clip.style.top = `${rect.top}px`;
+        clip.style.width = `${rect.width}px`;
+        clip.style.height = `${rect.height}px`;
+        clip.style.overflow = "hidden";
+        clip.style.pointerEvents = "none";
+        clip.style.zIndex = "60";
+        clip.setAttribute("aria-hidden", "true");
+        snapshot.style.position = "absolute";
+        snapshot.style.left = "0";
+        snapshot.style.top = "0";
+        snapshot.style.width = "100%";
+        snapshot.style.height = "100%";
         snapshot.style.transform = `translateX(${rect.width}px)`;
+        clip.appendChild(snapshot);
+        shell = clip;
+        document.body.appendChild(clip);
       }
-      document.body.appendChild(snapshot);
+      try {
+        snapshot.scrollTop = snap.scrollTop;
+      } catch {
+        /* best-effort */
+      }
       drag = {
         direction,
         width: rect.width,
         snapshot,
+        shell,
         real: content,
         translate: dx,
         baseIndex,
@@ -3030,6 +3058,20 @@ function LocalWorkspaceShell({
       real.style.position = "";
       real.style.zIndex = "";
       real.style.willChange = "";
+    };
+
+    // Lift a mask with a short fade rather than a pop: even when the real
+    // view underneath is pixel-close to the snapshot, an instantaneous swap
+    // reads as a flash.
+    const fadeOutAndRemove = (el: HTMLElement) => {
+      const fade = el.animate([{ opacity: 1 }, { opacity: 0 }], {
+        duration: 90,
+        easing: "ease-out",
+        fill: "forwards",
+      });
+      const drop = () => el.remove();
+      fade.addEventListener("finish", drop, { once: true });
+      window.setTimeout(drop, 200);
     };
 
     // Wait until the destination has genuinely landed (predicate) plus two
@@ -3066,6 +3108,15 @@ function LocalWorkspaceShell({
         : active.direction === "back"
           ? "translateX(0)"
           : `translateX(${active.width}px)`;
+      // Travel-proportional duration: a 50px return should not take as long
+      // as a full-width slide (a fixed duration read as an instant pop).
+      const fromX = Number(/([-\d.]+)px/.exec(from)?.[1] ?? 0);
+      const toX = Number(/([-\d.]+)px/.exec(to)?.[1] ?? 0);
+      const travel = Math.abs(toX - fromX);
+      const duration = Math.max(
+        140,
+        Math.min(280, Math.round((280 * travel) / Math.max(1, active.width))),
+      );
 
       if (commit) {
         // The traversal itself happens AFTER the settle animation, but the
@@ -3081,6 +3132,9 @@ function LocalWorkspaceShell({
       const settle = () => {
         if (done) return;
         done = true;
+        // Pin the resting transform BEFORE cancelling the animation, so a
+        // safety-timer settle can never cancel mid-flight and visibly jump.
+        mover.style.transform = to;
         try {
           animation.cancel();
         } catch {
@@ -3089,7 +3143,7 @@ function LocalWorkspaceShell({
         if (!commit) {
           // Nothing navigated; just undo the visual and drop the snapshot.
           restoreRealStyles(active.real);
-          active.snapshot.remove();
+          active.shell.remove();
           return;
         }
         // Commit: navigate for real, exactly once (guards engaged at
@@ -3121,7 +3175,7 @@ function LocalWorkspaceShell({
             () => {
               resyncIndex();
               restoreRealStyles(active.real);
-              active.snapshot.remove();
+              fadeOutAndRemove(active.shell);
               suppressSnapshotCaptureRef.current = false;
               navAnimationSuppressed = false;
               traversalPending = false;
@@ -3140,7 +3194,7 @@ function LocalWorkspaceShell({
               viewRef.current.level === "edit",
             () => {
               resyncIndex();
-              active.snapshot.remove();
+              fadeOutAndRemove(active.shell);
               suppressSnapshotCaptureRef.current = false;
               navAnimationSuppressed = false;
               traversalPending = false;
@@ -3151,10 +3205,10 @@ function LocalWorkspaceShell({
 
       const animation = mover.animate(
         [{ transform: from }, { transform: to }],
-        { duration: 240, easing: "cubic-bezier(.32,.72,0,1)", fill: "forwards" },
+        { duration, easing: "cubic-bezier(.32,.72,0,1)", fill: "forwards" },
       );
       animation.addEventListener("finish", settle, { once: true });
-      window.setTimeout(settle, 320);
+      window.setTimeout(settle, duration + 350);
     };
 
     const bridge = (phase: "begin" | "move" | "end", dx: number, velocity = 0) => {
@@ -3213,7 +3267,7 @@ function LocalWorkspaceShell({
       delete (window as { __ttNavSwipe?: typeof bridge }).__ttNavSwipe;
       if (drag) {
         restoreRealStyles(drag.real);
-        drag.snapshot.remove();
+        drag.shell.remove();
         drag = null;
         navAnimationSuppressed = false;
         suppressSnapshotCaptureRef.current = false;
