@@ -2932,6 +2932,17 @@ collab_state/collab_updates rows, then start the server.
   firing per gesture, ceded to horizontally scrollable content),
   driving the same history entries through the gated popstate path.
   Browsers keep the native gesture; the recognizer is app-only.
+- Navigation slides (owner ask): view transitions on every hierarchy
+  change, push from the right / pop from the left, new view always on
+  top (WebKit ignores z-index on the transition pseudos - the
+  old-on-top drill-out grammar silently loses its top layer there).
+  Only .post-editor-content carries a view-transition-name; the pair
+  is overflow:clip or the outgoing snapshot slides across the
+  sidebar. Playwright WebKit renders the live incoming layer blank on
+  pop (home list) while Chromium renders it perfectly - treat that as
+  a Playwright compositing artifact, but confirm pop in the real app
+  before trusting it. Animated paths cost ~180ms to content in the
+  matrix (capture + deferred update), a deliberate trade.
 
 ## Resolved episodes (one line each, dates in git log)
 
