@@ -3033,6 +3033,50 @@ collab_state/collab_updates rows, then start the server.
   non-pass checks are known-transient (align it with ship.sh), or
   lengthen HEALTH_WAIT_SECONDS - owner to decide.
 
+## Item scroll, assistant memory, history limits (2026-09-03)
+
+- Item scroll persistence (`e1b38a8b`): a shell-level restore alone
+  cannot work. An item's scroller mounts short, GROWS its height over
+  many frames, and resets to 0 as it does, so the one set that appears
+  to succeed is undone (measured: the position only sticks if
+  re-applied for ~900ms). The restore HOLDS the target across a window
+  and yields on real input (wheel/pointer/key), with recording
+  suppressed meanwhile so the mount's own scroll-to-0 cannot clobber
+  the saved value. Keyed per post (read and edit share one surface),
+  persisted per workspace in localStorage (debounced off the scroll
+  path), so a reopen after a quit resumes too.
+- Per-view assistant memory ALREADY EXISTED (`0743a338`): conversations
+  are keyed by context (`item:<id>`, folder, workspace), persisted per
+  owner scope, and server-synced. What read as "the chat is forgotten"
+  was two other things: the reload churn fixed in `a8685d67` (the app
+  reloaded on nearly every swipe and reset the rail), and the
+  transcript's first paint - before the owner scope resolves the rail
+  has no messages and rendered the "Good evening" empty state over a
+  view that had a real discussion. The state boundary now reports
+  `hydrating`, and the rail holds one quiet line until the remembered
+  thread is read back. Do not "rebuild" this feature; test it instead.
+- History limits (`10ee2b3b`): 60 chats / 200 messages -> 500 / 2,000.
+  The DB check constraint had to move in step
+  (migrate-raise-assistant-history-limits.mjs): a payload the browser
+  considers legal was otherwise rejected by
+  `workspace_assistant_conversation_history_count <= 60` and
+  cross-device sync stopped converging SILENTLY (the sync action
+  swallows errors by design). Counts are now the coarse bound and
+  bytes the real one: sync already capped 16KB/message,
+  512KB/conversation, 4MB/workspace, but the browser's save enforced
+  counts only, so a big history would blow the origin quota, setItem
+  would throw, and persistence would degrade to memory with no signal.
+  saveWorkspace now serializes within a 3MB budget, shedding
+  tombstones then the oldest unpinned chats, retrying once at half the
+  budget. In-memory history is untouched, so nothing vanishes
+  mid-session.
+- Testing note: the workspace list is sorted by recency, so opening
+  "row index 0" twice does NOT reopen the same item - target rows by
+  `data-workspace-post-id`. And Enter on a folder-list row activates
+  its anchor natively, which is a FULL page load that resets all
+  client state; click the row's handler instead when testing
+  client-side navigation.
+
 ## Resolved episodes (one line each, dates in git log)
 
 - Apple consent screen "write app": appleid.apple.com caches its own copy;
