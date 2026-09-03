@@ -398,8 +398,18 @@ function runViewTransition(direction: "push" | "pop" | null, apply: () => void) 
     });
 }
 
-/** How far either side of the current entry snapshots are kept. */
-const NAV_SNAPSHOT_RADIUS = 8;
+/**
+ * How far either side of the current entry snapshots are kept - the depth at
+ * which a swipe still scrubs against a live picture of the destination.
+ * Navigation itself is NOT limited by this: past the window the gesture still
+ * commits, it just loses the interactive reveal.
+ *
+ * Measured on a production build: one snapshot of a 300-item workspace list is
+ * ~540 nodes / 48KB of markup, an opened item ~677 nodes / 122KB, and taking
+ * one costs 0.55ms. 15 each way is 31 clones, about 3.8MB of markup worst
+ * case, which is why this is the number rather than a smaller one.
+ */
+const NAV_SNAPSHOT_RADIUS = 15;
 
 /**
  * Re-apply the inner scroll offsets a snapshot recorded at capture time.
@@ -516,6 +526,11 @@ function LocalWorkspaceShell({
   // WebKit's swipe snapshot reads as a full page refresh.
   const contentScrollMemoryRef = useRef(new Map<string, number>());
   const scrollRestorePendingRef = useRef(false);
+  // True once a returning view is sitting at its remembered scroll position.
+  // The swipe waits on this before lifting its overlay: the restore lands
+  // after the first paint, so uncovering early shows the destination at the
+  // top and then jumping - which is the scrollbar "jumping into position".
+  const scrollSettledRef = useRef(true);
   const scrollMemorySeededRef = useRef(false);
   // Our position in the session's history, so the swipe drag knows whether a
   // back target (index > 0) or forward target (index < max) exists before it
@@ -581,6 +596,7 @@ function LocalWorkspaceShell({
   // sensible - the item's folder, then home - instead of doing nothing.
   const navigateUpRef = useRef<() => boolean>(() => false);
   const navigateUpAsBackRef = useRef<() => boolean>(() => false);
+  const navigateBackRef = useRef<() => boolean>(() => false);
   const hierarchyUpAvailableRef = useRef(false);
   const captureNavSnapshot = useCallback((index: number) => {
     if (suppressSnapshotCaptureRef.current) return;
@@ -1150,6 +1166,7 @@ function LocalWorkspaceShell({
   // short deadline passes.
   useLayoutEffect(() => {
     const key = viewScrollMemoryKey(view);
+    scrollSettledRef.current = true;
     if (!key) return;
     if (!scrollMemorySeededRef.current) {
       // Seed here, not only in the recording effect: a layout effect runs
@@ -1166,6 +1183,7 @@ function LocalWorkspaceShell({
     if (saved === undefined || saved <= 0) return;
     const content = contentRef.current;
     if (!content) return;
+    scrollSettledRef.current = false;
     // HOLD the target rather than setting it once. An item's scroller
     // (windowed editor, long reader) mounts short, grows its height over
     // many frames, and resets to 0 as it does - a single successful set is
@@ -1185,10 +1203,13 @@ function LocalWorkspaceShell({
       content.removeEventListener("pointerdown", release);
       window.removeEventListener("keydown", release);
       scrollRestorePendingRef.current = false;
+      // Whatever ended the hold, stop anything waiting on it.
+      scrollSettledRef.current = true;
     };
     const hold = () => {
       if (released) return;
       if (Math.abs(content.scrollTop - saved) > 1) content.scrollTop = saved;
+      else scrollSettledRef.current = true;
       if (performance.now() - started > holdMs) {
         release();
         return;
@@ -3190,10 +3211,26 @@ function LocalWorkspaceShell({
     return true;
   }, [homePath, persistNavTrail]);
 
+  // ONE way back. The swipe, Backspace and Escape all take this path, so
+  // there is a single behaviour to maintain rather than a gesture that walks
+  // history and keys that quietly push new entries instead. Walk the real
+  // trail whenever there is something behind us; only then fall back to the
+  // hierarchy, and even then as a real back step.
+  const navigateBack = useCallback(() => {
+    const index = readNavIndex() ?? navIndexRef.current;
+    if (index > 0) {
+      pendingTraversalRef.current = -1;
+      window.history.back();
+      return true;
+    }
+    return navigateUpAsBack();
+  }, [navigateUpAsBack]);
+
   useEffect(() => {
     navigateUpRef.current = navigateUp;
     navigateUpAsBackRef.current = navigateUpAsBack;
-  }, [navigateUp, navigateUpAsBack]);
+    navigateBackRef.current = navigateBack;
+  }, [navigateUp, navigateUpAsBack, navigateBack]);
 
   const escapeCurrent = useCallback(() => {
     const current = viewRef.current;
@@ -3201,13 +3238,16 @@ function LocalWorkspaceShell({
       current.level === "post" || current.level === "edit"
         ? findPoolPostById(displayPoolRef.current, current.postId)
         : null;
-    return applyNavigationTarget(
-      workspaceEscapeTarget(
-        current,
-        displayPoolRef.current.folders,
-        post?.type,
-      ),
+    const target = workspaceEscapeTarget(
+      current,
+      displayPoolRef.current.folders,
+      post?.type,
     );
+    // Leaving edit mode is not a history step; everything else is, and takes
+    // the same path as the swipe.
+    if (target.kind === "read") return applyNavigationTarget(target);
+    if (target.kind === "none") return false;
+    return navigateBackRef.current();
   }, [applyNavigationTarget]);
 
   useEffect(() => {
@@ -3557,6 +3597,22 @@ function LocalWorkspaceShell({
       tick();
     };
 
+    // Two things arrive late on a landing and read as a flash: images in a
+    // freshly mounted view have to decode (the bookmark card's picture
+    // "suddenly appearing"), and a remembered scroll position is applied
+    // after the first paint, so the view visibly jumps and the scrollbar
+    // snaps to size. The overlay already holds a picture of the destination,
+    // so keep showing THAT until the real one can take over unnoticed.
+    const destinationReady = (): boolean => {
+      const el = contentRef.current;
+      if (!el) return false;
+      if (!scrollSettledRef.current) return false;
+      for (const image of el.querySelectorAll("img")) {
+        if (!image.complete) return false;
+      }
+      return true;
+    };
+
     const finishDrag = (commit: boolean) => {
       if (!drag) return;
       const active = drag;
@@ -3599,12 +3655,7 @@ function LocalWorkspaceShell({
         // trail one real step per swipe.
         navAnimationSuppressed = true;
         suppressSnapshotCaptureRef.current = true;
-        if (active.upNavigate) {
-          navigateUpAsBackRef.current();
-        } else {
-          pendingTraversalRef.current = -1;
-          window.history.back();
-        }
+        navigateBackRef.current();
         settleGuards();
       }
 
@@ -3633,7 +3684,14 @@ function LocalWorkspaceShell({
           window.history.forward();
           settleGuards();
         }
-        fadeOutAndRemove(active.shell);
+        // Only hold when the overlay still SHOWS the destination. A back
+        // slide with no cached snapshot has nothing left but an empty panel
+        // once the clone is off-screen, so that one lifts straight away.
+        if (active.direction === "back" && !active.underlay) {
+          fadeOutAndRemove(active.shell);
+          return;
+        }
+        afterLanded(destinationReady, () => fadeOutAndRemove(active.shell));
       };
 
       const animation = mover.animate(
@@ -3710,9 +3768,12 @@ function LocalWorkspaceShell({
         if (passed) {
           navAnimationSuppressed = true;
           suppressSnapshotCaptureRef.current = true;
-          pendingTraversalRef.current = direction === "back" ? -1 : 1;
-          if (direction === "back") window.history.back();
-          else window.history.forward();
+          if (direction === "back") {
+            navigateBackRef.current();
+          } else {
+            pendingTraversalRef.current = 1;
+            window.history.forward();
+          }
           window.setTimeout(() => {
             suppressSnapshotCaptureRef.current = false;
             navAnimationSuppressed = false;
@@ -3936,7 +3997,10 @@ function LocalWorkspaceShell({
       reconcileCreatedPost,
       openFolder: navigateSection,
       navigateRoot,
-      navigateUp,
+      // Backspace goes BACK, the same way a swipe does. navigateUp stays for
+      // internal callers (after a delete, where returning to the deleted
+      // item would be wrong).
+      navigateUp: navigateBack,
       escapeCurrent,
       focusSearch,
       openSettings: navigateSettings,
@@ -3973,6 +4037,7 @@ function LocalWorkspaceShell({
       navigateSection,
       navigateSettings,
       navigateToNavTargetByIndex,
+      navigateBack,
       navigateUp,
       openCreatedPost,
       openSelected,

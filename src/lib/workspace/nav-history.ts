@@ -12,8 +12,12 @@
 // ordinary swipe walks the real trail again, no special cases downstream.
 
 const KEY_PREFIX = "texttext:nav-trail:";
-/** URLs are tiny; a few dozen steps is plenty and bounds the stored size. */
-const MAX_ENTRIES = 50;
+/**
+ * URLs are tiny (a long one is ~100 bytes), so depth here is nearly free and
+ * this is the number that decides how far back a relaunched app can walk.
+ * 200 steps is well under any storage concern and past what a session uses.
+ */
+const MAX_ENTRIES = 200;
 
 export type NavTrail = {
   /** Visited hrefs, indexed by ttNavIndex. */

@@ -70,12 +70,12 @@ describe("nav-history trail", () => {
 
   it("keeps the recent window and re-bases the index when the trail is long", () => {
     vi.stubGlobal("window", { localStorage: memoryStorage() });
-    const entries = Array.from({ length: 60 }, (_, i) => `/@s/${i}`);
-    writeNavTrail("/@s", { entries, index: 59 });
+    const entries = Array.from({ length: 260 }, (_, i) => `/@s/${i}`);
+    writeNavTrail("/@s", { entries, index: 259 });
     const back = readNavTrail("/@s");
-    expect(back?.entries.length).toBe(50);
+    expect(back?.entries.length).toBe(200);
     // The current entry is still addressed and is still the last one.
-    expect(back?.entries[back.index]).toBe("/@s/59");
+    expect(back?.entries[back.index]).toBe("/@s/259");
   });
 });
 

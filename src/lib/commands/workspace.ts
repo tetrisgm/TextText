@@ -395,7 +395,7 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
   },
   {
     id: "navigation.up",
-    label: "Go up one level",
+    label: "Go back",
     group: "Navigate",
     shortcut: { key: "Backspace", label: "Backspace", once: true },
     // Keep this available at home so Backspace is consumed instead of falling
