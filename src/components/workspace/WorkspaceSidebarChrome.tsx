@@ -55,6 +55,7 @@ import {
   WORKSPACE_SIDEBAR_COOKIE,
   WORKSPACE_SIDEBAR_COOKIE_MAX_AGE,
   WORKSPACE_SIDEBAR_STORAGE_KEY,
+  WORKSPACE_SIDEBAR_WIDTH_COOKIE,
   parseWorkspaceSidebarCollapsed,
 } from "@/lib/workspace-sidebar-state";
 import {
@@ -286,6 +287,11 @@ function applySidebarWidthVariable(width: number) {
   }
 }
 
+function writeSidebarWidthFactCookie(width: number) {
+  if (typeof document === "undefined") return;
+  document.cookie = `${WORKSPACE_SIDEBAR_WIDTH_COOKIE}=${Math.round(width)}; path=/; max-age=${WORKSPACE_SIDEBAR_COOKIE_MAX_AGE}; samesite=lax`;
+}
+
 function setWorkspaceSidebarWidth(next: number) {
   sidebarWidthMemory = clampSidebarWidth(next);
   if (typeof window !== "undefined") {
@@ -294,15 +300,21 @@ function setWorkspaceSidebarWidth(next: number) {
       String(sidebarWidthMemory),
     );
   }
+  writeSidebarWidthFactCookie(sidebarWidthMemory);
   for (const listener of sidebarWidthListeners) listener();
 }
 
-function useWorkspaceSidebarWidth() {
+export function useWorkspaceSidebarWidth(initialWidth?: number) {
   const width = useSyncExternalStore(
     subscribeSidebarWidth,
     readSidebarWidth,
-    () => WORKSPACE_SIDEBAR_DEFAULT_WIDTH,
+    () => initialWidth ?? WORKSPACE_SIDEBAR_DEFAULT_WIDTH,
   );
+  // Keep the first-paint fact cache current (localStorage predates the
+  // cookie for existing browsers).
+  useEffect(() => {
+    writeSidebarWidthFactCookie(width);
+  }, [width]);
   return { width, setWidth: setWorkspaceSidebarWidth };
 }
 

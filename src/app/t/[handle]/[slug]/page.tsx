@@ -66,6 +66,8 @@ import {
 import {
   WORKSPACE_SIDEBAR_COOKIE,
   parseWorkspaceSidebarCollapsed,
+  WORKSPACE_SIDEBAR_WIDTH_COOKIE,
+  parseWorkspaceSidebarWidth,
 } from "@/lib/workspace-sidebar-state";
 import { tenantFromHost } from "@/lib/tenants";
 import { documentCapabilityCookieName } from "@/lib/document-capability";
@@ -210,6 +212,9 @@ export async function PostPageForHandle({
     parseAssistantWidthCookie(
       cookieStore.get(WORKSPACE_ASSISTANT_WIDTH_COOKIE)?.value,
     ) ?? undefined;
+  const initialSidebarWidth = parseWorkspaceSidebarWidth(
+    cookieStore.get(WORKSPACE_SIDEBAR_WIDTH_COOKIE)?.value,
+  );
   const canEdit = access.canEdit;
   const editRequested = queryValue(query.edit) === "1";
   const editId = queryValue(query.id);
@@ -465,6 +470,7 @@ export async function PostPageForHandle({
           initialSidebarCollapsed={initialSidebarCollapsed}
           initialAssistantState={initialAssistantState}
           initialAssistantWidth={initialAssistantWidth}
+      initialSidebarWidth={initialSidebarWidth}
           initialPool={initialPool}
           initialPostDocument={initialPostDocument}
           post={shellPost}
@@ -557,6 +563,7 @@ export async function PostPageForHandle({
           initialSidebarCollapsed={initialSidebarCollapsed}
           initialAssistantState={initialAssistantState}
           initialAssistantWidth={initialAssistantWidth}
+      initialSidebarWidth={initialSidebarWidth}
           initialPool={initialPool}
           initialPostDocument={initialPostDocument}
           post={shellPost}

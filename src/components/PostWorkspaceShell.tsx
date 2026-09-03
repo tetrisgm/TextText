@@ -197,6 +197,8 @@ import {
   updateCachedDocumentBody,
 } from "@/lib/workspace/draft-sessions";
 import { registerWorkspaceRowCommands } from "@/lib/workspace/command-bus";
+import { buildIsStale } from "@/lib/deployed-build";
+import { useWorkspaceSidebarWidth } from "@/components/workspace/WorkspaceSidebarChrome";
 import {
   WORKSPACE_COMPACT_MEDIA_QUERY,
   WORKSPACE_SIDEBAR_DEFAULT_WIDTH,
@@ -410,6 +412,7 @@ function LocalWorkspaceShell({
   initialPool,
   initialSidebarCollapsed,
   initialAssistantState,
+  initialSidebarWidth,
   initialAssistantWidth,
   initialSearchQuery,
   initialView,
@@ -424,6 +427,7 @@ function LocalWorkspaceShell({
   initialPool: WorkspacePoolPayload;
   initialSidebarCollapsed: boolean;
   initialAssistantState?: AssistantSidebarState;
+  initialSidebarWidth?: number;
   initialAssistantWidth?: number;
   initialSearchQuery?: string;
   initialView: LocalWorkspaceView;
@@ -663,6 +667,8 @@ function LocalWorkspaceShell({
   >(null);
   const { state: assistantState, width: assistantWidth } =
     useWorkspaceAssistantPreferences(initialAssistantState, initialAssistantWidth);
+  const { width: workspaceSidebarWidth } =
+    useWorkspaceSidebarWidth(initialSidebarWidth);
   useSyncExternalStore(
     subscribeOpenWorkspaceItemDrafts,
     openWorkspaceItemDraftRevision,
@@ -945,6 +951,14 @@ function LocalWorkspaceShell({
         (nextView.level !== "edit" || nextView.postId !== previousView.postId)
       ) {
         window.dispatchEvent(new Event(STOP_LOCAL_EDITING_EVENT));
+      }
+      // A stale build turns this navigation into a full-page load of the
+      // target URL: the update arrives inside a repaint the person asked
+      // for anyway, instead of asking them to reload (or press Cmd+R).
+      // Editors flush pending saves on pagehide, so nothing is lost.
+      if (buildIsStale()) {
+        window.location.assign(href);
+        return;
       }
       captureNavSnapshot(navIndexRef.current);
       navIndexRef.current += 1;
@@ -3727,6 +3741,10 @@ function LocalWorkspaceShell({
       style={
         {
           "--workspace-assistant-width": `${assistantWidth}px`,
+          // First paint carries the dragged width; without it the server
+          // painted the stylesheet default and the whole content margin
+          // jumped when the client applied the real value on every reload.
+          "--workspace-sidebar-width": `${workspaceSidebarWidth}px`,
         } as CSSProperties
       }
     >
@@ -4077,6 +4095,7 @@ export function BlogHomeWorkspaceShell({
   initialSidebarCollapsed = false,
   initialAssistantState,
   initialAssistantWidth,
+  initialSidebarWidth,
   initialSearchQuery = "",
   initialSearchSource = "query",
   initialSettingsOpen = false,
@@ -4094,6 +4113,7 @@ export function BlogHomeWorkspaceShell({
   initialSidebarCollapsed?: boolean;
   initialAssistantState?: AssistantSidebarState;
   initialAssistantWidth?: number;
+  initialSidebarWidth?: number;
   initialSearchQuery?: string;
   initialSearchSource?: WorkspaceSearchLocation["source"];
   initialSettingsOpen?: boolean;
@@ -4124,6 +4144,7 @@ export function BlogHomeWorkspaceShell({
           initialSidebarCollapsed={initialSidebarCollapsed}
           initialAssistantState={initialAssistantState}
           initialAssistantWidth={initialAssistantWidth}
+          initialSidebarWidth={initialSidebarWidth}
           initialSearchQuery={initialSearchQuery}
           initialView={
             initialSettingsOpen
@@ -4194,6 +4215,7 @@ export function PostReadWorkspaceShell({
   initialSidebarCollapsed = false,
   initialAssistantState,
   initialAssistantWidth,
+  initialSidebarWidth,
   initialPool,
   initialPostDocument,
   initialMode = "read",
@@ -4212,6 +4234,7 @@ export function PostReadWorkspaceShell({
   initialSidebarCollapsed?: boolean;
   initialAssistantState?: AssistantSidebarState;
   initialAssistantWidth?: number;
+  initialSidebarWidth?: number;
   initialPool?: WorkspacePoolPayload | null;
   initialPostDocument?: WorkspaceInitialDocument | null;
   initialMode?: "read" | "edit";
@@ -4274,6 +4297,7 @@ export function PostReadWorkspaceShell({
           initialSidebarCollapsed={initialSidebarCollapsed}
           initialAssistantState={initialAssistantState}
           initialAssistantWidth={initialAssistantWidth}
+          initialSidebarWidth={initialSidebarWidth}
           initialView={
             post.id
               ? {

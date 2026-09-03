@@ -46,3 +46,18 @@ export function compareBuild(
   if (here === there) return { state: "current" };
   return { state: "stale", running: here, serving: there };
 }
+
+// Module-level staleness latch. UpdatedBuildNotice sets it the moment a
+// newer deployed build is detected; the workspace shell reads it so the next
+// NAVIGATION becomes a full-page load of the target URL - the update rides
+// inside a repaint the person asked for anyway, instead of asking them to
+// notice a refresh (or press Cmd+R) themselves.
+let staleLatch = false;
+
+export function markBuildStale(): void {
+  staleLatch = true;
+}
+
+export function buildIsStale(): boolean {
+  return staleLatch;
+}

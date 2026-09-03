@@ -80,6 +80,8 @@ import {
 import {
   WORKSPACE_SIDEBAR_COOKIE,
   parseWorkspaceSidebarCollapsed,
+  WORKSPACE_SIDEBAR_WIDTH_COOKIE,
+  parseWorkspaceSidebarWidth,
 } from "@/lib/workspace-sidebar-state";
 import {
   SHARED_FOLDER_PATH,
@@ -527,6 +529,9 @@ export async function BlogHomeForHandle({
     parseAssistantWidthCookie(
       cookieStore.get(WORKSPACE_ASSISTANT_WIDTH_COOKIE)?.value,
     ) ?? undefined;
+  const initialSidebarWidth = parseWorkspaceSidebarWidth(
+    cookieStore.get(WORKSPACE_SIDEBAR_WIDTH_COOKIE)?.value,
+  );
   if (redirectClaimed && blog.username) {
     const redirectParams = new URLSearchParams();
     for (const key of [
@@ -761,6 +766,7 @@ export async function BlogHomeForHandle({
       initialSidebarCollapsed={initialSidebarCollapsed}
       initialAssistantState={initialAssistantState}
       initialAssistantWidth={initialAssistantWidth}
+      initialSidebarWidth={initialSidebarWidth}
       initialSearchQuery={
         queryValue(query.date) ??
         queryValue(query.tag) ??

@@ -23,10 +23,12 @@ import {
   RUNNING_BUILD_ID,
   compareBuild,
   comparableBuild,
+  markBuildStale,
 } from "@/lib/deployed-build";
 
-/** Slow: this is a courtesy, not a heartbeat. */
-const CHECK_EVERY_MS = 10 * 60 * 1000;
+/** A tiny JSON fetch; frequent enough that a deploy reaches an app in
+ * constant use within a minute, not within a coffee break. */
+const CHECK_EVERY_MS = 60 * 1000;
 /** Hands-off this long counts as between-thoughts. */
 const IDLE_BEFORE_RELOAD_MS = 15 * 1000;
 
@@ -70,6 +72,10 @@ export function UpdatedBuildNotice() {
       const answer = await response.json();
       if (compareBuild(RUNNING_BUILD_ID, answer).state === "stale") {
         staleRef.current = true;
+        // The shell turns the next navigation into a full-page load of the
+        // new build; the idle/hidden reload below is the fallback for a
+        // window nobody navigates in.
+        markBuildStale();
         if (document.visibilityState === "hidden") reloadNow();
         else scheduleIdleReload();
       }
