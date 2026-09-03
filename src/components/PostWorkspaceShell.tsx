@@ -509,6 +509,38 @@ function LocalWorkspaceShell({
     if (rect.width < 1) return;
     const clone = content.cloneNode(true) as HTMLElement;
     clone.removeAttribute("id");
+    // The action bars are position:fixed. Live, they lay out against the
+    // viewport; inside a body-appended snapshot they lay out against the
+    // snapshot box (different math - the bar landed ~70px off and snapped
+    // at landing), and chrome hidden by shell-scoped CSS stops matching
+    // its selector and resurrects. Pin every bar to its exact live
+    // geometry at capture, and drop the ones that are not rendered live.
+    const CHROME_SELECTOR =
+      ".post-top-action-bar, .post-back-action-bar, .workspace-root-action-bar";
+    const liveBars = content.querySelectorAll<HTMLElement>(CHROME_SELECTOR);
+    const cloneBars = clone.querySelectorAll<HTMLElement>(CHROME_SELECTOR);
+    liveBars.forEach((live, i) => {
+      const copy = cloneBars[i];
+      if (!copy) return;
+      const barRect = live.getBoundingClientRect();
+      if (
+        barRect.width < 1 ||
+        getComputedStyle(live).display === "none"
+      ) {
+        copy.remove();
+        return;
+      }
+      copy.style.position = "absolute";
+      copy.style.left = `${barRect.left - rect.left}px`;
+      // The snapshot is a scrolled container; absolute children ride its
+      // scroll, so add the capture-time scrollTop to stay viewport-pinned.
+      copy.style.top = `${barRect.top - rect.top + content.scrollTop}px`;
+      copy.style.right = "auto";
+      copy.style.bottom = "auto";
+      copy.style.width = `${barRect.width}px`;
+      copy.style.margin = "0";
+      copy.style.transform = "none";
+    });
     const cache = navSnapshotsRef.current;
     cache.set(index, { clone, scrollTop: content.scrollTop });
     // Keep only the neighbourhood of the current index; document clones can
