@@ -87,6 +87,7 @@ export type CommandWorkspaceSurface = {
   openFolder: (folderPath: string) => void;
   navigateRoot: () => void;
   navigateUp: () => boolean;
+  navigateForward: () => boolean;
   escapeCurrent: () => boolean;
   focusSearch: () => void;
   openSettings: () => void;

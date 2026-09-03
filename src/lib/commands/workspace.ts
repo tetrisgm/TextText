@@ -394,6 +394,29 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     },
   },
   {
+    id: "navigation.forward",
+    label: "Go forward",
+    group: "Navigate",
+    // The Mac convention, and until now the swipe was the ONLY way forward:
+    // there was no key and no menu item, so a mouse could go back but never
+    // return. Bare [ and ] are previous/next post, so these take the meta.
+    shortcut: { key: "]", meta: true, label: "⌘]", once: true },
+    when: (ctx) => Boolean(ctx.workspace),
+    run: (ctx) => {
+      ctx.workspace?.navigateForward();
+    },
+  },
+  {
+    id: "navigation.back",
+    label: "Go back",
+    group: "Navigate",
+    shortcut: { key: "[", meta: true, label: "⌘[", once: true },
+    when: (ctx) => Boolean(ctx.workspace),
+    run: (ctx) => {
+      ctx.workspace?.navigateUp();
+    },
+  },
+  {
     id: "navigation.up",
     label: "Go back",
     group: "Navigate",

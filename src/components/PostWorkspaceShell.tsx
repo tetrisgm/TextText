@@ -201,8 +201,10 @@ import { buildIsStale } from "@/lib/deployed-build";
 import {
   readNavTrail,
   readScrollMemory,
+  readVisitLog,
   writeNavTrail,
   writeScrollMemory,
+  writeVisitLog,
 } from "@/lib/workspace/nav-history";
 import { useWorkspaceSidebarWidth } from "@/components/workspace/WorkspaceSidebarChrome";
 import {
@@ -398,6 +400,20 @@ function runViewTransition(direction: "push" | "pop" | null, apply: () => void) 
     });
 }
 
+/** The view a sidebar folder path opens, including the special collections. */
+function sectionViewFor(folderPath: SidebarFolderId): LocalWorkspaceView {
+  if (folderPath === TRASH_FOLDER_PATH) {
+    return { level: "trash", folderPath: TRASH_FOLDER_PATH };
+  }
+  if (folderPath === SHARED_FOLDER_PATH) {
+    return { level: "shared", folderPath: SHARED_FOLDER_PATH };
+  }
+  if (folderPath === STARRED_FOLDER_PATH) {
+    return { level: "starred", folderPath: STARRED_FOLDER_PATH };
+  }
+  return { level: "section", folderPath };
+}
+
 /**
  * How far either side of the current entry snapshots are kept - the depth at
  * which a swipe still scrubs against a live picture of the destination.
@@ -547,6 +563,12 @@ function LocalWorkspaceShell({
   // The visited-href trail, mirrored to localStorage so the back/forward
   // stack survives a full app quit and reopen (see lib/workspace/nav-history).
   const navTrailRef = useRef<string[]>([]);
+  // Every view actually landed on, in order. See lib/workspace/nav-history:
+  // this is what lets a back gesture keep retracing once the browser's own
+  // stack has run out, which is any session that branched.
+  const visitLogRef = useRef<string[]>([]);
+  const visitCursorRef = useRef(-1);
+  const suppressVisitRecordRef = useRef(false);
   const currentHref = () => window.location.pathname + window.location.search;
   // The traversal we asked for and are still waiting on, so a popstate whose
   // state has lost our index can still tell back from forward.
@@ -584,6 +606,30 @@ function LocalWorkspaceShell({
       }, delay);
     }
   };
+  const persistVisitLog = useCallback(() => {
+    writeVisitLog(homePath, {
+      entries: visitLogRef.current,
+      cursor: visitCursorRef.current,
+    });
+  }, [homePath]);
+  /**
+   * Note a landing. A back-walk through the log does NOT append - it moves
+   * the cursor instead, or every step backwards would add a new newest entry
+   * and the walk would never get anywhere.
+   */
+  const recordVisit = useCallback(
+    (href: string) => {
+      if (suppressVisitRecordRef.current) {
+        suppressVisitRecordRef.current = false;
+        return;
+      }
+      const entries = visitLogRef.current;
+      if (entries[entries.length - 1] !== href) entries.push(href);
+      visitCursorRef.current = entries.length - 1;
+      persistVisitLog();
+    },
+    [persistVisitLog],
+  );
   const persistNavTrail = useCallback(() => {
     writeNavTrail(homePath, {
       entries: navTrailRef.current,
@@ -604,6 +650,8 @@ function LocalWorkspaceShell({
   const navigateUpRef = useRef<() => boolean>(() => false);
   const navigateUpAsBackRef = useRef<() => boolean>(() => false);
   const navigateBackRef = useRef<() => boolean>(() => false);
+  const navigateForwardRef = useRef<() => boolean>(() => false);
+  const recordVisitRef = useRef<(href: string) => void>(() => {});
   const hierarchyUpAvailableRef = useRef(false);
   const captureNavSnapshot = useCallback((index: number) => {
     if (suppressSnapshotCaptureRef.current) return;
@@ -1098,6 +1146,11 @@ function LocalWorkspaceShell({
       navTrailRef.current = [here];
     }
     persistNavTrail();
+    // Pick the visit log back up where it left off, then note this landing.
+    const visits = readVisitLog(homePath);
+    visitLogRef.current = visits.entries;
+    visitCursorRef.current = visits.cursor;
+    recordVisit(here);
     const urlView = currentLocalView(displayPool, homePath);
     const current = viewRef.current;
     if (
@@ -1308,6 +1361,7 @@ function LocalWorkspaceShell({
       navTrailRef.current = navTrailRef.current.slice(0, navIndexRef.current);
       navTrailRef.current[navIndexRef.current] = href;
       persistNavTrail();
+      recordVisit(href);
       const previousDepth = localWorkspaceViewDepth(previousView);
       const nextDepth = localWorkspaceViewDepth(nextView);
       const direction =
@@ -1346,7 +1400,7 @@ function LocalWorkspaceShell({
         }
       });
     },
-    [itemIdentity],
+    [itemIdentity, persistNavTrail, recordVisit],
   );
 
   const replaceWithView = useCallback(
@@ -1481,14 +1535,7 @@ function LocalWorkspaceShell({
       );
       if (remembered) lastRootFolderPathRef.current = remembered;
       setSearchQuery("");
-      const nextView: LocalWorkspaceView =
-        folderPath === TRASH_FOLDER_PATH
-          ? { level: "trash", folderPath: TRASH_FOLDER_PATH }
-          : folderPath === SHARED_FOLDER_PATH
-            ? { level: "shared", folderPath: SHARED_FOLDER_PATH }
-            : folderPath === STARRED_FOLDER_PATH
-              ? { level: "starred", folderPath: STARRED_FOLDER_PATH }
-              : { level: "section", folderPath };
+      const nextView = sectionViewFor(folderPath);
       navigateToView(
         nextView,
         folderWorkspaceHref(homePath, folderPath),
@@ -3168,6 +3215,30 @@ function LocalWorkspaceShell({
     [navigateRoot, navigateSearch, navigateSection, stopEditing],
   );
 
+  const viewForNavigationTarget = useCallback(
+    (
+      target: ReturnType<typeof workspaceHierarchyUpTarget>,
+    ): { view: LocalWorkspaceView; href: string } | null => {
+      if (target.kind === "home") {
+        return { view: { level: "root" }, href: workspaceRootHref(homePath) };
+      }
+      if (target.kind === "folder") {
+        return {
+          view: sectionViewFor(target.folderPath),
+          href: folderWorkspaceHref(homePath, target.folderPath),
+        };
+      }
+      if (target.kind === "search") {
+        return {
+          view: { level: "search", query: target.query, source: target.source },
+          href: workspaceSearchHref(homePath, target),
+        };
+      }
+      return null;
+    },
+    [homePath],
+  );
+
   const navigateUp = useCallback(
     () =>
       applyNavigationTarget(
@@ -3187,42 +3258,76 @@ function LocalWorkspaceShell({
   // the missing entry instead: rewrite index 0 as the parent, push the view we
   // are on as index 1, then go back. The result is a real back step whose
   // forward direction returns exactly where we came from.
+  /**
+   * Manufacture the missing back step: rewrite this entry as `target`, push
+   * where we are on top of it, then traverse. The result is a real back step
+   * whose forward direction returns here.
+   *
+   * The traversal MUST be deferred. Measured in WebKit: a back() or go(-1)
+   * issued in the SAME task as the pushState is silently dropped - the URL
+   * simply stays put - and one frame later it lands every time (0ms fails,
+   * 16ms and up all succeed).
+   */
+  const manufactureBackTo = useCallback(
+    (target: string) => {
+      const here = currentHref();
+      window.history.replaceState(
+        { ...(window.history.state ?? {}), ttNavIndex: 0 },
+        "",
+        target,
+      );
+      window.history.pushState({ ttNavIndex: 1 }, "", here);
+      navIndexRef.current = 1;
+      navMaxRef.current = 1;
+      navTrailRef.current = [target, here];
+      persistNavTrail();
+      pendingTraversalRef.current = -1;
+      window.requestAnimationFrame(() =>
+        window.requestAnimationFrame(() => window.history.back()),
+      );
+    },
+    [persistNavTrail],
+  );
+
   const navigateUpAsBack = useCallback(() => {
     const target = workspaceHierarchyUpTarget(
       viewRef.current,
       displayPoolRef.current.folders,
     );
-    const parentHref =
-      target.kind === "home"
-        ? workspaceRootHref(homePath)
-        : target.kind === "folder"
-          ? folderWorkspaceHref(homePath, target.folderPath)
-          : target.kind === "search"
-            ? workspaceSearchHref(homePath, target)
-            : null;
+    const parentHref = viewForNavigationTarget(target)?.href ?? null;
     if (!parentHref) return false;
-    const here = currentHref();
-    if (parentHref === here) return false;
-    window.history.replaceState(
-      { ...(window.history.state ?? {}), ttNavIndex: 0 },
-      "",
-      parentHref,
-    );
-    window.history.pushState({ ttNavIndex: 1 }, "", here);
-    navIndexRef.current = 1;
-    navMaxRef.current = 1;
-    navTrailRef.current = [parentHref, here];
-    persistNavTrail();
-    pendingTraversalRef.current = -1;
-    window.history.back();
+    if (parentHref === currentHref()) return false;
+    manufactureBackTo(parentHref);
     return true;
-  }, [homePath, persistNavTrail]);
+  }, [manufactureBackTo, viewForNavigationTarget]);
 
   // ONE way back. The swipe, Backspace and Escape all take this path, so
   // there is a single behaviour to maintain rather than a gesture that walks
   // history and keys that quietly push new entries instead. Walk the real
   // trail whenever there is something behind us; only then fall back to the
   // hierarchy, and even then as a real back step.
+  /**
+   * Step back through views actually visited, for when the browser's own
+   * stack has nothing left: after a relaunch, or after a branch (open A,
+   * back, open B, back - the entry for A is gone from the stack, but you
+   * were just looking at it). Manufactures the missing entry the same way
+   * navigateUpAsBack does, so it is a real back step and forward returns.
+   */
+  const visitBack = useCallback(() => {
+    const entries = visitLogRef.current;
+    const here = currentHref();
+    let index = Math.min(visitCursorRef.current, entries.length - 1);
+    while (index >= 0 && entries[index] === here) index -= 1;
+    if (index < 0) return false;
+    const target = entries[index];
+    visitCursorRef.current = index;
+    persistVisitLog();
+    // The landing is a step WITHIN the log, not a new place seen.
+    suppressVisitRecordRef.current = true;
+    manufactureBackTo(target);
+    return true;
+  }, [manufactureBackTo, persistVisitLog]);
+
   const navigateBack = useCallback(() => {
     const index = readNavIndex() ?? navIndexRef.current;
     if (index > 0) {
@@ -3230,14 +3335,29 @@ function LocalWorkspaceShell({
       window.history.back();
       return true;
     }
+    // Nothing behind us in this session's stack: retrace what was actually
+    // visited before falling back to the hierarchy.
+    if (visitBack()) return true;
     return navigateUpAsBack();
-  }, [navigateUpAsBack]);
+  }, [navigateUpAsBack, visitBack]);
+
+  // The forward counterpart. There is no hierarchy fallback for forward:
+  // either the trail has somewhere to go or the gesture/key does nothing.
+  const navigateForward = useCallback(() => {
+    const index = readNavIndex() ?? navIndexRef.current;
+    if (index >= navMaxRef.current) return false;
+    pendingTraversalRef.current = 1;
+    window.history.forward();
+    return true;
+  }, []);
 
   useEffect(() => {
     navigateUpRef.current = navigateUp;
     navigateUpAsBackRef.current = navigateUpAsBack;
     navigateBackRef.current = navigateBack;
-  }, [navigateUp, navigateUpAsBack, navigateBack]);
+    navigateForwardRef.current = navigateForward;
+    recordVisitRef.current = recordVisit;
+  }, [navigateUp, navigateUpAsBack, navigateBack, navigateForward, recordVisit]);
 
   const escapeCurrent = useCallback(() => {
     const current = viewRef.current;
@@ -3321,6 +3441,7 @@ function LocalWorkspaceShell({
         navTrailRef.current[landedIndex] = currentHref();
         persistNavTrail();
       }
+      recordVisitRef.current(currentHref());
       const nextView = currentLocalView(displayPool, homePath);
       // History traversal into an item must hold the current view until the
       // document is local, exactly like a click-open: switching immediately
@@ -3687,8 +3808,7 @@ function LocalWorkspaceShell({
         if (active.direction === "forward") {
           navAnimationSuppressed = true;
           suppressSnapshotCaptureRef.current = true;
-          pendingTraversalRef.current = 1;
-          window.history.forward();
+          navigateForwardRef.current();
           settleGuards();
         }
         // Only hold when the overlay still SHOWS the destination. A back
@@ -3778,8 +3898,7 @@ function LocalWorkspaceShell({
           if (direction === "back") {
             navigateBackRef.current();
           } else {
-            pendingTraversalRef.current = 1;
-            window.history.forward();
+            navigateForwardRef.current();
           }
           window.setTimeout(() => {
             suppressSnapshotCaptureRef.current = false;
@@ -3804,11 +3923,20 @@ function LocalWorkspaceShell({
     };
 
     (window as { __ttNavSwipe?: typeof bridge }).__ttNavSwipe = bridge;
+    // The Mac shell's History menu calls this. It is the same one way back
+    // and forward the gesture and the keys use, so the menu can never drift
+    // into a fourth behaviour.
+    const go = (direction: "back" | "forward"): boolean =>
+      direction === "back"
+        ? navigateBackRef.current()
+        : navigateForwardRef.current();
+    (window as { __ttNavGo?: typeof go }).__ttNavGo = go;
     return () => {
       window.removeEventListener("pointermove", onPointer);
       window.clearTimeout(holdTimer);
       window.clearTimeout(staleReloadTimer);
       delete (window as { __ttNavSwipe?: typeof bridge }).__ttNavSwipe;
+      delete (window as { __ttNavGo?: typeof go }).__ttNavGo;
       if (drag) {
         restoreRealStyles(drag.real);
         drag.shell.remove();
@@ -4008,6 +4136,7 @@ function LocalWorkspaceShell({
       // internal callers (after a delete, where returning to the deleted
       // item would be wrong).
       navigateUp: navigateBack,
+      navigateForward,
       escapeCurrent,
       focusSearch,
       openSettings: navigateSettings,
@@ -4022,7 +4151,22 @@ function LocalWorkspaceShell({
           (view.level === "post" || view.level === "edit") &&
           view.postId === postId
         ) {
-          navigateUp();
+          // REPLACE rather than push. Pushing left the deleted item as the
+          // entry behind us, so one step back landed on a document that no
+          // longer exists.
+          const resolved = viewForNavigationTarget(
+            workspaceHierarchyUpTarget(
+              viewRef.current,
+              displayPoolRef.current.folders,
+            ),
+          );
+          if (resolved) {
+            replaceWithView(resolved.view, resolved.href, {
+              selectedPostId: null,
+            });
+          } else {
+            navigateUp();
+          }
         }
       },
       startBookmarkCreate: () => {
@@ -4045,7 +4189,10 @@ function LocalWorkspaceShell({
       navigateSettings,
       navigateToNavTargetByIndex,
       navigateBack,
+      navigateForward,
       navigateUp,
+      viewForNavigationTarget,
+      replaceWithView,
       openCreatedPost,
       openSelected,
       openItemByIndex,

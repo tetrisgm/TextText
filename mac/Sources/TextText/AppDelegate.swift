@@ -2692,6 +2692,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
     @objc private func reloadWebWindowAction() { webWindow?.reloadFromOrigin() }
 
+    @objc private func goBackAction() { webWindow?.navigateHistory("back") }
+
+    @objc private func goForwardAction() { webWindow?.navigateHistory("forward") }
+
     @objc private func checkUpdates() {
         guard let updater else { return } // dev build: the menu item is hidden anyway
         NSApp.activate(ignoringOtherApps: true) // Sparkle's alert needs a frontmost app
@@ -2947,6 +2951,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         viewItem.submenu = view
         let reload = view.addItem(withTitle: "Reload", action: #selector(reloadWebWindowAction), keyEquivalent: "r")
         reload.target = self
+
+        // Until now the trackpad swipe was the only way forward: no key, no
+        // menu item. A mouse could go back but never return.
+        let historyItem = NSMenuItem(title: "History", action: nil, keyEquivalent: "")
+        main.addItem(historyItem)
+        let history = NSMenu(title: "History")
+        historyItem.submenu = history
+        let back = history.addItem(withTitle: "Back", action: #selector(goBackAction), keyEquivalent: "[")
+        back.target = self
+        let forward = history.addItem(withTitle: "Forward", action: #selector(goForwardAction), keyEquivalent: "]")
+        forward.target = self
 
         let windowItem = NSMenuItem(title: "Window", action: nil, keyEquivalent: "")
         main.addItem(windowItem)

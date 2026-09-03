@@ -682,6 +682,16 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         webView.reloadFromOrigin()
     }
 
+    /// History menu Back/Forward. This goes through the SAME one way back and
+    /// forward the swipe and the keys use, so the menu cannot drift into its
+    /// own behaviour. WKWebView's own goBack() would bypass all of it.
+    func navigateHistory(_ direction: String) {
+        webView.evaluateJavaScript(
+            "window.__ttNavGo && window.__ttNavGo('\(direction)')",
+            completionHandler: nil
+        )
+    }
+
     private func isInApp(_ url: URL) -> Bool {
         guard let host = url.host?.lowercased() else { return false }
         return host == origin.host?.lowercased()

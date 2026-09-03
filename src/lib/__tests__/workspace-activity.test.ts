@@ -191,3 +191,42 @@ describe("workspace activity", () => {
     ).toEqual(["notes", "blog"]);
   });
 });
+
+describe("recently opened does not move on background edits", () => {
+  const post = (
+    id: string,
+    createdAt: string,
+    updatedAt: string,
+  ): WorkspacePoolPost =>
+    ({
+      id,
+      slug: id,
+      title: id,
+      type: "note",
+      date: createdAt,
+      createdAt,
+      updatedAt,
+    }) as unknown as WorkspacePoolPost;
+
+  it("holds unopened documents still when one is edited elsewhere", () => {
+    const a = post("a", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z");
+    const b = post("b", "2026-01-02T00:00:00Z", "2026-01-02T00:00:00Z");
+    const before = sortSidebarDocuments([a, b], "recent", {}).map((p) => p.id);
+    // A sync from another device touches the older document's updatedAt.
+    const aEdited = post("a", "2026-01-01T00:00:00Z", "2026-06-01T00:00:00Z");
+    const after = sortSidebarDocuments([aEdited, b], "recent", {}).map(
+      (p) => p.id,
+    );
+    expect(after).toEqual(before);
+  });
+
+  it("still puts what you actually opened first", () => {
+    const a = post("a", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z");
+    const b = post("b", "2026-01-02T00:00:00Z", "2026-01-02T00:00:00Z");
+    expect(
+      sortSidebarDocuments([a, b], "recent", { a: Date.now() }).map(
+        (p) => p.id,
+      ),
+    ).toEqual(["a", "b"]);
+  });
+});

@@ -147,8 +147,17 @@ export function sortSidebarDocuments(
     return next.sort((a, b) => {
       const openDelta = (openHistory[b.id] ?? 0) - (openHistory[a.id] ?? 0);
       if (openDelta !== 0) return openDelta;
+      // Break ties on CREATION time, not update time. Anything the person
+      // has actually opened carries an open record, so the tiebreak only
+      // ever orders documents they have not opened - and using updatedAt
+      // there meant a background write (a sync from another device, a
+      // bookmark capture finishing, an agent edit) silently jumped a
+      // document to the top of a list labelled "Recently opened", with no
+      // one having opened anything. Creation time cannot move, so the
+      // unopened group holds still, and a newly created item still lands at
+      // the top of it. "Last edited" is the sort that follows updates.
       return (
-        timestamp(b.updatedAt ?? b.date) - timestamp(a.updatedAt ?? a.date)
+        timestamp(b.createdAt ?? b.date) - timestamp(a.createdAt ?? a.date)
       );
     });
   }

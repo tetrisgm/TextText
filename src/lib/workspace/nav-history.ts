@@ -133,3 +133,64 @@ export function writeScrollMemory(
     /* private mode or quota: scroll memory is a convenience */
   }
 }
+
+// The visit log: every view the person actually landed on, in order, append
+// only. This is NOT the back-stack. The browser's stack truncates the forward
+// entries every time you go somewhere new, so open A, back, open B, back
+// leaves nothing behind you even though you looked at A a moment ago. The log
+// remembers that, and a back gesture falls through to it once the real stack
+// is exhausted, which is what makes a branching session retraceable.
+const VISIT_PREFIX = "texttext:visit-log:";
+/** Hrefs are small; this is a long session's worth without being unbounded. */
+const MAX_VISITS = 300;
+
+export type VisitLog = {
+  /** Landed hrefs in the order they were visited, oldest first. */
+  entries: string[];
+  /** Where a back-walk has reached; the end of the list when idle. */
+  cursor: number;
+};
+
+export function readVisitLog(scope: string): VisitLog {
+  try {
+    const raw = window.localStorage.getItem(`${VISIT_PREFIX}${scope}`);
+    if (!raw) return { entries: [], cursor: -1 };
+    const parsed = JSON.parse(raw) as Partial<VisitLog>;
+    if (!parsed || !Array.isArray(parsed.entries)) return { entries: [], cursor: -1 };
+    const entries: string[] = [];
+    for (let i = 0; i < parsed.entries.length; i += 1) {
+      const entry = parsed.entries[i];
+      if (typeof entry !== "string") return { entries: [], cursor: -1 };
+      entries.push(entry);
+    }
+    const cursor =
+      typeof parsed.cursor === "number" &&
+      parsed.cursor >= -1 &&
+      parsed.cursor < entries.length
+        ? parsed.cursor
+        : entries.length - 1;
+    return { entries, cursor };
+  } catch {
+    return { entries: [], cursor: -1 };
+  }
+}
+
+export function writeVisitLog(scope: string, log: VisitLog): void {
+  try {
+    let { entries, cursor } = log;
+    for (let i = 0; i < entries.length; i += 1) {
+      if (typeof entries[i] !== "string") return;
+    }
+    if (entries.length > MAX_VISITS) {
+      const drop = entries.length - MAX_VISITS;
+      entries = entries.slice(drop);
+      cursor = Math.max(-1, cursor - drop);
+    }
+    window.localStorage.setItem(
+      `${VISIT_PREFIX}${scope}`,
+      JSON.stringify({ entries, cursor }),
+    );
+  } catch {
+    /* private mode or quota: the visit log is a convenience */
+  }
+}

@@ -3192,6 +3192,49 @@ collab_state/collab_updates rows, then start the server.
   every frame past the slide is 0% changed, including the frame the
   overlay lifts on. A flash shows as a late spike.
 
+## Forward affordances, the visit log, and a WebKit traversal trap (2026-09-03)
+
+- **WebKit DROPS a history traversal issued in the same task as a
+  `pushState`.** Measured directly: `replaceState` + `pushState` +
+  `history.back()` in one synchronous block leaves the URL exactly where
+  it was, no error; deferring the traversal by a single frame lands it
+  every time (0ms fails, 16/50/120/250ms all succeed, and `history.go(-1)`
+  behaves identically). `manufactureBackTo` therefore defers through two
+  rAFs. `navigateUpAsBack` had shipped with the same-task form and worked
+  only by timing luck. If a manufactured back step ever "does nothing",
+  this is why.
+- **Forward now has affordances.** Until this change the trackpad swipe
+  was the ONLY way forward: no key, no menu item, so a mouse could go
+  back but never return. `Cmd+[` / `Cmd+]` are bound in the web command
+  set (bare `[`/`]` are previous/next post), and the Mac shell has a
+  History menu whose Back and Forward call `window.__ttNavGo`, the same
+  one way back and forward everything else uses. WKWebView's own
+  `goBack()` would bypass all of it, so do not reach for it.
+- **The visit log is not the back-stack.** The browser truncates the
+  forward entries every time you go somewhere new, so open A, back, open
+  B, back leaves nothing behind you even though you were just looking at
+  A. `lib/workspace/nav-history` keeps an append-only log of landed
+  hrefs (cap 300, persisted per workspace) and `navigateBack` falls
+  through to it once the real stack is exhausted, manufacturing a real
+  back step each time. Verified: after that branch, back retraces
+  notes -> root -> blog -> root and forward returns. A back-walk moves
+  the cursor and does NOT append, or every step would add a new newest
+  entry and the walk would never move.
+- **"Recently opened" tie-broke on `updatedAt`, so background writes
+  reordered it.** Anything the person has opened carries an open record,
+  so the tiebreak only ever orders documents they have NOT opened - and
+  a sync from another device, a bookmark capture finishing, or an agent
+  edit would silently jump one to the top of a list labelled by open
+  time, with nobody having opened anything (owner, 2026-09-03). It now
+  breaks ties on `createdAt`, which cannot move, so the unopened group
+  holds still and a newly created item still lands at the top of it.
+  "Last edited" is the sort that follows updates.
+- **Deleting the open item used to leave it behind you.** `afterDelete`
+  called `navigateUp`, which pushes, so one step back landed on a
+  document that no longer exists. It now REPLACES the entry. Not
+  exercised end to end - the create shortcut did not open an item in the
+  headless harness - so confirm it by hand if you are in this code.
+
 ## Resolved episodes (one line each, dates in git log)
 
 - Apple consent screen "write app": appleid.apple.com caches its own copy;
