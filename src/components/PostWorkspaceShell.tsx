@@ -3202,6 +3202,11 @@ function LocalWorkspaceShell({
               suppressSnapshotCaptureRef.current = false;
               navAnimationSuppressed = false;
               traversalPending = false;
+              // The swipe has fully settled at its destination URL; if a
+              // newer build is waiting, take it now - swipes never pass
+              // through navigateToView, so without this a person who
+              // navigates by trackpad never receives an update.
+              if (buildIsStale()) window.location.reload();
             },
           );
         } else {
@@ -3221,6 +3226,7 @@ function LocalWorkspaceShell({
               suppressSnapshotCaptureRef.current = false;
               navAnimationSuppressed = false;
               traversalPending = false;
+              if (buildIsStale()) window.location.reload();
             },
           );
         }
