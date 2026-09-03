@@ -1,6 +1,13 @@
 "use client";
 
 import {
+  getWorkspaceSelection,
+  setWorkspaceSelection,
+  subscribeWorkspaceSelection,
+  useWorkspacePostSelection,
+  type WorkspaceSelectionState,
+} from "@/lib/workspace/selection-store";
+import {
   memo,
   useCallback,
   useEffect,
@@ -68,6 +75,11 @@ import {
   WorkspaceItemStar,
 } from "@/components/workspace/WorkspaceItemActions";
 import { WorkspaceItemThumbnail } from "@/components/workspace/WorkspaceItemThumbnail";
+import {
+  WorkspacePostOption,
+  domSafeId,
+  itemPreview,
+} from "@/components/workspace/WorkspacePostOption";
 import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
 
 const ItemTypeStudio = dynamic(() =>
@@ -592,9 +604,6 @@ function spatialNeighbor(
   return best?.element ?? current;
 }
 
-function domSafeId(value: string): string {
-  return value.replace(/[^a-zA-Z0-9_-]+/g, "_");
-}
 
 function readDocumentCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
@@ -2459,116 +2468,7 @@ function WorkspaceRootSearchActionBar({ children }: { children: ReactNode }) {
   );
 }
 
-function itemPreview(post: { excerpt?: string; bodyPreview?: string }): string {
-  return plainTextExcerpt(post.excerpt) || plainTextExcerpt(post.bodyPreview);
-}
 
-// memo: list rows are the widest fan-out in the shell - every selection
-// move or unrelated shell state change re-rendered every row. With stable
-// props (pool post identity, shell-level useCallback handlers) only the rows
-// whose active/selected actually changed re-render.
-const WorkspacePostOption = memo(function WorkspacePostOption({
-  active,
-  blog,
-  folderPath,
-  handle,
-  onDeletePost,
-  onItemClick,
-  onOpen,
-  onOpenTag,
-  onSelect,
-  owner,
-  post,
-  selected,
-  showUpdatedAt = false,
-}: {
-  active: boolean;
-  blog: Blog;
-  folderPath: string;
-  handle: string;
-  onDeletePost?: FolderDeleteItem;
-  onItemClick: (postId: string, event: ReactMouseEvent<HTMLElement>) => boolean;
-  onOpen: (postId: string) => void;
-  onOpenTag?: (tag: string) => void;
-  onSelect: (postId: string) => void;
-  owner: boolean;
-  post: WorkspacePoolPost;
-  selected: boolean;
-  showUpdatedAt?: boolean;
-}) {
-  return (
-    <div
-      id={`workspace-root-post-${domSafeId(post.id)}`}
-      className={`workspace-item-option${selected ? " is-command-selected" : ""}`}
-      data-workspace-post-id={post.id}
-      role="option"
-      aria-selected={selected}
-      tabIndex={active ? 0 : -1}
-      title={showUpdatedAt ? sidebarDocumentTitle(post) : undefined}
-      onFocus={() => {
-        onSelect(post.id);
-        prefetchPostDocument(post.id);
-      }}
-      onPointerEnter={() => prefetchPostDocument(post.id)}
-      onPointerMove={updateSpatialCardTilt}
-      onPointerLeave={resetSpatialCardTilt}
-    >
-      <WorkspaceItemStar
-        handle={handle}
-        owner={owner}
-        post={postFromPoolPost(post)}
-      />
-      <button
-        type="button"
-        className="workspace-item-option-main"
-        onMouseDown={(event) => {
-          if (shouldSuppressNativeItemSelection(event)) event.preventDefault();
-        }}
-        onClick={(event) => {
-          if (onItemClick(post.id, event)) onOpen(post.id);
-        }}
-      >
-        <WorkspaceItemThumbnail post={post} />
-        <span className="workspace-item-option-copy">
-          <strong>{sidebarDocumentTitle(post)}</strong>
-          {/* The icon already says what kind of item this is, so the row
-              carries the title and whatever the document actually says. The
-              preview is prose, not Markdown: a document that opens with a
-              heading or a code fence used to put ## and ``` on the card. */}
-          {itemPreview(post) && (
-            <span className="workspace-item-option-detail">
-              <small>{itemPreview(post)}</small>
-            </span>
-          )}
-        </span>
-        {showUpdatedAt && (
-          <time>
-            {post.updatedAt
-              ? new Intl.DateTimeFormat(undefined, {
-                  day: "numeric",
-                  month: "short",
-                }).format(new Date(post.updatedAt))
-              : ""}
-          </time>
-        )}
-      </button>
-      <TagChips
-        blog={blog}
-        className="workspace-item-option-tags"
-        onOpenTag={onOpenTag}
-        tags={post.tags}
-      />
-      <WorkspaceItemActions
-        blog={blog}
-        handle={handle}
-        href={blogWorkspacePostPath(blog, folderPath, post)}
-        onDeletePost={onDeletePost}
-        owner={owner}
-        post={postFromPoolPost(post)}
-      />
-    </div>
-  );
-});
 
 function WorkspaceRootLanding({
   canManageItems,
@@ -2926,13 +2826,11 @@ function WorkspaceRootLanding({
               ) : (
                 tagPosts.map((post) => (
                   <WorkspacePostOption
-                    active={selectedPostId === post.id}
                     key={post.id}
                     blog={pool.blog}
                     folderPath={folderPathForPoolPost(pool, post)}
                     handle={pool.blog.handle}
                     post={post}
-                    selected={selectedPostIds.has(post.id)}
                     onDeletePost={onDeletePost}
                     onItemClick={onItemClick}
                     onOpen={onOpenPost}
@@ -2967,13 +2865,11 @@ function WorkspaceRootLanding({
                     <div className="workspace-recent-list">
                       {dateActivity.created.map((post) => (
                         <WorkspacePostOption
-                          active={selectedPostId === post.id}
                           key={post.id}
                           blog={pool.blog}
                           folderPath={folderPathForPoolPost(pool, post)}
                           handle={pool.blog.handle}
                           post={post}
-                          selected={selectedPostIds.has(post.id)}
                           onDeletePost={onDeletePost}
                           onItemClick={onItemClick}
                           onOpen={onOpenPost}
@@ -2991,13 +2887,11 @@ function WorkspaceRootLanding({
                     <div className="workspace-recent-list">
                       {dateActivity.edited.map((post) => (
                         <WorkspacePostOption
-                          active={selectedPostId === post.id}
                           key={post.id}
                           blog={pool.blog}
                           folderPath={folderPathForPoolPost(pool, post)}
                           handle={pool.blog.handle}
                           post={post}
-                          selected={selectedPostIds.has(post.id)}
                           onDeletePost={onDeletePost}
                           onItemClick={onItemClick}
                           onOpen={onOpenPost}
@@ -3031,13 +2925,11 @@ function WorkspaceRootLanding({
                     if (!post) return null;
                     return (
                       <WorkspacePostOption
-                        active={selectedPostId === post.id}
                         key={result.id}
                         blog={pool.blog}
                         folderPath={folderPathForPoolPost(pool, post)}
                         handle={pool.blog.handle}
                         post={post}
-                        selected={selectedPostIds.has(post.id)}
                         onDeletePost={onDeletePost}
                         onItemClick={onItemClick}
                         onOpen={onOpenPost}
@@ -3249,13 +3141,11 @@ function WorkspaceRootLanding({
                 <div className="workspace-recent-list" role="listbox">
                   {recent.map((post) => (
                     <WorkspacePostOption
-                      active={selectedPostId === post.id}
                       key={post.id}
                       blog={pool.blog}
                       folderPath={folderPathForPoolPost(pool, post)}
                       handle={pool.blog.handle}
                       post={post}
-                      selected={selectedPostIds.has(post.id)}
                       showUpdatedAt
                       onDeletePost={onDeletePost}
                       onItemClick={onItemClick}
@@ -3563,13 +3453,11 @@ function StarredPage({
         >
           {posts.map((post) => (
             <WorkspacePostOption
-              active={selectedPostId === post.id}
               key={post.id}
               blog={pool.blog}
               folderPath={folderPathForPoolPost(pool, post)}
               handle={pool.blog.handle}
               post={post}
-              selected={selectedPostIds.has(post.id)}
               showUpdatedAt
               onDeletePost={onDeletePost}
               onItemClick={onItemClick}
@@ -4528,11 +4416,55 @@ function LocalWorkspaceShell({
   const mounted = typeof window !== "undefined";
   const viewRef = useRef(view);
   const initialSelectedPostId = selectedPostIdForView(initialPool, initialView);
-  const [selectedPostId, setSelectedPostId] = useState<string | null>(
-    initialSelectedPostId,
+  // Selection lives in the module store (see selection-store.ts) so writers
+  // do not re-render this whole component. The shell still subscribes for
+  // now; leaf components carry their own subscriptions.
+  const [] = useState(() => {
+    if (typeof window !== "undefined") {
+      setWorkspaceSelection({
+        activeId: initialSelectedPostId,
+        anchorId: initialSelectedPostId,
+        ids: new Set(initialSelectedPostId ? [initialSelectedPostId] : []),
+      });
+    }
+    return null;
+  });
+  const serverSelection = useMemo<WorkspaceSelectionState>(
+    () => ({
+      activeId: initialSelectedPostId,
+      anchorId: initialSelectedPostId,
+      ids: new Set(initialSelectedPostId ? [initialSelectedPostId] : []),
+    }),
+    [initialSelectedPostId],
   );
-  const [selectedPostIds, setSelectedPostIds] = useState<Set<string>>(
-    () => new Set(initialSelectedPostId ? [initialSelectedPostId] : []),
+  const workspaceSelection = useSyncExternalStore(
+    subscribeWorkspaceSelection,
+    getWorkspaceSelection,
+    () => serverSelection,
+  );
+  const selectedPostId = workspaceSelection.activeId;
+  const selectedPostIds = workspaceSelection.ids as Set<string>;
+  const setSelectedPostId = useCallback(
+    (
+      next: string | null | ((current: string | null) => string | null),
+    ) => {
+      const value =
+        typeof next === "function"
+          ? next(getWorkspaceSelection().activeId)
+          : next;
+      setWorkspaceSelection({ activeId: value });
+    },
+    [],
+  );
+  const setSelectedPostIds = useCallback(
+    (next: Set<string> | ((current: Set<string>) => Set<string>)) => {
+      const value =
+        typeof next === "function"
+          ? next(new Set(getWorkspaceSelection().ids))
+          : next;
+      setWorkspaceSelection({ ids: value });
+    },
+    [],
   );
   const [activeRegion, setActiveRegion] =
     useState<WorkspaceActiveRegion>("body");
@@ -4543,7 +4475,7 @@ function LocalWorkspaceShell({
   const lastSidebarPathRef = useRef<string>(
     "folderPath" in initialView ? initialView.folderPath : "",
   );
-  const selectionAnchorPostIdRef = useRef<string | null>(initialSelectedPostId);
+
   const [marqueeRectangle, setMarqueeRectangle] =
     useState<SelectionRectangle | null>(null);
   const [leftEdgePeeking, setLeftEdgePeeking] = useState(false);
@@ -4689,7 +4621,7 @@ function LocalWorkspaceShell({
       anchorId: string | null;
       selectedIds: Set<string>;
     }) => {
-      selectionAnchorPostIdRef.current = anchorId;
+      setWorkspaceSelection({ anchorId: anchorId });
       setSelectedPostId(activeId);
       setSelectedPostIds(selectedIds);
       if (activeId) {
@@ -4702,7 +4634,7 @@ function LocalWorkspaceShell({
   );
 
   const selectOnlyPost = useCallback((postId: string | null) => {
-    selectionAnchorPostIdRef.current = postId;
+    setWorkspaceSelection({ anchorId: postId });
     setSelectedPostId(postId);
     setSelectedPostIds(new Set(postId ? [postId] : []));
     if (postId) {
@@ -4713,7 +4645,7 @@ function LocalWorkspaceShell({
   }, []);
 
   const clearPostSelection = useCallback(() => {
-    selectionAnchorPostIdRef.current = null;
+    setWorkspaceSelection({ anchorId: null });
     setSelectedPostId(null);
     setSelectedPostIds(new Set());
   }, []);
@@ -4838,7 +4770,7 @@ function LocalWorkspaceShell({
           ? (options.selectedPostId ?? null)
           : selectedPostIdForView(displayPoolRef.current, nextView);
       setSelectedPostId(nextSelectedPostId);
-      selectionAnchorPostIdRef.current = nextSelectedPostId;
+      setWorkspaceSelection({ anchorId: nextSelectedPostId });
       setSelectedPostIds(
         new Set(nextSelectedPostId ? [nextSelectedPostId] : []),
       );
@@ -4905,7 +4837,7 @@ function LocalWorkspaceShell({
           ? (options.selectedPostId ?? null)
           : selectedPostIdForView(displayPoolRef.current, nextView);
       setSelectedPostId(nextSelectedPostId);
-      selectionAnchorPostIdRef.current = nextSelectedPostId;
+      setWorkspaceSelection({ anchorId: nextSelectedPostId });
       setSelectedPostIds(
         new Set(nextSelectedPostId ? [nextSelectedPostId] : []),
       );
@@ -5022,12 +4954,12 @@ function LocalWorkspaceShell({
 
   const pendingOpenTokenRef = useRef(0);
   const openPoolPost = useCallback(
-    (
+    function openPoolPostSelf(
       post: WorkspacePoolPost,
       folderPath?: string,
       mode: "read" | "edit" = "read",
       force = false,
-    ) => {
+    ) {
       // Keep edit transitions inside the workspace shell so existing notes and
       // posts feel instant; the URL still mirrors the canonical edit route.
       //
@@ -5057,7 +4989,7 @@ function LocalWorkspaceShell({
             if (pendingOpenTokenRef.current !== token) return;
             // force: a failed fetch must still open (the error body says
             // why) rather than silently eating the click.
-            openPoolPostNowRef.current?.(post, folderPath, mode, true);
+            openPoolPostSelf(post, folderPath, mode, true);
           });
         return;
       }
@@ -5113,11 +5045,6 @@ function LocalWorkspaceShell({
     },
     [homePath, navigateToView],
   );
-  const openPoolPostNowRef = useRef<typeof openPoolPost | null>(null);
-  useEffect(() => {
-    openPoolPostNowRef.current = openPoolPost;
-  }, [openPoolPost]);
-
   const openCreatedPost = useCallback(
     (post: WorkspacePoolPost) => {
       openPoolPost(
@@ -5415,8 +5342,8 @@ function LocalWorkspaceShell({
                 next.add(merged.id);
                 return next;
               });
-              if (selectionAnchorPostIdRef.current === temp.id) {
-                selectionAnchorPostIdRef.current = merged.id;
+              if (getWorkspaceSelection().anchorId === temp.id) {
+                setWorkspaceSelection({ anchorId: merged.id });
               }
             } else {
               reconcileCreatedPost(temp.id, merged);
@@ -5667,10 +5594,10 @@ function LocalWorkspaceShell({
         current && visibleIds.has(current) ? current : null,
       );
       if (
-        selectionAnchorPostIdRef.current &&
-        !visibleIds.has(selectionAnchorPostIdRef.current)
+        getWorkspaceSelection().anchorId &&
+        !visibleIds.has(getWorkspaceSelection().anchorId!)
       ) {
-        selectionAnchorPostIdRef.current = null;
+        setWorkspaceSelection({ anchorId: null });
       }
     });
     return () => {
@@ -6194,7 +6121,7 @@ function LocalWorkspaceShell({
   const handleItemClick = useCallback(
     (postId: string, event: ReactMouseEvent<HTMLElement>): boolean => {
       const selection = selectionFromClick({
-        anchorId: selectionAnchorPostIdRef.current,
+        anchorId: getWorkspaceSelection().anchorId,
         orderedIds: visiblePostIdsInDocumentOrder(),
         range: event.shiftKey,
         selectedIds: selectedPostIds,
@@ -6223,7 +6150,7 @@ function LocalWorkspaceShell({
         : undefined;
       const selection = extendSelectionByKeyboard({
         activeId: effectiveSelectedPostId,
-        anchorId: selectionAnchorPostIdRef.current,
+        anchorId: getWorkspaceSelection().anchorId,
         direction,
         orderedIds: visiblePostIdsInDocumentOrder(),
         targetId: spatialTarget,
@@ -6692,7 +6619,7 @@ function LocalWorkspaceShell({
       viewRef.current = nextView;
       setView(nextView);
       const nextSelectedPostId = selectedPostIdForView(displayPool, nextView);
-      selectionAnchorPostIdRef.current = nextSelectedPostId;
+      setWorkspaceSelection({ anchorId: nextSelectedPostId });
       setSelectedPostId(nextSelectedPostId);
       setSelectedPostIds(
         new Set(nextSelectedPostId ? [nextSelectedPostId] : []),

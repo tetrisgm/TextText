@@ -21,6 +21,11 @@ const shellSource = readFileSync(
   new URL("../../PostWorkspaceShell.tsx", import.meta.url),
   "utf8",
 );
+// The workspace list row moved out of the shell monolith.
+const rowSource = readFileSync(
+  new URL("../WorkspacePostOption.tsx", import.meta.url),
+  "utf8",
+);
 const viewModeSource = readFileSync(
   new URL("../WorkspaceViewModeControl.tsx", import.meta.url),
   "utf8",
@@ -91,7 +96,7 @@ describe("batch 4 workspace UI contract", () => {
     expect(broadsheetStyles).toContain(".blog-folder-feed-item");
     expect(broadsheetStyles).toContain(".blog-folder-feed-cover");
     expect(folderSource).toContain("onPointerMove={updateSpatialCardTilt}");
-    expect(shellSource).toContain("onPointerMove={updateSpatialCardTilt}");
+    expect(rowSource).toContain("onPointerMove={updateSpatialCardTilt}");
     expect(broadsheetStyles).toContain(
       ".workspace-recent.is-view-grid .workspace-item-option",
     );
