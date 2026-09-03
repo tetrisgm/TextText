@@ -293,7 +293,12 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
 
         let webView = AppWebView(
             frame: NSRect(x: 0, y: 0, width: 1100, height: 760), configuration: config)
-        webView.allowsBackForwardNavigationGestures = true
+        // The web app recognizes the two-finger swipe itself (wheel deltas)
+        // and drives its own same-document history, which restores either
+        // side instantly from its in-memory pool. WebKit's native gesture
+        // renders stored page snapshots instead, and pushState entries have
+        // no snapshot, so the gesture slid a white page across the window.
+        webView.allowsBackForwardNavigationGestures = false
         // A development build pointed at a local server is the only place the
         // inspector belongs; a release origin is always https, so this never
         // ships enabled.

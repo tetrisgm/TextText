@@ -2729,6 +2729,75 @@ function LocalWorkspaceShell({
     return () => window.removeEventListener("popstate", onPopState);
   }, [displayPool, homePath]);
 
+  // In the Mac app, the two-finger back/forward swipe is recognized HERE,
+  // from wheel deltas. WKWebView's native gesture renders stored page
+  // snapshots while the fingers move, and same-document (pushState) history
+  // entries have no snapshot, so the native gesture slid a white page across
+  // the window no matter what the app rendered afterwards. The shell turns
+  // that gesture off and this recognizer drives the same history entries;
+  // the popstate handler restores either side instantly from the pool.
+  useEffect(() => {
+    if (!(window as { __TEXTTEXT_APP__?: boolean }).__TEXTTEXT_APP__) return;
+    let sumX = 0;
+    let sumY = 0;
+    let fired = false;
+    let resetTimer = 0;
+    const reset = () => {
+      sumX = 0;
+      sumY = 0;
+      fired = false;
+    };
+    const scrollsHorizontally = (start: EventTarget | null): boolean => {
+      let el = start instanceof Element ? start : null;
+      while (el && el !== document.body) {
+        if (el.scrollWidth > el.clientWidth + 4) {
+          const overflowX = getComputedStyle(el).overflowX;
+          if (overflowX === "auto" || overflowX === "scroll") return true;
+        }
+        el = el.parentElement;
+      }
+      return false;
+    };
+    const onWheel = (event: WheelEvent) => {
+      window.clearTimeout(resetTimer);
+      resetTimer = window.setTimeout(reset, 250);
+      if (fired) return;
+      sumX += event.deltaX;
+      sumY += event.deltaY;
+      // A scroll, not a swipe: vertical dominance, or not far enough yet.
+      if (Math.abs(sumX) < 90) return;
+      if (Math.abs(sumX) < Math.abs(sumY) * 2) return;
+      // A gesture over horizontally scrollable content belongs to it.
+      if (scrollsHorizontally(event.target)) {
+        fired = true;
+        return;
+      }
+      fired = true;
+      const goingBack = sumX < 0;
+      if (goingBack) window.history.back();
+      else window.history.forward();
+      if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        window.requestAnimationFrame(() => {
+          contentRef.current?.animate(
+            [
+              {
+                opacity: 0.78,
+                transform: `translateX(${goingBack ? -22 : 22}px)`,
+              },
+              { opacity: 1, transform: "translateX(0)" },
+            ],
+            { duration: 170, easing: "cubic-bezier(.2,.75,.25,1)" },
+          );
+        });
+      }
+    };
+    window.addEventListener("wheel", onWheel, { passive: true });
+    return () => {
+      window.removeEventListener("wheel", onWheel);
+      window.clearTimeout(resetTimer);
+    };
+  }, []);
+
   const readerScrollBlocked = useCallback(() => {
     if (typeof document === "undefined") return true;
     // A live menu, popover, or the shortcut sheet owns the keyboard.
