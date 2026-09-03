@@ -11,6 +11,7 @@ import type {
 import type { AdjacentPublishedPosts } from "@/lib/store";
 import { markdownSubtitle, postSubtitle } from "@/lib/markdown-subtitle";
 import { normalizeTag, normalizeTags } from "@/lib/tags";
+import { workspaceIndexes } from "@/lib/workspace/kernel";
 import { blogPostPath } from "@/lib/public-paths";
 import type {
   WikiLinkRenderTarget,
@@ -132,9 +133,26 @@ export function postFromPoolPost(
   };
 }
 
+
+/**
+ * Whether a selector argument is a full pool snapshot the kernel can index.
+ * Unit tests hand these selectors hand-built partial pools; those keep the
+ * linear paths, while the app's real snapshots get O(1) indexed reads.
+ */
+function isIndexablePool(pool: unknown): pool is WorkspacePoolPayload {
+  return Boolean(
+    pool &&
+      typeof pool === "object" &&
+      "blogId" in pool &&
+      "posts" in pool &&
+      "folders" in pool,
+  );
+}
+
 export function starredPoolPosts(
   pool: Pick<WorkspacePoolPayload, "posts">,
 ): WorkspacePoolPost[] {
+  if (isIndexablePool(pool)) return workspaceIndexes(pool).starred;
   return pool.posts
     .filter((post) => Boolean(post.starred))
     .slice()
@@ -202,6 +220,13 @@ export function templateForPoolPost(
       id: legacyTemplateId(post.type),
       version: 1,
     };
+  if (isIndexablePool(pool)) {
+    return (
+      workspaceIndexes(pool).templateByKey.get(
+        `${reference.id}@${reference.version}`,
+      ) ?? requireBuiltinTemplate(reference.id, reference.version)
+    );
+  }
   return (
     pool.templates.find(
       (template) =>
@@ -225,16 +250,13 @@ export function poolPostsForFolder(
   pool: WorkspacePoolPayload,
   folderPath: string,
 ): WorkspacePoolPost[] {
-  return pool.posts.filter((post) => {
-    const postFolderPath = folderPathForPoolPost(pool, post);
-    if (folderPath === BLOG_FOLDER_PATH) {
-      return (
-        postFolderPath === BLOG_FOLDER_PATH ||
-        postFolderPath.startsWith(`${BLOG_FOLDER_PATH}/`)
-      );
-    }
-    return postFolderPath === folderPath;
-  });
+  // Indexed: one bucket per folder, built once per pool snapshot. The
+  // returned array is the shared index bucket - treat it as frozen. The
+  // stable identity per (snapshot, folder) is a feature: downstream
+  // useMemo/memo consumers key off it.
+  const indexes = workspaceIndexes(pool);
+  if (folderPath === BLOG_FOLDER_PATH) return indexes.blogSubtreePosts;
+  return indexes.postsByFolderPath.get(folderPath) ?? [];
 }
 
 export function poolPostsForTag(
@@ -243,6 +265,9 @@ export function poolPostsForTag(
 ): WorkspacePoolPost[] {
   const tag = normalizeTag(tagInput);
   if (!tag) return [];
+  if (isIndexablePool(pool)) {
+    return workspaceIndexes(pool).postsByTag.get(tag) ?? [];
+  }
   return pool.posts.filter((post) => normalizeTags(post.tags).includes(tag));
 }
 
@@ -260,7 +285,7 @@ export function findPoolPostBySlug(
   pool: WorkspacePoolPayload,
   slug: string,
 ): WorkspacePoolPost | null {
-  return pool.posts.find((post) => post.slug === slug) ?? null;
+  return workspaceIndexes(pool).postBySlug.get(slug) ?? null;
 }
 
 function resolvePoolWikiLinkTarget(
@@ -282,6 +307,9 @@ export function backlinksForPost(
   >,
   post: Pick<WorkspacePoolPost, "id" | "slug">,
 ): WorkspacePoolPost[] {
+  if (isIndexablePool(pool)) {
+    return workspaceIndexes(pool).inboundLinksByPostId.get(post.id) ?? [];
+  }
   const seen = new Set<string>();
   return pool.posts.filter((source) => {
     if (source.id === post.id || seen.has(source.id)) return false;
@@ -315,7 +343,7 @@ export function findPoolPostById(
   pool: WorkspacePoolPayload,
   postId: string,
 ): WorkspacePoolPost | null {
-  return pool.posts.find((post) => post.id === postId) ?? null;
+  return workspaceIndexes(pool).postById.get(postId) ?? null;
 }
 
 function timestampForAdjacent(post: WorkspacePoolPost): string {
