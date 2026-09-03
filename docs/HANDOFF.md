@@ -3161,11 +3161,22 @@ collab_state/collab_updates rows, then start the server.
   Measured on a production build: a 300-item workspace list snapshot is
   ~540 nodes / 48KB of markup (the list is windowed, so it does NOT grow
   with item count), an opened item ~677 nodes / 122KB, and `cloneNode`
-  costs 0.55ms. `NAV_SNAPSHOT_RADIUS = 15` is 31 clones, ~3.8MB of
-  markup worst case. Past the window a gesture still commits without the
-  live reveal, so raising it buys smoothness, never reach. The persisted
-  trail (`MAX_ENTRIES = 200`, URLs only) is what decides how far a
-  relaunched app can walk.
+  costs 0.55ms. Past the window a gesture still commits without the live
+  reveal, so raising it buys smoothness, never reach. The persisted trail
+  (`MAX_ENTRIES = 200`, URLs only) is what decides how far a relaunched
+  app can walk.
+- **15 vs 30 is a memory question, not a speed one.** Measured with CDP
+  after 40 distinct pushes then back-swipes from the deep end: radius 15
+  retains ~11,900 detached nodes, radius 30 ~22,900, and BOTH give a
+  257ms median swipe and 4.4MB of JS heap growth. Time is flat because
+  the cache is a Map lookup plus a prune over at most 61 keys per
+  navigation. `NAV_SNAPSHOT_RADIUS = 30` (owner asked for depth).
+- Measuring this: force `HeapProfiler.collectGarbage` twice before
+  reading `Performance.getMetrics`, or the heap number is just whenever
+  GC last ran and swamps the difference. And make the walk push
+  MONOTONICALLY - an open/back loop bounces between two entries and
+  never fills the window, which made two radii measure identical.
+  `JSHeapUsedSize` does not count DOM nodes; watch `Nodes` instead.
 - **The landing flash was the overlay lifting too early.** It lifted when
   its slide finished, while the destination was still arriving: images in
   a freshly mounted view have to decode (the bookmark card's picture

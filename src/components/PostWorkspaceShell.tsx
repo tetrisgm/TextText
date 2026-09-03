@@ -404,12 +404,19 @@ function runViewTransition(direction: "push" | "pop" | null, apply: () => void) 
  * Navigation itself is NOT limited by this: past the window the gesture still
  * commits, it just loses the interactive reveal.
  *
- * Measured on a production build: one snapshot of a 300-item workspace list is
- * ~540 nodes / 48KB of markup, an opened item ~677 nodes / 122KB, and taking
- * one costs 0.55ms. 15 each way is 31 clones, about 3.8MB of markup worst
- * case, which is why this is the number rather than a smaller one.
+ * Measured on a production build, walking 40 distinct pushes and then swiping
+ * back from the deep end: 15 each way retains ~11,900 detached nodes, 30 each
+ * way ~22,900 - and BOTH give a 257ms median swipe with 4.4MB of JS heap
+ * growth. Time is flat because the cache is a Map lookup plus a prune over at
+ * most 61 keys per navigation; the only real cost is retained DOM, a few MB of
+ * native memory that the JS heap figure does not even count. So depth here is
+ * paid for in memory, not speed, and 30 is affordable.
+ *
+ * Per snapshot: a 300-item workspace list is ~540 nodes / 48KB of markup (the
+ * list is windowed, so it does NOT grow with item count), an opened item ~677
+ * nodes / 122KB, and cloneNode costs 0.55ms.
  */
-const NAV_SNAPSHOT_RADIUS = 15;
+const NAV_SNAPSHOT_RADIUS = 30;
 
 /**
  * Re-apply the inner scroll offsets a snapshot recorded at capture time.
