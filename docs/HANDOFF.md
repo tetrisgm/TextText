@@ -2909,6 +2909,15 @@ collab_state/collab_updates rows, then start the server.
 - Caveat honored from the browser-verification contract: popstate
   behavior is proven in Playwright WebKit; the trackpad gesture feel
   itself needs the owner's hands on the deployed build.
+- White pixel specks left of the text during a sidebar drag (dark
+  mode): WebKit repaint artifacts, not DOM - a hit-test scan of the
+  gutter found no element, and Playwright screenshots cannot show
+  them (screenshotting forces a full composite). Cause: the content
+  margin's 0.18s ease chasing every pointer sample (continuous
+  reflow) over the sidebar's live backdrop-filter layer. Fix: an
+  is-sidebar-resizing root class suspends both during the drag;
+  removing it on release recomposites and clears leftovers. Verify
+  artifact-class fixes by hand in the real app, never by screenshot.
 - Dev fixture: visual-demo/bookmarks/probe-bookmark-capture (cloned
   capture bookmark, id 11111111-2222-4333-8444-555555555501) exists
   for bookmark-reader work. Folder rows select on click and open on
