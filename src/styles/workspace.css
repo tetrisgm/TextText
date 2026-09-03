@@ -43,6 +43,18 @@
   backdrop-filter: saturate(180%) blur(24px);
 }
 
+/* While the sidebar is being dragged: no eased margin chasing the pointer
+   (continuous reflow smears text pixels in WebKit) and no live blur layer
+   (moving backdrop-filter leaves repaint artifacts). Removing the class on
+   release recomposites the region and clears any stale pixels. */
+.is-sidebar-resizing .post-editor-content {
+  transition: none;
+}
+.is-sidebar-resizing .post-editor-sidebar {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 .post-editor-sidebar-top {
   min-height: 52px;
   gap: 6px;

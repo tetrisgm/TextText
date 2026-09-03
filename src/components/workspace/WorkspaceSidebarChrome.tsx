@@ -1668,7 +1668,13 @@ export function WorkspaceSidebarChrome({
       target.setPointerCapture(event.pointerId);
       // Drag writes the layout variable directly; the store (and the React
       // re-render it triggers) commits once on release, so the drag itself
-      // is pure style work.
+      // is pure style work. The resizing class suspends the content margin
+      // transition (an eased margin chasing every pointer sample reflows
+      // continuously and smears stale text pixels in WebKit) and the
+      // sidebar's backdrop-filter (a blur layer moving live leaves repaint
+      // artifacts); removing the class on release forces one clean
+      // recomposite that clears any leftover pixels.
+      document.documentElement.classList.add("is-sidebar-resizing");
       let lastWidth = startWidth;
       const onPointerMove = (moveEvent: PointerEvent) => {
         const viewportLimit = Math.max(
@@ -1684,6 +1690,7 @@ export function WorkspaceSidebarChrome({
         window.removeEventListener("pointermove", onPointerMove);
         window.removeEventListener("pointerup", finish);
         window.removeEventListener("pointercancel", finish);
+        document.documentElement.classList.remove("is-sidebar-resizing");
         setSidebarWidth(lastWidth);
       };
       window.addEventListener("pointermove", onPointerMove);
