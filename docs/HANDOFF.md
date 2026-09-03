@@ -2922,6 +2922,16 @@ collab_state/collab_updates rows, then start the server.
   capture bookmark, id 11111111-2222-4333-8444-555555555501) exists
   for bookmark-reader work. Folder rows select on click and open on
   Enter; home rows open on click.
+- The swipe white-page had a second, deeper cause (build 1010): the
+  native WKWebView gesture renders stored page SNAPSHOTS during the
+  drag, and pushState entries have no snapshot, so WebKit slid a
+  white page regardless of what the app rendered after popstate. The
+  app now sets allowsBackForwardNavigationGestures = false and the
+  workspace recognizes the swipe itself from wheel deltas (window
+  gated on __TEXTTEXT_APP__; horizontal dominance past ~90px, one
+  firing per gesture, ceded to horizontally scrollable content),
+  driving the same history entries through the gated popstate path.
+  Browsers keep the native gesture; the recognizer is app-only.
 
 ## Resolved episodes (one line each, dates in git log)
 
