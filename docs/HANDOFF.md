@@ -3004,6 +3004,34 @@ collab_state/collab_updates rows, then start the server.
   Remaining inherent cost of navigate-at-start: a start-then-hold has
   navigated underneath (clone + hidden scrollbar hide it); only a
   true dual-mount would avoid the nav entirely, deliberately not built.
+- SUPERSEDED by the snapshot rewrite (build 1013 web, commit a6481f97):
+  the drag no longer navigates mid-gesture at all. The shell snapshots
+  each view (cloneNode) as it is left, keyed by ttNavIndex
+  (navSnapshotsRef, captured in navigateToView and popstate; pruned to
+  +/-2 of the current index). A swipe reveals the destination from its
+  snapshot; back slides the real item away over the home snapshot,
+  forward slides the item snapshot in over real home. Commit navigates
+  ONCE (popstate suppressed via navAnimationSuppressed, capture
+  suppressed via suppressSnapshotCaptureRef); cancel removes the
+  overlay and clears one transform - zero navigation, zero redraw
+  (fixes the tiny-swipe-cancel redraw). This is the iOS/Ionic model:
+  both views present, commit only on release. Tuning: COMMIT_FRACTION
+  0.35, FLICK_VELOCITY 600, 240ms decel settle.
+- RELEASE-LANE BUG hit here, NOT fixed (needs owner call): a pure-web
+  change does not need a new app build, BUT promote-local.sh always
+  rebuilds+reinstalls the app and gates on install-local.sh, which
+  hard-requires runtime health status == "pass". The finder.provider
+  (File Provider domain) check legitimately reports a transient
+  "warning" for a few seconds after a fresh bundle swap, then settles
+  to pass - ship.sh documents this and treats a residual warning as
+  non-blocking, but install-local.sh does not, so promote-local rolled
+  back build 1014 even though health settled to pass moments later
+  (confirmed: latest.json showed finder.provider pass right after).
+  For a web-only change, skip promote-local and run `npm run
+  deploy:web` (the installed app auto-reloads). For a real app change,
+  install-local.sh should tolerate a residual warning whose only
+  non-pass checks are known-transient (align it with ship.sh), or
+  lengthen HEALTH_WAIT_SECONDS - owner to decide.
 
 ## Resolved episodes (one line each, dates in git log)
 
