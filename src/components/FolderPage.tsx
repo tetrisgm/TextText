@@ -112,6 +112,67 @@ function WindowedRows<T>({
   );
 }
 
+/**
+ * Progressive mount for the folder's card layouts (bookmark cards, the
+ * universal card grid). True windowing needs uniform row heights; a
+ * multi-column card grid has neither uniform heights nor single-column flow,
+ * so instead the grid mounts a first page and appends as an
+ * IntersectionObserver sentinel nears the viewport. Nothing above unmounts -
+ * the cost being cut is the initial mount of hundreds of rendered cards, not
+ * steady-state DOM size. The selected card is always mounted so keyboard
+ * selection and scroll-into-view keep working past the mounted edge.
+ */
+function GrowingGrid<T>({
+  items,
+  selectedIndex,
+  initial = 60,
+  step = 60,
+  children,
+}: {
+  items: readonly T[];
+  selectedIndex: number | null;
+  initial?: number;
+  step?: number;
+  children: (item: T) => ReactNode;
+}) {
+  const [count, setCount] = useState(initial);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const needed = selectedIndex !== null ? selectedIndex + 1 : 0;
+  const shown = Math.min(items.length, Math.max(count, needed));
+  useEffect(() => {
+    if (shown >= items.length) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel || typeof IntersectionObserver !== "function") {
+      setCount(items.length);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setCount((prev) =>
+            Math.min(items.length, Math.max(prev, shown) + step),
+          );
+        }
+      },
+      { rootMargin: "600px" },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [items.length, shown, step]);
+  return (
+    <>
+      {items.slice(0, shown).map(children)}
+      {shown < items.length ? (
+        <div
+          ref={sentinelRef}
+          aria-hidden="true"
+          style={{ gridColumn: "1 / -1", height: 1 }}
+        />
+      ) : null}
+    </>
+  );
+}
+
 // The workspace view of a folder: a quiet list rendered per folder mode inside
 // the home workspace shell. Notes and bookmarks stay unlisted; sharing only
 // grants named collaborators access.
@@ -1528,7 +1589,8 @@ function UniversalFolderContents({
             aria-label="Bookmarks"
             aria-activedescendant={postOptionId(selectedPostId)}
           >
-            {sorted.map((post) => {
+            <GrowingGrid items={sorted} selectedIndex={selectedRowIndex}>
+              {(post) => {
               const selected = Boolean(
                 post.id &&
                 (selectedPostIds?.has(post.id) ?? post.id === selectedPostId),
@@ -1554,7 +1616,8 @@ function UniversalFolderContents({
                   }
                 />
               );
-            })}
+              }}
+            </GrowingGrid>
           </div>
         ) : folder.mode === "blog" && usesBuiltInLook ? (
           // The stock blog feed is hardcoded markup that predates the document
@@ -1921,7 +1984,9 @@ function UniversalFolderContents({
                     aria-activedescendant={postOptionId(selectedPostId)}
                   >
                     <DocumentEngineStyles />
-                    {sorted.map(renderUniversalCard)}
+                    <GrowingGrid items={sorted} selectedIndex={selectedRowIndex}>
+                      {renderUniversalCard}
+                    </GrowingGrid>
                   </div>
                 </>
               );
@@ -2125,7 +2190,9 @@ function UniversalFolderContents({
                 aria-activedescendant={postOptionId(selectedPostId)}
               >
                 <DocumentEngineStyles />
-                {sorted.map(renderUniversalCard)}
+                <GrowingGrid items={sorted} selectedIndex={selectedRowIndex}>
+                  {renderUniversalCard}
+                </GrowingGrid>
               </div>
             );
           })()
