@@ -2822,6 +2822,63 @@ is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
   verified: zero dead wheel positions across the window in both
   engines.
 
+## Workspace kernel migration (2026-09-02)
+
+Owner ruling after the monolith split ("had you built this like a
+performance optimization focused engineer, you would have not built
+this this way"): rebuild the workspace read/mutate paths the way they
+would have been designed from scratch. Four stages, all landed:
+
+- Stage 1, indexed kernel (src/lib/workspace/kernel.ts): the pool
+  payload is an immutable snapshot, so each snapshot gets ONE index
+  build (by id, slug, folder path, tag, template key, starred, plus
+  inbound links resolved once) cached in a WeakMap keyed on the
+  payload. The selectors in src/lib/pool/selectors.ts keep their
+  signatures and route to map lookups; partial pools (unit tests)
+  fall back to the old linear scans. Folder buckets are shared
+  arrays - stable identity per snapshot is the point.
+- Stage 2, command bus (src/lib/workspace/command-bus.ts): row-level
+  actions (itemClick/openPost/selectPost/openTag/requestDeletePost)
+  are module calls, not props. The shell registers latest-ref-backed
+  handlers once; WorkspacePostOption calls the bus at event time and
+  lost its five callback props, so parents stopped threading them
+  (WorkspaceRootLanding and StarredPage shed them entirely). A row
+  re-renders only for its own selection bits or a real data change.
+- Stage 3, idle-time materialize encode (UnifiedDocumentEditor): the
+  debounced flush encoded + base64ed the whole Y.Doc synchronously -
+  a visible hitch when the 500ms timer fired mid-burst at large
+  sizes. The encode now waits for requestIdleCallback (1s timeout)
+  inside the flush queue; keepalive flushes (pagehide/unmount)
+  encode immediately since idle time may never come. The dead
+  pendingMaterializationStateRef was deleted. A full worker-thread
+  Y.Doc mirror was considered and deliberately deferred: after the
+  idle move nothing measurable remains on the input path, and a
+  worker doubles document memory and adds a protocol.
+- Stage 4, progressive card grids (FolderPage GrowingGrid): bookmark
+  cards and both universal-card grids mount 60 cards and grow by 60
+  via an IntersectionObserver sentinel (rootMargin 600px, gridColumn
+  1/-1); the selected card is always mounted so keyboard selection
+  and scroll-into-view work past the mounted edge. True windowing
+  was rejected for grids: multi-column flow with non-uniform heights
+  has no cheap spacer arithmetic, and the cost being cut is initial
+  mount, not steady-state DOM. List layouts keep WindowedRows.
+
+Verification (all green before push): suite 223 files / 1,819 tests;
+collab browser eval 24/24 twice; verify-reader-stability clean;
+bench-workspace-matrix within budget in both engines;
+scale-test 300-item lane 120fps hover / j-k 6-9ms;
+scripts/verify-growing-grid.ts (new lane) proves the notes folder
+windows to ~21 list rows and grows 60 -> 300 cards on scroll;
+verify-windowed-surface all checks pass.
+
+Fixture facts learned re-running verify-windowed-surface: the app
+reads and writes `document->content->body`; `content.fields.body` is
+a vestigial copy in old fixture rows - resetting only fields.body
+does nothing. And the collab server flushes in-memory doc state to
+collab_state on graceful shutdown, so a reset must SIGKILL :3131
+FIRST, then update posts.document/body + delete the post's
+collab_state/collab_updates rows, then start the server.
+
 ## Resolved episodes (one line each, dates in git log)
 
 - Apple consent screen "write app": appleid.apple.com caches its own copy;
