@@ -1142,8 +1142,30 @@ function NodeRenderer({
       const href = node.href
         ? scalarText(resolveDocumentBinding(document, node.href))
         : "";
+      // A field bound as both its own text and its own link is a raw URL on
+      // the page (the bookmark's source link). Show the host; the full URL
+      // stays in the link. Same treatment table cells already give URLs.
+      let display = value;
+      if (
+        typeof value === "string" &&
+        href &&
+        value.trim() === href.trim() &&
+        /^https?:\/\//i.test(href)
+      ) {
+        try {
+          display = new URL(href).hostname.replace(/^www\./, "");
+        } catch {
+          display = value;
+        }
+      }
       const children =
-        href && isSafeLinkHref(href) ? <a href={href}>{value}</a> : value;
+        href && isSafeLinkHref(href) ? (
+          <a href={href} title={href === display ? undefined : href}>
+            {display}
+          </a>
+        ) : (
+          display
+        );
       return textElement(node.role, {
         ...attrs,
         className: `tt-text tt-text-${node.role}`,

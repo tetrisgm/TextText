@@ -63,6 +63,7 @@ import {
   workspacePublicPostUrl,
 } from "@/lib/public-paths";
 import { localizeRemoteMarkdownImages } from "@/lib/markdown-images";
+import { stripRedundantBookmarkLead } from "@/lib/bookmark-display";
 import {
   folderWorkspaceHref,
   isOptimisticPostId,
@@ -202,7 +203,15 @@ export function WorkspacePostReader({
   );
   const bodyMarkdown =
     post.type === "bookmark"
-      ? localizeRemoteMarkdownImages(body, bodyImageReplacements)
+      ? stripRedundantBookmarkLead(
+          localizeRemoteMarkdownImages(body, bodyImageReplacements),
+          {
+            title: post.title,
+            excerpt: post.excerpt,
+            sourceUrl: post.capture?.url ?? post.links?.[0]?.href,
+            siteName: post.capture?.siteName,
+          },
+        )
       : body;
   const readablePost = useMemo(
     () => ({

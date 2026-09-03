@@ -247,10 +247,15 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
    the caption and date inherited Iowan Old Style from the editorial default,
    so the source line was set in a different face from the words beside it. */
 .tt-document[data-template="texttext.bookmark"]{--tt-accent:#835f42;--paper:#f6f1e7;--ink:#26231f;--muted:#7a7167;--tt-measure:39rem;--tt-font:Georgia,"Iowan Old Style","Palatino Linotype",serif}
-.tt-document:not(.tt-collection-item)[data-template="texttext.bookmark"]>.tt-stack{gap:2.1rem;padding:clamp(2.75rem,8vw,6.5rem) 0 5rem}
+.tt-document:not(.tt-collection-item)[data-template="texttext.bookmark"]>.tt-stack{gap:1.5rem;padding:clamp(2rem,5vw,3.5rem) 0 5rem}
+.tt-document[data-template="texttext.bookmark"] .tt-masthead{gap:.55rem}
+.tt-document[data-template="texttext.bookmark"] .tt-masthead .tt-text-caption{order:-1;margin:0}
+.tt-document[data-template="texttext.bookmark"] .tt-masthead .tt-metadata{margin-top:.2rem}
 .tt-document[data-template="texttext.bookmark"] .tt-text-title{font-family:Georgia,"Iowan Old Style",serif;font-size:clamp(1.75rem,2.8vw,2.25rem);font-weight:700;line-height:1.14;letter-spacing:-.018em}
 .tt-document[data-template="texttext.bookmark"] .tt-text-subtitle{font-family:Georgia,"Iowan Old Style",serif;font-size:1.18rem}
-.tt-document[data-template="texttext.bookmark"] .tt-text-caption{text-transform:uppercase;letter-spacing:.06em;font-size:.7rem;font-weight:700}
+.tt-document[data-template="texttext.bookmark"] .tt-text-caption{text-transform:uppercase;letter-spacing:.08em;font-size:.7rem;font-weight:700;color:var(--muted)}
+.tt-document[data-template="texttext.bookmark"] .tt-text-caption a{color:inherit;text-decoration:none;border-bottom:2px solid color-mix(in srgb,var(--tt-accent) 60%, var(--ink))}
+.tt-document[data-template="texttext.bookmark"] .tt-text-caption a:hover{color:var(--ink)}
 .tt-document[data-template="texttext.bookmark"] .tt-cover{width:min(52rem,calc(100% - 2rem));height:auto;aspect-ratio:3/2;border-radius:0}
 .tt-document[data-template="texttext.bookmark"] .tt-prose{font-family:Georgia,"Iowan Old Style",serif;font-size:1.18rem;line-height:1.82}
 .tt-document.tt-collection-item[data-template="texttext.bookmark"] .tt-text-title{font-size:1.45rem;line-height:1.16}
