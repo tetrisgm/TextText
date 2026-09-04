@@ -428,6 +428,14 @@ export function useEscapeLayer(
  * wants to offer an Undo, for one. The layer already owns the toast; this is
  * the door in.
  */
+/** Read the live command context from outside the command system. */
+export function useCommandContextReader():
+  | (() => import("@/lib/commands/types").CommandContext)
+  | null {
+  const layer = useContext(CommandLayerContext);
+  return layer ? layer.commandContext : null;
+}
+
 export function useCommandToast(): (
   message: string,
   action?: { label: string; run: () => void },

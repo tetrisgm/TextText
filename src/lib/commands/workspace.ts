@@ -328,6 +328,27 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
   createCommand("note"),
   createCommand("bookmark"),
   {
+    id: "selection.select-all",
+    label: "Select all items",
+    group: "Navigate",
+    // Cmd+A means "select everything here" in every list on the platform.
+    // Not while typing: there it belongs to the text.
+    shortcut: { key: "a", meta: true, label: "⌘A", once: true },
+    when: (ctx) =>
+      Boolean(ctx.workspace) &&
+      ctx.workspace?.viewLevel !== "post" &&
+      ctx.workspace?.viewLevel !== "edit",
+    run: (ctx) => ctx.workspace?.selectAllVisible(),
+  },
+  {
+    id: "selection.clear",
+    label: "Clear selection",
+    group: "Navigate",
+    shortcut: { key: "Escape", label: "Esc", once: true },
+    when: (ctx) => (ctx.workspace?.selectedPostIds.length ?? 0) > 1,
+    run: (ctx) => ctx.workspace?.clearSelection(),
+  },
+  {
     id: "selection.extend-previous",
     label: "Extend selection up",
     group: "Navigate",

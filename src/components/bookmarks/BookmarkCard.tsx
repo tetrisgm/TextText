@@ -363,6 +363,7 @@ export function BookmarkCard({
         <Link
           className={styles.main}
           href={editPath}
+          draggable={false}
           prefetch={onOpenPost ? false : undefined}
           onMouseDown={(event) => {
             if (shouldSuppressNativeItemSelection(event)) {

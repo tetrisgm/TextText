@@ -3384,6 +3384,37 @@ collab_state/collab_updates rows, then start the server.
   of open an item, go back, read the home order - found ZERO unexplained
   reorderings; only documents that were actually opened moved.
 
+## Selection, and telling people which keys exist (2026-09-03)
+
+- Keyboard multi-select ALREADY worked (`selection.extend-previous/next`,
+  Shift+Arrow) - it was simply undiscoverable, which is most of why the
+  key hints below exist. `Cmd+A` (`selection.select-all`) and `Escape`
+  back to a single row were genuinely missing and are new.
+- **A marquee can now start ON a row**, not only in the gutter beside it.
+  Two things were needed and neither is obvious: a row is a LINK, and a
+  link drags itself, which swallows the pointermove stream the marquee
+  needs (`draggable={false}` plus `-webkit-user-drag: none`); and the
+  gesture cannot be taken outright with `preventDefault`, because the
+  row's own click still has to be able to open it - so the handler calls
+  `setPointerCapture` instead and decides only once the pointer has
+  moved 5px. A drag that starts sets `suppressNextRowClickRef`, which the
+  row's click handler consumes, so the click at the end of a drag selects
+  instead of opening.
+- **Key hints** (`lib/commands/hints.ts`, `WorkspaceKeyHints`): the bar
+  along the bottom, Superhuman style. Hints are DERIVED from the command
+  table and filtered by the same `when` the keyboard uses, so the bar can
+  never advertise a key that would do nothing, and renaming a command
+  renames its hint. It re-reads on a revision string that includes
+  `mounted`, because the command surface registers in an effect and a
+  first read before that finds no workspace and shows nothing - that was
+  a real bug, caught only because the bar rendered empty.
+- Rows carry a `title` naming the click modifiers, which is the hover
+  half of the same idea.
+- Harness note: the Browser pane's `javascript_tool` can evaluate against
+  a stale document after a navigation and report an empty DOM while the
+  screenshot plainly shows the element. Trust the screenshot, or re-run
+  the query.
+
 ## Resolved episodes (one line each, dates in git log)
 
 - Apple consent screen "write app": appleid.apple.com caches its own copy;

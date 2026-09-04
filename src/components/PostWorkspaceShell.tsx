@@ -20,6 +20,7 @@ import {
   isSelectionRangeClick,
   isSelectionToggleClick,
 } from "@/lib/workspace/selection-modifiers";
+import { WorkspaceKeyHints } from "@/components/workspace/WorkspaceKeyHints";
 import { WorkspaceTabBar } from "@/components/workspace/WorkspaceTabBar";
 import {
   closeTab,
@@ -52,6 +53,7 @@ import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { readItemTypeForEditAction } from "@/app/editor/item-type-actions";
 import type { ItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
 import {
+  useCommandContextReader,
   useCommandToast,
   useWorkspaceCommandSurface,
 } from "@/components/keyboard/CommandLayer";
@@ -853,6 +855,9 @@ function LocalWorkspaceShell({
     useState<WorkspaceActiveRegion>("body");
   const activeRegionRef = useRef<WorkspaceActiveRegion>("body");
   const bodySelectionActiveRef = useRef(Boolean(initialSelectedPostId));
+  /** Set when a marquee drag begins on a row: the click that follows must
+   * select, not open. Cleared by the row handler that consumes it. */
+  const suppressNextRowClickRef = useRef(false);
   const sidebarSelectionActiveRef = useRef(false);
   const lastActivePostIdRef = useRef<string | null>(initialSelectedPostId);
   const lastSidebarPathRef = useRef<string>(
@@ -2804,6 +2809,11 @@ function LocalWorkspaceShell({
 
   const handleItemClick = useCallback(
     (postId: string, event: ReactMouseEvent<HTMLElement>): boolean => {
+      if (suppressNextRowClickRef.current) {
+        // This click is the tail of a marquee drag that started on this row.
+        suppressNextRowClickRef.current = false;
+        return false;
+      }
       const selection = selectionFromClick({
         anchorId: getWorkspaceSelection().anchorId,
         orderedIds: visiblePostIdsInDocumentOrder(),
@@ -4202,6 +4212,26 @@ function LocalWorkspaceShell({
         );
       },
       selectSpatial,
+      selectAllVisible: () => {
+        const ids = visiblePostIdsInDocumentOrder();
+        if (ids.length === 0) return;
+        activateRegion("body");
+        applyPostSelection({
+          activeId: ids[ids.length - 1] ?? null,
+          anchorId: ids[0] ?? null,
+          selectedIds: new Set(ids),
+        });
+      },
+      clearSelection: () => {
+        const current = selectedPostIdRef.current;
+        // Back to a single row rather than to nothing: losing the caret
+        // entirely would cost the keyboard its place in the list.
+        applyPostSelection({
+          activeId: current,
+          anchorId: current,
+          selectedIds: new Set(current ? [current] : []),
+        });
+      },
       extendSelection: (direction: -1 | 1) => {
         if (activeRegionRef.current === "sidebar") {
           moveSidebarSelection(direction > 0 ? "next" : "previous");
@@ -4370,6 +4400,9 @@ function LocalWorkspaceShell({
       selectOnlyPost,
       clearPostSelection,
       extendPostSelection,
+      applyPostSelection,
+      activateRegion,
+      visiblePostIdsInDocumentOrder,
       moveSidebarSelection,
       effectiveSelectedSectionPath,
       effectiveSelectedPostId,
@@ -4382,6 +4415,16 @@ function LocalWorkspaceShell({
   );
 
   useWorkspaceCommandSurface(mounted ? commandSurface : null);
+  // What the key hints read. Bumped by anything that changes which keys do
+  // something: the view, the selection, the open tabs.
+  const readCommandContext = useCommandContextReader();
+  const hintRevision = useMemo(
+    () =>
+      // `mounted` matters: the command surface registers in an effect, so a
+      // first read before that would find no workspace and show nothing.
+      `${mounted}:${view.level}:${effectiveSelectedPostIds.size}:${tabState.ids.length}`,
+    [mounted, view, effectiveSelectedPostIds, tabState],
+  );
 
   const beginBackgroundSelection = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -4401,7 +4444,12 @@ function LocalWorkspaceShell({
             // plaintext-only surface is just as interactive, and leaving it out
             // meant the background-selection handler swallowed its clicks and
             // focused the scroll container instead of the writer's field.
-            '.reader, .reader-prose, [data-static-prose], [role="option"], a, button, input, select, textarea, [contenteditable]:not([contenteditable="false"]), [role="menu"], [role="dialog"]',
+            // A ROW is deliberately not in this list: dragging from an item
+            // should rubber-band, the way it does from the gutter beside it
+            // (owner, 2026-09-03). The row's own click still opens it,
+            // because the marquee only begins once the pointer has actually
+            // moved, and a drag that begins suppresses that click.
+            '.reader, .reader-prose, [data-static-prose], button, input, select, textarea, [contenteditable]:not([contenteditable="false"]), [role="menu"], [role="dialog"]',
           ),
         );
       if (
@@ -4415,6 +4463,11 @@ function LocalWorkspaceShell({
       }
       const startX = event.clientX;
       const startY = event.clientY;
+      // Starting on a row means the row's click is still coming. Only a real
+      // drag should cancel it, so the decision waits for movement.
+      const startedOnRow =
+        event.target instanceof Element &&
+        Boolean(event.target.closest("[data-workspace-post-id]"));
       // Same modifiers as a click: the toggle key or Shift adds to what is
       // already selected instead of starting over.
       const additive =
@@ -4422,10 +4475,24 @@ function LocalWorkspaceShell({
       const baseIds = additive ? new Set(selectedPostIds) : new Set<string>();
       let dragging = false;
       bodySelectionActiveRef.current = false;
-      event.preventDefault();
-      event.currentTarget.focus({ preventScroll: true });
-      clearPostSelection();
-      setSelectedSectionPath(null);
+      if (startedOnRow) {
+        // Starting on a row, the gesture cannot be taken outright - the
+        // row's own click still has to be able to open it. Capture the
+        // pointer instead: the move stream keeps arriving even once the
+        // browser would rather be selecting text, and the click still fires
+        // on the row afterwards for the suppression flag to judge.
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          /* older engines: the window listeners below still see most moves */
+        }
+      } else {
+        // Empty space: take the gesture immediately, as before.
+        event.preventDefault();
+        event.currentTarget.focus({ preventScroll: true });
+        clearPostSelection();
+        setSelectedSectionPath(null);
+      }
 
       // Item geometry is measured ONCE when the drag crosses the threshold:
       // rect-reading every row on every pointermove forced one layout per
@@ -4446,6 +4513,11 @@ function LocalWorkspaceShell({
         }
         if (!dragging) {
           dragging = true;
+          // The click that follows this drag must not open anything.
+          suppressNextRowClickRef.current = true;
+          // Only now is it a marquee rather than a click on a row, so only
+          // now does the previous selection go.
+          if (startedOnRow && !additive) clearPostSelection();
           setMarqueeDragging(true);
           const el = document.createElement("div");
           el.className = "workspace-selection-marquee";
@@ -4510,6 +4582,7 @@ function LocalWorkspaceShell({
         });
       };
       const finish = () => {
+        if (!dragging) suppressNextRowClickRef.current = false;
         if (frame) cancelAnimationFrame(frame);
         marqueeElRef.current?.remove();
         marqueeElRef.current = null;
@@ -4736,6 +4809,13 @@ function LocalWorkspaceShell({
           />
           {content}
         </div>
+
+        {readCommandContext && (
+          <WorkspaceKeyHints
+            commandContext={readCommandContext}
+            revision={hintRevision}
+          />
+        )}
 
         <WorkspaceSelectionToolbar
           blog={displayPool.blog}

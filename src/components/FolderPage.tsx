@@ -345,6 +345,10 @@ function actionErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
+/** The tooltip on a row: the gestures that do something to it. */
+const ROW_HOVER_HINT =
+  "Open  ·  \u2318 click: new tab  ·  \u2325 click: add to selection  ·  \u21e7 click: extend";
+
 function shouldOpenLocally(event: MouseEvent<HTMLAnchorElement>): boolean {
   return (
     event.button === 0 &&
@@ -1808,6 +1812,9 @@ function UniversalFolderContents({
                   <Link
                     className="post-folder-row"
                     href={blogPostPath(blog, post)}
+                    draggable={false}
+                    // What the keys do here, on hover, as the owner asked.
+                    title={ROW_HOVER_HINT}
                     prefetch={onOpenPost ? false : undefined}
                     onMouseDown={(event) => {
                       if (shouldSuppressNativeItemSelection(event)) {
@@ -1921,6 +1928,9 @@ function UniversalFolderContents({
                   <Link
                     className="universal-item-card-link"
                     href={blogPostPath(blog, post)}
+                    draggable={false}
+                    // What the keys do here, on hover, as the owner asked.
+                    title={ROW_HOVER_HINT}
                     prefetch={onOpenPost ? false : undefined}
                     onMouseDown={(event) => {
                       if (shouldSuppressNativeItemSelection(event)) {

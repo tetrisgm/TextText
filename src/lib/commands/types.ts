@@ -64,6 +64,10 @@ export type CommandWorkspaceSurface = {
   selectSection: (folderPath: string | null) => void;
   selectSpatial: (direction: SpatialDirection) => void;
   extendSelection: (direction: -1 | 1) => void;
+  /** Cmd+A over a list: select everything shown. */
+  selectAllVisible: () => void;
+  /** Escape from a selection of many back to one. */
+  clearSelection: () => void;
   selectNext: () => void;
   selectPrevious: () => void;
   openSelected: () => void;
