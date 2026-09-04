@@ -25,6 +25,45 @@ const LocalUnifiedWorkspacePostEditor = dynamic(
   { ssr: false },
 );
 
+/**
+ * Fetch the editor's chunk while the workspace is idle, long before anyone
+ * opens anything.
+ *
+ * Splitting it out took it off the parse path for the list, which is the
+ * point; but a note opens STRAIGHT into the editor, and without this the
+ * open waited on the download. Warming it at idle keeps both: the list never
+ * parses the editor, and by the time an item is opened the chunk is already
+ * in hand.
+ */
+function useWarmEditorChunk(enabled: boolean) {
+  useEffect(() => {
+    if (!enabled) return;
+    const preload = (
+      LocalUnifiedWorkspacePostEditor as unknown as {
+        preload?: () => void;
+      }
+    ).preload;
+    const warm = () => {
+      if (preload) preload();
+      else void import("@/components/workspace/WorkspaceItemEditor");
+    };
+    const idle = (
+      window as unknown as {
+        requestIdleCallback?: (fn: () => void, o?: { timeout: number }) => number;
+        cancelIdleCallback?: (handle: number) => void;
+      }
+    ).requestIdleCallback;
+    if (idle) {
+      const handle = idle(warm, { timeout: 2500 });
+      return () =>
+        (window as unknown as { cancelIdleCallback?: (h: number) => void })
+          .cancelIdleCallback?.(handle);
+    }
+    const timer = window.setTimeout(warm, 600);
+    return () => window.clearTimeout(timer);
+  }, [enabled]);
+}
+
 const WorkspaceSettings = dynamic(() =>
   import("@/components/workspace/WorkspaceSettings").then(
     (module) => module.WorkspaceSettings,
@@ -1032,6 +1071,7 @@ export function LocalWorkspaceContent({
       );
   }
 
+  useWarmEditorChunk(canEditItems);
   const [warmEditorReady, setWarmEditorReady] = useState(false);
   const activePostId = activePost?.id ?? null;
   useEffect(() => {
