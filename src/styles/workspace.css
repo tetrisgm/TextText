@@ -1869,46 +1869,53 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   padding-bottom: 4px;
 }
 
-/* Flex, not a `max-content` grid.
+/* A fixed first column, which is what makes a list read as a table.
 
-   The grid asked the browser for each title's intrinsic width on every row,
-   every layout. Two costs followed. While the swipe slides the list in, the
-   row is laid out against a container that is still narrowing, so
-   `max-content` resolved to almost nothing and every title painted as one or
-   two characters before popping back - the text glitch on the way in. And a
-   list of intrinsic measurements is re-measured on every hover, scroll and
-   resize, which is the kind of thing that makes a list feel heavy.
-
-   Flex gets the same result: the title takes what it needs, the preview takes
-   the rest and truncates. */
-/* 20px between the title and the preview, measured off the reference. At
-   12px they read as one run of text; the gap is what makes the preview a
-   second column rather than a continuation. */
+   The reference aligns its senders in a fixed column and every subject
+   starts at the same x; ours put the title wherever the chip left it and
+   the preview wherever the title ended, so no two rows lined up and the
+   whole list read as ragged paragraphs. A FIXED width, not `max-content`:
+   an intrinsic column has to measure every title on every layout, and
+   during a swipe it resolves against a container that is still narrowing,
+   which is what once painted every title as one or two characters.
+   --------------------------------------------------------------------- */
 .workspace-recent.is-view-list .workspace-item-option-copy {
+  display: grid;
+  grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: baseline;
+}
+
+.workspace-recent.is-view-list .workspace-item-option-lede {
+  grid-column: 1;
+  min-width: 0;
   display: flex;
   align-items: baseline;
-  gap: 20px;
+  gap: 8px;
+  overflow: hidden;
 }
 
-.workspace-recent.is-view-list .workspace-item-option-copy > strong {
-  flex: 0 1 auto;
+.workspace-recent.is-view-list .workspace-item-option-copy > strong,
+.workspace-recent.is-view-list .workspace-item-option-lede > strong {
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 450 15px/1.35 var(--font-body);
+  letter-spacing: -0.005em;
+  font-size: 16px;
 }
 
-/* Basis ZERO, not auto. With `flex: 1 1 auto` the preview's basis is its own
-   content width, a nowrap line of prose, so the row grew to fit it: the
-   preview ran under the assistant rail and pushed the date off the end.
-   A zero basis makes the preview take what is left instead of asking for
-   what it wants. The `small` needs min-width: 0 of its own or it refuses to
-   shrink below min-content and the ellipsis never appears. */
 .workspace-recent.is-view-list .workspace-item-option-detail {
-  flex: 1 1 0;
+  grid-column: 2;
   min-width: 0;
   overflow: hidden;
 }
 
 .workspace-recent.is-view-list .workspace-item-option-detail small {
   min-width: 0;
+  font-size: 16px;
+  color: var(--muted);
 }
 
 .workspace-recent.is-view-list .workspace-item-option-main > time {
@@ -2019,7 +2026,12 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
    document. Without a tab strip nothing has moved. */
 .post-editor-shell.has-tab-bar .workspace-history-chrome,
 .post-editor-shell.has-tab-bar .post-top-action-bar,
-.post-editor-shell.has-tab-bar .workspace-sidebar-reveal-chrome {
+.post-editor-shell.has-tab-bar .workspace-sidebar-reveal-chrome,
+/* The LIST's search box is fixed chrome too, and was left at top:8 when the
+   others moved - so on a list with a tab open the tab band sat on top of the
+   search field and clipped it. Every piece of fixed chrome moves together or
+   none of it does. */
+.post-editor-shell.has-tab-bar .workspace-root-action-bar.is-inline-search {
   top: 46px;
 }
 
@@ -2390,4 +2402,113 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
     border-radius: 0;
     box-shadow: none;
   }
+}
+
+/* The star appears on hover, as it does in the reference.
+
+   Drawn at half opacity on every row it is a second column of furniture
+   before anything you came to read - and the reference's gutter carries one
+   small dot, nothing else. The star is still a click away on the row you are
+   pointing at, which is the only row you would ever star. */
+.workspace-recent.is-view-list .workspace-item-leading-star {
+  opacity: 0;
+  transition: opacity 0.14s var(--ease);
+}
+
+.is-pointer-live
+  .workspace-recent.is-view-list
+  .workspace-item-option:hover
+  .workspace-item-leading-star,
+.workspace-recent.is-view-list
+  .workspace-item-leading-star[aria-pressed="true"],
+.workspace-recent.is-view-list .workspace-item-leading-star:focus-visible {
+  opacity: 0.52;
+}
+
+.workspace-recent.is-view-list
+  .workspace-item-leading-star[aria-pressed="true"] {
+  opacity: 1;
+}
+
+/* Quieter chips. Theirs sit inside the line as small pale labels; ours were
+   loud enough to be read before the title they belong to. */
+.workspace-item-chip {
+  height: 16px;
+  padding: 0 5px;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+}
+
+.workspace-item-chip[data-chip="type"] {
+  background: color-mix(in srgb, #d8a12a 26%, transparent);
+  color: color-mix(in srgb, #6f5210 70%, var(--muted));
+}
+
+.workspace-item-chip[data-chip="folder"] {
+  background: color-mix(in srgb, #9a6ec4 24%, transparent);
+  color: color-mix(in srgb, #5c3d80 70%, var(--muted));
+}
+
+/* The date sits at the right edge, and the row's actions cover it on hover.
+
+   The row reserved 82px on the right so the hover actions would never
+   overlap anything, which left a column of dead space after every date and
+   squeezed the preview that could have used it. The reference does the
+   opposite: its dates run to the edge and the action icons appear OVER them
+   on the row you are pointing at, because that is the only row whose date
+   you are not reading. */
+.workspace-recent.is-view-list .workspace-item-option-main {
+  padding-right: 14px;
+}
+
+/* Something has to sit behind the actions or they land on top of the date
+   as text-on-text rather than as a control. */
+.workspace-recent.is-view-list .workspace-item-actions::before {
+  content: "";
+  position: absolute;
+  inset: -6px -6px -6px -18px;
+  border-radius: 8px;
+  background: var(--bg);
+  opacity: 0;
+  transition: opacity 0.14s var(--ease);
+}
+
+.is-pointer-live
+  .workspace-recent.is-view-list
+  .workspace-item-option:hover
+  .workspace-item-actions::before,
+.workspace-recent.is-view-list
+  .workspace-item-actions:focus-within::before {
+  opacity: 1;
+}
+
+[data-workspace-post-id][aria-selected="true"] .workspace-item-actions::before {
+  background: var(--row-selected-bg);
+}
+
+/* The row menu belongs to the row you are pointing at, not to every row you
+   have selected.
+
+   `is-command-selected` is on every selected row, and the shared rule that
+   reveals the menu keys off it - so a Cmd+A put an ellipsis over fourteen
+   dates at once. The keyboard's own row (`is-command-active`) and the row
+   under the pointer are the two that can act; a selection of fourteen has
+   one menu, not fourteen. */
+.workspace-recent.is-view-list
+  .workspace-item-option.is-command-selected:not(.is-command-active)
+  .workspace-item-actions-trigger {
+  opacity: 0;
+}
+
+.is-pointer-live
+  .workspace-recent.is-view-list
+  .workspace-item-option:hover
+  .workspace-item-actions-trigger,
+.workspace-recent.is-view-list
+  .workspace-item-option.is-command-active
+  .workspace-item-actions-trigger,
+.workspace-recent.is-view-list
+  .workspace-item-actions:focus-within
+  .workspace-item-actions-trigger {
+  opacity: 1;
 }

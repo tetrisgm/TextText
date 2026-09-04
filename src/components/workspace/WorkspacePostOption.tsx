@@ -86,7 +86,9 @@ export const WorkspacePostOption = memo(function WorkspacePostOption({
   return (
     <div
       id={workspacePostOptionDomId(post.id)}
-      className={`workspace-item-option${selected ? " is-command-selected" : ""}`}
+      className={`workspace-item-option${selected ? " is-command-selected" : ""}${
+        active ? " is-command-active" : ""
+      }`}
       data-workspace-post-id={post.id}
       data-tags={hasTags ? "" : undefined}
       role="option"
@@ -144,12 +146,19 @@ export const WorkspacePostOption = memo(function WorkspacePostOption({
       >
         <WorkspaceItemThumbnail post={post} />
         <span className="workspace-item-option-copy">
-          {chip && (
-            <span className="workspace-item-chip" data-chip={chip.kind}>
-              {chip.label}
-            </span>
-          )}
-          <strong>{sidebarDocumentTitle(post)}</strong>
+          {/* Chip and title share ONE column so the previews below each other
+              line up. In the reference the first column is fixed and that is
+              what makes the list read as a table rather than as ragged
+              paragraphs; a chip that sits in its own column moves the title
+              on every row that has one. */}
+          <span className="workspace-item-option-lede">
+            {chip && (
+              <span className="workspace-item-chip" data-chip={chip.kind}>
+                {chip.label}
+              </span>
+            )}
+            <strong>{sidebarDocumentTitle(post)}</strong>
+          </span>
           {/* The icon already says what kind of item this is, so the row
               carries the title and whatever the document actually says. The
               preview is prose, not Markdown: a document that opens with a
