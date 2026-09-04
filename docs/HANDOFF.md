@@ -3415,6 +3415,40 @@ collab_state/collab_updates rows, then start the server.
   screenshot plainly shows the element. Trust the screenshot, or re-run
   the query.
 
+## The rest of the list behaviours (2026-09-03)
+
+- **Right click opens a real menu** (`WorkspaceRowContextMenu`), at the
+  pointer, acting on the SELECTION rather than only the row under it -
+  right clicking outside the selection moves it, inside it leaves it
+  alone, as every file list does. Escape closes it through the app's
+  `useEscapeLayer`, NOT a private keydown listener: the first attempt
+  used one and Escape did nothing.
+- **Drag items into a folder.** A row is draggable only once SELECTED,
+  which is what lets the rubber-band and the move share the same pixel:
+  an always-draggable row lets the browser's own drag preempt the
+  marquee. The drop is delegated off `[data-workspace-sidebar-path]`.
+  Two traps: a server action called from a plain DOM listener throws
+  React #441, so the move runs inside `startTransition`; and a move that
+  the server refuses used to roll back in silence, which is how the
+  `posts_folder_slug_idx` conflict (an item whose slug already exists in
+  the destination) looked like nothing happening. There is a toast now.
+  That constraint is a real product edge: moving an item into a folder
+  holding the same slug fails, and the honest fix is re-slugging on move
+  rather than a message. Not done.
+- Cmd+D duplicates, Cmd+C / Cmd+V copy and paste items (an app clipboard
+  of ids, not the system one - what is being copied is a document).
+  Home/End and Cmd+Up/Down jump to the ends of a list. Move and star now
+  offer an Undo toast, as trash already did.
+- **Holding Cmd re-renders the hint bar** to show what Cmd does here,
+  which is the actual Superhuman trick. `metaKeyHintsFor` prefers the
+  Cmd spelling of a command that has several - while Cmd is held, "Home"
+  is the wrong answer to "what does Cmd do".
+- **Bare-letter type-ahead is deliberately NOT implemented.** Single
+  letters are commands here (c, s, e, m, g, j, k), and a scheme where
+  some letters jump to an item and others act on it is worse than none.
+  `/` filters the list as you type, which does the same job better; it
+  only needed to be discoverable, so it is in the hint bar now.
+
 ## Resolved episodes (one line each, dates in git log)
 
 - Apple consent screen "write app": appleid.apple.com caches its own copy;

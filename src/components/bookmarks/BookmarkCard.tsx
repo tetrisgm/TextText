@@ -161,6 +161,7 @@ export function BookmarkCard({
   editPath,
   onOpenPost,
   onOpenPostInNewTab,
+  onDragItems,
   onOpenTag,
   onItemClick,
   onSelect,
@@ -178,6 +179,8 @@ export function BookmarkCard({
   onOpenPost?: (post: Post) => void;
   /** Cmd/Ctrl or middle click: open the document as a background tab. */
   onOpenPostInNewTab?: (postId: string) => void;
+  /** Fill a drag with the items being moved. */
+  onDragItems?: (transfer: DataTransfer, postId: string) => void;
   onOpenTag?: (tag: string) => void;
   onItemClick?: (event: MouseEvent<HTMLElement>) => boolean;
   onSelect?: () => void;
@@ -363,7 +366,10 @@ export function BookmarkCard({
         <Link
           className={styles.main}
           href={editPath}
-          draggable={false}
+          draggable={Boolean(selected)}
+          onDragStart={(event) => {
+            if (post.id) onDragItems?.(event.dataTransfer, post.id);
+          }}
           prefetch={onOpenPost ? false : undefined}
           onMouseDown={(event) => {
             if (shouldSuppressNativeItemSelection(event)) {

@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { keyHintsFor, type KeyHint } from "@/lib/commands/hints";
+import {
+  keyHintsFor,
+  metaKeyHintsFor,
+  type KeyHint,
+} from "@/lib/commands/hints";
 import type { CommandContext } from "@/lib/commands/types";
 
 /**
@@ -21,11 +25,27 @@ export function WorkspaceKeyHints({
   revision: string;
 }) {
   const [hints, setHints] = useState<KeyHint[]>([]);
+  const [metaHeld, setMetaHeld] = useState(false);
+
+  // Holding Cmd asks "what does this modifier do here", and the bar answers.
+  useEffect(() => {
+    const sync = (event: KeyboardEvent) => setMetaHeld(event.metaKey);
+    const clear = () => setMetaHeld(false);
+    window.addEventListener("keydown", sync);
+    window.addEventListener("keyup", sync);
+    window.addEventListener("blur", clear);
+    return () => {
+      window.removeEventListener("keydown", sync);
+      window.removeEventListener("keyup", sync);
+      window.removeEventListener("blur", clear);
+    };
+  }, []);
 
   useEffect(() => {
     const read = () => {
       try {
-        setHints(keyHintsFor(commandContext()));
+        const ctx = commandContext();
+        setHints(metaHeld ? metaKeyHintsFor(ctx) : keyHintsFor(ctx));
       } catch {
         setHints([]);
       }
@@ -35,12 +55,15 @@ export function WorkspaceKeyHints({
     // after the view changes.
     const frame = window.requestAnimationFrame(read);
     return () => window.cancelAnimationFrame(frame);
-  }, [commandContext, revision]);
+  }, [commandContext, metaHeld, revision]);
 
   if (hints.length === 0) return null;
 
   return (
-    <div className="workspace-key-hints" aria-hidden="true">
+    <div
+      className={`workspace-key-hints${metaHeld ? " is-modifier-layer" : ""}`}
+      aria-hidden="true"
+    >
       {hints.map((hint) => (
         <span key={hint.id} className="workspace-key-hint">
           <kbd className="workspace-key-hint-keys">{hint.keys}</kbd>

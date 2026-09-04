@@ -829,6 +829,7 @@ export function LocalWorkspaceContent({
   onOpenPostId,
   onOpenPost,
   onOpenPostInNewTab,
+  onDragItems,
   onOpenRoot,
   onOpenTag,
   onItemClick,
@@ -873,6 +874,8 @@ export function LocalWorkspaceContent({
   onOpenPost: (post: Post) => void;
   /** Cmd/Ctrl or middle click: open the document as a background tab. */
   onOpenPostInNewTab: (postId: string) => void;
+  /** Fill a drag with the items being moved. */
+  onDragItems: (transfer: DataTransfer, postId: string) => void;
   onOpenRoot: () => void;
   onOpenTag: (tag: string) => void;
   onItemClick: (postId: string, event: ReactMouseEvent<HTMLElement>) => boolean;
@@ -1004,6 +1007,7 @@ export function LocalWorkspaceContent({
           onDeleteFolder={onDeleteFolder}
           onOpenPost={onOpenPost}
           onOpenPostInNewTab={onOpenPostInNewTab}
+          onDragItems={onDragItems}
           onOpenTag={onOpenTag}
           onItemClick={onItemClick}
           createBookmarkRequestKey={createBookmarkRequestKey}

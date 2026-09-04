@@ -15,7 +15,14 @@ export type KeyHint = { id: string; label: string; keys: string };
 const LIST_HINTS = [
   "selection.open",
   "workspace.open-in-new-tab",
+  // "/" is this app's answer to type-ahead. Bare-letter type-ahead cannot
+  // work here: single letters are commands (c, s, e, m, g, j, k), and a
+  // scheme where SOME letters jump to an item and others act on it would be
+  // worse than none. Filtering as you type is better than Finder's jump
+  // anyway; it only needed to be discoverable.
+  "workspace.search",
   "selection.select-all",
+  "post.duplicate",
   "post.delete",
   "create.current",
   "command.palette",
@@ -30,10 +37,55 @@ const DOCUMENT_HINTS = [
   "navigation.up",
 ] as const;
 
-function shortcutText(command: (typeof WORKSPACE_COMMANDS)[number]): string {
+function shortcutText(
+  command: (typeof WORKSPACE_COMMANDS)[number],
+  prefer: "first" | "meta" = "first",
+): string {
   const shortcut = command.shortcut;
   if (!shortcut) return "";
-  return Array.isArray(shortcut) ? (shortcut[0]?.label ?? "") : shortcut.label;
+  const list = Array.isArray(shortcut) ? shortcut : [shortcut];
+  if (prefer === "meta") {
+    // While Cmd is held, show the Cmd spelling of a command that has one:
+    // "Home" is the wrong answer to "what does Cmd do".
+    const withMeta = list.find((entry) => entry.meta);
+    if (withMeta) return withMeta.label;
+  }
+  return list[0]?.label ?? "";
+}
+
+/** Which layer the bar is showing: what is pressable now, or what Cmd adds. */
+export type HintLayer = "base" | "meta";
+
+function usesMeta(command: (typeof WORKSPACE_COMMANDS)[number]): boolean {
+  const shortcut = command.shortcut;
+  if (!shortcut) return false;
+  const list = Array.isArray(shortcut) ? shortcut : [shortcut];
+  return list.some((entry) => entry.meta);
+}
+
+/**
+ * Everything Cmd does here, for while the key is held - the Superhuman
+ * trick: the bar answers "what does this modifier do" at the moment you ask.
+ */
+export function metaKeyHintsFor(ctx: CommandContext, limit = 7): KeyHint[] {
+  const workspace = ctx.workspace;
+  if (!workspace) return [];
+  const hints: KeyHint[] = [];
+  for (const command of WORKSPACE_COMMANDS) {
+    if (!usesMeta(command)) continue;
+    let available = false;
+    try {
+      available = command.when(ctx);
+    } catch {
+      available = false;
+    }
+    if (!available) continue;
+    const keys = shortcutText(command, "meta");
+    if (!keys) continue;
+    hints.push({ id: command.id, label: command.label, keys });
+    if (hints.length >= limit) break;
+  }
+  return hints;
 }
 
 export function keyHintsFor(ctx: CommandContext, limit = 5): KeyHint[] {

@@ -1328,6 +1328,7 @@ function UniversalFolderContents({
   onItemClick,
   onOpenPost,
   onOpenPostInNewTab,
+  onDragItems,
   onOpenTag,
   onSelectPost,
   availableTemplates,
@@ -1349,6 +1350,8 @@ function UniversalFolderContents({
   onOpenPost?: (post: Post) => void;
   /** Cmd/Ctrl or middle click: open the document as a background tab. */
   onOpenPostInNewTab?: (postId: string) => void;
+  /** Fill a drag with the items being moved. */
+  onDragItems?: (transfer: DataTransfer, postId: string) => void;
   onOpenTag?: (tag: string) => void;
   onSelectPost?: (postId: string) => void;
   selectedPostId?: string | null;
@@ -1618,6 +1621,7 @@ function UniversalFolderContents({
                   onDeletePost={onDeleteItem}
                   onOpenPost={onOpenPost}
                   onOpenPostInNewTab={onOpenPostInNewTab}
+                  onDragItems={onDragItems}
                   onOpenTag={onOpenTag}
                   onSelect={() => post.id && onSelectPost?.(post.id)}
                   onItemClick={(event) =>
@@ -1812,7 +1816,15 @@ function UniversalFolderContents({
                   <Link
                     className="post-folder-row"
                     href={blogPostPath(blog, post)}
-                    draggable={false}
+                    // Draggable only once selected: an unselected row keeps
+                    // the rubber-band, and a selected one moves. Both
+                    // gestures cannot start from the same pixel, because the
+                    // browser's own drag preempts the marquee.
+                    draggable={selected}
+                    onDragStart={(event) => {
+                      if (!post.id) return;
+                      onDragItems?.(event.dataTransfer, post.id);
+                    }}
                     // What the keys do here, on hover, as the owner asked.
                     title={ROW_HOVER_HINT}
                     prefetch={onOpenPost ? false : undefined}
@@ -1928,7 +1940,15 @@ function UniversalFolderContents({
                   <Link
                     className="universal-item-card-link"
                     href={blogPostPath(blog, post)}
-                    draggable={false}
+                    // Draggable only once selected: an unselected row keeps
+                    // the rubber-band, and a selected one moves. Both
+                    // gestures cannot start from the same pixel, because the
+                    // browser's own drag preempts the marquee.
+                    draggable={selected}
+                    onDragStart={(event) => {
+                      if (!post.id) return;
+                      onDragItems?.(event.dataTransfer, post.id);
+                    }}
                     // What the keys do here, on hover, as the owner asked.
                     title={ROW_HOVER_HINT}
                     prefetch={onOpenPost ? false : undefined}
@@ -2282,6 +2302,7 @@ export function FolderPage({
   onItemClick,
   onOpenPost,
   onOpenPostInNewTab,
+  onDragItems,
   onOpenTag,
   createBookmarkRequestKey,
   editRequestKey = 0,
@@ -2304,6 +2325,8 @@ export function FolderPage({
   onDeleteItem?: FolderDeleteItem;
   onItemClick?: (postId: string, event: MouseEvent<HTMLElement>) => boolean;
   onOpenPost?: (post: Post) => void;
+  /** Fill a drag with the items being moved. */
+  onDragItems?: (transfer: DataTransfer, postId: string) => void;
   /** Cmd/Ctrl or middle click: open the document as a background tab. */
   onOpenPostInNewTab?: (postId: string) => void;
   onOpenTag?: (tag: string) => void;
@@ -2456,6 +2479,7 @@ export function FolderPage({
         onItemClick={onItemClick}
         onOpenPost={onOpenPost}
         onOpenPostInNewTab={onOpenPostInNewTab}
+        onDragItems={onDragItems}
         onOpenTag={onOpenTag}
         onSelectPost={onSelectPost}
         selectedPostId={visibleSelectedPostId}

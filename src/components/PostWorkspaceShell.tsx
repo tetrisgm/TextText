@@ -7,6 +7,7 @@ import {
   type WorkspaceSelectionState,
 } from "@/lib/workspace/selection-store";
 import {
+  startTransition,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -16,6 +17,15 @@ import {
   useSyncExternalStore,
 } from "react";
 import { flushSync } from "react-dom";
+import {
+  dragCarriesItems,
+  readItemDrag,
+  writeItemDrag,
+} from "@/lib/workspace/item-drag";
+import {
+  WorkspaceRowContextMenu,
+  type RowContextMenuTarget,
+} from "@/components/workspace/WorkspaceRowContextMenu";
 import {
   isSelectionRangeClick,
   isSelectionToggleClick,
@@ -858,6 +868,8 @@ function LocalWorkspaceShell({
   /** Set when a marquee drag begins on a row: the click that follows must
    * select, not open. Cleared by the row handler that consumes it. */
   const suppressNextRowClickRef = useRef(false);
+  const [rowContextMenu, setRowContextMenu] =
+    useState<RowContextMenuTarget | null>(null);
   const sidebarSelectionActiveRef = useRef(false);
   const lastActivePostIdRef = useRef<string | null>(initialSelectedPostId);
   const lastSidebarPathRef = useRef<string>(
@@ -2249,6 +2261,139 @@ function LocalWorkspaceShell({
     [displayPool, effectiveSelectedPostIds],
   );
 
+  const showToast = useCommandToast();
+
+  /** Move named items into a folder. The optimistic move lands first and is
+   * rolled back per item if the server refuses. */
+  const moveWorkspaceItems = useCallback(
+    async (postIds: readonly string[], folderPath: string) => {
+      if (!canManageFolders) return;
+      const folder = displayPoolRef.current.folders.find(
+        (candidate) => candidate.path === folderPath,
+      );
+      if (!folder) return;
+      const posts = postIds
+        .map((postId) => findPoolPostById(displayPoolRef.current, postId))
+        .filter((post): post is WorkspacePoolPost => Boolean(post))
+        // A note cannot live in a blog folder; silently skip rather than
+        // failing the whole drag.
+        .filter((post) => homeFolderModeForPostType(post.type) === folder.mode);
+      if (posts.length === 0) return;
+      const moved = posts.map((post) => ({
+        id: post.id,
+        previousFolderId: post.folderId,
+      }));
+      await Promise.all(
+        posts.map(async (post) => {
+          const previousFolderId = post.folderId;
+          movePost(post.id, folder.id);
+          try {
+            await movePostToFolderAction(
+              displayPoolRef.current.blog.handle,
+              post.id,
+              folder.path,
+            );
+          } catch (error) {
+            movePost(post.id, previousFolderId);
+            throw error;
+          }
+        }),
+      ).catch((error) => {
+        // A move can be refused - most often because an item with that slug
+        // already lives in the destination. The optimistic move has been
+        // rolled back by now; say so rather than letting the row silently
+        // snap back with no explanation.
+        showToast(
+          posts.length === 1
+            ? "Could not move that item"
+            : "Could not move those items",
+        );
+        throw error;
+      });
+      clearPostSelection();
+      showToast(
+        moved.length === 1
+          ? `Moved to ${folder.name?.trim() || folder.path}`
+          : `Moved ${moved.length} items to ${folder.name?.trim() || folder.path}`,
+        {
+          label: "Undo",
+          run: () => {
+            for (const entry of moved) movePost(entry.id, entry.previousFolderId);
+            void Promise.all(
+              moved.map((entry) => {
+                const back = displayPoolRef.current.folders.find(
+                  (candidate) => candidate.id === entry.previousFolderId,
+                );
+                return back
+                  ? movePostToFolderAction(
+                      displayPoolRef.current.blog.handle,
+                      entry.id,
+                      back.path,
+                    )
+                  : Promise.resolve();
+              }),
+            ).catch((error) => {
+              for (const entry of moved) movePost(entry.id, folder.id);
+              console.warn("workspace item move undo failed", error);
+            });
+          },
+        },
+      );
+    },
+    [canManageFolders, clearPostSelection, showToast],
+  );
+  const moveWorkspaceItemsRef = useRef(moveWorkspaceItems);
+  moveWorkspaceItemsRef.current = moveWorkspaceItems;
+  /** Ids remembered by Cmd+C, pasted by Cmd+V. An app clipboard rather than
+   * the system one: what is being copied is a document, not its text. */
+  const copiedPostIdsRef = useRef<readonly string[]>([]);
+  const selectedPostIdsRef = useRef<ReadonlySet<string>>(new Set());
+  selectedPostIdsRef.current = selectedPostIds;
+
+  /** Copies of the given items, in the folders they already live in. The
+   * body has to be on hand, so anything not yet cached is fetched first. */
+  const duplicateWorkspaceItems = useCallback(
+    async (postIds: readonly string[]) => {
+      if (!canManageFolders || postIds.length === 0) return;
+      const pool = displayPoolRef.current;
+      const posts = postIds
+        .map((postId) => findPoolPostById(pool, postId))
+        .filter((post): post is WorkspacePoolPost => Boolean(post))
+        .filter((post) => post.type !== "bookmark");
+      if (posts.length === 0) return;
+      let made = 0;
+      for (const post of posts) {
+        try {
+          await ensurePostDocument(pool.blogId, post.id);
+        } catch {
+          /* fall back to whatever is already local */
+        }
+        const document =
+          getCachedWorkspacePostDocument(pool.blogId, post.id)?.document ??
+          pool.initialDocuments?.find((entry) => entry.postId === post.id)
+            ?.document ??
+          post.document;
+        const title = (post.title ?? "").trim();
+        createWorkspaceItem(
+          {
+            type: post.type === "article" ? "article" : "note",
+            folderPath: folderPathForPoolPost(pool, post),
+            title: title ? `${title} copy` : "Untitled copy",
+            body: document?.content.body ?? "",
+          },
+          { open: false },
+        );
+        made += 1;
+      }
+      if (made > 0) {
+        showToast(made === 1 ? "Duplicated" : `Duplicated ${made} items`);
+      }
+    },
+    [canManageFolders, createWorkspaceItem, showToast],
+  );
+  const duplicateWorkspaceItemsRef = useRef(duplicateWorkspaceItems);
+  duplicateWorkspaceItemsRef.current = duplicateWorkspaceItems;
+
   const moveSelectedPosts = useCallback(
     async (folderPath: string) => {
       if (!canManageFolders) return;
@@ -2280,7 +2425,6 @@ function LocalWorkspaceShell({
     [canManageFolders, clearPostSelection, selectedPoolPosts],
   );
 
-  const showToast = useCommandToast();
   // An item held open beside the one being worked on. Not a second navigable
   // pane - see lib/workspace/split-view for why.
   useTabScope(homePath);
@@ -2807,6 +2951,106 @@ function LocalWorkspaceShell({
     return ids.length > 0 ? ids : visiblePosts.map((post) => post.id);
   }, [visiblePosts]);
 
+  /** Folders this selection could move into: same shape as the palette's
+   * Move commands, so the two never offer different destinations. */
+  const contextMenuMoveTargets = useMemo(() => {
+    if (selectedPoolPosts.length === 0) return [];
+    const types = new Set(selectedPoolPosts.map((post) => post.type));
+    if (types.size !== 1) return [];
+    const [type] = Array.from(types);
+    const mode =
+      type === "note" ? "notes" : type === "bookmark" ? "bookmarks" : "blog";
+    return displayPool.folders
+      .filter((folder) => folder.mode === mode)
+      .map((folder) => folder.path);
+  }, [displayPool.folders, selectedPoolPosts]);
+
+  const handleDragItems = useCallback(
+    (transfer: DataTransfer, postId: string) => {
+      // The whole selection travels when the dragged row is part of it.
+      const ids = selectedPostIds.has(postId)
+        ? Array.from(selectedPostIds)
+        : [postId];
+      writeItemDrag(transfer, ids);
+    },
+    [selectedPostIds],
+  );
+
+  // Dropping on a folder in the sidebar. Delegated rather than threaded
+  // through the sidebar's own components: the drop target is any element
+  // carrying a folder path, which is already how the sidebar marks its rows.
+  useEffect(() => {
+    const folderUnder = (event: DragEvent): HTMLElement | null => {
+      const target = event.target;
+      if (!(target instanceof Element)) return null;
+      return target.closest<HTMLElement>("[data-workspace-sidebar-path]");
+    };
+    let hovered: HTMLElement | null = null;
+    const setHovered = (next: HTMLElement | null) => {
+      if (hovered === next) return;
+      hovered?.classList.remove("is-drop-target");
+      next?.classList.add("is-drop-target");
+      hovered = next;
+    };
+    const onDragOver = (event: DragEvent) => {
+      if (!dragCarriesItems(event.dataTransfer)) return;
+      const folder = folderUnder(event);
+      setHovered(folder);
+      if (!folder) return;
+      // Only a preventDefault here makes the element a drop target at all.
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    };
+    const onDrop = (event: DragEvent) => {
+      const folder = folderUnder(event);
+      setHovered(null);
+      if (!folder) return;
+      const ids = readItemDrag(event.dataTransfer);
+      const folderPath = folder.dataset.workspaceSidebarPath;
+      if (ids.length === 0 || !folderPath) return;
+      event.preventDefault();
+      // Inside a transition: this listener is plain DOM, not a React event,
+      // and a server action called from outside one throws (React #441).
+      startTransition(() => {
+        void moveWorkspaceItemsRef.current(ids, folderPath).catch((error) => {
+          console.warn("workspace item move failed", error);
+        });
+      });
+    };
+    const onDragEnd = () => setHovered(null);
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("drop", onDrop);
+    window.addEventListener("dragend", onDragEnd);
+    window.addEventListener("dragleave", onDragEnd);
+    return () => {
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("drop", onDrop);
+      window.removeEventListener("dragend", onDragEnd);
+      window.removeEventListener("dragleave", onDragEnd);
+      setHovered(null);
+    };
+  }, []);
+
+  const handleRowContextMenu = useCallback(
+    (event: ReactMouseEvent<HTMLElement>) => {
+      const target = event.target;
+      const row =
+        target instanceof Element
+          ? target.closest<HTMLElement>("[data-workspace-post-id]")
+          : null;
+      const postId = row?.dataset.workspacePostId;
+      if (!postId) return;
+      event.preventDefault();
+      activateRegion("body");
+      // Right clicking outside the current selection moves it, exactly as a
+      // file list does; right clicking inside it leaves the selection alone
+      // so the menu can act on all of them.
+      if (!selectedPostIds.has(postId)) selectOnlyPost(postId);
+      setRowContextMenu({ x: event.clientX, y: event.clientY, postId });
+    },
+    [activateRegion, selectOnlyPost, selectedPostIds],
+  );
+
   const handleItemClick = useCallback(
     (postId: string, event: ReactMouseEvent<HTMLElement>): boolean => {
       if (suppressNextRowClickRef.current) {
@@ -2952,7 +3196,39 @@ function LocalWorkspaceShell({
         }
       }),
     ).catch((error) => console.warn("workspace star update failed", error));
-  }, [canManageFolders, effectiveSelectedPostId, effectiveSelectedPostIds]);
+    // Starring several items at once is easy to do by accident with a
+    // selection in play, so offer the way back.
+    showToast(
+      posts.length === 1
+        ? nextStarred
+          ? "Starred"
+          : "Unstarred"
+        : `${nextStarred ? "Starred" : "Unstarred"} ${posts.length} items`,
+      {
+        label: "Undo",
+        run: () => {
+          for (const post of posts) {
+            updatePost(post.id, { starred: Boolean(post.starred) });
+          }
+          void Promise.all(
+            posts.map((post) =>
+              Boolean(post.starred) === nextStarred
+                ? Promise.resolve()
+                : toggleEditablePostStarredAction(
+                    displayPoolRef.current.blog.handle,
+                    post.id,
+                  ),
+            ),
+          ).catch((error) => console.warn("workspace star undo failed", error));
+        },
+      },
+    );
+  }, [
+    canManageFolders,
+    effectiveSelectedPostId,
+    effectiveSelectedPostIds,
+    showToast,
+  ]);
 
   const focusWorkspaceBody = useCallback(() => {
     activateRegion("body");
@@ -4222,6 +4498,30 @@ function LocalWorkspaceShell({
           selectedIds: new Set(ids),
         });
       },
+      selectEdge: (edge: "first" | "last") => {
+        const ids = visiblePostIdsInDocumentOrder();
+        const postId = edge === "first" ? ids[0] : ids[ids.length - 1];
+        if (!postId) return;
+        activateRegion("body");
+        selectOnlyPost(postId);
+        document
+          .querySelector<HTMLElement>(`[data-workspace-post-id="${postId}"]`)
+          ?.scrollIntoView({ block: "nearest" });
+      },
+      duplicateSelected: () => {
+        void duplicateWorkspaceItemsRef.current(
+          Array.from(selectedPostIdsRef.current),
+        );
+      },
+      copySelection: () => {
+        copiedPostIdsRef.current = Array.from(selectedPostIdsRef.current);
+        const count = copiedPostIdsRef.current.length;
+        if (count === 0) return;
+        showToast(count === 1 ? "Item copied" : `${count} items copied`);
+      },
+      pasteCopied: () => {
+        void duplicateWorkspaceItemsRef.current(copiedPostIdsRef.current);
+      },
       clearSelection: () => {
         const current = selectedPostIdRef.current;
         // Back to a single row rather than to nothing: losing the caret
@@ -4620,6 +4920,7 @@ function LocalWorkspaceShell({
       onOpenSection={navigateSection}
       onOpenPostId={openPostId}
       onOpenPost={openPost}
+      onDragItems={handleDragItems}
       onOpenPostInNewTab={(postId) => {
         // A background tab: the strip grows, what you are reading stays put.
         deliberateOpenIdsRef.current.add(postId);
@@ -4789,6 +5090,7 @@ function LocalWorkspaceShell({
             activateRegion("body");
             beginBackgroundSelection(event);
           }}
+          onContextMenu={handleRowContextMenu}
           className={`post-editor-content${
             localViewActiveFolder(view) === "blog" ? " is-blog-folder-view" : ""
           }`}
@@ -4809,6 +5111,24 @@ function LocalWorkspaceShell({
           />
           {content}
         </div>
+
+        {rowContextMenu && (
+          <WorkspaceRowContextMenu
+            folders={displayPool.folders}
+            moveTargets={contextMenuMoveTargets}
+            posts={selectedPoolPosts}
+            target={rowContextMenu}
+            onClose={() => setRowContextMenu(null)}
+            onOpen={(postId) => openPostId(postId)}
+            onOpenInNewTab={(postId) => {
+              deliberateOpenIdsRef.current.add(postId);
+              openTab(postId);
+            }}
+            onToggleStar={toggleStarSelected}
+            onMove={(folderPath) => void moveSelectedPosts(folderPath)}
+            onDelete={() => deleteSelectedPosts()}
+          />
+        )}
 
         {readCommandContext && (
           <WorkspaceKeyHints

@@ -66,6 +66,13 @@ export type CommandWorkspaceSurface = {
   extendSelection: (direction: -1 | 1) => void;
   /** Cmd+A over a list: select everything shown. */
   selectAllVisible: () => void;
+  /** Home / End, or Cmd+Up / Cmd+Down: jump to the ends of the list. */
+  selectEdge: (edge: "first" | "last") => void;
+  /** Cmd+D: copies of the selected items, beside them. */
+  duplicateSelected: () => void;
+  /** Cmd+C then Cmd+V: remember a selection, then copy it in here. */
+  copySelection: () => void;
+  pasteCopied: () => void;
   /** Escape from a selection of many back to one. */
   clearSelection: () => void;
   selectNext: () => void;

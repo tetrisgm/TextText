@@ -349,6 +349,61 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     run: (ctx) => ctx.workspace?.clearSelection(),
   },
   {
+    id: "selection.first",
+    label: "Go to the first item",
+    group: "Navigate",
+    shortcut: [
+      { key: "Home", label: "Home" },
+      { key: "ArrowUp", meta: true, label: "⌘↑" },
+    ],
+    when: (ctx) => Boolean(ctx.workspace?.selectEdge),
+    run: (ctx) => ctx.workspace?.selectEdge?.("first"),
+  },
+  {
+    id: "selection.last",
+    label: "Go to the last item",
+    group: "Navigate",
+    shortcut: [
+      { key: "End", label: "End" },
+      { key: "ArrowDown", meta: true, label: "⌘↓" },
+    ],
+    when: (ctx) => Boolean(ctx.workspace?.selectEdge),
+    run: (ctx) => ctx.workspace?.selectEdge?.("last"),
+  },
+  {
+    id: "post.duplicate",
+    label: "Duplicate",
+    group: "Act",
+    shortcut: { key: "d", meta: true, label: "⌘D", once: true },
+    when: (ctx) =>
+      Boolean(ctx.workspace?.canManagePost) &&
+      (ctx.workspace?.selectedPostIds.length ?? 0) > 0,
+    run: (ctx) => ctx.workspace?.duplicateSelected?.(),
+  },
+  {
+    id: "post.copy",
+    label: "Copy items",
+    group: "Act",
+    shortcut: { key: "c", meta: true, label: "⌘C", once: true },
+    when: (ctx) =>
+      Boolean(ctx.workspace?.canManagePost) &&
+      (ctx.workspace?.selectedPostIds.length ?? 0) > 0 &&
+      ctx.workspace?.viewLevel !== "post" &&
+      ctx.workspace?.viewLevel !== "edit",
+    run: (ctx) => ctx.workspace?.copySelection?.(),
+  },
+  {
+    id: "post.paste",
+    label: "Paste items here",
+    group: "Act",
+    shortcut: { key: "v", meta: true, label: "⌘V", once: true },
+    when: (ctx) =>
+      Boolean(ctx.workspace?.canCreate) &&
+      ctx.workspace?.viewLevel !== "post" &&
+      ctx.workspace?.viewLevel !== "edit",
+    run: (ctx) => ctx.workspace?.pasteCopied?.(),
+  },
+  {
     id: "selection.extend-previous",
     label: "Extend selection up",
     group: "Navigate",
