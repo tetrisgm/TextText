@@ -3319,10 +3319,19 @@ collab_state/collab_updates rows, then start the server.
   cycle, Cmd+Enter opens the highlighted row as a background tab, tabs
   persist per workspace and can be dragged to reorder, and closing the
   open one lands on its neighbour.
-- **Alt-click opens a background tab, NOT Cmd-click.** Cmd/Ctrl click on
-  a list row already toggles selection (`selectionFromClick`), and taking
-  it for tabs would cost multi-select, which the owner uses. Middle click
-  works too, on rows and on tabs.
+- **Cmd-click opens a background tab; CTRL-click toggles selection**
+  (owner, 2026-09-03, after being shown the conflict). Two standards
+  collide on these rows because a row is a link AND a list item: browsers
+  say Cmd-click opens a tab, the macOS HIG says Cmd-click toggles a list
+  selection. The owner chose the browser reading and moved toggling to
+  Ctrl; Shift still extends a range, with or without Ctrl. Alt-click and
+  middle click also open a tab, and middle click closes one.
+- Ctrl-click is macOS's secondary-click alias, so making it the selection
+  modifier means it ALSO raises a context menu on every pick. A capture
+  listener suppresses `contextmenu` when `ctrlKey && button === 0` on a
+  row; a real right click (button 2) still gets its menu.
+- The new-tab branch must run BEFORE the selection handler, or Cmd-click
+  opens a tab and resets the selection to that one row on the way past.
 - **Preview tabs promote on a real EDIT, not on the view level.** Notes
   edit in place, so `view.level === "edit"` is true the moment one opens
   and promoting on it made every note permanent immediately. Promotion

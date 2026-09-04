@@ -304,23 +304,25 @@ export function BookmarkCard({
     </span>
   );
   const openItem = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (onItemClick && !onItemClick(event)) {
-      event.preventDefault();
-      return;
-    }
-    // Alt click opens a background tab. NOT Cmd click: that already toggles
-    // selection in a list, and taking it for tabs would cost multi-select.
+    // Cmd click opens a background tab, the way it opens a link anywhere
+    // else. Ctrl is what toggles selection here, so the two no longer
+    // collide. Alt does the same, and stops WebKit treating it as a
+    // download. BEFORE the selection handler: opening a tab should not also
+    // move what is selected.
     if (
       post.id &&
       onOpenPostInNewTab &&
       event.button === 0 &&
-      event.altKey &&
-      !event.metaKey &&
+      (event.metaKey || event.altKey) &&
       !event.ctrlKey &&
       !event.shiftKey
     ) {
       event.preventDefault();
       onOpenPostInNewTab(post.id);
+      return;
+    }
+    if (onItemClick && !onItemClick(event)) {
+      event.preventDefault();
       return;
     }
     if (!onOpenPost || !shouldOpenLocally(event)) return;

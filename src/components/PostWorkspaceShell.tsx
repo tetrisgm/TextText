@@ -2798,6 +2798,21 @@ function LocalWorkspaceShell({
     return ids.length > 0 ? ids : visiblePosts.map((post) => post.id);
   }, [visiblePosts]);
 
+  // On macOS Ctrl+click is the secondary-click alias, so now that it toggles
+  // selection it would also raise a context menu on every pick. Suppress the
+  // menu for THAT gesture on rows only; a real right click still gets it.
+  useEffect(() => {
+    const onContextMenu = (event: MouseEvent) => {
+      if (!event.ctrlKey || event.button !== 0) return;
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest?.("[data-workspace-post-id]")) return;
+      event.preventDefault();
+    };
+    window.addEventListener("contextmenu", onContextMenu, true);
+    return () =>
+      window.removeEventListener("contextmenu", onContextMenu, true);
+  }, []);
+
   const handleItemClick = useCallback(
     (postId: string, event: ReactMouseEvent<HTMLElement>): boolean => {
       const selection = selectionFromClick({
@@ -2806,7 +2821,10 @@ function LocalWorkspaceShell({
         range: event.shiftKey,
         selectedIds: selectedPostIds,
         targetId: postId,
-        toggle: event.metaKey || event.ctrlKey,
+        // Ctrl toggles, because Cmd now opens a new tab as it does on a
+        // link anywhere else (owner, 2026-09-03). Shift still extends a
+        // range, with or without Ctrl.
+        toggle: event.ctrlKey,
       });
       applyPostSelection(selection);
       return selection.open;
@@ -4408,7 +4426,8 @@ function LocalWorkspaceShell({
       }
       const startX = event.clientX;
       const startY = event.clientY;
-      const additive = event.metaKey || event.ctrlKey || event.shiftKey;
+      // Same modifiers as a click: Ctrl or Shift adds to what is selected.
+      const additive = event.ctrlKey || event.shiftKey;
       const baseIds = additive ? new Set(selectedPostIds) : new Set<string>();
       let dragging = false;
       bodySelectionActiveRef.current = false;

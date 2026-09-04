@@ -1677,28 +1677,30 @@ function UniversalFolderContents({
                     href={blogPostPath(blog, post)}
                     prefetch={onOpenPost ? false : undefined}
                     onClick={(event) => {
+                      // Cmd click opens a background tab, the way it opens a
+                      // link anywhere else. Ctrl is what toggles selection
+                      // here, so the two no longer collide. Alt does the
+                      // same, and stops WebKit treating it as a download.
+                      // BEFORE the selection handler: opening a tab should
+                      // not also move what is selected.
+                      if (
+                        post.id &&
+                        onOpenPostInNewTab &&
+                        event.button === 0 &&
+                        (event.metaKey || event.altKey) &&
+                        !event.ctrlKey &&
+                        !event.shiftKey
+                      ) {
+                        event.preventDefault();
+                        onOpenPostInNewTab(post.id);
+                        return;
+                      }
                       if (
                         post.id &&
                         onItemClick &&
                         !onItemClick(post.id, event)
                       ) {
                         event.preventDefault();
-                        return;
-                      }
-                      // Alt click opens a background tab. NOT Cmd click:
-                      // that already toggles selection in a list, and taking
-                      // it for tabs would cost multi-select.
-                      if (
-                        post.id &&
-                        onOpenPostInNewTab &&
-                        event.button === 0 &&
-                        event.altKey &&
-                        !event.metaKey &&
-                        !event.ctrlKey &&
-                        !event.shiftKey
-                      ) {
-                        event.preventDefault();
-                        onOpenPostInNewTab(post.id);
                         return;
                       }
                       if (!onOpenPost || !shouldOpenLocally(event)) return;
@@ -1820,28 +1822,30 @@ function UniversalFolderContents({
                       }
                     }}
                     onClick={(event) => {
+                      // Cmd click opens a background tab, the way it opens a
+                      // link anywhere else. Ctrl is what toggles selection
+                      // here, so the two no longer collide. Alt does the
+                      // same, and stops WebKit treating it as a download.
+                      // BEFORE the selection handler: opening a tab should
+                      // not also move what is selected.
+                      if (
+                        post.id &&
+                        onOpenPostInNewTab &&
+                        event.button === 0 &&
+                        (event.metaKey || event.altKey) &&
+                        !event.ctrlKey &&
+                        !event.shiftKey
+                      ) {
+                        event.preventDefault();
+                        onOpenPostInNewTab(post.id);
+                        return;
+                      }
                       if (
                         post.id &&
                         onItemClick &&
                         !onItemClick(post.id, event)
                       ) {
                         event.preventDefault();
-                        return;
-                      }
-                      // Alt click opens a background tab. NOT Cmd click:
-                      // that already toggles selection in a list, and taking
-                      // it for tabs would cost multi-select.
-                      if (
-                        post.id &&
-                        onOpenPostInNewTab &&
-                        event.button === 0 &&
-                        event.altKey &&
-                        !event.metaKey &&
-                        !event.ctrlKey &&
-                        !event.shiftKey
-                      ) {
-                        event.preventDefault();
-                        onOpenPostInNewTab(post.id);
                         return;
                       }
                       if (!onOpenPost || !shouldOpenLocally(event)) return;
@@ -1939,28 +1943,30 @@ function UniversalFolderContents({
                       }
                     }}
                     onClick={(event) => {
+                      // Cmd click opens a background tab, the way it opens a
+                      // link anywhere else. Ctrl is what toggles selection
+                      // here, so the two no longer collide. Alt does the
+                      // same, and stops WebKit treating it as a download.
+                      // BEFORE the selection handler: opening a tab should
+                      // not also move what is selected.
+                      if (
+                        post.id &&
+                        onOpenPostInNewTab &&
+                        event.button === 0 &&
+                        (event.metaKey || event.altKey) &&
+                        !event.ctrlKey &&
+                        !event.shiftKey
+                      ) {
+                        event.preventDefault();
+                        onOpenPostInNewTab(post.id);
+                        return;
+                      }
                       if (
                         post.id &&
                         onItemClick &&
                         !onItemClick(post.id, event)
                       ) {
                         event.preventDefault();
-                        return;
-                      }
-                      // Alt click opens a background tab. NOT Cmd click:
-                      // that already toggles selection in a list, and taking
-                      // it for tabs would cost multi-select.
-                      if (
-                        post.id &&
-                        onOpenPostInNewTab &&
-                        event.button === 0 &&
-                        event.altKey &&
-                        !event.metaKey &&
-                        !event.ctrlKey &&
-                        !event.shiftKey
-                      ) {
-                        event.preventDefault();
-                        onOpenPostInNewTab(post.id);
                         return;
                       }
                       if (!onOpenPost || !shouldOpenLocally(event)) return;
