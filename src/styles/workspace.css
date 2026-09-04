@@ -1667,3 +1667,248 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   background-color: var(--row-selected-bg);
   box-shadow: none;
 }
+
+/* ---------------------------------------------------------------------
+   Floating chrome: round history buttons and the item stepper.
+
+   These sit over the content rather than in a bar, so they carry their own
+   ground and a hairline ring instead of borrowing a toolbar's. The ring is
+   what makes them read as controls against both a white page and a dark one.
+   --------------------------------------------------------------------- */
+.workspace-round-button,
+.workspace-history-chrome .post-editor-sidebar-toggle,
+.workspace-sidebar-reveal-chrome .post-editor-sidebar-toggle {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--toolbar-bg);
+  color: var(--ink-2);
+  cursor: pointer;
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  transition:
+    background-color 0.18s var(--ease),
+    border-color 0.18s var(--ease),
+    color 0.18s var(--ease);
+}
+
+.workspace-round-button svg {
+  width: 17px;
+  height: 17px;
+  display: block;
+}
+
+.is-pointer-live .workspace-round-button:hover,
+.is-pointer-live .workspace-history-chrome .post-editor-sidebar-toggle:hover,
+.is-pointer-live
+  .workspace-sidebar-reveal-chrome
+  .post-editor-sidebar-toggle:hover {
+  border-color: color-mix(in srgb, var(--ink) 22%, var(--hairline));
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.workspace-round-button:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
+
+/* Previous and next item, as one control. A single pill rather than two
+   buttons, because the pair is one idea: step through this list. */
+.workspace-step-pill {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: stretch;
+  height: 36px;
+  margin-left: 4px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--toolbar-bg);
+  overflow: hidden;
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+}
+
+.workspace-step-pill button {
+  width: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background-color 0.18s var(--ease), color 0.18s var(--ease);
+}
+
+.workspace-step-pill button + button {
+  box-shadow: inset 1px 0 0 var(--hairline);
+}
+
+.workspace-step-pill button svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.is-pointer-live .workspace-step-pill button:hover {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  color: var(--ink);
+}
+
+.workspace-step-pill button:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
+
+.workspace-history-chrome,
+.workspace-sidebar-reveal-chrome {
+  gap: 8px;
+}
+
+/* ---------------------------------------------------------------------
+   Sidebar rows.
+
+   Flat rows at reading size with the count on the right, a soft rounded fill
+   on the selected one instead of a grey block, and children indented rather
+   than drawn as a nested structure. The rail itself carries no borders: the
+   only line in the sidebar is the one before Collections.
+   --------------------------------------------------------------------- */
+.post-editor-folder-name {
+  font: 500 15px/1.25 var(--font-body);
+  letter-spacing: -0.005em;
+}
+
+.post-editor-folder-row.is-active .post-editor-folder-name {
+  font-weight: 600;
+}
+
+.post-editor-folder-count {
+  font: 500 12px/1 var(--font-body);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.post-editor-folder-row {
+  border-radius: 8px;
+}
+
+.is-pointer-live .post-editor-folder-row:hover {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+
+/* The selected row picks up the accent rather than a neutral, which is what
+   separates "this is where I am" from "the pointer is here". */
+.post-editor-folder-row.is-active,
+.is-pointer-live .post-editor-folder-row.is-active:hover {
+  background: var(--row-selected-soft);
+}
+
+.post-editor-folder-row.is-active .post-editor-folder-name,
+.post-editor-folder-row.is-active .post-editor-folder-icon,
+.post-editor-folder-row.is-active .post-editor-folder-count {
+  color: var(--ink);
+}
+
+.post-editor-folder-children {
+  padding-left: 14px;
+}
+
+/* ---------------------------------------------------------------------
+   Item actions.
+
+   One filled primary and the rest as plain text. A row of grey chips reads
+   as five equally important choices; a sentence of words with one solid
+   button reads as "here is the thing to do, and here are the others".
+   Scoped to the item toolbar so the same classes keep their chip treatment
+   in settings, where a form's buttons genuinely are peers.
+   --------------------------------------------------------------------- */
+.post-action-toolbar .ac-btn-gray {
+  background: transparent;
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+.is-pointer-live .post-action-toolbar .ac-btn-gray:not(:disabled):hover {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  color: var(--ink);
+}
+
+/* The primary keeps its fill, and is the only thing in the bar that has one. */
+.post-action-toolbar .ac-btn-filled {
+  font-weight: 600;
+}
+
+/* Icon-only controls sit to the right of the words, after a hair of space,
+   the way a compose bar puts its attachments after Send. */
+.post-action-toolbar .post-detail-controls {
+  margin-left: 2px;
+}
+
+/* ---------------------------------------------------------------------
+   Workspace list rows.
+
+   The row metrics from the refit belong here, not only on the public
+   broadsheet: this is the list the workspace actually shows. Title and
+   preview share one line so twice as many items fit on a screen, and the
+   title drops from display weight to interface weight, which is what stops
+   a list of fourteen things reading as fourteen headlines.
+
+   Scoped to the list view: the column and grid views stack deliberately
+   and would collapse into unreadable strips under these rules.
+   --------------------------------------------------------------------- */
+.workspace-recent.is-view-list .workspace-item-option-main {
+  min-height: 50px;
+  gap: 12px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.workspace-recent.is-view-list .workspace-item-option-copy {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+}
+
+.workspace-recent.is-view-list .workspace-item-option-copy > strong {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.workspace-recent.is-view-list .workspace-item-option-detail {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.workspace-recent.is-view-list .workspace-item-option-copy > strong {
+  font: 600 15px/1.35 var(--font-body);
+  letter-spacing: -0.005em;
+}
+
+.workspace-recent.is-view-list .workspace-item-option-detail small {
+  font: 400 15px/1.35 var(--font-body);
+  color: var(--muted);
+}
+
+.workspace-recent.is-view-list .workspace-item-option-main > time {
+  font: 500 12px/1 var(--font-body);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+/* A row with tags keeps its second line for them, and only for them. */
+.workspace-recent.is-view-list
+  .workspace-item-option:has(.workspace-item-option-tags)
+  .workspace-item-option-main {
+  min-height: 64px;
+}

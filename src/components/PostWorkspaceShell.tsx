@@ -5016,6 +5016,11 @@ function LocalWorkspaceShell({
         onSelectFolder={navigateSection}
         onSearchDate={navigateDateSearch}
         onReturnToBody={focusWorkspaceBody}
+        onAdjacentPost={
+          view.level === "post" || view.level === "edit"
+            ? (delta) => selectRelativePost(delta as 1 | -1)
+            : undefined
+        }
         onSidebarFocus={(path) => {
           activateRegion("sidebar");
           lastSidebarPathRef.current = path;

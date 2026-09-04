@@ -643,15 +643,38 @@ function SidebarToggleControl({
   );
 }
 
-export function WorkspaceHistoryControls() {
+/**
+ * The floating history controls, and beside them the item stepper.
+ *
+ * Back and forward go through the shell's `__ttNavGo` rather than
+ * `window.history`, because the trail bookkeeping the swipe and the keys both
+ * rely on lives there: a raw traversal moves the browser without telling the
+ * shell, and the next gesture then reads an index that no longer describes
+ * where we are. Falling back to the raw call keeps the buttons working on the
+ * server-rendered pages, which have no shell to ask.
+ */
+export function WorkspaceHistoryControls({
+  onAdjacent,
+}: {
+  /** Previous/next item, when the view has an order to step through. */
+  onAdjacent?: (delta: number) => void;
+}) {
+  const go = (direction: "back" | "forward") => {
+    const shell = (
+      window as { __ttNavGo?: (direction: "back" | "forward") => boolean }
+    ).__ttNavGo;
+    if (shell?.(direction)) return;
+    if (direction === "back") window.history.back();
+    else window.history.forward();
+  };
   return (
     <>
       <ShortcutTooltip label="Back" placement="bottom">
         <button
           type="button"
-          className="post-editor-sidebar-toggle"
+          className="workspace-round-button"
           aria-label="Go back"
-          onClick={() => window.history.back()}
+          onClick={() => go("back")}
         >
           <HistoryChevron direction="back" />
         </button>
@@ -659,14 +682,51 @@ export function WorkspaceHistoryControls() {
       <ShortcutTooltip label="Forward" placement="bottom">
         <button
           type="button"
-          className="post-editor-sidebar-toggle"
+          className="workspace-round-button"
           aria-label="Go forward"
-          onClick={() => window.history.forward()}
+          onClick={() => go("forward")}
         >
           <HistoryChevron direction="forward" />
         </button>
       </ShortcutTooltip>
+      {onAdjacent && (
+        <span className="workspace-step-pill">
+          <ShortcutTooltip label="Previous item" placement="bottom">
+            <button
+              type="button"
+              aria-label="Previous item"
+              onClick={() => onAdjacent(-1)}
+            >
+              <StepChevron direction="up" />
+            </button>
+          </ShortcutTooltip>
+          <ShortcutTooltip label="Next item" placement="bottom">
+            <button
+              type="button"
+              aria-label="Next item"
+              onClick={() => onAdjacent(1)}
+            >
+              <StepChevron direction="down" />
+            </button>
+          </ShortcutTooltip>
+        </span>
+      )}
     </>
+  );
+}
+
+function StepChevron({ direction }: { direction: "up" | "down" }) {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path
+        d={direction === "up" ? "M4 10L8 6l4 4" : "M4 6l4 4 4-4"}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
@@ -1581,6 +1641,7 @@ export function WorkspaceSidebarChrome({
   trashCount = 0,
   peeking = false,
   onPeekEngage,
+  onAdjacentPost,
 }: {
   activeFolder: SidebarFolderId | null;
   blog: Blog;
@@ -1609,6 +1670,8 @@ export function WorkspaceSidebarChrome({
   trashCount?: number;
   peeking?: boolean;
   onPeekEngage?: () => void;
+  /** Only passed while an item is open, which is when stepping means anything. */
+  onAdjacentPost?: (delta: number) => void;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { width: sidebarWidth, setWidth: setSidebarWidth } =
@@ -1807,7 +1870,7 @@ export function WorkspaceSidebarChrome({
         </div>
       )}
       <div className="workspace-history-chrome ac-chrome">
-        <WorkspaceHistoryControls />
+        <WorkspaceHistoryControls onAdjacent={onAdjacentPost} />
       </div>
       <button
         type="button"

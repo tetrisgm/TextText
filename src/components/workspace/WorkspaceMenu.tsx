@@ -39,6 +39,18 @@ function requestNativeSignOut(): void {
   });
 }
 
+/**
+ * One letter for the account disc. Takes the first letter that is actually a
+ * letter or digit, so a workspace named with a leading emoji or quote still
+ * gets a readable initial rather than a box.
+ */
+function workspaceInitial(name: string): string {
+  for (const character of name) {
+    if (/\p{L}|\p{N}/u.test(character)) return character.toUpperCase();
+  }
+  return "?";
+}
+
 export function WorkspaceMenu({
   blogName,
   email,
@@ -129,6 +141,9 @@ export function WorkspaceMenu({
           focusMenuEdge(event.key === "ArrowDown" ? "first" : "last");
         }}
       >
+        <span className={styles.avatar} aria-hidden="true">
+          {workspaceInitial(blogName)}
+        </span>
         <span className={styles.workspaceName}>{blogName}</span>
         <span className={styles.chevron} aria-hidden="true">
           <ChevronIcon />

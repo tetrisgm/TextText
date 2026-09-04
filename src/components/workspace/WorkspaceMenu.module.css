@@ -13,7 +13,7 @@
   gap: 6px;
   border: 0;
   border-radius: var(--ac-radius-control);
-  padding: 0 9px 0 10px;
+  padding: 0 9px 0 6px;
   background: transparent;
   color: var(--ac-label);
   cursor: pointer;
@@ -34,6 +34,21 @@
 .signOutButton:focus-visible {
   outline: none;
   box-shadow: var(--ac-focus);
+}
+
+/* The account disc. Superhuman leads its sidebar with an avatar, and the
+   initial is the honest stand-in until a workspace can carry an image. */
+.avatar {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 88%, var(--ink));
+  color: #ffffff;
+  font: 600 12px/1 var(--ac-font-text);
+  letter-spacing: 0.01em;
 }
 
 .workspaceName {
