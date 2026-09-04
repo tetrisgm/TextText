@@ -780,7 +780,13 @@ export function UnifiedDocumentEditor({
             document?: DocumentSnapshot;
             revision?: number;
           };
-          if (result.document) {
+          // The response describes the Y.Doc state this request materialized.
+          // A person can keep editing while the request is in flight. Applying
+          // an older response after that point replaces the live Y.Text with
+          // the old snapshot and visibly resurrects deleted text.
+          const responseIsCurrent =
+            localMaterializationVersionRef.current === localVersion;
+          if (result.document && responseIsCurrent) {
             applyDocumentSnapshot(doc, result.document, "materialized");
             publishDocument(result.document);
             onMaterialized?.(result.document, result.revision);
@@ -789,7 +795,10 @@ export function UnifiedDocumentEditor({
             savedMaterializationVersionRef.current,
             localVersion,
           );
-          setSaveState("saved");
+          // A later debounced flush is already scheduled for the newer local
+          // version. Keep both the live document and its dirty cache entry
+          // authoritative until that request is acknowledged.
+          setSaveState(responseIsCurrent ? "saved" : "local");
           setError(null);
         })
         .catch((cause) => {

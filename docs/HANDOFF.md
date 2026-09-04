@@ -3665,7 +3665,7 @@ semantic tokens to the Apple system palette in apple.css (`--ac-label`,
 `--ac-bg`, ...). A change to `tokens.css` reaches the published site and
 nothing else. This cost a whole refit step before anyone noticed.
 
-## An edit that came back (2026-09-04, still OPEN; one related bug fixed)
+## An edit that came back (2026-09-04, FOUND and FIXED)
 
 The owner deleted a selection from a large bookmark; the delete landed, then
 the document reverted to its exact pre-edit state, repeatedly. Frames from
@@ -3745,6 +3745,60 @@ it) and `collab-provider.test.ts` (every catch-up read carries it).
 This is the same class as the owner's report and worth having fixed, but it is
 **not** confirmed to be what they saw: their sequence had no out-of-band
 writer that I can see. Their report stays open.
+
+### Third pass: found it. A materialize response applied out of order.
+
+`gpt-5.6-sol` (codex exec) diagnosed it from the code while a second session
+worked the bundle; the reproduction and verification below are mine.
+
+`flushMaterialization` in `UnifiedDocumentEditor.tsx` fences the REQUEST on
+`localVersion <= savedMaterializationVersionRef.current`, encodes the doc, and
+posts it. The RESPONSE was applied unconditionally:
+
+```ts
+if (result.document) {
+  applyDocumentSnapshot(doc, result.document, "materialized");
+```
+
+`applyDocumentSnapshot` reaches `replaceText`, which does
+`target.delete(0, target.length)` then re-inserts. So a response describing a
+state captured BEFORE a deletion wipes the live `Y.Text` and refills it with
+the pre-delete text - and the save already queued behind it then persists the
+restoration. That is the owner's sentence exactly: it brings back everything
+and deletes it.
+
+**Reproduced against a production build** by holding the first `/materialize`
+response in Playwright, deleting a mouse selection while it was in flight, and
+releasing it:
+
+```
+materialize in flight: yes (749 chars)
+deleted 84 chars: 749 -> 671
+  +800ms after release: 749 chars   <<< 78 CHARS CAME BACK
+```
+
+`.texttext/probe/materialize-race.mts`. With the fix the same probe holds at
+671, and the stored body goes 756 -> 673 (756 + 1 typed - 84 deleted), so the
+deletion still persists: skipping the stale acknowledgement is safe because
+`scheduleMaterialization` bumps the version AND schedules a flush, so a newer
+request is always already pending.
+
+The fix fences the response on the version its request described, and reports
+`local` rather than `saved` when it declines, so the UI does not claim saved
+while a newer flush is outstanding. Pinned by
+`src/components/document/__tests__/materialize-response-fence.test.ts`, whose
+first case asserts the destructive behaviour the fence prevents.
+
+Why the earlier passes missed it: every probe deleted once and waited. The
+window is only open while a materialize request is in flight, so the delete has
+to land inside it. The owner's session had an assistant run writing the body,
+which starts exactly that request.
+
+Two corrections to the earlier notes: the windowing threshold is 150,000
+characters, not ~100kB, so the 100kB fixture never exercised windowing; and
+windowing is not required for this bug at all, though a larger document widens
+the window.
+
 
 ### Fixture damage, and how it was undone
 
