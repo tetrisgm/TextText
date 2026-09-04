@@ -5158,16 +5158,39 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   color: var(--ink);
   font: 500 12px/1 var(--font-body);
 }
+/* One line: title, preview, date. The children are in DOM order title,
+   date, preview, so the columns are assigned explicitly rather than
+   reordering the markup - the reading order stays sensible for a screen
+   reader while the eye gets the newspaper arrangement. */
 .post-folder-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 18px;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr) auto;
+  gap: 14px;
   align-items: baseline;
-  min-height: 60px;
-  padding: 16px 0;
+  min-height: 50px;
+  padding: 13px 0;
   border-bottom: 1px solid var(--hairline);
   color: var(--ink);
   text-decoration: none;
+}
+/* The row is pinned explicitly. Naming only the column is not enough:
+   auto-placement never moves backwards, so once the date has been placed in
+   column 3 the preview lands on a second row instead of beside the title. */
+.post-folder-row > .post-folder-row-title {
+  grid-column: 1;
+  grid-row: 1;
+}
+.post-folder-row > .post-folder-row-excerpt {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.post-folder-row > .post-folder-row-meta {
+  grid-column: 3;
+  grid-row: 1;
 }
 .post-folder-row.is-command-selected {
   margin-inline: -10px;

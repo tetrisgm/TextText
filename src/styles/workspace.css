@@ -1638,3 +1638,32 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
     0 6px 22px -10px rgba(0, 0, 0, 0.6),
     0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
 }
+
+/* A selected row is filled outright rather than tinted. Every piece of text
+   inside it has to take the selected ink as well, or the parts that set
+   their own colour (the date, the preview) stay dark on blue. */
+[data-workspace-post-id][aria-selected="true"] {
+  background: var(--row-selected-bg);
+  border-radius: 6px;
+}
+[data-workspace-post-id][aria-selected="true"],
+[data-workspace-post-id][aria-selected="true"] .post-folder-row,
+[data-workspace-post-id][aria-selected="true"] .post-folder-row-title,
+[data-workspace-post-id][aria-selected="true"] .post-folder-row-excerpt,
+[data-workspace-post-id][aria-selected="true"] .post-folder-row-meta,
+[data-workspace-post-id][aria-selected="true"] .post-folder-row-tags {
+  color: var(--row-selected-ink);
+}
+[data-workspace-post-id][aria-selected="true"] .post-folder-row {
+  border-bottom-color: transparent;
+}
+[data-workspace-post-id][aria-selected="true"] svg {
+  color: var(--row-selected-ink);
+}
+/* The keyboard's own highlight sits under the selection fill: when a row is
+   both current and selected, the fill wins and the ring would double it. */
+[data-workspace-post-id][aria-selected="true"].is-command-selected,
+[data-workspace-post-id][aria-selected="true"] .post-folder-row.is-command-selected {
+  background-color: var(--row-selected-bg);
+  box-shadow: none;
+}
