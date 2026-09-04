@@ -1,6 +1,11 @@
 "use client";
 
 import {
+  activeDocumentBody,
+  documentOutline,
+  requestDocumentJump,
+} from "@/lib/document-outline";
+import {
   documentHistoryAvailable,
   requestDocumentRedo,
   requestDocumentUndo,
@@ -399,6 +404,16 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     },
   },
   {
+    id: "document.outline",
+    label: "Go to heading",
+    group: "Navigate",
+    // Cmd+Shift+O, as in VS Code's go-to-symbol. Opening the palette on "#"
+    // filters it to the outline, and typing refines from there.
+    shortcut: { key: "o", meta: true, shift: true, label: "⇧⌘O", once: true },
+    when: (ctx) => Boolean(ctx.workspace?.activePostId),
+    run: (ctx) => ctx.openPalette("#"),
+  },
+  {
     id: "document.undo",
     label: "Undo",
     group: "Act",
@@ -729,7 +744,25 @@ export function availableWorkspaceCommands(ctx: CommandContext): AppCommand[] {
 export function dynamicWorkspaceCommands(ctx: CommandContext): AppCommand[] {
   const pool = ctx.pool;
   const workspace = ctx.workspace;
-  if (!pool || !workspace) return [];
+  if (!workspace) return [];
+  // The document's headings, as jump targets. Computed BEFORE the pool guard:
+  // the editor routes hand over a workspace surface without a pool, and the
+  // outline needs nothing but the open document.
+  const body =
+    activeDocumentBody() ?? workspace.getActiveDocumentBody?.() ?? "";
+  const outlineCommands: AppCommand[] = body
+    ? documentOutline(body).map((entry) => ({
+        // Labelled with a leading hash so the palette can open straight onto
+        // them - the query "#" scores every one - the way an editor's
+        // go-to-symbol works.
+        id: `document.outline.${entry.line}`,
+        label: `# ${"  ".repeat(Math.max(0, entry.level - 1))}${entry.text}`,
+        group: "Outline",
+        when: () => true,
+        run: () => requestDocumentJump(entry.line),
+      }))
+    : [];
+  if (!pool) return outlineCommands;
   const target = commandTargetPost(ctx);
   const blogPost = target && !isPrivatePostType(target.type);
 
@@ -754,7 +787,10 @@ export function dynamicWorkspaceCommands(ctx: CommandContext): AppCommand[] {
           }))
       : [];
 
-  return moveCommands;
+  // The document's headings, as jump targets. Labelled with a leading hash so
+  // the palette can be opened straight onto them (the query "#" scores every
+  // one), the way an editor's symbol jump works.
+  return [...moveCommands, ...outlineCommands];
 }
 
 export function shouldSuppressWorkspaceSingleKeyShortcut(

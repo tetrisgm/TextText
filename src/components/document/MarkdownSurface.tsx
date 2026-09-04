@@ -40,6 +40,7 @@
 //    scrolling to 13fps. Never bring it back.
 
 import { useEffect, useLayoutEffect, useRef } from "react";
+import { DOCUMENT_JUMP_EVENT } from "@/lib/document-outline";
 
 export type SurfaceSelection = {
   clientId: number;
@@ -68,6 +69,8 @@ const MARKER_OPEN = "is-open";
 const LINE_ATTR = "data-tt-ln";
 /** The windowing spacers standing in for non-materialized lines. */
 const SPACER_ATTR = "data-tt-spacer";
+/** Breathing room above a jumped-to line, so it is not flush with the top. */
+const JUMP_MARGIN_PX = 12;
 /**
  * Past this size the system spellchecker becomes an input-latency source of
  * its own on a contenteditable (isolating that took the fast-editor crowd
@@ -880,6 +883,69 @@ export function MarkdownSurface({
       suffixRef.current = "";
     }
   };
+
+  /**
+   * Jump to a line, for the outline. The surface is windowed, so the target
+   * usually has no DOM node yet: scroll the scroller to where the line sits
+   * by row height first, and let the windowing materialize around it. A
+   * second pass once it has re-windowed lands on the real row, which
+   * corrects for the estimate the spacers were using.
+   */
+  const jumpToLine = (line: number) => {
+    const root = ref.current;
+    if (!root) return;
+    const lines = linesRef.current;
+    const target = Math.max(0, Math.min(line, Math.max(0, lines.length - 1)));
+    const scroller = scrollerOf(root);
+    const settle = (attempt: number) => {
+      const win = winRef.current;
+      const materialized =
+        !windowedRef.current ||
+        (target >= win.start && target < win.end);
+      const el = materialized
+        ? wrappersRef.current[windowedRef.current ? target - win.start : target]
+        : null;
+      if (el && scroller) {
+        const top =
+          scroller.scrollTop +
+          el.getBoundingClientRect().top -
+          scroller.getBoundingClientRect().top -
+          JUMP_MARGIN_PX;
+        scroller.scrollTo({ top: Math.max(0, top), behavior: "auto" });
+      } else if (el) {
+        el.scrollIntoView({ block: "start" });
+      } else if (scroller) {
+        const rootTop =
+          scroller.scrollTop +
+          root.getBoundingClientRect().top -
+          scroller.getBoundingClientRect().top;
+        scroller.scrollTo({
+          top: Math.max(0, rootTop + target * rowPxRef.current - JUMP_MARGIN_PX),
+          behavior: "auto",
+        });
+      }
+      if (attempt < 3) {
+        window.requestAnimationFrame(() => {
+          rewindowForViewport();
+          window.requestAnimationFrame(() => settle(attempt + 1));
+        });
+      }
+    };
+    settle(0);
+  };
+
+  // Same idiom as the beforeinput binding: a ref so the window listener is
+  // attached once while still calling the current closure.
+  const jumpRef = useRef(jumpToLine);
+  jumpRef.current = jumpToLine;
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const line = (event as CustomEvent<{ line?: number }>).detail?.line;
+      if (typeof line === "number") jumpRef.current(line);
+    };
+    window.addEventListener(DOCUMENT_JUMP_EVENT, handler);
+    return () => window.removeEventListener(DOCUMENT_JUMP_EVENT, handler);
+  }, []);
 
   /**
    * Windowed scrolling: when the viewport leaves the materialized band,

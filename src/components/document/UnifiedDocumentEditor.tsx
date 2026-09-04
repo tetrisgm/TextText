@@ -21,6 +21,7 @@ import {
   DOCUMENT_UNDO_EVENT,
   registerDocumentHistory,
 } from "@/lib/document-history-events";
+import { setActiveDocumentBody } from "@/lib/document-outline";
 import { Awareness } from "y-protocols/awareness";
 import { formatArticleDate } from "@/lib/content";
 import type { Blog, Post } from "@/lib/content";
@@ -605,6 +606,13 @@ export function UnifiedDocumentEditor({
     },
     [onDocumentChange],
   );
+  // Mount included: publishDocument only fires on CHANGES, so an untouched
+  // document would never register its body and the outline would be empty on
+  // exactly the documents most worth outlining.
+  useEffect(() => {
+    setActiveDocumentBody(document.content.body ?? "");
+    return () => setActiveDocumentBody(null);
+  }, [document]);
 
   const updateDocumentSnapshot = useCallback(
     (next: DocumentSnapshot) => {

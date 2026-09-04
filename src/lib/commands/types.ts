@@ -49,6 +49,10 @@ export type CommandWorkspaceSurface = {
   canManagePost: boolean;
   activeFolderPath: string | null;
   activePostId: string | null;
+  /** Source of the open document's body, for the outline. The pool's list
+   * projection deliberately carries no body, and the command context does not
+   * always have a pool at all, so the shell hands it over directly. */
+  getActiveDocumentBody?: () => string | null;
   selectedSectionPath: string | null;
   selectedPostId: string | null;
   selectedPostIds: readonly string[];

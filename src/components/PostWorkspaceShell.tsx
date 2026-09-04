@@ -4056,6 +4056,19 @@ function LocalWorkspaceShell({
       getVisiblePostIds: visiblePostIdsInDocumentOrder,
       getPost: (postId: string) =>
         findPoolPostById(displayPoolRef.current, postId),
+      getActiveDocumentBody: () => {
+        const current = viewRef.current;
+        if (current.level !== "post" && current.level !== "edit") return null;
+        const pool = displayPoolRef.current;
+        const warmed =
+          getCachedWorkspacePostDocument(pool.blogId, current.postId)
+            ?.document ??
+          pool.initialDocuments?.find(
+            (entry) => entry.postId === current.postId,
+          )?.document ??
+          findPoolPostById(pool, current.postId)?.document;
+        return warmed?.content.body ?? null;
+      },
       selectPost: (postId: string | null) => {
         selectOnlyPost(postId);
       },
