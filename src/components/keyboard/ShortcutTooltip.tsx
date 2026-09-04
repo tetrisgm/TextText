@@ -37,21 +37,28 @@ export function ShortcutTooltip({
   className?: string;
   children: ReactNode;
 }) {
-  const ids = command
-    ? typeof command === "string"
-      ? [command]
-      : [...command]
-    : [];
-  const derived = ids
-    .map((id) => commandTip(id))
-    .filter((tip): tip is { label: string; keys: string } => tip !== null);
-  // An explicit label still wins: some controls are not commands.
-  const lines: TipLine[] =
-    derived.length > 0 ? derived : label ? [{ label, keys }] : [];
-
   const wrapRef = useRef<HTMLSpanElement | null>(null);
   const tipRef = useRef<HTMLSpanElement | null>(null);
   const [visible, setVisible] = useState(false);
+
+  // Resolved only while the tip is up. A tooltip wraps a control that
+  // re-renders whenever anything around it does, and nothing about the
+  // resolution is needed until someone points at it.
+  const lines: TipLine[] = visible
+    ? (() => {
+        const ids = command
+          ? typeof command === "string"
+            ? [command]
+            : [...command]
+          : [];
+        const derived = ids
+          .map((id) => commandTip(id))
+          .filter((tip): tip is { label: string; keys: string } => tip !== null);
+        // An explicit label still wins: some controls are not commands.
+        return derived.length > 0 ? derived : label ? [{ label, keys }] : [];
+      })()
+    : [];
+
   const [position, setPosition] = useState<TipPosition | null>(null);
 
   const hide = useCallback(() => {

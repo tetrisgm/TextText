@@ -1330,10 +1330,23 @@ function LocalWorkspaceShell({
     return release;
   }, [view]);
 
+  // Set while a view change is the result of a history traversal rather than
+  // someone choosing to open something.
+  const arrivedByTraversalRef = useRef(false);
   const openedPostId =
     view.level === "post" || view.level === "edit" ? view.postId : null;
   useEffect(() => {
     if (!openedPostId) return;
+    // Arriving by history is not opening. Back, forward and the swipe all
+    // land here through popstate, and recording them re-sorted Recently
+    // opened while someone was only moving through the items they had
+    // already seen - "swiping changed the most recently opened item"
+    // (owner, 2026-09-04). The flag is set by the popstate handler and read
+    // once, so a later real open still counts.
+    if (arrivedByTraversalRef.current) {
+      arrivedByTraversalRef.current = false;
+      return;
+    }
     recordWorkspaceDocumentOpened(displayPool.blog.handle, openedPostId);
   }, [displayPool.blog.handle, openedPostId]);
   useEffect(() => {
@@ -3838,6 +3851,7 @@ function LocalWorkspaceShell({
         persistNavTrail();
       }
       recordVisitRef.current(currentHref());
+      arrivedByTraversalRef.current = true;
       const nextView = currentLocalView(displayPool, homePath);
       // History traversal into an item must hold the current view until the
       // document is local, exactly like a click-open: switching immediately

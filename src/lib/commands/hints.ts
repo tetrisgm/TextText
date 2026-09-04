@@ -39,12 +39,22 @@ export function hintPhrase(label: string): string {
  * three at once. Returns null for an id no command claims, so a stale id
  * shows nothing rather than a lie.
  */
+const TIP_CACHE = new Map<string, { label: string; keys: string } | null>();
+
 export function commandTip(
   id: string,
 ): { label: string; keys: string } | null {
+  // Cached: a tooltip resolves its command on every render, there are a dozen
+  // of them on an item view, and the table is eighty-odd entries long. The
+  // table is a module constant, so one lookup per id is all there ever is.
+  const hit = TIP_CACHE.get(id);
+  if (hit !== undefined) return hit;
   const command = WORKSPACE_COMMANDS.find((entry) => entry.id === id);
-  if (!command) return null;
-  return { label: command.label, keys: shortcutText(command) };
+  const tip = command
+    ? { label: command.label, keys: shortcutText(command) }
+    : null;
+  TIP_CACHE.set(id, tip);
+  return tip;
 }
 
 /** Ordered by how often a person reaches for it, most first. */

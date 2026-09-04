@@ -67,6 +67,23 @@ html[data-nav-transition]::view-transition-new(workspace-content) {
   animation-duration: 240ms;
   animation-timing-function: cubic-bezier(0.2, 0.75, 0.25, 1);
   animation-fill-mode: both;
+  /* Anchored, not fitted. The group's default animation interpolates the
+     snapshot's width and height between the outgoing and incoming views, and
+     the two views are rarely the same height - a short list into a long one,
+     say - so the content scaled as it slid and then settled a few pixels down
+     when the real DOM took over. That settle is what "everything appears and
+     then slides down a little bit" describes (owner, 2026-09-04). Pinning
+     both snapshots to their natural size at the top left leaves only the
+     horizontal slide we asked for. */
+  height: 100%;
+  object-fit: none;
+  object-position: top left;
+  overflow: clip;
+}
+/* The group carries the size interpolation; without this the images are
+   pinned but their box still animates. */
+html[data-nav-transition]::view-transition-group(workspace-content) {
+  animation: none;
 }
 /* Both directions keep the default stacking (new above old): WebKit does
    not honor z-index reordering of the transition pseudos, so the incoming
@@ -1846,6 +1863,21 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
    Scoped to the list view: the column and grid views stack deliberately
    and would collapse into unreadable strips under these rules.
    --------------------------------------------------------------------- */
+/* The list's own grid track has to be bounded.
+
+   .workspace-recent and .workspace-recent-list are grids with one implicit
+   `auto` column, which sizes to its content's max-content width. That was
+   harmless while the row was itself a grid whose preview column was
+   `minmax(0, 1fr)`, because a 1fr track contributes nothing to max-content.
+   A flex row contributes the full width of its nowrap preview, so the track
+   grew to 1648px inside a 750px column: the previews ran under the assistant
+   rail and pushed the date off the end. Pinning the track to `minmax(0, 1fr)`
+   makes the row bounded whatever is inside it. */
+.workspace-recent.is-view-list,
+.workspace-recent.is-view-list .workspace-recent-list {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .workspace-recent.is-view-list .workspace-item-option-main {
   min-height: 50px;
   gap: 12px;
@@ -1876,10 +1908,24 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   min-width: 0;
 }
 
+/* Basis ZERO, not auto. With `flex: 1 1 auto` the preview's basis is its own
+   content width, a nowrap line of prose, so the row grew to fit it: the
+   preview ran under the assistant rail and pushed the date off the end.
+   A zero basis makes the preview take what is left instead of asking for
+   what it wants. The `small` needs min-width: 0 of its own or it refuses to
+   shrink below min-content and the ellipsis never appears. */
 .workspace-recent.is-view-list .workspace-item-option-detail {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
+}
+
+.workspace-recent.is-view-list .workspace-item-option-detail small {
+  min-width: 0;
+}
+
+.workspace-recent.is-view-list .workspace-item-option-main > time {
+  flex: 0 0 auto;
 }
 
 .workspace-recent.is-view-list .workspace-item-option-copy > strong {
@@ -1954,7 +2000,12 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 /* On the document's content, not on the article: the article carries the
    paper background, and capping that would draw a 720px band of paper with
    the page's own ground either side of it. */
-.workspace-document-layout .tt-document > .tt-stack {
+/* Scoped to .post-editor-content, not to the layout: the swipe clones the
+   content and appends the clone beside the layout, so a rule that starts at
+   .workspace-document-layout does not match the clone and the document
+   inside it renders at full width - the page visibly changing measure
+   halfway through a swipe. */
+.post-editor-content .tt-document > .tt-stack {
   max-width: 720px;
   margin-inline: auto;
 }
@@ -1986,7 +2037,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
    save state is the last thing in an editor and was hidden by it (owner,
    2026-09-04). */
 .post-editor-shell {
-  --workspace-hints-height: 34px;
+  --workspace-hints-height: 42px;
 }
 
 @media (max-width: 900px) {
@@ -1996,7 +2047,10 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   }
 }
 
-.workspace-document-layout > .post-editor-content {
+/* On the LAYOUT, not the scroller. Padding inside the scroller only moves
+   content that is in flow; the editor's save state and the action bars are
+   positioned, so they stayed under the bar. Reserving the height on the
+   column means the bar has nothing to cover. */
+.workspace-document-layout {
   padding-bottom: var(--workspace-hints-height, 0px);
-  scroll-padding-bottom: var(--workspace-hints-height, 0px);
 }
