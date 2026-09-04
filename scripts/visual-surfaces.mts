@@ -7,9 +7,8 @@
  *   npx tsx scripts/visual-surfaces.mts <outDir>
  *
  * Needs a production server on :3131 with AUTH_DEV_LOGIN=1 and the
- * visual-demo fixture workspace. The walk's own noise floor is one bookmark
- * thumbnail that sometimes loads and sometimes does not, about 0.03% of a
- * frame; treat anything larger as real.
+ * visual-demo fixture workspace. Two runs of the same build are
+ * pixel-identical, so any difference at all is the change you made.
  */
 import { webkit, type Page } from "playwright";
 import { mkdirSync } from "node:fs";

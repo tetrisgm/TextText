@@ -3487,15 +3487,34 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   width: 20px;
   height: 20px;
 }
+/* The icon shows FIRST and the picture arrives over it, rather than the
+   other way round. Waiting for onError meant WebKit painted its own
+   broken-image glyph for a frame or two whenever a remote cover 404s - a
+   bookmark whose site has moved its favicon, say - which is a blue question
+   mark flickering in a list. */
 .workspace-item-thumbnail-fallback {
-  display: none;
-}
-.workspace-item-thumbnail.is-broken img {
-  display: none;
-}
-.workspace-item-thumbnail.is-broken .workspace-item-thumbnail-fallback {
+  position: absolute;
+  inset: 0;
   display: grid;
   place-items: center;
+}
+.workspace-item-thumbnail img,
+.workspace-item-thumbnail video {
+  position: relative;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.12s var(--ease);
+}
+.workspace-item-thumbnail.is-loaded img,
+.workspace-item-thumbnail.is-loaded video {
+  opacity: 1;
+}
+.workspace-item-thumbnail.is-loaded .workspace-item-thumbnail-fallback {
+  display: none;
+}
+.workspace-item-thumbnail.is-broken img,
+.workspace-item-thumbnail.is-broken video {
+  display: none;
 }
 .workspace-search-results mark {
   border-radius: 2px;

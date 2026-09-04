@@ -80,7 +80,21 @@ export function WorkspaceItemThumbnail({
   if (isVideoFile(source.src)) {
     return (
       <span className="workspace-item-thumbnail" aria-hidden="true">
-        <video src={source.src} muted playsInline preload="metadata" />
+        <video
+          src={source.src}
+          muted
+          playsInline
+          preload="metadata"
+          onLoadedData={(event) =>
+            event.currentTarget.parentElement?.classList.add("is-loaded")
+          }
+          onError={(event) =>
+            event.currentTarget.parentElement?.classList.add("is-broken")
+          }
+        />
+        <span className="workspace-item-thumbnail-fallback">
+          <ItemTypeIcon type={post.type} />
+        </span>
       </span>
     );
   }
@@ -93,10 +107,12 @@ export function WorkspaceItemThumbnail({
         alt=""
         decoding="async"
         loading="lazy"
-        onError={(event) => {
-          event.currentTarget.hidden = true;
-          event.currentTarget.parentElement?.classList.add("is-broken");
-        }}
+        onLoad={(event) =>
+          event.currentTarget.parentElement?.classList.add("is-loaded")
+        }
+        onError={(event) =>
+          event.currentTarget.parentElement?.classList.add("is-broken")
+        }
       />
       <span className="workspace-item-thumbnail-fallback">
         <ItemTypeIcon type={post.type} />
