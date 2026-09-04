@@ -1095,17 +1095,17 @@ export function PostActionBar(props: Props) {
           <div className="post-action-toolbar ac-chrome">
             {props.onSearchValueChange ? (
               <WorkspaceActionSearch
-                ariaLabel={`Find in ${postTitle(activeDraft.title)}`}
-                focusRequestKey={props.searchFocusRequestKey}
-                placeholder="Find in page"
-                value={props.searchValue ?? ""}
-                onChange={props.onSearchValueChange}
-                onKeyDown={(event) => {
-                  if (event.key !== "Escape") return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  if (props.searchValue) props.onSearchValueChange?.("");
-                  else event.currentTarget.blur();
+                  ariaLabel={`Find in ${postTitle(activeDraft.title)}`}
+                  focusRequestKey={props.searchFocusRequestKey}
+                  placeholder="Find in page"
+                  value={props.searchValue ?? ""}
+                  onChange={props.onSearchValueChange}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Escape") return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (props.searchValue) props.onSearchValueChange?.("");
+                    else event.currentTarget.blur();
                 }}
               />
             ) : props.onSearch ? (

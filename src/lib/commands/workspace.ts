@@ -1,5 +1,6 @@
 "use client";
 
+import { requestFocusReplace } from "@/lib/document-replace";
 import {
   activeDocumentBody,
   documentOutline,
@@ -401,6 +402,26 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     when: (ctx) => Boolean(ctx.workspace && ctx.workspace.viewLevel !== "root"),
     run: (ctx) => {
       ctx.workspace?.escapeCurrent();
+    },
+  },
+  {
+    id: "document.replace",
+    label: "Replace in document",
+    group: "Act",
+    // Cmd+Alt+F, as in VS Code and Sublime. The field is beside Find in the
+    // action bar, so this focuses it rather than opening a second surface.
+    shortcut: {
+      key: "f",
+      meta: true,
+      alt: true,
+      label: "⌥⌘F",
+      allowTypingTarget: true,
+      once: true,
+    },
+    when: () => documentHistoryAvailable(),
+    run: (ctx) => {
+      ctx.workspace?.focusSearch();
+      requestFocusReplace();
     },
   },
   {

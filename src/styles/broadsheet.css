@@ -7389,3 +7389,37 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   letter-spacing: 0.02em;
   text-transform: none;
 }
+
+/* Replace, beside Find in an item's action bar. Only rendered while editing
+   with something to find, so it never competes for room in the reader. */
+.post-action-replace {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.post-action-replace-input {
+  height: 32px;
+  min-width: 110px;
+  width: min(200px, 20vw);
+  border: 1px solid color-mix(in srgb, var(--hairline) 88%, transparent);
+  border-radius: var(--radius-control, 6px);
+  padding-inline: 9px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ac-label, var(--ink));
+  background: transparent;
+}
+.post-action-replace-input::placeholder {
+  color: var(--muted);
+}
+.post-action-replace-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+@media (max-width: 900px) {
+  .post-action-replace-input {
+    width: 120px;
+    min-width: 90px;
+  }
+}

@@ -22,6 +22,13 @@ import {
   registerDocumentHistory,
 } from "@/lib/document-history-events";
 import { setActiveDocumentBody } from "@/lib/document-outline";
+import {
+  DOCUMENT_REPLACE_EVENT,
+  FOCUS_REPLACE_EVENT,
+  replaceAllInText,
+  requestDocumentReplaceAll,
+  type ReplaceRequest,
+} from "@/lib/document-replace";
 import { Awareness } from "y-protocols/awareness";
 import { formatArticleDate } from "@/lib/content";
 import type { Blog, Post } from "@/lib/content";
@@ -547,6 +554,45 @@ export function UnifiedDocumentEditor({
     undoManagerRef.current = undoManager;
     return () => undoManager.destroy();
   }, [undoManager]);
+  // Replace-all goes through updateText, so it lands as one ordinary local
+  // edit: it syncs like any other, and Cmd+Z takes it back in one step.
+  const updateTextRef = useRef<
+    ((field: EditableField, value: string) => void) | null
+  >(null);
+  const [findValue, setFindValue] = useState("");
+  const [replaceValue, setReplaceValue] = useState("");
+  const findFieldRef = useRef<HTMLInputElement>(null);
+  const replaceFieldRef = useRef<HTMLInputElement>(null);
+  const runReplaceAll = useCallback(() => {
+    if (!findValue) return;
+    requestDocumentReplaceAll({ find: findValue, replace: replaceValue });
+  }, [findValue, replaceValue]);
+  useEffect(() => {
+    const focus = () => {
+      findFieldRef.current?.focus();
+      findFieldRef.current?.select();
+    };
+    window.addEventListener(FOCUS_REPLACE_EVENT, focus);
+    return () => window.removeEventListener(FOCUS_REPLACE_EVENT, focus);
+  }, []);
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<ReplaceRequest>).detail;
+      if (!detail?.find) return;
+      const body = documentRef.current.content.body ?? "";
+      const { text, count } = replaceAllInText(
+        body,
+        detail.find,
+        detail.replace,
+        { caseSensitive: detail.caseSensitive },
+      );
+      if (!count) return;
+      updateTextRef.current?.("body", text);
+    };
+    window.addEventListener(DOCUMENT_REPLACE_EVENT, handler);
+    return () => window.removeEventListener(DOCUMENT_REPLACE_EVENT, handler);
+  }, []);
+
   useEffect(() => {
     const undo = () => undoManagerRef.current?.undo();
     const redo = () => undoManagerRef.current?.redo();
@@ -908,6 +954,7 @@ export function UnifiedDocumentEditor({
     },
     [currentLocalDocument, doc, networkEnabled, publishDocument, ready],
   );
+  updateTextRef.current = updateText;
 
   // The bridge the assistant reads through. Selections used to flow only
   // into Yjs awareness, which paints collaborative cursors and nothing else;
@@ -1132,6 +1179,63 @@ export function UnifiedDocumentEditor({
       <div className="post-top-action-bar applecms is-edit" aria-label="Document controls">
         <div className="post-action-toolbar ac-chrome">
           {leadingControls}
+          {/* Find and replace, in the bar where the writing happens. The
+              reader has its own find field on a different view; editing had
+              none. Replace lands as ONE ordinary edit through updateText,
+              which is why Cmd+Z takes the whole thing back in a single
+              step. */}
+          <div className="post-action-replace">
+            <input
+              ref={findFieldRef}
+              className="post-action-replace-input"
+              type="text"
+              aria-label="Find in document"
+              placeholder="Find"
+              value={findValue}
+              onChange={(event) => setFindValue(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  replaceFieldRef.current?.focus();
+                  return;
+                }
+                if (event.key !== "Escape") return;
+                event.preventDefault();
+                event.stopPropagation();
+                if (findValue) setFindValue("");
+                else event.currentTarget.blur();
+              }}
+            />
+            <input
+              ref={replaceFieldRef}
+              className="post-action-replace-input"
+              type="text"
+              aria-label="Replace with"
+              placeholder="Replace with"
+              value={replaceValue}
+              onChange={(event) => setReplaceValue(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  runReplaceAll();
+                  return;
+                }
+                if (event.key !== "Escape") return;
+                event.preventDefault();
+                event.stopPropagation();
+                if (replaceValue) setReplaceValue("");
+                else event.currentTarget.blur();
+              }}
+            />
+            <button
+              type="button"
+              className="ac-btn ac-btn-gray post-action-replace-run"
+              disabled={!findValue}
+              onClick={runReplaceAll}
+            >
+              Replace all
+            </button>
+          </div>
         <Presence peers={peers} activeAgent={activeAgent} onOpenAgent={onOpenAgent} />
           {(onChooseTemplate || (availableTemplates && availableTemplates.length > 0)) && (
             <button
