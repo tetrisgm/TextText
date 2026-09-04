@@ -1399,3 +1399,61 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   opacity: 0.5;
   cursor: default;
 }
+
+/* The item held open beside the one being worked on. It sits between the
+   writing surface and the assistant rail, and it scrolls on its own so the
+   two sides never drag each other around. */
+.workspace-split-pane {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  right: calc(60px + var(--workspace-rail-inset, 0px));
+  width: min(420px, 34vw);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  z-index: 120;
+  background: var(--bg);
+  border-left: 1px solid color-mix(in srgb, var(--hairline) 88%, transparent);
+}
+.post-editor-shell.is-split-open .post-editor-content {
+  margin-right: calc(min(420px, 34vw) + 60px);
+}
+.workspace-split-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--hairline) 88%, transparent);
+}
+.workspace-split-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ac-label, var(--ink));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-split-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px 18px 48px;
+}
+.workspace-split-empty {
+  color: var(--muted);
+  font-size: 13px;
+}
+@media (max-width: 1100px) {
+  /* Not enough room for two columns and a rail; the pane would squeeze the
+     writing surface into a gutter. */
+  .workspace-split-pane {
+    display: none;
+  }
+  .post-editor-shell.is-split-open .post-editor-content {
+    margin-right: 0;
+  }
+}

@@ -16,6 +16,13 @@ import {
   useSyncExternalStore,
 } from "react";
 import { flushSync } from "react-dom";
+import { SplitItemPane } from "@/components/workspace/SplitItemPane";
+import {
+  closeSplit,
+  toggleSplit,
+  useSplitPostId,
+  useSplitScope,
+} from "@/lib/workspace/split-view";
 import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
@@ -1290,6 +1297,11 @@ function LocalWorkspaceShell({
     if (!openedPostId) return;
     recordWorkspaceDocumentOpened(displayPool.blog.handle, openedPostId);
   }, [displayPool.blog.handle, openedPostId]);
+  useEffect(() => {
+    if (!openedPostId || openedPostId === currentItemPostIdRef.current) return;
+    previousItemPostIdRef.current = currentItemPostIdRef.current;
+    currentItemPostIdRef.current = openedPostId;
+  }, [openedPostId]);
 
   // Reading keys work like the browser's: Space, Shift+Space, PageUp/Down,
   // Home/End and the arrows scroll natively only when the scrolling element
@@ -2240,6 +2252,17 @@ function LocalWorkspaceShell({
   );
 
   const showToast = useCommandToast();
+  // An item held open beside the one being worked on. Not a second navigable
+  // pane - see lib/workspace/split-view for why.
+  useSplitScope(homePath);
+  const splitPostId = useSplitPostId();
+  const splitPost = splitPostId
+    ? findPoolPostById(displayPool, splitPostId)
+    : null;
+  useEffect(() => {
+    // The item was deleted or moved out of reach while it was open beside.
+    if (splitPostId && !splitPost) closeSplit();
+  }, [splitPost, splitPostId]);
   const deleteWorkspaceItems = useCallback(
     async (posts: readonly WorkspacePoolPost[]) => {
       if (!canManageFolders || posts.length === 0) return;
@@ -2361,6 +2384,12 @@ function LocalWorkspaceShell({
     displayPool,
     selectedSectionPath,
   );
+  // What "open beside" should reach for: the highlighted row on a list, and
+  // on an item, the item you were looking at before it.
+  const selectedPostIdRef = useRef<string | null>(null);
+  const currentItemPostIdRef = useRef<string | null>(null);
+  const previousItemPostIdRef = useRef<string | null>(null);
+  selectedPostIdRef.current = effectiveSelectedPostId ?? null;
   const effectiveSelectedPostIdentity = effectiveSelectedPostId
     ? itemIdentity.stableKey(effectiveSelectedPostId)
     : null;
@@ -4182,6 +4211,16 @@ function LocalWorkspaceShell({
       // item would be wrong).
       navigateUp: navigateBack,
       navigateForward,
+      toggleSplitBeside: () => {
+        const current = viewRef.current;
+        // From a list, the highlighted row; from an item, the item you were
+        // looking at before this one, which is what "beside" usually means.
+        const candidate =
+          current.level === "post" || current.level === "edit"
+            ? (previousItemPostIdRef.current ?? null)
+            : (selectedPostIdRef.current ?? null);
+        toggleSplit(candidate);
+      },
       escapeCurrent,
       focusSearch,
       openSettings: navigateSettings,
@@ -4479,7 +4518,7 @@ function LocalWorkspaceShell({
     <div
       className={`post-editor-shell applecms has-sidebar ${className}${
         effectiveSidebarCollapsed ? " is-sidebar-collapsed" : ""
-      } is-active-region-${activeRegion}${
+      }${splitPost ? " is-split-open" : ""} is-active-region-${activeRegion}${
         marqueeDragging ? " is-marquee-dragging" : ""
       } assistant-is-${assistantState}${
         assistantState === "pinned" ? " has-assistant-pinned" : ""
@@ -4599,6 +4638,10 @@ function LocalWorkspaceShell({
         >
           {content}
         </div>
+
+        {splitPost && (
+          <SplitItemPane pool={displayPool} post={splitPost} />
+        )}
 
         <WorkspaceSelectionToolbar
           blog={displayPool.blog}

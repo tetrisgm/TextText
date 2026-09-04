@@ -3278,6 +3278,49 @@ collab_state/collab_updates rows, then start the server.
   not undoable yet; making them undoable means deciding what a
   cross-document undo stack even means.
 
+## Editor-grade quality of life (2026-09-03)
+
+- **Outline** (`lib/document-outline.ts`): headings become palette entries
+  labelled with a leading hash, so Shift+Cmd+O opens the palette on "#"
+  and typing refines. Jumping scrolls by row height first and lets the
+  WINDOWED surface materialize around the target, then lands on the real
+  row - the target line usually has no DOM node when the jump starts.
+  Two traps: `dynamicWorkspaceCommands` used to bail when `ctx.pool` was
+  null, which is exactly the state the editor routes are in; and
+  `publishDocument` only fires on CHANGES, so registering the body there
+  left the outline empty on any document nobody had typed in yet. The
+  editor registers its body from state instead.
+- **Find and replace** (`lib/document-replace.ts`): literal, never a
+  regular expression. It goes through `updateText`, so it is ONE ordinary
+  local edit - it syncs like any other and a single Cmd+Z takes the whole
+  replacement back. Placement matters: the reader's find field belongs to
+  PostActionBar and exists only on the read view, while the EDIT bar is
+  rendered by UnifiedDocumentEditor itself and had no find field at all.
+  Find and replace live in the editor's own toolbar and carry their own
+  find input.
+- **Undo now covers document structure.** `updateDocumentSnapshot`
+  (fields, the look) carries `userEditOrigin` instead of `localOrigin`,
+  so it joins typing in the undo stack while seeding stays out.
+- **Trash has an Undo**, because it is a pool and database mutation and
+  cannot ride the CRDT's undo: the toast carries the action, restoring
+  locally and calling the same `restore-post` operation the Trash page
+  uses. `useCommandToast` is the door into the toast from outside the
+  command system.
+- **Split view is ONE document held beside, and reads.** See
+  `lib/workspace/split-view.ts`: the shell's model is one view, one
+  history index, one snapshot per index, so a second NAVIGABLE pane would
+  mean rebuilding navigation. Cmd+\\ opens the highlighted row (or, from
+  an item, the previously visited one); it persists per workspace and
+  hides below 1100px where there is no room for two columns and the rail.
+  Use an explicit `is-split-open` class for the content margin - a
+  `:has()` rule did not take.
+- Harness limits worth knowing: the Browser pane cannot send Cmd+\\ (it
+  reports an empty `key`), and its screenshots are unreliable under
+  viewport emulation - geometry from `getBoundingClientRect` and
+  `elementFromPoint` is the trustworthy read. Playwright's find field is
+  laid out at 0x0 on the item routes; drive React's controlled inputs
+  through the native value setter plus an `input` event instead.
+
 ## Resolved episodes (one line each, dates in git log)
 
 - Apple consent screen "write app": appleid.apple.com caches its own copy;

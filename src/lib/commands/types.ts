@@ -92,6 +92,8 @@ export type CommandWorkspaceSurface = {
   navigateRoot: () => void;
   navigateUp: () => boolean;
   navigateForward: () => boolean;
+  /** Open an item beside the current one, or close the one already open. */
+  toggleSplitBeside?: () => void;
   escapeCurrent: () => boolean;
   focusSearch: () => void;
   openSettings: () => void;

@@ -425,6 +425,16 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     },
   },
   {
+    id: "workspace.split-beside",
+    label: "Open item beside",
+    group: "Navigate",
+    // Cmd+\, as in VS Code's split. From a list it opens the highlighted
+    // row; from an item, the one you were reading before it.
+    shortcut: { key: "\\", meta: true, label: "⌘\\", once: true },
+    when: (ctx) => Boolean(ctx.workspace?.toggleSplitBeside),
+    run: (ctx) => ctx.workspace?.toggleSplitBeside?.(),
+  },
+  {
     id: "document.outline",
     label: "Go to heading",
     group: "Navigate",
