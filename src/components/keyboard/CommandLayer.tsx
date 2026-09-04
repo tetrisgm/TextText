@@ -423,6 +423,24 @@ export function useEscapeLayer(
   }, [label, layer, open]);
 }
 
+/**
+ * Raise a toast from outside the command system - a workspace action that
+ * wants to offer an Undo, for one. The layer already owns the toast; this is
+ * the door in.
+ */
+export function useCommandToast(): (
+  message: string,
+  action?: { label: string; run: () => void },
+) => void {
+  const layer = useContext(CommandLayerContext);
+  return useCallback(
+    (message, action) => {
+      layer?.commandContext().toast(message, action);
+    },
+    [layer],
+  );
+}
+
 export function useWorkspaceCommandSurface(
   surface: CommandWorkspaceSurface | null,
 ) {

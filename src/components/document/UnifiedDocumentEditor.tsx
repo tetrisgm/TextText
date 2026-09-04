@@ -663,10 +663,14 @@ export function UnifiedDocumentEditor({
   const updateDocumentSnapshot = useCallback(
     (next: DocumentSnapshot) => {
       publishDocument(next);
+      // userEditOrigin, not localOrigin: everything that reaches here is a
+      // person changing the document - a field, the look it is rendered
+      // with - so it belongs in undo alongside typing. Seeding and the
+      // pre-ready reconciliation keep localOrigin and stay outside it.
       if (!hasDocumentSnapshot(doc) && (!networkEnabled || ready)) {
-        applyDocumentSnapshot(doc, next, localOrigin.current);
+        applyDocumentSnapshot(doc, next, userEditOrigin.current);
       } else if (hasDocumentSnapshot(doc)) {
-        applyDocumentSnapshot(doc, next, localOrigin.current);
+        applyDocumentSnapshot(doc, next, userEditOrigin.current);
         if (ready) preReadyLocalRef.current = null;
         else preReadyLocalRef.current = next;
       } else {

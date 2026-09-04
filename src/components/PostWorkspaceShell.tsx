@@ -35,6 +35,7 @@ import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { readItemTypeForEditAction } from "@/app/editor/item-type-actions";
 import type { ItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
 import {
+  useCommandToast,
   useWorkspaceCommandSurface,
 } from "@/components/keyboard/CommandLayer";
 import {
@@ -2238,6 +2239,7 @@ function LocalWorkspaceShell({
     [canManageFolders, clearPostSelection, selectedPoolPosts],
   );
 
+  const showToast = useCommandToast();
   const deleteWorkspaceItems = useCallback(
     async (posts: readonly WorkspacePoolPost[]) => {
       if (!canManageFolders || posts.length === 0) return;
@@ -2264,6 +2266,36 @@ function LocalWorkspaceShell({
       }
       clearPostSelection();
 
+      // Offer the way back. Sending to Trash is the one workspace action
+      // people take by accident, and until now the only route back was
+      // finding the item in Trash and restoring it there.
+      if (persistentPosts.length > 0) {
+        const handle = currentPool.blog.handle;
+        const restorable = persistentPosts.map((post) => post.id);
+        showToast(
+          restorable.length === 1
+            ? "Moved to Trash"
+            : `Moved ${restorable.length} items to Trash`,
+          {
+            label: "Undo",
+            run: () => {
+              for (const postId of restorable) restorePostFromTrash(postId);
+              void Promise.all(
+                restorable.map((postId) =>
+                  runTrashOperation("restore-post", handle, postId),
+                ),
+              ).catch((error) => {
+                // The server refused; put the local pool back where the
+                // server still has it rather than showing a card that is
+                // not really there.
+                for (const postId of restorable) movePostToTrash(postId);
+                console.warn("workspace item restore failed", error);
+              });
+            },
+          },
+        );
+      }
+
       if (persistentPosts.length === 0) return;
       try {
         await runTrashOperation(
@@ -2283,7 +2315,7 @@ function LocalWorkspaceShell({
         throw error;
       }
     },
-    [canManageFolders, clearPostSelection],
+    [canManageFolders, clearPostSelection, showToast],
   );
   const deleteSelectedPosts = useCallback(
     () => deleteWorkspaceItems(selectedPoolPosts),
