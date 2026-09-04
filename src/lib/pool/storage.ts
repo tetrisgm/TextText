@@ -244,12 +244,44 @@ export async function readPersistedPostDocument(
  * profile of four open-and-backs spent 194ms inside `put`. Nothing is
  * waiting on this: it is a cache for the NEXT open.
  */
+/**
+ * The write each document is waiting for, coalesced.
+ *
+ * Every path that sets a ready body persists it, and building a large
+ * document into the CRDT sets it many times as the content arrives: counted
+ * directly, opening an 8MB document wrote it to IndexedDB 180 times, 1.2GB
+ * per open. Nothing is waiting on any of those writes - they are a cache for
+ * the NEXT open - so only the last one matters. A pending write is replaced
+ * rather than queued, and the whole thing waits for idle, so a burst of a
+ * hundred updates costs one put of the final document.
+ */
+const pendingWrites = new Map<string, WorkspacePostDocumentPayload>();
+const writeScheduled = new Set<string>();
+/** What is already on disk, so an unchanged document is not written again. */
+const persistedStamps = new Map<string, string>();
+
+const persistStamp = (document: WorkspacePostDocumentPayload): string =>
+  `${document.revision ?? ""}:${document.updatedAt ?? ""}:${
+    document.document.content.body?.length ?? 0
+  }`;
+
 export async function persistPostDocument(
   document: WorkspacePostDocumentPayload,
 ): Promise<void> {
+  const key = bodyKey(document.blogId, document.postId);
+  pendingWrites.set(key, document);
+  if (writeScheduled.has(key)) return;
+  writeScheduled.add(key);
   await whenIdle();
+  writeScheduled.delete(key);
+  const latest = pendingWrites.get(key);
+  pendingWrites.delete(key);
+  if (!latest) return;
+  const stamp = persistStamp(latest);
+  if (persistedStamps.get(key) === stamp) return;
+  persistedStamps.set(key, stamp);
   await withStore<IDBValidKey>(BODY_STORE, "readwrite", (store) =>
-    store.put(document, bodyKey(document.blogId, document.postId)),
+    store.put(latest, key),
   );
 }
 
@@ -270,6 +302,7 @@ export async function deletePersistedPostDocument(
   blogId: string,
   postId: string,
 ): Promise<void> {
+  persistedStamps.delete(bodyKey(blogId, postId));
   await withStore<undefined>(BODY_STORE, "readwrite", (store) =>
     store.delete(bodyKey(blogId, postId)),
   );

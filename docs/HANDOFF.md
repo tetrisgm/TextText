@@ -3636,6 +3636,14 @@ AUTH_DEV_LOGIN=1 npx next start -p 3131 &
   an LRU on it changed nothing), and the editor's Y.Doc (destroying it on
   unmount made things worse, not better). Finding the retainer needs a heap
   snapshot with retaining paths.
+- **`scripts/storage-writes.mts`** counts IndexedDB writes per store across
+  three opens of one document. A count is immune to machine load, which is
+  the only reason this was findable on a night when wall-clock swung thirty
+  to one. It found the workspace writing an 8MB document to disk 180 times
+  per open, 1.2GB an open, because every path that sets a ready body
+  persisted it and building a large document into the CRDT sets it many
+  times as content arrives. Coalescing to one write per idle took three opens
+  from 551 puts / 3864MB to 12 puts / 37MB.
 - **`node scripts/find-dead-css.mjs [--write]`** lists (or removes) every
   rule whose selectors are built entirely from classes no source file
   mentions. Verify a `--write` with the surface walk above. It parses with
