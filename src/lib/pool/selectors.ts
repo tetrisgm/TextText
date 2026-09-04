@@ -1,3 +1,4 @@
+import { detachedSlice } from "@/lib/detached-slice";
 import {
   BLOG_FOLDER_PATH,
   isPublishedPublicPost,
@@ -63,9 +64,10 @@ export function narrowPostFromPost(
     slug: post.slug,
     title: post.title,
     excerpt: postSubtitle(post) || undefined,
+    // detachedSlice, not slice: a plain cut is a V8 SlicedString that holds
+    // the whole document body alive through this one preview field.
     bodyPreview:
-      post.bodyPreview ??
-      (post.body.slice(0, 2048) || undefined),
+      post.bodyPreview ?? (detachedSlice(post.body, 2048) || undefined),
     accent: post.accent,
     cover: post.cover,
     coverCaption: post.coverCaption,

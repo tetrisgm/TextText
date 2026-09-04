@@ -12,6 +12,7 @@
 // plus their small shared bodies. Extracted from the PostWorkspaceShell
 // monolith.
 
+import { detachedSlice } from "@/lib/detached-slice";
 import { useClientHydrated } from "@/lib/use-client-hydrated";
 
 import {
@@ -178,7 +179,8 @@ export function LocalUnifiedWorkspacePostEditor({
         template: nextDocument.presentation.template,
         title: projection.title,
         excerpt: projection.excerpt || undefined,
-        bodyPreview: projection.body.slice(0, 2048) || undefined,
+        // See detachedSlice: a plain cut pins the whole body.
+        bodyPreview: detachedSlice(projection.body, 2048) || undefined,
         accent: projection.accent ?? undefined,
         cover: projection.cover ?? undefined,
         coverCaption: projection.coverCaption ?? undefined,
