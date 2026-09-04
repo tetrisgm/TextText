@@ -3432,9 +3432,13 @@ collab_state/collab_updates rows, then start the server.
   the server refuses used to roll back in silence, which is how the
   `posts_folder_slug_idx` conflict (an item whose slug already exists in
   the destination) looked like nothing happening. There is a toast now.
-  That constraint is a real product edge: moving an item into a folder
-  holding the same slug fails, and the honest fix is re-slugging on move
-  rather than a message. Not done.
+  That constraint is now handled properly: `setPostFolder` RE-SLUGS on
+  move (`freeSlugInFolder`) instead of refusing, and pushes the old slug
+  into `slug_history` so links already shared still resolve. Verified on
+  the exact collision: "Connect your AI tools" moved into Documentation
+  beside "Connect an AI" and became `connect-your-ai-tools-2` with the
+  old slug in history. The failure toast remains for anything else the
+  server refuses.
 - Cmd+D duplicates, Cmd+C / Cmd+V copy and paste items (an app clipboard
   of ids, not the system one - what is being copied is a document).
   Home/End and Cmd+Up/Down jump to the ends of a list. Move and star now
@@ -3448,6 +3452,21 @@ collab_state/collab_updates rows, then start the server.
   some letters jump to an item and others act on it is worse than none.
   `/` filters the list as you type, which does the same job better; it
   only needed to be discoverable, so it is in the hint bar now.
+
+## Library chrome, trimmed (2026-09-04)
+
+- The Library's capture RECEIPTS now render only for failures. A save
+  that worked has already put the item in the list right below it, so
+  the "Saved to notes / Open / Undo" line was pure clutter (owner). A
+  failure leaves no other trace, so that one stays - deleting the strip
+  outright would have made a failed capture silent. The rapid-capture
+  contract test asserts the new rule.
+- The "Build a new item type with AI" prompt is gone from the Library
+  for the same reason. The command still exists elsewhere.
+- The key-hint bar is a near-black pill with NO border stroke: the
+  hairline ring drew the eye to the container rather than the keys
+  (owner). Its text colours are fixed white-on-dark rather than the
+  page's ink, because the pill is its own surface in both themes.
 
 ## Resolved episodes (one line each, dates in git log)
 

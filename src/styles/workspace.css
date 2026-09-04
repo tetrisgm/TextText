@@ -1528,13 +1528,14 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   overflow: hidden;
   padding: 6px 12px;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--hairline) 70%, transparent);
-  /* Nearly opaque: it sits over the last line of a document, and text
-     showing through a translucent strip reads as a rendering fault. */
-  background: color-mix(in srgb, var(--bg) 96%, transparent);
-  box-shadow: 0 1px 10px color-mix(in srgb, var(--ink) 8%, transparent);
-  backdrop-filter: saturate(180%) blur(14px);
-  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  /* No stroke: a hairline ring around a floating pill drew the eye to the
+     container rather than the keys (owner, 2026-09-04). Depth comes from the
+     shadow, and the fill is near-black so it reads as its own surface rather
+     than a tinted window onto the page. */
+  border: 0;
+  background: color-mix(in srgb, #000 92%, var(--bg));
+  color: #f4f4f5;
+  box-shadow: 0 6px 22px -10px rgba(0, 0, 0, 0.55);
   pointer-events: none;
   opacity: 0.55;
   transition: opacity 140ms ease;
@@ -1548,13 +1549,15 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   gap: 5px;
   white-space: nowrap;
   font-size: 11.5px;
-  color: var(--muted);
+  /* On the dark pill in both themes, so the pair is fixed rather than
+     following the page's ink. */
+  color: rgba(255, 255, 255, 0.62);
 }
 .workspace-key-hint-keys {
   font: inherit;
   font-weight: 600;
-  color: var(--ac-label, var(--ink));
-  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
   border-radius: 4px;
   padding: 1px 5px;
 }
@@ -1631,5 +1634,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
    forward instead of sitting quietly in the corner of the eye. */
 .workspace-key-hints.is-modifier-layer {
   opacity: 1;
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow:
+    0 6px 22px -10px rgba(0, 0, 0, 0.6),
+    0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
 }

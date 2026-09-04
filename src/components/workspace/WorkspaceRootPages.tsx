@@ -674,14 +674,6 @@ export function WorkspaceRootLanding({
                     if (post.id) onEditCreatedPost(post.id);
                   }}
                 />
-                <button
-                  type="button"
-                  className="workspace-build-type-button"
-                  onClick={onBuildItemType}
-                >
-                  <span aria-hidden="true">✦</span>
-                  Build a new item type with AI
-                </button>
               </section>
             ) : null}
             <section className={`workspace-recent is-view-${recentViewMode}`}>

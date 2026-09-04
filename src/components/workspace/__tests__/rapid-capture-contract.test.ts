@@ -30,7 +30,13 @@ describe("rapid capture contract", () => {
     expect(folderPage).toContain("Saving to ${capture.destination}");
     expect(folderPage).toContain("Saved to ${capture.destination}");
     expect(folderPage).toContain('capture.status === "failed"');
-    expect(folderPage).toContain("captures.map((capture)");
+    // Receipts are for FAILURES only (owner, 2026-09-04): a save that worked
+    // has already put the item in the list below, and its receipt was
+    // clutter. A failure leaves no other trace, so that one still shows.
+    expect(folderPage).toContain("failedCaptures.map((capture)");
+    expect(folderPage).toContain(
+      'captures.filter((capture) => capture.status === "failed")',
+    );
     expect(folderPage).toContain("readCaptureQueue<FolderCreateRequest, Post>");
     expect(folderPage).toContain("writeCaptureQueue(");
     expect(folderPage).toContain("before the textarea is ever cleared");

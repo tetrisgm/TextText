@@ -810,6 +810,10 @@ export function UniversalItemComposer({
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [captures, setCaptures] = useState<InboxCapture[]>([]);
+  const failedCaptures = useMemo(
+    () => captures.filter((capture) => capture.status === "failed"),
+    [captures],
+  );
   const [hydratedCaptureQueueHandle, setHydratedCaptureQueueHandle] = useState<
     string | null
   >(
@@ -1213,9 +1217,13 @@ export function UniversalItemComposer({
           <span aria-hidden="true">↑</span>
         </button>
       </form>
-      {captures.length > 0 && (
+      {/* Only failures are worth a line on screen. A save that worked has
+          already put the item in the list right below, and the receipt for it
+          was just clutter (owner, 2026-09-04). A save that FAILED leaves no
+          other trace, so that one stays. */}
+      {failedCaptures.length > 0 && (
         <div className="universal-item-receipts" aria-label="Recent captures">
-          {captures.map((capture) => (
+          {failedCaptures.map((capture) => (
             <div
               className={`universal-item-receipt is-${capture.status}`}
               role="status"

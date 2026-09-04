@@ -2258,14 +2258,34 @@ export async function setPostFolder(
     .limit(1);
   const row = existing[0];
   if (!row) throw new Error("Post not found");
+  // A slug is only unique WITHIN a folder, so a move can collide with an
+  // item already sitting in the destination. Re-slug rather than refuse: the
+  // person asked for the item to be moved, not for a lecture about URLs, and
+  // the old slug is kept in slug_history so existing links still resolve.
+  const slug =
+    row.folderId === folder.id
+      ? row.slug
+      : await freeSlugInFolder(folder.id, row.slug);
+  const reslugged = slug !== row.slug;
   if (row.visibility === "public" && row.folderId !== folder.id) {
-    await assertPublicPathAvailable(blogId, folder.path, row.slug, row.id);
+    await assertPublicPathAvailable(blogId, folder.path, slug, row.id);
   }
   let updated: PostRow[];
   try {
     updated = await db
       .update(posts)
-      .set({ folderId: folder.id, updatedAt: new Date() })
+      .set({
+        folderId: folder.id,
+        updatedAt: new Date(),
+        ...(reslugged
+          ? {
+              slug,
+              slugHistory: Array.from(
+                new Set([...(row.slugHistory ?? []), row.slug]),
+              ),
+            }
+          : {}),
+      })
       .where(eq(posts.id, row.id))
       .returning();
   } catch (error) {
