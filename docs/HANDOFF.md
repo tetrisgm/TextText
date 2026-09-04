@@ -3532,6 +3532,63 @@ Facts worth keeping from the interface refit, in the order they bit.
   workspace measure to ~75 characters instead. One line in
   `src/lib/presentation/styles.ts` if the owner wants the rest.
 
+## What the refit broke, and why (2026-09-04)
+
+The owner tested build 1027 and reported ten things. The causes are worth
+keeping, because most of them are one mistake wearing different clothes.
+
+- **A live `backdrop-filter` over content that moves is not free.** Three of
+  them went over the article (two round history buttons, a stepper pill).
+  This is already recorded further up for the sidebar drag; it is equally
+  true of a scrolling document and of a swipe. Opaque grounds instead.
+- **`max-content` in a row is a trap during a swipe.** The swipe lays the
+  clone out against a container that is still narrowing, so a
+  `minmax(0, max-content)` title column resolved to almost nothing and every
+  title painted as one or two characters before popping back.
+- **But a flex row hands its full width up to an `auto` grid track.**
+  `.workspace-recent` and `.workspace-recent-list` are grids with one
+  implicit column. A grid row's `minmax(0, 1fr)` preview contributed nothing
+  to max-content; a flex row's nowrap preview contributes all of it, and the
+  track grew to 1648px inside a 750px column. Any list container that holds
+  a truncating row needs `grid-template-columns: minmax(0, 1fr)` explicitly.
+  A truncating flex child also needs `flex: 1 1 0` and its own `min-width: 0`
+  on the text element.
+- **`.post-editor-shell.applecms` redefines `--bg-soft`/`--bg-soft-2`** to a
+  near-black scale of its own. A token that reads as a light grey at `:root`
+  paints almost black inside the workspace. Derive from `--ink` and `--bg`
+  for anything inside the shell.
+- **A view transition's GROUP animates the snapshot's size.** Two views are
+  rarely the same height, so the content scaled as it slid and settled a few
+  pixels when the real DOM took over. Pin both images (`object-fit: none`,
+  `object-position: top left`, `height: 100%`) and set
+  `::view-transition-group(...) { animation: none }`.
+- **Arriving by history is not opening.** Back, forward and the swipe all
+  land through popstate; recording them re-sorted Recently opened while
+  someone was only moving through items they had already seen.
+- **The swipe clone is appended to `.post-editor-shell`, not to
+  `.workspace-document-layout`.** A rule scoped to the layout does not match
+  the clone, so the document inside it renders differently mid-gesture. Scope
+  document rules to `.post-editor-content`, which the clone carries.
+- **Padding inside a scroller only moves content that is in flow.** The hint
+  bar's clearance has to be on the column, or positioned children (the
+  editor's save state, the action bars) stay underneath it.
+- **One action, one control.** The action bar has carried previous/next post
+  as left and right chevrons all along; the refit added a second pair as up
+  and down chevrons elsewhere.
+- **DESIGN.md's accent rule is load-bearing.** "The accent never floods a
+  surface" is what the tinted sidebar row violated, and it is what read as
+  "a lot of blues".
+
+**Measured, headless WebKit, click-to-content for opening an item** (20
+samples, first run after a server restart discarded, three runs each):
+pre-refit 73ms p50, build 1027 92ms, after these fixes ~85ms. Run-to-run
+noise reached +/-15ms by the end of the session, so the residual gap is at
+the edge of what this harness resolves. The harness cannot see compositing,
+which is where the blur layers cost the most, so it understates what the
+real app felt. `scripts/bench-workspace-interaction.ts` reloads the page
+before every sample and takes four; that variance is a page load, not the
+interaction.
+
 ## Resolved episodes (one line each, dates in git log)
 
 - Apple consent screen "write app": appleid.apple.com caches its own copy;
