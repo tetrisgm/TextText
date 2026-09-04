@@ -2477,24 +2477,33 @@ body:has(.reader):not(:has(.post-editor-shell)) {
 .workspace-document-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  /* Two rows: the tab strip, then the document. The strip is a band rather
+     than something sticky inside the scroller, so it never scrolls away and
+     the action bar can sit below it. */
+  grid-template-rows: auto minmax(0, 1fr);
   height: 100%;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   align-items: stretch;
 }
+.workspace-document-layout > .workspace-tab-bar {
+  grid-column: 1;
+  grid-row: 1;
+}
 .workspace-document-layout > .post-editor-content {
   grid-column: 1;
+  grid-row: 2;
   min-width: 0;
 }
 .post-editor-shell.has-assistant-pinned .workspace-document-layout {
-  grid-template-columns: minmax(0, 1fr) var(--workspace-assistant-width, 332px);
+  grid-template-columns: minmax(0, 1fr) var(--workspace-assistant-width, 360px);
 }
 .post-editor-shell.has-assistant-pinned
   .workspace-document-layout
   > .workspace-assistant-shell {
   grid-column: 2;
-  grid-row: 1;
+  grid-row: 1 / -1;
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -2516,7 +2525,7 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   --workspace-rail-inset: 0px;
 }
 .post-editor-shell.has-assistant-pinned {
-  --workspace-rail-inset: var(--workspace-assistant-width, 332px);
+  --workspace-rail-inset: var(--workspace-assistant-width, 360px);
 }
 
 /* TextText workspace chrome: a quiet three-pane editor. The rails own their
@@ -2573,7 +2582,8 @@ body:has(.reader):not(:has(.post-editor-shell)) {
     padding: 8px 14px 18px;
   }
 
-  .post-editor-shell.has-sidebar .post-editor-content {
+  .post-editor-shell.has-sidebar .post-editor-content,
+  .post-editor-shell.has-sidebar .workspace-tab-bar {
     margin-left: var(--workspace-sidebar-width, 248px);
   }
 
@@ -3131,10 +3141,12 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   box-shadow: none;
 }
 @media (min-width: 1025px) {
-  .post-editor-shell.has-sidebar .post-editor-content {
+  .post-editor-shell.has-sidebar .post-editor-content,
+  .post-editor-shell.has-sidebar .workspace-tab-bar {
     margin-left: var(--workspace-sidebar-width, 280px);
   }
-  .post-editor-shell.has-sidebar.is-sidebar-collapsed .post-editor-content {
+  .post-editor-shell.has-sidebar.is-sidebar-collapsed .post-editor-content,
+  .post-editor-shell.has-sidebar.is-sidebar-collapsed .workspace-tab-bar {
     margin-left: 0;
   }
   .post-editor-shell.has-sidebar .post-back-action-bar.is-edit {
@@ -3182,7 +3194,9 @@ body:has(.reader):not(:has(.post-editor-shell)) {
     left: 52px;
   }
   .post-editor-shell.has-sidebar .post-editor-content,
-  .post-editor-shell.has-sidebar.is-sidebar-collapsed .post-editor-content {
+  .post-editor-shell.has-sidebar.is-sidebar-collapsed .post-editor-content,
+  .post-editor-shell.has-sidebar .workspace-tab-bar,
+  .post-editor-shell.has-sidebar.is-sidebar-collapsed .workspace-tab-bar {
     margin-left: 0;
   }
   .post-editor-sidebar {
@@ -4834,7 +4848,7 @@ body:has(.reader):not(:has(.post-editor-shell)) {
         36px,
         calc(
           100vw - var(--workspace-sidebar-width, 280px) -
-            var(--workspace-assistant-width, 332px) - 32px
+            var(--workspace-assistant-width, 360px) - 32px
         )
       )
     );
@@ -4845,7 +4859,7 @@ body:has(.reader):not(:has(.post-editor-shell)) {
       520px,
       max(
         36px,
-        calc(100vw - var(--workspace-assistant-width, 332px) - 84px)
+        calc(100vw - var(--workspace-assistant-width, 360px) - 84px)
       )
     );
   }

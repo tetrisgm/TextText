@@ -1404,21 +1404,28 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
    top corners, so the strip keeps clear of both and scrolls sideways rather
    than shrinking each tab to nothing. Sticky, so it stays put while the
    document scrolls under it. */
+/* The topmost band of the document column, above the action bar.
+
+   It used to sit inside the scroller with 48px of padding to duck under the
+   floating chrome, which put the actions above the tabs they act on and let
+   the tabs scroll out of sight. Now it is its own grid row and the chrome
+   moves down to meet it. */
 .workspace-tab-bar {
-  position: sticky;
-  top: 0;
   z-index: 5;
   display: flex;
   align-items: stretch;
   gap: 2px;
-  /* Clear the floating chrome rather than squeezing between it: the pills
-     sit at top:8px and the editor's toolbar grows with find and replace, so
-     anything sharing that band ends up underneath it and swallows clicks. */
-  padding: 48px 24px 0;
+  height: 38px;
+  padding: 6px 12px 0;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
-  background: var(--bg);
+  /* Derived from --ink and --bg rather than --bg-soft-2: the workspace shell
+     redefines the soft greys to its own near-black scale, so a token that
+     reads as a light strip at the root paints the band almost black inside
+     the shell. */
+  background: color-mix(in srgb, var(--ink) 7%, var(--bg));
+  box-shadow: inset 0 -1px 0 var(--hairline);
 }
 .workspace-tab-bar::-webkit-scrollbar {
   display: none;
@@ -1444,13 +1451,16 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .workspace-tab.is-drop-target {
   box-shadow: inset 2px 0 0 var(--accent);
 }
+/* The open tab is the same colour as the document below it and sits proud of
+   the band, which is how a tab says "this strip continues into that page". */
 .workspace-tab.is-active {
-  background: color-mix(in srgb, var(--ink) 6%, transparent);
-  border-color: color-mix(in srgb, var(--hairline) 88%, transparent);
-  color: var(--ac-label, var(--ink));
+  background: var(--bg);
+  border-color: var(--hairline);
+  color: var(--ink);
 }
 .workspace-tab:not(.is-active):hover {
-  background: color-mix(in srgb, var(--ink) 3%, transparent);
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  color: var(--ink-2);
 }
 .workspace-tab-select {
   flex: 1 1 auto;
@@ -1703,11 +1713,13 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   padding: 0;
   border: 1px solid var(--hairline);
   border-radius: 999px;
-  background: var(--toolbar-bg);
+  /* Opaque, not a blur layer. A live backdrop-filter over content that is
+     scrolling or sliding smears pixels in WebKit and costs a composited pass
+     per frame - the same reason this file already turns the sidebar's blur
+     off while it is dragged. Three of these sat over the article. */
+  background: var(--bg);
   color: var(--ink-2);
   cursor: pointer;
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  backdrop-filter: saturate(180%) blur(20px);
   transition:
     background-color 0.18s var(--ease),
     border-color 0.18s var(--ease),
@@ -1731,55 +1743,6 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .workspace-round-button:focus-visible {
-  outline: none;
-  box-shadow: var(--ac-focus);
-}
-
-/* Previous and next item, as one control. A single pill rather than two
-   buttons, because the pair is one idea: step through this list. */
-.workspace-step-pill {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: stretch;
-  height: 36px;
-  margin-left: 4px;
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  background: var(--toolbar-bg);
-  overflow: hidden;
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  backdrop-filter: saturate(180%) blur(20px);
-}
-
-.workspace-step-pill button {
-  width: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--ink-2);
-  cursor: pointer;
-  transition: background-color 0.18s var(--ease), color 0.18s var(--ease);
-}
-
-.workspace-step-pill button + button {
-  box-shadow: inset 1px 0 0 var(--hairline);
-}
-
-.workspace-step-pill button svg {
-  width: 16px;
-  height: 16px;
-  display: block;
-}
-
-.is-pointer-live .workspace-step-pill button:hover {
-  background: color-mix(in srgb, var(--ink) 7%, transparent);
-  color: var(--ink);
-}
-
-.workspace-step-pill button:focus-visible {
   outline: none;
   box-shadow: var(--ac-focus);
 }
@@ -1820,11 +1783,14 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   background: color-mix(in srgb, var(--ink) 5%, transparent);
 }
 
-/* The selected row picks up the accent rather than a neutral, which is what
-   separates "this is where I am" from "the pointer is here". */
+/* Neutral, not accent. DESIGN.md's accent rule is that the accent never
+   floods a surface, and a tinted band on the sidebar row is a flood: it was
+   the most visible of the blues the refit added (owner, 2026-09-04). "Where
+   I am" is carried by the fill being stronger than hover plus the heavier
+   name, which is how the sidebar read before. */
 .post-editor-folder-row.is-active,
 .is-pointer-live .post-editor-folder-row.is-active:hover {
-  background: var(--row-selected-soft);
+  background: var(--control-bg-hover);
 }
 
 .post-editor-folder-row.is-active .post-editor-folder-name,
@@ -1887,21 +1853,31 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   padding-bottom: 4px;
 }
 
+/* Flex, not a `max-content` grid.
+
+   The grid asked the browser for each title's intrinsic width on every row,
+   every layout. Two costs followed. While the swipe slides the list in, the
+   row is laid out against a container that is still narrowing, so
+   `max-content` resolved to almost nothing and every title painted as one or
+   two characters before popping back - the text glitch on the way in. And a
+   list of intrinsic measurements is re-measured on every hover, scroll and
+   resize, which is the kind of thing that makes a list feel heavy.
+
+   Flex gets the same result: the title takes what it needs, the preview takes
+   the rest and truncates. */
 .workspace-recent.is-view-list .workspace-item-option-copy {
-  display: grid;
-  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
-  gap: 12px;
+  display: flex;
   align-items: baseline;
+  gap: 12px;
 }
 
 .workspace-recent.is-view-list .workspace-item-option-copy > strong {
-  grid-column: 1;
-  grid-row: 1;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .workspace-recent.is-view-list .workspace-item-option-detail {
-  grid-column: 2;
-  grid-row: 1;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
 }
@@ -1922,12 +1898,10 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   color: var(--muted);
 }
 
-/* A row with tags keeps its second line for them, and only for them. */
-.workspace-recent.is-view-list
-  .workspace-item-option:has(.workspace-item-option-tags)
-  .workspace-item-option-main {
-  min-height: 64px;
-}
+/* A tagged row keeps the 70px the base rule already gives it: the tags need
+   the second line, and adding another `:has()` here to shave six pixels off
+   the exception is not worth a second subtree-sensitive selector in a list
+   that restyles on every hover. */
 
 /* The lead-in of the hint sentence: said once, then each hint continues it. */
 .workspace-key-hint-lead {
@@ -1995,4 +1969,34 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 [data-workspace-post-id][aria-selected="true"] .workspace-item-option-detail small,
 [data-workspace-post-id][aria-selected="true"] .workspace-item-option-main > time {
   color: var(--row-selected-ink);
+}
+
+/* The floating chrome drops below the tab strip when there is one, so the
+   order down the window is tabs, then the actions for the open tab, then the
+   document. Without a tab strip nothing has moved. */
+.post-editor-shell.has-tab-bar .workspace-history-chrome,
+.post-editor-shell.has-tab-bar .post-top-action-bar,
+.post-editor-shell.has-tab-bar .workspace-sidebar-reveal-chrome {
+  top: 46px;
+}
+
+
+/* Nothing ends underneath the hint bar. It is a fixed overlay across the
+   bottom of the document column, so the scroller reserves its height; the
+   save state is the last thing in an editor and was hidden by it (owner,
+   2026-09-04). */
+.post-editor-shell {
+  --workspace-hints-height: 34px;
+}
+
+@media (max-width: 900px) {
+  /* The bar is not rendered at this width. */
+  .post-editor-shell {
+    --workspace-hints-height: 0px;
+  }
+}
+
+.workspace-document-layout > .post-editor-content {
+  padding-bottom: var(--workspace-hints-height, 0px);
+  scroll-padding-bottom: var(--workspace-hints-height, 0px);
 }

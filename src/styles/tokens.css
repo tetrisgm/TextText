@@ -14,14 +14,14 @@
   --bg: #fbfbfd;
   --bg-soft: #f2f3f7;
   --bg-soft-2: #f7f8fb;
-  --accent: #3b62e8;
-  --accent-pressed: #2c4bc0;
+  --accent: #0066cc;
+  --accent-pressed: #004e9f;
   --destructive: #d70015;
   --positive: #248a3d;
   --warning: #a05a00;
   --sidebar-bg: rgba(243, 244, 248, 0.92);
   --toolbar-bg: rgba(251, 251, 253, 0.86);
-  --selection-bg: rgba(59, 98, 232, 0.1);
+  --selection-bg: rgba(0, 122, 255, 0.1);
   /* A selected ROW is filled outright, not tinted: it is the difference
      between a list you are operating and a list you are reading. */
   /* Dark enough that white text on it clears 4.5:1. The lighter blue this
@@ -63,14 +63,14 @@
   --bg: #0d0f13;
   --bg-soft: #161922;
   --bg-soft-2: #1b1f2a;
-  --accent: #7c9bff;
-  --accent-pressed: #a3b8ff;
+  --accent: #0a84ff;
+  --accent-pressed: #409cff;
   --destructive: #ff453a;
   --positive: #30d158;
   --warning: #ff9f0a;
   --sidebar-bg: rgba(18, 21, 27, 0.94);
   --toolbar-bg: rgba(18, 21, 27, 0.88);
-  --selection-bg: rgba(124, 155, 255, 0.18);
+  --selection-bg: rgba(10, 132, 255, 0.18);
   --row-selected-bg: #2f5fc4;
   --row-selected-ink: #ffffff;
   --row-selected-soft: rgba(47, 95, 196, 0.28);
@@ -90,14 +90,14 @@
     --bg: #0d0f13;
     --bg-soft: #161922;
     --bg-soft-2: #1b1f2a;
-    --accent: #7c9bff;
-    --accent-pressed: #a3b8ff;
+    --accent: #0a84ff;
+    --accent-pressed: #409cff;
     --destructive: #ff453a;
     --positive: #30d158;
     --warning: #ff9f0a;
     --sidebar-bg: rgba(18, 21, 27, 0.94);
     --toolbar-bg: rgba(18, 21, 27, 0.88);
-    --selection-bg: rgba(124, 155, 255, 0.18);
+    --selection-bg: rgba(10, 132, 255, 0.18);
     --row-selected-bg: #2f5fc4;
     --row-selected-ink: #ffffff;
     --row-selected-soft: rgba(47, 95, 196, 0.28);

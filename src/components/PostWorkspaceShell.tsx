@@ -4991,7 +4991,9 @@ function LocalWorkspaceShell({
         marqueeDragging ? " is-marquee-dragging" : ""
       } assistant-is-${assistantState}${
         assistantState === "pinned" ? " has-assistant-pinned" : ""
-      }${assistantState !== "hidden" ? " has-assistant-open" : ""}`}
+      }${assistantState !== "hidden" ? " has-assistant-open" : ""}${
+        tabPosts.length > 0 ? " has-tab-bar" : ""
+      }`}
       style={
         {
           "--workspace-assistant-width": `${assistantWidth}px`,
@@ -5016,11 +5018,6 @@ function LocalWorkspaceShell({
         onSelectFolder={navigateSection}
         onSearchDate={navigateDateSearch}
         onReturnToBody={focusWorkspaceBody}
-        onAdjacentPost={
-          view.level === "post" || view.level === "edit"
-            ? (delta) => selectRelativePost(delta as 1 | -1)
-            : undefined
-        }
         onSidebarFocus={(path) => {
           activateRegion("sidebar");
           lastSidebarPathRef.current = path;
@@ -5090,6 +5087,25 @@ function LocalWorkspaceShell({
         }
       />
       <div className="workspace-document-layout">
+        {/* The tab strip is the topmost band, above the action bar, as in
+            Sublime. The actions belong to the tab that is open, so a bar
+            drawn ABOVE the tabs reads as acting on the wrong thing (owner,
+            2026-09-04). Outside the scroller as well, so the tabs do not
+            scroll away with the document. */}
+        <WorkspaceTabBar
+          activePostId={openedPostId}
+          posts={tabPosts}
+          previewPostId={tabState.preview}
+          onSelect={(postId) => openTabPostRef.current(postId)}
+          onPromote={(postId) => promoteTab(postId)}
+          onMove={(from, to) => moveTab(from, to)}
+          onClose={(postId) => {
+            const next = closeTab(postId);
+            if (postId !== openedPostId) return;
+            if (next) openTabPostRef.current(next);
+            else navigateUpRef.current();
+          }}
+        />
         <div
           ref={contentRef}
           tabIndex={-1}
@@ -5111,20 +5127,6 @@ function LocalWorkspaceShell({
             localViewActiveFolder(view) === "blog" ? " is-blog-folder-view" : ""
           }`}
         >
-          <WorkspaceTabBar
-            activePostId={openedPostId}
-            posts={tabPosts}
-            previewPostId={tabState.preview}
-            onSelect={(postId) => openTabPostRef.current(postId)}
-            onPromote={(postId) => promoteTab(postId)}
-            onMove={(from, to) => moveTab(from, to)}
-            onClose={(postId) => {
-              const next = closeTab(postId);
-              if (postId !== openedPostId) return;
-              if (next) openTabPostRef.current(next);
-              else navigateUpRef.current();
-            }}
-          />
           {content}
         </div>
 

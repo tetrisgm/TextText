@@ -26,10 +26,11 @@ import { WorkspaceAssistantSkillLauncher } from "./AssistantSkillLauncher";
 
 export type { AssistantContext } from "./context";
 
-// 332, not 360: the refit's three-pane proportions put the rail at 300-340,
-// and the CSS fallback for --workspace-assistant-width already said 332 in
-// one place and 360 in two others. One number now.
-export const ASSISTANT_SIDEBAR_DEFAULT_WIDTH = 332;
+// 360. The refit narrowed this to 332 to match a set of three-pane
+// proportions; nobody asked for the assistant to change, and at 332 its own
+// header truncates to "Chat with Co...". The rail is not ours to retune
+// (owner, 2026-09-04).
+export const ASSISTANT_SIDEBAR_DEFAULT_WIDTH = 360;
 export const ASSISTANT_SIDEBAR_MIN_WIDTH = 280;
 export const ASSISTANT_SIDEBAR_MAX_WIDTH = 600;
 
