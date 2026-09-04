@@ -75,6 +75,8 @@ export type CommandWorkspaceSurface = {
   pasteCopied: () => void;
   /** Escape from a selection of many back to one. */
   clearSelection: () => void;
+  /** Cycle light, dark, system. */
+  cycleAppearance: () => void;
   selectNext: () => void;
   selectPrevious: () => void;
   openSelected: () => void;

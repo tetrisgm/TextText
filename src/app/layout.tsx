@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { APPEARANCE_BOOT_SCRIPT } from "@/lib/workspace/appearance";
 import localFont from "next/font/local";
 import { rootDomainUrl } from "@/lib/site-url";
 import "../styles/tokens.css";
@@ -53,7 +54,14 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={fraunces.variable}>
+    <html lang="en" className={fraunces.variable} suppressHydrationWarning>
+      <head>
+        {/* Before first paint: reading the appearance after hydration shows a
+            light frame to someone who chose dark. */}
+        <script
+          dangerouslySetInnerHTML={{ __html: APPEARANCE_BOOT_SCRIPT }}
+        />
+      </head>
       <body>{children}</body>
     </html>
   );

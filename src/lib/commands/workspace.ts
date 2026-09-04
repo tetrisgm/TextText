@@ -328,6 +328,16 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
   createCommand("note"),
   createCommand("bookmark"),
   {
+    id: "workspace.appearance",
+    label: "Switch appearance",
+    group: "Navigate",
+    // Shift+Cmd+L: the light/dark switch, kept off the single-letter range
+    // because it is a preference rather than an action on an item.
+    shortcut: { key: "l", meta: true, shift: true, label: "⇧⌘L", once: true },
+    when: (ctx) => Boolean(ctx.workspace?.cycleAppearance),
+    run: (ctx) => ctx.workspace?.cycleAppearance?.(),
+  },
+  {
     id: "selection.select-all",
     label: "Select all items",
     group: "Navigate",

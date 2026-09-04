@@ -18,6 +18,12 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import {
+  appearanceLabel,
+  nextAppearance,
+  readAppearance,
+  writeAppearance,
+} from "@/lib/workspace/appearance";
+import {
   dragCarriesItems,
   readItemDrag,
   writeItemDrag,
@@ -4488,6 +4494,11 @@ function LocalWorkspaceShell({
         );
       },
       selectSpatial,
+      cycleAppearance: () => {
+        const next = nextAppearance(readAppearance());
+        writeAppearance(next);
+        showToast(`Appearance: ${appearanceLabel(next)}`);
+      },
       selectAllVisible: () => {
         const ids = visiblePostIdsInDocumentOrder();
         if (ids.length === 0) return;
