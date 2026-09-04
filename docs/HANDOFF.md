@@ -3624,6 +3624,18 @@ AUTH_DEV_LOGIN=1 npx next start -p 3131 &
   figures: a hover costs about half a millisecond, a scroll is negligible,
   and an open costs 17 recalcs, 11 layouts and 38ms of script before the
   reader is readable.
+- **`scripts/memory-retention.mts`** reports RETAINED heap after forcing
+  collection twice, every six open-and-backs. Reading `JSHeapUsedSize`
+  without forcing collection first is meaningless - it swung between 400MB
+  and 1.7GB for identical code and sent two investigations down the wrong
+  path in one sitting. **Open standing finding: the workspace retains about
+  1.7MB per open-and-back** (22MB settled at start, 52MB after eighteen),
+  with the same six documents cycling, so it is not document content being
+  cached - it is something allocated per mount and held. Two hypotheses are
+  ruled out: the in-memory body cache (bounded in that scenario anyway, and
+  an LRU on it changed nothing), and the editor's Y.Doc (destroying it on
+  unmount made things worse, not better). Finding the retainer needs a heap
+  snapshot with retaining paths.
 - **`node scripts/find-dead-css.mjs [--write]`** lists (or removes) every
   rule whose selectors are built entirely from classes no source file
   mentions. Verify a `--write` with the surface walk above. It parses with
