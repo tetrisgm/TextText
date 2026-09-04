@@ -3,9 +3,23 @@ import type { AssistantAttachment } from "./AssistantSidebar";
 import type { CloudAssistantAttachment } from "@/lib/ai/cloud-client";
 import {
   ASSISTANT_OFFICE_ATTACHMENT_ACCEPT,
-  extractOfficeAttachmentText,
   officeAttachmentKind,
-} from "./office-attachment-text";
+} from "./office-attachment-kind";
+
+/**
+ * The office text extractor, fetched the moment someone actually attaches a
+ * Word, Excel or PowerPoint file. It carries fflate and an XML walk, and the
+ * workspace was parsing all of it on every load to support a file nobody had
+ * dropped yet.
+ */
+async function extractOfficeAttachmentText(
+  file: Parameters<
+    typeof import("./office-attachment-text")["extractOfficeAttachmentText"]
+  >[0],
+): Promise<string> {
+  const module = await import("./office-attachment-text");
+  return module.extractOfficeAttachmentText(file);
+}
 
 const ASSISTANT_ATTACHMENT_ACCEPT =
   `image/*,.pdf,.txt,.md,.markdown,.csv,.json,.jsonl,.yaml,.yml,.xml,.html,.htm,${ASSISTANT_OFFICE_ATTACHMENT_ACCEPT}`;

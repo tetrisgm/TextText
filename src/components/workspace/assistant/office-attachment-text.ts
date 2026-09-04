@@ -1,64 +1,18 @@
 import { strFromU8, Unzip, UnzipInflate, type UnzipFile } from "fflate";
-
-export const ASSISTANT_OFFICE_ATTACHMENT_ACCEPT = ".docx,.xlsx,.pptx";
+import {
+  OFFICE_MEDIA_TYPES,
+  OfficeAttachmentError,
+  fileExtension,
+  officeAttachmentKind,
+  type OfficeAttachmentFile,
+  type OfficeAttachmentKind,
+} from "./office-attachment-kind";
 
 const MAX_ARCHIVE_BYTES = 5_000_000;
 const MAX_ARCHIVE_FILES = 256;
 const MAX_EXTRACTED_BYTES = 8_000_000;
 const MAX_SINGLE_ENTRY_BYTES = 4_000_000;
 const MAX_OUTPUT_CHARACTERS = 120_000;
-
-const OFFICE_MEDIA_TYPES = {
-  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-} as const;
-
-const GENERIC_ZIP_MEDIA_TYPES = new Set([
-  "",
-  "application/octet-stream",
-  "application/zip",
-  "application/x-zip-compressed",
-]);
-
-type OfficeAttachmentKind = keyof typeof OFFICE_MEDIA_TYPES;
-
-export type OfficeAttachmentFile = {
-  arrayBuffer(): Promise<ArrayBuffer>;
-  name: string;
-  size: number;
-  type: string;
-};
-
-export class OfficeAttachmentError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "OfficeAttachmentError";
-  }
-}
-
-function fileExtension(name: string): string {
-  const dot = name.lastIndexOf(".");
-  return dot < 0 ? "" : name.slice(dot + 1).toLowerCase();
-}
-
-export function officeAttachmentKind(
-  name: string,
-  mediaType = "",
-): OfficeAttachmentKind | null {
-  const extension = fileExtension(name);
-  if (!(extension in OFFICE_MEDIA_TYPES)) return null;
-
-  const kind = extension as OfficeAttachmentKind;
-  const normalizedMediaType = mediaType.toLowerCase().split(";", 1)[0].trim();
-  if (
-    !GENERIC_ZIP_MEDIA_TYPES.has(normalizedMediaType) &&
-    normalizedMediaType !== OFFICE_MEDIA_TYPES[kind]
-  ) {
-    return null;
-  }
-  return kind;
-}
 
 function requireOfficeKind(file: OfficeAttachmentFile): OfficeAttachmentKind {
   const extension = fileExtension(file.name);

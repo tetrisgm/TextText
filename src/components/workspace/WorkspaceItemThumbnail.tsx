@@ -45,6 +45,22 @@ function ItemTypeIcon({ type }: { type: ItemKind }) {
   );
 }
 
+/**
+ * Whether a post's thumbnail will be the type icon rather than a picture.
+ *
+ * The row's CSS used to ask this with `:has(.workspace-item-thumbnail.is-icon)`
+ * in six places, which makes every list row's style depend on its own subtree
+ * and re-resolve as the subtree changes. The component already knows, so it
+ * says so on an attribute instead.
+ */
+export function thumbnailIsIcon(post: Post | WorkspacePoolPost): boolean {
+  const source = resolveCoverSource({
+    ...post,
+    body: "body" in post ? post.body : (post.bodyPreview ?? ""),
+  });
+  return !source.src || source.kind === "none" || source.kind === "fallback";
+}
+
 export function WorkspaceItemThumbnail({
   post,
 }: {

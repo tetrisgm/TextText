@@ -3404,7 +3404,7 @@ body:has(.reader):not(:has(.post-editor-shell)) {
 .workspace-item-option-main {
   padding-right: 82px;
 }
-.workspace-item-option:has(.workspace-item-option-tags) .workspace-item-option-main {
+.workspace-item-option[data-tags] .workspace-item-option-main {
   min-height: 70px;
   padding-bottom: 24px;
 }
@@ -4747,7 +4747,7 @@ body:has(.reader):not(:has(.post-editor-shell)) {
 }
 
 .workspace-recent.is-view-grid
-  .workspace-item-option-main:has(.workspace-item-thumbnail.is-icon) {
+  .workspace-item-option-main[data-icon-thumb] {
   padding-top: 54px;
 }
 
@@ -4784,7 +4784,7 @@ body:has(.reader):not(:has(.post-editor-shell)) {
 }
 
 .workspace-recent.is-view-grid
-  .workspace-item-option:has(.workspace-item-option-tags)
+  .workspace-item-option[data-tags]
   .workspace-item-option-main {
   padding-bottom: 48px;
 }
@@ -4809,7 +4809,7 @@ body:has(.reader):not(:has(.post-editor-shell)) {
 }
 
 .workspace-recent.is-view-column
-  .workspace-item-option-main:has(.workspace-item-thumbnail.is-icon) {
+  .workspace-item-option-main[data-icon-thumb] {
   grid-template-columns: minmax(0, 1fr);
 }
 
@@ -4860,7 +4860,7 @@ body:has(.reader):not(:has(.post-editor-shell)) {
 }
 
 .workspace-recent.is-view-column
-  .workspace-item-option:has(.workspace-item-option-tags)
+  .workspace-item-option[data-tags]
   .workspace-item-option-main {
   padding-bottom: 72px;
 }
@@ -6561,15 +6561,15 @@ body:has(.reader):not(:has(.post-editor-shell)) {
 .workspace-recent.is-view-grid .workspace-item-thumbnail:not(.is-icon) {
   object-fit: cover;
 }
-.workspace-recent.is-view-grid .workspace-item-option-main:has(.workspace-item-thumbnail.is-icon) {
+.workspace-recent.is-view-grid .workspace-item-option-main[data-icon-thumb] {
   min-height: 250px;
   padding-top: 54px;
 }
-.workspace-recent.is-view-grid .workspace-item-option-main:has(.workspace-item-thumbnail.is-icon)
+.workspace-recent.is-view-grid .workspace-item-option-main[data-icon-thumb]
   .workspace-item-option-copy {
   padding-top: 8px;
 }
-.workspace-recent.is-view-grid .workspace-item-option-main:has(.workspace-item-thumbnail.is-icon)
+.workspace-recent.is-view-grid .workspace-item-option-main[data-icon-thumb]
   .workspace-item-option-copy strong {
   font-size: 22px;
 }

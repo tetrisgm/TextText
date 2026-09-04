@@ -2,9 +2,13 @@ import { strToU8, zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 import {
   extractOfficeAttachmentText,
+
+
+} from "../office-attachment-text";
+import {
   officeAttachmentKind,
   type OfficeAttachmentFile,
-} from "../office-attachment-text";
+} from "../office-attachment-kind";
 
 const TYPES = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

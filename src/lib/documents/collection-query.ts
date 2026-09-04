@@ -15,77 +15,12 @@
 // against Postgres and against an in-memory pool. Keep them in lockstep: a new
 // operator lands in BOTH or in neither.
 
-import { sql, type SQL } from "drizzle-orm";
 import type { CollectionFilter, CollectionRenderSpec } from "@/lib/presentation/schema";
 import type { DocumentFieldValue } from "@/lib/documents/model";
 
-const FIELD_PREFIX = "content.fields.";
+export const FIELD_PREFIX = "content.fields.";
 
 const fieldId = (path: string) => path.slice(FIELD_PREFIX.length);
-
-// ---------------------------------------------------------------------------
-// SQL compilation
-// ---------------------------------------------------------------------------
-
-/** The jsonb object filters run against. */
-const FIELDS = sql`(posts.document -> 'content' -> 'fields')`;
-
-function scalarText(id: string): SQL {
-  return sql`(${FIELDS} ->> ${id})`;
-}
-
-/**
- * One filter to one SQL condition. `eq` uses containment so the GIN
- * (jsonb_path_ops) index serves it; everything else is a cheap re-check on the
- * rows that survive.
- */
-function filterCondition(filter: CollectionFilter): SQL {
-  const id = fieldId(filter.field);
-  switch (filter.op) {
-    case "eq":
-      // An unset boolean is false, matching the in-memory rule: a row that has
-      // never carried the flag satisfies "flag = false". Kept in step with
-      // matchesFilter, or the same collection answers differently depending on
-      // whether it was filtered in Postgres or in the browser.
-      if (filter.value === false) {
-        return sql`(${FIELDS} @> ${JSON.stringify({ [id]: false })}::jsonb OR NOT (${FIELDS} ? ${id}) OR ${FIELDS} -> ${id} = 'null'::jsonb)`;
-      }
-      return sql`${FIELDS} @> ${JSON.stringify({ [id]: filter.value })}::jsonb`;
-    case "neq":
-      return sql`(NOT (${FIELDS} @> ${JSON.stringify({ [id]: filter.value })}::jsonb) AND ${FIELDS} ? ${id})`;
-    case "isSet":
-      return sql`(${FIELDS} ? ${id} AND ${FIELDS} -> ${id} <> 'null'::jsonb)`;
-    case "notSet":
-      return sql`(NOT (${FIELDS} ? ${id}) OR ${FIELDS} -> ${id} = 'null'::jsonb)`;
-    case "gt":
-    case "gte":
-    case "lt":
-    case "lte": {
-      const operator = { gt: sql`>`, gte: sql`>=`, lt: sql`<`, lte: sql`<=` }[filter.op];
-      // Numbers compare numerically. Dates are ISO-8601 strings, which order
-      // lexicographically, so text comparison is correct for them; the
-      // validator only admits these ops on number and date fields.
-      if (typeof filter.value === "number") {
-        return sql`(jsonb_typeof(${FIELDS} -> ${id}) = 'number' AND (${scalarText(id)})::numeric ${operator} ${filter.value})`;
-      }
-      return sql`(jsonb_typeof(${FIELDS} -> ${id}) = 'string' AND ${scalarText(id)} ${operator} ${String(filter.value)})`;
-    }
-    case "contains":
-      return sql`${scalarText(id)} ILIKE ${"%" + escapeLike(String(filter.value)) + "%"}`;
-  }
-}
-
-function escapeLike(value: string): string {
-  return value.replace(/([%_\\])/g, "\\$1");
-}
-
-/** All filters ANDed, or null when the spec has none. */
-export function fieldFilterSql(filters: CollectionFilter[]): SQL | null {
-  if (filters.length === 0) return null;
-  return filters
-    .map(filterCondition)
-    .reduce((all, condition) => sql`${all} AND ${condition}`);
-}
 
 // ---------------------------------------------------------------------------
 // In-process application

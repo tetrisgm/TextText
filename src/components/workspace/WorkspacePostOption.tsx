@@ -14,7 +14,10 @@ import {
   WorkspaceItemActions,
   WorkspaceItemStar,
 } from "@/components/workspace/WorkspaceItemActions";
-import { WorkspaceItemThumbnail } from "@/components/workspace/WorkspaceItemThumbnail";
+import {
+  WorkspaceItemThumbnail,
+  thumbnailIsIcon,
+} from "@/components/workspace/WorkspaceItemThumbnail";
 import {
   resetSpatialCardTilt,
   updateSpatialCardTilt,
@@ -76,11 +79,16 @@ export const WorkspacePostOption = memo(function WorkspacePostOption({
   const { selected, active } = useWorkspacePostSelection(post.id);
   const chip = chips && pool ? chipForPost(post, pool, chips) : null;
   const fresh = changedRecently(post);
+  // Facts the CSS used to ask for with `:has()`. A row that states them is a
+  // row whose style does not depend on walking its own subtree.
+  const hasTags = (post.tags?.length ?? 0) > 0;
+  const iconThumb = thumbnailIsIcon(post);
   return (
     <div
       id={workspacePostOptionDomId(post.id)}
       className={`workspace-item-option${selected ? " is-command-selected" : ""}`}
       data-workspace-post-id={post.id}
+      data-tags={hasTags ? "" : undefined}
       role="option"
       aria-selected={selected}
       tabIndex={active ? 0 : -1}
@@ -124,6 +132,7 @@ export const WorkspacePostOption = memo(function WorkspacePostOption({
       <button
         type="button"
         className="workspace-item-option-main"
+        data-icon-thumb={iconThumb ? "" : undefined}
         onMouseDown={(event) => {
           if (shouldSuppressNativeItemSelection(event)) event.preventDefault();
         }}

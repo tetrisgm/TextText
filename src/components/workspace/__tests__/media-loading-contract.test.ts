@@ -11,6 +11,9 @@ const shellSource = [
   "../WorkspaceRootPages.tsx",
   "../WorkspaceSpecialPages.tsx",
   "../WorkspaceItemViews.tsx",
+  // The editor moved into its own module so it can be loaded on demand;
+  // these contracts follow it.
+  "../WorkspaceItemEditor.tsx",
   "../../../lib/workspace/local-view.ts",
   "../../../lib/workspace/draft-sessions.ts",
 ]

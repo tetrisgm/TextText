@@ -8,10 +8,10 @@
 import { describe, expect, it } from "vitest";
 import {
   applyCollectionSpec,
-  fieldFilterSql,
   matchesFilter,
   type CollectionQueryable,
 } from "../collection-query";
+import { fieldFilterSql } from "../collection-query.server";
 import type { CollectionFilter } from "@/lib/presentation/schema";
 
 const book = (

@@ -8,10 +8,22 @@ import {
   SharedPage,
   StarredPage,
 } from "@/components/workspace/WorkspaceSpecialPages";
-import {
-  LocalUnifiedWorkspacePostEditor,
-  WorkspacePostReader,
-} from "@/components/workspace/WorkspaceItemViews";
+import { WorkspacePostReader } from "@/components/workspace/WorkspaceItemViews";
+
+/**
+ * Loaded on demand. The editor carries Yjs, y-protocols and the
+ * collaborative machinery, and the workspace was parsing all of it to show a
+ * list. It is mounted on the first idle after an item opens (see
+ * warmEditorReady), so by the time anyone presses E the chunk is long since
+ * fetched.
+ */
+const LocalUnifiedWorkspacePostEditor = dynamic(
+  () =>
+    import("@/components/workspace/WorkspaceItemEditor").then(
+      (module) => module.LocalUnifiedWorkspacePostEditor,
+    ),
+  { ssr: false },
+);
 
 const WorkspaceSettings = dynamic(() =>
   import("@/components/workspace/WorkspaceSettings").then(
@@ -1020,10 +1032,42 @@ export function LocalWorkspaceContent({
       );
   }
 
+  const [warmEditorReady, setWarmEditorReady] = useState(false);
+  const activePostId = activePost?.id ?? null;
+  useEffect(() => {
+    if (!activePostId) {
+      setWarmEditorReady(false);
+      return;
+    }
+    setWarmEditorReady(false);
+    const idle = (
+      window as unknown as {
+        requestIdleCallback?: (fn: () => void, o?: { timeout: number }) => number;
+        cancelIdleCallback?: (handle: number) => void;
+      }
+    ).requestIdleCallback;
+    if (idle) {
+      const handle = idle(() => setWarmEditorReady(true), { timeout: 1200 });
+      return () =>
+        (window as unknown as { cancelIdleCallback?: (h: number) => void })
+          .cancelIdleCallback?.(handle);
+    }
+    const timer = window.setTimeout(() => setWarmEditorReady(true), 200);
+    return () => window.clearTimeout(timer);
+  }, [activePostId]);
+
   const editorVisible =
     Boolean(activePost) &&
     (view.level === "edit" || activePost?.type === "note");
-  const shouldWarmEditor = Boolean(activePost) && canEditItems;
+  // The warm editor is mounted on the FIRST IDLE after an item opens, not
+  // during the open. Warming it inline meant every open - including a read
+  // that never touches the editor - paid for building a Yjs document, an
+  // awareness channel and a collab provider before the reader could paint.
+  // Deferring costs nothing: by the time a hand reaches Cmd+E the mount has
+  // long happened. Opening straight into edit still mounts immediately,
+  // because then the editor IS the view.
+  const shouldWarmEditor =
+    Boolean(activePost) && canEditItems && (editorVisible || warmEditorReady);
 
   return (
     <>
