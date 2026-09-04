@@ -1876,10 +1876,13 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
    Flex gets the same result: the title takes what it needs, the preview takes
    the rest and truncates. */
+/* 20px between the title and the preview, measured off the reference. At
+   12px they read as one run of text; the gap is what makes the preview a
+   second column rather than a continuation. */
 .workspace-recent.is-view-list .workspace-item-option-copy {
   display: flex;
   align-items: baseline;
-  gap: 12px;
+  gap: 20px;
 }
 
 .workspace-recent.is-view-list .workspace-item-option-copy > strong {
@@ -1907,8 +1910,14 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   flex: 0 0 auto;
 }
 
+/* Weight 500, not 600.
+
+   In the reference the subject and the preview are almost the same weight;
+   what separates them is COLOUR - #3e3e3e against #909090. Ours separated
+   them by weight as well, and a column of semibold titles reads as a table
+   of headings where theirs reads as a list of things. */
 .workspace-recent.is-view-list .workspace-item-option-copy > strong {
-  font: 600 15px/1.35 var(--font-body);
+  font: 450 15px/1.35 var(--font-body);
   letter-spacing: -0.005em;
 }
 
@@ -2161,4 +2170,116 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   font: 600 11px/1.2 var(--font-body);
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+/* ---------------------------------------------------------------------
+   Row type, measured against the reference.
+
+   Their list rows carry an 18px ink band at a 52px pitch; ours carried 17px
+   at the same pitch. A point of type on a row is the difference between a
+   list that reads as data and one that reads as writing, and their rows are
+   the ones that read as writing.
+   --------------------------------------------------------------------- */
+.workspace-recent.is-view-list .workspace-item-option-copy > strong {
+  font-size: 16px;
+}
+
+.workspace-recent.is-view-list .workspace-item-option-detail small {
+  font-size: 16px;
+}
+
+.workspace-recent.is-view-list .workspace-item-option-main > time {
+  font-size: 12.5px;
+}
+
+/* ---------------------------------------------------------------------
+   Chips carry a hue, quietly.
+
+   Theirs are pale washes with the ink a darker shade of the same colour -
+   #ebd2ef lilac and #e4da9e amber, measured - rather than the neutral grey
+   ours had. A pale wash reads as a label; grey reads as another piece of
+   chrome. One hue per kind, so the eye learns which is which.
+   --------------------------------------------------------------------- */
+.workspace-item-chip[data-chip="type"] {
+  background: color-mix(in srgb, #e8c14a 45%, transparent);
+  color: #6f5210;
+}
+
+.workspace-item-chip[data-chip="folder"] {
+  background: color-mix(in srgb, #c39ae0 40%, transparent);
+  color: #5c3d80;
+}
+
+[data-theme="dark"] .workspace-item-chip[data-chip="type"],
+[data-theme="dark"] .workspace-item-chip[data-chip="folder"] {
+  color: color-mix(in srgb, #ffffff 62%, var(--ink));
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .workspace-item-chip[data-chip="type"],
+  :root:not([data-theme="light"]) .workspace-item-chip[data-chip="folder"] {
+    color: color-mix(in srgb, #ffffff 62%, var(--ink));
+  }
+}
+
+
+/* The item icon steps back so the title leads.
+
+   The reference has nothing in this position at all; we keep the icon
+   because it says what kind of thing a row is, but at the ink colour it
+   competed with the title for the start of the line. Muted, it reads as
+   punctuation. */
+.workspace-recent.is-view-list .workspace-item-thumbnail.is-icon {
+  color: color-mix(in srgb, var(--muted) 78%, transparent);
+}
+
+/* ---------------------------------------------------------------------
+   The sidebar breathes.
+
+   Measured off the reference: relative to the width of the rail, their nav
+   rows sit about half again as far apart as ours did. That spacing is most
+   of why their sidebar reads as calm and ours read as a list of settings.
+   The icons stay - they say which collection is which, which their all-mail
+   nav has no need for - but they step back to the muted ink so the words
+   lead, as the words do there.
+   --------------------------------------------------------------------- */
+.post-editor-folder-main {
+  padding-top: 11px;
+  padding-bottom: 11px;
+}
+
+.post-editor-folder-nav {
+  gap: 1px;
+}
+
+.post-editor-folder-icon {
+  color: color-mix(in srgb, var(--muted) 72%, transparent);
+}
+
+.post-editor-folder-row.is-active .post-editor-folder-icon {
+  color: var(--ink-2);
+}
+
+/* The account row is a block across the rail, not a button floating in it. */
+.post-editor-sidebar-top {
+  padding: 10px 8px 6px;
+}
+
+.post-editor-sidebar-workspace-menu > .applecms {
+  display: block;
+  width: 100%;
+}
+
+/* The count is a number, not a badge.
+
+   Theirs is plain grey text at the end of the row - "272+" - where ours sat
+   in a filled pill. A pill on every collection is five more shapes in a rail
+   whose whole point is that it is quiet. */
+.post-editor-folder-count {
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  font-weight: 500;
 }

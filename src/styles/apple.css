@@ -32,8 +32,15 @@
   --ac-h-toolbar: 52px;
   --ac-h-tbtn: 28px;
 
-  /* semantic labels (opacity-based; base 60,60,67 light) */
-  --ac-label: rgba(0,0,0,1);
+  /* semantic labels (opacity-based; base 60,60,67 light)
+
+     --ac-label is NOT pure black. Measured against the reference: their list
+     titles sit at #3e3e3e and their panel labels at #1f1f2e, where ours were
+     rgb(0,0,0). Pure black is the hardest ink a screen can draw and it is
+     most of why the workspace read as sharp where theirs reads as calm. This
+     is the single token every piece of primary text in the workspace
+     inherits, so it is also the cheapest place to fix it. */
+  --ac-label: #34353a;
   --ac-label-2: rgba(60,60,67,0.60);
   --ac-label-3: rgba(60,60,67,0.30);
   --ac-label-4: rgba(60,60,67,0.18);
@@ -47,7 +54,7 @@
 
   /* separators + backgrounds */
   --ac-separator: rgba(60,60,67,0.29);
-  --ac-bg: #FFFFFF;
+  --ac-bg: #fcfcfd;
   --ac-bg-2: #F2F2F7;
 
   /* tint */
@@ -72,7 +79,8 @@
 /* dark tokens: applied on explicit [data-theme="dark"] and on the
    prefers-color-scheme fallback the site uses (:not([data-theme="light"])) */
 [data-theme="dark"] .applecms {
-  --ac-label: rgba(255,255,255,1);
+  /* Not pure white, for the same reason light is not pure black. */
+  --ac-label: #e9eaef;
   --ac-label-2: rgba(235,235,245,0.60);
   --ac-label-3: rgba(235,235,245,0.30);
   --ac-label-4: rgba(235,235,245,0.18);
@@ -96,7 +104,8 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .applecms {
-    --ac-label: rgba(255,255,255,1);
+    /* Not pure white, matching the explicit-dark block above. */
+    --ac-label: #e9eaef;
     --ac-label-2: rgba(235,235,245,0.60);
     --ac-label-3: rgba(235,235,245,0.30);
     --ac-label-4: rgba(235,235,245,0.18);
@@ -1800,11 +1809,14 @@
    that reason: these are the palette's own colours, not the page's.
    --------------------------------------------------------------------- */
 .command-palette {
-  --palette-ink: #f2f3f7;
-  --palette-ink-2: #9ba2b4;
+  /* Measured from the reference: their palette body is #191919 and the
+     selected band #363636 - a neutral grey, not a blue-black. Ours was
+     tinted, which read as a panel of the app rather than as a mode. */
+  --palette-ink: #f2f2f2;
+  --palette-ink-2: #9a9a9a;
   --palette-hairline: rgba(255, 255, 255, 0.09);
   border-color: rgba(255, 255, 255, 0.1);
-  background: #16181f;
+  background: #191919;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   box-shadow:
@@ -1828,9 +1840,10 @@
 }
 
 /* A lighter band, not an accent tint: on a dark ground the accent reads as
-   a button rather than as "this is the one you are on". */
+   a button rather than as "this is the one you are on". Theirs measures
+   #363636 against a #191919 body, which is a bigger step than ours was. */
 .command-palette-row.is-selected {
-  background: rgba(255, 255, 255, 0.08);
+  background: #363636;
 }
 
 .command-palette-label {
@@ -1864,13 +1877,16 @@
   background: transparent;
 }
 
-.command-palette-shortcut kbd {
+/* A keycap is a light chip with dark ink, which is what a key looks like.
+   A dark chip with grey ink disappears into the panel. */
+.command-palette-shortcut kbd,
+.command-palette--sheet .command-sheet-key {
   min-width: 22px;
-  padding: 3px 6px;
-  border: 1px solid rgba(255, 255, 255, 0.13);
+  padding: 4px 7px;
+  border: 0;
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.07);
-  color: var(--palette-ink-2);
+  background: #c9c9c9;
+  color: #232323;
   font: 600 11px/1 var(--ac-font-text);
   text-align: center;
 }
@@ -1966,10 +1982,82 @@
    no rules and no boxes: the keycaps are the only drawn thing, so the eye
    goes to the keys.
    --------------------------------------------------------------------- */
+/* The shortcut panel follows the theme; the command palette does not.
+
+   That is how the reference behaves: their Superhuman Command is dark on a
+   light app, because it is a mode you enter, while their Shortcuts panel is
+   a pale lavender rail in the light app, because it is part of the app you
+   are reading. Measured off it: panel #efeffe, headings #9b9faf, labels
+   #1f1f2e, keycaps #e1e5fb. */
+.command-palette--sheet {
+  --sheet-bg: #efeffe;
+  --sheet-ink: #1f1f2e;
+  --sheet-ink-2: #9b9faf;
+  --sheet-hairline: rgba(31, 31, 46, 0.09);
+  --sheet-key-bg: #e1e5fb;
+  --sheet-key-ink: #5b6178;
+}
+
+[data-theme="dark"] .command-palette--sheet {
+  --sheet-bg: #191b21;
+  --sheet-ink: #e4e5ea;
+  --sheet-ink-2: #7f8496;
+  --sheet-hairline: rgba(255, 255, 255, 0.08);
+  --sheet-key-bg: #c9c9c9;
+  --sheet-key-ink: #232323;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .command-palette--sheet {
+    --sheet-bg: #191b21;
+    --sheet-ink: #e4e5ea;
+    --sheet-ink-2: #7f8496;
+    --sheet-hairline: rgba(255, 255, 255, 0.08);
+    --sheet-key-bg: #c9c9c9;
+    --sheet-key-ink: #232323;
+  }
+}
+
+.command-palette--sheet {
+  background: var(--sheet-bg);
+  border-left-color: var(--sheet-hairline);
+}
+
+.command-palette--sheet .command-sheet-header {
+  border-bottom-color: var(--sheet-hairline);
+}
+
+.command-palette--sheet .command-sheet-title {
+  color: var(--sheet-ink);
+}
+
+.command-palette--sheet .command-sheet-subtitle,
+.command-palette--sheet .command-shortcut-heading {
+  color: var(--sheet-ink-2);
+}
+
+.command-palette--sheet .command-sheet-row-label {
+  color: var(--sheet-ink);
+}
+
+.command-palette--sheet .command-sheet-done {
+  background: color-mix(in srgb, var(--sheet-ink) 9%, transparent);
+  color: var(--sheet-ink);
+}
+
+.command-palette--sheet .command-sheet-done:hover {
+  background: color-mix(in srgb, var(--sheet-ink) 16%, transparent);
+}
+
+.command-palette--sheet .command-sheet-key {
+  background: var(--sheet-key-bg);
+  color: var(--sheet-key-ink);
+}
+
 .command-palette-backdrop.applecms.is-sheet {
   place-items: stretch end;
   padding: 0;
-  background: rgba(0, 0, 0, 0.24);
+  background: rgba(0, 0, 0, 0.18);
 }
 
 .command-palette--sheet {
@@ -2007,23 +2095,22 @@
 }
 
 .command-palette--sheet .command-sheet-title {
-  color: #f2f3f7;
+  color: var(--sheet-ink);
   font-weight: 600;
 }
 
 .command-palette--sheet .command-sheet-subtitle {
-  color: #6d7488;
+  color: var(--sheet-ink-2);
 }
 
 .command-palette--sheet .command-sheet-done {
   border: 0;
-  background: rgba(255, 255, 255, 0.08);
-  color: #c8cddb;
+  background: color-mix(in srgb, var(--sheet-ink) 9%, transparent);
+  color: var(--sheet-ink);
 }
 
 .command-palette--sheet .command-sheet-done:hover {
-  background: rgba(255, 255, 255, 0.16);
-  color: #ffffff;
+  background: color-mix(in srgb, var(--sheet-ink) 16%, transparent);
 }
 
 .command-palette--sheet .command-sheet-columns {
@@ -2039,11 +2126,15 @@
   padding: 12px 20px 24px;
 }
 
+/* "Navigation" and "Actions" are said the way you would say them, not
+   shouted in letter-spaced capitals. */
 .command-palette--sheet .command-shortcut-heading {
-  padding: 18px 0 6px;
-  color: #6d7488;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  padding: 22px 0 8px;
+  color: var(--sheet-ink-2);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .command-palette--sheet .command-shortcut-group:first-child
@@ -2051,21 +2142,17 @@
   padding-top: 4px;
 }
 
+/* 33px between rows, measured. The panel is a reference you scan, and it
+   scans better with air than with density. */
 .command-palette--sheet .command-sheet-row {
-  min-height: 32px;
-  padding: 4px 0;
+  min-height: 33px;
+  padding: 5px 0;
 }
 
 .command-palette--sheet .command-sheet-row-label {
-  color: #d7dbe6;
-  font-weight: 500;
-}
-
-.command-palette--sheet .command-sheet-key {
-  min-width: 22px;
-  border-color: rgba(255, 255, 255, 0.13);
-  background: rgba(255, 255, 255, 0.07);
-  color: #b9c0d0;
+  color: var(--sheet-ink);
+  font-size: 14.5px;
+  font-weight: 400;
 }
 
 @media (max-width: 680px) {

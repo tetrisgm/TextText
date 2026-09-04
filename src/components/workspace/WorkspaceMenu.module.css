@@ -5,10 +5,15 @@
   font-family: var(--ac-font-text);
 }
 
+/* Full width of the rail and taller, the way the account row reads in the
+   reference: a block you can hit anywhere, with the name at one end and the
+   chevron at the other. */
 .trigger {
-  max-width: 260px;
-  height: 36px;
-  display: inline-flex;
+  width: 100%;
+  max-width: none;
+  height: 44px;
+  display: flex;
+  justify-content: space-between;
   align-items: center;
   gap: 6px;
   border: 0;
@@ -52,6 +57,7 @@
 }
 
 .workspaceName {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   font: 600 var(--ac-fs-subheadline) / 1 var(--ac-font-text);
