@@ -4,7 +4,6 @@
 // plus their small shared bodies. Extracted from the PostWorkspaceShell
 // monolith.
 
-import { useClientHydrated } from "@/lib/use-client-hydrated";
 
 import {
   useCallback,
@@ -16,8 +15,6 @@ import type {
 } from "react";
 import { usePresence } from "@/lib/collab/usePresence";
 import { BacklinksPanel } from "@/components/BacklinksPanel";
-import { saveItemAsLookAction } from "@/app/editor/look-actions";
-import { UnifiedDocumentEditor } from "@/components/document/UnifiedDocumentEditor";
 import { UnifiedDocumentReader } from "@/components/document/UnifiedDocumentReader";
 import {
   type FolderCaptureResolved,
@@ -30,12 +27,10 @@ import {
 import { ReaderComments } from "@/components/workspace/ReaderComments";
 import { ReaderFindHighlights } from "@/components/workspace/ReaderFindHighlights";
 import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
-import { assistantAgentIdentity } from "@/components/workspace/assistant/agent-identity";
 import type {
   Blog,
   Post,
 } from "@/lib/content";
-import { legacyProjectionFromDocument } from "@/lib/documents/legacy";
 import type { DocumentSnapshot } from "@/lib/documents/model";
 import {
   adjacentPublishedPostsForPool,
@@ -45,19 +40,11 @@ import {
   postFromPoolPost,
   templateForPoolPost,
 } from "@/lib/pool/selectors";
-import {
-  acknowledgePost,
-  acknowledgePostDocument,
-  getCachedWorkspacePostDocument,
-  updatePost,
-  updatePostDocument,
-  useWorkspacePostDocument,
-} from "@/lib/pool/store";
+import { useWorkspacePostDocument } from "@/lib/pool/store";
 import type {
   WorkspacePoolPayload,
   WorkspacePoolPost,
 } from "@/lib/pool/types";
-import { workspaceReferenceChoices } from "@/lib/presentation/workspace-reference-choices";
 import {
   blogWorkspacePostPath,
   workspacePublicPostUrl,
