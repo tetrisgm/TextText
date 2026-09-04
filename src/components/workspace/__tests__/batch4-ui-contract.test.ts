@@ -128,16 +128,20 @@ describe("batch 4 workspace UI contract", () => {
     );
   });
 
-  it("uses the same universal item composer on Home and inside folders", () => {
+  it("keeps one universal item composer, and it lives inside folders", () => {
+    // Home no longer carries a capture row: the Library page is the list and
+    // nothing else (owner, 2026-09-04). Creating from anywhere still goes
+    // through this one composer, in the folder that will hold the item.
     expect(folderSource).toContain("export function UniversalItemComposer");
-    expect(shellSource).toContain("<UniversalItemComposer");
-    expect(shellSource).toContain("destinations={creationFolders}");
-    expect(shellSource).toContain("onCreateItem={onCreateItem}");
+    expect(folderSource).toContain("<UniversalItemComposer");
+    expect(shellSource).not.toContain("<UniversalItemComposer");
+    expect(shellSource).not.toContain('className="workspace-root-create"');
   });
 
   it("keeps the library collection-first and embeds the destination in the capture row", () => {
-    expect(shellSource).toContain('className="workspace-library-header"');
-    expect(shellSource).toContain('id="workspace-root-title">Library</h1>');
+    // The "Library" heading went with the capture row: the page announces
+    // itself well enough through the sidebar and the filters.
+    expect(shellSource).not.toContain('id="workspace-root-title">Library</h1>');
     // Home's layout is the workspace's one stored layout choice: it is read
     // from the workspace and written back to it, not kept in this browser.
     expect(shellSource).toContain("useState<BlogHomeView>(\n    pool.blog.homeLayout,\n  )");

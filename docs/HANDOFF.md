@@ -3463,6 +3463,12 @@ collab_state/collab_updates rows, then start the server.
   contract test asserts the new rule.
 - The "Build a new item type with AI" prompt is gone from the Library
   for the same reason. The command still exists elsewhere.
+- **The Library page is the list and nothing else.** The "Library"
+  heading and the capture composer went too - the owner meant the whole
+  screen capture, and said so twice (2026-09-04). Creating from Home is
+  now `c`, the command palette, or the composer inside a folder, which
+  is the same one component; only the Home instance was removed. The
+  batch-4 UI contract asserts the absence rather than the presence.
 - The key-hint bar is a near-black pill with NO border stroke: the
   hairline ring drew the eye to the container rather than the keys
   (owner). Its text colours are fixed white-on-dark rather than the

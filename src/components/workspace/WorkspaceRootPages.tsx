@@ -624,9 +624,6 @@ export function WorkspaceRootLanding({
           </section>
         ) : (
           <>
-            <header className="workspace-library-header">
-              <h1 id="workspace-root-title">Library</h1>
-            </header>
             {canManageItems && showStartHere && !hasPersonalItems ? (
               <section className="workspace-start-here" aria-label="Start here">
                 <div>
@@ -655,25 +652,6 @@ export function WorkspaceRootLanding({
                   )}
                 </div>
                 <button type="button" className="workspace-start-here-dismiss" aria-label="Dismiss Start here" onClick={dismissStartHere}>Done</button>
-              </section>
-            ) : null}
-            {canManageItems && creationFolder ? (
-              <section
-                className="workspace-root-create"
-                aria-label="Create an item"
-              >
-                <UniversalItemComposer
-                  blog={pool.blog}
-                  destinations={creationFolders}
-                  focusRequestKey={captureFocusRequestKey}
-                  folder={creationFolder}
-                  handle={pool.blog.handle}
-                  onCreateItem={onCreateItem}
-                  onDeleteItem={onDeletePost}
-                  onOpenCapturedItem={(post) => {
-                    if (post.id) onEditCreatedPost(post.id);
-                  }}
-                />
               </section>
             ) : null}
             <section className={`workspace-recent is-view-${recentViewMode}`}>
