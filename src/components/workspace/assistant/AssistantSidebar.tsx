@@ -26,7 +26,10 @@ import { WorkspaceAssistantSkillLauncher } from "./AssistantSkillLauncher";
 
 export type { AssistantContext } from "./context";
 
-export const ASSISTANT_SIDEBAR_DEFAULT_WIDTH = 360;
+// 332, not 360: the refit's three-pane proportions put the rail at 300-340,
+// and the CSS fallback for --workspace-assistant-width already said 332 in
+// one place and 360 in two others. One number now.
+export const ASSISTANT_SIDEBAR_DEFAULT_WIDTH = 332;
 export const ASSISTANT_SIDEBAR_MIN_WIDTH = 280;
 export const ASSISTANT_SIDEBAR_MAX_WIDTH = 600;
 

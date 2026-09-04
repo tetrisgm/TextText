@@ -24,9 +24,12 @@
   --selection-bg: rgba(59, 98, 232, 0.1);
   /* A selected ROW is filled outright, not tinted: it is the difference
      between a list you are operating and a list you are reading. */
-  --row-selected-bg: #4a95e4;
+  /* Dark enough that white text on it clears 4.5:1. The lighter blue this
+     started as measured 3.1:1 for the title and worse for the preview, which
+     is a fill that looks right in a mockup and is unreadable in use. */
+  --row-selected-bg: #2f6fd0;
   --row-selected-ink: #ffffff;
-  --row-selected-soft: rgba(74, 149, 228, 0.14);
+  --row-selected-soft: rgba(47, 111, 208, 0.14);
   --control-bg: rgba(118, 118, 128, 0.12);
   --control-bg-hover: rgba(118, 118, 128, 0.18);
   --shadow-menu: 0 16px 42px rgba(0, 0, 0, 0.16);

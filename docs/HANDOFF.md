@@ -3474,6 +3474,64 @@ collab_state/collab_updates rows, then start the server.
   (owner). Its text colours are fixed white-on-dark rather than the
   page's ink, because the pill is its own surface in both themes.
 
+## Superhuman refit, steps 3 to 6 (2026-09-04)
+
+Facts worth keeping from the interface refit, in the order they bit.
+
+- **The workspace list is `.workspace-item-option`, not `.post-folder-row`.**
+  `.post-folder-row` is `FolderPage`, which is the PUBLISHED page at
+  `/t/<handle>`. Step 2's row metrics landed there and did nothing for the
+  workspace for a whole step. Both surfaces now carry the one-line
+  treatment; when you change row typography, change both.
+- **Row metrics at 300 items:** height 51px, pitch 51px, 18 per 900px
+  screen, ~25 rows mounted whatever the count. The list windows by an
+  IntersectionObserver sentinel with a 600px root margin (`GrowingGrid` in
+  `FolderPage.tsx`), NOT by an assumed row height, so a shorter row costs
+  nothing there.
+- **A multicol box with a definite height fragments SIDEWAYS.** The
+  shortcut sheet's shared rule is `columns: 1` with a capped height, which
+  scrolls. Docking it as a full-height panel gave it a definite height, and
+  every group after the first was laid out in an off-screen column to the
+  right. `columns: auto` takes an element out of multicol entirely; that is
+  the fix, not a column-count of 1.
+- **Contrast has to be composited, not read.** `getComputedStyle` returns
+  `rgba(255,255,255,0.62)`; measuring that against black reports 21:1 when
+  the real figure is 7.85:1. Composite the ink over its ground first. Doing
+  this honestly found the selection fill failing: `#4a95e4` gives white
+  3.1:1. It is `#2f6fd0` now, which measures 4.88 light and 5.91 dark.
+- **A selection fill has to name every element that sets its own colour.**
+  The workspace row's preview and date are a bare `small` and `time` with
+  their own `color`, and the list rules match them at the same specificity,
+  so the selected-ink rules have to come LAST in `workspace.css`. Grey on
+  the fill measured 2.1:1 before that.
+- **Synthetic KeyboardEvents do not reach the command layer in WebKit
+  probes; `page.keyboard.press` does.** Four probe runs read as "the command
+  never fires" before that was the answer. Also: after dev sign-in, focus is
+  in the assistant composer, so a probe's keystrokes go there until it
+  clicks something in the list first.
+- **Dev sign-in provisions its own workspace from the email**, ignoring a
+  blog you seeded under a hand-picked handle, and `blogs_owner_idx` is
+  unique, so a scratch workspace needs its own scratch user. Seed through
+  the store, publish through `savePost`, and tear down user, blog, folders
+  and posts together.
+- Back and forward in the floating chrome called `window.history` directly,
+  which is a fourth way to navigate past the swipe, the keys and the Mac
+  menu. They go through the shell's `__ttNavGo` now, falling back to the raw
+  call only on server-rendered pages that have no shell.
+- **Teaching surfaces read the command table.** `commandTip(id)` in
+  `hints.ts` backs `ShortcutTooltip`'s `command` prop; the hint bar and the
+  sheet already derived from the table. A test asserts it. The cost is that
+  `ShortcutTooltip` now pulls `WORKSPACE_COMMANDS`, which imports the
+  editor's server actions, so any vitest suite rendering a tooltip needs the
+  `@/app/editor/actions` mock.
+- **The document's own measure was left alone.** The plan asked for ~65
+  characters; `--tt-measure: 46rem` lives in the presentation system and is
+  what PUBLISHED pages use, so narrowing it would reflow every published
+  document, and setting it only in the workspace would make writing and
+  reading disagree. The 720px cap on the document column brings the
+  workspace measure to ~75 characters instead. One line in
+  `src/lib/presentation/styles.ts` if the owner wants the rest.
+
 ## Resolved episodes (one line each, dates in git log)
 
 - Apple consent screen "write app": appleid.apple.com caches its own copy;

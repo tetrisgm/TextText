@@ -2488,7 +2488,7 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   min-width: 0;
 }
 .post-editor-shell.has-assistant-pinned .workspace-document-layout {
-  grid-template-columns: minmax(0, 1fr) var(--workspace-assistant-width, 360px);
+  grid-template-columns: minmax(0, 1fr) var(--workspace-assistant-width, 332px);
 }
 .post-editor-shell.has-assistant-pinned
   .workspace-document-layout
@@ -4834,7 +4834,7 @@ body:has(.reader):not(:has(.post-editor-shell)) {
         36px,
         calc(
           100vw - var(--workspace-sidebar-width, 280px) -
-            var(--workspace-assistant-width, 360px) - 32px
+            var(--workspace-assistant-width, 332px) - 32px
         )
       )
     );
@@ -4845,7 +4845,7 @@ body:has(.reader):not(:has(.post-editor-shell)) {
       520px,
       max(
         36px,
-        calc(100vw - var(--workspace-assistant-width, 360px) - 84px)
+        calc(100vw - var(--workspace-assistant-width, 332px) - 84px)
       )
     );
   }

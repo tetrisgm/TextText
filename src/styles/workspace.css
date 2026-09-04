@@ -1546,10 +1546,10 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   color: #f4f4f5;
   box-shadow: 0 -6px 22px -18px rgba(0, 0, 0, 0.55);
   pointer-events: none;
-  opacity: 0.55;
-  transition: opacity 140ms ease;
-}
-.post-editor-shell:hover .workspace-key-hints {
+  /* Fully opaque. As a floating pill it faded to 55% at rest and came up on
+     hover; as a bar that made a grey band across the bottom of a light page,
+     which reads as disabled chrome rather than as quiet chrome. The bar is
+     already quiet by being small text on its own dark strip. */
   opacity: 1;
 }
 .workspace-key-hint {
@@ -1660,7 +1660,14 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 [data-workspace-post-id][aria-selected="true"] .post-folder-row-title,
 [data-workspace-post-id][aria-selected="true"] .post-folder-row-excerpt,
 [data-workspace-post-id][aria-selected="true"] .post-folder-row-meta,
-[data-workspace-post-id][aria-selected="true"] .post-folder-row-tags {
+[data-workspace-post-id][aria-selected="true"] .post-folder-row-tags,
+/* The workspace list's own row parts. The broadsheet names above cover the
+   published page; here the title, preview and date are a bare strong, small
+   and time, and the last two set their own colour, so inheriting the
+   selected ink is not enough - measured at 3.5:1 grey on the blue fill. */
+[data-workspace-post-id][aria-selected="true"] .workspace-item-option-copy > strong,
+[data-workspace-post-id][aria-selected="true"] .workspace-item-option-detail small,
+[data-workspace-post-id][aria-selected="true"] .workspace-item-option-main > time {
   color: var(--row-selected-ink);
 }
 [data-workspace-post-id][aria-selected="true"] .post-folder-row {
@@ -1958,4 +1965,34 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   .workspace-item-option:hover
   .workspace-item-option-main {
   background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+
+/* ---------------------------------------------------------------------
+   Three-pane proportions.
+
+   Reading a document in a column as wide as the window is the thing the
+   collapsed layout is meant to fix: the item sits centred with real margins,
+   the assistant holds the right, and the left rail can go away entirely
+   without the text sprawling to fill the space it left. The cap is on the
+   document view only; a list wants every pixel it can get, because a list is
+   scanned across, not read along.
+   --------------------------------------------------------------------- */
+/* On the document's content, not on the article: the article carries the
+   paper background, and capping that would draw a 720px band of paper with
+   the page's own ground either side of it. */
+.workspace-document-layout .tt-document > .tt-stack {
+  max-width: 720px;
+  margin-inline: auto;
+}
+
+/* The selected row's ink, last in the file on purpose.
+
+   The workspace row's preview and date are a `small` and a `time` that set
+   their own colour, and the list-row rules above match them at the same
+   specificity. A tie goes to whichever comes later, so these have to. Grey
+   on the selection fill measured 2.1:1. */
+[data-workspace-post-id][aria-selected="true"] .workspace-item-option-copy > strong,
+[data-workspace-post-id][aria-selected="true"] .workspace-item-option-detail small,
+[data-workspace-post-id][aria-selected="true"] .workspace-item-option-main > time {
+  color: var(--row-selected-ink);
 }
