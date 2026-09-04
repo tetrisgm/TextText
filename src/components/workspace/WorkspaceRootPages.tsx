@@ -85,6 +85,7 @@ import {
   type WorkspaceDeepSearchMatch,
   type WorkspaceSearchResult,
 } from "@/lib/workspace-search";
+import { chipCensus } from "@/lib/workspace/item-labels";
 import {
   WORKSPACE_DOCUMENT_OPENED_EVENT,
   documentsForActivityDate,
@@ -276,6 +277,9 @@ export function WorkspaceRootLanding({
         : sorted.filter((post) => post.type === itemFilter);
     return filtered.slice(0, 30);
   }, [itemFilter, openHistory, pool.posts, sort]);
+  // Decided once for the whole list rather than per row: a chip only earns
+  // its place where the list actually mixes values.
+  const recentChips = useMemo(() => chipCensus(recent, pool), [pool, recent]);
   const itemCounts = useMemo(
     () => ({
       all: pool.posts.length,
@@ -759,8 +763,10 @@ export function WorkspaceRootLanding({
                     <WorkspacePostOption
                       key={post.id}
                       blog={pool.blog}
+                      chips={recentChips}
                       folderPath={folderPathForPoolPost(pool, post)}
                       handle={pool.blog.handle}
+                      pool={pool}
                       post={post}
                       showUpdatedAt
                       owner={canManageItems}

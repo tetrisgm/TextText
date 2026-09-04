@@ -2054,3 +2054,132 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .workspace-document-layout {
   padding-bottom: var(--workspace-hints-height, 0px);
 }
+
+/* ---------------------------------------------------------------------
+   Row gutter and chips.
+
+   The gutter is the band the leading star already lives in, at left: -32px.
+   It holds ONE mark at a time: the tick while the row is selected, the star
+   while the pointer is on it (hovering is when you want to star something),
+   and otherwise a dot if the row changed today. Three marks side by side in
+   a 32px band is a puzzle, and this list has been trimmed once already for
+   exactly that kind of furniture.
+
+   Written with hover and an attribute rather than `:has()` on the list: a
+   `:has()` here is re-evaluated whenever anything in the subtree changes,
+   and this subtree changes on every hover and every selection keystroke.
+   --------------------------------------------------------------------- */
+.workspace-item-tick {
+  position: absolute;
+  top: 50%;
+  /* Centred on the star's 30px box, which starts at -32px, so all three
+     marks share one centre and never sit half on top of each other. */
+  left: -26px;
+  z-index: 14;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  translate: 0 -50%;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  color: transparent;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.workspace-item-tick svg {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+
+.workspace-item-tick[data-selected] {
+  opacity: 1;
+  border-color: transparent;
+  background: var(--row-selected-ink);
+}
+
+/* The selection fill paints every svg in the row with the selected ink, which
+   on a white tick is a white check on a white box. The tick's mark is the
+   fill colour, and it has to say so after that rule. */
+[data-workspace-post-id][aria-selected="true"] .workspace-item-tick svg {
+  color: var(--row-selected-bg);
+}
+
+/* The star yields the slot, to the tick when the row is selected and to the
+   dot when the row changed today. The star is drawn at rest, not only on
+   hover, so without this the dot sits on top of it. A sibling combinator
+   rather than `:has()`: the dot is rendered before the star exactly so this
+   can be a cheap selector. */
+[data-workspace-post-id][aria-selected="true"] .workspace-item-leading-star,
+.workspace-item-fresh ~ .workspace-item-leading-star {
+  opacity: 0;
+}
+
+[data-workspace-post-id][aria-selected="true"] .workspace-item-leading-star {
+  pointer-events: none;
+}
+
+/* Hovering is when you want to star something, so the star comes back. */
+.is-pointer-live
+  .workspace-item-option:hover
+  .workspace-item-fresh
+  ~ .workspace-item-leading-star {
+  opacity: 0.52;
+}
+
+/* Changed in the last day. Six pixels, no label: a "look here", not a piece
+   of metadata, and it steps aside for either of the other two marks. */
+.workspace-item-fresh {
+  position: absolute;
+  top: 50%;
+  left: -20px;
+  z-index: 13;
+  width: 6px;
+  height: 6px;
+  translate: 0 -50%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: opacity 0.18s var(--ease);
+}
+
+.is-pointer-live .workspace-item-option:hover .workspace-item-fresh,
+[data-workspace-post-id][aria-selected="true"] .workspace-item-fresh {
+  opacity: 0;
+}
+
+.workspace-recent.is-view-list .workspace-item-option {
+  position: relative;
+}
+
+/* Quiet by construction: a neutral fill and the muted ink. The list already
+   carries one saturated colour and it belongs to the selection. */
+.workspace-item-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: var(--muted);
+  font: 600 10px/1 var(--font-body);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+[data-workspace-post-id][aria-selected="true"] .workspace-item-chip {
+  background: color-mix(in srgb, var(--row-selected-ink) 24%, transparent);
+  color: var(--row-selected-ink);
+}
+
+/* Date separators read as labels, not headings: they order the list, they
+   are not sections of a document. */
+.workspace-date-sections h2 {
+  color: var(--muted);
+  font: 600 11px/1.2 var(--font-body);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}

@@ -15,6 +15,7 @@ import {
 } from "@/lib/commands/workspace";
 import { dedupePaletteEntries } from "@/lib/commands/palette";
 import { plainTextExcerpt } from "@/lib/content";
+import { itemFolderLabel, itemKindLabel } from "@/lib/workspace/item-labels";
 import { workspaceMouseMoved } from "@/lib/workspace-hover";
 import type { AppCommand, CommandContext } from "@/lib/commands/types";
 import type {
@@ -53,28 +54,6 @@ function oneLine(value: string | undefined): string {
 
 function compactPath(path: string): string {
   return path.replace(/^blog\/?/, "") || "Blog";
-}
-
-function itemKindLabel(type: WorkspacePoolPost["type"]): string {
-  if (type === "note") return "Note";
-  if (type === "bookmark") return "Bookmark";
-  if (type === "media_post") return "Project";
-  if (type === "video_post") return "Talk";
-  return "Article";
-}
-
-function itemFolderLabel(
-  post: WorkspacePoolPost,
-  pool: WorkspacePoolPayload,
-): string {
-  const path = folderPathForPoolPost(pool, post);
-  const folder = pool.folders.find((candidate) => candidate.path === path);
-  if (folder?.name.trim()) return folder.name.trim();
-  return path
-    .split("/")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" / ") || "Library";
 }
 
 function folderHref(pool: WorkspacePoolPayload, folderPath: string): string {

@@ -28,6 +28,12 @@ import { shouldSuppressNativeItemSelection } from "@/lib/workspace-selection";
 import { useWorkspacePostSelection } from "@/lib/workspace/selection-store";
 import { workspaceRowCommands } from "@/lib/workspace/command-bus";
 import { plainTextExcerpt } from "@/lib/content";
+import {
+  changedRecently,
+  chipForPost,
+  type ChipCensus,
+} from "@/lib/workspace/item-labels";
+import type { WorkspacePoolPayload } from "@/lib/pool/types";
 import type { Blog } from "@/lib/content";
 
 export function workspacePostOptionDomId(postId: string): string {
@@ -47,20 +53,29 @@ export function itemPreview(post: {
 
 export const WorkspacePostOption = memo(function WorkspacePostOption({
   blog,
+  chips,
   folderPath,
   handle,
   owner,
+  pool,
   post,
   showUpdatedAt = false,
 }: {
   blog: Blog;
+  /** What the whole visible list looks like, so a row can tell whether its
+   * kind or folder is unusual enough to be worth saying. See chipForPost. */
+  chips?: ChipCensus;
   folderPath: string;
   handle: string;
   owner: boolean;
+  /** Only needed to name the folder a chip points at. */
+  pool?: WorkspacePoolPayload;
   post: WorkspacePoolPost;
   showUpdatedAt?: boolean;
 }) {
   const { selected, active } = useWorkspacePostSelection(post.id);
+  const chip = chips && pool ? chipForPost(post, pool, chips) : null;
+  const fresh = changedRecently(post);
   return (
     <div
       id={workspacePostOptionDomId(post.id)}
@@ -78,6 +93,29 @@ export const WorkspacePostOption = memo(function WorkspacePostOption({
       onPointerMove={updateSpatialCardTilt}
       onPointerLeave={resetSpatialCardTilt}
     >
+      {/* The gutter carries three marks that are about the row rather than
+          about the document: whether it is selected, whether it changed in
+          the last day, and whether it is starred. */}
+      {/* One slot in the gutter, three states. Selected shows the tick,
+          hovering shows the star (hovering is when you want to star), and a
+          row that is neither but changed today shows a dot. */}
+      {fresh && <span className="workspace-item-fresh" aria-hidden="true" />}
+      <span
+        className="workspace-item-tick"
+        aria-hidden="true"
+        data-selected={selected ? "true" : undefined}
+      >
+        <svg viewBox="0 0 14 14" focusable="false">
+          <path
+            d="M3 7.4l2.8 2.8L11 4.6"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </span>
       <WorkspaceItemStar
         handle={handle}
         owner={owner}
@@ -97,6 +135,11 @@ export const WorkspacePostOption = memo(function WorkspacePostOption({
       >
         <WorkspaceItemThumbnail post={post} />
         <span className="workspace-item-option-copy">
+          {chip && (
+            <span className="workspace-item-chip" data-chip={chip.kind}>
+              {chip.label}
+            </span>
+          )}
           <strong>{sidebarDocumentTitle(post)}</strong>
           {/* The icon already says what kind of item this is, so the row
               carries the title and whatever the document actually says. The
