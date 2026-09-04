@@ -18,6 +18,26 @@ const OUT = process.argv[2];
 if (!OUT) throw new Error("usage: visual-surfaces.mts <outDir>");
 mkdirSync(OUT, { recursive: true });
 
+/**
+ * Nothing outside the app under test.
+ *
+ * A workspace bookmark of texttext.app renders that site's favicon, so the
+ * walk was racing a request to production: the image arrived in time on some
+ * runs and not on others, and one row flickered. A screenshot suite that
+ * depends on the network is measuring the network. Aborting off-origin
+ * requests makes the walk deterministic and faster, and every fixture's own
+ * fallback is what a reader would see offline anyway.
+ */
+async function blockOffOrigin(page: Page) {
+  await page.route("**/*", (route) => {
+    const url = route.request().url();
+    if (url.startsWith(ORIGIN) || url.startsWith("data:") || url.startsWith("blob:")) {
+      return route.continue();
+    }
+    return route.abort();
+  });
+}
+
 async function signIn(page: Page) {
   await page.goto(`${ORIGIN}/editor`, { waitUntil: "networkidle" });
   const form = page.locator("form.ac-devsignin");
@@ -40,6 +60,7 @@ for (const theme of ["light", "dark"] as const) {
     deviceScaleFactor: 1,
   });
   const page = await ctx.newPage();
+  await blockOffOrigin(page);
   await signIn(page);
 
   await shot(page, "01-home", theme);

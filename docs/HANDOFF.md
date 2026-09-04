@@ -3604,6 +3604,10 @@ AUTH_DEV_LOGIN=1 npx next start -p 3131 &
   the palette, the shortcut panel, starred, shared, trash, a collection,
   search and a published page - and writes a screenshot of each. Run it
   before a change and after.
+  The walk aborts every off-origin request: a fixture bookmark of
+  texttext.app renders that site's favicon, so the suite was racing the
+  network and one row flickered depending on whether the image arrived in
+  time. A screenshot suite that depends on the network measures the network.
 - **`scripts/visual-diff.mjs <before> <after> <tmp>`** compares two such
   runs, per surface, with the bounding box of anything that moved. Two runs
   of the SAME build are pixel-identical, so any difference at all is the
