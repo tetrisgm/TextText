@@ -3665,6 +3665,44 @@ semantic tokens to the Apple system palette in apple.css (`--ac-label`,
 `--ac-bg`, ...). A change to `tokens.css` reaches the published site and
 nothing else. This cost a whole refit step before anyone noticed.
 
+## An edit that came back (2026-09-04, OPEN)
+
+The owner deleted a selection from a large bookmark; the delete landed, then
+the document reverted to its exact pre-edit state, repeatedly. Frames from
+the recording show the deletion applied correctly and then the whole
+document restored - a baseline superseding the local edit, not a corruption.
+
+**Not reproduced.** A delete of six lines, and a select-all delete, on a
+note, a bookmark, an article and the 100kB fixture, all hold for at least
+seven seconds. The owner's case had two things the fixtures do not: an
+assistant action that had run and hit a usage limit, and a captured bookmark
+body several times larger than anything here.
+
+Ruled out by reading: the AI quick-action path is guarded.
+`resolveWorkspaceItemTextEdit` refuses to apply a proposal whose captured
+`source` no longer matches the live field, returning `reason: "stale"`, so a
+proposal built before an edit cannot clobber it. And `ensurePostDocument`
+refuses to install a cached or fetched body while `locallyDirtyBodies` holds
+the key, which `updatePostDocument` sets on every local edit.
+
+**Two of my own changes combined into exactly this failure and are out.**
+The in-memory body cache had gained an LRU, and the IndexedDB write had been
+deferred to requestIdleCallback with a two second timeout. Together: evict
+the entry for a document being edited, and `ensurePostDocument` stops
+returning early, re-hydrates from a disk copy that is up to two seconds
+stale, and installs the pre-edit body. The eviction guards (listeners,
+dirty, in-flight) make that unlikely rather than impossible, and "unlikely"
+is not good enough when the cost is someone's edits. The LRU is reverted
+outright - it had no measured benefit - and the write delay is 60ms, which
+keeps three quarters of the write collapse (14 puts per three opens against
+551 before any of this, 12 with the idle version).
+
+If it recurs, the thing to capture is which path installed the old body:
+instrument `setBodyEntry` to log its caller and the body length whenever the
+new length is greater than the old while `locallyDirtyBodies` holds the key.
+That condition is exactly "something restored content during an edit" and it
+should never be true.
+
 ## Resolved episodes (one line each, dates in git log)
 
 - Apple consent screen "write app": appleid.apple.com caches its own copy;

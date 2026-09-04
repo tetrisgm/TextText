@@ -285,17 +285,20 @@ export async function persistPostDocument(
   );
 }
 
+/**
+ * A short breath, not an idle callback.
+ *
+ * This used to wait for requestIdleCallback with a two second timeout, which
+ * made the durable copy of a document seconds behind the live one. That
+ * window matters: the ONLY thing standing between a stale cache and someone's
+ * edits is that the in-memory entry is still there, and anything that drops
+ * it re-hydrates from here. Sixty milliseconds still collapses the burst of
+ * writes that building a document into the CRDT produces, and is short
+ * enough that the disk copy is never meaningfully behind.
+ */
 function whenIdle(): Promise<void> {
   if (typeof window === "undefined") return Promise.resolve();
-  const idle = (
-    window as unknown as {
-      requestIdleCallback?: (fn: () => void, o?: { timeout: number }) => number;
-    }
-  ).requestIdleCallback;
-  return new Promise((resolve) => {
-    if (idle) idle(() => resolve(), { timeout: 2000 });
-    else window.setTimeout(resolve, 120);
-  });
+  return new Promise((resolve) => window.setTimeout(resolve, 60));
 }
 
 export async function deletePersistedPostDocument(

@@ -89,66 +89,8 @@ function setState(patch: Partial<WorkspacePoolState>) {
   emitPool();
 }
 
-/**
- * How many parsed documents stay in memory at once.
- *
- * The cache had no bound at all, so a long session held every document it
- * had ever opened. That was invisible next to a much larger leak (a preview
- * pinning its whole body, see detachedSlice) and is modest now - measured at
- * roughly 350KB per distinct document - but a workspace of five hundred
- * items would still accumulate. Twenty-four is deliberately generous: an
- * evicted document is re-read from IndexedDB, which is the cache underneath
- * this one, so the only cost of being wrong is one local read.
- */
-const BODY_CACHE_LIMIT = 24;
-/** Monotonic use counter per key, so eviction can pick the coldest. */
-const bodyUsage = new Map<string, number>();
-let bodyUseClock = 0;
-
-function touchBody(key: string) {
-  bodyUseClock += 1;
-  bodyUsage.set(key, bodyUseClock);
-}
-
-/**
- * Drop the coldest documents beyond the limit.
- *
- * Never a document anything is still SHOWING. A key with body listeners is
- * mounted somewhere - the open reader, the warm editor, a tab - and evicting
- * one tore down its DOM and refetched it on the spot: a first attempt at
- * this without the guard made an open-and-back of a large document take
- * 587ms. Never one with unsaved local work, never one whose fetch is in
- * flight, and never the one just used.
- */
-function evictColdBodies(protectedKey: string) {
-  const ready = Object.entries(state.bodies).filter(
-    ([key, entry]) =>
-      entry.status === "ready" &&
-      key !== protectedKey &&
-      (bodyListeners.get(key)?.size ?? 0) === 0 &&
-      !locallyDirtyBodies.has(key) &&
-      !bodyFetches.has(key),
-  );
-  if (ready.length <= BODY_CACHE_LIMIT) return;
-  const coldestFirst = ready.sort(
-    (left, right) =>
-      (bodyUsage.get(left[0]) ?? 0) - (bodyUsage.get(right[0]) ?? 0),
-  );
-  const drop = coldestFirst.slice(0, ready.length - BODY_CACHE_LIMIT);
-  if (drop.length === 0) return;
-  const bodies = { ...state.bodies };
-  for (const [key] of drop) {
-    delete bodies[key];
-    bodyUsage.delete(key);
-    bodyMutationGenerations.delete(key);
-  }
-  state = { ...state, bodies };
-  for (const [key] of drop) emitBody(key);
-}
-
 function setBodyEntry(blogId: string, postId: string, entry: BodyCacheEntry) {
   const key = bodyKey(blogId, postId);
-  touchBody(key);
   state = {
     ...state,
     bodies: {
@@ -157,7 +99,6 @@ function setBodyEntry(blogId: string, postId: string, entry: BodyCacheEntry) {
     },
   };
   emitBody(key);
-  if (entry.status === "ready") evictColdBodies(key);
 }
 
 function removeBodyEntry(blogId: string, postId: string) {
@@ -168,7 +109,6 @@ function removeBodyEntry(blogId: string, postId: string) {
   bodyFetches.delete(key);
   bodyMutationGenerations.delete(key);
   locallyDirtyBodies.delete(key);
-  bodyUsage.delete(key);
   emitBody(key);
 }
 
@@ -644,13 +584,8 @@ export function getCachedWorkspacePostDocument(
   blogId: string,
   postId: string,
 ): WorkspacePostDocumentPayload | null {
-  const key = bodyKey(blogId, postId);
-  const entry = state.bodies[key];
-  if (entry?.status !== "ready") return null;
-  // Reading counts as use: the document you keep going back to is the one
-  // worth keeping.
-  touchBody(key);
-  return entry.document;
+  const entry = state.bodies[bodyKey(blogId, postId)];
+  return entry?.status === "ready" ? entry.document : null;
 }
 
 export function addPost(post: WorkspacePoolPost) {
