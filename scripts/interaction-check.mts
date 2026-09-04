@@ -106,6 +106,25 @@ await check("cmd+a selects everything, escape clears it", async () => {
     : `FAIL ${all} then ${none}`;
 });
 
+await check("a multi-select teaches the way out, once", async () => {
+  // The hint toast fires the first time a selection grows in a session.
+  const first = await page.evaluate(
+    () => document.querySelector(".command-toast.is-hint")?.textContent ?? "",
+  );
+  await page.keyboard.press("Escape");
+  // Wait the first hint out - it lives 4s - or the second reading finds the
+  // first one still on screen and calls a working feature broken.
+  await pause(4600);
+  await page.keyboard.press("Shift+ArrowDown");
+  await pause(900);
+  const second = await page.evaluate(
+    () => document.querySelectorAll(".command-toast.is-hint").length,
+  );
+  return first.includes("esc") && second === 0
+    ? `taught once: "${first.replace(/\s+/g, " ").trim().slice(0, 34)}"`
+    : `FAIL first="${first}" secondTime=${second}`;
+});
+
 await check("slash focuses search and filters", async () => {
   await page.keyboard.press("Slash");
   await pause(700);

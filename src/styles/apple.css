@@ -2161,3 +2161,41 @@
     border-left: 0;
   }
 }
+
+/* The lighter toast: a hint, not a report.
+
+   "Changed your mind? Hit esc" is the app teaching you the way back, and it
+   should not look like the receipt that says what it just did. Same shape
+   and the same corner, a lighter ground and the page's own ink, so the two
+   read as two kinds of sentence rather than two notifications. */
+.command-toast.applecms.is-hint {
+  background: var(--ac-bg-2);
+  color: var(--ac-label);
+  box-shadow:
+    0 0 0 1px var(--ac-hairline),
+    0 14px 40px -26px rgba(0, 0, 0, 0.45);
+  font-weight: 450;
+}
+
+.command-toast.is-hint .command-toast-action {
+  background: color-mix(in srgb, var(--ac-label) 10%, transparent);
+  color: var(--ac-label);
+}
+
+.command-toast.is-hint .command-toast-action:hover {
+  background: color-mix(in srgb, var(--ac-label) 18%, transparent);
+}
+
+.command-toast.is-hint .command-toast-dismiss {
+  color: color-mix(in srgb, var(--ac-label) 55%, transparent);
+}
+
+.command-toast.is-hint .command-toast-dismiss:hover {
+  background: color-mix(in srgb, var(--ac-label) 10%, transparent);
+  color: var(--ac-label);
+}
+
+.command-toast.is-hint .command-toast-action:focus-visible,
+.command-toast.is-hint .command-toast-dismiss:focus-visible {
+  outline: 2px solid var(--ac-accent);
+}

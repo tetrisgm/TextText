@@ -128,9 +128,16 @@ export type CommandContext = {
   openPalette: (query?: string) => void;
   openShortcuts: () => void;
   closePalette: () => void;
+  /**
+   * `report` (the default) is the app telling you what it just did, in a
+   * dark pill at the bottom left. `hint` is the app teaching you the way
+   * back - "Changed your mind? Hit esc" - which is a different kind of
+   * sentence and should not look like a receipt.
+   */
   toast: (
     message: string,
     action?: { label: string; run: () => void },
+    tone?: "report" | "hint",
   ) => void;
 };
 

@@ -245,11 +245,17 @@ function BackIcon() {
   );
 }
 
+/* Up and down, not left and right.
+
+   Previous and next ITEM is a move through a list, and a list runs down the
+   page; left and right is what history does. The reference draws this pair
+   as chevrons pointing up and down in exactly this position, and reading it
+   that way is what finally separated the two ideas in our own chrome. */
 function ChevronIcon({ dir }: { dir: "left" | "right" }) {
   return (
     <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path
-        d={dir === "left" ? "M10 3L5 8L10 13" : "M6 3L11 8L6 13"}
+        d={dir === "left" ? "M3 10L8 5L13 10" : "M3 6L8 11L13 6"}
         stroke="currentColor"
         strokeLinecap="round"
         strokeLinejoin="round"

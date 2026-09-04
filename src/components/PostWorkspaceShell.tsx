@@ -4459,6 +4459,15 @@ function LocalWorkspaceShell({
     [createWorkspaceItem, navigateRoot],
   );
 
+  // Shown once per session, and only for a selection someone built rather
+  // than one that came back with a view.
+  const taughtEscapeRef = useRef(false);
+  const teachEscapeOnce = useCallback(() => {
+    if (taughtEscapeRef.current) return;
+    taughtEscapeRef.current = true;
+    showToast("Changed your mind? Hit esc", undefined, "hint");
+  }, [showToast]);
+
   const commandSurface = useMemo(
     () => ({
       blog: displayPool.blog,
@@ -4513,10 +4522,14 @@ function LocalWorkspaceShell({
         writeAppearance(next);
         showToast(`Appearance: ${appearanceLabel(next)}`);
       },
+      // A selection of many is a mode, and the way out of it is Escape. Said
+      // once, the first time it happens in a session: a toast on every
+      // multi-select is nagging, and a mode nobody can leave is worse.
       selectAllVisible: () => {
         const ids = visiblePostIdsInDocumentOrder();
         if (ids.length === 0) return;
         activateRegion("body");
+        teachEscapeOnce();
         applyPostSelection({
           activeId: ids[ids.length - 1] ?? null,
           anchorId: ids[0] ?? null,
@@ -4562,6 +4575,7 @@ function LocalWorkspaceShell({
           moveSidebarSelection(direction > 0 ? "next" : "previous");
           return;
         }
+        teachEscapeOnce();
         extendPostSelection(direction);
       },
       selectNext: () => {

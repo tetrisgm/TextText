@@ -50,6 +50,8 @@ type ToastState = {
   id: number;
   message: string;
   action?: { label: string; run: () => void };
+  /** A report is what happened; a hint is what you can do about it. */
+  tone: "report" | "hint";
 };
 
 let activeEscapeLayerCount = 0;
@@ -146,16 +148,25 @@ export function CommandLayer({ children }: { children: ReactNode }) {
   }, []);
 
   const showToast = useCallback(
-    (message: string, action?: { label: string; run: () => void }) => {
+    (
+      message: string,
+      action?: { label: string; run: () => void },
+      tone: "report" | "hint" = "report",
+    ) => {
       if (toastTimerRef.current !== null) {
         window.clearTimeout(toastTimerRef.current);
       }
       const id = nextToastIdRef.current;
       nextToastIdRef.current += 1;
-      setToast({ id, message, action });
-      toastTimerRef.current = window.setTimeout(() => {
-        setToast((current) => (current?.id === id ? null : current));
-      }, 6500);
+      setToast({ id, message, action, tone });
+      toastTimerRef.current = window.setTimeout(
+        () => {
+          setToast((current) => (current?.id === id ? null : current));
+        },
+        // A hint has done its job the moment it is read; a report may carry
+        // an undo somebody is still deciding about.
+        tone === "hint" ? 4000 : 6500,
+      );
     },
     [],
   );
@@ -366,7 +377,10 @@ export function CommandLayer({ children }: { children: ReactNode }) {
         commandContext={commandContext}
       />
       {toast && (
-        <div className="command-toast applecms" role="status">
+        <div
+          className={`command-toast applecms is-${toast.tone}`}
+          role="status"
+        >
           <span className="command-toast-message">{toast.message}</span>
           {toast.action && (
             <button
@@ -458,11 +472,12 @@ export function useCommandContextReader():
 export function useCommandToast(): (
   message: string,
   action?: { label: string; run: () => void },
+  tone?: "report" | "hint",
 ) => void {
   const layer = useContext(CommandLayerContext);
   return useCallback(
-    (message, action) => {
-      layer?.commandContext().toast(message, action);
+    (message, action, tone) => {
+      layer?.commandContext().toast(message, action, tone);
     },
     [layer],
   );
