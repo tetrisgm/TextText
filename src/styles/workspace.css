@@ -1999,7 +1999,6 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
    inside it renders at full width - the page visibly changing measure
    halfway through a swipe. */
 .post-editor-content .tt-document > .tt-stack {
-  max-width: 720px;
   margin-inline: auto;
 }
 
@@ -2352,7 +2351,17 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
 /* The body sits in a panel on the page ground rather than flush against it,
    which is what separates "the item" from "the app" in the reference. */
-.post-editor-content .tt-document > .tt-stack {
+/* Four classes, because the presentation system states this stack's padding
+   at (0,4,0) with two :not()s and would otherwise keep its own - which is
+   zero at the sides, so the panel had a border and the text ran straight to
+   it. The width is chosen for the LINE rather than the box: 700 less the
+   padding puts a paragraph at about 64 characters, which is the measure the
+   plan asked for and which the published Broadsheet, at 46rem, does not
+   have to change to give us. */
+.post-editor-content
+  .tt-document:not(.tt-collection-item):not([data-preview])
+  > .tt-stack {
+  max-width: 700px;
   margin-block: 14px 28px;
   padding: 34px 40px 48px;
   border: 1px solid var(--hairline);
