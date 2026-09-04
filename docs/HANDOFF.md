@@ -3665,7 +3665,7 @@ semantic tokens to the Apple system palette in apple.css (`--ac-label`,
 `--ac-bg`, ...). A change to `tokens.css` reaches the published site and
 nothing else. This cost a whole refit step before anyone noticed.
 
-## An edit that came back (2026-09-04, OPEN)
+## An edit that came back (2026-09-04, still OPEN; one related bug fixed)
 
 The owner deleted a selection from a large bookmark; the delete landed, then
 the document reverted to its exact pre-edit state, repeatedly. Frames from
@@ -3684,6 +3684,86 @@ Ruled out by reading: the AI quick-action path is guarded.
 proposal built before an edit cannot clobber it. And `ensurePostDocument`
 refuses to install a cached or fetched body while `locallyDirtyBodies` holds
 the key, which `updatePostDocument` sets on every local edit.
+
+### Second pass: the mouse-selection lead, and what it actually turned up
+
+The owner's follow-up said the trigger is a **mouse highlight** followed by
+Backspace, not the keyboard selection the first pass used. That turned out not
+to be the difference, but chasing it found a real defect elsewhere.
+
+**Still not reproduced.** Every mouse gesture was driven against a real
+surface: drag inside, drag released below / above / left / right of the
+surface, over a markdown link, double-click, triple-click, whole-document
+drag - on a note, on a 24kB bookmark carrying links and headings, and across a
+reload. Every deletion matched its selection and held. The fragment visible in
+the recording (`w.gamedeveloper.com/author/hugo-bille)`) is correct behaviour:
+the blue selection ends mid-URL, so the delete correctly leaves the tail.
+
+Ruled out by test as well as by reading: an out-of-band metadata write against
+a live edit (the edit survives); the catch-up baseline (`baselineApplied`
+guards re-application inside a session); the proposal apply/undo path, which
+re-reads the item and verifies `current[field].slice(start, end)` before
+sending a **ranged** `text_edit`, so a stale proposal cannot restore a whole
+body.
+
+**A caution about the first pass's gesture matrix.** Its per-gesture reset
+silently failed, so most gestures ran against an already-emptied document and
+proved nothing. A reset of a post's body is not complete until the collab log
+is retired too; see below for why.
+
+### What was found: a stale log silently discards an out-of-band body write
+
+`prepareCollabBaseline` gates the reseed-and-retire on
+`hasActiveCoEditors(postId)` - with no `exceptClientId`, so it counts **the
+asking client itself**. `hasActiveCoEditors` documents that this is wrong
+("A caller that publishes its own presence before it writes must not count
+itself"); the parameter existed and was never passed.
+
+`resumeNetworkLoops` starts the catch-up and the presence heartbeat
+concurrently, so a client routinely races its own presence row into the table
+before its own `since=0` read is served. A reopen inside the presence window
+does the same with the previous session's row.
+
+Measured, on a post whose stored body and log disagreed:
+
+```
+posts.body      = 756 chars (posts.revision 23765)
+collab baseline = 756 chars (baselineRevision 23747)
+collab replayed =   0 chars after 3 updates  <- what the editor opens
+```
+
+The reseed that should have retired that log was skipped, so the log won and
+the stored body was discarded with no error anywhere. Any body written outside
+the collab materialize is exposed: an agent write, another device, a restore.
+
+**Fixed** by forwarding the asking client on the catch-up read
+(`?since=…&clientId=…`) and passing it to `hasActiveCoEditors`. A lone editor
+now reseeds; genuine co-editing by someone else still defers, which is what
+the guard was for. Covered by `collab-relay-route.test.ts` (the route forwards
+it) and `collab-provider.test.ts` (every catch-up read carries it).
+
+This is the same class as the owner's report and worth having fixed, but it is
+**not** confirmed to be what they saw: their sequence had no out-of-band
+writer that I can see. Their report stays open.
+
+### Fixture damage, and how it was undone
+
+The first pass's delete probes emptied three fixture documents outright:
+`Connect an AI` (1218 chars to 0), `Perf test 100kB` (88712 to 2) and 444
+chars from `Windowed integrity fixture`; this pass emptied
+`What makes quiet tools work` (135 to 72) before the harness was made
+non-destructive. All four were recovered by replaying `collab_updates` over
+`collab_state.baselineUpdate` and taking the longest reconstruction, then
+written back through `savePostContentPatch` and fenced with
+`prepareCollabBaseline`. `Connect an AI` also carried an older probe's slash
+command typed into a word (`scre/connectionen`), repaired to `screen`.
+
+The collab log is the only history this app keeps, and `prepareCollabBaseline`
+**deletes** retired-epoch rows - so dump a recovery before retiring anything.
+
+Destructive editor probes now run against a disposable document that is
+created, reset and removed by the harness, never against the owner's fixtures.
+
 
 **Two of my own changes combined into exactly this failure and are out.**
 The in-memory body cache had gained an LRU, and the IndexedDB write had been

@@ -139,6 +139,15 @@ export async function getCollabBaseline(
  */
 export async function prepareCollabBaseline(
   postId: string,
+  /**
+   * The client asking to catch up. It is about to be present (its heartbeat
+   * races this request), and a client's own presence must not veto its own
+   * reseed: a lone editor reopening inside the presence window would keep
+   * replaying a stale log over a body written out of band, and the external
+   * write would be silently discarded. Co-editing by someone ELSE still
+   * defers the reseed, which is what the guard is for.
+   */
+  requestingClientId?: string,
 ): Promise<CollabBaseline | null> {
   if (!db) return null;
   const context = await getPostStoreContext(postId);
@@ -191,7 +200,7 @@ export async function prepareCollabBaseline(
     state.materializedRevision !== revision &&
     state.baselineRevision !== revision;
   if (missingBaseline || externallyStale) {
-    const active = await hasActiveCoEditors(postId);
+    const active = await hasActiveCoEditors(postId, requestingClientId);
     if (missingBaseline || !active) {
       const result = await db.execute(sql`
         UPDATE ${collabState}

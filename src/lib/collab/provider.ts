@@ -801,9 +801,10 @@ export class CollabProvider implements CollaborationTransport {
     try {
       while (!this.stopped) {
         const previousSeq = this.lastSeq;
-        const res = await fetch(`${this.base}?since=${previousSeq}&wait=0`, {
-          signal: this.abort.signal,
-        });
+        const res = await fetch(
+          `${this.base}?since=${previousSeq}&wait=0&clientId=${encodeURIComponent(this.clientId)}`,
+          { signal: this.abort.signal },
+        );
         if (isAccessLoss(res.status)) {
           this.opts.onError?.(accessLossMessage(res.status));
           this.stop();
@@ -892,9 +893,10 @@ export class CollabProvider implements CollaborationTransport {
       generation === this.networkGeneration
     ) {
       try {
-        const res = await fetch(`${this.base}?since=${this.lastSeq}&wait=25`, {
-          signal,
-        });
+        const res = await fetch(
+          `${this.base}?since=${this.lastSeq}&wait=25&clientId=${encodeURIComponent(this.clientId)}`,
+          { signal },
+        );
         if (isAccessLoss(res.status)) {
           this.opts.onError?.(accessLossMessage(res.status));
           this.stop();

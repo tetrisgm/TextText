@@ -197,12 +197,21 @@ describe("collab relay route", () => {
       epoch: 3,
       baseline: { update: "YmFzZWxpbmU=", revision: 7 },
     });
-    expect(mocks.prepareCollabBaseline).toHaveBeenCalledWith(postId);
+    expect(mocks.prepareCollabBaseline).toHaveBeenCalledWith(postId, undefined);
 
     const resumed = await GET(read("?since=5"), ctx);
     const body = (await resumed.json()) as Record<string, unknown>;
     expect(body.baseline).toBeUndefined();
     expect(mocks.getCollabBaseline).toHaveBeenCalledWith(postId);
+  });
+
+  // A client's own presence must not veto its own reseed. The reader forwards
+  // who is asking so prepareCollabBaseline can exclude it; without this a lone
+  // editor reopening inside the presence window keeps replaying a stale log
+  // over a body written out of band, and that write is silently discarded.
+  it("forwards the asking client so it is not counted as a co-editor", async () => {
+    await GET(read("?since=0&clientId=abc-123"), ctx);
+    expect(mocks.prepareCollabBaseline).toHaveBeenCalledWith(postId, "abc-123");
   });
 
   it("answers 409 when the document has no baseline to read against", async () => {

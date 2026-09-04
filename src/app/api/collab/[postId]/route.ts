@@ -153,9 +153,10 @@ export async function GET(
     MAX_WAIT_SECONDS,
   );
 
+  const clientId = url.searchParams.get("clientId") ?? undefined;
   const baseline =
     since === 0
-      ? await prepareCollabBaseline(postId)
+      ? await prepareCollabBaseline(postId, clientId)
       : await getCollabBaseline(postId);
   if (!baseline) {
     return Response.json({ error: "Document baseline unavailable" }, { status: 409 });

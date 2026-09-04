@@ -61,6 +61,32 @@ afterEach(() => {
 });
 
 describe("CollabProvider startup and outbox", () => {
+  // The relay excludes the asking client from the co-editor check that gates a
+  // stale-log reseed, so the catch-up has to say who is asking. Without it a
+  // client's own presence vetoes its own reseed and a body written out of band
+  // is silently replaced by the stale log's content.
+  it("identifies itself on every catch-up read", async () => {
+    const reads: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/presence")) return jsonResponse({ presence: [] });
+        if (init?.method === "POST") return jsonResponse({ seq: 1, epoch: 0 });
+        reads.push(url);
+        return catchUpResponse({ epoch: 0 });
+      }),
+    );
+    const doc = new Y.Doc();
+    const provider = providerFor(doc, "identifies-itself");
+    await provider.start();
+    provider.destroy();
+    expect(reads.length).toBeGreaterThan(0);
+    for (const url of reads) {
+      expect(url).toMatch(/[?&]clientId=[^&]+/);
+    }
+  });
+
   it("captures edits during catch-up and flushes them after destroy", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("navigator", { sendBeacon: vi.fn(() => true) });
