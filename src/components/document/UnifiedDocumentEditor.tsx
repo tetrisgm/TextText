@@ -17,11 +17,14 @@ import type {
 } from "react";
 import * as Y from "yjs";
 import {
+  activeBodySelection,
   DOCUMENT_REDO_EVENT,
   DOCUMENT_UNDO_EVENT,
   registerDocumentHistory,
+  requestDocumentCaret,
 } from "@/lib/document-history-events";
 import { setActiveDocumentBody } from "@/lib/document-outline";
+import { promoteTab } from "@/lib/workspace/tabs";
 import {
   DOCUMENT_REPLACE_EVENT,
   FOCUS_REPLACE_EVENT,
@@ -554,6 +557,32 @@ export function UnifiedDocumentEditor({
     undoManagerRef.current = undoManager;
     return () => undoManager.destroy();
   }, [undoManager]);
+  // Sublime's undo behaviour: each step remembers where the caret was when it
+  // was recorded, and undoing puts the caret back there rather than leaving
+  // it wherever it happens to be. Yjs gives us the hook - stack items carry
+  // their own metadata - so the selection rides with the step.
+  useEffect(() => {
+    const onAdded = (event: { stackItem: { meta: Map<string, unknown> } }) => {
+      const selection = activeBodySelection();
+      if (selection) event.stackItem.meta.set("tt-selection", selection);
+    };
+    const onPopped = (event: { stackItem: { meta: Map<string, unknown> } }) => {
+      const selection = event.stackItem.meta.get("tt-selection") as
+        | { anchor: number; head: number }
+        | undefined;
+      if (!selection) return;
+      // After the document has been rewritten, not before.
+      window.requestAnimationFrame(() =>
+        requestDocumentCaret(selection.anchor, selection.head),
+      );
+    };
+    undoManager.on("stack-item-added", onAdded);
+    undoManager.on("stack-item-popped", onPopped);
+    return () => {
+      undoManager.off("stack-item-added", onAdded);
+      undoManager.off("stack-item-popped", onPopped);
+    };
+  }, [undoManager]);
   // Replace-all goes through updateText, so it lands as one ordinary local
   // edit: it syncs like any other, and Cmd+Z takes it back in one step.
   const updateTextRef = useRef<
@@ -928,8 +957,16 @@ export function UnifiedDocumentEditor({
     scheduleMaterialization,
   ]);
 
+  // Typing is the commitment that makes a preview tab permanent - not merely
+  // having the document open in an editable view, which for a note is true
+  // the moment it opens.
+  const promoteOnEdit = useCallback(() => {
+    if (collab.postId) promoteTab(collab.postId);
+  }, [collab.postId]);
+
   const updateText = useCallback(
     (field: EditableField, value: string) => {
+      promoteOnEdit();
       const normalized = field === "title" ? value.replace(/[\r\n]+/g, " ") : value;
       const base = currentLocalDocument();
       const next: DocumentSnapshot = {
@@ -956,7 +993,14 @@ export function UnifiedDocumentEditor({
       );
       if (!ready || !networkEnabled) setSaveState("local");
     },
-    [currentLocalDocument, doc, networkEnabled, publishDocument, ready],
+    [
+      currentLocalDocument,
+      doc,
+      networkEnabled,
+      promoteOnEdit,
+      publishDocument,
+      ready,
+    ],
   );
   updateTextRef.current = updateText;
 

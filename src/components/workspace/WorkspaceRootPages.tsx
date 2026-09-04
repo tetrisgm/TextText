@@ -828,6 +828,7 @@ export function LocalWorkspaceContent({
   onOpenSection,
   onOpenPostId,
   onOpenPost,
+  onOpenPostInNewTab,
   onOpenRoot,
   onOpenTag,
   onItemClick,
@@ -870,6 +871,8 @@ export function LocalWorkspaceContent({
   onOpenSection: (folderPath: string) => void;
   onOpenPostId: (postId: string, mode?: "read" | "edit") => void;
   onOpenPost: (post: Post) => void;
+  /** Cmd/Ctrl or middle click: open the document as a background tab. */
+  onOpenPostInNewTab: (postId: string) => void;
   onOpenRoot: () => void;
   onOpenTag: (tag: string) => void;
   onItemClick: (postId: string, event: ReactMouseEvent<HTMLElement>) => boolean;
@@ -1000,6 +1003,7 @@ export function LocalWorkspaceContent({
           onDeleteItem={onDeleteItem}
           onDeleteFolder={onDeleteFolder}
           onOpenPost={onOpenPost}
+          onOpenPostInNewTab={onOpenPostInNewTab}
           onOpenTag={onOpenTag}
           onItemClick={onItemClick}
           createBookmarkRequestKey={createBookmarkRequestKey}

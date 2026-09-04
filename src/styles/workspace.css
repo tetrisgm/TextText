@@ -1433,6 +1433,17 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   border-bottom: none;
   color: var(--muted);
 }
+/* A preview tab: the one a plain open replaces, drawn the way Sublime does
+   so it reads as provisional rather than kept. */
+.workspace-tab.is-preview .workspace-tab-select {
+  font-style: italic;
+}
+.workspace-tab.is-dragging {
+  opacity: 0.45;
+}
+.workspace-tab.is-drop-target {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
 .workspace-tab.is-active {
   background: color-mix(in srgb, var(--ink) 6%, transparent);
   border-color: color-mix(in srgb, var(--hairline) 88%, transparent);

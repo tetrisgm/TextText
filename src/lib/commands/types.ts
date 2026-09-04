@@ -94,6 +94,10 @@ export type CommandWorkspaceSurface = {
   navigateForward: () => boolean;
   /** Close the open document's tab and land on its neighbour. */
   closeActiveTab?: () => void;
+  /** Open a document as a background tab, leaving the current one open. */
+  openInNewTab?: (postId: string) => void;
+  /** Bring back the most recently closed tab and go to it. */
+  reopenClosedTab?: () => void;
   /** Move to the tab `step` places away, wrapping. */
   cycleTab?: (step: number) => void;
   escapeCurrent: () => boolean;

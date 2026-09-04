@@ -41,6 +41,10 @@
 
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { DOCUMENT_JUMP_EVENT } from "@/lib/document-outline";
+import {
+  DOCUMENT_SET_CARET_EVENT,
+  setActiveBodySelection,
+} from "@/lib/document-history-events";
 
 export type SurfaceSelection = {
   clientId: number;
@@ -491,9 +495,33 @@ export function MarkdownSurface({
     const at = selectionOffsets();
     if (!at) return;
     rangeRef.current = at;
+    // Undo needs to know where the caret was when a step was recorded.
+    setActiveBodySelection(at);
     revealLine(lineAtOffset(lineStartsRef.current, at.head));
     onSelection(at.anchor, at.head);
   };
+
+  // Undo puts the caret back where the edit happened, the way Sublime does.
+  // pendingCaretRef is the surface's own "place the caret on the next
+  // reconcile" channel, and the value change from the CRDT is what triggers
+  // that reconcile, so setting it here lands the caret with the undone text.
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ anchor?: number; head?: number }>)
+        .detail;
+      const head = detail?.head;
+      if (typeof head !== "number") return;
+      pendingCaretRef.current = head;
+      const root = ref.current;
+      if (root && document.activeElement !== root) root.focus({ preventScroll: true });
+      // The line may be far off screen after a big undo.
+      window.requestAnimationFrame(() =>
+        revealLine(lineAtOffset(lineStartsRef.current, head)),
+      );
+    };
+    window.addEventListener(DOCUMENT_SET_CARET_EVENT, handler);
+    return () => window.removeEventListener(DOCUMENT_SET_CARET_EVENT, handler);
+  }, []);
 
   useEffect(() => {
     const onSelectionChange = () => {

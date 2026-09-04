@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 function memoryStorage(): Storage {
   const map = new Map<string, string>();
@@ -69,5 +69,63 @@ describe("workspace tabs", () => {
     expect(t.currentTabs()).toEqual([]);
     t.useTabScope("/@a");
     expect(t.currentTabs()).toEqual(["a", "b"]);
+  });
+
+  describe("preview tabs", () => {
+    it("a plain open replaces the preview in place, and does not grow the strip", async () => {
+      const t = await freshTabs();
+      t.openTab("kept");
+      t.openTab("a", { preview: true });
+      expect(t.currentTabs()).toEqual(["kept", "a"]);
+      t.openTab("b", { preview: true });
+      // Browsing a folder leaves no trail: b took a's slot.
+      expect(t.currentTabs()).toEqual(["kept", "b"]);
+      expect(t.currentPreviewTab()).toBe("b");
+    });
+
+    it("a deliberate open makes the tab permanent", async () => {
+      const t = await freshTabs();
+      t.openTab("a", { preview: true });
+      t.openTab("b");
+      expect(t.currentTabs()).toEqual(["a", "b"]);
+      // Opening the preview again deliberately keeps it.
+      t.openTab("a");
+      expect(t.currentPreviewTab()).toBe(null);
+      t.openTab("c", { preview: true });
+      expect(t.currentTabs()).toEqual(["a", "b", "c"]);
+    });
+
+    it("promoting keeps a previewed document around", async () => {
+      const t = await freshTabs();
+      t.openTab("a", { preview: true });
+      t.promoteTab("a");
+      t.openTab("b", { preview: true });
+      expect(t.currentTabs()).toEqual(["a", "b"]);
+    });
+  });
+
+  describe("reopening and reordering", () => {
+    it("reopens closed tabs, most recent first", async () => {
+      const t = await freshTabs();
+      for (const id of ["a", "b", "c"]) t.openTab(id);
+      t.closeTab("a");
+      t.closeTab("c");
+      expect(t.reopenClosedTab()).toBe("c");
+      expect(t.currentTabs()).toEqual(["b", "c"]);
+      expect(t.reopenClosedTab()).toBe("a");
+      expect(t.currentTabs()).toEqual(["b", "c", "a"]);
+      expect(t.reopenClosedTab()).toBe(null);
+    });
+
+    it("moves a tab to a new position", async () => {
+      const t = await freshTabs();
+      for (const id of ["a", "b", "c"]) t.openTab(id);
+      t.moveTab(2, 0);
+      expect(t.currentTabs()).toEqual(["c", "a", "b"]);
+      t.moveTab(0, 2);
+      expect(t.currentTabs()).toEqual(["a", "b", "c"]);
+      t.moveTab(0, 9);
+      expect(t.currentTabs()).toEqual(["a", "b", "c"]);
+    });
   });
 });

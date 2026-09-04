@@ -159,6 +159,7 @@ export function BookmarkCard({
   post,
   editPath,
   onOpenPost,
+  onOpenPostInNewTab,
   onOpenTag,
   onItemClick,
   onSelect,
@@ -174,6 +175,8 @@ export function BookmarkCard({
   post: Post;
   editPath: string;
   onOpenPost?: (post: Post) => void;
+  /** Cmd/Ctrl or middle click: open the document as a background tab. */
+  onOpenPostInNewTab?: (postId: string) => void;
   onOpenTag?: (tag: string) => void;
   onItemClick?: (event: MouseEvent<HTMLElement>) => boolean;
   onSelect?: () => void;
@@ -305,9 +308,29 @@ export function BookmarkCard({
       event.preventDefault();
       return;
     }
+    // Alt click opens a background tab. NOT Cmd click: that already toggles
+    // selection in a list, and taking it for tabs would cost multi-select.
+    if (
+      post.id &&
+      onOpenPostInNewTab &&
+      event.button === 0 &&
+      event.altKey &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.shiftKey
+    ) {
+      event.preventDefault();
+      onOpenPostInNewTab(post.id);
+      return;
+    }
     if (!onOpenPost || !shouldOpenLocally(event)) return;
     event.preventDefault();
     onOpenPost(post);
+  };
+  const openItemInNewTab = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (event.button !== 1 || !post.id || !onOpenPostInNewTab) return;
+    event.preventDefault();
+    onOpenPostInNewTab(post.id);
   };
 
   return (
@@ -352,6 +375,7 @@ export function BookmarkCard({
             }
           }}
           onClick={openItem}
+          onAuxClick={openItemInNewTab}
         >
           {mainContent}
         </Link>
@@ -374,6 +398,7 @@ export function BookmarkCard({
           href={editPath}
           prefetch={onOpenPost ? false : undefined}
           onClick={openItem}
+          onAuxClick={openItemInNewTab}
           aria-label={`Open ${title}`}
         >
           {thumbnailMedia}
@@ -385,6 +410,7 @@ export function BookmarkCard({
           href={editPath}
           prefetch={onOpenPost ? false : undefined}
           onClick={openItem}
+          onAuxClick={openItemInNewTab}
           aria-label={`Open ${title}`}
         >
           {thumbnailMedia}
@@ -396,6 +422,7 @@ export function BookmarkCard({
           href={editPath}
           prefetch={onOpenPost ? false : undefined}
           onClick={openItem}
+          onAuxClick={openItemInNewTab}
           aria-label={`Open ${title}`}
         >
           {thumbnailFallback}

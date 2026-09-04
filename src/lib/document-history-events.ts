@@ -34,3 +34,28 @@ export function registerDocumentHistory(): () => void {
 export function documentHistoryAvailable(): boolean {
   return mountedEditors > 0;
 }
+
+// Where the caret was when an undo step was recorded, so undo can put it
+// back. Sublime restores the selection that belonged to the edit it is
+// undoing rather than leaving the caret wherever it happened to be, and that
+// is what makes undo feel like stepping back through your own work.
+let bodySelection: { anchor: number; head: number } | null = null;
+
+export function setActiveBodySelection(
+  selection: { anchor: number; head: number } | null,
+): void {
+  bodySelection = selection;
+}
+
+export function activeBodySelection(): { anchor: number; head: number } | null {
+  return bodySelection;
+}
+
+/** Raised with `{ anchor, head }`; the editing surface places the caret. */
+export const DOCUMENT_SET_CARET_EVENT = "texttext:document-set-caret";
+
+export function requestDocumentCaret(anchor: number, head: number): void {
+  window.dispatchEvent(
+    new CustomEvent(DOCUMENT_SET_CARET_EVENT, { detail: { anchor, head } }),
+  );
+}

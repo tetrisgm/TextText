@@ -19,11 +19,15 @@ import { flushSync } from "react-dom";
 import { WorkspaceTabBar } from "@/components/workspace/WorkspaceTabBar";
 import {
   closeTab,
+  currentPreviewTab,
+  moveTab,
   openTab,
+  promoteTab,
   pruneTabs,
+  reopenClosedTab,
   tabAfter,
-  useTabs,
   useTabScope,
+  useTabState,
 } from "@/lib/workspace/tabs";
 import type {
   MouseEvent as ReactMouseEvent,
@@ -663,6 +667,9 @@ function LocalWorkspaceShell({
   /** Open a document by id through the ordinary open path, so a tab lands on
    * the same fully editable view a click in a list does. */
   const openTabPostRef = useRef<(postId: string) => void>(() => {});
+  /** Ids whose next open is deliberate, so it does not take the preview
+   * slot: a Cmd-click, a middle click, or a reopened tab. */
+  const deliberateOpenIdsRef = useRef(new Set<string>());
   const navigateForwardRef = useRef<() => boolean>(() => false);
   const recordVisitRef = useRef<(href: string) => void>(() => {});
   const hierarchyUpAvailableRef = useRef(false);
@@ -1308,8 +1315,13 @@ function LocalWorkspaceShell({
     currentItemPostIdRef.current = openedPostId;
   }, [openedPostId]);
   useEffect(() => {
-    if (openedPostId) openTab(openedPostId);
+    if (!openedPostId) return;
+    // Clicking through a folder is browsing, so it takes the preview slot;
+    // deliberate opens (a new tab, or reopening) mark themselves first.
+    const deliberate = deliberateOpenIdsRef.current.delete(openedPostId);
+    openTab(openedPostId, { preview: !deliberate });
   }, [openedPostId]);
+
 
   // Reading keys work like the browser's: Space, Shift+Space, PageUp/Down,
   // Home/End and the arrows scroll natively only when the scrolling element
@@ -2263,13 +2275,13 @@ function LocalWorkspaceShell({
   // An item held open beside the one being worked on. Not a second navigable
   // pane - see lib/workspace/split-view for why.
   useTabScope(homePath);
-  const openTabIds = useTabs();
+  const tabState = useTabState();
   const tabPosts = useMemo(
     () =>
-      openTabIds
+      tabState.ids
         .map((postId) => findPoolPostById(displayPool, postId))
         .filter((post): post is WorkspacePoolPost => Boolean(post)),
-    [displayPool, openTabIds],
+    [displayPool, tabState],
   );
   useEffect(() => {
     // Documents deleted or moved out of reach should not keep a tab.
@@ -4249,6 +4261,17 @@ function LocalWorkspaceShell({
       // item would be wrong).
       navigateUp: navigateBack,
       navigateForward,
+      openInNewTab: (postId: string) => {
+        // A background tab: the strip grows, the current document stays put.
+        deliberateOpenIdsRef.current.add(postId);
+        openTab(postId);
+      },
+      reopenClosedTab: () => {
+        const postId = reopenClosedTab();
+        if (!postId) return;
+        deliberateOpenIdsRef.current.add(postId);
+        openTabPostRef.current(postId);
+      },
       closeActiveTab: () => {
         const current = viewRef.current;
         if (current.level !== "post" && current.level !== "edit") return;
@@ -4514,6 +4537,11 @@ function LocalWorkspaceShell({
       onOpenSection={navigateSection}
       onOpenPostId={openPostId}
       onOpenPost={openPost}
+      onOpenPostInNewTab={(postId) => {
+        // A background tab: the strip grows, what you are reading stays put.
+        deliberateOpenIdsRef.current.add(postId);
+        openTab(postId);
+      }}
       onOpenRoot={navigateRoot}
       onOpenTag={navigateTag}
       onItemClick={handleItemClick}
@@ -4685,7 +4713,10 @@ function LocalWorkspaceShell({
           <WorkspaceTabBar
             activePostId={openedPostId}
             posts={tabPosts}
+            previewPostId={tabState.preview}
             onSelect={(postId) => openTabPostRef.current(postId)}
+            onPromote={(postId) => promoteTab(postId)}
+            onMove={(from, to) => moveTab(from, to)}
             onClose={(postId) => {
               const next = closeTab(postId);
               if (postId !== openedPostId) return;

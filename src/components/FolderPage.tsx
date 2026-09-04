@@ -1322,6 +1322,7 @@ function UniversalFolderContents({
   onDeleteItem,
   onItemClick,
   onOpenPost,
+  onOpenPostInNewTab,
   onOpenTag,
   onSelectPost,
   availableTemplates,
@@ -1341,6 +1342,8 @@ function UniversalFolderContents({
   onDeleteItem?: FolderDeleteItem;
   onItemClick?: (postId: string, event: MouseEvent<HTMLElement>) => boolean;
   onOpenPost?: (post: Post) => void;
+  /** Cmd/Ctrl or middle click: open the document as a background tab. */
+  onOpenPostInNewTab?: (postId: string) => void;
   onOpenTag?: (tag: string) => void;
   onSelectPost?: (postId: string) => void;
   selectedPostId?: string | null;
@@ -1609,6 +1612,7 @@ function UniversalFolderContents({
                   onCaptureResolved={onCaptureResolved}
                   onDeletePost={onDeleteItem}
                   onOpenPost={onOpenPost}
+                  onOpenPostInNewTab={onOpenPostInNewTab}
                   onOpenTag={onOpenTag}
                   onSelect={() => post.id && onSelectPost?.(post.id)}
                   onItemClick={(event) =>
@@ -1681,9 +1685,32 @@ function UniversalFolderContents({
                         event.preventDefault();
                         return;
                       }
+                      // Alt click opens a background tab. NOT Cmd click:
+                      // that already toggles selection in a list, and taking
+                      // it for tabs would cost multi-select.
+                      if (
+                        post.id &&
+                        onOpenPostInNewTab &&
+                        event.button === 0 &&
+                        event.altKey &&
+                        !event.metaKey &&
+                        !event.ctrlKey &&
+                        !event.shiftKey
+                      ) {
+                        event.preventDefault();
+                        onOpenPostInNewTab(post.id);
+                        return;
+                      }
                       if (!onOpenPost || !shouldOpenLocally(event)) return;
                       event.preventDefault();
                       onOpenPost(post);
+                    }}
+                    onAuxClick={(event) => {
+                      // Middle click, same as everywhere else.
+                      if (event.button !== 1 || !post.id) return;
+                      if (!onOpenPostInNewTab) return;
+                      event.preventDefault();
+                      onOpenPostInNewTab(post.id);
                     }}
                   >
                     <span className="blog-folder-feed-copy">
@@ -1801,9 +1828,32 @@ function UniversalFolderContents({
                         event.preventDefault();
                         return;
                       }
+                      // Alt click opens a background tab. NOT Cmd click:
+                      // that already toggles selection in a list, and taking
+                      // it for tabs would cost multi-select.
+                      if (
+                        post.id &&
+                        onOpenPostInNewTab &&
+                        event.button === 0 &&
+                        event.altKey &&
+                        !event.metaKey &&
+                        !event.ctrlKey &&
+                        !event.shiftKey
+                      ) {
+                        event.preventDefault();
+                        onOpenPostInNewTab(post.id);
+                        return;
+                      }
                       if (!onOpenPost || !shouldOpenLocally(event)) return;
                       event.preventDefault();
                       onOpenPost(post);
+                    }}
+                    onAuxClick={(event) => {
+                      // Middle click, same as everywhere else.
+                      if (event.button !== 1 || !post.id) return;
+                      if (!onOpenPostInNewTab) return;
+                      event.preventDefault();
+                      onOpenPostInNewTab(post.id);
                     }}
                   >
                     <span className="post-folder-row-title">
@@ -1897,9 +1947,32 @@ function UniversalFolderContents({
                         event.preventDefault();
                         return;
                       }
+                      // Alt click opens a background tab. NOT Cmd click:
+                      // that already toggles selection in a list, and taking
+                      // it for tabs would cost multi-select.
+                      if (
+                        post.id &&
+                        onOpenPostInNewTab &&
+                        event.button === 0 &&
+                        event.altKey &&
+                        !event.metaKey &&
+                        !event.ctrlKey &&
+                        !event.shiftKey
+                      ) {
+                        event.preventDefault();
+                        onOpenPostInNewTab(post.id);
+                        return;
+                      }
                       if (!onOpenPost || !shouldOpenLocally(event)) return;
                       event.preventDefault();
                       onOpenPost(post);
+                    }}
+                    onAuxClick={(event) => {
+                      // Middle click, same as everywhere else.
+                      if (event.button !== 1 || !post.id) return;
+                      if (!onOpenPostInNewTab) return;
+                      event.preventDefault();
+                      onOpenPostInNewTab(post.id);
                     }}
                   >
                     {isNote ? (
@@ -2215,6 +2288,7 @@ export function FolderPage({
   onDeleteItem,
   onItemClick,
   onOpenPost,
+  onOpenPostInNewTab,
   onOpenTag,
   createBookmarkRequestKey,
   editRequestKey = 0,
@@ -2237,6 +2311,8 @@ export function FolderPage({
   onDeleteItem?: FolderDeleteItem;
   onItemClick?: (postId: string, event: MouseEvent<HTMLElement>) => boolean;
   onOpenPost?: (post: Post) => void;
+  /** Cmd/Ctrl or middle click: open the document as a background tab. */
+  onOpenPostInNewTab?: (postId: string) => void;
   onOpenTag?: (tag: string) => void;
   createBookmarkRequestKey?: number;
   editRequestKey?: number;
@@ -2386,6 +2462,7 @@ export function FolderPage({
         onDeleteItem={onDeleteItem}
         onItemClick={onItemClick}
         onOpenPost={onOpenPost}
+        onOpenPostInNewTab={onOpenPostInNewTab}
         onOpenTag={onOpenTag}
         onSelectPost={onSelectPost}
         selectedPostId={visibleSelectedPostId}

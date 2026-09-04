@@ -436,6 +436,28 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     run: (ctx) => ctx.workspace?.closeActiveTab?.(),
   },
   {
+    id: "workspace.reopen-tab",
+    label: "Reopen closed tab",
+    group: "Navigate",
+    // Shift+Cmd+T, the browser's pairing for Cmd+W.
+    shortcut: { key: "t", meta: true, shift: true, label: "⇧⌘T", once: true },
+    when: (ctx) => Boolean(ctx.workspace?.reopenClosedTab),
+    run: (ctx) => ctx.workspace?.reopenClosedTab?.(),
+  },
+  {
+    id: "workspace.open-in-new-tab",
+    label: "Open in new tab",
+    group: "Navigate",
+    // The keyboard pairing for Cmd-clicking a row.
+    shortcut: { key: "Enter", meta: true, label: "⌘↩", once: true },
+    when: (ctx) =>
+      Boolean(ctx.workspace?.openInNewTab && ctx.workspace.selectedPostId),
+    run: (ctx) => {
+      const postId = ctx.workspace?.selectedPostId;
+      if (postId) ctx.workspace?.openInNewTab?.(postId);
+    },
+  },
+  {
     id: "workspace.next-tab",
     label: "Next tab",
     group: "Navigate",

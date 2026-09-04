@@ -3315,8 +3315,29 @@ collab_state/collab_updates rows, then start the server.
   view at a time, where a split pane could only be a lesser copy.
   Cmd+W closes (falling back to closing the WINDOW only when no document
   is open - the Mac Window menu asks `window.__ttCloseTab` first),
-  Ctrl+Tab and Shift+Ctrl+Tab cycle, tabs persist per workspace, and
-  closing the open one lands on its neighbour.
+  Shift+Cmd+T reopens the last closed one, Ctrl+Tab and Shift+Ctrl+Tab
+  cycle, Cmd+Enter opens the highlighted row as a background tab, tabs
+  persist per workspace and can be dragged to reorder, and closing the
+  open one lands on its neighbour.
+- **Alt-click opens a background tab, NOT Cmd-click.** Cmd/Ctrl click on
+  a list row already toggles selection (`selectionFromClick`), and taking
+  it for tabs would cost multi-select, which the owner uses. Middle click
+  works too, on rows and on tabs.
+- **Preview tabs promote on a real EDIT, not on the view level.** Notes
+  edit in place, so `view.level === "edit"` is true the moment one opens
+  and promoting on it made every note permanent immediately. Promotion
+  now happens inside the editor's `updateText`, which is a keystroke.
+- **The tab strip's drag uses a REF for the dragged id**, not React
+  state: drop can fire before a state update flushes (a fast drag, or
+  events dispatched back to back) and then reads null and does nothing.
+  State drives the styling only.
+- **Undo puts the caret back where the edit was**, as Sublime does. Each
+  Y.UndoManager stack item carries the selection in its `meta` at
+  `stack-item-added`, and `stack-item-popped` asks the surface for it
+  through `pendingCaretRef` - the surface's own "place the caret on the
+  next reconcile" channel, which the CRDT's value change then triggers.
+  Measured: type at the top, move to the end, Cmd+Z - the caret returns
+  to offset 0 rather than staying at 7778.
 - The tab strip must CLEAR the floating chrome, not share its band: the
   action pills sit at `top: 8px` and the editor's toolbar grows with find
   and replace, so a strip beside them ends up underneath and swallows
@@ -3330,7 +3351,11 @@ collab_state/collab_updates rows, then start the server.
   React's controlled inputs through the native value setter plus an
   `input` event instead. Clicking a folder row in headless WebKit can
   fail to open the item because the body prefetch dies with an "access
-  control checks" error; navigate to the item URL directly instead.
+  control checks" error; navigate to the item URL directly instead. And
+  Playwright's modifier and middle clicks on a LINK go through WebKit's
+  own link gestures and never reach React - dispatch the MouseEvent
+  directly (`new MouseEvent("click", { altKey: true, bubbles: true })`)
+  to test them.
 - **Probes that type into a document damage fixtures.** Three separate
   strings were typed into visual-demo documents this session when a find
   field was not focused and the keystrokes reached the body instead
