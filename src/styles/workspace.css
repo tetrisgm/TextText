@@ -2288,3 +2288,97 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   background: transparent;
   font-weight: 500;
 }
+
+/* ---------------------------------------------------------------------
+   A long document costs what is on screen.
+
+   The editor's markdown surface windows past 150kB; the reader renders the
+   whole document, which for a large one is tens of thousands of nodes laid
+   out and painted before anything appears. `content-visibility: auto` lets
+   the engine skip layout and paint for blocks that are off screen, at no
+   cost to the DOM: the text is still there for find, for select-all and for
+   the assistant, and scrolling to a block renders it.
+
+   The editor deliberately does NOT use this - see MarkdownSurface, where it
+   breaks the caret - but the reader has no caret to break.
+
+   contain-intrinsic-size gives the skipped blocks a guessed height so the
+   scrollbar does not lurch as they materialise; `auto` remembers the real
+   height once a block has been rendered once.
+   --------------------------------------------------------------------- */
+.post-editor-content .tt-document > .tt-stack > * {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 320px;
+}
+
+/* Not the first few: whatever is above the fold should be laid out with
+   everything else, or the first paint has holes in it. */
+.post-editor-content .tt-document > .tt-stack > *:nth-child(-n + 4) {
+  content-visibility: visible;
+}
+
+/* ---------------------------------------------------------------------
+   The workspace reading view.
+
+   DESIGN.md keeps two systems: the Broadsheet, which is the PUBLISHED
+   reading experience and where the centred masthead belongs, and the Apple
+   editor, which is this. The reference reads its item left-aligned with the
+   body in a panel, and nothing in the contract asks the workspace to centre
+   anything - so the published page keeps its masthead and the workspace gets
+   the reading view the reference has.
+
+   Scoped to .post-editor-content, which is the workspace's own scroller and
+   the class the swipe clone also carries.
+   --------------------------------------------------------------------- */
+.post-editor-content .tt-document .tt-masthead {
+  align-items: flex-start;
+  text-align: left;
+}
+
+/* The rule under the masthead runs from the left with the words, not
+   centred under them. It is the masthead's own ::after, so this is where it
+   has to be said. */
+/* The presentation system states this at (0,4,1) with a style-family in the
+   selector, so beating it takes one more class rather than one more word. */
+.post-editor-content
+  .tt-document:not(.tt-collection-item)[data-style-family]
+  .tt-masthead::after {
+  margin: 1.1rem auto 0 0;
+}
+
+.post-editor-content .tt-document .tt-divider {
+  margin-inline: 0;
+}
+
+/* The body sits in a panel on the page ground rather than flush against it,
+   which is what separates "the item" from "the app" in the reference. */
+.post-editor-content .tt-document > .tt-stack {
+  margin-block: 14px 28px;
+  padding: 34px 40px 48px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  /* A shade off the page ground, so the panel reads as a panel even where a
+     hairline on near-white would not. */
+  background: color-mix(in srgb, var(--ink) 2%, var(--bg));
+  box-shadow: 0 18px 46px -34px rgba(0, 0, 0, 0.42);
+}
+
+/* The page behind the panel steps back, which is what makes the panel read
+   as the item and the rest as the app. */
+.post-editor-content .tt-document {
+  background: color-mix(in srgb, var(--ink) 5%, var(--bg));
+}
+
+.post-editor-content .tt-document {
+  padding-top: 12px;
+}
+
+@media (max-width: 900px) {
+  /* No room for a margin around a panel; the page is the panel. */
+  .post-editor-content .tt-document > .tt-stack {
+    padding: 20px;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
