@@ -2692,6 +2692,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
     @objc private func reloadWebWindowAction() { webWindow?.reloadFromOrigin() }
 
+    @objc private func closeTabAction() {
+        guard let webWindow, webWindow.window?.isKeyWindow == true else {
+            NSApp.keyWindow?.performClose(nil)
+            return
+        }
+        webWindow.closeTabOrWindow()
+    }
+
     @objc private func undoAction() { webWindow?.editHistory("undo") }
 
     @objc private func redoAction() { webWindow?.editHistory("redo") }
@@ -2974,7 +2982,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         let window = NSMenu(title: "Window")
         windowItem.submenu = window
         _ = window.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
-        _ = window.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        let close = window.addItem(withTitle: "Close", action: #selector(closeTabAction), keyEquivalent: "w")
+        close.target = self
         NSApp.windowsMenu = window
 
         return main

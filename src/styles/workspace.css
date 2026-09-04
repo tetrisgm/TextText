@@ -1400,60 +1400,95 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   cursor: default;
 }
 
-/* The item held open beside the one being worked on. It sits between the
-   writing surface and the assistant rail, and it scrolls on its own so the
-   two sides never drag each other around. */
-.workspace-split-pane {
-  position: fixed;
+/* Open documents, as tabs. The workspace's own chrome floats as pills in the
+   top corners, so the strip keeps clear of both and scrolls sideways rather
+   than shrinking each tab to nothing. Sticky, so it stays put while the
+   document scrolls under it. */
+.workspace-tab-bar {
+  position: sticky;
   top: 0;
-  bottom: 0;
-  right: calc(60px + var(--workspace-rail-inset, 0px));
-  width: min(420px, 34vw);
+  z-index: 5;
   display: flex;
-  flex-direction: column;
-  min-width: 0;
-  z-index: 120;
+  align-items: stretch;
+  gap: 2px;
+  /* Clear the floating chrome rather than squeezing between it: the pills
+     sit at top:8px and the editor's toolbar grows with find and replace, so
+     anything sharing that band ends up underneath it and swallows clicks. */
+  padding: 48px 24px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
   background: var(--bg);
-  border-left: 1px solid color-mix(in srgb, var(--hairline) 88%, transparent);
 }
-.post-editor-shell.is-split-open .post-editor-content {
-  margin-right: calc(min(420px, 34vw) + 60px);
+.workspace-tab-bar::-webkit-scrollbar {
+  display: none;
 }
-.workspace-split-header {
+.workspace-tab {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 10px 14px;
-  border-bottom: 1px solid
-    color-mix(in srgb, var(--hairline) 88%, transparent);
+  min-width: 0;
+  max-width: 220px;
+  border-radius: 7px 7px 0 0;
+  border: 1px solid transparent;
+  border-bottom: none;
+  color: var(--muted);
 }
-.workspace-split-title {
-  font-size: 13px;
-  font-weight: 600;
+.workspace-tab.is-active {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  border-color: color-mix(in srgb, var(--hairline) 88%, transparent);
   color: var(--ac-label, var(--ink));
+}
+.workspace-tab:not(.is-active):hover {
+  background: color-mix(in srgb, var(--ink) 3%, transparent);
+}
+.workspace-tab-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 190px;
+  padding: 6px 4px 6px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: default;
 }
-.workspace-split-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 16px 18px 48px;
-}
-.workspace-split-empty {
+.workspace-tab-close {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 5px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1;
+  cursor: default;
+  opacity: 0;
 }
-@media (max-width: 1100px) {
-  /* Not enough room for two columns and a rail; the pane would squeeze the
-     writing surface into a gutter. */
-  .workspace-split-pane {
-    display: none;
-  }
-  .post-editor-shell.is-split-open .post-editor-content {
-    margin-right: 0;
+.workspace-tab:hover .workspace-tab-close,
+.workspace-tab.is-active .workspace-tab-close {
+  opacity: 1;
+}
+.workspace-tab-close:hover {
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+  color: var(--ac-label, var(--ink));
+}
+.workspace-tab-select:focus-visible,
+.workspace-tab-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+@media (max-width: 900px) {
+  .workspace-tab-bar {
+    padding-inline: 12px;
   }
 }

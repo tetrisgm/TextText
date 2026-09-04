@@ -16,13 +16,15 @@ import {
   useSyncExternalStore,
 } from "react";
 import { flushSync } from "react-dom";
-import { SplitItemPane } from "@/components/workspace/SplitItemPane";
+import { WorkspaceTabBar } from "@/components/workspace/WorkspaceTabBar";
 import {
-  closeSplit,
-  toggleSplit,
-  useSplitPostId,
-  useSplitScope,
-} from "@/lib/workspace/split-view";
+  closeTab,
+  openTab,
+  pruneTabs,
+  tabAfter,
+  useTabs,
+  useTabScope,
+} from "@/lib/workspace/tabs";
 import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
@@ -658,6 +660,9 @@ function LocalWorkspaceShell({
   const navigateUpRef = useRef<() => boolean>(() => false);
   const navigateUpAsBackRef = useRef<() => boolean>(() => false);
   const navigateBackRef = useRef<() => boolean>(() => false);
+  /** Open a document by id through the ordinary open path, so a tab lands on
+   * the same fully editable view a click in a list does. */
+  const openTabPostRef = useRef<(postId: string) => void>(() => {});
   const navigateForwardRef = useRef<() => boolean>(() => false);
   const recordVisitRef = useRef<(href: string) => void>(() => {});
   const hierarchyUpAvailableRef = useRef(false);
@@ -1301,6 +1306,9 @@ function LocalWorkspaceShell({
     if (!openedPostId || openedPostId === currentItemPostIdRef.current) return;
     previousItemPostIdRef.current = currentItemPostIdRef.current;
     currentItemPostIdRef.current = openedPostId;
+  }, [openedPostId]);
+  useEffect(() => {
+    if (openedPostId) openTab(openedPostId);
   }, [openedPostId]);
 
   // Reading keys work like the browser's: Space, Shift+Space, PageUp/Down,
@@ -2254,15 +2262,19 @@ function LocalWorkspaceShell({
   const showToast = useCommandToast();
   // An item held open beside the one being worked on. Not a second navigable
   // pane - see lib/workspace/split-view for why.
-  useSplitScope(homePath);
-  const splitPostId = useSplitPostId();
-  const splitPost = splitPostId
-    ? findPoolPostById(displayPool, splitPostId)
-    : null;
+  useTabScope(homePath);
+  const openTabIds = useTabs();
+  const tabPosts = useMemo(
+    () =>
+      openTabIds
+        .map((postId) => findPoolPostById(displayPool, postId))
+        .filter((post): post is WorkspacePoolPost => Boolean(post)),
+    [displayPool, openTabIds],
+  );
   useEffect(() => {
-    // The item was deleted or moved out of reach while it was open beside.
-    if (splitPostId && !splitPost) closeSplit();
-  }, [splitPost, splitPostId]);
+    // Documents deleted or moved out of reach should not keep a tab.
+    pruneTabs((postId) => Boolean(findPoolPostById(displayPool, postId)));
+  }, [displayPool]);
   const deleteWorkspaceItems = useCallback(
     async (posts: readonly WorkspacePoolPost[]) => {
       if (!canManageFolders || posts.length === 0) return;
@@ -3418,7 +3430,19 @@ function LocalWorkspaceShell({
     navigateBackRef.current = navigateBack;
     navigateForwardRef.current = navigateForward;
     recordVisitRef.current = recordVisit;
-  }, [navigateUp, navigateUpAsBack, navigateBack, navigateForward, recordVisit]);
+    openTabPostRef.current = (postId: string) => {
+      const pool = displayPoolRef.current;
+      const post = findPoolPostById(pool, postId);
+      if (post) openPoolPost(post, folderPathForPoolPost(pool, post));
+    };
+  }, [
+    navigateUp,
+    navigateUpAsBack,
+    navigateBack,
+    navigateForward,
+    openPoolPost,
+    recordVisit,
+  ]);
 
   const escapeCurrent = useCallback(() => {
     const current = viewRef.current;
@@ -3992,12 +4016,26 @@ function LocalWorkspaceShell({
         ? navigateBackRef.current()
         : navigateForwardRef.current();
     (window as { __ttNavGo?: typeof go }).__ttNavGo = go;
+    // The Mac shell's Cmd+W asks here first: closing a tab is what Cmd+W
+    // means while a document is open, and closing the window is what it
+    // means when none is. Returns whether a tab was actually closed.
+    const closeTabFromShell = (): boolean => {
+      const current = viewRef.current;
+      if (current.level !== "post" && current.level !== "edit") return false;
+      const next = closeTab(current.postId);
+      if (next) openTabPostRef.current(next);
+      else navigateUpRef.current();
+      return true;
+    };
+    (window as { __ttCloseTab?: typeof closeTabFromShell }).__ttCloseTab =
+      closeTabFromShell;
     return () => {
       window.removeEventListener("pointermove", onPointer);
       window.clearTimeout(holdTimer);
       window.clearTimeout(staleReloadTimer);
       delete (window as { __ttNavSwipe?: typeof bridge }).__ttNavSwipe;
       delete (window as { __ttNavGo?: typeof go }).__ttNavGo;
+      delete (window as { __ttCloseTab?: typeof closeTabFromShell }).__ttCloseTab;
       if (drag) {
         restoreRealStyles(drag.real);
         drag.shell.remove();
@@ -4211,15 +4249,23 @@ function LocalWorkspaceShell({
       // item would be wrong).
       navigateUp: navigateBack,
       navigateForward,
-      toggleSplitBeside: () => {
+      closeActiveTab: () => {
         const current = viewRef.current;
-        // From a list, the highlighted row; from an item, the item you were
-        // looking at before this one, which is what "beside" usually means.
-        const candidate =
+        if (current.level !== "post" && current.level !== "edit") return;
+        const next = closeTab(current.postId);
+        // Land on the neighbouring tab, or leave the item entirely when it
+        // was the last one open.
+        if (next) openTabPostRef.current(next);
+        else navigateUpRef.current();
+      },
+      cycleTab: (step: number) => {
+        const current = viewRef.current;
+        const from =
           current.level === "post" || current.level === "edit"
-            ? (previousItemPostIdRef.current ?? null)
-            : (selectedPostIdRef.current ?? null);
-        toggleSplit(candidate);
+            ? current.postId
+            : null;
+        const next = tabAfter(from, step);
+        if (next && next !== from) openTabPostRef.current(next);
       },
       escapeCurrent,
       focusSearch,
@@ -4518,7 +4564,7 @@ function LocalWorkspaceShell({
     <div
       className={`post-editor-shell applecms has-sidebar ${className}${
         effectiveSidebarCollapsed ? " is-sidebar-collapsed" : ""
-      }${splitPost ? " is-split-open" : ""} is-active-region-${activeRegion}${
+      } is-active-region-${activeRegion}${
         marqueeDragging ? " is-marquee-dragging" : ""
       } assistant-is-${assistantState}${
         assistantState === "pinned" ? " has-assistant-pinned" : ""
@@ -4636,12 +4682,19 @@ function LocalWorkspaceShell({
             localViewActiveFolder(view) === "blog" ? " is-blog-folder-view" : ""
           }`}
         >
+          <WorkspaceTabBar
+            activePostId={openedPostId}
+            posts={tabPosts}
+            onSelect={(postId) => openTabPostRef.current(postId)}
+            onClose={(postId) => {
+              const next = closeTab(postId);
+              if (postId !== openedPostId) return;
+              if (next) openTabPostRef.current(next);
+              else navigateUpRef.current();
+            }}
+          />
           {content}
         </div>
-
-        {splitPost && (
-          <SplitItemPane pool={displayPool} post={splitPost} />
-        )}
 
         <WorkspaceSelectionToolbar
           blog={displayPool.blog}

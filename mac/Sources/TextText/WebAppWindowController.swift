@@ -697,6 +697,18 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         )
     }
 
+    /// Cmd+W. Ask the page to close the open document's tab; only when there
+    /// is no tab to close does this mean "close the window", which is the
+    /// arrangement every editor uses.
+    func closeTabOrWindow() {
+        webView.evaluateJavaScript(
+            "Boolean(window.__ttCloseTab && window.__ttCloseTab())"
+        ) { [weak self] result, _ in
+            let closed = (result as? Bool) ?? false
+            if !closed { self?.window?.performClose(nil) }
+        }
+    }
+
     /// History menu Back/Forward. This goes through the SAME one way back and
     /// forward the swipe and the keys use, so the menu cannot drift into its
     /// own behaviour. WKWebView's own goBack() would bypass all of it.

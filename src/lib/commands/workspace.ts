@@ -425,14 +425,38 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     },
   },
   {
-    id: "workspace.split-beside",
-    label: "Open item beside",
+    id: "workspace.close-tab",
+    label: "Close tab",
     group: "Navigate",
-    // Cmd+\, as in VS Code's split. From a list it opens the highlighted
-    // row; from an item, the one you were reading before it.
-    shortcut: { key: "\\", meta: true, label: "⌘\\", once: true },
-    when: (ctx) => Boolean(ctx.workspace?.toggleSplitBeside),
-    run: (ctx) => ctx.workspace?.toggleSplitBeside?.(),
+    shortcut: { key: "w", meta: true, label: "⌘W", once: true },
+    when: (ctx) =>
+      Boolean(ctx.workspace?.closeActiveTab) &&
+      (ctx.workspace?.viewLevel === "post" ||
+        ctx.workspace?.viewLevel === "edit"),
+    run: (ctx) => ctx.workspace?.closeActiveTab?.(),
+  },
+  {
+    id: "workspace.next-tab",
+    label: "Next tab",
+    group: "Navigate",
+    // Ctrl+Tab, as in every editor. Cmd+Tab belongs to the system.
+    shortcut: { key: "Tab", ctrl: true, label: "⌃Tab", once: true },
+    when: (ctx) => Boolean(ctx.workspace?.cycleTab),
+    run: (ctx) => ctx.workspace?.cycleTab?.(1),
+  },
+  {
+    id: "workspace.previous-tab",
+    label: "Previous tab",
+    group: "Navigate",
+    shortcut: {
+      key: "Tab",
+      ctrl: true,
+      shift: true,
+      label: "⇧⌃Tab",
+      once: true,
+    },
+    when: (ctx) => Boolean(ctx.workspace?.cycleTab),
+    run: (ctx) => ctx.workspace?.cycleTab?.(-1),
   },
   {
     id: "document.outline",

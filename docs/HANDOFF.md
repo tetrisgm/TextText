@@ -3306,20 +3306,42 @@ collab_state/collab_updates rows, then start the server.
   locally and calling the same `restore-post` operation the Trash page
   uses. `useCommandToast` is the door into the toast from outside the
   command system.
-- **Split view is ONE document held beside, and reads.** See
-  `lib/workspace/split-view.ts`: the shell's model is one view, one
-  history index, one snapshot per index, so a second NAVIGABLE pane would
-  mean rebuilding navigation. Cmd+\\ opens the highlighted row (or, from
-  an item, the previously visited one); it persists per workspace and
-  hides below 1100px where there is no room for two columns and the rail.
-  Use an explicit `is-split-open` class for the content margin - a
-  `:has()` rule did not take.
+- **TABS, not a split pane** (owner, 2026-09-03: "Split pane can't be a
+  downgrade. Make it tabs, like Sublime Text"). The read-only side pane
+  was replaced outright - see `lib/workspace/tabs.ts`. A tab is not a
+  second view: selecting one navigates the workspace to that item exactly
+  as clicking it in a list does, so the open document is always the real,
+  fully editable one. That is why tabs suit a shell whose model is one
+  view at a time, where a split pane could only be a lesser copy.
+  Cmd+W closes (falling back to closing the WINDOW only when no document
+  is open - the Mac Window menu asks `window.__ttCloseTab` first),
+  Ctrl+Tab and Shift+Ctrl+Tab cycle, tabs persist per workspace, and
+  closing the open one lands on its neighbour.
+- The tab strip must CLEAR the floating chrome, not share its band: the
+  action pills sit at `top: 8px` and the editor's toolbar grows with find
+  and replace, so a strip beside them ends up underneath and swallows
+  clicks (measured: the find input intercepted the tab close button).
+  `padding-top: 48px` puts it below them.
 - Harness limits worth knowing: the Browser pane cannot send Cmd+\\ (it
-  reports an empty `key`), and its screenshots are unreliable under
-  viewport emulation - geometry from `getBoundingClientRect` and
-  `elementFromPoint` is the trustworthy read. Playwright's find field is
-  laid out at 0x0 on the item routes; drive React's controlled inputs
-  through the native value setter plus an `input` event instead.
+  reports an empty `key`), and its screenshots and `location` reads are
+  unreliable under viewport emulation - geometry from
+  `getBoundingClientRect` and `elementFromPoint` is the trustworthy read.
+  Playwright's find field is laid out at 0x0 on the item routes; drive
+  React's controlled inputs through the native value setter plus an
+  `input` event instead. Clicking a folder row in headless WebKit can
+  fail to open the item because the body prefetch dies with an "access
+  control checks" error; navigate to the item URL directly instead.
+- **Probes that type into a document damage fixtures.** Three separate
+  strings were typed into visual-demo documents this session when a find
+  field was not focused and the keystrokes reached the body instead
+  (`/connection` inside "screen", `Z` and `/with` and `/image` inside
+  reader-images). All were found by querying
+  `posts.document::text ilike '%needle%'` and repaired THROUGH the app so
+  the collaborative state stayed consistent, never with raw SQL. Sweep
+  for artifacts before finishing a session that typed into documents.
+- Recently-opened drift: re-run of the owner's exact pattern - 14 rounds
+  of open an item, go back, read the home order - found ZERO unexplained
+  reorderings; only documents that were actually opened moved.
 
 ## Resolved episodes (one line each, dates in git log)
 
