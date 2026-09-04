@@ -299,14 +299,15 @@ describe("manifest compatibility and integrity", () => {
   const postUrlFor = (post: Post) => `https://texttext.example/t/demo/${post.slug}`;
 
   it("serializes with no undefined leakage in either v1 or v2 shape", () => {
-    for (const options of [undefined, { folder, fileUrlFor, postUrlFor }]) {
+    for (const extra of [{}, { folder, fileUrlFor, postUrlFor }]) {
+      const options = { hashFor: markdownFileHash, ...extra };
       const manifest = renderFolderManifest(blog, [basePost], options);
       expect(JSON.parse(JSON.stringify(manifest))).toEqual(manifest);
     }
   });
 
   it("keeps every v1 field with v1 values when options are omitted", () => {
-    const manifest = renderFolderManifest(blog, [basePost]);
+    const manifest = renderFolderManifest(blog, [basePost], { hashFor: markdownFileHash });
     expect(manifest.schema).toBe("texttext.folder.v1");
     expect(manifest.folder).toMatchObject({
       handle: "demo",
@@ -328,6 +329,7 @@ describe("manifest compatibility and integrity", () => {
 
   it("hashes each item exactly as the index.md route renders it", () => {
     const manifest = renderFolderManifest(blog, [basePost], {
+      hashFor: markdownFileHash,
       folder,
       fileUrlFor,
       postUrlFor,
@@ -344,8 +346,10 @@ describe("manifest compatibility and integrity", () => {
   });
 
   it("is stable across two manifest renders", () => {
-    const a = renderFolderManifest(blog, [basePost], { folder, postUrlFor });
-    const b = renderFolderManifest(blog, [basePost], { folder, postUrlFor });
+    const a = renderFolderManifest(blog, [basePost], {
+      hashFor: markdownFileHash, folder, postUrlFor });
+    const b = renderFolderManifest(blog, [basePost], {
+      hashFor: markdownFileHash, folder, postUrlFor });
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
 });

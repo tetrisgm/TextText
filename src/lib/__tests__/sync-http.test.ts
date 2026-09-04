@@ -344,7 +344,7 @@ describe("syncManifestItem", () => {
 
   it("adds representation to every sync item without changing public manifests", () => {
     const sync = renderSyncFolderManifest(blog, [post]);
-    const publicManifest = renderFolderManifest(blog, [post]);
+    const publicManifest = renderFolderManifest(blog, [post], { hashFor: markdownFileHash });
 
     expect(sync.items[0].representation).toBe("textbundle");
     expect(sync.items[0].file).toBe("posts/hello-sync.textbundle");

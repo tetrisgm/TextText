@@ -10,7 +10,6 @@ import type {
 } from "@/lib/content";
 import { collectionPageLayout, isSafeLinkHref } from "@/lib/content";
 import { getBuiltinTemplate } from "@/lib/presentation/templates";
-import { markdownFileHash } from "@/lib/content-hash";
 import { isNoCoverValue } from "@/lib/cover";
 import { sanitizePostSlug } from "@/lib/post-slug";
 import { normalizeTags } from "@/lib/tags";
@@ -94,6 +93,16 @@ export type RenderFolderManifestOptions = {
   postUrlFor?: (post: Post) => string;
   /** exact file representation whose bytes the manifest hashes and sizes */
   renderFileFor?: (post: Post) => string;
+  /**
+   * sha256 of a file's exact text. Threaded in rather than imported so this
+   * module stays a pure string transform: `markdownFileHash` reaches for
+   * node:crypto, and one import of it from here put crypto-browserify,
+   * stream-browserify and vm-browserify (263KB) on the workspace's critical
+   * path, because the assistant's agent-tools imports this module for
+   * `parsePostMarkdownFile` and `folderModeForPostType` alone. Every server
+   * caller passes `markdownFileHash` from @/lib/content-hash.
+   */
+  hashFor: (text: string) => string;
 };
 
 /** The kinds a folder's manifest advertises, by its mode; blog is the default. */
@@ -119,7 +128,7 @@ export function folderModeForPostType(type: ItemKind): FolderMode {
 export function renderFolderManifest(
   blog: Blog,
   posts: Post[],
-  options?: RenderFolderManifestOptions,
+  options: RenderFolderManifestOptions,
 ): MarkdownFolderManifest {
   const folder = options?.folder;
   return {
@@ -156,7 +165,7 @@ export function renderFolderManifest(
         ...(options?.postUrlFor
           ? { canonicalUrl: options.postUrlFor(post) }
           : {}),
-        hash: markdownFileHash(rendered),
+        hash: options.hashFor(rendered),
         size: new TextEncoder().encode(rendered).length,
       };
     }),

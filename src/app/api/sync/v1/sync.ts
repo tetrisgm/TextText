@@ -293,6 +293,7 @@ function syncManifestOptions(
   const baseUrl = blogBaseUrl(blog);
   return {
     folder,
+    hashFor: markdownFileHash,
     fileUrlFor: (post) => syncFileUrl(post.id ?? post.slug),
     postUrlFor: (post) =>
       locatedPostUrl(baseUrl, {

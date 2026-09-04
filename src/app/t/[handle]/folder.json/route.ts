@@ -30,6 +30,7 @@ export async function GET(request: Request, { params }: Props) {
   const locationFor = (post: (typeof posts)[number]) =>
     locations.find((candidate) => candidate.post.id === post.id)!;
   const manifest = renderFolderManifest(blog, posts, {
+    hashFor: markdownFileHash,
     folder,
     fileUrlFor: (post) => locatedPostMarkdownUrl(baseUrl, locationFor(post)),
     includePersonalMetadata: false,

@@ -424,7 +424,8 @@ describe("folder manifest v2", () => {
     `https://texttext.example/t/demo/${post.slug}/index.md`;
 
   it("carries folder identity, mode, and activeView", () => {
-    const manifest = renderFolderManifest(blog, posts, { folder });
+    const manifest = renderFolderManifest(blog, posts, {
+      hashFor: markdownFileHash, folder });
     expect(manifest.schema).toBe("texttext.folder.v1");
     expect(manifest.folder.handle).toBe("demo");
     expect(manifest.folder.name).toBe("The Demo Broadsheet");
@@ -438,7 +439,7 @@ describe("folder manifest v2", () => {
   });
 
   it("keeps the v1 shape when called without options", () => {
-    const manifest = renderFolderManifest(blog, posts);
+    const manifest = renderFolderManifest(blog, posts, { hashFor: markdownFileHash });
     expect(manifest.folder.mode).toBe("blog");
     expect(manifest.folder.id).toBeUndefined();
     expect(manifest.folder.path).toBeUndefined();
@@ -455,6 +456,7 @@ describe("folder manifest v2", () => {
 
   it("gives each item id, dates, url, and a file hash", () => {
     const manifest = renderFolderManifest(blog, posts, {
+      hashFor: markdownFileHash,
       folder,
       fileUrlFor,
       postUrlFor,
@@ -488,6 +490,7 @@ describe("folder manifest v2", () => {
 
   it("changes the hash when the body changes", () => {
     const before = renderFolderManifest(blog, [fullArticle], {
+      hashFor: markdownFileHash,
       folder,
       fileUrlFor,
       postUrlFor,
@@ -495,7 +498,7 @@ describe("folder manifest v2", () => {
     const after = renderFolderManifest(
       blog,
       [{ ...fullArticle, body: `${fullArticle.body}\n\nAn edit.` }],
-      { folder, fileUrlFor, postUrlFor },
+      { hashFor: markdownFileHash, folder, fileUrlFor, postUrlFor },
     );
     expect(after.items[0].hash).not.toBe(before.items[0].hash);
   });
