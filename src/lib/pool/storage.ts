@@ -234,12 +234,36 @@ export async function readPersistedPostDocument(
   return document;
 }
 
+/**
+ * Cache a document for the next time it is opened - on the first idle, not
+ * in the frames right after the open.
+ *
+ * The write is fire-and-forget already, but an IndexedDB put still
+ * structured-clones the whole document on the main thread, and a large one
+ * costs real milliseconds exactly when the reader is trying to paint. A
+ * profile of four open-and-backs spent 194ms inside `put`. Nothing is
+ * waiting on this: it is a cache for the NEXT open.
+ */
 export async function persistPostDocument(
   document: WorkspacePostDocumentPayload,
 ): Promise<void> {
+  await whenIdle();
   await withStore<IDBValidKey>(BODY_STORE, "readwrite", (store) =>
     store.put(document, bodyKey(document.blogId, document.postId)),
   );
+}
+
+function whenIdle(): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  const idle = (
+    window as unknown as {
+      requestIdleCallback?: (fn: () => void, o?: { timeout: number }) => number;
+    }
+  ).requestIdleCallback;
+  return new Promise((resolve) => {
+    if (idle) idle(() => resolve(), { timeout: 2000 });
+    else window.setTimeout(resolve, 120);
+  });
 }
 
 export async function deletePersistedPostDocument(

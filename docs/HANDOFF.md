@@ -3616,6 +3616,14 @@ AUTH_DEV_LOGIN=1 npx next start -p 3131 &
   reopened, the sidebar, the hint bar, a hover tooltip - and reports anything
   thrown along the way. A benchmark says how long something took; this says
   whether it worked. It is what found a 404 nobody had noticed.
+- **`scripts/runtime-profile.mts`** asks Chromium for style recalculations,
+  layouts and script time per interaction - a hover sweep, a scroll, and the
+  window between clicking a row and the reader being readable. Counters, not
+  wall-clock: a laptop that has been building all evening cannot resolve a
+  15ms difference in a stopwatch, but it counts work exactly. Current
+  figures: a hover costs about half a millisecond, a scroll is negligible,
+  and an open costs 17 recalcs, 11 layouts and 38ms of script before the
+  reader is readable.
 - **`node scripts/find-dead-css.mjs [--write]`** lists (or removes) every
   rule whose selectors are built entirely from classes no source file
   mentions. Verify a `--write` with the surface walk above. It parses with
