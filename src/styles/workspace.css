@@ -1568,13 +1568,18 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
      following the page's ink. */
   color: rgba(255, 255, 255, 0.62);
 }
+/* A keycap is a light chip with dark ink, the same object the palette and
+   the shortcut panel draw. In the reference every key in the app is that
+   one shape; ours had three different treatments. The bar stays black
+   (owner) - only the caps change. */
 .workspace-key-hint-keys {
   font: inherit;
+  font-size: 11px;
   font-weight: 600;
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.14);
+  color: #232323;
+  background: #c9c9c9;
   border-radius: 4px;
-  padding: 1px 5px;
+  padding: 2px 6px;
 }
 @media (max-width: 900px) {
   /* Not enough room to read them without crowding the writing surface. */
