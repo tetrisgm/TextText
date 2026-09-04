@@ -1642,38 +1642,75 @@
   letter-spacing: 0;
   text-align: center;
 }
+/* Bottom left, dark in both themes, clear of the hint bar. Centred toasts
+   land in the middle of what you are reading; the corner is where a report
+   belongs, and staying dark whatever the theme means "the app is telling you
+   something" always looks the same. */
 .command-toast.applecms {
   position: fixed;
-  left: 50%;
-  bottom: 22px;
+  left: 20px;
+  bottom: 50px;
   z-index: 1001;
   display: inline-flex;
   align-items: center;
-  gap: 12px;
-  max-width: min(92vw, 420px);
-  min-height: 42px;
-  padding: 9px 12px;
-  border: 1px solid var(--ac-hairline);
-  border-radius: 10px;
-  background: var(--ac-mat-fallback);
-  -webkit-backdrop-filter: var(--ac-mat-blur);
-  backdrop-filter: var(--ac-mat-blur);
-  box-shadow: 0 18px 54px -28px rgba(0,0,0,0.52);
-  color: var(--ac-label);
-  font: 600 var(--ac-fs-footnote)/1.25 var(--ac-font-text);
+  gap: 10px;
+  max-width: min(92vw, 460px);
+  min-height: 40px;
+  padding: 8px 8px 8px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, #000 92%, var(--bg));
+  box-shadow: 0 18px 54px -26px rgba(0,0,0,0.66);
+  color: #f4f4f5;
+  font: 500 var(--ac-fs-footnote)/1.25 var(--ac-font-text);
   letter-spacing: 0;
-  transform: translateX(-50%);
   animation: command-toast-in .1s ease both;
 }
-.command-toast button {
+.command-toast-message {
+  min-width: 0;
+}
+/* The action reads as a key you could press, in caps beside the report. */
+.command-toast-action {
+  flex: 0 0 auto;
   border: 0;
-  border-radius: 6px;
-  padding: 5px 8px;
-  background: var(--ac-tinted-fill);
-  color: var(--ac-accent);
-  font: 700 var(--ac-fs-footnote)/1 var(--ac-font-text);
-  letter-spacing: 0;
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: rgba(255,255,255,0.14);
+  color: #ffffff;
+  font: 650 11px/1 var(--ac-font-text);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   cursor: pointer;
+}
+.command-toast-action:hover {
+  background: rgba(255,255,255,0.24);
+}
+.command-toast-dismiss {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  background: transparent;
+  color: rgba(255,255,255,0.55);
+  cursor: pointer;
+}
+.command-toast-dismiss:hover {
+  background: rgba(255,255,255,0.12);
+  color: #ffffff;
+}
+.command-toast-dismiss svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+.command-toast-action:focus-visible,
+.command-toast-dismiss:focus-visible {
+  outline: 2px solid rgba(255,255,255,0.7);
+  outline-offset: 1px;
 }
 @keyframes command-backdrop-in {
   from { opacity: 0; }
@@ -1689,14 +1726,16 @@
     transform: translateY(0) scale(1);
   }
 }
+/* No horizontal centring left to preserve: the toast is anchored left now,
+   and keeping translateX(-50%) here parked it half off the screen. */
 @keyframes command-toast-in {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(6px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    transform: translateY(0);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1890,4 +1929,289 @@
 }
 .local-workspace-surface:not([hidden]) {
   display: contents;
+}
+
+/* ---------------------------------------------------------------------
+   Command palette: dark in both themes.
+
+   The palette is a mode, not a panel. Keeping it dark on a light page is
+   what makes it read as "the app is listening" rather than as another
+   window, and it means the muscle memory of where things are does not
+   change when someone switches theme. Every colour here is literal for
+   that reason: these are the palette's own colours, not the page's.
+   --------------------------------------------------------------------- */
+.command-palette {
+  --palette-ink: #f2f3f7;
+  --palette-ink-2: #9ba2b4;
+  --palette-hairline: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.1);
+  background: #16181f;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 34px 100px -40px rgba(0, 0, 0, 0.8);
+  color: var(--palette-ink);
+}
+
+.command-palette-input {
+  border-bottom-color: var(--palette-hairline);
+  color: var(--palette-ink);
+  font-weight: 500;
+}
+
+.command-palette-input::placeholder {
+  color: #6d7488;
+}
+
+.command-palette-row {
+  color: var(--palette-ink);
+}
+
+/* A lighter band, not an accent tint: on a dark ground the accent reads as
+   a button rather than as "this is the one you are on". */
+.command-palette-row.is-selected {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.command-palette-label {
+  color: var(--palette-ink);
+}
+
+.command-palette-label.is-command {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.command-palette-detail {
+  color: var(--palette-ink-2);
+}
+
+.command-palette-empty {
+  color: var(--palette-ink-2);
+}
+
+/* Keycaps rather than one run-together label, so a two-chord shortcut looks
+   like two keys. */
+.command-palette-shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.command-palette-shortcut kbd {
+  min-width: 22px;
+  padding: 3px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--palette-ink-2);
+  font: 600 11px/1 var(--ac-font-text);
+  text-align: center;
+}
+
+.command-palette-suggestions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 12px;
+  border-top: 1px solid var(--palette-hairline);
+  color: #6d7488;
+  font: 500 11.5px/1 var(--ac-font-text);
+}
+
+.command-palette-suggestions button {
+  border: 0;
+  border-radius: 5px;
+  padding: 4px 7px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--palette-ink-2);
+  font: 500 11.5px/1
+    var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  cursor: pointer;
+}
+
+.command-palette-suggestions button:hover {
+  background: rgba(255, 255, 255, 0.13);
+  color: var(--palette-ink);
+}
+
+.command-palette-suggestions button:focus-visible,
+.command-palette-row:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.6);
+  outline-offset: -2px;
+}
+
+/* ---------------------------------------------------------------------
+   Shortcut tooltip: dark, with the keys drawn as keycaps.
+
+   Same reasoning as the palette. A tooltip that matches the page reads as
+   part of the page; a dark one reads as the app answering a question. It
+   holds one line per action, so a control with two related actions teaches
+   both at once.
+   --------------------------------------------------------------------- */
+.kbd-tip {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #16181f;
+  color: #f2f3f7;
+  font: 500 12.5px/1.15 var(--ac-font-text, system-ui);
+  box-shadow: 0 14px 34px -18px rgba(0, 0, 0, 0.75);
+}
+
+.kbd-tip-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.kbd-tip-label {
+  color: #f2f3f7;
+}
+
+.kbd-tip-keys {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.kbd-tip-key {
+  min-width: 20px;
+  padding: 3px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #b9c0d0;
+  font: 600 11px/1 var(--ac-font-text, system-ui);
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------
+   Shortcut sheet: a panel on the right, not a card in the middle.
+
+   A centred modal is something to dismiss. A panel docked where the app's
+   other rails live reads as part of the app, which is what makes looking
+   something up feel like using it rather than interrupting it. Plain rows,
+   no rules and no boxes: the keycaps are the only drawn thing, so the eye
+   goes to the keys.
+   --------------------------------------------------------------------- */
+.command-palette-backdrop.applecms.is-sheet {
+  place-items: stretch end;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.command-palette--sheet {
+  width: min(100%, 400px);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0;
+  box-shadow: -30px 0 80px -50px rgba(0, 0, 0, 0.7);
+  animation: command-sheet-in 0.14s ease both;
+}
+
+@keyframes command-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .command-palette--sheet {
+    animation: none;
+  }
+}
+
+.command-palette--sheet .command-sheet-header {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+  padding: 20px 20px 14px;
+}
+
+.command-palette--sheet .command-sheet-title {
+  color: #f2f3f7;
+  font-weight: 600;
+}
+
+.command-palette--sheet .command-sheet-subtitle {
+  color: #6d7488;
+}
+
+.command-palette--sheet .command-sheet-done {
+  border: 0;
+  background: rgba(255, 255, 255, 0.08);
+  color: #c8cddb;
+}
+
+.command-palette--sheet .command-sheet-done:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+
+.command-palette--sheet .command-sheet-columns {
+  flex: 1 1 auto;
+  /* Not a multi-column box any more. The shared rule uses `columns: 1` with
+     a capped height, which scrolls; inside the panel the height is definite,
+     and a multicol box with a definite height fragments SIDEWAYS - every
+     group after Navigate was laid out in an off-screen column to the right.
+     `columns: auto` takes the element out of multicol entirely, so the groups
+     stack and the panel scrolls. */
+  columns: auto;
+  max-height: none;
+  padding: 12px 20px 24px;
+}
+
+.command-palette--sheet .command-shortcut-heading {
+  padding: 18px 0 6px;
+  color: #6d7488;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.command-palette--sheet .command-shortcut-group:first-child
+  .command-shortcut-heading {
+  padding-top: 4px;
+}
+
+.command-palette--sheet .command-sheet-row {
+  min-height: 32px;
+  padding: 4px 0;
+}
+
+.command-palette--sheet .command-sheet-row-label {
+  color: #d7dbe6;
+  font-weight: 500;
+}
+
+.command-palette--sheet .command-sheet-key {
+  min-width: 22px;
+  border-color: rgba(255, 255, 255, 0.13);
+  background: rgba(255, 255, 255, 0.07);
+  color: #b9c0d0;
+}
+
+@media (max-width: 680px) {
+  .command-palette--sheet {
+    width: 100%;
+    border-left: 0;
+  }
 }

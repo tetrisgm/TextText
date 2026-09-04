@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  hintPhrase,
   keyHintsFor,
   metaKeyHintsFor,
   type KeyHint,
@@ -64,10 +65,17 @@ export function WorkspaceKeyHints({
       className={`workspace-key-hints${metaHeld ? " is-modifier-layer" : ""}`}
       aria-hidden="true"
     >
+      {/* One sentence rather than a legend: the lead-in is said once, and
+          each hint after the first continues it. */}
+      <span className="workspace-key-hint-lead">
+        {metaHeld ? "Hold Command and hit" : "Hit"}
+      </span>
       {hints.map((hint) => (
         <span key={hint.id} className="workspace-key-hint">
           <kbd className="workspace-key-hint-keys">{hint.keys}</kbd>
-          <span className="workspace-key-hint-label">{hint.label}</span>
+          <span className="workspace-key-hint-label">
+            to {hintPhrase(hint.label)}
+          </span>
         </span>
       ))}
     </div>

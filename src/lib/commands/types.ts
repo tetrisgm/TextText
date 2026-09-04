@@ -140,6 +140,14 @@ export type AppCommand = {
   group: string;
   shortcut?: CommandShortcut | CommandShortcut[];
   showInShortcutSheet?: boolean;
+  /**
+   * Whether the palette lists this command. False for the numbered families
+   * (⌘1-⌘9 and 1-9): eighteen rows of "Open navigation target 4" bury the
+   * commands someone is actually hunting for, and nobody reaches the fourth
+   * sidebar target by searching for it. They stay on the keyboard and in the
+   * shortcut sheet, which is where a numbered range belongs.
+   */
+  showInPalette?: boolean;
   when: (ctx: CommandContext) => boolean;
   run: (ctx: CommandContext) => CommandRunResult;
 };

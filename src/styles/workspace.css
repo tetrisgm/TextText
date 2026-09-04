@@ -1517,17 +1517,26 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
    takes the pointer: it is something to glance at, not to click. */
 .workspace-key-hints {
   position: fixed;
-  bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%);
+  bottom: 0;
+  /* Spans the workspace rather than floating over it: a bar that is part of
+     the window teaches without asking to be noticed, where a centred pill
+     reads as a notification and gets dismissed by the eye. It clears the
+     sidebar and the assistant rail so it never covers either. */
+  left: 0;
+  right: var(--workspace-rail-inset, 0px);
   z-index: 90;
   display: flex;
   align-items: center;
+  /* Centred while it fits; anchored left when it does not. Plain `center`
+     clips BOTH ends when the sentence overflows, which ate the lead-in and
+     the last hint at once. `safe center` falls back to start alignment on its
+     own, and the plain declaration before it covers engines without it. */
+  justify-content: flex-start;
+  justify-content: safe center;
   gap: 14px;
-  max-width: min(760px, 82vw);
   overflow: hidden;
-  padding: 6px 12px;
-  border-radius: 999px;
+  padding: 8px 16px;
+  border-radius: 0;
   /* No stroke: a hairline ring around a floating pill drew the eye to the
      container rather than the keys (owner, 2026-09-04). Depth comes from the
      shadow, and the fill is near-black so it reads as its own surface rather
@@ -1535,7 +1544,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   border: 0;
   background: color-mix(in srgb, #000 92%, var(--bg));
   color: #f4f4f5;
-  box-shadow: 0 6px 22px -10px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 -6px 22px -18px rgba(0, 0, 0, 0.55);
   pointer-events: none;
   opacity: 0.55;
   transition: opacity 140ms ease;
@@ -1635,8 +1644,8 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .workspace-key-hints.is-modifier-layer {
   opacity: 1;
   box-shadow:
-    0 6px 22px -10px rgba(0, 0, 0, 0.6),
-    0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
+    0 -6px 22px -18px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
 /* A selected row is filled outright rather than tinted. Every piece of text
@@ -1911,4 +1920,42 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   .workspace-item-option:has(.workspace-item-option-tags)
   .workspace-item-option-main {
   min-height: 64px;
+}
+
+/* The lead-in of the hint sentence: said once, then each hint continues it. */
+.workspace-key-hint-lead {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.62);
+  white-space: nowrap;
+}
+
+/* Separators between the clauses, so the sentence has commas. */
+.workspace-key-hint + .workspace-key-hint::before {
+  content: "·";
+  margin-right: 10px;
+  color: rgba(255, 255, 255, 0.34);
+}
+
+.workspace-key-hint {
+  gap: 6px;
+}
+
+/* The bar starts where the content does, so the sidebar stays uncovered. */
+.post-editor-shell.has-sidebar .workspace-key-hints {
+  left: var(--workspace-sidebar-width, 280px);
+}
+
+.post-editor-shell.has-sidebar.is-sidebar-collapsed .workspace-key-hints {
+  left: 0;
+}
+
+/* The list's hover was the accent at a tenth, which with the refit accent
+   reads as a periwinkle band rather than as "the pointer is here". Neutral,
+   like the sidebar's, so the only blue in a list is a real selection. */
+.is-pointer-live
+  .workspace-recent
+  .workspace-item-option:hover
+  .workspace-item-option-main {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
 }

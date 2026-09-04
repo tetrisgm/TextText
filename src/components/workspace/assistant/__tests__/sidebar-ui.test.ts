@@ -5,6 +5,14 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/components/keyboard/CommandLayer", () => ({
   useEscapeLayer: () => {},
 }));
+// ShortcutTooltip reads the command table for its keys, and the table
+// imports the editor's server actions, which do not load under vitest.
+vi.mock("@/app/editor/actions", () => ({
+  createWorkspacePostAction: vi.fn(),
+  movePostToFolderAction: vi.fn(),
+  setEditablePostStatusAction: vi.fn(),
+  toggleEditablePostStarredAction: vi.fn(),
+}));
 vi.mock("@/app/editor/agent-skill-metadata-actions", () => ({
   getWorkspaceAgentSkillMetadataAction: vi.fn(async () => ({
     allowed: true,

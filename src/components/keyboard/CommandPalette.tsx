@@ -14,6 +14,7 @@ import {
   workspaceShortcutRows,
 } from "@/lib/commands/workspace";
 import { dedupePaletteEntries } from "@/lib/commands/palette";
+import { plainTextExcerpt } from "@/lib/content";
 import { workspaceMouseMoved } from "@/lib/workspace-hover";
 import type { AppCommand, CommandContext } from "@/lib/commands/types";
 import type {
@@ -44,7 +45,10 @@ function displayTitle(value: string): string {
 }
 
 function oneLine(value: string | undefined): string {
-  return (value ?? "").replace(/\s+/g, " ").trim();
+  // Through the same prose reduction the list rows use: a preview taken raw
+  // put "Open **Settings**" and stray backticks into the palette, because a
+  // document's first line is Markdown and the palette is not a renderer.
+  return plainTextExcerpt(value ?? "").replace(/\s+/g, " ").trim();
 }
 
 function compactPath(path: string): string {
@@ -249,7 +253,9 @@ export function CommandPalette({
     const commands = [
       ...availableWorkspaceCommands(ctx),
       ...dynamicWorkspaceCommands(ctx),
-    ].map((command) => commandResult(command, ctx));
+    ]
+      .filter((command) => command.showInPalette !== false)
+      .map((command) => commandResult(command, ctx));
 
     const commandRows = commands
       .map((result) => ({
@@ -383,7 +389,9 @@ export function CommandPalette({
 
   return (
     <div
-      className="command-palette-backdrop applecms"
+      className={`command-palette-backdrop applecms${
+        shortcutsOpen ? " is-sheet" : ""
+      }`}
       role="presentation"
       onWheel={(event) => {
         if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
@@ -494,7 +502,16 @@ export function CommandPalette({
                     }}
                   >
                     <span className="command-palette-copy">
-                      <span className="command-palette-label">{result.label}</span>
+                      {/* A command is a thing you type; a document is a thing
+                          you wrote. Mono for the first, prose for the second,
+                          so the two kinds of row never read as one list. */}
+                      <span
+                        className={`command-palette-label${
+                          result.id.startsWith("command:") ? " is-command" : ""
+                        }`}
+                      >
+                        {result.label}
+                      </span>
                       <span className="command-palette-detail">
                         {result.group}
                         {result.detail ? ` / ${result.detail}` : ""}
@@ -502,12 +519,32 @@ export function CommandPalette({
                     </span>
                     {result.shortcut && (
                       <span className="command-palette-shortcut">
-                        {result.shortcut}
+                        {result.shortcut.split(", ").map((chord, chordIndex) => (
+                          <kbd key={`${result.id}-${chordIndex}`}>{chord}</kbd>
+                        ))}
                       </span>
                     )}
                   </button>
                 ))
               )}
+            </div>
+            {/* What to type, for someone who opened this and went blank. Real
+                queries, not a legend: each one runs if you click it. */}
+            <div className="command-palette-suggestions">
+              <span>Try</span>
+              {PALETTE_SUGGESTIONS.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => {
+                    setQuery(suggestion);
+                    setSelected(0);
+                    inputRef.current?.focus();
+                  }}
+                >
+                  {suggestion}
+                </button>
+              ))}
             </div>
           </>
         )}
@@ -515,3 +552,6 @@ export function CommandPalette({
     </div>
   );
 }
+
+/** Openers, not a taxonomy: the shapes of query the palette answers well. */
+const PALETTE_SUGGESTIONS = ["/new", "notes", "starred", "/settings"] as const;

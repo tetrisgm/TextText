@@ -647,6 +647,7 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     id: `navigation.target.${index + 1}`,
     label: `Open navigation target ${index + 1}`,
     group: "Navigate",
+    showInPalette: false,
     shortcut: {
       key: String(index + 1),
       meta: true,
@@ -661,6 +662,7 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     id: `navigation.item.${index + 1}`,
     label: `Open visible item ${index + 1}`,
     group: "Navigate",
+    showInPalette: false,
     shortcut: { key: String(index + 1), label: String(index + 1), once: true },
     when: (ctx) => {
       const workspace = ctx.workspace;
@@ -869,17 +871,66 @@ type WorkspaceShortcutRow = {
   shortcut: string;
 };
 
+/**
+ * A numbered family, as one row.
+ *
+ * `navigation.target.1` through `.9` are nine commands but one idea, and
+ * listing them separately buried the rest of the Navigate group under
+ * eighteen near-identical rows. The range is what a person needs to read:
+ * "Open navigation target 1-9, Cmd+1 to Cmd+9". Anything not in a numbered
+ * family returns null and is listed on its own.
+ */
+function numberedFamily(
+  command: AppCommand,
+): { key: string; label: string; shortcut: string } | null {
+  const match = /^(.*)\.(\d+)$/.exec(command.id);
+  if (!match) return null;
+  const family = match[1] ?? "";
+  const ordinal = match[2] ?? "";
+  if (ordinal !== "1") return { key: family, label: "", shortcut: "" };
+  const last = WORKSPACE_COMMANDS.filter((entry) =>
+    entry.id.startsWith(`${family}.`),
+  ).at(-1);
+  const lastOrdinal = last ? /(\d+)$/.exec(last.id)?.[1] : null;
+  if (!lastOrdinal || lastOrdinal === "1") return null;
+  const first = commandShortcutLabel(command) ?? "";
+  const final = (last ? commandShortcutLabel(last) : "") ?? "";
+  return {
+    key: family,
+    label: command.label.replace(/1$/, `1-${lastOrdinal}`),
+    // One cap, not two: "⌘1" beside "⌘9" reads as two shortcuts.
+    shortcut: first && final ? `${first} to ${final}` : first,
+  };
+}
+
 export function workspaceShortcutRows(): WorkspaceShortcutRow[] {
   const rows: WorkspaceShortcutRow[] = [];
+  const seenLabels = new Map<string, number>();
   for (const command of WORKSPACE_COMMANDS) {
     if (command.showInShortcutSheet === false) continue;
     const shortcut = commandShortcutLabel(command);
     if (!shortcut) continue;
+    const family = numberedFamily(command);
+    // Only the first of a numbered family is listed, and it stands for the
+    // range; the rest are the same row said nine times.
+    if (family && !family.label) continue;
+    const label = family?.label ?? command.label;
+    // Two commands can be one idea reached two ways - Go back is Cmd+[ and
+    // Backspace - and the sheet should say that once, with both keys.
+    const existing = seenLabels.get(`${command.group}/${label}`);
+    if (existing !== undefined) {
+      const row = rows[existing];
+      if (!row.shortcut.split(", ").includes(shortcut)) {
+        row.shortcut = `${row.shortcut}, ${shortcut}`;
+      }
+      continue;
+    }
+    seenLabels.set(`${command.group}/${label}`, rows.length);
     rows.push({
       id: command.id,
-      label: command.label,
+      label,
       group: command.group,
-      shortcut,
+      shortcut: family?.shortcut ?? shortcut,
     });
   }
   return rows;

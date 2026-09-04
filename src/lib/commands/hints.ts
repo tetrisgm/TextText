@@ -11,6 +11,42 @@ import { WORKSPACE_COMMANDS } from "@/lib/commands/workspace";
 
 export type KeyHint = { id: string; label: string; keys: string };
 
+/**
+ * The label as it reads inside a sentence.
+ *
+ * The bar says "Hit Enter to open focused item" rather than listing "Enter -
+ * Open focused item", which is the difference between a legend and a person
+ * telling you what to do. Only an ordinary sentence-case word is lowered:
+ * a label that opens with an acronym or a product name ("AI settings",
+ * "TextText help") keeps its capital, because lowering it would be wrong
+ * rather than merely informal.
+ */
+export function hintPhrase(label: string): string {
+  const [first = ""] = label.split(" ");
+  const ordinary =
+    first.length > 1 && first[0] === first[0].toUpperCase() &&
+    first.slice(1) === first.slice(1).toLowerCase();
+  return ordinary ? label[0].toLowerCase() + label.slice(1) : label;
+}
+
+/**
+ * A control's teaching text, taken from the command it runs.
+ *
+ * Tooltips used to carry a hand-written label and a hand-written key string
+ * beside every button, which is two more places for a rebind to be forgotten.
+ * Naming the command instead means the tooltip, the hint bar and the shortcut
+ * sheet all read the same row, and a renamed or rebound command updates all
+ * three at once. Returns null for an id no command claims, so a stale id
+ * shows nothing rather than a lie.
+ */
+export function commandTip(
+  id: string,
+): { label: string; keys: string } | null {
+  const command = WORKSPACE_COMMANDS.find((entry) => entry.id === id);
+  if (!command) return null;
+  return { label: command.label, keys: shortcutText(command) };
+}
+
 /** Ordered by how often a person reaches for it, most first. */
 const LIST_HINTS = [
   "selection.open",
@@ -88,7 +124,7 @@ export function metaKeyHintsFor(ctx: CommandContext, limit = 7): KeyHint[] {
   return hints;
 }
 
-export function keyHintsFor(ctx: CommandContext, limit = 5): KeyHint[] {
+export function keyHintsFor(ctx: CommandContext, limit = 4): KeyHint[] {
   const workspace = ctx.workspace;
   if (!workspace) return [];
   const inDocument =

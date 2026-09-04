@@ -367,10 +367,11 @@ export function CommandLayer({ children }: { children: ReactNode }) {
       />
       {toast && (
         <div className="command-toast applecms" role="status">
-          <span>{toast.message}</span>
+          <span className="command-toast-message">{toast.message}</span>
           {toast.action && (
             <button
               type="button"
+              className="command-toast-action"
               onClick={() => {
                 toast.action?.run();
                 setToast(null);
@@ -379,6 +380,24 @@ export function CommandLayer({ children }: { children: ReactNode }) {
               {toast.action.label}
             </button>
           )}
+          {/* A report stays until it is read or replaced, so it needs a way
+              out that is not waiting six seconds. */}
+          <button
+            type="button"
+            className="command-toast-dismiss"
+            aria-label="Dismiss"
+            onClick={() => setToast(null)}
+          >
+            <svg viewBox="0 0 14 14" aria-hidden="true" focusable="false">
+              <path
+                d="M3.5 3.5l7 7M10.5 3.5l-7 7"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
         </div>
       )}
     </CommandLayerContext.Provider>

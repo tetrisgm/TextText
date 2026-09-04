@@ -669,7 +669,7 @@ export function WorkspaceHistoryControls({
   };
   return (
     <>
-      <ShortcutTooltip label="Back" placement="bottom">
+      <ShortcutTooltip command="navigation.back" placement="bottom">
         <button
           type="button"
           className="workspace-round-button"
@@ -679,7 +679,7 @@ export function WorkspaceHistoryControls({
           <HistoryChevron direction="back" />
         </button>
       </ShortcutTooltip>
-      <ShortcutTooltip label="Forward" placement="bottom">
+      <ShortcutTooltip command="navigation.forward" placement="bottom">
         <button
           type="button"
           className="workspace-round-button"
@@ -691,7 +691,7 @@ export function WorkspaceHistoryControls({
       </ShortcutTooltip>
       {onAdjacent && (
         <span className="workspace-step-pill">
-          <ShortcutTooltip label="Previous item" placement="bottom">
+          <ShortcutTooltip command="post.previous" placement="bottom">
             <button
               type="button"
               aria-label="Previous item"
@@ -700,7 +700,7 @@ export function WorkspaceHistoryControls({
               <StepChevron direction="up" />
             </button>
           </ShortcutTooltip>
-          <ShortcutTooltip label="Next item" placement="bottom">
+          <ShortcutTooltip command="post.next" placement="bottom">
             <button
               type="button"
               aria-label="Next item"
