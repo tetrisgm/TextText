@@ -3589,6 +3589,50 @@ real app felt. `scripts/bench-workspace-interaction.ts` reloads the page
 before every sample and takes four; that variance is a page load, not the
 interaction.
 
+## Verifying a visual change (2026-09-04)
+
+Three scripts, meant to be used together. All three need a production build
+served on :3131 with `AUTH_DEV_LOGIN=1` and the `visual-demo` fixture:
+
+```bash
+npm run build
+AUTH_DEV_LOGIN=1 npx next start -p 3131 &
+```
+
+- **`scripts/visual-surfaces.mts <dir>`** walks thirty surfaces in both
+  themes - home, a selection, all three view modes, an item read and edited,
+  the palette, the shortcut panel, starred, shared, trash, a collection,
+  search and a published page - and writes a screenshot of each. Run it
+  before a change and after.
+- **`scripts/visual-diff.mjs <before> <after> <tmp>`** compares two such
+  runs, per surface, with the bounding box of anything that moved. Two runs
+  of the SAME build are pixel-identical, so any difference at all is the
+  change you made. (It was not always: a bookmark thumbnail flickered until
+  the icon started being drawn first, which is worth remembering as the kind
+  of thing a regression suite tells you about your app.)
+- **`scripts/interaction-check.mts`** drives sixteen real flows and asserts
+  the outcome - open, back, j/k, shift-extend, Cmd+A, search, the palette,
+  the shortcut panel, the appearance cycle, tabs opened, closed and
+  reopened, the sidebar, the hint bar, a hover tooltip - and reports anything
+  thrown along the way. A benchmark says how long something took; this says
+  whether it worked. It is what found a 404 nobody had noticed.
+- **`node scripts/find-dead-css.mjs [--write]`** lists (or removes) every
+  rule whose selectors are built entirely from classes no source file
+  mentions. Verify a `--write` with the surface walk above. It parses with
+  postcss on purpose: a hand-rolled pass produced invalid CSS.
+
+**The reference screenshots are recoverable from the session transcript.**
+Owner-pasted images live base64 in `~/.claude/projects/<project>/<id>.jsonl`
+as `{type:"image",source:{data}}` inside `type:"user"` lines. Extracting them
+turns "match the design" into measurement: sample colours per pixel, find
+columns by scanning a row band for ink, find row rhythm by scanning a column.
+That is how every number in the visual pass was arrived at.
+
+**The workspace does not use tokens.css.** `.post-editor-shell` bridges the
+semantic tokens to the Apple system palette in apple.css (`--ac-label`,
+`--ac-bg`, ...). A change to `tokens.css` reaches the published site and
+nothing else. This cost a whole refit step before anyone noticed.
+
 ## Resolved episodes (one line each, dates in git log)
 
 - Apple consent screen "write app": appleid.apple.com caches its own copy;
