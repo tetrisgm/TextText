@@ -16,6 +16,10 @@ import {
   useSyncExternalStore,
 } from "react";
 import { flushSync } from "react-dom";
+import {
+  isSelectionRangeClick,
+  isSelectionToggleClick,
+} from "@/lib/workspace/selection-modifiers";
 import { WorkspaceTabBar } from "@/components/workspace/WorkspaceTabBar";
 import {
   closeTab,
@@ -2798,33 +2802,18 @@ function LocalWorkspaceShell({
     return ids.length > 0 ? ids : visiblePosts.map((post) => post.id);
   }, [visiblePosts]);
 
-  // On macOS Ctrl+click is the secondary-click alias, so now that it toggles
-  // selection it would also raise a context menu on every pick. Suppress the
-  // menu for THAT gesture on rows only; a real right click still gets it.
-  useEffect(() => {
-    const onContextMenu = (event: MouseEvent) => {
-      if (!event.ctrlKey || event.button !== 0) return;
-      const target = event.target as HTMLElement | null;
-      if (!target?.closest?.("[data-workspace-post-id]")) return;
-      event.preventDefault();
-    };
-    window.addEventListener("contextmenu", onContextMenu, true);
-    return () =>
-      window.removeEventListener("contextmenu", onContextMenu, true);
-  }, []);
-
   const handleItemClick = useCallback(
     (postId: string, event: ReactMouseEvent<HTMLElement>): boolean => {
       const selection = selectionFromClick({
         anchorId: getWorkspaceSelection().anchorId,
         orderedIds: visiblePostIdsInDocumentOrder(),
-        range: event.shiftKey,
+        range: isSelectionRangeClick(event),
         selectedIds: selectedPostIds,
         targetId: postId,
-        // Ctrl toggles, because Cmd now opens a new tab as it does on a
-        // link anywhere else (owner, 2026-09-03). Shift still extends a
-        // range, with or without Ctrl.
-        toggle: event.ctrlKey,
+        // Option toggles and Shift extends; Cmd opens a new tab. See
+        // lib/workspace/selection-modifiers for why it is Option and not
+        // Ctrl on a Mac.
+        toggle: isSelectionToggleClick(event),
       });
       applyPostSelection(selection);
       return selection.open;
@@ -4426,8 +4415,10 @@ function LocalWorkspaceShell({
       }
       const startX = event.clientX;
       const startY = event.clientY;
-      // Same modifiers as a click: Ctrl or Shift adds to what is selected.
-      const additive = event.ctrlKey || event.shiftKey;
+      // Same modifiers as a click: the toggle key or Shift adds to what is
+      // already selected instead of starting over.
+      const additive =
+        isSelectionToggleClick(event) || isSelectionRangeClick(event);
       const baseIds = additive ? new Set(selectedPostIds) : new Set<string>();
       let dragging = false;
       bodySelectionActiveRef.current = false;

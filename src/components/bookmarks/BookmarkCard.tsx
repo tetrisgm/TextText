@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import Link from "next/link";
+import { isNewTabClick } from "@/lib/workspace/selection-modifiers";
 import { useRouter } from "next/navigation";
 import {
   WorkspaceItemActions,
@@ -305,18 +306,10 @@ export function BookmarkCard({
   );
   const openItem = (event: MouseEvent<HTMLAnchorElement>) => {
     // Cmd click opens a background tab, the way it opens a link anywhere
-    // else. Ctrl is what toggles selection here, so the two no longer
-    // collide. Alt does the same, and stops WebKit treating it as a
-    // download. BEFORE the selection handler: opening a tab should not also
-    // move what is selected.
-    if (
-      post.id &&
-      onOpenPostInNewTab &&
-      event.button === 0 &&
-      (event.metaKey || event.altKey) &&
-      !event.ctrlKey &&
-      !event.shiftKey
-    ) {
+    // else. Option is what toggles selection, so the two never collide.
+    // BEFORE the selection handler: opening a tab should not also move what
+    // is selected.
+    if (post.id && onOpenPostInNewTab && isNewTabClick(event)) {
       event.preventDefault();
       onOpenPostInNewTab(post.id);
       return;

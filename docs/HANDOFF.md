@@ -3319,19 +3319,26 @@ collab_state/collab_updates rows, then start the server.
   cycle, Cmd+Enter opens the highlighted row as a background tab, tabs
   persist per workspace and can be dragged to reorder, and closing the
   open one lands on its neighbour.
-- **Cmd-click opens a background tab; CTRL-click toggles selection**
-  (owner, 2026-09-03, after being shown the conflict). Two standards
-  collide on these rows because a row is a link AND a list item: browsers
-  say Cmd-click opens a tab, the macOS HIG says Cmd-click toggles a list
-  selection. The owner chose the browser reading and moved toggling to
-  Ctrl; Shift still extends a range, with or without Ctrl. Alt-click and
-  middle click also open a tab, and middle click closes one.
-- Ctrl-click is macOS's secondary-click alias, so making it the selection
-  modifier means it ALSO raises a context menu on every pick. A capture
-  listener suppresses `contextmenu` when `ctrlKey && button === 0` on a
-  row; a real right click (button 2) still gets its menu.
+- **Cmd-click opens a background tab; OPTION-click toggles selection**
+  (owner, 2026-09-03). Two standards collide on these rows because a row
+  is a link AND a list item: browsers say Cmd-click opens a tab, the
+  macOS HIG says Cmd-click toggles a list selection. The owner chose the
+  browser reading, and toggling landed on Option after Ctrl was tried and
+  rejected - Ctrl is macOS's secondary-click alias, so it raised a
+  context menu on every pick and needed a suppression hack to work at
+  all. Option has no such baggage and the hack is gone.
+  `lib/workspace/selection-modifiers.ts` holds the rules and is platform
+  aware: Ctrl still toggles off Apple platforms, where it is the norm and
+  carries no menu. Shift extends a range, with or without Option. Middle
+  click opens a row and closes a tab.
 - The new-tab branch must run BEFORE the selection handler, or Cmd-click
   opens a tab and resets the selection to that one row on the way past.
+- **`deploy:web` and `promote:local` rebuild `.next` WITHOUT dev sign-in.**
+  Running either in the background while a local probe server is up
+  silently breaks every later probe: sign-in stops working, so the
+  workspace routes 307 to the production tenant host and Playwright
+  reports "a server with the specified hostname could not be found".
+  Rebuild with `npm run build` and restart before probing again.
 - **Preview tabs promote on a real EDIT, not on the view level.** Notes
   edit in place, so `view.level === "edit"` is true the moment one opens
   and promoting on it made every note permanent immediately. Promotion
