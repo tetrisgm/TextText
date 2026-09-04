@@ -122,15 +122,6 @@
   padding: 56px 20px 96px;
 }
 
-.connect-topbar {
-  max-width: 1080px;
-  margin: 0 auto;
-  padding: 16px 12px 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .connect-title {
   font: 600 28px/1.2 var(--ac-font-text);
   letter-spacing: -0.02em;
@@ -312,33 +303,6 @@
   gap: 8px;
 }
 
-.connect-capability-strip {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 18px;
-  margin-top: 14px;
-  color: var(--ac-label-2);
-  font: 500 var(--ac-fs-footnote)/var(--ac-lh-footnote) var(--ac-font-text);
-  letter-spacing: var(--ac-tr-footnote);
-}
-
-.connect-capability-strip span {
-  position: relative;
-}
-
-.connect-capability-strip span + span::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: -10px;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: var(--ac-label-3);
-  transform: translateY(-50%);
-}
-
 .connect-workflow-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -518,13 +482,6 @@
 .connect-confirm-label {
   font: 400 var(--ac-fs-footnote)/var(--ac-lh-footnote) var(--ac-font-text);
   color: var(--ac-label-2);
-}
-
-.connect-empty {
-  font: 400 var(--ac-fs-subheadline)/1.5 var(--ac-font-text);
-  letter-spacing: var(--ac-tr-subheadline);
-  color: var(--ac-label-2);
-  margin: 0;
 }
 
 .connect-error {
@@ -843,22 +800,6 @@
 
 /* --- example prompts --- */
 
-.connect-prompts {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.connect-prompts li {
-  font: 400 var(--ac-fs-subheadline)/1.5 var(--ac-font-text);
-  letter-spacing: var(--ac-tr-subheadline);
-  color: var(--ac-label);
-  padding: 8px 0 8px 14px;
-  border-left: 2px solid var(--ac-fill-1);
-  margin: 8px 0;
-  font-style: italic;
-}
-
 /* --- /docs/ai prose --- */
 
 /* ---------- documentation prose ----------
@@ -919,36 +860,6 @@
   font: 400 var(--ac-fs-callout)/1.55 var(--ac-font-text);
   letter-spacing: var(--ac-tr-callout);
   margin: 4px 0;
-}
-
-.connect-table-wrap {
-  overflow-x: auto;
-  margin: 0 0 12px;
-}
-
-.connect-table {
-  width: 100%;
-  border-collapse: collapse;
-  font: 400 var(--ac-fs-subheadline)/1.45 var(--ac-font-text);
-  letter-spacing: var(--ac-tr-subheadline);
-}
-
-.connect-table th {
-  text-align: left;
-  font-weight: 600;
-  padding: 8px 12px 8px 0;
-  border-bottom: 1px solid var(--ac-separator);
-  white-space: nowrap;
-}
-
-.connect-table td {
-  vertical-align: top;
-  padding: 8px 12px 8px 0;
-  border-bottom: 1px solid var(--ac-hairline);
-}
-
-.connect-table td:first-child {
-  white-space: nowrap;
 }
 
 @media (max-width: 480px) {
