@@ -3238,7 +3238,9 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
 .post-editor-content .tt-document {
   padding-top: 0;
-  color: #29292c;
+  /* The theme's ink, not a literal: the edit title is a textarea that
+     inherits this, and #29292c here made it dark-on-dark in dark mode. */
+  color: var(--ink, #29292c);
 }
 
 .post-editor-content .tt-document .tt-masthead {
@@ -5497,63 +5499,284 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   color: var(--workspace-action-bar-muted);
 }
 
-/* The editor owns its toolbar markup, so the existing row rises into the
-   reserved rail and gives that height back before the document begins. */
-.post-editor-shell .post-top-action-bar.is-edit {
-  position: sticky !important;
-  top: 0 !important;
-  right: auto;
-  left: auto;
-  z-index: 211;
-  box-sizing: border-box;
-  width: 100%;
-  max-width: none;
-  height: var(--workspace-action-bar-height, 52px);
-  min-height: var(--workspace-action-bar-height, 52px);
-  margin-top: calc(-1 * var(--workspace-action-bar-height, 52px));
-  padding: 0;
-  background: transparent;
+/* Editing and reading now occupy the same right slot. The portal's source is
+   inside the editor, but its rendered box is only this compact control group. */
+.post-editor-shell .tt-unified-editor {
+  --workspace-pane-ground: #fefefe;
 }
 
-.post-editor-shell .post-top-action-bar.is-edit .post-action-toolbar {
-  flex-wrap: nowrap;
-  align-content: center;
-  width: 100%;
+[data-theme="dark"] .post-editor-shell .tt-unified-editor {
+  --workspace-pane-ground: #2b2c30;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .post-editor-shell .tt-unified-editor {
+    --workspace-pane-ground: #2b2c30;
+  }
+}
+
+.workspace-action-bar-slot.is-right > .post-top-action-bar.is-edit {
+  position: static !important;
+  inset: auto;
+  z-index: auto;
+  width: auto;
+  max-width: none;
   height: 100%;
   min-height: 0;
-  gap: 6px;
-  padding: 8px 12px 8px
-    calc(var(--workspace-action-bar-history-width, 96px) + 8px);
-  overflow-x: auto;
-  overflow-y: visible;
+  margin: 0;
+  padding: 0;
+  background: #fefefe;
+}
+
+[data-theme="dark"]
+  .workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-edit {
+  background: #2b2c30;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"])
+    .workspace-action-bar-slot.is-right
+    > .post-top-action-bar.is-edit {
+    background: #2b2c30;
+  }
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-edit
+  .post-action-toolbar {
+  flex-wrap: nowrap;
+  align-content: center;
+  width: auto;
+  height: 100%;
+  min-height: 0;
+  gap: 8px;
+  padding: 0;
+  overflow: visible;
   border: 0;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  scrollbar-width: none;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
 
-.post-editor-shell
-  .post-top-action-bar.is-edit
-  .post-action-toolbar::-webkit-scrollbar {
+.workspace-action-bar-slot.is-right:has(> .post-top-action-bar.is-edit) {
+  overflow: visible;
+}
+
+.workspace-action-bar-slot.is-right:has(> .post-top-action-bar.is-edit)
+  > .post-top-action-bar.is-read {
   display: none;
 }
 
-.post-editor-shell .post-top-action-bar.is-edit .post-action-replace {
-  order: 10;
-  grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) auto;
-  flex: 1 1 360px;
-  width: auto;
-  min-width: 340px;
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-edit
+  .post-action-toolbar
+  :is(.ac-btn, .tt-editor-more > summary) {
+  min-height: 30px;
+  padding-inline: 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--workspace-action-bar-muted);
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-edit
+  .post-action-toolbar
+  :is(.ac-btn, .tt-editor-more > summary):hover {
+  background: var(--workspace-action-bar-hover);
+  color: var(--workspace-action-bar-ink);
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-edit
+  .tt-save-state {
+  position: static;
+  z-index: auto;
+  min-height: 0;
+  margin-left: 2px;
+  padding: 0 0 0 10px;
+  border: 0;
+  border-left: 1px solid var(--workspace-action-bar-border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--workspace-action-bar-muted);
+  font-size: 11px;
+  line-height: 30px;
+  white-space: nowrap;
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-edit
+  .tt-save-state.is-error {
+  color: #9f2d20;
+}
+
+[data-theme="dark"]
+  .workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-edit
+  .tt-save-state.is-error {
+  color: #ff9b91;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"])
+    .workspace-action-bar-slot.is-right
+    > .post-top-action-bar.is-edit
+    .tt-save-state.is-error {
+    color: #ff9b91;
+  }
+}
+
+/* Find is a second flow row only while the command is active. Its left edge
+   follows the document's 34px inset and its 720px measure. */
+.post-editor-shell .tt-unified-editor > .post-action-find-row {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 34px 7px;
+  border-bottom: 1px solid var(--workspace-action-bar-border);
+  background: var(--workspace-pane-ground);
 }
 
 .post-editor-shell
-  .post-top-action-bar.is-edit
-  ~ .tt-document
+  .tt-unified-editor
+  > .post-action-find-row
+  .post-action-replace {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) auto;
+  gap: 6px;
+  width: min(720px, 100%);
+  margin: 0;
+}
+
+.post-editor-shell
+  .tt-unified-editor
+  > .post-action-find-row
+  .post-action-replace-input {
+  box-sizing: border-box;
+  width: auto;
+  min-width: 0;
+  height: 30px;
+  padding: 5px 9px;
+  border: 1px solid var(--workspace-action-bar-border);
+  border-radius: 5px;
+  outline: 0;
+  background: transparent;
+  color: var(--workspace-action-bar-ink);
+  font: 400 13px/18px var(--ac-font-text, system-ui, sans-serif);
+}
+
+.post-editor-shell
+  .tt-unified-editor
+  > .post-action-find-row
+  .post-action-replace-input::placeholder {
+  color: var(--workspace-action-bar-muted);
+  opacity: 1;
+}
+
+.post-editor-shell
+  .tt-unified-editor
+  > .post-action-find-row
+  .post-action-replace-input:focus {
+  border-color: var(--workspace-action-bar-accent);
+  box-shadow: 0 0 0 1px var(--workspace-action-bar-accent);
+}
+
+.post-editor-shell
+  .tt-unified-editor
+  > .post-action-find-row
+  .post-action-replace-run {
+  min-height: 30px;
+  padding-inline: 10px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--workspace-action-bar-hover);
+  color: var(--workspace-action-bar-ink);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.post-editor-shell
+  .tt-unified-editor
+  > .post-action-find-row
+  .post-action-replace-run:disabled {
+  color: var(--workspace-action-bar-muted);
+  opacity: 1;
+}
+
+.post-editor-shell
+.tt-unified-editor
+  .tt-document-editor
   .tt-masthead {
-  padding-top: 12px;
+  padding-top: 24px;
+}
+
+.post-editor-shell .tt-unified-editor.tt-baseline-failure {
+  box-sizing: border-box;
+  display: grid;
+  align-content: start;
+  width: 100%;
+  min-height: calc(100vh - var(--workspace-action-bar-height, 52px));
+  padding: 34px;
+  background: var(--workspace-pane-ground);
+  color: var(--workspace-action-bar-ink);
+}
+
+.post-editor-shell .tt-unified-editor .tt-baseline-failure-copy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  width: min(720px, 100%);
+}
+
+.post-editor-shell .tt-unified-editor .tt-baseline-failure-copy h1 {
+  margin: 0;
+  font: 400 20px/28px var(--ac-font-text, system-ui, sans-serif);
+}
+
+.post-editor-shell .tt-unified-editor .tt-baseline-failure-copy .ac-btn {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 760px) {
+  .post-editor-shell .tt-unified-editor > .post-action-find-row {
+    padding-right: 20px;
+    padding-left: 20px;
+  }
+
+  .post-editor-shell
+    .tt-unified-editor
+    > .post-action-find-row
+    .post-action-replace {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .post-editor-shell
+    .tt-unified-editor
+    > .post-action-find-row
+    .post-action-replace-input:nth-child(2) {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .post-editor-shell
+    .tt-unified-editor
+    > .post-action-find-row
+    .post-action-replace-run {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .post-editor-shell .tt-unified-editor.tt-baseline-failure {
+    padding: 24px 20px;
+  }
 }
 
 .workspace-action-bar-host + .local-workspace-surface .post-folder-page {
@@ -5586,5 +5809,279 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
   .workspace-action-bar-host + .local-workspace-surface .post-folder-page {
     padding-top: 20px;
+  }
+}
+
+/* Open-item finish: keep read chrome icon-led and tune the document rhythm
+   to the Superhuman references without changing the published renderer. */
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-read
+  .post-action-toolbar {
+  gap: 14px;
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-read
+  .workspace-find-controls {
+  flex: 0 0 auto;
+  width: auto;
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-read
+  .workspace-action-search {
+  flex: 0 0 64px;
+  width: 64px;
+  min-width: 64px;
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-read
+  .workspace-action-search:is(:focus-within, :has(input:not(:placeholder-shown))) {
+  flex-basis: 240px;
+  width: 240px;
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-read
+  .workspace-search-field {
+  grid-template-columns: 16px minmax(0, 0) auto;
+  gap: 6px;
+  min-height: 32px;
+  height: 32px;
+  padding-inline: 8px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: transparent;
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-read
+  .workspace-action-search:is(:focus-within, :has(input:not(:placeholder-shown)))
+  .workspace-search-field {
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  background: var(--workspace-action-bar-hover);
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-read
+  .workspace-search-field input {
+  opacity: 0;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-read
+  .workspace-action-search:is(:focus-within, :has(input:not(:placeholder-shown)))
+  .workspace-search-field input {
+  opacity: 1;
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-read
+  .workspace-search-field kbd {
+  min-width: 20px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-read
+  .post-action-owner-group {
+  gap: 14px;
+  margin-inline-start: 0;
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-read
+  :is(.post-action-share, .post-owner-edit) {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--workspace-action-bar-muted);
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-read
+  .post-owner-edit.ac-btn-filled {
+  background: transparent;
+  color: var(--workspace-action-bar-ink);
+}
+
+.is-pointer-live
+  .workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-read
+  :is(.post-action-share, .post-owner-edit):hover {
+  background: var(--workspace-action-bar-hover);
+  color: var(--workspace-action-bar-ink);
+  filter: none;
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-read
+  :is(.post-responsive-action-label, .post-owner-edit .shortcut-label,
+    .post-presence-agent-name) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-read
+  .post-presence-stack {
+  height: 32px;
+  padding: 0;
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-read
+  .post-presence-avatar {
+  width: 22px;
+  height: 22px;
+  border: 1px solid currentColor;
+  background: transparent !important;
+  box-shadow: none;
+  color: var(--workspace-action-bar-muted);
+  font-size: 9px;
+  font-weight: 500;
+  text-shadow: none;
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-read
+  .post-presence-agent {
+  margin-left: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--workspace-action-bar-muted);
+}
+
+.post-editor-shell
+  .tt-document
+  .tt-masthead
+  :is(.tt-title, .tt-text-title, h1) {
+  margin-bottom: 2px;
+  color: #2d2d30;
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 32px;
+  letter-spacing: -0.01em;
+}
+
+.post-editor-shell
+  .tt-document
+  .tt-masthead
+  :is(.tt-byline, .tt-metadata) {
+  margin-bottom: 8px;
+  color: #73747a;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+  letter-spacing: 0;
+}
+
+.post-editor-shell .tt-document .tt-byline .tt-byline-avatar {
+  width: 22px;
+  height: 22px;
+  border: 1px solid #c5c6cb;
+  background: transparent;
+  color: #73747a;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.post-editor-shell .tt-document .tt-prose {
+  color: #38383b;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.85;
+}
+
+.post-editor-shell .tt-document .tt-prose p {
+  margin-bottom: 24px;
+}
+
+[data-theme="dark"]
+  .post-editor-shell
+  .tt-document
+  .tt-masthead
+  :is(.tt-title, .tt-text-title, h1) {
+  color: #f2f2f4;
+}
+
+[data-theme="dark"]
+  .post-editor-shell
+  .tt-document
+  .tt-masthead
+  :is(.tt-byline, .tt-metadata) {
+  color: #a8a8ac;
+}
+
+[data-theme="dark"] .post-editor-shell .tt-document .tt-byline .tt-byline-avatar {
+  border-color: #74757c;
+  color: #a8a8ac;
+}
+
+[data-theme="dark"] .post-editor-shell .tt-document .tt-prose {
+  color: #e5e5e8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"])
+    .post-editor-shell
+    .tt-document
+    .tt-masthead
+    :is(.tt-title, .tt-text-title, h1) {
+    color: #f2f2f4;
+  }
+
+  :root:not([data-theme="light"])
+    .post-editor-shell
+    .tt-document
+    .tt-masthead
+    :is(.tt-byline, .tt-metadata) {
+    color: #a8a8ac;
+  }
+
+  :root:not([data-theme="light"])
+    .post-editor-shell
+    .tt-document
+    .tt-byline
+    .tt-byline-avatar {
+    border-color: #74757c;
+    color: #a8a8ac;
+  }
+
+  :root:not([data-theme="light"])
+    .post-editor-shell
+    .tt-document
+    .tt-prose {
+    color: #e5e5e8;
+  }
+}
+
+@media (max-width: 760px) {
+  .workspace-action-bar-slot.is-right
+    > .post-top-action-bar.is-read
+    .workspace-action-search.is-compact {
+    flex-basis: 32px;
+    width: 32px;
+    min-width: 32px;
   }
 }

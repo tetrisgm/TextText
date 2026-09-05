@@ -37,6 +37,7 @@ import { formatArticleDate } from "@/lib/content";
 import type { Blog, Post } from "@/lib/content";
 import { CollabProvider, type PresencePeer } from "@/lib/collab/provider";
 import { CollaboratorMark } from "@/components/collab/CollaboratorMark";
+import { WorkspaceActionBarPortal } from "@/components/workspace/WorkspaceActionBarPortal";
 import type { AssistantAgentIdentity } from "@/components/workspace/assistant/agent-identity";
 import {
   registerOpenWorkspaceItemDraft,
@@ -588,6 +589,7 @@ export function UnifiedDocumentEditor({
   const updateTextRef = useRef<
     ((field: EditableField, value: string) => void) | null
   >(null);
+  const [findActive, setFindActive] = useState(false);
   const [findValue, setFindValue] = useState("");
   const [replaceValue, setReplaceValue] = useState("");
   const findFieldRef = useRef<HTMLInputElement>(null);
@@ -598,8 +600,11 @@ export function UnifiedDocumentEditor({
   }, [findValue, replaceValue]);
   useEffect(() => {
     const focus = () => {
-      findFieldRef.current?.focus();
-      findFieldRef.current?.select();
+      setFindActive(true);
+      window.requestAnimationFrame(() => {
+        findFieldRef.current?.focus();
+        findFieldRef.current?.select();
+      });
     };
     window.addEventListener(FOCUS_REPLACE_EVENT, focus);
     return () => window.removeEventListener(FOCUS_REPLACE_EVENT, focus);
@@ -654,6 +659,8 @@ export function UnifiedDocumentEditor({
   const [ready, setReady] = useState(!networkEnabled);
   const [saveState, setSaveState] = useState<SaveState>("local");
   const [error, setError] = useState<string | null>(null);
+  const [baselineFailure, setBaselineFailure] = useState<string | null>(null);
+  const [providerAttempt, setProviderAttempt] = useState(0);
   const [choosingTemplate, setChoosingTemplate] = useState(false);
   // "Save as look" is how a look gets made now. It takes what this document
   // already renders as and keeps it under a name; it never edits the document.
@@ -843,6 +850,9 @@ export function UnifiedDocumentEditor({
         if (!cancelled) {
           setError(message);
           setSaveState(navigator.onLine ? "error" : "offline");
+          if (!hasDocumentSnapshot(doc)) {
+            setBaselineFailure(message);
+          }
         }
       },
       expectedBaselineRevision: post.revision ?? 0,
@@ -963,6 +973,7 @@ export function UnifiedDocumentEditor({
     networkEnabled,
     post.revision,
     publishDocument,
+    providerAttempt,
     scheduleMaterialization,
   ]);
 
@@ -1212,8 +1223,40 @@ export function UnifiedDocumentEditor({
       (field) => field.visibility !== "hidden" && !bound.has(field.id),
     );
   }, [activeTemplate]);
+  const retryBaseline = useCallback(() => {
+    setBaselineFailure(null);
+    setError(null);
+    setSaveState("local");
+    setProviderAttempt((attempt) => attempt + 1);
+  }, []);
+  const saveStateLabel =
+    saveState === "local"
+      ? networkEnabled
+        ? "Saved"
+        : "Saved on this device"
+      : saveState === "offline"
+        ? "Saved on this device"
+        : saveState === "error"
+          ? error ?? "Could not sync"
+          : saveState === "saving"
+            ? "Saving"
+            : saveState === "saved"
+              ? "Saved"
+              : "";
 
   if (!active) return null;
+  if (baselineFailure && !hasDocumentSnapshot(doc)) {
+    return (
+      <section className="tt-unified-editor tt-baseline-failure" role="alert">
+        <div className="tt-baseline-failure-copy">
+          <h1>This document could not be loaded for editing</h1>
+          <button type="button" className="ac-btn ac-btn-gray" onClick={retryBaseline}>
+            Retry
+          </button>
+        </div>
+      </section>
+    );
+  }
   return (
     <section className="tt-unified-editor" onKeyDown={handleKeyboard}>
       {choosingTemplate && availableTemplates && availableTemplates.length > 0 && (
@@ -1233,66 +1276,10 @@ export function UnifiedDocumentEditor({
           }}
         />
       )}
-      <div className="post-top-action-bar applecms is-edit" aria-label="Document controls">
-        <div className="post-action-toolbar ac-chrome">
-          {leadingControls}
-          {/* Find and replace, in the bar where the writing happens. The
-              reader has its own find field on a different view; editing had
-              none. Replace lands as ONE ordinary edit through updateText,
-              which is why Cmd+Z takes the whole thing back in a single
-              step. */}
-          <div className="post-action-replace">
-            <input
-              ref={findFieldRef}
-              className="post-action-replace-input"
-              type="text"
-              aria-label="Find in document"
-              placeholder="Find"
-              value={findValue}
-              onChange={(event) => setFindValue(event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  replaceFieldRef.current?.focus();
-                  return;
-                }
-                if (event.key !== "Escape") return;
-                event.preventDefault();
-                event.stopPropagation();
-                if (findValue) setFindValue("");
-                else event.currentTarget.blur();
-              }}
-            />
-            <input
-              ref={replaceFieldRef}
-              className="post-action-replace-input"
-              type="text"
-              aria-label="Replace with"
-              placeholder="Replace with"
-              value={replaceValue}
-              onChange={(event) => setReplaceValue(event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  runReplaceAll();
-                  return;
-                }
-                if (event.key !== "Escape") return;
-                event.preventDefault();
-                event.stopPropagation();
-                if (replaceValue) setReplaceValue("");
-                else event.currentTarget.blur();
-              }}
-            />
-            <button
-              type="button"
-              className="ac-btn ac-btn-gray post-action-replace-run"
-              disabled={!findValue}
-              onClick={runReplaceAll}
-            >
-              Replace all
-            </button>
-          </div>
+      <WorkspaceActionBarPortal>
+        <div className="post-top-action-bar applecms is-edit" aria-label="Document controls">
+          <div className="post-action-toolbar ac-chrome">
+            {leadingControls}
         <Presence peers={peers} activeAgent={activeAgent} onOpenAgent={onOpenAgent} />
           {(onChooseTemplate || (availableTemplates && availableTemplates.length > 0)) && (
             <button
@@ -1400,8 +1387,70 @@ export function UnifiedDocumentEditor({
           <button type="button" className="ac-btn ac-btn-gray" onClick={() => void stopEditing()}>
             Stop editing
           </button>
+            <div className={`tt-save-state is-${saveState}`} role="status" aria-live="polite">
+              {saveStateLabel}
+            </div>
+          </div>
         </div>
-      </div>
+      </WorkspaceActionBarPortal>
+      {findActive && (
+        <div className="post-action-find-row" role="search" aria-label="Find and replace">
+          {/* Replace lands as one ordinary edit through updateText, which is
+              why Cmd+Z takes the whole change back in a single step. */}
+          <div className="post-action-replace">
+            <input
+              ref={findFieldRef}
+              className="post-action-replace-input"
+              type="text"
+              aria-label="Find in document"
+              placeholder="Find"
+              value={findValue}
+              onChange={(event) => setFindValue(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  replaceFieldRef.current?.focus();
+                  return;
+                }
+                if (event.key !== "Escape") return;
+                event.preventDefault();
+                event.stopPropagation();
+                if (findValue) setFindValue("");
+                else setFindActive(false);
+              }}
+            />
+            <input
+              ref={replaceFieldRef}
+              className="post-action-replace-input"
+              type="text"
+              aria-label="Replace with"
+              placeholder="Replace with"
+              value={replaceValue}
+              onChange={(event) => setReplaceValue(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  runReplaceAll();
+                  return;
+                }
+                if (event.key !== "Escape") return;
+                event.preventDefault();
+                event.stopPropagation();
+                if (replaceValue) setReplaceValue("");
+                else setFindActive(false);
+              }}
+            />
+            <button
+              type="button"
+              className="ac-btn ac-btn-gray post-action-replace-run"
+              disabled={!findValue}
+              onClick={runReplaceAll}
+            >
+              Replace all
+            </button>
+          </div>
+        </div>
+      )}
       {/* No byline while writing: an author and a reading time are reader
           chrome, and showing them here turns the page into a preview of
           itself instead of the thing being written.
@@ -1446,21 +1495,6 @@ export function UnifiedDocumentEditor({
           </div>
         </details>
       )}
-      <div className={`tt-save-state is-${saveState}`} role="status" aria-live="polite">
-        {saveState === "local"
-          ? networkEnabled
-            ? "Saved"
-            : "Saved on this device"
-          : saveState === "offline"
-          ? "Saved on this device"
-          : saveState === "error"
-            ? error ?? "Could not sync"
-            : saveState === "saving"
-              ? "Saving"
-              : saveState === "saved"
-                ? "Saved"
-                : ""}
-      </div>
       <style>{`
         .tt-unified-editor{min-height:100%;background:var(--paper,#fff)}
         .tt-document-editor{min-height:100vh;padding-bottom:3rem}

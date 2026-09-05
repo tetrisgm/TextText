@@ -10,7 +10,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { ReactNode, RefObject } from "react";
-import { createPortal } from "react-dom";
+import { WorkspaceActionBarPortal } from "@/components/workspace/WorkspaceActionBarPortal";
 import { useRouter } from "next/navigation";
 import {
   recaptureBookmarkAction,
@@ -87,29 +87,6 @@ type EditProps = CommonProps & {
 type Props = ReadProps | EditProps;
 export type BookmarkContentMode = "readable" | "capture";
 
-function WorkspaceActionBarPortal({ children }: { children: ReactNode }) {
-  const [slot, setSlot] = useState<HTMLElement | null>(null);
-
-  useLayoutEffect(() => {
-    const findSlot = () => {
-      const nextSlot = document.querySelector<HTMLElement>(
-        ".post-editor-content > .workspace-action-bar-host .workspace-action-bar-slot.is-right",
-      );
-      if (!nextSlot) return false;
-      setSlot(nextSlot);
-      return true;
-    };
-
-    if (findSlot()) return;
-    const observer = new MutationObserver(() => {
-      if (findSlot()) observer.disconnect();
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, []);
-
-  return slot ? createPortal(children, slot) : children;
-}
 
 type ReadState = {
   sourceVersion: string;

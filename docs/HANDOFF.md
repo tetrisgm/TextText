@@ -3688,6 +3688,23 @@ themes against ref-10 light and ref-08 dark):
 - Rail: `#ffffff` light ground, dark ground aligned to the document ground,
   secondary text raised from 2.76:1 to 5.41:1, composer as a rounded input.
 
+Second pass on the same day (build 1045): the editing pane now portals its
+toolbar into the bar's right slot through `WorkspaceActionBarPortal`, which
+moved to its own module (`src/components/workspace/WorkspaceActionBarPortal.tsx`)
+because importing it from `PostActionBar` pulled next-auth's `next/server`
+into the editor's import graph and took `pre-ready-edits.test.ts` down at
+load: 1905 tests read as 1901 with no failure line, the four cases simply
+vanished. A file that fails to import disappears from the count; check
+`Test Files` as well as `Tests`. The editing-pane diff keeps the offline
+`applyDocumentBaseline` fallback and adds a visible failure state only from
+`onError`; retry re-runs the provider effect via a `providerAttempt` counter.
+The edit title inherited `#29292c` from `.post-editor-content .tt-document`,
+a light ink hard-coded by an earlier pass, so in dark it was dark-on-dark; it
+is now `var(--ink)`. A second literal at ~line 3325 (prose and edit-surface
+ink) is covered by a later dark override and was left alone; it is a latent
+hazard for any selector that override misses. The polish pass turned the
+read bar's controls into monochrome glyphs, lightened the title and byline.
+
 Two things found by the interaction suite, not by looking:
 - Two bars alive after cmd+W / shift+cmd+T shared one `justify-content:
   flex-end` slot and overflowed LEFT over the arrows. More precisely, a note
