@@ -3665,6 +3665,62 @@ semantic tokens to the Apple system palette in apple.css (`--ac-label`,
 `--ac-bg`, ...). A change to `tokens.css` reaches the published site and
 nothing else. This cost a whole refit step before anyone noticed.
 
+## "Insane amount of errors" (2026-09-05): what the recording actually showed
+
+The owner recorded build 1042 in the Mac app at 1800x1169 logical (3600x2338
+native), sidebar resized to about 418px, dark mode, a tab open. Three things
+were visible; two were bugs, one was a gap.
+
+**Wrong turn first, so nobody repeats it.** An unauthenticated fetch of
+`https://texttext.app/editor` returns the sign-in page, which never loads
+`workspace.css`. Comparing that page's stylesheets against a local build
+"proved" production lacked the parity CSS. It did not. `vercel inspect
+texttext.app` resolves the alias authoritatively, and Turbopack chunk names
+are content hashes, so `curl` of a local chunk's filename on production
+(200 and `cmp` identical) settles whether the deploy matches. A deployment's
+own "Aliases" list in `vercel inspect <url>` is stale metadata and omitted the
+custom domain on the live one. Also: zsh ties `$path` to `$PATH`; a loop
+variable named `path` empties PATH for the rest of that shell.
+
+**Bug 1: scroll leaks across views.** "Notes" rendered as "es", "Bookmarks"
+as "okmarks", the heading sliced by the fixed history arrows. It never
+reproduced fresh at any window size, sidebar width or theme, because
+`.post-folder-page` reserves 72px above its heading. It reproduced the moment
+the probe scrolled the editor first: the shared `.post-editor-content`
+scroller kept 464px, the folder clamped it to 72, and the heading sat at y=40
+under arrows fixed at 46-82. The scroll-memory restore in PostWorkspaceShell
+returned early when a view had no saved position, leaving the scroller
+wherever the last view had put it. A view with nothing to return to now
+resets to 0 (207e93ce). Probe: `.texttext/probe/clipcheck.mts` with
+`SCROLLPREV=600 SBW=418 VW=1800 VH=1169`.
+
+**Bug 2: the edit toolbar sat on the arrows.** "Codex" read as "ex". The Sol
+pass pinned `.post-top-action-bar.is-edit` to `sidebar + 10px`; the arrows are
+at `sidebar + 8px`, 80px wide, same `top:46px` row. Reproduced at every size.
+Now `sidebar + 98px`, the clearance the filter strip already uses (759bfc72).
+The collapsed-sidebar variant is 98px by reasoning, not by probe: the collapse
+toggle is not in the edit view's chrome. The arrows' own `left` is not
+declared in any stylesheet grep found; it measures sidebar + 8 live.
+
+**Gap: the folder view was never restyled.** The home list got the Superhuman
+rows; a folder still renders FolderPage's older rows (star in the leading
+slot, hairline dividers, "Sep 4, 2026" dates, a bordered composer). It is a
+different component and sat outside every agent's ownership. Note for anyone
+restyling it: bare `.post-folder-*` selectors are shared with the PUBLISHED
+folder page; workspace-only changes must be scoped under `.post-editor-shell`.
+
+**Not a bug, probably:** "Welcome to TextText" showed an empty editor with
+"Saved on this device". That label is the `local` state, which
+`flushMaterialization` enters when `hasDocumentSnapshot(doc)` is false, and in
+that state nothing is written. Locally the same document renders all 1611
+chars. Reads as a collab baseline that never arrived under that evening's
+load average of 53, not a document saved empty. Unverified against production
+data; the owner was asked whether the note still has its content.
+
+Playwright's WebKit binary vanished mid-investigation (`npx playwright install
+webkit` restored it); dependencies were unchanged since 2026-09-01, so that was
+a cache eviction, not an agent.
+
 ## An edit that came back (2026-09-04, FOUND and FIXED)
 
 The owner deleted a selection from a large bookmark; the delete landed, then
