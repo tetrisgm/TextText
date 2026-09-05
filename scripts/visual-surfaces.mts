@@ -39,7 +39,11 @@ async function blockOffOrigin(page: Page) {
 }
 
 async function signIn(page: Page) {
-  await page.goto(`${ORIGIN}/editor`, { waitUntil: "networkidle" });
+  // domcontentloaded, not networkidle: once a workspace is open the collab
+  // relay and the changes feed both hold a long poll, so the network never
+  // goes idle and the sign-in form is never waited for. Same reason as the
+  // published-page load below.
+  await page.goto(`${ORIGIN}/editor`, { waitUntil: "domcontentloaded" });
   const form = page.locator("form.ac-devsignin");
   await form.waitFor({ timeout: 20000 });
   await form.locator("input[type=email]").fill("visual-demo@texttext.local");
