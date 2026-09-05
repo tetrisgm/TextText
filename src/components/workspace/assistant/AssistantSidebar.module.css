@@ -3,12 +3,17 @@
   --assistant-sidebar-min-width: 280px;
   --assistant-sidebar-max-width: 600px;
   --assistant-sidebar-rail-width: 44px;
+  --assistant-rail-ground: #fafcfe;
+  --assistant-rail-divider: #f2f2f2;
+  --assistant-rail-primary: #313236;
+  --assistant-rail-secondary: #9899a0;
+  --assistant-rail-scroll-thumb: #c7c8cc;
 
   z-index: 60;
   min-width: 0;
   height: 100%;
   min-height: 0;
-  color: var(--ac-label, #1d1d1f);
+  color: var(--assistant-rail-primary);
   font-family: var(
     --ac-font-text,
     -apple-system,
@@ -63,11 +68,11 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-left: 1px solid var(--ac-hairline, rgba(0, 0, 0, 0.12));
-  background: var(--bg, var(--ac-mat-bg, rgba(246, 246, 246, 0.96)));
-  color: var(--ac-label, #1d1d1f);
-  -webkit-backdrop-filter: var(--ac-mat-blur, blur(30px) saturate(180%));
-  backdrop-filter: var(--ac-mat-blur, blur(30px) saturate(180%));
+  border-left: 1px solid var(--assistant-rail-divider);
+  background: var(--assistant-rail-ground);
+  color: var(--assistant-rail-primary);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   opacity: 1;
   pointer-events: auto;
   transform: translateX(0);
@@ -156,7 +161,8 @@
 .launcherAvatar,.agentAvatar { display:grid; place-items:center; color:#fff; border-radius:50%; flex:0 0 auto; }
 .launcherAvatar { width:26px; height:26px; }
 .launcherAvatar svg,.agentAvatar svg { width:15px; height:15px; }
-.agentAvatar { width:28px; height:28px; }
+.agentAvatar { width:20px; height:20px; filter:grayscale(1); opacity:.72; }
+.agentAvatar svg { width:12px; height:12px; }
 
 .root[data-layout="inline"][data-state="hidden"] .launcherWrap {
   right: 4px;
@@ -179,8 +185,8 @@
 .launcher svg,
 .iconButton svg,
 .composerButton svg {
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   display: block;
 }
 
@@ -219,9 +225,9 @@
 .header {
   flex: 0 0 auto;
   display: grid;
-  gap: 8px;
-  padding: 10px 14px 8px;
-  border-bottom: 1px solid var(--ac-hairline, rgba(0, 0, 0, 0.12));
+  gap: 0;
+  padding: 28px 31px 8px;
+  border-bottom: 0;
 }
 
 .titleRow {
@@ -233,12 +239,13 @@
 }
 
 .title {
+  order: -1;
   min-width: 0;
   flex: 1 1 auto;
   overflow: hidden;
   margin: 0;
-  color: var(--ac-label, #1d1d1f);
-  font: 650 var(--ac-fs-subheadline, 15px) / 1.2 var(
+  color: var(--assistant-rail-primary);
+  font: 500 17px / 1.25 var(
       --ac-font-text,
       -apple-system,
       BlinkMacSystemFont,
@@ -252,11 +259,11 @@
 
 .pendingLabel {
   flex: 0 0 auto;
-  border-radius: 999px;
-  padding: 3px 7px;
-  background: var(--ac-accent-soft, rgba(10, 132, 255, 0.14));
-  color: var(--ac-accent, #0a84ff);
-  font: 650 11px/1.2 var(--ac-font-text, -apple-system, sans-serif);
+  border-radius: 0;
+  padding: 2px 3px;
+  background: transparent;
+  color: var(--assistant-rail-secondary);
+  font: 550 11px/1.2 var(--ac-font-text, -apple-system, sans-serif);
 }
 
 button.pendingLabel {
@@ -330,18 +337,18 @@ button.pendingLabel {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
 }
 
 .modelSelect {
-  width: 92px;
-  height: 26px;
-  padding: 0 22px 0 7px;
+  width: 68px;
+  height: 24px;
+  padding: 0 17px 0 2px;
   overflow: hidden;
-  border: 1px solid var(--ac-hairline, rgba(0, 0, 0, 0.12));
-  border-radius: 6px;
-  background-color: var(--ac-bg, #fff);
-  color: var(--ac-label-2, rgba(60, 60, 67, 0.72));
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+  color: var(--assistant-rail-secondary);
   font: 500 11px / 1 var(--ac-font-text, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
   text-overflow: ellipsis;
   cursor: pointer;
@@ -353,10 +360,18 @@ button.pendingLabel {
 }
 
 @media (prefers-color-scheme: dark) {
+  .root {
+    --assistant-rail-ground: #1a191c;
+    --assistant-rail-divider: #343438;
+    --assistant-rail-primary: #f2f2f4;
+    --assistant-rail-secondary: #9b9ba2;
+    --assistant-rail-scroll-thumb: #55565b;
+  }
+
   .modelSelect {
-    border-color: var(--ac-hairline, rgba(255, 255, 255, 0.14));
-    background-color: var(--ac-bg, #1c1c1e);
-    color: var(--ac-label-2, rgba(235, 235, 245, 0.6));
+    border: 0;
+    background-color: transparent;
+    color: var(--assistant-rail-secondary);
   }
 }
 
@@ -379,39 +394,39 @@ button.pendingLabel {
 }
 
 .iconButton {
-  width: 30px;
-  height: 30px;
-  border-radius: var(--ac-radius-control, 6px);
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  color: var(--assistant-rail-secondary);
 }
 
 .iconButton:hover,
 .composerButton:hover,
 .removeAttachmentButton:hover {
-  background: var(--ac-fill-3, rgba(118, 118, 128, 0.12));
-  color: var(--ac-label, #1d1d1f);
+  background: transparent;
+  color: var(--assistant-rail-primary);
 }
 
 .iconButton[aria-pressed="true"] {
-  background: var(--ac-tinted-fill, rgba(0, 122, 255, 0.15));
-  color: var(--ac-accent, #007aff);
+  background: transparent;
+  color: var(--assistant-rail-primary);
 }
 
-/* Inside the composer field: a quiet pill that says what the message will
-   be about, sized to read as part of the input rather than furniture. */
+/* Inside the composer field, scope reads as a plain metadata line. */
 .contextChip {
   min-width: 0;
   max-width: calc(100% - 16px);
   width: fit-content;
-  height: 22px;
+  height: 20px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
   overflow: hidden;
-  margin: 8px 8px 0;
-  border-radius: 6px;
-  padding: 0 7px;
-  background: var(--ac-fill-4, rgba(116, 116, 128, 0.08));
-  color: var(--ac-label-2, rgba(60, 60, 67, 0.72));
+  margin: 6px 0 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--assistant-rail-secondary);
 }
 
 .contextIcon {
@@ -421,7 +436,7 @@ button.pendingLabel {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  color: var(--ac-label-2, rgba(60, 60, 67, 0.72));
+  color: var(--assistant-rail-secondary);
 }
 
 .contextIcon svg {
@@ -448,43 +463,52 @@ button.pendingLabel {
 
 .contextLabel {
   flex: 0 1 auto;
-  color: var(--ac-label, #1d1d1f);
+  color: var(--assistant-rail-primary);
 }
 
 .contextDetail {
   flex: 1 1 auto;
-  border-left: 1px solid var(--ac-separator, rgba(60, 60, 67, 0.29));
-  padding-left: 6px;
-  color: var(--ac-label-2, rgba(60, 60, 67, 0.72));
+  border-left: 0;
+  padding-left: 0;
+  color: var(--assistant-rail-secondary);
 }
 
 .content {
   min-width: 0;
   min-height: 0;
   flex: 1 1 auto;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-  padding: 0 2px;
+  scrollbar-color: transparent transparent;
+  scrollbar-gutter: auto;
+  scrollbar-width: thin;
+  padding: 0;
 }
 
-/* The composer floats at the bottom of the panel as its own rounded card;
-   the field's border is its edge, so the region needs none of its own. */
+.content:hover { scrollbar-color: var(--assistant-rail-scroll-thumb) transparent; }
+.content::-webkit-scrollbar { width: 6px; }
+.content::-webkit-scrollbar-track,
+.content::-webkit-scrollbar-thumb { background: transparent; }
+.content::-webkit-scrollbar-thumb { border-radius: 999px; }
+.content:hover::-webkit-scrollbar-thumb { background: var(--assistant-rail-scroll-thumb); }
+
+/* The composer sits directly on the rail ground like the reference footer. */
 .composer {
   min-width: 0;
   flex: 0 0 auto;
   display: grid;
-  gap: 8px;
-  padding: 8px 12px 12px;
+  gap: 6px;
+  padding: 8px 31px 14px;
 }
 
 .attachmentList {
   min-width: 0;
   display: flex;
-  gap: 6px;
+  gap: 12px;
   overflow-x: auto;
   margin: 0;
-  padding: 1px;
+  padding: 0;
   list-style: none;
   scrollbar-width: thin;
 }
@@ -492,16 +516,16 @@ button.pendingLabel {
 .attachmentChip {
   min-width: 0;
   max-width: min(240px, calc(100vw - 40px));
-  height: 34px;
+  height: 32px;
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   gap: 6px;
-  border: 1px solid var(--ac-hairline, rgba(0, 0, 0, 0.12));
-  border-radius: var(--ac-radius-control, 6px);
-  padding: 0 4px 0 8px;
-  background: var(--ac-fill-4, rgba(116, 116, 128, 0.08));
-  color: var(--ac-label, #1d1d1f);
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--assistant-rail-primary);
 }
 
 .attachmentIcon {
@@ -511,7 +535,7 @@ button.pendingLabel {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  color: var(--ac-accent, #007aff);
+  color: var(--assistant-rail-secondary);
 }
 
 .attachmentIcon svg {
@@ -538,7 +562,7 @@ button.pendingLabel {
 }
 
 .attachmentName {
-  color: var(--ac-label, #1d1d1f);
+  color: var(--assistant-rail-primary);
   font: 550 var(--ac-fs-caption1, 12px) / 1.05 var(
       --ac-font-text,
       -apple-system,
@@ -549,7 +573,7 @@ button.pendingLabel {
 }
 
 .attachmentSize {
-  color: var(--ac-label-2, rgba(60, 60, 67, 0.72));
+  color: var(--assistant-rail-secondary);
   font: 400 var(--ac-fs-caption2, 11px) / 1 var(
       --ac-font-text,
       -apple-system,
@@ -574,31 +598,31 @@ button.pendingLabel {
 .composerField {
   min-width: 0;
   display: grid;
-  overflow: hidden;
-  border: 1px solid var(--ac-hairline, rgba(0, 0, 0, 0.12));
-  border-radius: 12px;
-  background: var(--ac-bg, #fff);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   transition:
     border-color 180ms ease,
     box-shadow 180ms ease;
 }
 
 .composerField:focus-within {
-  border-color: var(--ac-separator, rgba(60, 60, 67, 0.29));
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .textarea {
   width: 100%;
-  min-height: 44px;
+  min-height: 36px;
   max-height: 160px;
   overflow-y: auto;
   border: 0;
-  padding: 10px 10px 4px;
+  padding: 8px 0 3px;
   background: transparent;
-  color: var(--ac-label, #1d1d1f);
-  font: 400 var(--ac-fs-subheadline, 15px) / 1.35 var(
+  color: var(--assistant-rail-primary);
+  font: 400 13px / 1.4 var(
       --ac-font-text,
       -apple-system,
       BlinkMacSystemFont,
@@ -611,7 +635,7 @@ button.pendingLabel {
 }
 
 .textarea::placeholder {
-  color: var(--ac-placeholder, rgba(60, 60, 67, 0.38));
+  color: var(--assistant-rail-secondary);
   opacity: 1;
 }
 
@@ -625,12 +649,12 @@ button.pendingLabel {
 }
 
 .composerToolbar {
-  min-height: 36px;
+  min-height: 28px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 2px 5px 5px;
+  padding: 0;
 }
 
 .contextPicker {
@@ -719,27 +743,28 @@ button.pendingLabel {
 }
 
 .composerButton {
-  width: 30px;
-  height: 30px;
-  border-radius: var(--ac-radius-control, 6px);
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  color: var(--assistant-rail-secondary);
 }
 
 .submitButton {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--ac-accent, #007aff);
-  color: var(--ac-on-accent, #fff);
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--assistant-rail-secondary);
 }
 
 .submitButton svg {
-  width: 15px;
-  height: 15px;
+  width: 14px;
+  height: 14px;
 }
 
 .submitButton:hover {
-  background: color-mix(in srgb, var(--ac-accent, #007aff) 88%, #000);
-  color: var(--ac-on-accent, #fff);
+  background: transparent;
+  color: var(--assistant-rail-primary);
 }
 
 .iconButton:disabled,
@@ -753,19 +778,23 @@ button.pendingLabel {
 .removeAttachmentButton:disabled:hover,
 .composerButton:disabled:hover {
   background: transparent;
-  color: var(--ac-label-2, rgba(60, 60, 67, 0.72));
+  color: var(--assistant-rail-secondary);
 }
 
 .submitButton:disabled,
 .submitButton:disabled:hover {
-  background: var(--ac-fill-2, rgba(120, 120, 128, 0.16));
-  color: var(--ac-label-3, rgba(60, 60, 67, 0.3));
+  background: transparent;
+  color: var(--assistant-rail-secondary);
+  opacity: 0.38;
 }
 
 @supports not (
   (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
 ) {
-  .panel,
+  .panel {
+    background: var(--assistant-rail-ground);
+  }
+
   .launcher {
     background: var(--ac-mat-fallback, #f6f6f6);
   }

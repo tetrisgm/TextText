@@ -79,55 +79,79 @@
 /* dark tokens: applied on explicit [data-theme="dark"] and on the
    prefers-color-scheme fallback the site uses (:not([data-theme="light"])) */
 [data-theme="dark"] .applecms {
-  /* Not pure white, for the same reason light is not pure black. */
-  --ac-label: #f0f0f2;
-  --ac-label-2: rgba(240,240,242,0.62);
-  --ac-label-3: rgba(240,240,242,0.38);
-  --ac-label-4: rgba(240,240,242,0.22);
-  --ac-placeholder: rgba(240,240,242,0.42);
-  --ac-fill-1: rgba(255,255,255,0.16);
-  --ac-fill-2: rgba(255,255,255,0.11);
+  /* Superhuman dark: a warm charcoal canvas with a darker rail. */
+  --ac-label: #e5e7eb;
+  --ac-label-2: #9d9ea2;
+  --ac-label-3: #818389;
+  --ac-label-4: #606267;
+  --ac-placeholder: #818389;
+  --ac-fill-1: rgba(255,255,255,0.14);
+  --ac-fill-2: rgba(255,255,255,0.10);
   --ac-fill-3: rgba(255,255,255,0.07);
   --ac-fill-4: rgba(255,255,255,0.045);
-  --ac-separator: rgba(255,255,255,0.12);
-  --ac-bg: #202124;
-  --ac-bg-2: #17181b;
-  --ac-accent: #5aaee3;
-  --ac-on-accent: #111418;
+  --ac-fill-5: rgba(255,255,255,0.03);
+  --ac-separator: rgba(255,255,255,0.08);
+  --ac-bg: #2c2d31;
+  --ac-bg-2: #1a191c;
+  --ac-accent: #61b5e1;
+  --ac-on-accent: #ffffff;
+  --ac-accent-contrast: #ffffff;
+  --ac-accent-soft: rgba(97,181,225,0.16);
   --ac-red: #FF453A;
-  --ac-tinted-fill: rgba(90,174,227,0.14);
+  --ac-tinted-fill: rgba(97,181,225,0.16);
   --ac-sel-inactive: rgba(255,255,255,0.10);
-  --ac-mat-bg: rgba(32,33,36,0.86);
-  --ac-mat-blur: blur(30px) saturate(120%);
-  --ac-mat-fallback: rgba(32,33,36,0.98);
-  --ac-hairline: rgba(255,255,255,0.12);
-  --ac-focus: 0 0 0 3px rgba(90,174,227,0.45);
+  --ac-mat-bg: rgba(26,25,28,0.96);
+  --ac-mat-blur: blur(24px) saturate(110%);
+  --ac-mat-fallback: #1a191c;
+  --ac-hairline: rgba(255,255,255,0.08);
+  --ac-focus: 0 0 0 3px rgba(97,181,225,0.48);
+  --sidebar-bg: #1a191c;
+  --toolbar-bg: rgba(26,25,28,0.92);
+  --row-selected-bg: #61b5e1;
+  --row-selected-ink: #ffffff;
+  --row-selected-soft: rgba(97,181,225,0.24);
+  --control-bg: rgba(255,255,255,0.07);
+  --control-bg-hover: rgba(255,255,255,0.11);
+  --shadow-menu: 0 18px 46px rgba(0,0,0,0.55);
+  --shadow-window: 0 24px 80px rgba(0,0,0,0.60);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .applecms {
-    /* Not pure white, matching the explicit-dark block above. */
-    --ac-label: #f0f0f2;
-    --ac-label-2: rgba(240,240,242,0.62);
-    --ac-label-3: rgba(240,240,242,0.38);
-    --ac-label-4: rgba(240,240,242,0.22);
-    --ac-placeholder: rgba(240,240,242,0.42);
-    --ac-fill-1: rgba(255,255,255,0.16);
-    --ac-fill-2: rgba(255,255,255,0.11);
+    /* Keep the automatic-dark path identical to explicit dark. */
+    --ac-label: #e5e7eb;
+    --ac-label-2: #9d9ea2;
+    --ac-label-3: #818389;
+    --ac-label-4: #606267;
+    --ac-placeholder: #818389;
+    --ac-fill-1: rgba(255,255,255,0.14);
+    --ac-fill-2: rgba(255,255,255,0.10);
     --ac-fill-3: rgba(255,255,255,0.07);
     --ac-fill-4: rgba(255,255,255,0.045);
-    --ac-separator: rgba(255,255,255,0.12);
-    --ac-bg: #202124;
-    --ac-bg-2: #17181b;
-    --ac-accent: #5aaee3;
-    --ac-on-accent: #111418;
+    --ac-fill-5: rgba(255,255,255,0.03);
+    --ac-separator: rgba(255,255,255,0.08);
+    --ac-bg: #2c2d31;
+    --ac-bg-2: #1a191c;
+    --ac-accent: #61b5e1;
+    --ac-on-accent: #ffffff;
+    --ac-accent-contrast: #ffffff;
+    --ac-accent-soft: rgba(97,181,225,0.16);
     --ac-red: #FF453A;
-    --ac-tinted-fill: rgba(90,174,227,0.14);
+    --ac-tinted-fill: rgba(97,181,225,0.16);
     --ac-sel-inactive: rgba(255,255,255,0.10);
-    --ac-mat-bg: rgba(32,33,36,0.86);
-    --ac-mat-blur: blur(30px) saturate(120%);
-    --ac-mat-fallback: rgba(32,33,36,0.98);
-    --ac-hairline: rgba(255,255,255,0.12);
-    --ac-focus: 0 0 0 3px rgba(90,174,227,0.45);
+    --ac-mat-bg: rgba(26,25,28,0.96);
+    --ac-mat-blur: blur(24px) saturate(110%);
+    --ac-mat-fallback: #1a191c;
+    --ac-hairline: rgba(255,255,255,0.08);
+    --ac-focus: 0 0 0 3px rgba(97,181,225,0.48);
+    --sidebar-bg: #1a191c;
+    --toolbar-bg: rgba(26,25,28,0.92);
+    --row-selected-bg: #61b5e1;
+    --row-selected-ink: #ffffff;
+    --row-selected-soft: rgba(97,181,225,0.24);
+    --control-bg: rgba(255,255,255,0.07);
+    --control-bg-hover: rgba(255,255,255,0.11);
+    --shadow-menu: 0 18px 46px rgba(0,0,0,0.55);
+    --shadow-window: 0 24px 80px rgba(0,0,0,0.60);
   }
 }
 
@@ -271,14 +295,14 @@
 }
 [data-theme="dark"] .applecms {
   --ac-editor-toolbar-shadow:
-    0 1px 1px rgba(255, 255, 255, 0.06) inset,
-    0 10px 28px rgba(0, 0, 0, 0.26);
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 18px 46px rgba(0, 0, 0, 0.46);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .applecms {
     --ac-editor-toolbar-shadow:
-      0 1px 1px rgba(255, 255, 255, 0.06) inset,
-      0 10px 28px rgba(0, 0, 0, 0.26);
+      0 1px 0 rgba(255, 255, 255, 0.04) inset,
+      0 18px 46px rgba(0, 0, 0, 0.46);
   }
 }
 .applecms .body-editor-toolbar-shell {
@@ -1396,19 +1420,19 @@
   z-index: 1000;
   display: grid;
   place-items: start center;
-  padding: max(72px, 11dvh) 16px 24px;
-  background: rgba(0, 0, 0, 0.18);
+  padding: 185px 16px 24px;
+  background: transparent;
   opacity: 1;
   animation: command-backdrop-in .1s ease both;
   overscroll-behavior: contain;
   touch-action: none;
 }
 .command-palette {
-  width: min(100%, 980px);
+  width: min(100%, 702px);
   overflow: hidden;
   touch-action: pan-y;
   border: 1px solid var(--ac-hairline);
-  border-radius: 8px;
+  border-radius: 5px;
   background: var(--ac-mat-fallback);
   -webkit-backdrop-filter: var(--ac-mat-blur);
   backdrop-filter: var(--ac-mat-blur);
@@ -1421,10 +1445,10 @@
 }
 .command-palette-input {
   width: 100%;
-  height: 58px;
+  height: 136px;
   border: 0;
   border-bottom: 1px solid var(--ac-hairline);
-  padding: 0 18px;
+  padding: 52px 36px 0 71px;
   background: transparent;
   color: var(--ac-label);
   outline: none;
@@ -1436,9 +1460,14 @@
 }
 .command-palette-results {
   display: grid;
-  max-height: min(56dvh, 520px);
+  max-height: min(56dvh, 212px);
   overflow: auto;
-  padding: 8px;
+  padding: 0;
+  scrollbar-width: none;
+}
+.command-palette-results::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 .command-palette-row {
   display: grid;
@@ -1448,7 +1477,7 @@
   width: 100%;
   min-height: 52px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 0;
   padding: 8px 10px;
   background: transparent;
   color: var(--ac-label);
@@ -1811,38 +1840,37 @@
    that reason: these are the palette's own colours, not the page's.
    --------------------------------------------------------------------- */
 .command-palette {
-  /* Measured from the reference: their palette body is #191919 and the
-     selected band #363636 - a neutral grey, not a blue-black. Ours was
+  /* Measured from the reference: their palette body is #1b1b1b and the
+     selected band #383838 - a neutral grey, not a blue-black. Ours was
      tinted, which read as a panel of the app rather than as a mode. */
-  --palette-ink: #f2f2f2;
-  --palette-ink-2: #9a9a9a;
-  --palette-hairline: rgba(255, 255, 255, 0.09);
-  border-color: rgba(255, 255, 255, 0.1);
-  background: #191919;
+  --palette-ink: #d0d0d0;
+  --palette-ink-2: #9e9e9e;
+  --palette-hairline: #1f1f1f;
+  border-color: #2a2a2a;
+  background: #1b1b1b;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.06) inset,
-    0 24px 70px -22px rgba(0, 0, 0, 0.78),
-    0 10px 28px rgba(0, 0, 0, 0.22);
+    0 24px 54px -18px rgba(0, 0, 0, 0.68),
+    0 8px 18px rgba(0, 0, 0, 0.2);
   color: var(--palette-ink);
 }
 
 .command-palette-input {
   border-bottom-color: var(--palette-hairline);
   color: var(--palette-ink);
-  font-size: 17px;
-  font-weight: 500;
+  font-size: 26px;
+  font-weight: 400;
 }
 
 .command-palette-input::placeholder {
-  color: #8a8a8a;
+  color: #9e9e9e;
 }
 
 .command-palette-row {
   gap: 24px;
-  min-height: 44px;
-  padding: 6px 12px;
+  min-height: 62px;
+  padding: 8px 36px 8px 71px;
   color: var(--palette-ink);
 }
 
@@ -1850,22 +1878,25 @@
    a button rather than as "this is the one you are on". Theirs measures
    #363636 against a #191919 body, which is a bigger step than ours was. */
 .command-palette-row.is-selected {
-  background: #363636;
+  background: #383838;
 }
 
 .command-palette-label {
   color: var(--palette-ink);
+  font: 450 16px/1.2 var(--ac-font-text);
+  letter-spacing: 0;
 }
 
 .command-palette-label.is-command {
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 13.5px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
+  font-family: var(--ac-font-text);
+  font-size: 16px;
+  font-weight: 450;
+  letter-spacing: 0;
 }
 
 .command-palette-detail {
   color: var(--palette-ink-2);
+  font: 400 12px/1.2 var(--ac-font-text);
 }
 
 .command-palette-empty {
@@ -1884,17 +1915,18 @@
   background: transparent;
 }
 
-/* A keycap is a light chip with dark ink, which is what a key looks like.
-   A dark chip with grey ink disappears into the panel. */
-.command-palette-shortcut kbd,
-.command-palette--sheet .command-sheet-key {
-  min-width: 26px;
-  padding: 5px 8px;
+/* The reference uses a mid-grey keycap with light ink inside the dark sheet. */
+.command-palette-shortcut kbd {
+  min-width: 21px;
+  min-height: 21px;
+  display: inline-grid;
+  place-items: center;
+  padding: 3px 5px;
   border: 0;
-  border-radius: 4px;
-  background: #c9c9c9;
-  color: #232323;
-  font: 600 11px/1 var(--ac-font-text);
+  border-radius: 3px;
+  background: #5b5b5b;
+  color: #d0d0d0;
+  font: 600 10px/1 var(--ac-font-text);
   text-align: center;
 }
 
@@ -1904,7 +1936,8 @@
   gap: 6px;
   padding: 9px 12px;
   border-top: 1px solid var(--palette-hairline);
-  color: #6d7488;
+  background: #1b1b1b;
+  color: var(--palette-ink-2);
   font: 500 11.5px/1 var(--ac-font-text);
 }
 
@@ -1991,37 +2024,39 @@
    --------------------------------------------------------------------- */
 /* The shortcut panel follows the theme; the command palette does not.
 
-   That is how the reference behaves: their Superhuman Command is dark on a
-   light app, because it is a mode you enter, while their Shortcuts panel is
-   a pale lavender rail in the light app, because it is part of the app you
-   are reading. Measured off it: panel #efeffe, headings #9b9faf, labels
-   #1f1f2e, keycaps #e1e5fb. */
+   The reference keeps Superhuman Command dark while the Shortcuts panel uses
+   the app's theme. Direct light samples are panel #fafcfe, headings #b3b5b6,
+   labels #67696b, title #454749, and keycaps #b6bfce with near-white ink.
+   Dark values below use the neutral right-rail ground sampled in ref-08. */
 .command-palette--sheet {
-  --sheet-bg: #efeffe;
-  --sheet-ink: #1f1f2e;
-  --sheet-ink-2: #9b9faf;
-  --sheet-hairline: rgba(31, 31, 46, 0.09);
-  --sheet-key-bg: #e1e5fb;
-  --sheet-key-ink: #5b6178;
+  --sheet-bg: #fafcfe;
+  --sheet-ink: #454749;
+  --sheet-row-ink: #67696b;
+  --sheet-ink-2: #b3b5b6;
+  --sheet-hairline: transparent;
+  --sheet-key-bg: #b6bfce;
+  --sheet-key-ink: #fafcfe;
 }
 
 [data-theme="dark"] .command-palette--sheet {
-  --sheet-bg: #191b21;
-  --sheet-ink: #e4e5ea;
-  --sheet-ink-2: #7f8496;
-  --sheet-hairline: rgba(255, 255, 255, 0.08);
-  --sheet-key-bg: #c9c9c9;
-  --sheet-key-ink: #232323;
+  --sheet-bg: #1a191c;
+  --sheet-ink: #f0f0f2;
+  --sheet-row-ink: #d4d4d8;
+  --sheet-ink-2: #85858b;
+  --sheet-hairline: transparent;
+  --sheet-key-bg: #737780;
+  --sheet-key-ink: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .command-palette--sheet {
-    --sheet-bg: #191b21;
-    --sheet-ink: #e4e5ea;
-    --sheet-ink-2: #7f8496;
-    --sheet-hairline: rgba(255, 255, 255, 0.08);
-    --sheet-key-bg: #c9c9c9;
-    --sheet-key-ink: #232323;
+    --sheet-bg: #1a191c;
+    --sheet-ink: #f0f0f2;
+    --sheet-row-ink: #d4d4d8;
+    --sheet-ink-2: #85858b;
+    --sheet-hairline: transparent;
+    --sheet-key-bg: #737780;
+    --sheet-key-ink: #ffffff;
   }
 }
 
@@ -2044,7 +2079,7 @@
 }
 
 .command-palette--sheet .command-sheet-row-label {
-  color: var(--sheet-ink);
+  color: var(--sheet-row-ink);
 }
 
 .command-palette--sheet .command-sheet-done {
@@ -2057,25 +2092,33 @@
 }
 
 .command-palette--sheet .command-sheet-key {
+  min-width: 19px;
+  min-height: 17px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 3px;
   background: var(--sheet-key-bg);
   color: var(--sheet-key-ink);
+  font: 600 9px/1 var(--ac-font-text);
 }
 
 .command-palette-backdrop.applecms.is-sheet {
   place-items: stretch end;
   padding: 0;
-  background: rgba(0, 0, 0, 0.18);
+  background: transparent;
 }
 
 .command-palette--sheet {
-  width: min(100%, 400px);
+  width: min(100%, 333px);
   height: 100%;
   display: flex;
   flex-direction: column;
   border: 0;
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 0;
   border-radius: 0;
-  box-shadow: -30px 0 80px -50px rgba(0, 0, 0, 0.7);
+  box-shadow: -12px 0 28px -24px rgba(0, 0, 0, 0.28);
   animation: command-sheet-in 0.14s ease both;
 }
 
@@ -2097,13 +2140,14 @@
 }
 
 .command-palette--sheet .command-sheet-header {
-  border-bottom-color: rgba(255, 255, 255, 0.08);
-  padding: 20px 20px 14px;
+  border-bottom: 0;
+  padding: 35px 29px 10px;
 }
 
 .command-palette--sheet .command-sheet-title {
   color: var(--sheet-ink);
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 500;
 }
 
 .command-palette--sheet .command-sheet-subtitle {
@@ -2130,7 +2174,11 @@
      stack and the panel scrolls. */
   columns: auto;
   max-height: none;
-  padding: 12px 20px 24px;
+  padding: 7px 29px 24px;
+  scrollbar-width: none;
+}
+.command-palette--sheet .command-sheet-columns::-webkit-scrollbar {
+  width: 0;
 }
 
 /* "Navigation" and "Actions" are said the way you would say them, not
@@ -2138,8 +2186,8 @@
 .command-palette--sheet .command-shortcut-heading {
   padding: 22px 0 8px;
   color: var(--sheet-ink-2);
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 400;
   letter-spacing: 0;
   text-transform: none;
 }
@@ -2149,20 +2197,40 @@
   padding-top: 4px;
 }
 
-/* 33px between rows, measured. The panel is a reference you scan, and it
-   scans better with air than with density. */
+/* 33px raw between rows converts to 24px at the 1440px capture scale. */
 .command-palette--sheet .command-sheet-row {
-  min-height: 33px;
-  padding: 5px 0;
+  min-height: 24px;
+  display: grid;
+  grid-template-columns: minmax(0, 135px) minmax(0, 1fr);
+  align-items: center;
+  gap: 25px;
+  padding: 0;
 }
 
 .command-palette--sheet .command-sheet-row-label {
-  color: var(--sheet-ink);
-  font-size: 14.5px;
+  overflow: hidden;
+  color: var(--sheet-row-ink);
+  font-size: 13px;
   font-weight: 400;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-palette--sheet .command-sheet-keys {
+  justify-self: start;
+  gap: 4px;
 }
 
 @media (max-width: 680px) {
+  .command-palette-backdrop.applecms:not(.is-sheet) {
+    padding-top: 58px;
+  }
+  .command-palette:not(.command-palette--sheet) .command-palette-input {
+    height: 96px;
+    padding: 32px 24px 0;
+    font-size: 20px;
+  }
   .command-palette--sheet {
     width: 100%;
     border-left: 0;

@@ -146,11 +146,10 @@ export const WorkspacePostOption = memo(function WorkspacePostOption({
       >
         <WorkspaceItemThumbnail post={post} />
         <span className="workspace-item-option-copy">
-          {/* Chip and title share ONE column so the previews below each other
-              line up. In the reference the first column is fixed and that is
-              what makes the list read as a table rather than as ragged
-              paragraphs; a chip that sits in its own column moves the title
-              on every row that has one. */}
+          {/* The reference fixes its sender column, but the preview itself
+              flows directly after the subject. TextText has no sender field,
+              so chip and title form one bounded lede and the preview follows
+              that rendered lede instead of starting at a fixed x. */}
           <span className="workspace-item-option-lede">
             {chip && (
               <span className="workspace-item-chip" data-chip={chip.kind}>

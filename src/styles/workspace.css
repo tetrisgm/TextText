@@ -727,6 +727,306 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   text-align: center;
 }
 
+/* Transient workspace surfaces measured against the 2000px Superhuman
+   references and converted to this app's 1440px capture scale. */
+.workspace-collection-empty,
+.workspace-recent-empty p,
+.workspace-recent-empty span {
+  color: #9899a0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .workspace-collection-empty,
+  .workspace-recent-empty p,
+  .workspace-recent-empty span {
+    color: var(--ac-label-2, #aaa297);
+  }
+}
+
+[data-theme="dark"] .workspace-collection-empty,
+[data-theme="dark"] .workspace-recent-empty p,
+[data-theme="dark"] .workspace-recent-empty span {
+  color: var(--ac-label-2, #aaa297);
+}
+
+:is(.workspace-tooltip, .kbd-tip) {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  min-width: max-content;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 4px;
+  background: #4e525a;
+  color: #ffffff;
+  font: 500 12px/16px var(--ac-font-text, system-ui, sans-serif);
+  letter-spacing: 0;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22);
+}
+
+:is(.workspace-tooltip, .kbd-tip) .kbd-tip-line {
+  min-height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+:is(.workspace-tooltip, .kbd-tip) .kbd-tip-label {
+  color: #ffffff;
+}
+
+:is(.workspace-tooltip, .kbd-tip) .kbd-tip-keys {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 3px;
+  margin-left: 2px;
+}
+
+:is(.workspace-tooltip, .kbd-tip) .kbd-tip-key {
+  min-width: 19px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 3px;
+  background: #6d6e75;
+  color: #ffffff;
+  font: 600 11px/14px var(--ac-font-text, system-ui, sans-serif);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.command-toast.applecms {
+  left: 50%;
+  right: auto;
+  bottom: 54px;
+  gap: 8px;
+  min-height: 36px;
+  max-width: min(92vw, 946px);
+  padding: 6px 8px 6px 14px;
+  border: 0;
+  border-radius: 4px;
+  background: #4e525a;
+  color: #ffffff;
+  font: 500 12px/16px var(--ac-font-text, system-ui, sans-serif);
+  letter-spacing: 0;
+  box-shadow: 0 6px 16px rgba(20, 20, 24, 0.18);
+  translate: -50% 0;
+  transform: none;
+}
+
+.command-toast.applecms.is-hint {
+  border: 1px solid #eceef2;
+  background: #ffffff;
+  color: #4e525a;
+  box-shadow: 0 6px 16px rgba(20, 20, 24, 0.14);
+  font-weight: 500;
+}
+
+.command-toast.applecms .command-toast-action {
+  border-radius: 3px;
+  background: #6d6e75;
+  color: #ffffff;
+}
+
+.command-toast.applecms .command-toast-action:hover {
+  background: #777981;
+}
+
+.command-toast.applecms.is-hint .command-toast-action {
+  background: #f1f2f5;
+  color: #4e525a;
+}
+
+.command-toast.applecms.is-hint .command-toast-action:hover {
+  background: #e7e9ee;
+}
+
+.command-toast.applecms .command-toast-dismiss {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.command-toast.applecms.is-hint .command-toast-dismiss {
+  color: #9899a0;
+}
+
+.command-toast.applecms .command-toast-dismiss:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.command-toast.applecms.is-hint .command-toast-dismiss:hover {
+  background: #f1f2f5;
+  color: #4e525a;
+}
+
+.command-toast.applecms .command-toast-action:focus-visible,
+.command-toast.applecms .command-toast-dismiss:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .command-toast.applecms,
+  .command-toast.applecms.is-hint {
+    border-color: transparent;
+    background: #4e525a;
+    color: #ffffff;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.32);
+  }
+
+  .command-toast.applecms.is-hint .command-toast-action {
+    background: #6d6e75;
+    color: #ffffff;
+  }
+
+  .command-toast.applecms.is-hint .command-toast-dismiss {
+    color: rgba(255, 255, 255, 0.68);
+  }
+}
+
+[data-theme="dark"] .command-toast.applecms,
+[data-theme="dark"] .command-toast.applecms.is-hint {
+  border-color: transparent;
+  background: #4e525a;
+  color: #ffffff;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.32);
+}
+
+[data-theme="dark"] .command-toast.applecms.is-hint .command-toast-action {
+  background: #6d6e75;
+  color: #ffffff;
+}
+
+[data-theme="dark"] .command-toast.applecms.is-hint .command-toast-dismiss {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+:is(.workspace-bulk, .workspace-selection-toolbar) {
+  bottom: 50px;
+  gap: 2px;
+  min-height: 36px;
+  padding: 4px 8px;
+  border: 1px solid #eceef2;
+  border-radius: 4px;
+  background: #ffffff;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: 0 6px 16px rgba(20, 20, 24, 0.14);
+}
+
+:is(.workspace-bulk, .workspace-selection-toolbar) > strong {
+  padding: 0 8px;
+  color: #4e525a;
+  font: 500 12px/16px var(--ac-font-text, system-ui, sans-serif);
+}
+
+:is(.workspace-bulk, .workspace-selection-toolbar) > button,
+:is(.workspace-bulk, .workspace-selection-toolbar) > select,
+:is(.workspace-bulk, .workspace-selection-toolbar) > .kbd-tip-wrap > button,
+:is(.workspace-bulk, .workspace-selection-toolbar) > .kbd-tip-wrap > select {
+  min-height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: #4e525a;
+  font: 500 12px/1 var(--ac-font-text, system-ui, sans-serif);
+}
+
+:is(.workspace-bulk, .workspace-selection-toolbar) > button:hover,
+:is(.workspace-bulk, .workspace-selection-toolbar) > select:hover,
+:is(.workspace-bulk, .workspace-selection-toolbar) > .kbd-tip-wrap > button:hover,
+:is(.workspace-bulk, .workspace-selection-toolbar) > .kbd-tip-wrap > select:hover {
+  background: #f5f6f8;
+}
+
+:is(.workspace-bulk, .workspace-selection-toolbar) > button:focus-visible,
+:is(.workspace-bulk, .workspace-selection-toolbar) > select:focus-visible,
+:is(.workspace-bulk, .workspace-selection-toolbar) > .kbd-tip-wrap > button:focus-visible,
+:is(.workspace-bulk, .workspace-selection-toolbar) > .kbd-tip-wrap > select:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+}
+
+:is(.workspace-bulk, .workspace-selection-toolbar) > button:disabled,
+:is(.workspace-bulk, .workspace-selection-toolbar) > select:disabled,
+:is(.workspace-bulk, .workspace-selection-toolbar) > .kbd-tip-wrap > button:disabled,
+:is(.workspace-bulk, .workspace-selection-toolbar) > .kbd-tip-wrap > select:disabled {
+  opacity: 0.45;
+}
+
+:is(.workspace-bulk, .workspace-selection-toolbar)
+  > .kbd-tip-wrap
+  > .is-danger {
+  color: var(--ac-red, #d70015);
+}
+
+@media (prefers-color-scheme: dark) {
+  :is(.workspace-bulk, .workspace-selection-toolbar) {
+    border-color: #3a3c43;
+    background: #2b2d33;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.32);
+  }
+
+  :is(.workspace-bulk, .workspace-selection-toolbar) > strong,
+  :is(.workspace-bulk, .workspace-selection-toolbar) > button,
+  :is(.workspace-bulk, .workspace-selection-toolbar) > select,
+  :is(.workspace-bulk, .workspace-selection-toolbar) > .kbd-tip-wrap > button,
+  :is(.workspace-bulk, .workspace-selection-toolbar) > .kbd-tip-wrap > select {
+    color: #ffffff;
+  }
+
+  :is(.workspace-bulk, .workspace-selection-toolbar) > button:hover,
+  :is(.workspace-bulk, .workspace-selection-toolbar) > select:hover,
+  :is(.workspace-bulk, .workspace-selection-toolbar) > .kbd-tip-wrap > button:hover,
+  :is(.workspace-bulk, .workspace-selection-toolbar) > .kbd-tip-wrap > select:hover {
+    background: #3a3c43;
+  }
+}
+
+[data-theme="dark"] :is(.workspace-bulk, .workspace-selection-toolbar) {
+  border-color: #3a3c43;
+  background: #2b2d33;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.32);
+}
+
+[data-theme="dark"] :is(.workspace-bulk, .workspace-selection-toolbar) > strong,
+[data-theme="dark"] :is(.workspace-bulk, .workspace-selection-toolbar) > button,
+[data-theme="dark"] :is(.workspace-bulk, .workspace-selection-toolbar) > select,
+[data-theme="dark"] :is(.workspace-bulk, .workspace-selection-toolbar)
+  > .kbd-tip-wrap
+  > button,
+[data-theme="dark"] :is(.workspace-bulk, .workspace-selection-toolbar)
+  > .kbd-tip-wrap
+  > select {
+  color: #ffffff;
+}
+
+[data-theme="dark"] :is(.workspace-bulk, .workspace-selection-toolbar) > button:hover,
+[data-theme="dark"] :is(.workspace-bulk, .workspace-selection-toolbar) > select:hover,
+[data-theme="dark"] :is(.workspace-bulk, .workspace-selection-toolbar)
+  > .kbd-tip-wrap
+  > button:hover,
+[data-theme="dark"] :is(.workspace-bulk, .workspace-selection-toolbar)
+  > .kbd-tip-wrap
+  > select:hover {
+  background: #3a3c43;
+}
+
+@media (prefers-color-scheme: dark) {
+  :is(.workspace-bulk, .workspace-selection-toolbar)
+    > .kbd-tip-wrap
+    > .is-danger {
+    color: var(--ac-red, #ff453a);
+  }
+}
+
+[data-theme="dark"] :is(.workspace-bulk, .workspace-selection-toolbar)
+  > .kbd-tip-wrap
+  > .is-danger {
+  color: var(--ac-red, #ff453a);
+}
+
 .workspace-trash-list {
   display: grid;
   gap: 0;
@@ -1321,27 +1621,6 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   scrollbar-color: color-mix(in srgb, var(--ink) 22%, transparent) transparent;
 }
 
-.post-editor-shell ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-.post-editor-shell ::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.post-editor-shell ::-webkit-scrollbar-thumb {
-  border: 3px solid transparent;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--ink) 22%, transparent);
-  background-clip: padding-box;
-}
-
-.post-editor-shell ::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--ink) 34%, transparent);
-  background-clip: padding-box;
-}
-
 /* Controls show their surface only when the pointer arrives; at rest the
    toolbar is just words, which is most of why a Notion page reads as calm. */
 .workspace-library-controls select,
@@ -1541,12 +1820,18 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
    by default so it reads as a footnote rather than a toolbar, and it never
    takes the pointer: it is something to glance at, not to click. */
 .workspace-key-hints {
+  --workspace-hint-ground-start: #fafbff;
+  --workspace-hint-ground-end: #f5f6fd;
+  --workspace-hint-ink: #505158;
+  --workspace-hint-keycap-ground: #b6c0ca;
+  --workspace-hint-keycap-ink: #ffffff;
+  --workspace-hint-separator: #989aa3;
+  --workspace-hint-shadow: 0 -3px 10px -8px rgba(70, 76, 98, 0.22);
   position: fixed;
   bottom: 0;
-  /* Spans the workspace rather than floating over it: a bar that is part of
-     the window teaches without asking to be noticed, where a centred pill
-     reads as a notification and gets dismissed by the eye. It clears the
-     sidebar and the assistant rail so it never covers either. */
+  /* Spans the active workspace column: its live rails define both edges, so
+     resizing either rail keeps the hint sentence aligned with the list and
+     avoids covering the rail's bottom controls. */
   left: 0;
   right: var(--workspace-rail-inset, 0px);
   z-index: 90;
@@ -1558,48 +1843,44 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
      own, and the plain declaration before it covers engines without it. */
   justify-content: flex-start;
   justify-content: safe center;
-  gap: 14px;
+  gap: 6px;
   overflow: hidden;
-  min-height: 42px;
-  padding: 7px 16px;
+  min-height: 32px;
+  padding: 4px 16px;
   border-radius: 0;
-  /* A quiet top edge separates the strip from the writing surface without
-     turning it into a floating control. */
-  border: 1px solid #2e2e31;
-  border-bottom: 0;
-  background: #0b0b0c;
-  color: #f4f4f5;
-  box-shadow: 0 -6px 22px -18px rgba(0, 0, 0, 0.55);
+  border: 0;
+  background: linear-gradient(
+    90deg,
+    var(--workspace-hint-ground-start) 0%,
+    var(--workspace-hint-ground-end) 100%
+  );
+  color: var(--workspace-hint-ink);
+  box-shadow: var(--workspace-hint-shadow);
   pointer-events: none;
-  /* Fully opaque. As a floating pill it faded to 55% at rest and came up on
-     hover; as a bar that made a grey band across the bottom of a light page,
-     which reads as disabled chrome rather than as quiet chrome. The bar is
-     already quiet by being small text on its own dark strip. */
+  /* The reference material is stable rather than hover-reactive. */
   opacity: 1;
 }
 .workspace-key-hint {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   white-space: nowrap;
   font-size: 11.5px;
-  /* On the dark pill in both themes, so the pair is fixed rather than
-     following the page's ink. */
-  color: rgba(255, 255, 255, 0.74);
+  line-height: 19px;
+  color: var(--workspace-hint-ink);
 }
-/* A keycap is a light chip with dark ink, the same object the palette and
-   the shortcut panel draw. In the reference every key in the app is that
-   one shape; ours had three different treatments. The bar stays black
-   (owner) - only the caps change. */
+/* Keycap values are sampled separately for the light and dark reference
+   chrome. The light reference deliberately uses white on a low-contrast
+   blue-gray cap. */
 .workspace-key-hint-keys {
   font: inherit;
   font-size: 11px;
   font-weight: 600;
-  color: #171719;
-  background: #bfc2c8;
-  border-radius: 4px;
+  color: var(--workspace-hint-keycap-ink);
+  background: var(--workspace-hint-keycap-ground);
+  border-radius: 3px;
   padding: 2px 6px;
-  line-height: 16px;
+  line-height: 15px;
 }
 @media (max-width: 900px) {
   /* Not enough room to read them without crowding the writing surface. */
@@ -1670,12 +1951,10 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   border-radius: 7px;
 }
 
-/* While a modifier is held the bar is answering a question, so it comes
-   forward instead of sitting quietly in the corner of the eye. */
+/* A modifier changes the available hints, not the strip material. */
 .workspace-key-hints.is-modifier-layer {
   opacity: 1;
-  box-shadow:
-    0 -6px 22px -18px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--workspace-hint-shadow);
 }
 
 /* A selected row is filled outright rather than tinted. Every piece of text
@@ -1879,39 +2158,67 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .workspace-recent.is-view-list,
 .workspace-recent.is-view-list .workspace-recent-list {
   grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+.workspace-recent.is-view-list {
+  --workspace-row-hover: #f6f8fe;
+  --workspace-row-secondary: #909096;
+  --workspace-row-dot: #79c9f0;
+}
+
+[data-theme="dark"] .workspace-recent.is-view-list {
+  --workspace-row-hover: #27272c;
+  --workspace-row-secondary: #a0a0a6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .workspace-recent.is-view-list {
+    --workspace-row-hover: #27272c;
+    --workspace-row-secondary: #a0a0a6;
+  }
+}
+
+.workspace-recent.is-view-list > .workspace-library-toolbar {
+  margin-bottom: 0;
+  border-bottom: 0;
 }
 
 .workspace-recent.is-view-list .workspace-item-option-main {
-  min-height: 52px;
+  min-height: 37px;
   gap: 10px;
-  padding-top: 3px;
-  padding-bottom: 3px;
+  padding: 0 24px 0 48px;
+  border-radius: 0;
 }
 
-/* A fixed first column, which is what makes a list read as a table.
+/* Superhuman fixes the sender column, not the subject/preview boundary.
 
-   The reference aligns its senders in a fixed column and every subject
-   starts at the same x; ours put the title wherever the chip left it and
-   the preview wherever the title ended, so no two rows lined up and the
-   whole list read as ragged paragraphs. A FIXED width, not `max-content`:
-   an intrinsic column has to measure every title on every layout, and
-   during a swipe it resolves against a container that is still narrowing,
-   which is what once painted every title as one or two characters.
+   TextText has no sender field in this row. Its title therefore starts at
+   the content origin and the preview follows the rendered title. Capping the
+   lede preserves room for preview text without inventing a rigid second
+   column that is absent from the reference.
    --------------------------------------------------------------------- */
 .workspace-recent.is-view-list .workspace-item-option-copy {
-  display: grid;
-  grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
+  display: flex;
   gap: 16px;
   align-items: baseline;
+  overflow: hidden;
 }
 
 .workspace-recent.is-view-list .workspace-item-option-lede {
-  grid-column: 1;
+  flex: 0 1 auto;
+  max-width: 60%;
   min-width: 0;
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px;
   overflow: hidden;
+}
+
+.workspace-recent.is-view-list
+  .workspace-item-option-copy
+  > .workspace-item-option-lede:only-child {
+  max-width: 100%;
 }
 
 .workspace-recent.is-view-list .workspace-item-option-copy > strong,
@@ -1920,25 +2227,25 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: 500 15px/1.35 var(--font-body);
-  letter-spacing: -0.005em;
+  font: 500 13px/18px var(--font-body);
+  letter-spacing: 0;
 }
 
 .workspace-recent.is-view-list .workspace-item-option-detail {
-  grid-column: 2;
+  flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
 }
 
 .workspace-recent.is-view-list .workspace-item-option-detail small {
   min-width: 0;
-  font: 400 15px/1.35 var(--font-body);
-  color: var(--muted);
+  font: 400 13px/18px var(--font-body);
+  color: var(--workspace-row-secondary);
 }
 
 .workspace-recent.is-view-list .workspace-item-option-main > time {
   flex: 0 0 auto;
-  min-width: 52px;
+  min-width: 56px;
   text-align: right;
 }
 
@@ -1949,52 +2256,79 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
    them by weight as well, and a column of semibold titles reads as a table
    of headings where theirs reads as a list of things. */
 .workspace-recent.is-view-list .workspace-item-option-copy > strong {
-  font: 500 15px/1.35 var(--font-body);
-  letter-spacing: -0.005em;
+  font: 500 13px/18px var(--font-body);
+  letter-spacing: 0;
 }
 
 .workspace-recent.is-view-list .workspace-item-option-detail small {
-  font: 400 15px/1.35 var(--font-body);
-  color: var(--muted);
+  font: 400 13px/18px var(--font-body);
+  color: var(--workspace-row-secondary);
 }
 
 .workspace-recent.is-view-list .workspace-item-option-main > time {
-  font: 500 12px/1 var(--font-body);
+  font: 500 11px/1 var(--font-body);
   font-variant-numeric: tabular-nums;
-  color: var(--muted);
+  color: var(--workspace-row-secondary);
+  text-transform: uppercase;
 }
 
-/* A tagged row keeps the 70px the base rule already gives it: the tags need
-   the second line, and adding another `:has()` here to shave six pixels off
-   the exception is not worth a second subtree-sensitive selector in a list
-   that restyles on every hover. */
+/* Tagged rows keep a compact second line for the TextText-only tag feature. */
 
 /* The lead-in of the hint sentence: said once, then each hint continues it. */
 .workspace-key-hint-lead {
   flex: 0 0 auto;
   font-size: 11.5px;
-  color: rgba(255, 255, 255, 0.74);
+  line-height: 19px;
+  color: var(--workspace-hint-ink);
   white-space: nowrap;
 }
 
 /* Separators between the clauses, so the sentence has commas. */
 .workspace-key-hint + .workspace-key-hint::before {
   content: "·";
-  margin-right: 10px;
-  color: rgba(255, 255, 255, 0.42);
+  margin-right: 4px;
+  color: var(--workspace-hint-separator);
 }
 
-.workspace-key-hint {
-  gap: 6px;
+.workspace-key-hint + .workspace-key-hint {
+  margin-left: 4px;
 }
 
-/* The bar starts where the content does, so the sidebar stays uncovered. */
+/* The open sidebar defines the active workspace column's left edge. */
 .post-editor-shell.has-sidebar .workspace-key-hints {
-  left: var(--workspace-sidebar-width, 280px);
+  left: var(--workspace-sidebar-width, 252px);
 }
 
 .post-editor-shell.has-sidebar.is-sidebar-collapsed .workspace-key-hints {
   left: 0;
+}
+
+/* The supplied dark capture does not show the literal teaching strip, so
+   these are sampled from its nearest equivalent dark chrome and keycaps. */
+[data-theme="dark"] .workspace-key-hints {
+  --workspace-hint-ground-start: #1a191c;
+  --workspace-hint-ground-end: #1a191c;
+  --workspace-hint-ink: #cfd1d8;
+  --workspace-hint-keycap-ground: #5f626b;
+  --workspace-hint-keycap-ink: #ffffff;
+  --workspace-hint-separator: #85878f;
+  --workspace-hint-shadow:
+    inset 0 1px 0 #34343a,
+    0 -3px 10px -8px rgba(0, 0, 0, 0.45);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .workspace-key-hints {
+    --workspace-hint-ground-start: #1a191c;
+    --workspace-hint-ground-end: #1a191c;
+    --workspace-hint-ink: #cfd1d8;
+    --workspace-hint-keycap-ground: #5f626b;
+    --workspace-hint-keycap-ink: #ffffff;
+    --workspace-hint-separator: #85878f;
+    --workspace-hint-shadow:
+      inset 0 1px 0 #34343a,
+      0 -3px 10px -8px rgba(0, 0, 0, 0.45);
+  }
 }
 
 /* The list's hover was the accent at a tenth, which with the refit accent
@@ -2004,7 +2338,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   .workspace-recent
   .workspace-item-option:hover
   .workspace-item-option-main {
-  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  background: var(--workspace-row-hover);
 }
 
 /* ---------------------------------------------------------------------
@@ -2078,12 +2412,21 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   box-sizing: border-box;
   padding-bottom: var(--workspace-hints-height, 0px);
   scroll-padding-bottom: var(--workspace-hints-height, 0px);
+  scrollbar-gutter: auto;
 }
 
 /* The layout also contains fixed chrome, so do not use it as the scroll
    reservation target. */
 .workspace-document-layout {
   padding-bottom: 0;
+}
+
+/* The assistant module declares a stable gutter on its scrolling body. The
+   reference uses the native macOS overlay scrollbar, so no descendant in the
+   pinned rail should reserve a permanent track. */
+.workspace-document-layout > .workspace-assistant-shell,
+.workspace-document-layout > .workspace-assistant-shell * {
+  scrollbar-gutter: auto;
 }
 
 /* Keep the fixed edit chrome below the tab strip and within the available
@@ -2232,6 +2575,29 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
 .workspace-recent.is-view-list .workspace-item-option {
   position: relative;
+  margin-inline: -27px -38px;
+}
+
+.workspace-recent.is-view-list .workspace-item-option .workspace-item-fresh {
+  left: 35px;
+  background: var(--workspace-row-dot);
+}
+
+.workspace-recent.is-view-list .workspace-item-option .workspace-item-leading-star {
+  left: 29px;
+}
+
+.workspace-recent.is-view-list
+  .workspace-item-option[data-tags]
+  .workspace-item-option-main {
+  min-height: 58px;
+  padding-bottom: 20px;
+}
+
+.workspace-recent.is-view-list .workspace-item-option-tags {
+  right: 24px;
+  bottom: 4px;
+  left: 48px;
 }
 
 /* Quiet by construction: a neutral fill and the muted ink. The list already
@@ -2268,21 +2634,22 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 /* ---------------------------------------------------------------------
    Row type, measured against the reference.
 
-   Their list rows carry an 18px ink band at a 52px pitch; ours carried 17px
-   at the same pitch. A point of type on a row is the difference between a
-   list that reads as data and one that reads as writing, and their rows are
-   the ones that read as writing.
+   The reference's 18px ink band and 51px pitch convert to 13px type and a
+   36.7px row at the TextText capture scale. Values here are rounded only
+   after division by 1.389.
    --------------------------------------------------------------------- */
 .workspace-recent.is-view-list .workspace-item-option-copy > strong {
-  font-size: 15px;
+  font-size: 13px;
+  line-height: 18px;
 }
 
 .workspace-recent.is-view-list .workspace-item-option-detail small {
-  font-size: 15px;
+  font-size: 13px;
+  line-height: 18px;
 }
 
 .workspace-recent.is-view-list .workspace-item-option-main > time {
-  font-size: 12px;
+  font-size: 11px;
 }
 
 /* ---------------------------------------------------------------------
@@ -2316,14 +2683,10 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 
-/* The item icon steps back so the title leads.
-
-   The reference has nothing in this position at all; we keep the icon
-   because it says what kind of thing a row is, but at the ink colour it
-   competed with the title for the start of the line. Muted, it reads as
-   punctuation. */
+/* Superhuman has no document glyph in a resting list row. Hide only the
+   icon thumbnail in list view; media thumbnails and the component remain. */
 .workspace-recent.is-view-list .workspace-item-thumbnail.is-icon {
-  color: color-mix(in srgb, var(--muted) 78%, transparent);
+  display: none;
 }
 
 /* ---------------------------------------------------------------------
@@ -2410,11 +2773,836 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   line-height: 20px;
 }
 
+/* Superhuman parity: top of the root list.
+
+   The reference carries one 80.6px converted band. TextText needs two tiers
+   because its persistent search, sort, and view controls must remain: history
+   and search occupy the upper tier, while filters and their controls occupy a
+   separate 42px lower tier. */
+.post-editor-shell:has(.workspace-root-action-bar) {
+  --workspace-topbar-ground: #ffffff;
+  --workspace-topbar-ink: #646569;
+  --workspace-topbar-muted: #a8a8ac;
+  --workspace-topbar-hover: #f6f8fe;
+}
+
+[data-theme="dark"]
+  .post-editor-shell:has(.workspace-root-action-bar) {
+  --workspace-topbar-ground: #2c2d31;
+  --workspace-topbar-ink: #f0f0f2;
+  --workspace-topbar-muted: #a8a8ac;
+  --workspace-topbar-hover: #36373d;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"])
+    .post-editor-shell:has(.workspace-root-action-bar) {
+    --workspace-topbar-ground: #2c2d31;
+    --workspace-topbar-ink: #f0f0f2;
+    --workspace-topbar-muted: #a8a8ac;
+    --workspace-topbar-hover: #36373d;
+  }
+}
+
+.workspace-root-page:has(> .workspace-root-action-bar) {
+  background: linear-gradient(
+    to bottom,
+    var(--workspace-topbar-ground) 0 106px,
+    var(--bg) 106px
+  );
+}
+
+.workspace-root-action-bar.is-inline-search {
+  top: 8px;
+  right: calc(8px + var(--workspace-rail-inset, 0px));
+  width: min(
+    520px,
+    max(
+      180px,
+      calc(
+        100vw - var(--workspace-sidebar-width, 280px) -
+          var(--workspace-rail-inset, 0px) - 128px
+      )
+    )
+  );
+}
+
+.post-editor-shell.has-tab-bar
+  .workspace-root-action-bar.is-inline-search {
+  top: 46px;
+}
+
+.workspace-root-action-bar .workspace-root-action-toolbar {
+  width: 100%;
+  height: 36px;
+  min-height: 36px;
+  padding: 2px;
+  border: 1px solid var(--ac-hairline);
+  border-radius: 8px;
+  background: var(--ac-mat-fallback);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 5%, transparent);
+  -webkit-backdrop-filter: var(--ac-mat-blur);
+  backdrop-filter: var(--ac-mat-blur);
+}
+
+.workspace-root-action-bar .workspace-action-search,
+.workspace-root-action-bar .workspace-action-search.is-compact {
+  width: 100%;
+  min-width: 0;
+  flex-basis: auto;
+}
+
+.workspace-root-action-bar .workspace-search-field {
+  height: 32px;
+  min-height: 30px;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  justify-content: stretch;
+  gap: 8px;
+  overflow: hidden;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--workspace-topbar-muted);
+  box-shadow: none;
+}
+
+.workspace-root-action-bar .workspace-search-field svg {
+  width: 14px;
+  height: 14px;
+}
+
+.workspace-root-action-bar .workspace-search-action {
+  width: 36px;
+  height: 36px;
+  flex-basis: 36px;
+  color: var(--workspace-topbar-muted);
+}
+
+.workspace-root-action-bar .workspace-search-action svg {
+  width: 14px;
+  height: 14px;
+}
+
+.workspace-root-action-bar .workspace-search-field input {
+  width: 100%;
+  min-width: 0;
+  opacity: 1;
+  color: var(--workspace-topbar-ink);
+  font-size: 14px;
+  font-weight: 400;
+  pointer-events: auto;
+}
+
+.workspace-root-action-bar .workspace-search-field kbd {
+  display: block;
+  min-width: 24px;
+  padding: 3px 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  background: var(--bg-soft);
+  color: var(--workspace-topbar-muted);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.workspace-root-action-bar:focus-within .workspace-search-field {
+  background: var(--workspace-topbar-hover);
+  box-shadow: var(--ac-focus);
+}
+
+.workspace-root-action-bar .workspace-search-field input::placeholder {
+  color: var(--workspace-topbar-muted);
+  opacity: 1;
+}
+
+.is-pointer-live
+  .workspace-root-action-bar
+  .workspace-search-field:hover {
+  background: var(--workspace-topbar-hover);
+}
+
+.workspace-root-action-bar + .workspace-root-inner {
+  margin-top: 0;
+}
+
+.workspace-root-action-bar + .workspace-root-inner .workspace-library-toolbar {
+  box-sizing: border-box;
+  min-height: 42px;
+  gap: 20px;
+  margin: 0;
+  padding: 0 0 0 12px;
+  border-bottom: 0;
+}
+
+.workspace-root-action-bar + .workspace-root-inner .workspace-library-filters {
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  gap: 24px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.workspace-root-action-bar
+  + .workspace-root-inner
+  .workspace-library-filters::-webkit-scrollbar {
+  display: none;
+}
+
+.workspace-root-action-bar
+  + .workspace-root-inner
+  .workspace-library-filters button {
+  min-height: 32px;
+  flex: 0 0 auto;
+  gap: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--workspace-topbar-muted);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.workspace-root-action-bar
+  + .workspace-root-inner
+  .workspace-library-filters button small {
+  min-width: 0;
+  margin-left: 6px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 10px;
+  font-weight: 450;
+  line-height: 1;
+}
+
+.workspace-root-action-bar
+  + .workspace-root-inner
+  .workspace-library-filters button[aria-pressed="true"] {
+  background: transparent;
+  color: var(--workspace-topbar-ink);
+  font-weight: 550;
+}
+
+.is-pointer-live
+  .workspace-root-action-bar
+  + .workspace-root-inner
+  .workspace-library-filters button:hover {
+  background: transparent;
+  color: var(--workspace-topbar-ink);
+}
+
+.workspace-root-action-bar
+  + .workspace-root-inner
+  .workspace-library-filters button:focus-visible {
+  border-radius: 2px;
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.workspace-root-action-bar + .workspace-root-inner .workspace-library-controls {
+  flex: 0 0 auto;
+  gap: 8px !important;
+}
+
+.workspace-root-action-bar
+  + .workspace-root-inner
+  .workspace-library-controls select {
+  min-height: 32px;
+  padding: 0 18px 0 0;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+  color: var(--workspace-topbar-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.is-pointer-live
+  .workspace-root-action-bar
+  + .workspace-root-inner
+  .workspace-library-controls select:hover {
+  background-color: transparent;
+  color: var(--workspace-topbar-ink);
+}
+
+.workspace-root-action-bar
+  + .workspace-root-inner
+  .workspace-library-controls select:focus-visible {
+  border-radius: 2px;
+  box-shadow: var(--ac-focus);
+}
+
+.workspace-root-action-bar + .workspace-root-inner .workspace-view-segmented {
+  height: 32px;
+  min-height: 32px;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.workspace-root-action-bar
+  + .workspace-root-inner
+  .workspace-view-segmented-button {
+  width: 28px;
+  height: 28px;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--workspace-topbar-muted);
+  box-shadow: none;
+}
+
+.workspace-root-action-bar
+  + .workspace-root-inner
+  .workspace-view-segmented-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.workspace-root-action-bar
+  + .workspace-root-inner
+  .workspace-view-segmented-button[aria-pressed="true"] {
+  background: transparent;
+  color: var(--workspace-topbar-ink);
+  box-shadow: none;
+}
+
+.is-pointer-live
+  .workspace-root-action-bar
+  + .workspace-root-inner
+  .workspace-view-segmented-button:hover {
+  background: var(--workspace-topbar-hover);
+  color: var(--workspace-topbar-ink);
+}
+
+.post-editor-shell:has(.workspace-root-action-bar) .workspace-history-chrome {
+  top: 8px;
+  gap: 4px;
+}
+
+.post-editor-shell.has-tab-bar:has(.workspace-root-action-bar)
+  .workspace-history-chrome {
+  top: 46px;
+}
+
+.post-editor-shell:has(.workspace-root-action-bar)
+  .workspace-history-chrome
+  :is(.workspace-round-button, .post-editor-sidebar-toggle) {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--workspace-topbar-muted);
+  box-shadow: none;
+}
+
+.post-editor-shell:has(.workspace-root-action-bar)
+  .workspace-history-chrome
+  :is(.workspace-round-button, .post-editor-sidebar-toggle)
+  svg {
+  width: 14px;
+  height: 14px;
+}
+
+.is-pointer-live
+  .post-editor-shell:has(.workspace-root-action-bar)
+  .workspace-history-chrome
+  :is(.workspace-round-button, .post-editor-sidebar-toggle):hover {
+  border: 0;
+  background: var(--workspace-topbar-hover);
+  color: var(--workspace-topbar-ink);
+}
+
+@media (max-width: 760px) {
+  .workspace-root-page:has(> .workspace-root-action-bar) {
+    background: var(--bg);
+  }
+
+  .workspace-root-action-bar.is-inline-search {
+    top: 8px;
+    right: calc(60px + var(--workspace-rail-inset, 0px));
+    width: 36px;
+  }
+
+  .post-editor-shell.has-tab-bar
+    .workspace-root-action-bar.is-inline-search {
+    top: 46px;
+  }
+
+  .workspace-root-action-bar + .workspace-root-inner {
+    margin-top: 0;
+  }
+
+  .workspace-root-action-bar
+    + .workspace-root-inner
+    .workspace-library-toolbar {
+    min-height: 44px;
+    margin-bottom: 14px;
+    padding: 0 0 10px;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .post-editor-shell:has(.workspace-root-action-bar) .workspace-history-chrome {
+    top: 8px;
+  }
+
+  .post-editor-shell.has-tab-bar:has(.workspace-root-action-bar)
+    .workspace-history-chrome {
+    top: 46px;
+  }
+}
+
 .post-workspace-sidebar-region .post-editor-nav-heading.is-collections {
   margin: 17px 10px 6px;
   padding: 13px 0 0;
   font-size: 11px;
   letter-spacing: 0.04em;
+}
+
+/* ---------------------------------------------------------------------
+   Open document: Superhuman thread geometry.
+
+   The workspace document is one flat pane. Published documents keep their
+   look-specific card and type treatments; these overrides exist only below
+   the workspace shell. The body measure remains 620px (about 64 characters)
+   even though the reference thread can run wider. */
+.post-editor-shell {
+  --workspace-hints-height: 32px;
+}
+
+.post-editor-content {
+  background: #fefefe;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ink) 14%, transparent) transparent;
+}
+
+.post-editor-content::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.post-editor-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.post-editor-content::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ink) 14%, transparent);
+  background-clip: padding-box;
+}
+
+.post-editor-content::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--ink) 24%, transparent);
+  background-clip: padding-box;
+}
+
+.post-editor-shell .tt-unified-editor,
+.post-editor-content .tt-document {
+  background: #fefefe;
+}
+
+.post-editor-content
+  .tt-document:not(.tt-collection-item):not([data-preview])
+  > .tt-stack {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0 0 56px;
+  gap: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.post-editor-content .tt-document {
+  padding-top: 0;
+  color: #29292c;
+}
+
+.post-editor-content .tt-document .tt-masthead {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  align-self: stretch;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 12px 52px 16px;
+  gap: 8px;
+  border-bottom: 1px solid #ececf0;
+  background: #fefefe;
+  text-align: left;
+  align-items: flex-start;
+}
+
+.post-editor-content
+  .tt-document:not(.tt-collection-item)[data-style-family]
+  .tt-masthead::after {
+  content: none;
+}
+
+.post-editor-shell
+  .tt-document
+  .tt-masthead
+  :is(.tt-title, .tt-text-title, h1) {
+  order: -2;
+  width: min(620px, calc(100% - 240px));
+  max-width: 100%;
+  margin: 0;
+  overflow: hidden;
+  color: #242426;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+    sans-serif;
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 28px;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  text-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.post-editor-shell
+  .tt-document
+  .tt-masthead
+  :is(.tt-byline, .tt-metadata) {
+  order: -1;
+  justify-content: flex-start;
+  width: min(620px, 100%);
+  max-width: 100%;
+  margin: 0;
+  color: #9b9ba1;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+    sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+  letter-spacing: 0;
+}
+
+.post-editor-content
+  .tt-document
+  > .tt-stack
+  > :is(.tt-text, .tt-group, .tt-prose) {
+  width: min(620px, calc(100% - 104px));
+  margin-right: auto;
+  margin-left: 52px;
+}
+
+.post-editor-content .tt-document > .tt-stack > .tt-masthead + * {
+  margin-top: 24px;
+}
+
+.post-editor-shell
+  .tt-document
+  :is(.tt-prose, .tt-field-body, .tt-field-body textarea, .tt-field-body .tt-md-surface) {
+  color: #29292c;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+    sans-serif;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 22px;
+}
+
+.post-editor-shell .tt-document .tt-prose p {
+  margin: 0 0 16px;
+}
+
+.post-editor-shell .tt-document .tt-prose :is(ul, ol) {
+  margin-top: 8px;
+  margin-bottom: 16px;
+}
+
+.post-editor-shell .tt-document .tt-prose a {
+  color: #4b91b4;
+}
+
+/* Read controls share the subject's header band and stay visually unboxed. */
+.post-editor-shell .post-top-action-bar.is-read {
+  top: 46px;
+}
+
+.post-editor-shell .post-top-action-bar.is-read .post-action-toolbar {
+  flex-wrap: nowrap;
+  min-height: 30px;
+  padding: 0;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.post-editor-shell .post-top-action-bar.is-read .post-action-toolbar .ac-btn,
+.post-editor-shell .post-top-action-bar.is-read .post-detail-nav,
+.post-editor-shell .post-top-action-bar.is-read .post-detail-control-icon,
+.post-editor-shell .post-top-action-bar.is-read .post-edit-menu-button {
+  width: auto;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding-inline: 8px;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.post-editor-shell .post-top-action-bar.is-read .post-detail-controls {
+  gap: 10px;
+}
+
+.post-editor-shell .post-top-action-bar.is-read .post-detail-control-icon {
+  padding: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-2);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.post-editor-shell
+  .post-top-action-bar.is-read
+  .post-detail-nav:hover
+  .post-detail-control-icon,
+.post-editor-shell
+  .post-top-action-bar.is-read
+  .post-detail-nav:focus-visible
+  .post-detail-control-icon {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+.post-editor-shell
+  .post-top-action-bar.is-read
+  :is(.post-action-button-icon, .post-action-button-icon svg, .post-edit-menu-button svg,
+    .post-detail-control-icon svg) {
+  width: 16px;
+  height: 16px;
+}
+
+/* The edit-only controls cannot become a true compose footer without moving
+   UnifiedDocumentEditor markup. Give the current fixed group two clear rows. */
+.post-editor-shell.has-sidebar .post-top-action-bar.is-edit {
+  right: calc(68px + var(--workspace-rail-inset, 0px));
+  left: calc(var(--workspace-sidebar-width, 252px) + 10px);
+  width: auto;
+  max-width: none;
+}
+
+.post-editor-shell.has-sidebar.is-sidebar-collapsed
+  .post-top-action-bar.is-edit {
+  left: 10px;
+}
+
+.post-editor-shell .post-top-action-bar.is-edit .post-action-toolbar {
+  width: 100%;
+  min-height: 70px;
+  padding: 5px;
+  gap: 6px;
+  align-content: center;
+  border: 1px solid color-mix(in srgb, var(--hairline) 72%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--bg) 96%, transparent);
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.08);
+}
+
+.post-editor-shell .post-top-action-bar.is-edit .post-action-replace {
+  order: 10;
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) auto;
+  flex: 1 0 100%;
+  width: 100%;
+}
+
+.post-editor-shell
+  .post-top-action-bar.is-edit
+  .post-action-replace-input {
+  width: auto;
+  min-width: 0;
+}
+
+.post-editor-shell .tt-unified-editor .tt-masthead {
+  position: relative;
+  padding-top: 82px;
+}
+
+.post-editor-shell .tt-save-state {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #9b9ba1;
+  font-size: 11px;
+}
+
+/* The light shortcut strip is the near-white lavender band in ref-00. */
+.post-editor-shell .workspace-key-hints {
+  min-height: 32px;
+  padding: 4px 16px;
+  border: 0;
+  border-top: 1px solid #e7e9ef;
+  background: #f7f8fe;
+  color: #5d5f68;
+  box-shadow: 0 -4px 14px -13px rgba(37, 38, 48, 0.32);
+}
+
+.post-editor-shell .workspace-key-hint {
+  color: #5d5f68;
+}
+
+.post-editor-shell .workspace-key-hint-keys {
+  color: #30313a;
+  background: #d9dbe4;
+}
+
+.post-editor-shell .workspace-key-hint + .workspace-key-hint::before {
+  color: #a5a7b0;
+}
+
+[data-theme="dark"] .post-editor-content,
+[data-theme="dark"] .post-editor-shell .tt-unified-editor,
+[data-theme="dark"] .post-editor-content .tt-document,
+[data-theme="dark"] .post-editor-content .tt-document .tt-masthead {
+  background: #2b2c30;
+}
+
+[data-theme="dark"]
+  .post-editor-shell
+  .tt-document
+  .tt-masthead
+  :is(.tt-title, .tt-text-title, h1) {
+  color: #f5f5f7;
+}
+
+[data-theme="dark"]
+  .post-editor-shell
+  .tt-document
+  :is(.tt-prose, .tt-field-body, .tt-field-body textarea, .tt-field-body .tt-md-surface) {
+  color: #f1f1f3;
+}
+
+[data-theme="dark"] .post-editor-content .tt-document .tt-masthead {
+  border-bottom-color: #3a3b40;
+}
+
+[data-theme="dark"] .post-editor-shell .workspace-key-hints {
+  border-top-color: #2e2e31;
+  background: #0b0b0c;
+  color: #f4f4f5;
+}
+
+[data-theme="dark"] .post-editor-shell .workspace-key-hint {
+  color: rgba(255, 255, 255, 0.74);
+}
+
+[data-theme="dark"] .post-editor-shell .workspace-key-hint-keys {
+  color: #171719;
+  background: #bfc2c8;
+}
+
+[data-theme="dark"]
+  .post-editor-shell
+  .workspace-key-hint
+  + .workspace-key-hint::before {
+  color: rgba(255, 255, 255, 0.42);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .post-editor-content,
+  :root:not([data-theme="light"]) .post-editor-shell .tt-unified-editor,
+  :root:not([data-theme="light"]) .post-editor-content .tt-document,
+  :root:not([data-theme="light"])
+    .post-editor-content
+    .tt-document
+    .tt-masthead {
+    background: #2b2c30;
+  }
+
+  :root:not([data-theme="light"])
+    .post-editor-shell
+    .tt-document
+    .tt-masthead
+    :is(.tt-title, .tt-text-title, h1) {
+    color: #f5f5f7;
+  }
+
+  :root:not([data-theme="light"])
+    .post-editor-shell
+    .tt-document
+    :is(.tt-prose, .tt-field-body, .tt-field-body textarea, .tt-field-body .tt-md-surface) {
+    color: #f1f1f3;
+  }
+
+  :root:not([data-theme="light"])
+    .post-editor-content
+    .tt-document
+    .tt-masthead {
+    border-bottom-color: #3a3b40;
+  }
+
+  :root:not([data-theme="light"]) .post-editor-shell .workspace-key-hints {
+    border-top-color: #2e2e31;
+    background: #0b0b0c;
+    color: #f4f4f5;
+  }
+
+  :root:not([data-theme="light"]) .post-editor-shell .workspace-key-hint {
+    color: rgba(255, 255, 255, 0.74);
+  }
+
+  :root:not([data-theme="light"])
+    .post-editor-shell
+    .workspace-key-hint-keys {
+    color: #171719;
+    background: #bfc2c8;
+  }
+
+  :root:not([data-theme="light"])
+    .post-editor-shell
+    .workspace-key-hint
+    + .workspace-key-hint::before {
+    color: rgba(255, 255, 255, 0.42);
+  }
+}
+
+@media (max-width: 900px) {
+  .post-editor-content
+    .tt-document:not(.tt-collection-item):not([data-preview])
+    > .tt-stack {
+    padding: 0 0 48px;
+  }
+
+  .post-editor-content .tt-document .tt-masthead {
+    padding-right: 20px;
+    padding-left: 20px;
+  }
+
+  .post-editor-content
+    .tt-document
+    > .tt-stack
+    > :is(.tt-text, .tt-group, .tt-prose) {
+    width: calc(100% - 40px);
+    margin-left: 20px;
+  }
+
+  .post-editor-shell
+    .tt-document
+    .tt-masthead
+    :is(.tt-title, .tt-text-title, h1) {
+    width: min(620px, calc(100% - 120px));
+  }
 }
 
 /* ---------------------------------------------------------------------
@@ -2582,23 +3770,53 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 /* Quieter chips. Theirs sit inside the line as small pale labels; ours were
    loud enough to be read before the title they belong to. */
 .workspace-item-chip {
-  height: 18px;
-  padding: 0 6px;
+  height: 16px;
+  padding: 0 4px;
   border-radius: 3px;
-  font-size: 11px;
+  font-size: 10px;
   letter-spacing: 0;
   text-transform: lowercase;
-  margin-inline-end: 2px;
+  margin-inline-end: 0;
 }
 
 .workspace-item-chip[data-chip="type"] {
-  background: color-mix(in srgb, #e8c14a 34%, var(--bg));
-  color: color-mix(in srgb, #6f5210 78%, var(--ink));
+  background: #e4da9e;
+  color: #6f5210;
 }
 
 .workspace-item-chip[data-chip="folder"] {
-  background: color-mix(in srgb, #c58bd3 34%, var(--bg));
-  color: color-mix(in srgb, #5c3d80 78%, var(--ink));
+  background: #ebd2ef;
+  color: #5c3d80;
+}
+
+[data-theme="dark"]
+  .workspace-recent.is-view-list
+  .workspace-item-chip[data-chip="type"] {
+  background: color-mix(in srgb, #e4da9e 24%, transparent);
+  color: #f0df9a;
+}
+
+[data-theme="dark"]
+  .workspace-recent.is-view-list
+  .workspace-item-chip[data-chip="folder"] {
+  background: color-mix(in srgb, #ebd2ef 22%, transparent);
+  color: #e9c8ef;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"])
+    .workspace-recent.is-view-list
+    .workspace-item-chip[data-chip="type"] {
+    background: color-mix(in srgb, #e4da9e 24%, transparent);
+    color: #f0df9a;
+  }
+
+  :root:not([data-theme="light"])
+    .workspace-recent.is-view-list
+    .workspace-item-chip[data-chip="folder"] {
+    background: color-mix(in srgb, #ebd2ef 22%, transparent);
+    color: #e9c8ef;
+  }
 }
 
 /* The date sits at the right edge, and the row's actions cover it on hover.
@@ -2610,7 +3828,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
    on the row you are pointing at, because that is the only row whose date
    you are not reading. */
 .workspace-recent.is-view-list .workspace-item-option-main {
-  padding-right: 14px;
+  padding-right: 24px;
 }
 
 /* Something has to sit behind the actions or they land on top of the date
@@ -2620,7 +3838,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   position: absolute;
   inset: -6px -6px -6px -18px;
   border-radius: 8px;
-  background: var(--bg);
+  background: var(--workspace-row-hover);
   opacity: 0;
   transition: opacity 0.14s var(--ease);
 }
@@ -2680,9 +3898,9 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 /* The keyboard cursor remains a quiet locator when it is not selected. */
 .workspace-recent.is-view-list
   .workspace-item-option.is-command-active:not(.is-selected):not(.is-command-selected) {
-  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  background: var(--workspace-row-hover);
   border-radius: 0;
-  box-shadow: inset 2px 0 0 var(--muted);
+  box-shadow: none;
 }
 
 /* Superhuman selection is a continuous sky-blue band, with no inset or
@@ -2692,30 +3910,57 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .workspace-recent.is-view-list
   .workspace-item-option.is-command-selected {
   background: #61b5e1;
-  color: #cff1ff;
+  color: #ffffff;
   border-radius: 0;
-  margin-inline: 0;
+  margin-inline: -27px -38px;
+  box-shadow: none;
 }
 
+/* Keep adjacent selected rows free of any inherited shadow or seam. */
 .workspace-recent.is-view-list
   .workspace-item-option.is-selected
-  .workspace-item-option-copy > strong,
+  + .workspace-item-option:is(.is-selected, .is-command-selected),
+.workspace-recent.is-view-list
+  .workspace-item-option.is-command-selected
+  + .workspace-item-option:is(.is-selected, .is-command-selected) {
+  box-shadow: none;
+}
+
+/* The title is nested in the lede. The former direct-child selector missed
+   it, leaving light-mode titles dark on selected rows. */
 .workspace-recent.is-view-list
   .workspace-item-option.is-selected
+  .workspace-item-option-lede > strong,
+.workspace-recent.is-view-list
+  .workspace-item-option.is-command-selected
+  .workspace-item-option-lede > strong {
+  color: #ffffff;
+}
+
+/* Secondary text is white with reduced opacity, not an opaque cyan. */
+.workspace-recent.is-view-list
+  .workspace-item-option.is-selected
+  .workspace-item-option-detail small,
+.workspace-recent.is-view-list
+  .workspace-item-option.is-command-selected
   .workspace-item-option-detail small,
 .workspace-recent.is-view-list
   .workspace-item-option.is-selected
   .workspace-item-option-main > time,
 .workspace-recent.is-view-list
   .workspace-item-option.is-command-selected
-  .workspace-item-option-copy > strong,
-.workspace-recent.is-view-list
-  .workspace-item-option.is-command-selected
-  .workspace-item-option-detail small,
-.workspace-recent.is-view-list
-  .workspace-item-option.is-command-selected
   .workspace-item-option-main > time {
-  color: #cff1ff;
+  color: #ffffff;
+}
+
+.workspace-recent.is-view-list
+  .workspace-item-option.is-selected
+  .workspace-item-chip,
+.workspace-recent.is-view-list
+  .workspace-item-option.is-command-selected
+  .workspace-item-chip {
+  background: #ffffff;
+  color: #768796;
 }
 
 .workspace-recent.is-view-list
@@ -2724,7 +3969,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .workspace-recent.is-view-list
   .workspace-item-option.is-command-selected
   .workspace-item-actions {
-  color: #cff1ff;
+  color: #ffffff;
 }
 
 .workspace-recent.is-view-list
@@ -2733,11 +3978,111 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .workspace-recent.is-view-list
   .workspace-item-option.is-checked
   .workspace-item-check {
-  color: #61b5e1;
-  background: #ffffff;
+  color: #ffffff;
+  background: transparent;
   border-color: #ffffff;
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+}
+
+/* WorkspacePostOption renders this tick, rather than workspace-item-check. */
+.workspace-recent.is-view-list
+  .workspace-item-option.is-selected
+  .workspace-item-tick,
+.workspace-recent.is-view-list
+  .workspace-item-option.is-command-selected
+  .workspace-item-tick {
+  left: 8px;
+  width: 14px;
+  height: 14px;
+  border-color: #ffffff;
+  border-radius: 2px;
+  background: transparent;
+}
+
+.workspace-recent.is-view-list
+  .workspace-item-option:is(.is-selected, .is-command-selected)
+  .workspace-item-tick svg {
+  width: 9px;
+  height: 9px;
+}
+
+.workspace-recent.is-view-list
+  .workspace-item-option.is-selected
+  .workspace-item-tick svg,
+.workspace-recent.is-view-list
+  .workspace-item-option.is-command-selected
+  .workspace-item-tick svg {
+  color: #ffffff;
+}
+
+/* Preserve the existing conditional dot when a selected row already has
+   one. Selection changes its treatment, not its presence in the component. */
+.workspace-recent.is-view-list
+  .workspace-item-option.is-selected
+  .workspace-item-fresh,
+.workspace-recent.is-view-list
+  .workspace-item-option.is-command-selected
+  .workspace-item-fresh {
+  left: 35px;
+  background: var(--workspace-row-dot);
+  opacity: 1;
+}
+
+/* Selection owns the ground. Hover and focus must not draw a second inset
+   rectangle or ring inside the blue band. */
+.is-pointer-live
+  .workspace-recent.is-view-list
+  .workspace-item-option.is-selected:hover
+  .workspace-item-option-main,
+.is-pointer-live
+  .workspace-recent.is-view-list
+  .workspace-item-option.is-command-selected:hover
+  .workspace-item-option-main {
+  background: transparent;
+}
+
+.workspace-recent.is-view-list
+  .workspace-item-option.is-selected
+  .workspace-item-option-main:focus-visible,
+.workspace-recent.is-view-list
+  .workspace-item-option.is-command-selected
+  .workspace-item-option-main:focus-visible {
+  box-shadow: none;
+}
+
+/* Keep the one active-row menu available, but use Superhuman's lightweight
+   glyph treatment instead of an opaque circular control. */
+.workspace-recent.is-view-list
+  .workspace-item-option.is-selected.is-command-active
+  .workspace-item-actions-trigger,
+.workspace-recent.is-view-list
+  .workspace-item-option.is-command-selected.is-command-active
+  .workspace-item-actions-trigger {
+  background: transparent;
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.is-pointer-live
+  .workspace-recent.is-view-list
+  .workspace-item-option.is-selected
+  .workspace-item-actions-trigger:hover,
+.is-pointer-live
+  .workspace-recent.is-view-list
+  .workspace-item-option.is-command-selected
+  .workspace-item-actions-trigger:hover,
+.workspace-recent.is-view-list
+  .workspace-item-option.is-selected
+  .workspace-item-actions-trigger:focus-visible,
+.workspace-recent.is-view-list
+  .workspace-item-option.is-command-selected
+  .workspace-item-actions-trigger:focus-visible {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  outline: 1px solid rgba(255, 255, 255, 0.72);
+  outline-offset: -1px;
 }
 
 /* A selected row already owns the emphasis. Its star should stay out of the
@@ -2752,60 +4097,361 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   pointer-events: none;
 }
 
-/* Sidebar visual language: a calm, wide navigation rail with generous
-   Superhuman-like rows. Keep the existing folder tree and its controls; only
-   tune the chrome metrics and hierarchy here. */
-.post-workspace-sidebar-region .post-editor-folder-nav {
-  padding: 8px;
-  gap: 2px;
+/* The persistent workspace rail keeps the measured Superhuman treatment from
+   ref-02 without taking on that transient overlay's width. Reference geometry
+   is divided by 1.389; horizontal content offsets are then scaled from the
+   433px overlay measurement to this rail's 252px default. */
+.post-workspace-sidebar-region {
+  --workspace-sidebar-ground: #ffffff;
+  --workspace-sidebar-primary: #626262;
+  --workspace-sidebar-secondary: #9899a0;
+  --workspace-sidebar-section: #8998b1;
+  --workspace-sidebar-active: #f6f8fe;
+  --workspace-sidebar-hover: #fafbff;
+  --workspace-sidebar-spine: #dfe0eb;
+  --workspace-sidebar-rule: #f5f5f5;
+  --workspace-sidebar-thumb: #d0d1d6;
+  --workspace-sidebar-avatar: #b7d0ce;
 }
 
-.post-workspace-sidebar-region .post-editor-folder-row {
-  min-height: 44px;
+.post-workspace-sidebar-region .post-editor-sidebar {
+  gap: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border-right: 1px solid var(--workspace-sidebar-rule);
+  background: var(--workspace-sidebar-ground);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: 12px 0 18px -18px rgba(0, 0, 0, 0.3);
+  scrollbar-width: thin;
+  scrollbar-color: var(--workspace-sidebar-thumb) transparent;
+}
+
+.post-workspace-sidebar-region .post-editor-sidebar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.post-workspace-sidebar-region .post-editor-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.post-workspace-sidebar-region .post-editor-sidebar::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: var(--workspace-sidebar-thumb);
+  background-clip: padding-box;
+}
+
+.post-workspace-sidebar-region .post-editor-sidebar-top {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  min-height: 81px;
+  gap: 0;
+  padding: 21px 16px 8px 31px;
+  background: var(--workspace-sidebar-ground);
+}
+
+.post-workspace-sidebar-region .post-editor-sidebar-workspace-menu,
+.post-workspace-sidebar-region .post-editor-sidebar-workspace-menu > .applecms {
+  width: 100%;
+  min-width: 0;
+}
+
+.post-workspace-sidebar-region
+  .post-editor-sidebar-workspace-menu
+  > .applecms
+  > button {
+  height: 52px;
+  justify-content: flex-start;
+  gap: 14px;
+  padding: 0;
+  border-radius: 0;
+  color: var(--workspace-sidebar-primary);
+}
+
+.post-workspace-sidebar-region
+  .post-editor-sidebar-workspace-menu
+  > .applecms
+  > button:hover,
+.post-workspace-sidebar-region
+  .post-editor-sidebar-workspace-menu
+  > .applecms
+  > button:focus-visible,
+.post-workspace-sidebar-region
+  .post-editor-sidebar-workspace-menu
+  > .applecms
+  > button[aria-expanded="true"] {
+  background: var(--workspace-sidebar-hover);
+}
+
+.post-workspace-sidebar-region
+  .post-editor-sidebar-workspace-menu
+  > .applecms
+  > button
+  > span:first-child {
+  width: 34px;
+  height: 34px;
+  background: var(--workspace-sidebar-avatar);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.post-workspace-sidebar-region
+  .post-editor-sidebar-workspace-menu
+  > .applecms
+  > button
+  > span:nth-child(2) {
+  color: var(--workspace-sidebar-primary);
+  font: 500 13px/18px var(--font-body);
+  letter-spacing: 0;
+}
+
+.post-workspace-sidebar-region
+  .post-editor-sidebar-workspace-menu
+  > .applecms
+  > button
+  > span:last-child {
+  margin-left: auto;
+  color: var(--workspace-sidebar-secondary);
+}
+
+.post-workspace-sidebar-region .post-editor-sidebar-top > .post-editor-sidebar-toggle {
+  position: absolute;
+  top: 29px;
+  right: 2px;
+  z-index: 3;
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+}
+
+.post-workspace-sidebar-region
+  .post-editor-sidebar-top:hover
+  > .post-editor-sidebar-toggle,
+.post-workspace-sidebar-region
+  .post-editor-sidebar-top
+  > .post-editor-sidebar-toggle:focus-visible {
+  opacity: 1;
+}
+
+.post-workspace-sidebar-region .post-editor-folder-nav {
+  flex: 0 0 auto;
+  gap: 0;
+  padding: 0 6px;
+}
+
+.post-workspace-sidebar-region .post-editor-special-folders {
+  gap: 0;
+  margin-top: 0;
+}
+
+.post-workspace-sidebar-region .post-editor-folder-row,
+.post-workspace-sidebar-region .post-editor-home-row,
+.post-workspace-sidebar-region .post-editor-special-row {
+  position: relative;
+  height: 37px;
+  min-height: 37px;
   margin: 0;
-  border-radius: 7px;
+  padding: 0;
+  border-radius: 0;
+  color: var(--workspace-sidebar-primary);
 }
 
 .post-workspace-sidebar-region .post-editor-folder-main {
-  min-height: 44px;
-  gap: 10px;
-  padding: 0 10px;
-  font-size: 14px;
-  letter-spacing: -0.01em;
+  height: 37px;
+  min-height: 37px;
+  gap: 0;
+  padding: 0 7px 0 41px;
+  border-radius: 0;
+  color: var(--workspace-sidebar-primary);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.post-workspace-sidebar-region .post-editor-special-main {
+  padding-left: 28px;
+}
+
+.post-workspace-sidebar-region .post-editor-folder-icon {
+  display: none;
 }
 
 .post-workspace-sidebar-region .post-editor-folder-name {
-  font-size: 14px;
-  line-height: 20px;
+  color: var(--workspace-sidebar-primary);
+  font: 500 13px/18px var(--font-body);
+  letter-spacing: 0;
+}
+
+.post-workspace-sidebar-region .post-editor-folder-row.is-active,
+.is-pointer-live
+  .post-workspace-sidebar-region
+  .post-editor-folder-row.is-active:hover {
+  background: var(--workspace-sidebar-active);
+}
+
+.post-workspace-sidebar-region .post-editor-folder-row.is-active::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--workspace-sidebar-spine);
+  content: "";
+}
+
+.post-workspace-sidebar-region .post-editor-folder-row.is-active .post-editor-folder-main,
+.post-workspace-sidebar-region .post-editor-folder-row.is-active .post-editor-folder-name,
+.post-workspace-sidebar-region .post-editor-folder-row.is-active .post-editor-folder-count {
+  color: var(--workspace-sidebar-primary);
+  font-weight: 500;
+}
+
+.is-pointer-live
+  .post-workspace-sidebar-region
+  .post-editor-folder-row:not(.is-active):hover {
+  background: var(--workspace-sidebar-hover);
 }
 
 .post-workspace-sidebar-region .post-editor-folder-count {
-  margin-right: 10px;
-  font-size: 12px;
-  line-height: 20px;
+  height: auto;
+  margin-right: 21px;
+  padding: 0;
+  background: transparent;
+  color: var(--workspace-sidebar-secondary);
+  font: 500 11px/18px var(--font-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.post-workspace-sidebar-region .post-editor-folder-trailing {
+  margin-right: 11px;
+}
+
+.post-workspace-sidebar-region
+  .post-editor-folder-trailing
+  > .post-editor-folder-count {
+  margin-right: 0;
+}
+
+.post-workspace-sidebar-region .post-editor-folder-children {
+  padding-left: 13px;
+}
+
+.post-workspace-sidebar-region .post-editor-folder-disclosure {
+  position: absolute;
+  left: 28px;
+  z-index: 1;
+  width: 18px;
+  height: 37px;
+  opacity: 0;
+}
+
+.post-workspace-sidebar-region .post-editor-folder-disclosure.is-empty {
+  display: none;
+}
+
+.post-workspace-sidebar-region
+  .post-editor-folder-row:hover
+  > .post-editor-folder-disclosure,
+.post-workspace-sidebar-region
+  .post-editor-folder-row:focus-within
+  > .post-editor-folder-disclosure {
+  opacity: 1;
 }
 
 .post-workspace-sidebar-region .post-editor-nav-heading.is-collections {
-  margin: 17px 10px 6px;
-  padding: 13px 0 0;
+  position: relative;
+  margin: 15px 17px 8px 28px;
+  padding: 24px 0 0;
+  border-top: 0;
+  color: var(--workspace-sidebar-section);
+  font: 500 12px/18px var(--font-body);
+  letter-spacing: 0;
+}
+
+.post-workspace-sidebar-region .post-editor-nav-heading.is-collections::before {
+  position: absolute;
+  inset: 0 0 auto 6px;
+  height: 1px;
+  background: var(--workspace-sidebar-rule);
+  content: "";
+}
+
+.post-workspace-sidebar-region .post-editor-sidebar-activity {
+  position: relative;
+  flex: 0 0 auto;
+  min-height: 0;
+  overflow: visible;
+  gap: 18px;
+  margin: 15px 21px 0 31px;
+  padding: 0;
+  border-top: 0;
+}
+
+.post-workspace-sidebar-region .post-editor-sidebar-activity::before {
+  position: absolute;
+  inset: 0 0 auto 6px;
+  height: 1px;
+  background: var(--workspace-sidebar-rule);
+  content: "";
+}
+
+.post-workspace-sidebar-region .post-editor-sidebar-activity > summary {
+  min-height: 50px;
+  padding: 24px 0 8px;
+  color: var(--workspace-sidebar-section);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.post-workspace-sidebar-region .post-editor-sidebar-activity > summary small {
+  color: var(--workspace-sidebar-secondary);
   font-size: 11px;
-  letter-spacing: 0.04em;
+}
+
+[data-theme="dark"] .post-workspace-sidebar-region {
+  --workspace-sidebar-ground: #1a191c;
+  --workspace-sidebar-primary: #d9d9dc;
+  --workspace-sidebar-secondary: #8f9198;
+  --workspace-sidebar-section: #8f9ab2;
+  --workspace-sidebar-active: #28282d;
+  --workspace-sidebar-hover: #222227;
+  --workspace-sidebar-spine: #5e6070;
+  --workspace-sidebar-rule: #303036;
+  --workspace-sidebar-thumb: #55565e;
+  --workspace-sidebar-avatar: #668184;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .post-workspace-sidebar-region {
+    --workspace-sidebar-ground: #1a191c;
+    --workspace-sidebar-primary: #d9d9dc;
+    --workspace-sidebar-secondary: #8f9198;
+    --workspace-sidebar-section: #8f9ab2;
+    --workspace-sidebar-active: #28282d;
+    --workspace-sidebar-hover: #222227;
+    --workspace-sidebar-spine: #5e6070;
+    --workspace-sidebar-rule: #303036;
+    --workspace-sidebar-thumb: #55565e;
+    --workspace-sidebar-avatar: #668184;
+  }
+}
 
 /* Shortcut sheet: Superhuman's quiet utility rail. Keep the sheet dense and
    legible, with the keycaps carrying the only strong shape. */
 .command-palette--sheet {
-  width: min(100%, 400px);
-  background: var(--sheet-bg, #efeffe);
-  color: var(--sheet-ink, #1f1f2e);
+  width: min(100%, 333px);
+  background: var(--sheet-bg, #fafcfe);
+  color: var(--sheet-ink, #454749);
 }
 .command-palette--sheet .command-sheet-header {
   gap: 16px;
-  padding: 20px 20px 14px;
+  padding: 35px 29px 10px;
+  border-bottom: 0;
 }
 .command-palette--sheet .command-sheet-title {
-  font-size: 18px;
+  font-size: 17px;
   line-height: 1.2;
-  font-weight: 600;
+  font-weight: 500;
 }
 .command-palette--sheet .command-sheet-subtitle {
   font-size: 12px;
@@ -2817,22 +4463,39 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   font-size: 13px;
 }
 .command-palette--sheet .command-sheet-columns {
-  padding: 12px 20px 24px;
+  padding: 7px 29px 24px;
+  scrollbar-width: none;
+}
+.command-palette--sheet .command-sheet-columns::-webkit-scrollbar {
+  width: 0;
 }
 .command-palette--sheet .command-shortcut-heading {
   padding: 22px 0 8px;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.2;
-  font-weight: 500;
+  font-weight: 400;
 }
 .command-palette--sheet .command-sheet-row {
-  min-height: 30px;
-  gap: 24px;
-  padding: 3px 0;
+  min-height: 24px;
+  display: grid;
+  grid-template-columns: minmax(0, 135px) minmax(0, 1fr);
+  align-items: center;
+  gap: 25px;
+  padding: 0;
 }
 .command-palette--sheet .command-sheet-row-label {
-  font-size: 14px;
+  overflow: hidden;
+  color: var(--sheet-row-ink, #67696b);
+  font-size: 13px;
   line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-palette--sheet .command-sheet-keys {
+  justify-self: start;
+  gap: 4px;
+}
 
 /* Superhuman-style tooltip chip. The component keeps shortcuts in their own
    key group, so labels stay readable while the shortcut remains scannable. */
