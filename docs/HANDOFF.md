@@ -4208,3 +4208,41 @@ the earlier `nettop`-based attempt blocked and was dropped.
 - Blank window at launch: about two seconds in the recording, matching the
   process-sampling number (WebKit processes at 0.7s, idle at 2.9s).
   Function and database are both in us-east-1, so it is not cross-region.
+
+### Adversarial review round (2026-09-05, Codex gpt-6-astra low)
+
+Briefs and full reports are in the session scratchpad
+(`scratchpad/astra/out/*.md`); the confident diffs were applied (commit
+"Take the confident fixes from six adversarial reviews"). Still open,
+ranked by the reviewers:
+
+- Sync P1: materialization does not carry the client's learned epoch, so a
+  retired local state can be written back after an out-of-band body
+  write; require and check the epoch server-side. P1: while a local save
+  is pending, remote CRDT updates are hidden from the surface and can then
+  be deleted by a stale acknowledgment; publish the merged CRDT and fence
+  acknowledgments against every in-flight generation. P1 (partly fixed):
+  pre-ready text reconciliation overwrites other clients' text with the
+  whole local field; needs a range-based merge.
+- Sharing P1: presence routes let a viewer delete or forge another
+  participant's awareness (bind sessions to the account and a
+  server-issued credential). P1: the share dialog always says "Only people
+  invited"; show the real access summary (public, link grants, inherited).
+- Agents P1: hosted MCP executes confirmation-worthy tools (empty_trash,
+  publish) directly; route them through the proposal service. P1: an
+  agent's edit cannot be undone by the person (undo tracks the human origin
+  only); add durable per-item agent change records with revert. P2:
+  presence and attribution around agent writes are inconsistent.
+- AI sidebar P1: selections over 4,000 characters are truncated for the
+  model but replaced in full; carry a validated selection envelope and
+  refuse over-budget requests visibly. P2: history sync never retries or
+  refreshes on an idle device. P2: selection actions do not stream inline
+  or offer accept/discard; the report carries a concrete UI spec (preview
+  under the passage, states, keys). P2: no Translate or Continue writing.
+- Item types P1: updating a type does not migrate existing values or
+  workflows (compare field ids, kinds, enums before applying). P1: the
+  studio ignores the chosen save scope when editing. P2: multi-select row
+  subfields compile but cannot be stored. P2: the folder preview does not
+  reflect the real collection query.
+- UI: an Apple-style participant row (people and agents as 24px marks in
+  the bar) is specified in the agents and sharing reports.
