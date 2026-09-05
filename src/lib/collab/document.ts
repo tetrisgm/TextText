@@ -41,6 +41,7 @@ export type DocumentMutation = {
     expectedText: string;
     replacementText: string;
     selectionEnvelope?: SelectionEnvelope;
+    sourcePrecondition?: SelectionEnvelope;
   };
   tags?: string[];
   /** Declared field values. A null clears one. */

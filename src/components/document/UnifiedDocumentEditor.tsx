@@ -35,7 +35,7 @@ import {
 import { Awareness } from "y-protocols/awareness";
 import { formatArticleDate } from "@/lib/content";
 import type { Blog, Post } from "@/lib/content";
-import { applyPreReadyMetadata, applyPreReadyTextOperations, preReadyTextOperations } from "@/lib/collab/pre-ready";
+import { capturePreReadyDocumentBaseline, applyPreReadyMetadata, applyPreReadyTextOperations, preReadyTextOperations } from "@/lib/collab/pre-ready";
 import { acknowledgeRetiredOutboxes, CollabProvider, type PresencePeer } from "@/lib/collab/provider";
 import {
   keepMaterializationRecovery,
@@ -479,6 +479,9 @@ export function UnifiedDocumentEditor({
     [post],
   );
   const initialDocumentRef = useRef(initialDocument);
+  const [preReadyBaseline] = useState(() => capturePreReadyDocumentBaseline(
+    initialDocument, `${collab.postId}:${post.revision ?? 0}`,
+  ));
   const [document, setDocument] = useState(initialDocument);
   const documentRef = useRef(document);
   const networkEnabled = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -1002,7 +1005,8 @@ export function UnifiedDocumentEditor({
         plans = textChanges.map((field) => ({
           field,
           operations: preReadyTextOperations(initial.content[field] ?? "",
-            localBeforeReady.content[field] ?? "", documentText(doc, field).toString()),
+            localBeforeReady.content[field] ?? "", documentText(doc, field).toString(),
+            { baseline: preReadyBaseline[field], target: documentText(doc, field) }),
         }));
         const content = { ...(overlaid ?? remote).content };
         for (const { field, operations } of plans) {
@@ -1017,11 +1021,13 @@ export function UnifiedDocumentEditor({
         preserveRecovery(provider.learnedEpoch ?? 0);
         return;
       }
-      for (const { field, operations } of plans) {
-        applyPreReadyTextOperations(documentText(doc, field), operations, localOrigin.current);
-      }
-      // This writes metadata entries only and cannot undo text reconciliation.
-      if (overlaid) applyPreReadyMetadata(doc, overlaid, localOrigin.current);
+      doc.transact(() => {
+        for (const { field, operations } of plans) {
+          applyPreReadyTextOperations(documentText(doc, field), operations, localOrigin.current);
+        }
+        // This writes metadata entries only and cannot undo text reconciliation.
+        if (overlaid) applyPreReadyMetadata(doc, overlaid, localOrigin.current);
+      }, localOrigin.current);
       preReadyLocalRef.current = null;
       publishDocument(documentSnapshotFromYDoc(doc));
       readyRef.current = true;
@@ -1063,6 +1069,7 @@ export function UnifiedDocumentEditor({
     post.revision,
     publishDocument,
     providerAttempt,
+    preReadyBaseline,
     preserveRecovery,
     scheduleMaterialization,
   ]);

@@ -4,7 +4,10 @@ import { AgentChangeConflictError } from "@/lib/agent-changes";
 import { listAgentChanges, getAgentChange } from "@/lib/store";
 import {
   validateSelectionEditEnvelope,
+  validateSelectionEnvelope,
+  assertSelectionMatches,
   SELECTION_INVALID_ERROR,
+  SELECTION_STALE_ERROR,
 } from "@/lib/ai/selection-envelope";
 import { assessItemTypeQuality } from "@/lib/presentation/item-type-quality";
 import type { AuthInfo } from "./types";
@@ -152,7 +155,7 @@ import {
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const CLIENT_SAVE_ERRORS = new Set(["That URL is already used"]);
+const CLIENT_SAVE_ERRORS = new Set(["That URL is already used", SELECTION_STALE_ERROR, SELECTION_INVALID_ERROR]);
 
 export type ToolContext = { authInfo?: AuthInfo };
 type ToolTargetType = "workspace" | "folder" | "item" | "mode";
@@ -2122,6 +2125,14 @@ async function executeWorkspaceCommand(
           return errorResult(error instanceof Error ? error.message : SELECTION_INVALID_ERROR);
         }
       }
+      if (input.text_edit?.source_precondition !== undefined) {
+        try {
+          const source = await validateSelectionEnvelope(input.text_edit.source_precondition);
+          assertSelectionMatches(source, input.id, post);
+        } catch (error) {
+          return errorResult(error instanceof Error ? error.message : SELECTION_INVALID_ERROR);
+        }
+      }
       let textEditValue: string | undefined;
       if (input.text_edit !== undefined) {
         const current =
@@ -2401,6 +2412,7 @@ async function executeWorkspaceCommand(
                     expectedText: input.text_edit.expected_text,
                     replacementText: input.text_edit.replacement_text,
                     ...(input.text_edit.selection_envelope ? { selectionEnvelope: input.text_edit.selection_envelope } : {}),
+                    ...(input.text_edit.source_precondition ? { sourcePrecondition: input.text_edit.source_precondition } : {}),
                   },
                 }
               : {}),

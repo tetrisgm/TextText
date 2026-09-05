@@ -137,10 +137,8 @@ export function LocalUnifiedWorkspacePostEditor({
     initialDocument,
   );
   const poolDocument = poolPost.document ?? initialDocument?.document;
-  const cachedDocument = getCachedWorkspacePostDocument(
-    pool.blogId,
-    poolPost.id,
-  )?.document;
+  const cached = getCachedWorkspacePostDocument(pool.blogId, poolPost.id);
+  const cachedDocument = cached?.document;
   // Hydration-safe: the server and the first client render may consult only
   // what the RSC payload carries (poolBody). The body cache and fetch entry
   // are client module state; letting them into the first render made the
@@ -159,9 +157,18 @@ export function LocalUnifiedWorkspacePostEditor({
     if (!poolDocument && !cachedDocument) documentState.load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pool.blogId, poolPost.id]);
+  // The pool list carries no revision (it is kept small), so the item's
+  // revision comes from the body fetch that produced the document. Without
+  // it the editor keyed its canonical baseline on revision 0, the provider's
+  // baseline check never ran, and every selection-aware AI action refused the
+  // passage as "not saved yet".
+  const revision = bodySourcesMounted
+    ? (cached?.revision ?? initialDocument?.revision ?? poolPost.revision)
+    : (initialDocument?.revision ?? poolPost.revision);
   const post = {
     ...postFromPoolPost(poolPost, document?.content.body ?? ""),
     document,
+    revision,
   };
   const containingFolderPath = folderPathForPoolPost(pool, poolPost);
   const containingFolderHref = returnToSearch

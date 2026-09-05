@@ -2,6 +2,8 @@ import { agentTextChanges, type AgentTextChange } from "@/lib/agent-changes";
 import { agentChangeCte } from "@/lib/agent-change-sql.server";
 import {
   validateSelectionEditEnvelope,
+  validateSelectionEnvelope,
+  assertSelectionMatches,
   SELECTION_STALE_ERROR,
 } from "@/lib/ai/selection-envelope";
 // Realtime co-editing server core: the Yjs update relay and presence, plus
@@ -428,21 +430,31 @@ export async function applyLiveDocumentMutation(
     if (!loaded) return null;
     try {
       const selection = mutation.textRange?.selectionEnvelope;
-      if (selection) {
+      const source = mutation.textRange?.sourcePrecondition;
+      const guarded = selection !== undefined || source !== undefined;
+      const beforeSnapshot = documentSnapshotFromYDoc(loaded.document);
+      if (guarded) {
         if (!audit) throw new Error("A guarded selection mutation requires an audit entry.");
         const context = await getPostStoreContext(postId);
         if (!context) throw new Error(SELECTION_STALE_ERROR);
-        const content = documentSnapshotFromYDoc(loaded.document).content;
-        const range = mutation.textRange!;
-        await validateSelectionEditEnvelope(selection, postId, {
+        const content = beforeSnapshot.content;
+        const item = {
           revision: context.post.revision, title: content.title,
           excerpt: content.subtitle, body: content.body,
-        }, {
-          field: range.field === "subtitle" ? "excerpt" : range.field,
-          start: range.start, end: range.end, text: range.expectedText,
-        });
+        };
+        if (selection !== undefined) {
+          const range = mutation.textRange!;
+          await validateSelectionEditEnvelope(selection, postId, item, {
+            field: range.field === "subtitle" ? "excerpt" : range.field,
+            start: range.start, end: range.end, text: range.expectedText,
+          });
+        }
+        if (source !== undefined) {
+          // Source and destination can be different fields. Both are checked
+          // against this loaded document, then fenced by its version/revision.
+          assertSelectionMatches(await validateSelectionEnvelope(source), postId, item);
+        }
       }
-      const beforeSnapshot = documentSnapshotFromYDoc(loaded.document);
       const before = Y.encodeStateVector(loaded.document);
       const applied = applyDocumentMutation(
         loaded.document,
@@ -468,7 +480,7 @@ export async function applyLiveDocumentMutation(
         Buffer.from(update).toString("base64"),
         loaded.epoch,
         audit,
-        selection?.revision,
+        selection?.revision ?? source?.revision,
         {
           expectedVersion: loaded.mutationVersion,
           changes: agentTextChanges(beforeSnapshot, documentSnapshotFromYDoc(loaded.document)),
@@ -476,7 +488,7 @@ export async function applyLiveDocumentMutation(
         },
       );
       if ("retired" in appended) {
-        if (selection) throw new Error(SELECTION_STALE_ERROR);
+        if (guarded) throw new Error(SELECTION_STALE_ERROR);
         continue;
       }
       return {

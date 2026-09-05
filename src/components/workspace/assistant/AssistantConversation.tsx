@@ -695,6 +695,9 @@ export function AssistantConversation({
           return <div key={message.id} className={styles.proposal}>
             <p className={styles.proposalLabel}>{INLINE_ACTIONS.find((action) => action.id === preview.action)?.label} · {preview.title}</p>
             <p className={styles.proposalScope}>{INLINE_STATUS_LABELS[preview.status]} · {preview.words} selected words</p>
+            {preview.refinements?.length ? <p className={styles.proposalScope}>
+              Refinements: {preview.refinements.join(" · ")}
+            </p> : null}
             <AssistantMarkdown text={message.text} />
           </div>;
         }

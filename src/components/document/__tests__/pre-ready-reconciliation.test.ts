@@ -4,7 +4,7 @@ import { it, expect, vi } from "vitest";
 import * as Y from "yjs";
 import { applyDocumentSnapshot, applyDocumentBaseline, documentSnapshotFromYDoc, documentText, hasDocumentSnapshot } from "@/lib/collab/document";
 import { validateDocumentSnapshot } from "@/lib/documents/model";
-import { preReadyTextOperations, applyPreReadyTextOperations, applyPreReadyMetadata } from "@/lib/collab/pre-ready";
+import { capturePreReadyTextBaseline, preReadyTextOperations, applyPreReadyTextOperations, applyPreReadyMetadata } from "@/lib/collab/pre-ready";
 const editor=readFileSync("src/components/document/UnifiedDocumentEditor.tsx","utf8");
 function compile(source:string,name:string,bindings:Record<string,unknown>){
  const js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
@@ -13,10 +13,29 @@ function compile(source:string,name:string,bindings:Record<string,unknown>){
 const replaceYText=compile(editor.slice(editor.indexOf("function replaceYText("),editor.indexOf("\nfunction selectionForField(")),"replaceYText",{});
 const overlayPreReadyEdits=compile(editor.slice(editor.indexOf("export function overlayPreReadyEdits("),editor.indexOf("\nfunction bytesToBase64(")).replace("export function","function"),"overlayPreReadyEdits",{});
 const snapshot=(body:string)=>validateDocumentSnapshot({schemaVersion:1,content:{title:"Probe",body,fields:{},tags:[],assets:[]},presentation:{template:{id:"texttext.note",version:1},theme:{}}});
+// Give the readiness harness a real startup history, then make surgical peer
+// edits on it. Seeding the remote snapshot independently has no baseline IDs.
+function caughtUp(initial: ReturnType<typeof snapshot>, remote: ReturnType<typeof snapshot>) {
+ const doc=new Y.Doc();applyDocumentSnapshot(doc,initial,"baseline");
+ const fields=["title","subtitle","body"] as const;
+ const preReadyBaseline=Object.fromEntries(fields.map(field=>[field,capturePreReadyTextBaseline(documentText(doc,field))]));
+ for(const field of fields){
+  const target=documentText(doc,field);
+  const before=Array.from(target.toString()),after=Array.from(remote.content[field]??"");
+  let start=0,end=before.length,last=after.length;
+  while(start<end&&start<last&&before[start]===after[start])start++;
+  while(end>start&&last>start&&before[end-1]===after[last-1]){end--;last--;}
+  const offset=before.slice(0,start).join("").length;
+  target.delete(offset,before.slice(start,end).join("").length);
+  target.insert(offset,after.slice(start,last).join(""));
+ }
+ applyPreReadyMetadata(doc,remote,"peer");
+ return {doc,preReadyBaseline};
+}
 function reconcile(initial: ReturnType<typeof snapshot>,local: ReturnType<typeof snapshot>,remote: ReturnType<typeof snapshot>){
- const doc=new Y.Doc();applyDocumentSnapshot(doc,remote,"baseline");
+ const {doc,preReadyBaseline}=caughtUp(initial,remote);
  const source=editor.slice(editor.indexOf("      const localBeforeReady ="),editor.indexOf("      readyRef.current = true;"));
- compile(source,"remote",{doc,requireDocumentSnapshot:validateDocumentSnapshot,preReadyTextOperations,applyPreReadyTextOperations,applyPreReadyMetadata,preserveRecovery:vi.fn(),provider:{learnedEpoch:1},preReadyLocalRef:{current:local},documentRef:{current:local},initialDocumentRef:{current:initial},hasDocumentSnapshot,applyDocumentBaseline,documentSnapshotFromYDoc,documentText,replaceYText,localOrigin:{current:{}},overlayPreReadyEdits,applyDocumentSnapshot,publishDocument:()=>{}});
+ compile(source,"remote",{doc,preReadyBaseline,requireDocumentSnapshot:validateDocumentSnapshot,preReadyTextOperations,applyPreReadyTextOperations,applyPreReadyMetadata,preserveRecovery:vi.fn(),provider:{learnedEpoch:1},preReadyLocalRef:{current:local},documentRef:{current:local},initialDocumentRef:{current:initial},hasDocumentSnapshot,applyDocumentBaseline,documentSnapshotFromYDoc,documentText,replaceYText,localOrigin:{current:{}},overlayPreReadyEdits,applyDocumentSnapshot,publishDocument:()=>{}});
  const result=documentSnapshotFromYDoc(doc);doc.destroy();return result;
 }
 it("preserves a disjoint remote suffix when local deletes at readiness",()=>{
@@ -151,10 +170,10 @@ it.each(["work bound", "schema limit"])("preserves the complete ledger before mu
    local.content.title=initial.content.title+"L";
    remote.content.title=initial.content.title+"R";
  }
- const doc=new Y.Doc();applyDocumentSnapshot(doc,remote);
+ const {doc,preReadyBaseline}=caughtUp(initial,remote);
  const ledger={current:local};const preserveRecovery=vi.fn();
  const source=editor.slice(editor.indexOf("      const localBeforeReady ="),editor.indexOf("      readyRef.current = true;"));
- compile(`function run(){${source}};run();`,"undefined",{doc,requireDocumentSnapshot:validateDocumentSnapshot,preReadyLocalRef:ledger,documentRef:{current:local},initialDocumentRef:{current:initial},hasDocumentSnapshot,applyDocumentBaseline,documentSnapshotFromYDoc,documentText,replaceYText,localOrigin:{current:{}},overlayPreReadyEdits,applyDocumentSnapshot,applyPreReadyMetadata,preReadyTextOperations,applyPreReadyTextOperations,publishDocument:vi.fn(),preserveRecovery,provider:{learnedEpoch:5}});
+ compile(`function run(){${source}};run();`,"undefined",{doc,preReadyBaseline,requireDocumentSnapshot:validateDocumentSnapshot,preReadyLocalRef:ledger,documentRef:{current:local},initialDocumentRef:{current:initial},hasDocumentSnapshot,applyDocumentBaseline,documentSnapshotFromYDoc,documentText,replaceYText,localOrigin:{current:{}},overlayPreReadyEdits,applyDocumentSnapshot,applyPreReadyMetadata,preReadyTextOperations,applyPreReadyTextOperations,publishDocument:vi.fn(),preserveRecovery,provider:{learnedEpoch:5}});
  expect(preserveRecovery).toHaveBeenCalledExactlyOnceWith(5);
  expect(ledger.current).toEqual(local);
  expect(documentSnapshotFromYDoc(doc)).toEqual(remote);
@@ -191,4 +210,41 @@ it("preserves an unreconciled ledger when unmounted during catch-up",()=>{
  cleanup();
  expect(preserveRecovery).toHaveBeenCalledExactlyOnceWith(5);
  expect(destroy).toHaveBeenCalledOnce();doc.destroy();
+});
+
+it.each(["same visible replacement", "repeated insertion", "disjoint suffix"])("recovers all fields when the plain startup snapshot has no identities: %s", (change) => {
+ const initial=snapshot(change==="repeated insertion"?"aaa":"abc");
+ const local=structuredClone(initial);local.content.title="Probe LOCAL";
+ local.content.body=change==="repeated insertion"?"aa":"ac";local.content.tags=["local"];
+ // A different canonical revision has the same strings but unrelated IDs.
+ const baselineDoc=new Y.Doc();applyDocumentBaseline(baselineDoc,initial,"post:1");
+ const preReadyBaseline=Object.fromEntries((["title","subtitle","body"] as const).map(field=>[field,capturePreReadyTextBaseline(documentText(baselineDoc,field))]));
+ const doc=new Y.Doc();applyDocumentBaseline(doc,initial,"post:2");
+ const body=documentText(doc,"body");
+ if(change==="same visible replacement"){body.delete(1,1);body.insert(1,"b");}
+ else if(change==="repeated insertion")body.insert(2,"a");
+ else body.insert(body.length," REMOTE");
+ const remote=documentSnapshotFromYDoc(doc),ledger={current:local};
+ const keepMaterializationRecovery=vi.fn(()=>true);
+ const bindings={doc,preReadyBaseline,requireDocumentSnapshot:validateDocumentSnapshot,
+  preReadyLocalRef:ledger,documentRef:{current:local},initialDocumentRef:{current:initial},
+  hasDocumentSnapshot,applyDocumentBaseline,documentSnapshotFromYDoc,documentText,
+  localOrigin:{current:{}},overlayPreReadyEdits,applyPreReadyMetadata,preReadyTextOperations,
+  applyPreReadyTextOperations,publishDocument:vi.fn(),provider:{learnedEpoch:5},
+  recoveryBlockedRef:{current:false},collab:{postId:"post"},Y,
+  bytesToBase64:(bytes:Uint8Array)=>Buffer.from(bytes).toString("base64"),
+  useCallback:(fn:unknown)=>fn,keepMaterializationRecovery,setRecoveryDurable:vi.fn(),
+  setRecoveryCopies:vi.fn(),setSaveState:vi.fn(),setError:vi.fn()};
+ const preserveSource=editor.slice(editor.indexOf("  const preserveRecovery = useCallback("),editor.indexOf("  const materializeTimerRef ="));
+ const preserveRecovery=compile(preserveSource,"preserveRecovery",bindings);
+ const source=editor.slice(editor.indexOf("      const localBeforeReady ="),editor.indexOf("      readyRef.current = true;"));
+ compile(`function run(){${source}};run();`,"undefined",{...bindings,preserveRecovery});
+ expect(keepMaterializationRecovery).toHaveBeenCalledOnce();
+ const copy=(keepMaterializationRecovery.mock.calls as unknown as [{document:unknown;state:string;epoch:number}][])[0][0];
+ expect(copy.document).toEqual(local);expect(copy.epoch).toBe(5);
+ const recovered=new Y.Doc();Y.applyUpdate(recovered,Buffer.from(copy.state,"base64"));
+ expect(documentSnapshotFromYDoc(recovered)).toEqual(remote);
+ expect(documentSnapshotFromYDoc(doc)).toEqual(remote);
+ expect(ledger.current).toEqual(local);expect(bindings.publishDocument).not.toHaveBeenCalled();
+ baselineDoc.destroy();doc.destroy();recovered.destroy();
 });

@@ -1,4 +1,4 @@
-import { createSelectionEnvelope } from "@/lib/ai/selection-envelope";
+import { createSelectionEnvelope, SELECTION_STALE_ERROR, SELECTION_INVALID_ERROR } from "@/lib/ai/selection-envelope";
 import type { AuthInfo, CallToolResult } from "@/lib/mcp/types";
 import type { Post } from "@/lib/content";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -1191,6 +1191,53 @@ describe("MCP workspace tool adapter", () => {
     expect(result.isError).not.toBe(true);
     expect(mocks.applyLiveDocumentMutation).toHaveBeenCalledWith(id, expect.objectContaining({ textRange: expect.objectContaining({ selectionEnvelope: selection_envelope }) }), expect.objectContaining({ actionName: "mcp.update_item" }));
     expect(mocks.savePost).toHaveBeenCalledWith("local", expect.any(Object), expect.objectContaining({ auditAlreadyRecorded: true }));
+  });
+
+  it("passes an independent source guard to the audited excerpt mutation and preserves stale refusals", async () => {
+    const id = "66666666-6666-4666-8666-666666666666";
+    const source = { id, folderId: "blog", type: "article", slug: "draft", title: "Draft", excerpt: "Old", body: "Before", status: "draft", pinned: false, revision: 42 };
+    const source_precondition = (await createSelectionEnvelope(id, source, { field: "body", start: 0, end: 6, text: "Before" }))!;
+    mocks.resolveItemAccess.mockResolvedValue({ canView: true, canEditContent: true, isOwner: true });
+    mocks.getPostById.mockResolvedValue(source);
+    const snapshot = { schemaVersion: 1, content: { title: "Draft", subtitle: "Generated", body: "Before", fields: {}, tags: [], assets: [] }, presentation: { template: { id: "texttext.article", version: 1 }, theme: {} } };
+    mocks.applyLiveDocumentMutation.mockResolvedValue({ snapshot, epoch: 1, seq: 2, applied: true, auditRecorded: true });
+    mocks.getPostStoreContext.mockResolvedValue({ handle: "local", post: source });
+    mocks.materializeCollabDocument.mockResolvedValue(snapshot);
+    mocks.savePost.mockResolvedValue({ ...source, excerpt: "Generated", document: snapshot, revision: 43 });
+    const update = registrations().find((entry) => entry.name === "update_item")!;
+    const input = { id, text_edit: { field: "excerpt", start: 0, end: 3, expected_text: "Old", replacement_text: "Generated", source_precondition } };
+    expect((await update.callback(input, auth(["sync"]))).isError).not.toBe(true);
+    expect(mocks.applyLiveDocumentMutation).toHaveBeenCalledWith(id, expect.objectContaining({ textRange: {
+      field: "subtitle", start: 0, end: 3, expectedText: "Old", replacementText: "Generated", sourcePrecondition: source_precondition,
+    } }), expect.objectContaining({ actionName: "mcp.update_item" }));
+    expect(mocks.savePost).toHaveBeenCalledWith("local", expect.any(Object), expect.objectContaining({ auditAlreadyRecorded: true }));
+
+    mocks.savePost.mockClear();
+    mocks.applyLiveDocumentMutation.mockRejectedValue(new Error(SELECTION_STALE_ERROR));
+    const refused = await update.callback(input, auth(["sync"]));
+    expect(refused).toEqual({ isError: true, content: [{ type: "text", text: SELECTION_STALE_ERROR }] });
+    expect(mocks.savePost).not.toHaveBeenCalled();
+  });
+
+  it("rejects stale or invalid independent source guards before changing metadata", async () => {
+    const id = "66666666-6666-4666-8666-666666666666";
+    const source = { id, folderId: "blog", type: "article", slug: "draft", title: "Draft", excerpt: "Old", body: "Before", status: "draft", pinned: false, revision: 42 };
+    const envelope = (await createSelectionEnvelope(id, source, { field: "body", start: 0, end: 6, text: "Before" }))!;
+    const other = (await createSelectionEnvelope("other-item", source, { field: "body", start: 0, end: 6, text: "Before" }))!;
+    mocks.resolveItemAccess.mockResolvedValue({ canView: true, canEditContent: true, isOwner: true });
+    const update = registrations().find((entry) => entry.name === "update_item")!;
+    for (const [current, source_precondition, message] of [
+      [{ ...source, revision: 43 }, envelope, SELECTION_STALE_ERROR],
+      [{ ...source, body: "After!" }, envelope, SELECTION_STALE_ERROR],
+      [source, other, SELECTION_STALE_ERROR],
+      [source, { ...envelope, hash: "0".repeat(64) }, SELECTION_INVALID_ERROR],
+    ] as const) {
+      mocks.getPostById.mockResolvedValue(current);
+      const result = await update.callback({ id, text_edit: { field: "excerpt", start: 0, end: 3, expected_text: "Old", replacement_text: "Generated", source_precondition } }, auth(["sync"]));
+      expect(result).toEqual({ isError: true, content: [{ type: "text", text: message }] });
+    }
+    expect(mocks.applyLiveDocumentMutation).not.toHaveBeenCalled();
+    expect(mocks.savePost).not.toHaveBeenCalled();
   });
 
   it("writes a body change when no one is co-editing", async () => {

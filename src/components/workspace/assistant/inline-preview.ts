@@ -3,6 +3,7 @@ import {
   SELECTION_INVALID_ERROR, SELECTION_STALE_ERROR, type SelectionEnvelope,
 } from "@/lib/ai/selection-envelope";
 import type { WorkspaceItemTextSelection, WorkspaceItemTextSnapshot } from "@/lib/ai/workspace-item-draft";
+import { quickActionRefinementPrompt, type QuickActionRefinement } from "@/lib/ai/quick-actions";
 import { createAssistantTextDeltaBuffer } from "./text-delta-buffer";
 
 export const INLINE_ACTIONS = [
@@ -23,10 +24,13 @@ export type InlinePreviewRecord = {
   /** True after a write was sent but its acknowledgment was lost. Never retry it. */
   uncertain?: boolean;
   appliedEdit?: InlineEdit;
+  /** Instructions belong to this preview decision, not separate transcript turns. */
+  refinements?: string[];
 };
 export type InlineEdit = {
   field: WorkspaceItemTextSelection["field"]; start: number; end: number;
   expected_text: string; replacement_text: string; selection_envelope?: SelectionEnvelope;
+  source_precondition?: SelectionEnvelope;
 };
 type Dependencies = {
   read: () => Promise<WorkspaceItemTextSnapshot>;
@@ -35,7 +39,7 @@ type Dependencies = {
   persist: (record: InlinePreviewRecord) => void;
   active: () => boolean;
 };
-export function inlinePrompt(request: InlineRequest): string {
+export function inlinePrompt(request: InlineRequest, refinement?: QuickActionRefinement): string {
   const action = request.action === "translate"
     ? `Translate the entire selection into ${request.language === "Document language" ? "the primary language of the document (read the document if needed)" : request.language?.trim() || "English"}.`
     : request.action === "continue"
@@ -43,13 +47,15 @@ export function inlinePrompt(request: InlineRequest): string {
       : request.action === "excerpt"
         ? "Write a concise document excerpt based on the selection."
         : `${request.action === "rewrite" ? "Rewrite" : "Summarize"} the entire selection.`;
-  return `${action} Return only the suggested text. Do not change the item.`;
+  return refinement
+    ? `Original action: ${action}\n${quickActionRefinementPrompt(request.selection.text, refinement)}`
+    : `${action} Return only the suggested text. Do not change the item.`;
 }
 export function inlineEdit(record: InlinePreviewRecord, item: WorkspaceItemTextSnapshot, replace = false): InlineEdit {
   const e = record.envelope!;
   if (record.action === "excerpt") return {
     field: "excerpt", start: 0, end: item.excerpt.length,
-    expected_text: item.excerpt, replacement_text: record.text,
+    expected_text: item.excerpt, replacement_text: record.text, source_precondition: e,
   };
   const suffix = item[e.field].slice(e.end);
   const below = record.action === "summarize" && !replace;
@@ -75,7 +81,9 @@ export function createInlinePreview(request: InlineRequest, deps: Dependencies) 
   let applied: { edit: InlineEdit; result: string } | undefined;
   let controller: AbortController | undefined;
   let generation = 0;
+  let pendingRelease = 0;
   let started = false;
+  let lastAttempt: { envelope: SelectionEnvelope; prompt: string } | undefined;
   const listeners = new Set<() => void>();
   const emit = (patch: Partial<InlinePreviewRecord>, durable = true) => {
     state = { ...state, ...patch };
@@ -87,25 +95,30 @@ export function createInlinePreview(request: InlineRequest, deps: Dependencies) 
     status: error instanceof Error && error.message === SELECTION_STALE_ERROR ? "stale" : "failed",
     error: error instanceof Error ? error.message : "Could not generate this preview. Try again.",
   });
-  async function generate(selection = request.selection) {
+  async function generate(selection = request.selection, attempt?: typeof lastAttempt, refinements = state.refinements) {
     if (!active() || state.status === "applying" || state.status === "applied" || state.uncertain) return;
     controller?.abort();
     const turn = ++generation;
     const abort = new AbortController();
     controller = abort;
     const live = () => active() && turn === generation && !abort.signal.aborted;
-    emit({ status: "generating", text: "", error: undefined, envelope: undefined });
+    emit({ status: "generating", text: "", error: undefined, envelope: attempt?.envelope, refinements: attempt ? refinements : undefined });
+    lastAttempt = attempt;
     const buffer = createAssistantTextDeltaBuffer((text) => {
       if (live() && state.status === "generating") emit({ text: state.text + text }, false);
     });
     try {
       const read = await deps.read();
       if (!live()) return;
-      source = read;
-      const envelope = await createSelectionEnvelope(request.itemId, source, selection);
+      if (!attempt) source = read;
+      const envelope = attempt?.envelope ?? await createSelectionEnvelope(request.itemId, read, selection);
+      if (!live()) return;
       if (!envelope) throw new Error(SELECTION_INVALID_ERROR);
-      emit({ envelope, title: source.title || "Untitled", words: envelope.text.trim().split(/\s+/u).filter(Boolean).length });
-      const answer = await deps.generate(envelope, inlinePrompt(request), abort.signal, buffer.push);
+      assertSelectionMatches(envelope, request.itemId, read);
+      const prompt = attempt?.prompt ?? inlinePrompt({ ...request, selection: envelope });
+      lastAttempt = { envelope, prompt };
+      emit({ envelope, title: read.title || "Untitled", words: envelope.text.trim().split(/\s+/u).filter(Boolean).length });
+      const answer = await deps.generate(envelope, prompt, abort.signal, buffer.push);
       buffer.finish();
       if (!live()) return;
       const acknowledged = await validateSelectionEnvelope(answer.selectionEnvelope);
@@ -124,7 +137,7 @@ export function createInlinePreview(request: InlineRequest, deps: Dependencies) 
   return {
     snapshot: () => state,
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
-    start() { if (!started) { started = true; void generate(); } },
+    start() { pendingRelease += 1; if (!started) { started = true; void generate(); } },
     stop() {
       if (state.status !== "generating") return;
       ++generation;
@@ -138,11 +151,25 @@ export function createInlinePreview(request: InlineRequest, deps: Dependencies) 
       emit({ status: "discarded" });
       return true;
     },
+    tryAgain() {
+      if (state.status !== "ready" || !lastAttempt) return;
+      void generate(lastAttempt.envelope, lastAttempt);
+    },
+    refine(instruction: string) {
+      const trimmed = instruction.trim();
+      if (!active() || state.status !== "ready" || !state.envelope || !trimmed) return false;
+      const attempt = { envelope: state.envelope, prompt: inlinePrompt({ ...request, selection: state.envelope }, {
+        currentOutput: state.text, instruction: trimmed,
+      }) };
+      void generate(state.envelope, attempt, [...(state.refinements ?? []), trimmed]);
+      return true;
+    },
     retry(selection?: WorkspaceItemTextSelection | null) {
       if (state.status !== "failed" && state.status !== "stale") return;
       // A changed range must be selected again. A revision-only change can
       // regenerate the same exact passage safely.
-      void generate(selection ?? state.envelope ?? request.selection);
+      if (state.status === "failed" && lastAttempt) void generate(lastAttempt.envelope, lastAttempt);
+      else void generate(selection ?? state.envelope ?? request.selection);
     },
     check(current: WorkspaceItemTextSnapshot | null) {
       if (!state.envelope || !["generating", "ready"].includes(state.status)) return;
@@ -197,6 +224,15 @@ export function createInlinePreview(request: InlineRequest, deps: Dependencies) 
       controller?.abort();
       if (state.status === "generating") emit({ status: "failed", error: "Generation stopped when you left the document." });
       listeners.clear();
+    },
+    release() {
+      // An effect cleanup that is immediately followed by a re-run (React's
+      // strict mode in development, a parent remount) must not kill a running
+      // generation: dispose on a microtask unless start() arrives first.
+      const token = ++pendingRelease;
+      queueMicrotask(() => {
+        if (token === pendingRelease) this.dispose();
+      });
     },
   };
 }

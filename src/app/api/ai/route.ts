@@ -536,8 +536,23 @@ function cloudToolMode(
  * an answer that sounds like the work happened. A turn that cannot act should
  * say it cannot act.
  */
-function readOnlyTurnNote(mode: CloudAssistantToolMode): string {
+function readOnlyTurnNote(
+  mode: CloudAssistantToolMode,
+  viewMode?: "suggestion",
+): string {
   if (mode !== "read_only") return "";
+  // A suggestion turn feeds a preview the person can apply. The read-only
+  // disclaimer written for conversation would come back inside the
+  // replacement text ("I haven't changed the item..."), so the model gets
+  // the contract of that surface instead.
+  if (viewMode === "suggestion") {
+    return (
+      "\n\nThis turn produces a suggestion shown in a preview that the person " +
+      "may apply. Return only the suggested text itself: no preamble, no " +
+      "quotation marks around it, no explanation, and no remark about whether " +
+      "the item was changed. Do not use em dashes."
+    );
+  }
   return (
     "\n\nThis turn has no tools that change anything in the workspace. If the " +
     "person asked you to create, edit, move, or organize something, do not " +
@@ -1001,7 +1016,10 @@ export async function POST(request: Request) {
         reachable.map((entry) => entry.connection.name),
         unreachable,
       ) +
-      readOnlyTurnNote(toolMode),
+      readOnlyTurnNote(
+        toolMode,
+        viewContext(body.context).mode === "suggestion" ? "suggestion" : undefined,
+      ),
     messages: modelMessages,
     tools,
     stopWhen: stepCountIs(MAX_STEPS),

@@ -1013,3 +1013,28 @@ describe("history sync status", () => {
     expect(html).not.toContain("Retry sync");
   });
 });
+
+
+describe("inline refinement history", () => {
+  it.each(["applied", "discarded", "undone"] as const)("shows instructions once with the %s decision", (status) => {
+    const html = renderToStaticMarkup(React.createElement(AssistantConversation, {
+      messages: [{ id: "preview", role: "assistant", text: "Refined result", inlinePreview: {
+        action: "rewrite", itemId: "item", title: "Draft", words: 2, status, text: "Refined result",
+        refinements: ["Shorter", "Use <friendly> language"],
+      } }], submitting: false,
+    }));
+    expect(html.match(/Refinements:/g)).toHaveLength(1);
+    expect(html).toContain("Shorter · Use &lt;friendly&gt; language");
+    expect(html).toContain(status === "applied" ? "Applied" : status === "discarded" ? "Discarded" : "Undone");
+    expect(html).not.toContain("<friendly>");
+  });
+  it("keeps older preview records readable without refinement metadata", () => {
+    const html = renderToStaticMarkup(React.createElement(AssistantConversation, {
+      messages: [{ id: "preview", role: "assistant", text: "Result", inlinePreview: {
+        action: "rewrite", itemId: "item", title: "Draft", words: 2, status: "applied", text: "Result",
+      } }], submitting: false,
+    }));
+    expect(html).toContain("Applied");
+    expect(html).not.toContain("Refinements:");
+  });
+});

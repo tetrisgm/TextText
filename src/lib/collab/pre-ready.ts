@@ -1,23 +1,75 @@
-import type * as Y from "yjs";
-import { documentAssets, documentFields, documentPresentation, documentTags, documentTheme } from "@/lib/collab/document";
+import * as Y from "yjs";
+import { applyDocumentBaseline, documentText, documentAssets, documentFields, documentPresentation, documentTags, documentTheme } from "@/lib/collab/document";
 import type { DocumentSnapshot } from "@/lib/documents/model";
 
 type Hunk = { start: number; end: number; insert: string };
 
-/** Myers diff over UTF-16 offsets, the coordinate system used by Y.Text.
+/** Immutable identities from the actual startup history, not a caught-up string. */
+export type PreReadyTextBaseline = {
+  text: string;
+  keys: string[];
+  type: string;
+  clocks: Map<number, number>;
+};
+
+export function capturePreReadyTextBaseline(target: Y.Text): PreReadyTextBaseline {
+  const text = target.toString();
+  const ids: string[] = [];
+  const clocks = new Map<number, number>();
+  // Walk Yjs runs once. Relative positions per character would repeatedly scan
+  // the text. Only read the pinned Yjs Item layout; never mutate its internals.
+  for (let item = target._start; item; item = item.right) {
+    if (item.deleted || !item.countable) continue;
+    if (!(item.content instanceof Y.ContentString)) throw new Error("Pre-ready text merge needs recovery");
+    clocks.set(item.id.client, Math.max(clocks.get(item.id.client) ?? 0, item.id.clock + item.length));
+    for (let offset = 0; offset < item.length; offset++) ids.push(`${item.id.client}:${item.id.clock + offset}`);
+  }
+  let offset = 0;
+  const keys = Array.from(text, (point) => {
+    const key = ids.slice(offset, offset + point.length).join("/");
+    offset += point.length;
+    return key;
+  });
+  const position = Y.createRelativePositionFromTypeIndex(target, 0);
+  return { text, keys, type: JSON.stringify([position.type, position.tname]), clocks };
+}
+
+/** Reconstruct the server's deterministic startup revision in an isolated doc.
+ * Never seed the live doc just to give a plain snapshot apparent identities. */
+export function capturePreReadyDocumentBaseline(snapshot: DocumentSnapshot, seed: string) {
+  const baseline = new Y.Doc();
+  try {
+    applyDocumentBaseline(baseline, snapshot, seed);
+    return {
+      title: capturePreReadyTextBaseline(documentText(baseline, "title")),
+      subtitle: capturePreReadyTextBaseline(documentText(baseline, "subtitle")),
+      body: capturePreReadyTextBaseline(documentText(baseline, "body")),
+    };
+  } finally {
+    baseline.destroy();
+  }
+}
+
+const inferredPlans = new WeakMap<Hunk[], { baseline: string; local: string; remote: string }>();
+
+/** Myers diff over complete code points (or their identities), with UTF-16 output offsets.
  * Trim the common edges so a small edit in a large document stays cheap.
  * Bound divergent input; the caller keeps the ledger for explicit recovery
  * instead of guessing a destructive replacement or freezing the editor. */
-function textHunks(before: string, after: string): Hunk[] {
+function textHunks(before: string, after: string, beforeKeys?: string[], afterKeys?: string[]): Hunk[] {
+  const beforePoints = Array.from(before), afterPoints = Array.from(after);
+  const left = beforeKeys ?? beforePoints, rightKeys = afterKeys ?? afterPoints;
+  const offsets = [0];
+  for (const point of beforePoints) offsets.push(offsets[offsets.length - 1] + point.length);
   let prefix = 0;
-  while (prefix < before.length && prefix < after.length && before[prefix] === after[prefix]) prefix++;
-  let endBefore = before.length, endAfter = after.length;
-  while (endBefore > prefix && endAfter > prefix && before[endBefore - 1] === after[endAfter - 1]) {
+  while (prefix < left.length && prefix < rightKeys.length && left[prefix] === rightKeys[prefix]) prefix++;
+  let endBefore = left.length, endAfter = rightKeys.length;
+  while (endBefore > prefix && endAfter > prefix && left[endBefore - 1] === rightKeys[endAfter - 1]) {
     endBefore--; endAfter--;
   }
-  const a = before.slice(prefix, endBefore), b = after.slice(prefix, endAfter);
+  const a = left.slice(prefix, endBefore), b = rightKeys.slice(prefix, endAfter);
   if (!a.length || !b.length) {
-    return a === b ? [] : [{ start: prefix, end: endBefore, insert: b }];
+    return !a.length && !b.length ? [] : [{ start: offsets[prefix], end: offsets[endBefore], insert: afterPoints.slice(prefix, endAfter).join("") }];
   }
   let frontier = new Map<number, number>([[1, 0]]);
   const trace: Map<number, number>[] = [];
@@ -51,9 +103,9 @@ function textHunks(before: string, after: string): Hunk[] {
         let ai = prefix, bi = prefix, active: Hunk | undefined;
         for (const step of steps.reverse()) {
           if (step === "equal") { active = undefined; ai++; bi++; continue; }
-          if (!active) { active = { start: ai, end: ai, insert: "" }; hunks.push(active); }
-          if (step === "delete") { ai++; active.end++; }
-          else { active.insert += after[bi++]; }
+          if (!active) { active = { start: offsets[ai], end: offsets[ai], insert: "" }; hunks.push(active); }
+          if (step === "delete") { ai++; active.end = offsets[ai]; }
+          else { active.insert += afterPoints[bi++]; }
         }
         return hunks;
       }
@@ -64,14 +116,34 @@ function textHunks(before: string, after: string): Hunk[] {
 }
 
 /** Plan local operations on the caught-up text. Delete only surviving baseline
- * characters, never a peer's insertion. Overlapping replacements keep both
+ * identities when an identity baseline is supplied. Overlapping replacements keep both
  * insertions (remote then local); identical hunks are already satisfied.
  * The returned operations use remote offsets and run right to left, preserving
  * every untouched remote CRDT identity for subsequent peer deletions. */
-export function preReadyTextOperations(baseline: string, local: string, remote: string): Hunk[] {
+export function preReadyTextOperations(
+  baseline: string, local: string, remote: string,
+  identity?: { baseline: PreReadyTextBaseline; target: Y.Text },
+): Hunk[] {
   if (local === baseline || local === remote) return [];
   const localHunks = textHunks(baseline, local);
-  const remoteHunks = textHunks(baseline, remote);
+  let remoteHunks: Hunk[];
+  if (identity) {
+    const current = capturePreReadyTextBaseline(identity.target);
+    if (current.text !== remote || identity.baseline.text !== baseline) throw new Error("Pre-ready text merge needs recovery");
+    const state = Y.decodeStateVector(Y.encodeStateVector(identity.target.doc!));
+    const known = identity.baseline.type === current.type &&
+      [...identity.baseline.clocks].every(([client, clock]) => (state.get(client) ?? 0) >= clock);
+    if (!known) {
+      // The plain page snapshot belongs to another history. Insertions can be
+      // positioned by text, but no character is proven safe to delete.
+      if (localHunks.some((h) => h.end > h.start)) throw new Error("Pre-ready text merge needs recovery");
+      remoteHunks = textHunks(baseline, remote);
+    } else {
+      remoteHunks = textHunks(baseline, remote, identity.baseline.keys, current.keys);
+    }
+  } else {
+    remoteHunks = textHunks(baseline, remote);
+  }
   const equal: { start: number; end: number; offset: number }[] = [];
   let cursor = 0, offset = 0;
   for (const h of remoteHunks) {
@@ -97,16 +169,38 @@ export function preReadyTextOperations(baseline: string, local: string, remote: 
       operations.push({ start: at, end: at, insert: h.insert });
     }
   }
-  return operations.sort((a, b) => b.start - a.start || b.end - a.end);
+  // Reverse source order first: stable sorting then applies later insertions
+  // first when remote deletions collapse multiple source positions together.
+  operations.reverse().sort((a, b) => b.start - a.start || b.end - a.end);
+  if (!identity) inferredPlans.set(operations, { baseline, local, remote });
+  return operations;
 }
 
-export function applyPreReadyTextOperations(target: Y.Text, operations: Hunk[], origin: unknown): void {
+/** String-only plans are advisory. Return false, without mutation, when Yjs
+ * history or non-unique string alignment makes their deletions untrustworthy.
+ * The editor uses identity plans and preflights all fields before application. */
+export function applyPreReadyTextOperations(target: Y.Text, operations: Hunk[], origin: unknown): boolean {
+  const inferred = inferredPlans.get(operations);
+  if (inferred && operations.some((h) => h.end > h.start)) {
+    if (target.toString() !== inferred.remote) return false;
+    // Even identical visible text may have entirely new identities. Tombstones
+    // remain evidence after Yjs collects their old string content.
+    for (let item = target._start; item; item = item.right) if (item.deleted) return false;
+    // Check the opposite alignment too. Repeated characters can shift a hunk
+    // across a peer insertion while producing the same visible edit.
+    const reverse = (value: string) => Array.from(value).reverse().join("");
+    const forward = textHunks(inferred.baseline, inferred.remote);
+    const backward = textHunks(reverse(inferred.baseline), reverse(inferred.remote))
+      .map((h) => ({ start: inferred.baseline.length - h.end, end: inferred.baseline.length - h.start, insert: reverse(h.insert) })).reverse();
+    if (JSON.stringify(forward) !== JSON.stringify(backward)) return false;
+  }
   target.doc?.transact(() => {
     for (const h of operations) {
       if (h.end > h.start) target.delete(h.start, h.end - h.start);
       if (h.insert) target.insert(h.start, h.insert);
     }
   }, origin);
+  return true;
 }
 
 /** Apply only changed metadata entries. Replacing an entire Y.Array would

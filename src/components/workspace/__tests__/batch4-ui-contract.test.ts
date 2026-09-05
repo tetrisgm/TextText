@@ -83,6 +83,16 @@ describe("batch 4 workspace UI contract", () => {
     expect(actionBarSource).not.toContain("post-comments-button");
   });
 
+  it("gives the editor the item's real revision, not the pool list's missing one", () => {
+    // The pool payload omits revision; the body fetch has it. An undefined
+    // revision keyed the Yjs baseline on 0, silenced the provider's baseline
+    // check, and made every inline AI action fail as "not saved yet".
+    expect(shellSource).toContain(
+      "cached?.revision ?? initialDocument?.revision ?? poolPost.revision",
+    );
+    expect(shellSource).toMatch(/const post = \{[\s\S]*?document,\s*revision,\s*\}/);
+  });
+
   it("keeps bookmark recapture edit-only and exposes only Reader and Full views", () => {
     expect(actionBarSource).toMatch(
       /canManagePost\s*&&\s*props\.mode === "edit"[\s\S]*?<BookmarkRecaptureControl/,

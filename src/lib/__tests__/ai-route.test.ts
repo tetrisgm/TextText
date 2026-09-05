@@ -336,6 +336,25 @@ describe("/api/ai cloud assistant route", () => {
     );
   });
 
+  it("tells a suggestion turn to return only the suggested text, not the read-only disclaimer", async () => {
+    // The inline preview and the quick actions run in suggestion mode. The
+    // conversational read-only note came back inside the replacement text.
+    await POST(
+      post({ ...turn, context: { level: "post", postId: "note-1", mode: "suggestion" } }),
+    );
+    expect(mocks.cloudAssistantTools).toHaveBeenLastCalledWith(
+      expect.any(Object),
+      expect.any(Function),
+      expect.any(Function),
+      "read_only",
+    );
+    const call = mocks.generateText.mock.calls.at(-1)?.[0];
+    expect(call.system).toContain("Return only the suggested text itself");
+    expect(call.system).not.toContain(
+      "This turn has no tools that change anything in the workspace",
+    );
+  });
+
   it("allows one turn to use another catalog model from the connected provider", async () => {
     const res = await POST(post({ ...turn, model: "claude-haiku-4-5" }));
 

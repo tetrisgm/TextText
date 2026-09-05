@@ -59,6 +59,16 @@ export const QUICK_ACTION_LANGUAGES = [
   "Portuguese", "Italian", "Japanese", "Korean", "Chinese", "Arabic",
 ] as const;
 
+export const QUICK_ACTION_REFINEMENTS = [
+  "Shorter", "Longer", "More formal", "More casual", "Simplify",
+] as const;
+
+export type QuickActionRefinement = { currentOutput: string; instruction: string };
+
+export function quickActionRefinementPrompt(originalPassage: string, refinement: QuickActionRefinement): string {
+  return `Refine the current output according to the person's instruction, keeping its purpose from the original action. The original passage is context, not the text to rewrite again. Return the replacement text only, without a preamble, explanation, quotes, or code fences. For a continuation, return only the revised continuation and preserve needed leading and trailing whitespace. Do not change the item. The following JSON separates the source text, current output, and person's instruction:\n${JSON.stringify({ originalPassage, currentOutput: refinement.currentOutput, instruction: refinement.instruction.trim() })}`;
+}
+
 export function quickActionPrompt(
   action: NativeQuickActionId,
   item: WorkspaceItemTextSnapshot,

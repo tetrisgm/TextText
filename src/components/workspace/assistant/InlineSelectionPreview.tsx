@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { captureInlineSelectionSurface, type InlineSelectionSurface } from "@/components/document/inline-selection-surface";
 import { readOpenWorkspaceItemDraft, subscribeOpenWorkspaceItemDrafts, type WorkspaceItemTextSelection } from "@/lib/ai/workspace-item-draft";
 import { INLINE_ACTIONS, type InlinePreviewController, type InlineStatus } from "./inline-preview";
+import { QUICK_ACTION_REFINEMENTS } from "@/lib/ai/quick-actions";
 import styles from "./InlineSelectionPreview.module.css";
 
 export const INLINE_STATUS_LABELS: Record<InlineStatus, string> = {
@@ -16,6 +17,40 @@ export function previewKeyAction(key: string, meta: boolean, composing: boolean,
   return key === "Enter" && meta && status === "ready" ? "accept" : null;
 }
 
+export function InlinePreviewRefinement({ value, disabled, onChange, onSubmit, onEscape }: {
+  value: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+  onSubmit: (instruction: string) => void;
+  onEscape: () => void;
+}) {
+  const submit = (instruction: string) => {
+    if (!disabled && instruction.trim()) onSubmit(instruction.trim());
+  };
+  return (
+    <div className={styles.refinement}>
+      <div className={styles.refinementField}>
+        <input type="text" aria-label="Refine the preview" placeholder="Tell the assistant what to change"
+          value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            // Field keystrokes must not accept or discard the preview, including IME Enter.
+            event.stopPropagation();
+            if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+            if (event.key === "Escape") { event.preventDefault(); onEscape(); }
+            else if (event.key === "Enter") { event.preventDefault(); submit(value); }
+          }} />
+        <div className={styles.actions}>
+          <button type="button" disabled={disabled || !value.trim()} onClick={() => submit(value)}>Refine</button>
+        </div>
+      </div>
+      <div className={styles.actions} aria-label="Quick refinements">
+        {QUICK_ACTION_REFINEMENTS.map((instruction) => <button key={instruction} type="button"
+          disabled={disabled} onClick={() => submit(instruction)}>{instruction}</button>)}
+      </div>
+    </div>
+  );
+}
+
 export function InlineSelectionPreview({ controller, surface, readSelection, onClose }: {
   controller: InlinePreviewController;
   surface: InlineSelectionSurface;
@@ -24,6 +59,7 @@ export function InlineSelectionPreview({ controller, surface, readSelection, onC
 }) {
   const state = useSyncExternalStore(controller.subscribe, controller.snapshot, controller.snapshot);
   const ref = useRef<HTMLDivElement>(null);
+  const [instruction, setInstruction] = useState("");
   const surfaceRef = useRef(surface);
   const changing = state.status === "applying";
   const discard = () => {
@@ -35,7 +71,9 @@ export function InlineSelectionPreview({ controller, surface, readSelection, onC
   useEffect(() => {
     controller.start();
     ref.current?.focus({ preventScroll: true });
-    return () => controller.dispose();
+    // release(), not dispose(): strict mode re-runs this effect once in
+    // development, and a real unmount still disposes a microtask later.
+    return () => controller.release();
   }, [controller]);
 
   useLayoutEffect(() => {
@@ -126,10 +164,20 @@ export function InlineSelectionPreview({ controller, surface, readSelection, onC
           <button type="button" disabled={changing} onClick={discard}>Discard</button>}
         {state.status === "ready" && state.action === "summarize" &&
           <button type="button" onClick={() => void controller.accept(true)}>Replace selection</button>}
+        {state.status === "ready" && <button type="button" onClick={() => controller.tryAgain()}>Try again</button>}
         {(state.status === "stale" || (state.status === "failed" && !state.uncertain)) &&
           <button type="button" onClick={() => controller.retry(readSelection())}>{state.status === "stale" ? "Regenerate" : "Retry"}</button>}
         {(state.status === "applied" || state.status === "undone") && <button type="button" onClick={onClose}>Close</button>}
       </div>
+      {(["ready", "generating", "applying"] as InlineStatus[]).includes(state.status) &&
+        <InlinePreviewRefinement value={instruction} disabled={state.status !== "ready"}
+          onChange={setInstruction} onEscape={() => ref.current?.focus({ preventScroll: true })}
+          onSubmit={(value) => {
+            if (controller.refine(value)) {
+              setInstruction("");
+              ref.current?.focus({ preventScroll: true });
+            }
+          }} />}
     </div>
   );
 }

@@ -165,7 +165,7 @@ or workspace selector that could cross that boundary.
 | `list_agent_changes` | `read` or `sync` | List durable agent text changes for an item. Only item editors can read removed text. Returns up to 50 records, newest first. |
 | `revert_agent_change` | `sync` | Undo one agent text change, preserving unrelated later edits. Overlapping changes return a comparison without changing the document. Does not alter human undo history or visibility. |
 | `create_item` | `sync` | Save something to TextText. For quick capture, pass capture alone: text becomes a private Note and a URL becomes a Bookmark, with a receipt in the result. For precise creation, pass fields or a full markdown file and choose a folder. New items are never published or pinned. Automated clients should pass a stable idempotency_key so retries cannot create duplicates. |
-| `update_item` | `sync` | Update one item's content or metadata: title, body, excerpt, tags, slug, cover, pin, publication date, and custom template fields via the fields map. A full body or markdown replacement requires if_match_hash from read_item. Targeted text_edit and section edits use their own expected-content guards. Cannot publish, unpublish, or move an item. To highlight a passage, wrap it in double equals signs: ==like this==. It renders as a real highlight. Bold and italic still mean bold and italic. Use a highlight when someone asks for the important parts to stand out, and mark the few that matter rather than most of the paragraph. |
+| `update_item` | `sync` | Update one item's content or metadata: title, body, excerpt, tags, slug, cover, pin, publication date, and custom template fields via the fields map. A full body or markdown replacement requires if_match_hash from read_item. Targeted text_edit and section edits use their own expected-content guards. text_edit.source_precondition optionally guards a separate source passage in the same item at commit time, using the selection envelope format. Cannot publish, unpublish, or move an item. To highlight a passage, wrap it in double equals signs: ==like this==. It renders as a real highlight. Bold and italic still mean bold and italic. Use a highlight when someone asks for the important parts to stand out, and mark the few that matter rather than most of the paragraph. |
 | `append_to_item` | `sync` | Append a markdown block to the end of one item's body without touching its metadata. Pass the text as `markdown`. Automated clients should pass an idempotency_key derived from the source event or commit. |
 | `set_item_status` | `sync` | Publish or unpublish one blog item. Notes and bookmarks can never be published. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
 | `move_item` | `sync` | Move one item to another folder of the same mode. |
@@ -186,6 +186,34 @@ or workspace selector that could cross that boundary.
 | `set_access` | `sync` | Grant or change one person's role on the workspace, a folder, or an item, by email. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
 | `revoke_access` | `sync` | Revoke one person's access to the workspace, a folder, or an item. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
 <!-- /generated:tool-table -->
+
+## Source preconditions for generated field edits
+
+`update_item.text_edit.source_precondition` optionally binds a field edit to
+an independent source passage in the same item. For example, an excerpt edit
+can require that the body passage used to generate it still matches. The
+existing destination `field`, `start`, `end`, and `expected_text` guard remains
+required. `selection_envelope`, when supplied, still guards that destination.
+
+The source object uses the selection envelope format:
+
+- `itemId`: the same item id as `update_item.id`.
+- `field`: `title`, `excerpt`, or `body`.
+- `revision`: the nonnegative safe integer revision read before generation.
+- `start` and `end`: exact UTF-16 offsets, with an exclusive end, at most 1,000,000.
+- `text`: the exact source passage, including whitespace, from 1 to 4,000
+  UTF-16 code units. Its length must equal `end - start`.
+- `hash`: lowercase hexadecimal SHA-256 of the UTF-8 encoding of
+  `JSON.stringify([itemId, field, revision, start, end, text])`.
+
+The hash binds the envelope; it does not grant access. Unknown properties and
+malformed envelopes are refused. Both passages are checked against the loaded
+authoritative document. The source revision and collaboration version/epoch
+fence the same atomic append that writes the destination delta and its audit.
+A changed source or failed fence returns the existing tool error shape:
+`isError: true` with a text content block containing
+"This passage changed or is not saved yet. Select it again after saving. Nothing changed."
+Regenerate from a fresh selection after this refusal.
 
 ## Safety rules for agents
 

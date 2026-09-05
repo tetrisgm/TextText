@@ -4530,3 +4530,65 @@ and heartbeats; the Add agent popover opens at 352x292 with the sheet tokens
 in both themes (light rgb(252,252,253) on rgb(52,53,58) ink, dark
 rgb(44,45,49) on rgb(229,231,235)), focus lands inside, Escape closes it and
 returns focus to the Add agent mark, every control is named, no em dash.
+
+## 2026-09-05: live verification against real providers and the hosted agent path
+
+Both development provider keys were already in the login Keychain (services
+`texttext-dev-anthropic` and `texttext-dev-openai`, stored 2026-08-15) and
+validated against each provider's model listing (Anthropic 200 with 11 models
+including claude-sonnet-5; OpenAI 200 with 125 models). No new keys were
+minted. `AUTH_DEV_LOGIN=1 ./scripts/dev-with-ai.sh` loads the Anthropic key and
+serves on 3001 when 3000 is busy.
+
+Hosted agent path, proven end to end on the dev server with a Playwright probe
+(`.texttext/probe/agent-live.mts`; the token never left the page): Add agent
+sheet, client Codex, Hosted MCP, Read and edit; the one-time token, the Codex
+configuration and the instruction render; with the token, `server/discover`,
+`tools/list`, `read_item` and `append_to_item` on the item answer 200, another
+item and `delete_item` answer 403 "This token only permits reading or editing
+its item"; presence shows Codex as an agent editor; the participant row shows
+"Codex, Working, Agent session"; the sheet reports "connected to this item";
+after Remove agent the token answers 401. `initialize` answers 404 by design:
+this transport has no handshake (`docs/mcp.md`), discovery replaces it.
+
+Inline AI against a real model: still being verified. The selection toolbar
+renders all five actions with the dev key; Playwright cannot click it as
+"stable" because it re-renders continuously (a coordinate click works). Two
+things found on the way and fixed in the tree: the preview controller is now
+released on a microtask (`release()`), since strict mode's effect re-run in
+development disposed it and every generation failed with "Generation stopped
+when you left the document"; the probe preludes wait for hydration before
+using the dev sign-in form, which otherwise submits natively as a GET.
+
+Local production server on 3131: its stylesheet chunk answers 500 after the
+dev server ran from the same checkout; rebuild before the next probe run and
+do not run `next dev` and `next start` from one `.next` again.
+
+Inline AI against a real model, resolved: the pool list carries no `revision`
+(kept small), so an item opened from the pool gave the editor `post.revision`
+undefined. That keyed the canonical Yjs baseline on revision 0, silenced the
+provider's baseline check, and made every selection-aware action refuse the
+passage as "not saved yet" (the envelope needs a safe integer revision).
+`WorkspaceItemEditor` now takes the revision from the cached document payload
+(the body fetch), falling back to the initial document and the pool post. A
+contract test in `batch4-ui-contract.test.ts` pins it. Second fix: the route's
+read-only note ("this turn has no tools that change anything...") went into
+suggestion turns too, and the model echoed it inside the replacement text with
+an em dash; suggestion turns now get a replacement-only note (`ai-route.test.ts`
+covers it). With both, Rewrite on a 60-character passage reaches Ready in 3 to
+7 seconds with clean replacement text from claude-sonnet-5, Cmd+Enter applies
+it, and the change is recorded in `agent_changes`.
+
+Probe artifacts, not product defects: the typed variant of the probe typed
+over the live selection and deleted the fixture's first sixty characters, and
+a mid-word selection made the model complete the word twice ("blockkk"). The
+fixture was repaired through `/api/ai/tools` `update_item` text edits. Headless
+WebKit never reports the selection toolbar as stable although it is one
+element with one rect across 30 frames; probes click by position or in page.
+
+Real-model evidence (dev server on 3001, Anthropic key from the Keychain,
+`.texttext/probe/ai-live.mts`): Rewrite on the fixture's first sixty
+characters reached Ready in 3 s; the model returned "Paragraph 1 with a good
+amount of running text so each block" and nothing else; Cmd+Enter applied it
+(stored head changed, revision 25120 to 25121); Undo restored the original
+(revision 25122). Two `/api/ai` calls of 1.3 s and 1.5 s.

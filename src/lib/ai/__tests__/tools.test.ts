@@ -420,3 +420,33 @@ describe("item type save scope command contract", () => {
     expect(() => parseWorkspaceToolInput("update_item_type", { template_id: "tasks", base_version: 3, blueprint: { name: "Tasks", fields: [], collection: { layout: "list" } }, save_scope: { mode: "folder" } })).toThrow();
   });
 });
+
+describe("text edit source precondition schema", () => {
+  const source = {
+    itemId: "item", field: "body", revision: 7, start: 2, end: 4,
+    text: "📰", hash: "a".repeat(64),
+  };
+  const edit = { field: "excerpt", start: 0, end: 3, expected_text: "Old", replacement_text: "Generated" };
+  it("preserves the independent source alongside the destination and keeps it optional", () => {
+    expect(parseWorkspaceToolInput("update_item", { id: "item", text_edit: edit }).text_edit).toEqual(edit);
+    const text_edit = { ...edit, source_precondition: source };
+    expect(parseWorkspaceToolInput("update_item", { id: "item", text_edit }).text_edit).toEqual(text_edit);
+    expect(WORKSPACE_TOOL_DEFINITIONS.update_item.jsonSchema).toMatchObject({ properties: { text_edit: { properties: { source_precondition: { properties: { itemId: { type: "string" }, field: { enum: ["title", "excerpt", "body"] } } } } } } });
+    expect(workspaceToolModelSchema("update_item")).toMatchObject({ properties: { text_edit: { properties: { source_precondition: expect.any(Object) } } } });
+    expect(workspaceToolModelDescription("update_item")).toContain("text_edit.source_precondition");
+  });
+  it.each([
+    { itemId: "" }, { field: "tags" }, { revision: -1 }, { revision: 1.5 },
+    { start: -1 }, { start: 1.5 }, { end: 3 }, { end: 1 },
+    { text: "" }, { text: "x".repeat(4001), end: 4003 },
+    { hash: "wrong" }, { extra: true }, { end: 1_000_001 },
+  ])("rejects malformed source preconditions: %j", (patch) => {
+    expect(() => parseWorkspaceToolInput("update_item", { id: "item", text_edit: { ...edit, source_precondition: { ...source, ...patch } } })).toThrow();
+  });
+  it("rejects null, incomplete sources and invalid destination ranges independently", () => {
+    for (const source_precondition of [null, {}, { ...source, hash: undefined }]) {
+      expect(() => parseWorkspaceToolInput("update_item", { id: "item", text_edit: { ...edit, source_precondition } })).toThrow();
+    }
+    expect(() => parseWorkspaceToolInput("update_item", { id: "item", text_edit: { ...edit, end: 4, source_precondition: source } })).toThrow();
+  });
+});
