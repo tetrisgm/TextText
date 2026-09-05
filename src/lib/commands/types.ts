@@ -1,3 +1,4 @@
+import type { Appearance } from "@/lib/workspace/appearance";
 import type { Blog, ItemKind } from "@/lib/content";
 import type {
   WorkspacePoolPayload,
@@ -77,6 +78,10 @@ export type CommandWorkspaceSurface = {
   clearSelection: () => void;
   /** Cycle light, dark, system. */
   cycleAppearance: () => void;
+  /** Set the appearance outright (the palette lists all three). */
+  setAppearance: (appearance: Appearance) => void;
+  /** An item is open for reading and its pane can scroll. */
+  readerScrollable: () => boolean;
   selectNext: () => void;
   selectPrevious: () => void;
   openSelected: () => void;

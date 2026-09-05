@@ -1712,35 +1712,84 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .workspace-tab-bar {
   z-index: 5;
   display: flex;
-  align-items: stretch;
+  align-items: flex-end;
   box-sizing: border-box;
-  gap: 0;
+  gap: 2px;
   height: 36px;
-  padding: 0 8px;
+  padding: 0 6px;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
-  background: var(--workspace-pane-ground);
+  /* Sublime Text: the strip is a shade darker than the page, and the active
+     tab is cut from the page itself and attached to it; inactive tabs are
+     quiet shapes with a hairline between them. */
+  background: color-mix(in srgb, var(--ink) 5%, var(--workspace-pane-ground));
   box-shadow: inset 0 -1px 0 var(--workspace-frame-hairline);
 }
+
 .workspace-tab-bar::-webkit-scrollbar {
   display: none;
 }
+
 .workspace-tab {
+  position: relative;
   display: flex;
   align-items: center;
-  min-width: 0;
+  flex: 0 0 180px;
+  min-width: 120px;
   max-width: 220px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  color: color-mix(
-    in srgb,
-    var(--ink) 72%,
-    var(--workspace-pane-ground)
-  );
+  height: 30px;
+  margin: 0;
+  padding: 0 4px 0 6px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 7px 7px 0 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--ink) 62%, var(--workspace-pane-ground));
+  font-size: 13px;
 }
+
+.workspace-tab:not(.is-active) + .workspace-tab:not(.is-active)::before {
+  content: "";
+  position: absolute;
+  left: -2px;
+  top: 8px;
+  width: 1px;
+  height: 14px;
+  background: var(--workspace-frame-hairline);
+}
+
 .workspace-tab.is-preview .workspace-tab-select {
+  font-style: italic;
+}
+
+.workspace-tab.is-dragging {
+  opacity: 0.45;
+}
+
+.workspace-tab.is-drop-target {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* The active tab is the page: same ground, a hairline around three sides,
+   and one pixel taller so it covers the strip's bottom rule and reads as
+   attached to the content below. */
+.workspace-tab.is-active {
+  height: 31px;
+  margin-bottom: -1px;
+  border-color: var(--workspace-frame-hairline);
+  background: var(--workspace-pane-ground);
+  color: var(--ink);
+  font-weight: 500;
+  box-shadow: 0 -1px 0 color-mix(in srgb, var(--ink) 3%, transparent);
+}
+
+.workspace-tab:not(.is-active):hover {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink);
+}
+
+.workspace-tab-select {
   font-style: normal;
 }
 .workspace-tab.is-dragging {
@@ -1796,8 +1845,16 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   opacity: 0;
 }
 .workspace-tab:hover .workspace-tab-close,
-.workspace-tab.is-active .workspace-tab-close {
+.workspace-tab.is-active .workspace-tab-close,
+.workspace-tab:hover .workspace-tab-close,
+.workspace-tab:focus-within .workspace-tab-close {
   opacity: 1;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .workspace-tab-close {
+    opacity: 1;
+  }
 }
 .workspace-tab-close:hover {
   background: color-mix(in srgb, var(--ink) 10%, transparent);
@@ -5357,17 +5414,21 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
    full-width band at the same y (z-index 210), which covered the arrows and
    made "Go back" unhoverable; stacking the host above every in-content bar
    ends that regardless of how the view below is built. */
+/* Above the edit toolbar and popovers, and sticky: the bar stays at the top
+   of the column while the document scrolls beneath it (the relative rule that
+   replaced this let it scroll away). */
 .post-editor-content > .workspace-action-bar-host {
-  position: relative;
+  position: sticky;
+  top: 0;
   z-index: 230;
 }
 .workspace-action-bar-slot.is-right {
-  overflow: clip;
+  overflow: visible;
 }
 .workspace-action-bar {
   display: grid;
   grid-template-columns:
-    var(--workspace-action-bar-history-width, 96px)
+    minmax(var(--workspace-action-bar-history-width, 96px), max-content)
     minmax(0, 1fr)
     max-content;
   align-items: stretch;
@@ -6386,4 +6447,46 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
     font-size: 18px;
     line-height: 26px;
   }
+}
+
+
+/* Tools in the bar's left group, after the history arrows: the actions a
+   person expects at the top of a document window (new item, new folder),
+   drawn as Apple draws toolbar items: monochrome glyphs, no chrome until
+   hovered. */
+.workspace-action-bar-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+  padding-left: 8px;
+  border-left: 1px solid var(--workspace-action-bar-border);
+}
+
+.workspace-action-bar-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--workspace-action-bar-muted, var(--workspace-action-bar-ink));
+  cursor: default;
+}
+
+.workspace-action-bar-tool:hover {
+  background: color-mix(in srgb, var(--workspace-action-bar-ink) 7%, transparent);
+  color: var(--workspace-action-bar-ink);
+}
+
+.workspace-action-bar-tool:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.workspace-action-bar-tool svg {
+  width: 16px;
+  height: 16px;
 }

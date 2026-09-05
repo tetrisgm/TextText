@@ -946,6 +946,27 @@ function persistExpandedFolders(ids: Set<string>) {
 // The Apple Notes-style nested folder tree: disclosure triangles, indentation
 // by depth, per-folder "new subfolder", and expand state that persists and
 // auto-opens the branch containing the active folder.
+/** Raised by the bar; the folder tree opens its inline name field. */
+const NEW_FOLDER_EVENT = "texttext:new-folder";
+
+function NewItemGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2.75" y="2.75" width="10.5" height="10.5" rx="2.5" />
+      <path d="M8 5.5v5M5.5 8h5" />
+    </svg>
+  );
+}
+
+function NewFolderGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2.5 5.25A1.75 1.75 0 0 1 4.25 3.5h2.6l1.4 1.5h3.5a1.75 1.75 0 0 1 1.75 1.75v4.5a1.75 1.75 0 0 1-1.75 1.75h-7.5A1.75 1.75 0 0 1 2.5 11.25z" />
+      <path d="M8 7.5v3M6.5 9h3" />
+    </svg>
+  );
+}
+
 function FolderTreeNav({
   blog,
   folders,
@@ -1016,6 +1037,21 @@ function FolderTreeNav({
   const [moreOpenFor, setMoreOpenFor] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const onNewFolder = (event: Event) => {
+      const parentPath =
+        (event as CustomEvent<{ parentPath?: string }>).detail?.parentPath ?? "";
+      setCreatingUnder(parentPath);
+      setNewName("");
+      setError(null);
+      if (parentPath) {
+        const parent = foldersByPath.get(parentPath);
+        if (parent) persistExpandedFolders(new Set(persistedExpanded).add(parent.id));
+      }
+    };
+    window.addEventListener(NEW_FOLDER_EVENT, onNewFolder);
+    return () => window.removeEventListener(NEW_FOLDER_EVENT, onNewFolder);
+  }, [foldersByPath, persistedExpanded]);
   const closeMoreMenu = useCallback(() => setMoreOpenFor(null), []);
   useEscapeLayer(Boolean(moreOpenFor), "Folder actions", closeMoreMenu);
   useEffect(() => {
@@ -1331,7 +1367,40 @@ function FolderTreeNav({
     );
   };
 
-  return <>{tree.map((node) => renderNode(node, 0))}</>;
+  return (
+    <>
+      {creatingUnder === "" && (
+        <div className="post-editor-new-folder-form" style={{ paddingLeft: 15 }}>
+          <input
+            className="post-editor-new-folder-input"
+            value={newName}
+            autoFocus
+            placeholder="Folder name"
+            maxLength={80}
+            disabled={busy}
+            onChange={(event) => setNewName(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void submitNewFolder("");
+              } else if (event.key === "Escape") {
+                setCreatingUnder(null);
+                setNewName("");
+              }
+            }}
+            onBlur={() => {
+              if (!newName.trim()) setCreatingUnder(null);
+            }}
+            aria-label="New folder name"
+          />
+          {error && (
+            <span className="post-editor-new-folder-error">{error}</span>
+          )}
+        </div>
+      )}
+      {tree.map((node) => renderNode(node, 0))}
+    </>
+  );
 }
 
 export function PostFolderSidebar({
@@ -1602,6 +1671,7 @@ export function WorkspaceSidebarChrome({
   onReturnToBody,
   onSidebarFocus,
   onSidebarEmptyPointerDown,
+  onNewItem,
   onSettings,
   onBuildItemType,
   onChangeItemType,
@@ -1630,6 +1700,8 @@ export function WorkspaceSidebarChrome({
   onReturnToBody?: () => void;
   onSidebarFocus?: (path: string) => void;
   onSidebarEmptyPointerDown?: (nav: HTMLElement) => void;
+  /** The bar's New item control; runs the workspace's create command. */
+  onNewItem?: () => void;
   onSettings?: () => void;
   onBuildItemType?: (folder: Folder) => void;
   onChangeItemType?: (folder: Folder) => void;
@@ -1866,6 +1938,36 @@ export function WorkspaceSidebarChrome({
               aria-label="Workspace history"
             >
               <WorkspaceHistoryControls />
+              <div className="workspace-action-bar-tools" role="group" aria-label="Create">
+                {onNewItem && (
+                  <button
+                    type="button"
+                    className="workspace-action-bar-tool"
+                    title="New item (C)"
+                    aria-label="New item"
+                    onClick={onNewItem}
+                  >
+                    <NewItemGlyph />
+                  </button>
+                )}
+                {canManageFolders && (
+                  <button
+                    type="button"
+                    className="workspace-action-bar-tool"
+                    title={activeFolder ? "New folder inside this folder" : "New folder"}
+                    aria-label="New folder"
+                    onClick={() =>
+                      window.dispatchEvent(
+                        new CustomEvent(NEW_FOLDER_EVENT, {
+                          detail: { parentPath: activeFolder ?? "" },
+                        }),
+                      )
+                    }
+                  >
+                    <NewFolderGlyph />
+                  </button>
+                )}
+              </div>
             </nav>
             <div
               className="workspace-action-bar-slot is-middle"

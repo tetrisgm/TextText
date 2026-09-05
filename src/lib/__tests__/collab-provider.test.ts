@@ -662,7 +662,7 @@ describe("CollabProvider startup and outbox", () => {
     provider.destroy();
   });
 
-  it("splices delivered edits so a second pagehide does not double-send", async () => {
+  it("retains beacon-queued edits for another pagehide and an acknowledged push", async () => {
     vi.useFakeTimers();
     const { beacons, firePageHide, base } = beaconHarness("beacon-splice");
     const doc = new Y.Doc();
@@ -677,9 +677,21 @@ describe("CollabProvider startup and outbox", () => {
 
     firePageHide();
     firePageHide();
-    // The first beacon delivered and spliced the outbox; the second finds an
-    // empty queue and sends nothing. Exactly one push-endpoint beacon.
-    expect(beacons.filter((b) => b.url === base)).toHaveLength(1);
+    // Both beacons were queued but neither was acknowledged by the server.
+    // The operations must still be available after a bfcache restore or retry.
+    expect(beacons.filter((b) => b.url === base)).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(300);
+    const pushes = vi.mocked(fetch).mock.calls.filter(
+      ([input, init]) => String(input) === base && init?.method === "POST",
+    );
+    expect(pushes).toHaveLength(1);
+    const payload = JSON.parse(String(pushes[0][1]?.body));
+    const recovered = new Y.Doc();
+    for (const update of payload.updates) {
+      Y.applyUpdate(recovered, new Uint8Array(Buffer.from(update, "base64")));
+    }
+    expect(recovered.getMap("body").get("text")).toBe("queued once");
+    recovered.destroy();
 
     provider.destroy();
   });

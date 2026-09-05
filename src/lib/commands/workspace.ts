@@ -338,6 +338,62 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     run: (ctx) => ctx.workspace?.cycleAppearance?.(),
   },
   {
+    id: "workspace.appearance.light",
+    label: "Appearance: Light",
+    group: "Navigate",
+    when: (ctx) => Boolean(ctx.workspace?.setAppearance),
+    run: (ctx) => ctx.workspace?.setAppearance?.("light"),
+  },
+  {
+    id: "workspace.appearance.dark",
+    label: "Appearance: Dark",
+    group: "Navigate",
+    when: (ctx) => Boolean(ctx.workspace?.setAppearance),
+    run: (ctx) => ctx.workspace?.setAppearance?.("dark"),
+  },
+  {
+    id: "workspace.appearance.system",
+    label: "Appearance: Match system",
+    group: "Navigate",
+    when: (ctx) => Boolean(ctx.workspace?.setAppearance),
+    run: (ctx) => ctx.workspace?.setAppearance?.("system"),
+  },
+  // Reading keys. With an item open the pane is not focused, so the browser
+  // never scrolled it from the keyboard (owner, 2026-09-05). Repeat allowed:
+  // holding the key keeps scrolling, as in any reader.
+  {
+    id: "reader.scroll.line-down",
+    label: "Scroll down a little",
+    group: "Read",
+    shortcut: { key: "ArrowDown", label: "↓" },
+    when: (ctx) => Boolean(ctx.workspace?.readerScrollable?.()),
+    run: (ctx) => ctx.workspace?.scrollReader("down", "line"),
+  },
+  {
+    id: "reader.scroll.line-up",
+    label: "Scroll up a little",
+    group: "Read",
+    shortcut: { key: "ArrowUp", label: "↑" },
+    when: (ctx) => Boolean(ctx.workspace?.readerScrollable?.()),
+    run: (ctx) => ctx.workspace?.scrollReader("up", "line"),
+  },
+  {
+    id: "reader.scroll.page-down",
+    label: "Scroll down a page",
+    group: "Read",
+    shortcut: { key: "PageDown", label: "Page Down" },
+    when: (ctx) => Boolean(ctx.workspace?.readerScrollable?.()),
+    run: (ctx) => ctx.workspace?.scrollReader("down", "page"),
+  },
+  {
+    id: "reader.scroll.page-up",
+    label: "Scroll up a page",
+    group: "Read",
+    shortcut: { key: "PageUp", label: "Page Up" },
+    when: (ctx) => Boolean(ctx.workspace?.readerScrollable?.()),
+    run: (ctx) => ctx.workspace?.scrollReader("up", "page"),
+  },
+  {
     id: "selection.select-all",
     label: "Select all items",
     group: "Navigate",

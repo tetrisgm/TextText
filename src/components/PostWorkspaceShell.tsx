@@ -1,6 +1,7 @@
 "use client";
 
 import { requestDocumentCaret } from "@/lib/document-history-events";
+import type { Appearance } from "@/lib/workspace/appearance";
 import {
   consumeReadingAnchor,
   hasReadingAnchor,
@@ -196,6 +197,7 @@ import {
   uniqueSlug,
 } from "@/lib/post-edit-draft";
 import type { SpatialDirection } from "@/lib/commands/types";
+import { availableWorkspaceCommands } from "@/lib/commands/workspace";
 import type { AgentFocusEvent } from "@/lib/collab/agent-focus";
 import type { AdjacentPublishedPosts } from "@/lib/store";
 import {
@@ -3410,11 +3412,10 @@ function LocalWorkspaceShell({
           (direction === "up" || direction === "down") &&
           typeof window !== "undefined"
         ) {
-          const step = Math.max(
-            64,
-            Math.round((window.innerHeight || 800) * 0.16),
-          );
-          window.scrollBy({
+          const scroller = contentRef.current;
+          if (!scroller) return;
+          const step = Math.max(64, Math.round(scroller.clientHeight * 0.16));
+          scroller.scrollBy({
             top: direction === "down" ? step : -step,
             behavior: "auto",
           });
@@ -4623,6 +4624,12 @@ function LocalWorkspaceShell({
         writeAppearance(next);
         showToast(`Appearance: ${appearanceLabel(next)}`);
       },
+      setAppearance: (appearance: Appearance) => {
+        writeAppearance(appearance);
+        showToast(`Appearance: ${appearanceLabel(appearance)}`);
+      },
+      readerScrollable: () =>
+        viewRef.current.level === "post" && Boolean(contentRef.current),
       // A selection of many is a mode, and the way out of it is Escape. Said
       // once, the first time it happens in a session: a toast on every
       // multi-select is nagging, and a mode nobody can leave is worse.
@@ -4858,6 +4865,15 @@ function LocalWorkspaceShell({
   // What the key hints read. Bumped by anything that changes which keys do
   // something: the view, the selection, the open tabs.
   const readCommandContext = useCommandContextReader();
+  // The bar's New item control runs the same command the palette and the C
+  // key run, so the kind follows the current folder.
+  const runCreateCurrent = useCallback(() => {
+    const ctx = readCommandContext?.();
+    if (!ctx) return;
+    availableWorkspaceCommands(ctx)
+      .find((command) => command.id === "create.current")
+      ?.run(ctx);
+  }, [readCommandContext]);
   const hintRevision = useMemo(
     () =>
       // `mounted` matters: the command surface registers in an effect, so a
@@ -5157,6 +5173,7 @@ function LocalWorkspaceShell({
           sidebarSelectionActiveRef.current = false;
           nav.focus({ preventScroll: true });
         }}
+        onNewItem={runCreateCurrent}
         onSettings={navigateSettings}
         onBuildItemType={(folder) => {
           setItemTypeStudioEditing(null);
