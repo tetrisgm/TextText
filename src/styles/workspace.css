@@ -3397,14 +3397,19 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
    UnifiedDocumentEditor markup. Give the current fixed group two clear rows. */
 .post-editor-shell.has-sidebar .post-top-action-bar.is-edit {
   right: calc(68px + var(--workspace-rail-inset, 0px));
-  left: calc(var(--workspace-sidebar-width, 252px) + 10px);
+  /* Start past the fixed history arrows, which sit at sidebar + 8px and are
+     80px wide on the same top:46px row. Pinned at sidebar + 10px this bar sat
+     directly on them and the arrows sliced its first control ("Codex" read
+     as "ex"; owner's recording, 2026-09-05). 98px is the clearance the filter
+     strip already uses for the same arrows. */
+  left: calc(var(--workspace-sidebar-width, 252px) + 98px);
   width: auto;
   max-width: none;
 }
 
 .post-editor-shell.has-sidebar.is-sidebar-collapsed
   .post-top-action-bar.is-edit {
-  left: 10px;
+  left: 98px;
 }
 
 .post-editor-shell .post-top-action-bar.is-edit .post-action-toolbar {
