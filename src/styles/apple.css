@@ -12,13 +12,13 @@
   --ac-font-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 
   /* type scale: size / line-height / tracking(em) */
-  --ac-fs-title2: 22px;      --ac-lh-title2: 28px;      --ac-tr-title2: 0.016em;
-  --ac-fs-title3: 20px;      --ac-lh-title3: 25px;      --ac-tr-title3: 0.019em;
-  --ac-fs-headline: 17px;    --ac-lh-headline: 22px;    --ac-tr-headline: -0.0253em;
-  --ac-fs-body: 17px;        --ac-lh-body: 22px;        --ac-tr-body: -0.0253em;
-  --ac-fs-callout: 16px;     --ac-lh-callout: 21px;     --ac-tr-callout: -0.0194em;
-  --ac-fs-subheadline: 15px; --ac-lh-subheadline: 20px; --ac-tr-subheadline: -0.0153em;
-  --ac-fs-footnote: 13px;    --ac-lh-footnote: 18px;    --ac-tr-footnote: -0.0062em;
+  --ac-fs-title2: 20px;      --ac-lh-title2: 25px;      --ac-tr-title2: 0.019em;
+  --ac-fs-title3: 17px;      --ac-lh-title3: 22px;      --ac-tr-title3: -0.0253em;
+  --ac-fs-headline: 16px;    --ac-lh-headline: 21px;    --ac-tr-headline: -0.0194em;
+  --ac-fs-body: 15px;        --ac-lh-body: 20px;        --ac-tr-body: -0.0153em;
+  --ac-fs-callout: 15px;     --ac-lh-callout: 20px;     --ac-tr-callout: -0.0153em;
+  --ac-fs-subheadline: 14px; --ac-lh-subheadline: 18px; --ac-tr-subheadline: -0.0062em;
+  --ac-fs-footnote: 13px;    --ac-lh-footnote: 17px;    --ac-tr-footnote: 0em;
   --ac-fs-caption1: 12px;    --ac-lh-caption1: 16px;    --ac-tr-caption1: 0em;
   --ac-fs-caption2: 11px;    --ac-lh-caption2: 13px;    --ac-tr-caption2: 0.0064em;
 
@@ -1404,11 +1404,11 @@
   touch-action: none;
 }
 .command-palette {
-  width: min(100%, 640px);
+  width: min(100%, 680px);
   overflow: hidden;
   touch-action: pan-y;
   border: 1px solid var(--ac-hairline);
-  border-radius: 12px;
+  border-radius: 7px;
   background: var(--ac-mat-fallback);
   -webkit-backdrop-filter: var(--ac-mat-blur);
   backdrop-filter: var(--ac-mat-blur);
@@ -1823,21 +1823,26 @@
   backdrop-filter: none;
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.06) inset,
-    0 34px 100px -40px rgba(0, 0, 0, 0.8);
+    0 24px 70px -22px rgba(0, 0, 0, 0.78),
+    0 10px 28px rgba(0, 0, 0, 0.22);
   color: var(--palette-ink);
 }
 
 .command-palette-input {
   border-bottom-color: var(--palette-hairline);
   color: var(--palette-ink);
+  font-size: 16px;
   font-weight: 500;
 }
 
 .command-palette-input::placeholder {
-  color: #6d7488;
+  color: #777777;
 }
 
 .command-palette-row {
+  gap: 24px;
+  min-height: 44px;
+  padding: 6px 10px;
   color: var(--palette-ink);
 }
 
@@ -1883,10 +1888,10 @@
    A dark chip with grey ink disappears into the panel. */
 .command-palette-shortcut kbd,
 .command-palette--sheet .command-sheet-key {
-  min-width: 22px;
-  padding: 4px 7px;
+  min-width: 24px;
+  padding: 5px 7px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 4px;
   background: #c9c9c9;
   color: #232323;
   font: 600 11px/1 var(--ac-font-text);

@@ -515,7 +515,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
 .workspace-library-toolbar {
   min-width: 0;
-  min-height: 42px;
+  min-height: 44px;
   margin: 0 0 14px;
   padding: 0 0 10px;
   border-bottom: 1px solid var(--hairline);
@@ -572,7 +572,8 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   margin: 0;
   color: var(--muted);
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 400;
+  letter-spacing: -0.01em;
 }
 
 .workspace-recent-empty span {
@@ -714,12 +715,13 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .workspace-collection-empty {
-  min-height: 180px;
+  min-height: 216px;
   display: grid;
   place-content: center;
   margin: 0;
   color: var(--muted);
-  font: 500 14px/1.45 var(--font-body);
+  font: 400 14px/1.4 var(--font-body);
+  letter-spacing: -0.01em;
   text-align: center;
 }
 
@@ -1667,8 +1669,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .workspace-key-hints.is-modifier-layer {
   opacity: 1;
   box-shadow:
-    0 -6px 22px -18px rgba(0, 0, 0, 0.6),
-    inset 0 1px 0 color-mix(in srgb, var(--accent) 55%, transparent);
+    0 -6px 22px -18px rgba(0, 0, 0, 0.6);
 }
 
 /* A selected row is filled outright rather than tinted. Every piece of text
@@ -2054,7 +2055,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
    save state is the last thing in an editor and was hidden by it (owner,
    2026-09-04). */
 .post-editor-shell {
-  --workspace-hints-height: 42px;
+  --workspace-hints-height: 44px;
 }
 
 @media (max-width: 900px) {
@@ -2430,11 +2431,11 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   margin-block: 14px 28px;
   padding: 34px 40px 48px;
   border: 1px solid var(--hairline);
-  border-radius: 12px;
+  border-radius: 6px;
   /* A shade off the page ground, so the panel reads as a panel even where a
      hairline on near-white would not. */
   background: color-mix(in srgb, var(--ink) 2%, var(--bg));
-  box-shadow: 0 18px 46px -34px rgba(0, 0, 0, 0.42);
+  box-shadow: 0 10px 28px -26px rgba(0, 0, 0, 0.30);
 }
 
 /* The page behind the panel steps back, which is what makes the panel read
@@ -2448,18 +2449,18 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .post-editor-shell .tt-document .tt-masthead {
-  gap: 10px;
+  gap: 8px;
 }
 
 .post-editor-shell .tt-document .tt-masthead :is(.tt-title, h1) {
-  letter-spacing: -0.022em;
-  line-height: 1.12;
+  letter-spacing: -0.025em;
+  line-height: 1.16;
 }
 
 .post-editor-shell .tt-document .tt-masthead :is(.tt-byline, .tt-metadata) {
-  font-size: 13px;
-  line-height: 1.35;
-  letter-spacing: 0.01em;
+  font-size: 14px;
+  line-height: 1.4;
+  letter-spacing: -0.005em;
 }
 
 .post-editor-shell .tt-document > .tt-stack > .tt-text,
@@ -2608,6 +2609,69 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   .workspace-item-option.is-command-active
   .workspace-item-actions {
   opacity: 1;
+}
+
+/* The keyboard cursor remains a quiet locator when it is not selected. */
+.workspace-recent.is-view-list
+  .workspace-item-option.is-command-active:not(.is-selected):not(.is-command-selected) {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  border-radius: 0;
+  box-shadow: inset 2px 0 0 var(--muted);
+}
+
+/* Superhuman selection is a continuous sky-blue band, with no inset or
+   rounding between adjacent selected rows. */
+.workspace-recent.is-view-list
+  .workspace-item-option.is-selected,
+.workspace-recent.is-view-list
+  .workspace-item-option.is-command-selected {
+  background: #61b5e1;
+  color: #cff1ff;
+  border-radius: 0;
+  margin-inline: 0;
+}
+
+.workspace-recent.is-view-list
+  .workspace-item-option.is-selected
+  .workspace-item-option-copy > strong,
+.workspace-recent.is-view-list
+  .workspace-item-option.is-selected
+  .workspace-item-option-detail small,
+.workspace-recent.is-view-list
+  .workspace-item-option.is-selected
+  .workspace-item-option-main > time,
+.workspace-recent.is-view-list
+  .workspace-item-option.is-command-selected
+  .workspace-item-option-copy > strong,
+.workspace-recent.is-view-list
+  .workspace-item-option.is-command-selected
+  .workspace-item-option-detail small,
+.workspace-recent.is-view-list
+  .workspace-item-option.is-command-selected
+  .workspace-item-option-main > time {
+  color: #cff1ff;
+}
+
+.workspace-recent.is-view-list
+  .workspace-item-option.is-selected
+  .workspace-item-actions,
+.workspace-recent.is-view-list
+  .workspace-item-option.is-command-selected
+  .workspace-item-actions {
+  color: #cff1ff;
+}
+
+.workspace-recent.is-view-list
+  .workspace-item-option.is-selected
+  .workspace-item-check,
+.workspace-recent.is-view-list
+  .workspace-item-option.is-checked
+  .workspace-item-check {
+  color: #61b5e1;
+  background: #ffffff;
+  border-color: #ffffff;
+  width: 18px;
+  height: 18px;
 }
 
 /* A selected row already owns the emphasis. Its star should stay out of the
