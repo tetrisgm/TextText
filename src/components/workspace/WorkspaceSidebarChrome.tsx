@@ -4,6 +4,7 @@
 // state - one tab, one sidebar), the folder tree, and the chrome component
 // with its resize handle. Extracted from the PostWorkspaceShell monolith.
 
+import dynamic from "next/dynamic";
 import {
   useCallback,
   useEffect,
@@ -27,7 +28,14 @@ import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
 import {
   useEscapeLayer,
 } from "@/components/keyboard/CommandLayer";
-import { FolderLookPicker } from "@/components/workspace/FolderLookPicker";
+// Loaded on demand. The picker carries the template gallery, and with it the
+// document renderer and react-markdown; imported statically it put all of
+// that in the sidebar's chunk group on every home load.
+const FolderLookPicker = dynamic(() =>
+  import("@/components/workspace/FolderLookPicker").then(
+    (module) => module.FolderLookPicker,
+  ),
+);
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import { WorkspaceMenuMount } from "@/components/workspace/WorkspaceMenuMount";
 import {
