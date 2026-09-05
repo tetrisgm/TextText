@@ -4184,3 +4184,27 @@ quiet, under 10% for two seconds, from 2.9s after launch. Idle CPU is a
 proxy for "rendered", not a paint timestamp, but it is the real client, the
 real session and production. Sampler: python in the shell, no probe file;
 the earlier `nettop`-based attempt blocked and was dropped.
+
+### From the owner's recording (2026-09-05, after build 1049)
+
+- Deleted text coming back: a pre-ready edit race. The surface edits the
+  local ledger before the provider is ready; when the collab catch-up
+  landed, `handleDocumentUpdate`'s remote branch published the server
+  snapshot over the surface. Guarded now (`readyRef` + ledger). Reproduce
+  with `.texttext/probe/deleterepro3.mts` (900ms delay on /api/collab, edit
+  within two seconds of launch); the flag `window.__ttEditorInspect = true`
+  before mount exposes `window.__ttEditor()` with ready/ledger/ydoc/surface
+  lengths. The window was widened by warming the editor chunk late; it now
+  warms 300ms after load.
+- Scroll jumps on scrolling up: this WebKit (605.1.15, Safari 26.5) has
+  overflow-anchor; the reader's own compensation doubled it. Feature-detect
+  in `scroll-anchoring.ts`; the old onLoad compensation is gone.
+- Scrollbar under the shortcut bar: `.post-editor-content` takes its grid
+  row minus `--workspace-hints-height` (the row is a fixed track, so a
+  margin only overflowed it).
+- Edit opening off from the reading position: `reading-anchor.ts`; the
+  shell dispatches the caret event with `align: "top"` once the surface is
+  laid out; the scroll restore yields while an anchor is pending.
+- Blank window at launch: about two seconds in the recording, matching the
+  process-sampling number (WebKit processes at 0.7s, idle at 2.9s).
+  Function and database are both in us-east-1, so it is not cross-region.
