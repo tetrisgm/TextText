@@ -4246,3 +4246,11 @@ ranked by the reviewers:
   reflect the real collection query.
 - UI: an Apple-style participant row (people and agents as 24px marks in
   the bar) is specified in the agents and sharing reports.
+
+### Shipped 2026-09-05: TextText 0.182 build 1051
+
+Fifth promotion of the day: the six reviews' confident fixes and the four
+UI items (Sublime-style tabs, reading keys, appearance in Cmd+K, the bar
+with New item and New folder). The active tab's page colour was still
+overridden in that build; fixed in the following commit, to ship with the
+next promotion.
