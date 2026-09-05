@@ -4465,3 +4465,16 @@ comparison is the real check.
   subscribers, per-entry metadata overlay) and the item-level Add agent flow
   (`AddAgentPopover.tsx`, `agent-connect-actions.ts`, Cmd+K command, Settings
   pointing at the item-level path).
+
+Promotion of `ce870406` failed at `workflow.live_clients` in 7 s: the token
+loop (`scripts/test-token-mcp-loop.ts`) could not delete its scratch user
+because token creation and revocation now write `action_audit` rows with the
+actor, and that column has no cascade. The teardown deletes the scratch
+user's audit rows first. The stray scratch user from that run was removed by
+hand from the local database.
+
+History placeholders: the server merge now drops empty unpinned undeleted
+chats always (`isAssistantConversationHistory`), not only above the limit, and
+the client acknowledgement compares its syncable subset with the server's
+cleaned list. Before this, a workspace with 497 placeholder chats on the server
+stayed "Saved on this device" forever after every real conversation had synced.

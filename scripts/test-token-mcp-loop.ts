@@ -16,7 +16,7 @@ import {
   revokeApiToken,
 } from "../src/lib/api-tokens";
 import { db } from "../src/lib/db/client";
-import { apiTokens, blogs, folders, users } from "../src/lib/db/schema";
+import { actionAudit, apiTokens, blogs, folders, users } from "../src/lib/db/schema";
 import { MCP_PROTOCOL_VERSION } from "../src/lib/mcp/protocol";
 import { ensureWorkspaceFolders } from "../src/lib/store";
 
@@ -312,7 +312,12 @@ async function main() {
       await localDb.delete(folders).where(eq(folders.blogId, blogId));
       await localDb.delete(blogs).where(eq(blogs.id, blogId));
     }
-    if (userId) await localDb.delete(users).where(eq(users.id, userId));
+    if (userId) {
+      // Token creation and revocation are audited with the actor, and the
+      // audit column has no cascade: remove this scratch user's trail first.
+      await localDb.delete(actionAudit).where(eq(actionAudit.actorUserId, userId));
+      await localDb.delete(users).where(eq(users.id, userId));
+    }
   }
   assert(summary, "The workspace-token evaluator produced no result.");
   console.log(JSON.stringify(summary));

@@ -6,6 +6,7 @@ import {
   cleanAssistantConversationSyncPayload,
   mergeAssistantConversationSyncPayloads,
   type SyncedAssistantConversation,
+  isAssistantConversationHistory,
 } from "@/lib/ai/assistant-conversation-sync";
 
 /** A lightweight record for the history picker. Message bodies stay internal. */
@@ -777,15 +778,10 @@ export function updateAssistantConversationMessage(
  * same subset is what an acknowledgement is measured against, so a placeholder
  * never keeps a workspace "Saved on this device" after everything real synced.
  */
-function syncableAssistantConversations(
-  conversations: readonly AssistantConversation[],
-): AssistantConversation[] {
-  return conversations.filter(
-    (conversation) =>
-      Boolean(conversation.deletedAt) ||
-      conversation.pinned ||
-      conversation.messages.length > 0,
-  );
+function syncableAssistantConversations<
+  T extends { deletedAt?: string; pinned: boolean; messages: readonly unknown[] },
+>(conversations: readonly T[]): T[] {
+  return conversations.filter(isAssistantConversationHistory);
 }
 
 export function assistantConversationSyncPayload(
@@ -815,7 +811,10 @@ export function acknowledgeAssistantConversationSync(handle: string, remote: unk
   state.syncedLocalRevision =
     assistantConversationSyncFingerprint(
       syncableAssistantConversations(state.conversations),
-    ) === assistantConversationSyncFingerprint(remote)
+    ) ===
+    assistantConversationSyncFingerprint(
+      syncableAssistantConversations(cleanAssistantConversationSyncPayload(remote)),
+    )
       ? state.localRevision
       : -1;
 }

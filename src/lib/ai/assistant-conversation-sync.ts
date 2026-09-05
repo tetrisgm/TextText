@@ -407,6 +407,16 @@ export function mergeAssistantConversationSyncPayloads(
 export const ASSISTANT_HISTORY_MAX_CONVERSATIONS = 500;
 
 /**
+ * An empty, unpinned, undeleted chat is a context's placeholder, never
+ * history. Each browser profile keeps its own; none belongs in the shared copy.
+ */
+export function isAssistantConversationHistory<
+  T extends { deletedAt?: string; pinned: boolean; messages: readonly unknown[] },
+>(conversation: T): boolean {
+  return Boolean(conversation.deletedAt) || conversation.pinned || conversation.messages.length > 0;
+}
+
+/**
  * Keep a merged history under the stored limit instead of failing the write.
  * Every fresh browser profile mints an empty chat per context, and a merge is
  * a union by id, so a workspace opened on enough devices would otherwise hit
@@ -417,7 +427,9 @@ export function capAssistantConversationSyncPayload(
   conversations: SyncedAssistantConversation[],
   limit = ASSISTANT_HISTORY_MAX_CONVERSATIONS,
 ): SyncedAssistantConversation[] {
-  if (conversations.length <= limit) return conversations;
+  const history = conversations.filter(isAssistantConversationHistory);
+  if (history.length <= limit) return history.length === conversations.length ? conversations : history;
+  conversations = history;
   const stamp = (c: SyncedAssistantConversation) =>
     Date.parse(c.updatedAt || c.metadataUpdatedAt || c.createdAt || "") || 0;
   const oldestFirst = (a: SyncedAssistantConversation, b: SyncedAssistantConversation) =>
