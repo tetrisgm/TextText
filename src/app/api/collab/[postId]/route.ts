@@ -24,6 +24,7 @@ import {
   prepareCollabBaseline,
 } from "@/lib/collab";
 import { getCollabRequestAccess } from "@/lib/collab/access.server";
+import { verifyPresenceSession } from "@/lib/collab/presence-session.server";
 import { readBoundedJson } from "@/lib/http/bounded-json";
 
 export const dynamic = "force-dynamic";
@@ -153,7 +154,18 @@ export async function GET(
     MAX_WAIT_SECONDS,
   );
 
-  const clientId = url.searchParams.get("clientId") ?? undefined;
+  const principal = access.user
+    ? `account:${access.user.userId ?? access.user.sub}`
+    : access.capability ? `capability:${access.capability.id}` : null;
+  // Excluding a live editor can permit an epoch rotation. A public row ID
+  // alone is not authority to exclude that editor from the contention check.
+  const session = role === "editor" && principal
+    ? verifyPresenceSession(
+        request.headers.get("X-TextText-Presence-Session"), principal, postId,
+        url.searchParams.get("clientId"),
+      )
+    : null;
+  const clientId = session?.clientId;
   const baseline =
     since === 0
       ? await prepareCollabBaseline(postId, clientId)

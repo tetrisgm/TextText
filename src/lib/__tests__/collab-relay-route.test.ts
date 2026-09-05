@@ -19,10 +19,14 @@ const mocks = vi.hoisted(() => ({
   latestCollabSeq: vi.fn(),
   maybeCompactCollab: vi.fn(),
   prepareCollabBaseline: vi.fn(),
+  verifyPresenceSession: vi.fn(),
 }));
 
 vi.mock("@/lib/collab/access.server", () => ({
   getCollabRequestAccess: mocks.getCollabRequestAccess,
+}));
+vi.mock("@/lib/collab/presence-session.server", () => ({
+  verifyPresenceSession: mocks.verifyPresenceSession,
 }));
 vi.mock("@/lib/collab", () => ({
   appendCollabUpdate: mocks.appendCollabUpdate,
@@ -210,8 +214,34 @@ describe("collab relay route", () => {
   // editor reopening inside the presence window keeps replaying a stale log
   // over a body written out of band, and that write is silently discarded.
   it("forwards the asking client so it is not counted as a co-editor", async () => {
-    await GET(read("?since=0&clientId=abc-123"), ctx);
+    // Only a presence session the server issued to this principal may exclude
+    // a row from the contention check; the credential rides in a header.
+    mocks.getCollabRequestAccess.mockResolvedValue({
+      ...(await mocks.getCollabRequestAccess()),
+      user: { userId: "user-1", sub: "sub-1" },
+    });
+    mocks.verifyPresenceSession.mockReturnValue({ clientId: "abc-123" });
+    await GET(
+      new Request(`http://localhost/api/collab/${postId}?since=0&clientId=abc-123`, {
+        headers: { "X-TextText-Presence-Session": "credential" },
+      }),
+      ctx,
+    );
+    expect(mocks.verifyPresenceSession).toHaveBeenCalledWith(
+      "credential",
+      "account:user-1",
+      postId,
+      "abc-123",
+    );
     expect(mocks.prepareCollabBaseline).toHaveBeenCalledWith(postId, "abc-123");
+  });
+
+  it("ignores a bare client ID that carries no presence session", async () => {
+    // A viewer who copied an editor's public row ID from presence must not be
+    // able to exclude that editor and permit an epoch rotation.
+    mocks.verifyPresenceSession.mockReturnValue(null);
+    await GET(read("?since=0&clientId=abc-123"), ctx);
+    expect(mocks.prepareCollabBaseline).toHaveBeenCalledWith(postId, undefined);
   });
 
   it("answers 409 when the document has no baseline to read against", async () => {

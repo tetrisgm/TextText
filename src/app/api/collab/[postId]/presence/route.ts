@@ -22,6 +22,16 @@ export async function GET(request: Request, ctx: { params: Promise<{ postId: str
 
 export async function POST(request: Request, ctx: { params: Promise<{ postId: string }> }) {
   const { postId } = await ctx.params;
+  const decoded = await readBoundedJson<unknown>(request, MAX_PRESENCE_BODY_BYTES);
+  if ("error" in decoded) {
+    return decoded.error === "too_large"
+      ? respond({ error: "Presence update is too large" }, 413)
+      : respond({ error: "Send a JSON body" }, 400);
+  }
+  if (!decoded.value || typeof decoded.value !== "object" || Array.isArray(decoded.value)) {
+    return respond({ error: "Send a JSON object" }, 400);
+  }
+  // Authorize after consuming the body: a slow upload must not retain a revoked grant.
   const access = await getCollabRequestAccess(request, postId);
   if (!access.role) {
     return access.trashed
@@ -34,15 +44,6 @@ export async function POST(request: Request, ctx: { params: Promise<{ postId: st
     : access.capability ? `capability:${access.capability.id}` : null;
   if (!principal) return respond({ error: "A presence identity is required" }, 403);
 
-  const decoded = await readBoundedJson<unknown>(request, MAX_PRESENCE_BODY_BYTES);
-  if ("error" in decoded) {
-    return decoded.error === "too_large"
-      ? respond({ error: "Presence update is too large" }, 413)
-      : respond({ error: "Send a JSON body" }, 400);
-  }
-  if (!decoded.value || typeof decoded.value !== "object" || Array.isArray(decoded.value)) {
-    return respond({ error: "Send a JSON object" }, 400);
-  }
   const body = decoded.value as Record<string, unknown>;
   if (body.join === true) {
     if (!Number.isSafeInteger(body.awarenessClientId) || Number(body.awarenessClientId) < 0 ||

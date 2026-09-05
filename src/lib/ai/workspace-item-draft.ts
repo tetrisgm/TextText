@@ -22,6 +22,7 @@ export type WorkspaceItemTextSnapshot = {
   body: string;
   tags?: string[];
   selection?: WorkspaceItemTextSelection | null;
+  writingSelection?: WorkspaceItemTextSelection | null;
 };
 
 export type WorkspaceItemTextPatch = Partial<
@@ -60,6 +61,7 @@ type OpenWorkspaceItemDraft = {
 type OpenWorkspaceItemDraftEntry = {
   draft: OpenWorkspaceItemDraft;
   selection: WorkspaceItemTextSelection | null;
+  writingSelection: { selection: WorkspaceItemTextSelection; source: string } | null;
 };
 
 type OpenWorkspaceItemDraftPatchResult =
@@ -236,7 +238,7 @@ export function registerOpenWorkspaceItemDraft(
   postId: string,
   draft: OpenWorkspaceItemDraft,
 ): () => void {
-  const entry = { draft, selection: null };
+  const entry: OpenWorkspaceItemDraftEntry = { draft, selection: null, writingSelection: null };
   openDrafts.set(postId, entry);
   notifyDraftListeners();
   return () => {
@@ -257,7 +259,11 @@ export function readOpenWorkspaceItemDraft(
     selection: entry.selection,
   });
   if (entry.selection && !selection) entry.selection = null;
-  return { ...snapshot, selection };
+  // Blur clears live presence/selection, but writing commands still need the
+  // last caret when focus enters their controls. Any field edit invalidates it.
+  const frozen = entry.writingSelection;
+  if (frozen && snapshot[frozen.selection.field] !== frozen.source) entry.writingSelection = null;
+  return { ...snapshot, selection, writingSelection: entry.writingSelection?.selection ?? null };
 }
 
 export function readOpenWorkspaceItemSelection(
@@ -276,6 +282,9 @@ export function setOpenWorkspaceItemSelection(
   const nextSelection = selection
     ? resolveWorkspaceItemTextSelection({ ...snapshot, selection })
     : null;
+  if (nextSelection) {
+    entry.writingSelection = { selection: { ...nextSelection }, source: snapshot[nextSelection.field] };
+  }
   if (sameSelection(entry.selection, nextSelection)) return true;
   entry.selection = nextSelection;
   notifyDraftListeners();
@@ -297,6 +306,7 @@ export function patchOpenWorkspaceItemDraftIfCurrent(
   }
   entry.draft.apply(patch);
   entry.selection = null;
+  entry.writingSelection = null;
   notifyDraftListeners();
   return "applied";
 }

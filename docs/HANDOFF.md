@@ -4330,3 +4330,53 @@ Tests: 2175 across 259 files after aligning contract tests with the new
 tools (in the implementation's order, revert idempotent), executor calls
 carrying actor attribution, single deletion in the previewable set, and
 the live-apply mocks including the mutation counter read.
+
+### Writing quick actions scratch candidate (2026-09-05)
+
+- The Finding 6 candidate adds Translate and Continue writing to both rail
+  action lists, using the existing Apply/Undo proposal flow. The original six
+  commands and prompts are unchanged. Translate offers common languages plus
+  Document language; replacement coverage uses the 4,000-character envelope.
+- The two new commands retain the editor's last caret across focus transfer,
+  invalidated by field changes. Continue inserts after that caret or selection
+  and retains surrounding text with a full-field expected-text guard.
+- Scratch verification: 78 focused Vitest tests, TypeScript, and patch apply
+  check passed. Lint has zero errors and one existing unused-import warning.
+  Browser rendering was blocked by unavailable Playwright binaries and a
+  Chrome launch abort. This candidate has not been applied or released.
+
+## 2026-09-05: round three landed, gate repaired, sync round four running
+
+Applied from the Astra round-three outputs (scratchpad `astra/out3/`):
+
+- Sharing re-review patch: the relay GET only honors a `clientId` exclusion
+  when the `X-TextText-Presence-Session` header verifies for an editor
+  principal (a viewer could copy an editor's public row ID from presence and
+  permit an epoch rotation); the presence POST authorizes after the bounded
+  body read so a withheld body can no longer hold permission across a
+  revocation; link revoke controls carry distinct accessible names.
+- Translate and Continue writing quick actions (rail action bars, durable
+  proposals, Apply/Undo), with a retained writing selection across editor blur.
+- Assistant history sync loop with backoff, a Saved/Syncing/Synced/Offline
+  status and Retry sync, and an owner-scoped store key on the server action.
+- One `ParticipantsRow` on the action bar's right slot for reader and editor:
+  live presence with role, popovers, and Review changes for agent sessions.
+
+Gate: `workflow.live_clients` failed in the promotion with "presence did not
+include every client" because `activePresence` now counts only server-issued
+rows (`p-` or `agent-` prefixes) and the four-client script picked its own
+IDs. `scripts/verify-collaboration-database.ts` now issues a presence session
+per client through `issuePresenceSession`, as the route does.
+
+Tests adapted: `collab-relay-route.test.ts` (credential-backed exclusion plus a
+bare-ID negative case), `batch4-ui-contract.test.ts` (presence call moved to
+`ParticipantsRow.tsx`).
+
+Sync re-review (`astra/out3/rereview-sync.md`) left four P1 edit-loss paths
+open, none with a one-line fix: the materialize acknowledgment applies a plain
+snapshot and can duplicate an unseen peer edit; pre-ready whole-field
+reconciliation still destroys disjoint peer edits; epoch retirement after
+unmount discards the outbox without a recovery copy; a pre-ready metadata edit
+overlays unrelated remote groups. A round-four Astra implementation agent is
+running on all four (`astra/briefs/impl4-sync.md`, output `astra/out4/`).
+Still running from round three: inline AI preview and item-type shapes.

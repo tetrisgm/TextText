@@ -21,6 +21,7 @@ import type {
   AssistantConversationSummary,
   AssistantPendingConversationSummary,
 } from "./conversation-store";
+import type { AssistantHistorySyncStatus } from "./conversation-sync";
 import type { AssistantModelChoice } from "./model-preference";
 import { WorkspaceAssistantSkillLauncher } from "./AssistantSkillLauncher";
 import {
@@ -111,6 +112,8 @@ export type AssistantSidebarProps = {
   maxWidth?: number;
   resizeStep?: number;
   title?: string;
+  historySyncStatus?: AssistantHistorySyncStatus | null;
+  onRetryHistorySync?: () => void;
   ariaLabel?: string;
   contentLabel?: string;
   composerLabel?: string;
@@ -227,6 +230,8 @@ export function AssistantSidebar({
   maxWidth = ASSISTANT_SIDEBAR_MAX_WIDTH,
   resizeStep = 16,
   title = "Assistant",
+  historySyncStatus,
+  onRetryHistorySync,
   ariaLabel,
   contentLabel,
   composerLabel = "Message assistant",
@@ -622,9 +627,26 @@ export function AssistantSidebar({
         <header className={styles.header}>
           <div className={styles.titleRow}>
             {agent && <span className={styles.agentAvatar} style={{ backgroundColor: agent.color }}><CollaboratorMark provider={agent.provider} name={agent.name} /></span>}
-            <h2 id={titleId} className={styles.title}>
-              {agent ? `Chat with ${agent.name}` : title}
-            </h2>
+            <div className={styles.titleAndSync}>
+              <h2 id={titleId} className={styles.title}>
+                {agent ? `Chat with ${agent.name}` : title}
+              </h2>
+              {historySyncStatus ? (
+                <div className={styles.historySync}>
+                  <span role="status" aria-live="polite" aria-atomic="true">
+                    {historySyncStatus === "syncing" ? "Syncing"
+                      : historySyncStatus === "synced" ? "Synced"
+                      : historySyncStatus === "offline" ? "Offline"
+                      : "Saved on this device"}
+                  </span>
+                  {(historySyncStatus === "offline" || historySyncStatus === "error") && onRetryHistorySync ? (
+                    <button type="button" className={styles.retrySync} onClick={onRetryHistorySync}>
+                      Retry sync
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
             {pendingCount > 0 && onOpenPendingConversation ? (
               <div className={styles.pendingMenu}>
                 <button

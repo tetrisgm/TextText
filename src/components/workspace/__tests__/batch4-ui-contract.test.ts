@@ -30,6 +30,9 @@ const shellSource = [
   // The editor moved into its own module so it can be loaded on demand;
   // these contracts follow it.
   "../WorkspaceItemEditor.tsx",
+  // Presence moved into the participant row on the action bar; the optimistic
+  // exclusion follows it.
+  "../ParticipantsRow.tsx",
   "../../../lib/workspace/local-view.ts",
   "../../../lib/workspace/draft-sessions.ts",
 ]
@@ -72,7 +75,9 @@ describe("batch 4 workspace UI contract", () => {
 
   it("uses anchored reader comments without mounting the retired sheet", () => {
     expect(shellSource).toContain("<ReaderComments");
-    expect(shellSource).toContain("usePresence(optimistic ? null : poolPost.id)");
+    expect(shellSource).toContain(
+      "usePresence(postId && !isOptimisticPostId(postId) ? postId : null)",
+    );
     expect(shellSource).toContain("post.id && !optimistic && document");
     expect(actionBarSource).not.toContain("CommentsDialog");
     expect(actionBarSource).not.toContain("post-comments-button");

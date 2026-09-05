@@ -2,7 +2,10 @@
 
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
+  useState,
   useSyncExternalStore,
   type ReactNode,
 } from "react";
@@ -11,8 +14,6 @@ import {
   assistantConversationMessages,
   assistantConversationRevision,
   assistantConversationSummaries,
-  assistantConversationSyncPayload,
-  mergeSyncedAssistantConversations,
   pendingAssistantConversationSummaries,
   pendingAssistantProposalCount,
   serverAssistantConversationRevision,
@@ -21,6 +22,11 @@ import {
   type AssistantPendingConversationSummary,
 } from "./conversation-store";
 import type { AssistantMessage } from "./useNativeAssistant";
+
+import {
+  startAssistantConversationSync,
+  type AssistantHistorySyncStatus,
+} from "./conversation-sync";
 
 const EMPTY_MESSAGES: AssistantMessage[] = [];
 const EMPTY_CONVERSATIONS: AssistantConversationSummary[] = [];
@@ -35,6 +41,8 @@ export type AssistantConversationView = {
    * empty conversation, so the rail can wait instead of greeting someone who
    * already has a discussion on this view. */
   hydrating: boolean;
+  historySyncStatus: AssistantHistorySyncStatus | null;
+  retryHistorySync?: () => void;
 };
 
 type AssistantConversationStateProps = {
@@ -68,22 +76,39 @@ export function AssistantConversationState({
     serverAssistantConversationRevision,
   );
 
+  const scope = ownerScopeReady && storeKey ? `${handle}\u001f${storeKey}` : null;
+  const currentScope = useRef(scope);
+  useLayoutEffect(() => {
+    currentScope.current = scope;
+    return () => {
+      currentScope.current = null;
+    };
+  }, [scope]);
+  const [syncState, setSyncState] = useState<{
+    scope: string;
+    status: AssistantHistorySyncStatus;
+    retry: () => void;
+  } | null>(null);
+  const retryHistorySync =
+    syncState?.scope === scope ? syncState.retry : undefined;
+
   useEffect(() => {
-    if (conversationRevision < 0 || !storeKey) return;
-    const timeout = window.setTimeout(() => {
-      const local = assistantConversationSyncPayload(storeKey);
-      void syncAssistantConversationsAction(handle, local)
-        .then((result) => {
-          if (result.allowed) {
-            mergeSyncedAssistantConversations(storeKey, result.conversations);
-          }
-        })
-        .catch(() => {
-          // The local replica remains fully usable while offline.
-        });
-    }, 900);
-    return () => window.clearTimeout(timeout);
-  }, [conversationRevision, handle, storeKey]);
+    if (!scope || !storeKey) return;
+    const loop = startAssistantConversationSync({
+      storeKey,
+      sync: (local) => syncAssistantConversationsAction(handle, local, storeKey),
+      isCurrent: () => currentScope.current === scope,
+      onStatus: (status) =>
+        setSyncState({ scope, status, retry: () => loop.retry() }),
+    });
+    return () => {
+      loop.dispose();
+    };
+  }, [handle, scope, storeKey]);
+
+  const historySyncStatus = scope
+    ? syncState?.scope === scope ? syncState.status : "local"
+    : null;
 
   const view = useMemo<AssistantConversationView>(() => {
     if (
@@ -98,6 +123,7 @@ export function AssistantConversationState({
         pendingConversations: EMPTY_PENDING_CONVERSATIONS,
         pendingProposalCount: 0,
         hydrating: true,
+        historySyncStatus: null,
       };
     }
     return {
@@ -106,8 +132,12 @@ export function AssistantConversationState({
       pendingConversations: pendingAssistantConversationSummaries(storeKey),
       pendingProposalCount: pendingAssistantProposalCount(storeKey),
       hydrating: false,
+      historySyncStatus,
+      retryHistorySync,
     };
   }, [
+    historySyncStatus,
+    retryHistorySync,
     activeConversationId,
     contextKey,
     conversationRevision,

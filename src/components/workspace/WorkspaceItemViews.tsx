@@ -13,7 +13,6 @@ import {
 } from "react";
 import type {
 } from "react";
-import { usePresence } from "@/lib/collab/usePresence";
 import { BacklinksPanel } from "@/components/BacklinksPanel";
 import dynamic from "next/dynamic";
 
@@ -178,7 +177,6 @@ export function WorkspacePostReader({
     query: "",
   });
   const optimistic = isOptimisticPostId(poolPost.id);
-  const readerPeers = usePresence(optimistic ? null : poolPost.id);
   const findQuery = findState.postId === poolPost.id ? findState.query : "";
   const setFindQuery = useCallback(
     (query: string) => setFindState({ postId: poolPost.id, query }),
@@ -267,7 +265,6 @@ export function WorkspacePostReader({
         owner
         blog={blog}
         post={post}
-        presencePeers={readerPeers}
         adjacent={adjacent}
         previousPath={
           adjacent.previous ? adjacentPath(adjacent.previous) : undefined

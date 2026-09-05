@@ -42,6 +42,8 @@ import {
 } from "@/lib/ai/cloud-client";
 import {
   NATIVE_QUICK_ACTIONS,
+  quickActionPrompt,
+  continuationReplacement,
   type NativeQuickActionField,
   type NativeQuickActionId,
   type NativeQuickActionScope,
@@ -52,6 +54,7 @@ import {
   type WorkspaceItemTextEdit,
   type WorkspaceItemTextPatch,
   type WorkspaceItemTextSnapshot,
+  type WorkspaceItemTextSelection,
 } from "@/lib/ai/workspace-item-draft";
 import {
   assistantJobs,
@@ -156,6 +159,7 @@ type AssistantProposalBase = {
   status: "pending" | "applying" | "applied" | "undoing" | "undone";
   syncPending?: boolean;
   selectionEnvelope?: SelectionEnvelope;
+  continuation?: boolean;
 };
 
 type AssistantProposal = AssistantProposalBase &
@@ -514,12 +518,23 @@ function quickActionProposal({
   actionLabel: string;
   item: WorkspaceItemTextSnapshot;
   itemId: string;
-  selection: SelectionEnvelope | null;
+  selection: WorkspaceItemTextSelection | null;
   selectionEnvelope?: SelectionEnvelope;
   text: string;
 }): AssistantProposal | undefined {
   const after = text.trim();
   if (!after) return undefined;
+
+  if (action === "continue") {
+    const continued = continuationReplacement(item, selection, text);
+    return {
+      itemId, label: actionLabel, canApply: true, status: "pending",
+      kind: "text", continuation: true, field: continued.field, before: continued.source,
+      after: continued.after, source: continued.source,
+      range: { start: 0, end: continued.source.length }, scope: "field",
+      ...(selectionEnvelope ? { selectionEnvelope } : {}),
+    };
+  }
 
   if (action === "tags") {
     const beforeTags = normalizeTags(item.tags ?? []);
@@ -550,7 +565,7 @@ function quickActionProposal({
       ? "title"
       : action === "excerpt"
         ? "excerpt"
-        : action === "rewrite"
+        : action === "rewrite" || action === "translate"
           ? (selection?.field ?? "body")
           : action === "structure"
             ? "body"
@@ -1844,7 +1859,7 @@ export function useNativeAssistant({
   );
 
   const runQuickAction = useCallback(
-    async (action: NativeQuickActionId, selectionRequired = false) => {
+    async (action: NativeQuickActionId, selectionRequired: boolean | string = false) => {
       if (!ownerScopeReady || !conversationStoreKey) return;
       const thread = threadKey;
       if (busyThreads.has(thread)) return;
@@ -1860,18 +1875,25 @@ export function useNativeAssistant({
         contextLabel: contextLabel(),
         prompt: actionLabel,
       });
-      let actionPrompt =
-        action === "structure"
-          ? "Restructure the current item's full body into a clear, useful document. Preserve its meaning and details. Return the complete replacement body only. Do not change the item."
-          : `${actionLabel} the current item. Return the suggestion only. Do not change the item.`;
       try {
         const item = await readItemTextRef.current(view.postId);
-        const selection = resolveWorkspaceItemTextSelection(item);
-        if (!selection && (selectionRequired || item.selection)) {
+        const writingAction = action === "translate" || action === "continue";
+        const selection = resolveWorkspaceItemTextSelection(writingAction
+          ? { ...item, selection: item.selection ?? item.writingSelection }
+          : item);
+        if (!selection && (selectionRequired === true || item.selection)) {
           throw new Error(SELECTION_INVALID_ERROR);
         }
-        const selectionAction = action === "rewrite" || action === "summarize";
-        const envelope = await createSelectionEnvelope(view.postId, item, selection);
+        const selectionAction = action === "rewrite" || action === "summarize" || action === "translate";
+        // Translate always delivers the complete replacement target. Continue
+        // uses a caret as context, not as a nonempty replacement selection.
+        const targetSelection = action === "translate"
+          ? selection?.text ? selection : { field: "body" as const, start: 0, end: item.body.length, text: item.body }
+          : selection;
+        const envelope = await createSelectionEnvelope(view.postId, item,
+          action === "continue" && !selection?.text ? null : targetSelection);
+        const actionPrompt = quickActionPrompt(action, item, targetSelection,
+          typeof selectionRequired === "string" ? selectionRequired : undefined);
         const priorCloudMessages = cloudConversationHistory(threadFor(thread));
         appendToThread(
           thread,
@@ -1880,9 +1902,6 @@ export function useNativeAssistant({
             ? `${actionLabel} selection`
             : actionLabel,
         );
-        if (selection && selectionAction) {
-          actionPrompt = `${actionLabel} this selected ${selection.field} text. Return the suggestion only. Do not change the item.`;
-        }
         const cloudAbortController = new AbortController();
         activeCloudAbortRef.current.set(thread, cloudAbortController);
         const result = await cloudAssistantTurn(handle, actionPrompt, {
@@ -1951,7 +1970,7 @@ export function useNativeAssistant({
                 actionLabel,
                 item,
                 itemId: view.postId,
-                selection: selectionAction ? result.selectionEnvelope ?? null : null,
+                selection: action === "continue" ? selection : selectionAction ? result.selectionEnvelope ?? null : null,
                 selectionEnvelope: result.selectionEnvelope,
                 text: result.text ?? "",
               }),
@@ -2130,7 +2149,9 @@ export function useNativeAssistant({
       const expectedText = direction === "apply" ? edit.before : edit.after;
       const replacementText = direction === "apply" ? edit.after : edit.before;
       const end = start + expectedText.length;
-      if (current[edit.field].slice(start, end) !== expectedText) {
+      if (current[edit.field].slice(start, end) !== expectedText ||
+          (proposal.continuation && current[edit.field] !==
+            (direction === "apply" ? edit.source : edit.result))) {
         appendToThread(
           threadKey,
           "error",

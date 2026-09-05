@@ -17,6 +17,7 @@ import { useEffect, useState } from "react";
 import type { PresencePeer } from "@/lib/collab/provider";
 
 const POLL_MS = 4000;
+const pageIsVisible = () => document.visibilityState !== "hidden";
 
 export function presencePeersEqual(
   left: readonly PresencePeer[],
@@ -33,7 +34,8 @@ export function presencePeersEqual(
         peer.color === candidate.color &&
         peer.awareness === candidate.awareness &&
         peer.participantType === candidate.participantType &&
-        peer.provider === candidate.provider
+        peer.provider === candidate.provider &&
+        peer.role === candidate.role
       );
     })
   );
@@ -61,15 +63,18 @@ export function usePresence(postId: string | null | undefined): PresencePeer[] {
       try {
         const res = await fetch(
           `/api/collab/${encodeURIComponent(postId)}/presence`,
-          { headers: { Accept: "application/json" }, signal: abort.signal },
+          { headers: { Accept: "application/json" }, signal: AbortSignal.any([abort.signal, AbortSignal.timeout(8000)]) },
         );
         if (res.status === 401 || res.status === 403 || res.status === 410) {
           if (!cancelled) setState({ postId, peers: [] });
           return;
         }
-        if (!res.ok) return;
+        if (!res.ok) {
+          if (!cancelled) setState({ postId, peers: [] });
+          return;
+        }
         const data = (await res.json()) as { presence?: PresencePeer[] };
-        if (!cancelled) {
+        if (!cancelled && pageIsVisible()) {
           const nextPeers = data.presence ?? [];
           setState((current) =>
             current.postId === postId &&
@@ -79,7 +84,8 @@ export function usePresence(postId: string | null | undefined): PresencePeer[] {
           );
         }
       } catch {
-        // Presence is decoration. A failed read leaves the last known list.
+        // Do not keep advertising activity after a failed presence read.
+        if (!cancelled) setState({ postId, peers: [] });
       } finally {
         reading = false;
       }
@@ -95,7 +101,10 @@ export function usePresence(postId: string | null | undefined): PresencePeer[] {
       timer = setInterval(() => void read(), POLL_MS);
     };
     const visibilityChanged = () => {
-      if (document.visibilityState === "hidden") stopTimer();
+      if (document.visibilityState === "hidden") {
+        stopTimer();
+        setState({ postId, peers: [] });
+      }
       else start();
     };
 

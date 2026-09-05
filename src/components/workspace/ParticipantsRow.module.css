@@ -1,0 +1,89 @@
+.row {
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 32px;
+  max-width: 160px;
+  height: 40px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  padding: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--workspace-action-bar-ink, var(--ac-label));
+  cursor: pointer;
+}
+
+.mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--workspace-action-bar-border, var(--ac-hairline));
+  border-radius: 50%;
+  font: 500 10px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.mark svg { width: 16px; height: 16px; fill: currentColor; }
+.trigger:hover, .trigger[aria-expanded="true"] { background: var(--workspace-action-bar-hover, var(--ac-fill-3)); }
+.trigger:focus-visible, .popover button:focus-visible, .popover summary:focus-visible {
+  outline: 2px solid var(--workspace-action-bar-ink, var(--ac-label));
+  outline-offset: -2px;
+}
+
+.popover {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  box-sizing: border-box;
+  width: min(304px, calc(100vw - 16px));
+  max-height: calc(100dvh - 80px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+  border: 1px solid var(--ac-hairline);
+  border-radius: 6px;
+  background: var(--ac-bg);
+  color: var(--ac-label);
+  box-shadow: var(--shadow-menu, 0 8px 28px rgba(0, 0, 0, 0.16));
+  font: 400 12px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.popover p { margin: 8px 0 0; }
+.header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.header strong { font-size: 13px; }
+.close, .action {
+  border: 0;
+  border-radius: 6px;
+  color: inherit;
+  background: var(--ac-fill-3);
+  font: inherit;
+  cursor: pointer;
+}
+.close { flex: 0 0 24px; height: 24px; padding: 0; font-size: 18px; }
+.action { margin-top: 8px; min-height: 32px; padding: 0 8px; }
+/* Full-strength semantic ink also keeps small connection labels readable. */
+.connection, .meta { font-size: 11px; }
+.history { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--ac-hairline); }
+.review details { margin-top: 16px; }
+.review summary { cursor: pointer; }
+.review section { margin-top: 8px; }
+.review pre { margin: 8px 0; padding: 8px; background: var(--ac-fill-3); white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+
+@media (max-width: 600px) {
+  .row { max-width: 64px; }
+}

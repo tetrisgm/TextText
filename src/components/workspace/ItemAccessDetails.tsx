@@ -46,10 +46,12 @@ export function ItemAccessDetails({ summary, canChange, confirmingId, setConfirm
               {confirmingId === link.id ? <div className={styles.confirmActions}>
                 <span className={styles.confirmText}>Revoke this link?</span>
                 <button className={`${styles.inlineButton} ${styles.dangerButton}`} type="button"
+                  aria-label={`Revoke access link ${link.label || link.id}`}
                   disabled={!canChange} onClick={() => { void revokeLink(link.id); }}>Revoke link</button>
                 <button className={styles.inlineButton} type="button" disabled={!canChange}
                   onClick={() => setConfirmingId(null)}>Cancel</button>
               </div> : <button className={`${styles.inlineButton} ${styles.dangerButton}`} type="button"
+                aria-label={`Review revocation of access link ${link.label || link.id}`}
                 disabled={!canChange} onClick={() => setConfirmingId(link.id)}>Revoke</button>}
             </li>)}</ul>
           </>}

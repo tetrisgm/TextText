@@ -31,7 +31,7 @@ describe("reader presence polling", () => {
   it("stops the interval while hidden and reads immediately when visible", () => {
     expect(source).toContain('document.visibilityState === "hidden"');
     expect(source).toContain('document.addEventListener("visibilitychange"');
-    expect(source).toContain("if (document.visibilityState === \"hidden\") stopTimer()");
+    expect(source).toContain("stopTimer();\n        setState({ postId, peers: [] })");
     expect(source).toContain("else start()");
     expect(source).toContain("void read();\n      timer = setInterval");
     expect(source).toContain('document.removeEventListener("visibilitychange"');

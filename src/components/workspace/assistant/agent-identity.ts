@@ -1,3 +1,5 @@
+import type { PresencePeer } from "@/lib/collab/provider";
+
 export type AssistantAgentIdentity = {
   name: string;
   provider?: string;
@@ -43,4 +45,15 @@ export function assistantAgentIdentity(
     };
   }
   return null;
+}
+
+/** A live session supplies its own label. A selected assistant is not presence. */
+export function presenceAgentIdentity(peer: PresencePeer): AssistantAgentIdentity | null {
+  if (peer.participantType !== "agent") return null;
+  return {
+    name: peer.userName.trim() || "Agent",
+    provider: peer.provider,
+    color: peer.color,
+    status: peer.role === "viewer" ? "connected" : "working",
+  };
 }

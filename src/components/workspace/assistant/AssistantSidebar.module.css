@@ -265,6 +265,47 @@
   white-space: nowrap;
 }
 
+.titleAndSync {
+  order: -1;
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.historySync {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 8px;
+  color: var(--assistant-rail-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.retrySync {
+  min-height: 32px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--assistant-rail-primary);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.retrySync:focus-visible {
+  outline: 2px solid var(--assistant-composer-focus);
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .retrySync { min-height: 44px; }
+}
+
 .pendingLabel {
   flex: 0 0 auto;
   border-radius: 0;

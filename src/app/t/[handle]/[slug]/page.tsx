@@ -483,6 +483,7 @@ export async function PostPageForHandle({
     if (!collab) notFound();
     return (
       <StandaloneUnifiedDocumentEditor
+        canReviewAgentChanges={access.isOwner}
         key={post.id ?? post.slug}
         blog={blog}
         post={post}

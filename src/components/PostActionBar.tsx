@@ -26,8 +26,7 @@ import { ShareDialog } from "@/components/workspace/ShareDialog";
 import { WorkspaceActionSearch } from "@/components/workspace/WorkspaceActionSearch";
 import { WorkspaceSearchButton } from "@/components/workspace/WorkspaceSearchButton";
 import type { Blog, Folder, Post, ItemKind } from "@/lib/content";
-import type { PresencePeer } from "@/lib/collab/provider";
-import { CollaboratorMark } from "@/components/collab/CollaboratorMark";
+import { ParticipantsRow } from "@/components/workspace/ParticipantsRow";
 import {
   initialDraft,
   payloadFor,
@@ -58,7 +57,6 @@ type CommonProps = {
   searchFocusRequestKey?: number;
   searchValue?: string;
   onSearchValueChange?: (value: string) => void;
-  presencePeers?: PresencePeer[];
 };
 
 type ReadProps = CommonProps & {
@@ -150,89 +148,6 @@ function safePostUrl(value: string | undefined): string {
     return "";
   }
   return "";
-}
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
-function presencePersonKey(peer: PresencePeer): string {
-  return [
-    peer.participantType ?? "person",
-    peer.provider ?? "",
-    peer.userName.trim().toLocaleLowerCase() || peer.clientId,
-  ].join(":");
-}
-
-function uniquePresencePeers(peers: PresencePeer[]): PresencePeer[] {
-  const people = new Map<string, PresencePeer>();
-  for (const peer of peers) {
-    const key = presencePersonKey(peer);
-    if (!people.has(key)) {
-      people.set(key, {
-        ...peer,
-        userName: peer.userName.trim() || "Someone",
-      });
-    }
-  }
-  return Array.from(people.values()).sort((a, b) =>
-    a.userName.localeCompare(b.userName),
-  );
-}
-
-function PresenceStack({ peers }: { peers: PresencePeer[] }) {
-  const people = uniquePresencePeers(peers);
-  if (people.length === 0) return null;
-
-  const visible = people.slice(0, 5);
-  const overflow = people.slice(5);
-  const names = people.map((peer) => peer.userName).join(", ");
-  const label = `Collaborators active: ${names}`;
-
-  return (
-    <div className="post-presence-stack" aria-label={label} title={names}>
-      {visible.map((peer) => (
-        peer.participantType === "agent" ? (
-          <span
-            key={presencePersonKey(peer)}
-            className="post-presence-agent"
-            title={`${peer.userName} is collaborating`}
-            aria-label={`${peer.userName} is collaborating`}
-          >
-            <span
-              className="post-presence-avatar is-agent"
-              style={{ backgroundColor: peer.color }}
-            >
-              <CollaboratorMark provider={peer.provider} name={peer.userName} />
-            </span>
-            <span className="post-presence-agent-name">{peer.userName}</span>
-          </span>
-        ) : (
-          <span
-            key={presencePersonKey(peer)}
-            className="post-presence-avatar"
-            style={{ backgroundColor: peer.color }}
-            title={peer.userName}
-            aria-label={peer.userName}
-          >
-            {initials(peer.userName)}
-          </span>
-        )
-      ))}
-      {overflow.length > 0 && (
-        <span
-          className="post-presence-avatar post-presence-overflow"
-          title={overflow.map((peer) => peer.userName).join(", ")}
-          aria-label={`${overflow.length} more collaborators active`}
-        >
-          +{overflow.length}
-        </span>
-      )}
-    </div>
-  );
 }
 
 function BackIcon() {
@@ -963,12 +878,11 @@ export function PostActionBar(props: Props) {
     Boolean(props.onSearch || props.onSearchValueChange) ||
     canEditPost ||
     showPostNav ||
-    Boolean(bookmarkControls);
+    Boolean(bookmarkControls) || Boolean(props.post.id);
   const showAddHeaderItem =
     props.mode === "edit" &&
     activeDraft.type === "article" &&
     !props.hasHeaderImage;
-  const presenceControl = <PresenceStack peers={props.presencePeers ?? []} />;
   const shareControl = (
     <div className="post-action-popover-wrap" ref={shareWrapRef}>
       <button
@@ -1124,11 +1038,11 @@ export function PostActionBar(props: Props) {
             ) : props.onSearch ? (
               <WorkspaceSearchButton onSearch={props.onSearch} />
             ) : null}
+            <ParticipantsRow key={props.post.id} postId={props.post.id} handle={props.blog.handle} canReviewChanges={props.owner} />
             {(canEditPost || bookmarkControls) && (
               <div className="post-action-owner-group">
                 {bookmarkControls}
                 {canManagePost && shareControl}
-                {canEditPost && presenceControl}
                 {canManagePost &&
                   props.mode === "edit" &&
                   !unlistedItem && (

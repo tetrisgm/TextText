@@ -1,5 +1,7 @@
 "use client";
 
+import { QuickActionControl } from "./QuickActionControl";
+
 import {
   useEffect,
   useId,
@@ -36,7 +38,7 @@ import styles from "./AssistantSidebar.module.css";
 export type AssistantRailShellProps = AssistantSidebarProps & {
   /** The conversation context key, so the shell can peek at the replica. */
   contextKey?: string;
-  shellOnQuickAction?: (action: NativeQuickActionId) => unknown;
+  shellOnQuickAction?: (action: NativeQuickActionId, language?: string) => unknown;
   shellOnSubmit?: (submission: AssistantComposerSubmission) => unknown;
   shellViewerName?: string | null;
 };
@@ -382,18 +384,12 @@ export function AssistantRailShell({
             {quickActions.length > 0 ? (
               <div className={idleStyles.quickActions} aria-label="Assistant actions">
                 {quickActions.map((action) => (
-                  <button
-                    key={action.id}
-                    type="button"
+                  <QuickActionControl key={action.id} action={action}
                     className={idleStyles.quickAction}
-                    title={action.description}
-                    onClick={() => {
-                      if (shellOnQuickAction) void shellOnQuickAction(action.id);
+                    onRun={(id, language) => {
+                      if (shellOnQuickAction) void shellOnQuickAction(id, language);
                       else void activate();
-                    }}
-                  >
-                    {action.label}
-                  </button>
+                    }} />
                 ))}
               </div>
             ) : null}

@@ -11,12 +11,14 @@ import {
 
 export function StandaloneUnifiedDocumentEditor({
   blog,
+  canReviewAgentChanges = false,
   collab,
   post,
   postPath,
   template,
 }: {
   blog: Blog;
+  canReviewAgentChanges?: boolean;
   collab: UnifiedEditorCollab;
   post: Post;
   postPath: string;
@@ -26,6 +28,7 @@ export function StandaloneUnifiedDocumentEditor({
   return (
     <UnifiedDocumentEditor
       blog={blog}
+      canReviewAgentChanges={canReviewAgentChanges}
       collab={collab}
       post={post}
       template={template}

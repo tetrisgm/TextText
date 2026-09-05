@@ -74,6 +74,7 @@ type PresenceSessionCredential = {
 };
 
 export type PresencePeer = {
+  role?: "editor" | "viewer";
   clientId: string;
   userName: string;
   color: string;
@@ -853,7 +854,12 @@ export class CollabProvider implements CollaborationTransport {
         const previousSeq = this.lastSeq;
         const res = await fetch(
           `${this.base}?since=${previousSeq}&wait=0&clientId=${encodeURIComponent(this.presenceSession?.clientId ?? this.clientId)}`,
-          { signal: this.abort.signal },
+          {
+            signal: this.abort.signal,
+            headers: this.presenceSession
+              ? { "X-TextText-Presence-Session": this.presenceSession.sessionCredential }
+              : undefined,
+          },
         );
         if (isAccessLoss(res.status)) {
           this.opts.onError?.(accessLossMessage(res.status));
@@ -948,7 +954,12 @@ export class CollabProvider implements CollaborationTransport {
       try {
         const res = await fetch(
           `${this.base}?since=${this.lastSeq}&wait=25&clientId=${encodeURIComponent(this.presenceSession?.clientId ?? this.clientId)}`,
-          { signal },
+          {
+            signal: signal,
+            headers: this.presenceSession
+              ? { "X-TextText-Presence-Session": this.presenceSession.sessionCredential }
+              : undefined,
+          },
         );
         if (isAccessLoss(res.status)) {
           this.opts.onError?.(accessLossMessage(res.status));

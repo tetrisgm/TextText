@@ -1,5 +1,7 @@
 "use client";
 
+import { QuickActionControl } from "./QuickActionControl";
+
 import { useEffect, useRef, type ReactNode } from "react";
 import type { AssistantMessage } from "./useNativeAssistant";
 import type { AssistantJob } from "@/lib/ai/jobs";
@@ -431,7 +433,7 @@ export function AssistantConversation({
   onApplyProposal?: (messageId: string) => Promise<void> | void;
   onOpenJob?: (job: AssistantJob) => void;
   onUsePrompt?: (prompt: string) => void;
-  onQuickAction?: (action: NativeQuickActionId) => Promise<void> | void;
+  onQuickAction?: (action: NativeQuickActionId, language?: string) => Promise<void> | void;
   onUndoProposal?: (messageId: string) => Promise<void> | void;
   nativeConnection?: AiConnectionSnapshot | null;
   onConnectNative?: () => void;
@@ -506,18 +508,9 @@ export function AssistantConversation({
     quickActions && quickActions.length > 0 ? (
       <div className={styles.quickActions} aria-label="Assistant actions">
         {quickActions.map((action) => (
-          <button
-            key={action.id}
-            type="button"
-            className={styles.quickAction}
-            disabled={submitting}
-            title={
-              action.description ?? `${action.label} with your AI provider`
-            }
-            onClick={() => void onQuickAction?.(action.id)}
-          >
-            {action.label}
-          </button>
+          <QuickActionControl key={action.id} action={action}
+            className={styles.quickAction} disabled={submitting}
+            onRun={(id, language) => onQuickAction?.(id, language)} />
         ))}
       </div>
     ) : null;

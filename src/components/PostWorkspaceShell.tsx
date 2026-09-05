@@ -5399,6 +5399,8 @@ function LocalWorkspaceShell({
           submitDisabled={!assistant.ownerScopeReady}
           launcherBusy={assistant.runningJobs > 0}
           pendingCount={conversation.pendingProposalCount}
+          historySyncStatus={conversation.historySyncStatus}
+          onRetryHistorySync={conversation.retryHistorySync}
           pendingConversations={conversation.pendingConversations}
           onOpenPendingConversation={(conversation) => {
             assistant.openConversationInContext(

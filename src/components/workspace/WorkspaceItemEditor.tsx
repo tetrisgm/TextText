@@ -235,6 +235,7 @@ export function LocalUnifiedWorkspacePostEditor({
           ? { ok: true, message: `Saved as "${result.name}"` }
           : { ok: false, message: result.error };
       }}
+      canReviewAgentChanges
       activeAgent={activeAgent}
       onOpenAgent={onOpenAssistant}
       collab={{

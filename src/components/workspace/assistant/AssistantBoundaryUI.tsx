@@ -29,6 +29,7 @@ import styles from "./AssistantLauncher.module.css";
 const EMPTY_CONVERSATION: AssistantConversationView = {
   conversations: [],
   hydrating: true,
+  historySyncStatus: null,
   messages: [],
   pendingConversations: [],
   pendingProposalCount: 0,

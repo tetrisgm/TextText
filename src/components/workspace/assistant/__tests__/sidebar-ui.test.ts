@@ -987,3 +987,29 @@ describe("starting a new chat", () => {
     expect(html).not.toContain('aria-label="New chat"');
   });
 });
+
+
+describe("history sync status", () => {
+  const base = {
+    state: "pinned" as const, width: 360, onWidthChange: () => {}, onStateChange: () => {},
+    composerValue: "Keep this draft", onComposerChange: () => {}, onSubmit: () => {},
+    onFilesSelected: () => {}, onRemoveAttachment: () => {}, onRetryHistorySync: () => {},
+  };
+  it.each([
+    ["local", "Saved on this device"], ["syncing", "Syncing"], ["synced", "Synced"],
+    ["offline", "Offline"], ["error", "Saved on this device"],
+  ] as const)("renders %s beside the title with an accessible recovery action when needed", (status, label) => {
+    const html = renderToStaticMarkup(React.createElement(AssistantSidebar, { ...base, historySyncStatus: status }));
+    expect(html).toContain(`aria-atomic="true">${label}</span>`);
+    expect(html).toContain('role="status"');
+    expect(html).toContain("Keep this draft");
+    if (status === "offline" || status === "error") {
+      expect(html).toMatch(/<button type="button"[^>]*>Retry sync<\/button>/);
+    } else expect(html).not.toContain("Retry sync");
+  });
+  it("does not claim sync state before the owner is resolved", () => {
+    const html = renderToStaticMarkup(React.createElement(AssistantSidebar, { ...base, historySyncStatus: null }));
+    expect(html).not.toContain("Saved on this device");
+    expect(html).not.toContain("Retry sync");
+  });
+});

@@ -34,6 +34,7 @@ import {
   documentTheme,
 } from "@/lib/collab/document";
 import { COLLABORATION_EVALUATION_BASELINE } from "@/lib/collab/evaluation";
+import { issuePresenceSession } from "@/lib/collab/presence-session.server";
 import { closeDatabaseConnections, db } from "@/lib/db/client";
 import {
   actionAudit,
@@ -240,8 +241,15 @@ async function evaluate(): Promise<EvaluationMetrics> {
       const awareness = encodeAwarenessUpdate(client.awareness, [
         client.awareness.clientID,
       ]);
+      // Presence rows count only when their IDs were issued by the server,
+      // exactly as the presence route does for a joining browser.
+      const session = issuePresenceSession(
+        `account:${userId}`,
+        postId,
+        client.awareness.clientID,
+      );
       await upsertPresence(postId, {
-        clientId: client.id,
+        clientId: session.clientId,
         userName: client.id,
         color:
           CLIENTS.find((definition) => definition.id === client.id)?.color ??

@@ -33,10 +33,18 @@ function cleanHandle(value: unknown): string {
 export async function syncAssistantConversationsAction(
   handleInput: unknown,
   conversationsInput: unknown,
+  expectedStoreKey: unknown,
 ): Promise<AssistantConversationSyncState> {
   try {
     const access = await getBlogEditAccess(cleanHandle(handleInput));
     if (!access.isOwner || !access.blogId || !access.ownerId) {
+      return { allowed: false, conversations: [] };
+    }
+    const scope = createHash("sha256")
+      .update(`texttext-assistant-history\0${access.ownerId}\0${access.blogId}`)
+      .digest("hex")
+      .slice(0, 32);
+    if (expectedStoreKey !== `${cleanHandle(handleInput)}:${scope}`) {
       return { allowed: false, conversations: [] };
     }
     return {

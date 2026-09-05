@@ -42,6 +42,9 @@ type StoredWorkspaceConversations = {
 type WorkspaceConversationState = StoredWorkspaceConversations & {
   loaded: boolean;
   revision: number;
+  /** Content changes only; selection and remote merges do not dirty an upload. */
+  localRevision: number;
+  syncedLocalRevision: number;
 };
 
 const STORE_VERSION = 1;
@@ -154,6 +157,8 @@ function emptyState(): WorkspaceConversationState {
   return {
     loaded: true,
     revision: 0,
+    localRevision: 0,
+    syncedLocalRevision: -1,
     version: STORE_VERSION,
     activeByContext: {},
     conversations: [],
@@ -303,8 +308,9 @@ function notify() {
   for (const listener of listeners) listener();
 }
 
-function markChanged(state: WorkspaceConversationState) {
+function markChanged(state: WorkspaceConversationState, localChange = true) {
   state.revision += 1;
+  if (localChange) state.localRevision += 1;
 }
 
 function titleFromMessages(messages: readonly AssistantMessage[]): string {
@@ -430,7 +436,7 @@ function ensureActiveConversation(
       ...state.activeByContext,
       [contextKey]: existing.id,
     };
-    markChanged(state);
+    markChanged(state, false);
     saveWorkspace(handle, state);
     return existing;
   }
@@ -642,7 +648,7 @@ export function activateAssistantConversation(
     ...state.activeByContext,
     [contextKey]: conversationId,
   };
-  markChanged(state);
+  markChanged(state, false);
   saveWorkspace(handle, state);
   notify();
   return true;
@@ -772,6 +778,29 @@ export function assistantConversationSyncPayload(
   );
 }
 
+/** Cheap enough for streamed updates; payloads are compared only after sync. */
+export function assistantConversationLocalRevision(handle: string): number {
+  return loadWorkspace(handle).localRevision;
+}
+
+export function assistantConversationsNeedSync(handle: string): boolean {
+  const state = loadWorkspace(handle);
+  return state.localRevision !== state.syncedLocalRevision;
+}
+
+/** A response acknowledges its replica, not edits made while awaiting it. */
+export function acknowledgeAssistantConversationSync(handle: string, remote: unknown) {
+  const state = loadWorkspace(handle);
+  mergeSyncedAssistantConversations(handle, remote);
+  // Compare the bounded copy: live proposals omitted by sync must remain local.
+  // A newer local revision is only clean if the server actually has its content.
+  state.syncedLocalRevision =
+    assistantConversationSyncFingerprint(state.conversations) ===
+    assistantConversationSyncFingerprint(remote)
+      ? state.localRevision
+      : -1;
+}
+
 /**
  * Merge a remote owner replica without disturbing the local active-chat map.
  * Equal replicas are a no-op, preventing a successful sync from scheduling a
@@ -838,7 +867,7 @@ export function mergeSyncedAssistantConversations(
     return false;
   }
   state.conversations = next;
-  markChanged(state);
+  markChanged(state, false);
   saveWorkspace(handle, state);
   notify();
   return true;
