@@ -1723,7 +1723,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   /* Sublime Text: the strip is a shade darker than the page, and the active
      tab is cut from the page itself and attached to it; inactive tabs are
      quiet shapes with a hairline between them. */
-  background: color-mix(in srgb, var(--ink) 5%, var(--workspace-pane-ground));
+  background: var(--workspace-tab-strip, color-mix(in srgb, var(--ink) 6%, var(--workspace-pane-ground)));
   box-shadow: inset 0 -1px 0 var(--workspace-frame-hairline);
 }
 
@@ -1735,9 +1735,10 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   position: relative;
   display: flex;
   align-items: center;
-  flex: 0 0 180px;
+  flex: 0 1 auto;
+  width: max-content;
   min-width: 120px;
-  max-width: 220px;
+  max-width: 240px;
   height: 30px;
   margin: 0;
   padding: 0 4px 0 6px;
@@ -1778,7 +1779,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   height: 31px;
   margin-bottom: -1px;
   border-color: var(--workspace-frame-hairline);
-  background: var(--workspace-pane-ground);
+  background: var(--workspace-tab-page, var(--workspace-pane-ground));
   color: var(--ink);
   font-weight: 500;
   box-shadow: 0 -1px 0 color-mix(in srgb, var(--ink) 3%, transparent);
@@ -1801,8 +1802,6 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 /* The active tab stays on the pane ground and uses one short baseline rule.
    It is a location marker, not another panel above the document. */
 .workspace-tab.is-active {
-  border-bottom-color: var(--workspace-tab-rule);
-  background: transparent;
   color: var(--ink);
   font-weight: 500;
 }
@@ -1813,7 +1812,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .workspace-tab-select {
   flex: 1 1 auto;
   min-width: 0;
-  max-width: 190px;
+  max-width: none;
   padding: 0 8px;
   border: 0;
   background: transparent;
@@ -6229,12 +6228,13 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   background: var(--workspace-reader-ground);
 }
 
-/* The tab strip sits beside the content, outside the token's reach, so it
-   takes the same ground literally; otherwise it reads as a white band
-   over the gray bar. */
-.workspace-document-layout:has(.post-editor-content .tt-document) .workspace-tab-bar,
-.workspace-document-layout:has(.post-editor-content .tt-unified-editor) .workspace-tab-bar {
-  background: #eef1f6;
+/* The tab strip and its page colour follow the document ground when an
+   item is open (the tokens live on the content pane, out of the strip's
+   reach, so they are set here on the layout). */
+.workspace-document-layout:has(.post-editor-content .tt-document),
+.workspace-document-layout:has(.post-editor-content .tt-unified-editor)  {
+  --workspace-tab-page: #eef1f6;
+  --workspace-tab-strip: color-mix(in srgb, var(--ink) 7%, #eef1f6);
 }
 
 /* The document engine paints its own page ground: a fixed, viewport-sized
@@ -6374,12 +6374,13 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   --workspace-action-bar-muted: #a8a8ac;
 }
 
-/* The tab strip sits beside the content, outside the token's reach, so it
-   takes the same ground literally; otherwise it reads as a white band
-   over the gray bar. */
-[data-theme="dark"] .workspace-document-layout:has(.post-editor-content .tt-document) .workspace-tab-bar,
-[data-theme="dark"] .workspace-document-layout:has(.post-editor-content .tt-unified-editor) .workspace-tab-bar {
-  background: #26272b;
+/* The tab strip and its page colour follow the document ground when an
+   item is open (the tokens live on the content pane, out of the strip's
+   reach, so they are set here on the layout). */
+[data-theme="dark"] .workspace-document-layout:has(.post-editor-content .tt-document),
+[data-theme="dark"] .workspace-document-layout:has(.post-editor-content .tt-unified-editor)  {
+  --workspace-tab-page: #26272b;
+  --workspace-tab-strip: color-mix(in srgb, var(--ink) 9%, #26272b);
 }
 
 [data-theme="dark"]
@@ -6400,12 +6401,13 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
     --workspace-action-bar-muted: #a8a8ac;
   }
 
-  /* The tab strip sits beside the content, outside the token's reach, so it
-     takes the same ground literally; otherwise it reads as a white band
-     over the gray bar. */
-  :root:not([data-theme="light"]) .workspace-document-layout:has(.post-editor-content .tt-document) .workspace-tab-bar,
-  :root:not([data-theme="light"]) .workspace-document-layout:has(.post-editor-content .tt-unified-editor) .workspace-tab-bar {
-    background: #26272b;
+  /* The tab strip and its page colour follow the document ground when an
+     item is open (the tokens live on the content pane, out of the strip's
+     reach, so they are set here on the layout). */
+  :root:not([data-theme="light"]) .workspace-document-layout:has(.post-editor-content .tt-document),
+  :root:not([data-theme="light"]) .workspace-document-layout:has(.post-editor-content .tt-unified-editor)  {
+    --workspace-tab-page: #26272b;
+    --workspace-tab-strip: color-mix(in srgb, var(--ink) 9%, #26272b);
   }
 
   :root:not([data-theme="light"])
