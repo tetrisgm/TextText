@@ -98,11 +98,11 @@ import {
   useLocalWorkspaceItemIdentity,
 } from "@/components/workspace/useLocalWorkspaceInteraction";
 import {
-  AssistantSidebar,
-  type AssistantSidebarState,
-} from "@/components/workspace/assistant";
-import { AssistantConversation } from "@/components/workspace/assistant/AssistantConversation";
-import { AssistantConversationState } from "@/components/workspace/assistant/AssistantConversationState";
+  LazyAssistantConversation as AssistantConversation,
+  LazyAssistantConversationState as AssistantConversationState,
+  LazyAssistantSidebar as AssistantSidebar,
+} from "@/components/workspace/assistant/AssistantBoundaryUI";
+import type { AssistantSidebarState } from "@/components/workspace/assistant/constants";
 import { TRY_AI_IN_TEXTTEXT_EVENT } from "@/components/workspace/AiConnectionSettings";
 import { useAssistantComposerDraft } from "@/components/workspace/assistant/composer-store";
 import {
@@ -118,8 +118,10 @@ import { assistantAgentIdentity } from "@/components/workspace/assistant/agent-i
 import { SelectionActions } from "@/components/workspace/assistant/SelectionActions";
 import {
   conversationIdFromThreadKey,
+  NativeAssistantRuntime,
   useNativeAssistant,
-} from "@/components/workspace/assistant/useNativeAssistant";
+} from "@/components/workspace/assistant/useNativeAssistantFacade";
+import { loadAssistantBoundary } from "@/components/workspace/assistant/assistant-boundary";
 import { executeWorkspaceToolRequest } from "@/lib/ai/workspace-tool-client";
 import {
   openWorkspaceItemDraftRevision,
@@ -1008,7 +1010,10 @@ function LocalWorkspaceShell({
   }, [marqueeDragging, sidebarCollapsed]);
 
   const changeAssistantState = useCallback(
-    (next: AssistantSidebarState) => setWorkspaceAssistantState(next),
+    (next: AssistantSidebarState) => {
+      if (next !== "hidden") void loadAssistantBoundary();
+      setWorkspaceAssistantState(next);
+    },
     [],
   );
   const changeAssistantWidth = useCallback(
@@ -2849,16 +2854,29 @@ function LocalWorkspaceShell({
     },
     [readAssistantItemText],
   );
-  const assistant = useNativeAssistant({
-    handle: displayPool.blog.handle,
-    contextKey: assistantTarget.contextKey,
-    getPool: getAssistantPool,
-    getView: getAssistantView,
-    openItem: openAssistantItem,
-    readItemText: readAssistantItemText,
-    applyItemPatch: applyAssistantItemPatch,
-    confirmDestructive: assistantConfirmationController.request,
-  });
+  const assistantOptions = useMemo(
+    () => ({
+      handle: displayPool.blog.handle,
+      contextKey: assistantTarget.contextKey,
+      getPool: getAssistantPool,
+      getView: getAssistantView,
+      openItem: openAssistantItem,
+      readItemText: readAssistantItemText,
+      applyItemPatch: applyAssistantItemPatch,
+      confirmDestructive: assistantConfirmationController.request,
+    }),
+    [
+      applyAssistantItemPatch,
+      assistantConfirmationController,
+      assistantTarget.contextKey,
+      displayPool.blog.handle,
+      getAssistantPool,
+      getAssistantView,
+      openAssistantItem,
+      readAssistantItemText,
+    ],
+  );
+  const assistant = useNativeAssistant(assistantOptions);
   const assistantComposer = useAssistantComposerDraft(
     `${displayPool.blog.handle}:${assistantTarget.contextKey}`,
   );
@@ -5124,6 +5142,7 @@ function LocalWorkspaceShell({
         }
       />
       <div className="workspace-document-layout">
+        <NativeAssistantRuntime options={assistantOptions} />
         {/* The tab strip is the topmost band, above the action bar, as in
             Sublime. The actions belong to the tab that is open, so a bar
             drawn ABOVE the tabs reads as acting on the wrong thing (owner,

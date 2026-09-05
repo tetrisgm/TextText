@@ -2191,9 +2191,9 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .workspace-recent.is-view-list .workspace-item-option-main {
-  min-height: 37px;
-  gap: 10px;
-  padding: 0 24px 0 48px;
+  min-height: 47px;
+  gap: 12px;
+  padding: 0 24px 0 68px;
   border-radius: 0;
 }
 
@@ -2206,7 +2206,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
    --------------------------------------------------------------------- */
 .workspace-recent.is-view-list .workspace-item-option-copy {
   display: flex;
-  gap: 16px;
+  gap: 18px;
   align-items: baseline;
   overflow: hidden;
 }
@@ -2233,7 +2233,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: 500 13px/18px var(--font-body);
+  font: 500 15px/20px var(--font-body);
   letter-spacing: 0;
 }
 
@@ -2245,13 +2245,13 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
 .workspace-recent.is-view-list .workspace-item-option-detail small {
   min-width: 0;
-  font: 400 13px/18px var(--font-body);
+  font: 400 15px/20px var(--font-body);
   color: var(--workspace-row-secondary);
 }
 
 .workspace-recent.is-view-list .workspace-item-option-main > time {
   flex: 0 0 auto;
-  min-width: 56px;
+  min-width: 60px;
   text-align: right;
 }
 
@@ -2262,17 +2262,17 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
    them by weight as well, and a column of semibold titles reads as a table
    of headings where theirs reads as a list of things. */
 .workspace-recent.is-view-list .workspace-item-option-copy > strong {
-  font: 500 13px/18px var(--font-body);
+  font: 500 15px/20px var(--font-body);
   letter-spacing: 0;
 }
 
 .workspace-recent.is-view-list .workspace-item-option-detail small {
-  font: 400 13px/18px var(--font-body);
+  font: 400 15px/20px var(--font-body);
   color: var(--workspace-row-secondary);
 }
 
 .workspace-recent.is-view-list .workspace-item-option-main > time {
-  font: 500 11px/1 var(--font-body);
+  font: 500 12px/1 var(--font-body);
   font-variant-numeric: tabular-nums;
   color: var(--workspace-row-secondary);
   text-transform: uppercase;
@@ -2584,29 +2584,31 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
 .workspace-recent.is-view-list .workspace-item-option {
   position: relative;
-  margin-inline: -27px -38px;
+  margin-inline: -40px -48px;
 }
 
 .workspace-recent.is-view-list .workspace-item-option .workspace-item-fresh {
-  left: 35px;
+  left: 52px;
+  width: 8px;
+  height: 8px;
   background: var(--workspace-row-dot);
 }
 
 .workspace-recent.is-view-list .workspace-item-option .workspace-item-leading-star {
-  left: 29px;
+  left: 45px;
 }
 
 .workspace-recent.is-view-list
   .workspace-item-option[data-tags]
   .workspace-item-option-main {
-  min-height: 58px;
-  padding-bottom: 20px;
+  min-height: 68px;
+  padding-bottom: 21px;
 }
 
 .workspace-recent.is-view-list .workspace-item-option-tags {
   right: 24px;
-  bottom: 4px;
-  left: 48px;
+  bottom: 5px;
+  left: 68px;
 }
 
 /* Quiet by construction: a neutral fill and the muted ink. The list already
@@ -2643,22 +2645,22 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 /* ---------------------------------------------------------------------
    Row type, measured against the reference.
 
-   The reference's 18px ink band and 51px pitch convert to 13px type and a
-   36.7px row at the TextText capture scale. Values here are rounded only
-   after division by 1.389.
+   The reference's 17px type and 52px pitch convert to about 15px type and a
+   46.8px row in the owner's 1800px frame. Values here are rounded only after
+   division by 1.111.
    --------------------------------------------------------------------- */
 .workspace-recent.is-view-list .workspace-item-option-copy > strong {
-  font-size: 13px;
-  line-height: 18px;
+  font-size: 15px;
+  line-height: 20px;
 }
 
 .workspace-recent.is-view-list .workspace-item-option-detail small {
-  font-size: 13px;
-  line-height: 18px;
+  font-size: 15px;
+  line-height: 20px;
 }
 
 .workspace-recent.is-view-list .workspace-item-option-main > time {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 /* ---------------------------------------------------------------------
@@ -2842,12 +2844,24 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .workspace-root-action-bar .workspace-root-action-toolbar {
-  width: 100%;
+  width: auto;
+  min-width: 0;
   height: 36px;
   min-height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.workspace-root-action-bar
+  .workspace-root-action-toolbar:has(.workspace-action-search.is-expanded) {
+  width: min(420px, 100%);
   padding: 2px;
   border: 1px solid var(--ac-hairline);
-  border-radius: 8px;
   background: var(--ac-mat-fallback);
   box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 5%, transparent);
   -webkit-backdrop-filter: var(--ac-mat-blur);
@@ -2856,9 +2870,13 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
 .workspace-root-action-bar .workspace-action-search,
 .workspace-root-action-bar .workspace-action-search.is-compact {
-  width: 100%;
+  width: auto;
   min-width: 0;
   flex-basis: auto;
+}
+
+.workspace-root-action-bar .workspace-action-search.is-expanded {
+  width: 100%;
 }
 
 .workspace-root-action-bar .workspace-search-field {
@@ -2891,6 +2909,43 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .workspace-root-action-bar .workspace-search-action svg {
   width: 14px;
   height: 14px;
+}
+
+.workspace-search-launcher {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.workspace-search-launcher > kbd {
+  min-width: 20px;
+  padding: 2px 5px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--workspace-action-bar-muted, var(--muted));
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  text-align: center;
+}
+
+.workspace-root-action-bar .workspace-search-launcher .workspace-search-action {
+  width: 32px;
+  height: 32px;
+  flex-basis: 32px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+}
+
+.is-pointer-live
+  .workspace-root-action-bar
+  .workspace-search-launcher
+  .workspace-search-action:hover {
+  background: var(--workspace-topbar-hover);
+  color: var(--workspace-topbar-ink);
 }
 
 .workspace-root-action-bar .workspace-search-field input {
@@ -2938,10 +2993,10 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
 .workspace-root-action-bar + .workspace-root-inner .workspace-library-toolbar {
   box-sizing: border-box;
-  min-height: 42px;
+  min-height: 49px;
   gap: 20px;
   margin: 0;
-  padding: 0 0 0 12px;
+  padding: 0 0 0 28px;
   border-bottom: 0;
 }
 
@@ -2949,7 +3004,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   min-width: 0;
   flex: 1 1 auto;
   flex-wrap: nowrap;
-  gap: 24px;
+  gap: 30px;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -2963,7 +3018,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .workspace-root-action-bar
   + .workspace-root-inner
   .workspace-library-filters button {
-  min-height: 32px;
+  min-height: 36px;
   flex: 0 0 auto;
   gap: 0;
   padding: 0;
@@ -2971,7 +3026,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   border-radius: 0;
   background: transparent;
   color: var(--workspace-topbar-muted);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 400;
   line-height: 1;
   letter-spacing: 0;
@@ -2987,7 +3042,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   border-radius: 0;
   background: transparent;
   color: inherit;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 450;
   line-height: 1;
 }
@@ -3240,7 +3295,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   padding-top: 0;
   /* The theme's ink, not a literal: the edit title is a textarea that
      inherits this, and #29292c here made it dark-on-dark in dark mode. */
-  color: var(--ink, #29292c);
+  color: var(--workspace-reader-ink, var(--ink, #29292c));
 }
 
 .post-editor-content .tt-document .tt-masthead {
@@ -3326,7 +3381,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   :is(.tt-prose, .tt-field-body, .tt-field-body textarea, .tt-field-body .tt-md-surface) {
   /* The theme's ink, not a literal, so dark mode cannot fall through to a
      light value where the dark override misses a selector. */
-  color: var(--ink, #29292c);
+  color: var(--workspace-reader-ink, var(--ink, #29292c));
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
     sans-serif;
   font-size: 18px;
@@ -3829,10 +3884,10 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 /* Quieter chips. Theirs sit inside the line as small pale labels; ours were
    loud enough to be read before the title they belong to. */
 .workspace-item-chip {
-  height: 16px;
-  padding: 0 4px;
+  height: 20px;
+  padding: 0 6px;
   border-radius: 3px;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0;
   text-transform: lowercase;
   margin-inline-end: 0;
@@ -3971,7 +4026,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   background: #61b5e1;
   color: #ffffff;
   border-radius: 0;
-  margin-inline: -27px -38px;
+  margin-inline: -40px -48px;
   box-shadow: none;
 }
 
@@ -4084,7 +4139,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .workspace-recent.is-view-list
   .workspace-item-option.is-command-selected
   .workspace-item-fresh {
-  left: 35px;
+  left: 52px;
   background: var(--workspace-row-dot);
   opacity: 1;
 }
@@ -4158,8 +4213,8 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
 /* The persistent workspace rail keeps the measured Superhuman treatment from
    ref-02 without taking on that transient overlay's width. Reference geometry
-   is divided by 1.389; horizontal content offsets are then scaled from the
-   433px overlay measurement to this rail's 252px default. */
+   is divided by 1.111 for the owner's 1800px frame; horizontal content offsets
+   preserve the reference proportions in the owner's 418px rail. */
 .post-workspace-sidebar-region {
   --workspace-sidebar-ground: #ffffff;
   --workspace-sidebar-primary: #626262;
@@ -4205,9 +4260,9 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   position: sticky;
   top: 0;
   z-index: 2;
-  min-height: 81px;
+  min-height: 101px;
   gap: 0;
-  padding: 21px 16px 8px 31px;
+  padding: 26px 20px 10px 39px;
   background: var(--workspace-sidebar-ground);
 }
 
@@ -4221,9 +4276,9 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   .post-editor-sidebar-workspace-menu
   > .applecms
   > button {
-  height: 52px;
+  height: 65px;
   justify-content: flex-start;
-  gap: 14px;
+  gap: 17px;
   padding: 0;
   border-radius: 0;
   color: var(--workspace-sidebar-primary);
@@ -4249,10 +4304,10 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   > .applecms
   > button
   > span:first-child {
-  width: 34px;
-  height: 34px;
+  width: 42px;
+  height: 42px;
   background: var(--workspace-sidebar-avatar);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 500;
 }
 
@@ -4262,7 +4317,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   > button
   > span:nth-child(2) {
   color: var(--workspace-sidebar-primary);
-  font: 500 13px/18px var(--font-body);
+  font: 500 15px/20px var(--font-body);
   letter-spacing: 0;
 }
 
@@ -4277,7 +4332,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
 .post-workspace-sidebar-region .post-editor-sidebar-top > .post-editor-sidebar-toggle {
   position: absolute;
-  top: 29px;
+  top: 36px;
   right: 2px;
   z-index: 3;
   width: 24px;
@@ -4297,7 +4352,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .post-workspace-sidebar-region .post-editor-folder-nav {
   flex: 0 0 auto;
   gap: 0;
-  padding: 0 6px;
+  padding: 0 8px;
 }
 
 .post-workspace-sidebar-region .post-editor-special-folders {
@@ -4309,8 +4364,8 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .post-workspace-sidebar-region .post-editor-home-row,
 .post-workspace-sidebar-region .post-editor-special-row {
   position: relative;
-  height: 37px;
-  min-height: 37px;
+  height: 46px;
+  min-height: 46px;
   margin: 0;
   padding: 0;
   border-radius: 0;
@@ -4318,19 +4373,19 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .post-workspace-sidebar-region .post-editor-folder-main {
-  height: 37px;
-  min-height: 37px;
+  height: 46px;
+  min-height: 46px;
   gap: 0;
-  padding: 0 7px 0 41px;
+  padding: 0 7px 0 66px;
   border-radius: 0;
   color: var(--workspace-sidebar-primary);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
   letter-spacing: 0;
 }
 
 .post-workspace-sidebar-region .post-editor-special-main {
-  padding-left: 28px;
+  padding-left: 44px;
 }
 
 .post-workspace-sidebar-region .post-editor-folder-icon {
@@ -4339,7 +4394,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
 .post-workspace-sidebar-region .post-editor-folder-name {
   color: var(--workspace-sidebar-primary);
-  font: 500 13px/18px var(--font-body);
+  font: 500 15px/20px var(--font-body);
   letter-spacing: 0;
 }
 
@@ -4373,11 +4428,11 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
 .post-workspace-sidebar-region .post-editor-folder-count {
   height: auto;
-  margin-right: 21px;
+  margin-right: 26px;
   padding: 0;
   background: transparent;
   color: var(--workspace-sidebar-secondary);
-  font: 500 11px/18px var(--font-body);
+  font: 500 12px/20px var(--font-body);
   font-variant-numeric: tabular-nums;
 }
 
@@ -4397,10 +4452,10 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
 .post-workspace-sidebar-region .post-editor-folder-disclosure {
   position: absolute;
-  left: 28px;
+  left: 43px;
   z-index: 1;
   width: 18px;
-  height: 37px;
+  height: 46px;
   opacity: 0;
 }
 
@@ -5474,11 +5529,13 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .workspace-root-page > .workspace-root-action-bar {
   margin-right: -48px;
   margin-left: -48px;
+  padding-right: 34px;
 }
 
 .workspace-root-action-bar .workspace-root-action-toolbar {
-  width: min(520px, 100%);
-  margin-inline: auto;
+  width: auto;
+  margin-right: 0;
+  margin-left: auto;
   pointer-events: auto;
 }
 
@@ -6085,5 +6142,242 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
     flex-basis: 32px;
     width: 32px;
     min-width: 32px;
+  }
+}
+
+/* ---------------------------------------------------------------------
+   The open item is an inset sheet on the workspace ground. The 27px outer
+   inset and 30px text inset are the 30px and 33px reference measurements
+   converted from a 2000px capture to the 1800px owner viewport. */
+.post-editor-content:has(.tt-document),
+.post-editor-content:has(.tt-unified-editor) {
+  /* A perceptible off-white: at #fafcfe against a #fefefe card the edge
+     could not be seen at all. Superhuman's ground only reads darker in its
+     screenshots because of the window backdrop behind it. */
+  --workspace-reader-ground: #eef1f6;
+  --workspace-reader-sheet: #ffffff;
+  --workspace-reader-ink: #232428;
+  --workspace-action-bar-ground: var(--workspace-reader-ground);
+  --workspace-action-bar-muted: #73747b;
+  background: var(--workspace-reader-ground);
+}
+
+/* The tab strip sits beside the content, outside the token's reach, so it
+   takes the same ground literally; otherwise it reads as a white band
+   over the gray bar. */
+.workspace-document-layout:has(.post-editor-content .tt-document) .workspace-tab-bar,
+.workspace-document-layout:has(.post-editor-content .tt-unified-editor) .workspace-tab-bar {
+  background: #eef1f6;
+}
+
+/* The document engine paints its own page ground: a fixed, viewport-sized
+   white ::before behind every .tt-document, which the published site needs.
+   Inside the workspace it covered the reader ground, so the card could never
+   be seen against it. The workspace supplies the ground itself. */
+.post-editor-content .tt-document:not(.tt-collection-item):not([data-preview])::before {
+  content: none;
+}
+
+.post-editor-content:has(.tt-unified-editor) .tt-unified-editor {
+  background: var(--workspace-reader-ground);
+}
+
+.post-editor-content
+  .tt-document:not(.tt-collection-item):not([data-preview]) {
+  box-sizing: border-box;
+  width: calc(100% - 54px);
+  max-width: none;
+  margin: 27px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--workspace-reader-sheet);
+  /* Strong enough to read between two near-whites; at .08 the edge vanished. */
+  box-shadow: 0 8px 28px rgba(30, 40, 60, 0.14), 0 0 0 1px rgba(30, 40, 60, 0.04);
+}
+
+.post-editor-content
+  > .tt-document:not(.tt-collection-item):not([data-preview]) {
+  min-height: calc(
+    100% - var(--workspace-action-bar-height, 52px) - 54px
+  );
+}
+
+.post-editor-content
+  > .tt-unified-editor
+  .tt-document:not(.tt-collection-item):not([data-preview]) {
+  min-height: calc(
+    100dvh - var(--workspace-action-bar-height, 52px) -
+      var(--workspace-hints-height, 0px) - 54px
+  );
+}
+
+.post-editor-shell.has-tab-bar
+  .post-editor-content
+  > .tt-unified-editor
+  .tt-document:not(.tt-collection-item):not([data-preview]) {
+  min-height: calc(
+    100dvh - 36px - var(--workspace-action-bar-height, 52px) -
+      var(--workspace-hints-height, 0px) - 54px
+  );
+}
+
+.post-editor-content
+  .tt-document:not(.tt-collection-item):not([data-preview])
+  > .tt-stack {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0 0 48px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  box-shadow: none;
+}
+
+.post-editor-content .tt-document .tt-masthead {
+  padding: 24px 30px 12px;
+}
+
+.post-editor-content
+  .tt-document
+  > .tt-stack
+  > :is(.tt-text, .tt-group, .tt-prose) {
+  width: min(880px, calc(100% - 60px));
+  margin-right: auto;
+  margin-left: 30px;
+}
+
+.post-editor-content .tt-document > .tt-stack > .tt-masthead + * {
+  margin-top: 16px;
+}
+
+.post-editor-shell
+  .tt-document
+  :is(.tt-prose, .tt-field-body, .tt-field-body textarea, .tt-field-body .tt-md-surface) {
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.post-editor-shell .tt-document .tt-prose p {
+  margin-bottom: 22px;
+}
+
+/* The bar owns the visible reader title. Keep the renderer's h1 available to
+   assistive technology because the middle host is currently aria-hidden. */
+.post-editor-content
+  .tt-document:not(.tt-document-editor)
+  .tt-text-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.workspace-action-bar-slot.is-middle {
+  display: flex;
+  align-items: center;
+  padding: 0 18px 0 0;
+  overflow: hidden;
+}
+
+.workspace-action-bar-slot.is-middle > .workspace-document-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--workspace-action-bar-ink);
+  font: 400 22px/30px -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Helvetica Neue", sans-serif;
+  letter-spacing: -0.012em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-theme="dark"]
+  .post-editor-content:has(.tt-document),
+[data-theme="dark"]
+  .post-editor-content:has(.tt-unified-editor) {
+  --workspace-reader-ground: #26272b;
+  --workspace-reader-sheet: #333438;
+  --workspace-reader-ink: #e4e4e8;
+  --workspace-action-bar-muted: #a8a8ac;
+}
+
+/* The tab strip sits beside the content, outside the token's reach, so it
+   takes the same ground literally; otherwise it reads as a white band
+   over the gray bar. */
+[data-theme="dark"] .workspace-document-layout:has(.post-editor-content .tt-document) .workspace-tab-bar,
+[data-theme="dark"] .workspace-document-layout:has(.post-editor-content .tt-unified-editor) .workspace-tab-bar {
+  background: #26272b;
+}
+
+[data-theme="dark"]
+  .post-editor-content
+  .tt-document:not(.tt-collection-item):not([data-preview]) {
+  background: var(--workspace-reader-sheet);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"])
+    .post-editor-content:has(.tt-document),
+  :root:not([data-theme="light"])
+    .post-editor-content:has(.tt-unified-editor) {
+    --workspace-reader-ground: #26272b;
+    --workspace-reader-sheet: #333438;
+    --workspace-reader-ink: #e4e4e8;
+    --workspace-action-bar-muted: #a8a8ac;
+  }
+
+  /* The tab strip sits beside the content, outside the token's reach, so it
+     takes the same ground literally; otherwise it reads as a white band
+     over the gray bar. */
+  :root:not([data-theme="light"]) .workspace-document-layout:has(.post-editor-content .tt-document) .workspace-tab-bar,
+  :root:not([data-theme="light"]) .workspace-document-layout:has(.post-editor-content .tt-unified-editor) .workspace-tab-bar {
+    background: #26272b;
+  }
+
+  :root:not([data-theme="light"])
+    .post-editor-content
+    .tt-document:not(.tt-collection-item):not([data-preview]) {
+    background: var(--workspace-reader-sheet);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  }
+}
+
+@media (max-width: 760px) {
+  .post-editor-content
+    .tt-document:not(.tt-collection-item):not([data-preview]) {
+    width: 100%;
+    min-height: calc(100% - var(--workspace-action-bar-height, 52px));
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .post-editor-content .tt-document .tt-masthead {
+    padding-right: 20px;
+    padding-left: 20px;
+  }
+
+  .post-editor-content
+    .tt-document
+    > .tt-stack
+    > :is(.tt-text, .tt-group, .tt-prose) {
+    width: calc(100% - 40px);
+    margin-left: 20px;
+  }
+
+  .workspace-action-bar-slot.is-middle {
+    padding-right: 8px;
+  }
+
+  .workspace-action-bar-slot.is-middle > .workspace-document-title {
+    font-size: 18px;
+    line-height: 26px;
   }
 }

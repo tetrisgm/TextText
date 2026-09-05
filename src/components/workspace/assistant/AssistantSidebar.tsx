@@ -23,6 +23,19 @@ import type {
 } from "./conversation-store";
 import type { AssistantModelChoice } from "./model-preference";
 import { WorkspaceAssistantSkillLauncher } from "./AssistantSkillLauncher";
+import {
+  ASSISTANT_SIDEBAR_DEFAULT_WIDTH,
+  ASSISTANT_SIDEBAR_MAX_WIDTH,
+  ASSISTANT_SIDEBAR_MIN_WIDTH,
+  type AssistantSidebarState,
+} from "./constants";
+
+export {
+  ASSISTANT_SIDEBAR_DEFAULT_WIDTH,
+  ASSISTANT_SIDEBAR_MAX_WIDTH,
+  ASSISTANT_SIDEBAR_MIN_WIDTH,
+} from "./constants";
+export type { AssistantSidebarState } from "./constants";
 
 export type { AssistantContext } from "./context";
 
@@ -30,12 +43,6 @@ export type { AssistantContext } from "./context";
 // proportions; nobody asked for the assistant to change, and at 332 its own
 // header truncates to "Chat with Co...". The rail is not ours to retune
 // (owner, 2026-09-04).
-export const ASSISTANT_SIDEBAR_DEFAULT_WIDTH = 360;
-export const ASSISTANT_SIDEBAR_MIN_WIDTH = 280;
-export const ASSISTANT_SIDEBAR_MAX_WIDTH = 600;
-
-export type AssistantSidebarState = "hidden" | "open" | "pinned";
-
 export type AssistantSidebarLayout = "auto" | "inline" | "overlay";
 
 export type AssistantAttachment = {

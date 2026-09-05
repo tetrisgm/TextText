@@ -1,0 +1,153 @@
+.root {
+  z-index: 60;
+  height: 100%;
+  min-height: 0;
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: min(var(--workspace-assistant-width, 360px), 100%);
+  max-width: 100%;
+  pointer-events: none;
+  overflow: clip;
+}
+
+.root,
+.root * {
+  box-sizing: border-box;
+}
+
+.launcherWrap {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  z-index: 3;
+  pointer-events: auto;
+}
+
+.launcher {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ac-hairline, rgba(0, 0, 0, 0.12));
+  border-radius: 50%;
+  background: var(--ac-bg, #fff);
+  color: var(--ac-label-2, rgba(60, 60, 67, 0.72));
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.1),
+    0 8px 24px -12px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease,
+    transform 180ms var(--ease, ease);
+}
+
+.launcher:hover {
+  background: var(--ac-fill-3, rgba(118, 118, 128, 0.12));
+  color: var(--ac-label, #1d1d1f);
+  transform: scale(1.06);
+}
+
+.launcher:active {
+  transform: scale(0.97);
+}
+
+.launcher:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus, 0 0 0 3px rgba(0, 122, 255, 0.45));
+}
+
+.launcher svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.launcherAvatar {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  border-radius: 50%;
+}
+
+.launcherAvatar svg {
+  width: 15px;
+  height: 15px;
+}
+
+.launcherBusy {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ac-mat-bg, rgba(246, 246, 246, 0.96));
+  background: var(--ac-accent, #0a84ff);
+  animation: assistant-launcher-pulse 1.2s ease-in-out infinite;
+}
+
+.launcherPending {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  padding: 0 4px;
+  border: 2px solid var(--ac-bg, #fff);
+  border-radius: 999px;
+  background: var(--ac-accent, #0a84ff);
+  color: #fff;
+  font: 700 10px/1 var(--ac-font-text, -apple-system, sans-serif);
+}
+
+@keyframes assistant-launcher-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (max-width: 900px) {
+  .root {
+    position: fixed;
+    z-index: 520;
+    width: min(var(--workspace-assistant-width, 360px), 100vw);
+    height: 100dvh;
+    min-height: 100dvh;
+  }
+}
+
+@media (min-width: 561px) and (max-width: 900px) {
+  .root {
+    width: min(320px, 50vw);
+  }
+}
+
+@media (max-width: 560px) {
+  .root {
+    inset: 0;
+    width: auto;
+    max-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .launcher,
+  .launcher:hover,
+  .launcher:active {
+    animation: none;
+    transform: none;
+    transition: none;
+  }
+}

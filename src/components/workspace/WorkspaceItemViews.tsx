@@ -40,6 +40,7 @@ import {
 } from "@/components/PostActionBar";
 import { ReaderComments } from "@/components/workspace/ReaderComments";
 import { ReaderFindHighlights } from "@/components/workspace/ReaderFindHighlights";
+import { WorkspaceActionBarPortal } from "@/components/workspace/WorkspaceActionBarPortal";
 import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
 import type {
   Blog,
@@ -252,9 +253,15 @@ export function WorkspacePostReader({
   const sectionPath = returnToSearch
     ? workspaceSearchHref(homePath, returnToSearch)
     : folderWorkspaceHref(homePath, folderPathForPoolPost(pool, poolPost));
+  const workspaceTitle = post.title.trim() || "Untitled";
 
   return (
     <>
+      <WorkspaceActionBarPortal slot="middle">
+        <div className="workspace-document-title" title={workspaceTitle}>
+          {workspaceTitle}
+        </div>
+      </WorkspaceActionBarPortal>
       <PostActionBar
         mode="read"
         owner

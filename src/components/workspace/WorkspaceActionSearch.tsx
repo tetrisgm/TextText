@@ -41,6 +41,8 @@ export function WorkspaceActionSearch({
   const hostRef = useRef<HTMLDivElement>(null);
   const localInputRef = useRef<HTMLInputElement>(null);
   const [compact, setCompact] = useState(false);
+  const [expanded, setExpanded] = useState(() => value.trim().length > 0);
+  const searchVisible = expanded || value.trim().length > 0;
 
   useLayoutEffect(() => {
     const host = hostRef.current;
@@ -72,7 +74,11 @@ export function WorkspaceActionSearch({
       openSearchModal();
       return;
     }
-    window.requestAnimationFrame(() => localInputRef.current?.focus());
+    const revealFrame = window.requestAnimationFrame(() => {
+      setExpanded(true);
+      window.requestAnimationFrame(() => localInputRef.current?.focus());
+    });
+    return () => window.cancelAnimationFrame(revealFrame);
   }, [compact, focusRequestKey]);
 
   const setInput = (node: HTMLInputElement | null) => {
@@ -80,13 +86,25 @@ export function WorkspaceActionSearch({
     if (inputRef) inputRef.current = node;
   };
 
+  const revealInput = () => {
+    setExpanded(true);
+    window.requestAnimationFrame(() => localInputRef.current?.focus());
+  };
+
   return (
     <div
       ref={hostRef}
-      className={`workspace-action-search${compact ? " is-compact" : ""}`}
+      className={`workspace-action-search${compact ? " is-compact" : ""}${
+        !compact && searchVisible ? " is-expanded" : ""
+      }`}
     >
       {compact ? (
         <WorkspaceSearchButton onSearch={openSearchModal} />
+      ) : !searchVisible ? (
+        <div className="workspace-search-launcher">
+          <kbd aria-hidden="true">/</kbd>
+          <WorkspaceSearchButton onSearch={revealInput} />
+        </div>
       ) : (
         <label className="workspace-search-field">
           <SearchIcon />
@@ -100,7 +118,13 @@ export function WorkspaceActionSearch({
             onChange={(event: ChangeEvent<HTMLInputElement>) =>
               onChange(event.currentTarget.value)
             }
-            onKeyDown={onKeyDown}
+            onBlur={() => {
+              if (!value.trim()) setExpanded(false);
+            }}
+            onKeyDown={(event) => {
+              onKeyDown?.(event);
+              if (event.key === "Escape") setExpanded(false);
+            }}
           />
           <kbd>/</kbd>
         </label>

@@ -35,7 +35,7 @@ import {
   ASSISTANT_SIDEBAR_MAX_WIDTH,
   ASSISTANT_SIDEBAR_MIN_WIDTH,
   type AssistantSidebarState,
-} from "@/components/workspace/assistant";
+} from "@/components/workspace/assistant/constants";
 import type {
   Blog,
   Folder,

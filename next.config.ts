@@ -25,6 +25,9 @@ const nextConfig: NextConfig = {
   // Live client evaluations use an isolated build directory so a stopped
   // evaluator cannot leave stale development route manifests for normal work.
   distDir: process.env.TEXTTEXT_NEXT_DIST_DIR ?? ".next",
+  // Opt-in maps for attributing chunk weight in a probe build; never on by
+  // default, so production ships without them.
+  productionBrowserSourceMaps: process.env.TEXTTEXT_SOURCE_MAPS === "1",
   // Live evaluators can point Next at a disposable config. This keeps their
   // generated route-type includes out of the developer's real tsconfig.json.
   ...(tsconfigPath ? { typescript: { tsconfigPath } } : {}),

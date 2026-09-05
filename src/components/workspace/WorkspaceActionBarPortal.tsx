@@ -1,6 +1,6 @@
 "use client";
 
-// The action bar's right slot, reached by portal. In its own module so the
+// The action bar's content slots, reached by portal. In its own module so the
 // editor can use it without importing PostActionBar, whose server-action
 // imports reach next-auth and next/server: that graph loads in the browser but
 // fails under vitest, which took pre-ready-edits.test.ts down with it.
@@ -8,16 +8,28 @@
 import { useLayoutEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
-export function WorkspaceActionBarPortal({ children }: { children: ReactNode }) {
-  const [slot, setSlot] = useState<HTMLElement | null>(null);
+type WorkspaceActionBarPortalProps = {
+  children: ReactNode;
+  slot?: "middle" | "right";
+};
+
+export function WorkspaceActionBarPortal({
+  children,
+  slot = "right",
+}: WorkspaceActionBarPortalProps) {
+  const [target, setTarget] = useState<HTMLElement | null>(null);
 
   useLayoutEffect(() => {
     const findSlot = () => {
+      const selector =
+        slot === "middle"
+          ? ".post-editor-content > .workspace-action-bar-host .workspace-action-bar-slot.is-middle"
+          : ".post-editor-content > .workspace-action-bar-host .workspace-action-bar-slot.is-right";
       const nextSlot = document.querySelector<HTMLElement>(
-        ".post-editor-content > .workspace-action-bar-host .workspace-action-bar-slot.is-right",
+        selector,
       );
       if (!nextSlot) return false;
-      setSlot(nextSlot);
+      setTarget(nextSlot);
       return true;
     };
 
@@ -27,7 +39,7 @@ export function WorkspaceActionBarPortal({ children }: { children: ReactNode }) 
     });
     observer.observe(document.body, { childList: true, subtree: true });
     return () => observer.disconnect();
-  }, []);
+  }, [slot]);
 
-  return slot ? createPortal(children, slot) : children;
+  return target ? createPortal(children, target) : children;
 }

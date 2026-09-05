@@ -12,6 +12,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -223,7 +224,7 @@ function assistantWriteProposals(
     : undefined;
 }
 
-type UseNativeAssistantOptions = {
+export type UseNativeAssistantOptions = {
   handle: string;
   contextKey: string;
   getPool: () => WorkspacePoolPayload | null;
@@ -2527,4 +2528,16 @@ export function useNativeAssistant({
     submitting: ownerScopeReady ? submitting : false,
     undoProposal,
   };
+}
+
+export function NativeAssistantRuntime({
+  onResult,
+  options,
+}: {
+  onResult: (result: ReturnType<typeof useNativeAssistant>) => void;
+  options: UseNativeAssistantOptions;
+}) {
+  const result = useNativeAssistant(options);
+  useLayoutEffect(() => onResult(result), [onResult, result]);
+  return null;
 }
