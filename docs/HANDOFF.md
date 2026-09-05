@@ -4038,3 +4038,35 @@ side-by-side composites rather than by computed style alone.
   (names do not match otherwise). Probes live in `.texttext/probe/`
   (gitignored): `waterfall.mts`, `chunktime.mts`, `servertime.mts`,
   `flowcheck.mts`, `typeprobe.mts`.
+
+### Changelog entry pending (2026-09-05)
+
+The `texttext:project-changelog` entry for this pass could not be written
+from this session: `~/.local/bin/texttext` is a dangling link into a deleted
+visual fixture (`.texttext/native-undo-visual-fixture/...`), the installed
+app's helper at `/Applications/TextText.app/Contents/Helpers/texttext` works
+but addresses the app's active workspace (Bookmarks, Documentation, Notes;
+no changelog), and the MCP server needed authorization. Draft, newest on top
+under the version that shipped:
+
+- The reading pane is a card on a soft ground, with the title and actions
+  in one bar across the top, in both light and dark mode.
+- Reading text is 16px on a roomier line, with darker ink in light mode
+  and softer ink in dark mode.
+- The list is denser: rows sit closer together with slightly larger
+  titles, and search is an icon in the bar.
+- The workspace opens faster. The home view no longer recounts words in
+  every document on each load.
+
+### Shipped 2026-09-05: TextText 0.182 build 1047
+
+`npm run promote:local` at 06:43: gates passed in 1m11s (load 13),
+deployment `dpl_9DEzFR5L2YFZ5fztoBysYGSCAZM2` aliased to texttext.app,
+production migrations ran (`migrate-backfill-word-count`: 0 production rows
+had a null word_count, so the fallback never fired there; the bound stays as
+insurance), app installed and verified. Production serves the reader rules:
+the chunk carrying `.tt-document:not(.tt-collection-item):not([data-preview])::before`
+returns 200 from texttext.app. Final captures of the shipped build at
+1800x1169 in both themes: list, folder, reader and edit, composited against
+ref-00/02/10, pixel-sampled dark (sidebar `#303036`, content `#2c2d31`,
+rail `#2b2b2e`).
