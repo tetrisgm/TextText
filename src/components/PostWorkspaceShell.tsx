@@ -1287,9 +1287,18 @@ function LocalWorkspaceShell({
       }
     }
     const saved = contentScrollMemoryRef.current.get(key);
-    if (saved === undefined || saved <= 0) return;
     const content = contentRef.current;
     if (!content) return;
+    if (saved === undefined || saved <= 0) {
+      // A view with nothing to return to must start at the top. Returning
+      // early here left the shared scroller wherever the previous view had
+      // scrolled it, clamped to the new content's height: leave an article
+      // 464px down, open a folder, and the folder arrives scrolled 72px, with
+      // its heading under the fixed history arrows ("Notes" read as "es";
+      // owner, 2026-09-05).
+      if (content.scrollTop !== 0) content.scrollTop = 0;
+      return;
+    }
     scrollSettledRef.current = false;
     // HOLD the target rather than setting it once. An item's scroller
     // (windowed editor, long reader) mounts short, grows its height over
