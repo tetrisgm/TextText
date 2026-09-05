@@ -371,7 +371,7 @@
   justify-content: space-between;
   gap: 12px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   padding: 0 9px;
   background: transparent;
   color: var(--ac-label);
@@ -1404,11 +1404,11 @@
   touch-action: none;
 }
 .command-palette {
-  width: min(100%, 680px);
+  width: min(100%, 980px);
   overflow: hidden;
   touch-action: pan-y;
   border: 1px solid var(--ac-hairline);
-  border-radius: 7px;
+  border-radius: 8px;
   background: var(--ac-mat-fallback);
   -webkit-backdrop-filter: var(--ac-mat-blur);
   backdrop-filter: var(--ac-mat-blur);
@@ -1621,7 +1621,7 @@
   }
   .command-palette-input {
     height: 54px;
-    font-size: 16px;
+    font-size: 17px;
   }
 }
 
@@ -1654,7 +1654,7 @@
 .command-sheet-done {
   flex-shrink: 0;
   border: 1px solid var(--ac-hairline);
-  border-radius: 7px;
+  border-radius: 8px;
   padding: 6px 12px;
   background: var(--ac-fill-4);
   color: var(--ac-label);
@@ -1831,18 +1831,18 @@
 .command-palette-input {
   border-bottom-color: var(--palette-hairline);
   color: var(--palette-ink);
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 500;
 }
 
 .command-palette-input::placeholder {
-  color: #777777;
+  color: #8a8a8a;
 }
 
 .command-palette-row {
   gap: 24px;
   min-height: 44px;
-  padding: 6px 10px;
+  padding: 6px 12px;
   color: var(--palette-ink);
 }
 
@@ -1888,8 +1888,8 @@
    A dark chip with grey ink disappears into the panel. */
 .command-palette-shortcut kbd,
 .command-palette--sheet .command-sheet-key {
-  min-width: 24px;
-  padding: 5px 7px;
+  min-width: 26px;
+  padding: 5px 8px;
   border: 0;
   border-radius: 4px;
   background: #c9c9c9;

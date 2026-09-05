@@ -525,32 +525,33 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .workspace-library-controls {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
 }
 
 .workspace-library-filters button {
-  min-height: 30px;
-  padding-inline: 10px;
+  min-height: 32px;
+  padding: 0;
   border: 0;
-  border-radius: var(--radius-control);
+  border-radius: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 15px;
+  font-weight: 450;
+  letter-spacing: -0.01em;
 }
 
 .workspace-library-filters button small {
-  margin-left: 5px;
+  margin-left: 4px;
   color: inherit;
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 450;
 }
 
 .workspace-library-filters button[aria-pressed="true"] {
   border-color: transparent;
-  background: var(--control-bg-hover);
+  background: transparent;
   color: var(--ink);
-  font-weight: 600;
+  font-weight: 550;
 }
 
 .workspace-library-controls select,
@@ -963,7 +964,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   display: grid;
   grid-template-columns: minmax(140px, 0.34fr) minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
+  gap: 24px;
   padding: 12px 4px;
 }
 
@@ -1346,12 +1347,14 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .workspace-view-segmented {
   border-color: transparent;
   background-color: transparent;
+  color: var(--muted);
 }
 
 .workspace-library-controls select:hover,
 .workspace-view-segmented:hover {
   border-color: transparent;
   background-color: var(--control-bg);
+  color: var(--ink);
 }
 
 /* "Saved as ..." after Save as look. A quiet confirmation beside the control
@@ -1424,8 +1427,8 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   display: flex;
   align-items: stretch;
   gap: 2px;
-  height: 38px;
-  padding: 6px 12px 0;
+  height: 40px;
+  padding: 4px 12px 0;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
@@ -1466,6 +1469,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   background: var(--bg);
   border-color: var(--hairline);
   color: var(--ink);
+  font-weight: 550;
 }
 .workspace-tab:not(.is-active):hover {
   background: color-mix(in srgb, var(--ink) 5%, transparent);
@@ -1480,7 +1484,8 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   background: transparent;
   color: inherit;
   font: inherit;
-  font-size: 13px;
+  font-size: 15px;
+  letter-spacing: -0.01em;
   text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2519,20 +2524,23 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 /* Quieter chips. Theirs sit inside the line as small pale labels; ours were
    loud enough to be read before the title they belong to. */
 .workspace-item-chip {
-  height: 16px;
-  padding: 0 5px;
-  font-size: 9.5px;
-  letter-spacing: 0.04em;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: lowercase;
+  margin-inline-end: 2px;
 }
 
 .workspace-item-chip[data-chip="type"] {
-  background: color-mix(in srgb, #e8c14a 28%, var(--bg));
-  color: color-mix(in srgb, #6f5210 72%, var(--ink));
+  background: color-mix(in srgb, #e8c14a 34%, var(--bg));
+  color: color-mix(in srgb, #6f5210 78%, var(--ink));
 }
 
 .workspace-item-chip[data-chip="folder"] {
-  background: color-mix(in srgb, #c58bd3 28%, var(--bg));
-  color: color-mix(in srgb, #5c3d80 72%, var(--ink));
+  background: color-mix(in srgb, #c58bd3 34%, var(--bg));
+  color: color-mix(in srgb, #5c3d80 78%, var(--ink));
 }
 
 /* The date sits at the right edge, and the row's actions cover it on hover.
@@ -2767,3 +2775,51 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .command-palette--sheet .command-sheet-row-label {
   font-size: 14px;
   line-height: 1.25;
+
+/* Superhuman-style tooltip chip. The component keeps shortcuts in their own
+   key group, so labels stay readable while the shortcut remains scannable. */
+.kbd-tip {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  min-width: max-content;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: #34363d;
+  color: #f6f7f9;
+  font: 500 12px/16px var(--ac-font-text, system-ui, sans-serif);
+  letter-spacing: 0;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
+}
+
+.kbd-tip-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.kbd-tip-label {
+  color: #f6f7f9;
+}
+
+.kbd-tip-keys {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 3px;
+  margin-left: 2px;
+}
+
+.kbd-tip-key {
+  min-width: 18px;
+  padding: 1px 4px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #c9cdd5;
+  font: 600 11px/14px var(--ac-font-text, system-ui, sans-serif);
+  text-align: center;
+  white-space: nowrap;
+}
