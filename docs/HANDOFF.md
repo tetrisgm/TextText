@@ -4592,3 +4592,23 @@ characters reached Ready in 3 s; the model returned "Paragraph 1 with a good
 amount of running text so each block" and nothing else; Cmd+Enter applied it
 (stored head changed, revision 25120 to 25121); Undo restored the original
 (revision 25122). Two `/api/ai` calls of 1.3 s and 1.5 s.
+
+Shipped: build 1055 (`44f9a178`), deployment `dpl_8CvB1rN7U8SvaNM7MBbqjzwoLmVN`, page stamp
+`tt-1055-44f9a178`, Mac app 0.182 build 1055 installed. Live gates green (23
+workflow checks, 43 Mac tests). Round seven running: a QA review of today's
+code and an implementation of caret-based inline drafting
+(`astra/briefs/round7-*.md`, output `astra/out7/`).
+
+Round-seven QA review (`astra/out7/qa-review.md`, tests-only patch applied): no
+P1. Fixed in the tree with the reviewer's four regressions now passing:
+- P2: `WorkspaceItemEditor` paired a body from the pool or initial document
+  with a revision from the body cache; a stale cache seeded the canonical Yjs
+  baseline with the wrong identities and fed the provider a wrong expected
+  revision. Body and revision now come from one source
+  (`document-cache-guard.test.ts`).
+- P3: the shared presence poller let a read started before a hide/show cycle
+  republish departed peers and block the fresh read; each entry now carries a
+  generation bumped on both transitions (`presence-lifecycle.test.ts`).
+- P3: provider presence reads and heartbeats could complete out of order within
+  one generation; a sequence number lets only the newest response apply
+  (`collab-presence-provider.test.ts`).

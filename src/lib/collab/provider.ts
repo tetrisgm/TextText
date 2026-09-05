@@ -573,6 +573,9 @@ export class CollabProvider implements CollaborationTransport {
   /** Bumped on every presence switch so a join or read admitted before the
    * switch cannot publish an editing session after it. */
   private presenceGeneration = 0;
+  /** Presence reads and heartbeats can overlap; only the newest response may
+   * apply, or an older list would restore a peer who has since left. */
+  private presenceSeq = 0;
   private networkGeneration = 0;
   private pollRetries = 0;
   private baselineApplied = false;
@@ -1247,6 +1250,7 @@ export class CollabProvider implements CollaborationTransport {
         });
       }
       if (superseded()) return;
+      const seq = ++this.presenceSeq;
       const awarenessPayload = awareness
         ? u8ToBase64(
             encodeAwarenessUpdate(awareness, [awareness.clientID]),
@@ -1272,7 +1276,7 @@ export class CollabProvider implements CollaborationTransport {
       }
       if (!res.ok || this.stopped || signal.aborted) return;
       const data = (await res.json()) as { presence: PresencePeer[] };
-      if (superseded()) return;
+      if (superseded() || seq !== this.presenceSeq) return;
       this.applyPresence(data.presence);
     } catch {
       // presence is best-effort (an aborted heartbeat on teardown is expected)
@@ -1290,6 +1294,7 @@ export class CollabProvider implements CollaborationTransport {
   private async pollPresence() {
     if (this.stopped || !this.networkActive || !this.presenceEnabled || this.pageIsHidden()) return;
     const generation = this.presenceGeneration;
+    const seq = ++this.presenceSeq;
     try {
       const res = await fetch(`${this.base}/presence`, {
         method: "GET",
@@ -1303,7 +1308,7 @@ export class CollabProvider implements CollaborationTransport {
       }
       if (!res.ok) return;
       const data = (await res.json()) as { presence: PresencePeer[] };
-      if (generation !== this.presenceGeneration || !this.presenceEnabled) return;
+      if (generation !== this.presenceGeneration || !this.presenceEnabled || seq !== this.presenceSeq) return;
       this.applyPresence(data.presence);
     } catch {
       // best-effort, exactly like the heartbeat

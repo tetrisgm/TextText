@@ -49,6 +49,9 @@ type PresenceEntry = {
   timer: ReturnType<typeof setInterval> | null;
   abort: AbortController;
   reading: boolean;
+  /** Bumped on every hide/show transition: a read that started before the
+   * transition may neither publish nor block the fresh read after it. */
+  generation: number;
 };
 
 // One poller per item, however many surfaces ask. The reader's action bar, the
@@ -65,11 +68,14 @@ function publish(entry: PresenceEntry, next: PresencePeer[]) {
 async function read(postId: string, entry: PresenceEntry) {
   if (document.visibilityState === "hidden" || entry.reading) return;
   entry.reading = true;
+  const generation = entry.generation;
+  const current = () => generation === entry.generation && entries.get(postId) === entry;
   try {
     const res = await fetch(
       `/api/collab/${encodeURIComponent(postId)}/presence`,
       { headers: { Accept: "application/json" }, signal: AbortSignal.any([entry.abort.signal, AbortSignal.timeout(8000)]) },
     );
+    if (!current()) return;
     if (!res.ok) {
       // 401, 403 and 410 included: never keep advertising activity the server
       // no longer confirms.
@@ -77,12 +83,12 @@ async function read(postId: string, entry: PresenceEntry) {
       return;
     }
     const data = (await res.json()) as { presence?: PresencePeer[] };
-    if (pageIsVisible() && entries.get(postId) === entry) publish(entry, data.presence ?? []);
+    if (pageIsVisible() && current()) publish(entry, data.presence ?? []);
   } catch {
     // Do not keep advertising activity after a failed presence read.
-    publish(entry, []);
+    if (current()) publish(entry, []);
   } finally {
-    entry.reading = false;
+    if (generation === entry.generation) entry.reading = false;
   }
 }
 
@@ -99,6 +105,10 @@ function start(postId: string, entry: PresenceEntry) {
 
 function visibilityChanged() {
   for (const [postId, entry] of entries) {
+    // Either way the in-flight read is retired: it belongs to the old
+    // visibility state and must not republish or block the next read.
+    entry.generation += 1;
+    entry.reading = false;
     if (document.visibilityState === "hidden") {
       stopTimer(entry);
       publish(entry, []);
@@ -111,7 +121,7 @@ function visibilityChanged() {
 function subscribe(postId: string, listener: PresenceListener): () => void {
   let entry = entries.get(postId);
   if (!entry) {
-    entry = { peers: [], listeners: new Set(), timer: null, abort: new AbortController(), reading: false };
+    entry = { peers: [], listeners: new Set(), timer: null, abort: new AbortController(), reading: false, generation: 0 };
     entries.set(postId, entry);
     if (entries.size === 1) document.addEventListener("visibilitychange", visibilityChanged);
     start(postId, entry);

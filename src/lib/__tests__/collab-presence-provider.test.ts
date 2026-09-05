@@ -165,3 +165,19 @@ describe("awareness identity isolation", () => {
  expect(bodies[1].awareness).toBeUndefined();
  expect(bodies.some(b => b.leave)).toBe(true);
  });
+
+
+it("round7: an older overlapping presence read cannot restore a departed peer", async () => {
+  const { transport, onPresence } = harness();
+  const reader = transport as unknown as { pollPresence(): Promise<void> };
+  let resolve!: (response: Response) => void;
+  const fetchMock = vi.fn()
+    .mockImplementationOnce(() => new Promise<Response>((done) => { resolve = done; }))
+    .mockResolvedValueOnce(json({ presence: [] }));
+  vi.stubGlobal("fetch", fetchMock);
+  const oldRead = reader.pollPresence();
+  await reader.pollPresence();
+  resolve(json({ presence: [peer("departed", 123)] }));
+  await oldRead;
+  expect(onPresence.mock.calls.at(-1)?.[0]).toEqual([]);
+});

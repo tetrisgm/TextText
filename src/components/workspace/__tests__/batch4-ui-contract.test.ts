@@ -88,8 +88,9 @@ describe("batch 4 workspace UI contract", () => {
     // revision keyed the Yjs baseline on 0, silenced the provider's baseline
     // check, and made every inline AI action fail as "not saved yet".
     expect(shellSource).toContain(
-      "cached?.revision ?? initialDocument?.revision ?? poolPost.revision",
+      "{ document: cached.document, revision: cached.revision }",
     );
+    expect(shellSource).toContain("Body and revision travel together.");
     expect(shellSource).toMatch(/const post = \{[\s\S]*?document,\s*revision,\s*\}/);
   });
 

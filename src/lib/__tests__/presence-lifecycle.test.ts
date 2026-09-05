@@ -126,3 +126,18 @@ it("probe: two surfaces share polling and last cleanup stops it", async () => {
  await vi.advanceTimersByTimeAsync(12000);
  expect(fetchMock).toHaveBeenCalledTimes(2);
 });
+
+
+it("round7: a poll from before hide/show cannot republish departed peers", async () => {
+  let resolve!: (value: ReturnType<typeof success>) => void;
+  fetchMock.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+  await mount("round7-item");
+  page.visibilityState = "hidden";
+  page.dispatchEvent(new Event("visibilitychange"));
+  fetchMock.mockResolvedValue(success([]));
+  page.visibilityState = "visible";
+  page.dispatchEvent(new Event("visibilitychange"));
+  resolve(success([peer]));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(usePresence("round7-item")).toEqual([]);
+});

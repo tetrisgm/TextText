@@ -138,33 +138,40 @@ export function LocalUnifiedWorkspacePostEditor({
   );
   const poolDocument = poolPost.document ?? initialDocument?.document;
   const cached = getCachedWorkspacePostDocument(pool.blogId, poolPost.id);
-  const cachedDocument = cached?.document;
   // Hydration-safe: the server and the first client render may consult only
   // what the RSC payload carries (poolBody). The body cache and fetch entry
   // are client module state; letting them into the first render made the
   // server and client disagree and hydration fail. After mount, the client
   // may know more.
   const bodySourcesMounted = useClientHydrated();
-  const document =
-    poolDocument ??
-    (bodySourcesMounted
-      ? (cachedDocument ??
-        (documentState.entry.status === "ready"
-          ? documentState.entry.document.document
-          : undefined))
-      : undefined);
+  // Body and revision travel together. The pool list carries no revision (it
+  // is kept small); the body fetch does. Taking a body from one source and a
+  // revision from another seeded the Yjs baseline with the wrong identities,
+  // silenced the provider's baseline check, and made every selection-aware AI
+  // action refuse the passage as "not saved yet".
+  const source = poolDocument
+    ? {
+        document: poolDocument,
+        revision: poolPost.document
+          ? poolPost.revision
+          : (initialDocument?.revision ?? poolPost.revision),
+      }
+    : bodySourcesMounted
+      ? cached
+        ? { document: cached.document, revision: cached.revision }
+        : documentState.entry.status === "ready"
+          ? {
+              document: documentState.entry.document.document,
+              revision: documentState.entry.document.revision,
+            }
+          : undefined
+      : undefined;
+  const document = source?.document;
+  const revision = source?.revision;
   useEffect(() => {
-    if (!poolDocument && !cachedDocument) documentState.load();
+    if (!poolDocument && !cached?.document) documentState.load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pool.blogId, poolPost.id]);
-  // The pool list carries no revision (it is kept small), so the item's
-  // revision comes from the body fetch that produced the document. Without
-  // it the editor keyed its canonical baseline on revision 0, the provider's
-  // baseline check never ran, and every selection-aware AI action refused the
-  // passage as "not saved yet".
-  const revision = bodySourcesMounted
-    ? (cached?.revision ?? initialDocument?.revision ?? poolPost.revision)
-    : (initialDocument?.revision ?? poolPost.revision);
   const post = {
     ...postFromPoolPost(poolPost, document?.content.body ?? ""),
     document,
