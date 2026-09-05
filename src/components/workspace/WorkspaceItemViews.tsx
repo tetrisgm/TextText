@@ -33,7 +33,7 @@ const UnifiedDocumentReader = dynamic(() =>
 import {
   type FolderCaptureResolved,
   type FolderDeleteItem,
-} from "@/components/FolderPage";
+} from "@/components/workspace/UniversalItemComposer";
 import {
   PostActionBar,
   type BookmarkContentMode,

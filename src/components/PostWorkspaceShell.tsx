@@ -77,7 +77,7 @@ import {
   type FolderCaptureResolved,
   type FolderCreateItem,
   type FolderDeleteItem,
-} from "@/components/FolderPage";
+} from "@/components/workspace/UniversalItemComposer";
 import {
   PostActionBar,
 } from "@/components/PostActionBar";

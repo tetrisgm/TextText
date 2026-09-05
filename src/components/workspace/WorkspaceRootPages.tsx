@@ -11,6 +11,46 @@ import {
 import { WorkspacePostReader } from "@/components/workspace/WorkspaceItemViews";
 
 /**
+ * Loaded on demand in the workspace. The published folder route keeps its
+ * static FolderPage import so public folders still render on the server.
+ */
+const FolderPage = dynamic(
+  () =>
+    import("@/components/FolderPage").then((module) => module.FolderPage),
+  { ssr: false },
+);
+
+/** Fetch the folder chunk while the workspace is idle, before navigation. */
+function useWarmFolderPageChunk(enabled: boolean) {
+  useEffect(() => {
+    if (!enabled) return;
+    const preload = (
+      FolderPage as unknown as {
+        preload?: () => void;
+      }
+    ).preload;
+    const warm = () => {
+      if (preload) preload();
+      else void import("@/components/FolderPage");
+    };
+    const idle = (
+      window as unknown as {
+        requestIdleCallback?: (fn: () => void, o?: { timeout: number }) => number;
+        cancelIdleCallback?: (handle: number) => void;
+      }
+    ).requestIdleCallback;
+    if (idle) {
+      const handle = idle(warm, { timeout: 2500 });
+      return () =>
+        (window as unknown as { cancelIdleCallback?: (h: number) => void })
+          .cancelIdleCallback?.(handle);
+    }
+    const timer = window.setTimeout(warm, 600);
+    return () => window.clearTimeout(timer);
+  }, [enabled]);
+}
+
+/**
  * Loaded on demand. The editor carries Yjs, y-protocols and the
  * collaborative machinery, and the workspace was parsing all of it to show a
  * list. It is mounted on the first idle after an item opens (see
@@ -86,12 +126,10 @@ import {
   updateBlogAction,
 } from "@/app/editor/actions";
 import {
-  FolderPage,
-  UniversalItemComposer,
   type FolderCaptureResolved,
   type FolderCreateItem,
   type FolderDeleteItem,
-} from "@/components/FolderPage";
+} from "@/components/workspace/UniversalItemComposer";
 import { WorkspaceActionSearch } from "@/components/workspace/WorkspaceActionSearch";
 import { WorkspaceSearchButton } from "@/components/workspace/WorkspaceSearchButton";
 import {
@@ -1071,6 +1109,7 @@ export function LocalWorkspaceContent({
       );
   }
 
+  useWarmFolderPageChunk(pool.folders.length > 0);
   useWarmEditorChunk(canEditItems);
   const [warmEditorReady, setWarmEditorReady] = useState(false);
   const activePostId = activePost?.id ?? null;
@@ -1140,4 +1179,3 @@ export function LocalWorkspaceContent({
     </>
   );
 }
-

@@ -9,6 +9,10 @@ const folderSource = readFileSync(
   new URL("../../FolderPage.tsx", import.meta.url),
   "utf8",
 );
+const composerSource = readFileSync(
+  new URL("../UniversalItemComposer.tsx", import.meta.url),
+  "utf8",
+);
 const templateSource = readFileSync(
   new URL("../../../lib/presentation/templates.ts", import.meta.url),
   "utf8",
@@ -135,7 +139,7 @@ describe("batch 4 workspace UI contract", () => {
     // Home no longer carries a capture row: the Library page is the list and
     // nothing else (owner, 2026-09-04). Creating from anywhere still goes
     // through this one composer, in the folder that will hold the item.
-    expect(folderSource).toContain("export function UniversalItemComposer");
+    expect(composerSource).toContain("export function UniversalItemComposer");
     expect(folderSource).toContain("<UniversalItemComposer");
     expect(shellSource).not.toContain("<UniversalItemComposer");
     expect(shellSource).not.toContain('className="workspace-root-create"');

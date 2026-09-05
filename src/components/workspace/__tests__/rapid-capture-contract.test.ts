@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const folderPage = readFileSync(
-  new URL("../../FolderPage.tsx", import.meta.url),
+  new URL("../UniversalItemComposer.tsx", import.meta.url),
   "utf8",
 );
 const workspaceShell = [

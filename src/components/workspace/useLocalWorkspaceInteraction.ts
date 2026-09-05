@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { FolderCreateRequest } from "@/components/FolderPage";
+import type { FolderCreateRequest } from "@/components/workspace/UniversalItemComposer";
 import { isNoCoverValue } from "@/lib/cover";
 import { poolPostsForFolder } from "@/lib/pool/selectors";
 import type {
