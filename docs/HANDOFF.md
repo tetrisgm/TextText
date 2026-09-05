@@ -4171,3 +4171,16 @@ look picker (react-markdown off the home load) and the dynamic single-post
 reader. Deployment `dpl_DSUbM66mNNeP2f4cPE2pDB9edi5B` aliased to texttext.app, migrations ran, app
 installed; the production chunk carrying the shell's stylesheet returns
 200. Local early script set 1936KB (2725KB this morning).
+
+### Signed-in production launch, measured from outside (2026-09-05, build 1049)
+
+Screen access to the app was declined, so the launch was timed by process
+sampling instead: quit the installed app, `open -a TextText`, then every
+half second read CPU for the host process and for the WebKit WebContent and
+Networking processes that appeared after launch. The host process is busy
+until about 1.7s. WebKit processes appear at 0.7s, web CPU peaks at 1.8s
+(parsing and first render of texttext.app with the owner's session) and is
+quiet, under 10% for two seconds, from 2.9s after launch. Idle CPU is a
+proxy for "rendered", not a paint timestamp, but it is the real client, the
+real session and production. Sampler: python in the shell, no probe file;
+the earlier `nettop`-based attempt blocked and was dropped.
