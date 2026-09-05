@@ -440,12 +440,16 @@ function bodyPreviewSql(): SQL<string | null> {
   return sql<string | null>`nullif(left(${posts.body}, ${BODY_PREVIEW_LENGTH}), '')`;
 }
 
+// The fallback only runs for rows without a stored count (see the
+// migrate-backfill-word-count script). It is bounded to the first 256KB so a
+// giant unmigrated body can never cost a regex over megabytes per list load;
+// a count from the prefix is an estimate for such rows until the backfill.
 function wordCountSql(): SQL<number | null> {
   return sql<number | null>`coalesce(
     ${posts.wordCount},
     case
       when btrim(${posts.body}) = '' then 0
-      else cardinality(regexp_split_to_array(btrim(${posts.body}), '[[:space:]]+'))
+      else cardinality(regexp_split_to_array(btrim(left(${posts.body}, 262144)), '[[:space:]]+'))
     end
   )`;
 }

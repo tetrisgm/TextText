@@ -3991,3 +3991,50 @@ should never be true.
   Newsletter; a test fails on competitor names.
 - 56-agent visual critique and the 24-check collaboration proof exist as
   repeatable verification lanes.
+
+## 2026-09-05 Reader sheet, list scale, cold load
+
+Visual pass against the Superhuman references at the owner's 1800x1169
+viewport (sidebar 418), both themes, verified by pixel sampling and
+side-by-side composites rather than by computed style alone.
+
+- The reading pane is a white card (6px radius, 27px inset, soft shadow)
+  on an off-white ground, `#eef1f6` light / `#26272b` dark with the card
+  `#333438`. The document engine paints a fixed viewport-sized page ground
+  as `.tt-document::before`; inside the workspace it covered the ground, so
+  workspace.css suppresses it with a selector mirroring the engine's
+  (`:not(.tt-collection-item):not([data-preview])`), because a plainer
+  selector loses on specificity and silently does nothing. The tab strip
+  and action bar take the same ground so the header reads as one surface.
+- Body type 16px on 1.6; reading ink `#232428` light, `#e4e4e8` dark via
+  `--workspace-reader-ink`. Two dark rules pinned `#f1f1f3` literally and
+  had to be routed through the token.
+- List rows 47px pitch, 15px titles, sidebar rows 46px, search as an icon
+  in the bar (agent inventory `listscale`).
+- Cold load, local production build, dev login cookie present:
+  home first byte 1034ms -> 57ms, list visible 1227ms -> 127ms, warm
+  reload ~530ms -> ~100ms. The whole second was `getAllPosts`:
+  `wordCountSql()` falls back to splitting the body on whitespace when
+  `word_count` is null, and one 7MB fixture row was null, so every home
+  render regex-split 7MB. `scripts/migrate-backfill-word-count.mjs` fills
+  the nulls and is in the release migration list (promote:local runs it);
+  the fallback is bounded to the first 256KB so an unmigrated giant row
+  can never cost that again (its count is an estimate until backfilled).
+- Chunks: the editor (Yjs, 228KB) and the assistant boundary now wait for
+  the window load event plus a quiet period (`src/lib/after-load-idle.ts`)
+  instead of an idle slot during the pool fetch, which fired before the
+  list was visible. FolderPage takes the engine stylesheet from
+  `DocumentEngineStyles.tsx` and loads `DocumentCollectionRenderer` on
+  demand, so the list bundle no longer imports react-markdown.
+- Still on the cold path by design: the assistant rail is open at startup,
+  so its controller, sidebar and conversation chunks (about 450KB) and the
+  react-markdown graph they reference (239KB) load before the list. The
+  next lever is rendering the rail's static shell without the controller
+  until first interaction. Also still there: zod (351KB) through the pool
+  payload validation; `zod/mini` would mean rewriting ~2900 lines of
+  schema, and the shim an agent proposed saved 27KB, so it was not taken.
+- Attributing chunks: `TEXTTEXT_SOURCE_MAPS=1 TEXTTEXT_NEXT_DIST_DIR=.texttext/probe/next-maps AUTH_DEV_LOGIN=1 npx next build`
+  then pair each chunk with its map through the `sourceMappingURL` comment
+  (names do not match otherwise). Probes live in `.texttext/probe/`
+  (gitignored): `waterfall.mts`, `chunktime.mts`, `servertime.mts`,
+  `flowcheck.mts`, `typeprobe.mts`.

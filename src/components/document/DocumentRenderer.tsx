@@ -52,9 +52,10 @@ type DocumentRenderSlots = {
   metadata?: ReactNode;
 };
 
-export function DocumentEngineStyles() {
-  return <style>{DOCUMENT_ENGINE_CSS}</style>;
-}
+// Re-exported so existing importers keep working; the definition moved so
+// styles-only importers need not carry the Markdown toolchain.
+import { DocumentEngineStyles } from "@/components/document/DocumentEngineStyles";
+export { DocumentEngineStyles };
 
 type RendererProps = {
   document: DocumentSnapshot;

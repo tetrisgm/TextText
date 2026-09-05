@@ -1,3 +1,4 @@
+
 "use client";
 
 /**
@@ -187,14 +188,12 @@ import {
 } from "react";
 import type { CSSProperties, MouseEvent, ReactNode } from "react";
 import { isNewTabClick } from "@/lib/workspace/selection-modifiers";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { renameFolderAction } from "@/app/editor/actions";
 import { BookmarkCard } from "@/components/bookmarks/BookmarkCard";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
-import {
-  DocumentCollectionRenderer,
-  DocumentEngineStyles,
-} from "@/components/document/DocumentRenderer";
+import { DocumentEngineStyles } from "@/components/document/DocumentEngineStyles";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
 import { TagChips } from "@/components/TagChips";
@@ -240,6 +239,16 @@ import {
   type FolderCreateItem,
   type FolderDeleteItem,
 } from "@/components/workspace/UniversalItemComposer";
+
+
+// Loaded on demand: only a folder whose items render as a collection needs
+// the document renderer, and with it react-markdown. The list path itself
+// never parses Markdown.
+const DocumentCollectionRenderer = dynamic(() =>
+  import("@/components/document/DocumentRenderer").then(
+    (module) => module.DocumentCollectionRenderer,
+  ),
+);
 
 type FolderViewMode = WorkspaceViewMode;
 type FolderDeleteFolder = (folder: Folder) => Promise<void> | void;

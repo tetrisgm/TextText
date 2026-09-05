@@ -1,5 +1,7 @@
 "use client";
 
+import { scheduleAfterLoadIdle } from "@/lib/after-load-idle";
+
 // The workspace's root, search and tag pages plus the content router that
 // picks between them. Extracted from the PostWorkspaceShell monolith.
 
@@ -83,24 +85,13 @@ function useWarmEditorChunk(enabled: boolean) {
         preload?: () => void;
       }
     ).preload;
-    const warm = () => {
+    // After the cold path, never during it: an idle slot used to arrive while
+    // the pool fetch was pending, and the editor's 228KB downloaded before the
+    // list was visible.
+    return scheduleAfterLoadIdle(() => {
       if (preload) preload();
       else void import("@/components/workspace/WorkspaceItemEditor");
-    };
-    const idle = (
-      window as unknown as {
-        requestIdleCallback?: (fn: () => void, o?: { timeout: number }) => number;
-        cancelIdleCallback?: (handle: number) => void;
-      }
-    ).requestIdleCallback;
-    if (idle) {
-      const handle = idle(warm, { timeout: 2500 });
-      return () =>
-        (window as unknown as { cancelIdleCallback?: (h: number) => void })
-          .cancelIdleCallback?.(handle);
-    }
-    const timer = window.setTimeout(warm, 600);
-    return () => window.clearTimeout(timer);
+    });
   }, [enabled]);
 }
 

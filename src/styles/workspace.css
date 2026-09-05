@@ -3567,7 +3567,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   .post-editor-shell
   .tt-document
   :is(.tt-prose, .tt-field-body, .tt-field-body textarea, .tt-field-body .tt-md-surface) {
-  color: #f1f1f3;
+  color: var(--workspace-reader-ink, #f1f1f3);
 }
 
 [data-theme="dark"]
@@ -3641,7 +3641,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
     .post-editor-shell
     .tt-document
     :is(.tt-prose, .tt-field-body, .tt-field-body textarea, .tt-field-body .tt-md-surface) {
-    color: #f1f1f3;
+    color: var(--workspace-reader-ink, #f1f1f3);
   }
 
   :root:not([data-theme="light"])
