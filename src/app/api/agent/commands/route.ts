@@ -156,7 +156,8 @@ export async function POST(request: Request) {
       const blog = await getOwnedBlog(sub);
       if (!blog) return noStore({ error: "Workspace not found" }, 404);
       const proposal = await createWorkspaceWriteProposal({
-        actor: { sub, userId, handle: blog.handle },
+        actor: { sub, userId, handle: blog.handle, actorType: "external_agent",
+          connectionId: typeof auth.extra?.connectionId === "string" ? auth.extra.connectionId : undefined },
         tool: name,
         arguments: args,
       });

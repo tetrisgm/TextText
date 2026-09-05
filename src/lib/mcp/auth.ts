@@ -39,6 +39,7 @@ export async function verifyTextTextApiToken(
       : undefined,
     extra: {
       userId: identity.userId,
+      connectionId: identity.id,
       sub: identity.sub,
       ...(connectionName ? { connectionName } : {}),
     },

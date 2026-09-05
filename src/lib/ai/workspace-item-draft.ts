@@ -16,6 +16,7 @@ export type WorkspaceItemTextSelection = {
 };
 
 export type WorkspaceItemTextSnapshot = {
+  revision?: number;
   title: string;
   excerpt: string;
   body: string;

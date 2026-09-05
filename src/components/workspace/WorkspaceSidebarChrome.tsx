@@ -21,6 +21,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
+  createRootFolderAction,
   createSubfolderAction,
   renameFolderAction,
 } from "@/app/editor/actions";
@@ -1032,6 +1033,7 @@ function FolderTreeNav({
   }, [activeFolder, foldersById, foldersByPath, persistedExpanded]);
   const [creatingUnder, setCreatingUnder] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
+  const [newFolderFocused, setNewFolderFocused] = useState(false);
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
   const [renameName, setRenameName] = useState("");
   const [moreOpenFor, setMoreOpenFor] = useState<string | null>(null);
@@ -1039,8 +1041,10 @@ function FolderTreeNav({
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     const onNewFolder = (event: Event) => {
-      const parentPath =
+      const requested =
         (event as CustomEvent<{ parentPath?: string }>).detail?.parentPath ?? "";
+      // Starred, Shared and Trash are views, not folders: create at the root.
+      const parentPath = foldersByPath.has(requested) ? requested : "";
       setCreatingUnder(parentPath);
       setNewName("");
       setError(null);
@@ -1052,6 +1056,12 @@ function FolderTreeNav({
     window.addEventListener(NEW_FOLDER_EVENT, onNewFolder);
     return () => window.removeEventListener(NEW_FOLDER_EVENT, onNewFolder);
   }, [foldersByPath, persistedExpanded]);
+  const cancelNewFolder = useCallback(() => {
+    setCreatingUnder(null);
+    setNewName("");
+    setError(null);
+  }, []);
+  useEscapeLayer(creatingUnder !== null && newFolderFocused, "New folder", cancelNewFolder);
   const closeMoreMenu = useCallback(() => setMoreOpenFor(null), []);
   useEscapeLayer(Boolean(moreOpenFor), "Folder actions", closeMoreMenu);
   useEffect(() => {
@@ -1091,7 +1101,8 @@ function FolderTreeNav({
     setBusy(true);
     setError(null);
     try {
-      await createSubfolderAction(blog.handle, parentPath, clean);
+      if (parentPath) await createSubfolderAction(blog.handle, parentPath, clean);
+      else await createRootFolderAction(blog.handle, clean);
       setNewName("");
       setCreatingUnder(null);
       // Make sure the parent is open so the new child is visible.
@@ -1308,6 +1319,7 @@ function FolderTreeNav({
               disabled={busy}
               onChange={(event) => setNewName(event.currentTarget.value)}
               onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
                 if (event.key === "Enter") {
                   event.preventDefault();
                   void submitNewFolder(folder.path);
@@ -1316,13 +1328,15 @@ function FolderTreeNav({
                   setNewName("");
                 }
               }}
+              onFocus={() => setNewFolderFocused(true)}
               onBlur={() => {
+                setNewFolderFocused(false);
                 if (!newName.trim()) setCreatingUnder(null);
               }}
               aria-label={`New folder name in ${folder.name}`}
             />
             {error && (
-              <span className="post-editor-new-folder-error">{error}</span>
+              <span className="post-editor-new-folder-error" role="alert">{error}</span>
             )}
           </div>
         )}
@@ -1340,6 +1354,7 @@ function FolderTreeNav({
               disabled={busy}
               onChange={(event) => setRenameName(event.currentTarget.value)}
               onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
                 if (event.key === "Enter") {
                   event.preventDefault();
                   void submitRenameFolder(folder);
@@ -1354,7 +1369,7 @@ function FolderTreeNav({
               aria-label={`Rename ${folder.name}`}
             />
             {error && (
-              <span className="post-editor-new-folder-error">{error}</span>
+              <span className="post-editor-new-folder-error" role="alert">{error}</span>
             )}
           </div>
         )}
@@ -1380,6 +1395,7 @@ function FolderTreeNav({
             disabled={busy}
             onChange={(event) => setNewName(event.currentTarget.value)}
             onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
               if (event.key === "Enter") {
                 event.preventDefault();
                 void submitNewFolder("");
@@ -1388,13 +1404,15 @@ function FolderTreeNav({
                 setNewName("");
               }
             }}
+            onFocus={() => setNewFolderFocused(true)}
             onBlur={() => {
+              setNewFolderFocused(false);
               if (!newName.trim()) setCreatingUnder(null);
             }}
             aria-label="New folder name"
           />
           {error && (
-            <span className="post-editor-new-folder-error">{error}</span>
+            <span className="post-editor-new-folder-error" role="alert">{error}</span>
           )}
         </div>
       )}
@@ -1956,13 +1974,14 @@ export function WorkspaceSidebarChrome({
                     className="workspace-action-bar-tool"
                     title={activeFolder ? "New folder inside this folder" : "New folder"}
                     aria-label="New folder"
-                    onClick={() =>
+                    onClick={() => {
+                      openSidebar();
                       window.dispatchEvent(
                         new CustomEvent(NEW_FOLDER_EVENT, {
                           detail: { parentPath: activeFolder ?? "" },
                         }),
-                      )
-                    }
+                      );
+                    }}
                   >
                     <NewFolderGlyph />
                   </button>

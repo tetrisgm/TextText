@@ -1,27 +1,8 @@
-// Session-end document materialization for co-editing.
-//
-//   POST /api/collab/{postId}/materialize  {handle, state}  -> {ok}
-//
-// The canonical posts.body is fed only by the editor's 800ms-debounced autosave,
-// a server action that cannot complete during a tab close. So an editor who
-// closes the tab within that window leaves their final edits in the Yjs log but
-// not in posts.body, and everything that reads the canonical body (reader, sync
-// API, MCP, Finder mirror) serves a stale body until someone reopens the editor
-// and re-materializes it. This endpoint is the unload-safe path: the client
-// beacons its current body here on pagehide so the canonical body catches up
-// before teardown. Editors only (collabAccess); a viewer cannot write.
-//
-// It is deliberately a plain body write (savePostContentPatch), not a log
-// operation: it never touches collab_updates, so it cannot race a push or orphan
-// a delta. The write is revision-CAS'd, so it can only ever advance posts.body
-// from the exact revision this request read: it never overwrites a newer write
-// (a boundary-timed external write, or another co-editor's autosave/beacon). The
-// beacon body is this tab's local Y.Doc and may trail an in-flight co-editor
-// edit, so it is best-effort; the Yjs log (also flushed on pagehide) carries
-// anything a stale beacon missed, recovered on the next editor open.
+// Unload-safe canonical save. Client state is fenced by its learned epoch,
+// then persisted with revision CAS, epoch locking, provenance and audit.
 
 import {
-  markCollabMaterialized,
+  CollabEpochConflictError,
   materializeCollabDocument,
 } from "@/lib/collab";
 import { getCollabRequestAccess } from "@/lib/collab/access.server";
@@ -62,7 +43,7 @@ export async function POST(
   const decoded = await readBoundedJson<{
     handle?: unknown;
     state?: unknown;
-    body?: unknown;
+    epoch?: unknown;
   }>(request, MAX_MATERIALIZE_BODY_BYTES);
   if ("error" in decoded) {
     if (decoded.error === "too_large") {
@@ -76,8 +57,11 @@ export async function POST(
   const body = decoded.value;
   const handle = typeof body.handle === "string" ? body.handle : "";
   const state = typeof body.state === "string" ? body.state : undefined;
-  const legacyBody = typeof body.body === "string" ? body.body : undefined;
-  if (!handle || (!state && legacyBody === undefined)) {
+  const epoch = body.epoch;
+  if (typeof epoch !== "number" || !Number.isSafeInteger(epoch) || epoch < 0) {
+    return epochConflict();
+  }
+  if (!handle || !state) {
     return Response.json({ error: "handle and state are required" }, { status: 400 });
   }
 
@@ -91,16 +75,16 @@ export async function POST(
     post.document,
     `Persisted item ${post.id ?? post.slug}`,
   );
-  const collabDocument = state
-    ? await materializeCollabDocument(postId, state)
-    : null;
-  const nextDocument = collabDocument ?? {
-    ...currentDocument,
-    content: {
-      ...currentDocument.content,
-      body: legacyBody ?? currentDocument.content.body,
-    },
-  };
+  let nextDocument;
+  try {
+    nextDocument = await materializeCollabDocument(postId, state, epoch);
+  } catch (error) {
+    if (error instanceof CollabEpochConflictError) return epochConflict();
+    throw error;
+  }
+  if (!nextDocument) {
+    return Response.json({ error: "Invalid collaborative document state" }, { status: 400 });
+  }
   if (JSON.stringify(currentDocument) === JSON.stringify(nextDocument)) {
     return Response.json({
       ok: true,
@@ -119,6 +103,7 @@ export async function POST(
     saved = await savePost(handle, { ...post, document: nextDocument }, {
       preservePublishedAt: true,
       expectedRevision: post.revision,
+      expectedCollabEpoch: epoch,
       audit: {
         actorUserId: access.user
           ? access.user.userId ?? (await getUserIdBySub(access.user.sub))
@@ -132,15 +117,9 @@ export async function POST(
     });
   } catch (error) {
     if (error instanceof PostConflictError) {
-      return Response.json({ ok: true, skipped: "superseded" });
+      return epochConflict();
     }
     throw error;
-  }
-  // Record that this collab body write produced posts.body @ its new revision, so
-  // the catch-up staleness check does not later reseed away a body the session
-  // itself materialized.
-  if (typeof saved.revision === "number" && saved.id) {
-    await markCollabMaterialized(saved.id, saved.revision).catch(() => {});
   }
   const blog = await getBlog(handle).catch(() => null);
   revalidateBlogPaths(blog ?? { handle }, [post.slug]);
@@ -149,4 +128,11 @@ export async function POST(
     document: saved.document ?? nextDocument,
     revision: saved.revision,
   });
+}
+
+function epochConflict() {
+  return Response.json(
+    { error: "This document changed elsewhere. Keep your local copy for recovery.", retired: true },
+    { status: 409, headers: { "Cache-Control": "private, no-store" } },
+  );
 }

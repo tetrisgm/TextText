@@ -4,6 +4,7 @@
 // converging shared document without a websocket server. Presence heartbeats
 // ride alongside. Browser-only (uses fetch/btoa); import from client code.
 
+import { decodePresenceAwareness, encodePresenceAwareness } from "@/lib/collab/presence-awareness";
 import * as Y from "yjs";
 import {
   applyAwarenessUpdate,
@@ -66,6 +67,12 @@ function base64ToU8(b64: string): Uint8Array {
   return bytes;
 }
 
+type PresenceSessionCredential = {
+  clientId: string;
+  sessionCredential: string;
+  expiresAt: number;
+};
+
 export type PresencePeer = {
   clientId: string;
   userName: string;
@@ -91,10 +98,8 @@ type CollabProviderOptions = {
   onBaselineMismatch?: (serverRevision: number) => void;
   /** The server retired this document's log generation (its stale between-
    * sessions log was reset from posts.body). The local Y.Doc is now stale and
-   * must be rebuilt: the editor discards it and remounts a fresh doc that
-   * re-catches-up and reseeds. Any un-materialized local edit is intentionally
-   * dropped rather than merged over the authoritative body. */
-  onRetired?: () => void;
+   * must be preserved for explicit recovery before opening a fresh document. */
+  onRetired?: (epoch: number) => void;
 };
 
 /** Transport boundary for the editor. The HTTP relay is the baseline, while a
@@ -110,8 +115,8 @@ type OutboxSubscriber = {
   /** Called when the relay reports this session lost access (401/403), so the
    * subscribing provider tears its poll/heartbeat loops down too. */
   onFatal?: () => void;
-  /** Called when a push is fenced out because the log generation was retired. */
-  onRetired?: () => void;
+  /** Called with the old epoch before the subscribing document is retired. */
+  onRetired?: (epoch: number) => void;
 };
 
 type Outbox = {
@@ -266,6 +271,7 @@ function removePendingBatch(outbox: Outbox, batch: Uint8Array[]) {
 }
 
 function retireOutbox(outbox: Outbox, epoch: number) {
+  const previousEpoch = outbox.epoch;
   outbox.pending.length = 0;
   outbox.retries = 0;
   outbox.epoch = epoch;
@@ -278,7 +284,7 @@ function retireOutbox(outbox: Outbox, epoch: number) {
   }
   for (const sub of outbox.subscribers.values()) {
     try {
-      sub.onRetired?.();
+      sub.onRetired?.(previousEpoch);
     } catch {
       // teardown of one subscriber must not block the others
     }
@@ -412,6 +418,10 @@ function stableSessionClientId(postId: string): string {
 
 export class CollabProvider implements CollaborationTransport {
   readonly clientId: string;
+  private presenceSession: PresenceSessionCredential | null = null;
+  private heartbeatPending = false;
+  private remotePresenceIds = new Map<string, { sourceId: number; localId: number }>();
+  private nextPresenceId = 0x100000000;
   private lastSeq = 0;
   private stopped = false;
   private started = false;
@@ -430,6 +440,47 @@ export class CollabProvider implements CollaborationTransport {
   private networkGeneration = 0;
   private pollRetries = 0;
   private baselineApplied = false;
+  private retiredEpoch: number | null = null;
+  private documentEpoch: number | null = null;
+
+  /** Never relabel a retired Y.Doc with the replacement outbox's epoch. */
+  get learnedEpoch(): number | null {
+    return this.retiredEpoch ?? this.documentEpoch;
+  }
+
+  get materializationBlocked(): boolean {
+    return this.retiredEpoch !== null;
+  }
+
+  /** All autosave and keepalive materializations use this same epoch envelope. */
+  async materialize(handle: string, keepalive = false): Promise<Response | null> {
+    const epoch = this.learnedEpoch;
+    if (!this.opts.canPush || this.materializationBlocked ||
+        !this.baselineApplied || epoch === null) return null;
+    const response = await fetch(`${this.base}/materialize`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ handle, state: u8ToBase64(Y.encodeStateAsUpdate(this.doc)), epoch }),
+      keepalive,
+    });
+    if (response.status === 409 && !this.materializationBlocked && this.outbox) {
+      // Stop relay pushes as well. The subscriber preserves the live Y.Doc,
+      // including edits made after this request was encoded.
+      if (this.outbox.epoch === epoch) retireOutbox(this.outbox, epoch);
+      // Unmount already removed this subscriber; still preserve its rejected state.
+      if (!this.materializationBlocked) this.retireDocument(epoch);
+    }
+    return response;
+  }
+
+  private retireDocument(epoch: number): void {
+    this.retiredEpoch = this.documentEpoch ?? epoch;
+    try {
+      this.opts.onRetired?.(this.retiredEpoch);
+    } finally {
+      this.stop();
+    }
+  }
 
   constructor(
     private readonly doc: Y.Doc,
@@ -484,10 +535,7 @@ export class CollabProvider implements CollaborationTransport {
       onFatal: () => this.stop(),
       // The generation was retired: signal the editor to remount onto a fresh
       // doc (which reseeds from posts.body), then stop this provider.
-      onRetired: () => {
-        this.opts.onRetired?.();
-        this.stop();
-      },
+      onRetired: (epoch) => this.retireDocument(epoch),
     });
     this.startPromise = this.finishStart(outbox);
     return this.startPromise;
@@ -512,12 +560,13 @@ export class CollabProvider implements CollaborationTransport {
     // a remount replays it); draining it here would defeat that. The beacon is
     // for pagehide only, where the whole JS context is going away.
     if (
+      this.presenceSession &&
       typeof navigator !== "undefined" &&
       typeof navigator.sendBeacon === "function"
     ) {
       navigator.sendBeacon(
         `${this.base}/presence`,
-        JSON.stringify({ clientId: this.clientId, userName: this.opts.userName, color: this.opts.color, leave: true }),
+        JSON.stringify({ ...this.presenceSession, leave: true }),
       );
     }
     this.stop();
@@ -667,6 +716,8 @@ export class CollabProvider implements CollaborationTransport {
       this.awarenessTimer = null;
     }
     this.clearPresenceLoops();
+    this.remotePresenceIds.clear();
+    this.opts.onPresence?.([]);
     if (this.outbox) {
       this.outbox.subscribers.delete(this.outboxSubscriber);
       releaseOutbox(this.opts.postId, this.outbox);
@@ -801,7 +852,7 @@ export class CollabProvider implements CollaborationTransport {
       while (!this.stopped) {
         const previousSeq = this.lastSeq;
         const res = await fetch(
-          `${this.base}?since=${previousSeq}&wait=0&clientId=${encodeURIComponent(this.clientId)}`,
+          `${this.base}?since=${previousSeq}&wait=0&clientId=${encodeURIComponent(this.presenceSession?.clientId ?? this.clientId)}`,
           { signal: this.abort.signal },
         );
         if (isAccessLoss(res.status)) {
@@ -845,6 +896,9 @@ export class CollabProvider implements CollaborationTransport {
           }
           this.outbox.epoch = responseEpoch;
           this.outbox.epochKnown = true;
+          if (typeof data.epoch === "number" && Number.isSafeInteger(data.epoch) && data.epoch >= 0) {
+            this.documentEpoch ??= data.epoch;
+          }
           scheduleOutbox(this.opts.postId, this.outbox, 0);
         }
         if (data.updates.length === 0) {
@@ -893,7 +947,7 @@ export class CollabProvider implements CollaborationTransport {
     ) {
       try {
         const res = await fetch(
-          `${this.base}?since=${this.lastSeq}&wait=25&clientId=${encodeURIComponent(this.clientId)}`,
+          `${this.base}?since=${this.lastSeq}&wait=25&clientId=${encodeURIComponent(this.presenceSession?.clientId ?? this.clientId)}`,
           { signal },
         );
         if (isAccessLoss(res.status)) {
@@ -933,11 +987,13 @@ export class CollabProvider implements CollaborationTransport {
           if (!this.outbox.epochKnown) {
             this.outbox.epoch = data.epoch;
             this.outbox.epochKnown = true;
+            this.documentEpoch = data.epoch;
             scheduleOutbox(this.opts.postId, this.outbox, 0);
           } else if (data.epoch !== this.outbox.epoch) {
             retireOutbox(this.outbox, data.epoch);
             return;
           }
+          this.documentEpoch ??= data.epoch;
         }
         // Same corruption-tolerant path as catchUp: applyRow advances past a
         // row even if applying it throws, so one bad update can never stall
@@ -959,9 +1015,31 @@ export class CollabProvider implements CollaborationTransport {
   }
 
   private async heartbeat() {
-    if (this.stopped || !this.networkActive || this.pageIsHidden()) return;
+    if (this.stopped || !this.networkActive || this.pageIsHidden() || this.heartbeatPending) return;
+    this.heartbeatPending = true;
+    const signal = this.abort.signal;
     try {
       const awareness = this.opts.awareness;
+      if (!this.presenceSession || this.presenceSession.expiresAt <= Date.now()) {
+        const joined = await fetch(`${this.base}/presence`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ join: true, awarenessClientId: awareness?.clientID ?? this.doc.clientID }),
+          signal,
+        });
+        if (isAccessLoss(joined.status)) {
+          this.opts.onError?.(accessLossMessage(joined.status));
+          this.stop();
+          return;
+        }
+        if (!joined.ok || this.stopped || signal.aborted) return;
+        const data = await joined.json() as { session?: PresenceSessionCredential };
+        if (this.stopped || signal.aborted || !data.session) return;
+        this.presenceSession = data.session;
+        awareness?.setLocalStateField("user", {
+          name: this.opts.userName, color: this.opts.color, clientId: data.session.clientId,
+        });
+      }
       const awarenessPayload = awareness
         ? u8ToBase64(
             encodeAwarenessUpdate(awareness, [awareness.clientID]),
@@ -971,23 +1049,27 @@ export class CollabProvider implements CollaborationTransport {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          clientId: this.clientId,
-          userName: this.opts.userName,
-          color: this.opts.color,
+          ...this.presenceSession,
           awareness: awarenessPayload,
         }),
-        signal: this.abort.signal,
+        signal,
       });
       if (isAccessLoss(res.status)) {
         this.opts.onError?.(accessLossMessage(res.status));
         this.stop();
         return;
       }
-      if (!res.ok) return;
+      if (res.status === 409) {
+        this.presenceSession = null;
+        return;
+      }
+      if (!res.ok || this.stopped || signal.aborted) return;
       const data = (await res.json()) as { presence: PresencePeer[] };
       this.applyPresence(data.presence);
     } catch {
       // presence is best-effort (an aborted heartbeat on teardown is expected)
+    } finally {
+      this.heartbeatPending = false;
     }
   }
 
@@ -1019,6 +1101,7 @@ export class CollabProvider implements CollaborationTransport {
   }
 
   private applyPresence(presence: PresencePeer[]) {
+    if (this.stopped) return;
     const awareness = this.opts.awareness;
     {
       const data = { presence };
@@ -1027,16 +1110,37 @@ export class CollabProvider implements CollaborationTransport {
           data.presence.map((peer) => peer.clientId),
         );
         for (const peer of data.presence) {
-          if (peer.clientId === this.clientId || !peer.awareness) continue;
+          if (peer.clientId === this.presenceSession?.clientId || !peer.awareness) continue;
           try {
+            const decoded = decodePresenceAwareness(peer.awareness);
+            const user = decoded.state?.user;
+            if (!user || typeof user !== "object" ||
+                (user as { clientId?: unknown }).clientId !== peer.clientId) continue;
+            let identity = this.remotePresenceIds.get(peer.clientId);
+            if (!identity || identity.sourceId !== decoded.clientId) {
+              if (identity) {
+                removeAwarenessStates(awareness, [identity.localId], REMOTE_AWARENESS_ORIGIN);
+                awareness.meta.delete(identity.localId);
+              }
+              while (this.nextPresenceId === awareness.clientID || awareness.meta.has(this.nextPresenceId)) {
+                this.nextPresenceId += 1;
+              }
+              identity = { sourceId: decoded.clientId, localId: this.nextPresenceId++ };
+              this.remotePresenceIds.set(peer.clientId, identity);
+            }
+            // Wire IDs are untrusted even for agents. Allocate a distinct local
+            // awareness ID per authenticated row, never the document's own ID.
             applyAwarenessUpdate(
               awareness,
-              base64ToU8(peer.awareness),
+              base64ToU8(encodePresenceAwareness(identity.localId, decoded.clock, decoded.state)),
               REMOTE_AWARENESS_ORIGIN,
             );
           } catch {
             // One invalid ephemeral update must not block other collaborators.
           }
+        }
+        for (const sessionId of this.remotePresenceIds.keys()) {
+          if (!activeClientIds.has(sessionId)) this.remotePresenceIds.delete(sessionId);
         }
         const staleAwarenessIds: number[] = [];
         // An agent mints a fresh Yjs client id on every publish, so without
@@ -1079,7 +1183,7 @@ export class CollabProvider implements CollaborationTransport {
       // A presence row is "who else is here": handing the caller its own row
       // back means a person writing alone sees an avatar of themselves.
       this.opts.onPresence?.(
-        data.presence.filter((peer) => peer.clientId !== this.clientId),
+        data.presence.filter((peer) => peer.clientId !== this.presenceSession?.clientId),
       );
     }
   }

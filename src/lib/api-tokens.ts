@@ -24,6 +24,7 @@ const API_TOKEN_RE = /^wsk_[A-Za-z0-9_-]{43}$/;
 const LAST_USED_TOUCH_MS = 60 * 60 * 1000;
 
 export type ApiTokenIdentity = {
+  id: string;
   userId: string;
   /** user-visible connection name supplied when the capability is created */
   name: string;
@@ -186,6 +187,7 @@ export async function resolveApiToken(
   }
 
   return {
+    id: row.id,
     userId: row.userId,
     name: row.name,
     kind: normalizeTokenKind(row.kind),

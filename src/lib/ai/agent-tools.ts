@@ -268,7 +268,6 @@ export function createWorkspaceAgentTools(
     getPool,
     openItem,
     readItemText,
-    applyItemPatch,
     confirmDestructive,
     executeTool,
     refreshPool,
@@ -355,58 +354,20 @@ export function createWorkspaceAgentTools(
     ifMatchHash?: string,
   ) {
     const current = await currentText(poolPost);
-    if (applyItemPatch) {
-      const commit = await applyItemPatch(poolPost.id, patch, {}, ifMatchHash);
-      const synced = commit?.synced === true && commit.queued !== true;
-      return {
-        id: poolPost.id,
-        title: patch.title ?? current.title,
-        excerpt: patch.excerpt ?? current.excerpt,
-        body: patch.body ?? current.body,
-        tags: normalizeTags(patch.tags ?? poolPost.tags),
-        queued: !synced,
-        synced,
-      };
-    }
-    const title = patch.title ?? current.title;
-    const excerpt = patch.excerpt ?? current.excerpt;
-    const body = patch.body ?? current.body;
-    const tags = normalizeTags(patch.tags ?? poolPost.tags);
-    const previousPost = {
-      title: poolPost.title,
-      excerpt: poolPost.excerpt,
-      tags: poolPost.tags,
-    };
-    updatePost(poolPost.id, { title, excerpt, tags });
-    if (patch.body !== undefined) {
-      updateCachedBody(pool().blogId, poolPost.id, body);
-    }
-    try {
-      await runRemote("update_item", {
-        id: poolPost.id,
-        ...(patch.title !== undefined ? { title: patch.title } : {}),
-        ...(patch.excerpt !== undefined ? { excerpt: patch.excerpt } : {}),
-        ...(patch.body !== undefined ? { body: patch.body } : {}),
-        ...(patch.tags !== undefined ? { tags } : {}),
-        ...(ifMatchHash ? { if_match_hash: ifMatchHash } : {}),
-      });
-    } catch (error) {
-      updatePost(poolPost.id, previousPost);
-      if (patch.body !== undefined) {
-        updateCachedBody(pool().blogId, poolPost.id, current.body);
-      }
-      throw error;
-    }
-    await refreshPoolAfterMutation();
-    return {
+    // Agent writes must reach durable server history before being acknowledged.
+    // In particular, never queue them as edits from the human draft session.
+    await runRemote("update_item", {
       id: poolPost.id,
-      title,
-      excerpt,
-      body,
-      tags,
-      queued: false,
-      synced: true,
-    };
+      ...(patch.title !== undefined ? { title: patch.title } : {}),
+      ...(patch.excerpt !== undefined ? { excerpt: patch.excerpt } : {}),
+      ...(patch.body !== undefined ? { body: patch.body } : {}),
+      ...(patch.tags !== undefined ? { tags: normalizeTags(patch.tags) } : {}),
+      ...(ifMatchHash ? { if_match_hash: ifMatchHash } : {}),
+    });
+    await refreshPoolAfterMutation();
+    return { id: poolPost.id, title: patch.title ?? current.title,
+      excerpt: patch.excerpt ?? current.excerpt, body: patch.body ?? current.body,
+      tags: normalizeTags(patch.tags ?? current.tags), synced: true, queued: false };
   }
 
   async function confirmTool(
@@ -713,6 +674,12 @@ export function createWorkspaceAgentTools(
         };
       }
 
+      case "list_agent_changes":
+      case "revert_agent_change": {
+        const result = await runRemote(rawName, args as WorkspaceToolInput<typeof rawName>);
+        if (rawName === "revert_agent_change") await refreshPoolAfterMutation();
+        return result;
+      }
       case "read_item": {
         const input = args as WorkspaceToolInput<"read_item">;
         const post = requirePost(input.id);

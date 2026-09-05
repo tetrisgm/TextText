@@ -1,3 +1,10 @@
+import { agentChangeContext } from "@/lib/agent-change-context.server";
+import { AgentChangeConflictError } from "@/lib/agent-changes";
+import { listAgentChanges, getAgentChange } from "@/lib/store";
+import {
+  validateSelectionEditEnvelope,
+  SELECTION_INVALID_ERROR,
+} from "@/lib/ai/selection-envelope";
 import { assessItemTypeQuality } from "@/lib/presentation/item-type-quality";
 import type { AuthInfo } from "./types";
 import type { CallToolResult } from "./types";
@@ -335,6 +342,7 @@ async function saveLiveContentMutation({
   access,
   mutation,
   ownerPatch,
+  revert,
   audit,
   extra,
 }: {
@@ -343,6 +351,7 @@ async function saveLiveContentMutation({
   access: EffectiveAccess;
   mutation: DocumentMutation;
   ownerPatch?: Partial<Post>;
+  revert?: { id: string; userId: string };
   audit: AuditEntry;
   extra: ToolContext;
 }): Promise<Post> {
@@ -364,7 +373,9 @@ async function saveLiveContentMutation({
   // The Yjs delta becomes visible before canonical materialization. Write its
   // audit row in the same database statement so a later CAS failure can never
   // leave a durable, unaudited edit in the collaboration log.
-  const applied = await applyLiveDocumentMutation(post.id, mutation, audit);
+  const applied = revert
+    ? await applyLiveDocumentMutation(post.id, mutation, audit, revert)
+    : await applyLiveDocumentMutation(post.id, mutation, audit);
   if (!applied) throw new Error("The live document could not be updated");
   if (presence) {
     await upsertPresence(
@@ -771,6 +782,28 @@ export async function executeMcpTool(
 ): Promise<CallToolResult> {
   const denied = scopeError(name, extra);
   if (denied) return denied;
+  const userId = extra.authInfo?.extra?.userId;
+  const connectionId = extra.authInfo?.extra?.connectionId;
+  const actorType = mcpActorType(extra);
+  if (actorType === "human" || WORKSPACE_TOOL_DEFINITIONS[name].mutability === "read") {
+    return executeWorkspaceCommand(name, rawArgs, extra);
+  }
+  if (typeof userId !== "string" || !userId || typeof connectionId !== "string" || !connectionId) {
+    return errorResult("An authenticated agent connection is required to change an item.");
+  }
+  const runId = extra.authInfo?.extra?.runId;
+  return agentChangeContext.run({ userId, connectionId, actorType,
+    runId: typeof runId === "string" && runId ? runId : crypto.randomUUID(),
+  }, () => executeWorkspaceCommand(name, rawArgs, extra));
+}
+
+async function executeWorkspaceCommand(
+  name: WorkspaceToolName,
+  rawArgs: Record<string, unknown>,
+  extra: ToolContext,
+): Promise<CallToolResult> {
+  const denied = scopeError(name, extra);
+  if (denied) return denied;
 
   let args: WorkspaceToolInput<typeof name>;
   try {
@@ -782,6 +815,39 @@ export async function executeMcpTool(
   }
 
   switch (name) {
+    case "list_agent_changes":
+    case "revert_agent_change": {
+      const input = args as WorkspaceToolInput<"list_agent_changes"> & { change_id?: string };
+      const resolved = await requirePost(extra, input.id);
+      if (isToolResult(resolved)) return resolved;
+      if (!resolved.access.canEditContent) return errorResult("Only item editors can review agent changes.");
+      if (name === "list_agent_changes") {
+        return jsonResult({ itemId: input.id, changes: await listAgentChanges(input.id,
+          input.before ? { createdAt: new Date(input.before.created_at), id: input.before.id } : undefined) });
+      }
+      const change = await getAgentChange(input.id, input.change_id!);
+      if (!change || change.revertsId || change.actorType === "human") return errorResult("Agent change not found.");
+      if (!change.changes.length) return errorResult("This record has no text change to revert.");
+      if (change.reverted) return jsonResult({ itemId: input.id, changeId: change.id, status: "already_reverted" });
+      const userId = extra.authInfo?.extra?.userId;
+      if (typeof userId !== "string" || !userId) return errorResult("Sign in to revert a change.");
+      try {
+        const saved = await saveLiveContentMutation({ ...resolved, extra,
+          mutation: { revertChanges: change.changes, operationId: `revert:${change.id}` },
+          revert: { id: change.id, userId },
+          audit: { actorUserId: userId, actorType: mcpActorType(extra),
+            actionName: "revert_agent_change", targetType: "item", targetId: input.id,
+            inputSummary: change.id },
+        });
+        revalidateBlogPaths(resolved.blog, [saved.slug]);
+        return jsonResult({ itemId: input.id, changeId: change.id, status: "reverted", revision: saved.revision });
+      } catch (error) {
+        if (error instanceof AgentChangeConflictError) return jsonResult({
+          itemId: input.id, changeId: change.id, status: "conflict", comparisons: error.comparisons,
+        });
+        return saveErrorResult(error);
+      }
+    }
     case "get_workspace": {
       const resolved = await requireWorkspace(extra);
       if (isToolResult(resolved)) return resolved;
@@ -969,6 +1035,7 @@ export async function executeMcpTool(
             undefined,
             input.blueprint.name,
           ),
+          saveScope: input.save_scope,
           apply: input.apply,
           applyToExisting: input.apply_to_existing,
           baseVersion: input.base_version,
@@ -994,10 +1061,10 @@ export async function executeMcpTool(
                 .join(", ")}. Version ${updated.previousVersion} is kept, and anything still on it renders as it did.`
             : `Version ${updated.definition.version} is saved but not applied anywhere yet.`,
           left
-            ? `${left} item(s) were not restyled in this pass. Continue with set_folder_template on the same folder and version ${updated.definition.version} - calling update_item_type again would make another version and start over.`
+            ? `${left} item(s) were not restyled in this pass. They keep their previous version. Do not repeat update_item_type: the successor is already saved, and a new update would create another version.`
             : "",
           busy
-            ? `${busy} item(s) were being edited at that moment and kept their old look, so their words were not overwritten. Run it again when they are done.`
+            ? `${busy} item(s) were being edited at that moment and kept their old look, so their words were not overwritten. The saved successor remains available.`
             : "",
           updated.skipped.length
             ? `Left alone because they are pinned to an older version: ${updated.skipped
@@ -2024,6 +2091,16 @@ export async function executeMcpTool(
         sectionBody = replaced;
       }
 
+      if (input.text_edit?.selection_envelope !== undefined) {
+        try {
+          await validateSelectionEditEnvelope(
+            input.text_edit.selection_envelope, input.id, post,
+            { ...input.text_edit, text: input.text_edit.expected_text },
+          );
+        } catch (error) {
+          return errorResult(error instanceof Error ? error.message : SELECTION_INVALID_ERROR);
+        }
+      }
       let textEditValue: string | undefined;
       if (input.text_edit !== undefined) {
         const current =
@@ -2302,6 +2379,7 @@ export async function executeMcpTool(
                     end: input.text_edit.end,
                     expectedText: input.text_edit.expected_text,
                     replacementText: input.text_edit.replacement_text,
+                    ...(input.text_edit.selection_envelope ? { selectionEnvelope: input.text_edit.selection_envelope } : {}),
                   },
                 }
               : {}),
@@ -3338,7 +3416,7 @@ export async function executeMcpTool(
 export async function runWorkspaceToolForSession(
   name: WorkspaceToolName,
   args: Record<string, unknown>,
-  actor: { sub: string; userId: string | null; handle: string },
+  actor: { sub: string; userId: string | null; handle: string; connectionId?: string; runId?: string; actorType?: "human" | "ai" | "external_agent" },
 ): Promise<CallToolResult> {
   const extra: ToolContext = {
     authInfo: {
@@ -3348,7 +3426,9 @@ export async function runWorkspaceToolForSession(
       extra: {
         sub: actor.sub,
         userId: actor.userId,
-        actorType: "ai",
+        actorType: actor.actorType ?? "ai",
+        connectionId: actor.connectionId ?? `assistant:${actor.userId}`,
+        runId: actor.runId,
         workspaceHandle: actor.handle,
         // The name the assistant renders under in the presence row. It is the
         // workspace's own assistant, not a connected outside client, so it is

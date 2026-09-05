@@ -18,6 +18,15 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import {
+  assertSelectionMatches,
+  validateSelectionEditEnvelope,
+  createSelectionEnvelope,
+  validateSelectionEnvelope,
+  SELECTION_INVALID_ERROR,
+  type SelectionEnvelope,
+} from "@/lib/ai/selection-envelope";
+import { reportSelectionError } from "./selection-error";
 import { createWorkspaceAgentTools } from "@/lib/ai/agent-tools";
 import {
   cloudAssistantTurn,
@@ -41,7 +50,6 @@ import {
   createWorkspaceItemTextEdit,
   resolveWorkspaceItemTextSelection,
   type WorkspaceItemTextEdit,
-  type WorkspaceItemTextSelection,
   type WorkspaceItemTextPatch,
   type WorkspaceItemTextSnapshot,
 } from "@/lib/ai/workspace-item-draft";
@@ -147,6 +155,7 @@ type AssistantProposalBase = {
   note?: string;
   status: "pending" | "applying" | "applied" | "undoing" | "undone";
   syncPending?: boolean;
+  selectionEnvelope?: SelectionEnvelope;
 };
 
 type AssistantProposal = AssistantProposalBase &
@@ -498,13 +507,15 @@ function quickActionProposal({
   item,
   itemId,
   selection,
+  selectionEnvelope,
   text,
 }: {
   action: string;
   actionLabel: string;
   item: WorkspaceItemTextSnapshot;
   itemId: string;
-  selection: WorkspaceItemTextSelection | null;
+  selection: SelectionEnvelope | null;
+  selectionEnvelope?: SelectionEnvelope;
   text: string;
 }): AssistantProposal | undefined {
   const after = text.trim();
@@ -527,6 +538,7 @@ function quickActionProposal({
       canApply: true,
       status: "pending",
       kind: "tags",
+      ...(selectionEnvelope ? { selectionEnvelope } : {}),
       beforeTags,
       afterTags,
       addedTags,
@@ -565,6 +577,7 @@ function quickActionProposal({
     source,
     range,
     scope: selection && selection.field === field ? "selection" : "field",
+    ...(selectionEnvelope ? { selectionEnvelope } : {}),
   };
 }
 
@@ -1711,7 +1724,9 @@ export function useNativeAssistant({
           folderPath: submittedView.folderPath,
           postId: submittedView.postId,
           itemTitle: open?.title,
-          selection: openSelection?.text,
+          selectionEnvelope: open && submittedView.postId
+            ? await createSelectionEnvelope(submittedView.postId, open, openSelection)
+            : undefined,
           itemPreview: open?.body?.slice(0, 4000),
           relatedItems: relatedItems.map((item) => ({ id: item.id })),
           ...(cloudAttachments.length > 0
@@ -1803,6 +1818,7 @@ export function useNativeAssistant({
         settleCloudTurn(thread, jobId, result);
       } catch (error) {
         const message = assistantAgentError(error);
+        if (submittedView.postId) reportSelectionError(submittedView.postId, message);
         appendToThread(thread, "error", message);
         updateAssistantJob(jobId, { status: "error", activity: message });
       } finally {
@@ -1828,7 +1844,7 @@ export function useNativeAssistant({
   );
 
   const runQuickAction = useCallback(
-    async (action: NativeQuickActionId) => {
+    async (action: NativeQuickActionId, selectionRequired = false) => {
       if (!ownerScopeReady || !conversationStoreKey) return;
       const thread = threadKey;
       if (busyThreads.has(thread)) return;
@@ -1851,14 +1867,11 @@ export function useNativeAssistant({
       try {
         const item = await readItemTextRef.current(view.postId);
         const selection = resolveWorkspaceItemTextSelection(item);
-        const selectionAction = action === "rewrite" || action === "summarize";
-        // The cloud route supplies at most 4,000 selection characters. Never
-        // offer a replacement over text the model was not given in full.
-        if (selectionAction && selection && selection.text.length > 4_000) {
-          throw new Error(
-            "Select up to 4,000 characters and try again. Nothing changed.",
-          );
+        if (!selection && (selectionRequired || item.selection)) {
+          throw new Error(SELECTION_INVALID_ERROR);
         }
+        const selectionAction = action === "rewrite" || action === "summarize";
+        const envelope = await createSelectionEnvelope(view.postId, item, selection);
         const priorCloudMessages = cloudConversationHistory(threadFor(thread));
         appendToThread(
           thread,
@@ -1877,7 +1890,7 @@ export function useNativeAssistant({
           folderPath: view.folderPath,
           postId: view.postId,
           itemTitle: item.title,
-          selection: selection?.text,
+          selectionEnvelope: envelope,
           itemPreview: item.body.slice(0, 4000),
           mode: "suggestion",
         }, {
@@ -1919,6 +1932,11 @@ export function useNativeAssistant({
           title: item.title,
         });
         if (proof) proofs = mergeArtifactProofs([proof], proofs);
+        // Never offer Apply unless the server acknowledged the exact coverage.
+        if (envelope && !result.terminalError) {
+          const acknowledged = await validateSelectionEnvelope(result.selectionEnvelope);
+          if (acknowledged.hash !== envelope.hash) throw new Error(SELECTION_INVALID_ERROR);
+        }
         const resultMessageId = appendToThread(
           thread,
           "assistant",
@@ -1933,7 +1951,8 @@ export function useNativeAssistant({
                 actionLabel,
                 item,
                 itemId: view.postId,
-                selection: selection && selectionAction ? selection : null,
+                selection: selectionAction ? result.selectionEnvelope ?? null : null,
+                selectionEnvelope: result.selectionEnvelope,
                 text: result.text ?? "",
               }),
           result.provider,
@@ -1953,6 +1972,7 @@ export function useNativeAssistant({
         settleCloudTurn(thread, jobId, result);
       } catch (error) {
         const message = assistantAgentError(error);
+        reportSelectionError(view.postId, message);
         appendToThread(
           thread,
           "error",
@@ -1991,6 +2011,21 @@ export function useNativeAssistant({
         (direction === "undo" && proposal.status !== "applied")
       ) {
         return;
+      }
+      // Metadata suggestions can be based on a passage too. Preserve and
+      // validate that source without changing their whole-field target.
+      if (direction === "apply" && proposal.selectionEnvelope &&
+          (proposal.kind === "tags" || proposal.scope !== "selection")) {
+        try {
+          const envelope = await validateSelectionEnvelope(proposal.selectionEnvelope);
+          assertSelectionMatches(envelope, proposal.itemId,
+            await readItemTextRef.current(proposal.itemId));
+        } catch (error) {
+          const text = error instanceof Error ? error.message : SELECTION_INVALID_ERROR;
+          appendToThread(threadKey, "error", text);
+          reportSelectionError(proposal.itemId, text);
+          return;
+        }
       }
       if (proposal.kind === "tags") {
         const current = await readItemTextRef.current(proposal.itemId);
@@ -2075,7 +2110,22 @@ export function useNativeAssistant({
         );
         return;
       }
-      const current = await readItemTextRef.current(proposal.itemId);
+      let current: WorkspaceItemTextSnapshot;
+      let selectionEnvelope: SelectionEnvelope | undefined;
+      try {
+        current = await readItemTextRef.current(proposal.itemId);
+        if (direction === "apply" && proposal.scope === "selection") {
+          selectionEnvelope = await validateSelectionEditEnvelope(
+            proposal.selectionEnvelope, proposal.itemId, current,
+            { field: edit.field, ...edit.range, text: edit.before },
+          );
+        }
+      } catch (error) {
+        const text = error instanceof Error ? error.message : SELECTION_INVALID_ERROR;
+        appendToThread(threadKey, "error", text);
+        reportSelectionError(proposal.itemId, text);
+        return;
+      }
       const start = edit.range.start;
       const expectedText = direction === "apply" ? edit.before : edit.after;
       const replacementText = direction === "apply" ? edit.after : edit.before;
@@ -2107,6 +2157,7 @@ export function useNativeAssistant({
             end,
             expected_text: expectedText,
             replacement_text: replacementText,
+            ...(selectionEnvelope ? { selection_envelope: selectionEnvelope } : {}),
           },
         });
         const queued = workspaceMutationQueued(outcome);

@@ -101,7 +101,7 @@ describe("staging a deletion for the owner to approve", () => {
     expect(execute).toHaveBeenCalledWith(
       "delete_items",
       { ids: ["a", "b"], expected_revisions: { a: 11, b: 22 } },
-      owner,
+      expect.objectContaining(owner),
     );
   });
 });
@@ -164,7 +164,7 @@ describe("when the world moves between showing and approving", () => {
     expect(execute).toHaveBeenCalledWith(
       "delete_items",
       { ids: ["b"], expected_revisions: { b: 22 } },
-      owner,
+      expect.objectContaining(owner),
     );
   });
 
@@ -207,7 +207,7 @@ describe("when the world moves between showing and approving", () => {
     expect(execute).toHaveBeenCalledWith(
       "delete_items",
       { ids: ["b"], expected_revisions: { b: 22 } },
-      owner,
+      expect.objectContaining(owner),
     );
   });
 
@@ -247,7 +247,7 @@ describe("when the world moves between showing and approving", () => {
     expect(execute).toHaveBeenCalledWith(
       "delete_items",
       { ids: ["b"], expected_revisions: { b: 22 } },
-      owner,
+      expect.objectContaining(owner),
     );
   });
 });

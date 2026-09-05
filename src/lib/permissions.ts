@@ -186,7 +186,7 @@ function accessUserFromParts(
   return { userId, sub, email, name };
 }
 
-function roleForTarget(
+export function roleForTarget(
   rawRole: string,
   scopeType: CollaboratorScopeType,
   targetType: CollaboratorScopeType,

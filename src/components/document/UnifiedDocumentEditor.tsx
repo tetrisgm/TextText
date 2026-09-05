@@ -36,6 +36,12 @@ import { Awareness } from "y-protocols/awareness";
 import { formatArticleDate } from "@/lib/content";
 import type { Blog, Post } from "@/lib/content";
 import { CollabProvider, type PresencePeer } from "@/lib/collab/provider";
+import {
+  keepMaterializationRecovery,
+  readMaterializationRecoveries,
+  acknowledgeMaterializationRecoveries,
+  type MaterializationRecovery,
+} from "@/lib/collab/materialization-recovery";
 import { CollaboratorMark } from "@/components/collab/CollaboratorMark";
 import { WorkspaceActionBarPortal } from "@/components/workspace/WorkspaceActionBarPortal";
 import type { AssistantAgentIdentity } from "@/components/workspace/assistant/agent-identity";
@@ -675,8 +681,42 @@ export function UnifiedDocumentEditor({
   const canAddSubtitle =
     !showSubtitle && !document.content.subtitle?.trim();
   const providerRef = useRef<CollabProvider | null>(null);
+  const recoveryBlockedRef = useRef(false);
+  const [recoveryCopies, setRecoveryCopies] = useState<MaterializationRecovery[]>([]);
+  const [recoveryDurable, setRecoveryDurable] = useState(true);
+  const [recoveryDownloaded, setRecoveryDownloaded] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    const copies = readMaterializationRecoveries(collab.postId);
+    if (copies.length) {
+      recoveryBlockedRef.current = true;
+      queueMicrotask(() => {
+        if (!cancelled) setRecoveryCopies(copies);
+      });
+    }
+    return () => { cancelled = true; };
+  }, [collab.postId]);
+  const preserveRecovery = useCallback((epoch: number) => {
+    if (recoveryBlockedRef.current) return;
+    recoveryBlockedRef.current = true;
+    const copy: MaterializationRecovery = {
+      id: crypto.randomUUID(),
+      postId: collab.postId,
+      epoch,
+      state: bytesToBase64(Y.encodeStateAsUpdate(doc)),
+      document: preReadyLocalRef.current ?? (hasDocumentSnapshot(doc)
+        ? documentSnapshotFromYDoc(doc) : documentRef.current),
+    };
+    setRecoveryDurable(keepMaterializationRecovery(copy));
+    setRecoveryCopies([copy]);
+    setSaveState("error");
+    setError("This document changed elsewhere. Download your local copy before reopening.");
+  }, [collab.postId, doc]);
   const materializeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const materializeQueueRef = useRef(Promise.resolve());
+  // Every CRDT mutation invalidates requests encoded before it, including
+  // remote edits and mutations while another request is queued or in flight.
+  const documentMutationVersionRef = useRef(0);
   const localMaterializationVersionRef = useRef(0);
   const savedMaterializationVersionRef = useRef(0);
   const titleRef = useRef<HTMLTextAreaElement>(null);
@@ -747,7 +787,10 @@ export function UnifiedDocumentEditor({
 
   const flushMaterialization = useCallback(
     (keepalive = false) => {
-      if (!networkEnabled || !collab.canEdit || !hasDocumentSnapshot(doc)) {
+      if (recoveryBlockedRef.current) return Promise.resolve();
+      // Capture the provider for the queued unmount flush, before cleanup clears the ref.
+      const provider = providerRef.current;
+      if (!networkEnabled || !collab.canEdit || !hasDocumentSnapshot(doc) || !provider) {
         setSaveState("local");
         return Promise.resolve();
       }
@@ -774,26 +817,35 @@ export function UnifiedDocumentEditor({
               requestIdleCallback(() => resolve(), { timeout: 1000 });
             });
           }
-          const state = bytesToBase64(Y.encodeStateAsUpdate(doc));
-          const response = await fetch(
-            `/api/collab/${encodeURIComponent(collab.postId)}/materialize`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ handle: blog.handle, state }),
-              keepalive,
-            },
-          );
+          if (recoveryBlockedRef.current || provider.materializationBlocked) return;
+          // Capture each request's own fence at encoding time, after queue
+          // and idle waits. Earlier requests may already have saved this work.
+          // The provider encodes the state and sends the learned epoch with it.
+          const localVersion = localMaterializationVersionRef.current;
+          if (localVersion <= savedMaterializationVersionRef.current) return;
+          const documentVersion = documentMutationVersionRef.current;
+          const response = await provider.materialize(blog.handle, keepalive);
+          if (recoveryBlockedRef.current || provider.materializationBlocked) return;
+          if (!response) {
+            setSaveState("local");
+            return;
+          }
           if (!response.ok) throw new Error("Document could not be saved");
           const result = (await response.json()) as {
             document?: DocumentSnapshot;
             revision?: number;
           };
+          if (recoveryBlockedRef.current || provider.materializationBlocked) return;
+          // A successful but superseded save has no persisted snapshot to
+          // acknowledge. Keep the draft dirty, just as for a failed request.
+          if (!result.document) throw new Error("Document could not be saved");
           // The response describes the Y.Doc state this request materialized.
-          // A person can keep editing while the request is in flight. Applying
-          // an older response after that point replaces the live Y.Text with
-          // the old snapshot and visibly resurrects deleted text.
+          // A person can keep editing while the request is in flight, and
+          // remote updates can land too. Applying an older response after that
+          // point replaces the live Y.Text with the old snapshot and visibly
+          // resurrects deleted text, so each request keeps its own fence.
           const responseIsCurrent =
+            documentMutationVersionRef.current === documentVersion &&
             localMaterializationVersionRef.current === localVersion;
           if (result.document && responseIsCurrent) {
             applyDocumentSnapshot(doc, result.document, "materialized");
@@ -804,9 +856,9 @@ export function UnifiedDocumentEditor({
             savedMaterializationVersionRef.current,
             localVersion,
           );
-          // A later debounced flush is already scheduled for the newer local
-          // version. Keep both the live document and its dirty cache entry
-          // authoritative until that request is acknowledged.
+          // Intervening local edits or remote merges into a pending save
+          // schedule another flush. Only a current response acknowledges the
+          // visible draft/cache; an older response covers its own version.
           setSaveState(responseIsCurrent ? "saved" : "local");
           setError(null);
         })
@@ -820,7 +872,6 @@ export function UnifiedDocumentEditor({
     [
       blog.handle,
       collab.canEdit,
-      collab.postId,
       doc,
       networkEnabled,
       onMaterialized,
@@ -829,7 +880,7 @@ export function UnifiedDocumentEditor({
   );
 
   const scheduleMaterialization = useCallback(() => {
-    if (!networkEnabled || !collab.canEdit) return;
+    if (!networkEnabled || !collab.canEdit || recoveryBlockedRef.current) return;
     localMaterializationVersionRef.current += 1;
     setSaveState("local");
     if (materializeTimerRef.current) clearTimeout(materializeTimerRef.current);
@@ -840,7 +891,7 @@ export function UnifiedDocumentEditor({
   }, [collab.canEdit, doc, flushMaterialization, networkEnabled]);
 
   useEffect(() => {
-    if (!networkEnabled) return;
+    if (!networkEnabled || recoveryBlockedRef.current) return;
 
     let cancelled = false;
     const provider = new CollabProvider(doc, {
@@ -864,21 +915,18 @@ export function UnifiedDocumentEditor({
           setSaveState("error");
         }
       },
-      onRetired: () => {
-        if (!cancelled) {
-          setError("This document changed on another device. Reconnecting.");
-          setSaveState("offline");
-        }
-      },
+      onRetired: preserveRecovery,
     });
     providerRef.current = provider;
 
     const handleDocumentUpdate = (_update: Uint8Array, origin: unknown) => {
+      documentMutationVersionRef.current += 1;
       if (!hasDocumentSnapshot(doc)) return;
+      // The accepted response is published and acknowledged by its caller.
+      // It must not schedule another save of itself.
+      if (origin === "materialized") return;
       if (origin === undoManagerRef.current) {
-        // Undo/redo rewrote the CRDT under React. Republish unconditionally -
-        // the remote branch below skips publishing while a local save is in
-        // flight, which would leave the person's undo invisible - and save it.
+        // Undo/redo rewrote the CRDT under React. Publish the result and save it.
         try {
           publishDocument(documentSnapshotFromYDoc(doc));
         } catch {
@@ -900,6 +948,12 @@ export function UnifiedDocumentEditor({
         return;
       }
       try {
+        // A pending request cannot acknowledge this merge. Schedule it even
+        // when the pre-ready ledger temporarily owns the visible document.
+        const localSavePending =
+          localMaterializationVersionRef.current >
+          savedMaterializationVersionRef.current;
+        if (localSavePending) scheduleMaterialization();
         // A remote history arriving before the provider is ready must not
         // replace what the person already typed: the ledger holds that edit
         // and the reconciliation in provider.start().then() republishes the
@@ -908,10 +962,7 @@ export function UnifiedDocumentEditor({
         // back).
         if (!readyRef.current && preReadyLocalRef.current) return;
         const next = documentSnapshotFromYDoc(doc);
-        const localSavePending =
-          localMaterializationVersionRef.current >
-          savedMaterializationVersionRef.current;
-        if (localSavePending) return;
+        // Visibility follows the merged CRDT even while persistence is dirty.
         publishDocument(next);
       } catch {
         setError("This document contains unsupported data.");
@@ -928,7 +979,7 @@ export function UnifiedDocumentEditor({
       });
     }
     void provider.start().then((result) => {
-      if (cancelled) return;
+      if (cancelled || recoveryBlockedRef.current) return;
       // The ledger, never documentRef: a remote update that arrived while the
       // provider was starting has already overwritten documentRef.
       const localBeforeReady = preReadyLocalRef.current ?? documentRef.current;
@@ -994,6 +1045,7 @@ export function UnifiedDocumentEditor({
     post.revision,
     publishDocument,
     providerAttempt,
+    preserveRecovery,
     scheduleMaterialization,
   ]);
 
@@ -1057,6 +1109,7 @@ export function UnifiedDocumentEditor({
       read: () => {
         const snapshot = currentLocalDocument();
         return {
+          revision: post.revision,
           title: snapshot.content.title ?? "",
           excerpt: snapshot.content.subtitle ?? "",
           body: snapshot.content.body ?? "",
@@ -1070,7 +1123,7 @@ export function UnifiedDocumentEditor({
       },
     });
     return unregister;
-  }, [collab.canEdit, collab.postId, currentLocalDocument, updateText]);
+  }, [collab.canEdit, collab.postId, currentLocalDocument, post.revision, updateText]);
 
   const updateSelection = useCallback(
     (field: EditableField, anchor: number, head: number) => {
@@ -1265,6 +1318,31 @@ export function UnifiedDocumentEditor({
               : "";
 
   if (!active) return null;
+  if (recoveryCopies.length) {
+    return (
+      <section className="tt-unified-editor tt-baseline-failure" role="alert">
+        <div className="tt-baseline-failure-copy">
+          <h1>This document changed elsewhere</h1>
+          <p>{recoveryDurable
+            ? "Your local copy is kept on this device. Download it to recover your edits."
+            : "Device storage is unavailable. Download your local copy before closing this page."}</p>
+          <button type="button" className="ac-btn ac-btn-gray" onClick={() => {
+            const url = URL.createObjectURL(new Blob([JSON.stringify(recoveryCopies, null, 2)], { type: "application/json" }));
+            const link = window.document.createElement("a");
+            link.href = url;
+            link.download = `texttext-recovery-${collab.postId}.json`;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            setRecoveryDownloaded(true);
+          }}>Download local copy</button>
+          <button type="button" className="ac-btn ac-btn-gray" disabled={!recoveryDownloaded} onClick={() => {
+            acknowledgeMaterializationRecoveries(recoveryCopies);
+            window.location.reload();
+          }}>Open current version</button>
+        </div>
+      </section>
+    );
+  }
   if (baselineFailure && !hasDocumentSnapshot(doc)) {
     return (
       <section className="tt-unified-editor tt-baseline-failure" role="alert">

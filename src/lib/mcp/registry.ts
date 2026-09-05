@@ -14,10 +14,11 @@ import type { CallToolResult } from "./types";
 import {
   WORKSPACE_TOOL_DEFINITIONS,
   WORKSPACE_TOOL_NAMES,
-  type WorkspaceToolName,
+  isWorkspaceToolName,
 } from "@/lib/ai/tools";
 import { registerAgentSurface } from "./agent-surface";
 import { executeMcpTool, type ToolContext } from "./tools";
+import { hostedToolNeedsProposal, stageHostedToolProposal } from "./write-proposals";
 import { invalidParams, methodNotFound } from "./protocol";
 
 type ResourceHandler = (
@@ -108,7 +109,11 @@ export function listTools() {
     return {
       name,
       title: definition.title,
-      description: definition.description,
+      description: definition.description + (definition.confirmation !== "none"
+        ? " Hosted MCP stages this action for owner review in TextText; client confirmation cannot execute it."
+        : name === "update_item"
+          ? " Hosted MCP stages whole-body and markdown replacements for owner review. Guarded section and text-range edits run directly."
+          : ""),
       inputSchema: definition.jsonSchema,
       annotations: definition.annotations,
     };
@@ -120,12 +125,15 @@ export async function callTool(
   args: Record<string, unknown>,
   context: ToolContext,
 ): Promise<CallToolResult> {
-  if (!(name in WORKSPACE_TOOL_DEFINITIONS)) {
+  if (!isWorkspaceToolName(name)) {
     // An unknown TOOL is a bad argument to a known method, not an unknown
     // method, so this is Invalid Params rather than Method Not Found.
     throw invalidParams(`Unknown tool: ${name}`);
   }
-  return executeMcpTool(name as WorkspaceToolName, args, context);
+  if (hostedToolNeedsProposal(name, args)) {
+    return stageHostedToolProposal(name, args, context);
+  }
+  return executeMcpTool(name, args, context);
 }
 
 // ---------------------------------------------------------------------------

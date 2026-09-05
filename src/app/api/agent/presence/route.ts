@@ -140,7 +140,13 @@ export async function POST(request: Request) {
     } else {
       // Delete rather than blank the awareness, or the agent would linger as a
       // collaborator with no cursor after its command finished.
-      await removePresence(itemId, presence.clientId);
+      await removePresence(itemId, presence.clientId, {
+        actorUserId: userId,
+        actorType: "external_agent",
+        actionName: "collab.presence.leave",
+        targetType: "item",
+        targetId: itemId,
+      });
     }
     await signalWorkspaceChange(context.handle).catch(() => {});
   } catch {

@@ -1,3 +1,4 @@
+import { createSelectionEnvelope, validateSelectionEditEnvelope } from "@/lib/ai/selection-envelope";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   activateAssistantConversation,
@@ -457,6 +458,24 @@ describe("assistant conversation history", () => {
       title: "A durable question",
       messageCount: 1,
     });
+  });
+
+  it("preserves selection coverage through reload and rejects a later revision on Apply", async () => {
+    browserStorage();
+    const active = activeAssistantConversation("writer", "root")!;
+    const item = { revision: 7, title: "Draft", body: "Before", excerpt: "" };
+    const selection = { field: "body" as const, start: 0, end: 6, text: "Before" };
+    const selectionEnvelope = await createSelectionEnvelope("post-1", item, selection);
+    appendAssistantConversationMessage("writer", active.id, {
+      id: "selection-answer", role: "assistant", text: "After",
+      proposal: { itemId: "post-1", label: "Rewrite", canApply: true, status: "pending", kind: "text", field: "body", before: "Before", after: "After", source: "Before", range: { start: 0, end: 6 }, scope: "selection", selectionEnvelope },
+    });
+    resetAssistantConversationStore();
+    const proposal = assistantConversationMessages("writer", active.id)[0]?.proposal;
+    expect(proposal).toMatchObject({ selectionEnvelope });
+    if (proposal?.kind === "tags") throw new Error("Expected a text proposal");
+    await expect(validateSelectionEditEnvelope(proposal?.selectionEnvelope, "post-1", item, selection)).resolves.toEqual(selectionEnvelope);
+    await expect(validateSelectionEditEnvelope(proposal?.selectionEnvelope, "post-1", { ...item, revision: 8 }, selection)).rejects.toThrow();
   });
 
   it("persists guarded write proposal review state with its answer", () => {

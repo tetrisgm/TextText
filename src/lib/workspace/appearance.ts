@@ -23,7 +23,10 @@ export function applyAppearance(appearance: Appearance): void {
   else root.setAttribute("data-theme", appearance);
 }
 
+let sessionAppearance: Appearance | null = null;
+
 export function readAppearance(): Appearance {
+  if (sessionAppearance !== null) return sessionAppearance;
   try {
     const stored = window.localStorage.getItem(APPEARANCE_STORAGE_KEY);
     return isAppearance(stored) ? stored : "system";
@@ -39,7 +42,9 @@ export function writeAppearance(appearance: Appearance): void {
     } else {
       window.localStorage.setItem(APPEARANCE_STORAGE_KEY, appearance);
     }
+    sessionAppearance = null;
   } catch {
+    sessionAppearance = appearance;
     /* private mode: the choice lasts for this session only */
   }
   applyAppearance(appearance);

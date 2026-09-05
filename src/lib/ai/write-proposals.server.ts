@@ -6,6 +6,7 @@ import { auditCteFrom, auditInsertQuery } from "@/lib/audit";
 import { db, executeAtomicBatch } from "@/lib/db/client";
 import { aiWriteProposals } from "@/lib/db/schema";
 import {
+  STATE_PREVIEW_TOOLS,
   MAX_WRITE_PROPOSAL_TTL_MS,
   WRITE_PROPOSAL_TTL_MS,
   validateWorkspaceWriteProposal,
@@ -23,11 +24,15 @@ import { runWorkspaceToolForSession } from "@/lib/mcp/tools";
 import { getFolders, getPostById, getTrashedFolders, getTrashedPosts } from "@/lib/store";
 import { getBlogEditRecord } from "@/lib/store";
 import { listScopeShares } from "@/lib/shares";
+import { resolveConfirmationState, type ConfirmationState } from "./write-proposal-state.server";
 
 export type WorkspaceWriteProposalActor = {
   sub: string;
   userId: string | null;
   handle: string;
+  connectionId?: string;
+  runId?: string;
+  actorType?: "ai" | "external_agent";
 };
 
 type WorkspaceWriteProposalStatus =
@@ -151,6 +156,7 @@ export type WorkspaceWriteProposalDependencies = {
   ): Promise<
     Map<string, { title: string; folderPath: string; visibility: "public" | "private"; revision: number | null }>
   >;
+  resolveConfirmationState?(handle: string, name: WorkspaceToolName, args: Record<string, unknown>): Promise<ConfirmationState>;
   resolveAccess?(scopeType: string, scopeId: string): Promise<Array<{ id: string; email: string; role: string }>>;
 };
 
@@ -376,6 +382,7 @@ const defaultDependencies: WorkspaceWriteProposalDependencies = {
   now: () => new Date(),
   randomId: randomUUID,
   resolveItems: resolveProposalItems,
+  resolveConfirmationState,
   resolveAccess: async (scopeType, scopeId) => listScopeShares(scopeType as never, scopeId),
 };
 
@@ -401,6 +408,7 @@ export async function createWorkspaceWriteProposal(
     tool: string;
     arguments: unknown;
     ttlMs?: number;
+    origin?: { surface: "hosted_mcp"; connectionName: string };
   },
   dependencies: WorkspaceWriteProposalDependencies = defaultDependencies,
 ): Promise<WorkspaceWriteProposalPreview> {
@@ -428,9 +436,18 @@ export async function createWorkspaceWriteProposal(
       preview = { kind: "trash", tool: validated.name, trashCount: posts.length + folders.length };
     } else if (validated.name === "set_access" || validated.name === "revoke_access") {
       const a = validated.arguments as { scope_type: string; scope_id: string; email?: string; role?: string; access_id?: string };
-      const shares = await (dependencies.resolveAccess?.(a.scope_type, a.scope_id) ?? []);
+      // Establish ownership before reading an access list for a model-supplied id.
+      if (a.scope_type === "item" && !(await dependencies.resolveItems(owner.workspace.handle, [a.scope_id])).has(a.scope_id)) {
+        throw new Error("Item not found.");
+      }
+      if (a.scope_type === "folder" && !(await getFolders(owner.workspace.handle)).some((folder) => folder.id === a.scope_id)) {
+        throw new Error("Folder not found.");
+      }
+      if (!dependencies.resolveAccess) throw new Error("Access preview unavailable.");
+      const scopeId = a.scope_type === "workspace" ? owner.workspace.id : a.scope_id;
+      const shares = await dependencies.resolveAccess(a.scope_type, scopeId);
       const target = a.access_id ? shares.find((s) => s.id === a.access_id) : shares.find((s) => s.email.toLowerCase() === a.email?.toLowerCase());
-      preview = { kind: "access", tool: validated.name, scopeType: a.scope_type, scopeId: a.scope_id, email: a.email ?? target?.email, role: a.role, accessId: a.access_id ?? target?.id, currentRole: target?.role, fingerprint: JSON.stringify(shares.map((s) => [s.id, s.email, s.role])) };
+      preview = { kind: "access", tool: validated.name, scopeType: a.scope_type, scopeId, email: a.email ?? target?.email, role: a.role, accessId: a.access_id ?? target?.id, currentRole: target?.role, fingerprint: JSON.stringify(shares.map((s) => [s.id, s.email, s.role])) };
     } else {
     const singleId = (validated.arguments as { id?: unknown }).id;
     const ids = typeof singleId === "string"
@@ -468,6 +485,12 @@ export async function createWorkspaceWriteProposal(
     };
     }
   }
+  const state = STATE_PREVIEW_TOOLS.includes(validated.name)
+    ? await dependencies.resolveConfirmationState?.(owner.workspace.handle, validated.name, validated.arguments)
+    : undefined;
+  if (STATE_PREVIEW_TOOLS.includes(validated.name) && !state) {
+    throw new Error("This action needs a current review preview.");
+  }
   await dependencies.repository.create({
     id,
     ...owner.binding,
@@ -475,7 +498,13 @@ export async function createWorkspaceWriteProposal(
     connectionId: null,
     toolName: validated.name,
     arguments: validated.arguments,
-    metadata: preview ? { preview } : null,
+    metadata: {
+      ...(preview ? { preview } : {}),
+      ...(state ? { state } : {}),
+      ...(input.origin ? { origin: input.origin } : {}),
+      agentConnectionId: input.actor.connectionId ?? `assistant:${input.actor.userId}`,
+      agentActorType: input.actor.actorType ?? "ai",
+    },
     status: "pending",
     createdAt: now,
     expiresAt,
@@ -486,7 +515,7 @@ export async function createWorkspaceWriteProposal(
     status: "pending",
     tool: validated.name,
     title: WORKSPACE_TOOL_DEFINITIONS[validated.name].title,
-    summary: preview
+    summary: state ? state.summary : preview
       ? describeFrozenPreview(preview)
       : workspaceWriteProposalSummary(validated.name, validated.arguments),
     arguments: validated.arguments,
@@ -612,6 +641,20 @@ export async function decideWorkspaceWriteProposal(
     };
   }
 
+  if (STATE_PREVIEW_TOOLS.includes(validated.name)) {
+    const frozenState = claimed.metadata?.state as ConfirmationState | undefined;
+    let currentState: ConfirmationState | undefined;
+    try {
+      currentState = await dependencies.resolveConfirmationState?.(owner.workspace.handle, validated.name, validated.arguments);
+    } catch {
+      // A removed or unreadable target cannot leave an approval in flight.
+    }
+    if (!frozenState || !currentState || frozenState.fingerprint !== currentState.fingerprint) {
+      await dependencies.repository.fail(input.proposalId, owner.binding, "state_drifted", dependencies.now());
+      return { status: "failed", proposalId: input.proposalId, message: "The target changed since this proposal was offered. Ask again to review its current state." };
+    }
+  }
+
   // Approving a preview of five drafts must not delete five things that are
   // now published, or five that someone has edited since. Ask whether the
   // world still matches what the person was shown, and drop what moved: the
@@ -639,10 +682,11 @@ export async function decideWorkspaceWriteProposal(
   }
   if (frozen?.kind === "access") {
     const a = validated.arguments as { scope_type: string; scope_id: string; access_id?: string; email?: string };
-    const shares = await (dependencies.resolveAccess?.(a.scope_type, a.scope_id) ?? []);
+    const scopeId = a.scope_type === "workspace" ? owner.workspace.id : a.scope_id;
+    const shares = await (dependencies.resolveAccess?.(a.scope_type, scopeId) ?? []);
     const fingerprint = JSON.stringify(shares.map((s) => [s.id, s.email, s.role]));
     const target = a.access_id ? shares.find((s) => s.id === a.access_id) : shares.find((s) => s.email.toLowerCase() === a.email?.toLowerCase());
-    if (fingerprint !== frozen.fingerprint || !target || (frozen.tool === "set_access" && target.role !== frozen.currentRole)) {
+    if (fingerprint !== frozen.fingerprint || (frozen.tool === "revoke_access" && !target) || (frozen.tool === "set_access" && target?.role !== frozen.currentRole)) {
       await dependencies.repository.fail(input.proposalId, owner.binding, "state_drifted", dependencies.now());
       return { status: "failed", proposalId: input.proposalId, message: "The access list changed since approval was offered, so nothing was changed. Ask again to review the current access." };
     }
@@ -709,8 +753,7 @@ export async function decideWorkspaceWriteProposal(
       .map((item) => item.title || item.id);
     approvedArguments = validateWorkspaceWriteProposal(validated.name, {
       ...validated.arguments,
-      ...(validated.name === "set_item_status" || validated.name === "restore_item" ? { id: stillAgreed[0] } : { ids: stillAgreed }),
-      ...(Object.keys(expected).length ? { expected_revisions: expected } : {}),
+      ...(validated.name === "delete_items" ? { ids: stillAgreed, ...(Object.keys(expected).length ? { expected_revisions: expected } : {}) } : { id: stillAgreed[0] }),
     }).arguments;
   }
 
@@ -718,7 +761,10 @@ export async function decideWorkspaceWriteProposal(
     const result = await dependencies.execute(
       validated.name,
       approvedArguments,
-      input.actor,
+      { ...input.actor, runId: claimed.id,
+        actorType: claimed.metadata?.agentActorType === "external_agent" ? "external_agent" : "ai",
+        connectionId: typeof claimed.metadata?.agentConnectionId === "string"
+          ? claimed.metadata.agentConnectionId : `assistant:${claimed.actorUserId}` },
     );
     const text = resultText(result);
     if (result.isError) {
@@ -838,4 +884,28 @@ async function resolveProposalItems(
     });
   }
   return resolved;
+}
+
+/** Read stored review data without leaking another owner's proposal. */
+export async function getWorkspaceWriteProposalForReview(
+  actor: WorkspaceWriteProposalActor,
+  id: string,
+  dependencies: WorkspaceWriteProposalDependencies = defaultDependencies,
+) {
+  const owner = await proposalBinding(actor, dependencies);
+  if (!owner) return null;
+  const stored = await dependencies.repository.get(id, owner.binding);
+  if (!stored || stored.proposalKind !== "workspace") return null;
+  const validated = validateWorkspaceWriteProposal(stored.toolName, stored.arguments);
+  const preview = stored.metadata?.preview as FrozenProposalPreview | undefined;
+  const state = stored.metadata?.state as ConfirmationState | undefined;
+  return {
+    id: stored.id,
+    title: WORKSPACE_TOOL_DEFINITIONS[validated.name].title,
+    summary: state?.summary ?? (preview ? describeFrozenPreview(preview) : workspaceWriteProposalSummary(validated.name, validated.arguments)),
+    arguments: validated.arguments,
+    status: stored.status === "pending" && stored.expiresAt <= dependencies.now() ? "expired" : stored.status,
+    origin: stored.metadata?.origin as { surface: string; connectionName: string } | undefined,
+    receipt: stored.receipt ?? null,
+  };
 }

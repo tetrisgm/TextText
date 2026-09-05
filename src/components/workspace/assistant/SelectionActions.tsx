@@ -13,6 +13,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { NativeQuickActionId } from "@/lib/ai/quick-actions";
+import {
+  MAX_SELECTION_CHARS,
+  SELECTION_BUDGET_ERROR,
+  SELECTION_INVALID_ERROR,
+} from "@/lib/ai/selection-envelope";
+import { SELECTION_ERROR_EVENT } from "./selection-error";
 import styles from "./SelectionActions.module.css";
 
 type EditorTextSelection = { text: string };
@@ -60,11 +66,13 @@ export function isActionableSelection(text: string | null | undefined): boolean 
 
 export function SelectionActions({
   enabled,
+  itemId,
   readSelection,
   onRunAction,
 }: {
   /** Editing an item. Elsewhere a selection is just reading. */
   enabled: boolean;
+  itemId?: string;
   /**
    * The editor's own account of what is selected. The body of an item is a
    * textarea, and window.getSelection() does not see textarea selections at
@@ -75,22 +83,29 @@ export function SelectionActions({
   readSelection: () => EditorTextSelection | null;
   onRunAction: (id: NativeQuickActionId) => void;
 }) {
+  const barRef = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState<string | null>(null);
   const [anchor, setAnchor] = useState<SelectionAnchor | null>(null);
   const anchorRef = useRef<SelectionAnchor | null>(null);
   anchorRef.current = anchor;
   // Where the pointer last let go: the anchor a textarea cannot give us.
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
 
+  const selectedTextRef = useRef<string | null>(null);
   const refresh = useCallback(() => {
     if (!enabled) {
+      setError(null);
       setAnchor(null);
       return;
     }
     const selection = readSelection();
     if (!selection || !isActionableSelection(selection.text)) {
+      setError(null);
       setAnchor(null);
       return;
     }
+    if (selectedTextRef.current !== selection.text) setError(null);
+    selectedTextRef.current = selection.text;
     const at = pointerRef.current;
     const rect = at
       ? { left: at.x, right: at.x, top: at.y, width: 0 }
@@ -123,6 +138,7 @@ export function SelectionActions({
       settle = window.setTimeout(refresh, 60);
     };
     const onMouseUp = (event: MouseEvent) => {
+      if (barRef.current?.contains(event.target as Node)) return;
       pointerRef.current = { x: event.clientX, y: event.clientY };
       scheduleRefresh();
     };
@@ -153,10 +169,22 @@ export function SelectionActions({
     };
   }, [enabled, refresh]);
 
-  if (!anchor) return null;
+  useEffect(() => {
+    const onError = (event: Event) => {
+      const detail = (event as CustomEvent<{ itemId: string; message: string }>).detail;
+      if (!enabled || detail?.itemId !== itemId) return;
+      refresh();
+      setError(detail.message);
+    };
+    window.addEventListener(SELECTION_ERROR_EVENT, onError);
+    return () => window.removeEventListener(SELECTION_ERROR_EVENT, onError);
+  }, [enabled, itemId, refresh]);
+
+  if (!enabled || !anchor) return null;
 
   return (
     <div
+      ref={barRef}
       className={styles.bar}
       style={{ left: anchor.left, top: anchor.top }}
       role="toolbar"
@@ -164,6 +192,7 @@ export function SelectionActions({
       // Taking focus would collapse the selection the actions are about.
       onMouseDown={(event) => event.preventDefault()}
     >
+      {error && <div role="alert" className={styles.error}>{error}</div>}
       {SELECTION_ACTIONS.map((action) => (
         <button
           key={action.id}
@@ -171,7 +200,16 @@ export function SelectionActions({
           className={styles.action}
           title={action.title}
           onClick={() => {
-            setAnchor(null);
+            const selection = readSelection();
+            if (!selection || !isActionableSelection(selection.text)) {
+              setError(SELECTION_INVALID_ERROR);
+              return;
+            }
+            if (selection.text.length > MAX_SELECTION_CHARS) {
+              setError(SELECTION_BUDGET_ERROR);
+              return;
+            }
+            setError(null);
             onRunAction(action.id);
           }}
         >

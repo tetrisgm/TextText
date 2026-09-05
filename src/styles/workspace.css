@@ -1746,7 +1746,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   border-bottom: 0;
   border-radius: 7px 7px 0 0;
   background: transparent;
-  color: color-mix(in srgb, var(--ink) 62%, var(--workspace-pane-ground));
+  color: color-mix(in srgb, var(--ink) 78%, var(--workspace-pane-ground));
   font-size: 13px;
 }
 

@@ -1,3 +1,9 @@
+import { agentTextChanges, type AgentTextChange } from "@/lib/agent-changes";
+import { agentChangeCte } from "@/lib/agent-change-sql.server";
+import {
+  validateSelectionEditEnvelope,
+  SELECTION_STALE_ERROR,
+} from "@/lib/ai/selection-envelope";
 // Realtime co-editing server core: the Yjs update relay and presence, plus
 // the authorization gate. Transport is HTTP long-poll over an append log
 // (collab_updates) keyed by a monotonic seq, so co-editing needs no websocket
@@ -15,7 +21,7 @@ import {
   encodeAwarenessUpdate,
 } from "y-protocols/awareness";
 import * as Y from "yjs";
-import { db } from "@/lib/db/client";
+import { db, executeAtomicBatch } from "@/lib/db/client";
 import {
   actionAudit,
   blogs,
@@ -24,7 +30,7 @@ import {
   collabUpdates,
   posts,
 } from "@/lib/db/schema";
-import { auditValues, type AuditEntry } from "@/lib/audit";
+import { auditInsertQuery, auditValues, type AuditEntry } from "@/lib/audit";
 import {
   applyDocumentMutation,
   documentText,
@@ -202,6 +208,8 @@ export async function prepareCollabBaseline(
   if (missingBaseline || externallyStale) {
     const active = await hasActiveCoEditors(postId, requestingClientId);
     if (missingBaseline || !active) {
+      // If a materialization wins the row lock, its new provenance invalidates
+      // this rotation's earlier canonical read, even under the old SQL snapshot.
       const result = await db.execute(sql`
         UPDATE ${collabState}
         SET epoch = collab_state.epoch + 1,
@@ -211,6 +219,11 @@ export async function prepareCollabBaseline(
             updated_at = now()
         WHERE post_id = ${postId}::uuid
           AND epoch = ${state.epoch}
+          AND materialized_revision IS NOT DISTINCT FROM ${state.materializedRevision}
+          AND EXISTS (
+            SELECT 1 FROM ${posts}
+            WHERE id = ${postId}::uuid AND revision = ${revision}
+          )
           AND (
             baseline_update IS NULL
             OR baseline_revision IS NULL
@@ -249,48 +262,48 @@ export async function appendCollabUpdate(
   updateBase64: string,
   clientEpoch: number,
   audit?: AuditEntry,
+  expectedRevision?: number,
+  change?: { expectedVersion?: number; changes: AgentTextChange[]; revert?: { id: string; userId: string } },
 ): Promise<{ seq: number } | { retired: true }> {
   if (!db) throw new Error("collab needs a database");
-  const result = audit
-    ? await db.execute(
-        (() => {
-          const values = auditValues(audit);
-          return sql`
-            WITH appended AS (
-              INSERT INTO ${collabUpdates} (post_id, "update", epoch)
-              SELECT ${postId}::uuid, ${updateBase64}, ${clientEpoch}::int
-              WHERE ${clientEpoch}::int = (
-                SELECT epoch FROM ${collabState}
-                WHERE post_id = ${postId}::uuid
-                  AND baseline_update IS NOT NULL
-                  AND baseline_revision IS NOT NULL
-              )
-              RETURNING seq
-            ), audited AS (
-              INSERT INTO ${actionAudit}
-                (actor_user_id, actor_type, action_name, target_type,
-                 target_id, input_summary, output_summary)
-              SELECT ${values.actorUserId}::uuid, ${values.actorType},
-                     ${values.actionName}, ${values.targetType},
-                     ${values.targetId}, ${values.inputSummary},
-                     ${values.outputSummary}
-              FROM appended
-            )
-            SELECT seq FROM appended
-          `;
-        })(),
-      )
-    : await db.execute(sql`
-        INSERT INTO ${collabUpdates} (post_id, "update", epoch)
-        SELECT ${postId}::uuid, ${updateBase64}, ${clientEpoch}::int
-        WHERE ${clientEpoch}::int = (
-          SELECT epoch FROM ${collabState}
-          WHERE post_id = ${postId}::uuid
-            AND baseline_update IS NOT NULL
-            AND baseline_revision IS NOT NULL
-        )
-        RETURNING seq
-      `);
+  const values = audit ? auditValues(audit) : null;
+  // One statement: the fence bumps the generation's mutation counter (and,
+  // when asked, checks the post revision and the caller's expected counter),
+  // the append rides on the fenced row, and the audit and agent-change rows
+  // ride on the append. No row from `fenced` means retired or stale.
+  const result = await db.execute(sql`
+    WITH fenced AS (
+      UPDATE ${collabState} SET mutation_version = mutation_version + 1
+      WHERE post_id = ${postId}::uuid AND epoch = ${clientEpoch}::int
+        AND baseline_update IS NOT NULL AND baseline_revision IS NOT NULL
+        ${change?.expectedVersion === undefined ? sql`` : sql`AND mutation_version = ${change.expectedVersion}`}
+        ${expectedRevision === undefined ? sql`` : sql`
+          AND EXISTS (
+            SELECT id FROM ${posts}
+            WHERE id = ${postId}::uuid AND revision = ${expectedRevision}
+              AND deleted_at IS NULL
+            FOR UPDATE
+          )
+        `}
+      RETURNING post_id
+    ), appended AS (
+      INSERT INTO ${collabUpdates} (post_id, "update", epoch)
+      SELECT post_id, ${updateBase64}, ${clientEpoch}::int FROM fenced
+      RETURNING seq
+    ), audited AS (${values ? sql`
+      INSERT INTO ${actionAudit}
+        (actor_user_id, actor_type, action_name, target_type, target_id, input_summary, output_summary)
+      SELECT ${values.actorUserId}::uuid, ${values.actorType}, ${values.actionName},
+        ${values.targetType}, ${values.targetId}, ${values.inputSummary}, ${values.outputSummary}
+      FROM appended` : sql`SELECT 1`}
+    ), agent_change AS (${agentChangeCte({
+      source: "appended", postId: sql`${postId}::uuid`,
+      revision: sql`(SELECT revision FROM ${posts} WHERE id = ${postId}::uuid)`,
+      changes: change?.changes ?? [], revert: change?.revert,
+      epoch: clientEpoch, seq: sql`appended.seq`,
+    })})
+    SELECT seq FROM appended
+  `);
   // A row means the fence matched and the append landed. `seq` is a bigserial,
   // which neon-http returns as a string, so coerce rather than type-check.
   const raw = (result.rows[0] as { seq?: number | string } | undefined)?.seq;
@@ -365,9 +378,12 @@ function base64ToUpdate(b64: string): Uint8Array {
 
 async function loadCurrentCollabDocument(
   postId: string,
-): Promise<{ document: Y.Doc; epoch: number } | null> {
+): Promise<{ document: Y.Doc; epoch: number; mutationVersion: number } | null> {
   const baseline = await prepareCollabBaseline(postId);
   if (!baseline) return null;
+  const [state] = await db!.select({ mutationVersion: collabState.mutationVersion })
+    .from(collabState).where(and(eq(collabState.postId, postId), eq(collabState.epoch, baseline.epoch))).limit(1);
+  if (!state) return null;
   const rows = await db!
     .select({ update: collabUpdates.update })
     .from(collabUpdates)
@@ -382,7 +398,7 @@ async function loadCurrentCollabDocument(
   try {
     Y.applyUpdate(document, base64ToUpdate(baseline.update));
     for (const row of rows) Y.applyUpdate(document, base64ToUpdate(row.update));
-    return { document, epoch: baseline.epoch };
+    return { document, epoch: baseline.epoch, mutationVersion: state.mutationVersion };
   } catch {
     document.destroy();
     return null;
@@ -398,6 +414,7 @@ export async function applyLiveDocumentMutation(
   postId: string,
   mutation: DocumentMutation,
   audit?: AuditEntry,
+  revert?: { id: string; userId: string },
 ): Promise<{
   snapshot: DocumentSnapshot;
   epoch: number;
@@ -410,6 +427,22 @@ export async function applyLiveDocumentMutation(
     const loaded = await loadCurrentCollabDocument(postId);
     if (!loaded) return null;
     try {
+      const selection = mutation.textRange?.selectionEnvelope;
+      if (selection) {
+        if (!audit) throw new Error("A guarded selection mutation requires an audit entry.");
+        const context = await getPostStoreContext(postId);
+        if (!context) throw new Error(SELECTION_STALE_ERROR);
+        const content = documentSnapshotFromYDoc(loaded.document).content;
+        const range = mutation.textRange!;
+        await validateSelectionEditEnvelope(selection, postId, {
+          revision: context.post.revision, title: content.title,
+          excerpt: content.subtitle, body: content.body,
+        }, {
+          field: range.field === "subtitle" ? "excerpt" : range.field,
+          start: range.start, end: range.end, text: range.expectedText,
+        });
+      }
+      const beforeSnapshot = documentSnapshotFromYDoc(loaded.document);
       const before = Y.encodeStateVector(loaded.document);
       const applied = applyDocumentMutation(
         loaded.document,
@@ -435,8 +468,17 @@ export async function applyLiveDocumentMutation(
         Buffer.from(update).toString("base64"),
         loaded.epoch,
         audit,
+        selection?.revision,
+        {
+          expectedVersion: loaded.mutationVersion,
+          changes: agentTextChanges(beforeSnapshot, documentSnapshotFromYDoc(loaded.document)),
+          revert,
+        },
       );
-      if ("retired" in appended) continue;
+      if ("retired" in appended) {
+        if (selection) throw new Error(SELECTION_STALE_ERROR);
+        continue;
+      }
       return {
         snapshot: documentSnapshotFromYDoc(loaded.document),
         epoch: loaded.epoch,
@@ -457,19 +499,37 @@ export async function applyLiveDocumentMutation(
  * outbox participate in the merge. Yjs makes applying the same update twice
  * harmless, so a state already present in the relay does not duplicate text.
  */
+export class CollabEpochConflictError extends Error {
+  constructor() {
+    super("This document generation is no longer current");
+    this.name = "CollabEpochConflictError";
+  }
+}
+
 export async function materializeCollabDocument(
   postId: string,
   currentStateBase64?: string,
+  expectedEpoch?: number,
 ): Promise<DocumentSnapshot | null> {
+  // Server-only reconstruction has no supplied state. Every client state,
+  // including an empty/invalid encoding, must carry a learned generation.
+  if (currentStateBase64 !== undefined &&
+      (!Number.isSafeInteger(expectedEpoch) || Number(expectedEpoch) < 0)) {
+    throw new CollabEpochConflictError();
+  }
   if (!db) return null;
   const loaded = await loadCurrentCollabDocument(postId);
   if (!loaded) return null;
   try {
+    if (currentStateBase64 !== undefined && loaded.epoch !== expectedEpoch) {
+      throw new CollabEpochConflictError();
+    }
     if (currentStateBase64) {
       Y.applyUpdate(loaded.document, base64ToUpdate(currentStateBase64));
     }
     return documentSnapshotFromYDoc(loaded.document);
-  } catch {
+  } catch (error) {
+    if (error instanceof CollabEpochConflictError) throw error;
     return null;
   } finally {
     loaded.document.destroy();
@@ -526,6 +586,9 @@ export async function maybeCompactCollab(postId: string): Promise<void> {
 }
 
 export type PresenceEntry = {
+  /** Internal attribution, never returned by activePresence. */
+  actorUserId?: string;
+  role?: "editor" | "viewer";
   clientId: string;
   userName: string;
   color: string;
@@ -541,6 +604,7 @@ export type AgentSelectionState = {
 };
 
 type PresenceAwarenessUser = {
+  role?: "editor" | "viewer";
   participantType?: "person" | "agent";
   provider?: string;
 };
@@ -572,7 +636,7 @@ function awarenessIdentity(
 ): PresenceAwarenessUser {
   for (const state of awarenessStates(encoded)) {
     const user = state.user as PresenceAwarenessUser | undefined;
-    if (user?.participantType || user?.provider) return user;
+    if (user?.participantType || user?.provider || user?.role) return user;
   }
   return {};
 }
@@ -757,6 +821,7 @@ function dedupePresenceRows(
         awareness,
         participantType: identity.participantType,
         provider: identity.provider,
+        role: identity.role,
       };
     });
 }
@@ -765,19 +830,24 @@ function dedupePresenceRows(
 export async function upsertPresence(
   postId: string,
   entry: PresenceEntry,
+  audit: AuditEntry = {
+    actorUserId: entry.actorUserId,
+    actorType: entry.clientId.startsWith("agent-") ? "external_agent" : "human",
+    actionName: "collab.presence.update",
+    targetType: "item",
+    targetId: postId,
+  },
 ): Promise<PresenceEntry[]> {
   if (!db) return [];
-  await db
-    .insert(collabPresence)
-    .values({
+  await executeAtomicBatch((tx) => [
+    tx.insert(collabPresence).values({
       postId,
       clientId: entry.clientId,
       userName: entry.userName,
       color: entry.color,
       awareness: entry.awareness,
       updatedAt: new Date(),
-    })
-    .onConflictDoUpdate({
+    }).onConflictDoUpdate({
       target: [collabPresence.postId, collabPresence.clientId],
       set: {
         userName: entry.userName,
@@ -785,18 +855,14 @@ export async function upsertPresence(
         awareness: entry.awareness,
         updatedAt: new Date(),
       },
-    });
-  // Opportunistic cleanup: a tab that closed without a clean leave leaves a
-  // stale row. Drop rows for this post well past the active window so the
-  // table never accumulates ghosts.
-  await db
-    .delete(collabPresence)
-    .where(
-      and(
-        eq(collabPresence.postId, postId),
-        lt(collabPresence.updatedAt, new Date(Date.now() - PRESENCE_STALE_MS * 4)),
-      ),
-    );
+    }),
+    // Pruning is part of the same audited heartbeat transaction.
+    tx.delete(collabPresence).where(and(
+      eq(collabPresence.postId, postId),
+      lt(collabPresence.updatedAt, new Date(Date.now() - PRESENCE_STALE_MS * 4)),
+    )),
+    auditInsertQuery(audit, tx),
+  ]);
   return activePresence(postId);
 }
 
@@ -814,7 +880,7 @@ export async function hasActiveCoEditors(
   // "Is anyone ELSE live here." A caller that publishes its own presence
   // before it writes must not count itself, or every agent write looks
   // contended with itself.
-  return present.some((entry) => entry.clientId !== exceptClientId);
+  return present.some((entry) => entry.clientId !== exceptClientId && entry.role !== "viewer");
 }
 
 export async function activePresence(postId: string): Promise<PresenceEntry[]> {
@@ -835,20 +901,27 @@ export async function activePresence(postId: string): Promise<PresenceEntry[]> {
         gt(collabPresence.updatedAt, cutoff),
       ),
     );
-  return dedupePresenceRows(rows);
+  return dedupePresenceRows(rows.filter((row) =>
+    row.clientId.startsWith("p-") || row.clientId.startsWith("agent-"),
+  ));
 }
 
 export async function removePresence(
   postId: string,
   clientId: string,
+  audit: AuditEntry = {
+    actorType: clientId.startsWith("agent-") ? "external_agent" : "human",
+    actionName: "collab.presence.leave",
+    targetType: "item",
+    targetId: postId,
+  },
 ): Promise<void> {
   if (!db) return;
-  await db
-    .delete(collabPresence)
-    .where(
-      and(
-        eq(collabPresence.postId, postId),
-        eq(collabPresence.clientId, clientId),
-      ),
-    );
+  await executeAtomicBatch((tx) => [
+    tx.delete(collabPresence).where(and(
+      eq(collabPresence.postId, postId),
+      eq(collabPresence.clientId, clientId),
+    )),
+    auditInsertQuery(audit, tx),
+  ]);
 }

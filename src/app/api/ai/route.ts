@@ -5,6 +5,15 @@
 // tool set still excludes confirmation-gated destructive/sharing/publish tools
 // until an interactive confirmation flow is wired for the web path.
 
+import {
+  assertSelectionMatches,
+  validateSelectionEnvelope,
+  SELECTION_INVALID_ERROR,
+  SELECTION_STALE_ERROR,
+  SELECTION_BUDGET_ERROR,
+  MAX_SELECTION_CHARS,
+  type SelectionEnvelope,
+} from "@/lib/ai/selection-envelope";
 import { generateText, stepCountIs, streamText } from "ai";
 import type { ModelMessage, UserContent } from "ai";
 import { getCurrentUser } from "@/lib/session";
@@ -147,12 +156,14 @@ function coerceMessages(value: unknown): ModelMessage[] {
   return messages.slice(-MAX_HISTORY);
 }
 
+
 type AssistantViewContext = {
   level?: unknown;
   folderPath?: unknown;
   postId?: unknown;
   itemTitle?: unknown;
   selection?: unknown;
+  selectionEnvelope?: SelectionEnvelope;
   itemPreview?: unknown;
   relatedItems?: unknown;
   attachments?: unknown;
@@ -292,6 +303,7 @@ type AssistantStreamEvent =
       workspaceCalls: CloudAssistantWorkspaceCall[];
       writeProposals?: CloudAssistantWriteProposal[];
       contextItems?: RecentWorkspaceContextItem[];
+      selectionEnvelope?: SelectionEnvelope;
     }
   | {
       type: "error";
@@ -329,6 +341,7 @@ function assistantStreamResponse(
     workspaceCalls,
     writeProposals,
     contextItems,
+    selectionEnvelope,
     signal,
   }: {
     provider: string;
@@ -338,6 +351,7 @@ function assistantStreamResponse(
     workspaceCalls: CloudAssistantWorkspaceCall[];
     writeProposals: CloudAssistantWriteProposal[];
     contextItems: RecentWorkspaceContextItem[];
+    selectionEnvelope?: SelectionEnvelope;
     signal: AbortSignal;
   },
 ): Response {
@@ -428,6 +442,7 @@ function assistantStreamResponse(
               workspaceCalls,
               ...(writeProposals.length > 0 ? { writeProposals } : {}),
               ...(contextItems.length > 0 ? { contextItems } : {}),
+            ...(selectionEnvelope ? { selectionEnvelope } : {}),
             });
           }
         }
@@ -447,6 +462,7 @@ function assistantStreamResponse(
             workspaceCalls,
             ...(writeProposals.length > 0 ? { writeProposals } : {}),
             ...(contextItems.length > 0 ? { contextItems } : {}),
+            ...(selectionEnvelope ? { selectionEnvelope } : {}),
           });
         }
       } catch {
@@ -690,10 +706,10 @@ function buildSystem(
       fencedUntrusted("UNTRUSTED_ITEM_TITLE", view.itemTitle.slice(0, 200)),
     );
   }
-  if (typeof view.selection === "string" && view.selection.trim()) {
+  if (view.selectionEnvelope) {
     parts.push(
-      "The writer has selected the following untrusted workspace data:",
-      fencedUntrusted("UNTRUSTED_SELECTION", view.selection.slice(0, 4000)),
+      "The writer selected this complete range of untrusted workspace data (offsets are UTF-16):",
+      fencedUntrusted("UNTRUSTED_SELECTION", JSON.stringify(view.selectionEnvelope)),
     );
   }
   if (typeof view.itemPreview === "string" && view.itemPreview.trim()) {
@@ -807,6 +823,33 @@ export async function POST(request: Request) {
     return Response.json(
       { error: "This AI connection is not available for this workspace." },
       { status: 403, headers: NO_STORE_HEADERS },
+    );
+  }
+  let selectionEnvelope: SelectionEnvelope | undefined;
+  const selectionView = viewContext(body.context);
+  try {
+    if (selectionView.selection !== undefined) {
+      throw new Error(typeof selectionView.selection === "string" &&
+        selectionView.selection.length > MAX_SELECTION_CHARS
+        ? SELECTION_BUDGET_ERROR : SELECTION_INVALID_ERROR);
+    }
+    if (selectionView.selectionEnvelope !== undefined) {
+      selectionEnvelope = await validateSelectionEnvelope(selectionView.selectionEnvelope);
+      if (selectionEnvelope.itemId !== selectionView.postId) throw new Error(SELECTION_INVALID_ERROR);
+      // getPostById is scoped to the caller's owned workspace. No foreign
+      // selection text is delivered to a provider when access cannot be proved.
+      const post = await getPostById(workspace.handle, selectionEnvelope.itemId);
+      if (!post?.id) throw new Error(SELECTION_INVALID_ERROR);
+      assertSelectionMatches(selectionEnvelope, post.id, post);
+      body.context = { ...selectionView, selectionEnvelope };
+    }
+  } catch (error) {
+    const message = error instanceof Error && [
+      SELECTION_INVALID_ERROR, SELECTION_STALE_ERROR, SELECTION_BUDGET_ERROR,
+    ].includes(error.message) ? error.message : SELECTION_INVALID_ERROR;
+    return Response.json(
+      { error: message },
+      { status: 400, headers: NO_STORE_HEADERS },
     );
   }
   const config = await getWorkspaceAiConfigForOwner(user.sub);
@@ -984,6 +1027,7 @@ export async function POST(request: Request) {
       workspaceCalls,
       writeProposals,
       contextItems,
+      selectionEnvelope,
       signal: request.signal,
     });
   }
@@ -994,6 +1038,7 @@ export async function POST(request: Request) {
     });
     return Response.json({
       text: result.text,
+      ...(selectionEnvelope ? { selectionEnvelope } : {}),
       provider,
       model: selectedModel,
       // What the assistant did on machines this workspace does not control.

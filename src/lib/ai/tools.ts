@@ -1,4 +1,6 @@
+import { selectionEnvelopeSchema } from "@/lib/ai/selection-envelope";
 import { z } from "zod";
+import { itemTypeSaveScopeSchema } from "@/lib/presentation/item-type-update";
 import { itemTypeBlueprintSchema } from "@/lib/presentation/item-type-blueprint";
 
 type WorkspaceToolMutability = "read" | "write";
@@ -353,6 +355,7 @@ const updateItemInput = z
         end: z.number().int().min(0).max(1_000_000),
         expected_text: z.string().max(1_000_000),
         replacement_text: z.string().max(1_000_000),
+        selection_envelope: selectionEnvelopeSchema.optional(),
       })
       .strict()
       .optional()
@@ -646,7 +649,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     description:
       "Change an item type that already exists, by editing the blueprint it was built from. Use this when someone wants their existing kind of thing to be different: another field, a different folder view, a bigger title, a new accent. list_document_templates returns the blueprint and the version for every type that can be changed this way.\n\n" +
       "Send the WHOLE blueprint, not only the part you changed: it replaces the old one. Send base_version exactly as list_document_templates reported it, so an edit made against a stale copy is refused instead of quietly overwriting someone else's.\n\n" +
-      "The old version is kept and the items already using it keep rendering as they were. By default the new version is applied to every folder using this type and the items in them are restyled, which is what someone asking for their look to change means.\n\n" +
+      "The old version is kept and the items already using it keep rendering as they were. Use save_scope to name the selected folder or the exact listed usages, or to save only a version. Legacy calls without save_scope apply to folders on the base version. Only items pinned to that exact base reference are restyled. Existing field ids, storage kinds and enum values must stay compatible; change enum labels to rename options.\n\n" +
       "Built-in types cannot be changed. Neither can a look that was saved from a document, imported, or duplicated: those were assembled rather than designed, so they have no blueprint to edit and list_document_templates will not list them as changeable.",
     inputSchema: z
       .object({
@@ -666,6 +669,9 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
             "The version you read before editing. If the type has moved on since, the change is refused rather than applied on top.",
           ),
         blueprint: itemTypeBlueprintSchema,
+        save_scope: itemTypeSaveScopeSchema.optional().describe(
+          "Explicit save scope, overriding apply: version only, one selected folder, or the exact listed usage paths approved for this update. Only items pinned to base_version are restyled. Enum option values are stable ids: rename labels, not values.",
+        ),
         apply: z
           .boolean()
           .default(true)
@@ -754,6 +760,18 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
         if_match_hash: ifMatchHash,
       })
       .strict(),
+    mutability: "write",
+    idempotent: true,
+  }),
+  list_agent_changes: defineTool("list_agent_changes", {
+    title: "Review agent changes",
+    description: "List durable agent text changes for an item. Only item editors can read removed text. Returns up to 50 records, newest first.",
+    inputSchema: z.object({ id, before: z.object({ created_at: z.iso.datetime(), id: z.uuid() }).strict().optional() }).strict(),
+  }),
+  revert_agent_change: defineTool("revert_agent_change", {
+    title: "Revert agent change",
+    description: "Undo one agent text change, preserving unrelated later edits. Overlapping changes return a comparison without changing the document. Does not alter human undo history or visibility.",
+    inputSchema: z.object({ id, change_id: z.uuid() }).strict(),
     mutability: "write",
     idempotent: true,
   }),

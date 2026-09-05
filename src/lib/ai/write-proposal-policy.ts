@@ -25,32 +25,16 @@ export class WriteProposalValidationError extends Error {
 }
 
 /**
- * The proposal surface is intentionally narrower than the full command
- * registry. A preview is not permission to expose a URL chosen by the model or
- * to stage confirmation-gated, audience-changing, sharing, publishing, or
- * Trash work. Content replacement and moves may be staged because they remain
- * inert until the owner reviews and approves the exact validated arguments.
+ * Confirmation-gated commands are admitted individually with an owner preview.
+ * Item, audience and Trash previews use the established service; folder, asset
+ * removal and look retirement freeze their target state separately. URL-fetch
+ * tools remain excluded: approving a proposal does not make a fetch safe.
  */
-/**
- * Confirmation-gated commands a proposal may carry.
- *
- * The rule used to be that nothing confirmation-gated could be staged, which
- * left the browser assistant unable to delete anything at all. The reasoning
- * was sound and the conclusion too broad: a proposal IS a confirmation, as
- * long as the owner is shown what will actually happen rather than a list of
- * opaque ids, and as long as the world has not moved underneath it by the time
- * they approve.
- *
- * So this is a per-command decision, not a lifted filter. A command earns a
- * place here by having a preview that resolves ids into things a person
- * recognises, and a fingerprint that makes approval fail closed on drift.
- *
- * Deliberately still absent: publishing and access changes, which alter who
- * can see something and need their own preview design; restore, which can
- * return an item to public; and the two commands that fetch a URL the model
- * chose, where approval does not make the fetch safe.
- */
-const PREVIEWABLE_DESTRUCTIVE: readonly WorkspaceToolName[] = ["delete_items", "set_item_status", "restore_item", "empty_trash", "set_access", "revoke_access"];
+const PREVIEWABLE_DESTRUCTIVE: readonly WorkspaceToolName[] = ["delete_item", "delete_items", "set_item_status", "restore_item", "empty_trash", "set_access", "revoke_access"];
+
+export const STATE_PREVIEW_TOOLS: readonly WorkspaceToolName[] = [
+  "delete_folder", "restore_folder", "remove_item_asset", "retire_document_template",
+];
 
 export function isProposableWorkspaceWrite(
   name: WorkspaceToolName,
@@ -59,7 +43,7 @@ export function isProposableWorkspaceWrite(
   if (definition.mutability !== "write") return false;
   if (definition.annotations.openWorldHint) return false;
   if (definition.confirmation === "none") return true;
-  return PREVIEWABLE_DESTRUCTIVE.includes(name);
+  return PREVIEWABLE_DESTRUCTIVE.includes(name) || STATE_PREVIEW_TOOLS.includes(name);
 }
 
 /** Whether staging this command must freeze a preview of what it will do. */

@@ -9,15 +9,19 @@ import {
 } from "react";
 import type { FormEvent, MouseEvent as ReactMouseEvent } from "react";
 import {
+  getItemAccessSummaryAction,
+  revokeItemAccessLinkAction,
   listScopeSharesAction,
   revokeScopeShareAction,
   shareScopeAction,
   updateScopeShareRoleAction,
 } from "@/app/editor/actions";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
+import type { ItemAccessSummary } from "@/lib/store";
 import type { ScopeShare, ScopeShareRole } from "@/lib/shares";
 import type { CollaboratorScopeType } from "@/lib/permissions";
 import styles from "./ShareDialog.module.css";
+import { GeneralItemAccess, ItemAccessDetails } from "./ItemAccessDetails";
 
 type ShareDialogProps = {
   handle: string;
@@ -45,6 +49,7 @@ function defaultRole(scopeType: CollaboratorScopeType): ScopeShareRole {
 
 function roleLabel(role: ScopeShareRole): string {
   if (role === "editor") return "Can edit";
+  if (role === "commenter") return "Can comment";
   if (role === "viewer") return "Can view";
   if (role === "member") return "Member";
   return "Guest";
@@ -53,7 +58,7 @@ function roleLabel(role: ScopeShareRole): string {
 function roleOptions(scopeType: CollaboratorScopeType) {
   return scopeType === "workspace"
     ? (["member", "guest"] as const)
-    : (["editor", "viewer"] as const);
+    : (["editor", "commenter", "viewer"] as const);
 }
 
 function scopeCopy(scopeType: CollaboratorScopeType): string {
@@ -71,7 +76,15 @@ function shareUrlFromLocation(): string {
   return url.toString();
 }
 
-export function ShareDialog({
+export function ShareDialog(props: ShareDialogProps) {
+  if (!props.open) return null;
+  return <ShareDialogContent
+    key={`${props.handle}:${props.scopeType ?? "item"}:${props.scopeId ?? props.postId}`}
+    {...props}
+  />;
+}
+
+function ShareDialogContent({
   handle,
   postId,
   postTitle,
@@ -86,11 +99,17 @@ export function ShareDialog({
   const resolvedSubtitle = subtitle ?? postTitle ?? scopeCopy(scopeType);
   const titleId = useId();
   const emailId = useId();
+  const dialogRef = useRef<HTMLElement>(null);
+  const activeRef = useRef(true);
+  const requestRef = useRef(0);
+  const [summary, setSummary] = useState<ItemAccessSummary | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [managedScope, setManagedScope] = useState<ItemAccessSummary["inherited"][number] | null>(null);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [shares, setShares] = useState<ScopeShare[]>([]);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<ScopeShareRole>(() => defaultRole(scopeType));
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [inviting, setInviting] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -98,52 +117,53 @@ export function ShareDialog({
   const [error, setError] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
 
+  const reload = useCallback(async () => {
+    const request = ++requestRef.current;
+    await Promise.resolve();
+    const current = () => activeRef.current && requestRef.current === request;
+    if (!current()) return null;
+    setLoading(true);
+    setSummary(null);
+    setError(null);
+    try {
+      if (scopeType === "item") {
+        const next = await getItemAccessSummaryAction(handle, resolvedScopeId);
+        if (current()) { setSummary(next); setShares(next.direct); }
+        return current() ? next : null;
+      }
+      const next = await listScopeSharesAction(handle, scopeType, resolvedScopeId);
+      if (current()) setShares(next);
+      return null;
+    } catch {
+      if (current()) {
+        setShares([]);
+        setError("Access summary unavailable. Try again before changing access.");
+      }
+      return null;
+    } finally {
+      if (current()) setLoading(false);
+    }
+  }, [handle, resolvedScopeId, scopeType]);
+
   useEffect(() => {
+    activeRef.current = true;
+    queueMicrotask(() => { if (activeRef.current) void reload(); });
     return () => {
+      activeRef.current = false;
+      requestRef.current += 1;
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     };
-  }, []);
+  }, [reload]);
 
   useEffect(() => {
-    if (!open) return;
-    if (!resolvedScopeId) return;
-
-    let active = true;
-    async function loadShares() {
-      // The dialog can mount during hydration. Start the state transition in
-      // the next microtask so opening it does not cascade another render from
-      // inside the effect itself.
-      await Promise.resolve();
-      if (!active) return;
-      setLoading(true);
-      setError(null);
-      setConfirmingId(null);
-      setRole(defaultRole(scopeType));
-
-      try {
-        const nextShares = await listScopeSharesAction(
-          handle,
-          scopeType,
-          resolvedScopeId,
-        );
-        if (active) setShares(nextShares);
-      } catch (loadError) {
-        if (active) {
-          setError(errorMessage(loadError, "Could not load sharing."));
-          setShares([]);
-        }
-      } finally {
-        if (active) setLoading(false);
-      }
-    }
-    void loadShares();
-
+    const previous = document.activeElement;
+    dialogRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
     return () => {
-      active = false;
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
     };
-  }, [handle, open, resolvedScopeId, scopeType]);
+  }, [managedScope]);
 
-  useEscapeLayer(open, "Share dialog", onClose);
+  useEscapeLayer(open && !managedScope, "Share dialog", onClose);
 
   const closeFromBackdrop = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -152,119 +172,113 @@ export function ShareDialog({
     [onClose],
   );
 
-  const invite = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      if (inviting) return;
+  const busy = inviting || Boolean(revokingId) || Boolean(updatingId);
+  const canChange = !loading && !error && !busy && (scopeType !== "item" || Boolean(summary));
 
-      const nextEmail = email.trim().toLowerCase();
-      if (!nextEmail) return;
+  const invite = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const nextEmail = email.trim().toLowerCase();
+    if (!canChange || !nextEmail) return;
+    setInviting(true);
+    setNotice(null);
+    setConfirmingId(null);
+    setSummary(null);
+    try {
+      const result = await shareScopeAction(handle, scopeType, resolvedScopeId, nextEmail, role);
+      if (!activeRef.current) return;
+      setNotice(`Access granted to ${nextEmail}. ${result.emailStatus === "sent"
+        ? "Email sent. Delivery to the inbox is not confirmed."
+        : result.emailStatus === "failed"
+          ? "Email failed. Retry the invitation to send it again."
+          : "Email not sent. Share the link with them directly."}`);
+      if (result.emailStatus !== "failed") setEmail("");
+      await reload();
+    } catch (inviteError) {
+      if (activeRef.current) {
+        await reload();
+        setError(errorMessage(inviteError, "Could not confirm access. Refresh before retrying."));
+      }
+    } finally {
+      if (activeRef.current) setInviting(false);
+    }
+  };
 
-      const previousShares = shares;
-      const optimisticShare: ScopeShare = {
-        id: `optimistic-${nextEmail}`,
-        email: nextEmail,
-        role,
-        accepted: false,
-        createdAt: new Date().toISOString(),
-      };
-
-      setInviting(true);
-      setError(null);
+  const revoke = async (share: ScopeShare) => {
+    if (!canChange) return;
+    setRevokingId(share.id);
+    setNotice(null);
+    setSummary(null);
+    try {
+      await revokeScopeShareAction(handle, scopeType, resolvedScopeId, share.id);
+      if (!activeRef.current) return;
       setConfirmingId(null);
-      setShares((current) => {
-        const existingIndex = current.findIndex(
-          (share) => share.email.toLowerCase() === nextEmail,
-        );
-        if (existingIndex === -1) return [...current, optimisticShare];
-
-        return current.map((share, index) =>
-          index === existingIndex ? { ...share, role } : share,
-        );
-      });
-
-      try {
-        const nextShares = await shareScopeAction(
-          handle,
-          scopeType,
-          resolvedScopeId,
-          nextEmail,
-          role,
-        );
-        setShares(nextShares);
-        setEmail("");
-      } catch (inviteError) {
-        setShares(previousShares);
-        setError(errorMessage(inviteError, "Could not send invite."));
-      } finally {
-        setInviting(false);
+      const next = await reload();
+      if (!activeRef.current) return;
+      const remaining = next?.inherited.filter((grant) => grant.email === share.email) ?? [];
+      setNotice(`Direct access removed for ${share.email}. ${remaining.length
+        ? `Access remains via ${remaining.map((grant) => grant.scopeName).join(", ")}. ` : ""}${
+        next?.visibility !== "private" && next
+          ? "Public or link access still remains."
+          : next ? "Other access is shown below." : "Review the current scope and item access before assuming access has ended."
+      }`);
+    } catch (revokeError) {
+      if (activeRef.current) {
+        await reload();
+        setError(errorMessage(revokeError, "Could not confirm removal. Refresh before retrying."));
       }
-    },
-    [email, handle, inviting, resolvedScopeId, role, scopeType, shares],
-  );
+    } finally {
+      if (activeRef.current) setRevokingId(null);
+    }
+  };
 
-  const revoke = useCallback(
-    async (share: ScopeShare) => {
-      if (revokingId || share.id.startsWith("optimistic-")) return;
-
-      const previousShares = shares;
-      setRevokingId(share.id);
-      setError(null);
-      setShares((current) => current.filter((item) => item.id !== share.id));
-
-      try {
-        const nextShares = await revokeScopeShareAction(
-          handle,
-          scopeType,
-          resolvedScopeId,
-          share.id,
-        );
-        setShares(nextShares);
-        setConfirmingId(null);
-      } catch (revokeError) {
-        setShares(previousShares);
-        setError(errorMessage(revokeError, "Could not revoke access."));
-      } finally {
-        setRevokingId(null);
+  const updateRole = async (share: ScopeShare, nextRole: ScopeShareRole) => {
+    if (!canChange) return;
+    setUpdatingId(share.id);
+    setNotice(null);
+    setSummary(null);
+    try {
+      await updateScopeShareRoleAction(handle, scopeType, resolvedScopeId, share.id, nextRole);
+      if (activeRef.current) await reload();
+    } catch (roleError) {
+      if (activeRef.current) {
+        await reload();
+        setError(errorMessage(roleError, "Could not confirm role. Refresh before retrying."));
       }
-    },
-    [handle, resolvedScopeId, revokingId, scopeType, shares],
-  );
+    } finally {
+      if (activeRef.current) setUpdatingId(null);
+    }
+  };
 
-  const updateRole = useCallback(
-    async (share: ScopeShare, nextRole: ScopeShareRole) => {
-      if (updatingId || share.id.startsWith("optimistic-")) return;
-      const previousShares = shares;
-      setUpdatingId(share.id);
-      setError(null);
-      setShares((current) =>
-        current.map((item) =>
-          item.id === share.id ? { ...item, role: nextRole } : item,
-        ),
-      );
-      try {
-        const nextShares = await updateScopeShareRoleAction(
-          handle,
-          scopeType,
-          resolvedScopeId,
-          share.id,
-          nextRole,
-        );
-        setShares(nextShares);
-      } catch (roleError) {
-        setShares(previousShares);
-        setError(errorMessage(roleError, "Could not change role."));
-      } finally {
-        setUpdatingId(null);
+  const revokeLink = async (linkId: string) => {
+    if (!canChange) return;
+    setRevokingId(linkId);
+    setNotice(null);
+    setSummary(null);
+    try {
+      await revokeItemAccessLinkAction(handle, resolvedScopeId, linkId);
+      if (!activeRef.current) return;
+      setConfirmingId(null);
+      const next = await reload();
+      if (activeRef.current) setNotice(`Link revoked. ${next?.visibility === "public"
+        ? "The page is still public."
+        : next?.visibility === "link" ? "Other link access still remains."
+        : "Named and inherited access are separate. Review the current access below."}`);
+    } catch (linkError) {
+      if (activeRef.current) {
+        await reload();
+        setError(errorMessage(linkError, "Could not confirm link revocation."));
       }
-    },
-    [handle, resolvedScopeId, scopeType, shares, updatingId],
-  );
+    } finally {
+      if (activeRef.current) setRevokingId(null);
+    }
+  };
 
   const copyLink = useCallback(async () => {
     setError(null);
     try {
-      const shareUrl = shareUrlFromLocation();
+      const shareUrl = scopeType === "item"
+        ? summary ? new URL(summary.pagePath, window.location.origin).toString() : ""
+        : shareUrlFromLocation();
       if (!navigator.clipboard || !shareUrl) {
         throw new Error("Clipboard is unavailable.");
       }
@@ -276,9 +290,17 @@ export function ShareDialog({
       setCopyState("idle");
       setError(errorMessage(copyError, "Could not copy link."));
     }
-  }, []);
+  }, [scopeType, summary]);
 
   if (!open || !resolvedScopeId) return null;
+
+  if (managedScope) return <ShareDialog
+    handle={handle} scopeType={managedScope.scopeType} scopeId={managedScope.scopeId}
+    subtitle={managedScope.scopeName} open onClose={() => {
+      setManagedScope(null);
+      void reload();
+    }}
+  />;
 
   const trimmedEmail = email.trim();
   const options = roleOptions(scopeType);
@@ -286,6 +308,20 @@ export function ShareDialog({
   return (
     <div className={`applecms ${styles.backdrop}`} onMouseDown={closeFromBackdrop}>
       <section
+        ref={dialogRef}
+        onKeyDown={(event) => {
+          if (event.key !== "Tab") return;
+          const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+            'button:not(:disabled), input:not(:disabled), select:not(:disabled), a[href]',
+          ));
+          const first = controls[0];
+          const last = controls[controls.length - 1];
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault(); last?.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault(); first?.focus();
+          }
+        }}
         className={styles.dialog}
         role="dialog"
         aria-modal="true"
@@ -320,13 +356,13 @@ export function ShareDialog({
             value={email}
             placeholder="name@example.com"
             autoComplete="email"
-            disabled={inviting}
+            disabled={!canChange}
             onChange={(event) => setEmail(event.currentTarget.value)}
           />
           <select
             className={styles.roleSelect}
             value={role}
-            disabled={inviting}
+            disabled={!canChange}
             aria-label="Invite role"
             onChange={(event) =>
               setRole(event.currentTarget.value as ScopeShareRole)
@@ -341,7 +377,7 @@ export function ShareDialog({
           <button
             className={classNames(styles.button, styles.primaryButton)}
             type="submit"
-            disabled={!trimmedEmail || inviting}
+            disabled={!trimmedEmail || !canChange}
           >
             {inviting ? "Inviting" : "Invite"}
           </button>
@@ -349,21 +385,33 @@ export function ShareDialog({
 
         {error && (
           <p className={styles.error} role="status">
-            {error}
+            {error} <button className={styles.inlineButton} type="button"
+              disabled={busy || loading} onClick={() => { void reload(); }}>Refresh access</button>
           </p>
         )}
 
+        {notice && <p className={styles.notice} role="status">{notice}</p>}
+
         <div className={styles.peopleSection}>
+          {summary?.owner && <div className={styles.shareRow}>
+            <div className={styles.personMain}>
+              <div className={styles.personEmail}>{summary.owner.name}</div>
+              <div className={styles.personState}>{summary.owner.email} · Workspace owner</div>
+            </div>
+            <span className={styles.roleChip}>Owner · Full access</span>
+          </div>}
           <div className={styles.sectionLabel}>People</div>
           {loading ? (
             <div className={styles.emptyState}>Loading people</div>
+          ) : error || (scopeType === "item" && !summary) ? (
+            <div className={styles.emptyState}>Access details unavailable</div>
           ) : shares.length === 0 ? (
-            <div className={styles.emptyState}>No one invited</div>
+            <div className={styles.emptyState}>No direct invitations</div>
           ) : (
             <ul className={styles.shareList}>
               {shares.map((share) => {
                 const confirming = confirmingId === share.id;
-                const pending = share.id.startsWith("optimistic-");
+                const pending = busy;
                 return (
                   <li
                     className={styles.shareRow}
@@ -376,16 +424,14 @@ export function ShareDialog({
                     <div className={styles.personMain}>
                       <div className={styles.personEmail}>{share.email}</div>
                       <div className={styles.personState}>
-                        {share.accepted ? "accepted" : "invited"}
+                        {share.accepted ? "Access granted · Direct invitation" : "Access granted · Sign in with this email"}
                       </div>
                     </div>
                     <select
                       className={styles.personRoleSelect}
                       value={share.role}
                       disabled={
-                        pending ||
-                        Boolean(revokingId) ||
-                        updatingId === share.id
+                        pending || !canChange
                       }
                       aria-label={`Role for ${share.email}`}
                       onChange={(event) => {
@@ -403,11 +449,11 @@ export function ShareDialog({
                     </select>
                     {confirming ? (
                       <div className={styles.confirmActions}>
-                        <span className={styles.confirmText}>Remove access?</span>
+                        <span className={styles.confirmText}>Remove direct access?</span>
                         <button
                           className={classNames(styles.inlineButton, styles.dangerButton)}
                           type="button"
-                          disabled={Boolean(revokingId)}
+                          disabled={!canChange}
                           onClick={() => {
                             void revoke(share);
                           }}
@@ -417,7 +463,7 @@ export function ShareDialog({
                         <button
                           className={styles.inlineButton}
                           type="button"
-                          disabled={Boolean(revokingId)}
+                          disabled={!canChange}
                           onClick={() => setConfirmingId(null)}
                         >
                           Cancel
@@ -427,7 +473,7 @@ export function ShareDialog({
                       <button
                         className={classNames(styles.inlineButton, styles.dangerButton)}
                         type="button"
-                        disabled={pending || Boolean(revokingId)}
+                        disabled={pending || !canChange}
                         onClick={() => setConfirmingId(share.id)}
                       >
                         Revoke
@@ -440,19 +486,25 @@ export function ShareDialog({
           )}
         </div>
 
+        {summary && <ItemAccessDetails summary={summary} canChange={canChange}
+          confirmingId={confirmingId} setConfirmingId={setConfirmingId}
+          setManagedScope={setManagedScope} revokeLink={revokeLink} />}
+
         <div className={styles.generalAccess}>
           <div>
             <div className={styles.generalTitle}>General access</div>
-            <div className={styles.generalCopy}>Only people invited</div>
+            {scopeType === "item" ? <GeneralItemAccess summary={summary} loading={loading || busy} />
+              : <div className={styles.generalCopy}>Direct invitations for this scope. Items may also have other grants or links.</div>}
           </div>
           <button
             className={classNames(styles.button, styles.secondaryButton)}
+            disabled={scopeType === "item" && !summary}
             type="button"
             onClick={() => {
               void copyLink();
             }}
           >
-            {copyState === "copied" ? "Copied" : "Copy link"}
+            {copyState === "copied" ? "Copied" : "Copy page link"}
           </button>
         </div>
       </section>

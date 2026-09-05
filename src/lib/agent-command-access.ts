@@ -33,6 +33,7 @@ const LOCAL_READS: readonly WorkspaceToolName[] = [
   "list_items",
   "list_trash",
   "list_comments",
+  "list_agent_changes",
   "list_responses",
   "list_access",
   "list_document_templates",
@@ -58,6 +59,7 @@ const LOCAL_READS: readonly WorkspaceToolName[] = [
 const LOCAL_WRITES: readonly WorkspaceToolName[] = [
   "create_item",
   "update_item",
+  "revert_agent_change",
   "append_to_item",
   "move_item",
   // Tagging and filing many at once. It changes how items are labelled and

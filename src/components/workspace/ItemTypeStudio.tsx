@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   createItemTypeAction,
   updateItemTypeAction,
+  readItemTypeUsagesAction,
 } from "@/app/editor/item-type-actions";
 import {
   DocumentCollectionRenderer,
@@ -24,6 +25,7 @@ import {
   type ItemTypeFieldBlueprint,
 } from "@/lib/presentation/item-type-blueprint";
 import { assessItemTypeQuality } from "@/lib/presentation/item-type-quality";
+import type { ItemTypeSaveScope } from "@/lib/presentation/item-type-update";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import {
   EMPTY_STUDIO_TIMELINE,
@@ -472,6 +474,18 @@ export function ItemTypeStudio({
   );
   const [folderPath, setFolderPath] = useState(initialFolderPath);
   const [applyToExisting, setApplyToExisting] = useState(true);
+  const [saveMode, setSaveMode] = useState<ItemTypeSaveScope["mode"]>(initialFolderPath ? "folder" : "version");
+  const [usages, setUsages] = useState<Array<{ path: string; version: number }> | null>(null);
+  const [saved, setSaved] = useState<Extract<Awaited<ReturnType<typeof updateItemTypeAction>>, { ok: true }> | null>(null);
+  const saveScope: ItemTypeSaveScope = saveMode === "folder"
+    ? { mode: "folder", folderPath }
+    : saveMode === "usages"
+      ? { mode: "usages", folderPaths: (usages ?? []).map((usage) => usage.path) }
+      : { mode: "version" };
+  const targetPaths = saveMode === "folder" ? (folderPath ? [folderPath] : [])
+    : saveMode === "usages" ? (usages ?? []).filter((usage) => usage.version === editing?.baseVersion).map((usage) => usage.path)
+    : [];
+
   const [previewMode, setPreviewMode] = useState<"item" | "folder">("item");
   const [previewContentMode, setPreviewContentMode] =
     useState<PreviewContentMode>("sample");
@@ -485,6 +499,18 @@ export function ItemTypeStudio({
   const [loadedPreviewDocuments, setLoadedPreviewDocuments] = useState<
     readonly ItemTypeStudioPreviewDocument[]
   >([]);
+
+  const editingTemplateId = editing?.templateId;
+  useEffect(() => {
+    if (!editingTemplateId) return;
+    let active = true;
+    void readItemTypeUsagesAction(handle, editingTemplateId).then((result) => {
+      if (!active) return;
+      if (result.ok) setUsages(result.usages);
+      else setError(result.error);
+    }).catch(() => { if (active) setError("Could not read the target folders."); });
+    return () => { active = false; };
+  }, [handle, editingTemplateId]);
 
   const revision = currentStudioRevision(timeline);
   const design = useMemo(
@@ -825,7 +851,11 @@ export function ItemTypeStudio({
   };
 
   const save = async () => {
-    if (!design || busy) return;
+    if (!design || busy || saved) return;
+    if (editing && ((saveMode === "folder" && !folderPath) || (saveMode === "usages" && !usages))) {
+      setError("Choose a folder or wait for the usage list before saving.");
+      return;
+    }
     setBusy("save");
     setError(null);
     try {
@@ -839,6 +869,7 @@ export function ItemTypeStudio({
             editing.baseVersion,
             design.blueprint,
             applyToExisting,
+            saveScope,
           )
         : await createItemTypeAction(
             handle,
@@ -847,12 +878,13 @@ export function ItemTypeStudio({
             applyToExisting,
           );
       if (!result.ok) throw new Error(result.error);
+      if ("applied" in result) setSaved(result);
       await refreshWorkspacePool(handle, blogId);
       router.refresh();
       onCreated?.(
         "folder" in result ? (result.folder?.path ?? null) : (result.applied[0]?.path ?? null),
       );
-      onClose();
+      if (!("applied" in result)) onClose();
     } catch (saveError) {
       setError(
         saveError instanceof Error
@@ -884,15 +916,15 @@ export function ItemTypeStudio({
           <button
             type="button"
             className={styles.doneButton}
-            disabled={Boolean(busy) || importantQualityFindings.length > 0}
+            disabled={!saved && (Boolean(busy) || importantQualityFindings.length > 0)}
             title={
               importantQualityFindings.length > 0
                 ? "Fix important preflight issues before saving"
                 : undefined
             }
-            onClick={() => void save()}
+            onClick={() => saved ? onClose() : void save()}
           >
-            {busy === "save" ? "Saving" : "Done"}
+            {saved ? "Close" : busy === "save" ? "Saving" : "Done"}
           </button>
         ) : (
           <button type="button" className={styles.iconButton} aria-label="Close" onClick={onClose}>
@@ -1118,22 +1150,51 @@ export function ItemTypeStudio({
             </div>
 
             <div className={styles.section}>
-              <label>
+              {editing ? (
+                <label>
+                  <span>Save scope</span>
+                  <select value={saveMode} disabled={Boolean(saved) || Boolean(busy)} onChange={(event) => setSaveMode(event.currentTarget.value as ItemTypeSaveScope["mode"])}>
+                    <option value="version">This version only</option>
+                    <option value="folder">The selected folder</option>
+                    <option value="usages" disabled={!usages}>All listed usages</option>
+                  </select>
+                </label>
+              ) : null}
+              {!editing || saveMode === "folder" ? <label>
                 <span>Use in folder</span>
-                <select value={folderPath} onChange={(event) => setFolderPath(event.currentTarget.value)}>
-                  <option value="">Save for later</option>
+                <select value={folderPath} disabled={Boolean(saved) || Boolean(busy)} onChange={(event) => setFolderPath(event.currentTarget.value)}>
+                  <option value="">{editing ? "Choose a folder" : "Save for later"}</option>
                   {folders.map((folder) => (
                     <option key={folder.id} value={folder.path}>{folder.name}</option>
                   ))}
                 </select>
-              </label>
-              {folderPath ? (
+              </label> : null}
+              {editing ? (
+                <div aria-label="Target folders" aria-live="polite">
+                  <p>{saveMode === "version" ? "Save a new version without changing any folder or item." : "Target folders:"}</p>
+                  {targetPaths.length ? <ul>{targetPaths.map((path) => <li key={path}>{path}</li>)}</ul> : saveMode !== "version" ? <p>No target folders selected.</p> : null}
+                  {saveMode === "usages" ? (usages ?? []).filter((usage) => usage.version !== editing.baseVersion).map((usage) => <p key={usage.path}>{usage.path}: kept on version {usage.version}.</p>) : null}
+                  {saveMode !== "version" ? <p>Only items using this type at version {editing.baseVersion} can be updated. Other item types and pinned versions stay as they are.</p> : null}
+                </div>
+              ) : null}
+              {(editing ? saveMode !== "version" : Boolean(folderPath)) ? (
                 <label className={styles.checkbox}>
-                  <input type="checkbox" checked={applyToExisting} onChange={(event) => setApplyToExisting(event.currentTarget.checked)} />
-                  <span>Update items already in this folder</span>
+                  <input type="checkbox" disabled={Boolean(saved) || Boolean(busy)} checked={applyToExisting} onChange={(event) => setApplyToExisting(event.currentTarget.checked)} />
+                  <span>{editing ? "Update matching items in the target folders" : "Update items already in this folder"}</span>
                 </label>
               ) : null}
             </div>
+
+            {saved ? (
+              <div className={styles.section} role="status" aria-label="Save result">
+                <p>Saved version {saved.itemType.version}.</p>
+                {!saved.applied.length ? <p>No folders were changed.</p> : null}
+                {saved.applied.map((entry) => <p key={entry.path}>{entry.path}: {entry.restyledItems} items updated, {entry.itemsLeft} left, {entry.itemsBeingEdited} being edited.</p>)}
+                {saved.skipped.map((entry) => <p key={entry.path}>{entry.path}: kept on version {entry.pinnedTo}.</p>)}
+                {saved.conflicted.map((entry) => <p key={entry.path}>{entry.path}: its look changed while saving, so it was left alone.</p>)}
+                {saved.applied.some((entry) => entry.itemsLeft > 0) ? <p>The update is incomplete. Items left keep their previous version.</p> : null}
+              </div>
+            ) : null}
 
             <div className={styles.conversation} aria-label="Design conversation">
               {timeline.revisions

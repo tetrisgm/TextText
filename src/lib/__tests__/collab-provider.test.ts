@@ -757,7 +757,7 @@ describe("CollabProvider startup and outbox", () => {
     provider.destroy();
   });
 
-  it("destroy() leaves presence but never drains the outbox over a beacon", async () => {
+  it("destroy() never sends an unauthenticated leave or drains the outbox", async () => {
     vi.useFakeTimers();
     const { beacons, base } = beaconHarness("beacon-destroy");
     const doc = new Y.Doc();
@@ -772,9 +772,165 @@ describe("CollabProvider startup and outbox", () => {
 
     provider.destroy();
     // A React unmount with the tab still open: the module-level outbox survives,
-    // so destroy must NOT flush edits (that is pagehide's job). It DOES announce
-    // a presence leave.
+    // so destroy must NOT flush edits (that is pagehide's job). This old-server
+    // fixture supplied no session, so there is no authorized presence to leave.
     expect(beacons.some((b) => b.url === base)).toBe(false);
-    expect(beacons.some((b) => b.url === `${base}/presence`)).toBe(true);
+    expect(beacons.some((b) => b.url === `${base}/presence`)).toBe(false);
   });
+});
+
+
+describe("epoch-fenced materialization", () => {
+  it("waits for a learned epoch and includes it on autosave and keepalive", async () => {
+    vi.useFakeTimers();
+    const initial = deferred<Response>();
+    const requests: RequestInit[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input, init) => {
+      if (String(input).endsWith("/materialize")) {
+        requests.push(init);
+        return jsonResponse({ ok: true });
+      }
+      if (String(input).endsWith("/presence")) return jsonResponse({ presence: [] });
+      return initial.promise;
+    }));
+    const doc = new Y.Doc();
+    const provider = providerFor(doc, "materialize-learned-epoch");
+    const start = provider.start();
+    expect(await provider.materialize("demo")).toBeNull();
+    expect(requests).toHaveLength(0);
+    initial.resolve(catchUpResponse({ epoch: 7 }));
+    await start;
+    doc.getText("local").insert(0, "Keep this");
+    await provider.materialize("demo");
+    await provider.materialize("demo", true);
+    expect(requests.map((r) => r.keepalive)).toEqual([false, true]);
+    for (const request of requests) {
+      const body = JSON.parse(String(request.body));
+      expect(body).toMatchObject({ handle: "demo", epoch: 7 });
+      const restored = new Y.Doc();
+      Y.applyUpdate(restored, Buffer.from(body.state, "base64"));
+      expect(restored.getText("local").toString()).toBe("Keep this");
+      restored.destroy();
+    }
+    provider.destroy();
+  });
+
+  it("retains the live state on a 409 and blocks queued or unload materialization", async () => {
+    vi.useFakeTimers();
+    const save = deferred<Response>();
+    let retained = "";
+    const doc = new Y.Doc();
+    const onRetired = vi.fn(() => { retained = doc.getText("local").toString(); });
+    const fetcher = vi.fn(async (input) => {
+      if (String(input).endsWith("/materialize")) return save.promise;
+      if (String(input).endsWith("/presence")) return jsonResponse({ presence: [] });
+      return catchUpResponse({ epoch: 0 });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const provider = new CollabProvider(doc, {
+      postId: "materialize-rejected", userName: "Ada", color: "#112233", canPush: true, onRetired,
+    });
+    await provider.start();
+    doc.getText("local").insert(0, "Rejected edit");
+    const pending = provider.materialize("demo");
+    doc.getText("local").insert(doc.getText("local").length, " plus newer edit");
+    save.resolve(jsonResponse({ retired: true }, 409));
+    expect((await pending)?.status).toBe(409);
+    expect(onRetired).toHaveBeenCalledOnce();
+    expect(retained).toBe("Rejected edit plus newer edit");
+    expect(provider.learnedEpoch).toBe(0);
+    expect(provider.materializationBlocked).toBe(true);
+    expect(await provider.materialize("demo", true)).toBeNull();
+    expect(await provider.materialize("demo")).toBeNull();
+    expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith("/materialize"))).toHaveLength(1);
+    provider.destroy();
+  });
+
+  it("does not send state with the replacement epoch after relay retirement", async () => {
+    vi.useFakeTimers();
+    const poll = deferred<Response>();
+    let first = true;
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      if (String(input).endsWith("/presence")) return jsonResponse({ presence: [] });
+      if (first) { first = false; return catchUpResponse({ epoch: 3 }); }
+      return poll.promise;
+    }));
+    const provider = providerFor(new Y.Doc(), "materialize-retired-poll");
+    await provider.start();
+    poll.resolve(jsonResponse({ updates: [], seq: 0, epoch: 4 }));
+    await vi.advanceTimersByTimeAsync(1);
+    expect(provider.materializationBlocked).toBe(true);
+    expect(provider.learnedEpoch).toBe(3);
+    expect(await provider.materialize("demo")).toBeNull();
+    provider.destroy();
+  });
+});
+
+it("pins an unmounted document's epoch while a remount retires the shared outbox", async () => {
+  vi.useFakeTimers();
+  const save = deferred<Response>();
+  let catchups = 0;
+  vi.stubGlobal("fetch", vi.fn(async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/materialize")) {
+      expect(JSON.parse(String(init?.body)).epoch).toBe(3);
+      return save.promise;
+    }
+    if (url.endsWith("/presence")) return jsonResponse({ presence: [] });
+    // Catch-up uses wait=0; long polls stay in flight.
+    if (url.includes("wait=0")) return catchUpResponse({ epoch: ++catchups === 1 ? 3 : 4 });
+    return new Promise<Response>(() => {});
+  }));
+  const oldDoc = new Y.Doc();
+  const old = providerFor(oldDoc, "materialize-unmount-remount");
+  await old.start();
+  oldDoc.getText("local").insert(0, "Old queued edit");
+  const pending = old.materialize("demo", true);
+  old.destroy();
+  const remount = providerFor(new Y.Doc(), "materialize-unmount-remount");
+  await remount.start();
+  expect(old.learnedEpoch).toBe(3);
+  save.resolve(jsonResponse({ retired: true }, 409));
+  await pending;
+  expect(old.learnedEpoch).toBe(3);
+  expect(old.materializationBlocked).toBe(true);
+  expect(await old.materialize("demo")).toBeNull();
+  remount.destroy();
+});
+
+
+it("notifies recovery when an unload materialization is rejected after destroy", async () => {
+  vi.useFakeTimers();
+  const save = deferred<Response>();
+  const onRetired = vi.fn();
+  vi.stubGlobal("fetch", vi.fn(async (input) => {
+    if (String(input).endsWith("/materialize")) return save.promise;
+    if (String(input).endsWith("/presence")) return jsonResponse({ presence: [] });
+    return catchUpResponse({ epoch: 5 });
+  }));
+  const provider = new CollabProvider(new Y.Doc(), {
+    postId: "materialize-rejected-after-unmount", userName: "Ada", color: "#112233", canPush: true, onRetired,
+  });
+  await provider.start();
+  const pending = provider.materialize("demo", true);
+  provider.destroy();
+  save.resolve(jsonResponse({ retired: true }, 409));
+  await pending;
+  expect(onRetired).toHaveBeenCalledWith(5);
+  expect(provider.materializationBlocked).toBe(true);
+  expect(await provider.materialize("demo", true)).toBeNull();
+});
+
+
+it("does not invent epoch zero when catch-up omits its generation", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("fetch", vi.fn(async (input) => {
+    if (String(input).endsWith("/presence")) return jsonResponse({ presence: [] });
+    return jsonResponse({ updates: [], seq: 0, baseline: { update: BASELINE_UPDATE, revision: 1 } });
+  }));
+  const provider = providerFor(new Y.Doc(), "materialize-missing-learned-epoch");
+  await provider.start();
+  expect(provider.learnedEpoch).toBeNull();
+  expect(await provider.materialize("demo", true)).toBeNull();
+  provider.destroy();
 });

@@ -1,3 +1,4 @@
+import { createSelectionEnvelope } from "@/lib/ai/selection-envelope";
 import type { AuthInfo, CallToolResult } from "@/lib/mcp/types";
 import type { Post } from "@/lib/content";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -32,6 +33,8 @@ const mocks = vi.hoisted(() => ({
   inviteScopeShare: vi.fn(),
   listItemAssetReferences: vi.fn(),
   listItemComments: vi.fn(),
+  listAgentChanges: vi.fn(),
+  getAgentChange: vi.fn(),
   listDocumentTemplates: vi.fn(),
   listScopeShares: vi.fn(),
   markCollabMaterialized: vi.fn(),
@@ -87,6 +90,8 @@ vi.mock("@/lib/shares", () => ({
   updateScopeShareRole: mocks.updateScopeShareRole,
 }));
 vi.mock("@/lib/store", () => ({
+  listAgentChanges: mocks.listAgentChanges,
+  getAgentChange: mocks.getAgentChange,
   PostConflictError: class PostConflictError extends Error {},
   claimIdempotencyKey: mocks.claimIdempotencyKey,
   createItemComment: mocks.createItemComment,
@@ -178,6 +183,7 @@ function auth(
       scopes,
       extra: {
         userId: "user-1",
+        connectionId: "token-record-1",
         sub: "sub-1",
         ...(connectionName ? { connectionName } : {}),
         ...(actorIntent !== undefined ? { actorIntent } : {}),
@@ -296,7 +302,7 @@ describe("MCP workspace tool adapter", () => {
         ];
       expect(entry.config).toMatchObject({
         title: definition.title,
-        description: definition.description,
+        description: expect.stringContaining(definition.description),
         inputSchema: definition.inputSchema,
         annotations: {
           readOnlyHint: expect.any(Boolean),
@@ -1125,6 +1131,43 @@ describe("MCP workspace tool adapter", () => {
     });
     expect(mocks.savePost).not.toHaveBeenCalled();
     expect(mocks.applyLiveDocumentMutation).not.toHaveBeenCalled();
+  });
+
+  it("rejects stale or mismatched selection envelopes before any content mutation", async () => {
+    const id = "66666666-6666-4666-8666-666666666666";
+    const source = { id, folderId: "blog", type: "article", slug: "draft", title: "Draft", excerpt: "", body: "Before", status: "draft", pinned: false, revision: 42 };
+    const selection_envelope = (await createSelectionEnvelope(id, source, { field: "body", start: 0, end: 6, text: "Before" }))!;
+    mocks.resolveItemAccess.mockResolvedValue({ canView: true, canEditContent: true, isOwner: true });
+    const update = registrations().find((entry) => entry.name === "update_item")!;
+    for (const [current, envelope, start, end] of [
+      [{ ...source, revision: 43 }, selection_envelope, 0, 6],
+      [source, { ...selection_envelope, hash: "0".repeat(64) }, 0, 6],
+      [source, selection_envelope, 1, 7],
+      [{ ...source, body: "After!" }, selection_envelope, 0, 6],
+    ] as const) {
+      mocks.getPostById.mockResolvedValue(current);
+      const result = await update.callback({ id, text_edit: { field: "body", start, end, expected_text: "Before", replacement_text: "After", selection_envelope: envelope } }, auth(["sync"]));
+      expect(result.isError).toBe(true);
+    }
+    expect(mocks.applyLiveDocumentMutation).not.toHaveBeenCalled();
+    expect(mocks.savePost).not.toHaveBeenCalled();
+  });
+
+  it("passes verified selection coverage to the audited live mutation", async () => {
+    const id = "66666666-6666-4666-8666-666666666666";
+    const source = { id, folderId: "blog", type: "article", slug: "draft", title: "Draft", excerpt: "", body: "Before", status: "draft", pinned: false, revision: 42 };
+    const selection_envelope = (await createSelectionEnvelope(id, source, { field: "body", start: 0, end: 6, text: "Before" }))!;
+    mocks.resolveItemAccess.mockResolvedValue({ canView: true, canEditContent: true, isOwner: true });
+    mocks.getPostById.mockResolvedValue(source);
+    const snapshot = { schemaVersion: 1, content: { title: "Draft", subtitle: "", body: "After", fields: {}, tags: [], assets: [] }, presentation: { template: { id: "texttext.article", version: 1 }, theme: {} } };
+    mocks.applyLiveDocumentMutation.mockResolvedValue({ snapshot, epoch: 1, seq: 2, applied: true, auditRecorded: true });
+    mocks.getPostStoreContext.mockResolvedValue({ handle: "local", post: source });
+    mocks.materializeCollabDocument.mockResolvedValue(snapshot);
+    mocks.savePost.mockResolvedValue({ ...source, body: "After", document: snapshot, revision: 43 });
+    const result = await registrations().find((entry) => entry.name === "update_item")!.callback({ id, text_edit: { field: "body", start: 0, end: 6, expected_text: "Before", replacement_text: "After", selection_envelope } }, auth(["sync"]));
+    expect(result.isError).not.toBe(true);
+    expect(mocks.applyLiveDocumentMutation).toHaveBeenCalledWith(id, expect.objectContaining({ textRange: expect.objectContaining({ selectionEnvelope: selection_envelope }) }), expect.objectContaining({ actionName: "mcp.update_item" }));
+    expect(mocks.savePost).toHaveBeenCalledWith("local", expect.any(Object), expect.objectContaining({ auditAlreadyRecorded: true }));
   });
 
   it("writes a body change when no one is co-editing", async () => {
@@ -2801,4 +2844,67 @@ describe("MCP workspace tool adapter", () => {
     expect(resolveMcpScopeAccess(["sync", "read"])).toBe("read-only");
     expect(resolveMcpScopeAccess([])).toBe("none");
   });
+  it("never trusts a client display name as authenticated agent identity", async () => {
+    const context = auth(["sync"], "Claude");
+    delete context.authInfo.extra!.connectionId;
+    const result = await executeMcpTool("append_to_item", { id: "11111111-1111-4111-8111-111111111111", markdown: "New" }, context);
+    expect(result.isError).toBe(true);
+    expect(mocks.savePost).not.toHaveBeenCalled();
+  });
+
+  it("keeps removed text private from viewers and other workspaces", async () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    mocks.getPostById.mockResolvedValue({ id, type: "note", slug: "private", title: "Private", body: "Now", status: "draft" });
+    mocks.resolveItemAccess.mockResolvedValue({ canView: true, canEditContent: false });
+    const result = await executeMcpTool("list_agent_changes", { id }, auth(["read"]));
+    expect(result.isError).toBe(true);
+    expect(mocks.listAgentChanges).not.toHaveBeenCalled();
+    mocks.getPostById.mockResolvedValue(null);
+    expect((await executeMcpTool("revert_agent_change", { id, change_id: id }, auth(["sync"]))).isError).toBe(true);
+    expect(mocks.getAgentChange).not.toHaveBeenCalled();
+  });
+
+  it("lists editor history through the same workspace surface", async () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    mocks.getPostById.mockResolvedValue({ id, type: "note", slug: "private", title: "Private", body: "Now", status: "draft" });
+    mocks.listAgentChanges.mockResolvedValue([{ id: "change", connectionId: "token-record-1", changes: [{ field: "body", before: "Old", after: "Now" }] }]);
+    const result = await executeMcpTool("list_agent_changes", { id }, auth(["read"]));
+    expect(JSON.parse(toolText(result)).changes[0].connectionId).toBe("token-record-1");
+    expect(mocks.listAgentChanges).toHaveBeenCalledWith(id, undefined);
+  });
+
+  it("reverts through the audited live write and returns conflicts without a save", async () => {
+    const { emptyDocumentSnapshot } = await import("@/lib/documents/model");
+    const { AgentChangeConflictError } = await import("@/lib/agent-changes");
+    const id = "11111111-1111-4111-8111-111111111111";
+    const changeId = "22222222-2222-4222-8222-222222222222";
+    const snapshot = emptyDocumentSnapshot({ id: "texttext.note", version: 1 });
+    snapshot.content.body = "Old";
+    const post = { id, type: "note", slug: "private", title: "", body: "Now", status: "draft", revision: 7, document: snapshot };
+    mocks.getPostById.mockResolvedValue(post);
+    const changes = [{ field: "body" as const, before: "Old", after: "Now" }];
+    mocks.getAgentChange.mockResolvedValue({ id: changeId, actorType: "external_agent", changes, reverted: false });
+    mocks.applyLiveDocumentMutation.mockResolvedValue({ snapshot, auditRecorded: true });
+    mocks.materializeCollabDocument.mockResolvedValue(snapshot);
+    mocks.getPostStoreContext.mockResolvedValue({ handle: "local", post });
+    mocks.savePost.mockResolvedValue({ ...post, body: "Old", revision: 8 });
+    const result = await executeMcpTool("revert_agent_change", { id, change_id: changeId }, auth(["sync"]));
+    expect(JSON.parse(toolText(result)).status).toBe("reverted");
+    expect(mocks.applyLiveDocumentMutation).toHaveBeenCalledWith(id,
+      { revertChanges: changes, operationId: `revert:${changeId}` },
+      expect.objectContaining({ actionName: "revert_agent_change", targetId: id }),
+      { id: changeId, userId: "user-1" });
+    expect(mocks.savePost).toHaveBeenCalledWith("local", expect.objectContaining({ status: "draft" }),
+      expect.objectContaining({ expectedRevision: 7, auditAlreadyRecorded: true }));
+    mocks.savePost.mockClear();
+    mocks.applyLiveDocumentMutation.mockRejectedValue(new AgentChangeConflictError([{ ...changes[0], current: "Human" }]));
+    const conflict = await executeMcpTool("revert_agent_change", { id, change_id: changeId }, auth(["sync"]));
+    expect(JSON.parse(toolText(conflict))).toMatchObject({ status: "conflict", comparisons: [{ current: "Human" }] });
+    expect(mocks.savePost).not.toHaveBeenCalled();
+    mocks.getAgentChange.mockResolvedValue({ id: changeId, actorType: "external_agent", changes, reverted: true });
+    mocks.applyLiveDocumentMutation.mockClear();
+    expect(JSON.parse(toolText(await executeMcpTool("revert_agent_change", { id, change_id: changeId }, auth(["sync"]))))).toMatchObject({ status: "already_reverted" });
+    expect(mocks.applyLiveDocumentMutation).not.toHaveBeenCalled();
+  });
+
 });

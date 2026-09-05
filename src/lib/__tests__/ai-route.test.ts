@@ -1,3 +1,4 @@
+import { createSelectionEnvelope, SELECTION_BUDGET_ERROR } from "@/lib/ai/selection-envelope";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type MockOutboundConnection = {
@@ -1069,14 +1070,70 @@ describe("/api/ai cloud assistant route", () => {
     );
   });
 
+  it.each([false, true])("delivers all 4,000 selected characters and echoes coverage (stream=%s)", async (stream) => {
+    const text = "x".repeat(3977) + " CRITICAL FINAL CLAUSE.";
+    expect(text.length).toBe(4000);
+    const source = { id: "note-1", revision: 7, title: "Draft", body: "prefix" + text, excerpt: "" };
+    const selectionEnvelope = await createSelectionEnvelope(source.id, source, { field: "body", start: 6, end: 4006, text });
+    mocks.getPostById.mockResolvedValue(source);
+    mocks.streamText.mockReturnValue({ fullStream: (async function* () {
+      yield { type: "text-delta", text: "Suggestion" };
+      yield { type: "finish" };
+    })() });
+    const response = await POST(post({ ...turn, stream, context: { postId: source.id, selectionEnvelope, mode: "suggestion" } }));
+    expect(response.status).toBe(200);
+    const request = (stream ? mocks.streamText : mocks.generateText).mock.calls.at(-1)![0];
+    expect(request.system).toContain(JSON.stringify(selectionEnvelope));
+    const payload = stream ? (await response.text()).trim().split("\n").map((line) => JSON.parse(line)).find((event) => event.type === "complete") : await response.json();
+    expect(payload.selectionEnvelope).toEqual(selectionEnvelope);
+  });
+
+  it("rejects oversized and legacy selections before any provider or outbound contact", async () => {
+    for (const context of [
+      { selection: "x".repeat(4022) },
+      { selectionEnvelope: { text: "x".repeat(4001) } },
+    ]) {
+      const response = await POST(post({ ...turn, context }));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: SELECTION_BUDGET_ERROR });
+    }
+    const legacy = await POST(post({ ...turn, context: { selection: "small raw selection" } }));
+    expect(legacy.status).toBe(400);
+    expect(mocks.getWorkspaceAiConfigForOwner).not.toHaveBeenCalled();
+    expect(mocks.generateText).not.toHaveBeenCalled();
+    expect(mocks.streamText).not.toHaveBeenCalled();
+    expect(mocks.listRemoteTools).not.toHaveBeenCalled();
+  });
+
+  it("fails closed for stale, forged, foreign or unavailable selection envelopes", async () => {
+    const source = { id: "note-1", revision: 7, title: "Draft", body: "Selected words", excerpt: "" };
+    const envelope = (await createSelectionEnvelope(source.id, source, { field: "body", start: 0, end: 14, text: source.body }))!;
+    for (const [selectionEnvelope, postId, current] of [
+      [envelope, source.id, { ...source, revision: 8 }],
+      [envelope, source.id, { ...source, body: "Changed words!" }],
+      [{ ...envelope, hash: "0".repeat(64) }, source.id, source],
+      [envelope, "another-item", source],
+      [envelope, source.id, null],
+    ] as const) {
+      mocks.getPostById.mockResolvedValue(current);
+      const response = await POST(post({ ...turn, context: { postId, selectionEnvelope } }));
+      expect(response.status).toBe(400);
+    }
+    expect(mocks.generateText).not.toHaveBeenCalled();
+    expect(mocks.streamText).not.toHaveBeenCalled();
+  });
+
   it("server-limits suggestion quick actions to read-only tools", async () => {
+    const source = { id: "note-1", revision: 7, title: "Draft", body: "Selected words", excerpt: "" };
+    mocks.getPostById.mockResolvedValue(source);
+    const selectionEnvelope = await createSelectionEnvelope(source.id, source, { field: "body", start: 0, end: 14, text: source.body });
     await POST(
       post({
         messages: [{ role: "user", content: "Rewrite this selected text" }],
         context: {
           level: "edit",
           postId: "note-1",
-          selection: "Selected words",
+          selectionEnvelope,
           mode: "suggestion",
         },
       }),

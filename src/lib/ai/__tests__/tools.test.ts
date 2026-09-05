@@ -28,6 +28,8 @@ const EXPECTED_NAMES = [
   "set_folder_template",
   "retire_document_template",
   "set_item_template",
+  "list_agent_changes",
+  "revert_agent_change",
   "create_item",
   "update_item",
   "append_to_item",
@@ -69,6 +71,7 @@ const DESTRUCTIVE_TOOLS = new Set([
 ]);
 
 const IDEMPOTENT_WRITES = new Set([
+  "revert_agent_change",
   "organize_items",
   "delete_items",
   "delete_folder",
@@ -404,5 +407,16 @@ describe("update_item custom fields", () => {
       },
     );
     expect(parsed.success).toBe(false);
+  });
+});
+
+
+describe("item type save scope command contract", () => {
+  it.each([{ mode: "version" }, { mode: "folder", folderPath: "A" }, { mode: "usages", folderPaths: ["A", "B"] }])("preserves explicit scope %j", (scope) => {
+    const parsed = parseWorkspaceToolInput("update_item_type", { template_id: "tasks", base_version: 3, blueprint: { name: "Tasks", fields: [], collection: { layout: "list" } }, save_scope: scope });
+    expect(parsed.save_scope).toEqual(scope);
+  });
+  it("rejects malformed scope instead of dropping it", () => {
+    expect(() => parseWorkspaceToolInput("update_item_type", { template_id: "tasks", base_version: 3, blueprint: { name: "Tasks", fields: [], collection: { layout: "list" } }, save_scope: { mode: "folder" } })).toThrow();
   });
 });

@@ -528,50 +528,28 @@ describe("native workspace tool adapter", () => {
     });
   });
 
-  it("reports an open-draft edit as queued until sync is acknowledged", async () => {
-    const applyItemPatch = vi.fn(async () => ({
-      synced: false,
-      queued: true,
-    }));
-    const tools = createWorkspaceAgentTools({
-      handle: "local",
-      getPool: workspacePool,
-      readItemText: vi.fn(async () => ({
-        title: "Draft",
-        excerpt: "",
-        body: "Persisted body",
-        tags: [],
-      })),
-      applyItemPatch,
+  it("persists simple assistant edits through the command surface, never the human draft queue", async () => {
+    const applyItemPatch = vi.fn();
+    const executeTool = vi.fn(async () => ({ item: { id: "post-1", title: "Saved" } }));
+    const tools = createWorkspaceAgentTools({ handle: "local", getPool: workspacePool,
+      applyItemPatch, executeTool, refreshPool: async () => {},
+      readItemText: async () => ({ title: "Draft", excerpt: "", body: "Body", tags: [] }),
     });
-
-    await expect(
-      tools.executor("update_item", { id: "post-1", title: "Queued title" }),
-    ).resolves.toMatchObject({
-      ok: false,
-      queued: true,
-      sync_status: "queued_locally",
-    });
+    await expect(tools.executor("update_item", { id: "post-1", title: "Saved" }))
+      .resolves.toMatchObject({ ok: true, sync_status: "acknowledged" });
+    expect(applyItemPatch).not.toHaveBeenCalled();
+    expect(executeTool).toHaveBeenCalledWith("update_item", { id: "post-1", title: "Saved" });
   });
 
-  it("propagates authorization and conflict failures from draft sync", async () => {
-    const tools = createWorkspaceAgentTools({
-      handle: "local",
-      getPool: workspacePool,
-      readItemText: vi.fn(async () => ({
-        title: "Draft",
-        excerpt: "",
-        body: "Persisted body",
-        tags: [],
-      })),
-      applyItemPatch: vi.fn(async () => {
-        throw new Error("Conflict: You cannot edit this item.");
-      }),
+  it("propagates authorization and conflict failures from the authoritative command", async () => {
+    const applyItemPatch = vi.fn();
+    const tools = createWorkspaceAgentTools({ handle: "local", getPool: workspacePool,
+      applyItemPatch, executeTool: async () => { throw new Error("Conflict: You cannot edit this item."); },
+      readItemText: async () => ({ title: "Draft", excerpt: "", body: "Body", tags: [] }),
     });
-
-    await expect(
-      tools.executor("update_item", { id: "post-1", title: "Rejected" }),
-    ).rejects.toThrow("Conflict: You cannot edit this item.");
+    await expect(tools.executor("update_item", { id: "post-1", title: "Rejected" }))
+      .rejects.toThrow("Conflict: You cannot edit this item.");
+    expect(applyItemPatch).not.toHaveBeenCalled();
   });
 
   it("keeps guarded section edits on the authoritative command path", async () => {

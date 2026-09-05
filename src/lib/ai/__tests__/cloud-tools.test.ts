@@ -14,7 +14,6 @@ describe("cloudAssistantToolNames", () => {
 
   it("excludes actions without a confirmation preview", () => {
     for (const gated of [
-      "delete_item",
     ]) {
       expect(names).not.toContain(gated);
     }

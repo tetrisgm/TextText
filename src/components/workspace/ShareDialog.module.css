@@ -1,4 +1,5 @@
 .backdrop {
+  --share-secondary: color-mix(in srgb, var(--ac-label) 80%, var(--ac-bg));
   position: fixed;
   inset: 0;
   z-index: 80;
@@ -17,7 +18,7 @@
   max-height: min(720px, calc(100dvh - 72px));
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
   border: 1px solid var(--ac-separator);
   border-radius: var(--ac-radius-control);
   background: var(--ac-mat-bg);
@@ -49,7 +50,7 @@
 .subtitle {
   margin: 2px 0 0;
   overflow: hidden;
-  color: var(--ac-label-2);
+  color: var(--share-secondary);
   font: 400 var(--ac-fs-footnote) / 1.35 var(--ac-font-text);
   letter-spacing: 0;
   text-overflow: ellipsis;
@@ -66,7 +67,7 @@
   border: 0;
   border-radius: var(--ac-radius-control);
   background: transparent;
-  color: var(--ac-label-2);
+  color: var(--share-secondary);
   cursor: pointer;
 }
 
@@ -101,7 +102,7 @@
 
 .emailLabel {
   grid-column: 1 / -1;
-  color: var(--ac-label-2);
+  color: var(--share-secondary);
   font: 600 var(--ac-fs-caption1) / 1.2 var(--ac-font-text);
   letter-spacing: 0;
 }
@@ -124,7 +125,7 @@
 }
 
 .emailInput::placeholder {
-  color: var(--ac-placeholder);
+  color: var(--share-secondary);
 }
 
 .roleSelect {
@@ -153,8 +154,8 @@
 }
 
 .primaryButton {
-  background: var(--ac-accent);
-  color: var(--ac-on-accent);
+  background: var(--ac-label);
+  color: var(--ac-bg);
 }
 
 .primaryButton:not(:disabled):hover {
@@ -174,28 +175,28 @@
   margin: 0;
   padding: 0 var(--ac-sp-4) var(--ac-sp-3);
   background: var(--ac-bg);
-  color: var(--ac-red);
+  color: color-mix(in srgb, var(--ac-red) 60%, var(--ac-label));
   font: 400 var(--ac-fs-footnote) / 1.35 var(--ac-font-text);
   letter-spacing: 0;
 }
 
 .peopleSection {
   min-height: 0;
-  overflow-y: auto;
+  flex-shrink: 0;
   padding: var(--ac-sp-3) var(--ac-sp-4) var(--ac-sp-4);
   background: var(--ac-bg);
 }
 
 .sectionLabel {
   margin-bottom: var(--ac-sp-2);
-  color: var(--ac-label-2);
+  color: var(--share-secondary);
   font: 600 var(--ac-fs-caption1) / 1.2 var(--ac-font-text);
   letter-spacing: 0;
 }
 
 .emptyState {
   padding: var(--ac-sp-4) 0;
-  color: var(--ac-label-2);
+  color: var(--share-secondary);
   font: 400 var(--ac-fs-subheadline) / 1.35 var(--ac-font-text);
   letter-spacing: 0;
 }
@@ -235,7 +236,7 @@
   justify-content: center;
   border-radius: var(--ac-radius-control);
   background: var(--ac-tinted-fill);
-  color: var(--ac-accent);
+  color: var(--ac-label);
   font: 700 var(--ac-fs-caption1) / 1 var(--ac-font-text);
   letter-spacing: 0;
 }
@@ -256,7 +257,7 @@
 
 .personState {
   margin-top: 1px;
-  color: var(--ac-label-2);
+  color: var(--share-secondary);
   font: 400 var(--ac-fs-caption1) / 1.2 var(--ac-font-text);
   letter-spacing: 0;
 }
@@ -266,7 +267,7 @@
   padding: 3px 7px;
   border-radius: var(--ac-radius-pill);
   background: var(--ac-fill-3);
-  color: var(--ac-label-2);
+  color: var(--share-secondary);
   font: 600 var(--ac-fs-caption1) / 1 var(--ac-font-text);
   letter-spacing: 0;
 }
@@ -297,7 +298,7 @@
   border-radius: var(--ac-radius-control);
   padding: 0 7px;
   background: transparent;
-  color: var(--ac-accent);
+  color: var(--ac-label);
   font: 500 var(--ac-fs-caption1) / 1 var(--ac-font-text);
   letter-spacing: 0;
   cursor: pointer;
@@ -313,7 +314,7 @@
 }
 
 .dangerButton {
-  color: var(--ac-red);
+  color: color-mix(in srgb, var(--ac-red) 60%, var(--ac-label));
 }
 
 .confirmActions {
@@ -324,7 +325,7 @@
 }
 
 .confirmText {
-  color: var(--ac-label-2);
+  color: var(--share-secondary);
   font: 400 var(--ac-fs-caption1) / 1 var(--ac-font-text);
   letter-spacing: 0;
 }
@@ -347,7 +348,7 @@
 
 .generalCopy {
   margin-top: 2px;
-  color: var(--ac-label-2);
+  color: var(--share-secondary);
   font: 400 var(--ac-fs-footnote) / 1.3 var(--ac-font-text);
   letter-spacing: 0;
 }
@@ -379,4 +380,27 @@
     flex: 1 1 100%;
     justify-content: flex-end;
   }
+}
+
+.inheritedSection {
+  padding: 0 var(--ac-sp-4) var(--ac-sp-3);
+  background: var(--ac-bg);
+}
+
+.notice {
+  margin: 0;
+  padding: 0 var(--ac-sp-4) var(--ac-sp-3);
+  background: var(--ac-bg);
+  color: var(--ac-label);
+  font: 400 var(--ac-fs-footnote) / 1.4 var(--ac-font-text);
+}
+
+.dialog > * {
+  flex-shrink: 0;
+}
+
+.personState,
+.generalCopy,
+.notice {
+  overflow-wrap: anywhere;
 }

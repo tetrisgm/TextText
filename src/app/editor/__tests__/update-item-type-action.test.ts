@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   updateWorkspaceItemType: vi.fn(),
   createWorkspaceItemType: vi.fn(),
   getDocumentTemplateAuthoringSource: vi.fn(),
+  listFoldersUsingTemplate: vi.fn(),
 }));
 
 vi.mock("@/lib/blog-edit-auth", () => ({
@@ -16,10 +17,12 @@ vi.mock("@/lib/presentation/item-type.server", () => ({
 }));
 vi.mock("@/lib/store", () => ({
   getDocumentTemplateAuthoringSource: mocks.getDocumentTemplateAuthoringSource,
+  listFoldersUsingTemplate: mocks.listFoldersUsingTemplate,
 }));
 
 import {
   readItemTypeForEditAction,
+  readItemTypeUsagesAction,
   updateItemTypeAction,
 } from "@/app/editor/item-type-actions";
 
@@ -115,4 +118,39 @@ describe("reopening a look from the studio", () => {
     }
     expect(mocks.updateWorkspaceItemType).not.toHaveBeenCalled();
   });
+  it.each([
+    { mode: "version" },
+    { mode: "folder", folderPath: "A" },
+    { mode: "usages", folderPaths: ["A", "B"] },
+  ])("passes the exact scope and full receipt through: %j", async (scope) => {
+    const receipt = {
+      applied: [{ path: "A", restyledItems: 1, itemsLeft: 3, itemsBeingEdited: 2 }],
+      skipped: [{ path: "B", pinnedTo: 1 }], conflicted: [{ path: "C" }],
+    };
+    mocks.updateWorkspaceItemType.mockResolvedValue({ definition: { id: "recipes", version: 4, name: "Recipes" }, ...receipt });
+    expect(await updateItemTypeAction("shoku", "recipes", 3, blueprint, false, scope)).toMatchObject({ ok: true, ...receipt });
+    expect(mocks.updateWorkspaceItemType).toHaveBeenCalledWith(expect.objectContaining({ saveScope: scope, applyToExisting: false }));
+  });
+
+  it("does not widen an omitted scope to all folders", async () => {
+    mocks.updateWorkspaceItemType.mockResolvedValue({ definition: { id: "recipes", version: 4, name: "Recipes" }, applied: [], skipped: [], conflicted: [] });
+    await updateItemTypeAction("shoku", "recipes", 3, blueprint, true);
+    expect(mocks.updateWorkspaceItemType).toHaveBeenCalledWith(expect.objectContaining({ saveScope: { mode: "version" } }));
+  });
+
+  it("rejects malformed scopes without calling the mutation", async () => {
+    expect(await updateItemTypeAction("shoku", "recipes", 3, blueprint, true, { mode: "folder" })).toMatchObject({ ok: false });
+    expect(mocks.updateWorkspaceItemType).not.toHaveBeenCalled();
+  });
+
+  it("lists only workspace-owned usage paths for review", async () => {
+    mocks.listFoldersUsingTemplate.mockResolvedValue([{ id: "a", path: "A", version: 3 }]);
+    expect(await readItemTypeUsagesAction(" Shoku ", "recipes")).toEqual({ ok: true, usages: [{ path: "A", version: 3 }] });
+    expect(mocks.listFoldersUsingTemplate).toHaveBeenCalledWith("blog-1", "recipes");
+    mocks.listFoldersUsingTemplate.mockClear();
+    mocks.getBlogEditAccess.mockResolvedValue({ isOwner: false, blogId: "blog-1" });
+    expect(await readItemTypeUsagesAction("shoku", "recipes")).toMatchObject({ ok: false });
+    expect(mocks.listFoldersUsingTemplate).not.toHaveBeenCalled();
+  });
+
 });

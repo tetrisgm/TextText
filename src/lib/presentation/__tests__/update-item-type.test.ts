@@ -83,7 +83,7 @@ describe("changing an item type that already exists", () => {
       "shoku",
       "f-1",
       { id: "recipes-a1b2c3", version: 4 },
-      { expectedReference: { id: "recipes-a1b2c3", version: 3 } },
+      expect.objectContaining({ expectedReference: { id: "recipes-a1b2c3", version: 3 }, audit: expect.objectContaining({ actionName: "set_folder_template" }) }),
     );
     expect(result.applied).toEqual([
       { path: "recipes", restyledItems: 7, itemsLeft: 0, itemsBeingEdited: 0 },
@@ -255,10 +255,71 @@ describe("changing an item type that already exists", () => {
   it("stores the blueprint that compiled, not the one that arrived", async () => {
     // A cards layout with no fields to summarise, so normalising changes it.
     await call({
-      blueprint: { name: "Runs", fields: [], collection: { layout: "calendar" } },
+      blueprint: { ...BLUEPRINT, name: "Runs", collection: { layout: "calendar" } },
     });
     const stored = mocks.createDocumentTemplateVersion.mock.calls[0][0];
     expect(stored.authoringSource.kind).toBe("item-type-blueprint");
     expect(stored.authoringSource.blueprint.collection.layout).not.toBe("calendar");
   });
+  it.each([false, true])("rejects an incompatible successor before any write, apply=%s", async (apply) => {
+    await expect(call({ apply, blueprint: { ...BLUEPRINT, fields: [{ id: "cookTime", label: "Cook time", type: "text" }] } })).rejects.toThrow(/cookTime.*number to text/);
+    expect(mocks.createDocumentTemplateVersion).not.toHaveBeenCalled();
+    expect(mocks.setFolderTemplate).not.toHaveBeenCalled();
+    expect(mocks.retemplateFolderItems).not.toHaveBeenCalled();
+  });
+
+  it("saves only a version even when legacy apply is true", async () => {
+    const result = await call({ apply: true, saveScope: { mode: "version" } });
+    expect(result.applied).toEqual([]);
+    expect(mocks.listFoldersUsingTemplate).not.toHaveBeenCalled();
+    expect(mocks.setFolderTemplate).not.toHaveBeenCalled();
+    expect(mocks.recordAction).toHaveBeenCalledWith(expect.objectContaining({ actionName: "update_item_type" }));
+  });
+
+  it("applies only the listed usages, excluding a newly added usage", async () => {
+    mocks.listFoldersUsingTemplate.mockResolvedValue([
+      { id: "a", path: "A", version: 3 }, { id: "b", path: "B", version: 3 },
+      { id: "c", path: "C", version: 1 }, { id: "new", path: "new", version: 3 },
+    ]);
+    const result = await call({ saveScope: { mode: "usages", folderPaths: ["A", "B", "C"] } });
+    expect(result.applied.map((entry) => entry.path)).toEqual(["A", "B"]);
+    expect(result.skipped).toEqual([{ path: "C", pinnedTo: 1 }]);
+    expect(mocks.setFolderTemplate).toHaveBeenCalledTimes(2);
+    expect(mocks.retemplateFolderItems).toHaveBeenCalledWith("shoku", "a", expect.anything(), expect.objectContaining({
+      fromReference: { id: "recipes-a1b2c3", version: 3 }, audit: expect.any(Function),
+    }));
+    expect(mocks.retemplateFolderItems.mock.calls[0][3].audit({ id: "item-1" })).toMatchObject({ targetType: "item", targetId: "item-1" });
+  });
+
+  it.each([{ id: "recipes-a1b2c3", version: 3 }, { id: "unrelated", version: 2 }])("applies to the selected folder C, guarding its previous default %j", async (defaultTemplate) => {
+    mocks.getFolderByPath.mockResolvedValue({ id: "c", path: "C", defaultTemplate });
+    const result = await call({ saveScope: { mode: "folder", folderPath: "C" } });
+    expect(result.applied.map((entry) => entry.path)).toEqual(["C"]);
+    expect(mocks.listFoldersUsingTemplate).not.toHaveBeenCalled();
+    expect(mocks.setFolderTemplate).toHaveBeenCalledWith("shoku", "c", expect.anything(), expect.objectContaining({ expectedReference: defaultTemplate ?? null }));
+  });
+
+  it("refuses a missing selected folder before inserting", async () => {
+    mocks.getFolderByPath.mockResolvedValue(null);
+    await expect(call({ saveScope: { mode: "folder", folderPath: "missing" } })).rejects.toThrow(/folder could not be found/);
+    expect(mocks.createDocumentTemplateVersion).not.toHaveBeenCalled();
+  });
+
+  it("refuses a stale usage list before inserting", async () => {
+    await expect(call({ saveScope: { mode: "usages", folderPaths: ["missing"] } })).rejects.toThrow(/missing.*no longer uses/);
+    expect(mocks.createDocumentTemplateVersion).not.toHaveBeenCalled();
+  });
+
+  it("fails closed on malformed scope instead of applying everywhere", async () => {
+    await expect(call({ saveScope: { mode: "folder" } })).rejects.toThrow();
+    expect(mocks.createDocumentTemplateVersion).not.toHaveBeenCalled();
+    expect(mocks.setFolderTemplate).not.toHaveBeenCalled();
+  });
+
+  it("refuses an unreadable folder default rather than applying without a guard", async () => {
+    mocks.getFolderByPath.mockResolvedValue({ id: "c", path: "C" });
+    await expect(call({ saveScope: { mode: "folder", folderPath: "C" } })).rejects.toThrow(/current item type could not be read/);
+    expect(mocks.createDocumentTemplateVersion).not.toHaveBeenCalled();
+  });
+
 });

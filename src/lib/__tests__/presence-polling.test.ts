@@ -36,4 +36,9 @@ describe("reader presence polling", () => {
     expect(source).toContain("void read();\n      timer = setInterval");
     expect(source).toContain('document.removeEventListener("visibilitychange"');
   });
+  it("clears the reader's peers when authorization is lost", () => {
+    expect(source).toContain("res.status === 401 || res.status === 403 || res.status === 410");
+    expect(source).toContain("if (!cancelled) setState({ postId, peers: [] })");
+  });
+
 });

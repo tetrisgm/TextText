@@ -158,7 +158,7 @@ describe("POST /api/agent/presence", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(removePresence).toHaveBeenCalledWith("p1", "agent-abc");
+    expect(removePresence).toHaveBeenCalledWith("p1", "agent-abc", expect.objectContaining({ actorUserId: "user-1", actionName: "collab.presence.leave" }));
     expect(upsertPresence).not.toHaveBeenCalled();
   });
 

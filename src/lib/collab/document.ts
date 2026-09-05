@@ -1,3 +1,5 @@
+import { inverseTextChange, type AgentTextChange } from "@/lib/agent-changes";
+import type { SelectionEnvelope } from "@/lib/ai/selection-envelope";
 import * as Y from "yjs";
 import {
   validateDocumentSnapshot,
@@ -11,6 +13,7 @@ const APPLIED_OPERATIONS_KEY = "agentOperations";
 const MAX_APPLIED_OPERATIONS = 256;
 
 export type DocumentMutation = {
+  revertChanges?: AgentTextChange[];
   title?: string;
   subtitle?: string | null;
   body?: string;
@@ -37,6 +40,7 @@ export type DocumentMutation = {
     end: number;
     expectedText: string;
     replacementText: string;
+    selectionEnvelope?: SelectionEnvelope;
   };
   tags?: string[];
   /** Declared field values. A null clears one. */
@@ -324,6 +328,10 @@ export function applyDocumentMutation(
   let applied = true;
   doc.transact(() => {
     const rootMap = root(doc);
+    if (mutation.revertChanges && Object.keys(mutation).some((key) =>
+      key !== "revertChanges" && key !== "operationId")) {
+      throw new Error("A revert cannot also apply another document mutation.");
+    }
     if (
       mutation.textRange !== undefined &&
       (mutation.title !== undefined ||
@@ -365,10 +373,16 @@ export function applyDocumentMutation(
         throw new DocumentTextRangeConflictError();
       }
     }
-    const operations = map(rootMap, APPLIED_OPERATIONS_KEY);
-    if (mutation.operationId && operations.has(mutation.operationId)) {
+    const existingOperations = rootMap.get(APPLIED_OPERATIONS_KEY);
+    if (mutation.operationId && existingOperations instanceof Y.Map && existingOperations.has(mutation.operationId)) {
       applied = false;
       return;
+    }
+    const inverses = mutation.revertChanges?.map((change) =>
+      inverseTextChange(change, text(rootMap, change.field).toString()));
+    const operations = map(rootMap, APPLIED_OPERATIONS_KEY);
+    for (const inverse of inverses ?? []) {
+      replaceLiveTextRange(text(rootMap, inverse.field), inverse);
     }
     if (mutation.title !== undefined) {
       replaceText(text(rootMap, "title"), mutation.title);

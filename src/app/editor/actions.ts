@@ -13,12 +13,15 @@ import { isAuthConfigured } from "@/auth";
 import { getCurrentUser } from "@/lib/session";
 import type { BlogPatch, ItemComment, PostContentPatch } from "@/lib/store";
 import {
+  getItemAccessSummary,
+  revokeItemAccessLink,
   countAllPosts,
   createItemComment,
   createDraft,
   createDraftInFolder,
   getDocumentTemplate,
   getFolderByPath,
+  createRootFolder,
   createSubfolder,
   deletePost,
   getAllPosts,
@@ -1178,7 +1181,7 @@ export async function shareScopeAction(
   scopeIdInput: unknown,
   emailInput: unknown,
   roleInput: unknown,
-): Promise<ScopeShare[]> {
+): Promise<{ accessGranted: true; emailStatus: "sent" | "not_sent" | "failed" }> {
   const scope = await manageableScopeForSharing(
     handleInput,
     scopeTypeInput,
@@ -1193,16 +1196,38 @@ export async function shareScopeAction(
     role,
     invitedBySub: scope.user.sub,
   });
+  let emailStatus: "sent" | "not_sent" | "failed" = "not_sent";
   if (scope.scopeType === "item" && scope.post) {
-    void sendShareInviteEmail({
-      to: share.email,
-      role: role === "editor" ? "editor" : "viewer",
-      post: scope.post,
-      handle: scope.handle,
-      inviterName: scope.user.name ?? scope.user.email ?? "Someone",
-    }).catch((error) => console.warn("share invite email failed", error));
+    try {
+      emailStatus = await sendShareInviteEmail({
+        to: share.email,
+        role: role === "editor" ? "editor" : role === "commenter" ? "commenter" : "viewer",
+        post: scope.post,
+        handle: scope.handle,
+        inviterName: scope.user.name ?? scope.user.email ?? "Someone",
+      });
+    } catch {
+      // The audited grant already committed. Email failure does not undo access.
+      emailStatus = "failed";
+    }
   }
-  return listScopeShares(scope.scopeType, scope.scopeId);
+  return { accessGranted: true, emailStatus };
+}
+
+export async function getItemAccessSummaryAction(handleInput: unknown, itemIdInput: unknown) {
+  const scope = await manageableScopeForSharing(handleInput, "item", itemIdInput);
+  return getItemAccessSummary(scope.handle, scope.scopeId);
+}
+
+export async function revokeItemAccessLinkAction(
+  handleInput: unknown, itemIdInput: unknown, linkIdInput: unknown,
+) {
+  const scope = await manageableScopeForSharing(handleInput, "item", itemIdInput);
+  const linkId = cleanPostId(linkIdInput);
+  await revokeItemAccessLink(scope.handle, scope.scopeId, linkId, {
+    actorType: "human",
+    actorUserId: scope.user.userId ?? await getUserIdBySub(scope.user.sub),
+  });
 }
 
 export async function updateScopeShareRoleAction(
@@ -1269,6 +1294,18 @@ export async function createSubfolderAction(
     typeof parentPathInput === "string" ? parentPathInput.trim() : "";
   const name = typeof nameInput === "string" ? nameInput : "";
   const folder = await createSubfolder(handle, parentPath, name);
+  await auditEdit(access, "create_folder", "workspace", folder.id, folder.path);
+  await revalidateBlog(handle);
+  return folder;
+}
+
+export async function createRootFolderAction(
+  handleInput: unknown,
+  nameInput: unknown,
+): Promise<Folder> {
+  const { handle, access } = await editableHandleFor(handleInput);
+  const name = typeof nameInput === "string" ? nameInput : "";
+  const folder = await createRootFolder(handle, name);
   await auditEdit(access, "create_folder", "workspace", folder.id, folder.path);
   await revalidateBlog(handle);
   return folder;

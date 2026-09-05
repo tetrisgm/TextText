@@ -1,3 +1,7 @@
+import { agentTextChanges } from "@/lib/agent-changes";
+import { agentChangeContext } from "@/lib/agent-change-context.server";
+import { agentChangeCte } from "@/lib/agent-change-sql.server";
+import { agentChanges } from "./db/schema";
 // Content access for the app. This is the ONLY content access point: routes and
 // the editor go through here. Postgres (Drizzle + Neon) is the sole backing
 // store; the demo seed that once served every read path without a database was
@@ -11,6 +15,7 @@ import {
   asc,
   desc,
   eq,
+  getTableColumns,
   inArray,
   ilike,
   isNotNull,
@@ -80,11 +85,13 @@ import {
 import { listItemAssetReferences } from "./item-assets";
 import { localizeRemoteMarkdownImages } from "./markdown-images";
 import {
+  roleForTarget,
   accessibleFolderIdsForUser,
   accessiblePostIdsForUser,
   type AccessUser,
 } from "./permissions";
 import {
+  blogWorkspacePostPath,
   RESERVED_USERNAMES,
   USERNAME_RE,
   cleanUsername,
@@ -1390,6 +1397,58 @@ export async function createSubfolder(
   throw new Error("A folder with that name already exists here.");
 }
 
+/**
+ * A new top-level folder. Root folders were only ever provisioned; the bar's
+ * New folder control at the workspace root needs a real operation. It takes
+ * the notes mode, the most general kind, and sits after the existing roots;
+ * the studio can give it a look later.
+ */
+export async function createRootFolder(
+  handle: string,
+  name: string,
+  options: { audit?: AuditEntry } = {},
+): Promise<Folder> {
+  if (!db) throw new Error("Folders need a database.");
+  const blogId = await blogIdFor(handle);
+  const cleanName = name.trim().slice(0, 80);
+  if (!cleanName) throw new Error("A folder needs a name.");
+  const base = folderPathSegment(cleanName);
+  const [last] = await db
+    .select({ position: sql<number>`coalesce(max(${folders.position}), 0)` })
+    .from(folders)
+    .where(and(eq(folders.blogId, blogId), isNull(folders.parentId)));
+  const position = Number(last?.position ?? 0) + 1;
+  for (let attempt = 0; attempt < 9; attempt++) {
+    const path = attempt === 0 ? base : `${base}-${attempt + 1}`;
+    const insertQuery = db
+      .insert(folders)
+      .values({ blogId, name: cleanName, path, mode: "notes", parentId: null, position })
+      .onConflictDoNothing()
+      .returning({ id: folders.id });
+    let insertedId: string | undefined;
+    if (options.audit) {
+      const auditCte = auditCteFrom(options.audit, "changed", sql`changed.id::text`);
+      const result = await db.execute(sql`
+        WITH changed AS ${insertQuery}, audit AS (${auditCte})
+        SELECT id FROM changed
+      `);
+      insertedId = (result.rows[0] as { id?: string } | undefined)?.id;
+    } else {
+      insertedId = (await insertQuery)[0]?.id;
+    }
+    if (insertedId) {
+      const [fresh] = await db
+        .select()
+        .from(folders)
+        .where(and(eq(folders.id, insertedId), eq(folders.blogId, blogId)))
+        .limit(1);
+      if (!fresh) throw new Error("The created folder is unavailable.");
+      return mapFolder(fresh);
+    }
+  }
+  throw new Error("A folder with that name already exists.");
+}
+
 export async function renameFolder(
   handle: string,
   folderId: string,
@@ -1541,6 +1600,8 @@ export async function retemplateFolderItems(
   reference: TemplateReference,
   options: {
     limit?: number;
+    /** Type successors only move documents pinned to the version reviewed. */
+    fromReference?: TemplateReference;
     audit?: (post: Post) => AuditEntry;
   } = {},
 ): Promise<{ changed: number; contested: number; remaining: number }> {
@@ -1567,6 +1628,10 @@ export async function retemplateFolderItems(
   const pending = rows.filter((row) => {
     const current = mapPost(row).document;
     if (!current) return false;
+    if (options.fromReference && (
+      current.presentation.template.id !== options.fromReference.id ||
+      current.presentation.template.version !== options.fromReference.version
+    )) return false;
     return !(
       current.presentation.template.id === reference.id &&
       current.presentation.template.version === reference.version
@@ -1708,6 +1773,15 @@ export async function saveBookmarkCapture(
     .limit(1);
   const row = existing[0];
   if (!row || row.type !== "bookmark") return null;
+  const generationId = opts.completedGeneration ?? captureGeneration(row.capture)?.id;
+  const [origin] = generationId ? await db.select().from(agentChanges).where(and(
+    eq(agentChanges.postId, postId), eq(agentChanges.captureGeneration, generationId),
+  )).orderBy(desc(agentChanges.createdAt)).limit(1) : [];
+  const agent = agentChangeContext.getStore() ?? (origin &&
+    (origin.actorType === "ai" || origin.actorType === "external_agent") ? {
+      userId: origin.actorUserId, connectionId: origin.connectionId,
+      runId: origin.runId, actorType: origin.actorType,
+    } as const : undefined);
   const previousCapture = publicBookmarkCapture(row.capture);
   const merged: BookmarkCapture = opts.replaceCapture
     ? stripLegacyBookmarkHtmlUrl(capture)
@@ -1781,14 +1855,15 @@ export async function saveBookmarkCapture(
     `Persisted item ${row.id}`,
   );
   const document =
-    canonical.content.title === title && canonical.content.body === body
+    canonical.content.title === title && canonical.content.body === body &&
+    canonical.content.subtitle === (excerpt || undefined)
       ? canonical
       : {
           ...canonical,
-          content: { ...canonical.content, title, body },
+          content: { ...canonical.content, title, body, subtitle: excerpt || undefined },
         };
 
-  const updated = await db
+  const updateQuery = db
     .update(posts)
     .set({
       capture: opts.completedGeneration
@@ -1809,11 +1884,25 @@ export async function saveBookmarkCapture(
       updatedAt: new Date(),
     })
     .where(
-      opts.expectedRevision === undefined
-        ? eq(posts.id, row.id)
-        : and(eq(posts.id, row.id), eq(posts.revision, opts.expectedRevision)),
+      and(eq(posts.id, row.id), isNull(posts.deletedAt),
+        opts.expectedRevision === undefined ? undefined : eq(posts.revision, opts.expectedRevision),
+        agent ? eq(posts.revision, row.revision) : undefined),
     )
-    .returning();
+    ;
+  if (agent) {
+    const changed = updateQuery.returning({ id: posts.id, revision: posts.revision });
+    const audit = auditCteFrom({ actorUserId: agent.userId, actorType: agent.actorType,
+      actionName: "agent.capture_completed", targetType: "item", targetId: postId,
+    }, "changed", sql`changed.id::text`);
+    const result = await db.execute(sql`WITH changed AS ${changed}, audit AS (${audit}),
+      agent_change AS (${agentChangeCte({ source: "changed", postId: sql`changed.id`,
+        revision: sql`changed.revision`, changes: agentTextChanges(canonical, document), actor: agent,
+      })}) SELECT id FROM changed`);
+    if (!result.rows.length) return null;
+    const [fresh] = await db.select().from(posts).where(eq(posts.id, postId)).limit(1);
+    return fresh ? mapPost(fresh) : null;
+  }
+  const updated = await updateQuery.returning();
   return updated[0] ? mapPost(updated[0]) : null;
 }
 
@@ -2200,7 +2289,7 @@ export async function markCapturePending(
         isNull(posts.deletedAt),
       ),
     )
-    .returning({ id: posts.id });
+    .returning({ id: posts.id, revision: posts.revision });
   let updatedId: string | undefined;
   if (options.audit) {
     const auditCte = auditCteFrom(
@@ -2209,7 +2298,10 @@ export async function markCapturePending(
       sql`changed.id::text`,
     );
     const result = await db.execute(sql`
-      WITH changed AS ${updateQuery}, audit AS (${auditCte})
+      WITH changed AS ${updateQuery}, audit AS (${auditCte}), agent_change AS (${agentChangeCte({
+        source: "changed", postId: sql`changed.id`, revision: sql`changed.revision`, changes: [],
+        captureGeneration: captureGeneration(capture)?.id,
+      })})
       SELECT id FROM changed
     `);
     updatedId = (result.rows[0] as { id?: string } | undefined)?.id;
@@ -2441,6 +2533,7 @@ export async function movePostFile(
     eq(posts.blogId, blogId),
     isNull(posts.deletedAt),
     ...guard,
+    ...(agentChangeContext.getStore() ? [eq(posts.revision, row.revision)] : []),
   );
   try {
     let movedId: string | undefined;
@@ -2457,10 +2550,13 @@ export async function movePostFile(
         .update(posts)
         .set(set)
         .where(where)
-        .returning({ id: posts.id });
+        .returning({ id: posts.id, revision: posts.revision });
       const auditCte = auditCteFrom(audit, "changed", sql`changed.id::text`);
       const result = await db.execute(sql`
-        WITH changed AS ${updateQuery}, audit AS (${auditCte})
+        WITH changed AS ${updateQuery}, audit AS (${auditCte}), agent_change AS (${agentChangeCte({
+          source: "changed", postId: sql`changed.id`, revision: sql`changed.revision`,
+          changes: agentTextChanges(requireDocumentSnapshot(row.document, "Rename baseline"), set.document ?? requireDocumentSnapshot(row.document, "Rename result")),
+        })})
         SELECT id FROM changed
       `);
       movedId = (result.rows[0] as { id?: string } | undefined)?.id;
@@ -2469,7 +2565,7 @@ export async function movePostFile(
         .update(posts)
         .set(set)
         .where(where)
-        .returning({ id: posts.id });
+        .returning({ id: posts.id, revision: posts.revision });
       movedId = updated[0]?.id;
     }
     if (movedId) {
@@ -2741,7 +2837,7 @@ export async function createDraftInFolder(
       starred: seed.starred,
       publishedAt: null,
     })
-    .returning({ id: posts.id });
+    .returning({ id: posts.id, revision: posts.revision });
   const auditCte = auditCteFrom(audit, "changed", sql`changed.id::text`);
   try {
     const result = options.idempotencyKey
@@ -2753,11 +2849,17 @@ export async function createDraftInFolder(
               AND key = ${options.idempotencyKey}
               AND result_id IS NULL
             RETURNING blog_id
-          ), changed AS ${insertQuery}, audit AS (${auditCte})
+          ), changed AS ${insertQuery}, audit AS (${auditCte}), agent_change AS (${agentChangeCte({
+            source: "changed", postId: sql`changed.id`, revision: sql`changed.revision`,
+            changes: agentTextChanges(null, document),
+          })})
           SELECT id FROM changed
         `)
       : await db.execute(sql`
-          WITH changed AS ${insertQuery}, audit AS (${auditCte})
+          WITH changed AS ${insertQuery}, audit AS (${auditCte}), agent_change AS (${agentChangeCte({
+            source: "changed", postId: sql`changed.id`, revision: sql`changed.revision`,
+            changes: agentTextChanges(null, document),
+          })})
           SELECT id FROM changed
         `);
     const createdId = (result.rows[0] as { id?: string } | undefined)?.id;
@@ -4243,6 +4345,151 @@ export async function retireDocumentTemplate(
   );
 }
 
+export type ItemAccessSummary = {
+  itemId: string;
+  visibility: "public" | "link" | "private";
+  /** Whether the ordinary page URL works without a named grant. */
+  pageVisibility: "public" | "link" | "private";
+  pagePath: string;
+  owner: { id: string; name: string; email: string | null; role: "owner" } | null;
+  direct: import("./shares").ScopeShare[];
+  inherited: Array<{
+    id: string;
+    email: string;
+    role: "editor" | "commenter" | "viewer";
+    scopeType: "workspace" | "folder";
+    scopeId: string;
+    scopeName: string;
+  }>;
+  links: Array<{
+    id: string;
+    role: DocumentCapabilityRole;
+    label: string | null;
+    expiresAt: string | null;
+  }>;
+};
+
+/** Management-only read, called after manageableScopeForSharing authorizes it.
+ * One statement gives visibility, ancestry, people and links the same snapshot.
+ * Explicit JSON projections never select bearer tokens or their hashes.
+ */
+export async function getItemAccessSummary(
+  handle: string,
+  itemId: string,
+): Promise<ItemAccessSummary> {
+  if (!db) throw new Error(NO_DATABASE);
+  const result = await db.execute(sql`
+    WITH RECURSIVE item AS (
+      SELECT p.id, p.slug, p.blog_id, p.folder_id, p.visibility,
+             b.name AS workspace_name, b.owner_id
+      FROM posts p JOIN blogs b ON b.id = p.blog_id
+      WHERE p.id = ${itemId}::uuid AND b.handle = ${handle}
+        AND p.deleted_at IS NULL AND b.deleted_at IS NULL
+    ), ancestors AS (
+      SELECT f.id, f.parent_id, f.name, ARRAY[f.id] AS visited
+      FROM folders f JOIN item i ON f.blog_id = i.blog_id
+      WHERE f.deleted_at IS NULL AND
+        (f.id = i.folder_id OR (i.folder_id IS NULL AND f.path = 'blog'))
+      UNION ALL
+      SELECT f.id, f.parent_id, f.name, a.visited || f.id
+      FROM folders f JOIN ancestors a ON f.id = a.parent_id
+      JOIN item i ON f.blog_id = i.blog_id
+      WHERE f.deleted_at IS NULL AND NOT f.id = ANY(a.visited)
+    )
+    SELECT i.id, i.slug, i.visibility, u.username,
+      (SELECT f.path FROM folders f WHERE f.blog_id = i.blog_id AND f.deleted_at IS NULL
+        AND (f.id = i.folder_id OR (i.folder_id IS NULL AND f.path = 'blog')) LIMIT 1) AS folder_path,
+      CASE WHEN u.id IS NULL THEN NULL ELSE jsonb_build_object(
+        'id', u.id, 'name', COALESCE(u.name, u.email, 'Workspace owner'),
+        'email', u.email, 'role', 'owner') END AS owner,
+      COALESCE((SELECT jsonb_agg(jsonb_build_object(
+        'id', c.id, 'email', COALESCE(person.email, c.invited_email, person.name, 'Workspace participant'),
+        'role', c.role, 'accepted', c.user_id IS NOT NULL,
+        'createdAt', c.created_at, 'scopeType', c.scope_type,
+        'scopeId', c.scope_id,
+        'scopeName', CASE WHEN c.scope_type = 'workspace' THEN i.workspace_name ELSE a.name END
+      ) ORDER BY c.created_at, c.id)
+      FROM collaborators c
+      LEFT JOIN users person ON person.id = c.user_id
+      LEFT JOIN ancestors a ON c.scope_type = 'folder' AND a.id = c.scope_id
+      WHERE c.revoked_at IS NULL AND (
+        (c.scope_type = 'item' AND c.scope_id = i.id) OR
+        (c.scope_type = 'workspace' AND c.scope_id = i.blog_id) OR
+        (c.scope_type = 'folder' AND a.id IS NOT NULL)
+      )), '[]'::jsonb) AS grants,
+      COALESCE((SELECT jsonb_agg(jsonb_build_object(
+        'id', l.id, 'role', l.role, 'label', l.label, 'expiresAt', l.expires_at
+      ) ORDER BY l.created_at, l.id)
+      FROM document_capability_links l WHERE l.post_id = i.id
+        AND l.revoked_at IS NULL AND (l.expires_at IS NULL OR l.expires_at > now())
+      ), '[]'::jsonb) AS links
+    FROM item i LEFT JOIN users u ON u.id = i.owner_id
+  `);
+  type Grant = import("./shares").ScopeShare & {
+    scopeType: "item" | "folder" | "workspace";
+    scopeId: string;
+    scopeName: string;
+  };
+  const row = result.rows[0] as unknown as {
+    id: string;
+    visibility: string;
+    slug: string;
+    username: string | null;
+    folder_path: string | null;
+    owner: ItemAccessSummary["owner"];
+    grants: Grant[];
+    links: ItemAccessSummary["links"];
+  } | undefined;
+  if (!row) throw new Error("Item not found");
+  // Corrupt visibility must never turn an incomplete summary into a privacy promise.
+  if (!["public", "link", "private"].includes(row.visibility)) {
+    throw new Error("Item access is unavailable");
+  }
+  const direct: ItemAccessSummary["direct"] = [];
+  const inherited: ItemAccessSummary["inherited"] = [];
+  for (const grant of row.grants) {
+    const role = roleForTarget(grant.role, grant.scopeType, "item");
+    if (!role || role === "owner") continue;
+    if (grant.scopeType === "item") {
+      direct.push({ id: grant.id, email: grant.email, role,
+        accepted: grant.accepted, createdAt: grant.createdAt });
+    } else {
+      inherited.push({ id: grant.id, email: grant.email, role,
+        scopeType: grant.scopeType, scopeId: grant.scopeId, scopeName: grant.scopeName });
+    }
+  }
+  return {
+    itemId: row.id,
+    visibility: row.visibility === "public" ? "public"
+      : row.visibility === "link" || row.links.length > 0 ? "link" : "private",
+    pageVisibility: row.visibility as ItemAccessSummary["pageVisibility"],
+    pagePath: blogWorkspacePostPath({ handle, username: row.username ?? undefined }, row.folder_path ?? "blog", { slug: row.slug }),
+    owner: row.owner, direct, inherited, links: row.links,
+  };
+}
+
+/** A link revocation and its audit are one statement, scoped to the live item. */
+export async function revokeItemAccessLink(
+  handle: string,
+  itemId: string,
+  linkId: string,
+  actor: Pick<AuditEntry, "actorType" | "actorUserId">,
+): Promise<void> {
+  if (!db) throw new Error(NO_DATABASE);
+  const audit = auditCteFrom({ ...actor, actionName: "share.link.revoke",
+    targetType: "item", targetId: itemId, inputSummary: linkId }, "changed", sql`${itemId}::text`);
+  await db.execute(sql`
+    WITH changed AS (
+      UPDATE document_capability_links l SET revoked_at = now()
+      FROM posts p JOIN blogs b ON p.blog_id = b.id
+      WHERE l.id = ${linkId}::uuid AND l.post_id = ${itemId}::uuid
+        AND p.id = l.post_id AND b.handle = ${handle}
+        AND p.deleted_at IS NULL AND b.deleted_at IS NULL AND l.revoked_at IS NULL
+      RETURNING l.id
+    ), audit AS (${audit}) SELECT id FROM changed
+  `);
+}
+
 export async function resolveDocumentCapability(
   token: string,
 ): Promise<ResolvedDocumentCapability | null> {
@@ -5502,6 +5749,8 @@ type SavePostOptions = {
    * stale save can likewise never resurrect a deleted post.
    */
   expectedRevision?: number;
+  /** Materialization locks this generation through the audited canonical save. */
+  expectedCollabEpoch?: number;
   audit?: AuditEntry;
   /**
    * The caller already wrote the command audit atomically with a live Yjs
@@ -5639,9 +5888,11 @@ function visibilityForSave(
 }
 
 function postSaveAudit(post: Post, audit: AuditEntry | undefined): AuditEntry {
+  const agent = agentChangeContext.getStore();
   return (
     audit ?? {
-      actorType: "human",
+      actorUserId: agent?.userId,
+      actorType: agent?.actorType ?? "human",
       actionName: "save_document",
       targetType: "item",
       targetId: post.id,
@@ -5656,6 +5907,12 @@ export async function savePost(
   options: SavePostOptions = {},
 ): Promise<Post> {
   if (!db) throw new Error("savePost requires DATABASE_URL");
+  if (options.expectedCollabEpoch !== undefined &&
+      (!post.id || !options.preservePublishedAt || !Number.isSafeInteger(options.expectedCollabEpoch) ||
+       options.expectedCollabEpoch < 0 || !Number.isSafeInteger(options.expectedRevision) ||
+       options.auditAlreadyRecorded)) {
+    throw new PostConflictError();
+  }
   if (options.preservePublishedAt && !post.id) {
     throw new Error("Cannot preserve published_at without an existing post");
   }
@@ -5676,6 +5933,7 @@ export async function savePost(
           .limit(1)
       )[0]
     : undefined;
+  if (agentChangeContext.getStore() && post.id && !existingRow) throw new PostConflictError();
   const document = canonicalDocumentForSave(
     post,
     existingRow,
@@ -5749,6 +6007,11 @@ export async function savePost(
         options.expectedRevision !== undefined
           ? [eq(posts.revision, options.expectedRevision)]
           : [];
+      if (options.expectedCollabEpoch !== undefined) {
+        guard.push(sql`EXISTS (
+          SELECT 1 FROM locked_epoch WHERE epoch = ${options.expectedCollabEpoch}
+        )`);
+      }
       const updateQuery = db
         .update(posts)
         .set({ ...set, slug })
@@ -5758,20 +6021,48 @@ export async function savePost(
             eq(posts.blogId, blogId),
             isNull(posts.deletedAt),
             ...guard,
+            ...(agentChangeContext.getStore() && existingRow ? [eq(posts.revision, existingRow.revision)] : []),
           ),
         );
+      if (options.expectedCollabEpoch !== undefined) {
+        // The dependency on locked_epoch serializes rotation with this save.
+        // A plain EXISTS against collab_state would only check the MVCC snapshot.
+        const changed = updateQuery.returning({ id: posts.id, revision: posts.revision });
+        const auditCte = auditCteFrom(
+          postSaveAudit({ ...post, slug }, options.audit), "changed", sql`changed.id::text`,
+        );
+        const result = await db.execute(sql`
+          WITH locked_epoch AS MATERIALIZED (
+            SELECT epoch FROM ${collabState}
+            WHERE post_id = ${post.id}::uuid FOR UPDATE
+          ), changed AS ${changed}, audit AS (${auditCte}), provenance AS (
+            UPDATE ${collabState}
+            SET materialized_revision = changed.revision, updated_at = now()
+            FROM changed
+            WHERE post_id = changed.id AND epoch = ${options.expectedCollabEpoch}
+          )
+          SELECT id, revision FROM changed
+        `);
+        const changedRow = result.rows[0] as { id: string; revision: number | string } | undefined;
+        if (!changedRow) throw new PostConflictError();
+        // Return exactly what this statement saved, never a later writer's row.
+        return mapPost({ ...existingRow!, ...base, slug, revision: Number(changedRow.revision) });
+      }
       if (options.auditAlreadyRecorded) {
         const updated = await updateQuery.returning();
         if (updated[0]) return mapPost(updated[0]);
       } else {
-        const changed = updateQuery.returning({ id: posts.id });
+        const changed = updateQuery.returning({ id: posts.id, revision: posts.revision });
         const auditCte = auditCteFrom(
           postSaveAudit({ ...post, slug }, options.audit),
           "changed",
           sql`changed.id::text`,
         );
         const result = await db.execute(sql`
-          WITH changed AS ${changed}, audit AS (${auditCte})
+          WITH changed AS ${changed}, audit AS (${auditCte}), agent_change AS (${agentChangeCte({
+            source: "changed", postId: sql`changed.id`, revision: sql`changed.revision`,
+            changes: agentTextChanges(existingRow ? requireDocumentSnapshot(existingRow.document, "Agent change baseline") : null, document),
+          })})
           SELECT id FROM changed
         `);
         const updatedId = (result.rows[0] as { id?: string } | undefined)?.id;
@@ -5789,11 +6080,11 @@ export async function savePost(
       // the base moved (someone else wrote) or the row is gone (deleted). Both
       // must surface as 412, not silently resurrect the post or upsert onto
       // whatever row happens to share this slug.
-      if (options.expectedRevision !== undefined) throw new PostConflictError();
+      if (options.expectedRevision !== undefined || agentChangeContext.getStore()) throw new PostConflictError();
       if (options.preservePublishedAt) throw new Error("Post not found");
     }
 
-    const insertQuery = db
+    const insertBuilder = db
       .insert(posts)
       .values({
         blogId,
@@ -5807,10 +6098,12 @@ export async function savePost(
               ? new Date(post.date)
               : new Date()
             : null,
-      })
-      // The unique index is partial (deleted_at is null), so the conflict
-      // target must match it; trashed rows never absorb a new post's save.
-      .onConflictDoUpdate({
+      });
+    // Agent creates never upsert over content whose before state was not read.
+    // Human upserts retain the existing partial-index conflict target.
+    const insertQuery = agentChangeContext.getStore()
+      ? insertBuilder.onConflictDoNothing()
+      : insertBuilder.onConflictDoUpdate({
         target: [posts.folderId, posts.slug],
         targetWhere: sql`${posts.deletedAt} is null`,
         set,
@@ -5819,14 +6112,17 @@ export async function savePost(
       const inserted = await insertQuery.returning();
       return mapPost(inserted[0]);
     }
-    const changed = insertQuery.returning({ id: posts.id });
+    const changed = insertQuery.returning({ id: posts.id, revision: posts.revision });
     const auditCte = auditCteFrom(
       postSaveAudit({ ...post, slug }, options.audit),
       "changed",
       sql`changed.id::text`,
     );
     const result = await db.execute(sql`
-      WITH changed AS ${changed}, audit AS (${auditCte})
+      WITH changed AS ${changed}, audit AS (${auditCte}), agent_change AS (${agentChangeCte({
+            source: "changed", postId: sql`changed.id`, revision: sql`changed.revision`,
+            changes: agentTextChanges(existingRow ? requireDocumentSnapshot(existingRow.document, "Agent change baseline") : null, document),
+          })})
       SELECT id FROM changed
     `);
     const insertedId = (result.rows[0] as { id?: string } | undefined)?.id;
@@ -6829,4 +7125,23 @@ export async function fileContentReport(input: {
     inputSummary: input.path,
   });
   return { id: row.id };
+}
+
+/** Private history: only call after resolving current item edit access. */
+export async function listAgentChanges(postId: string, before?: { createdAt: Date; id: string }) {
+  if (!db) throw new Error("Agent history requires a database");
+  return db.select({ ...getTableColumns(agentChanges),
+    reverted: sql<boolean>`EXISTS (SELECT 1 FROM agent_changes reverted WHERE reverted.reverts_id = ${agentChanges.id})`,
+  }).from(agentChanges).where(and(eq(agentChanges.postId, postId),
+    before ? sql`(${agentChanges.createdAt}, ${agentChanges.id}) < (${before.createdAt}, ${before.id}::uuid)` : undefined))
+    .orderBy(desc(agentChanges.createdAt), desc(agentChanges.id)).limit(50);
+}
+
+export async function getAgentChange(postId: string, changeId: string) {
+  if (!db) throw new Error("Agent history requires a database");
+  const [change] = await db.select().from(agentChanges).where(and(
+    eq(agentChanges.postId, postId), eq(agentChanges.id, changeId))).limit(1);
+  const [revert] = await db.select({ id: agentChanges.id }).from(agentChanges)
+    .where(and(eq(agentChanges.postId, postId), eq(agentChanges.revertsId, changeId))).limit(1);
+  return change ? { ...change, reverted: Boolean(revert) } : null;
 }

@@ -90,12 +90,12 @@ describe("guarded cloud assistant tools", () => {
     );
   });
 
-  it("stages ordinary edits but omits confirmation-gated and open-world writes", () => {
+  it("stages previewable edits and confirmations but omits open-world writes", () => {
     const tools = guardedCloudAssistantTools(actor, vi.fn());
     expect(tools).toHaveProperty("create_item");
     expect(tools).toHaveProperty("read_item");
     expect(tools).toHaveProperty("update_item");
-    expect(tools).not.toHaveProperty("delete_item");
+    expect(tools).toHaveProperty("delete_item");
     expect(tools).toHaveProperty("set_item_status");
     expect(tools).not.toHaveProperty("add_item_asset");
   });

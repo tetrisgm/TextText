@@ -48,7 +48,7 @@ describe("item type studio experience", () => {
     expect(studioSource).toContain('finding.severity === "important"');
     expect(studioSource).toContain('className={styles.preflight}');
     expect(studioSource).toContain(
-      "disabled={Boolean(busy) || importantQualityFindings.length > 0}",
+      "disabled={!saved && (Boolean(busy) || importantQualityFindings.length > 0)}",
     );
   });
 

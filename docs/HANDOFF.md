@@ -4269,3 +4269,64 @@ agents-undo (durable agent change records with revert), ai-selection
 scope). Still to assign after these land: Notion-style inline selection
 preview with accept/discard and streaming, Translate and Continue writing
 quick actions, history sync retry, the participant row in the bar.
+
+
+### Agent change history scratch candidate (2026-09-05)
+
+- `agents-undo.diff` is an unapplied Finding 2 implementation, developed under
+  `.texttext/probe/astra-impl-agents-undo/work`. It adds private durable text
+  history, authenticated connection/run attribution, workspace list/revert
+  commands, and conservative inverses through the audited Yjs write path.
+- Human Cmd+Z origins are unchanged. The inverse covers canonical title,
+  subtitle and body; overlapping or ambiguous later text returns a comparison.
+- Unit/transport/Yjs tests and TypeScript pass. A local Postgres integration
+  suite is included, but this sandbox denied both TCP and Unix socket access
+  with `EPERM`; database execution is not verified. No migration or release ran.
+
+### Implementation round landed (2026-09-05)
+
+Eight Codex diffs (gpt-6-astra, high effort) merged, with the collisions
+resolved by hand where two of them rewrote the same seams:
+
+- Sync: materialization carries the client's learned collab epoch; the
+  route and materializer reject a missing or stale epoch with 409 and lock
+  `collab_state` for the canonical write; a 409 stops that document's relay
+  and shows a recovery panel with the local copy. Remote CRDT updates now
+  reach the surface while a save is pending; every request carries its own
+  fence (document mutation version plus local version, captured when the
+  provider encodes), and an older acknowledgment can no longer replace a
+  newer merge. The two diffs met in `flushMaterialization`; the merge keeps
+  the provider request with the epoch and the per-request fences.
+- Sharing: presence sessions are registered (`join`) and return a
+  server-issued credential that every heartbeat and leave must present;
+  awareness payloads are decoded and bounded; viewers cannot mutate others'
+  rows. The share dialog renders a server-derived access summary
+  (visibility, links, direct and inherited grants) and separates Access
+  granted from Email sent.
+- Agents: hosted MCP stages destructive and audience-changing tools, and
+  whole-body rewrites, as owner proposals with a review page at
+  `/proposals/[id]`. Durable `agent_changes` records (migration
+  `migrate-add-agent-changes.mjs`, in the release list; `collab_state`
+  gains `mutation_version`) capture every agent text change with connection
+  and run ids; `list_agent_changes` and `revert_agent_change` are on the
+  command surface. `appendCollabUpdate` is one fenced statement now: the
+  counter bump, the optional revision check from the epoch work, the
+  append, the audit and the change record.
+- AI: a validated selection envelope (item, field, revision, offsets, full
+  text, hash) travels from the passage toolbar through `/api/ai` to the
+  proposal; selections over 4,000 characters are refused with a visible
+  message; stale envelopes fail closed at apply time.
+- Item types: successor blueprints are compared field by field before a
+  version is inserted or applied; incompatible changes name the field;
+  the studio has an explicit edit save scope and shows target folders.
+- UI re-review: the bar's New folder now works at the root through a new
+  `createRootFolder` store operation and action (root folders had only
+  ever been provisioned); Starred, Shared and Trash create at the root;
+  Enter and Space on the bar's tools no longer open the background
+  selection; reading keys yield to the sidebar region; IME composition
+  Enter no longer submits a folder name.
+
+Tests: 2175 across 259 files after aligning contract tests with the new
+tools (in the implementation's order, revert idempotent), executor calls
+carrying actor attribution, single deletion in the previewable set, and
+the live-apply mocks including the mutation counter read.

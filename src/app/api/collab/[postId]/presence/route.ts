@@ -1,99 +1,89 @@
-// Co-editing presence: who is in this post right now, and where their cursor is.
-//
-//   POST /api/collab/{postId}/presence  {clientId, userName, color, awareness}
-//     -> {presence: [{clientId, userName, color, awareness}]}
-//   GET  /api/collab/{postId}/presence
-//     -> {presence: [...]}
-//
-// The POST is a write plus a read, which is enough for whoever is typing: their
-// own awareness changes drive a heartbeat, and the response carries everyone
-// else's. It is NOT enough for someone who is only watching, because their
-// awareness never changes, so they would learn where a colleague's cursor moved
-// only on their next slow heartbeat. Watching a colleague write is the common
-// case, so the read is also available on its own and is polled quickly.
-//
-// Rows go stale quickly so a closed tab drops out on its own. Any collaborator
-// (viewer included) counts as present.
-
-import {
-  activePresence,
-  removePresence,
-  upsertPresence,
-} from "@/lib/collab";
+// GET reads presence. POST {join: true, awarenessClientId} issues a session;
+// subsequent {clientId, sessionCredential, awareness|leave} requests own that row.
+import { activePresence, removePresence, upsertPresence } from "@/lib/collab";
 import { getCollabRequestAccess } from "@/lib/collab/access.server";
+import { sanitizePresenceAwareness } from "@/lib/collab/presence-awareness";
+import { issuePresenceSession, verifyPresenceSession } from "@/lib/collab/presence-session.server";
 import { readBoundedJson } from "@/lib/http/bounded-json";
+import type { AuditEntry } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
-
 const MAX_PRESENCE_BODY_BYTES = 96 * 1024;
+const respond = (body: unknown, status = 200) => Response.json(body, {
+  status, headers: { "Cache-Control": "private, no-store" },
+});
 
-export async function GET(
-  request: Request,
-  ctx: { params: Promise<{ postId: string }> },
-) {
+export async function GET(request: Request, ctx: { params: Promise<{ postId: string }> }) {
+  const { postId } = await ctx.params;
+  const access = await getCollabRequestAccess(request, postId);
+  if (!access.role) return respond({ error: "No access to this post" }, 403);
+  return respond({ presence: await activePresence(postId) });
+}
+
+export async function POST(request: Request, ctx: { params: Promise<{ postId: string }> }) {
   const { postId } = await ctx.params;
   const access = await getCollabRequestAccess(request, postId);
   if (!access.role) {
-    return Response.json({ error: "No access to this post" }, { status: 403 });
+    return access.trashed
+      ? respond({ error: "This item was moved to Trash", reason: "trashed" }, 410)
+      : respond({ error: "No access to this post" }, 403);
   }
-  return Response.json(
-    { presence: await activePresence(postId) },
-    { headers: { "Cache-Control": "private, no-store" } },
-  );
-}
+  // A capability is a principal too, but never the unbound "Guest" fallback.
+  const principal = access.user
+    ? `account:${access.user.userId ?? access.user.sub}`
+    : access.capability ? `capability:${access.capability.id}` : null;
+  if (!principal) return respond({ error: "A presence identity is required" }, 403);
 
-export async function POST(
-  request: Request,
-  ctx: { params: Promise<{ postId: string }> },
-) {
-  const { postId } = await ctx.params;
-  const access = await getCollabRequestAccess(request, postId);
-  const role = access.role;
-  if (!role) {
-    if (access.trashed) {
-      return Response.json(
-        { error: "This item was moved to Trash", reason: "trashed" },
-        { status: 410 },
-      );
-    }
-    return Response.json({ error: "No access to this post" }, { status: 403 });
-  }
-
-  const decoded = await readBoundedJson<{
-    clientId?: unknown;
-    userName?: unknown;
-    color?: unknown;
-    awareness?: unknown;
-    leave?: unknown;
-  }>(request, MAX_PRESENCE_BODY_BYTES);
+  const decoded = await readBoundedJson<unknown>(request, MAX_PRESENCE_BODY_BYTES);
   if ("error" in decoded) {
-    if (decoded.error === "too_large") {
-      return Response.json(
-        { error: "Presence update is too large" },
-        { status: 413, headers: { "Cache-Control": "private, no-store" } },
-      );
+    return decoded.error === "too_large"
+      ? respond({ error: "Presence update is too large" }, 413)
+      : respond({ error: "Send a JSON body" }, 400);
+  }
+  if (!decoded.value || typeof decoded.value !== "object" || Array.isArray(decoded.value)) {
+    return respond({ error: "Send a JSON object" }, 400);
+  }
+  const body = decoded.value as Record<string, unknown>;
+  if (body.join === true) {
+    if (!Number.isSafeInteger(body.awarenessClientId) || Number(body.awarenessClientId) < 0 ||
+        body.leave !== undefined || body.awareness !== undefined || body.sessionCredential !== undefined) {
+      return respond({ error: "Send a valid awareness client ID to join" }, 400);
     }
-    return Response.json({ error: "Send a JSON body" }, { status: 400 });
+    // Never let the caller choose the row ID, including when rejoining.
+    try {
+      return respond({ session: issuePresenceSession(principal, postId, Number(body.awarenessClientId)) });
+    } catch {
+      return respond({ error: "Presence is unavailable" }, 503);
+    }
   }
-  const body = decoded.value;
-  const clientId = typeof body.clientId === "string" ? body.clientId.slice(0, 64) : "";
-  if (!clientId) {
-    return Response.json({ error: "clientId is required" }, { status: 400 });
-  }
+  const session = verifyPresenceSession(body.sessionCredential, principal, postId, body.clientId);
+  if (!session) return respond({ error: "Join presence again", reason: "presence_session" }, 409);
+  const audit: AuditEntry = {
+    actorUserId: access.user?.userId ?? null,
+    actorType: "human",
+    actionName: body.leave === true ? "collab.presence.leave" : "collab.presence.update",
+    targetType: "item",
+    targetId: postId,
+  };
   if (body.leave === true) {
-    await removePresence(postId, clientId);
-    return Response.json({ presence: await activePresence(postId) });
+    await removePresence(postId, session.clientId, audit);
+    return respond({ presence: await activePresence(postId) });
   }
-  const awareness =
-    typeof body.awareness === "string" && body.awareness.length <= 64 * 1024
-      ? body.awareness
-      : null;
-
-  const presence = await upsertPresence(postId, {
-    clientId,
+  let awareness: string;
+  try {
+    awareness = sanitizePresenceAwareness(body.awareness, session.awarenessClientId, {
+      clientId: session.clientId,
+      name: access.userName,
+      color: access.color,
+      role: access.role,
+    });
+  } catch {
+    return respond({ error: "Invalid presence awareness" }, 400);
+  }
+  return respond({ presence: await upsertPresence(postId, {
+    clientId: session.clientId,
     userName: access.userName,
     color: access.color,
     awareness,
-  });
-  return Response.json({ presence });
+  }, audit) });
 }

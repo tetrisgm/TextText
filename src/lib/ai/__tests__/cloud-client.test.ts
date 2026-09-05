@@ -1,3 +1,4 @@
+import { createSelectionEnvelope } from "@/lib/ai/selection-envelope";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cloudAssistantStatus,
@@ -6,6 +7,18 @@ import {
 
 describe("cloud assistant client", () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it.each([false, true])("round-trips the complete selection envelope (stream=%s)", async (stream) => {
+    const text = "x".repeat(4000);
+    const selectionEnvelope = await createSelectionEnvelope("note-1", { revision: 9, title: "Draft", body: text }, { field: "body", start: 0, end: 4000, text });
+    const answer = { type: "complete", text: "Suggestion", provider: "OpenAI", model: "test", selectionEnvelope };
+    const fetchMock = vi.fn(async () => stream ? new Response(JSON.stringify(answer) + "\n", { headers: { "Content-Type": "application/x-ndjson" } }) : Response.json(answer));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await cloudAssistantTurn("writer", "Rewrite", { postId: "note-1", selectionEnvelope, mode: "suggestion" }, { stream });
+    expect(result).toMatchObject({ selectionEnvelope });
+    const init = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(init[1].body as string).context.selectionEnvelope).toEqual(selectionEnvelope);
+  });
 
   it("binds status discovery to the exact displayed workspace handle", async () => {
     const fetchMock = vi.fn(async () =>

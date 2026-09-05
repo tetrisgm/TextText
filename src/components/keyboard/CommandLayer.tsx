@@ -286,7 +286,7 @@ export function CommandLayer({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
+      if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
       const typingTarget = isTypingTarget(event.target);
 
       if (event.key === "Escape") {
@@ -327,6 +327,17 @@ export function CommandLayer({ children }: { children: ReactNode }) {
         openShortcuts();
         return;
       }
+
+      // Real buttons own activation, including when a list view is behind
+      // the toolbar or a tab remains open above Library Home.
+      if (
+        (event.key === "Enter" || event.key === " ") &&
+        !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey &&
+        event.target instanceof Element &&
+        event.target.closest(
+          ".workspace-action-bar-tool, .workspace-tab-select, .workspace-tab-close",
+        )
+      ) return;
 
       if (dispatchCommandShortcut(event, typingTarget)) return;
       if (typingTarget) return;

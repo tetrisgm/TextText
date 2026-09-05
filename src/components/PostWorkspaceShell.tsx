@@ -2741,6 +2741,7 @@ function LocalWorkspaceShell({
       if (!document) throw new Error("Could not load the item document");
       const body = document.content.body;
       return {
+        revision: getCachedWorkspacePostDocument(currentPool.blogId, postId)?.revision ?? poolPost.revision,
         title: poolPost.title,
         excerpt: markdownSubtitle(body) || poolPost.excerpt || "",
         body,
@@ -4630,7 +4631,9 @@ function LocalWorkspaceShell({
         showToast(`Appearance: ${appearanceLabel(appearance)}`);
       },
       readerScrollable: () =>
-        viewRef.current.level === "post" && Boolean(contentRef.current),
+        viewRef.current.level === "post" &&
+        activeRegionRef.current !== "sidebar" &&
+        Boolean(contentRef.current),
       // A selection of many is a mode, and the way out of it is Escape. Said
       // once, the first time it happens in a session: a toast on every
       // multi-select is nagging, and a mode nobody can leave is worse.
@@ -5315,6 +5318,7 @@ function LocalWorkspaceShell({
           rail runs, against the same selection it already reads, and the
           result arrives as a proposal to accept or undo. */}
         <SelectionActions
+          itemId={assistantTarget.view.postId}
           enabled={
             assistant.ownerScopeReady && assistantTarget.view.level === "edit"
           }
@@ -5325,7 +5329,7 @@ function LocalWorkspaceShell({
           }
           onRunAction={(id) => {
             if (assistantState === "hidden") changeAssistantState("pinned");
-            void assistant.runQuickAction(id);
+            void assistant.runQuickAction(id, true);
           }}
         />
 

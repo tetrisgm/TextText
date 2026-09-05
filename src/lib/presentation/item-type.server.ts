@@ -15,6 +15,7 @@ import {
   type ItemTypeBlueprint,
 } from "@/lib/presentation/item-type-blueprint";
 import { authoringSourceFor } from "@/lib/presentation/authoring-source";
+import { assertCompatibleItemTypeFields, itemTypeSaveScopeSchema, type ItemTypeSaveScope } from "@/lib/presentation/item-type-update";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 
 type CreatedItemType = {
@@ -134,10 +135,9 @@ export type ItemTypeUpdateResult = {
  * ones, so an edit adds a successor and the documents already on the old one
  * keep rendering exactly as they did.
  *
- * It does not guess where the change belongs. A new version is invisible on its
- * own, so it is applied to the folders already wearing this look, and the
- * result says which and how many items were restyled. A caller that wants the
- * version without moving anyone passes `apply: false`.
+ * The explicit save scope names the target folders, or saves only a version.
+ * Legacy callers can still use `apply: false`. Item application moves only
+ * documents pinned to the exact base reference, preserving independent looks.
  *
  * It does not accept a blind write. `baseVersion` is the version the editor was
  * looking at; if a successor appeared meanwhile the update is refused rather
@@ -146,6 +146,7 @@ export type ItemTypeUpdateResult = {
 export async function updateWorkspaceItemType(input: {
   actor: AuditEntry;
   apply?: boolean;
+  saveScope?: ItemTypeSaveScope;
   applyToExisting?: boolean;
   baseVersion: number;
   blogId: string;
@@ -195,33 +196,46 @@ export async function updateWorkspaceItemType(input: {
     );
   }
 
-  // Find where this will land BEFORE committing anything. Creating the version
-  // first and discovering folders after meant a folder trashed in between left
-  // a committed version that nothing wore, and a base version too stale to
-  // retry from. An immutable version cannot be withdrawn, so whatever can fail
-  // has to fail first.
-  const targets =
-    input.apply === false
-      ? []
-      : await listFoldersUsingTemplate(input.blogId, input.templateId);
-  // A folder deliberately left on an older version stays there. Sharing an id
-  // is not consent to be moved: pinning is how a folder says it wants the look
-  // it already has.
-  const applicable = targets.filter(
-    (folder) => folder.version === input.baseVersion,
-  );
-  const skipped = targets
+  const blueprint = normalizeItemTypeBlueprint(input.blueprint);
+  const base = compileItemTypeBlueprint(current.source.blueprint, { id: input.templateId });
+  const definition = compileItemTypeBlueprint(blueprint, { id: input.templateId });
+  assertCompatibleItemTypeFields(base.fields, definition.fields);
+
+  // Resolve and validate the whole scope before inserting an immutable version.
+  // Legacy callers retain apply:false; explicit scope takes precedence.
+  const scope = input.saveScope === undefined
+    ? null
+    : itemTypeSaveScopeSchema.parse(input.saveScope);
+  const saveOnly = scope ? scope.mode === "version" : input.apply === false;
+  const targets = saveOnly || scope?.mode === "folder"
+    ? []
+    : await listFoldersUsingTemplate(input.blogId, input.templateId);
+  if (scope?.mode === "usages") {
+    for (const path of scope.folderPaths) {
+      if (!targets.some((folder) => folder.path === path)) {
+        throw new Error(`Folder "${path}" no longer uses this item type. Review the target folders again.`);
+      }
+    }
+  }
+  const listed = scope?.mode === "usages"
+    ? targets.filter((folder) => scope.folderPaths.includes(folder.path))
+    : targets;
+  const applicable = listed
+    .filter((folder) => folder.version === input.baseVersion)
+    .map((folder) => ({ ...folder, expectedReference: { id: input.templateId, version: input.baseVersion } }));
+  const skipped = listed
     .filter((folder) => folder.version !== input.baseVersion)
     .map((folder) => ({ path: folder.path, pinnedTo: folder.version }));
+  if (scope?.mode === "folder") {
+    const folder = await getFolderByPath(input.handle, scope.folderPath);
+    if (!folder) throw new Error("That folder could not be found.");
+    if (!folder.defaultTemplate) throw new Error("That folder's current item type could not be read. Reload it before applying.");
+    applicable.push({
+      id: folder.id, path: folder.path, version: input.baseVersion,
+      expectedReference: folder.defaultTemplate,
+    });
+  }
   const conflicted: Array<{ path: string }> = [];
-
-  const blueprint = normalizeItemTypeBlueprint(input.blueprint);
-  // Same id, so this is a new version of the SAME look rather than a new look
-  // that happens to resemble it. createDocumentTemplateVersion picks the next
-  // free version number.
-  const definition = compileItemTypeBlueprint(blueprint, {
-    id: input.templateId,
-  });
   const created = await createDocumentTemplateVersion({
     blogId: input.blogId,
     definition,
@@ -239,15 +253,13 @@ export async function updateWorkspaceItemType(input: {
     itemsLeft: number;
     itemsBeingEdited: number;
   }> = [];
-  if (input.apply !== false) {
+  if (!saveOnly) {
     const reference = { id: created.id, version: created.version };
     for (const folder of applicable) {
       try {
         await setFolderTemplate(input.handle, folder.id, reference, {
-          expectedReference: {
-            id: input.templateId,
-            version: input.baseVersion,
-          },
+          expectedReference: folder.expectedReference,
+          audit: { ...input.actor, actionName: "set_folder_template", targetType: "folder", targetId: folder.id },
         });
       } catch (error) {
         if (
@@ -264,7 +276,10 @@ export async function updateWorkspaceItemType(input: {
       const restyled =
         input.applyToExisting === false
           ? { changed: 0, contested: 0, remaining: 0 }
-          : await retemplateFolderItems(input.handle, folder.id, reference);
+          : await retemplateFolderItems(input.handle, folder.id, reference, {
+              fromReference: { id: input.templateId, version: input.baseVersion },
+              audit: (post) => ({ ...input.actor, actionName: "update_item_type_item", targetType: "item", targetId: post.id }),
+            });
       applied.push({
         path: folder.path,
         restyledItems: restyled.changed,

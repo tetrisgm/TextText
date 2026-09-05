@@ -11,15 +11,15 @@ import { rootDomainUrl } from "@/lib/site-url";
 
 export async function sendShareInviteEmail(opts: {
   to: string;
-  role: "editor" | "viewer";
+  role: "editor" | "commenter" | "viewer";
   post: Post;
   handle: string;
   inviterName: string;
-}): Promise<void> {
+}): Promise<"sent" | "not_sent"> {
   const server = process.env.AUTH_EMAIL_SERVER;
   const from =
     process.env.AUTH_EMAIL_FROM ?? "TextText <noreply@TextText.app>";
-  if (!server || !from) return;
+  if (!server || !from) return "not_sent";
 
   const blog = await getBlog(opts.handle).catch(() => null);
   const path = blogPostPath(
@@ -28,12 +28,12 @@ export async function sendShareInviteEmail(opts: {
   );
   const origin = rootDomainUrl().toString().replace(/\/$/, "");
   const url = `${origin}${path}`;
-  const verb = opts.role === "editor" ? "edit" : "read";
+  const verb = opts.role === "editor" ? "edit" : opts.role === "commenter" ? "comment on" : "read";
   const title = opts.post.title.trim() || "an untitled draft";
 
   const { createTransport } = await import("nodemailer");
   const transport = createTransport(server);
-  await transport.sendMail({
+  const receipt = await transport.sendMail({
     to: opts.to,
     from,
     subject: `${opts.inviterName} shared "${title}" with you`,
@@ -45,4 +45,8 @@ export async function sendShareInviteEmail(opts: {
       `Sign in with this email address (${opts.to}) to get access.`,
     ].join("\n"),
   });
+  if (!receipt.accepted?.some((address) =>
+    (typeof address === "string" ? address : address.address).toLowerCase() === opts.to.toLowerCase()
+  )) throw new Error("Email was not accepted");
+  return "sent";
 }

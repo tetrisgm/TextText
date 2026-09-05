@@ -424,6 +424,23 @@ export const aiWriteProposals = pgTable(
 // made by AI and by external agents, and it has to survive the person leaving;
 // nulling the actor severs the identity while keeping what happened. This is
 // also why actorUserId is nullable rather than notNull.
+export const agentChanges = pgTable("agent_changes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  postId: uuid("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+  actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  actorType: text("actor_type").notNull(),
+  // Opaque capability row id (or authenticated in-app session identity), never a token.
+  connectionId: text("connection_id").notNull(),
+  runId: text("run_id").notNull(),
+  changes: jsonb("changes").$type<import("@/lib/agent-changes").AgentTextChange[]>().notNull(),
+  revision: bigint("revision", { mode: "number" }).notNull(),
+  captureGeneration: text("capture_generation"),
+  collabEpoch: integer("collab_epoch"),
+  collabSeq: bigint("collab_seq", { mode: "number" }),
+  revertsId: uuid("reverts_id").unique().references((): AnyPgColumn => agentChanges.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [index("agent_changes_post_created_idx").on(t.postId, t.createdAt, t.id)]);
+
 export const actionAudit = pgTable("action_audit", {
   id: uuid("id").defaultRandom().primaryKey(),
   actorUserId: uuid("actor_user_id").references(() => users.id),
@@ -1053,6 +1070,7 @@ export const collabUpdates = pgTable(
 // (single-writer upsert CAS) and the next editor reseeds from posts.body instead
 // of replaying the stale log. See the hole-2 plan for the full race analysis.
 export const collabState = pgTable("collab_state", {
+  mutationVersion: bigint("mutation_version", { mode: "number" }).notNull().default(0),
   postId: uuid("post_id")
     .primaryKey()
     .references(() => posts.id),

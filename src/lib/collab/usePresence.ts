@@ -63,6 +63,10 @@ export function usePresence(postId: string | null | undefined): PresencePeer[] {
           `/api/collab/${encodeURIComponent(postId)}/presence`,
           { headers: { Accept: "application/json" }, signal: abort.signal },
         );
+        if (res.status === 401 || res.status === 403 || res.status === 410) {
+          if (!cancelled) setState({ postId, peers: [] });
+          return;
+        }
         if (!res.ok) return;
         const data = (await res.json()) as { presence?: PresencePeer[] };
         if (!cancelled) {

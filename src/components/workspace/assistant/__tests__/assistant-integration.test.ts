@@ -203,7 +203,10 @@ describe("assistant local-first item edits", () => {
     expect(readOpenWorkspaceItemDraft("post-1")).toBeNull();
   });
 
-  it("routes agent updates through the live draft command when provided", async () => {
+  it("no longer routes agent updates through the local draft shortcut", async () => {
+    // Agent edits are attributed and revertable only on the acknowledged
+    // workspace command surface, so the local draft patch is not used even
+    // when a caller offers it.
     const applyItemPatch = vi.fn(async () => ({ synced: true }));
     const tools = createWorkspaceAgentTools({
       handle: "local",
@@ -223,17 +226,7 @@ describe("assistant local-first item edits", () => {
         excerpt: "Local excerpt",
       }),
     ).resolves.toMatchObject({ ok: true, id: "post-1", title: "Local title" });
-    expect(applyItemPatch).toHaveBeenCalledWith(
-      "post-1",
-      {
-        title: "Local title",
-        excerpt: "Local excerpt",
-        body: undefined,
-        tags: undefined,
-      },
-      {},
-      undefined,
-    );
+    expect(applyItemPatch).not.toHaveBeenCalled();
   });
 
   it("persists tag metadata through the stable workspace command", async () => {

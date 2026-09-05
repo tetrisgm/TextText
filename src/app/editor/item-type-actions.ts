@@ -9,7 +9,23 @@ import {
   createWorkspaceItemType,
   updateWorkspaceItemType,
 } from "@/lib/presentation/item-type.server";
-import { getDocumentTemplateAuthoringSource } from "@/lib/store";
+import { getDocumentTemplateAuthoringSource, listFoldersUsingTemplate } from "@/lib/store";
+import { itemTypeSaveScopeSchema } from "@/lib/presentation/item-type-update";
+import type { ItemTypeUpdateResult } from "@/lib/presentation/item-type.server";
+
+export async function readItemTypeUsagesAction(handleInput: unknown, templateIdInput: unknown): Promise<
+  { ok: true; usages: Array<{ path: string; version: number }> } | { ok: false; error: string }
+> {
+  try {
+    const access = await getBlogEditAccess(cleanHandle(handleInput));
+    if (!access.isOwner || !access.blogId) throw new Error("Only the workspace owner can edit an item type.");
+    if (typeof templateIdInput !== "string" || !templateIdInput.trim()) throw new Error("Which item type?");
+    const usages = await listFoldersUsingTemplate(access.blogId, templateIdInput.trim());
+    return { ok: true, usages: usages.map(({ path, version }) => ({ path, version })) };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Could not read the target folders." };
+  }
+}
 
 function cleanHandle(value: unknown): string {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -156,11 +172,14 @@ export async function updateItemTypeAction(
   baseVersionInput: unknown,
   blueprintInput: unknown,
   applyToExistingInput: unknown,
+  saveScopeInput: unknown = { mode: "version" },
 ): Promise<
   | {
       ok: true;
       itemType: { id: string; version: number; name: string };
-      applied: Array<{ path: string; restyledItems: number }>;
+      applied: ItemTypeUpdateResult["applied"];
+      skipped: ItemTypeUpdateResult["skipped"];
+      conflicted: ItemTypeUpdateResult["conflicted"];
     }
   | { ok: false; error: string }
 > {
@@ -185,6 +204,7 @@ export async function updateItemTypeAction(
         targetType: "mode",
         inputSummary: blueprint.name,
       },
+      saveScope: itemTypeSaveScopeSchema.parse(saveScopeInput),
       applyToExisting: applyToExistingInput !== false,
       baseVersion,
       blogId: access.blogId,
@@ -201,6 +221,8 @@ export async function updateItemTypeAction(
         name: updated.definition.name,
       },
       applied: updated.applied,
+      skipped: updated.skipped,
+      conflicted: updated.conflicted,
     };
   } catch (error) {
     return {

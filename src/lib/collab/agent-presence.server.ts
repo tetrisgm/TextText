@@ -72,6 +72,7 @@ export function buildAgentPresence(
   const color = agentProviderColor(identity.provider) ?? colorForSub(clientId);
   const userName = identity.displayName;
   return {
+    actorUserId: actor.userId,
     clientId,
     userName,
     color,

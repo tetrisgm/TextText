@@ -1,6 +1,7 @@
 // Client for the workspace-owned AI connection. The browser sees provider and
 // model metadata, never the configured key.
 
+import { parseSelectionEnvelope, type SelectionEnvelope } from "@/lib/ai/selection-envelope";
 import { TENANT_HANDLE_RE } from "@/lib/tenants";
 
 export type CloudAssistantProviderLabel = "Anthropic" | "OpenAI";
@@ -12,7 +13,7 @@ type CloudAssistantContext = {
   /** The open item's title, so a request about "this" has a subject. */
   itemTitle?: string;
   /** Exactly what the writer selected, when they selected something. */
-  selection?: string;
+  selectionEnvelope?: SelectionEnvelope;
   /** The opening of the body, bounded. The model can read the rest. */
   itemPreview?: string;
   /** IDs for TextText items the server must resolve in this workspace. */
@@ -106,6 +107,7 @@ type CloudAssistantOutcome =
       writeProposals: CloudAssistantWriteProposal[];
       /** Exact access-checked items supplied as source context for the turn. */
       contextItems: CloudContextItem[];
+      selectionEnvelope?: SelectionEnvelope;
       /** Some commands completed before the provider failed later in the turn. */
       terminalError?: string;
       /** Connected servers that did not answer, so the turn was smaller. */
@@ -127,6 +129,7 @@ export type CloudAssistantStreamEvent =
       workspaceCalls: CloudWorkspaceCall[];
       writeProposals: CloudAssistantWriteProposal[];
       contextItems: CloudContextItem[];
+      selectionEnvelope?: SelectionEnvelope;
     }
   | {
       type: "error";
@@ -498,6 +501,7 @@ export async function cloudAssistantTurn(
           workspaceCalls: cleanWorkspaceCalls(record.workspaceCalls),
           writeProposals: cleanWriteProposals(record.writeProposals),
           contextItems: cleanContextItems(record.contextItems),
+          ...(record.selectionEnvelope !== undefined ? { selectionEnvelope: parseSelectionEnvelope(record.selectionEnvelope) } : {}),
           unreachableServers: Array.isArray(record.unreachableServers)
             ? record.unreachableServers.filter(
                 (entry): entry is string => typeof entry === "string",
@@ -571,6 +575,7 @@ export async function cloudAssistantTurn(
     workspaceCalls?: unknown;
     writeProposals?: unknown;
     contextItems?: unknown;
+    selectionEnvelope?: unknown;
     terminalError?: unknown;
   };
   if (data.provider !== "Anthropic" && data.provider !== "OpenAI") {
@@ -584,6 +589,7 @@ export async function cloudAssistantTurn(
     workspaceCalls: cleanWorkspaceCalls(data.workspaceCalls),
     writeProposals: cleanWriteProposals(data.writeProposals),
     contextItems: cleanContextItems(data.contextItems),
+    ...(data.selectionEnvelope !== undefined ? { selectionEnvelope: parseSelectionEnvelope(data.selectionEnvelope) } : {}),
     ...(typeof data.terminalError === "string" && data.terminalError.trim()
       ? { terminalError: data.terminalError.trim() }
       : {}),

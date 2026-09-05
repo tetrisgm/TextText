@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createWorkspaceWriteProposal,
+  getWorkspaceWriteProposalForReview,
   decideWorkspaceWriteProposal,
   type StoredWorkspaceWriteProposal,
   type WorkspaceWriteProposalBinding,
@@ -174,7 +175,7 @@ describe("workspace write proposals", () => {
     expect(execute).toHaveBeenCalledWith(
       "create_item",
       { capture: "A durable private note" },
-      owner,
+      { ...owner, connectionId: "assistant:user-1", runId: proposal.id, actorType: "ai" },
     );
     expect(repository.rows.get(proposal.id)?.status).toBe("completed");
   });
@@ -281,7 +282,7 @@ describe("workspace write proposals", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it.each(["delete_item", "add_item_asset"])(
+  it.each(["recapture_bookmark", "add_item_asset"])(
     "never stages excluded %s actions",
     async (tool) => {
       const { dependencies, execute } = harness();
@@ -296,4 +297,87 @@ describe("workspace write proposals", () => {
       expect(execute).not.toHaveBeenCalled();
     },
   );
+});
+
+
+describe("owner review of externally staged writes", () => {
+  it("returns exact stored arguments only to the bound owner and never executes on read", async () => {
+    const { dependencies, execute, repository } = harness();
+    const args = { id: "item-1", body: "Exact replacement", if_match_hash: "sha256:" + "a".repeat(64) };
+    const proposal = await createWorkspaceWriteProposal({ actor: owner, tool: "update_item", arguments: args,
+      origin: { surface: "hosted_mcp", connectionName: "Research agent" } }, dependencies);
+    args.body = "Changed after staging";
+    const reviewed = await getWorkspaceWriteProposalForReview(owner, proposal.id, dependencies);
+    expect(reviewed).toMatchObject({ status: "pending", arguments: { body: "Exact replacement" }, origin: { surface: "hosted_mcp" } });
+    expect(await getWorkspaceWriteProposalForReview(otherOwner, proposal.id, dependencies)).toBeNull();
+    expect(execute).not.toHaveBeenCalled();
+    await decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies);
+    expect(execute).toHaveBeenCalledWith("update_item", repository.rows.get(proposal.id)!.arguments, expect.objectContaining(owner));
+    expect((await getWorkspaceWriteProposalForReview(owner, proposal.id, dependencies))?.status).toBe("completed");
+  });
+
+  it("renders expired proposals as unavailable without executing", async () => {
+    const { dependencies, execute, advance } = harness();
+    const proposal = await createCapture(dependencies);
+    advance(16 * 60_000);
+    expect((await getWorkspaceWriteProposalForReview(owner, proposal.id, dependencies))?.status).toBe("expired");
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it.each(["delete_folder", "restore_folder", "remove_item_asset", "retire_document_template"])("freezes and approves %s once", async (tool) => {
+    const { dependencies, execute, repository } = harness();
+    dependencies.resolveConfirmationState = async () => ({ summary: "Exact target", fingerprint: "v1" });
+    const args = tool.endsWith("folder") ? { folder_id: "folder-1" }
+      : tool === "remove_item_asset" ? { id: "item-1", asset_url: "https://example.com/a.png" }
+      : { template_id: "custom-look" };
+    const proposal = await createWorkspaceWriteProposal({ actor: owner, tool, arguments: args }, dependencies);
+    expect(repository.rows.get(proposal.id)?.metadata?.state).toEqual({ summary: "Exact target", fingerprint: "v1" });
+    expect(execute).not.toHaveBeenCalled();
+    expect((await decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies)).status).toBe("completed");
+    await decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies);
+    expect(execute).toHaveBeenCalledExactlyOnceWith(tool, args, expect.objectContaining(owner));
+  });
+
+  it.each(["changed", "missing", "unreadable"])("fails closed when the staged target is %s", async (state) => {
+    const { dependencies, execute, repository } = harness();
+    dependencies.resolveConfirmationState = async () => ({ summary: "Blog", fingerprint: "v1" });
+    const proposal = await createWorkspaceWriteProposal({ actor: owner, tool: "delete_folder", arguments: { folder_id: "folder-1" } }, dependencies);
+    if (state === "missing") repository.rows.get(proposal.id)!.metadata = null;
+    else if (state === "changed") dependencies.resolveConfirmationState = async () => ({ summary: "Blog", fingerprint: "v2" });
+    else dependencies.resolveConfirmationState = async () => { throw new Error("Not found"); };
+    expect((await decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies)).status).toBe("failed");
+    expect(repository.rows.get(proposal.id)?.status).toBe("failed");
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("single deletion uses its frozen item preview and preserves its hash guard", async () => {
+    const { dependencies, execute } = harness();
+    dependencies.resolveItems = async () => new Map([["item-1", { title: "My article", folderPath: "blog", visibility: "private", revision: 4 }]]);
+    const args = { id: "item-1", if_match_hash: "sha256:" + "a".repeat(64) };
+    const proposal = await createWorkspaceWriteProposal({ actor: owner, tool: "delete_item", arguments: args }, dependencies);
+    expect(proposal.summary).toContain("My article");
+    expect((await decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies)).status).toBe("completed");
+    expect(execute).toHaveBeenCalledWith("delete_item", args, expect.objectContaining(owner));
+  });
+});
+
+
+describe("access proposals routed from hosted MCP", () => {
+  it("approves a new workspace grant with an owner-bound access preview", async () => {
+    const { dependencies, execute } = harness();
+    dependencies.resolveAccess = vi.fn(async () => []);
+    const args = { scope_type: "workspace", email: "reader@example.com", role: "guest" };
+    const proposal = await createWorkspaceWriteProposal({ actor: owner, tool: "set_access", arguments: args }, dependencies);
+    expect(dependencies.resolveAccess).toHaveBeenCalledWith("workspace", "blog-1");
+    expect((await decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies)).status).toBe("completed");
+    expect(execute).toHaveBeenCalledWith("set_access", args, expect.objectContaining(owner));
+  });
+
+  it("does not read another workspace's item access list when staging", async () => {
+    const { dependencies, repository } = harness();
+    dependencies.resolveAccess = vi.fn(async () => []);
+    await expect(createWorkspaceWriteProposal({ actor: owner, tool: "revoke_access", arguments: { scope_type: "item", scope_id: "foreign-item", access_id: "foreign-share" } }, dependencies)).rejects.toThrow("Item not found");
+    expect(dependencies.resolveAccess).not.toHaveBeenCalled();
+    expect(repository.rows.size).toBe(0);
+  });
 });
