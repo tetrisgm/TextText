@@ -4151,3 +4151,15 @@ statically by any client module in src any more (the reader in
 shared client chunk list (see `page_client-reference-manifest.js`, where
 every client component of the page carries the same list). A source-mapped
 build is the way to find the module that keeps them there.
+
+### react-markdown found (2026-09-05)
+
+The chain was `WorkspaceSidebarChrome` -> `FolderLookPicker` (static) ->
+`TemplateGallery` -> `DocumentRenderer` -> react-markdown. Source greps for
+importers of `DocumentRenderer` missed it because the gallery imports it
+with a relative path; the source-mapped build showed `DocumentRenderer.tsx`
+in a small chunk of its own whose two known importers were dynamic
+entries, which pointed at a third importer. The picker is now a dynamic
+import. Early set on the local production build: 2725KB at the start of
+the day, 1936KB now; the 58KB presence chunk that remains early is the
+action bar with `usePresence`, which is on screen at startup by design.
