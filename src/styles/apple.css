@@ -13,11 +13,11 @@
 
   /* type scale: size / line-height / tracking(em) */
   --ac-fs-title2: 20px;      --ac-lh-title2: 25px;      --ac-tr-title2: 0.019em;
-  --ac-fs-title3: 17px;      --ac-lh-title3: 22px;      --ac-tr-title3: -0.0253em;
-  --ac-fs-headline: 16px;    --ac-lh-headline: 21px;    --ac-tr-headline: -0.0194em;
-  --ac-fs-body: 15px;        --ac-lh-body: 20px;        --ac-tr-body: -0.0153em;
-  --ac-fs-callout: 15px;     --ac-lh-callout: 20px;     --ac-tr-callout: -0.0153em;
-  --ac-fs-subheadline: 14px; --ac-lh-subheadline: 18px; --ac-tr-subheadline: -0.0062em;
+  --ac-fs-title3: 17px;      --ac-lh-title3: 22px;      --ac-tr-title3: 0em;
+  --ac-fs-headline: 16px;    --ac-lh-headline: 21px;    --ac-tr-headline: 0em;
+  --ac-fs-body: 15px;        --ac-lh-body: 20px;        --ac-tr-body: 0em;
+  --ac-fs-callout: 15px;     --ac-lh-callout: 20px;     --ac-tr-callout: 0em;
+  --ac-fs-subheadline: 14px; --ac-lh-subheadline: 18px; --ac-tr-subheadline: 0em;
   --ac-fs-footnote: 13px;    --ac-lh-footnote: 17px;    --ac-tr-footnote: 0em;
   --ac-fs-caption1: 12px;    --ac-lh-caption1: 16px;    --ac-tr-caption1: 0em;
   --ac-fs-caption2: 11px;    --ac-lh-caption2: 13px;    --ac-tr-caption2: 0.0064em;

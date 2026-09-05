@@ -563,7 +563,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .workspace-recent-empty {
-  min-height: 144px;
+  min-height: 176px;
   display: grid;
   place-content: center;
   text-align: center;
@@ -572,15 +572,16 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .workspace-recent-empty p {
   margin: 0;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 400;
-  letter-spacing: -0.01em;
+  line-height: 20px;
 }
 
 .workspace-recent-empty span {
   margin-top: 6px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .workspace-first-loop {
@@ -716,13 +717,13 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .workspace-collection-empty {
-  min-height: 216px;
+  min-height: 264px;
   display: grid;
   place-content: center;
   margin: 0;
   color: var(--muted);
-  font: 400 14px/1.4 var(--font-body);
-  letter-spacing: -0.01em;
+  font: 400 13px/20px var(--font-body);
+  letter-spacing: 0;
   text-align: center;
 }
 
@@ -2879,6 +2880,57 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   font: 600 11px/14px var(--ac-font-text, system-ui, sans-serif);
   text-align: center;
   white-space: nowrap;
+}
+
+/* Superhuman's transient feedback is a quiet, centred status pill. Keep the
+   existing action and dismiss affordances, but give both toast variants the
+   same compact geometry as the reference (ref-11). */
+.command-toast.applecms {
+  left: 50%;
+  right: auto;
+  bottom: 44px;
+  min-height: 46px;
+  max-width: min(92vw, 560px);
+  padding: 10px 14px;
+  border: 1px solid var(--ac-hairline, #e5e5e7);
+  border-radius: 8px;
+  background: var(--ac-bg-2, #ffffff);
+  box-shadow: 0 10px 28px rgba(20, 20, 24, 0.16);
+  color: var(--ac-label, #242426);
+  font-size: 13px;
+  transform: translateX(-50%);
+}
+
+.command-toast.applecms.is-hint {
+  background: var(--ac-bg-2, #ffffff);
+  color: var(--ac-label, #242426);
+}
+
+.command-toast.is-hint .command-toast-action {
+  background: color-mix(in srgb, var(--ac-label, #242426) 10%, transparent);
+  color: var(--ac-label, #242426);
+}
+
+.command-toast.is-hint .command-toast-dismiss {
+  color: color-mix(in srgb, var(--ac-label, #242426) 55%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  .command-toast.applecms,
+  .command-toast.applecms.is-hint {
+    border-color: var(--ac-hairline, #3a3a40);
+    background: var(--ac-bg-2, #202024);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.38);
+    color: var(--ac-label, #f4f4f5);
+  }
+}
+
+[data-theme="dark"] .command-toast.applecms,
+[data-theme="dark"] .command-toast.applecms.is-hint {
+  border-color: var(--ac-hairline, #3a3a40);
+  background: var(--ac-bg-2, #202024);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.38);
+  color: var(--ac-label, #f4f4f5);
 }
 
 /* Superhuman's transient feedback is a quiet, centred status pill. Keep the
