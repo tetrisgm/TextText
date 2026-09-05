@@ -4163,3 +4163,11 @@ entries, which pointed at a third importer. The picker is now a dynamic
 import. Early set on the local production build: 2725KB at the start of
 the day, 1936KB now; the 58KB presence chunk that remains early is the
 action bar with `usePresence`, which is on screen at startup by design.
+
+### Shipped 2026-09-05: TextText 0.182 build 1049
+
+Third promotion of the day: the assistant rail static shell, the on-demand
+look picker (react-markdown off the home load) and the dynamic single-post
+reader. Deployment `dpl_DSUbM66mNNeP2f4cPE2pDB9edi5B` aliased to texttext.app, migrations ran, app
+installed; the production chunk carrying the shell's stylesheet returns
+200. Local early script set 1936KB (2725KB this morning).
