@@ -4624,6 +4624,7 @@ function LocalWorkspaceShell({
         writeAppearance(next);
         showToast(`Appearance: ${appearanceLabel(next)}`);
       },
+      currentAppearance: () => readAppearance(),
       setAppearance: (appearance: Appearance) => {
         writeAppearance(appearance);
         showToast(`Appearance: ${appearanceLabel(appearance)}`);

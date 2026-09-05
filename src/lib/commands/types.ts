@@ -80,6 +80,8 @@ export type CommandWorkspaceSurface = {
   cycleAppearance: () => void;
   /** Set the appearance outright (the palette lists all three). */
   setAppearance: (appearance: Appearance) => void;
+  /** The stored appearance, for the palette to mark the current choice. */
+  currentAppearance?: () => Appearance;
   /** An item is open for reading and its pane can scroll. */
   readerScrollable: () => boolean;
   selectNext: () => void;

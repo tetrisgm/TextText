@@ -337,27 +337,6 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     when: (ctx) => Boolean(ctx.workspace?.cycleAppearance),
     run: (ctx) => ctx.workspace?.cycleAppearance?.(),
   },
-  {
-    id: "workspace.appearance.light",
-    label: "Appearance: Light",
-    group: "Navigate",
-    when: (ctx) => Boolean(ctx.workspace?.setAppearance),
-    run: (ctx) => ctx.workspace?.setAppearance?.("light"),
-  },
-  {
-    id: "workspace.appearance.dark",
-    label: "Appearance: Dark",
-    group: "Navigate",
-    when: (ctx) => Boolean(ctx.workspace?.setAppearance),
-    run: (ctx) => ctx.workspace?.setAppearance?.("dark"),
-  },
-  {
-    id: "workspace.appearance.system",
-    label: "Appearance: Match system",
-    group: "Navigate",
-    when: (ctx) => Boolean(ctx.workspace?.setAppearance),
-    run: (ctx) => ctx.workspace?.setAppearance?.("system"),
-  },
   // Reading keys. With an item open the pane is not focused, so the browser
   // never scrolled it from the keyboard (owner, 2026-09-05). Repeat allowed:
   // holding the key keeps scrolling, as in any reader.
@@ -1015,6 +994,20 @@ export function dynamicWorkspaceCommands(ctx: CommandContext): AppCommand[] {
   const pool = ctx.pool;
   const workspace = ctx.workspace;
   if (!workspace) return [];
+  const current = workspace.currentAppearance?.();
+  const appearance: AppCommand[] = (
+    [
+      ["light", "Light"],
+      ["dark", "Dark"],
+      ["system", "Match system"],
+    ] as const
+  ).map(([value, name]) => ({
+    id: `workspace.appearance.${value}`,
+    label: `Appearance: ${name}${current === value ? " (current)" : ""}`,
+    group: "Appearance",
+    when: () => true,
+    run: (context) => context.workspace?.setAppearance(value),
+  }));
   // The document's headings, as jump targets. Computed BEFORE the pool guard:
   // the editor routes hand over a workspace surface without a pool, and the
   // outline needs nothing but the open document.
@@ -1032,7 +1025,7 @@ export function dynamicWorkspaceCommands(ctx: CommandContext): AppCommand[] {
         run: () => requestDocumentJump(entry.line),
       }))
     : [];
-  if (!pool) return outlineCommands;
+  if (!pool) return appearance.concat(outlineCommands);
   const target = commandTargetPost(ctx);
   const blogPost = target && !isPrivatePostType(target.type);
 
@@ -1060,7 +1053,8 @@ export function dynamicWorkspaceCommands(ctx: CommandContext): AppCommand[] {
   // The document's headings, as jump targets. Labelled with a leading hash so
   // the palette can be opened straight onto them (the query "#" scores every
   // one), the way an editor's symbol jump works.
-  return [...moveCommands, ...outlineCommands];
+  return appearance.concat(
+[...moveCommands, ...outlineCommands]);
 }
 
 export function shouldSuppressWorkspaceSingleKeyShortcut(
