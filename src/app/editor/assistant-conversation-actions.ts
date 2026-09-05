@@ -54,6 +54,7 @@ export async function syncAssistantConversationsAction(
       conversations: await syncWorkspaceAssistantConversationHistory(
         access.blogId,
         conversationsInput,
+        { userId: access.ownerId },
       ),
     };
   } catch {

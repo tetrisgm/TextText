@@ -570,6 +570,9 @@ export class CollabProvider implements CollaborationTransport {
   /** False while the owning editor is mounted but not shown (a warm editor
    * behind the reader): the document stays live, but nobody is "editing". */
   private presenceEnabled: boolean;
+  /** Bumped on every presence switch so a join or read admitted before the
+   * switch cannot publish an editing session after it. */
+  private presenceGeneration = 0;
   private networkGeneration = 0;
   private pollRetries = 0;
   private baselineApplied = false;
@@ -760,6 +763,7 @@ export class CollabProvider implements CollaborationTransport {
   setPresenceEnabled(enabled: boolean): void {
     if (this.presenceEnabled === enabled || this.stopped) return;
     this.presenceEnabled = enabled;
+    this.presenceGeneration += 1;
     if (enabled) {
       if (this.networkActive) this.startPresenceLoops();
       return;
@@ -1207,6 +1211,8 @@ export class CollabProvider implements CollaborationTransport {
     if (this.stopped || !this.networkActive || !this.presenceEnabled || this.pageIsHidden() || this.heartbeatPending) return;
     this.heartbeatPending = true;
     const signal = this.abort.signal;
+    const generation = this.presenceGeneration;
+    const superseded = () => generation !== this.presenceGeneration || !this.presenceEnabled;
     try {
       const awareness = this.opts.awareness;
       if (!this.presenceSession || this.presenceSession.expiresAt <= Date.now()) {
@@ -1224,11 +1230,23 @@ export class CollabProvider implements CollaborationTransport {
         if (!joined.ok || this.stopped || signal.aborted) return;
         const data = await joined.json() as { session?: PresenceSessionCredential };
         if (this.stopped || signal.aborted || !data.session) return;
+        if (superseded()) {
+          // Returned to reading while the join was in flight: give the row
+          // back rather than let a later heartbeat announce an editor.
+          void fetch(`${this.base}/presence`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...data.session, leave: true }),
+            keepalive: true,
+          }).catch(() => {});
+          return;
+        }
         this.presenceSession = data.session;
         awareness?.setLocalStateField("user", {
           name: this.opts.userName, color: this.opts.color, clientId: data.session.clientId,
         });
       }
+      if (superseded()) return;
       const awarenessPayload = awareness
         ? u8ToBase64(
             encodeAwarenessUpdate(awareness, [awareness.clientID]),
@@ -1254,6 +1272,7 @@ export class CollabProvider implements CollaborationTransport {
       }
       if (!res.ok || this.stopped || signal.aborted) return;
       const data = (await res.json()) as { presence: PresencePeer[] };
+      if (superseded()) return;
       this.applyPresence(data.presence);
     } catch {
       // presence is best-effort (an aborted heartbeat on teardown is expected)
@@ -1270,6 +1289,7 @@ export class CollabProvider implements CollaborationTransport {
    */
   private async pollPresence() {
     if (this.stopped || !this.networkActive || !this.presenceEnabled || this.pageIsHidden()) return;
+    const generation = this.presenceGeneration;
     try {
       const res = await fetch(`${this.base}/presence`, {
         method: "GET",
@@ -1283,6 +1303,7 @@ export class CollabProvider implements CollaborationTransport {
       }
       if (!res.ok) return;
       const data = (await res.json()) as { presence: PresencePeer[] };
+      if (generation !== this.presenceGeneration || !this.presenceEnabled) return;
       this.applyPresence(data.presence);
     } catch {
       // best-effort, exactly like the heartbeat

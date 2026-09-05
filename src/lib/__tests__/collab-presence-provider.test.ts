@@ -146,3 +146,22 @@ describe("awareness identity isolation", () => {
     expect([...h.awareness.getStates().values()].filter((state) => state.user?.clientId === "agent-1")).toHaveLength(0);
   });
 });
+
+ it("a join that completes after presence is disabled is given back, not heartbeated", async () => {
+ const h = harness();
+ let resolve!: (response: Response) => void;
+ const pending = new Promise<Response>(done => { resolve = done; });
+ const bodies: Record<string, unknown>[] = [];
+ vi.stubGlobal("fetch", vi.fn(async (_url, init) => {
+   const body = JSON.parse(init.body); bodies.push(body);
+   return body.join ? pending : json({presence: []});
+ }));
+ const work = h.transport.heartbeat();
+ h.provider.setPresenceEnabled(false);
+ resolve(json({session: session()}));
+ await work;
+ expect(bodies).toHaveLength(2);
+    // The row issued mid-switch is returned with a leave; no awareness heartbeat follows.
+ expect(bodies[1].awareness).toBeUndefined();
+ expect(bodies.some(b => b.leave)).toBe(true);
+ });

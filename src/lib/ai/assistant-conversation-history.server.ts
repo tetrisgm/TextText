@@ -1,3 +1,4 @@
+import { recordAction } from "@/lib/audit";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { workspaceAssistantConversationHistories } from "@/lib/db/schema";
@@ -16,6 +17,7 @@ import {
 export async function syncWorkspaceAssistantConversationHistory(
   blogId: string,
   localInput: unknown,
+  actor: { userId: string | null } = { userId: null },
 ): Promise<SyncedAssistantConversation[]> {
   if (!db) throw new Error("Conversation sync needs a configured database.");
   const local = cleanAssistantConversationSyncPayload(localInput);
@@ -60,7 +62,7 @@ export async function syncWorkspaceAssistantConversationHistory(
           target: workspaceAssistantConversationHistories.blogId,
         })
         .returning({ blogId: workspaceAssistantConversationHistories.blogId });
-      if (inserted.length > 0) return merged;
+      if (inserted.length > 0) return audited(merged);
       continue;
     }
     const updated = await db
@@ -76,7 +78,21 @@ export async function syncWorkspaceAssistantConversationHistory(
         ),
       )
       .returning({ blogId: workspaceAssistantConversationHistories.blogId });
-    if (updated.length > 0) return merged;
+    if (updated.length > 0) return audited(merged);
   }
   throw new Error("Conversation sync was busy. The local copy is unchanged.");
+
+  // Every mutation writes action_audit. The row carries counts only: never
+  // transcript text, never credentials.
+  async function audited(result: SyncedAssistantConversation[]) {
+    await recordAction({
+      actorUserId: actor.userId,
+      actorType: "human",
+      actionName: "assistant.history.sync",
+      targetType: "workspace",
+      targetId: blogId,
+      outputSummary: `${result.length} conversations retained`,
+    });
+    return result;
+  }
 }

@@ -37,7 +37,7 @@ describe("assistant conversation sync action", () => {
     expect(mocks.getBlogEditAccess).toHaveBeenCalledWith("writer");
     expect(mocks.syncHistory).toHaveBeenCalledWith("blog-1", [
       { id: "chat-1" },
-    ]);
+    ], { userId: "owner-1" });
   });
 
   it("does not expose history to a collaborator", async () => {

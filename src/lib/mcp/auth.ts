@@ -96,7 +96,7 @@ export function enforceMcpToolScope(
     const allowed = messages.every((message) => {
       if (!message || typeof message !== "object") return false;
       const { method, params } = message as { method?: string; params?: { name?: string; arguments?: Record<string, unknown> } };
-      if (["initialize", "ping", "tools/list", "resources/list", "resources/templates/list", "prompts/list"].includes(method ?? "")) return true;
+      if (["initialize", "ping", "server/discover", "tools/list", "resources/list", "resources/templates/list", "prompts/list"].includes(method ?? "")) return true;
       return method === "tools/call" && itemAgentAllows(scopes, params?.name ?? "", params?.arguments ?? {});
     });
     return allowed ? null : Response.json({ error: "This token only permits reading or editing its item." },

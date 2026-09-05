@@ -332,3 +332,24 @@ describe("origin validation", () => {
     expect(response.status).toBe(200);
   });
 });
+
+ it("an item token may run the server discovery the transport implements", async () => {
+ resolveApiToken.mockResolvedValue({ userId: "user-1", sub: "sub-1", scopes: "item:11111111-1111-1111-1111-111111111111:edit", name: "test", expiresAt: null });
+ const response = await handleMcpRequest(post({method: "server/discover"}));
+ expect(response.status).toBe(200);
+ });
+ it("a token revoked while its body was still uploading is refused", async () => {
+ let controller!: ReadableStreamDefaultController<Uint8Array>;
+ const source = post({method: "tools/list"});
+ const payload = await source.text();
+ const request = new Request(ENDPOINT, {method: "POST", headers: source.headers,
+ body: new ReadableStream({start(c) { controller = c; }}), duplex: "half"} as RequestInit);
+ const result = handleMcpRequest(request);
+ await new Promise(r => setTimeout(r, 0));
+ // Nothing is resolved until the bounded body has fully arrived.
+ expect(resolveApiToken).toHaveBeenCalledTimes(0);
+ resolveApiToken.mockResolvedValue(null);
+ controller.enqueue(new TextEncoder().encode(payload)); controller.close();
+ expect((await result).status).toBe(401);
+ expect(resolveApiToken).toHaveBeenCalledTimes(1);
+ });

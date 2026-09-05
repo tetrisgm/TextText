@@ -146,10 +146,9 @@ export function usePresence(postId: string | null | undefined): PresencePeer[] {
           : { postId, peers: next },
       );
     const unsubscribe = subscribe(postId, listener);
-    // A surface mounting into an item someone else already polls shows the
-    // known answer at once.
-    const known = entries.get(postId);
-    if (known && known.peers.length > 0) listener(known.peers);
+    // Hydrate from the real snapshot, an empty one included, so a hook that
+    // returns to an item never shows that item's stale peers from before.
+    listener(entries.get(postId)?.peers ?? []);
     return unsubscribe;
   }, [postId]);
 

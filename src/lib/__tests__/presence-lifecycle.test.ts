@@ -99,3 +99,30 @@ describe("presence freshness and item boundaries", () => {
     expect(usePresence("new-item")).toEqual([peer]);
   });
 });
+
+it("revisiting an item after failed reads shows no stale peers", async () => {
+ await mount("a");
+ expect(usePresence("a")).toEqual([peer]);
+ cleanup?.();
+ fetchMock.mockResolvedValue(success([]));
+ await mount("b");
+ expect(usePresence("b")).toEqual([]);
+ cleanup?.();
+ fetchMock.mockResolvedValue({ok: false, status: 403});
+ await mount("a");
+ expect(usePresence("a")).toEqual([]);
+ await vi.advanceTimersByTimeAsync(12000);
+ expect(usePresence("a")).toEqual([]);
+});
+
+it("probe: two surfaces share polling and last cleanup stops it", async () => {
+ await mount("item"); const firstCleanup = cleanup!;
+ await mount("item"); const secondCleanup = cleanup!;
+ expect(fetchMock).toHaveBeenCalledTimes(1);
+ firstCleanup();
+ await vi.advanceTimersByTimeAsync(4000);
+ expect(fetchMock).toHaveBeenCalledTimes(2);
+ secondCleanup(); cleanup = undefined;
+ await vi.advanceTimersByTimeAsync(12000);
+ expect(fetchMock).toHaveBeenCalledTimes(2);
+});

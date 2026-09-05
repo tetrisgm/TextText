@@ -45,6 +45,7 @@ import { DOCUMENT_JUMP_EVENT } from "@/lib/document-outline";
 import {
   DOCUMENT_SET_CARET_EVENT,
   setActiveBodySelection,
+  requestDocumentCaret,
 } from "@/lib/document-history-events";
 
 export type SurfaceSelection = {
@@ -1386,7 +1387,12 @@ export function MarkdownSurface({
         };
         const from = place(start);
         const to = place(end);
-        if (!from || !to) return;
+        if (!from || !to) {
+          // The rows scrolled out of the materialized window; the caret
+          // request rewindows to them and selects the same span.
+          requestDocumentCaret(start, end);
+          return;
+        }
         const range = document.createRange();
         range.setStart(from.node, from.offset);
         range.setEnd(to.node, to.offset);

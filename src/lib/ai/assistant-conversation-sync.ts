@@ -405,6 +405,25 @@ export function mergeAssistantConversationSyncPayloads(
 
 /** The database keeps at most this many conversations per workspace. */
 export const ASSISTANT_HISTORY_MAX_CONVERSATIONS = 500;
+/** How long a deletion tombstone is kept before capacity pruning may drop it. */
+export const ASSISTANT_HISTORY_TOMBSTONE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Whether the shared copy could have kept `conversation` at all, given what it
+ * did keep. A device whose oldest chats fall past the retention cap must not
+ * treat their absence from the acknowledgement as unsynced work, or it would
+ * upload the same history forever.
+ */
+export function assistantConversationEvictedByCap(
+  conversation: SyncedAssistantConversation,
+  retained: readonly SyncedAssistantConversation[],
+  limit = ASSISTANT_HISTORY_MAX_CONVERSATIONS,
+): boolean {
+  if (retained.some((candidate) => candidate.id === conversation.id)) return false;
+  return !capAssistantConversationSyncPayload([...retained, conversation], limit).some(
+    (candidate) => candidate.id === conversation.id,
+  );
+}
 
 /**
  * An empty, unpinned, undeleted chat is a context's placeholder, never
@@ -437,9 +456,16 @@ export function capAssistantConversationSyncPayload(
   const tombstone = (c: SyncedAssistantConversation) => Boolean(c.deletedAt);
   const empty = (c: SyncedAssistantConversation) =>
     !tombstone(c) && !c.pinned && c.messages.length === 0;
+  // A deletion must outlive every replica that could still hold the chat:
+  // a fresh tombstone is never evicted (dropping it would let a device that
+  // reconnects with an old copy bring the chat back). Tombstones older than
+  // the retention window have propagated to any device that synced within it,
+  // so they go before the oldest live chats do.
+  const retirable = (c: SyncedAssistantConversation) =>
+    tombstone(c) && Date.now() - (Date.parse(c.deletedAt ?? "") || 0) > ASSISTANT_HISTORY_TOMBSTONE_MS;
   const pools = [
     conversations.filter(empty).sort(oldestFirst),
-    conversations.filter(tombstone).sort(oldestFirst),
+    conversations.filter(retirable).sort(oldestFirst),
     conversations.filter((c) => !empty(c) && !tombstone(c) && !c.pinned).sort(oldestFirst),
   ];
   const dropped = new Set<string>();

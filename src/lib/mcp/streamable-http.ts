@@ -347,12 +347,14 @@ export async function handleMcpRequest(request: Request): Promise<Response> {
     return errorResponse(null, JSONRPC_INTERNAL_ERROR, "Forbidden origin", 403);
   }
 
+  // The body is read first, bounded, and only then is the token resolved: a
+  // request opened before a revocation and held open while its body trickled
+  // in would otherwise be dispatched under an identity that no longer exists.
+  const decoded = await readBoundedJson(request);
   const auth = await verifyTextTextApiToken(request);
   if (!auth) return unauthorized(request);
   (request as Request & { auth?: AuthInfo }).auth = auth;
-
-  const decoded = await readBoundedJson(request);
-  if (decoded.tooLarge) {
+if (decoded.tooLarge) {
     return errorResponse(
       null,
       JSONRPC_PARSE_ERROR,

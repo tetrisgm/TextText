@@ -7,6 +7,7 @@ import {
   mergeAssistantConversationSyncPayloads,
   type SyncedAssistantConversation,
   isAssistantConversationHistory,
+  assistantConversationEvictedByCap,
 } from "@/lib/ai/assistant-conversation-sync";
 
 /** A lightweight record for the history picker. Message bodies stay internal. */
@@ -803,20 +804,31 @@ export function assistantConversationsNeedSync(handle: string): boolean {
 }
 
 /** A response acknowledges its replica, not edits made while awaiting it. */
+function canonicalConversation(conversation: SyncedAssistantConversation): string {
+  return assistantConversationSyncFingerprint([conversation]);
+}
+
 export function acknowledgeAssistantConversationSync(handle: string, remote: unknown) {
   const state = loadWorkspace(handle);
   mergeSyncedAssistantConversations(handle, remote);
   // Compare the bounded copy: live proposals omitted by sync must remain local.
   // A newer local revision is only clean if the server actually has its content.
-  state.syncedLocalRevision =
-    assistantConversationSyncFingerprint(
-      syncableAssistantConversations(state.conversations),
-    ) ===
-    assistantConversationSyncFingerprint(
-      syncableAssistantConversations(cleanAssistantConversationSyncPayload(remote)),
-    )
-      ? state.localRevision
-      : -1;
+  const retained = syncableAssistantConversations(
+    cleanAssistantConversationSyncPayload(remote),
+  );
+  const retainedById = new Map(retained.map((conversation) => [conversation.id, conversation]));
+  const local = cleanAssistantConversationSyncPayload(
+    syncableAssistantConversations(state.conversations),
+  );
+  // Clean when the server holds every syncable local chat with equal content,
+  // or could not have kept it under the retention cap (a chat missing for any
+  // other reason keeps the revision dirty).
+  const clean = local.every((conversation) => {
+    const kept = retainedById.get(conversation.id);
+    if (kept) return canonicalConversation(kept) === canonicalConversation(conversation);
+    return assistantConversationEvictedByCap(conversation, retained);
+  });
+  state.syncedLocalRevision = clean ? state.localRevision : -1;
 }
 
 /**

@@ -4487,3 +4487,46 @@ presence, relay updates and relay state for the scratch posts before the
 posts. Three scratch workspaces left behind locally were removed by hand. This
 mattered for production too: the promotion drives a scratch workspace against
 texttext.app and tears it down in the production database.
+
+## 2026-09-05: build 1053 shipped; round-five reviews and their fixes
+
+Shipped: build 1053 (`b1fb3cd6`), deployment `dpl_QsCsNkdBVB8gZsKWeStZyHa3w8eZ`,
+page stamp `tt-1053-b1fb3cd6`, Mac app 0.182 build 1053 installed.
+
+Three low-effort Astra re-reviews of the landed code (`astra/out5/`):
+
+- Agents and presence (`agents.md`): no P1. Fixed in the tree: the MCP
+  transport now reads the bounded body before resolving the token, so a
+  request opened before a revocation cannot dispatch under the revoked
+  identity; item tokens may run `server/discover`; the provider fences presence
+  joins and reads with a generation counter, so returning to reading mid-join
+  gives the issued row back instead of heartbeating it; the presence hook
+  hydrates from the real snapshot, empty included. The reviewer's four probes
+  were flipped into guarantees and kept.
+- Inline AI, writing commands, history sync (`ai2.md`): no P1, five P2s.
+  Fixed: capacity pruning no longer evicts fresh deletion tombstones (only
+  those older than 30 days, and only after empty chats and before live
+  chats); a device whose oldest chats fall past the cap no longer re-uploads
+  forever (`assistantConversationEvictedByCap` makes the acknowledgement
+  cap-aware); history writes are audited (`assistant.history.sync`, counts
+  only); an Escape restore whose rows were virtualized away goes through the
+  caret request. Open: an excerpt acceptance has no source precondition of its
+  own (needs a command-schema change); native IME during a delayed Accept is
+  an unverified path. Notion gaps the reviewer ranked: no refinement prompt
+  inside the preview, caret-based drafting still goes through the rail, no
+  context picker.
+- Sync merge (`sync2.md`, rerun after the first attempt refused the wording):
+  two P1s and one P2 in `src/lib/collab/pre-ready.ts`: hunk boundaries inside
+  surrogate pairs destroy emoji; plain-string alignment can delete a peer's
+  identical-looking insertion; equal-offset insertions apply in reverse. An
+  Astra implementation agent is on all three (`astra/briefs/impl6-preready.md`,
+  output `astra/out6/`), with the reviewer's failing tests as the acceptance
+  bar.
+
+Probes on the local production build before promoting 1054: interaction
+17/17; rail early versus late differs only in rows 63 to 74 (the status text
+itself); reading polls presence twice in 8 s with no heartbeat, editing joins
+and heartbeats; the Add agent popover opens at 352x292 with the sheet tokens
+in both themes (light rgb(252,252,253) on rgb(52,53,58) ink, dark
+rgb(44,45,49) on rgb(229,231,235)), focus lands inside, Escape closes it and
+returns focus to the Add agent mark, every control is named, no em dash.
