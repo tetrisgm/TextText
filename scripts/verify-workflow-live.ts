@@ -30,6 +30,9 @@ import {
   itemComments,
   posts,
   users,
+  collabPresence,
+  collabState,
+  collabUpdates,
 } from "@/lib/db/schema";
 import { ensureWorkspaceFolders } from "@/lib/store";
 import { generateApiToken, hashApiToken } from "@/lib/api-tokens";
@@ -467,10 +470,16 @@ async function main() {
         .from(posts)
         .where(eq(posts.blogId, blogId));
       if (blogPosts.length) {
+        const postIds = blogPosts.map((p) => p.id);
         await db
           .delete(itemComments)
-          .where(inArray(itemComments.postId, blogPosts.map((p) => p.id)))
+          .where(inArray(itemComments.postId, postIds))
           .catch(() => {});
+        // Agent tool calls announce presence and the relay keeps state per
+        // post; none of it cascades, so it goes before the posts do.
+        await db.delete(collabPresence).where(inArray(collabPresence.postId, postIds));
+        await db.delete(collabUpdates).where(inArray(collabUpdates.postId, postIds));
+        await db.delete(collabState).where(inArray(collabState.postId, postIds));
       }
       await db.delete(collaborators).where(eq(collaborators.scopeId, blogId));
       await db.delete(idempotencyKeys).where(eq(idempotencyKeys.blogId, blogId)).catch(() => {});

@@ -4478,3 +4478,12 @@ chats always (`isAssistantConversationHistory`), not only above the limit, and
 the client acknowledgement compares its syncable subset with the server's
 cleaned list. Before this, a workspace with 497 placeholder chats on the server
 stayed "Saved on this device" forever after every real conversation had synced.
+
+Second gate failure (`282012a2`): the sharing workflow evaluator could not
+delete its scratch posts because agent tool calls now leave `collab_presence`
+rows (announced around every MCP mutation; rows outlive the 15 s stale window
+and the column has no cascade). `scripts/verify-workflow-live.ts` now deletes
+presence, relay updates and relay state for the scratch posts before the
+posts. Three scratch workspaces left behind locally were removed by hand. This
+mattered for production too: the promotion drives a scratch workspace against
+texttext.app and tears it down in the production database.
