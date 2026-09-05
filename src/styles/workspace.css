@@ -2070,12 +2070,69 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   }
 }
 
-/* On the LAYOUT, not the scroller. Padding inside the scroller only moves
-   content that is in flow; the editor's save state and the action bars are
-   positioned, so they stayed under the bar. Reserving the height on the
-   column means the bar has nothing to cover. */
-.workspace-document-layout {
+/* The document content is the actual scroller. Reserve the fixed hint bar's
+   height there so the save state and final line can scroll above it in both
+   read and edit views. */
+.post-editor-content {
+  box-sizing: border-box;
   padding-bottom: var(--workspace-hints-height, 0px);
+  scroll-padding-bottom: var(--workspace-hints-height, 0px);
+}
+
+/* The layout also contains fixed chrome, so do not use it as the scroll
+   reservation target. */
+.workspace-document-layout {
+  padding-bottom: 0;
+}
+
+/* Keep the fixed edit chrome below the tab strip and within the available
+   workspace width. Search and actions remain intact, but have distinct
+   groups and enough breathing room to prevent the final action from clipping. */
+.post-editor-shell .post-top-action-bar {
+  z-index: 210;
+  max-width: calc(100vw - 32px);
+}
+
+.post-editor-shell .post-action-toolbar {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 8px;
+  height: auto;
+  min-height: 36px;
+  padding: 4px;
+}
+
+.workspace-find-controls {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 8px;
+}
+
+.post-editor-shell .post-action-owner-group {
+  flex: 0 1 auto;
+  min-width: 0;
+  gap: 8px;
+  margin-inline-start: 8px;
+}
+
+.post-editor-shell .post-action-owner-group > * {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 900px) {
+  .post-editor-shell .post-top-action-bar {
+    max-width: calc(100vw - 24px);
+  }
+
+  .post-editor-shell .post-action-toolbar {
+    gap: 6px;
+  }
+
+  .post-editor-shell .post-action-owner-group {
+    margin-inline-start: 0;
+  }
 }
 
 /* ---------------------------------------------------------------------
@@ -2822,4 +2879,55 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   font: 600 11px/14px var(--ac-font-text, system-ui, sans-serif);
   text-align: center;
   white-space: nowrap;
+}
+
+/* Superhuman's transient feedback is a quiet, centred status pill. Keep the
+   existing action and dismiss affordances, but give both toast variants the
+   same compact geometry as the reference (ref-11). */
+.command-toast.applecms {
+  left: 50%;
+  right: auto;
+  bottom: 44px;
+  min-height: 46px;
+  max-width: min(92vw, 560px);
+  padding: 10px 14px;
+  border: 1px solid var(--ac-hairline, #e5e5e7);
+  border-radius: 8px;
+  background: var(--ac-bg-2, #ffffff);
+  box-shadow: 0 10px 28px rgba(20, 20, 24, 0.16);
+  color: var(--ac-label, #242426);
+  font-size: 13px;
+  transform: translateX(-50%);
+}
+
+.command-toast.applecms.is-hint {
+  background: var(--ac-bg-2, #ffffff);
+  color: var(--ac-label, #242426);
+}
+
+.command-toast.is-hint .command-toast-action {
+  background: color-mix(in srgb, var(--ac-label, #242426) 10%, transparent);
+  color: var(--ac-label, #242426);
+}
+
+.command-toast.is-hint .command-toast-dismiss {
+  color: color-mix(in srgb, var(--ac-label, #242426) 55%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  .command-toast.applecms,
+  .command-toast.applecms.is-hint {
+    border-color: var(--ac-hairline, #3a3a40);
+    background: var(--ac-bg-2, #202024);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.38);
+    color: var(--ac-label, #f4f4f5);
+  }
+}
+
+[data-theme="dark"] .command-toast.applecms,
+[data-theme="dark"] .command-toast.applecms.is-hint {
+  border-color: var(--ac-hairline, #3a3a40);
+  background: var(--ac-bg-2, #202024);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.38);
+  color: var(--ac-label, #f4f4f5);
 }

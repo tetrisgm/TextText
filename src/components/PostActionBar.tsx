@@ -1100,7 +1100,8 @@ export function PostActionBar(props: Props) {
         >
           <div className="post-action-toolbar ac-chrome">
             {props.onSearchValueChange ? (
-              <WorkspaceActionSearch
+              <div className="workspace-find-controls">
+                <WorkspaceActionSearch
                 ariaLabel={`Find in ${postTitle(activeDraft.title)}`}
                 focusRequestKey={props.searchFocusRequestKey}
                 placeholder="Find in page"
@@ -1113,7 +1114,8 @@ export function PostActionBar(props: Props) {
                   if (props.searchValue) props.onSearchValueChange?.("");
                   else event.currentTarget.blur();
                 }}
-              />
+                />
+              </div>
             ) : props.onSearch ? (
               <WorkspaceSearchButton onSearch={props.onSearch} />
             ) : null}
