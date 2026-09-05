@@ -4254,3 +4254,18 @@ UI items (Sublime-style tabs, reading keys, appearance in Cmd+K, the bar
 with New item and New folder). The active tab's page colour was still
 overridden in that build; fixed in the following commit, to ship with the
 next promotion.
+
+### Implementation round launched (2026-09-05, Codex gpt-6-astra high)
+
+Eight agents, briefs in the session scratchpad (`astra/impl/*.md`), each
+delivering a diff plus notes to `astra/out2/`: sync-epoch (epoch on
+materialize), sync-pending (publish merged CRDT during a pending save,
+fence every in-flight generation), sharing-presence (bind presence
+sessions to the account), sharing-dialog (truthful access summary),
+agents-proposals (hosted MCP destructive tools through proposals),
+agents-undo (durable agent change records with revert), ai-selection
+(validated selection envelope, no silent truncation), item-types-migrate
+(compare schemas before applying a successor; honour the studio's save
+scope). Still to assign after these land: Notion-style inline selection
+preview with accept/discard and streaming, Translate and Continue writing
+quick actions, history sync retry, the participant row in the bar.
