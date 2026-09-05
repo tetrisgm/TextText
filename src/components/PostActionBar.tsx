@@ -4,11 +4,13 @@ import Link from "next/link";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
 } from "react";
 import type { ReactNode, RefObject } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
   recaptureBookmarkAction,
@@ -84,6 +86,31 @@ type EditProps = CommonProps & {
 
 type Props = ReadProps | EditProps;
 export type BookmarkContentMode = "readable" | "capture";
+
+function WorkspaceActionBarPortal({ children }: { children: ReactNode }) {
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    const findSlot = () => {
+      const nextSlot = document.querySelector<HTMLElement>(
+        ".post-editor-content > .workspace-action-bar-host .workspace-action-bar-slot.is-right",
+      );
+      if (!nextSlot) return false;
+      setSlot(nextSlot);
+      return true;
+    };
+
+    if (findSlot()) return;
+    const observer = new MutationObserver(() => {
+      if (findSlot()) observer.disconnect();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
+
+  return slot ? createPortal(children, slot) : children;
+}
+
 type ReadState = {
   sourceVersion: string;
   dirty: boolean;
@@ -1094,11 +1121,12 @@ export function PostActionBar(props: Props) {
         </NavControl>
       </nav>
       {showTopActionBar && (
-        <div
-          className={`post-top-action-bar applecms is-${props.mode}`}
-          aria-label="Post controls"
-        >
-          <div className="post-action-toolbar ac-chrome">
+        <WorkspaceActionBarPortal>
+          <div
+            className={`post-top-action-bar applecms is-${props.mode}`}
+            aria-label="Post controls"
+          >
+            <div className="post-action-toolbar ac-chrome">
             {props.onSearchValueChange ? (
               <div className="workspace-find-controls">
                 <WorkspaceActionSearch
@@ -1274,8 +1302,9 @@ export function PostActionBar(props: Props) {
                 </NavControl>
               </nav>
             )}
+            </div>
           </div>
-        </div>
+        </WorkspaceActionBarPortal>
       )}
     </>
   );

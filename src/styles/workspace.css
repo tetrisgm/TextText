@@ -1371,11 +1371,18 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
 .post-editor-shell {
   --workspace-sidebar-width: 252px;
+  --workspace-frame-ground: #fafcfe;
+  --workspace-pane-ground: #fefefe;
+  --workspace-frame-hairline: #f3f3f3;
+  --workspace-pane-shadow: 0 0 18px rgba(37, 38, 48, 0.10);
+  --workspace-tab-rule: #34353a;
+  background: var(--workspace-frame-ground);
 }
 
 .post-editor-content {
   min-width: 0;
-  background: var(--bg);
+  background: var(--workspace-pane-ground);
+  box-shadow: var(--workspace-pane-shadow);
 }
 
 /* The open item is a reading surface, not a card grid. Keep its chrome
@@ -1706,18 +1713,15 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   z-index: 5;
   display: flex;
   align-items: stretch;
-  gap: 2px;
-  height: 40px;
-  padding: 4px 12px 0;
+  box-sizing: border-box;
+  gap: 0;
+  height: 36px;
+  padding: 0 8px;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
-  /* Derived from --ink and --bg rather than --bg-soft-2: the workspace shell
-     redefines the soft greys to its own near-black scale, so a token that
-     reads as a light strip at the root paints the band almost black inside
-     the shell. */
-  background: color-mix(in srgb, var(--ink) 7%, var(--bg));
-  box-shadow: inset 0 -1px 0 var(--hairline);
+  background: var(--workspace-pane-ground);
+  box-shadow: inset 0 -1px 0 var(--workspace-frame-hairline);
 }
 .workspace-tab-bar::-webkit-scrollbar {
   display: none;
@@ -1727,15 +1731,17 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   align-items: center;
   min-width: 0;
   max-width: 220px;
-  border-radius: 7px 7px 0 0;
-  border: 1px solid transparent;
-  border-bottom: none;
-  color: var(--muted);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: color-mix(
+    in srgb,
+    var(--ink) 72%,
+    var(--workspace-pane-ground)
+  );
 }
-/* A preview tab: the one a plain open replaces, drawn the way Sublime does
-   so it reads as provisional rather than kept. */
 .workspace-tab.is-preview .workspace-tab-select {
-  font-style: italic;
+  font-style: normal;
 }
 .workspace-tab.is-dragging {
   opacity: 0.45;
@@ -1743,23 +1749,23 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .workspace-tab.is-drop-target {
   box-shadow: inset 2px 0 0 var(--accent);
 }
-/* The open tab is the same colour as the document below it and sits proud of
-   the band, which is how a tab says "this strip continues into that page". */
+/* The active tab stays on the pane ground and uses one short baseline rule.
+   It is a location marker, not another panel above the document. */
 .workspace-tab.is-active {
-  background: var(--bg);
-  border-color: var(--hairline);
+  border-bottom-color: var(--workspace-tab-rule);
+  background: transparent;
   color: var(--ink);
-  font-weight: 550;
+  font-weight: 500;
 }
 .workspace-tab:not(.is-active):hover {
-  background: color-mix(in srgb, var(--ink) 5%, transparent);
-  color: var(--ink-2);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  color: var(--ink);
 }
 .workspace-tab-select {
   flex: 1 1 auto;
   min-width: 0;
   max-width: 190px;
-  padding: 6px 4px 6px 10px;
+  padding: 0 8px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -1779,11 +1785,11 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   justify-content: center;
   width: 20px;
   height: 20px;
-  margin-right: 5px;
+  margin-right: 4px;
   border: 0;
   border-radius: 5px;
   background: transparent;
-  color: var(--muted);
+  color: inherit;
   font-size: 14px;
   line-height: 1;
   cursor: default;
@@ -2418,7 +2424,10 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 /* The layout also contains fixed chrome, so do not use it as the scroll
    reservation target. */
 .workspace-document-layout {
+  gap: 0;
+  padding: 0;
   padding-bottom: 0;
+  background: var(--workspace-frame-ground);
 }
 
 /* The assistant module declares a stable gutter on its scrolling body. The
@@ -3182,7 +3191,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .post-editor-content {
-  background: #fefefe;
+  background: var(--workspace-pane-ground);
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--ink) 14%, transparent) transparent;
 }
@@ -3210,7 +3219,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
 .post-editor-shell .tt-unified-editor,
 .post-editor-content .tt-document {
-  background: #fefefe;
+  background: var(--workspace-pane-ground);
 }
 
 .post-editor-content
@@ -3233,17 +3242,17 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .post-editor-content .tt-document .tt-masthead {
-  position: sticky;
-  top: 0;
-  z-index: 20;
+  position: relative;
+  top: auto;
+  z-index: auto;
   align-self: stretch;
   width: 100%;
   max-width: none;
   margin: 0;
-  padding: 12px 52px 16px;
-  gap: 8px;
-  border-bottom: 1px solid #ececf0;
-  background: #fefefe;
+  padding: 24px 34px 18px;
+  gap: 6px;
+  border: 0;
+  background: transparent;
   text-align: left;
   align-items: flex-start;
 }
@@ -3259,20 +3268,20 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   .tt-masthead
   :is(.tt-title, .tt-text-title, h1) {
   order: -2;
-  width: min(620px, calc(100% - 240px));
+  width: min(720px, 100%);
   max-width: 100%;
   margin: 0;
-  overflow: hidden;
+  overflow: visible;
   color: #242426;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
     sans-serif;
-  font-size: 22px;
-  font-weight: 500;
-  line-height: 28px;
-  letter-spacing: -0.01em;
-  text-overflow: ellipsis;
-  text-wrap: nowrap;
-  white-space: nowrap;
+  font-size: 26px;
+  font-weight: 400;
+  line-height: 34px;
+  letter-spacing: -0.015em;
+  text-overflow: clip;
+  text-wrap: wrap;
+  white-space: normal;
 }
 
 .post-editor-shell
@@ -3281,29 +3290,33 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   :is(.tt-byline, .tt-metadata) {
   order: -1;
   justify-content: flex-start;
-  width: min(620px, 100%);
+  width: min(720px, 100%);
   max-width: 100%;
   margin: 0;
-  color: #9b9ba1;
+  color: #6e6e73;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
     sans-serif;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 400;
-  line-height: 18px;
+  line-height: 20px;
   letter-spacing: 0;
+}
+
+.post-editor-content .tt-document .tt-byline-separator {
+  color: inherit;
 }
 
 .post-editor-content
   .tt-document
   > .tt-stack
   > :is(.tt-text, .tt-group, .tt-prose) {
-  width: min(620px, calc(100% - 104px));
+  width: min(720px, calc(100% - 68px));
   margin-right: auto;
-  margin-left: 52px;
+  margin-left: 34px;
 }
 
 .post-editor-content .tt-document > .tt-stack > .tt-masthead + * {
-  margin-top: 24px;
+  margin-top: 18px;
 }
 
 .post-editor-shell
@@ -3312,22 +3325,22 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   color: #29292c;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
     sans-serif;
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 400;
-  line-height: 22px;
+  line-height: 1.8;
 }
 
 .post-editor-shell .tt-document .tt-prose p {
-  margin: 0 0 16px;
+  margin: 0 0 22px;
 }
 
 .post-editor-shell .tt-document .tt-prose :is(ul, ol) {
-  margin-top: 8px;
-  margin-bottom: 16px;
+  margin-top: 10px;
+  margin-bottom: 22px;
 }
 
 .post-editor-shell .tt-document .tt-prose a {
-  color: #4b91b4;
+  color: #286a8b;
 }
 
 /* Read controls share the subject's header band and stay visually unboxed. */
@@ -3480,7 +3493,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 [data-theme="dark"] .post-editor-shell .tt-unified-editor,
 [data-theme="dark"] .post-editor-content .tt-document,
 [data-theme="dark"] .post-editor-content .tt-document .tt-masthead {
-  background: #2b2c30;
+  background: var(--workspace-pane-ground);
 }
 
 [data-theme="dark"]
@@ -3498,8 +3511,30 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   color: #f1f1f3;
 }
 
-[data-theme="dark"] .post-editor-content .tt-document .tt-masthead {
-  border-bottom-color: #3a3b40;
+[data-theme="dark"]
+  .post-editor-content
+  .tt-document
+  .tt-masthead {
+  background: transparent;
+}
+
+[data-theme="dark"]
+  .post-editor-shell
+  .tt-document
+  .tt-masthead
+  :is(.tt-byline, .tt-metadata) {
+  color: #a7a7ad;
+}
+
+[data-theme="dark"]
+  .post-editor-content
+  .tt-document
+  .tt-byline-separator {
+  color: inherit;
+}
+
+[data-theme="dark"] .post-editor-shell .tt-document .tt-prose a {
+  color: #7ac7ee;
 }
 
 [data-theme="dark"] .post-editor-shell .workspace-key-hints {
@@ -3532,7 +3567,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
     .post-editor-content
     .tt-document
     .tt-masthead {
-    background: #2b2c30;
+    background: var(--workspace-pane-ground);
   }
 
   :root:not([data-theme="light"])
@@ -3554,7 +3589,30 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
     .post-editor-content
     .tt-document
     .tt-masthead {
-    border-bottom-color: #3a3b40;
+    background: transparent;
+  }
+
+  :root:not([data-theme="light"])
+    .post-editor-shell
+    .tt-document
+    .tt-masthead
+    :is(.tt-byline, .tt-metadata) {
+    color: #a7a7ad;
+  }
+
+  :root:not([data-theme="light"])
+    .post-editor-content
+    .tt-document
+    .tt-byline-separator {
+    color: inherit;
+  }
+
+  :root:not([data-theme="light"])
+    .post-editor-shell
+    .tt-document
+    .tt-prose
+    a {
+    color: #7ac7ee;
   }
 
   :root:not([data-theme="light"]) .post-editor-shell .workspace-key-hints {
@@ -3671,51 +3729,43 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   margin-inline: 0;
 }
 
-/* The body sits in a panel on the page ground rather than flush against it,
-   which is what separates "the item" from "the app" in the reference. */
-/* Four classes, because the presentation system states this stack's padding
-   at (0,4,0) with two :not()s and would otherwise keep its own - which is
-   zero at the sides, so the panel had a border and the text ran straight to
-   it. The width is chosen for the LINE rather than the box: 700 less the
-   padding puts a paragraph at about 64 characters, which is the measure the
-   plan asked for and which the published Broadsheet, at 46rem, does not
-   have to change to give us. */
+/* The document owns the full reading column. Its text measure provides the
+   inset; the stack itself must not become a card inside that column. */
 .post-editor-content
   .tt-document:not(.tt-collection-item):not([data-preview])
   > .tt-stack {
-  max-width: 700px;
-  margin-block: 14px 28px;
-  padding: 34px 40px 48px;
-  border: 1px solid var(--hairline);
-  border-radius: 6px;
-  /* A shade off the page ground, so the panel reads as a panel even where a
-     hairline on near-white would not. */
-  background: color-mix(in srgb, var(--ink) 2%, var(--bg));
-  box-shadow: 0 10px 28px -26px rgba(0, 0, 0, 0.30);
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0 0 48px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
-/* The page behind the panel steps back, which is what makes the panel read
-   as the item and the rest as the app. */
+/* The renderer and its owning column share one ground. Sheet separation now
+   happens only at the column edges, never around an inner document card. */
 .post-editor-content .tt-document {
-  background: color-mix(in srgb, var(--ink) 5%, var(--bg));
+  background: var(--workspace-pane-ground);
 }
 
 .post-editor-content .tt-document {
-  padding-top: 12px;
+  padding-top: 0;
 }
 
 .post-editor-shell .tt-document .tt-masthead {
-  gap: 8px;
+  gap: 6px;
 }
 
-.post-editor-shell .tt-document .tt-masthead :is(.tt-title, h1) {
-  letter-spacing: -0.025em;
-  line-height: 1.16;
+.post-editor-shell .tt-document .tt-masthead :is(.tt-title, .tt-text-title, h1) {
+  letter-spacing: -0.015em;
+  line-height: 34px;
 }
 
 .post-editor-shell .tt-document .tt-masthead :is(.tt-byline, .tt-metadata) {
   font-size: 14px;
-  line-height: 1.4;
+  line-height: 20px;
   letter-spacing: -0.005em;
 }
 
@@ -3737,9 +3787,9 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 @media (max-width: 900px) {
-  /* No room for a margin around a panel; the page is the panel. */
+  /* The compact inset belongs to the content, never to the sheet. */
   .post-editor-content .tt-document > .tt-stack {
-    padding: 20px;
+    padding: 0 0 48px;
     border: 0;
     border-radius: 0;
     box-shadow: none;
@@ -5182,5 +5232,359 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 @media (max-width: 560px) {
   .post-editor-shell .post-folder-list.workspace-folder-row-list {
     padding-left: 22px;
+  }
+}
+
+/* ---------------------------------------------------------------------
+   One action rail for every workspace view.
+
+   The rail is the first child of the workspace scroller. It owns real flow
+   height, then sticks to the top of that scroller. The document, library and
+   folder surfaces therefore all start below it and can scroll beneath it
+   without any control occupying document space. */
+.post-editor-shell:has(.workspace-action-bar-host) {
+  --workspace-action-bar-height: var(--ac-h-toolbar, 52px);
+  --workspace-action-bar-history-width: 96px;
+  --workspace-action-bar-history-inset: 8px;
+  --workspace-action-bar-ground: var(--workspace-pane-ground, #fefefe);
+  --workspace-action-bar-border: #ececf0;
+  --workspace-action-bar-ink: #34353a;
+  --workspace-action-bar-muted: #74757c;
+  --workspace-action-bar-hover: #f3f4f7;
+  --workspace-action-bar-accent: #0a6dd9;
+  --workspace-action-bar-on-accent: #ffffff;
+}
+
+[data-theme="dark"] .post-editor-shell:has(.workspace-action-bar-host) {
+  --workspace-action-bar-border: #3a3b40;
+  --workspace-action-bar-ink: #e5e7eb;
+  --workspace-action-bar-muted: #a8a8ac;
+  --workspace-action-bar-hover: #36373d;
+  --workspace-action-bar-accent: #61b5e1;
+  --workspace-action-bar-on-accent: #1a191c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"])
+    .post-editor-shell:has(.workspace-action-bar-host) {
+    --workspace-action-bar-border: #3a3b40;
+    --workspace-action-bar-ink: #e5e7eb;
+    --workspace-action-bar-muted: #a8a8ac;
+    --workspace-action-bar-hover: #36373d;
+    --workspace-action-bar-accent: #61b5e1;
+    --workspace-action-bar-on-accent: #1a191c;
+  }
+}
+
+.post-editor-content > .workspace-action-bar-host {
+  position: sticky;
+  top: 0;
+  z-index: 209;
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--workspace-action-bar-height, 52px);
+  min-height: var(--workspace-action-bar-height, 52px);
+  background: var(--workspace-action-bar-ground);
+}
+
+/* The history slot must stay reachable whatever a view renders beneath the
+   bar. A note opened into edit mode still mounts its toolbar as a sticky
+   full-width band at the same y (z-index 210), which covered the arrows and
+   made "Go back" unhoverable; stacking the host above every in-content bar
+   ends that regardless of how the view below is built. */
+.post-editor-content > .workspace-action-bar-host {
+  position: relative;
+  z-index: 230;
+}
+.workspace-action-bar-slot.is-right {
+  overflow: clip;
+}
+.workspace-action-bar {
+  display: grid;
+  grid-template-columns:
+    var(--workspace-action-bar-history-width, 96px)
+    minmax(0, 1fr)
+    max-content;
+  align-items: stretch;
+  width: 100%;
+  height: 100%;
+  border-bottom: 1px solid var(--workspace-action-bar-border);
+  background: var(--workspace-action-bar-ground);
+  color: var(--workspace-action-bar-ink);
+}
+
+.workspace-action-bar .workspace-history-chrome {
+  position: static;
+  grid-column: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: auto;
+  height: 100%;
+  padding-left: var(--workspace-action-bar-history-inset, 8px);
+  background: transparent;
+}
+
+.workspace-action-bar
+  .workspace-history-chrome
+  :is(.workspace-round-button, .post-editor-sidebar-toggle) {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--workspace-action-bar-muted);
+  box-shadow: none;
+}
+
+.workspace-action-bar
+  .workspace-history-chrome
+  :is(.workspace-round-button, .post-editor-sidebar-toggle)
+  svg {
+  width: 14px;
+  height: 14px;
+}
+
+.is-pointer-live
+  .workspace-action-bar
+  .workspace-history-chrome
+  :is(.workspace-round-button, .post-editor-sidebar-toggle):hover {
+  border: 0;
+  background: var(--workspace-action-bar-hover);
+  color: var(--workspace-action-bar-ink);
+}
+
+.workspace-action-bar-slot.is-middle,
+.workspace-action-bar-slot.is-right {
+  min-width: 0;
+  height: 100%;
+}
+
+.workspace-action-bar-slot.is-middle {
+  grid-column: 2;
+}
+
+.workspace-action-bar-slot.is-right {
+  grid-column: 3;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  padding-right: 12px;
+}
+
+.post-editor-content {
+  scroll-padding-top: var(--workspace-action-bar-height, 52px);
+}
+
+/* Read actions mount directly in the rail's right slot. */
+.workspace-action-bar-slot.is-right > .post-top-action-bar.is-read {
+  position: static !important;
+  inset: auto;
+  z-index: auto;
+  width: auto;
+  max-width: none;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-read
+  .post-action-toolbar {
+  flex-wrap: nowrap;
+  width: auto;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  gap: 12px;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-read
+  .workspace-find-controls {
+  flex: 0 1 280px;
+  width: min(280px, 26vw);
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-read
+  :is(button:not(.ac-btn-filled), a, input, kbd) {
+  color: var(--workspace-action-bar-muted);
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-read
+  :is(button:not(.ac-btn-filled), a):hover {
+  color: var(--workspace-action-bar-ink);
+}
+
+.workspace-action-bar-slot.is-right
+  > .post-top-action-bar.is-read
+  .ac-btn-filled {
+  background: var(--workspace-action-bar-accent);
+  color: var(--workspace-action-bar-on-accent);
+}
+
+/* Root and utility search controls keep their existing component ownership,
+   but occupy this same flow row. Negative block margin consumes only the
+   rail's reserved height, never document content. */
+.workspace-root-page:has(> .workspace-root-action-bar) {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding-top: 0;
+  background: var(--bg);
+}
+
+.workspace-root-page > .workspace-root-action-bar,
+.local-workspace-surface > .workspace-root-action-bar {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 211;
+  box-sizing: border-box;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: auto;
+  max-width: none;
+  height: var(--workspace-action-bar-height, 52px);
+  min-height: var(--workspace-action-bar-height, 52px);
+  margin-top: calc(-1 * var(--workspace-action-bar-height, 52px));
+  padding: 8px 12px 8px
+    calc(var(--workspace-action-bar-history-width, 96px) + 12px);
+  background: transparent;
+  pointer-events: none;
+}
+
+.workspace-root-page > .workspace-root-action-bar {
+  margin-right: -48px;
+  margin-left: -48px;
+}
+
+.workspace-root-action-bar .workspace-root-action-toolbar {
+  width: min(520px, 100%);
+  margin-inline: auto;
+  pointer-events: auto;
+}
+
+.local-workspace-surface > .workspace-root-action-bar .workspace-root-action-toolbar {
+  width: 36px;
+  margin-right: 0;
+  margin-left: auto;
+}
+
+.workspace-root-action-bar .workspace-search-field :is(input, kbd),
+.workspace-root-action-bar .workspace-search-action {
+  color: var(--workspace-action-bar-muted);
+}
+
+.workspace-root-action-bar .workspace-search-field input {
+  color: var(--workspace-action-bar-ink);
+}
+
+.workspace-root-action-bar .workspace-search-field input::placeholder {
+  color: var(--workspace-action-bar-muted);
+}
+
+/* The editor owns its toolbar markup, so the existing row rises into the
+   reserved rail and gives that height back before the document begins. */
+.post-editor-shell .post-top-action-bar.is-edit {
+  position: sticky !important;
+  top: 0 !important;
+  right: auto;
+  left: auto;
+  z-index: 211;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  height: var(--workspace-action-bar-height, 52px);
+  min-height: var(--workspace-action-bar-height, 52px);
+  margin-top: calc(-1 * var(--workspace-action-bar-height, 52px));
+  padding: 0;
+  background: transparent;
+}
+
+.post-editor-shell .post-top-action-bar.is-edit .post-action-toolbar {
+  flex-wrap: nowrap;
+  align-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  gap: 6px;
+  padding: 8px 12px 8px
+    calc(var(--workspace-action-bar-history-width, 96px) + 8px);
+  overflow-x: auto;
+  overflow-y: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  scrollbar-width: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.post-editor-shell
+  .post-top-action-bar.is-edit
+  .post-action-toolbar::-webkit-scrollbar {
+  display: none;
+}
+
+.post-editor-shell .post-top-action-bar.is-edit .post-action-replace {
+  order: 10;
+  grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) auto;
+  flex: 1 1 360px;
+  width: auto;
+  min-width: 340px;
+}
+
+.post-editor-shell
+  .post-top-action-bar.is-edit
+  ~ .tt-document
+  .tt-masthead {
+  padding-top: 12px;
+}
+
+.workspace-action-bar-host + .local-workspace-surface .post-folder-page {
+  padding-top: 28px;
+}
+
+@media (max-width: 1024px) {
+  .post-editor-shell:has(.workspace-action-bar-host),
+  .post-editor-shell.is-sidebar-collapsed:has(.workspace-action-bar-host) {
+    --workspace-action-bar-history-width: 132px;
+    --workspace-action-bar-history-inset: 52px;
+  }
+}
+
+@media (max-width: 760px) {
+  .workspace-root-page > .workspace-root-action-bar {
+    margin-right: -16px;
+    margin-left: -16px;
+  }
+
+  .workspace-action-bar-slot.is-right {
+    padding-right: 8px;
+  }
+
+  .workspace-action-bar-slot.is-right
+    > .post-top-action-bar.is-read
+    .workspace-find-controls {
+    width: min(220px, 32vw);
+  }
+
+  .workspace-action-bar-host + .local-workspace-surface .post-folder-page {
+    padding-top: 20px;
   }
 }

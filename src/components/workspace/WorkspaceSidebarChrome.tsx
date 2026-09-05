@@ -17,6 +17,7 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
   createSubfolderAction,
@@ -1635,11 +1636,30 @@ export function WorkspaceSidebarChrome({
   onPeekEngage?: () => void;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [actionBarHost, setActionBarHost] = useState<HTMLDivElement | null>(
+    null,
+  );
   const { width: sidebarWidth, setWidth: setSidebarWidth } =
     useWorkspaceSidebarWidth();
   useLayoutEffect(() => {
     applySidebarWidthVariable(sidebarWidth);
   }, [sidebarWidth]);
+  useLayoutEffect(() => {
+    const content = document.querySelector<HTMLElement>(
+      ".post-editor-shell .post-editor-content",
+    );
+    if (!content) return;
+
+    const host = document.createElement("div");
+    host.className = "workspace-action-bar-host";
+    content.prepend(host);
+    const frame = window.requestAnimationFrame(() => setActionBarHost(host));
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      host.remove();
+    };
+  }, []);
   const selectFolder = useCallback(
     (folder: SidebarFolderId) => {
       disarmWorkspaceHover();
@@ -1830,9 +1850,28 @@ export function WorkspaceSidebarChrome({
           <SidebarToggleControl collapsed onToggleCollapsed={openSidebar} />
         </div>
       )}
-      <div className="workspace-history-chrome ac-chrome">
-        <WorkspaceHistoryControls />
-      </div>
+      {actionBarHost ? (
+        createPortal(
+          <div className="workspace-action-bar ac-chrome" aria-label="Workspace controls">
+            <nav
+              className="workspace-history-chrome workspace-action-bar-slot is-left"
+              aria-label="Workspace history"
+            >
+              <WorkspaceHistoryControls />
+            </nav>
+            <div
+              className="workspace-action-bar-slot is-middle"
+              aria-hidden="true"
+            />
+            <div className="workspace-action-bar-slot is-right" />
+          </div>,
+          actionBarHost,
+        )
+      ) : (
+        <div className="workspace-history-chrome ac-chrome">
+          <WorkspaceHistoryControls />
+        </div>
+      )}
       <button
         type="button"
         className={`post-sidebar-backdrop${mobileOpen ? " is-open" : ""}`}
@@ -1843,4 +1882,3 @@ export function WorkspaceSidebarChrome({
     </>
   );
 }
-

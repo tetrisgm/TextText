@@ -3665,6 +3665,49 @@ semantic tokens to the Apple system palette in apple.css (`--ac-label`,
 `--ac-bg`, ...). A change to `tokens.css` reaches the published site and
 nothing else. This cost a whole refit step before anyone noticed.
 
+## The open item rebuilt to Superhuman's structure (2026-09-05, build 1045)
+
+The owner's goal, set with /goal after seeing build 1044: match the Superhuman
+screenshots precisely, both themes, verify visually, do not stop until close.
+The failures were structural, not metric: fixed chrome floating over the
+document, a sheet capped at 700px leaving a dead strip to the rail, the title
+in a sticky card, the edit toolbar as a floating panel. The owner added a
+rule mid-work: **one action bar across the whole column, same height and
+slots in every view, so the back button is always in the same place.**
+
+What landed (gpt-5.6-sol passes, integrated in order frame, rail, action bar,
+reading pane; each verified by eye at 1800x1169 with a 418px sidebar in both
+themes against ref-10 light and ref-08 dark):
+- `WorkspaceSidebarChrome` prepends a `.workspace-action-bar-host` into
+  `.post-editor-content`, a 3-column grid (history 96px | middle | right).
+  `PostActionBar` portals the read bar into the right slot
+  (`WorkspaceActionBarPortal`). The list's search sits in the middle slot.
+- The sheet spans the column; the winning cap was a LATER
+  `max-width: 700px` at ~line 3683 that beat the earlier full-width override.
+- Title as a plain heading with one byline; body ~18px in a ~710px measure.
+- Rail: `#ffffff` light ground, dark ground aligned to the document ground,
+  secondary text raised from 2.76:1 to 5.41:1, composer as a rounded input.
+
+Two things found by the interaction suite, not by looking:
+- Two bars alive after cmd+W / shift+cmd+T shared one `justify-content:
+  flex-end` slot and overflowed LEFT over the arrows. More precisely, a note
+  opened via cmd-click lands in edit mode whose toolbar is not portaled and
+  renders as a sticky full-width band at the bar's y. The host now stacks at
+  z 230 above any in-content bar (17/17 restored); the edit toolbar's portal
+  is the editing-pane pass still in flight.
+- A first editing-pane diff deleted the `applyDocumentBaseline` fallback in
+  `provider.start().then` (the offline seed) to show a failure state. Rejected:
+  fail visibly only from `onError`; the re-brief says so verbatim.
+
+Perf, decided against: a Sol pass swapped zod imports across 13 files
+including `documents/model.ts` for 28KB (1976 -> 1948). Not applied; the
+schema-v1 contract is not worth 28KB. Its real finding: `FolderPage` cannot
+lazy-load until `UniversalItemComposer` (~540 lines of loss-protection and
+retry) is extracted from it. Timings on this build, WebKit, local production
+server: cold load 2.1-2.5s including dev sign-in, warm reload 0.5-0.65s, open
+item ~50ms, edit ready ~30ms. The owner's 5s cold is the network path to
+Vercel plus the ~1.9MB parse on a loaded machine.
+
 ## "Insane amount of errors" (2026-09-05): what the recording actually showed
 
 The owner recorded build 1042 in the Mac app at 1800x1169 logical (3600x2338

@@ -93,6 +93,11 @@
   --ac-separator: rgba(255,255,255,0.08);
   --ac-bg: #2c2d31;
   --ac-bg-2: #1a191c;
+  --workspace-frame-ground: #1a191c;
+  --workspace-pane-ground: #2c2d31;
+  --workspace-frame-hairline: rgba(255,255,255,0.08);
+  --workspace-pane-shadow: 0 0 18px rgba(0,0,0,0.22);
+  --workspace-tab-rule: #e5e7eb;
   --ac-accent: #61b5e1;
   --ac-on-accent: #ffffff;
   --ac-accent-contrast: #ffffff;
@@ -131,6 +136,11 @@
     --ac-separator: rgba(255,255,255,0.08);
     --ac-bg: #2c2d31;
     --ac-bg-2: #1a191c;
+    --workspace-frame-ground: #1a191c;
+    --workspace-pane-ground: #2c2d31;
+    --workspace-frame-hairline: rgba(255,255,255,0.08);
+    --workspace-pane-shadow: 0 0 18px rgba(0,0,0,0.22);
+    --workspace-tab-rule: #e5e7eb;
     --ac-accent: #61b5e1;
     --ac-on-accent: #ffffff;
     --ac-accent-contrast: #ffffff;

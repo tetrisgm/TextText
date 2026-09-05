@@ -3,11 +3,19 @@
   --assistant-sidebar-min-width: 280px;
   --assistant-sidebar-max-width: 600px;
   --assistant-sidebar-rail-width: 44px;
-  --assistant-rail-ground: #fafcfe;
-  --assistant-rail-divider: #f2f2f2;
-  --assistant-rail-primary: #313236;
-  --assistant-rail-secondary: #9899a0;
+  --assistant-rail-ground: #ffffff;
+  --assistant-rail-divider: #ececee;
+  --assistant-rail-primary: #303136;
+  --assistant-rail-secondary: #686a70;
   --assistant-rail-scroll-thumb: #c7c8cc;
+  --assistant-composer-ground: #ffffff;
+  --assistant-composer-border: #d9dade;
+  --assistant-composer-focus: #7a7c82;
+  --assistant-control-fill: #eef0f3;
+  --assistant-send-ground: #303136;
+  --assistant-send-ink: #ffffff;
+  --assistant-error: #a33a3f;
+  --assistant-quote-rule: #a6a8ad;
 
   z-index: 60;
   min-width: 0;
@@ -161,7 +169,7 @@
 .launcherAvatar,.agentAvatar { display:grid; place-items:center; color:#fff; border-radius:50%; flex:0 0 auto; }
 .launcherAvatar { width:26px; height:26px; }
 .launcherAvatar svg,.agentAvatar svg { width:15px; height:15px; }
-.agentAvatar { width:20px; height:20px; filter:grayscale(1); opacity:.72; }
+.agentAvatar { width:18px; height:18px; filter:grayscale(1); opacity:.62; }
 .agentAvatar svg { width:12px; height:12px; }
 
 .root[data-layout="inline"][data-state="hidden"] .launcherWrap {
@@ -226,7 +234,7 @@
   flex: 0 0 auto;
   display: grid;
   gap: 0;
-  padding: 28px 31px 8px;
+  padding: 34px 26px 10px;
   border-bottom: 0;
 }
 
@@ -245,7 +253,7 @@
   overflow: hidden;
   margin: 0;
   color: var(--assistant-rail-primary);
-  font: 500 17px / 1.25 var(
+  font: 500 18px / 1.25 var(
       --ac-font-text,
       -apple-system,
       BlinkMacSystemFont,
@@ -359,19 +367,37 @@ button.pendingLabel {
   box-shadow: var(--ac-focus, 0 0 0 3px rgba(0, 122, 255, 0.45));
 }
 
-@media (prefers-color-scheme: dark) {
-  .root {
-    --assistant-rail-ground: #1a191c;
-    --assistant-rail-divider: #343438;
-    --assistant-rail-primary: #f2f2f4;
-    --assistant-rail-secondary: #9b9ba2;
-    --assistant-rail-scroll-thumb: #55565b;
-  }
+:global([data-theme="dark"]) .root {
+  --assistant-rail-ground: #2b2b2e;
+  --assistant-rail-divider: #45454a;
+  --assistant-rail-primary: #f2f2f4;
+  --assistant-rail-secondary: #aaaab0;
+  --assistant-rail-scroll-thumb: #66666d;
+  --assistant-composer-ground: #343438;
+  --assistant-composer-border: #4b4b51;
+  --assistant-composer-focus: #aaaab0;
+  --assistant-control-fill: #414146;
+  --assistant-send-ground: #f2f2f4;
+  --assistant-send-ink: #2b2b2e;
+  --assistant-error: #f2a4aa;
+  --assistant-quote-rule: #73737b;
+}
 
-  .modelSelect {
-    border: 0;
-    background-color: transparent;
-    color: var(--assistant-rail-secondary);
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme="light"])) .root {
+    --assistant-rail-ground: #2b2b2e;
+    --assistant-rail-divider: #45454a;
+    --assistant-rail-primary: #f2f2f4;
+    --assistant-rail-secondary: #aaaab0;
+    --assistant-rail-scroll-thumb: #66666d;
+    --assistant-composer-ground: #343438;
+    --assistant-composer-border: #4b4b51;
+    --assistant-composer-focus: #aaaab0;
+    --assistant-control-fill: #414146;
+    --assistant-send-ground: #f2f2f4;
+    --assistant-send-ink: #2b2b2e;
+    --assistant-error: #f2a4aa;
+    --assistant-quote-rule: #73737b;
   }
 }
 
@@ -415,14 +441,14 @@ button.pendingLabel {
 /* Inside the composer field, scope reads as a plain metadata line. */
 .contextChip {
   min-width: 0;
-  max-width: calc(100% - 16px);
+  max-width: calc(100% - 4px);
   width: fit-content;
   height: 20px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
   overflow: hidden;
-  margin: 6px 0 0;
+  margin: 0 2px 6px;
   border-radius: 0;
   padding: 0;
   background: transparent;
@@ -498,8 +524,8 @@ button.pendingLabel {
   min-width: 0;
   flex: 0 0 auto;
   display: grid;
-  gap: 6px;
-  padding: 8px 31px 14px;
+  gap: 0;
+  padding: 8px 13px 18px;
 }
 
 .attachmentList {
@@ -507,7 +533,7 @@ button.pendingLabel {
   display: flex;
   gap: 12px;
   overflow-x: auto;
-  margin: 0;
+  margin: 0 0 8px;
   padding: 0;
   list-style: none;
   scrollbar-width: thin;
@@ -597,7 +623,7 @@ button.pendingLabel {
 
 .composerField {
   min-width: 0;
-  display: grid;
+  display: contents;
   overflow: visible;
   border: 0;
   border-radius: 0;
@@ -609,18 +635,20 @@ button.pendingLabel {
 }
 
 .composerField:focus-within {
-  border-color: transparent;
+  border-color: var(--assistant-composer-focus);
   box-shadow: none;
 }
 
 .textarea {
   width: 100%;
-  min-height: 36px;
+  min-height: 40px;
   max-height: 160px;
   overflow-y: auto;
-  border: 0;
-  padding: 8px 0 3px;
-  background: transparent;
+  border: 1px solid var(--assistant-composer-border);
+  border-bottom: 0;
+  border-radius: 10px 10px 0 0;
+  padding: 10px 11px 4px;
+  background: var(--assistant-composer-ground);
   color: var(--assistant-rail-primary);
   font: 400 13px / 1.4 var(
       --ac-font-text,
@@ -645,16 +673,26 @@ button.pendingLabel {
 }
 
 .textarea:focus-visible {
+  outline: none;
   box-shadow: none;
 }
 
 .composerToolbar {
-  min-height: 28px;
+  min-height: 32px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 0;
+  border: 1px solid var(--assistant-composer-border);
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  padding: 2px 5px 5px;
+  background: var(--assistant-composer-ground);
+  box-shadow: 0 8px 18px -16px rgba(0, 0, 0, 0.42);
+}
+
+.composer:has(.textarea:focus-visible) :is(.textarea, .composerToolbar) {
+  border-color: var(--assistant-composer-focus);
 }
 
 .contextPicker {
@@ -743,18 +781,18 @@ button.pendingLabel {
 }
 
 .composerButton {
-  width: 24px;
-  height: 24px;
-  border-radius: 4px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
   color: var(--assistant-rail-secondary);
 }
 
 .submitButton {
-  width: 24px;
-  height: 24px;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--assistant-rail-secondary);
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--assistant-send-ground);
+  color: var(--assistant-send-ink);
 }
 
 .submitButton svg {
@@ -763,8 +801,8 @@ button.pendingLabel {
 }
 
 .submitButton:hover {
-  background: transparent;
-  color: var(--assistant-rail-primary);
+  background: var(--assistant-send-ground);
+  color: var(--assistant-send-ink);
 }
 
 .iconButton:disabled,
@@ -783,9 +821,9 @@ button.pendingLabel {
 
 .submitButton:disabled,
 .submitButton:disabled:hover {
-  background: transparent;
+  background: var(--assistant-control-fill);
   color: var(--assistant-rail-secondary);
-  opacity: 0.38;
+  opacity: 1;
 }
 
 @supports not (
