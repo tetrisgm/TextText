@@ -15,6 +15,7 @@ import {
   WORKSPACE_TOOL_DEFINITIONS,
   WORKSPACE_TOOL_NAMES,
   isWorkspaceToolName,
+  type WorkspaceToolName,
 } from "@/lib/ai/tools";
 import { registerAgentSurface } from "./agent-surface";
 import { executeMcpTool, type ToolContext } from "./tools";
@@ -103,17 +104,34 @@ registerAgentSurface(collector as never);
  * high. `WORKSPACE_TOOL_NAMES` is already a fixed array, so the order is the
  * declaration order and does not vary per call or per token.
  */
+/**
+ * What a hosted client should expect of a write. Staged tools wait for the
+ * owner in TextText; the rest run directly for the owner's own token and are
+ * audited (and, for document text, recorded for review or revert).
+ */
+function hostedNote(name: WorkspaceToolName, confirmation: string): string {
+  if (name === "set_item_status") {
+    return " Publishing is staged for owner review in TextText; unpublishing runs directly and is audited.";
+  }
+  if (hostedToolNeedsProposal(name, {})) {
+    return " Hosted MCP stages this action for owner review in TextText; client confirmation cannot execute it.";
+  }
+  if (name === "update_item") {
+    return " Whole-body and markdown replacements run directly and are recorded for the owner to review or revert; guarded section and text-range edits run directly too.";
+  }
+  if (confirmation !== "none") {
+    return " Runs directly for the owner's own token and is audited.";
+  }
+  return "";
+}
+
 export function listTools() {
   return WORKSPACE_TOOL_NAMES.map((name) => {
     const definition = WORKSPACE_TOOL_DEFINITIONS[name];
     return {
       name,
       title: definition.title,
-      description: definition.description + (definition.confirmation !== "none"
-        ? " Hosted MCP stages this action for owner review in TextText; client confirmation cannot execute it."
-        : name === "update_item"
-          ? " Hosted MCP stages whole-body and markdown replacements for owner review. Guarded section and text-range edits run directly."
-          : ""),
+      description: definition.description + hostedNote(name, definition.confirmation),
       inputSchema: definition.jsonSchema,
       annotations: definition.annotations,
     };

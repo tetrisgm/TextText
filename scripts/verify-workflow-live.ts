@@ -34,6 +34,7 @@ import {
 import { ensureWorkspaceFolders } from "@/lib/store";
 import { generateApiToken, hashApiToken } from "@/lib/api-tokens";
 import { MCP_PROTOCOL_VERSION } from "../src/lib/mcp/protocol";
+import { decideWorkspaceWriteProposal } from "@/lib/ai/write-proposals.server";
 
 const ORIGIN = process.env.TEXTTEXT_ORIGIN ?? "http://127.0.0.1:3000";
 const ASSET_FIXTURE_URL =
@@ -159,7 +160,20 @@ async function main() {
     // ---- Workflow: folder_trash_restore ----
     const created = await tool("create_folder", { parent_path: "blog", name: `Ideas ${STAMP}` });
     const folderId = (created.data?.folder as { id?: string })?.id ?? "";
+    // Hosted MCP stages a deletion for the owner (a destructive change is
+    // never executed on a client's say-so); approve it the way the owner
+    // would, then the folder must be in the Trash.
     const del = await tool("delete_folder", { folder_id: folderId });
+    const proposalId = (del.data as { proposalId?: string } | undefined)?.proposalId ?? "";
+    check("delete_folder is staged for owner review", del.ok && proposalId.length > 0, String(del.error ?? proposalId));
+    if (proposalId) {
+      const decided = await decideWorkspaceWriteProposal({
+        actor: { sub: SUB, userId, handle: HANDLE },
+        proposalId,
+        decision: "approve",
+      });
+      check("approving the staged deletion completes it", decided.status === "completed", String(decided.status));
+    }
     const [trashed] = await db.select().from(folders).where(eq(folders.id, folderId));
     const restore = await tool("restore_folder", { folder_id: folderId });
     const [restored] = await db.select().from(folders).where(eq(folders.id, folderId));

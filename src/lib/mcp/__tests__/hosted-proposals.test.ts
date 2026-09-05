@@ -31,14 +31,7 @@ const risky: Array<[string, Record<string, unknown>]> = [
   ["delete_item", { id: "item-1", if_match_hash: hash }],
   ["delete_items", { ids: ["item-1"] }], ["empty_trash", {}],
   ["set_item_status", { id: "item-1", status: "published" }],
-  ["set_item_status", { id: "item-1", status: "draft" }],
-  ["restore_item", { id: "item-1" }],
-  ["delete_folder", { folder_id: "folder-1" }], ["restore_folder", { folder_id: "folder-1" }],
-  ["set_access", { scope_type: "item", scope_id: "item-1", email: "reader@example.com", role: "viewer" }],
-  ["revoke_access", { scope_type: "item", scope_id: "item-1", access_id: "share-1" }],
-  ["update_item", { id: "item-1", body: "Replacement", if_match_hash: hash }],
-  ["update_item", { id: "item-1", body: "", if_match_hash: hash }],
-  ["update_item", { id: "item-1", markdown: "# Replacement", if_match_hash: hash }],
+  ["delete_folder", { folder_id: "folder-1" }],
   ["remove_item_asset", { id: "item-1", asset_url: "https://example.com/a.png" }],
   ["retire_document_template", { template_id: "custom-look" }],
 ];
@@ -80,15 +73,33 @@ describe("hosted MCP durable proposal boundary", () => {
     ["update_item", { id: "item-1", title: "New title" }],
     ["update_item", { id: "item-1", section: "Intro", body: "New", expected_section_body: "Old" }],
     ["update_item", { id: "item-1", text_edit: { field: "body", start: 0, end: 3, expected_text: "Old", replacement_text: "New" } }],
+    // Recoverable or owner-scoped: restores undo a deletion, unpublishing
+    // narrows the audience, a named grant is the owner acting through their
+    // own token, and a whole-body rewrite is recorded for revert.
+    ["restore_item", { id: "item-1" }],
+    ["restore_folder", { folder_id: "folder-1" }],
+    ["set_item_status", { id: "item-1", status: "draft" }],
+    ["set_access", { scope_type: "item", scope_id: "item-1", email: "reader@example.com", role: "viewer" }],
+    ["revoke_access", { scope_type: "item", scope_id: "item-1", access_id: "share-1" }],
+    ["update_item", { id: "item-1", body: "Replacement", if_match_hash: hash }],
+    ["update_item", { id: "item-1", markdown: "# Replacement", if_match_hash: hash }],
   ] as Array<[string, Record<string, unknown>]>)("keeps ordinary %s direct", async (name, args) => {
     expect(await callTool(name, args, context)).toEqual({ content: [{ type: "text", text: "direct" }] });
     expect(mocks.execute).toHaveBeenCalledWith(name, args, context); expect(mocks.insert).not.toHaveBeenCalled();
   });
-  it("covers every confirmation-marked command and advertises owner review", () => {
-    for (const name of WORKSPACE_TOOL_NAMES) {
-      if (WORKSPACE_TOOL_DEFINITIONS[name].confirmation === "none") continue;
-      expect(hostedToolNeedsProposal(name, {}), name).toBe(true);
-      expect(listTools().find((tool) => tool.name === name)?.description).toContain("Hosted MCP stages");
+  it("stages exactly the destructive and publishing commands and advertises owner review", () => {
+    const staged = WORKSPACE_TOOL_NAMES.filter((name) =>
+      hostedToolNeedsProposal(name, { status: "published" }),
+    );
+    expect(staged.sort()).toEqual([
+      "delete_folder", "delete_item", "delete_items", "empty_trash",
+      "remove_item_asset", "retire_document_template", "set_item_status",
+    ]);
+    for (const name of staged) {
+      expect(listTools().find((tool) => tool.name === name)?.description).toContain("owner review");
+    }
+    for (const name of ["restore_item", "restore_folder", "set_access", "revoke_access", "update_item"] as const) {
+      expect(hostedToolNeedsProposal(name, { status: "draft" }), name).toBe(false);
     }
   });
   it.each([{ scopes: [] }, { scopes: ["read"] }, { scopes: ["sync", "read"] }, { scopes: ["sync", "read-only"] }])("rejects scope $scopes before staging", async ({ scopes }) => {
@@ -106,7 +117,6 @@ describe("hosted MCP durable proposal boundary", () => {
   it.each([
     ["empty_trash", { confirmed: true }],
     ["delete_item", { id: "item-1", actor: "owner", confirmed: true }],
-    ["update_item", { id: "item-1", body: "Replacement" }],
   ] as Array<[string, Record<string, unknown>]>)("refuses invalid or self-confirmed %s", async (name, args) => {
     expect((await callTool(name, args, context)).isError).toBe(true);
     expect(mocks.insert).not.toHaveBeenCalled(); expect(mocks.execute).not.toHaveBeenCalled();
