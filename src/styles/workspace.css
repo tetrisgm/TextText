@@ -2416,8 +2416,14 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
    read and edit views. */
 .post-editor-content {
   box-sizing: border-box;
-  padding-bottom: var(--workspace-hints-height, 0px);
-  scroll-padding-bottom: var(--workspace-hints-height, 0px);
+  /* End the scroller above the bar rather than padding inside it: with the
+     padding the scrollbar track still ran under the bar and its bottom was
+     hidden (owner, 2026-09-05). */
+  /* The layout's content row is a fixed 1fr track, so a margin only
+     overflows it; the scroller takes the row minus the bar instead. */
+  align-self: start;
+  height: calc(100% - var(--workspace-hints-height, 0px));
+  min-height: 0;
   scrollbar-gutter: auto;
 }
 

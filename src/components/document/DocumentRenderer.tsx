@@ -18,6 +18,7 @@ import type {
   TemplateDefinition,
 } from "@/lib/presentation/schema";
 import { DOCUMENT_ENGINE_CSS } from "@/lib/presentation/styles";
+import { ScrollAnchoring } from "@/components/document/ScrollAnchoring";
 import { styleFamilyFor } from "@/lib/presentation/templates";
 import { remarkHighlight } from "@/components/document/HighlightMarkdown";
 import { remarkWikiLinks } from "@/components/WikiLinkMarkdown";
@@ -288,24 +289,6 @@ function DefaultMetadata({ metadata }: { metadata: DocumentRenderMetadata }) {
 
 type AssetDimensions = ReadonlyMap<string, { width: number; height: number }>;
 
-/**
- * A lazy image finishing its load above the visible region grows the content
- * and pushes what the reader is looking at. Chromium's scroll anchoring
- * compensates on its own; WebKit has none, and the Mac app runs WebKit, so
- * fast paging through an image-heavy document made the page visibly jump.
- * Images with known dimensions never need this - their space is reserved.
- */
-function compensateAboveViewportImageLoad(
-  event: React.SyntheticEvent<HTMLImageElement>,
-) {
-  const image = event.currentTarget;
-  const scroller = image.closest(".post-editor-content");
-  if (!(scroller instanceof HTMLElement)) return;
-  const rect = image.getBoundingClientRect();
-  const viewTop = scroller.getBoundingClientRect().top;
-  if (rect.bottom <= viewTop) scroller.scrollTop += rect.height;
-}
-
 function markdownImageFor(dimensions: AssetDimensions | null) {
   return function MarkdownImage({ src, alt }: { src?: unknown; alt?: string }) {
     const safe = safeMediaSource(typeof src === "string" ? src : "");
@@ -321,7 +304,6 @@ function markdownImageFor(dimensions: AssetDimensions | null) {
         decoding="async"
         width={size?.width}
         height={size?.height}
-        onLoad={size ? undefined : compensateAboveViewportImageLoad}
       />
     );
   };
@@ -1356,6 +1338,7 @@ export function DocumentRenderer({
       data-media={theme.media ?? "full"}
       style={style}
     >
+      {!preview && <ScrollAnchoring />}
       <DocumentEngineStyles />
       <NodeRenderer node={template.item} path="item" document={document} metadata={metadata} slots={slots} fields={templateFieldMap(template)} documentId={documentId} wikiLinkTargets={wikiLinkTargets} preview={preview} />
     </article>

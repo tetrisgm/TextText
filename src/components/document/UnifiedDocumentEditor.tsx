@@ -657,6 +657,8 @@ export function UnifiedDocumentEditor({
   const [peers, setPeers] = useState<PresencePeer[]>([]);
   const [remoteRevision, setRemoteRevision] = useState(0);
   const [ready, setReady] = useState(!networkEnabled);
+  const readyRef = useRef(!networkEnabled);
+  readyRef.current = ready;
   const [saveState, setSaveState] = useState<SaveState>("local");
   const [error, setError] = useState<string | null>(null);
   const [baselineFailure, setBaselineFailure] = useState<string | null>(null);
@@ -898,6 +900,13 @@ export function UnifiedDocumentEditor({
         return;
       }
       try {
+        // A remote history arriving before the provider is ready must not
+        // replace what the person already typed: the ledger holds that edit
+        // and the reconciliation in provider.start().then() republishes the
+        // merge. Publishing here first showed the server text for a beat and,
+        // with a fast keystroke, for good (owner, 2026-09-05: a deletion came
+        // back).
+        if (!readyRef.current && preReadyLocalRef.current) return;
         const next = documentSnapshotFromYDoc(doc);
         const localSavePending =
           localMaterializationVersionRef.current >
@@ -910,6 +919,14 @@ export function UnifiedDocumentEditor({
     };
     doc.on("update", handleDocumentUpdate);
 
+    if ((window as unknown as { __ttEditorInspect?: unknown }).__ttEditorInspect === true) {
+      (window as unknown as { __ttEditor?: () => unknown }).__ttEditor = () => ({
+        ready: readyRef.current,
+        ledger: preReadyLocalRef.current?.content.body.length ?? null,
+        ydoc: hasDocumentSnapshot(doc) ? documentText(doc, "body").toString().length : null,
+        surface: documentRef.current.content.body.length,
+      });
+    }
     void provider.start().then((result) => {
       if (cancelled) return;
       // The ledger, never documentRef: a remote update that arrived while the
@@ -940,6 +957,7 @@ export function UnifiedDocumentEditor({
         applyDocumentSnapshot(doc, remote, localOrigin.current);
       }
       publishDocument(documentSnapshotFromYDoc(doc));
+      readyRef.current = true;
       setReady(true);
       setSaveState(result.authoritative ? "saved" : "offline");
     });

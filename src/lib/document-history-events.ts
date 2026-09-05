@@ -54,8 +54,14 @@ export function activeBodySelection(): { anchor: number; head: number } | null {
 /** Raised with `{ anchor, head }`; the editing surface places the caret. */
 export const DOCUMENT_SET_CARET_EVENT = "texttext:document-set-caret";
 
-export function requestDocumentCaret(anchor: number, head: number): void {
+export function requestDocumentCaret(
+  anchor: number,
+  head: number,
+  options: { align?: "top" } = {},
+): void {
   window.dispatchEvent(
-    new CustomEvent(DOCUMENT_SET_CARET_EVENT, { detail: { anchor, head } }),
+    new CustomEvent(DOCUMENT_SET_CARET_EVENT, {
+      detail: { anchor, head, align: options.align },
+    }),
   );
 }

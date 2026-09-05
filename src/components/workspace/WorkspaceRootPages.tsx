@@ -87,11 +87,15 @@ function useWarmEditorChunk(enabled: boolean) {
     ).preload;
     // After the cold path, never during it: an idle slot used to arrive while
     // the pool fetch was pending, and the editor's 228KB downloaded before the
-    // list was visible.
+    // list was visible. But soon after: the warm editor mounts only once this
+    // chunk is here, and an item opened and edited before that mounts the
+    // editor cold, where the collab baseline can land after the first
+    // keystrokes (owner, 2026-09-05: a deletion came back). A short quiet
+    // period after load is enough to stay off the first paint.
     return scheduleAfterLoadIdle(() => {
       if (preload) preload();
       else void import("@/components/workspace/WorkspaceItemEditor");
-    });
+    }, 300);
   }, [enabled]);
 }
 

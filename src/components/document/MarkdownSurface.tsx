@@ -501,27 +501,6 @@ export function MarkdownSurface({
     onSelection(at.anchor, at.head);
   };
 
-  // Undo puts the caret back where the edit happened, the way Sublime does.
-  // pendingCaretRef is the surface's own "place the caret on the next
-  // reconcile" channel, and the value change from the CRDT is what triggers
-  // that reconcile, so setting it here lands the caret with the undone text.
-  useEffect(() => {
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent<{ anchor?: number; head?: number }>)
-        .detail;
-      const head = detail?.head;
-      if (typeof head !== "number") return;
-      pendingCaretRef.current = head;
-      const root = ref.current;
-      if (root && document.activeElement !== root) root.focus({ preventScroll: true });
-      // The line may be far off screen after a big undo.
-      window.requestAnimationFrame(() =>
-        revealLine(lineAtOffset(lineStartsRef.current, head)),
-      );
-    };
-    window.addEventListener(DOCUMENT_SET_CARET_EVENT, handler);
-    return () => window.removeEventListener(DOCUMENT_SET_CARET_EVENT, handler);
-  }, []);
 
   useEffect(() => {
     const onSelectionChange = () => {
@@ -919,6 +898,25 @@ export function MarkdownSurface({
    * second pass once it has re-windowed lands on the real row, which
    * corrects for the estimate the spacers were using.
    */
+  /** Whether a materialized line's wrapper sits inside the scroller's view. */
+  const lineInView = (line: number): boolean => {
+    const root = ref.current;
+    if (!root) return true;
+    const win = winRef.current;
+    const el =
+      wrappersRef.current[windowedRef.current ? line - win.start : line];
+    if (!el?.isConnected) return false;
+    const scroller = scrollerOf(root);
+    const rect = el.getBoundingClientRect();
+    const view = scroller
+      ? scroller.getBoundingClientRect()
+      : { top: 0, bottom: window.innerHeight };
+    const covered = scroller
+      ? parseFloat(getComputedStyle(scroller).scrollPaddingTop) || 0
+      : 0;
+    return rect.top >= view.top + covered && rect.bottom <= view.bottom;
+  };
+
   const jumpToLine = (line: number) => {
     const root = ref.current;
     if (!root) return;
@@ -934,10 +932,14 @@ export function MarkdownSurface({
         ? wrappersRef.current[windowedRef.current ? target - win.start : target]
         : null;
       if (el && scroller) {
+        // The action bar sits inside the scroller (scroll-padding-top); a
+        // line placed at the very top would land under it.
+        const covered = parseFloat(getComputedStyle(scroller).scrollPaddingTop) || 0;
         const top =
           scroller.scrollTop +
           el.getBoundingClientRect().top -
           scroller.getBoundingClientRect().top -
+          covered -
           JUMP_MARGIN_PX;
         scroller.scrollTo({ top: Math.max(0, top), behavior: "auto" });
       } else if (el) {
@@ -961,6 +963,7 @@ export function MarkdownSurface({
     };
     settle(0);
   };
+
 
   // Same idiom as the beforeinput binding: a ref so the window listener is
   // attached once while still calling the current closure.
@@ -1360,6 +1363,36 @@ export function MarkdownSurface({
   };
 
   useLayoutEffect(reconcile);
+
+  // Undo puts the caret back where the edit happened, the way Sublime does.
+  // pendingCaretRef is the surface's own "place the caret on the next
+  // reconcile" channel, and the value change from the CRDT is what triggers
+  // that reconcile, so setting it here lands the caret with the undone text.
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{ anchor?: number; head?: number; align?: "top" }>
+      ).detail;
+      const head = detail?.head;
+      if (typeof head !== "number") return;
+      const alignTop = detail?.align === "top";
+      pendingCaretRef.current = head;
+      const root = ref.current;
+      if (root && document.activeElement !== root) root.focus({ preventScroll: true });
+      // The line may be far off screen after a big undo, or be the block the
+      // reader was on when edit began (reading-anchor.ts). Reveal opens its
+      // syntax; a line outside the viewport is also scrolled to.
+      window.requestAnimationFrame(() => {
+        const line = lineAtOffset(lineStartsRef.current, head);
+        revealLine(line);
+        // The reading anchor wants its line at the top, as the reader had it;
+        // undo only needs the line on screen.
+        if (alignTop || !lineInView(line)) jumpToLine(line);
+      });
+    };
+    window.addEventListener(DOCUMENT_SET_CARET_EVENT, handler);
+    return () => window.removeEventListener(DOCUMENT_SET_CARET_EVENT, handler);
+  }, []);
 
   return (
     <div

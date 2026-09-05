@@ -1,5 +1,13 @@
 "use client";
 
+import { requestDocumentCaret } from "@/lib/document-history-events";
+import {
+  consumeReadingAnchor,
+  hasReadingAnchor,
+  offsetOfReadingAnchor,
+  rememberReadingAnchor,
+  topVisibleBlockText,
+} from "@/lib/reading-anchor";
 import {
   getWorkspaceSelection,
   setWorkspaceSelection,
@@ -488,6 +496,51 @@ function applyRecordedScrollOffsets(root: HTMLElement): void {
 
 /** Which list views keep a remembered scroll position (item views manage
  * their own). Search memory is per query so a new search starts at the top. */
+/**
+ * Once the editing surface for the item exists (the warm editor is usually
+ * already mounted; a cold one arrives with its chunk), place the caret at
+ * the remembered reading anchor. The surface's caret handler reveals the
+ * line. Consuming the anchor here also re-enables the scroll restore that
+ * yielded to it.
+ */
+function revealReadingAnchorWhenEditable(blogId: string, postId: string) {
+  const startedAt = performance.now();
+  const dispatch = (at: number) => {
+    const scroller = document.querySelector(".post-editor-content");
+    const before = scroller?.scrollTop ?? 0;
+    requestDocumentCaret(at, at, { align: "top" });
+    // The editor's content grows over its first frames and can clamp the
+    // scroll it just made; one more pass lands it.
+    window.setTimeout(() => {
+      if (scroller && Math.abs(scroller.scrollTop - before) < 2) {
+        requestDocumentCaret(at, at, { align: "top" });
+      }
+    }, 120);
+  };
+  const attempt = () => {
+    if (!hasReadingAnchor()) return;
+    const surface = document.querySelector<HTMLElement>(".tt-md-surface");
+    const laidOut =
+      surface &&
+      surface.getBoundingClientRect().height > 0 &&
+      !surface.closest("[hidden], [aria-hidden='true'], [inert]");
+    if (!laidOut) {
+      if (performance.now() - startedAt < 4000) window.setTimeout(attempt, 50);
+      else consumeReadingAnchor();
+      return;
+    }
+    const text = consumeReadingAnchor();
+    const body =
+      getCachedWorkspacePostDocument(blogId, postId)?.document.content.body ?? "";
+    const at = text ? offsetOfReadingAnchor(body, text) : -1;
+    if (at < 0) return;
+    window.requestAnimationFrame(() =>
+      window.requestAnimationFrame(() => dispatch(at)),
+    );
+  };
+  window.setTimeout(attempt, 30);
+}
+
 function viewScrollMemoryKey(view: LocalWorkspaceView): string | null {
   // Read and edit share the item's one scroll surface, so a reopened item
   // resumes at the reading position either way.
@@ -1291,6 +1344,10 @@ function LocalWorkspaceShell({
         }
       }
     }
+    // Entering edit with a reading anchor: the editor reveals the block the
+    // reader was on (see reading-anchor.ts); restoring the reading scrollTop
+    // here would fight that reveal, so this transition skips the restore.
+    if (view.level === "edit" && hasReadingAnchor()) return;
     const saved = contentScrollMemoryRef.current.get(key);
     const content = contentRef.current;
     if (!content) return;
@@ -1682,6 +1739,23 @@ function LocalWorkspaceShell({
       const nextFolderPath =
         folderPath ?? folderPathForPoolPost(currentPool, post);
       const currentView = viewRef.current;
+      // Reading to editing the same item: remember the block at the top of
+      // the reader so the editor opens on it (see reading-anchor.ts). The
+      // action bar sits inside the scroller, so the view begins below it.
+      if (
+        nextMode === "edit" &&
+        currentView.level === "post" &&
+        currentView.postId === post.id &&
+        contentRef.current
+      ) {
+        const content = contentRef.current;
+        const bar = content.querySelector(".workspace-action-bar-host");
+        const viewTop =
+          content.getBoundingClientRect().top +
+          (bar ? bar.getBoundingClientRect().height : 0);
+        rememberReadingAnchor(topVisibleBlockText(content, viewTop));
+        revealReadingAnchorWhenEditable(currentPool.blogId, post.id);
+      }
       const returnToSearch =
         currentView.level === "search"
           ? {
