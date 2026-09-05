@@ -4070,3 +4070,37 @@ returns 200 from texttext.app. Final captures of the shipped build at
 1800x1169 in both themes: list, folder, reader and edit, composited against
 ref-00/02/10, pixel-sampled dark (sidebar `#303036`, content `#2c2d31`,
 rail `#2b2b2e`).
+
+### Cold path, second pass (2026-09-05, after build 1047)
+
+- Server chain for the owner's home render: batch one (blog, query, cookies,
+  viewer, edit record, with `getBlogEditAccess` started before it), then the
+  pool parts started optimistically, then the Blog folder's saved layout.
+  The layout query depended only on the handle but was awaited after the
+  pool; it now starts with it (`homeLayoutPromise` in
+  `src/app/t/[handle]/page.tsx`). For the owner the folder items come from
+  the pool and the folder access check is skipped, so the render is two
+  sequential round trips. Locally invisible (1ms latency); on Vercel to Neon
+  each sequential trip is the cost of this page.
+- Right after hydration the client POSTs three Server Actions, all the
+  assistant's: `getAssistantConversationCacheScopeAction`
+  (useNativeAssistant.ts), `getWorkspaceAgentSkillMetadataAction`
+  (AssistantSkillLauncher.tsx) and `syncAssistantConversationsAction`
+  (AssistantConversationState.tsx, 900ms after mount). They looked like
+  route re-renders in the waterfall (POST to `/@handle` with only
+  `next-router-state-tree`); `.texttext/probe/rscwho.mts` wraps fetch and
+  records the `next-action` id, mapped to a name through the client chunk's
+  `createServerReference` call. The conversation sync also wrote the
+  history row on every launch even when the merge changed nothing;
+  `syncWorkspaceAssistantConversationHistory` now compares canonical
+  fingerprints and returns without writing. All three actions move off the
+  cold path once the rail renders from a static shell (agent brief
+  `sol/brief-rail.md`; diff pending).
+- `refreshWorkspacePool` fetches `/api/workspace/pool` (JSON), not the route.
+- Production wire sizes are brotli: the six largest chunks (352 to 144KB raw)
+  are 77 to 39KB on the wire, so JS transfer is not where a 5-second launch
+  goes; server round trips and the assistant's startup work are.
+- Not measured: the owner's real workspace on production. Screen access to
+  the app was declined and Claude in Chrome was not connected, so the
+  numbers above are local; the shipped build's production first byte for a
+  signed-in owner is still unmeasured from this side.
