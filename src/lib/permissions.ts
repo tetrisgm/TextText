@@ -19,6 +19,7 @@ type StoredCollaboratorRole =
   | "guest"
   | "editor"
   | "reviewer"
+  | "commenter"
   | "viewer";
 
 export type AccessUser = {
@@ -87,6 +88,7 @@ function isStoredCollaboratorRole(
     value === "guest" ||
     value === "editor" ||
     value === "reviewer" ||
+    value === "commenter" ||
     value === "viewer"
   );
 }
@@ -196,7 +198,7 @@ function roleForTarget(
     if (role === "admin" || role === "member" || role === "editor") {
       return "editor";
     }
-    if (role === "reviewer") return "commenter";
+    if (role === "reviewer" || role === "commenter") return "commenter";
     if (role === "guest" || role === "viewer") return "viewer";
     return null;
   }
@@ -204,7 +206,7 @@ function roleForTarget(
   if (role === "admin" || role === "member" || role === "editor") {
     return "editor";
   }
-  if (role === "reviewer") return "commenter";
+  if (role === "reviewer" || role === "commenter") return "commenter";
   if (role === "guest" || role === "viewer") return "viewer";
   return null;
 }

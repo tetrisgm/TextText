@@ -153,7 +153,7 @@ export async function POST(request: Request) {
       const { createWorkspaceWriteProposal } = await import("@/lib/ai/write-proposals.server");
       const userId = typeof auth.extra?.userId === "string" ? auth.extra.userId : auth.clientId;
       const sub = typeof auth.extra?.sub === "string" ? auth.extra.sub : userId;
-      const blog = await getOwnedBlog(userId);
+      const blog = await getOwnedBlog(sub);
       if (!blog) return noStore({ error: "Workspace not found" }, 404);
       const proposal = await createWorkspaceWriteProposal({
         actor: { sub, userId, handle: blog.handle },

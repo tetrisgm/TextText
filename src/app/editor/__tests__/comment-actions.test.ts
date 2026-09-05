@@ -87,6 +87,7 @@ beforeEach(() => {
   mocks.resolveItemAccess.mockResolvedValue({
     role: "editor",
     canView: true,
+    canComment: true,
     canEditContent: true,
     canManage: false,
     isOwner: false,
@@ -123,6 +124,21 @@ beforeEach(() => {
 });
 
 describe("item comment actions", () => {
+  it("refuses a comment from someone who can only view", async () => {
+    mocks.resolveItemAccess.mockResolvedValue({
+      canView: true,
+      canComment: false,
+      canEditContent: false,
+      canManage: false,
+      isOwner: false,
+      blogId: "blog-1",
+      userId: "viewer-1",
+    });
+    await expect(
+      addItemCommentAction("demo", "post-1", "I can only read this"),
+    ).rejects.toThrow(/cannot comment/i);
+    expect(mocks.createItemComment).not.toHaveBeenCalled();
+  });
   it("requires an authenticated user before resolving item access", async () => {
     mocks.getCurrentUser.mockResolvedValue(null);
 
@@ -132,10 +148,11 @@ describe("item comment actions", () => {
     expect(mocks.resolveItemAccess).not.toHaveBeenCalled();
   });
 
-  it("allows a viewer to add a comment and records a human audit row", async () => {
+  it("allows a commenter to add a comment and records a human audit row", async () => {
     mocks.resolveItemAccess.mockResolvedValue({
-      role: "viewer",
+      role: "commenter",
       canView: true,
+      canComment: true,
       canEditContent: false,
       canManage: false,
       isOwner: false,

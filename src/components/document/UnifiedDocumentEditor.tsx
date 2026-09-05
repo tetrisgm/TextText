@@ -941,7 +941,6 @@ export function UnifiedDocumentEditor({
           "provider-baseline",
         );
       }
-      let remote = documentSnapshotFromYDoc(doc);
       const initial = initialDocumentRef.current;
       const textChanges: EditableField[] = ["title", "subtitle", "body"];
       for (const field of textChanges) {
@@ -951,6 +950,9 @@ export function UnifiedDocumentEditor({
           replaceYText(documentText(doc, field), localValue, localOrigin.current);
         }
       }
+      // The text reconciliation above has already applied the local ledger.
+      // Build the metadata overlay from that result so it cannot undo the text.
+      let remote = documentSnapshotFromYDoc(doc);
       const overlaid = overlayPreReadyEdits(localBeforeReady, initial, remote);
       if (overlaid) {
         remote = overlaid;

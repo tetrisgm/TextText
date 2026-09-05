@@ -847,9 +847,12 @@ function fieldNodes(blueprint: ItemTypeBlueprint): RenderNode[] {
       facts.push({ bind: binding(field.id), label: field.label });
     }
   }
-  if (facts.length > 0) {
-    nodes.unshift({ type: "facts", variant: "table", entries: facts.slice(0, 12) });
+  // Each facts node holds at most twelve entries. Keep every declared fact.
+  const factNodes: RenderNode[] = [];
+  for (let offset = 0; offset < facts.length; offset += 12) {
+    factNodes.push({ type: "facts", variant: "table", entries: facts.slice(offset, offset + 12) });
   }
+  nodes.unshift(...factNodes);
   return nodes;
 }
 
@@ -929,7 +932,7 @@ function summaryNodes(blueprint: ItemTypeBlueprint): RenderNode[] {
     blueprint.collection.summaryFields.length > 0
       ? blueprint.collection.summaryFields
       : blueprint.fields
-          .filter((field) => !["image", "richtext", "rows"].includes(field.type))
+          .filter((field) => field.display !== "hidden" && !["image", "richtext", "rows"].includes(field.type))
           .slice(0, 3)
           .map((field) => field.id);
   const fields = requested
@@ -938,8 +941,9 @@ function summaryNodes(blueprint: ItemTypeBlueprint): RenderNode[] {
   const nodes: RenderNode[] = [];
   const facts: Array<{ bind: string; label?: string }> = [];
   for (const field of fields) {
+    if (field.display === "hidden") continue;
     if (field.type === "computed") {
-      if (field.display !== "hidden") nodes.push(computedNode(field));
+      nodes.push(computedNode(field));
       continue;
     }
     if (field.type === "rows" || field.type === "richtext" || field.type === "image") continue;

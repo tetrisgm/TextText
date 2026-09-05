@@ -340,9 +340,8 @@ async function flushOutbox(postId: string, outbox: Outbox) {
         // this post to remount onto a fresh doc.
         retireOutbox(outbox, typeof data.epoch === "number" ? data.epoch : batchEpoch);
       } else {
-        // A pagehide beacon can remove this in-flight batch while the request is
-        // pending. Remove the exact update objects that this response delivered,
-        // never a positional prefix that may now contain newer edits.
+        // Only an acknowledged push removes edits. Remove the exact update
+        // objects in this request, preserving newer edits queued in flight.
         removePendingBatch(outbox, batch);
         outbox.retries = 0;
         if (typeof data.epoch === "number") {
@@ -575,9 +574,9 @@ export class CollabProvider implements CollaborationTransport {
 
   /** Last-resort delivery of queued edits over sendBeacon (survives page
    * unload, when a normal fetch would be cancelled). A keepalive fetch carries
-   * any over-limit tail or retries a rejected beacon. Delivered beacon updates
-   * are dropped from the queue so a following normal flush cannot double-send
-   * them. */
+   * any over-limit tail or retries a rejected beacon. Queueing a beacon is not
+   * a server acknowledgement: retain the durable updates until a normal push
+   * succeeds. Replaying a Yjs update is idempotent. */
   private flushPendingViaBeacon(): void {
     if (
       !this.opts.canPush ||
@@ -635,8 +634,8 @@ export class CollabProvider implements CollaborationTransport {
     });
     const blob = new Blob([payload], { type: "application/json" });
     if (navigator.sendBeacon(this.base, blob)) {
-      this.outbox.pending.splice(0, fit);
-      void persistOutbox(this.opts.postId, this.outbox);
+      // sendBeacon returning true only promises browser queueing. A network
+      // failure or server rejection must leave these edits available to retry.
       keepalive(encoded.slice(fit));
     } else {
       keepalive(encoded);

@@ -905,7 +905,7 @@ function cleanCommentBody(value: unknown): string {
 async function accessibleItemForComments(
   handleInput: unknown,
   postIdInput: unknown,
-  permission: "view" | "edit",
+  permission: "view" | "comment" | "edit",
 ) {
   const handle = cleanHandle(handleInput);
   const postId = cleanPostId(postIdInput);
@@ -913,6 +913,9 @@ async function accessibleItemForComments(
   if (!user) throw new Error("Sign in to use comments");
   const access = await resolveItemAccess({ handle, postId, user });
   if (!access.canView) throw new Error("You cannot view comments on this item");
+  if (permission === "comment" && !access.canComment) {
+    throw new Error("You cannot comment on this item");
+  }
   if (permission === "edit" && !access.canEditContent) {
     throw new Error("You cannot resolve comments on this item");
   }
@@ -939,7 +942,7 @@ export async function addItemCommentAction(
   anchorStartInput?: unknown,
   anchorEndInput?: unknown,
 ): Promise<ItemCommentView[]> {
-  const item = await accessibleItemForComments(handleInput, postIdInput, "view");
+  const item = await accessibleItemForComments(handleInput, postIdInput, "comment");
   const body = cleanCommentBody(bodyInput);
   const anchorField =
     anchorFieldInput === "title" ||
@@ -1003,7 +1006,7 @@ export async function replyItemCommentAction(
   parentCommentIdInput: unknown,
   bodyInput: unknown,
 ): Promise<ItemCommentView[]> {
-  const item = await accessibleItemForComments(handleInput, postIdInput, "view");
+  const item = await accessibleItemForComments(handleInput, postIdInput, "comment");
   const parentId = cleanPostId(parentCommentIdInput);
   const body = cleanCommentBody(bodyInput);
   const comments = await storedItemComments(item.postId);

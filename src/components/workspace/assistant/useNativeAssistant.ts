@@ -640,7 +640,7 @@ export function useNativeAssistant({
     handle,
     ownerScopeKey: null,
   });
-  const activeCloudAbortRef = useRef<AbortController | null>(null);
+  const activeCloudAbortRef = useRef(new Map<string, AbortController>());
   const nativeProofsRef = useRef<AssistantArtifactProof[]>([]);
   const nativeItemTypeDesignRef = useRef<{
     blueprint: ItemTypeBlueprint | null;
@@ -1656,7 +1656,7 @@ export function useNativeAssistant({
           ? resolveWorkspaceItemTextSelection(open)
           : null;
         const cloudAbortController = new AbortController();
-        activeCloudAbortRef.current = cloudAbortController;
+        activeCloudAbortRef.current.set(thread, cloudAbortController);
         let cloudMessageId: string | null = null;
         let streamProvider: CloudAssistantProviderLabel | undefined;
         let streamModel: string | undefined;
@@ -1807,7 +1807,7 @@ export function useNativeAssistant({
         updateAssistantJob(jobId, { status: "error", activity: message });
       } finally {
         cloudTextBuffer.current?.finish();
-        activeCloudAbortRef.current = null;
+        activeCloudAbortRef.current.delete(thread);
         setThreadCloudProvider(thread, null);
         if (!handedToNativeAgent) setThreadBusy(thread, false);
       }
@@ -1852,6 +1852,13 @@ export function useNativeAssistant({
         const item = await readItemTextRef.current(view.postId);
         const selection = resolveWorkspaceItemTextSelection(item);
         const selectionAction = action === "rewrite" || action === "summarize";
+        // The cloud route supplies at most 4,000 selection characters. Never
+        // offer a replacement over text the model was not given in full.
+        if (selectionAction && selection && selection.text.length > 4_000) {
+          throw new Error(
+            "Select up to 4,000 characters and try again. Nothing changed.",
+          );
+        }
         const priorCloudMessages = cloudConversationHistory(threadFor(thread));
         appendToThread(
           thread,
@@ -1864,7 +1871,7 @@ export function useNativeAssistant({
           actionPrompt = `${actionLabel} this selected ${selection.field} text. Return the suggestion only. Do not change the item.`;
         }
         const cloudAbortController = new AbortController();
-        activeCloudAbortRef.current = cloudAbortController;
+        activeCloudAbortRef.current.set(thread, cloudAbortController);
         const result = await cloudAssistantTurn(handle, actionPrompt, {
           level: view.level,
           folderPath: view.folderPath,
@@ -1953,7 +1960,7 @@ export function useNativeAssistant({
         );
         updateAssistantJob(jobId, { status: "error", activity: message });
       } finally {
-        activeCloudAbortRef.current = null;
+        activeCloudAbortRef.current.delete(thread);
         setThreadCloudProvider(thread, null);
         setThreadBusy(thread, false);
       }
@@ -2386,16 +2393,16 @@ export function useNativeAssistant({
   );
 
   const cancel = useCallback(() => {
-    const cloudAbort = activeCloudAbortRef.current;
+    const cloudAbort = activeCloudAbortRef.current.get(threadKey);
     cloudAbort?.abort();
-    if (!cloudAbort && nativeConnection?.state === "ready" && nativeJobRef.current) {
+    if (!cloudAbort && nativeConnection?.state === "ready" && nativeJobRef.current && nativeThreadRef.current === threadKey) {
       requestNativeAssistant(
         "assistantCancel",
         undefined,
         nativeConversationRef.current ?? undefined,
       );
     }
-  }, [nativeConnection?.state]);
+  }, [nativeConnection?.state, threadKey]);
 
   const quickActions =
     ownerScopeReady && getView().postId && cloudProvider
