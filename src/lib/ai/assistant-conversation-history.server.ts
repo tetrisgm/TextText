@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { workspaceAssistantConversationHistories } from "@/lib/db/schema";
 import {
+  assistantConversationSyncFingerprint,
   cleanAssistantConversationSyncPayload,
   mergeAssistantConversationSyncPayloads,
   type SyncedAssistantConversation,
@@ -34,6 +35,16 @@ export async function syncWorkspaceAssistantConversationHistory(
       row?.conversations ?? [],
       local,
     );
+    // The rail syncs on every launch. When the local replica adds nothing,
+    // the merge equals what is stored; writing it back again would be a
+    // database write per launch for no change.
+    if (
+      row &&
+      assistantConversationSyncFingerprint(row.conversations ?? []) ===
+        assistantConversationSyncFingerprint(merged)
+    ) {
+      return merged;
+    }
     const nextUpdatedAt = new Date(
       Math.max(Date.now(), (row?.updatedAt.getTime() ?? 0) + 1),
     );
