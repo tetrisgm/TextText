@@ -3324,7 +3324,9 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .post-editor-shell
   .tt-document
   :is(.tt-prose, .tt-field-body, .tt-field-body textarea, .tt-field-body .tt-md-surface) {
-  color: #29292c;
+  /* The theme's ink, not a literal, so dark mode cannot fall through to a
+     light value where the dark override misses a selector. */
+  color: var(--ink, #29292c);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
     sans-serif;
   font-size: 18px;
@@ -5550,7 +5552,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   width: auto;
   height: 100%;
   min-height: 0;
-  gap: 8px;
+  gap: 18px;
   padding: 0;
   overflow: visible;
   border: 0;
