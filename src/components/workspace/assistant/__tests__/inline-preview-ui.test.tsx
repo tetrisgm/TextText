@@ -34,6 +34,12 @@ describe("inline preview UI", () => {
     expect(buttons(markup("ready", { action: "summarize" }))).toEqual(["Insert below", "Discard", "Replace selection", "Try again", ...refinementButtons]);
     expect(markup("ready", { action: "excerpt" })).toContain("Set document excerpt · Project brief");
   });
+  it("labels a body caret without claiming selected words and reuses refinement controls", () => {
+    const html = markup("ready", { action: "continue", words: 0, envelope: { itemId: "item", field: "body", revision: 7, start: 0, end: 0, text: "", hash: "0".repeat(64) } });
+    expect(html).toContain("Continue writing · Project brief · At caret");
+    expect(html).not.toContain("0 selected words");
+    expect(buttons(html)).toEqual(["Accept", "Discard", "Try again", ...refinementButtons]);
+  });
   it("renders model output as text, without executing HTML or partial Markdown", () => {
     const html = markup("generating", { text: '<img src=x onerror="alert(1)"> **unfinished' });
     expect(html).toContain("&lt;img");

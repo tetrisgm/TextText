@@ -14,10 +14,11 @@ export const selectionEnvelopeSchema = z.object({
   field: z.enum(["title", "excerpt", "body"]),
   revision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   start: z.number().int().nonnegative().max(1_000_000),
-  end: z.number().int().positive().max(1_000_000),
-  text: z.string().min(1).max(MAX_SELECTION_CHARS),
+  end: z.number().int().nonnegative().max(1_000_000),
+  text: z.string().max(MAX_SELECTION_CHARS),
   hash: z.string().regex(/^[a-f0-9]{64}$/),
-}).strict().refine((value) => value.end - value.start === value.text.length);
+}).strict().refine((value) => value.end - value.start === value.text.length &&
+  (value.text.length > 0 || value.field === "body"));
 
 export type SelectionEnvelope = z.infer<typeof selectionEnvelopeSchema>;
 type Selection = Pick<SelectionEnvelope, "field" | "start" | "end" | "text">;
@@ -60,6 +61,7 @@ export function assertSelectionMatches(
   item: ItemText,
 ): void {
   if (envelope.itemId !== itemId || envelope.revision !== item.revision ||
+      envelope.end > (item[envelope.field] ?? "").length ||
       (item[envelope.field] ?? "").slice(envelope.start, envelope.end) !== envelope.text) {
     throw new Error(SELECTION_STALE_ERROR);
   }

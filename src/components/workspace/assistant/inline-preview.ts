@@ -3,7 +3,7 @@ import {
   SELECTION_INVALID_ERROR, SELECTION_STALE_ERROR, type SelectionEnvelope,
 } from "@/lib/ai/selection-envelope";
 import type { WorkspaceItemTextSelection, WorkspaceItemTextSnapshot } from "@/lib/ai/workspace-item-draft";
-import { quickActionRefinementPrompt, type QuickActionRefinement } from "@/lib/ai/quick-actions";
+import { quickActionPrompt, quickActionRefinementPrompt, type QuickActionRefinement } from "@/lib/ai/quick-actions";
 import { createAssistantTextDeltaBuffer } from "./text-delta-buffer";
 
 export const INLINE_ACTIONS = [
@@ -39,8 +39,14 @@ type Dependencies = {
   persist: (record: InlinePreviewRecord) => void;
   active: () => boolean;
 };
-export function inlinePrompt(request: InlineRequest, refinement?: QuickActionRefinement): string {
-  const action = request.action === "translate"
+export function isBodyCaret(selection: WorkspaceItemTextSelection | null | undefined): boolean {
+  return selection?.field === "body" && selection.text === "" &&
+    Number.isSafeInteger(selection.start) && selection.start >= 0 && selection.start === selection.end;
+}
+export function inlinePrompt(request: InlineRequest, refinement?: QuickActionRefinement, source?: WorkspaceItemTextSnapshot): string {
+  const action = request.action === "continue" && isBodyCaret(request.selection) && source
+    ? quickActionPrompt("continue", source, request.selection)
+    : request.action === "translate"
     ? `Translate the entire selection into ${request.language === "Document language" ? "the primary language of the document (read the document if needed)" : request.language?.trim() || "English"}.`
     : request.action === "continue"
       ? "Write a continuation immediately after the selection. Return only the new continuation, without repeating the selection. Include the leading and trailing whitespace needed at the insertion point."
@@ -95,7 +101,13 @@ export function createInlinePreview(request: InlineRequest, deps: Dependencies) 
     status: error instanceof Error && error.message === SELECTION_STALE_ERROR ? "stale" : "failed",
     error: error instanceof Error ? error.message : "Could not generate this preview. Try again.",
   });
-  async function generate(selection = request.selection, attempt?: typeof lastAttempt, refinements = state.refinements) {
+  const assertCurrent = (envelope: SelectionEnvelope, current: WorkspaceItemTextSnapshot) => {
+    assertSelectionMatches(envelope, request.itemId, current);
+    // A collapsed slice is always empty. Also fence unsaved local changes,
+    // whose published revision may not have advanced yet.
+    if (isBodyCaret(envelope) && source && current.body !== source.body) throw new Error(SELECTION_STALE_ERROR);
+  };
+  async function generate(selection = request.selection, attempt?: typeof lastAttempt, refinements = state.refinements, recaptured = false) {
     if (!active() || state.status === "applying" || state.status === "applied" || state.uncertain) return;
     controller?.abort();
     const turn = ++generation;
@@ -110,12 +122,15 @@ export function createInlinePreview(request: InlineRequest, deps: Dependencies) 
     try {
       const read = await deps.read();
       if (!live()) return;
+      // An empty passage cannot locate an old caret after text changes.
+      // Regeneration then needs a caret explicitly recaptured from the editor.
+      if (!attempt && source && isBodyCaret(selection) && !recaptured && read.body !== source.body) throw new Error(SELECTION_STALE_ERROR);
       if (!attempt) source = read;
       const envelope = attempt?.envelope ?? await createSelectionEnvelope(request.itemId, read, selection);
       if (!live()) return;
       if (!envelope) throw new Error(SELECTION_INVALID_ERROR);
-      assertSelectionMatches(envelope, request.itemId, read);
-      const prompt = attempt?.prompt ?? inlinePrompt({ ...request, selection: envelope });
+      assertCurrent(envelope, read);
+      const prompt = attempt?.prompt ?? inlinePrompt({ ...request, selection: envelope }, undefined, source);
       lastAttempt = { envelope, prompt };
       emit({ envelope, title: read.title || "Untitled", words: envelope.text.trim().split(/\s+/u).filter(Boolean).length });
       const answer = await deps.generate(envelope, prompt, abort.signal, buffer.push);
@@ -126,7 +141,7 @@ export function createInlinePreview(request: InlineRequest, deps: Dependencies) 
       if (!answer.text.trim()) throw new Error("No suggestion was returned. Try again.");
       const current = await deps.read();
       if (!live()) return;
-      assertSelectionMatches(envelope, request.itemId, current);
+      assertCurrent(envelope, current);
       emit({ status: "ready", text: request.action === "continue" ? answer.text : answer.text.trim() });
     } catch (error) {
       if (live()) fail(error);
@@ -160,7 +175,7 @@ export function createInlinePreview(request: InlineRequest, deps: Dependencies) 
       if (!active() || state.status !== "ready" || !state.envelope || !trimmed) return false;
       const attempt = { envelope: state.envelope, prompt: inlinePrompt({ ...request, selection: state.envelope }, {
         currentOutput: state.text, instruction: trimmed,
-      }) };
+      }, source) };
       void generate(state.envelope, attempt, [...(state.refinements ?? []), trimmed]);
       return true;
     },
@@ -169,13 +184,13 @@ export function createInlinePreview(request: InlineRequest, deps: Dependencies) 
       // A changed range must be selected again. A revision-only change can
       // regenerate the same exact passage safely.
       if (state.status === "failed" && lastAttempt) void generate(lastAttempt.envelope, lastAttempt);
-      else void generate(selection ?? state.envelope ?? request.selection);
+      else void generate(selection ?? state.envelope ?? request.selection, undefined, undefined, selection != null);
     },
     check(current: WorkspaceItemTextSnapshot | null) {
       if (!state.envelope || !["generating", "ready"].includes(state.status)) return;
       try {
         if (!current) throw new Error(SELECTION_STALE_ERROR);
-        assertSelectionMatches(state.envelope, request.itemId, current);
+        assertCurrent(state.envelope, current);
       } catch {
         ++generation;
         controller?.abort();
@@ -191,7 +206,7 @@ export function createInlinePreview(request: InlineRequest, deps: Dependencies) 
         const current = await deps.read();
         if (!active()) throw new Error(SELECTION_STALE_ERROR);
         await validateSelectionEnvelope(state.envelope);
-        assertSelectionMatches(state.envelope, request.itemId, current);
+        assertCurrent(state.envelope, current);
         if (state.action === "excerpt" && current.excerpt !== source.excerpt) throw new Error(SELECTION_STALE_ERROR);
         const edit = inlineEdit(state, current, replace);
         sent = true;

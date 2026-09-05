@@ -5,6 +5,7 @@ import { appendAssistantConversationMessage, assistantConversationMessages, assi
 import { cleanAssistantConversationSyncPayload } from "@/lib/ai/assistant-conversation-sync";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createInlinePreview, inlinePrompt, type InlineAction, type InlineEdit, type InlinePreviewRecord } from "../inline-preview";
+import { quickActionPrompt } from "@/lib/ai/quick-actions";
 import { previewKeyAction } from "../InlineSelectionPreview";
 import { createSelectionEnvelope, assertSelectionMatches, validateSelectionEnvelope } from "@/lib/ai/selection-envelope";
 import type { WorkspaceItemTextSnapshot } from "@/lib/ai/workspace-item-draft";
@@ -17,8 +18,8 @@ function deferred<T>() {
   const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 }
-function setup(action: InlineAction = "rewrite", options: { slow?: boolean; execute?: (edit: InlineEdit) => Promise<void> } = {}) {
-  let current = initial();
+function setup(action: InlineAction = "rewrite", options: { caret?: number; body?: string; slow?: boolean; execute?: (edit: InlineEdit) => Promise<void> } = {}) {
+  let current = { ...initial(), ...(options.body !== undefined ? { body: options.body } : {}) };
   let active = true;
   let signal: AbortSignal;
   let delta!: (text: string) => void;
@@ -33,7 +34,7 @@ function setup(action: InlineAction = "rewrite", options: { slow?: boolean; exec
     signal = abort; delta = onDelta;
     return { text: options.slow ? await answer.promise : action === "continue" ? " continued text" : "Clear passage", selectionEnvelope: envelope };
   });
-  const controller = createInlinePreview({ itemId: "item", action, selection }, {
+  const controller = createInlinePreview({ itemId: "item", action, selection: options.caret === undefined ? selection : { field: "body", start: options.caret, end: options.caret, text: "" } }, {
     read: async () => current, active: () => active, execute, generate,
     persist: (record) => records.push(record),
   });
@@ -439,4 +440,79 @@ describe("inline refinement history integration", () => {
       expect(roundTrip[0].messages[0].inlinePreview).toMatchObject({ status: "discarded", refinements: ["Shorter", "More formal"] });
     } finally { resetAssistantConversationStore(); vi.unstubAllGlobals(); }
   });
+});
+
+
+describe("inline caret lifecycle", () => {
+  it.each([0, 7, initial().body.length])("inserts at caret %i and undoes only that exact text", async (caret) => {
+    const s = setup("continue", { caret }); await ready(s);
+    expect(s.controller.snapshot()).toMatchObject({ words: 0, status: "ready", envelope: { start: caret, end: caret, text: "" } });
+    expect(s.generate.mock.calls[0][1]).toContain(quickActionPrompt("continue", initial(), { field: "body", start: caret, end: caret, text: "" }));
+    await s.controller.accept();
+    expect(s.execute.mock.calls[0][0]).toMatchObject({ start: caret, end: caret, expected_text: "", replacement_text: " continued text", selection_envelope: s.controller.snapshot().envelope });
+    expect(s.current().body).toBe(initial().body.slice(0, caret) + " continued text" + initial().body.slice(caret));
+    await s.controller.undo();
+    expect(s.current().body).toBe(initial().body);
+    expect(s.execute.mock.calls[1][0]).toEqual({ field: "body", start: caret, end: caret + " continued text".length, expected_text: " continued text", replacement_text: "" });
+    expect(s.records.map((record) => record.status)).toEqual(expect.arrayContaining(["generating", "ready", "applying", "applied", "undone"]));
+  });
+  it("drafts into an empty document with the same guarded controller", async () => {
+    const s = setup("continue", { caret: 0, body: "" }); await ready(s);
+    await s.controller.accept(); expect(s.current().body).toBe(" continued text");
+    await s.controller.undo(); expect(s.current().body).toBe("");
+  });
+  it("preserves the frozen caret and contextual prompt through refinement and Try again", async () => {
+    const s = setup("continue", { caret: 7 }); await ready(s);
+    const envelope = s.controller.snapshot().envelope;
+    s.controller.refine("Shorter"); await vi.waitFor(() => expect(s.controller.snapshot().status).toBe("ready"));
+    const refined = s.generate.mock.calls[1][1];
+    expect(refined).toContain('"before":"Before "');
+    expect(refined).toContain('"after":"rough passage. After."');
+    expect(refined).toContain('"instruction":"Shorter"');
+    s.controller.tryAgain(); await vi.waitFor(() => expect(s.controller.snapshot().status).toBe("ready"));
+    expect(s.generate.mock.calls[2][1]).toBe(refined);
+    expect(s.controller.snapshot().envelope).toEqual(envelope);
+  });
+  it.each(["check", "accept", "completion"])("rejects unsaved body changes during %s with unchanged revision", async (phase) => {
+    const s = setup("continue", { caret: 7, slow: phase === "completion" });
+    if (phase === "completion") { s.controller.start(); await vi.waitFor(() => expect(s.generate).toHaveBeenCalledOnce()); }
+    else await ready(s);
+    s.change({ body: "Peer edit before " + initial().body });
+    if (phase === "check") s.controller.check(s.current());
+    else if (phase === "accept") await s.controller.accept();
+    else s.answer.resolve(" new text");
+    await vi.waitFor(() => expect(s.controller.snapshot().status).toBe("stale"));
+    expect(s.execute).not.toHaveBeenCalled();
+  });
+  it("stops, retries and discards a caret generation without applying partial output", async () => {
+    const s = setup("continue", { caret: 7, slow: true });
+    s.controller.start(); await vi.waitFor(() => expect(s.generate).toHaveBeenCalledOnce());
+    s.controller.stop(); expect(s.controller.snapshot().status).toBe("failed");
+    await s.controller.accept(); expect(s.execute).not.toHaveBeenCalled();
+    s.answer.resolve(" new text"); s.controller.retry();
+    await vi.waitFor(() => expect(s.controller.snapshot().status).toBe("ready"));
+    s.controller.discard(); await s.controller.accept();
+    expect(s.controller.snapshot().status).toBe("discarded"); expect(s.execute).not.toHaveBeenCalled();
+  });
+  it("refuses a changed revision and refuses Undo after a later body edit", async () => {
+    const s = setup("continue", { caret: 7 }); await ready(s);
+    s.change({ revision: 8 }); await s.controller.accept();
+    expect(s.controller.snapshot().status).toBe("stale"); expect(s.execute).not.toHaveBeenCalled();
+    s.controller.retry(); await vi.waitFor(() => expect(s.controller.snapshot().status).toBe("ready"));
+    await s.controller.accept(); s.change({ body: s.current().body + " later" }); await s.controller.undo();
+    expect(s.execute).toHaveBeenCalledOnce(); expect(s.controller.snapshot().error).toContain("newer text");
+  });
+});
+
+
+it("requires a recaptured caret to regenerate after its source body changes", async () => {
+  const s = setup("continue", { caret: 7 }); await ready(s);
+  s.change({ body: "New body" }); s.controller.check(s.current());
+  s.controller.retry(null);
+  await vi.waitFor(() => expect(s.controller.snapshot().status).toBe("stale"));
+  expect(s.generate).toHaveBeenCalledOnce();
+  s.controller.retry({ field: "body", start: 8, end: 8, text: "" });
+  await vi.waitFor(() => expect(s.controller.snapshot().status).toBe("ready"));
+  expect(s.generate.mock.calls[1][1]).toContain('"before":"New body","after":""');
+  expect(s.controller.snapshot().envelope).toMatchObject({ start: 8, end: 8 });
 });

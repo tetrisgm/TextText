@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { captureInlineSelectionSurface, type InlineSelectionSurface } from "@/components/document/inline-selection-surface";
 import { readOpenWorkspaceItemDraft, subscribeOpenWorkspaceItemDrafts, type WorkspaceItemTextSelection } from "@/lib/ai/workspace-item-draft";
-import { INLINE_ACTIONS, type InlinePreviewController, type InlineStatus } from "./inline-preview";
+import { INLINE_ACTIONS, isBodyCaret, type InlinePreviewController, type InlineStatus } from "./inline-preview";
 import { QUICK_ACTION_REFINEMENTS } from "@/lib/ai/quick-actions";
 import styles from "./InlineSelectionPreview.module.css";
 
@@ -149,7 +149,7 @@ export function InlineSelectionPreview({ controller, surface, readSelection, onC
         else discard();
       }}>
       <div className={styles.header}>
-        {INLINE_ACTIONS.find((action) => action.id === state.action)?.label} · {state.title} · {state.words} selected {state.words === 1 ? "word" : "words"}
+        {INLINE_ACTIONS.find((action) => action.id === state.action)?.label} · {state.title} · {isBodyCaret(state.envelope) ? "At caret" : `${state.words} selected ${state.words === 1 ? "word" : "words"}`}
       </div>
       <div className={styles.body} aria-live="off">{state.text}</div>
       <div className={styles.status} role="status" aria-live="polite" aria-atomic="true">{INLINE_STATUS_LABELS[state.status]}</div>

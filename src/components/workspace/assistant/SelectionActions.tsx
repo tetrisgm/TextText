@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkspaceItemTextSelection } from "@/lib/ai/workspace-item-draft";
 import { captureInlineSelectionSurface, type InlineSelectionSurface } from "@/components/document/inline-selection-surface";
-import { INLINE_ACTIONS, type InlineAction, type InlineRequest, type InlinePreviewController } from "./inline-preview";
+import { INLINE_ACTIONS, isBodyCaret, type InlineAction, type InlineRequest, type InlinePreviewController } from "./inline-preview";
 import { InlineSelectionPreview } from "./InlineSelectionPreview";
 import {
   MAX_SELECTION_CHARS,
@@ -67,11 +67,13 @@ export function SelectionActions({
   onRunAction: (request: InlineRequest) => Promise<InlinePreviewController | null>;
 }) {
   const [preview, setPreview] = useState<{ controller: InlinePreviewController; surface: InlineSelectionSurface } | null>(null);
+  const [caret, setCaret] = useState(false);
   const [translating, setTranslating] = useState(false);
   const [language, setLanguage] = useState("English");
   const frozenRef = useRef<WorkspaceItemTextSelection | null>(null);
   const aliveRef = useRef(true);
   const launchingRef = useRef(false);
+  const composingRef = useRef(false);
   useEffect(() => { aliveRef.current = true; return () => { aliveRef.current = false; }; }, []);
   const barRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -84,23 +86,30 @@ export function SelectionActions({
 
   const selectedTextRef = useRef<string | null>(null);
   const refresh = useCallback(() => {
-    if (!enabled) {
+    if (!enabled || composingRef.current) {
       setError(null);
       setAnchor(null);
       return;
     }
     if (preview || barRef.current?.contains(document.activeElement)) return;
     const selection = readSelection();
-    if (!selection || !isActionableSelection(selection.text)) {
+    if (!selection || (!isActionableSelection(selection.text) && !isBodyCaret(selection))) {
       setError(null);
       setAnchor(null);
       return;
     }
+    const atCaret = isBodyCaret(selection);
+    // Only the focused body may offer idle drafting. The rail uses its saved
+    // writing selection separately after focus leaves the editor.
+    const surface = atCaret && itemId ? captureInlineSelectionSurface(itemId, selection) : null;
+    if (atCaret && !surface?.column.contains(document.activeElement)) { setAnchor(null); return; }
+    setCaret(atCaret);
+    setTranslating(false);
     frozenRef.current = { ...selection };
     if (selectedTextRef.current !== selection.text) setError(null);
     selectedTextRef.current = selection.text;
     const at = pointerRef.current;
-    const rect = at
+    const rect = atCaret ? surface?.passage()?.getBoundingClientRect() : at
       ? { left: at.x, right: at.x, top: at.y, width: 0 }
       : (() => {
           const field = document.activeElement;
@@ -112,8 +121,8 @@ export function SelectionActions({
       setAnchor(null);
       return;
     }
-    setAnchor(anchorFor(rect, { width: window.innerWidth }, { width: 560, height: 40, gap: 8 }));
-  }, [enabled, readSelection, preview]);
+    setAnchor(anchorFor(rect, { width: window.innerWidth }, { width: atCaret ? 160 : 560, height: 40, gap: 8 }));
+  }, [enabled, itemId, readSelection, preview]);
 
   useEffect(() => {
     if (!enabled) {
@@ -128,7 +137,8 @@ export function SelectionActions({
     let settle: number | undefined;
     const scheduleRefresh = () => {
       window.clearTimeout(settle);
-      settle = window.setTimeout(refresh, 60);
+      if (!barRef.current?.contains(document.activeElement)) setAnchor(null);
+      settle = window.setTimeout(refresh, isBodyCaret(readSelection()) ? 800 : 60);
     };
     const onMouseUp = (event: MouseEvent) => {
       if (barRef.current?.contains(event.target as Node)) return;
@@ -145,8 +155,17 @@ export function SelectionActions({
     // Guarded: this rides capture-phase scroll from EVERY scroller; a
     // setState per scroll event (even a bail-out one) is scheduler noise.
     const dismiss = () => {
+      window.clearTimeout(settle);
       if (anchorRef.current) setAnchor(null);
     };
+    const onKeyDown = () => { if (!barRef.current?.contains(document.activeElement)) dismiss(); };
+    const onCompositionStart = () => { composingRef.current = true; dismiss(); };
+    const onCompositionEnd = () => { composingRef.current = false; scheduleRefresh(); };
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("input", scheduleRefresh);
+    document.addEventListener("focusin", scheduleRefresh);
+    document.addEventListener("compositionstart", onCompositionStart);
+    document.addEventListener("compositionend", onCompositionEnd);
     document.addEventListener("mouseup", onMouseUp);
     document.addEventListener("keyup", onKeyUp);
     document.addEventListener("selectionchange", onSelectionChange);
@@ -154,13 +173,18 @@ export function SelectionActions({
     window.addEventListener("resize", dismiss);
     return () => {
       window.clearTimeout(settle);
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("input", scheduleRefresh);
+      document.removeEventListener("focusin", scheduleRefresh);
+      document.removeEventListener("compositionstart", onCompositionStart);
+      document.removeEventListener("compositionend", onCompositionEnd);
       document.removeEventListener("mouseup", onMouseUp);
       document.removeEventListener("keyup", onKeyUp);
       document.removeEventListener("selectionchange", onSelectionChange);
       window.removeEventListener("scroll", dismiss, true);
       window.removeEventListener("resize", dismiss);
     };
-  }, [enabled, refresh]);
+  }, [enabled, refresh, readSelection]);
 
   useEffect(() => {
     const onError = (event: Event) => {
@@ -188,7 +212,7 @@ export function SelectionActions({
   const run = async (action: InlineAction) => {
     if (launchingRef.current || !itemId) return;
     const selection = readSelection() ?? frozenRef.current;
-    if (!selection || !isActionableSelection(selection.text)) { setError(SELECTION_INVALID_ERROR); return; }
+    if (!selection || (!isActionableSelection(selection.text) && !(action === "continue" && isBodyCaret(selection)))) { setError(SELECTION_INVALID_ERROR); return; }
     if (selection.text.length > MAX_SELECTION_CHARS) { setError(SELECTION_BUDGET_ERROR); return; }
     frozenRef.current = { ...selection };
     if (action === "translate" && !translating) { setTranslating(true); return; }
@@ -216,7 +240,7 @@ export function SelectionActions({
       className={`${previewStyles.palette} ${styles.bar}`}
       style={{ left: anchor.left, top: anchor.top }}
       role="toolbar"
-      aria-label="AI actions for the selected text"
+      aria-label={caret ? "AI action at the caret" : "AI actions for the selected text"}
       // Taking focus would collapse the selection the actions are about.
       onMouseDown={(event) => { if (!(event.target instanceof HTMLInputElement)) event.preventDefault(); }}
     >
@@ -232,12 +256,12 @@ export function SelectionActions({
         </datalist>
         <button className={styles.action} type="submit" disabled={!language.trim()}>Translate</button>
         <button className={styles.action} type="button" onClick={() => setTranslating(false)}>Cancel</button>
-      </form> : SELECTION_ACTIONS.map((action) => (
+      </form> : (caret ? SELECTION_ACTIONS.filter((action) => action.id === "continue") : SELECTION_ACTIONS).map((action) => (
         <button
           key={action.id}
           type="button"
           className={styles.action}
-          title={action.title}
+          title={caret ? "Continue writing at the caret" : action.title}
           onClick={() => void run(action.id)}
         >
           {action.label}

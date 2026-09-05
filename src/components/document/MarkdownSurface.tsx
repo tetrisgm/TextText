@@ -1379,7 +1379,7 @@ export function MarkdownSurface({
         if (!root.isConnected) return;
         root.focus({ preventScroll: true });
         const end = Math.min(frozen.end, valueRef.current.length);
-        const start = valueRef.current.slice(frozen.start, frozen.end) === frozen.text ? frozen.start : end;
+        const start = valueRef.current.slice(frozen.start, frozen.end) === frozen.text ? Math.min(frozen.start, end) : end;
         const place = (offset: number) => {
           const line = lineAtOffset(lineStartsRef.current, offset);
           const wrapper = wrappersRef.current[line - winRef.current.start];

@@ -4612,3 +4612,18 @@ P1. Fixed in the tree with the reviewer's four regressions now passing:
 - P3: provider presence reads and heartbeats could complete out of order within
   one generation; a sequence number lets only the newest response apply
   (`collab-presence-provider.test.ts`).
+
+Leftover: the hosted-agent probes left scratch item grants ("Codex") on the
+"Reader images fixture" item in the local database; the Add agent sheet lists
+them with Remove agent. They are seven-day item tokens on a demo item; remove
+them from the sheet or let them expire. The cleanup probe's prelude did not
+open the item on that run, so they were not removed automatically.
+
+Caret-based inline drafting landed (`astra/out7/caret-inline`): with a caret in
+the body and no selection, Continue writing from the rail or from a Continue
+affordance that appears 800 ms after activity opens the same inline preview
+anchored at the caret row; the envelope accepts an empty body range, Accept
+inserts at the caret through the guarded text edit, Undo removes exactly the
+inserted text, Discard restores the caret, and body equality supplements the
+revision guard so unsaved local typing makes the preview stale. Discard
+restoration clamps both endpoints after the body shrinks.

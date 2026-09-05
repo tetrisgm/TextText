@@ -26,7 +26,7 @@ import {
   SELECTION_INVALID_ERROR,
   type SelectionEnvelope,
 } from "@/lib/ai/selection-envelope";
-import { createInlinePreview, inlinePrompt, INLINE_ACTIONS, type InlineRequest, type InlinePreviewRecord } from "./inline-preview";
+import { createInlinePreview, inlinePrompt, INLINE_ACTIONS, isBodyCaret, type InlineRequest, type InlinePreviewRecord } from "./inline-preview";
 import { captureInlineSelectionSurface } from "@/components/document/inline-selection-surface";
 import { presentSelectionPreview } from "./selection-preview-event";
 import { reportSelectionError } from "./selection-error";
@@ -1913,7 +1913,7 @@ export function useNativeAssistant({
       const draft = readOpenWorkspaceItemDraft(view.postId);
       const frozen = draft?.selection ?? draft?.writingSelection;
       const inlineAction = INLINE_ACTIONS.find((candidate) => candidate.id === action);
-      if (view.level === "edit" && frozen?.text && inlineAction) {
+      if (view.level === "edit" && frozen && inlineAction && (frozen.text || (action === "continue" && isBodyCaret(frozen)))) {
         const surface = captureInlineSelectionSurface(view.postId, frozen);
         if (!surface) { reportSelectionError(view.postId, SELECTION_INVALID_ERROR); return; }
         const controller = await createSelectionPreview({

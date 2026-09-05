@@ -67,3 +67,27 @@ describe("AI selection envelope", () => {
     await expect(createSelectionEnvelope("item", { ...item, revision: undefined }, selection)).rejects.toThrow(SELECTION_STALE_ERROR);
   });
 });
+
+
+describe("caret envelopes", () => {
+  it.each([0, 5, item.body.length])("accepts and binds an empty body range at %i", async (offset) => {
+    const caret = { field: "body" as const, start: offset, end: offset, text: "" };
+    const envelope = (await createSelectionEnvelope("item", item, caret))!;
+    expect(await validateSelectionEditEnvelope(envelope, "item", item, caret)).toEqual(envelope);
+    await expect(validateSelectionEnvelope({ ...envelope, start: offset + 1, end: offset + 1 })).rejects.toThrow();
+    await expect(validateSelectionEditEnvelope(envelope, "item", { ...item, revision: 8 }, caret)).rejects.toThrow(SELECTION_STALE_ERROR);
+    await expect(validateSelectionEditEnvelope(envelope, "other", item, caret)).rejects.toThrow(SELECTION_STALE_ERROR);
+    await expect(validateSelectionEditEnvelope(envelope, "item", item, { ...caret, start: 1, end: 2, text: "x" })).rejects.toThrow();
+  });
+  it("supports the beginning of an empty body but not empty metadata ranges", async () => {
+    await expect(createSelectionEnvelope("item", { ...item, body: "" }, { field: "body", start: 0, end: 0, text: "" })).resolves.toMatchObject({ start: 0, end: 0, text: "" });
+    for (const field of ["title", "excerpt"] as const) {
+      await expect(createSelectionEnvelope("item", item, { field, start: 0, end: 0, text: "" })).rejects.toThrow();
+    }
+  });
+  it("rejects an out-of-bounds caret even though its slice is empty", async () => {
+    await expect(createSelectionEnvelope("item", item, { field: "body", start: 100, end: 100, text: "" })).rejects.toThrow(SELECTION_STALE_ERROR);
+    const envelope = (await createSelectionEnvelope("item", item, { field: "body", start: 5, end: 5, text: "" }))!;
+    expect(() => assertSelectionMatches(envelope, "item", { ...item, body: "" })).toThrow(SELECTION_STALE_ERROR);
+  });
+});
