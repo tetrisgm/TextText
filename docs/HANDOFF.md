@@ -3705,6 +3705,23 @@ ink) is covered by a later dark override and was left alone; it is a latent
 hazard for any selector that override misses. The polish pass turned the
 read bar's controls into monochrome glyphs, lightened the title and byline.
 
+Cold load, second attempt, decided against: extracting `UniversalItemComposer`
+so `FolderPage` can lazy-load is a clean move (392 of 399 distinct removed
+lines reappear verbatim; every other file is an import path) but the deferred
+FolderPage chunk is only 48KB by emitted-manifest comparison (1969 -> 1921KB),
+under the 60KB bar set for it, and the sandbox could not bind a port to run
+the browser probe or the interaction suite (`listen EPERM`). Not applied; the
+diff is at the session scratchpad `sol/out/composer.diff` if the bar changes.
+The finding that matters: what remains on the critical graph is SHARED -
+zod ~322KB, presentation/templates ~157KB, the assistant ~202KB,
+react-markdown's residual ~270KB. Cold load will not move meaningfully
+without a real boundary around one of those, each of which is a product
+decision (the assistant has 55 call sites in the shell; zod/mini changes the
+validator; the templates are the document model). Two safe levers were tried
+today and yielded 28KB and 48KB. Locally cold load is 2.1-2.5s including dev
+sign-in; the owner's 5s is the Vercel round trip plus the ~1.9MB parse on a
+loaded machine.
+
 Two things found by the interaction suite, not by looking:
 - Two bars alive after cmd+W / shift+cmd+T shared one `justify-content:
   flex-end` slot and overflowed LEFT over the arrows. More precisely, a note
