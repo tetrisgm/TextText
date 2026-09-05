@@ -26,7 +26,12 @@ export function assertCompatibleItemTypeFields(
     if (!successor) return refuse("cannot be removed or given a different id");
     if (field.type !== successor.type) refuse(`cannot change from ${field.type} to ${successor.type}`);
     if ("multiple" in field && "multiple" in successor && field.multiple !== successor.multiple) {
-      refuse("cannot change between one value and multiple values");
+      // Schema-v1 row cells have always been scalar. Correcting a legacy
+      // declaration from multiple to single cannot strand an array value;
+      // the document model never accepted one. Top-level fields stay strict.
+      if (!(parent && field.multiple && !successor.multiple)) {
+        refuse("cannot change between one value and multiple values");
+      }
     }
     if (field.type === "reference" && successor.type === "reference" && field.target !== successor.target) {
       refuse("cannot change its reference target");

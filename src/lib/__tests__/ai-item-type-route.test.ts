@@ -174,6 +174,28 @@ describe("/api/ai/item-type", () => {
     );
   });
 
+  it.each(["enum", "reference"])("repairs unsupported multi-select %s rows and includes legacy source in the request", async (type) => {
+    mocks.getCurrentUser.mockResolvedValue({ sub: `row-repair-${type}` });
+    const invalid = { ...blueprint, fields: [...blueprint.fields, {
+      id: "entries", label: "Entries", type: "rows", fields: [{
+        id: "tags", label: "Tags", type, multiple: true,
+        ...(type === "enum" ? { options: [{ value: "a", label: "A" }] } : {}),
+      }],
+    }] };
+    mocks.generateText
+      .mockResolvedValueOnce({ text: JSON.stringify(invalid) })
+      .mockResolvedValueOnce({ text: JSON.stringify(blueprint) });
+    const response = await POST(request({ prompt: "Correct the source tags", current: invalid }));
+    expect(response.status).toBe(200);
+    expect(mocks.generateText).toHaveBeenCalledTimes(2);
+    expect(mocks.generateText.mock.calls[0][0].prompt).toContain("Current design to revise:");
+    expect(mocks.generateText.mock.calls[0][0].prompt).toContain('"multiple":true');
+    const repair = mocks.generateText.mock.calls[1][0].prompt;
+    expect(repair).toContain('Row field "entries.tags" cannot use multiple: true');
+    expect(repair).toContain("Set multiple to false or omit it");
+    expect(repair).toContain("one row per value");
+  });
+
   it("keeps a safe first draft when the optional quality revision is malformed", async () => {
     const incomplete = {
       ...blueprint,

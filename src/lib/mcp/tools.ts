@@ -1,3 +1,4 @@
+import { hasItemAgentScope, itemAgentAccess, itemAgentAllows } from "@/lib/item-agent-access";
 import { agentChangeContext } from "@/lib/agent-change-context.server";
 import { AgentChangeConflictError } from "@/lib/agent-changes";
 import { listAgentChanges, getAgentChange } from "@/lib/store";
@@ -171,6 +172,8 @@ export function resolveMcpScopeAccess(
   scopes: readonly string[] | undefined,
 ): McpScopeAccess {
   const values = scopes ?? [];
+  // Item grants never become workspace authority in other routes or proposal services.
+  if (hasItemAgentScope(values)) return "none";
   if (values.some(isReadOnlyScope)) return "read-only";
   if (values.includes("sync")) return "full";
   return "none";
@@ -282,8 +285,9 @@ function agentPresence(
     {
       userId,
       connectionName: extra.authInfo?.extra?.connectionName as string,
+      ...(hasItemAgentScope(extra.authInfo?.scopes) ? { connectionId: extra.authInfo?.extra?.connectionId as string } : {}),
     },
-    state,
+    { ...state, ...(hasItemAgentScope(extra.authInfo?.scopes) ? { role: itemAgentAccess(extra.authInfo?.scopes)?.role === "edit" ? "editor" as const : "viewer" as const } : {}) },
   );
 }
 
@@ -586,6 +590,11 @@ async function mcpItemEntry(
     resolveWikiLinkTarget?: WikiLinkTargetResolver;
   } = {},
 ) {
+  if (hasItemAgentScope(extra.authInfo?.scopes)) {
+    const entry = await itemEntry(blog, post, { ...options, backlinks: [], resolveWikiLinkTarget: () => null });
+    // The file URL requires broad sync authority, which this grant never has.
+    return { ...entry, file: undefined };
+  }
   let resolveWikiLinkTarget = options.resolveWikiLinkTarget;
   if (!resolveWikiLinkTarget) {
     const [visiblePosts, aliases] = await Promise.all([
@@ -763,7 +772,9 @@ function scopeError(
   extra: ToolContext,
 ): CallToolResult | null {
   const definition = WORKSPACE_TOOL_DEFINITIONS[name];
-  const scope = resolveMcpScopeAccess(extra.authInfo?.scopes);
+  const scopes = extra.authInfo?.scopes ?? [];
+  const item = itemAgentAccess(scopes);
+  const scope = item ? item.role === "edit" ? "full" : "read-only" : resolveMcpScopeAccess(scopes);
   if (scope === "none") {
     return errorResult("This token has no supported workspace scope.");
   }
@@ -780,6 +791,10 @@ export async function executeMcpTool(
   rawArgs: Record<string, unknown>,
   extra: ToolContext,
 ): Promise<CallToolResult> {
+  const scopes = extra.authInfo?.scopes ?? [];
+  if (hasItemAgentScope(scopes) && !itemAgentAllows(scopes, name, rawArgs)) {
+    return errorResult("This connection only permits reading or editing its item.");
+  }
   const denied = scopeError(name, extra);
   if (denied) return denied;
   const userId = extra.authInfo?.extra?.userId;
@@ -1546,6 +1561,12 @@ async function executeWorkspaceCommand(
       const resolved = await requirePost(extra, input.id);
       if (isToolResult(resolved)) return resolved;
       const rendered = renderItemFile(resolved.blog, resolved.post);
+      const presence = agentPresence(extra);
+      if (presence) await upsertPresence(input.id, presence);
+      if (hasItemAgentScope(extra.authInfo?.scopes)) {
+        return jsonResult({ item: await mcpItemEntry(extra, resolved.blog, resolved.post, { hash: rendered.hash }),
+          markdown: rendered.text, assets: listItemAssetReferences(resolved.post) });
+      }
       const [livePosts, wikiLinkSources, aliases] = await Promise.all([
         getAccessibleAllPosts(resolved.blog.handle, accessUser(extra)),
         getAccessibleWorkspaceWikiLinkSources(

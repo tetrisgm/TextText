@@ -16,6 +16,8 @@ type Options = {
   storeKey: string;
   sync: (local: SyncedAssistantConversation[]) => Promise<{
     allowed: boolean;
+    /** Set when the server failed rather than refused; only then is a retry due. */
+    transient?: boolean;
     conversations: SyncedAssistantConversation[];
   }>;
   onStatus: (status: AssistantHistorySyncStatus) => void;
@@ -53,8 +55,14 @@ export function startAssistantConversationSync({ storeKey, sync, onStatus, isCur
     try {
       const result = await sync(assistantConversationSyncPayload(storeKey));
       if (!current()) return;
-      // The action fails closed for both access denial and transient server errors.
-      if (!result.allowed) throw new Error("History sync unavailable");
+      if (!result.allowed) {
+        // A server failure is retried below; a refusal (a collaborator, a
+        // capability viewer) is final: history stays on this device, quietly.
+        if (result.transient) throw new Error("History sync unavailable");
+        failures = 0;
+        status("local");
+        return;
+      }
       acknowledgeAssistantConversationSync(storeKey, result.conversations);
       revision = assistantConversationLocalRevision(storeKey);
       failures = 0;

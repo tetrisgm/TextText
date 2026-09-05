@@ -28,8 +28,24 @@ export function participantMarks(peers: readonly PresencePeer[]): ParticipantMar
       // Editor means an open editor session, not a claim of keystrokes.
       // A live agent lease indicates work, never a configured provider alone.
       state: peer.role === "viewer" ? "Viewing" : identity ? "Working" : peer.role === "editor" ? "Editing" : "Present",
-      connection: `${identity ? "Agent" : "Browser"} session: ${peer.clientId}`,
+      connection: sessionLabel(identity ? "Agent" : "Browser", peer, peers),
       role: peer.role === "editor" ? "Can edit this item" : peer.role === "viewer" ? "Read-only session" : "Permission not reported",
     } satisfies ParticipantMark;
   }).sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+}
+
+/**
+ * "Browser session", or "Browser session 2 of 3" when the same name has more
+ * than one live session, so two marks stay distinguishable without exposing a
+ * row ID nobody can act on.
+ */
+function sessionLabel(kind: string, peer: PresencePeer, peers: readonly PresencePeer[]): string {
+  const same = peers
+    .filter((candidate) => candidate.clientId && candidate.userName === peer.userName)
+    .map((candidate) => candidate.clientId)
+    .sort();
+  const index = same.indexOf(peer.clientId);
+  return same.length > 1 && index >= 0
+    ? `${kind} session ${index + 1} of ${same.length}`
+    : `${kind} session`;
 }

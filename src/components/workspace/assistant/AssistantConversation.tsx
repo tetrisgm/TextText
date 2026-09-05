@@ -1,5 +1,7 @@
 "use client";
 
+import { INLINE_STATUS_LABELS } from "./InlineSelectionPreview";
+import { INLINE_ACTIONS } from "./inline-preview";
 import { QuickActionControl } from "./QuickActionControl";
 
 import { useEffect, useRef, type ReactNode } from "react";
@@ -688,6 +690,14 @@ export function AssistantConversation({
       {jobsStrip}
       {quickActionBar}
       {visibleMessages.map((message, messageIndex) => {
+        if (message.inlinePreview) {
+          const preview = message.inlinePreview;
+          return <div key={message.id} className={styles.proposal}>
+            <p className={styles.proposalLabel}>{INLINE_ACTIONS.find((action) => action.id === preview.action)?.label} · {preview.title}</p>
+            <p className={styles.proposalScope}>{INLINE_STATUS_LABELS[preview.status]} · {preview.words} selected words</p>
+            <AssistantMarkdown text={message.text} />
+          </div>;
+        }
         if (message.proposal) {
           const proposal = message.proposal;
           const changing =

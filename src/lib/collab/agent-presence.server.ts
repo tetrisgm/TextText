@@ -25,6 +25,7 @@ export const UNKNOWN_AGENT_CONNECTION_NAME = "AI agent";
 type AgentPresenceActor = {
   /** The raw connection name (OAuth client name, or MCP clientInfo.name). */
   connectionName: string;
+  connectionId?: string;
   /** The signed-in user this agent is acting for. */
   userId: string;
 };
@@ -61,6 +62,7 @@ export function agentConnectionName(raw: unknown): string {
 export function buildAgentPresence(
   actor: AgentPresenceActor,
   state: {
+    role?: "viewer" | "editor";
     selection?: AgentSelectionState | null;
     focus?: AgentFocusEvent | null;
   } = {},
@@ -68,7 +70,7 @@ export function buildAgentPresence(
   if (!actor.userId) return null;
   const connectionName = agentConnectionName(actor.connectionName);
   const identity = agentIdentity(connectionName);
-  const clientId = agentPresenceClientId(actor.userId, connectionName);
+  const clientId = agentPresenceClientId(actor.userId, actor.connectionId ?? connectionName);
   const color = agentProviderColor(identity.provider) ?? colorForSub(clientId);
   const userName = identity.displayName;
   return {
@@ -82,6 +84,7 @@ export function buildAgentPresence(
       color,
       provider: identity.provider,
       selection: state.selection,
+      ...(state.role ? { role: state.role } : {}),
       focus: state.focus,
     }),
   };

@@ -226,3 +226,20 @@ and the bookmark capture pipeline. It uses the same `wsk_` bearer tokens but
 requires `sync`. Existing-file mutations require current validators such as
 `If-Match`. A sync DELETE also moves the item to Trash rather than permanently
 deleting it.
+
+### Item connection tokens
+
+Prefer the item's Add agent control for a single-item connection. This reuses
+`api_tokens` with one `item:<uuid>:read` or `item:<uuid>:edit` scope and a
+seven-day expiry. It does not include `sync`. See
+[Connect an agent from an item](agent-interoperability.md#connect-an-agent-from-an-item)
+for client setup and the local shared-device limitation.
+
+Item tokens use the same bearer parser, hash lookup, expiry, and revocation
+checks as workspace tokens. Both hosted dispatch and the shared executor deny
+all commands except exact-id `read_item`, content-only `update_item`, and
+`append_to_item`; the latter two also require edit permission. Resource reads
+and prompt retrieval are denied for item tokens. Sync and app-session exchange
+reject them. Item reads omit backlinks, cross-item link resolution, and the
+unusable sync file URL. An authenticated read publishes agent presence without
+changing the document. Token ids, not client names, identify remote presence.

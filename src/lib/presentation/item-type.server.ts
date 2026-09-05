@@ -4,6 +4,7 @@ import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import {
   createDocumentTemplateVersion,
   getDocumentTemplateAuthoringSource,
+  getDocumentTemplate,
   getFolderByPath,
   listFoldersUsingTemplate,
   retemplateFolderItems,
@@ -197,7 +198,13 @@ export async function updateWorkspaceItemType(input: {
   }
 
   const blueprint = normalizeItemTypeBlueprint(input.blueprint);
-  const base = compileItemTypeBlueprint(current.source.blueprint, { id: input.templateId });
+  const hasLegacyRowMultiplicity = current.source.blueprint.fields.some((field) =>
+    field.type === "rows" && field.fields.some((cell) => cell.multiple),
+  );
+  const base = hasLegacyRowMultiplicity
+    ? await getDocumentTemplate(input.blogId, { id: input.templateId, version: input.baseVersion })
+    : compileItemTypeBlueprint(current.source.blueprint, { id: input.templateId });
+  if (!base) throw new Error("The saved item type could not be read. Reopen it before saving a correction.");
   const definition = compileItemTypeBlueprint(blueprint, { id: input.templateId });
   assertCompatibleItemTypeFields(base.fields, definition.fields);
 

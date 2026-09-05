@@ -172,6 +172,7 @@ function inertResult(
     ownerScopeStatus: "checking",
     quickActions: [],
     runQuickAction: queuedMethod(entry, "runQuickAction", true),
+    createSelectionPreview: queuedMethod(entry, "createSelectionPreview", true),
     runningJobs: 0,
     saveAnswer: queuedMethod(entry, "saveAnswer", true),
     rateAnswer: queuedMethod(entry, "rateAnswer", true),

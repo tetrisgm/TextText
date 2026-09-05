@@ -41,6 +41,93 @@ export function presencePeersEqual(
   );
 }
 
+type PresenceListener = (peers: PresencePeer[]) => void;
+
+type PresenceEntry = {
+  peers: PresencePeer[];
+  listeners: Set<PresenceListener>;
+  timer: ReturnType<typeof setInterval> | null;
+  abort: AbortController;
+  reading: boolean;
+};
+
+// One poller per item, however many surfaces ask. The reader's action bar, the
+// editor's bar and a hidden bar kept mounted for a fast switch back would each
+// otherwise run their own interval against the same endpoint.
+const entries = new Map<string, PresenceEntry>();
+
+function publish(entry: PresenceEntry, next: PresencePeer[]) {
+  if (presencePeersEqual(entry.peers, next)) return;
+  entry.peers = next;
+  for (const listener of entry.listeners) listener(next);
+}
+
+async function read(postId: string, entry: PresenceEntry) {
+  if (document.visibilityState === "hidden" || entry.reading) return;
+  entry.reading = true;
+  try {
+    const res = await fetch(
+      `/api/collab/${encodeURIComponent(postId)}/presence`,
+      { headers: { Accept: "application/json" }, signal: AbortSignal.any([entry.abort.signal, AbortSignal.timeout(8000)]) },
+    );
+    if (!res.ok) {
+      // 401, 403 and 410 included: never keep advertising activity the server
+      // no longer confirms.
+      publish(entry, []);
+      return;
+    }
+    const data = (await res.json()) as { presence?: PresencePeer[] };
+    if (pageIsVisible() && entries.get(postId) === entry) publish(entry, data.presence ?? []);
+  } catch {
+    // Do not keep advertising activity after a failed presence read.
+    publish(entry, []);
+  } finally {
+    entry.reading = false;
+  }
+}
+
+function stopTimer(entry: PresenceEntry) {
+  if (entry.timer) clearInterval(entry.timer);
+  entry.timer = null;
+}
+
+function start(postId: string, entry: PresenceEntry) {
+  if (document.visibilityState === "hidden" || entry.timer) return;
+  void read(postId, entry);
+  entry.timer = setInterval(() => void read(postId, entry), POLL_MS);
+}
+
+function visibilityChanged() {
+  for (const [postId, entry] of entries) {
+    if (document.visibilityState === "hidden") {
+      stopTimer(entry);
+      publish(entry, []);
+    } else {
+      start(postId, entry);
+    }
+  }
+}
+
+function subscribe(postId: string, listener: PresenceListener): () => void {
+  let entry = entries.get(postId);
+  if (!entry) {
+    entry = { peers: [], listeners: new Set(), timer: null, abort: new AbortController(), reading: false };
+    entries.set(postId, entry);
+    if (entries.size === 1) document.addEventListener("visibilitychange", visibilityChanged);
+    start(postId, entry);
+  }
+  entry.listeners.add(listener);
+  const current = entry;
+  return () => {
+    current.listeners.delete(listener);
+    if (current.listeners.size > 0 || entries.get(postId) !== current) return;
+    stopTimer(current);
+    current.abort.abort();
+    entries.delete(postId);
+    if (entries.size === 0) document.removeEventListener("visibilitychange", visibilityChanged);
+  };
+}
+
 export function usePresence(postId: string | null | undefined): PresencePeer[] {
   const [state, setState] = useState<{ postId: string | null; peers: PresencePeer[] }>({
     postId: postId ?? null,
@@ -52,70 +139,18 @@ export function usePresence(postId: string | null | undefined): PresencePeer[] {
 
   useEffect(() => {
     if (!postId) return;
-    let cancelled = false;
-    let reading = false;
-    let timer: ReturnType<typeof setInterval> | null = null;
-    const abort = new AbortController();
-
-    const read = async () => {
-      if (document.visibilityState === "hidden" || reading) return;
-      reading = true;
-      try {
-        const res = await fetch(
-          `/api/collab/${encodeURIComponent(postId)}/presence`,
-          { headers: { Accept: "application/json" }, signal: AbortSignal.any([abort.signal, AbortSignal.timeout(8000)]) },
-        );
-        if (res.status === 401 || res.status === 403 || res.status === 410) {
-          if (!cancelled) setState({ postId, peers: [] });
-          return;
-        }
-        if (!res.ok) {
-          if (!cancelled) setState({ postId, peers: [] });
-          return;
-        }
-        const data = (await res.json()) as { presence?: PresencePeer[] };
-        if (!cancelled && pageIsVisible()) {
-          const nextPeers = data.presence ?? [];
-          setState((current) =>
-            current.postId === postId &&
-            presencePeersEqual(current.peers, nextPeers)
-              ? current
-              : { postId, peers: nextPeers },
-          );
-        }
-      } catch {
-        // Do not keep advertising activity after a failed presence read.
-        if (!cancelled) setState({ postId, peers: [] });
-      } finally {
-        reading = false;
-      }
-    };
-
-    const stopTimer = () => {
-      if (timer) clearInterval(timer);
-      timer = null;
-    };
-    const start = () => {
-      if (document.visibilityState === "hidden" || timer) return;
-      void read();
-      timer = setInterval(() => void read(), POLL_MS);
-    };
-    const visibilityChanged = () => {
-      if (document.visibilityState === "hidden") {
-        stopTimer();
-        setState({ postId, peers: [] });
-      }
-      else start();
-    };
-
-    start();
-    document.addEventListener("visibilitychange", visibilityChanged);
-    return () => {
-      cancelled = true;
-      abort.abort();
-      stopTimer();
-      document.removeEventListener("visibilitychange", visibilityChanged);
-    };
+    const listener: PresenceListener = (next) =>
+      setState((current) =>
+        current.postId === postId && presencePeersEqual(current.peers, next)
+          ? current
+          : { postId, peers: next },
+      );
+    const unsubscribe = subscribe(postId, listener);
+    // A surface mounting into an item someone else already polls shows the
+    // known answer at once.
+    const known = entries.get(postId);
+    if (known && known.peers.length > 0) listener(known.peers);
+    return unsubscribe;
   }, [postId]);
 
   return peers;

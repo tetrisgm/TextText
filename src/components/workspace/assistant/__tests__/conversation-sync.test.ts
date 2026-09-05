@@ -85,7 +85,7 @@ describe("owner-scoped conversation sync schedule", () => {
     const sync = vi.fn(async (..._args: [SyncedAssistantConversation[]]) => {
       void _args;
       if (failure === "reject") throw new Error("offline");
-      return { allowed: false, conversations: [] };
+      return { allowed: false, conversations: [], transient: true };
     });
     const loop = start(key, sync);
     await vi.advanceTimersByTimeAsync(900);
@@ -140,9 +140,27 @@ describe("owner-scoped conversation sync schedule", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("a refusal stays local without retries", async () => {
+    // A collaborator or capability viewer is refused, not failed: history
+    // stays on this device and the rail must not offer Retry sync.
+    const id = activeAssistantConversationId(key, "root")!;
+    const sync = vi.fn(async (local: SyncedAssistantConversation[]) => ({ allowed: false, conversations: local.slice(0, 0) }));
+    const loop = start(key, sync);
+    await vi.advanceTimersByTimeAsync(900);
+    expect(sync).toHaveBeenCalledTimes(1);
+    expect(loop.statuses.at(-1)).toBe("local");
+    appendAssistantConversationMessage(key, id, message("kept on this device"));
+    await vi.advanceTimersByTimeAsync(900);
+    expect(sync).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(sync).toHaveBeenCalledTimes(2);
+    expect(loop.statuses.at(-1)).toBe("local");
+    expect(loop.statuses).not.toContain("error");
+  });
+
   it("a new dirty revision reopens the retry budget after exhaustion", async () => {
     const id = activeAssistantConversationId(key, "root")!;
-    const sync = vi.fn(async (...args: [SyncedAssistantConversation[]]) => ({ allowed: false, conversations: args[0].slice(0, 0) }));
+    const sync = vi.fn(async (...args: [SyncedAssistantConversation[]]) => ({ allowed: false, conversations: args[0].slice(0, 0), transient: true }));
     start(key, sync);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(sync).toHaveBeenCalledTimes(6);
@@ -155,7 +173,7 @@ describe("owner-scoped conversation sync schedule", () => {
 
   it("a dirty revision made during the last failed attempt gets its own retry budget", async () => {
     const id = activeAssistantConversationId(key, "root")!;
-    const pending = deferred<{ allowed: boolean; conversations: SyncedAssistantConversation[] }>();
+    const pending = deferred<{ allowed: boolean; conversations: SyncedAssistantConversation[]; transient?: boolean }>();
     let attempts = 0;
     const sync = vi.fn(async (...args: [SyncedAssistantConversation[]]) => {
       void args;
@@ -166,7 +184,7 @@ describe("owner-scoped conversation sync schedule", () => {
     await vi.advanceTimersByTimeAsync(31_900);
     expect(sync).toHaveBeenCalledTimes(6);
     appendAssistantConversationMessage(key, id, message("new while awaiting failure"));
-    pending.resolve({ allowed: false, conversations: [] });
+    pending.resolve({ allowed: false, conversations: [], transient: true });
     await vi.advanceTimersByTimeAsync(999);
     expect(sync).toHaveBeenCalledTimes(6);
     await vi.advanceTimersByTimeAsync(1);
@@ -209,7 +227,7 @@ describe("owner-scoped conversation sync schedule", () => {
 
   it("pauses a scheduled retry when hidden and resumes on foreground", async () => {
     activeAssistantConversationId(key, "root");
-    const sync = vi.fn(async (...args: [SyncedAssistantConversation[]]) => ({ allowed: false, conversations: args[0].slice(0, 0) }));
+    const sync = vi.fn(async (...args: [SyncedAssistantConversation[]]) => ({ allowed: false, conversations: args[0].slice(0, 0), transient: true }));
     start(key, sync);
     await vi.advanceTimersByTimeAsync(900);
     setVisible(false);
@@ -222,7 +240,7 @@ describe("owner-scoped conversation sync schedule", () => {
 
   it("does not overlap requests or acknowledge edits made during an upload", async () => {
     const id = activeAssistantConversationId(key, "root")!;
-    const pending = deferred<{ allowed: boolean; conversations: SyncedAssistantConversation[] }>();
+    const pending = deferred<{ allowed: boolean; conversations: SyncedAssistantConversation[]; transient?: boolean }>();
     const sync = vi.fn(async (local: SyncedAssistantConversation[]) => ({ allowed: true, conversations: local })).mockImplementationOnce(() => pending.promise);
     const loop = start(key, sync);
     await vi.advanceTimersByTimeAsync(900);
@@ -244,9 +262,15 @@ describe("owner-scoped conversation sync schedule", () => {
 
   it.each(["dispose", "owner-commit"])("fences late responses on %s and cannot schedule more work", async (reason) => {
     const id = activeAssistantConversationId(key, "root")!;
-    const remote = assistantConversationSyncPayload(key);
-    remote[0].messages.push({ ...message("remote private"), updatedAt: "2026-09-05T13:00:00Z" });
-    const pending = deferred<{ allowed: boolean; conversations: SyncedAssistantConversation[] }>();
+    // Built by hand: the sync payload no longer carries an empty placeholder
+    // chat, and this late response must be fenced whatever it contains.
+    const now = new Date().toISOString();
+    const remote: SyncedAssistantConversation[] = [{
+      id, contextKey: "root", title: "New chat", pinned: false,
+      metadataUpdatedAt: now, createdAt: now, updatedAt: now,
+      messages: [{ ...message("remote private"), updatedAt: "2026-09-05T13:00:00Z" }],
+    }];
+    const pending = deferred<{ allowed: boolean; conversations: SyncedAssistantConversation[]; transient?: boolean }>();
     const sync = vi.fn((...args: [SyncedAssistantConversation[]]) => { void args; return pending.promise; });
     let current = true;
     const loop = start(key, sync, () => current);

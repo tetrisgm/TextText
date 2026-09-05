@@ -8,6 +8,8 @@ import type { SyncedAssistantConversation } from "@/lib/ai/assistant-conversatio
 type AssistantConversationSyncState = {
   allowed: boolean;
   conversations: SyncedAssistantConversation[];
+  /** The server failed rather than refused; the rail may retry. */
+  transient?: boolean;
 };
 
 export async function getAssistantConversationCacheScopeAction(
@@ -56,6 +58,8 @@ export async function syncAssistantConversationsAction(
     };
   } catch {
     // Sync is background-only. Local history remains authoritative offline.
-    return { allowed: false, conversations: [] };
+    // Marked transient so the rail retries this, and only this: a denial is
+    // final and must not turn into a permanent Retry sync control.
+    return { allowed: false, conversations: [], transient: true };
   }
 }

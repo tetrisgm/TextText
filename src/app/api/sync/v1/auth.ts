@@ -1,3 +1,4 @@
+import { hasItemAgentScope } from "@/lib/item-agent-access";
 // Bearer auth -> workspace resolution for every sync API route. The token's
 // user's OWNED blog is the workspace; resolving it here means no post or
 // folder lookup below can ever cross tenants.
@@ -31,7 +32,7 @@ export async function resolveSyncWorkspace(
       { status: 401, headers: { "WWW-Authenticate": "Bearer" } },
     );
   }
-  if (!identity.scopes.split(/\s+/).includes("sync")) {
+  if (hasItemAgentScope(identity.scopes.split(/\s+/)) || !identity.scopes.split(/\s+/).includes("sync")) {
     return syncError(403, "This token does not have the sync scope");
   }
   let blog: Blog | null;

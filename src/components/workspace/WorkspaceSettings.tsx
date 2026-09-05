@@ -565,7 +565,8 @@ export function WorkspaceSettings({
             <div className={styles.sectionHeader}>
               <div>
                 <h2 id="settings-connections">Connected clients</h2>
-                <p>API tokens used by TextText apps and external AI clients.</p>
+                <p>To connect an agent to one item, open the item and choose Add agent in its participant row or the command palette. Manage existing app and workspace tokens here.</p>
+                <button type="button" className={styles.connectionAddLink} onClick={onBack}>Return to items</button>
               </div>
               <a href="/connect" className={styles.connectionAddLink}>
                 Add client token

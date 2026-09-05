@@ -1,3 +1,4 @@
+import { hasItemAgentScope } from "./item-agent-access";
 import { encode } from "@auth/core/jwt";
 import type { ApiTokenIdentity } from "@/lib/api-tokens";
 
@@ -28,7 +29,7 @@ export function safeAppSessionNextPath(value: string | null): string {
 }
 
 export function appSessionHasSyncScope(scopes: string): boolean {
-  return scopes.split(/\s+/).includes("sync");
+  return !hasItemAgentScope(scopes.split(/\s+/)) && scopes.split(/\s+/).includes("sync");
 }
 
 export async function createAppSessionCookie(

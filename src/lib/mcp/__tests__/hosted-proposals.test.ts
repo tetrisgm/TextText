@@ -21,7 +21,7 @@ vi.mock("@/lib/shares", () => ({ listScopeShares: vi.fn(async () => []) }));
 vi.mock("@/lib/db/client", () => ({ db: {}, executeAtomicBatch: mocks.batch }));
 vi.mock("@/lib/audit", () => ({ auditInsertQuery: mocks.audit, auditCteFrom: vi.fn(), recordAction: vi.fn() }));
 import { callTool, listTools } from "@/lib/mcp/registry";
-import { hostedToolNeedsProposal } from "@/lib/mcp/write-proposals";
+import { hostedToolNeedsProposal, stageHostedToolProposal } from "@/lib/mcp/write-proposals";
 import type { ToolContext } from "@/lib/mcp/tools";
 const context: ToolContext = { authInfo: { token: "", clientId: "user-1", scopes: ["sync"], extra: {
   sub: "apple-sub", userId: "user-1", connectionName: "Research agent",
@@ -48,6 +48,15 @@ describe("hosted MCP durable proposal boundary", () => {
     mocks.listDocumentTemplates.mockResolvedValue([{ id: "custom-look", name: "Custom look", version: 1 }]);
     mocks.insert.mockImplementation((row) => ({ inserted: row })); mocks.audit.mockReturnValue({ audit: true });
     mocks.batch.mockImplementation(async (build) => build({ insert: () => ({ values: mocks.insert }) }));
+  });
+  it("item edit grants cannot stage a proposal through either entry point", async () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    const scoped = { authInfo: { ...context.authInfo!, scopes: [`item:${id}:edit`] } };
+    expect((await callTool("delete_item", { id }, scoped)).isError).toBe(true);
+    expect((await stageHostedToolProposal("delete_item", { id }, scoped)).isError).toBe(true);
+    expect(mocks.getOwnedBlog).not.toHaveBeenCalled();
+    expect(mocks.insert).not.toHaveBeenCalled();
+    expect(mocks.execute).not.toHaveBeenCalled();
   });
   it.each(risky)("stages %s through the real proposal service without executing", async (name, args) => {
     const result = await callTool(name, args, context);

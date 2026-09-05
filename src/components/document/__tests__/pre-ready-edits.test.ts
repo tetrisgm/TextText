@@ -1,3 +1,5 @@
+vi.mock("@/components/keyboard/CommandLayer", () => ({ useEscapeLayer: vi.fn() }));
+vi.mock("@/app/editor/agent-connect-actions", () => ({ listItemAgentsAction: vi.fn(), createItemAgentAction: vi.fn(), prepareLocalItemAgentAction: vi.fn(), removeItemAgentAction: vi.fn() }));
 // Regression: edits made before the collab provider is ready must survive a
 // remote baseline arriving first.
 //
@@ -11,7 +13,7 @@
 // and the ready-merge overlays the LEDGER onto the authoritative baseline.
 // These tests pin the overlay's semantics.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { overlayPreReadyEdits } from "../UnifiedDocumentEditor";
 import { validateDocumentSnapshot, type DocumentSnapshot } from "@/lib/documents/model";
 

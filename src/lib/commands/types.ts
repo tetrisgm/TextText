@@ -134,6 +134,7 @@ export type CommandContext = {
   refresh: () => void;
   openPalette: (query?: string) => void;
   openShortcuts: () => void;
+  openAddAgent?: (postId: string) => void;
   closePalette: () => void;
   /**
    * `report` (the default) is the app telling you what it just did, in a

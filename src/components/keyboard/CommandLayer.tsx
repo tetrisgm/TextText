@@ -11,6 +11,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { OPEN_ADD_AGENT_EVENT } from "@/lib/agent-connect";
 import { useRouter } from "next/navigation";
 import { isTypingTarget } from "@/components/keyboard/typing-target";
 import {
@@ -181,6 +182,10 @@ export function CommandLayer({ children }: { children: ReactNode }) {
       openShortcuts,
       closePalette,
       toast: showToast,
+      openAddAgent: (postId) => {
+        closePalette();
+        requestAnimationFrame(() => window.dispatchEvent(new CustomEvent(OPEN_ADD_AGENT_EVENT, { detail: { postId } })));
+      },
     }),
     [closePalette, openPalette, openShortcuts, router, showToast],
   );

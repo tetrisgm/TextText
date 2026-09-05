@@ -1,3 +1,4 @@
+import { hasItemAgentScope, itemAgentAllows } from "@/lib/item-agent-access";
 // The server's capability registry, independent of any transport.
 //
 // MCP 2026-07-28 is stateless, so there is no long-lived `Server` object to
@@ -147,6 +148,10 @@ export async function callTool(
     // An unknown TOOL is a bad argument to a known method, not an unknown
     // method, so this is Invalid Params rather than Method Not Found.
     throw invalidParams(`Unknown tool: ${name}`);
+  }
+  const scopes = context.authInfo?.scopes ?? [];
+  if (hasItemAgentScope(scopes) && !itemAgentAllows(scopes, name, args)) {
+    return { isError: true, content: [{ type: "text", text: "This connection only permits reading or editing its item." }] };
   }
   if (hostedToolNeedsProposal(name, args)) {
     return stageHostedToolProposal(name, args, context);

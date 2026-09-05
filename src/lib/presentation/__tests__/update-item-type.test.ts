@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   createDocumentTemplateVersion: vi.fn(),
   getDocumentTemplateAuthoringSource: vi.fn(),
+  getDocumentTemplate: vi.fn(),
   getFolderByPath: vi.fn(),
   listFoldersUsingTemplate: vi.fn(),
   retemplateFolderItems: vi.fn(),
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/store", () => ({
   createDocumentTemplateVersion: mocks.createDocumentTemplateVersion,
   getDocumentTemplateAuthoringSource: mocks.getDocumentTemplateAuthoringSource,
+  getDocumentTemplate: mocks.getDocumentTemplate,
   getFolderByPath: mocks.getFolderByPath,
   listFoldersUsingTemplate: mocks.listFoldersUsingTemplate,
   retemplateFolderItems: mocks.retemplateFolderItems,
@@ -24,6 +26,8 @@ vi.mock("@/lib/revalidate-blog", () => ({
   revalidateBlogPaths: mocks.revalidateBlogPaths,
 }));
 
+import { compileItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
+import { validateTemplateDefinition } from "@/lib/presentation/schema";
 import { updateWorkspaceItemType } from "@/lib/presentation/item-type.server";
 
 const BLUEPRINT = {
@@ -322,4 +326,28 @@ describe("changing an item type that already exists", () => {
     expect(mocks.createDocumentTemplateVersion).not.toHaveBeenCalled();
   });
 
+});
+
+
+describe("correcting a legacy row declaration", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.createDocumentTemplateVersion.mockImplementation(async ({ definition }) => ({ ...definition, version: 4 }));
+  });
+  it("compares with the saved definition and preserves scalar values when making the row single-select", async () => {
+    const blueprint = { name: "Sources", collection: { layout: "list" }, fields: [{ id: "entries", label: "Entries", type: "rows", fields: [{ id: "tags", label: "Tags", type: "enum", options: [{ value: "a", label: "A" }] }] }] };
+    const definition = compileItemTypeBlueprint(blueprint, { id: "recipes-a1b2c3", version: 3 });
+    const row = definition.fields.find((field) => field.id === "entries")!;
+    if (row.type !== "rows" || row.fields[0].type !== "enum") throw new Error("Expected row enum");
+    row.fields[0].multiple = true;
+    mocks.getDocumentTemplate.mockResolvedValue(validateTemplateDefinition(definition));
+    mocks.getDocumentTemplateAuthoringSource.mockResolvedValue({
+      version: 3, retired: false, state: "authored",
+      source: { blueprint: { ...blueprint, fields: [{ ...blueprint.fields[0], fields: [{ ...blueprint.fields[0].fields[0], multiple: true }] }] } },
+    });
+    const result = await call({ blueprint, saveScope: { mode: "version" } });
+    expect(mocks.getDocumentTemplate).toHaveBeenCalledWith("blog-1", { id: "recipes-a1b2c3", version: 3 });
+    const corrected = result.definition.fields.find((field) => field.id === "entries");
+    expect(corrected).toMatchObject({ fields: [{ id: "tags", multiple: false }] });
+  });
 });

@@ -1,64 +1,35 @@
-/* Floats over the editor, so it sits above the document but below any dialog. */
+/* The editor's selection toolbar shares the preview and rail palette. */
 .bar {
   position: fixed;
   z-index: 40;
   display: flex;
+  flex-wrap: wrap;
+  box-sizing: border-box;
+  max-width: min(560px, calc(100vw - 16px));
   gap: 2px;
   padding: 4px;
-  border-radius: 10px;
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.1));
-  background: var(--surface-raised, rgba(255, 255, 255, 0.92));
-  backdrop-filter: blur(12px) saturate(180%);
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.08),
-    0 8px 24px rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+  border: 1px solid var(--assistant-rail-divider);
+  background: var(--assistant-rail-ground);
 }
-
 .action {
   appearance: none;
   border: 0;
   background: transparent;
-  color: var(--text-primary, #1a1a1a);
+  color: var(--assistant-rail-primary);
   font: inherit;
   font-size: 13px;
   line-height: 1;
+  min-height: 32px;
   padding: 6px 10px;
-  border-radius: 7px;
+  border-radius: 6px;
   cursor: pointer;
 }
-
-.action:hover,
-.action:focus-visible {
-  background: var(--surface-hover, rgba(0, 0, 0, 0.06));
+.action:hover { background: var(--assistant-control-fill); }
+.action:focus-visible, .languages input:focus-visible {
+  outline: 2px solid var(--assistant-composer-focus);
+  outline-offset: 1px;
 }
-
-.action:active {
-  transform: scale(0.97);
-}
-
-@media (prefers-color-scheme: dark) {
-  .bar {
-    border-color: var(--border-subtle, rgba(255, 255, 255, 0.14));
-    background: var(--surface-raised, rgba(32, 32, 34, 0.92));
-    box-shadow:
-      0 1px 2px rgba(0, 0, 0, 0.4),
-      0 8px 24px rgba(0, 0, 0, 0.5);
-  }
-  .action {
-    color: var(--text-primary, #f2f2f2);
-  }
-  .action:hover,
-  .action:focus-visible {
-    background: var(--surface-hover, rgba(255, 255, 255, 0.1));
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .action:active {
-    transform: none;
-  }
-}
-
 .error {
   position: absolute;
   top: calc(100% + 6px);
@@ -67,18 +38,20 @@
   width: 100%;
   max-width: calc(100vw - 16px);
   padding: 6px 8px;
-  border: 1px solid var(--border-subtle, #d8d8da);
+  border: 1px solid var(--assistant-rail-divider);
   border-radius: 6px;
-  background: var(--surface-raised, #fff);
-  color: var(--text-primary, #303136);
+  background: var(--assistant-rail-ground);
+  color: var(--assistant-error);
   font-size: 13px;
   line-height: 1.4;
 }
-
-@media (prefers-color-scheme: dark) {
-  .error {
-    border-color: var(--border-subtle, #555558);
-    background: var(--surface-raised, #2b2b2e);
-    color: var(--text-primary, #f2f2f4);
-  }
+.languages { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.languages input {
+  width: 140px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--assistant-rail-divider);
+  border-radius: 6px;
+  min-height: 32px;
 }
+@media (pointer: coarse) { .action, .languages input { min-height: 44px; } }

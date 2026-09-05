@@ -217,7 +217,10 @@ import type { Blog, Folder, Post } from "@/lib/content";
 import { resolveCoverSource } from "@/lib/cover";
 import type { TemplateReference } from "@/lib/documents/model";
 import { documentFromLegacyPost } from "@/lib/documents/legacy";
-import { applyCollectionSpec } from "@/lib/documents/collection-query";
+import {
+  queryCollectionItems, collectionDateGroups, collectionBoardGroups,
+  collectionCalendarMonth, collectionDayKey, collectionHeatmapDays,
+} from "@/lib/presentation/collection-layout";
 import { getBuiltinTemplate } from "@/lib/presentation/templates";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import {
@@ -280,20 +283,6 @@ function shouldOpenLocally(event: MouseEvent<HTMLAnchorElement>): boolean {
     !event.shiftKey &&
     !event.altKey
   );
-}
-
-function sortedByTimestampDesc(
-  items: Post[],
-  timestamp: (post: Post) => string,
-): Post[] {
-  // Pinned items float to the top of every folder list (all item types), then
-  // most-recent first. Pin is a personal "keep on top" that works everywhere.
-  return [...items].sort((a, b) => {
-    if (Boolean(a.pinned) !== Boolean(b.pinned)) {
-      return Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
-    }
-    return timestamp(b).localeCompare(timestamp(a));
-  });
 }
 
 function firstBodyLine(body: string): string {
@@ -789,36 +778,19 @@ function UniversalFolderContents({
     () => defaultTemplateForFolder(folder).id.startsWith("texttext."),
     [folder],
   );
-  const collectionSpec = useMemo(() => {
-    if (!activeCollection) return null;
-    const { sort, filters } = activeCollection;
-    return sort.length > 0 || filters.length > 0 ? { sort, filters } : null;
-  }, [activeCollection]);
-  const sorted = useMemo(() => {
-    if (!collectionSpec) {
-      return sortedByTimestampDesc(
-        items,
-        (post) => post.updatedAt ?? post.date ?? "",
-      );
-    }
-    const shaped = applyCollectionSpec(
-      items.map((post) => ({
-        post,
-        createdAt: post.date ?? null,
-        updatedAt: post.updatedAt ?? post.date ?? null,
-        publishedAt: post.status === "published" ? (post.date ?? null) : null,
-        title: post.title,
-        fields: post.document?.content.fields ?? {},
-      })),
-      collectionSpec,
-    ).map((entry) => entry.post);
-    return [...shaped].sort((a, b) => {
-      if (Boolean(a.pinned) !== Boolean(b.pinned)) {
-        return Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
-      }
-      return 0; // stable within pin groups; applyCollectionSpec already ordered
-    });
-  }, [collectionSpec, items]);
+  const collectionRows = useMemo(() => queryCollectionItems(
+    items.map((post) => ({
+      post,
+      pinned: Boolean(post.pinned),
+      createdAt: post.date ?? null,
+      updatedAt: post.updatedAt ?? post.date ?? null,
+      publishedAt: post.status === "published" ? (post.date ?? null) : null,
+      title: post.title,
+      fields: post.document?.content.fields ?? {},
+    })),
+    activeCollection,
+  ), [activeCollection, items]);
+  const sorted = useMemo(() => collectionRows.map((entry) => entry.post), [collectionRows]);
 
   // A calendar folder places items on a month grid by the template's dateBy
   // date field. The offset is which month is showing, relative to now.
@@ -829,89 +801,23 @@ function UniversalFolderContents({
     return index === -1 ? null : index;
   }, [selectedPostId, sorted]);
 
-  const calendar = useMemo(() => {
-    const collection = activeCollection;
-    if (!collection || collection.layout !== "calendar" || !collection.dateBy) {
-      return null;
-    }
-    const fieldId = collection.dateBy.slice("content.fields.".length);
-    const field = collectionDefinition?.fields.find(
-      (entry) => entry.id === fieldId,
-    );
-    if (!field || field.type !== "date") return null;
-    const byDay = new Map<string, typeof sorted>();
-    const undated: typeof sorted = [];
-    for (const post of sorted) {
-      const value = post.document?.content.fields[fieldId];
-      const key =
-        typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)
-          ? value.slice(0, 10)
-          : null;
-      if (!key) {
-        undated.push(post);
-        continue;
-      }
-      const list = byDay.get(key) ?? [];
-      list.push(post);
-      byDay.set(key, list);
-    }
-    return { byDay, undated };
-  }, [activeCollection, collectionDefinition, sorted]);
-
-  // A heatmap folder shows a trailing year of activity as one cell per day,
-  // shaded by how many items carry that date, with the normal list below.
-  const heatmap = useMemo(() => {
-    const collection = activeCollection;
-    if (!collection || collection.layout !== "heatmap" || !collection.dateBy) {
-      return null;
-    }
-    const fieldId = collection.dateBy.slice("content.fields.".length);
-    const field = collectionDefinition?.fields.find(
-      (entry) => entry.id === fieldId,
-    );
-    if (!field || field.type !== "date") return null;
-    const counts = new Map<string, number>();
-    for (const post of sorted) {
-      const value = post.document?.content.fields[fieldId];
-      if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
-        const key = value.slice(0, 10);
-        counts.set(key, (counts.get(key) ?? 0) + 1);
-      }
-    }
-    return { counts };
-  }, [activeCollection, collectionDefinition, sorted]);
-
-  // A board folder groups its items into one column per option of the
-  // template's groupBy enum, in declared option order, with an Unsorted
-  // column for items that have no value yet.
+  const dateGroups = useMemo(() => collectionDateGroups(
+    collectionRows, activeCollection, collectionDefinition?.fields ?? [],
+  ), [collectionRows, activeCollection, collectionDefinition]);
+  const calendar = useMemo(() => activeCollection?.layout === "calendar" && dateGroups ? {
+    byDay: new Map([...dateGroups.byDay].map(([day, rows]) => [day, rows.map((row) => row.post)])),
+    undated: dateGroups.undated.map((row) => row.post),
+  } : null, [activeCollection, dateGroups]);
+  const heatmap = useMemo(() => activeCollection?.layout === "heatmap" && dateGroups ? {
+    counts: new Map([...dateGroups.byDay].map(([day, rows]) => [day, rows.length])),
+  } : null, [activeCollection, dateGroups]);
   const board = useMemo(() => {
-    const collection = activeCollection;
-    if (!collection || collection.layout !== "board" || !collection.groupBy) {
-      return null;
-    }
-    const fieldId = collection.groupBy.slice("content.fields.".length);
-    const field = collectionDefinition?.fields.find(
-      (entry) => entry.id === fieldId,
-    );
-    if (!field || field.type !== "enum") return null;
-    const valueOf = (post: (typeof sorted)[number]) => {
-      const value = post.document?.content.fields[fieldId];
-      return typeof value === "string" ? value : null;
-    };
-    const known = new Set(field.options.map((option) => option.value));
-    const columns = field.options.map((option) => ({
-      value: option.value,
-      label: option.label,
-      tone: option.tone ?? "neutral",
-      icon: option.icon,
-      posts: sorted.filter((post) => valueOf(post) === option.value),
-    }));
-    const unsorted = sorted.filter((post) => {
-      const value = valueOf(post);
-      return value === null || !known.has(value);
-    });
-    return { columns, unsorted };
-  }, [activeCollection, collectionDefinition, sorted]);
+    const groups = collectionBoardGroups(collectionRows, activeCollection, collectionDefinition?.fields ?? []);
+    return groups ? {
+      columns: groups.columns.map(({ items: rows, ...column }) => ({ ...column, posts: rows.map((row) => row.post) })),
+      unsorted: groups.unsorted.map((row) => row.post),
+    } : null;
+  }, [collectionRows, activeCollection, collectionDefinition]);
   const collectionViewMode: FolderViewMode = displayModeForCollectionView(
     selectedSavedView,
     viewMode,
@@ -1397,18 +1303,7 @@ function UniversalFolderContents({
               );
             };
             if (heatmap) {
-              const today = new Date();
-              const pad = (value: number) => String(value).padStart(2, "0");
-              const start = new Date(today);
-              start.setDate(start.getDate() - 364);
-              start.setDate(start.getDate() - start.getDay());
-              const days: { key: string; count: number }[] = [];
-              const cursor = new Date(start);
-              while (cursor <= today) {
-                const key = `${cursor.getFullYear()}-${pad(cursor.getMonth() + 1)}-${pad(cursor.getDate())}`;
-                days.push({ key, count: heatmap.counts.get(key) ?? 0 });
-                cursor.setDate(cursor.getDate() + 1);
-              }
+              const days = collectionHeatmapDays(heatmap.counts, new Date());
               const level = (count: number) =>
                 count === 0 ? 0 : count === 1 ? 1 : count === 2 ? 2 : 3;
               return (
@@ -1450,33 +1345,8 @@ function UniversalFolderContents({
                 now.getMonth() + calendarOffset,
                 1,
               );
-              const monthLabel = anchor.toLocaleDateString("en-US", {
-                month: "long",
-                year: "numeric",
-              });
-              const pad = (value: number) => String(value).padStart(2, "0");
-              const dayKey = (year: number, month: number, day: number) =>
-                `${year}-${pad(month + 1)}-${pad(day)}`;
-              const todayKey = dayKey(
-                now.getFullYear(),
-                now.getMonth(),
-                now.getDate(),
-              );
-              const daysInMonth = new Date(
-                anchor.getFullYear(),
-                anchor.getMonth() + 1,
-                0,
-              ).getDate();
-              const cells: { key: string | null; day: number | null }[] = [];
-              for (let blank = 0; blank < anchor.getDay(); blank += 1) {
-                cells.push({ key: null, day: null });
-              }
-              for (let day = 1; day <= daysInMonth; day += 1) {
-                cells.push({
-                  key: dayKey(anchor.getFullYear(), anchor.getMonth(), day),
-                  day,
-                });
-              }
+              const { monthLabel, cells } = collectionCalendarMonth(anchor);
+              const todayKey = collectionDayKey(now);
               return (
                 <div
                   className="universal-item-calendar"

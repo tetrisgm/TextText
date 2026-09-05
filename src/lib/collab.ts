@@ -646,6 +646,7 @@ export function createAgentAwareness(input: {
   userName: string;
   color: string;
   provider: string;
+  role?: "viewer" | "editor";
   selection?: AgentSelectionState | null;
   focus?: AgentFocusEvent | null;
 }): string {
@@ -659,6 +660,7 @@ export function createAgentAwareness(input: {
         color: input.color,
         participantType: "agent",
         provider: input.provider,
+        ...(input.role ? { role: input.role } : {}),
       },
       ...(input.selection ? { selection: input.selection } : {}),
       ...(input.focus ? { focus: input.focus } : {}),

@@ -392,3 +392,19 @@ describe("what a synced message can carry", () => {
     expect(options[0]).toEqual({ value: "keep", label: "Keep" });
   });
 });
+
+
+describe("inline preview decisions", () => {
+  it("keeps Discard terminal across history sync, even against a newer pending clock", () => {
+    const record = (status: string, time: string) => [chat("inline-chat", { messages: [{
+      id: "preview", role: "assistant", text: "Suggestion", updatedAt: time,
+      inlinePreview: { status, action: "rewrite", itemId: "item", title: "Draft", words: 2, text: "Suggestion" },
+    }] })];
+    const discarded = record("discarded", "2026-08-24T12:00:00.000Z");
+    const ready = record("ready", "2026-08-24T12:02:00.000Z");
+    const forward = mergeAssistantConversationSyncPayloads(discarded, ready);
+    expect(forward).toEqual(mergeAssistantConversationSyncPayloads(ready, discarded));
+    expect(forward[0].messages[0].inlinePreview).toMatchObject({ status: "discarded" });
+    expect(cleanAssistantConversationSyncPayload(JSON.parse(JSON.stringify(forward)))[0].messages[0].inlinePreview).toMatchObject({ status: "discarded" });
+  });
+});

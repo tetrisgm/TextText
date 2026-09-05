@@ -20,7 +20,4 @@ export function itemAgentChanges(payload: unknown, postId: string): ParticipantC
   return result.changes.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
 }
 
-export function changeSummary(change: ParticipantChange): string {
-  const fields = [...new Set(change.changes.map((field) => field.field))].join(", ");
-  return `${change.revertsId ? "Reverted" : "Changed"} ${fields || "item content"}${change.reverted ? " (reverted)" : ""}`;
-}
+export { changeSummary } from "./participant-change-summary";

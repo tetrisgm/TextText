@@ -6,6 +6,7 @@ import {
   cleanAssistantConversationSyncPayload,
   mergeAssistantConversationSyncPayloads,
   type SyncedAssistantConversation,
+  capAssistantConversationSyncPayload,
 } from "@/lib/ai/assistant-conversation-sync";
 
 /**
@@ -31,9 +32,8 @@ export async function syncWorkspaceAssistantConversationHistory(
       .from(workspaceAssistantConversationHistories)
       .where(eq(workspaceAssistantConversationHistories.blogId, blogId))
       .limit(1);
-    const merged = mergeAssistantConversationSyncPayloads(
-      row?.conversations ?? [],
-      local,
+    const merged = capAssistantConversationSyncPayload(
+      mergeAssistantConversationSyncPayloads(row?.conversations ?? [], local),
     );
     // The rail syncs on every launch. When the local replica adds nothing,
     // the merge equals what is stored; writing it back again would be a

@@ -1,13 +1,25 @@
+vi.mock("@/components/keyboard/CommandLayer", () => ({ useEscapeLayer: vi.fn() }));
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PresencePeer } from "@/lib/collab/provider";
 const fixture = vi.hoisted(() => ({ peers: [] as PresencePeer[] }));
 vi.mock("@/lib/collab/usePresence", () => ({ usePresence: () => fixture.peers }));
+vi.mock("@/app/editor/agent-connect-actions", () => ({ listItemAgentsAction: vi.fn(), createItemAgentAction: vi.fn(), prepareLocalItemAgentAction: vi.fn(), removeItemAgentAction: vi.fn() }));
 import { ChangeReview, ParticipantsRow } from "../ParticipantsRow";
 
 beforeEach(() => { fixture.peers = []; });
 describe("participant row markup", () => {
+  it("offers Add agent to the owner even with no participants", () => {
+    const html = renderToStaticMarkup(<ParticipantsRow postId="item" handle="owner" canReviewChanges />);
+    expect(html).toContain('aria-label="Add agent"');
+    expect(html).toContain('aria-label="Close add agent"');
+    expect(html).not.toContain("Copy token");
+  });
+  it("hides connection controls for viewers and unsaved items", () => {
+    expect(renderToStaticMarkup(<ParticipantsRow postId={null} handle="owner" canReviewChanges />)).toBe("");
+    expect(renderToStaticMarkup(<ParticipantsRow postId="item" handle="owner" />)).not.toContain('aria-label="Add agent"');
+  });
   it("takes no space when nobody is present", () => {
     expect(renderToStaticMarkup(<ParticipantsRow postId="item" handle="owner" />)).toBe("");
   });
@@ -15,7 +27,10 @@ describe("participant row markup", () => {
     fixture.peers = Array.from({ length: 8 }, (_, i) => ({ clientId: `session-${i}`, userName: "Ada", role: "editor", color: "red", awareness: null }));
     const html = renderToStaticMarkup(<ParticipantsRow postId="item" handle="owner" />);
     expect(html.match(/popover="auto"/g)).toHaveLength(8);
-    expect(html).toContain('aria-label="Ada, Editing, Browser session: session-7"');
+    // Same-name sessions stay distinguishable without exposing a row ID.
+    expect(html).toContain('aria-label="Ada, Editing, Browser session 8 of 8"');
+    expect(html).toContain('aria-label="Ada, Editing, Browser session 1 of 8"');
+    expect(html).not.toContain("session-7");
     expect(html).toContain('aria-haspopup="dialog"');
     expect(html).toContain('aria-label="Close participant details"');
     expect(html).not.toContain("background-color:red");

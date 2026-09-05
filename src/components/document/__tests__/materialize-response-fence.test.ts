@@ -178,17 +178,17 @@ describe("materialization visibility and response fencing", () => {
     expect(h.onMaterialized).not.toHaveBeenCalled();
   });
 
-  it("accepts a current server snapshot without scheduling a save of the acknowledgment", async () => {
+  it("acknowledges persistence without converting unseen server text into local CRDT operations", async () => {
     const h = harness();
     const first = h.flushMaterialization();
     await tick();
     const result = snapshotOf(`${BODY} SERVER`);
     h.respond(0, { document: result, revision: 7 });
     await first;
-    expect(bodyOf(h.doc)).toBe(`${BODY} SERVER`);
-    expect(h.visible()).toBe(`${BODY} SERVER`);
-    expect(h.publishDocument).toHaveBeenCalledTimes(1);
-    expect(h.onMaterialized).toHaveBeenCalledExactlyOnceWith(result, 7);
+    expect(bodyOf(h.doc)).toBe(BODY);
+    expect(h.visible()).toBe(BODY);
+    expect(h.publishDocument).not.toHaveBeenCalled();
+    expect(h.onMaterialized).toHaveBeenCalledExactlyOnceWith(snapshotOf(BODY), 7);
     expect(h.dirty()).toBe(false);
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -351,4 +351,43 @@ describe("materialization visibility and response fencing", () => {
     expect(h.dirty()).toBe(false);
     expect(h.setSaveState).toHaveBeenLastCalledWith("saved");
   });
+});
+
+// Delayed relay operations must retain the peer identities across acknowledgments.
+it("does not duplicate an unseen server insertion on acknowledgment", async () => {
+  const h = harness();
+  const peer = new Y.Doc();
+  Y.applyUpdate(peer, Y.encodeStateAsUpdate(h.doc));
+  documentText(peer, "body").insert(0, "REMOTE ");
+  const locallyGenerated = vi.fn();
+  h.doc.on("update", (_update, origin) => { if (origin !== "collab-remote") locallyGenerated(); });
+  const first = h.flushMaterialization();
+  await tick();
+  h.respond(0, { document: documentSnapshotFromYDoc(peer), revision: 9 });
+  await first;
+  expect(h.visible()).toBe(BODY);
+  Y.applyUpdate(h.doc, Y.encodeStateAsUpdate(peer), "collab-remote");
+  expect(h.visible()).toBe("REMOTE " + BODY);
+  Y.applyUpdate(peer, Y.encodeStateAsUpdate(h.doc), "collab-remote");
+  expect(bodyOf(peer)).toBe(h.visible());
+  expect(locallyGenerated).not.toHaveBeenCalled();
+  peer.destroy();
+});
+it("does not resurrect a peer insertion deleted before relay delivery", async () => {
+  const h = harness();
+  const peer = new Y.Doc();
+  Y.applyUpdate(peer, Y.encodeStateAsUpdate(h.doc));
+  documentText(peer, "body").insert(0, "REMOTE ");
+  const locallyGenerated = vi.fn();
+  h.doc.on("update", (_update, origin) => { if (origin !== "collab-remote") locallyGenerated(); });
+  const first = h.flushMaterialization(); await tick();
+  h.respond(0, { document: documentSnapshotFromYDoc(peer), revision: 9 }); await first;
+  documentText(peer, "body").delete(0, 7);
+  Y.applyUpdate(h.doc, Y.encodeStateAsUpdate(peer), "collab-remote");
+  expect(bodyOf(peer)).toBe(BODY);
+  expect(h.visible()).toBe(BODY);
+  Y.applyUpdate(peer, Y.encodeStateAsUpdate(h.doc), "collab-remote");
+  expect(bodyOf(peer)).toBe(h.visible());
+  expect(locallyGenerated).not.toHaveBeenCalled();
+  peer.destroy();
 });

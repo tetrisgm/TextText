@@ -286,6 +286,10 @@ function moveSelectedTo(ctx: CommandContext, folder: Folder) {
 }
 
 export const WORKSPACE_COMMANDS: AppCommand[] = [
+  { id: "item.add-agent", label: "Add agent", group: "Item",
+    when: (ctx) => Boolean(ctx.workspace?.canManagePost && ctx.workspace.activePostId && ["post", "edit"].includes(ctx.workspace.viewLevel) && ctx.openAddAgent),
+    run: (ctx) => { if (ctx.workspace?.activePostId) ctx.openAddAgent?.(ctx.workspace.activePostId); },
+  },
   {
     id: "command.palette",
     label: "Open command palette",

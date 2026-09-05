@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { isOptimisticPostId } from "@/lib/workspace/local-view";
 import { usePresence } from "@/lib/collab/usePresence";
 import { CollaboratorMark } from "@/components/collab/CollaboratorMark";
 import { executeWorkspaceToolRequest } from "@/lib/ai/workspace-tool-client";
 import { participantMarks, type ParticipantMark } from "./participants";
-import { changeSummary, itemAgentChanges, type ParticipantChange } from "./participant-changes";
+import type { ParticipantChange } from "./participant-changes";
+import { changeSummary } from "./participant-change-summary";
+import { listItemAgentsAction } from "@/app/editor/agent-connect-actions";
+import { AddAgentPopover, RemoveItemAgent, type ItemAgentGrant } from "./AddAgentPopover";
+import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import styles from "./ParticipantsRow.module.css";
 
 type Props = { postId?: string | null; handle: string; canReviewChanges?: boolean };
@@ -14,16 +18,29 @@ type Props = { postId?: string | null; handle: string; canReviewChanges?: boolea
 export function ParticipantsRow({ postId, handle, canReviewChanges = false }: Props) {
   const peers = usePresence(postId && !isOptimisticPostId(postId) ? postId : null);
   const marks = participantMarks(peers);
-  if (!postId || !marks.length) return null;
+  const [grants, setGrants] = useState<ItemAgentGrant[]>([]);
+  const [grantError, setGrantError] = useState(false);
+  const active = useRef(true);
+  const reload = useCallback(() => {
+    if (!postId || isOptimisticPostId(postId) || !canReviewChanges) return;
+    void listItemAgentsAction(handle, postId).then((next) => {
+      if (active.current) { setGrants(next); setGrantError(false); }
+    }).catch(() => { if (active.current) setGrantError(true); });
+  }, [handle, postId, canReviewChanges]);
+  useEffect(() => { active.current = true; reload(); return () => { active.current = false; }; }, [reload]);
+  const removed = (id: string) => { setGrants((items) => items.filter((grant) => grant.id !== id)); reload(); };
+  if (!postId || isOptimisticPostId(postId) || (!marks.length && !canReviewChanges)) return null;
   return (
     <div className={styles.row} role="group" aria-label="People and agents on this item">
-      {marks.map((mark) => <Participant key={`${postId}:${mark.id}`} mark={mark}
-        postId={postId} handle={handle} canReviewChanges={canReviewChanges} />)}
+      <div className={styles.marks}>{marks.map((mark) => <Participant key={`${postId}:${mark.id}`} mark={mark}
+        postId={postId} handle={handle} canReviewChanges={canReviewChanges}
+        grant={grants.find((grant) => grant.presenceId === mark.id)} onRemoved={removed} />)}</div>
+      {canReviewChanges && <AddAgentPopover handle={handle} postId={postId} marks={marks} grants={grants} loadError={grantError} reload={reload} onRemoved={removed} />}
     </div>
   );
 }
 
-function Participant({ mark, postId, handle, canReviewChanges }: Props & { mark: ParticipantMark; postId: string }) {
+function Participant({ mark, postId, handle, canReviewChanges, grant, onRemoved }: Props & { mark: ParticipantMark; postId: string; grant?: ItemAgentGrant; onRemoved: (id: string) => void }) {
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const popover = useRef<HTMLDivElement>(null);
@@ -33,12 +50,15 @@ function Participant({ mark, postId, handle, canReviewChanges }: Props & { mark:
   const [history, setHistory] = useState<ParticipantChange[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [review, setReview] = useState(false);
+  useEscapeLayer(open, "Participant details", () => popover.current?.hidePopover());
 
   useEffect(() => {
     if (!open || !mark.agent || !canReviewChanges) return;
     let cancelled = false;
     executeWorkspaceToolRequest(handle, "list_agent_changes", { id: postId })
-      .then((result) => {
+      .then(async (result) => {
+        // The zod-backed parser loads only when history is actually requested.
+        const { itemAgentChanges } = await import("./participant-changes");
         const changes = itemAgentChanges(result, postId);
         if (!cancelled) setHistory(changes);
       }).catch(() => { if (!cancelled) setFailed(true); });
@@ -63,7 +83,7 @@ function Participant({ mark, postId, handle, canReviewChanges }: Props & { mark:
       </span>
     </button>
     <div ref={popover} id={id} popover="auto" role="dialog" aria-labelledby={`${id}-name`}
-      className={styles.popover} style={position}
+      className={styles.popover} style={{ ...position, maxHeight: `calc(100dvh - ${position.top + 8}px)` }}
       onBeforeToggle={(event) => {
         if (event.newState !== "open") return;
         const rect = trigger.current?.getBoundingClientRect();
@@ -73,18 +93,20 @@ function Participant({ mark, postId, handle, canReviewChanges }: Props & { mark:
         setFailed(false);
         setReview(false);
       }}
-      onToggle={(event) => setOpen(event.newState === "open")}>
+      onToggle={(event) => { setOpen(event.newState === "open"); if (event.newState === "closed") trigger.current?.focus(); }}>
       <div className={styles.header}>
         <strong id={`${id}-name`}>{mark.name}</strong>
         <button type="button" autoFocus className={styles.close} aria-label="Close participant details"
           onClick={() => popover.current?.hidePopover()}>×</button>
       </div>
-      <p>{mark.role}</p>
+      <p>{grant ? grant.role === "edit" ? "Can read and edit this item" : "Read-only access to this item" : mark.role}</p>
       <p className={styles.connection}>{mark.connection}</p>
       <p role="status" aria-live="polite">{mark.state}</p>
       <p className={styles.meta}>{mark.state === "Editing" ? "Editor session open. Typing activity is not reported."
         : mark.state === "Working" ? "Active agent presence. The current task is not reported."
         : mark.state === "Present" ? "Activity is not reported by this session." : "Read-only session open."}</p>
+      {grant && canReviewChanges && <RemoveItemAgent grant={grant} handle={handle} postId={postId} onRemoved={onRemoved} />}
+      {mark.agent && !grant && canReviewChanges && <p className={styles.meta}>This session has no separate item grant. Stop it in its client. Manage shared workspace credentials in Settings.</p>}
       <div className={styles.history}>
         <strong>Latest change</strong>
         {!mark.agent ? <p>Changes by this person are not reported.</p>

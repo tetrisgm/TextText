@@ -610,23 +610,29 @@ function LocalWorkspaceShell({
   const loadItemTypeStudioPreviewDocuments = useCallback(
     async (folderPath: string) => {
       const currentPool = displayPoolRef.current;
-      const candidates = currentPool.posts
-        .filter(
-          (post) => folderPathForPoolPost(currentPool, post) === folderPath,
-        )
-        .slice(0, 12);
-      await Promise.all(
-        candidates.map((post) =>
-          ensurePostDocument(currentPool.blogId, post.id),
-        ),
+      const candidates = currentPool.posts.filter(
+        (post) => folderPathForPoolPost(currentPool, post) === folderPath,
       );
+      // Read all candidates before the preview query. Bound concurrent reads,
+      // not the results, or a filter can hide matches beyond the first page.
+      for (let start = 0; start < candidates.length; start += 12) {
+        await Promise.all(candidates.slice(start, start + 12).map((post) =>
+          ensurePostDocument(currentPool.blogId, post.id),
+        ));
+      }
       return candidates.flatMap((post) => {
         const cached = getCachedWorkspacePostDocument(
           currentPool.blogId,
           post.id,
         );
         return cached
-          ? [{ folderPath, document: cached.document }]
+          ? [{
+              folderPath, document: cached.document,
+              pinned: Boolean(post.pinned),
+              createdAt: post.date ?? null,
+              updatedAt: post.updatedAt ?? post.date ?? null,
+              publishedAt: post.status === "published" ? (post.date ?? null) : null,
+            }]
           : [];
       });
     },
@@ -5314,10 +5320,8 @@ function LocalWorkspaceShell({
           onMove={moveSelectedPosts}
           onToggleStar={toggleStarSelected}
         />
-        {/* AI at the point of writing. Runs the same quick actions the
-          rail runs, against the same selection it already reads, and the
-          result arrives as a proposal to accept or undo. */}
         <SelectionActions
+          key={`${assistant.conversationStoreKey}:${assistantTarget.view.postId}:${assistantTarget.view.level}`}
           itemId={assistantTarget.view.postId}
           enabled={
             assistant.ownerScopeReady && assistantTarget.view.level === "edit"
@@ -5327,10 +5331,7 @@ function LocalWorkspaceShell({
               ? readOpenWorkspaceItemSelection(assistantTarget.view.postId)
               : null
           }
-          onRunAction={(id) => {
-            if (assistantState === "hidden") changeAssistantState("pinned");
-            void assistant.runQuickAction(id, true);
-          }}
+          onRunAction={assistant.createSelectionPreview}
         />
 
         <AssistantConversationState

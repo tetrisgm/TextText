@@ -5,8 +5,6 @@
   min-width: 32px;
   max-width: 160px;
   height: 40px;
-  overflow-x: auto;
-  scrollbar-width: thin;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -87,3 +85,18 @@
 @media (max-width: 600px) {
   .row { max-width: 64px; }
 }
+
+.connect { width: min(352px, calc(100vw - 16px)); }
+.field { display: grid; gap: 8px; margin-top: 16px; }
+.field select, .field input {
+  width: 100%; min-height: 32px; box-sizing: border-box; padding: 8px;
+  border: 1px solid var(--ac-hairline); border-radius: 6px;
+  background: var(--ac-bg); color: var(--ac-label); font: inherit;
+}
+.field select:focus-visible, .field input:focus-visible {
+  outline: 2px solid var(--ac-label); outline-offset: 2px;
+}
+.copyText { padding: 8px; margin: 8px 0; background: var(--ac-fill-3); white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; user-select: text; }
+.popover button:disabled { cursor: default; opacity: 0.6; }
+
+.marks { display: flex; align-items: center; min-width: 0; overflow-x: auto; scrollbar-width: thin; }

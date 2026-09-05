@@ -1,0 +1,83 @@
+/* Same neutral palette as AssistantSidebar. Also used outside the rail. */
+.palette {
+  --assistant-rail-ground: #ffffff;
+  --assistant-rail-primary: #303136;
+  --assistant-rail-secondary: #686a70;
+  --assistant-rail-divider: #ececee;
+  --assistant-control-fill: #eef0f3;
+  --assistant-composer-focus: #7a7c82;
+  --assistant-error: #a33a3f;
+  color: var(--assistant-rail-primary);
+  font-family: var(--ac-font-text, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  letter-spacing: 0;
+}
+.preview {
+  position: fixed;
+  z-index: 40;
+  box-sizing: border-box;
+  max-width: calc(100vw - 16px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--assistant-rail-divider);
+  border-radius: 6px;
+  background: var(--assistant-rail-ground);
+  color: var(--assistant-rail-primary);
+  font-family: var(--ac-font-text, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  letter-spacing: 0;
+}
+.header, .status {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--assistant-rail-secondary);
+  overflow-wrap: anywhere;
+}
+.body {
+  font-size: 16px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: min(360px, 45vh);
+  overflow-y: auto;
+}
+.body:empty { display: none; }
+.error { color: var(--assistant-error); font-size: 13px; line-height: 1.4; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.actions button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--assistant-rail-divider);
+  border-radius: 6px;
+  background: var(--assistant-control-fill);
+  color: var(--assistant-rail-primary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.preview:focus-visible, .actions button:focus-visible {
+  outline: 2px solid var(--assistant-composer-focus);
+  outline-offset: 2px;
+}
+.actions button:disabled { opacity: 0.55; cursor: default; }
+:global([data-theme="dark"]) .palette {
+  --assistant-rail-ground: #2b2b2e;
+  --assistant-rail-primary: #f2f2f4;
+  --assistant-rail-secondary: #aaaab0;
+  --assistant-rail-divider: #45454a;
+  --assistant-control-fill: #414146;
+  --assistant-composer-focus: #aaaab0;
+  --assistant-error: #f2a4aa;
+}
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme="light"])) .palette {
+    --assistant-rail-ground: #2b2b2e;
+    --assistant-rail-primary: #f2f2f4;
+    --assistant-rail-secondary: #aaaab0;
+    --assistant-rail-divider: #45454a;
+    --assistant-control-fill: #414146;
+    --assistant-composer-focus: #aaaab0;
+    --assistant-error: #f2a4aa;
+  }
+}
+@media (pointer: coarse) { .actions button { min-height: 44px; } }

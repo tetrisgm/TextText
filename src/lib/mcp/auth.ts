@@ -3,6 +3,7 @@
 // The token owner's OWNED blog is the workspace, so no tool below can ever
 // cross tenants.
 
+import { hasItemAgentScope, itemAgentAllows } from "@/lib/item-agent-access";
 import type { AuthInfo } from "./types";
 import {
   WORKSPACE_SCOPE_CAPABILITIES,
@@ -90,6 +91,17 @@ export function enforceMcpToolScope(
   payload: unknown,
 ): Response | null {
   const scopes = (request as AuthenticatedRequest).auth?.scopes ?? [];
+  if (hasItemAgentScope(scopes)) {
+    const messages = Array.isArray(payload) ? payload : [payload];
+    const allowed = messages.every((message) => {
+      if (!message || typeof message !== "object") return false;
+      const { method, params } = message as { method?: string; params?: { name?: string; arguments?: Record<string, unknown> } };
+      if (["initialize", "ping", "tools/list", "resources/list", "resources/templates/list", "prompts/list"].includes(method ?? "")) return true;
+      return method === "tools/call" && itemAgentAllows(scopes, params?.name ?? "", params?.arguments ?? {});
+    });
+    return allowed ? null : Response.json({ error: "This token only permits reading or editing its item." },
+      { status: 403, headers: { "Cache-Control": "no-store" } });
+  }
   const hasReadOnlyScope = scopes.some((scope) =>
     WORKSPACE_SCOPE_CAPABILITIES.readOnly.includes(
       scope as (typeof WORKSPACE_SCOPE_CAPABILITIES.readOnly)[number],

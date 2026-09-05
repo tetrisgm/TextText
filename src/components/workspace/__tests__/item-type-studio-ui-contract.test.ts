@@ -52,9 +52,9 @@ describe("item type studio experience", () => {
     );
   });
 
-  it("loads a bounded set of canonical folder documents only on demand", () => {
+  it("loads all canonical folder candidates on demand with bounded concurrency", () => {
     expect(shellSource).toContain("loadItemTypeStudioPreviewDocuments");
-    expect(shellSource).toContain(".slice(0, 12)");
+    expect(shellSource).toContain("candidates.slice(start, start + 12)");
     expect(shellSource).toContain("ensurePostDocument(currentPool.blogId, post.id)");
     expect(shellSource).toContain(
       "loadPreviewDocuments={loadItemTypeStudioPreviewDocuments}",

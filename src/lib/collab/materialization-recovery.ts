@@ -5,7 +5,11 @@ export type MaterializationRecovery = {
   postId: string;
   epoch: number | null;
   state: string;
-  document: DocumentSnapshot;
+  document?: DocumentSnapshot;
+  /** Durable retired-outbox copies also retain undecodable/raw operations. */
+  outboxKey?: string;
+  updates?: string[];
+  baselineRevision?: number | null;
 };
 const PREFIX = "texttext:collab-recovery:v1:";
 

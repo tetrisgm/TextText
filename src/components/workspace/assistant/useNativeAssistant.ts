@@ -26,6 +26,9 @@ import {
   SELECTION_INVALID_ERROR,
   type SelectionEnvelope,
 } from "@/lib/ai/selection-envelope";
+import { createInlinePreview, inlinePrompt, INLINE_ACTIONS, type InlineRequest, type InlinePreviewRecord } from "./inline-preview";
+import { captureInlineSelectionSurface } from "@/components/document/inline-selection-surface";
+import { presentSelectionPreview } from "./selection-preview-event";
 import { reportSelectionError } from "./selection-error";
 import { createWorkspaceAgentTools } from "@/lib/ai/agent-tools";
 import {
@@ -50,6 +53,7 @@ import {
 } from "@/lib/ai/quick-actions";
 import {
   createWorkspaceItemTextEdit,
+  readOpenWorkspaceItemDraft,
   resolveWorkspaceItemTextSelection,
   type WorkspaceItemTextEdit,
   type WorkspaceItemTextPatch,
@@ -191,6 +195,7 @@ export type AssistantMessage = {
   provider?: CloudAssistantProviderLabel;
   model?: string;
   proposal?: AssistantProposal;
+  inlinePreview?: InlinePreviewRecord;
   /**
    * What this turn did on machines the workspace does not control, and which
    * connected servers were unreachable. Attached to the message rather than
@@ -1858,6 +1863,46 @@ export function useNativeAssistant({
     ],
   );
 
+  const createSelectionPreview = useCallback(async (request: InlineRequest) => {
+    if (!ownerScopeReady || !conversationStoreKey) return null;
+    const view = getViewRef.current();
+    if (view.postId !== request.itemId || view.level !== "edit") return null;
+    const scope = { ...currentOwnerScopeRef.current };
+    const thread = threadKey;
+    const scopeMatches = () => assistantOwnerScopeMatches(scope, currentOwnerScopeRef.current);
+    const active = () => scopeMatches() && getViewRef.current().postId === request.itemId && getViewRef.current().level === "edit";
+    const messageId = appendToThread(thread, "assistant", "Selection preview");
+    return createInlinePreview(request, {
+      active,
+      read: () => readItemTextRef.current(request.itemId),
+      generate: async (envelope, prompt, signal, delta) => {
+        if (!active()) throw new Error(SELECTION_INVALID_ERROR);
+        const result = await cloudAssistantTurn(handle, prompt, {
+          level: view.level, folderPath: view.folderPath, postId: request.itemId,
+          selectionEnvelope: envelope, mode: "suggestion",
+        }, {
+          stream: true, signal,
+          ...(selectedCloudModel ? { model: selectedCloudModel } : {}),
+          onEvent: (event) => { if (event.type === "text") delta(event.text); },
+        });
+        if ("disabled" in result) throw new Error("Connect Anthropic or OpenAI in Workspace Settings.");
+        if (result.terminalError) throw new Error(result.terminalError);
+        return result;
+      },
+      execute: async (edit) => {
+        if (!active()) throw new Error(SELECTION_INVALID_ERROR);
+        const outcome = await tools.executor("update_item", { id: request.itemId, text_edit: edit });
+        if (workspaceMutationQueued(outcome)) throw new Error("Waiting for acknowledgment.");
+      },
+      persist: (record) => {
+        if (!scopeMatches()) return;
+        updateThreadMessage(thread, messageId, (message) => ({
+          ...message, text: record.text || inlinePrompt(request), inlinePreview: record,
+        }));
+      },
+    });
+  }, [conversationStoreKey, handle, ownerScopeReady, selectedCloudModel, threadKey, tools]);
+
   const runQuickAction = useCallback(
     async (action: NativeQuickActionId, selectionRequired: boolean | string = false) => {
       if (!ownerScopeReady || !conversationStoreKey) return;
@@ -1865,6 +1910,21 @@ export function useNativeAssistant({
       if (busyThreads.has(thread)) return;
       const view = getViewRef.current();
       if (!view.postId) return;
+      const draft = readOpenWorkspaceItemDraft(view.postId);
+      const frozen = draft?.selection ?? draft?.writingSelection;
+      const inlineAction = INLINE_ACTIONS.find((candidate) => candidate.id === action);
+      if (view.level === "edit" && frozen?.text && inlineAction) {
+        const surface = captureInlineSelectionSurface(view.postId, frozen);
+        if (!surface) { reportSelectionError(view.postId, SELECTION_INVALID_ERROR); return; }
+        const controller = await createSelectionPreview({
+          itemId: view.postId, action: inlineAction.id, selection: { ...frozen },
+          ...(typeof selectionRequired === "string" ? { language: selectionRequired } : {}),
+        });
+        if (controller && !presentSelectionPreview({ itemId: view.postId, controller, surface })) {
+          reportSelectionError(view.postId, "Finish the current preview before starting another.");
+        }
+        return;
+      }
       const actionLabel =
         NATIVE_QUICK_ACTIONS.find((candidate) => candidate.id === action)
           ?.label ?? action;
@@ -2008,6 +2068,7 @@ export function useNativeAssistant({
       contextKey,
       contextLabel,
       conversationStoreKey,
+      createSelectionPreview,
       handle,
       ownerScopeReady,
       selectedCloudModel,
@@ -2599,6 +2660,7 @@ export function useNativeAssistant({
     ownerScopeStatus,
     quickActions,
     runQuickAction,
+    createSelectionPreview,
     runningJobs: scopedRunningJobs,
     saveAnswer,
     rateAnswer,

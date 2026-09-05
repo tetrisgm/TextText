@@ -280,13 +280,18 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0 8px;
+  /* Reserved even while empty: the static shell and the loaded rail share
+     this height, so the first sync result never moves the rail. */
+  min-height: calc(12px * 1.4);
   color: var(--assistant-rail-secondary);
   font-size: 12px;
   line-height: 1.4;
 }
 
 .retrySync {
-  min-height: 32px;
+  /* Sits inside the reserved status line; a taller control would push the
+     whole rail down the moment a sync fails. Coarse pointers get 32px below. */
+  min-height: calc(12px * 1.4);
   padding: 0 2px;
   border: 0;
   border-radius: 4px;
@@ -982,5 +987,15 @@ button.pendingLabel {
 @media (prefers-reduced-motion: reduce) {
   .launcherBusy {
     animation: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .historySync {
+    min-height: 32px;
+  }
+
+  .retrySync {
+    min-height: 32px;
   }
 }

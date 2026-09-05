@@ -34,6 +34,16 @@ function context(
 }
 
 describe("workspace commands", () => {
+  it("opens Add agent only on the manageable active item", () => {
+    const command = WORKSPACE_COMMANDS.find((entry) => entry.id === "item.add-agent")!;
+    const ctx = { ...context({ canManagePost: true, activePostId: "active", selectedPostId: "different", viewLevel: "post" }), openAddAgent: vi.fn() };
+    expect(command.when(ctx)).toBe(true);
+    command.run(ctx);
+    expect(ctx.openAddAgent).toHaveBeenCalledWith("active");
+    expect(command.when({ ...ctx, workspace: { ...ctx.workspace!, canManagePost: false } })).toBe(false);
+    expect(command.when({ ...ctx, workspace: { ...ctx.workspace!, viewLevel: "settings" } })).toBe(false);
+    expect(command.when({ ...ctx, workspace: { ...ctx.workspace!, activePostId: null } })).toBe(false);
+  });
   it("uses Cmd-K only for the palette and reserves slash for search", () => {
     const palette = WORKSPACE_COMMANDS.find(
       (command) => command.id === "command.palette",

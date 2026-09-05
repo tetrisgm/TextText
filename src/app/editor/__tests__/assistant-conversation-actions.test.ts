@@ -75,7 +75,7 @@ describe("assistant conversation sync action", () => {
 
     await expect(
       syncAssistantConversationsAction("writer", [{ id: "local-chat" }], storeKey),
-    ).resolves.toEqual({ allowed: false, conversations: [] });
+    ).resolves.toEqual({ allowed: false, conversations: [], transient: true });
   });
 });
 

@@ -6,7 +6,9 @@
 
 import { createHash, randomBytes } from "node:crypto";
 import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
-import { db } from "./db/client";
+import { auditInsertQuery, auditCteFrom, type AuditEntry } from "./audit";
+import { sql } from "drizzle-orm";
+import { db, executeAtomicBatch } from "./db/client";
 import { apiTokens, users } from "./db/schema";
 import {
   API_TOKEN_KINDS,
@@ -43,6 +45,8 @@ export type ApiTokenSummary = {
   kind: ApiTokenKind;
   createdAt: string;
   lastUsedAt: string | null;
+  scopes?: string;
+  expiresAt?: string | null;
 };
 
 function mapToken(row: typeof apiTokens.$inferSelect): ApiTokenSummary {
@@ -50,6 +54,8 @@ function mapToken(row: typeof apiTokens.$inferSelect): ApiTokenSummary {
     id: row.id,
     name: row.name,
     kind: normalizeTokenKind(row.kind),
+    scopes: row.scopes,
+    expiresAt: row.expiresAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
     lastUsedAt: row.lastUsedAt ? row.lastUsedAt.toISOString() : null,
   };
@@ -88,11 +94,12 @@ export async function createApiToken(
     kind?: ApiTokenKind;
     scopes?: string;
     expiresAt?: Date;
+    audit?: AuditEntry;
   } = {},
 ): Promise<{ raw: string; record: ApiTokenSummary }> {
   if (!db) throw new Error("createApiToken requires DATABASE_URL");
   const raw = generateApiToken();
-  const inserted = await db
+  const insert = (executor: NonNullable<typeof db>) => executor
     .insert(apiTokens)
     .values({
       userId,
@@ -103,6 +110,9 @@ export async function createApiToken(
       expiresAt: options.expiresAt,
     })
     .returning();
+  const audit = options.audit ?? { actorUserId: userId, actorType: "human" as const,
+    actionName: "token.create", targetType: "workspace" as const, inputSummary: name };
+  const inserted = (await executeAtomicBatch((executor) => [insert(executor), auditInsertQuery(audit, executor)] as const))[0];
   if (!inserted[0]) throw new Error("failed to create the token");
   return { raw, record: mapToken(inserted[0]) };
 }
@@ -121,20 +131,18 @@ export async function listApiTokens(userId: string): Promise<ApiTokenSummary[]> 
 export async function revokeApiToken(
   userId: string,
   id: string,
+  audit?: AuditEntry,
 ): Promise<boolean> {
   if (!db) throw new Error("revokeApiToken requires DATABASE_URL");
-  const revoked = await db
-    .update(apiTokens)
-    .set({ revokedAt: new Date() })
-    .where(
-      and(
-        eq(apiTokens.id, id),
-        eq(apiTokens.userId, userId),
-        isNull(apiTokens.revokedAt),
-      ),
-    )
-    .returning({ id: apiTokens.id });
-  return Boolean(revoked[0]);
+  const entry: AuditEntry = audit ?? { actorUserId: userId, actorType: "human" as const,
+    actionName: "token.revoke", targetType: "workspace" as const, inputSummary: id };
+  const result = await db.execute(sql`WITH changed AS (
+    UPDATE ${apiTokens} SET revoked_at = now()
+    WHERE id = ${id}::uuid AND user_id = ${userId}::uuid AND revoked_at IS NULL
+    RETURNING id
+  ), audit AS (${auditCteFrom(entry, "changed", sql`${entry.targetId ?? id}::text`)})
+  SELECT id FROM changed`);
+  return result.rows.length > 0;
 }
 
 /**

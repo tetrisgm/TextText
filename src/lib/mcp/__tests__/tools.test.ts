@@ -292,6 +292,29 @@ describe("MCP workspace tool adapter", () => {
     mocks.resolvePostSlug.mockResolvedValue({ kind: "missing" });
   });
 
+  it("item grants reject other items and workspace tools before resolving any content", async () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    for (const [name, args] of [["read_item", { id: "22222222-2222-4222-8222-222222222222" }], ["search", { query: "secret" }], ["update_item", { id, status: "published" }], ["revoke_access", { id }]] as const) {
+      const result = await executeMcpTool(name, args, auth([`item:${id}:edit`], "Codex"));
+      expect(result.isError).toBe(true);
+    }
+    expect(mocks.getOwnedBlog).not.toHaveBeenCalled();
+    expect(mocks.getPostById).not.toHaveBeenCalled();
+  });
+  it("an item read establishes exact token presence without looking up sibling titles or backlinks", async () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    mocks.getPostById.mockResolvedValue({ id, type: "note", slug: "private", title: "Private", body: "Words", status: "draft", tags: [], pinned: false, revision: 1 });
+    const result = await executeMcpTool("read_item", { id }, auth([`item:${id}:read`], "Codex"));
+    expect(result.isError).not.toBe(true);
+    expect(mocks.getAccessibleAllPosts).not.toHaveBeenCalled();
+    expect(mocks.getAccessibleWorkspaceWikiLinkSources).not.toHaveBeenCalled();
+    expect(mocks.getPostSlugAliases).not.toHaveBeenCalled();
+    expect(mocks.upsertPresence).toHaveBeenCalledWith(id, expect.objectContaining({ clientId: expect.stringMatching(/^agent-/) }));
+    expect(mocks.createAgentAwareness).toHaveBeenCalledWith(expect.objectContaining({ role: "viewer" }));
+    expect(mocks.savePost).not.toHaveBeenCalled();
+    expect(JSON.parse(toolText(result)).item.backlinks).toEqual([]);
+  });
+
   it("registers every shared definition with all current MCP annotations", () => {
     const entries = registrations();
     expect(entries.map((entry) => entry.name)).toEqual(WORKSPACE_TOOL_NAMES);
@@ -2843,6 +2866,11 @@ describe("MCP workspace tool adapter", () => {
     expect(resolveMcpScopeAccess(["read"])).toBe("read-only");
     expect(resolveMcpScopeAccess(["sync", "read"])).toBe("read-only");
     expect(resolveMcpScopeAccess([])).toBe("none");
+    for (const role of ["read", "edit"]) {
+      const item = `item:11111111-1111-4111-8111-111111111111:${role}`;
+      expect(resolveMcpScopeAccess([item])).toBe("none");
+      expect(resolveMcpScopeAccess([item, "sync"])).toBe("none");
+    }
   });
   it("never trusts a client display name as authenticated agent identity", async () => {
     const context = auth(["sync"], "Claude");

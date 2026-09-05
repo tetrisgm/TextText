@@ -631,21 +631,23 @@ export function AssistantSidebar({
               <h2 id={titleId} className={styles.title}>
                 {agent ? `Chat with ${agent.name}` : title}
               </h2>
-              {historySyncStatus ? (
-                <div className={styles.historySync}>
+              {/* Always present, so the line's height is reserved before the
+                  first sync result and the rail does not shift on load. */}
+              <div className={styles.historySync}>
+                {historySyncStatus ? (
                   <span role="status" aria-live="polite" aria-atomic="true">
                     {historySyncStatus === "syncing" ? "Syncing"
                       : historySyncStatus === "synced" ? "Synced"
                       : historySyncStatus === "offline" ? "Offline"
                       : "Saved on this device"}
                   </span>
-                  {(historySyncStatus === "offline" || historySyncStatus === "error") && onRetryHistorySync ? (
-                    <button type="button" className={styles.retrySync} onClick={onRetryHistorySync}>
-                      Retry sync
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
+                ) : null}
+                {(historySyncStatus === "offline" || historySyncStatus === "error") && onRetryHistorySync ? (
+                  <button type="button" className={styles.retrySync} onClick={onRetryHistorySync}>
+                    Retry sync
+                  </button>
+                ) : null}
+              </div>
             </div>
             {pendingCount > 0 && onOpenPendingConversation ? (
               <div className={styles.pendingMenu}>

@@ -625,7 +625,14 @@ function scalarDefinition(
   }
 }
 
-function rowDefinition(field: z.infer<typeof rowSubField>) {
+function rowDefinition(field: z.infer<typeof rowSubField>, parentId: string) {
+  // Keep the stored blueprint and template readers permissive. Only new
+  // authoring is rejected: schema-v1 row cells cannot contain arrays.
+  if (field.multiple) {
+    throw new Error(
+      `Row field "${parentId}.${field.id}" cannot use multiple: true. Schema-v1 rows store one scalar value per cell. Set multiple to false or omit it; for multiple values, use a top-level enum or reference field, or one row per value.`,
+    );
+  }
   const base = {
     id: field.id,
     label: field.label,
@@ -686,7 +693,7 @@ function fieldDefinitions(blueprint: ItemTypeBlueprint): DocumentFieldDefinition
         required: field.required,
         visibility: field.display === "hidden" ? "hidden" : "public",
         ...(field.help ? { help: field.help } : {}),
-        fields: field.fields.map(rowDefinition),
+        fields: field.fields.map((subfield) => rowDefinition(subfield, field.id)),
         maxRows: field.maxRows,
       });
   }

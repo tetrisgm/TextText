@@ -40,6 +40,7 @@
 //    scrolling to 13fps. Never bring it back.
 
 import { useEffect, useLayoutEffect, useRef } from "react";
+import { registerInlineSelectionSurface } from "./inline-selection-surface";
 import { DOCUMENT_JUMP_EVENT } from "@/lib/document-outline";
 import {
   DOCUMENT_SET_CARET_EVENT,
@@ -1363,6 +1364,39 @@ export function MarkdownSurface({
   };
 
   useLayoutEffect(reconcile);
+
+  useLayoutEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    return registerInlineSelectionSurface(root, (frozen) => ({
+      column: root,
+      passage: () => {
+        const line = lineAtOffset(lineStartsRef.current, Math.max(frozen.start, frozen.end - 1));
+        return wrappersRef.current[line - winRef.current.start] ?? null;
+      },
+      restore: () => {
+        if (!root.isConnected) return;
+        root.focus({ preventScroll: true });
+        const end = Math.min(frozen.end, valueRef.current.length);
+        const start = valueRef.current.slice(frozen.start, frozen.end) === frozen.text ? frozen.start : end;
+        const place = (offset: number) => {
+          const line = lineAtOffset(lineStartsRef.current, offset);
+          const wrapper = wrappersRef.current[line - winRef.current.start];
+          return wrapper ? positionWithin(wrapper, offset - (lineStartsRef.current[line] ?? 0)) : null;
+        };
+        const from = place(start);
+        const to = place(end);
+        if (!from || !to) return;
+        const range = document.createRange();
+        range.setStart(from.node, from.offset);
+        range.setEnd(to.node, to.offset);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+        rangeRef.current = { anchor: start, head: end };
+      },
+    }));
+  }, [ref]);
 
   // Undo puts the caret back where the edit happened, the way Sublime does.
   // pendingCaretRef is the surface's own "place the caret on the next

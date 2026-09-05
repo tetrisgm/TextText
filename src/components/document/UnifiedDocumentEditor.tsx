@@ -35,7 +35,8 @@ import {
 import { Awareness } from "y-protocols/awareness";
 import { formatArticleDate } from "@/lib/content";
 import type { Blog, Post } from "@/lib/content";
-import { CollabProvider, type PresencePeer } from "@/lib/collab/provider";
+import { applyPreReadyMetadata, applyPreReadyTextOperations, preReadyTextOperations } from "@/lib/collab/pre-ready";
+import { acknowledgeRetiredOutboxes, CollabProvider, type PresencePeer } from "@/lib/collab/provider";
 import {
   keepMaterializationRecovery,
   readMaterializationRecoveries,
@@ -137,26 +138,43 @@ export function overlayPreReadyEdits(
   initial: DocumentSnapshot,
   remote: DocumentSnapshot,
 ): DocumentSnapshot | null {
-  const changed =
-    JSON.stringify(localBeforeReady.content.fields) !==
-      JSON.stringify(initial.content.fields) ||
-    JSON.stringify(localBeforeReady.content.assets) !==
-      JSON.stringify(initial.content.assets) ||
-    JSON.stringify(localBeforeReady.content.tags) !==
-      JSON.stringify(initial.content.tags) ||
-    JSON.stringify(localBeforeReady.presentation) !==
-      JSON.stringify(initial.presentation);
-  if (!changed) return null;
-  return {
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  // A key changed on both sides uses the explicit local value, including a
+  // deletion. Unchanged keys always follow remote. Collections without entry
+  // IDs (row-valued fields) remain atomic at their field key.
+  const mergeMap = <T,>(local: Record<string, T>, base: Record<string, T>, current: Record<string, T>) => {
+    const merged = { ...current };
+    for (const key of new Set([...Object.keys(base), ...Object.keys(local)])) {
+      if (same(local[key], base[key])) continue;
+      if (Object.hasOwn(local, key)) merged[key] = local[key];
+      else delete merged[key];
+    }
+    return merged;
+  };
+  const mergeEntries = <T,>(local: T[], base: T[], current: T[], key: (value: T) => string) => {
+    if (same(local, base)) return current;
+    const byKey = (values: T[]) => Object.fromEntries(values.map((value) => [key(value), value]));
+    const merged = mergeMap(byKey(local), byKey(base), byKey(current));
+    // Keep remote order, then append locally added entries. A reorder alone
+    // cannot delete remote entries or recreate entries deleted by a peer.
+    return [...new Set([...current.map(key), ...local.map(key)])]
+      .filter((id) => Object.hasOwn(merged, id)).map((id) => merged[id]);
+  };
+  const result: DocumentSnapshot = {
     ...remote,
     content: {
       ...remote.content,
-      fields: localBeforeReady.content.fields,
-      assets: localBeforeReady.content.assets,
-      tags: localBeforeReady.content.tags,
+      fields: mergeMap(localBeforeReady.content.fields, initial.content.fields, remote.content.fields),
+      assets: mergeEntries(localBeforeReady.content.assets, initial.content.assets, remote.content.assets, (asset) => asset.id),
+      tags: mergeEntries(localBeforeReady.content.tags, initial.content.tags, remote.content.tags, (tag) => tag),
     },
-    presentation: localBeforeReady.presentation,
+    presentation: {
+      template: same(localBeforeReady.presentation.template, initial.presentation.template)
+        ? remote.presentation.template : localBeforeReady.presentation.template,
+      theme: mergeMap(localBeforeReady.presentation.theme, initial.presentation.theme, remote.presentation.theme),
+    },
   };
+  return same(result, remote) ? null : result;
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -471,7 +489,8 @@ export function UnifiedDocumentEditor({
   // those and nothing else. localOrigin also tags seeding and the pre-ready
   // reconciliation - tracking it would let the first Cmd+Z undo the seed and
   // empty the document.
-  const userEditOrigin = useRef(Symbol("unified-document-editor:user-edit"));
+  const [userEditOriginValue] = useState(() => Symbol("unified-document-editor:user-edit"));
+  const userEditOrigin = useRef(userEditOriginValue);
   /**
    * Local edits made BEFORE the provider is ready, kept where an incoming
    * remote update cannot clobber them. documentRef mirrors whatever was
@@ -512,13 +531,13 @@ export function UnifiedDocumentEditor({
       new Y.UndoManager(
         documentRoot(doc),
         {
-          trackedOrigins: new Set([userEditOrigin.current]),
+          trackedOrigins: new Set([userEditOriginValue]),
           // Typing coalesces into one step per short burst, the way an editor
           // does, instead of one step per keystroke.
           captureTimeout: 400,
         },
       ),
-    [doc],
+    [doc, userEditOriginValue],
   );
   const undoManagerRef = useRef(undoManager);
   useEffect(() => {
@@ -625,7 +644,7 @@ export function UnifiedDocumentEditor({
   const [remoteRevision, setRemoteRevision] = useState(0);
   const [ready, setReady] = useState(!networkEnabled);
   const readyRef = useRef(!networkEnabled);
-  readyRef.current = ready;
+
   const [saveState, setSaveState] = useState<SaveState>("local");
   const [error, setError] = useState<string | null>(null);
   const [baselineFailure, setBaselineFailure] = useState<string | null>(null);
@@ -642,6 +661,13 @@ export function UnifiedDocumentEditor({
   const canAddSubtitle =
     !showSubtitle && !document.content.subtitle?.trim();
   const providerRef = useRef<CollabProvider | null>(null);
+  // Presence follows the shown editor, not the mounted one: the warm editor
+  // behind the reader must not announce an editing session.
+  const activeRef = useRef(active);
+  useEffect(() => {
+    activeRef.current = active;
+    providerRef.current?.setPresenceEnabled(active);
+  }, [active]);
   const recoveryBlockedRef = useRef(false);
   const [recoveryCopies, setRecoveryCopies] = useState<MaterializationRecovery[]>([]);
   const [recoveryDurable, setRecoveryDurable] = useState(true);
@@ -702,6 +728,11 @@ export function UnifiedDocumentEditor({
   const updateDocumentSnapshot = useCallback(
     (next: DocumentSnapshot) => {
       publishDocument(next);
+      if (!ready && networkEnabled) {
+        preReadyLocalRef.current = next;
+        setSaveState("local");
+        return;
+      }
       // userEditOrigin, not localOrigin: everything that reaches here is a
       // person changing the document - a field, the look it is rendered
       // with - so it belongs in undo alongside typing. Seeding and the
@@ -800,18 +831,17 @@ export function UnifiedDocumentEditor({
           // A successful but superseded save has no persisted snapshot to
           // acknowledge. Keep the draft dirty, just as for a failed request.
           if (!result.document) throw new Error("Document could not be saved");
-          // The response describes the Y.Doc state this request materialized.
-          // A person can keep editing while the request is in flight, and
-          // remote updates can land too. Applying an older response after that
-          // point replaces the live Y.Text with the old snapshot and visibly
-          // resurrects deleted text, so each request keeps its own fence.
+          // Only acknowledge the draft/cache if no local or remote mutation
+          // has landed since encoding this request. The snapshot is proof of
+          // persistence, never a source of operations for the live Y.Doc.
           const responseIsCurrent =
             documentMutationVersionRef.current === documentVersion &&
             localMaterializationVersionRef.current === localVersion;
           if (result.document && responseIsCurrent) {
-            applyDocumentSnapshot(doc, result.document, "materialized");
-            publishDocument(result.document);
-            onMaterialized?.(result.document, result.revision);
+            // The response may include unseen peer operations. Its plain text
+            // cannot be inserted with new identities: only the relay applies
+            // peer CRDT state. Acknowledge the visible, fenced local projection.
+            onMaterialized?.(documentSnapshotFromYDoc(doc), result.revision);
           }
           savedMaterializationVersionRef.current = Math.max(
             savedMaterializationVersionRef.current,
@@ -836,7 +866,6 @@ export function UnifiedDocumentEditor({
       doc,
       networkEnabled,
       onMaterialized,
-      publishDocument,
     ],
   );
 
@@ -849,16 +878,21 @@ export function UnifiedDocumentEditor({
       materializeTimerRef.current = null;
       void flushMaterialization();
     }, 500);
-  }, [collab.canEdit, doc, flushMaterialization, networkEnabled]);
+  }, [collab.canEdit, flushMaterialization, networkEnabled]);
 
   useEffect(() => {
     if (!networkEnabled || recoveryBlockedRef.current) return;
 
     let cancelled = false;
     const provider = new CollabProvider(doc, {
-      ...collab,
+      postId: collab.postId,
+      userName: collab.userName,
+      color: collab.color,
       awareness,
       canPush: collab.canEdit,
+      // A warm editor behind the reader keeps the document live but must not
+      // announce an editing session nobody is in.
+      presence: activeRef.current,
       onPresence: setPeers,
       onError: (message) => {
         if (!cancelled) {
@@ -877,15 +911,20 @@ export function UnifiedDocumentEditor({
         }
       },
       onRetired: preserveRecovery,
+      onRecovery: (copies, durable) => {
+        recoveryBlockedRef.current = true;
+        if (!cancelled) {
+          setRecoveryCopies(copies);
+          setRecoveryDurable(durable);
+          setSaveState("error");
+        }
+      },
     });
     providerRef.current = provider;
 
     const handleDocumentUpdate = (_update: Uint8Array, origin: unknown) => {
       documentMutationVersionRef.current += 1;
       if (!hasDocumentSnapshot(doc)) return;
-      // The accepted response is published and acknowledged by its caller.
-      // It must not schedule another save of itself.
-      if (origin === "materialized") return;
       if (origin === undoManagerRef.current) {
         // Undo/redo rewrote the CRDT under React. Publish the result and save it.
         try {
@@ -921,7 +960,7 @@ export function UnifiedDocumentEditor({
         // merge. Publishing here first showed the server text for a beat and,
         // with a fast keystroke, for good (owner, 2026-09-05: a deletion came
         // back).
-        if (!readyRef.current && preReadyLocalRef.current) return;
+        if (!readyRef.current) return;
         const next = documentSnapshotFromYDoc(doc);
         // Visibility follows the merged CRDT even while persistence is dirty.
         publishDocument(next);
@@ -943,8 +982,7 @@ export function UnifiedDocumentEditor({
       if (cancelled || recoveryBlockedRef.current) return;
       // The ledger, never documentRef: a remote update that arrived while the
       // provider was starting has already overwritten documentRef.
-      const localBeforeReady = preReadyLocalRef.current ?? documentRef.current;
-      preReadyLocalRef.current = null;
+      const localBeforeReady = preReadyLocalRef.current ?? initialDocumentRef.current;
       if (!hasDocumentSnapshot(doc)) {
         applyDocumentBaseline(
           doc,
@@ -955,25 +993,41 @@ export function UnifiedDocumentEditor({
       }
       const initial = initialDocumentRef.current;
       const textChanges: EditableField[] = ["title", "subtitle", "body"];
-      for (const field of textChanges) {
-        const initialValue = initial.content[field] ?? "";
-        const localValue = localBeforeReady.content[field] ?? "";
-        if (localValue !== initialValue) {
-          replaceYText(documentText(doc, field), localValue, localOrigin.current);
-        }
-      }
-      // The text reconciliation above has already applied the local ledger.
-      // Build the metadata overlay from that result so it cannot undo the text.
-      let remote = documentSnapshotFromYDoc(doc);
+      // Plan every field before mutating any of them. If a highly divergent
+      // diff exceeds the work bound, keep the entire ledger for recovery.
+      let plans;
+      const remote = documentSnapshotFromYDoc(doc);
       const overlaid = overlayPreReadyEdits(localBeforeReady, initial, remote);
-      if (overlaid) {
-        remote = overlaid;
-        applyDocumentSnapshot(doc, remote, localOrigin.current);
+      try {
+        plans = textChanges.map((field) => ({
+          field,
+          operations: preReadyTextOperations(initial.content[field] ?? "",
+            localBeforeReady.content[field] ?? "", documentText(doc, field).toString()),
+        }));
+        const content = { ...(overlaid ?? remote).content };
+        for (const { field, operations } of plans) {
+          content[field] = operations.reduce((value, operation) =>
+            value.slice(0, operation.start) + operation.insert + value.slice(operation.end),
+          content[field] ?? "");
+        }
+        // Keeping both sides can exceed a schema limit. Preserve both the
+        // ledger and caught-up CRDT for recovery before making any mutation.
+        requireDocumentSnapshot({ ...(overlaid ?? remote), content });
+      } catch {
+        preserveRecovery(provider.learnedEpoch ?? 0);
+        return;
       }
+      for (const { field, operations } of plans) {
+        applyPreReadyTextOperations(documentText(doc, field), operations, localOrigin.current);
+      }
+      // This writes metadata entries only and cannot undo text reconciliation.
+      if (overlaid) applyPreReadyMetadata(doc, overlaid, localOrigin.current);
+      preReadyLocalRef.current = null;
       publishDocument(documentSnapshotFromYDoc(doc));
       readyRef.current = true;
       setReady(true);
-      setSaveState(result.authoritative ? "saved" : "offline");
+      setSaveState(!result.authoritative ? "offline" :
+        localMaterializationVersionRef.current > savedMaterializationVersionRef.current ? "local" : "saved");
     });
 
     const handleAwareness = () => setRemoteRevision((value) => value + 1);
@@ -990,6 +1044,9 @@ export function UnifiedDocumentEditor({
       awareness.off("change", handleAwareness);
       doc.off("update", handleDocumentUpdate);
       if (materializeTimerRef.current) clearTimeout(materializeTimerRef.current);
+      // Catch-up may still be pending. The ledger has not entered the outbox
+      // yet, so unmount must preserve it explicitly instead of abandoning it.
+      if (!readyRef.current && preReadyLocalRef.current) preserveRecovery(provider.learnedEpoch ?? 0);
       void flushMaterialization(true);
       provider.destroy();
       providerRef.current = null;
@@ -1030,6 +1087,11 @@ export function UnifiedDocumentEditor({
         },
       };
       publishDocument(next);
+      if (!ready && networkEnabled) {
+        preReadyLocalRef.current = next;
+        setSaveState("local");
+        return;
+      }
       if (!hasDocumentSnapshot(doc) && (!networkEnabled || ready)) {
         applyDocumentSnapshot(doc, next, localOrigin.current);
       }
@@ -1055,7 +1117,9 @@ export function UnifiedDocumentEditor({
       ready,
     ],
   );
-  updateTextRef.current = updateText;
+  useLayoutEffect(() => {
+    updateTextRef.current = updateText;
+  }, [updateText]);
 
   // The bridge the assistant reads through. Selections used to flow only
   // into Yjs awareness, which paints collaborative cursors and nothing else;
@@ -1137,11 +1201,15 @@ export function UnifiedDocumentEditor({
   );
 
   const remoteSelections = useMemo(
-    () => ({
+    () => {
+      // Awareness mutates in place. Its event revision invalidates this cache.
+      void remoteRevision;
+      return {
       title: selectionForField(awareness, doc, "title", peers),
       subtitle: selectionForField(awareness, doc, "subtitle", peers),
       body: selectionForField(awareness, doc, "body", peers),
-    }),
+      };
+    },
     [awareness, doc, peers, remoteRevision],
   );
 
@@ -1296,7 +1364,11 @@ export function UnifiedDocumentEditor({
             setTimeout(() => URL.revokeObjectURL(url), 1000);
             setRecoveryDownloaded(true);
           }}>Download local copy</button>
-          <button type="button" className="ac-btn ac-btn-gray" disabled={!recoveryDownloaded} onClick={() => {
+          <button type="button" className="ac-btn ac-btn-gray" disabled={!recoveryDownloaded} onClick={async () => {
+            if (!await acknowledgeRetiredOutboxes(recoveryCopies)) {
+              setError("Your local recovery copy could not be acknowledged. Please try again.");
+              return;
+            }
             acknowledgeMaterializationRecoveries(recoveryCopies);
             window.location.reload();
           }}>Open current version</button>
@@ -1317,7 +1389,7 @@ export function UnifiedDocumentEditor({
     );
   }
   return (
-    <section className="tt-unified-editor" onKeyDown={handleKeyboard}>
+    <section className="tt-unified-editor" data-ai-item-id={collab.postId} onKeyDown={handleKeyboard}>
       {choosingTemplate && availableTemplates && availableTemplates.length > 0 && (
         <TemplateGallery
           document={document}

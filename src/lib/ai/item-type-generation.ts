@@ -76,6 +76,7 @@ export const ITEM_TYPE_BLUEPRINT_FORMAT = `Return JSON only, with this shape:
   },
   "theme": {}
 }
+Rows store one scalar value per cell. Row subfields, including enum and reference, must omit multiple or set it to false. For multiple values, use a top-level enum or reference field, or one row per value.
 Omit properties that do not apply. Enum fields must include options. Reference fields create relations to other documents or folders. People fields link ordinary TextText people records without introducing a separate account model. Recurrence fields use safe preset enum values. Computed fields are read-only display values and never create stored document fields.`;
 
 export function parseItemTypeBlueprintText(text: string): ItemTypeBlueprint {

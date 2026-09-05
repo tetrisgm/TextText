@@ -290,3 +290,45 @@ loopback MCP configuration, signed-in CLI routing, command allowlists,
 idempotent create and append behavior, conflict handling, self-declared agent
 metadata, and hosted MCP authentication. The live MCP loop runs only against an
 isolated local workspace and refuses a non-local database.
+
+## Connect an agent from an item
+
+The owner can choose Add agent at the end of an item's participant row, or
+search for Add agent in the command palette while the item is open. Settings
+links back to items and retains the workspace-token management flow.
+
+For Claude Code, Codex, or Cursor on this Mac, Prepare instruction produces
+an exact-id `texttext do read_item` request with a unique self-declared `--as`
+label. It uses the standalone app's existing signed-in credential. No new
+credential, bridge, plugin installation, or disposable proof item is needed.
+An authenticated read publishes presence. Keep the sheet open to see inline
+verification, then give the agent editing instructions in its own client.
+Local labels share the device credential: stop the session in its client;
+revoking only one label is not a supported security operation.
+
+Hosted MCP setup asks the owner to approve read-only or read and edit access
+to this item. The existing token table stores a SHA-256 hash, an expiry seven
+days away, and one `item:<uuid>:read` or `item:<uuid>:edit` scope. No database
+migration is needed. Creation and revocation commit with `action_audit`.
+The raw token is returned once, held only in the open sheet, masked, and
+copied only by the explicit Copy token control. Closing the sheet or choosing
+I saved the token discards it. If setup is interrupted, the connection remains
+listed and revocable; remove it before making a replacement.
+
+Configuration and agent instructions never contain the token. Codex, Claude
+Code, and Cursor reuse their existing environment-variable configurations with
+a unique variable and server name per grant. A protected environment manager
+supplies the credential. Other clients must provide a protected bearer field.
+Claude Desktop's remote OAuth connector cannot consume these bearer tokens;
+the sheet explains the limitation and does not mint an unusable token.
+
+Item grants can call `read_item`, plus `append_to_item` and content-only
+`update_item` with edit access. They cannot browse other items, read backlinks
+or resolve other item titles, manage metadata or access, publish, delete, stage
+proposals, read MCP resources, or exchange the token for a browser app session.
+All allowed content commands still execute through the shared workspace
+command surface and retain their existing revision and live-content guards.
+Reads and changes publish presence keyed to the verified token row id, so two
+same-name grants cannot verify or revoke each other. The item popover and the
+sheet's Item connections list revoke a grant after confirmation. Revocation
+blocks subsequent authenticated requests; already admitted work may finish.

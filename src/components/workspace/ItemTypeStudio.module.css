@@ -791,6 +791,8 @@
 .collectionPreview[data-layout="list"],
 .collectionPreview[data-layout="index"],
 .collectionPreview[data-layout="timeline"],
+.collectionPreview[data-layout="single"],
+.collectionPreview[data-layout="heatmap"],
 .collectionPreview[data-layout="calendar"] {
   grid-template-columns: 1fr;
 }
@@ -871,6 +873,9 @@
 }
 
 .calendarPreview > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 16px;
   border-bottom: 1px solid var(--ac-hairline);
   font-size: 15px;
@@ -1053,3 +1058,31 @@
 @media (prefers-reduced-motion: reduce) {
   .spinner { animation: none; }
 }
+
+.collectionPreviewNote,
+.collectionViewPicker {
+  width: min(920px, 100%);
+  margin: 0 auto 12px;
+  color: var(--ac-label-2);
+  font-size: 12px;
+}
+
+.collectionViewPicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.collectionViewPicker select {
+  font: inherit;
+  color: var(--ac-label);
+  background: var(--ac-bg);
+  border: 1px solid var(--ac-hairline);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+.calendarGrid strong { overflow-wrap: anywhere; }
+.calendarUndated { padding: 16px; border-top: 1px solid var(--ac-hairline); }
+.calendarUndated h3 { font-size: 12px; }
+.calendarUndated p { font-size: 12px; }

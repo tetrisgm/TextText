@@ -321,9 +321,14 @@ export function AssistantRailShell({
             <span className={styles.agentAvatar} style={{ backgroundColor: agent.color }}>
               <CollaboratorMark provider={agent.provider} name={agent.name} />
             </span>
-            <h2 id={titleId} className={styles.title}>
-              {`Chat with ${agent.name}`}
-            </h2>
+            <div className={styles.titleAndSync}>
+              <h2 id={titleId} className={styles.title}>
+                {`Chat with ${agent.name}`}
+              </h2>
+              {/* Same structure as the loaded rail, including the reserved
+                  status line, so the two paint identically. */}
+              <div className={styles.historySync} />
+            </div>
             <div className={styles.headerActions}>
               <select
                 className={styles.modelSelect}

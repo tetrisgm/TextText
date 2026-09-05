@@ -31,14 +31,24 @@ describe("reader presence polling", () => {
   it("stops the interval while hidden and reads immediately when visible", () => {
     expect(source).toContain('document.visibilityState === "hidden"');
     expect(source).toContain('document.addEventListener("visibilitychange"');
-    expect(source).toContain("stopTimer();\n        setState({ postId, peers: [] })");
-    expect(source).toContain("else start()");
-    expect(source).toContain("void read();\n      timer = setInterval");
+    expect(source).toContain("stopTimer(entry);\n      publish(entry, []);");
+    expect(source).toContain("start(postId, entry);");
+    expect(source).toContain("void read(postId, entry);\n  entry.timer = setInterval");
     expect(source).toContain('document.removeEventListener("visibilitychange"');
   });
   it("clears the reader's peers when authorization is lost", () => {
-    expect(source).toContain("res.status === 401 || res.status === 403 || res.status === 410");
-    expect(source).toContain("if (!cancelled) setState({ postId, peers: [] })");
+    // 401, 403 and 410 all fail res.ok; none may keep advertising activity.
+    expect(source).toContain("if (!res.ok) {");
+    expect(source).toContain("401, 403 and 410 included");
+    expect(source).toContain("publish(entry, []);");
+  });
+  it("shares one poller per item across every mounted surface", () => {
+    // The reader bar, the editor bar and a hidden bar kept for a fast switch
+    // back must not each run their own interval against the same endpoint.
+    expect(source).toContain("const entries = new Map<string, PresenceEntry>()");
+    expect(source).toContain("entry.listeners.add(listener);");
+    expect(source).toContain("if (current.listeners.size > 0 || entries.get(postId) !== current) return;");
+    expect(source).toContain("current.abort.abort();\n    entries.delete(postId);");
   });
 
 });

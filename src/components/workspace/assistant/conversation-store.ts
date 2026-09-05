@@ -770,11 +770,29 @@ export function updateAssistantConversationMessage(
 }
 
 /** Bounded, credential-scrubbed snapshot suitable for owner-only sync. */
+/**
+ * An empty, unpinned chat is this context's placeholder, not history. Every
+ * new browser profile mints one per item, and the server merge is a union, so
+ * uploading them would fill the stored limit and stop every later sync. The
+ * same subset is what an acknowledgement is measured against, so a placeholder
+ * never keeps a workspace "Saved on this device" after everything real synced.
+ */
+function syncableAssistantConversations(
+  conversations: readonly AssistantConversation[],
+): AssistantConversation[] {
+  return conversations.filter(
+    (conversation) =>
+      Boolean(conversation.deletedAt) ||
+      conversation.pinned ||
+      conversation.messages.length > 0,
+  );
+}
+
 export function assistantConversationSyncPayload(
   handle: string,
 ): SyncedAssistantConversation[] {
   return cleanAssistantConversationSyncPayload(
-    loadWorkspace(handle).conversations,
+    syncableAssistantConversations(loadWorkspace(handle).conversations),
   );
 }
 
@@ -795,8 +813,9 @@ export function acknowledgeAssistantConversationSync(handle: string, remote: unk
   // Compare the bounded copy: live proposals omitted by sync must remain local.
   // A newer local revision is only clean if the server actually has its content.
   state.syncedLocalRevision =
-    assistantConversationSyncFingerprint(state.conversations) ===
-    assistantConversationSyncFingerprint(remote)
+    assistantConversationSyncFingerprint(
+      syncableAssistantConversations(state.conversations),
+    ) === assistantConversationSyncFingerprint(remote)
       ? state.localRevision
       : -1;
 }

@@ -295,6 +295,16 @@ export function assistantConversationSyncFingerprint(value: unknown): string {
   return canonical(cleanAssistantConversationSyncPayload(value));
 }
 
+// Inline previews have one irreversible decision per message. A delayed
+// generating/ready replica must not resurrect a discarded suggestion. An
+// acknowledged write takes precedence if a conflicting decision arrives.
+function inlineDecisionRank(message: SyncedAssistantMessage): number {
+  const preview = message.inlinePreview;
+  if (!preview || typeof preview !== "object") return 0;
+  const status = (preview as Record<string, unknown>).status;
+  return status === "undone" ? 4 : status === "applied" ? 3 : status === "discarded" ? 2 : 0;
+}
+
 function mergeMessages(
   left: readonly SyncedAssistantMessage[],
   right: readonly SyncedAssistantMessage[],
@@ -304,9 +314,10 @@ function mergeMessages(
     const existing = messages.get(message.id);
     if (
       !existing ||
-      message.updatedAt > existing.updatedAt ||
-      (message.updatedAt === existing.updatedAt &&
-        canonical(message) > canonical(existing))
+      (inlineDecisionRank(message) !== inlineDecisionRank(existing)
+        ? inlineDecisionRank(message) > inlineDecisionRank(existing)
+        : message.updatedAt > existing.updatedAt ||
+          (message.updatedAt === existing.updatedAt && canonical(message) > canonical(existing)))
     ) {
       messages.set(message.id, message);
     }
@@ -390,4 +401,43 @@ export function mergeAssistantConversationSyncPayloads(
     );
   }
   return boundWorkspace([...merged.values()]);
+}
+
+/** The database keeps at most this many conversations per workspace. */
+export const ASSISTANT_HISTORY_MAX_CONVERSATIONS = 500;
+
+/**
+ * Keep a merged history under the stored limit instead of failing the write.
+ * Every fresh browser profile mints an empty chat per context, and a merge is
+ * a union by id, so a workspace opened on enough devices would otherwise hit
+ * the limit and never sync again. Empty chats go first, then old deletion
+ * tombstones (they have propagated by then), then the oldest unpinned chats.
+ */
+export function capAssistantConversationSyncPayload(
+  conversations: SyncedAssistantConversation[],
+  limit = ASSISTANT_HISTORY_MAX_CONVERSATIONS,
+): SyncedAssistantConversation[] {
+  if (conversations.length <= limit) return conversations;
+  const stamp = (c: SyncedAssistantConversation) =>
+    Date.parse(c.updatedAt || c.metadataUpdatedAt || c.createdAt || "") || 0;
+  const oldestFirst = (a: SyncedAssistantConversation, b: SyncedAssistantConversation) =>
+    stamp(a) - stamp(b);
+  const tombstone = (c: SyncedAssistantConversation) => Boolean(c.deletedAt);
+  const empty = (c: SyncedAssistantConversation) =>
+    !tombstone(c) && !c.pinned && c.messages.length === 0;
+  const pools = [
+    conversations.filter(empty).sort(oldestFirst),
+    conversations.filter(tombstone).sort(oldestFirst),
+    conversations.filter((c) => !empty(c) && !tombstone(c) && !c.pinned).sort(oldestFirst),
+  ];
+  const dropped = new Set<string>();
+  let excess = conversations.length - limit;
+  for (const pool of pools) {
+    for (const conversation of pool) {
+      if (excess <= 0) break;
+      dropped.add(conversation.id);
+      excess -= 1;
+    }
+  }
+  return conversations.filter((c) => !dropped.has(c.id));
 }

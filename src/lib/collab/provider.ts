@@ -6,6 +6,8 @@
 
 import { decodePresenceAwareness, encodePresenceAwareness } from "@/lib/collab/presence-awareness";
 import * as Y from "yjs";
+import { documentSnapshotFromYDoc, hasDocumentSnapshot } from "@/lib/collab/document";
+import type { MaterializationRecovery } from "@/lib/collab/materialization-recovery";
 import {
   applyAwarenessUpdate,
   encodeAwarenessUpdate,
@@ -92,6 +94,8 @@ type CollabProviderOptions = {
   userName: string;
   color: string;
   canPush: boolean;
+  /** Start joined to presence (default). The editor passes false while it is only warm. */
+  presence?: boolean;
   awareness?: Awareness;
   onPresence?: (peers: PresencePeer[]) => void;
   onError?: (message: string) => void;
@@ -101,6 +105,7 @@ type CollabProviderOptions = {
    * sessions log was reset from posts.body). The local Y.Doc is now stale and
    * must be preserved for explicit recovery before opening a fresh document. */
   onRetired?: (epoch: number) => void;
+  onRecovery?: (copies: MaterializationRecovery[], durable: boolean) => void;
 };
 
 /** Transport boundary for the editor. The HTTP relay is the baseline, while a
@@ -139,6 +144,11 @@ type Outbox = {
   baselineRevision: number | null;
   /** Restores edits that survived a tab or app process restart. */
   hydrated: Promise<void>;
+  /** Full baseline plus dependencies received while operations are pending. */
+  recoveryUpdates: Uint8Array[];
+  persistence: Promise<void>;
+  retirement: RetiredOutbox | null;
+  retirementWrite: Promise<void> | null;
 };
 
 // A provider is tied to a mounted editor, but unsent edits are tied to the
@@ -155,7 +165,16 @@ type StoredOutbox = {
   epoch: number;
   epochKnown: boolean;
   baselineRevision: number | null;
+  baseline?: string;
 };
+
+type RetiredOutbox = {
+  // Separate key in the same IDB store, never returned by a live-outbox get.
+  postId: string;
+  documentPostId: string;
+  copy: MaterializationRecovery;
+};
+const retiredOutboxes = new Map<string, { record: RetiredOutbox; durable: boolean }>();
 
 function openOutboxDatabase(): Promise<IDBDatabase | null> {
   if (typeof indexedDB === "undefined") return Promise.resolve(null);
@@ -183,32 +202,86 @@ async function readStoredOutbox(postId: string): Promise<StoredOutbox | null> {
   });
 }
 
-async function persistOutbox(postId: string, outbox: Outbox): Promise<void> {
-  const database = await openOutboxDatabase();
-  if (!database) return;
-  await new Promise<void>((resolve) => {
-    const transaction = database.transaction(OUTBOX_STORE, "readwrite");
-    const store = transaction.objectStore(OUTBOX_STORE);
-    if (outbox.pending.length === 0) {
-      store.delete(postId);
-    } else {
-      store.put({
+function persistOutbox(postId: string, outbox: Outbox): Promise<void> {
+  // Serialize writes with quarantine. An older pending write must never
+  // recreate the deliverable queue after the retirement transaction commits.
+  outbox.persistence = outbox.persistence.then(async () => {
+    if (outbox.retirement) return;
+    const database = await openOutboxDatabase();
+    if (!database) return;
+    await new Promise<void>((resolve) => {
+      const transaction = database.transaction(OUTBOX_STORE, "readwrite");
+      const store = transaction.objectStore(OUTBOX_STORE);
+      if (outbox.pending.length === 0) store.delete(postId);
+      else store.put({
         postId,
         updates: outbox.pending.map(u8ToBase64),
         epoch: outbox.epoch,
         epochKnown: outbox.epochKnown,
         baselineRevision: outbox.baselineRevision,
+        baseline: outbox.recoveryUpdates.length
+          ? u8ToBase64(Y.mergeUpdates(outbox.recoveryUpdates)) : undefined,
       } satisfies StoredOutbox);
+      transaction.oncomplete = transaction.onerror = transaction.onabort = () => {
+        database.close(); resolve();
+      };
+    });
+  }).catch(() => undefined);
+  return outbox.persistence;
+}
+
+/** Raw updates remain exportable even if an old/corrupt row lacks a baseline. */
+export async function readRetiredOutboxes(postId: string): Promise<{
+  copies: MaterializationRecovery[]; durable: boolean;
+}> {
+  const database = await openOutboxDatabase();
+  if (database) {
+    const records = await new Promise<RetiredOutbox[]>((resolve, reject) => {
+      const transaction = database.transaction(OUTBOX_STORE, "readonly");
+      const request = transaction.objectStore(OUTBOX_STORE).getAll();
+      transaction.oncomplete = () => { database.close(); resolve(request.result as RetiredOutbox[]); };
+      transaction.onerror = transaction.onabort = () => { database.close(); reject(new Error("Local recovery could not be read")); };
+    });
+    for (const record of records) {
+      if (record.documentPostId === postId && record.copy) {
+        retiredOutboxes.set(record.postId, { record, durable: true });
+      }
     }
-    transaction.oncomplete = () => {
-      database.close();
-      resolve();
-    };
-    transaction.onerror = () => {
-      database.close();
-      resolve();
-    };
+  }
+  const entries = [...retiredOutboxes.values()].filter(({ record }) => record.documentPostId === postId);
+  return { copies: entries.map(({ record }) => record.copy), durable: entries.every((entry) => entry.durable) };
+}
+
+/** Only the explicit download/open-current-version UI acknowledges quarantine. */
+export async function acknowledgeRetiredOutboxes(copies: MaterializationRecovery[]): Promise<boolean> {
+  const selected = copies.filter((copy) => copy.outboxKey);
+  if (!selected.length) return true;
+  const database = await openOutboxDatabase();
+  if (!database) return false;
+  const saved = await new Promise<boolean>((resolve) => {
+    const transaction = database.transaction(OUTBOX_STORE, "readwrite");
+    const store = transaction.objectStore(OUTBOX_STORE);
+    for (const copy of selected) {
+      store.delete(copy.outboxKey!);
+      // If quarantine failed, its original queue is still durable. Acknowledge
+      // only rows covered by the downloaded copy, never newer work from a tab.
+      const request = store.get(copy.postId);
+      request.onsuccess = () => {
+        const live = request.result as StoredOutbox | undefined;
+        if (live && live.epoch === copy.epoch && live.updates.every((update) => copy.updates?.includes(update))) {
+          store.delete(copy.postId);
+        }
+      };
+    }
+    transaction.oncomplete = () => { database.close(); resolve(true); };
+    transaction.onerror = transaction.onabort = () => { database.close(); resolve(false); };
   });
+  if (saved) for (const copy of selected) {
+    retiredOutboxes.delete(copy.outboxKey!);
+    const outbox = outboxes.get(copy.postId);
+    if (outbox?.retirement?.postId === copy.outboxKey) outboxes.delete(copy.postId);
+  }
+  return saved;
 }
 
 async function hydrateOutbox(postId: string, outbox: Outbox): Promise<void> {
@@ -223,6 +296,9 @@ async function hydrateOutbox(postId: string, outbox: Outbox): Promise<void> {
     }
   }
   outbox.pending.unshift(...restored);
+  if (stored.baseline) {
+    try { outbox.recoveryUpdates.unshift(base64ToU8(stored.baseline)); } catch { /* Raw operations remain recoverable. */ }
+  }
   if (!outbox.epochKnown && stored.epochKnown) {
     outbox.epoch = stored.epoch;
     outbox.epochKnown = true;
@@ -246,6 +322,10 @@ function outboxFor(postId: string, base: string): Outbox {
     epochKnown: false,
     baselineRevision: null,
     hydrated: Promise.resolve(),
+    recoveryUpdates: [],
+    persistence: Promise.resolve(),
+    retirement: null,
+    retirementWrite: null,
   };
   outboxes.set(postId, created);
   created.hydrated = hydrateOutbox(postId, created);
@@ -255,6 +335,7 @@ function outboxFor(postId: string, base: string): Outbox {
 function releaseOutbox(postId: string, outbox: Outbox) {
   if (
     outbox.pending.length === 0 &&
+    !outbox.retirement &&
     !outbox.flushing &&
     !outbox.timer &&
     outbox.subscribers.size === 0 &&
@@ -271,29 +352,77 @@ function removePendingBatch(outbox: Outbox, batch: Uint8Array[]) {
   }
 }
 
-function retireOutbox(outbox: Outbox, epoch: number) {
+async function retireOutbox(outbox: Outbox, epoch: number): Promise<void> {
+  if (outbox.retirementWrite) return outbox.retirementWrite;
   const previousEpoch = outbox.epoch;
-  outbox.pending.length = 0;
-  outbox.retries = 0;
-  outbox.epoch = epoch;
-  outbox.epochKnown = true;
   const postId = Array.from(outboxes.entries()).find(([, value]) => value === outbox)?.[0];
-  if (postId) void persistOutbox(postId, outbox);
-  if (outbox.timer) {
-    clearTimeout(outbox.timer);
-    outbox.timer = null;
-  }
-  for (const sub of outbox.subscribers.values()) {
+  if (!postId) return;
+  if (outbox.timer) { clearTimeout(outbox.timer); outbox.timer = null; }
+  // Freeze transport synchronously. Subscribers may be absent; they are not
+  // responsible for retaining the outbox or its reconstruction dependencies.
+  const key = `retired:${postId}:${previousEpoch}:${crypto.randomUUID()}`;
+  const copy: MaterializationRecovery = {
+    id: key, outboxKey: key, postId, epoch: previousEpoch,
+    baselineRevision: outbox.baselineRevision,
+    state: "", updates: outbox.pending.map(u8ToBase64),
+  };
+  const state = [...outbox.recoveryUpdates, ...outbox.pending];
+  if (state.length) {
     try {
-      sub.onRetired?.(previousEpoch);
-    } catch {
-      // teardown of one subscriber must not block the others
-    }
+      copy.state = u8ToBase64(Y.mergeUpdates(state));
+      const doc = new Y.Doc();
+      try {
+        Y.applyUpdate(doc, base64ToU8(copy.state));
+        if (hasDocumentSnapshot(doc)) copy.document = documentSnapshotFromYDoc(doc);
+      } finally { doc.destroy(); }
+    } catch { /* Preserve the raw updates even if reconstruction fails. */ }
   }
+  const record: RetiredOutbox = { postId: key, documentPostId: postId, copy };
+  outbox.retirement = record;
+  if (outbox.pending.length) retiredOutboxes.set(key, { record, durable: false });
+  for (const sub of outbox.subscribers.values()) {
+    try { sub.onRetired?.(previousEpoch); } catch { /* One teardown cannot block recovery. */ }
+  }
+  outbox.retirementWrite = (async () => {
+    await outbox.persistence;
+    // Empty queues have nothing to quarantine. Nonempty queues are removed
+    // ONLY by the same transaction that commits the complete recovery record.
+    if (outbox.pending.length) {
+      const database = await openOutboxDatabase();
+      if (!database) return;
+      const saved = await new Promise<boolean>((resolve) => {
+        const transaction = database.transaction(OUTBOX_STORE, "readwrite");
+        const store = transaction.objectStore(OUTBOX_STORE);
+        store.put(record);
+        const request = store.get(postId);
+        request.onsuccess = () => {
+          const live = request.result as StoredOutbox | undefined;
+          // Another tab may have persisted newer work at this post key. Only
+          // delete operations explicitly covered by this quarantine record.
+          if (live && live.epoch === previousEpoch && live.updates.every((update) => copy.updates?.includes(update))) {
+            store.delete(postId);
+          }
+        };
+        transaction.oncomplete = () => { database.close(); resolve(true); };
+        transaction.onerror = transaction.onabort = () => { database.close(); resolve(false); };
+      });
+      if (!saved) return;
+      retiredOutboxes.set(key, { record, durable: true });
+    }
+    outbox.pending.length = 0;
+    outbox.recoveryUpdates.length = 0;
+    outbox.retries = 0;
+    outbox.epoch = epoch;
+    outbox.epochKnown = true;
+    // The quarantine is independently addressable. Do not retain an empty,
+    // frozen transport that would prevent a later fresh document from syncing.
+    if (!outbox.subscribers.size && outboxes.get(postId) === outbox) outboxes.delete(postId);
+  })();
+  await outbox.retirementWrite;
 }
 
 function scheduleOutbox(postId: string, outbox: Outbox, delay: number) {
-  if (outbox.timer || outbox.flushing || outbox.pending.length === 0) return;
+  if (outbox.retirement || outbox.timer || outbox.flushing || outbox.pending.length === 0) return;
   outbox.timer = setTimeout(() => {
     outbox.timer = null;
     void flushOutbox(postId, outbox);
@@ -301,7 +430,7 @@ function scheduleOutbox(postId: string, outbox: Outbox, delay: number) {
 }
 
 async function flushOutbox(postId: string, outbox: Outbox) {
-  if (outbox.flushing || outbox.pending.length === 0) {
+  if (outbox.retirement || outbox.flushing || outbox.pending.length === 0) {
     releaseOutbox(postId, outbox);
     return;
   }
@@ -338,14 +467,14 @@ async function flushOutbox(postId: string, outbox: Outbox) {
       // A poll or catch-up may have observed a retirement while this request was
       // in flight. Its response belongs to the old generation and must not
       // restore that epoch or remove newer queued edits.
-      if (outbox.epoch !== batchEpoch) {
+      if (outbox.retirement || outbox.epoch !== batchEpoch) {
         // retirement already handled by the response that advanced the epoch
       } else if (data.retired) {
         // The log generation was retired (a stale between-sessions log reset from
-        // posts.body). This client's queued edits are now stale: drop them so
-        // they can never merge over the reseeded body, and tell every provider on
-        // this post to remount onto a fresh doc.
-        retireOutbox(outbox, typeof data.epoch === "number" ? data.epoch : batchEpoch);
+        // posts.body). Quarantine stale edits so they cannot merge over the
+        // reseeded body, and tell every provider on
+        // this post to offer recovery before opening a fresh doc.
+        await retireOutbox(outbox, typeof data.epoch === "number" ? data.epoch : batchEpoch);
       } else {
         // Only an acknowledged push removes edits. Remove the exact update
         // objects in this request, preserving newer edits queued in flight.
@@ -438,6 +567,9 @@ export class CollabProvider implements CollaborationTransport {
   // provider does not hold a connection open for up to the full wait window.
   private abort = new AbortController();
   private networkActive = false;
+  /** False while the owning editor is mounted but not shown (a warm editor
+   * behind the reader): the document stays live, but nobody is "editing". */
+  private presenceEnabled: boolean;
   private networkGeneration = 0;
   private pollRetries = 0;
   private baselineApplied = false;
@@ -467,7 +599,7 @@ export class CollabProvider implements CollaborationTransport {
     if (response.status === 409 && !this.materializationBlocked && this.outbox) {
       // Stop relay pushes as well. The subscriber preserves the live Y.Doc,
       // including edits made after this request was encoded.
-      if (this.outbox.epoch === epoch) retireOutbox(this.outbox, epoch);
+      if (this.outbox.epoch === epoch) await retireOutbox(this.outbox, epoch);
       // Unmount already removed this subscriber; still preserve its rejected state.
       if (!this.materializationBlocked) this.retireDocument(epoch);
     }
@@ -489,6 +621,7 @@ export class CollabProvider implements CollaborationTransport {
   ) {
     this.clientId = stableSessionClientId(opts.postId);
     this.base = `/api/collab/${encodeURIComponent(opts.postId)}`;
+    this.presenceEnabled = opts.presence ?? true;
     this.onDocUpdate = this.onDocUpdate.bind(this);
     this.onAwarenessUpdate = this.onAwarenessUpdate.bind(this);
     this.onPageHide = this.onPageHide.bind(this);
@@ -549,7 +682,10 @@ export class CollabProvider implements CollaborationTransport {
     if (!this.opts.canPush || this.stopped) return;
     const outbox = this.outbox ?? outboxFor(this.opts.postId, this.base);
     this.outbox = outbox;
-    outbox.pending.push(Y.encodeStateAsUpdate(this.doc));
+    if (outbox.retirement) return;
+    const state = Y.encodeStateAsUpdate(this.doc);
+    outbox.recoveryUpdates.push(state);
+    outbox.pending.push(state);
     void outbox.hydrated.then(() => persistOutbox(this.opts.postId, outbox));
     scheduleOutbox(this.opts.postId, outbox, 0);
   }
@@ -608,6 +744,10 @@ export class CollabProvider implements CollaborationTransport {
     const generation = this.networkGeneration;
     this.abort = new AbortController();
     void this.pollLoop(generation, this.abort.signal);
+    if (this.presenceEnabled) this.startPresenceLoops();
+  }
+  private startPresenceLoops(): void {
+    if (this.presenceTimer || this.presencePollTimer) return;
     void this.heartbeat();
     void this.pollPresence();
     this.presenceTimer = setInterval(() => void this.heartbeat(), 8000);
@@ -615,6 +755,26 @@ export class CollabProvider implements CollaborationTransport {
       () => void this.pollPresence(),
       PRESENCE_POLL_MS,
     );
+  }
+  /** Join or leave presence without touching the document loops. */
+  setPresenceEnabled(enabled: boolean): void {
+    if (this.presenceEnabled === enabled || this.stopped) return;
+    this.presenceEnabled = enabled;
+    if (enabled) {
+      if (this.networkActive) this.startPresenceLoops();
+      return;
+    }
+    this.clearPresenceLoops();
+    if (this.presenceSession) {
+      void fetch(`${this.base}/presence`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...this.presenceSession, leave: true }),
+        keepalive: true,
+      }).catch(() => {});
+      this.presenceSession = null;
+    }
+    this.applyPresence([]);
   }
 
   private onVisibilityChange(): void {
@@ -730,11 +890,20 @@ export class CollabProvider implements CollaborationTransport {
   }
 
   private onDocUpdate(update: Uint8Array, origin: unknown) {
-    if (origin === REMOTE_ORIGIN) return; // do not echo what we just applied
+    if (origin === REMOTE_ORIGIN) {
+      if (this.outbox?.pending.length && !this.outbox.retirement) {
+        this.outbox.recoveryUpdates.push(update.slice());
+        void this.outbox.hydrated.then(() => persistOutbox(this.opts.postId, this.outbox!));
+      }
+      return; // do not echo what we just applied
+    }
     if (!this.opts.canPush) return; // viewers never write
     this.capturedLocalUpdate = true;
     const outbox = this.outbox ?? outboxFor(this.opts.postId, this.base);
     this.outbox = outbox;
+    if (outbox.retirement) return;
+    if (!outbox.pending.length) outbox.recoveryUpdates = [Y.encodeStateAsUpdate(this.doc)];
+    else outbox.recoveryUpdates.push(update.slice());
     outbox.pending.push(update.slice());
     void outbox.hydrated.then(() => persistOutbox(this.opts.postId, outbox));
     scheduleOutbox(this.opts.postId, outbox, PUSH_DEBOUNCE_MS);
@@ -760,8 +929,17 @@ export class CollabProvider implements CollaborationTransport {
 
   private async finishStart(outbox: Outbox): Promise<CollabStartResult> {
     await outbox.hydrated;
+    if (outbox.retirementWrite) await outbox.retirementWrite;
+    const recovery = await readRetiredOutboxes(this.opts.postId);
+    if (recovery.copies.length) {
+      this.retiredEpoch = recovery.copies[0].epoch ?? outbox.epoch;
+      this.opts.onRecovery?.(recovery.copies, recovery.durable);
+      this.stop();
+      return { authoritative: false, remoteEmpty: false };
+    }
     const hadPendingUpdates = outbox.pending.length > 0;
     const caughtUp = await this.catchUp();
+    if (outbox.retirement || this.stopped) return caughtUp;
     // A remounted editor gets every durable local operation after the canonical
     // baseline. This ordering prevents two independent seed histories from
     // duplicating the document when the device reconnects.
@@ -878,16 +1056,10 @@ export class CollabProvider implements CollaborationTransport {
         if (!Array.isArray(data.updates) || !Number.isSafeInteger(data.seq)) {
           return { authoritative: false, remoteEmpty: false };
         }
-        if (!this.baselineApplied) {
-          baselineRevision = this.applyBaseline(data.baseline ?? {});
-          if (baselineRevision == null) {
-            return { authoritative: false, remoteEmpty: false };
-          }
-        }
         // Record the generation we are catching up under; every push is fenced
         // on it so a stale offline flush after a retirement is rejected. A
         // shared outbox that already knows a different epoch contains edits
-        // from the retired document and must be discarded, never relabeled as
+        // from the retired document and must be quarantined, never relabeled as
         // belonging to the new generation.
         if (this.outbox) {
           const responseEpoch =
@@ -897,7 +1069,7 @@ export class CollabProvider implements CollaborationTransport {
               ? data.epoch
               : 0;
           if (this.outbox.epochKnown && responseEpoch !== this.outbox.epoch) {
-            retireOutbox(this.outbox, responseEpoch);
+            await retireOutbox(this.outbox, responseEpoch);
             return { authoritative: false, remoteEmpty: false };
           }
           this.outbox.epoch = responseEpoch;
@@ -906,6 +1078,12 @@ export class CollabProvider implements CollaborationTransport {
             this.documentEpoch ??= data.epoch;
           }
           scheduleOutbox(this.opts.postId, this.outbox, 0);
+        }
+        if (!this.baselineApplied) {
+          baselineRevision = this.applyBaseline(data.baseline ?? {});
+          if (baselineRevision == null) {
+            return { authoritative: false, remoteEmpty: false };
+          }
         }
         if (data.updates.length === 0) {
           return {
@@ -978,17 +1156,6 @@ export class CollabProvider implements CollaborationTransport {
           epoch?: number;
           baseline?: { update?: unknown; revision?: unknown };
         };
-        if (!this.baselineApplied && this.lastSeq === 0) {
-          const revision = this.applyBaseline(data.baseline ?? {});
-          if (revision == null) {
-            if (this.stopped) return;
-            this.pollRetries += 1;
-            await this.sleep(
-              backoff(this.pollRetries, POLL_RETRY_MS, POLL_MAX_RETRY_MS),
-            );
-            continue;
-          }
-        }
         // Epoch handling. If we never recorded an epoch (a transient catch-up
         // failure), LEARN it from the poll rather than mistake it for a change.
         // Once known, a different epoch means the generation was retired under
@@ -1001,10 +1168,21 @@ export class CollabProvider implements CollaborationTransport {
             this.documentEpoch = data.epoch;
             scheduleOutbox(this.opts.postId, this.outbox, 0);
           } else if (data.epoch !== this.outbox.epoch) {
-            retireOutbox(this.outbox, data.epoch);
+            await retireOutbox(this.outbox, data.epoch);
             return;
           }
           this.documentEpoch ??= data.epoch;
+        }
+        if (!this.baselineApplied && this.lastSeq === 0) {
+          const revision = this.applyBaseline(data.baseline ?? {});
+          if (revision == null) {
+            if (this.stopped) return;
+            this.pollRetries += 1;
+            await this.sleep(
+              backoff(this.pollRetries, POLL_RETRY_MS, POLL_MAX_RETRY_MS),
+            );
+            continue;
+          }
         }
         // Same corruption-tolerant path as catchUp: applyRow advances past a
         // row even if applying it throws, so one bad update can never stall
@@ -1026,7 +1204,7 @@ export class CollabProvider implements CollaborationTransport {
   }
 
   private async heartbeat() {
-    if (this.stopped || !this.networkActive || this.pageIsHidden() || this.heartbeatPending) return;
+    if (this.stopped || !this.networkActive || !this.presenceEnabled || this.pageIsHidden() || this.heartbeatPending) return;
     this.heartbeatPending = true;
     const signal = this.abort.signal;
     try {
@@ -1091,7 +1269,7 @@ export class CollabProvider implements CollaborationTransport {
    * writer for the people watching, not just for the people typing.
    */
   private async pollPresence() {
-    if (this.stopped || !this.networkActive || this.pageIsHidden()) return;
+    if (this.stopped || !this.networkActive || !this.presenceEnabled || this.pageIsHidden()) return;
     try {
       const res = await fetch(`${this.base}/presence`, {
         method: "GET",

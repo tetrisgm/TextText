@@ -56,7 +56,7 @@ describe("when it appears at all", () => {
 describe("what it offers", () => {
   it("only offers actions that mean something about a passage", () => {
     const ids = SELECTION_ACTIONS.map((action) => action.id);
-    expect(ids).toEqual(["rewrite", "summarize", "excerpt"]);
+    expect(ids).toEqual(["rewrite", "summarize", "excerpt", "translate", "continue"]);
     // "title" and "tags" are about the whole item, not the selection.
     expect(ids).not.toContain("title");
     expect(ids).not.toContain("tags");

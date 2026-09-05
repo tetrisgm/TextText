@@ -4380,3 +4380,88 @@ unmount discards the outbox without a recovery copy; a pre-ready metadata edit
 overlays unrelated remote groups. A round-four Astra implementation agent is
 running on all four (`astra/briefs/impl4-sync.md`, output `astra/out4/`).
 Still running from round three: inline AI preview and item-type shapes.
+
+Shipped: build 1052 (`7cb2f1ba`), Vercel deployment
+`dpl_GGzkK2g6wNBYFJnrULczaSui5t3Y` aliased to texttext.app (page stamp
+`tt-1052-7cb2f1ba`), Mac app 0.182 build 1052 installed. The live-clients gate
+passed against production after the four-client script fix.
+
+Next in the tree, unshipped: item-type row shapes and the folder preview
+(`astra/out3/item-types-shape.diff`: row subfields with multiplicity fail
+compilation with a repair message, studio preview shares collection querying
+and grouping with the production folder), and the participant row loads its
+zod-backed change parser on demand so zod stays off the reader's cold path
+(`participant-change-summary.ts` holds the formatter).
+
+## 2026-09-05: probes after build 1052, and the fixes they forced
+
+Against a local production build of the landed round: interaction suite 17/17,
+reader keys (ArrowDown x2 352, PageDown 1343, PageUp 352), bar top 36 equals
+content top, tab strip 36 with the active tab at 31, delete-and-hold not
+restored. Two regressions, both fixed in the tree:
+
+- The rail's first paint no longer matched the loaded rail (railsame YMAX 177,
+  rows 38 to 284): the history-sync status line appears under the title only
+  after the controller loads, pushing the whole header down. The static shell
+  (`AssistantRailShell.tsx`) now mirrors the `titleAndSync` wrapper with an
+  empty status line, `.historySync` reserves its height, and the sidebar always
+  renders the line. Expect the only remaining difference to be the status
+  text itself.
+- Presence was polled about three times per interval in edit mode: the
+  reader's action bar stays mounted (display none) beside the editor's bar,
+  each with a participant row and its own poll. `usePresence` now keeps one
+  poller per item shared by every subscriber (module-level entries, visibility
+  pause, abort on last unsubscribe). Participant popovers say "Browser session"
+  or "Browser session 2 of 3" instead of printing the row ID.
+
+Also in the tree: the inline AI selection preview (`astra/out3/ai-inline-preview`,
+Rewrite/Summarize/Excerpt/Translate/Continue previewed in the document column
+with Accept, Discard, Undo, Regenerate; Cmd+Enter accepts, Escape discards),
+the selection actions ref write moved out of render. The `railsame` probe's
+`shell` flag is stale (`data-assistant-shell` no longer exists); its pixel
+comparison is the real check.
+
+## Item-level agent connection patch (2026-09-05, not shipped)
+
+- Private-copy implementation adds owner-only Add agent in the participant row
+  and command palette. Local instructions address the exact item id through
+  the signed-in standalone CLI with a unique self-declared label. Reads now
+  publish audited presence, so no disposable proof note is needed.
+- Remote tokens reuse `api_tokens` with an explicit item scope and seven-day
+  expiry. An allowlist at hosted dispatch and the shared executor limits these
+  tokens to reading and guarded content edits on their item. No broad sync,
+  browser-session exchange, cross-item backlinks, sharing, or publishing.
+- Secrets are one-time values in the open sheet, separate from non-secret
+  configuration and agent instructions. Item grants remain discoverable and
+  revocable after the sheet closes. Token creation and revocation are atomic
+  with their audit, including Settings calls through the existing token module.
+- Remote presence is keyed to the verified token id. Local presence remains a
+  self-declared session label on a shared app credential, so per-label removal
+  cannot revoke access. Claude Desktop's OAuth-only connector is not offered a
+  bearer token. Both limitations are explicit in the sheet.
+- This patch is not applied to the shared checkout or deployed. Verification
+  details and exact test counts accompany the delivered agent-connect.md.
+
+## 2026-09-05: what the local probes forced after the round-three merge
+
+- The warm editor mounted behind the reader (first idle after an open) ran
+  the full collaboration provider, so a person merely reading joined presence
+  as an editor session, heartbeated, and polled presence at 1.2 s. The
+  provider now takes `presence: boolean` and `setPresenceEnabled()`; the
+  editor passes its `active` flag, so presence follows the shown editor while
+  the document stays live underneath. Readers publish nothing, as designed.
+- Assistant history sync showed a permanent "Retry sync" locally. Two causes,
+  both fixed: the action collapsed refusal and failure into one answer, so a
+  collaborator would retry forever (the action now marks server failures
+  `transient`, the loop treats a plain refusal as local-only); and the local
+  history row had hit the table's 500-conversation check constraint with 497
+  empty "New chat" placeholders, one per fresh browser profile per item. The
+  client payload now skips empty unpinned chats, and the server merge caps
+  under the limit (`capAssistantConversationSyncPayload`: empties first, then
+  old tombstones, then the oldest unpinned chats) instead of failing.
+- Round-four Astra outputs landed: the four sync P1 fixes (acknowledgment as
+  persistence evidence only, operation-level pre-ready reconciliation in
+  `src/lib/collab/pre-ready.ts`, outbox quarantine on retirement independent of
+  subscribers, per-entry metadata overlay) and the item-level Add agent flow
+  (`AddAgentPopover.tsx`, `agent-connect-actions.ts`, Cmd+K command, Settings
+  pointing at the item-level path).
