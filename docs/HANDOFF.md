@@ -4127,3 +4127,27 @@ and the write-free conversation sync. Deployment
 `dpl_HLkkTsXoffPDtJ5iC9NPSgLcSJVk` aliased to texttext.app, migrations ran
 (no null word counts), app installed. The assistant rail static shell was
 still being drafted by the agent at this point and is not in this build.
+
+### Assistant rail static shell (2026-09-05, commit e2cd781f)
+
+The rail paints from `AssistantRailShell` until its controller loads. Shell
+and loaded rail are pixel-identical at 1800x1169 (`.texttext/probe/railsame.mts`
+crops the rail right after the list is visible and again seven seconds
+later; ffmpeg difference max 0). The boundary loads after window load plus
+2.5s quiet, on first interaction with the shell, or at once when the
+persisted replica shows the active chat holds messages
+(`replica-peek.ts`, read-only scan of the owner-scoped
+`texttext:assistant-conversations:v1:` keys). The shell hides the new-chat
+button until a conversation exists, as the real rail does; shown, it
+truncated the title. Chunk timing on the local production build: the
+controller (127KB), sidebar (26KB), conversation (18KB + 24KB), skills (50KB)
+and editor (228KB) now arrive about 700ms after the list is visible.
+
+Still early: the workspace shell (235KB, includes the rail shell), a 108KB
+chunk with the shell's CSS module maps and starters, react-markdown
+(239KB) and the presence chunk (94KB). Neither of the last two is imported
+statically by any client module in src any more (the reader in
+`page.tsx` is dynamic too), yet Turbopack still lists them in the page's
+shared client chunk list (see `page_client-reference-manifest.js`, where
+every client component of the page carries the same list). A source-mapped
+build is the way to find the module that keeps them there.
