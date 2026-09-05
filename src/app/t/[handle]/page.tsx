@@ -502,6 +502,12 @@ export async function BlogHomeForHandle({
       : null;
   // A discarded optimistic fetch must not surface as an unhandled rejection.
   optimisticPoolParts?.catch(() => {});
+  // The Blog folder's saved look depends only on the handle. Start it with
+  // the pool rather than after it: one fewer round trip before first byte,
+  // which on Vercel to Neon is the whole cost of this page.
+  const previewHomeLayout = queryHomeLayout(queryValue(query.layout));
+  const homeLayoutPromise = getFolderCollectionLayout(handle, "blog");
+  homeLayoutPromise.catch(() => {});
   const access = await accessPromise;
   // The owner needs no collaborator-grant resolution: every place the result
   // is consulted short-circuits on ownership.
@@ -573,10 +579,8 @@ export async function BlogHomeForHandle({
     canEdit || Boolean(workspaceAccess?.canEditContent);
   // ?layout= previews a page layout without saving it, for everyone. What
   // persists is the look on the folder.
-  const previewHomeLayout = queryHomeLayout(queryValue(query.layout));
   const layout =
-    previewHomeLayout ??
-    collectionPageLayout(await getFolderCollectionLayout(handle, "blog"));
+    previewHomeLayout ?? collectionPageLayout(await homeLayoutPromise);
   // The blog home lists ONLY the Blog folder: notes and bookmarks live in
   // their own folder views and never mix into the cards, even for the owner.
   const [posts, folders, counts] = initialPool
