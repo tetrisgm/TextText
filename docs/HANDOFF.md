@@ -3702,12 +3702,22 @@ The collapsed-sidebar variant is 98px by reasoning, not by probe: the collapse
 toggle is not in the edit view's chrome. The arrows' own `left` is not
 declared in any stylesheet grep found; it measures sidebar + 8 live.
 
-**Gap: the folder view was never restyled.** The home list got the Superhuman
+**Gap: the folder view was never restyled** (closed in d3794a4a, build 1044). The home list got the Superhuman
 rows; a folder still renders FolderPage's older rows (star in the leading
 slot, hairline dividers, "Sep 4, 2026" dates, a bordered composer). It is a
 different component and sat outside every agent's ownership. Note for anyone
 restyling it: bare `.post-folder-*` selectors are shared with the PUBLISHED
 folder page; workspace-only changes must be scoped under `.post-editor-shell`.
+
+Closing it took two Sol passes (89 and 62 inventory rows) and one measured
+correction: the row shell's right bleed was copied from the home list at
+-38px and carried every folder row 30px under the assistant rail, clipping
+its date to "SEP 4, 202". The list sits 8px inside the column, so 8px it is.
+A block-level scope check (parse the diff's added rules, assert every
+`.post-folder-*` selector starts with `.post-editor-shell`) is the right test
+for anything touching FolderPage; a per-line grep flags multi-line selectors
+falsely. One parity nit remains on the home list: a bookmark row keeps its
+type glyph in the leading slot where Superhuman draws nothing.
 
 **Not a bug, probably:** "Welcome to TextText" showed an empty editor with
 "Saved on this device". That label is the `local` state, which
