@@ -20,6 +20,8 @@
     "set_folder_template",
     "retire_document_template",
     "set_item_template",
+    "list_agent_changes",
+    "revert_agent_change",
     "create_item",
     "update_item",
     "append_to_item",
@@ -53,7 +55,8 @@
     "list_trash",
     "list_comments",
     "list_responses",
-    "list_document_templates"
+    "list_document_templates",
+    "list_agent_changes"
   ],
   "openWorld": [
     "add_item_asset",

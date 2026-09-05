@@ -39,9 +39,9 @@ and that runbook are the canonical entry point for future implementation work.
   but no permanent delete.
 
 <!-- generated:tool-contract -->
-## Shared 39-tool contract
+## Shared 41-tool contract
 
-The 11 read-scope tools are:
+The 12 read-scope tools are:
 
 1. `get_workspace`
 2. `list_folders`
@@ -54,8 +54,9 @@ The 11 read-scope tools are:
 9. `list_comments`
 10. `list_responses`
 11. `list_document_templates`
+12. `list_agent_changes`
 
-The 28 sync-scope tools are:
+The 29 sync-scope tools are:
 
 1. `list_access`
 2. `create_item_type`
@@ -64,27 +65,28 @@ The 28 sync-scope tools are:
 5. `set_folder_template`
 6. `retire_document_template`
 7. `set_item_template`
-8. `create_item`
-9. `update_item`
-10. `append_to_item`
-11. `set_item_status`
-12. `move_item`
-13. `organize_items`
-14. `delete_item`
-15. `delete_items`
-16. `empty_trash`
-17. `restore_item`
-18. `add_item_asset`
-19. `remove_item_asset`
-20. `recapture_bookmark`
-21. `add_comment`
-22. `set_comment_resolved`
-23. `create_folder`
-24. `rename_folder`
-25. `delete_folder`
-26. `restore_folder`
-27. `set_access`
-28. `revoke_access`
+8. `revert_agent_change`
+9. `create_item`
+10. `update_item`
+11. `append_to_item`
+12. `set_item_status`
+13. `move_item`
+14. `organize_items`
+15. `delete_item`
+16. `delete_items`
+17. `empty_trash`
+18. `restore_item`
+19. `add_item_asset`
+20. `remove_item_asset`
+21. `recapture_bookmark`
+22. `add_comment`
+23. `set_comment_resolved`
+24. `create_folder`
+25. `rename_folder`
+26. `delete_folder`
+27. `restore_folder`
+28. `set_access`
+29. `revoke_access`
 <!-- /generated:tool-contract -->
 
 `list_access` is read-only but requires `sync` because membership information is
