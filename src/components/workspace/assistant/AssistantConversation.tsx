@@ -6,17 +6,20 @@ import type { AssistantJob } from "@/lib/ai/jobs";
 import type { NativeQuickActionId } from "@/lib/ai/quick-actions";
 import type { CloudAssistantProviderLabel } from "@/lib/ai/cloud-client";
 import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
-import { greeting, startersFor, type StarterContext } from "./starters";
+import {
+  greeting,
+  startersFor,
+  workflowHeading,
+  type StarterContext,
+} from "./starters";
 import type { AssistantArtifactProof } from "./artifact-proof";
 import styles from "./AssistantConversation.module.css";
 import dynamic from "next/dynamic";
 
-// See AssistantMarkdown: react-markdown's package graph is ~300KB and the rail
-// is closed by default, so it loads when a reply actually needs rendering.
+// The Markdown graph stays nested inside the delayed conversation boundary.
 // ssr stays on: sidebar-ui.test renders this thread and asserts that provider
 // Markdown is escaped and its images are replaced, which it cannot see through
-// an ssr:false boundary. The split is what matters, and the rail is closed by
-// default, so the list still never requests the chunk.
+// an ssr:false boundary.
 const AssistantMarkdown = dynamic(() =>
   import("./AssistantMarkdown").then((module) => module.AssistantMarkdown),
 );
@@ -51,12 +54,6 @@ function progressFallback(context: StarterContext): string {
   if (context.level === "item") return `Reading ${context.label}`;
   if (context.level === "folder") return `Reviewing ${context.label}`;
   return "Reviewing your workspace";
-}
-
-function workflowHeading(context: StarterContext): string {
-  if (context.level === "item") return `Ways to work with ${context.label}`;
-  if (context.level === "folder") return `Ways to work with ${context.label}`;
-  return "Start with a workspace workflow";
 }
 
 /**

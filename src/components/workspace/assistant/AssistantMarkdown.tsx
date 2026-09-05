@@ -1,12 +1,12 @@
 "use client";
 
-// The assistant's Markdown renderer, in its own module so the workspace list
-// does not parse it.
+// The assistant's Markdown renderer stays in the delayed assistant boundary so
+// the workspace list does not parse it.
 //
 // react-markdown brings unified, micromark, mdast and hast with it - about
-// 300KB across ~97 packages. The rail is closed by default and the list
-// renders no Markdown at all, so none of that belongs on the path to the first
-// paint. Kept beside AssistantConversation because it shares its stylesheet.
+// 300KB across ~97 packages. The open rail's static shell renders no Markdown,
+// so none of that belongs on the path to the first paint. Kept beside
+// AssistantConversation because it shares its stylesheet.
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";

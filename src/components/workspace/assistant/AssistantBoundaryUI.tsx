@@ -14,15 +14,16 @@ import {
   loadAssistantBoundary,
   subscribeAssistantBoundary,
 } from "./assistant-boundary";
+import {
+  AssistantRailShell,
+  type AssistantRailShellProps,
+} from "./AssistantRailShell";
 import type { AssistantConversation } from "./AssistantConversation";
 import type {
   AssistantConversationState,
   AssistantConversationView,
 } from "./AssistantConversationState";
-import type {
-  AssistantSidebar,
-  AssistantSidebarProps,
-} from "./AssistantSidebar";
+import type { AssistantSidebarProps } from "./AssistantSidebar";
 import styles from "./AssistantLauncher.module.css";
 
 const EMPTY_CONVERSATION: AssistantConversationView = {
@@ -160,13 +161,14 @@ function AssistantLauncher(props: AssistantSidebarProps) {
   );
 }
 
-export function LazyAssistantSidebar(props: ComponentProps<typeof AssistantSidebar>) {
+export function LazyAssistantSidebar(props: AssistantRailShellProps) {
   const modules = useAssistantBoundary();
-  useEffect(() => {
-    if (props.state !== "hidden") void loadAssistantBoundary();
-  }, [props.state]);
   if (modules) return <modules.sidebar.AssistantSidebar {...props} />;
-  return props.state === "hidden" ? <AssistantLauncher {...props} /> : null;
+  return props.state === "hidden" ? (
+    <AssistantLauncher {...props} />
+  ) : (
+    <AssistantRailShell {...props} />
+  );
 }
 
 export function LazyAssistantConversation(

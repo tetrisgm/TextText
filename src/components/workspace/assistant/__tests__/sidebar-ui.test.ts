@@ -526,9 +526,9 @@ describe("assistant sidebar UI", () => {
   });
 
   // Rendered directly rather than through AssistantConversation: the renderer
-  // now loads on demand (react-markdown's package graph is ~300KB and the rail
-  // is closed by default), and renderToStaticMarkup is synchronous, so it can
-  // never resolve that boundary. The contract under test is this component's.
+  // loads inside the delayed conversation boundary, and renderToStaticMarkup
+  // is synchronous, so it can never resolve that boundary. The contract under
+  // test is this component's.
   it("renders assistant Markdown without loading provider-supplied images", () => {
     const html = renderToStaticMarkup(
       React.createElement(AssistantMarkdown, {

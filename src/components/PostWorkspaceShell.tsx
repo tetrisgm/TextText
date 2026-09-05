@@ -5246,6 +5246,7 @@ function LocalWorkspaceShell({
         >
           {(conversation) => (
         <AssistantSidebar
+          contextKey={assistant.conversationContextKey}
           workspaceHandle={displayPool.blog.handle}
           agent={assistantAgentIdentity(
             assistant.cloudProvider,
@@ -5291,6 +5292,12 @@ function LocalWorkspaceShell({
             assistantComposer.clear();
             void assistant.submit(submission.text, submission.attachments);
           }}
+          shellOnSubmit={(submission) => {
+            assistantComposer.clear();
+            void assistant.submit(submission.text, submission.attachments);
+          }}
+          shellOnQuickAction={assistant.runQuickAction}
+          shellViewerName={blog.author}
           onCancel={assistant.cancel}
           submitting={assistant.submitting}
           submitDisabled={!assistant.ownerScopeReady}

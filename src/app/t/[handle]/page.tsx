@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
@@ -7,8 +8,17 @@ import {
   BlogHomeShell,
 } from "@/components/BlogHomeEditorControls";
 import { BlogHomeWorkspaceShell } from "@/components/PostWorkspaceShell";
-import { UnifiedDocumentReader } from "@/components/document/UnifiedDocumentReader";
 import { FolderPage } from "@/components/FolderPage";
+// Turbopack gives every client component this page references one shared
+// chunk list, the union of the page's client graph. A static import of the
+// reader put react-markdown and the presence chunk on every home load even
+// though only the single-post layout renders it. Dynamic keeps the server
+// render for that layout and loads the reader only when it is used.
+const UnifiedDocumentReader = dynamic(() =>
+  import("@/components/document/UnifiedDocumentReader").then(
+    (module) => module.UnifiedDocumentReader,
+  ),
+);
 import { PostCard } from "@/components/PostCard";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import { getCurrentUser } from "@/lib/session";

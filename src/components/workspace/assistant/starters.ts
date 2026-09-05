@@ -48,6 +48,13 @@ export type Starter = {
   prompt: string;
 };
 
+export function workflowHeading(context: StarterContext): string {
+  if (context.level === "item" || context.level === "folder") {
+    return `Ways to work with ${context.label}`;
+  }
+  return "Start with a workspace workflow";
+}
+
 /**
  * Time of day in the reader's own clock. Split out so the boundaries are
  * testable without waiting for the afternoon.

@@ -29,6 +29,8 @@ import {
   ASSISTANT_SIDEBAR_MIN_WIDTH,
   type AssistantSidebarState,
 } from "./constants";
+import { resolveAssistantSidebarDimensions } from "./sidebar-dimensions";
+import { assistantComposerPlaceholder } from "./sidebar-copy";
 
 export {
   ASSISTANT_SIDEBAR_DEFAULT_WIDTH,
@@ -36,6 +38,7 @@ export {
   ASSISTANT_SIDEBAR_MIN_WIDTH,
 } from "./constants";
 export type { AssistantSidebarState } from "./constants";
+export { resolveAssistantSidebarDimensions } from "./sidebar-dimensions";
 
 export type { AssistantContext } from "./context";
 
@@ -68,6 +71,8 @@ export type AssistantComposerSubmission = {
 };
 
 export type AssistantSidebarProps = {
+  /** The conversation context key; the static shell peeks at the replica with it. */
+  contextKey?: string;
   /** Owner-scoped workspace used to load reusable skill names and shortcuts. */
   workspaceHandle?: string;
   agent?: AssistantAgentIdentity | null;
@@ -154,56 +159,6 @@ function positiveNumber(value: number, fallback: number): number {
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
-}
-
-function assistantComposerPlaceholder(
-  context: AssistantContext | null | undefined,
-): string {
-  if (context?.kind === "item") return "Ask or change this item";
-  if (context?.kind === "folder") return "Ask or work with this collection";
-  return "Find, create, or change anything";
-}
-
-export function resolveAssistantSidebarDimensions({
-  availableWidth,
-  maxWidth,
-  minWidth,
-  width,
-}: {
-  availableWidth?: number | null;
-  maxWidth: number;
-  minWidth: number;
-  width: number;
-}) {
-  const configuredMin = Math.round(
-    positiveNumber(minWidth, ASSISTANT_SIDEBAR_MIN_WIDTH),
-  );
-  const configuredMax = Math.max(
-    configuredMin,
-    Math.round(positiveNumber(maxWidth, ASSISTANT_SIDEBAR_MAX_WIDTH)),
-  );
-  const viewportLimit =
-    availableWidth !== null &&
-    availableWidth !== undefined &&
-    Number.isFinite(availableWidth) &&
-    availableWidth > 0
-      ? Math.max(1, Math.floor(availableWidth))
-      : null;
-  const resolvedMinWidth = viewportLimit
-    ? Math.min(configuredMin, viewportLimit)
-    : configuredMin;
-  const resolvedMaxWidth = viewportLimit
-    ? Math.max(resolvedMinWidth, Math.min(configuredMax, viewportLimit))
-    : configuredMax;
-  const resolvedWidth = Math.round(
-    clamp(
-      positiveNumber(width, ASSISTANT_SIDEBAR_DEFAULT_WIDTH),
-      resolvedMinWidth,
-      resolvedMaxWidth,
-    ),
-  );
-
-  return { resolvedMaxWidth, resolvedMinWidth, resolvedWidth };
 }
 
 export function isAssistantToggleShortcut(
