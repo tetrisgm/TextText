@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import type { AssistantMessage } from "./useNativeAssistant";
 import type { AssistantJob } from "@/lib/ai/jobs";
 import type { NativeQuickActionId } from "@/lib/ai/quick-actions";
@@ -11,6 +9,17 @@ import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
 import { greeting, startersFor, type StarterContext } from "./starters";
 import type { AssistantArtifactProof } from "./artifact-proof";
 import styles from "./AssistantConversation.module.css";
+import dynamic from "next/dynamic";
+
+// See AssistantMarkdown: react-markdown's package graph is ~300KB and the rail
+// is closed by default, so it loads when a reply actually needs rendering.
+// ssr stays on: sidebar-ui.test renders this thread and asserts that provider
+// Markdown is escaped and its images are replaced, which it cannot see through
+// an ssr:false boundary. The split is what matters, and the rail is closed by
+// default, so the list still never requests the chunk.
+const AssistantMarkdown = dynamic(() =>
+  import("./AssistantMarkdown").then((module) => module.AssistantMarkdown),
+);
 
 const FALLBACK_STARTER_CONTEXT: StarterContext = { level: "root" };
 
@@ -36,43 +45,6 @@ function scrollParent(node: HTMLElement): HTMLElement | null {
 
 function displayedMessageText(message: AssistantMessage): string {
   return message.text;
-}
-
-/**
- * Provider text is untrusted Markdown. ReactMarkdown escapes raw HTML by
- * default; the image override also prevents a reply from loading a tracking
- * URL merely because it was rendered in the sidebar.
- */
-// Module-level component map: inline functions here are new component types
-// on every render, which unmounts and remounts their DOM (see the same fix in
-// DocumentRenderer's Markdown).
-const assistantMarkdownComponents = {
-  a: ({ href, children }: { href?: string; children?: ReactNode }) => (
-    <a href={href} target="_blank" rel="noreferrer noopener">
-      {children}
-    </a>
-  ),
-  h1: ({ children }: { children?: ReactNode }) => <h3>{children}</h3>,
-  h2: ({ children }: { children?: ReactNode }) => <h3>{children}</h3>,
-  img: ({ alt }: { alt?: string }) => (
-    <span className={styles.assistantImagePlaceholder}>
-      {alt ? `Image: ${alt}` : "Image omitted"}
-    </span>
-  ),
-};
-const assistantMarkdownPlugins = [remarkGfm];
-
-function AssistantMarkdown({ text }: { text: string }) {
-  return (
-    <div className={styles.assistantMarkdown}>
-      <ReactMarkdown
-        remarkPlugins={assistantMarkdownPlugins}
-        components={assistantMarkdownComponents}
-      >
-        {text}
-      </ReactMarkdown>
-    </div>
-  );
 }
 
 function progressFallback(context: StarterContext): string {

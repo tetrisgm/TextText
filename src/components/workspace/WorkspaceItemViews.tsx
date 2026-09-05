@@ -15,7 +15,21 @@ import type {
 } from "react";
 import { usePresence } from "@/lib/collab/usePresence";
 import { BacklinksPanel } from "@/components/BacklinksPanel";
-import { UnifiedDocumentReader } from "@/components/document/UnifiedDocumentReader";
+import dynamic from "next/dynamic";
+
+// The reader pulls DocumentRenderer, and with it react-markdown's package
+// graph (unified, micromark, mdast, hast - about 300KB across ~97 packages).
+// The workspace LIST renders no Markdown, so it must not parse any of that;
+// this module is statically imported by the shell for one small helper.
+//
+// ssr stays ON: a deep link straight to an open item server-renders the
+// document, and ssr:false would paint it blank and then fill it in. The split
+// is what matters - the list never requests the chunk.
+const UnifiedDocumentReader = dynamic(() =>
+  import("@/components/document/UnifiedDocumentReader").then(
+    (module) => module.UnifiedDocumentReader,
+  ),
+);
 import {
   type FolderCaptureResolved,
   type FolderDeleteItem,

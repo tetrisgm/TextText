@@ -26,6 +26,7 @@ import {
   resolveAssistantSidebarDimensions,
 } from "@/components/workspace/assistant/AssistantSidebar";
 import { AssistantConversation } from "@/components/workspace/assistant/AssistantConversation";
+import { AssistantMarkdown } from "../AssistantMarkdown";
 
 describe("assistant sidebar UI", () => {
   it("keeps waiting approvals visible while the assistant is closed", () => {
@@ -524,15 +525,14 @@ describe("assistant sidebar UI", () => {
     expect(html).not.toContain("off this Mac");
   });
 
+  // Rendered directly rather than through AssistantConversation: the renderer
+  // now loads on demand (react-markdown's package graph is ~300KB and the rail
+  // is closed by default), and renderToStaticMarkup is synchronous, so it can
+  // never resolve that boundary. The contract under test is this component's.
   it("renders assistant Markdown without loading provider-supplied images", () => {
     const html = renderToStaticMarkup(
-      React.createElement(AssistantConversation, {
-        messages: [{
-          id: "markdown-1",
-          role: "assistant",
-          text: "**Strong**\n\n- One\n- Two\n\n![tracker](https://tracker.example/pixel.png)",
-        }],
-        submitting: false,
+      React.createElement(AssistantMarkdown, {
+        text: "**Strong**\n\n- One\n- Two\n\n![tracker](https://tracker.example/pixel.png)",
       }),
     );
     expect(html).toContain("<strong>Strong</strong>");
