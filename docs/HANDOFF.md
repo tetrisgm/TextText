@@ -4119,3 +4119,11 @@ rail `#2b2b2e`).
   module, loading the document schema lazily in the storage parser, and
   loading the look picker on demand. That is a contract question for the
   owner ("render specs are validated data"), so it was not done here.
+
+### Shipped 2026-09-05: TextText 0.182 build 1048
+
+Second promotion of the day (07:24, load 11): the parallelized home render
+and the write-free conversation sync. Deployment
+`dpl_HLkkTsXoffPDtJ5iC9NPSgLcSJVk` aliased to texttext.app, migrations ran
+(no null word counts), app installed. The assistant rail static shell was
+still being drafted by the agent at this point and is not in this build.
