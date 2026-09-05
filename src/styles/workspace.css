@@ -880,7 +880,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .bookmark-folder-collection.is-column {
   max-width: 780px;
   margin-inline: auto;
-  gap: 12px;
+  gap: 14px;
 }
 
 .universal-item-card.is-note-card {
@@ -961,7 +961,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   display: grid;
   grid-template-columns: minmax(140px, 0.34fr) minmax(0, 1fr) auto;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   padding: 12px 4px;
 }
 
@@ -1072,6 +1072,17 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .post-editor-content {
   min-width: 0;
   background: var(--bg);
+}
+
+/* The open item is a reading surface, not a card grid. Keep its chrome
+   compact and its text rhythm close to the reference's mail pane. */
+.post-editor-shell .post-back-action-bar.is-read {
+  padding-block: 12px;
+}
+
+.post-editor-shell .post-top-action-bar.is-read {
+  min-height: 44px;
+  padding-block: 8px;
 }
 
 /* Keep the library and assistant in the same proportions as the document
@@ -1541,14 +1552,14 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   justify-content: safe center;
   gap: 14px;
   overflow: hidden;
-  padding: 8px 16px;
+  min-height: 42px;
+  padding: 7px 16px;
   border-radius: 0;
-  /* No stroke: a hairline ring around a floating pill drew the eye to the
-     container rather than the keys (owner, 2026-09-04). Depth comes from the
-     shadow, and the fill is near-black so it reads as its own surface rather
-     than a tinted window onto the page. */
-  border: 0;
-  background: color-mix(in srgb, #000 92%, var(--bg));
+  /* A quiet top edge separates the strip from the writing surface without
+     turning it into a floating control. */
+  border: 1px solid #2e2e31;
+  border-bottom: 0;
+  background: #0b0b0c;
   color: #f4f4f5;
   box-shadow: 0 -6px 22px -18px rgba(0, 0, 0, 0.55);
   pointer-events: none;
@@ -1566,7 +1577,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   font-size: 11.5px;
   /* On the dark pill in both themes, so the pair is fixed rather than
      following the page's ink. */
-  color: rgba(255, 255, 255, 0.62);
+  color: rgba(255, 255, 255, 0.74);
 }
 /* A keycap is a light chip with dark ink, the same object the palette and
    the shortcut panel draw. In the reference every key in the app is that
@@ -1576,10 +1587,11 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   font: inherit;
   font-size: 11px;
   font-weight: 600;
-  color: #232323;
-  background: #c9c9c9;
+  color: #171719;
+  background: #bfc2c8;
   border-radius: 4px;
   padding: 2px 6px;
+  line-height: 16px;
 }
 @media (max-width: 900px) {
   /* Not enough room to read them without crowding the writing surface. */
@@ -1863,10 +1875,10 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .workspace-recent.is-view-list .workspace-item-option-main {
-  min-height: 50px;
-  gap: 12px;
-  padding-top: 4px;
-  padding-bottom: 4px;
+  min-height: 52px;
+  gap: 10px;
+  padding-top: 3px;
+  padding-bottom: 3px;
 }
 
 /* A fixed first column, which is what makes a list read as a table.
@@ -1881,8 +1893,8 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
    --------------------------------------------------------------------- */
 .workspace-recent.is-view-list .workspace-item-option-copy {
   display: grid;
-  grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
-  gap: 20px;
+  grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
+  gap: 16px;
   align-items: baseline;
 }
 
@@ -1901,9 +1913,8 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: 450 15px/1.35 var(--font-body);
+  font: 500 15px/1.35 var(--font-body);
   letter-spacing: -0.005em;
-  font-size: 16px;
 }
 
 .workspace-recent.is-view-list .workspace-item-option-detail {
@@ -1914,12 +1925,14 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
 .workspace-recent.is-view-list .workspace-item-option-detail small {
   min-width: 0;
-  font-size: 16px;
+  font: 400 15px/1.35 var(--font-body);
   color: var(--muted);
 }
 
 .workspace-recent.is-view-list .workspace-item-option-main > time {
   flex: 0 0 auto;
+  min-width: 52px;
+  text-align: right;
 }
 
 /* Weight 500, not 600.
@@ -1929,7 +1942,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
    them by weight as well, and a column of semibold titles reads as a table
    of headings where theirs reads as a list of things. */
 .workspace-recent.is-view-list .workspace-item-option-copy > strong {
-  font: 450 15px/1.35 var(--font-body);
+  font: 500 15px/1.35 var(--font-body);
   letter-spacing: -0.005em;
 }
 
@@ -1953,7 +1966,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .workspace-key-hint-lead {
   flex: 0 0 auto;
   font-size: 11.5px;
-  color: rgba(255, 255, 255, 0.62);
+  color: rgba(255, 255, 255, 0.74);
   white-space: nowrap;
 }
 
@@ -1961,7 +1974,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .workspace-key-hint + .workspace-key-hint::before {
   content: "·";
   margin-right: 10px;
-  color: rgba(255, 255, 255, 0.34);
+  color: rgba(255, 255, 255, 0.42);
 }
 
 .workspace-key-hint {
@@ -2197,15 +2210,15 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
    the ones that read as writing.
    --------------------------------------------------------------------- */
 .workspace-recent.is-view-list .workspace-item-option-copy > strong {
-  font-size: 16px;
+  font-size: 15px;
 }
 
 .workspace-recent.is-view-list .workspace-item-option-detail small {
-  font-size: 16px;
+  font-size: 15px;
 }
 
 .workspace-recent.is-view-list .workspace-item-option-main > time {
-  font-size: 12.5px;
+  font-size: 12px;
 }
 
 /* ---------------------------------------------------------------------
@@ -2298,6 +2311,46 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   border-radius: 0;
   background: transparent;
   font-weight: 500;
+}
+
+/* Sidebar visual language: a calm, wide navigation rail with generous
+   Superhuman-like rows. Keep the existing folder tree and its controls; only
+   tune the chrome metrics and hierarchy here. */
+.post-workspace-sidebar-region .post-editor-folder-nav {
+  padding: 8px;
+  gap: 2px;
+}
+
+.post-workspace-sidebar-region .post-editor-folder-row {
+  min-height: 44px;
+  margin: 0;
+  border-radius: 7px;
+}
+
+.post-workspace-sidebar-region .post-editor-folder-main {
+  min-height: 44px;
+  gap: 10px;
+  padding: 0 10px;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+
+.post-workspace-sidebar-region .post-editor-folder-name {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.post-workspace-sidebar-region .post-editor-folder-count {
+  margin-right: 10px;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.post-workspace-sidebar-region .post-editor-nav-heading.is-collections {
+  margin: 17px 10px 6px;
+  padding: 13px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.04em;
 }
 
 /* ---------------------------------------------------------------------
@@ -2394,6 +2447,38 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   padding-top: 12px;
 }
 
+.post-editor-shell .tt-document .tt-masthead {
+  gap: 10px;
+}
+
+.post-editor-shell .tt-document .tt-masthead :is(.tt-title, h1) {
+  letter-spacing: -0.022em;
+  line-height: 1.12;
+}
+
+.post-editor-shell .tt-document .tt-masthead :is(.tt-byline, .tt-metadata) {
+  font-size: 13px;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+}
+
+.post-editor-shell .tt-document > .tt-stack > .tt-text,
+.post-editor-shell .tt-document > .tt-stack > .tt-group {
+  line-height: 1.58;
+}
+
+.post-editor-shell .post-action-toolbar {
+  gap: 6px;
+  border-top: 1px solid var(--hairline);
+  border-radius: 0;
+  background: transparent;
+}
+
+.post-editor-shell .post-action-toolbar .ac-btn {
+  min-height: 32px;
+  padding-inline: 10px;
+}
+
 @media (max-width: 900px) {
   /* No room for a margin around a panel; the page is the panel. */
   .post-editor-content .tt-document > .tt-stack {
@@ -2440,13 +2525,13 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .workspace-item-chip[data-chip="type"] {
-  background: color-mix(in srgb, #d8a12a 26%, transparent);
-  color: color-mix(in srgb, #6f5210 70%, var(--muted));
+  background: color-mix(in srgb, #e8c14a 28%, var(--bg));
+  color: color-mix(in srgb, #6f5210 72%, var(--ink));
 }
 
 .workspace-item-chip[data-chip="folder"] {
-  background: color-mix(in srgb, #9a6ec4 24%, transparent);
-  color: color-mix(in srgb, #5c3d80 70%, var(--muted));
+  background: color-mix(in srgb, #c58bd3 28%, var(--bg));
+  color: color-mix(in srgb, #5c3d80 72%, var(--ink));
 }
 
 /* The date sits at the right edge, and the row's actions cover it on hover.
@@ -2512,3 +2597,109 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   .workspace-item-actions-trigger {
   opacity: 1;
 }
+
+/* The keyboard cursor is a cue, not a second selection colour. Keep its
+   action affordance crisp and compact, matching Superhuman's quiet row
+   furniture while preserving the existing hit target. */
+.workspace-recent.is-view-list
+  .workspace-item-option.is-command-active
+  .workspace-row-actions,
+.workspace-recent.is-view-list
+  .workspace-item-option.is-command-active
+  .workspace-item-actions {
+  opacity: 1;
+}
+
+/* A selected row already owns the emphasis. Its star should stay out of the
+   way, including when focus lands on the action group. */
+[data-workspace-post-id][aria-selected="true"]
+  .workspace-item-option.is-selected
+  .workspace-item-star,
+[data-workspace-post-id][aria-selected="true"]
+  .workspace-item-option.is-selected
+  .workspace-item-leading-star {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Sidebar visual language: a calm, wide navigation rail with generous
+   Superhuman-like rows. Keep the existing folder tree and its controls; only
+   tune the chrome metrics and hierarchy here. */
+.post-workspace-sidebar-region .post-editor-folder-nav {
+  padding: 8px;
+  gap: 2px;
+}
+
+.post-workspace-sidebar-region .post-editor-folder-row {
+  min-height: 44px;
+  margin: 0;
+  border-radius: 7px;
+}
+
+.post-workspace-sidebar-region .post-editor-folder-main {
+  min-height: 44px;
+  gap: 10px;
+  padding: 0 10px;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+
+.post-workspace-sidebar-region .post-editor-folder-name {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.post-workspace-sidebar-region .post-editor-folder-count {
+  margin-right: 10px;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.post-workspace-sidebar-region .post-editor-nav-heading.is-collections {
+  margin: 17px 10px 6px;
+  padding: 13px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+
+/* Shortcut sheet: Superhuman's quiet utility rail. Keep the sheet dense and
+   legible, with the keycaps carrying the only strong shape. */
+.command-palette--sheet {
+  width: min(100%, 400px);
+  background: var(--sheet-bg, #efeffe);
+  color: var(--sheet-ink, #1f1f2e);
+}
+.command-palette--sheet .command-sheet-header {
+  gap: 16px;
+  padding: 20px 20px 14px;
+}
+.command-palette--sheet .command-sheet-title {
+  font-size: 18px;
+  line-height: 1.2;
+  font-weight: 600;
+}
+.command-palette--sheet .command-sheet-subtitle {
+  font-size: 12px;
+  line-height: 1.25;
+}
+.command-palette--sheet .command-sheet-done {
+  padding: 6px 12px;
+  border-radius: 7px;
+  font-size: 13px;
+}
+.command-palette--sheet .command-sheet-columns {
+  padding: 12px 20px 24px;
+}
+.command-palette--sheet .command-shortcut-heading {
+  padding: 22px 0 8px;
+  font-size: 14px;
+  line-height: 1.2;
+  font-weight: 500;
+}
+.command-palette--sheet .command-sheet-row {
+  min-height: 30px;
+  gap: 24px;
+  padding: 3px 0;
+}
+.command-palette--sheet .command-sheet-row-label {
+  font-size: 14px;
+  line-height: 1.25;
