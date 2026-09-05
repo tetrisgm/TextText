@@ -4104,3 +4104,18 @@ rail `#2b2b2e`).
   the app was declined and Claude in Chrome was not connected, so the
   numbers above are local; the shipped build's production first byte for a
   signed-in owner is still unmeasured from this side.
+- zod (352KB raw, 77KB wire) reaches the list path through four value
+  imports, not through the pool payload: `presentation/templates.ts` runs
+  `validateTemplateDefinition` over every builtin at module init and
+  `FolderPage` imports it; `documents/legacy.ts` imports
+  `validateDocumentSnapshot` for its value and `pool/selectors.ts` imports
+  `legacyTemplateId` from it; `pool/storage.ts` parses rehydrated documents
+  with `documentSnapshotSchema.safeParse`; `WorkspaceSidebarChrome` imports
+  `FolderLookPicker`, which imports `validateDocumentSnapshot`. Everything
+  else imports types only. Taking zod off the cold path means validating
+  the static builtins in `src/lib/__tests__/builtin-templates.test.ts`
+  instead of at every launch (check first whether the schema fills defaults
+  the raw definitions lack), moving `legacyTemplateId` to a zod-free
+  module, loading the document schema lazily in the storage parser, and
+  loading the look picker on demand. That is a contract question for the
+  owner ("render specs are validated data"), so it was not done here.
