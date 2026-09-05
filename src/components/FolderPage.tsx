@@ -1789,7 +1789,7 @@ function UniversalFolderContents({
           </div>
         ) : viewMode === "list" && usesBuiltInLook ? (
           <div
-            className="post-folder-list"
+            className="post-folder-list workspace-folder-row-list"
             role="listbox"
             aria-label="Folder items"
             aria-activedescendant={postOptionId(selectedPostId)}

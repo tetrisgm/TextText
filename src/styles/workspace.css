@@ -4601,6 +4601,265 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   color: var(--ac-label, #f4f4f5);
 }
 
+/* Folder identity and capture follow the compact list-header rhythm in the
+   Superhuman references. This must stay workspace-scoped: FolderPage also
+   renders the published folder page. */
+.post-editor-shell .post-folder-page:not(.is-mode-blog) {
+  --folderhead-ground: #ffffff;
+  --folderhead-title: #3e3e3e;
+  --folderhead-muted: #9899a0;
+  --folderhead-line: #ececf0;
+  --folderhead-control: #ffffff;
+  --folderhead-control-hover: #ffffff;
+  --folderhead-control-line: #e8e8ec;
+  --folderhead-control-line-hover: #dedee4;
+  --folderhead-focus: #c8c8d6;
+  --folderhead-icon-hover: #f6f8fe;
+  --folderhead-disabled: #ececfa;
+  --folderhead-disabled-ink: #ffffff;
+  --folderhead-shadow: rgba(35, 35, 45, 0.22);
+  gap: 12px;
+  padding: 72px 8px 88px;
+  background: var(--folderhead-ground);
+}
+
+.post-editor-shell:is([data-theme="dark"] *)
+  .post-folder-page:not(.is-mode-blog) {
+  --folderhead-ground: #2c2d31;
+  --folderhead-title: #e5e7eb;
+  --folderhead-muted: #9d9ea2;
+  --folderhead-line: #3d3d41;
+  --folderhead-control: #343539;
+  --folderhead-control-hover: #38393d;
+  --folderhead-control-line: #494a4f;
+  --folderhead-control-line-hover: #58595e;
+  --folderhead-focus: #73758b;
+  --folderhead-icon-hover: rgba(255, 255, 255, 0.07);
+  --folderhead-disabled: rgba(97, 181, 225, 0.22);
+  --folderhead-disabled-ink: rgba(255, 255, 255, 0.52);
+  --folderhead-shadow: rgba(0, 0, 0, 0.46);
+}
+
+@media (prefers-color-scheme: dark) {
+  .post-editor-shell:is(:root:not([data-theme="light"]) *)
+    .post-folder-page:not(.is-mode-blog) {
+    --folderhead-ground: #2c2d31;
+    --folderhead-title: #e5e7eb;
+    --folderhead-muted: #9d9ea2;
+    --folderhead-line: #3d3d41;
+    --folderhead-control: #343539;
+    --folderhead-control-hover: #38393d;
+    --folderhead-control-line: #494a4f;
+    --folderhead-control-line-hover: #58595e;
+    --folderhead-focus: #73758b;
+    --folderhead-icon-hover: rgba(255, 255, 255, 0.07);
+    --folderhead-disabled: rgba(97, 181, 225, 0.22);
+    --folderhead-disabled-ink: rgba(255, 255, 255, 0.52);
+    --folderhead-shadow: rgba(0, 0, 0, 0.46);
+  }
+}
+
+.post-editor-shell
+  .post-folder-page:not(.is-mode-blog)
+  .post-folder-page-header {
+  width: 100%;
+  min-height: 0;
+  gap: 1px;
+  margin: 0 auto;
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--folderhead-line);
+}
+
+.post-editor-shell
+  .post-folder-page:not(.is-mode-blog)
+  .post-folder-title-row,
+.post-editor-shell
+  .post-folder-page:not(.is-mode-blog)
+  .post-folder-title-form {
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+
+.post-editor-shell
+  .post-folder-page:not(.is-mode-blog)
+  .post-folder-page-header
+  h1 {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--folderhead-title);
+  font-family: var(--font-body);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 24px;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.post-editor-shell
+  .post-folder-page:not(.is-mode-blog)
+  .post-folder-page-count {
+  margin: 0;
+  color: var(--folderhead-muted);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 15px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.post-editor-shell
+  .post-folder-page:not(.is-mode-blog)
+  .post-folder-title-edit {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  color: var(--folderhead-muted);
+}
+
+.post-editor-shell
+  .post-folder-page:not(.is-mode-blog)
+  .post-folder-title-edit:hover {
+  background: var(--folderhead-icon-hover);
+  color: var(--folderhead-title);
+}
+
+.post-editor-shell
+  .post-folder-page:not(.is-mode-blog)
+  .post-folder-title-edit:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--folderhead-focus);
+}
+
+.post-editor-shell
+  .post-folder-page:not(.is-mode-blog)
+  .post-folder-title-input {
+  min-height: 32px;
+  border-bottom-color: var(--folderhead-control-line);
+  padding: 0 0 3px;
+  color: var(--folderhead-title);
+  font-family: var(--font-body);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 24px;
+  letter-spacing: 0;
+}
+
+.post-editor-shell
+  .post-folder-page:not(.is-mode-blog)
+  .post-folder-title-input:focus-visible {
+  border-bottom-color: var(--folderhead-focus);
+}
+
+.post-editor-shell
+  .post-folder-page:not(.is-mode-blog)
+  .post-folder-title-confirm {
+  min-width: 56px;
+  min-height: 28px;
+  border-radius: 5px;
+  background: #61b5e1;
+  color: #ffffff;
+  font: 500 12px/16px var(--font-body);
+}
+
+.post-editor-shell
+  .post-folder-page:not(.is-mode-blog)
+  .universal-item-composer {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 36px;
+  grid-template-columns: minmax(0, 1fr) 20px;
+  gap: 8px;
+  margin: 0;
+  padding: 4px 8px 4px 12px;
+  border: 1px solid var(--folderhead-control-line);
+  border-radius: 6px;
+  background: var(--folderhead-control);
+  box-shadow: 0 6px 18px -14px var(--folderhead-shadow);
+  transition:
+    border-color 0.14s ease,
+    background-color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+.post-editor-shell
+  .post-folder-page:not(.is-mode-blog)
+  .universal-item-composer:hover {
+  border-color: var(--folderhead-control-line-hover);
+  background: var(--folderhead-control-hover);
+}
+
+.post-editor-shell
+  .post-folder-page:not(.is-mode-blog)
+  .universal-item-composer:focus-within {
+  border-color: var(--folderhead-focus);
+  background: var(--folderhead-control);
+  box-shadow:
+    0 6px 18px -14px var(--folderhead-shadow),
+    0 0 0 1px color-mix(in srgb, var(--folderhead-focus) 54%, transparent);
+}
+
+.post-editor-shell
+  .post-folder-page:not(.is-mode-blog)
+  .universal-item-composer-input {
+  min-height: 26px;
+  color: var(--folderhead-title);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+  letter-spacing: 0;
+}
+
+.post-editor-shell
+  .post-folder-page:not(.is-mode-blog)
+  .universal-item-composer-input::placeholder {
+  color: var(--folderhead-muted);
+  opacity: 1;
+}
+
+.post-editor-shell
+  .post-folder-page:not(.is-mode-blog)
+  .universal-item-composer
+  .universal-item-create {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #61b5e1;
+  color: #ffffff;
+  font: 600 13px/1 var(--font-body);
+  filter: none;
+}
+
+.post-editor-shell
+  .post-folder-page:not(.is-mode-blog)
+  .universal-item-composer
+  .universal-item-create:hover:not(:disabled) {
+  background: #55a9d5;
+  filter: none;
+}
+
+.post-editor-shell
+  .post-folder-page:not(.is-mode-blog)
+  .universal-item-composer
+  .universal-item-create:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--folderhead-control),
+    0 0 0 3px var(--folderhead-focus);
+}
+
+.post-editor-shell
+  .post-folder-page:not(.is-mode-blog)
+  .universal-item-composer
+  .universal-item-create:disabled {
+  background: var(--folderhead-disabled);
+  color: var(--folderhead-disabled-ink);
+  opacity: 1;
+}
+
 /* Superhuman's transient feedback is a quiet, centred status pill. Keep the
    existing action and dismiss affordances, but give both toast variants the
    same compact geometry as the reference (ref-11). */
@@ -4650,4 +4909,278 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   background: var(--ac-bg-2, #202024);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.38);
   color: var(--ac-label, #f4f4f5);
+}
+
+/* Built-in folder lists use the same dense row grammar as the Home list.
+   The extra class is intentionally inert on the published FolderPage: every
+   rule remains below the workspace shell. */
+.post-editor-shell .post-folder-list.workspace-folder-row-list {
+  --workspace-folder-row-hover: #f6f8fe;
+  --workspace-folder-row-secondary: #909096;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  border-top: 0;
+}
+
+.post-editor-shell:is([data-theme="dark"], [data-theme="dark"] *)
+  .post-folder-list.workspace-folder-row-list {
+  --workspace-folder-row-hover: #27272c;
+  --workspace-folder-row-secondary: #a0a0a6;
+}
+
+@media (prefers-color-scheme: dark) {
+  .post-editor-shell:not(:is([data-theme="light"], [data-theme="light"] *))
+    .post-folder-list.workspace-folder-row-list {
+    --workspace-folder-row-hover: #27272c;
+    --workspace-folder-row-secondary: #a0a0a6;
+  }
+}
+
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-shell {
+  min-width: 0;
+  min-height: 37px;
+  /* The list sits 8px inside the column, so the row may bleed that far and
+     no further: at -38px every row ran 30px under the assistant rail and
+     its date read "SEP 4, 202". */
+  margin-inline: -27px -8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transition: background-color 0.14s var(--ease);
+}
+
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-shell:has(> .post-folder-row-tags) {
+  min-height: 58px;
+}
+
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-shell
+  > .post-folder-row {
+  order: 0;
+  width: 100%;
+  min-width: 0;
+  min-height: 37px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 24px 0 48px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-shell:has(> .post-folder-row-tags)
+  > .post-folder-row {
+  min-height: 58px;
+  padding-bottom: 20px;
+}
+
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row:not(:has(.post-folder-row-excerpt))
+  > .post-folder-row-title {
+  max-width: none;
+  flex: 1 1 auto;
+}
+
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row
+  > .post-folder-row-title {
+  order: 1;
+  min-width: 0;
+  max-width: 60%;
+  flex: 0 1 auto;
+  color: var(--ink);
+  font: 500 13px/18px var(--font-body);
+  letter-spacing: 0;
+}
+
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row
+  > .post-folder-row-excerpt {
+  order: 2;
+  min-width: 0;
+  flex: 1 1 0;
+  overflow: hidden;
+  color: var(--workspace-folder-row-secondary);
+  font: 400 13px/18px var(--font-body);
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row
+  > .post-folder-row-meta {
+  order: 3;
+  min-width: 56px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  color: var(--workspace-folder-row-secondary);
+  font: 500 11px/18px var(--font-body);
+  letter-spacing: 0;
+  text-align: right;
+  text-transform: uppercase;
+  text-overflow: clip;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-tags {
+  position: absolute;
+  z-index: 4;
+  right: 24px;
+  bottom: 4px;
+  left: 48px;
+  max-height: 24px;
+  margin: 0;
+  overflow: hidden;
+}
+
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-shell
+  > .workspace-item-leading-star {
+  left: 29px;
+  opacity: 0;
+  transition: opacity 0.14s var(--ease);
+}
+
+.post-editor-shell.is-pointer-live
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-shell:hover
+  > .workspace-item-leading-star,
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-shell:focus-within
+  > .workspace-item-leading-star {
+  opacity: 0.52;
+}
+
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-shell
+  > .workspace-item-leading-star[aria-pressed="true"] {
+  opacity: 1;
+}
+
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-shell[aria-selected="true"]
+  > .workspace-item-leading-star {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.post-editor-shell.is-pointer-live
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-shell:not([aria-selected="true"]):hover,
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-shell:not([aria-selected="true"]):focus-within {
+  background: var(--workspace-folder-row-hover);
+  box-shadow: none;
+}
+
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-shell[aria-selected="true"] {
+  border-radius: 0;
+  background: #61b5e1;
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-shell[aria-selected="true"]
+  :is(.post-folder-row, .post-folder-row-title, .post-folder-row-excerpt, .post-folder-row-meta, .post-folder-row-tags) {
+  color: #ffffff;
+}
+
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-shell[aria-selected="true"]
+  .post-folder-row-tags
+  :is(a, button, span) {
+  color: #ffffff;
+}
+
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-shell
+  .workspace-item-actions::before {
+  content: "";
+  position: absolute;
+  inset: -6px -6px -6px -18px;
+  border-radius: 8px;
+  background: var(--workspace-folder-row-hover);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s var(--ease);
+}
+
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-shell[aria-selected="true"]
+  .workspace-item-actions::before {
+  background: #61b5e1;
+}
+
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-shell[aria-selected="true"]
+  .workspace-item-actions-trigger {
+  opacity: 0;
+}
+
+.post-editor-shell.is-pointer-live
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-shell:hover
+  .workspace-item-actions::before,
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-shell:focus-within
+  .workspace-item-actions::before,
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-shell:has(.workspace-item-actions-trigger[aria-expanded="true"])
+  .workspace-item-actions::before {
+  opacity: 1;
+}
+
+.post-editor-shell.is-pointer-live
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-shell:hover
+  .workspace-item-actions-trigger,
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-shell:focus-within
+  .workspace-item-actions-trigger,
+.post-editor-shell
+  .post-folder-list.workspace-folder-row-list
+  .post-folder-row-shell
+  .workspace-item-actions-trigger[aria-expanded="true"] {
+  opacity: 1;
+}
+
+@media (max-width: 560px) {
+  .post-editor-shell .post-folder-list.workspace-folder-row-list {
+    padding-left: 22px;
+  }
 }
