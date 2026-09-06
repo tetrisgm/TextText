@@ -4939,3 +4939,41 @@ servers. Clear them with `sudo networksetup -setdnsservers Wi-Fi Empty`.
 Shipped: build 1062 (`177f24fc`, round-nine assistant fixes plus their probe
 record), page stamp `tt-1062-177f24fc`, Mac app 0.182 build 1062 installed.
 Suite 2785 passed; live gates green (43 Mac tests, 23 workflow checks).
+
+## 2026-09-06: round ten, the award-quality gaps
+
+After build 1062 the functional work is done and hardened. What was left, from
+an honest assessment, is what a reviewer actually judges. Five Astra agents are
+on it in private copies (`astra/briefs/round10-*.md`, outputs `astra/out10/`):
+
+- `motion`: the biggest gap. The app has 127 CSS transition and keyframe
+  declarations, no springs, no gesture tracking and nothing interruptible. The
+  brief is Apple's own fluid-interface standard: a hand-rolled rAF spring in
+  `src/lib/motion` with damping and response rather than duration, motion that
+  starts from the live presentation value, 1:1 pointer tracking with grab
+  offset, velocity handoff on release, momentum projection with the 0.998
+  deceleration form, rubber-banding at boundaries, symmetric enter and exit
+  anchored to the trigger, and reduced motion as a real path rather than a
+  disable. Applied to the rail and its resize handle, popovers and sheets, the
+  inline preview, the tab strip and press feedback.
+- `mac-platform`: the Mac app has a strong File Provider and nothing else that
+  makes it a Mac app. No App Intents or Shortcuts, no Spotlight, no drag and
+  drop, no Quick Look, no sharing. The brief covers menu bar depth, drag and
+  drop both directions, Shortcuts, Spotlight, Quick Look and window restoration.
+- `a11y`: keyboard-only paths, focus order and return, roles and landmarks,
+  live regions, large text at 200 percent, prefers-contrast and forced colors,
+  and computed contrast from the real tokens.
+- `firstrun`: every empty, failed and first-run state, with copy.
+- `qa10`: an adversarial pass aiming for the clean bar. Rounds eight and nine
+  each still found a P1; the goal is a round that finds none.
+
+Two findings from my own checks. The blank screen at launch already has a fix:
+`WebAppWindowController` puts a `LaunchPlaceholderView` in the container and
+lifts it on first commit with a backstop on navigation finish, so the window is
+never white. And production timings measured from here are contaminated by the
+tunnel (615 ms to first byte), so the launch number worth trusting has to come
+from a normal connection or the local production build.
+
+The real Safari and trackpad pass is the one item no agent can do. A twelve
+point checklist is at `astra/../safari-pass.md` in the session scratchpad and
+was sent to the owner.
