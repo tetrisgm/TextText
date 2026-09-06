@@ -4829,3 +4829,20 @@ Shipped: build 1060 (`ad6b7f24` plus the docs commit `6c5c9e2b`), deployment
 Suite 2759 passed; live gates green. The first promotion attempt was refused
 only because the handoff changed while gates ran; the rerun landed. Wrap-up
 complete: tree clean, no agents running.
+
+## 2026-09-05, late: rail shell parity, context picker verified, scratch cleaned
+
+The two follow-ups from the last probe run were probe artifacts plus one real
+gap. The shared probe prelude (`.texttext/probe/tok.mts`) grew when it was
+hardened, so probes built from a fixed line count lost their sign-in or their
+item click and measured the workspace root; that is why the Context row showed
+no "This item" chip and the Add agent mark was "missing". Probes now start from
+`.texttext/probe/prelude.mts`. Regenerated, the context picker probe shows the
+row with This item pressed, Whole workspace index, and Add; the search combobox
+takes focus with a listbox of matches, adding "Quiet tools" makes a removable
+chip, Enter returns focus to the composer, and the chips use the sheet tokens in
+both themes. The real gap: the static rail shell had no Context row, so the
+composer moved when the controller loaded; `AssistantRailShell.tsx` now paints
+the same row (This item when an item is open, Whole workspace index, Add) wired
+to its activate handler. Scratch data removed: the second dev account's editor
+share (`revoke_access`) and the Codex item grants (Remove agent in the sheet).

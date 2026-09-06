@@ -432,6 +432,34 @@ export function AssistantRailShell({
           aria-label={`${title} composer`}
           onSubmit={submit}
         >
+          {/* The loaded rail shows a Context row here; painting the same row at
+              first paint keeps the composer from moving when the controller
+              arrives. Any interaction hands over to the loaded rail. */}
+          <div>
+            <div className={styles.contextRow} role="group" aria-label="Context for the next turn">
+              <span>Context</span>
+              {context?.kind === "item" ? (
+                <button type="button" aria-pressed onClick={() => void activate()} onFocus={() => void activate()}>
+                  This item
+                </button>
+              ) : null}
+              <button type="button" aria-pressed={false} onClick={() => void activate()} onFocus={() => void activate()}>
+                Whole workspace index
+              </button>
+              <div className={styles.contextPicker}>
+                <button
+                  type="button"
+                  aria-label="Add TextText context"
+                  aria-haspopup="dialog"
+                  aria-expanded={false}
+                  onClick={() => void activate()}
+                  onFocus={() => void activate()}
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+          </div>
           <div className={styles.composerField}>
             {context ? (
               <div className={styles.contextChip}>
