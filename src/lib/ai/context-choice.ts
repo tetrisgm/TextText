@@ -21,3 +21,19 @@ export function cleanAssistantContextChoice(value: unknown): AssistantContextCho
     ))].slice(0, MAX_PERSON_CONTEXT_ITEMS) : [],
   };
 }
+
+/** Requested ids only; failed reads never reveal a title or body. */
+export type AssistantContextResolution = { id: string; status: "read" | "unavailable" };
+export function cleanAssistantContextResolutions(value: unknown): AssistantContextResolution[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, MAX_PERSON_CONTEXT_ITEMS).flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || typeof entry.id !== "string" ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(entry.id) ||
+        (entry.status !== "read" && entry.status !== "unavailable")) return [];
+    return [{ id: entry.id, status: entry.status }];
+  });
+}
+export function unavailableContextWarning(outcomes: readonly AssistantContextResolution[]): string {
+  const count = outcomes.filter((entry) => entry.status === "unavailable").length;
+  return count ? `${count} chosen context ${count === 1 ? "item is" : "items are"} unavailable. The assistant could not use ${count === 1 ? "that source" : "those sources"}.` : "";
+}

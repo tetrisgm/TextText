@@ -106,3 +106,17 @@ it("handles the actual window-capture Escape callback without hiding a focused c
   close();
   expect(hideAssistant).toHaveBeenCalledOnce();
 });
+
+it("R9 preserves a usable active option when the live item list shrinks", () => {
+  const onAdd = vi.fn(), onClose = vi.fn();
+  let available = items;
+  const render = () => { hooks.cursor = 0; return AssistantContextSearch({ items: available, selected: [], onAdd, onClose }); };
+  invoke(find(render(), e => e.props.role === "combobox"), "onKeyDown", key("ArrowDown"));
+  // The first item disappears following deletion/access refresh. The active
+  // second item is still readable, now at index zero.
+  available = [items[1]];
+  const input = find(render(), e => e.props.role === "combobox");
+  invoke(input, "onKeyDown", key("Enter"));
+  expect(onAdd).toHaveBeenCalledExactlyOnceWith(items[1]);
+  expect(onClose).toHaveBeenCalledOnce();
+});

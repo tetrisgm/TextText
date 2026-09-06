@@ -27,12 +27,12 @@ import type { AssistantHistorySyncStatus } from "./conversation-sync";
 import type { AssistantModelChoice } from "./model-preference";
 import { WorkspaceAssistantSkillLauncher } from "./AssistantSkillLauncher";
 import {
-  ASSISTANT_SIDEBAR_DEFAULT_WIDTH,
   ASSISTANT_SIDEBAR_MAX_WIDTH,
   ASSISTANT_SIDEBAR_MIN_WIDTH,
   type AssistantSidebarState,
 } from "./constants";
 import { resolveAssistantSidebarDimensions } from "./sidebar-dimensions";
+import { AssistantAttachmentList, AssistantHistorySync, DocumentIcon, StopIcon } from "./AssistantRailDetails";
 import { assistantComposerPlaceholder } from "./sidebar-copy";
 
 export {
@@ -184,22 +184,6 @@ export function isAssistantToggleShortcut(
 }
 
 
-function formatFileSize(value: number | undefined): string | null {
-  if (value === undefined || !Number.isFinite(value) || value < 0) return null;
-  if (value < 1024) return `${Math.round(value)} B`;
-
-  const units = ["KB", "MB", "GB", "TB"];
-  let amount = value / 1024;
-  let unitIndex = 0;
-
-  while (amount >= 1024 && unitIndex < units.length - 1) {
-    amount /= 1024;
-    unitIndex += 1;
-  }
-
-  const precision = amount < 10 ? 1 : 0;
-  return `${amount.toFixed(precision)} ${units[unitIndex]}`;
-}
 
 export function AssistantSidebar({
   contextKey,
@@ -641,21 +625,7 @@ export function AssistantSidebar({
               </h2>
               {/* Always present, so the line's height is reserved before the
                   first sync result and the rail does not shift on load. */}
-              <div className={styles.historySync}>
-                {historySyncStatus ? (
-                  <span role="status" aria-live="polite" aria-atomic="true">
-                    {historySyncStatus === "syncing" ? "Syncing"
-                      : historySyncStatus === "synced" ? "Synced"
-                      : historySyncStatus === "offline" ? "Offline"
-                      : "Saved on this device"}
-                  </span>
-                ) : null}
-                {(historySyncStatus === "offline" || historySyncStatus === "error") && onRetryHistorySync ? (
-                  <button type="button" className={styles.retrySync} onClick={onRetryHistorySync}>
-                    Retry sync
-                  </button>
-                ) : null}
-              </div>
+              <AssistantHistorySync status={historySyncStatus} onRetry={onRetryHistorySync} />
             </div>
             {pendingCount > 0 && onOpenPendingConversation ? (
               <div className={styles.pendingMenu}>
@@ -791,41 +761,7 @@ export function AssistantSidebar({
             hasSelection={hasSelection} disabled={disabled || submitting}
             focusComposer={() => composerRef.current?.focus()} />
           </div>
-          {attachments.length > 0 && (
-            <ul className={styles.attachmentList} aria-label="Added context">
-              {attachments.map((attachment) => {
-                const fileSize = formatFileSize(attachment.size);
-                return (
-                  <li className={styles.attachmentChip} key={attachment.id}>
-                    <span className={styles.attachmentIcon} aria-hidden="true">
-                      {attachment.workspaceItemId ? <DocumentIcon /> : <AttachmentIcon />}
-                    </span>
-                    <span className={styles.attachmentCopy}>
-                      <span
-                        className={styles.attachmentName}
-                        title={attachment.name}
-                      >
-                        {attachment.name}
-                      </span>
-                      {(attachment.detail || fileSize) && (
-                        <span className={styles.attachmentSize}>{attachment.detail || fileSize}</span>
-                      )}
-                    </span>
-                    <button
-                      className={styles.removeAttachmentButton}
-                      type="button"
-                      disabled={disabled || submitting}
-                      aria-label={`${attachment.workspaceItemId ? "Remove context" : "Remove attachment"} ${attachment.name}`}
-                      title={`Remove ${attachment.name}`}
-                      onClick={() => onRemoveAttachment(attachment)}
-                    >
-                      <SmallCloseIcon />
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+          <AssistantAttachmentList attachments={attachments} disabled={disabled || submitting} onRemove={onRemoveAttachment} />
 
           <div className={styles.composerField}>
             {workspaceHandle ? (
@@ -996,25 +932,6 @@ function CloseIcon() {
   );
 }
 
-function DocumentIcon() {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path
-        d="M3.75 2.25h5.4l3.1 3.1v8.4h-8.5V2.25Z"
-        stroke="currentColor"
-        strokeLinejoin="round"
-        strokeWidth="1.3"
-      />
-      <path
-        d="M9 2.5v3h3M5.75 8.25h4.5M5.75 10.5h3.5"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.3"
-      />
-    </svg>
-  );
-}
 
 function FolderIcon() {
   return (
@@ -1057,19 +974,6 @@ function WorkspaceIcon() {
   );
 }
 
-function AttachmentIcon() {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path
-        d="m5.15 8.95 4.2-4.2a2.1 2.1 0 0 1 2.95 2.95l-5.2 5.2a3.1 3.1 0 0 1-4.4-4.4l5.05-5.05M6.4 10.2l4.4-4.4"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.35"
-      />
-    </svg>
-  );
-}
 
 function PlusIcon() {
   return (
@@ -1084,18 +988,6 @@ function PlusIcon() {
   );
 }
 
-function SmallCloseIcon() {
-  return (
-    <svg viewBox="0 0 14 14" fill="none" aria-hidden="true">
-      <path
-        d="m4.25 4.25 5.5 5.5m0-5.5-5.5 5.5"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.45"
-      />
-    </svg>
-  );
-}
 
 function SendIcon() {
   return (
@@ -1111,19 +1003,5 @@ function SendIcon() {
   );
 }
 
-function StopIcon() {
-  return (
-    <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <rect
-        x="5"
-        y="5"
-        width="8"
-        height="8"
-        rx="1.25"
-        fill="currentColor"
-      />
-    </svg>
-  );
-}
 
 export default AssistantSidebar;

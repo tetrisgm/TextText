@@ -4,7 +4,7 @@ import { INLINE_STATUS_LABELS } from "./InlineSelectionPreview";
 import { INLINE_ACTIONS } from "./inline-preview";
 import { QuickActionControl } from "./QuickActionControl";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef } from "react";
 import type { AssistantMessage } from "./useNativeAssistant";
 import type { AssistantJob } from "@/lib/ai/jobs";
 import type { NativeQuickActionId } from "@/lib/ai/quick-actions";
@@ -674,10 +674,10 @@ export function AssistantConversation({
   }
 
   const visibleMessages = messages.filter(
-    (message) => message.role !== "progress",
+    (message) => message.role !== "progress" || message.contextWarning === true,
   );
   const latestProgress = submitting
-    ? [...messages].reverse().find((message) => message.role === "progress")
+    ? [...messages].reverse().find((message) => message.role === "progress" && !message.contextWarning)
     : undefined;
   return (
     <div
@@ -690,6 +690,7 @@ export function AssistantConversation({
       {jobsStrip}
       {quickActionBar}
       {visibleMessages.map((message, messageIndex) => {
+        if (message.contextWarning) return <p key={message.id} role="status" className={styles.contextWarning}>{message.text}</p>;
         if (message.inlinePreview) {
           const preview = message.inlinePreview;
           return <div key={message.id} className={styles.proposal}>

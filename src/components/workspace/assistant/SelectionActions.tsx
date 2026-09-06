@@ -145,7 +145,8 @@ export function SelectionActions({
       pointerRef.current = { x: event.clientX, y: event.clientY };
       scheduleRefresh();
     };
-    const onKeyUp = () => {
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key === "Tab") return;
       pointerRef.current = null;
       scheduleRefresh();
     };
@@ -158,7 +159,17 @@ export function SelectionActions({
       window.clearTimeout(settle);
       if (anchorRef.current) setAnchor(null);
     };
-    const onKeyDown = () => { if (!barRef.current?.contains(document.activeElement)) dismiss(); };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Tab") {
+        if (!event.shiftKey && anchorRef.current && !barRef.current?.contains(document.activeElement) &&
+            !event.isComposing && event.keyCode !== 229) {
+          const first = barRef.current?.querySelector?.<HTMLButtonElement>("button:not(:disabled)");
+          if (first) { event.preventDefault(); first.focus(); }
+        }
+        return;
+      }
+      if (!barRef.current?.contains(document.activeElement)) dismiss();
+    };
     const onCompositionStart = () => { composingRef.current = true; dismiss(); };
     const onCompositionEnd = () => { composingRef.current = false; scheduleRefresh(); };
     document.addEventListener("keydown", onKeyDown);
@@ -171,6 +182,7 @@ export function SelectionActions({
     document.addEventListener("selectionchange", onSelectionChange);
     window.addEventListener("scroll", dismiss, true);
     window.addEventListener("resize", dismiss);
+    window.addEventListener("blur", dismiss);
     return () => {
       window.clearTimeout(settle);
       document.removeEventListener("keydown", onKeyDown);
@@ -183,6 +195,7 @@ export function SelectionActions({
       document.removeEventListener("selectionchange", onSelectionChange);
       window.removeEventListener("scroll", dismiss, true);
       window.removeEventListener("resize", dismiss);
+      window.removeEventListener("blur", dismiss);
     };
   }, [enabled, refresh, readSelection]);
 

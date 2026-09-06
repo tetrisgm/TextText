@@ -142,7 +142,7 @@ export function InlineSelectionPreview({ controller, surface, readSelection, onC
       className={`${styles.palette} ${styles.preview}`} data-state={state.status}
       onKeyDown={(event) => {
         // Local handler only: document Cmd+Enter must never accept a preview.
-        const action = previewKeyAction(event.key, event.metaKey, event.nativeEvent.isComposing, state.status);
+        const action = previewKeyAction(event.key, event.metaKey, event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229, state.status);
         if (!action) return;
         event.preventDefault(); event.stopPropagation();
         if (action === "accept") void controller.accept();
@@ -152,7 +152,8 @@ export function InlineSelectionPreview({ controller, surface, readSelection, onC
         {INLINE_ACTIONS.find((action) => action.id === state.action)?.label} · {state.title} · {isBodyCaret(state.envelope) ? "At caret" : `${state.words} selected ${state.words === 1 ? "word" : "words"}`}
       </div>
       <div className={styles.context}>
-        <span>{state.includeItem !== false ? "Context: this passage and the item" : "Context: this passage only"}</span>
+        <span>{state.generationIncludeItem !== false ? (isBodyCaret(state.envelope) ? "Context: item at caret" : "Context: this passage and the item") : (isBodyCaret(state.envelope) ? "Context: caret only" : "Context: this passage only")}</span>
+        <span>Next generation:</span>
         <button type="button" aria-label="Include item context for the next generation" aria-pressed={state.includeItem !== false}
           disabled={changing || state.status === "applied" || state.status === "undone"}
           onClick={() => controller.setIncludeItem(state.includeItem === false)}>

@@ -6,7 +6,7 @@ import { listAgentChanges, getAgentChange } from "@/lib/store";
 import {
   validateSelectionEditEnvelope,
   validateSelectionEnvelope,
-  assertSelectionMatches,
+  validateSelectionSource,
   SELECTION_INVALID_ERROR,
   SELECTION_STALE_ERROR,
 } from "@/lib/ai/selection-envelope";
@@ -2129,7 +2129,7 @@ async function executeWorkspaceCommand(
       if (input.text_edit?.source_precondition !== undefined) {
         try {
           const source = await validateSelectionEnvelope(input.text_edit.source_precondition);
-          assertSelectionMatches(source, input.id, post);
+          await validateSelectionSource(source, input.id, post);
         } catch (error) {
           return errorResult(error instanceof Error ? error.message : SELECTION_INVALID_ERROR);
         }

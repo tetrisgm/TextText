@@ -1,5 +1,8 @@
 "use client";
 
+import { AssistantAttachmentList, AssistantHistorySync, StopIcon } from "./AssistantRailDetails";
+import { AssistantContextPicker } from "./AssistantContextPicker";
+import { DEFAULT_CONTEXT_CHOICE } from "@/lib/ai/context-choice";
 import { QuickActionControl } from "./QuickActionControl";
 
 import {
@@ -20,6 +23,7 @@ import type {
 } from "./AssistantSidebar";
 import type { AssistantContext } from "./context";
 import {
+  ASSISTANT_SIDEBAR_DEFAULT_WIDTH,
   ASSISTANT_SIDEBAR_MAX_WIDTH,
   ASSISTANT_SIDEBAR_MIN_WIDTH,
 } from "./constants";
@@ -35,6 +39,9 @@ import idleStyles from "./AssistantRailIdle.module.css";
 import historyStyles from "./AssistantConversationHistory.module.css";
 import styles from "./AssistantSidebar.module.css";
 
+// These controls hand off to the loaded rail; a passive shell can paint
+// without installing their callbacks. The loaded sidebar keeps them required.
+type DeferredShellProps = "width" | "onWidthChange" | "onFilesSelected" | "onRemoveAttachment";
 export type AssistantRailShellProps = AssistantSidebarProps & {
   /** The conversation context key, so the shell can peek at the replica. */
   contextKey?: string;
@@ -42,6 +49,9 @@ export type AssistantRailShellProps = AssistantSidebarProps & {
   shellOnSubmit?: (submission: AssistantComposerSubmission) => unknown;
   shellViewerName?: string | null;
 };
+
+type AssistantRailShellViewProps = Omit<AssistantRailShellProps, DeferredShellProps> &
+  Partial<Pick<AssistantRailShellProps, DeferredShellProps>>;
 
 const CLAUDE_SHELL_AGENT = {
   color: "#0071e3",
@@ -183,10 +193,10 @@ export function AssistantRailShell({
   submitOnEnter = true,
   submitting = false,
   title = "Assistant",
-  width,
+  width = ASSISTANT_SIDEBAR_DEFAULT_WIDTH,
   contextKey,
   ...props
-}: AssistantRailShellProps) {
+}: AssistantRailShellViewProps) {
   const generatedPanelId = useId();
   const titleId = useId();
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -327,8 +337,14 @@ export function AssistantRailShell({
               </h2>
               {/* Same structure as the loaded rail, including the reserved
                   status line, so the two paint identically. */}
-              <div className={styles.historySync} />
+              <AssistantHistorySync status={props.historySyncStatus} onRetry={props.onRetryHistorySync} />
             </div>
+            {(props.pendingCount ?? 0) > 0 && (props.onOpenPendingConversation ?
+              <button type="button" className={styles.pendingLabel} onClick={() => void activate()}>
+                {props.pendingCount} {props.pendingCount === 1 ? "approval" : "approvals"}
+              </button> : <span className={styles.pendingLabel}>
+                {props.pendingCount} {props.pendingCount === 1 ? "approval" : "approvals"}
+              </span>)}
             <div className={styles.headerActions}>
               <select
                 className={styles.modelSelect}
@@ -432,34 +448,20 @@ export function AssistantRailShell({
           aria-label={`${title} composer`}
           onSubmit={submit}
         >
-          {/* The loaded rail shows a Context row here; painting the same row at
-              first paint keeps the composer from moving when the controller
-              arrives. Any interaction hands over to the loaded rail. */}
-          <div>
-            <div className={styles.contextRow} role="group" aria-label="Context for the next turn">
-              <span>Context</span>
-              {context?.kind === "item" ? (
-                <button type="button" aria-pressed onClick={() => void activate()} onFocus={() => void activate()}>
-                  This item
-                </button>
-              ) : null}
-              <button type="button" aria-pressed={false} onClick={() => void activate()} onFocus={() => void activate()}>
-                Whole workspace index
-              </button>
-              <div className={styles.contextPicker}>
-                <button
-                  type="button"
-                  aria-label="Add TextText context"
-                  aria-haspopup="dialog"
-                  aria-expanded={false}
-                  onClick={() => void activate()}
-                  onFocus={() => void activate()}
-                >
-                  Add
-                </button>
-              </div>
-            </div>
+          <div onFocus={() => void activate()}>
+            <AssistantContextPicker
+              choice={props.onContextChoiceChange ? props.contextChoice ?? DEFAULT_CONTEXT_CHOICE : {
+                ...(props.contextChoice ?? DEFAULT_CONTEXT_CHOICE),
+                itemIds: attachments.flatMap((a) => a.workspaceItemId ? [a.workspaceItemId] : []),
+              }}
+              onChange={(choice) => { props.onContextChoiceChange?.(choice); void activate(); }}
+              items={props.availableContextItems ?? []} hasItem={context?.kind === "item"}
+              hasSelection={props.hasSelection ?? false} disabled={disabled || submitting}
+              focusComposer={() => composerRef.current?.focus()}
+              onOpenChange={() => void activate()} />
           </div>
+          <AssistantAttachmentList attachments={attachments} disabled={disabled || submitting}
+            onRemove={(attachment) => { props.onRemoveAttachment?.(attachment); void activate(); }} />
           <div className={styles.composerField}>
             {context ? (
               <div className={styles.contextChip}>
@@ -501,7 +503,10 @@ export function AssistantRailShell({
               >
                 <PlusIcon />
               </button>
-              <button
+              {submitting ? <button
+                className={classNames(styles.composerButton, styles.submitButton)}
+                type="button" aria-label="Stop assistant" title="Stop assistant"
+                onClick={() => { props.onCancel?.(); void activate(); }}><StopIcon /></button> : <button
                 className={classNames(styles.composerButton, styles.submitButton)}
                 type="submit"
                 disabled={!canSubmit}
@@ -509,7 +514,7 @@ export function AssistantRailShell({
                 title={submitOnEnter ? "Send message (Return)" : "Send message"}
               >
                 <SendIcon />
-              </button>
+              </button>}
             </div>
           </div>
         </form>

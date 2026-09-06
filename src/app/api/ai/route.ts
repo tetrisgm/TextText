@@ -5,8 +5,9 @@
 // tool set still excludes confirmation-gated destructive/sharing/publish tools
 // until an interactive confirmation flow is wired for the web path.
 
+import type { AssistantContextResolution } from "@/lib/ai/context-choice";
 import {
-  assertSelectionMatches,
+  validateSelectionSource,
   validateSelectionEnvelope,
   SELECTION_INVALID_ERROR,
   SELECTION_STALE_ERROR,
@@ -293,7 +294,7 @@ function assistantToolProgress(toolName: string, finished = false): string {
 }
 
 type AssistantStreamEvent =
-  | { type: "start"; provider: string; model: string }
+  | { type: "start"; provider: string; model: string; contextResolutions?: AssistantContextResolution[] }
   | { type: "text"; text: string }
   | { type: "progress"; message: string; tool?: string }
   | {
@@ -306,6 +307,7 @@ type AssistantStreamEvent =
       workspaceCalls: CloudAssistantWorkspaceCall[];
       writeProposals?: CloudAssistantWriteProposal[];
       contextItems?: RecentWorkspaceContextItem[];
+      contextResolutions?: AssistantContextResolution[];
       selectionEnvelope?: SelectionEnvelope;
     }
   | {
@@ -344,6 +346,7 @@ function assistantStreamResponse(
     workspaceCalls,
     writeProposals,
     contextItems,
+    contextResolutions,
     selectionEnvelope,
     signal,
   }: {
@@ -354,6 +357,7 @@ function assistantStreamResponse(
     workspaceCalls: CloudAssistantWorkspaceCall[];
     writeProposals: CloudAssistantWriteProposal[];
     contextItems: RecentWorkspaceContextItem[];
+    contextResolutions: AssistantContextResolution[];
     selectionEnvelope?: SelectionEnvelope;
     signal: AbortSignal;
   },
@@ -372,7 +376,7 @@ function assistantStreamResponse(
       const emit = (event: AssistantStreamEvent) => {
         controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
       };
-      emit({ type: "start", provider, model });
+      emit({ type: "start", provider, model, ...(contextResolutions.length ? { contextResolutions } : {}) });
       try {
         for await (const rawPart of result.fullStream) {
           if (signal.aborted) break;
@@ -445,7 +449,8 @@ function assistantStreamResponse(
               workspaceCalls,
               ...(writeProposals.length > 0 ? { writeProposals } : {}),
               ...(contextItems.length > 0 ? { contextItems } : {}),
-            ...(selectionEnvelope ? { selectionEnvelope } : {}),
+              ...(contextResolutions.length ? { contextResolutions } : {}),
+              ...(selectionEnvelope ? { selectionEnvelope } : {}),
             });
           }
         }
@@ -465,6 +470,7 @@ function assistantStreamResponse(
             workspaceCalls,
             ...(writeProposals.length > 0 ? { writeProposals } : {}),
             ...(contextItems.length > 0 ? { contextItems } : {}),
+            ...(contextResolutions.length ? { contextResolutions } : {}),
             ...(selectionEnvelope ? { selectionEnvelope } : {}),
           });
         }
@@ -657,9 +663,9 @@ type RelatedWorkspaceContextItem = {
 async function relatedWorkspaceContext(
   context: unknown,
   handle: string,
-): Promise<RelatedWorkspaceContextItem[]> {
+): Promise<{ items: RelatedWorkspaceContextItem[]; outcomes: AssistantContextResolution[] }> {
   const view = viewContext(context);
-  if (!Array.isArray(view.relatedItems)) return [];
+  if (!Array.isArray(view.relatedItems)) return { items: [], outcomes: [] };
   const requestedItems = view.relatedItems.slice(0, 5);
   const ids = [
     ...new Set(
@@ -673,7 +679,7 @@ async function relatedWorkspaceContext(
   const posts = await Promise.all(
     ids.map((id) => getPostById(handle, id).catch(() => null)),
   );
-  return posts.flatMap((post) =>
+  const items = posts.flatMap((post) =>
     post?.id
       ? [
           {
@@ -688,6 +694,7 @@ async function relatedWorkspaceContext(
         ]
       : [],
   );
+  return { items, outcomes: ids.map((id, index) => ({ id, status: posts[index]?.id ? "read" : "unavailable" })) };
 }
 
 function buildSystem(
@@ -857,7 +864,7 @@ export async function POST(request: Request) {
       // selection text is delivered to a provider when access cannot be proved.
       const post = await getPostById(workspace.handle, selectionEnvelope.itemId);
       if (!post?.id) throw new Error(SELECTION_INVALID_ERROR);
-      assertSelectionMatches(selectionEnvelope, post.id, post);
+      await validateSelectionSource(selectionEnvelope, post.id, post);
       body.context = { ...selectionView, selectionEnvelope };
     }
   } catch (error) {
@@ -974,11 +981,12 @@ export async function POST(request: Request) {
         messages,
         user,
       }).catch(() => ({ note: "", items: [] })),
-      relatedWorkspaceContext(body.context, workspace.handle).catch(() => []),
+      relatedWorkspaceContext(body.context, workspace.handle),
     ]);
+  const contextResolutions = relatedContext.outcomes;
   const contextItems = [
     ...recentContext.items,
-    ...relatedContext.map((item) => ({
+    ...relatedContext.items.map((item) => ({
       id: item.id,
       title: item.title,
       folderPath: "",
@@ -1012,7 +1020,9 @@ export async function POST(request: Request) {
   const modelRequest = {
     model,
     system:
-      buildSystem(body.context, relatedContext, recentContext.note) +
+      buildSystem(body.context, relatedContext.items, recentContext.note) +
+      (contextResolutions.some((entry) => entry.status === "unavailable")
+        ? `\n\nChosen context sources unavailable: ${contextResolutions.filter((entry) => entry.status === "unavailable").map((entry) => entry.id).join(", ")}. These sources could not be read. Do not infer their content or claim to have used them; explain when this limits the answer.` : "") +
       (workspaceAgentPrompt ? `\n\n${workspaceAgentPrompt}` : "") +
       outboundSystemNote(
         reachable.map((entry) => entry.connection.name),
@@ -1047,6 +1057,7 @@ export async function POST(request: Request) {
       workspaceCalls,
       writeProposals,
       contextItems,
+      contextResolutions,
       selectionEnvelope,
       signal: request.signal,
     });
@@ -1058,6 +1069,7 @@ export async function POST(request: Request) {
     });
     return Response.json({
       text: result.text,
+      ...(contextResolutions.length ? { contextResolutions } : {}),
       ...(selectionEnvelope ? { selectionEnvelope } : {}),
       provider,
       model: selectedModel,
@@ -1087,6 +1099,7 @@ export async function POST(request: Request) {
     ) {
       return Response.json({
         text: "",
+        ...(contextResolutions.length ? { contextResolutions } : {}),
         provider,
         model: selectedModel,
         outboundCalls: calls,

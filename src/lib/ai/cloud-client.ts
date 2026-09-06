@@ -1,3 +1,4 @@
+import { cleanAssistantContextResolutions, type AssistantContextResolution } from "./context-choice";
 // Client for the workspace-owned AI connection. The browser sees provider and
 // model metadata, never the configured key.
 
@@ -109,6 +110,7 @@ type CloudAssistantOutcome =
       writeProposals: CloudAssistantWriteProposal[];
       /** Exact access-checked items supplied as source context for the turn. */
       contextItems: CloudContextItem[];
+      contextResolutions?: AssistantContextResolution[];
       selectionEnvelope?: SelectionEnvelope;
       /** Some commands completed before the provider failed later in the turn. */
       terminalError?: string;
@@ -118,7 +120,7 @@ type CloudAssistantOutcome =
   | { disabled: true };
 
 export type CloudAssistantStreamEvent =
-  | { type: "start"; provider: CloudAssistantProviderLabel; model: string }
+  | { type: "start"; provider: CloudAssistantProviderLabel; model: string; contextResolutions?: AssistantContextResolution[] }
   | { type: "text"; text: string }
   | { type: "progress"; message: string; tool?: string }
   | {
@@ -131,6 +133,7 @@ export type CloudAssistantStreamEvent =
       workspaceCalls: CloudWorkspaceCall[];
       writeProposals: CloudAssistantWriteProposal[];
       contextItems: CloudContextItem[];
+      contextResolutions?: AssistantContextResolution[];
       selectionEnvelope?: SelectionEnvelope;
     }
   | {
@@ -503,6 +506,7 @@ export async function cloudAssistantTurn(
           workspaceCalls: cleanWorkspaceCalls(record.workspaceCalls),
           writeProposals: cleanWriteProposals(record.writeProposals),
           contextItems: cleanContextItems(record.contextItems),
+          ...(record.contextResolutions !== undefined ? { contextResolutions: cleanAssistantContextResolutions(record.contextResolutions) } : {}),
           ...(record.selectionEnvelope !== undefined ? { selectionEnvelope: parseSelectionEnvelope(record.selectionEnvelope) } : {}),
           unreachableServers: Array.isArray(record.unreachableServers)
             ? record.unreachableServers.filter(
@@ -577,6 +581,7 @@ export async function cloudAssistantTurn(
     workspaceCalls?: unknown;
     writeProposals?: unknown;
     contextItems?: unknown;
+    contextResolutions?: unknown;
     selectionEnvelope?: unknown;
     terminalError?: unknown;
   };
@@ -591,6 +596,7 @@ export async function cloudAssistantTurn(
     workspaceCalls: cleanWorkspaceCalls(data.workspaceCalls),
     writeProposals: cleanWriteProposals(data.writeProposals),
     contextItems: cleanContextItems(data.contextItems),
+    ...(data.contextResolutions !== undefined ? { contextResolutions: cleanAssistantContextResolutions(data.contextResolutions) } : {}),
     ...(data.selectionEnvelope !== undefined ? { selectionEnvelope: parseSelectionEnvelope(data.selectionEnvelope) } : {}),
     ...(typeof data.terminalError === "string" && data.terminalError.trim()
       ? { terminalError: data.terminalError.trim() }
@@ -611,6 +617,7 @@ function cleanStreamEvent(
   if (record.type === "start") {
     return {
       type: "start",
+      ...(record.contextResolutions !== undefined ? { contextResolutions: cleanAssistantContextResolutions(record.contextResolutions) } : {}),
       provider: provider ?? "OpenAI",
       model,
     };
@@ -644,6 +651,7 @@ function cleanStreamEvent(
       workspaceCalls: cleanWorkspaceCalls(record.workspaceCalls),
       writeProposals: cleanWriteProposals(record.writeProposals),
       contextItems: cleanContextItems(record.contextItems),
+      ...(record.contextResolutions !== undefined ? { contextResolutions: cleanAssistantContextResolutions(record.contextResolutions) } : {}),
     };
   }
   return {

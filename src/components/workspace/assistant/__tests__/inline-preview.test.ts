@@ -453,7 +453,10 @@ describe("inline caret lifecycle", () => {
     expect(s.current().body).toBe(initial().body.slice(0, caret) + " continued text" + initial().body.slice(caret));
     await s.controller.undo();
     expect(s.current().body).toBe(initial().body);
-    expect(s.execute.mock.calls[1][0]).toEqual({ field: "body", start: caret, end: caret + " continued text".length, expected_text: " continued text", replacement_text: "" });
+    const undoEnvelope = await createSelectionEnvelope("item", {
+      ...initial(), revision: 8, body: initial().body.slice(0, caret) + " continued text" + initial().body.slice(caret),
+    }, { field: "body", start: caret, end: caret + " continued text".length, text: " continued text" }, true);
+    expect(s.execute.mock.calls[1][0]).toEqual({ field: "body", start: caret, end: caret + " continued text".length, expected_text: " continued text", replacement_text: "", selection_envelope: undoEnvelope });
     expect(s.records.map((record) => record.status)).toEqual(expect.arrayContaining(["generating", "ready", "applying", "applied", "undone"]));
   });
   it("drafts into an empty document with the same guarded controller", async () => {

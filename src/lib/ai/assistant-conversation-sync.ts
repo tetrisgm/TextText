@@ -1,4 +1,4 @@
-import { cleanAssistantContextChoice, type AssistantContextChoice } from "./context-choice";
+import { DEFAULT_CONTEXT_CHOICE, cleanAssistantContextChoice, type AssistantContextChoice } from "./context-choice";
 
 // Generous counts, because losing an old discussion is worse than holding
 // it: the real protection is the byte budget below (and the store's own
@@ -22,6 +22,7 @@ export type SyncedAssistantConversation = {
   title: string;
   pinned: boolean;
   contextChoice?: AssistantContextChoice;
+  contextUpdatedAt?: string;
   metadataUpdatedAt: string;
   createdAt: string;
   updatedAt: string;
@@ -220,6 +221,11 @@ function cleanConversation(value: unknown): SyncedAssistantConversation | null {
     title: record.title.trim().replace(SECRET_VALUE, "[redacted]").slice(0, 80) || "New chat",
     pinned: record.pinned === true,
     ...(record.contextChoice ? { contextChoice: cleanAssistantContextChoice(record.contextChoice) } : {}),
+    // Legacy default choices may have been copied by an unrelated pin/title edit.
+    // Migrate those from creation; explicit new context edits carry their own clock.
+    contextUpdatedAt: validTimestamp(record.contextUpdatedAt,
+      canonical(cleanAssistantContextChoice(record.contextChoice) ?? DEFAULT_CONTEXT_CHOICE) === canonical(DEFAULT_CONTEXT_CHOICE)
+        ? createdAt : validTimestamp(record.metadataUpdatedAt, updatedAt)),
     metadataUpdatedAt: validTimestamp(record.metadataUpdatedAt, updatedAt),
     createdAt,
     updatedAt,
@@ -368,8 +374,12 @@ function mergeConversation(
   const rightMetadataWins =
     right.metadataUpdatedAt > left.metadataUpdatedAt ||
     (right.metadataUpdatedAt === left.metadataUpdatedAt &&
-      canonical({ title: right.title, pinned: right.pinned, contextChoice: right.contextChoice ?? null }) >
-        canonical({ title: left.title, pinned: left.pinned, contextChoice: left.contextChoice ?? null }));
+      canonical({ title: right.title, pinned: right.pinned }) >
+        canonical({ title: left.title, pinned: left.pinned }));
+  const leftContextClock = left.contextUpdatedAt ?? left.createdAt;
+  const rightContextClock = right.contextUpdatedAt ?? right.createdAt;
+  const contextWinner = rightContextClock > leftContextClock ||
+    (rightContextClock === leftContextClock && canonical(right.contextChoice ?? null) > canonical(left.contextChoice ?? null)) ? right : left;
   return {
     id: left.id,
     contextKey:
@@ -378,7 +388,8 @@ function mergeConversation(
         : [left.contextKey, right.contextKey].sort()[0]!,
     title: rightMetadataWins ? right.title : left.title,
     pinned: rightMetadataWins ? right.pinned : left.pinned,
-    ...((rightMetadataWins ? right : left).contextChoice ? { contextChoice: (rightMetadataWins ? right : left).contextChoice } : {}),
+    ...(contextWinner.contextChoice ? { contextChoice: contextWinner.contextChoice } : {}),
+    contextUpdatedAt: contextWinner.contextUpdatedAt ?? contextWinner.createdAt,
     metadataUpdatedAt:
       right.metadataUpdatedAt > left.metadataUpdatedAt
         ? right.metadataUpdatedAt

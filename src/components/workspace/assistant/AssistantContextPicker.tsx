@@ -17,10 +17,12 @@ export function AssistantContextSearch({ items, selected, onAdd, onClose }: {
   onAdd: (item: AssistantWorkspaceContextItem) => void; onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const id = useId();
   const choices = contextItemChoices(items, selected, query);
-  useEffect(() => { document.getElementById(`${id}-${active}`)?.scrollIntoView({ block: "nearest" }); }, [id, active, query]);
+  const active = Math.max(0, choices.findIndex((item) => item.id === activeId));
+  const activeChoiceId = choices[active]?.id;
+  useEffect(() => { document.getElementById(`${id}-${active}`)?.scrollIntoView({ block: "nearest" }); }, [id, active, query, activeChoiceId]);
   const add = (item: AssistantWorkspaceContextItem) => { onAdd(item); onClose(); };
   return <div className={styles.contextPickerPanel} role="dialog" aria-label="Add TextText context"
     onKeyDown={(event) => {
@@ -30,12 +32,12 @@ export function AssistantContextSearch({ items, selected, onAdd, onClose }: {
       aria-expanded="true" aria-autocomplete="list" aria-controls={id}
       aria-activedescendant={choices[active] ? `${id}-${active}` : undefined}
       placeholder="Search titles or folders" value={query}
-      onChange={(event) => { setQuery(event.target.value); setActive(0); }}
+      onChange={(event) => { setQuery(event.target.value); setActiveId(null); }}
       onKeyDown={(event) => {
         if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
         if (event.key === "ArrowDown" || event.key === "ArrowUp") {
           event.preventDefault();
-          setActive((index) => Math.max(0, Math.min(choices.length - 1, index + (event.key === "ArrowDown" ? 1 : -1))));
+          setActiveId(choices[Math.max(0, Math.min(choices.length - 1, active + (event.key === "ArrowDown" ? 1 : -1)))]?.id ?? null);
         } else if (event.key === "Enter") {
           event.preventDefault(); event.stopPropagation();
           if (choices[active]) add(choices[active]);

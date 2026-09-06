@@ -1231,3 +1231,10 @@
   color: color-mix(in srgb, var(--ac-red) 55%, var(--ac-label-2));
   font: 500 11px/1.4 var(--ac-font-text);
 }
+
+.contextWarning {
+  margin: 0;
+  color: var(--assistant-rail-secondary);
+  font: 400 12px / 1.5 var(--ac-font-text);
+  overflow-wrap: anywhere;
+}

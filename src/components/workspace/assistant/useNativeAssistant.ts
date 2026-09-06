@@ -9,6 +9,7 @@
 //
 // Credentials remain server-side. The browser only receives provider metadata.
 
+import { unavailableContextWarning } from "@/lib/ai/context-choice";
 import {
   useCallback,
   useEffect,
@@ -198,6 +199,8 @@ export type AssistantMessage = {
   model?: string;
   proposal?: AssistantProposal;
   inlinePreview?: InlinePreviewRecord;
+  /** Durable resolution notice, separate from transient model progress. */
+  contextWarning?: boolean;
   /**
    * What this turn did on machines the workspace does not control, and which
    * connected servers were unreachable. Attached to the message rather than
@@ -1701,6 +1704,11 @@ export function useNativeAssistant({
         let streamModel: string | undefined;
         const onCloudEvent = (event: CloudAssistantStreamEvent) => {
           if (event.type === "start") {
+            const warning = unavailableContextWarning(event.contextResolutions ?? []);
+            if (warning) {
+              const warningId = appendToThread(thread, "progress", warning);
+              updateThreadMessage(thread, warningId, (message) => ({ ...message, contextWarning: true }));
+            }
             streamProvider = event.provider;
             streamModel = event.model;
             setCloudProvider(event.provider);
@@ -1923,6 +1931,10 @@ export function useNativeAssistant({
       if (!view.postId) return;
       const draft = readOpenWorkspaceItemDraft(view.postId);
       const frozen = draft?.selection ?? draft?.writingSelection;
+      if (action === "continue" && frozen && !frozen.text && frozen.field !== "body") {
+        reportSelectionError(view.postId, "Place the caret in the document body to continue writing. Select metadata text to preview a rewrite.");
+        return;
+      }
       const inlineAction = INLINE_ACTIONS.find((candidate) => candidate.id === action);
       if (view.level === "edit" && frozen && inlineAction && (frozen.text || (action === "continue" && isBodyCaret(frozen)))) {
         const surface = captureInlineSelectionSurface(view.postId, frozen);
@@ -1954,6 +1966,9 @@ export function useNativeAssistant({
           : item);
         if (!selection && (selectionRequired === true || item.selection)) {
           throw new Error(SELECTION_INVALID_ERROR);
+        }
+        if (action === "continue" && selection && !selection.text && selection.field !== "body") {
+          throw new Error("Place the caret in the document body to continue writing. Select metadata text to preview a rewrite.");
         }
         const selectionAction = action === "rewrite" || action === "summarize" || action === "translate";
         // Translate always delivers the complete replacement target. Continue

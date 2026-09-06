@@ -244,9 +244,24 @@ describe("rail Continue routing", () => {
     const s = setup("detail"); await expect(s.run("continue")).rejects.toThrow("rail flow reached");
     expect(s.rail).toHaveBeenCalled(); expect(s.createSelectionPreview).not.toHaveBeenCalled(); s.d.cleanup();
   });
+  it("R8 refuses Continue from a metadata caret instead of starting the legacy field-writing flow", async () => {
+    const s = setup("edit", { ...caret, start: 2, end: 2, field: "title" });
+    try {
+      await s.run("continue").catch(() => {});
+      expect(s.rail).not.toHaveBeenCalled();
+      expect(s.createSelectionPreview).not.toHaveBeenCalled();
+    } finally { s.d.cleanup(); }
+  });
   it("does not turn a metadata caret or a missing caret into inline drafting", async () => {
     for (const selection of [{ ...caret, field: "title" as const }, null]) {
-      const s = setup("edit", selection); await expect(s.run("continue")).rejects.toThrow("rail flow reached");
+      const s = setup("edit", selection);
+      if (selection) {
+        await s.run("continue");
+        expect(s.rail).not.toHaveBeenCalled();
+        expect(s.reportSelectionError).toHaveBeenCalledWith("item", expect.stringContaining("document body"));
+      } else {
+        await expect(s.run("continue")).rejects.toThrow("rail flow reached");
+      }
       expect(s.createSelectionPreview).not.toHaveBeenCalled(); s.d.cleanup();
     }
   });
@@ -258,5 +273,41 @@ describe("rail Continue routing", () => {
     await s.run("continue");
     expect(s.reportSelectionError).toHaveBeenCalledWith("item", envelopes.SELECTION_INVALID_ERROR);
     expect(s.rail).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("round9 keyboard regressions", () => {
+  it("R5 keeps Continue available when a keyboard user tabs from the focused body", () => {
+    vi.useFakeTimers(); const d = dom();
+    const props = { enabled: true, itemId: "item", readSelection: () => caret, onRunAction: vi.fn() };
+    const ui = harness("SelectionActions", d.preview);
+    try {
+      ui.render(props);
+      d.doc.dispatchEvent(new Event("selectionchange")); vi.advanceTimersByTime(800);
+      expect(button(ui.render(props), "Continue writing")).toBeDefined();
+      // Native Tab focus movement follows keydown. The toolbar must survive
+      // this event to be a possible sequential-focus destination.
+      d.doc.dispatchEvent(Object.assign(new Event("keydown"), { key: "Tab" }));
+      expect(button(ui.render(props), "Continue writing")).toBeDefined();
+    } finally { ui.dispose(); d.cleanup(); }
+  });
+
+  it("R6 does not Accept on the IME keyCode 229 fallback at the preview root", async () => {
+    const d = dom(); const execute = vi.fn();
+    const controller = inline.createInlinePreview({ itemId: "item", action: "continue", selection: caret }, {
+      read: async () => initial, active: () => true, persist: vi.fn(), execute,
+      generate: async envelope => ({ text: "new", selectionEnvelope: envelope }),
+    });
+    const ui = harness("InlineSelectionPreview", d.preview);
+    const props = { controller, surface: surfaces.captureInlineSelectionSurface("item", caret), readSelection: () => caret, onClose: vi.fn() };
+    try {
+      ui.render(props); await vi.waitFor(() => expect(controller.snapshot().status).toBe("ready"));
+      const tree = ui.render(props)!;
+      (tree.props.onKeyDown as (event: unknown) => void)({ key: "Enter", metaKey: true,
+        nativeEvent: { isComposing: false, keyCode: 229 }, preventDefault: vi.fn(), stopPropagation: vi.fn() });
+      expect(controller.snapshot().status).toBe("ready");
+      expect(execute).not.toHaveBeenCalled();
+    } finally { ui.dispose(); d.cleanup(); }
   });
 });

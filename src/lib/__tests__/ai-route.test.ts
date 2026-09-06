@@ -1300,4 +1300,19 @@ describe("/api/ai cloud assistant route", () => {
     ).toEqual({ enabled: false, provider: null, model: null });
     expect(mocks.getWorkspaceAiConfigStatusForOwner).not.toHaveBeenCalled();
   });
+  it("R7 does not silently omit a person-chosen item that became unavailable", async () => {
+    const id = "00000000-0000-4000-8000-000000000001";
+    // Resolution correctly returns no content after deletion/access loss.
+    // The remaining contract is to make that omission visible, rather than
+    // answering as though the person's chosen evidence was considered.
+    mocks.getPostById.mockResolvedValue(null);
+    const response = await POST(post({ messages: [{ role: "user", content: "Summarize the item I added" }],
+      context: { includeItem: false, workspaceIndex: false, relatedItems: [{ id, origin: "person" }] } }));
+    expect(mocks.getPostById).toHaveBeenCalledWith("demo-blog", id);
+    const payload = await response.json();
+    const diagnostic = JSON.stringify(payload) + String(mocks.generateText.mock.calls[0]?.[0]?.system ?? "");
+    expect(diagnostic).toContain(id);
+    expect(diagnostic).toMatch(/unavailable|could not (?:read|load)|cannot (?:read|access)|not (?:available|accessible)/i);
+  });
+
 });

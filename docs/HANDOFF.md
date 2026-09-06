@@ -4875,3 +4875,27 @@ selection-based previews are unaffected.
 Everything else is shipped: builds 1052 through 1061, tree clean at the commit
 recording this, no other agents running. Open items unchanged from the earlier
 wrap-up section: native IME and real Safari pointer checks.
+
+## 2026-09-06: round-nine fixes landed locally; network blocked at a foreign site
+
+The round-nine agent finished after the previous session ended
+(`astra/out9/fix-assistant`, 24 files): selection envelopes carry a SHA-256
+source hash of the whole field and empty body ranges require it, so a caret
+Accept or Undo after a peer edit at the same revision is refused instead of
+landing on the wrong text; the preview's Context note records the context each
+generation actually used and the switch is labelled "Next generation"; context
+preferences have their own update clock so pinning elsewhere cannot overwrite
+them; the static rail shell also paints attachments, Stop while submitting,
+approval counts and the sync status; Tab moves into the Continue toolbar
+instead of dismissing it; the preview shortcuts honor the IME keyCode 229
+fallback; the route reports each requested context id as read or unavailable
+and says so in the prompt; Continue refuses metadata carets with an
+explanation; the picker keeps a usable active option when results disappear.
+Applied to the shared tree with typecheck and lint clean; full suite and local
+probes run before the commit.
+
+Connectivity from this Mac at the owner's father's place: the default route
+goes through the WireGuard tunnel (utun8, 10.6.0.3) and no traffic gets out;
+the local gateway is 192.168.1.254 on the same 192.168.1.0/24 range as home,
+the foreign-network case in the fleet notes. Nothing was changed; the owner
+decides on the tunnel. Push and promotion wait for the network.

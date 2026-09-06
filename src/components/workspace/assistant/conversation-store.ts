@@ -31,6 +31,7 @@ type AssistantConversation = Omit<
   "messageCount"
 > & {
   contextChoice?: AssistantContextChoice;
+  contextUpdatedAt?: string;
   metadataUpdatedAt: string;
   messages: AssistantMessage[];
   /** Deletion tombstone; kept so the server merge cannot resurrect the chat. */
@@ -136,6 +137,8 @@ function cleanConversation(value: unknown): AssistantConversation | null {
     title: conversation.title.trim().slice(0, 80) || DEFAULT_TITLE,
     pinned: conversation.pinned === true,
     ...(conversation.contextChoice ? { contextChoice: cleanAssistantContextChoice(conversation.contextChoice) } : {}),
+    ...(typeof conversation.contextUpdatedAt === "string" && Number.isFinite(Date.parse(conversation.contextUpdatedAt))
+      ? { contextUpdatedAt: conversation.contextUpdatedAt } : {}),
     metadataUpdatedAt:
       typeof conversation.metadataUpdatedAt === "string"
         ? conversation.metadataUpdatedAt
@@ -924,7 +927,7 @@ export function setAssistantConversationContextChoice(handle: string, conversati
   const contextChoice = cleanAssistantContextChoice(value);
   if (!contextChoice) return;
   replaceConversation(handle, conversationId, (conversation) => {
-    const timestamp = new Date(Math.max(Date.now(), Date.parse(conversation.metadataUpdatedAt) + 1)).toISOString();
-    return { ...conversation, contextChoice, metadataUpdatedAt: timestamp, updatedAt: timestamp };
+    const timestamp = new Date(Math.max(Date.now(), Date.parse(conversation.contextUpdatedAt ?? conversation.createdAt) + 1)).toISOString();
+    return { ...conversation, contextChoice, contextUpdatedAt: timestamp, updatedAt: timestamp };
   });
 }

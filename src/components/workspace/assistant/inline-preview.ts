@@ -1,6 +1,6 @@
 import {
   assertSelectionMatches, createSelectionEnvelope, validateSelectionEnvelope,
-  SELECTION_INVALID_ERROR, SELECTION_STALE_ERROR, type SelectionEnvelope,
+  MAX_SELECTION_CHARS, SELECTION_INVALID_ERROR, SELECTION_STALE_ERROR, type SelectionEnvelope,
 } from "@/lib/ai/selection-envelope";
 import type { WorkspaceItemTextSelection, WorkspaceItemTextSnapshot } from "@/lib/ai/workspace-item-draft";
 import { quickActionPrompt, quickActionRefinementPrompt, type QuickActionRefinement } from "@/lib/ai/quick-actions";
@@ -27,6 +27,7 @@ export type InlinePreviewRecord = {
   /** Instructions belong to this preview decision, not separate transcript turns. */
   refinements?: string[];
   includeItem?: boolean;
+  generationIncludeItem?: boolean;
 };
 export type InlineEdit = {
   field: WorkspaceItemTextSelection["field"]; start: number; end: number;
@@ -116,7 +117,7 @@ export function createInlinePreview(request: InlineRequest, deps: Dependencies) 
     const abort = new AbortController();
     controller = abort;
     const live = () => active() && turn === generation && !abort.signal.aborted;
-    emit({ status: "generating", text: "", error: undefined, envelope: attempt?.envelope, refinements: attempt ? refinements : undefined });
+    emit({ status: "generating", text: "", generationIncludeItem: includeItem, error: undefined, envelope: attempt?.envelope, refinements: attempt ? refinements : undefined });
     lastAttempt = attempt;
     const buffer = createAssistantTextDeltaBuffer((text) => {
       if (live() && state.status === "generating") emit({ text: state.text + text }, false);
@@ -231,11 +232,23 @@ export function createInlinePreview(request: InlineRequest, deps: Dependencies) 
         const current = await deps.read();
         if (!active() || current[applied.edit.field] !== applied.result) throw new Error(SELECTION_STALE_ERROR);
         const edit = applied.edit;
+        // Large generated insertions still need Undo. A bounded source passage
+        // plus its full-field hash guards those without expanding the selection budget.
+        const longResult = edit.replacement_text.length > MAX_SELECTION_CHARS;
+        const guard = await createSelectionEnvelope(request.itemId, current, longResult ? {
+          field: edit.field, start: 0, end: Math.min(MAX_SELECTION_CHARS, current[edit.field].length),
+          text: current[edit.field].slice(0, MAX_SELECTION_CHARS),
+        } : {
+          field: edit.field, start: edit.start, end: edit.start + edit.replacement_text.length,
+          text: edit.replacement_text,
+        }, true);
         sent = true;
-        await deps.execute({ field: edit.field, start: edit.start, end: edit.start + edit.replacement_text.length,
+        await deps.execute({ ...(longResult ? { source_precondition: guard } : { selection_envelope: guard }),
+          field: edit.field, start: edit.start, end: edit.start + edit.replacement_text.length,
           expected_text: edit.replacement_text, replacement_text: edit.expected_text });
         emit({ status: "undone" });
-      } catch {
+      } catch (error) {
+        if (error instanceof Error && error.message === SELECTION_STALE_ERROR) sent = false;
         emit({ status: "applied", error: sent ? "Could not confirm Undo. Check the document." : "The passage changed. Undo would overwrite newer text.", uncertain: sent });
       }
     },

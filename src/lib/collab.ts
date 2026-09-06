@@ -3,7 +3,7 @@ import { agentChangeCte } from "@/lib/agent-change-sql.server";
 import {
   validateSelectionEditEnvelope,
   validateSelectionEnvelope,
-  assertSelectionMatches,
+  validateSelectionSource,
   SELECTION_STALE_ERROR,
 } from "@/lib/ai/selection-envelope";
 // Realtime co-editing server core: the Yjs update relay and presence, plus
@@ -450,7 +450,7 @@ export async function applyLiveDocumentMutation(
         if (source !== undefined) {
           // Source and destination can be different fields. Both are checked
           // against this loaded document, then fenced by its version/revision.
-          assertSelectionMatches(await validateSelectionEnvelope(source), postId, item);
+          await validateSelectionSource(await validateSelectionEnvelope(source), postId, item);
         }
       }
       const before = Y.encodeStateVector(loaded.document);
