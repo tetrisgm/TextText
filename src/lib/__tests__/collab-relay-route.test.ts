@@ -277,3 +277,15 @@ it("rechecks access on an empty held baseline response too", async () => {
   expect(response.status).toBe(403);
   expect(await response.json()).not.toHaveProperty("baseline");
 });
+
+it("checks a downgrade between batch appends and audits only the accepted append", async () => {
+  mocks.appendCollabUpdate.mockImplementationOnce(async () => {
+    mocks.getCollabRequestAccess.mockResolvedValue({ role: "viewer", trashed: false });
+    return { seq: 41 };
+  });
+  const response = await POST(push({ updates: [realUpdate(), realUpdate()], epoch: 3 }), ctx);
+  expect(response.status).toBe(403);
+  expect(mocks.appendCollabUpdate).toHaveBeenCalledTimes(1);
+  expect(mocks.appendCollabUpdate).toHaveBeenCalledWith(postId, expect.any(String), 3,
+    expect.objectContaining({ actorType: "human", actionName: "collab.append", targetId: postId }));
+});

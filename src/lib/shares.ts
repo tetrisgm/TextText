@@ -267,7 +267,7 @@ export async function revokeScopeShare(
 
 async function listSharedWithMe(
   user: ShareUser | null,
-): Promise<{ items: Array<{ postId: string; role: ShareRole }>; workspaces: Map<string, WorkspaceShareRole> }> {
+): Promise<{ items: Array<{ postId: string; role: ShareRole }>; workspaces: Map<string, { role: WorkspaceShareRole; itemRole: ShareRole }> }> {
   if (!db || !user) return { items: [], workspaces: new Map() };
   const userId = user.userId ?? await getUserIdBySub(user.sub);
   const email = user.email ? normalizeShareEmail(user.email) : "";
@@ -289,12 +289,16 @@ async function listSharedWithMe(
     .from(collaborators)
     .where(and(minePredicate, isNull(collaborators.revokedAt)));
   const mine = rows.filter((row) => row.scopeType === "workspace"
-    ? isWorkspaceMemberRole(row.role) || row.role === "admin"
+    ? roleForTarget(row.role, "workspace", "item") !== null
     : (row.scopeType === "item" || row.scopeType === "folder") && roleForTarget(row.role, row.scopeType, "item") !== null);
-  const workspaces = new Map<string, WorkspaceShareRole>();
+  const workspaces = new Map<string, { role: WorkspaceShareRole; itemRole: ShareRole }>();
   for (const row of mine.filter((row) => row.scopeType === "workspace")) {
-    const role = row.role === "member" || row.role === "admin" ? "member" : "guest";
-    if (workspaces.get(row.scopeId) !== "member") workspaces.set(row.scopeId, role);
+    // Use permission normalization for legacy grants, keeping their item
+    // privileges separate from the current member/guest destination label.
+    const effective = roleForTarget(row.role, "workspace", "item");
+    if (!isItemShareRole(effective)) continue;
+    const itemRole = maxShareRole(workspaces.get(row.scopeId)?.itemRole, effective);
+    workspaces.set(row.scopeId, { role: itemRole === "editor" ? "member" : "guest", itemRole });
   }
   const itemIds = new Set<string>();
   const directRoles = new Map<string, ShareRole>();
@@ -416,7 +420,7 @@ export async function getSharedPostsForUser(
       postId: row.id,
       scopeType: "item" as const,
       role: row.ownerId && row.ownerId === userId ? "editor" as const
-        : maxShareRole(roleByPost.get(row.id), shares.workspaces.get(row.blogId) === "member" ? "editor" : "viewer"),
+        : maxShareRole(roleByPost.get(row.id), shares.workspaces.get(row.blogId)?.itemRole ?? "viewer"),
       title: row.title,
       slug: row.slug,
       blogHandle: row.blogHandle,
@@ -432,7 +436,7 @@ export async function getSharedPostsForUser(
     }).from(blogs).leftJoin(users, eq(blogs.ownerId, users.id))
       .where(and(inArray(blogs.id, [...shares.workspaces.keys()]), isNull(blogs.deletedAt)));
     for (const row of workspaceRows) {
-      const role = shares.workspaces.get(row.id);
+      const role = shares.workspaces.get(row.id)?.role;
       if (!role) continue;
       entries.push({
         postId: row.id, scopeType: "workspace", role, title: row.blogName,

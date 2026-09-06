@@ -174,3 +174,32 @@ describe("bounded and attributed awareness", () => {
     expect(mocks.upsertPresence).not.toHaveBeenCalled();
   });
 });
+
+it.each([false, true])("withholds POST's returned peers after revocation (leave=%s)", async (leave) => {
+  const session = await join();
+  const rows = [{ userName: "Private new peer", awareness: "private" }];
+  const revoke = async () => {
+    mocks.access.mockResolvedValue({ ...viewer, role: null });
+    return rows;
+  };
+  if (leave) mocks.activePresence.mockImplementationOnce(revoke);
+  else mocks.upsertPresence.mockImplementationOnce(revoke);
+  const response = await POST(request({ ...session, leave }), context);
+  expect(response.status).toBe(403);
+  expect(await response.text()).not.toContain("Private new peer");
+  const write = leave ? mocks.removePresence : mocks.upsertPresence;
+  expect(write).toHaveBeenCalledWith(postId, expect.anything(), expect.objectContaining({
+    actorUserId: viewer.user.userId,
+    actionName: leave ? "collab.presence.leave" : "collab.presence.update",
+  }));
+});
+
+it("preserves Trash when presence is removed during the read", async () => {
+  mocks.activePresence.mockImplementationOnce(async () => {
+    mocks.access.mockResolvedValue({ ...viewer, role: null, trashed: true });
+    return [{ userName: "Private new peer" }];
+  });
+  const response = await GET(new Request("http://localhost"), context);
+  expect(response.status).toBe(410);
+  expect(await response.json()).toEqual({ error: "This item was moved to Trash", reason: "trashed" });
+});

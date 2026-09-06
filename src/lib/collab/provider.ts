@@ -1047,20 +1047,24 @@ export class CollabProvider implements CollaborationTransport {
   }
 
   private async catchUp(): Promise<CollabStartResult> {
+    const generation = this.networkGeneration;
+    const signal = this.abort.signal;
+    const obsolete = () => this.stopped || signal.aborted || generation !== this.networkGeneration;
     let sawRemoteUpdate = false;
     let baselineRevision: number | null = null;
     try {
-      while (!this.stopped) {
+      while (!obsolete()) {
         const previousSeq = this.lastSeq;
         const res = await fetch(
           `${this.base}?since=${previousSeq}&wait=0&clientId=${encodeURIComponent(this.presenceSession?.clientId ?? this.clientId)}`,
           {
-            signal: this.abort.signal,
+            signal,
             headers: this.presenceSession
               ? { "X-TextText-Presence-Session": this.presenceSession.sessionCredential }
               : undefined,
           },
         );
+        if (obsolete()) return { authoritative: false, remoteEmpty: false };
         if (isAccessLoss(res.status)) {
           this.loseAccess(res.status);
           return { authoritative: false, remoteEmpty: false };
@@ -1074,6 +1078,7 @@ export class CollabProvider implements CollaborationTransport {
           epoch?: unknown;
           baseline?: { update?: unknown; revision?: unknown };
         };
+        if (obsolete()) return { authoritative: false, remoteEmpty: false };
         if (!Array.isArray(data.updates) || !Number.isSafeInteger(data.seq)) {
           return { authoritative: false, remoteEmpty: false };
         }
@@ -1145,8 +1150,9 @@ export class CollabProvider implements CollaborationTransport {
   }
 
   private async pollLoop(generation: number, signal: AbortSignal) {
+    const obsolete = () => this.stopped || signal.aborted || generation !== this.networkGeneration;
     while (
-      !this.stopped &&
+      !obsolete() &&
       this.networkActive &&
       generation === this.networkGeneration
     ) {
@@ -1160,6 +1166,7 @@ export class CollabProvider implements CollaborationTransport {
               : undefined,
           },
         );
+        if (obsolete()) return;
         if (isAccessLoss(res.status)) {
           this.loseAccess(res.status);
           return;
@@ -1176,12 +1183,13 @@ export class CollabProvider implements CollaborationTransport {
           epoch?: number;
           baseline?: { update?: unknown; revision?: unknown };
         };
+        if (obsolete()) return;
         // Epoch handling. If we never recorded an epoch (a transient catch-up
         // failure), LEARN it from the poll rather than mistake it for a change.
         // Once known, a different epoch means the generation was retired under
         // us: our Y.Doc is based on the retired epoch, so do NOT apply the new
         // epoch's rows (that would corrupt it); signal a remount and stop.
-        if (!this.stopped && this.outbox && typeof data.epoch === "number") {
+        if (this.outbox && typeof data.epoch === "number") {
           if (!this.outbox.epochKnown) {
             this.outbox.epoch = data.epoch;
             this.outbox.epochKnown = true;
@@ -1211,8 +1219,7 @@ export class CollabProvider implements CollaborationTransport {
       } catch (error) {
         // A torn-down provider's aborted fetch is expected, not a failure.
         if (
-          this.stopped ||
-          generation !== this.networkGeneration ||
+          obsolete() ||
           (error as { name?: string })?.name === "AbortError"
         ) {
           return;

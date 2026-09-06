@@ -62,6 +62,12 @@ function isValidYjsUpdate(base64: string): boolean {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+function editorDenied(access: Awaited<ReturnType<typeof getCollabRequestAccess>>) {
+  return access.trashed
+    ? Response.json({ error: "This item was moved to Trash", reason: "trashed" }, { status: 410 })
+    : Response.json({ error: "Not an editor of this post" }, { status: 403 });
+}
+
 export async function POST(
   request: Request,
   ctx: { params: Promise<{ postId: string }> },
@@ -93,6 +99,9 @@ export async function POST(
     return Response.json({ error: "Send a JSON body" }, { status: 400 });
   }
   const body = decoded.value;
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return Response.json({ error: "Send a JSON object" }, { status: 400 });
+  }
   // The epoch the client caught up under. Absent (an old client) means epoch 0,
   // which is correct for any post that has never been retired.
   const clientEpoch =
@@ -109,17 +118,27 @@ export async function POST(
   if (clean.length !== candidates.length) {
     return Response.json({ error: "Invalid update payload" }, { status: 400 });
   }
+  // The early check only rejects unauthorized uploads. Authorize the validated
+  // body again, including each append after the preceding storage await.
   if (clean.length === 0) {
-    return Response.json({ seq: await latestCollabSeq(postId, clientEpoch), epoch: clientEpoch });
+    const seq = await latestCollabSeq(postId, clientEpoch);
+    const current = await getCollabRequestAccess(request, postId);
+    if (current.role !== "editor") return editorDenied(current);
+    return Response.json({ seq, epoch: clientEpoch });
   }
 
   let seq = 0;
   for (const update of clean) {
-    const result = await appendCollabUpdate(postId, update, clientEpoch);
+    const current = await getCollabRequestAccess(request, postId);
+    if (current.role !== "editor") return editorDenied(current);
+    const result = await appendCollabUpdate(postId, update, clientEpoch, {
+      actorUserId: current.user?.userId ?? null,
+      actorType: "human",
+      actionName: "collab.append",
+      targetType: "item",
+      targetId: postId,
+    });
     if ("retired" in result) {
-      // The generation moved under this client (its log was retired while it was
-      // offline/lapsed). Reject the whole push so its stale edits never merge
-      // into the new epoch over an external write; the client reseeds.
       return Response.json({ retired: true, epoch: await getCollabEpoch(postId) });
     }
     seq = result.seq;
@@ -191,7 +210,14 @@ export async function GET(
   }
   // The grant may have been revoked while this request was held. Re-resolve
   // both named and capability access before disclosing any result or baseline.
-  if (!(await getCollabRequestAccess(request, postId)).role) {
+  const finalAccess = await getCollabRequestAccess(request, postId);
+  if (!finalAccess.role) {
+    if (finalAccess.trashed) {
+      return Response.json(
+        { error: "This item was moved to Trash", reason: "trashed" },
+        { status: 410 },
+      );
+    }
     return Response.json({ error: "No access to this post" }, { status: 403 });
   }
   const seq = updates.length > 0 ? updates[updates.length - 1].seq : since;

@@ -251,3 +251,18 @@ describe("materialization epoch boundary", () => {
     expect(mocks.savePost).not.toHaveBeenCalled();
   });
 });
+
+it.each([false, true])("rejects a downgrade during materialization (unchanged=%s)", async (unchanged) => {
+  mocks.getCurrentUser.mockResolvedValue({ sub: "editor-sub", userId: "user-uuid" });
+  mocks.collabAccess.mockResolvedValue("editor");
+  mocks.getPostById.mockResolvedValue({ id: POST_ID, document: BASE_DOCUMENT, revision: 12 });
+  mocks.savePost.mockClear();
+  mocks.materializeCollabDocument.mockImplementationOnce(async () => {
+    mocks.collabAccess.mockResolvedValue("viewer");
+    return unchanged ? BASE_DOCUMENT : { ...BASE_DOCUMENT, content: { ...BASE_DOCUMENT.content, body: "Private" } };
+  });
+  const response = await POST(req({ handle: "writer", state: "encoded", epoch: 7 }), ctx);
+  expect(response.status).toBe(403);
+  expect(await response.text()).not.toContain("body");
+  expect(mocks.savePost).not.toHaveBeenCalled();
+});

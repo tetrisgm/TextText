@@ -123,3 +123,19 @@ it.each(["viewer", "commenter", "editor"] as const)("capability %s may add acces
   mocks.access.mockResolvedValue({ canEditContent: false, canView: true });
   expect(await collabAccess(user, "11111111-1111-4111-8111-111111111111", capability)).toBe(capability === "editor" ? "editor" : "viewer");
 });
+
+it.each([
+  ["editor", "editor", "member"],
+  ["commenter", "commenter", "guest"],
+  ["reviewer", "commenter", "guest"],
+  ["viewer", "viewer", "guest"],
+])("legacy workspace %s preserves effective item rights and current destination labels", async (role, itemRole, workspaceRole) => {
+  mocks.select.mockReturnValueOnce(query([
+    { scopeType: "workspace", scopeId: "team", role },
+    { scopeType: "item", scopeId: "review", role: "viewer" },
+  ])).mockReturnValueOnce(query([{ ...post("review"), blogId: "team" }]))
+    .mockReturnValueOnce(query([post("team")]));
+  const entries = await getSharedPostsForUser(user);
+  expect(entries.find(p => p.postId === "review")?.role).toBe(itemRole);
+  expect(entries.find(p => p.postId === "team")?.role).toBe(workspaceRole);
+});

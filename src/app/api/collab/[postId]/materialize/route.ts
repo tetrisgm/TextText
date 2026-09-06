@@ -28,7 +28,7 @@ export async function POST(
   ctx: { params: Promise<{ postId: string }> },
 ) {
   const { postId } = await ctx.params;
-  const access = await getCollabRequestAccess(request, postId);
+  let access = await getCollabRequestAccess(request, postId);
   const role = access.role;
   if (role !== "editor") {
     if (access.trashed) {
@@ -55,6 +55,9 @@ export async function POST(
     return Response.json({ error: "Send a JSON body" }, { status: 400 });
   }
   const body = decoded.value;
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return Response.json({ error: "Send a JSON object" }, { status: 400 });
+  }
   const handle = typeof body.handle === "string" ? body.handle : "";
   const state = typeof body.state === "string" ? body.state : undefined;
   const epoch = body.epoch;
@@ -63,6 +66,18 @@ export async function POST(
   }
   if (!handle || !state) {
     return Response.json({ error: "handle and state are required" }, { status: 400 });
+  }
+
+  // A completed upload needs current editor authority.
+  access = await getCollabRequestAccess(request, postId);
+  if (access.role !== "editor") {
+    if (access.trashed) {
+      return Response.json(
+        { error: "This item was moved to Trash", reason: "trashed" },
+        { status: 410 },
+      );
+    }
+    return Response.json({ error: "Not an editor of this post" }, { status: 403 });
   }
 
   // getPostById is scoped to the handle, so a mismatched handle simply misses;
@@ -85,6 +100,21 @@ export async function POST(
   if (!nextDocument) {
     return Response.json({ error: "Invalid collaborative document state" }, { status: 400 });
   }
+  const actorUserId = access.user
+    ? access.user.userId ?? (await getUserIdBySub(access.user.sub))
+    : null;
+  // Materialization and identity lookup also await storage. Check again before
+  // disclosing an unchanged document or entering the audited CAS save.
+  access = await getCollabRequestAccess(request, postId);
+  if (access.role !== "editor") {
+    if (access.trashed) {
+      return Response.json(
+        { error: "This item was moved to Trash", reason: "trashed" },
+        { status: 410 },
+      );
+    }
+    return Response.json({ error: "Not an editor of this post" }, { status: 403 });
+  }
   if (JSON.stringify(currentDocument) === JSON.stringify(nextDocument)) {
     return Response.json({
       ok: true,
@@ -105,9 +135,7 @@ export async function POST(
       expectedRevision: post.revision,
       expectedCollabEpoch: epoch,
       audit: {
-        actorUserId: access.user
-          ? access.user.userId ?? (await getUserIdBySub(access.user.sub))
-          : null,
+        actorUserId,
         actorType: "human",
         actionName: "collab.materialize",
         targetType: "item",

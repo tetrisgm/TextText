@@ -18,8 +18,12 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
   const access = await resolveItemAccess({ handle: item.handle, postId: id, user });
   const token = (await cookies()).get(documentCapabilityCookieName(id))?.value;
   const capability = token ? await resolveDocumentCapability(token) : null;
-  const canReadByLink = item.post.status === "published" &&
-    (item.post.visibility === "public" || item.post.visibility === "link");
+  // Read live eligibility and its revision together after asynchronous access
+  // resolution. The first lookup supplies only the workspace for that decision.
+  const current = await getPostStoreContext(id);
+  if (!current || current.handle !== item.handle) return missing();
+  const canReadByLink = current.post.status === "published" &&
+    (current.post.visibility === "public" || current.post.visibility === "link");
   if (!access.canView && capability?.itemId !== id && !canReadByLink) return missing();
-  return Response.json({ revision: readerRevision(item.post) }, { headers });
+  return Response.json({ revision: readerRevision(current.post) }, { headers });
 }

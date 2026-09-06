@@ -22,8 +22,17 @@ export function validateFilterOperand(
     if (typeof filter.value !== "number" || !Number.isFinite(filter.value)) fail("a number");
   } else if (field.type === "boolean") {
     if (typeof filter.value !== "boolean") fail("a boolean (true or false)");
+  } else if (field.type === "date") {
+    const value = filter.value;
+    if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      fail("a valid ISO date string in YYYY-MM-DD form");
+    }
+    const date = new Date(`${value}T00:00:00.000Z`);
+    if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
+      fail("a valid ISO date string in YYYY-MM-DD form");
+    }
   } else {
-    if (typeof filter.value !== "string") fail(field.type === "date" ? "a date string" : "a string");
+    if (typeof filter.value !== "string") fail("a string");
     if (field.type === "enum" && !field.options?.some((option) => option.value === filter.value)) {
       fail("a string matching one of its declared enum options");
     }

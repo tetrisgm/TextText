@@ -4763,3 +4763,52 @@ read before authorization finished; repeated visibility events issue
 overlapping refreshes; any string compiles as a date filter operand) and one P3
 (Trash reported as generic access loss on two read paths). An Astra agent is
 implementing all eight against the reviewer's tests (`round8-fix-shipped`).
+
+Shipped: build 1059 (`6dfd1874`, assistant context picker), deployment
+`dpl_4NqjsmoDWvRVsm9vPNXEk3vcrQWU`, page stamp `tt-1059-6dfd1874`, Mac app 0.182 build 1059 installed.
+Suite 2710 passed; live gates green.
+
+## 2026-09-05: state at wrap-up (owner leaving for the airport)
+
+Round-eight fixes landed in the tree (`astra/out8/fix-shipped`, all eight
+findings, reviewer tests byte-for-byte unchanged and green): the relay POST and
+the materialize route re-authorize after the bounded body has fully arrived;
+presence GET fetches then re-resolves access before disclosing, and POST
+heartbeat and leave do the same; reader freshness coalesces refreshes by target
+revision with a retry window; discovery normalizes legacy workspace grants the
+way permissions do; date filter operands must be valid `YYYY-MM-DD`; catch-up
+and polling reject stopped, aborted or obsolete continuations after every
+await; the reader-revision endpoint decides eligibility and revision from one
+final live lookup; Trash answers 410 with its reason on the relay GET's final
+check and both presence reads. This is being promoted as build 1060 by the
+sequence in `seq19.log`; if that promotion did not finish, run
+`npm run promote:local` from a clean tree after `npx vitest run`.
+
+Shipped today: builds 1052 through 1059 (1060 in flight). Verified live: inline
+AI against claude-sonnet-5 (Rewrite, Accept, Undo), the hosted agent path with
+a one-time item token (read, append, refusals, presence, participant row,
+revocation), two-browser sharing (1 to 2 s propagation both ways, both editors
+in the row and presence), public reader freshness (guest page follows an edit
+in about 9 s), the Add agent sheet in both themes, reader keys, the Sublime-style
+tabs, the top action bar, the appearance switch in Cmd+K.
+
+Open, in priority order:
+- Native verification not done headless: IME composition during a delayed
+  Accept; real Safari pointer and trackpad behavior on the deployed build (the
+  owner denied computer-use access to the app; Claude in Chrome was not
+  connected). Pixel evidence exists for the rail, tabs and bars.
+- Scratch data on the local database: an editor grant for
+  `second-editor@texttext.local` and Codex item grants on the "Reader images
+  fixture" item (remove from the Share dialog or the Add agent sheet, or let
+  the seven-day tokens expire).
+- Probe niceties: `openlatency.mts` times out on its click and never printed a
+  number; the selection toolbar is never "stable" for headless WebKit (click
+  by position or in page).
+- Reviews to consider next: a QA pass over the caret drafting and the context
+  picker (both shipped without a dedicated re-review), and the Notion parity
+  list in `astra/out5/ai2.md` is now closed for its three ranked gaps.
+
+Agent artifacts live under the session scratchpad
+`/private/tmp/claude-501/-Users-shokunin-dev-TextText/8a7bdd20-ca1d-4cca-86a4-9fabccb1f8f1/scratchpad/astra/`
+(briefs, outputs `out/` through `out8/`, logs) and the private work copies under
+`.texttext/probe/astra-*/work` (ignored by git; safe to delete).

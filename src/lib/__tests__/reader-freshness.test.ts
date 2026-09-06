@@ -78,3 +78,56 @@ it("retries transient failures and refreshes the permission-gated page on access
   expect(fetchMock).toHaveBeenCalledTimes(3);
   poll.stop();
 });
+
+it("backs off unchanged refreshes to a bounded retry interval despite visibility events", async () => {
+  fetchMock.mockImplementation(async () => Response.json({ revision: "2:today" }));
+  const refresh = vi.fn();
+  const poll = startReaderFreshness("item", "1:today", refresh);
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(refresh).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(refresh).toHaveBeenCalledTimes(4);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(refresh).toHaveBeenCalledTimes(5);
+  } finally { poll.stop(); }
+});
+
+it("serializes a pending refresh and retries its rejection without an unhandled error", async () => {
+  fetchMock.mockImplementation(async () => Response.json({ revision: "2:today" }));
+  let reject!: (error: Error) => void;
+  const refresh = vi.fn<() => void | Promise<void>>()
+    .mockImplementationOnce(() => new Promise<void>((_resolve, fail) => { reject = fail; }));
+  const poll = startReaderFreshness("item", "1:today", refresh);
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    for (let i = 0; i < 3; i++) {
+      page.visibilityState = "hidden"; page.dispatchEvent(new Event("visibilitychange"));
+      page.visibilityState = "visible"; page.dispatchEvent(new Event("visibilitychange"));
+      await vi.advanceTimersByTimeAsync(30_000);
+    }
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    reject(new Error("refresh failed"));
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(refresh).toHaveBeenCalledTimes(2);
+  } finally { poll.stop(); }
+});
+
+it("refreshes a newer target immediately while an unchanged target is in backoff", async () => {
+  fetchMock.mockImplementation(async () => Response.json({ revision: "2:today" }));
+  const refresh = vi.fn();
+  const poll = startReaderFreshness("item", "1:today", refresh);
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    fetchMock.mockImplementation(async () => Response.json({ revision: "3:today" }));
+    await poll.refresh();
+    expect(refresh).toHaveBeenCalledTimes(2);
+  } finally { poll.stop(); }
+});

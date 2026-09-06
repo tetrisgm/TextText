@@ -13,11 +13,22 @@ const respond = (body: unknown, status = 200) => Response.json(body, {
   status, headers: { "Cache-Control": "private, no-store" },
 });
 
+function denied(access: Awaited<ReturnType<typeof getCollabRequestAccess>>) {
+  return access.trashed
+    ? respond({ error: "This item was moved to Trash", reason: "trashed" }, 410)
+    : respond({ error: "No access to this post" }, 403);
+}
+
+async function disclosePresence(request: Request, postId: string, presence: unknown) {
+  const access = await getCollabRequestAccess(request, postId);
+  return access.role ? respond({ presence }) : denied(access);
+}
+
 export async function GET(request: Request, ctx: { params: Promise<{ postId: string }> }) {
   const { postId } = await ctx.params;
   const access = await getCollabRequestAccess(request, postId);
-  if (!access.role) return respond({ error: "No access to this post" }, 403);
-  return respond({ presence: await activePresence(postId) });
+  if (!access.role) return denied(access);
+  return disclosePresence(request, postId, await activePresence(postId));
 }
 
 export async function POST(request: Request, ctx: { params: Promise<{ postId: string }> }) {
@@ -68,7 +79,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ postId: st
   };
   if (body.leave === true) {
     await removePresence(postId, session.clientId, audit);
-    return respond({ presence: await activePresence(postId) });
+    return disclosePresence(request, postId, await activePresence(postId));
   }
   let awareness: string;
   try {
@@ -81,10 +92,10 @@ export async function POST(request: Request, ctx: { params: Promise<{ postId: st
   } catch {
     return respond({ error: "Invalid presence awareness" }, 400);
   }
-  return respond({ presence: await upsertPresence(postId, {
+  return disclosePresence(request, postId, await upsertPresence(postId, {
     clientId: session.clientId,
     userName: access.userName,
     color: access.color,
     awareness,
-  }, audit) });
+  }, audit));
 }
