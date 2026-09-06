@@ -4846,3 +4846,32 @@ composer moved when the controller loaded; `AssistantRailShell.tsx` now paints
 the same row (This item when an item is open, Whole workspace index, Add) wired
 to its activate handler. Scratch data removed: the second dev account's editor
 share (`revoke_access`) and the Codex item grants (Remove agent in the sheet).
+
+Shipped: build 1061 (`c9e71302`, Context row in the static rail shell),
+deployment `dpl_AN2sN9bEBiqdbbykB5pts7HsSZ8U`, page stamp `tt-1061-c9e71302`, Mac app 0.182 build 1061
+installed. Rail parity after the fix: early versus late differ only in the
+status text rows 63 to 74, as before the Context row existed.
+
+## State at final wrap-up (owner boarding)
+
+Round-nine QA of caret drafting and the context picker
+(`astra/out9/qa-assistant.md`, tests only, 14 failing regressions): one P1, a
+caret preview's empty-range envelope binds revision and offsets but not the
+source body, so after a peer edit at the same revision Accept can insert at a
+stale offset and Undo can remove the wrong text; six P2s (the Context note
+describes the next setting as if it produced the shown result; pinning on
+another device overwrites context preferences through a shared metadata clock;
+Tab dismisses the Continue affordance; the preview's shortcuts ignore the IME
+keyCode 229 fallback; an unresolvable chosen context item is dropped silently;
+Continue from a metadata caret uses the legacy path) and two P3s. An Astra
+agent (`round9-fix-assistant`, high effort) is implementing all of them
+against the reviewer's tests; its patch will appear at
+`/private/tmp/claude-501/-Users-shokunin-dev-TextText/8a7bdd20-ca1d-4cca-86a4-9fabccb1f8f1/scratchpad/astra/out9/fix-assistant.diff`
+with notes beside it. To land it from a clean tree: `git apply` the diff,
+`npx tsc --noEmit -p tsconfig.json`, `npx vitest run`, commit, push,
+`npm run promote:local`. Until then the caret P1 is open in production;
+selection-based previews are unaffected.
+
+Everything else is shipped: builds 1052 through 1061, tree clean at the commit
+recording this, no other agents running. Open items unchanged from the earlier
+wrap-up section: native IME and real Safari pointer checks.
