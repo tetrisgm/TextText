@@ -98,7 +98,7 @@ export function matchesFilter(
   }
 }
 
-const timestamp = (value: string | Date | null | undefined): number => {
+export const collectionTimestamp = (value: string | Date | null | undefined): number => {
   if (!value) return 0;
   const parsed = value instanceof Date ? value.getTime() : Date.parse(value);
   return Number.isNaN(parsed) ? 0 : parsed;
@@ -110,11 +110,11 @@ function sortKey(
 ): number | string | null {
   switch (field) {
     case "createdAt":
-      return timestamp(item.createdAt);
+      return collectionTimestamp(item.createdAt);
     case "updatedAt":
-      return timestamp(item.updatedAt);
+      return collectionTimestamp(item.updatedAt);
     case "publishedAt":
-      return timestamp(item.publishedAt);
+      return collectionTimestamp(item.publishedAt);
     case "title":
       return (item.title ?? "").toLowerCase();
     default: {

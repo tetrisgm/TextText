@@ -1,3 +1,5 @@
+import { isVisualRatingScale } from "./rating-scale";
+import { validateFilterOperand } from "./filter-operand";
 import { z } from "zod";
 import {
   themeTokensSchema,
@@ -579,7 +581,10 @@ function scalarDefinition(
       return {
         ...base,
         type: "number",
-        format: field.format,
+        // Preserve the data range and successor compatibility. Unsuitable
+        // star scales display as numbers instead of tightening stored limits.
+        format: field.format === "rating" && !isVisualRatingScale(field.validation?.max)
+          ? "plain" : field.format,
         ...(field.validation?.min !== undefined
           ? { min: field.validation.min }
           : {}),
@@ -1346,6 +1351,7 @@ export function compileItemTypeBlueprint(
     context: string,
   ) => {
     const field = requireStoredField(filter.field, context);
+    validateFilterOperand(field, filter);
     if (filter.op === "contains" && field.type !== "text" && field.type !== "richtext") {
       throw new Error(`${context} contains filter needs a text field.`);
     }

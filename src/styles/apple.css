@@ -42,7 +42,8 @@
      inherits, so it is also the cheapest place to fix it. */
   --ac-label: #34353a;
   --ac-label-2: rgba(60,60,67,0.60);
-  --ac-label-3: rgba(60,60,67,0.30);
+  /* Active small labels and errors must remain readable on workspace surfaces. */
+  --ac-label-3: #6b6c71;
   --ac-label-4: rgba(60,60,67,0.18);
   --ac-placeholder: rgba(60,60,67,0.30);
 
@@ -60,7 +61,7 @@
   /* tint */
   --ac-accent: #007AFF;
   --ac-on-accent: #FFFFFF;
-  --ac-red: #FF3B30;
+  --ac-red: #c52a22;
   --ac-tinted-fill: rgba(0,122,255,0.15);
 
   /* selection */
@@ -82,7 +83,7 @@
   /* Superhuman dark: a warm charcoal canvas with a darker rail. */
   --ac-label: #e5e7eb;
   --ac-label-2: #9d9ea2;
-  --ac-label-3: #818389;
+  --ac-label-3: #9d9ea2;
   --ac-label-4: #606267;
   --ac-placeholder: #818389;
   --ac-fill-1: rgba(255,255,255,0.14);
@@ -102,7 +103,7 @@
   --ac-on-accent: #ffffff;
   --ac-accent-contrast: #ffffff;
   --ac-accent-soft: rgba(97,181,225,0.16);
-  --ac-red: #FF453A;
+  --ac-red: #ff827a;
   --ac-tinted-fill: rgba(97,181,225,0.16);
   --ac-sel-inactive: rgba(255,255,255,0.10);
   --ac-mat-bg: rgba(26,25,28,0.96);
@@ -125,7 +126,7 @@
     /* Keep the automatic-dark path identical to explicit dark. */
     --ac-label: #e5e7eb;
     --ac-label-2: #9d9ea2;
-    --ac-label-3: #818389;
+    --ac-label-3: #9d9ea2;
     --ac-label-4: #606267;
     --ac-placeholder: #818389;
     --ac-fill-1: rgba(255,255,255,0.14);
@@ -145,7 +146,7 @@
     --ac-on-accent: #ffffff;
     --ac-accent-contrast: #ffffff;
     --ac-accent-soft: rgba(97,181,225,0.16);
-    --ac-red: #FF453A;
+    --ac-red: #ff827a;
     --ac-tinted-fill: rgba(97,181,225,0.16);
     --ac-sel-inactive: rgba(255,255,255,0.10);
     --ac-mat-bg: rgba(26,25,28,0.96);

@@ -267,3 +267,27 @@ describe("/api/ai/item-type", () => {
     expect((await response.json()).error).not.toContain("request id");
   });
 });
+
+// Round 7 QA: valid JSON is not necessarily a request object.
+it("P2: returns a plain 400 for JSON null", async () => {
+  mocks.getCurrentUser.mockResolvedValue({ sub: "round7-null" });
+  mocks.getOwnedBlog.mockResolvedValue({ handle: "writer" });
+  mocks.getWorkspaceAiConfigForOwner.mockResolvedValue({ provider: "anthropic" });
+  const response = await POST(request(null));
+  expect(response.status).toBe(400);
+  expect((await response.json()).error).toMatch(/describe|JSON|request/i);
+});
+
+it("P3: exhausted compilation repair explains the field problem instead of blaming prompt length", async () => {
+  mocks.getCurrentUser.mockResolvedValue({ sub: "round7-exhausted" });
+  mocks.getOwnedBlog.mockResolvedValue({ handle: "writer" });
+  mocks.getWorkspaceAiConfigForOwner.mockResolvedValue({ provider: "anthropic" });
+  const invalid = { name: "Sources", fields: [{ id: "entries", label: "Entries", type: "rows", fields: [{ id: "tags", label: "Tags", type: "enum", multiple: true, options: [{ value: "a", label: "A" }] }] }], collection: { layout: "list" } };
+  mocks.generateText.mockReset().mockResolvedValue({ text: JSON.stringify(invalid) });
+  const response = await POST(request({ prompt: "Multiple tags on each source" }));
+  expect(response.status).toBe(502);
+  expect(mocks.generateText).toHaveBeenCalledTimes(2);
+  const { error } = await response.json();
+  expect(error).toMatch(/row|single value|entries.tags/i);
+  expect(error).not.toContain("shorter description");
+});

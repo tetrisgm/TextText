@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   itemTypeBlueprintSchema,
   type ItemTypeBlueprint,
@@ -133,4 +134,37 @@ Validation problem:
 ${validation}
 
 ${ITEM_TYPE_BLUEPRINT_FORMAT}`;
+}
+
+/** Called only for local parsing/compilation failures, never provider errors.
+ * Return one bounded reason, not a Zod dump, generated JSON, or stack trace. */
+export function itemTypeValidationReason(error: unknown): string {
+  if (error instanceof SyntaxError) {
+    return "The design was not valid JSON. Ask for a complete item type with supported properties.";
+  }
+  let reason = "The design uses an unsupported property or layout. Choose supported properties and a matching folder layout.";
+  if (error instanceof z.ZodError) {
+    const issue = error.issues[0];
+    if (issue) {
+      const path = issue.path.map(String).join(".");
+      reason = `The design property ${path || "at the top level"} is invalid. ${issue.message}`;
+    }
+  } else if (error instanceof Error) {
+    reason = error.message;
+  }
+  // Do not echo credentials, URLs, markup, control characters, or stack lines
+  // that could have been embedded in a generated name or an invalid value.
+  return reason
+    .replace(/sk-[A-Za-z0-9_-]+/g, "[redacted]")
+    .replace(/(?:https?:\/\/|Bearer\s+)\S+/gi, "[redacted]")
+    .replace(/(?:api[_ -]?key|token|password|secret)\s*[:=]\s*[^\s,;]+/gi, "[redacted]")
+    .replace(/<[^>]*>/g, "")
+    .replace(/[\p{Cc}\p{Cf}]/gu, " ")
+    .replace(/\s+/g, " ")
+    .replace(/Row field "([a-zA-Z0-9_.-]+)" cannot use multiple: true\./,
+      'Property "$1" needs a single value in each row.')
+    .replace(/Schema-v1 rows store one scalar value per cell\. Set multiple to false or omit it; for multiple values, use a top-level enum or reference field, or one row per value\./,
+      "Use one row per value, or a top-level multi-select property.")
+    .trim()
+    .slice(0, 600) || "The design is invalid. Choose supported properties and a matching folder layout.";
 }

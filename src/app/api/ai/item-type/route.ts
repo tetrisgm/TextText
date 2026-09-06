@@ -12,6 +12,7 @@ import {
   ITEM_TYPE_BLUEPRINT_FORMAT,
   honorNamedStyleReference,
   itemTypeBlueprintRepairPrompt,
+  itemTypeValidationReason,
   parseItemTypeBlueprintText,
 } from "@/lib/ai/item-type-generation";
 import {
@@ -110,6 +111,12 @@ export async function POST(request: Request) {
     );
   }
   const body = decoded.value;
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return Response.json(
+      { error: "Send a JSON request object describing what you want to build." },
+      { status: 400, headers: NO_STORE_HEADERS },
+    );
+  }
   const prompt = cleanPrompt(body.prompt);
   if (!prompt) {
     return Response.json({ error: "Describe what you want to build." }, { status: 400 });
@@ -160,13 +167,20 @@ export async function POST(request: Request) {
           request: designPrompt,
         }),
       });
-      blueprint = honorNamedStyleReference(
-        parseItemTypeBlueprintText(repaired.text),
-        prompt,
-      );
-      template = compileItemTypeBlueprint(blueprint, {
-        id: "preview.item-type",
-      });
+      try {
+        blueprint = honorNamedStyleReference(
+          parseItemTypeBlueprintText(repaired.text),
+          prompt,
+        );
+        template = compileItemTypeBlueprint(blueprint, {
+          id: "preview.item-type",
+        });
+      } catch (lastValidationError) {
+        return Response.json(
+          { error: `The assistant could not finish that design. ${itemTypeValidationReason(lastValidationError)}` },
+          { status: 502, headers: NO_STORE_HEADERS },
+        );
+      }
     }
     // Schema validity is the safety floor, not the design bar. Give the model
     // one focused revision when a valid blueprint would still produce an
@@ -222,7 +236,7 @@ export async function POST(request: Request) {
         : { name: "Error", statusCode: null, providerError: null };
     console.error("item type generation failed", failure);
     return Response.json(
-      { error: "The assistant could not finish that design. Try a shorter description." },
+      { error: "The AI provider could not complete the design request. Try again in a moment." },
       { status: 502 },
     );
   }

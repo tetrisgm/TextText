@@ -298,6 +298,9 @@ export function isPublishedPublicPost(
  * data:, and every other scheme.
  */
 export function isSafeLinkHref(value: string): boolean {
+  // Browsers strip embedded ASCII whitespace before recognizing a scheme.
+  // Reject controls before relative-reference handling can bypass the allowlist.
+  if (Array.from(value).some((character) => character.charCodeAt(0) <= 31 || character.charCodeAt(0) === 127)) return false;
   const href = value.trim();
   if (!href) return false;
   if (href.startsWith("/") || href.startsWith("#")) return true;

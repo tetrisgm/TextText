@@ -4627,3 +4627,55 @@ inserts at the caret through the guarded text edit, Undo removes exactly the
 inserted text, Discard restores the caret, and body equality supplements the
 revision guard so unsaved local typing makes the preview stale. Discard
 restoration clamps both endpoints after the body shrinks.
+
+Shipped: build 1056 (`c722d5e2`, caret drafting, on top of `76e34224` with
+the round-seven QA fixes), deployment `dpl_8tasCmywUFBwYWt6vPEvDVVGd8uH`, page stamp
+`tt-1056-c722d5e2`, Mac app 0.182 build 1056 installed. Live gates green.
+Next probe run adds `.texttext/probe/share-live.mts`: the owner grants a second
+dev account editor access to the fixture through `set_access`, the guest signs
+in and types in the shared item, and the owner's open editor must show the text
+live and the guest in the participant row, then the deletion.
+
+Sharing, proven live with two browsers (`.texttext/probe/share-live.mts`, local
+production build of `c722d5e2`): the owner grants `second-editor@texttext.local`
+editor access to the fixture through `set_access` (scope_type item); the guest
+signs in with the dev login, sees "Shared with me 1", opens the item, and the
+public page's Edit control opens the editor at `?edit=1`; the guest's typing
+appears in the owner's open editor in 1.5 s, the owner's participant row shows
+"second-editor, Editing" beside "visual-demo, Editing", presence lists both as
+editors, and the guest's deletion reaches the owner in 2.0 s. The stored body is
+clean afterwards. The editor grant for that account is still on the fixture.
+
+Probe lesson: `deleterepro.mts` deleted twelve characters from the "Quiet tools"
+note on every run and never restored them; over the day it emptied the note,
+and its last verdict ("the deleted text came back") was the empty string
+matching itself. The probe now restores what it removes and reports an empty
+note as inconclusive. The note's text is being recovered from the relay log.
+
+The "Quiet tools" note was restored to "The essential machines recede into the
+work." (recovered from the relay log's insert operations, written back through
+`update_item`, revision 25221). The delete probe now types back what it removes.
+
+Round-seven sharing QA (`astra/out7/qa-sharing.md`, tests-only patch): two
+P1s (a held relay poll returns new updates after the caller's access is
+revoked; a 403 on materialization leaves the editor accepting edits and
+retrying), eight P2s (a viewer capability cookie downgrades a named editor;
+public named commenters have no comment entry point; capability-only
+commenters are rejected by the comment actions; the command schema cannot grant
+Can comment; Shared with me reports wrong roles; workspace invitations are
+undiscoverable and unmailed; an open reader never learns of others' comments;
+comment-load failures are invisible) and one P3 (caret label contrast), plus
+the public reader staying a snapshot while others edit. Two Astra agents are
+implementing them (`round7-fix-sharing-access`, `round7-fix-sharing-comments`)
+against the reviewer's tests; a third is closing the item-type findings.
+
+Item-type fixes landed in the tree (`astra/out7/fix-item-types`): rating scales
+are whole numbers from 1 to 10 (unsuitable stored scales render as numeric
+text), a render boundary contains one bad card (`DocumentRenderBoundary.tsx`),
+filter operands are typed against their property for base and saved views with
+a repair message, `isSafeLinkHref` rejects control characters before scheme
+recognition, `--ac-label-3` and `--ac-red` now reach 4.5:1 on both grounds in
+both themes, the item-type route answers 400 to a non-object body, default
+collection ordering sorts by timestamp, and an exhausted repair returns its
+last sanitized reason with the concrete fix. The reviewer's two evidence tests
+that asserted the old defects now assert the fixed behavior.

@@ -1,3 +1,5 @@
+import { DocumentRenderBoundary } from "./DocumentRenderBoundary";
+import { isVisualRatingScale } from "@/lib/presentation/rating-scale";
 import { Fragment, memo, useMemo, type CSSProperties, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
@@ -17,7 +19,6 @@ import type {
   RowSubFieldDefinition,
   TemplateDefinition,
 } from "@/lib/presentation/schema";
-import { DOCUMENT_ENGINE_CSS } from "@/lib/presentation/styles";
 import { ScrollAnchoring } from "@/components/document/ScrollAnchoring";
 import { styleFamilyFor } from "@/lib/presentation/templates";
 import { remarkHighlight } from "@/components/document/HighlightMarkdown";
@@ -198,7 +199,10 @@ function formatMinutes(value: number): string {
 }
 
 function formatRating(value: number, max: number | undefined): string {
-  const scale = Math.max(1, Math.round(max ?? 5));
+  // Old stored definitions may predate scale validation. Numeric text has a
+  // fixed-size representation even when the scale is enormous or malformed.
+  if (!isVisualRatingScale(max) || !Number.isFinite(value)) return String(value);
+  const scale = max ?? 5;
   const clamped = Math.min(scale, Math.max(0, value));
   const halves = Math.round(clamped * 2);
   const full = Math.floor(halves / 2);
@@ -1303,7 +1307,7 @@ function templateFieldMap(template: TemplateDefinition): FieldDefinitionMap {
   return new Map(template.fields.map((field) => [field.id, field]));
 }
 
-export function DocumentRenderer({
+function DocumentRendererContent({
   document,
   template,
   documentId = "tt-document",
@@ -1345,7 +1349,7 @@ export function DocumentRenderer({
   );
 }
 
-export function DocumentCollectionRenderer({
+function DocumentCollectionRendererContent({
   document,
   template,
   documentId = "tt-collection-item",
@@ -1388,5 +1392,21 @@ export function DocumentCollectionRenderer({
         documentId={documentId}
       />
     </article>
+  );
+}
+
+export function DocumentRenderer(props: RendererProps) {
+  return (
+    <DocumentRenderBoundary document={props.document} template={props.template}>
+      <DocumentRendererContent {...props} />
+    </DocumentRenderBoundary>
+  );
+}
+
+export function DocumentCollectionRenderer(props: CollectionRendererProps) {
+  return (
+    <DocumentRenderBoundary document={props.document} template={props.template}>
+      <DocumentCollectionRendererContent {...props} />
+    </DocumentRenderBoundary>
   );
 }

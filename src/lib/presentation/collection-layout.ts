@@ -1,4 +1,4 @@
-import { applyCollectionSpec, FIELD_PREFIX, type CollectionQueryable } from "@/lib/documents/collection-query";
+import { applyCollectionSpec, collectionTimestamp, FIELD_PREFIX, type CollectionQueryable } from "@/lib/documents/collection-query";
 import type { CollectionRenderSpec, DocumentFieldDefinition } from "./schema";
 
 /** Shared by the folder and its authoring preview. Pinning stays outside the
@@ -9,7 +9,7 @@ export function queryCollectionItems<T extends CollectionQueryable & { pinned?: 
 ): T[] {
   const queried = collection && (collection.sort.length || collection.filters.length)
     ? applyCollectionSpec(items, collection)
-    : [...items].sort((a, b) => String(b.updatedAt ?? b.createdAt ?? "").localeCompare(String(a.updatedAt ?? a.createdAt ?? "")));
+    : [...items].sort((a, b) => collectionTimestamp(b.updatedAt ?? b.createdAt) - collectionTimestamp(a.updatedAt ?? a.createdAt));
   return queried.sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)));
 }
 

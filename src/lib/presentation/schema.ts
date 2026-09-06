@@ -1,3 +1,5 @@
+import { isVisualRatingScale } from "./rating-scale";
+import { validateFilterOperand } from "./filter-operand";
 import { z } from "zod";
 
 export const RENDER_SPEC_VERSION = 1 as const;
@@ -125,7 +127,15 @@ const numberFieldSchema = z.object({
   format: z
     .enum(["plain", "currency", "percent", "minutes", "rating"])
     .default("plain"),
-}).strict();
+}).strict().superRefine((field, ctx) => {
+  if (field.format === "rating" && !isVisualRatingScale(field.max)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["max"],
+      message: `Rating property "${field.id}" needs a whole-number scale from 1 to 10. Use plain numbers for other scales.`,
+    });
+  }
+});
 
 const booleanFieldSchema = z.object({ ...fieldBase, type: z.literal("boolean") }).strict();
 
@@ -1182,6 +1192,7 @@ export function validateTemplateDefinition(value: unknown): TemplateDefinition {
     if (!declared) {
       throw new Error(`collection filter references undeclared field ${id}`);
     }
+    validateFilterOperand(declared, filter);
     if (filter.op === "contains" && declared.type !== "text" && declared.type !== "richtext") {
       throw new Error(`filter op contains requires a text field, not ${declared.type} (${id})`);
     }
@@ -1233,6 +1244,7 @@ export function validateTemplateDefinition(value: unknown): TemplateDefinition {
       if (!declared) {
         throw new Error(`collection view ${view.id} filter references undeclared field ${id}`);
       }
+      validateFilterOperand(declared, filter);
       if (filter.op === "contains" && declared.type !== "text" && declared.type !== "richtext") {
         throw new Error(
           `collection view ${view.id} filter op contains requires a text field, not ${declared.type} (${id})`,
