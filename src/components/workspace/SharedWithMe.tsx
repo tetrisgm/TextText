@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { SharedWithMeEntry } from "@/lib/shares";
-import { blogPostPath } from "@/lib/public-paths";
+import { blogPostPath, tenantHomePath } from "@/lib/public-paths";
 import styles from "./SharedWithMe.module.css";
 
 type SharedWithMeProps = {
@@ -34,7 +34,7 @@ function formatUpdatedAt(iso: string): string {
 }
 
 function roleLabel(role: SharedWithMeEntry["role"]): string {
-  return role === "editor" ? "Editor" : "Viewer";
+  return { editor: "Edit", commenter: "Comment", viewer: "View", member: "Member", guest: "Guest" }[role];
 }
 
 export function SharedWithMe({ entries }: SharedWithMeProps) {
@@ -43,7 +43,7 @@ export function SharedWithMe({ entries }: SharedWithMeProps) {
   return (
     <ul className={`applecms ${styles.list}`} aria-label="Shared with me">
       {entries.map((entry) => {
-        const href = blogPostPath(
+        const href = entry.scopeType === "workspace" ? tenantHomePath(entry.blogHandle) : blogPostPath(
           {
             handle: entry.blogHandle,
             username: entry.blogUsername ?? undefined,
@@ -53,11 +53,11 @@ export function SharedWithMe({ entries }: SharedWithMeProps) {
         const title = entry.title.trim() || "Untitled";
 
         return (
-          <li className={styles.item} key={entry.postId}>
+          <li className={styles.item} key={`${entry.scopeType}:${entry.postId}`}>
             <Link className={styles.link} href={href}>
               <span className={styles.main}>
                 <span className={styles.title}>{title}</span>
-                <span className={styles.meta}>from {entry.blogName}</span>
+                <span className={styles.meta}>{entry.scopeType === "workspace" ? "Workspace" : `from ${entry.blogName}`}</span>
               </span>
               <span className={styles.side}>
                 <span className={styles.roleChip}>{roleLabel(entry.role)}</span>

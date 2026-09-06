@@ -3,6 +3,7 @@ import type { ItemComment } from "@/lib/store";
 
 const mocks = vi.hoisted(() => ({
   createItemComment: vi.fn(),
+  resolveDocumentCapability: vi.fn(),
   getCurrentUser: vi.fn(),
   getPostById: vi.fn(),
   getUserIdBySub: vi.fn(),
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   setItemCommentResolved: vi.fn(),
 }));
 
+vi.mock("next/headers", () => ({ cookies: vi.fn(async () => ({ get: () => ({ value: "valid-test-capability" }) })) }));
 vi.mock("@/auth", () => ({ isAuthConfigured: true }));
 
 vi.mock("@/lib/session", () => ({
@@ -37,6 +39,7 @@ vi.mock("@/lib/revalidate-blog", () => ({
 vi.mock("@/lib/store", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/store")>()),
   createItemComment: mocks.createItemComment,
+  resolveDocumentCapability: mocks.resolveDocumentCapability,
   getPostById: mocks.getPostById,
   getUserIdBySub: mocks.getUserIdBySub,
   listItemComments: mocks.listItemComments,
@@ -78,6 +81,7 @@ function storedComment(patch: Partial<ItemComment> = {}): ItemComment {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.resolveDocumentCapability.mockResolvedValue(null);
   mocks.getCurrentUser.mockResolvedValue({
     sub: "apple-sub",
     userId: USER_ID,
@@ -363,6 +367,63 @@ describe("item comment actions", () => {
       "Only the owner can recapture bookmarks",
     );
     expect(mocks.markCapturePending).not.toHaveBeenCalled();
+    expect(mocks.recordAction).not.toHaveBeenCalled();
+  });
+});
+
+it("round7: signed-in capability-only commenter can use promised comment access", async () => {
+  mocks.resolveItemAccess.mockResolvedValue({ canView: false, canComment: false, userId: USER_ID });
+  mocks.resolveDocumentCapability.mockResolvedValue({ id: "cap", itemId: ITEM_ID, role: "commenter" });
+  await expect(addItemCommentAction("writer", ITEM_ID, "Review from access link")).resolves.toHaveLength(1);
+});
+
+
+describe("capability comment permissions", () => {
+  beforeEach(() => {
+    mocks.resolveItemAccess.mockResolvedValue({ canView: false, canComment: false, canEditContent: false });
+  });
+  it("attributes capability comments and replies to the signed-in account and audits both", async () => {
+    mocks.resolveDocumentCapability.mockResolvedValue({ itemId: ITEM_ID, role: "commenter" });
+    await addItemCommentAction("writer", ITEM_ID, "From my account");
+    await replyItemCommentAction("writer", ITEM_ID, COMMENT_ID, "And my reply");
+    expect(mocks.createItemComment).toHaveBeenCalledTimes(2);
+    for (const call of mocks.createItemComment.mock.calls) {
+      expect(call[1]).toEqual({ actorUserId: USER_ID, actorType: "human", actorName: "Alex Writer" });
+    }
+    expect(mocks.recordAction.mock.calls.map(([entry]) => entry.actionName)).toEqual(["comment.add", "comment.reply"]);
+  });
+  it("lets capability viewers read threads but not add, reply or resolve", async () => {
+    mocks.resolveDocumentCapability.mockResolvedValue({ itemId: ITEM_ID, role: "viewer" });
+    await expect(listItemCommentsAction("writer", ITEM_ID)).resolves.toHaveLength(1);
+    await expect(addItemCommentAction("writer", ITEM_ID, "No")).rejects.toThrow("You cannot comment");
+    await expect(replyItemCommentAction("writer", ITEM_ID, COMMENT_ID, "No")).rejects.toThrow("You cannot comment");
+    await expect(resolveItemCommentAction("writer", ITEM_ID, COMMENT_ID)).rejects.toThrow("You cannot resolve");
+    expect(mocks.createItemComment).not.toHaveBeenCalled();
+    expect(mocks.recordAction).not.toHaveBeenCalled();
+  });
+  it("reserves resolution for editors and audits capability editor resolution", async () => {
+    mocks.resolveDocumentCapability.mockResolvedValue({ itemId: ITEM_ID, role: "commenter" });
+    await expect(resolveItemCommentAction("writer", ITEM_ID, COMMENT_ID)).rejects.toThrow("You cannot resolve");
+    mocks.resolveDocumentCapability.mockResolvedValue({ itemId: ITEM_ID, role: "editor" });
+    await resolveItemCommentAction("writer", ITEM_ID, COMMENT_ID);
+    expect(mocks.recordAction).toHaveBeenCalledWith(expect.objectContaining({ actorUserId: USER_ID, actionName: "comment.resolve" }));
+  });
+  it.each([null, { itemId: "another-item", role: "editor" }])("fails closed for absent, revoked or mismatched capability %j", async (capability) => {
+    mocks.resolveDocumentCapability.mockResolvedValue(capability);
+    await expect(addItemCommentAction("writer", ITEM_ID, "No")).rejects.toThrow("You cannot view comments");
+    expect(mocks.createItemComment).not.toHaveBeenCalled();
+    expect(mocks.recordAction).not.toHaveBeenCalled();
+  });
+  it("does not downgrade named editors when a viewer capability is present", async () => {
+    mocks.resolveItemAccess.mockResolvedValue({ canView: true, canComment: true, canEditContent: true, userId: USER_ID });
+    mocks.resolveDocumentCapability.mockResolvedValue({ itemId: ITEM_ID, role: "viewer" });
+    await expect(resolveItemCommentAction("writer", ITEM_ID, COMMENT_ID)).resolves.toHaveLength(1);
+  });
+  it("refuses anonymous capability holders with the page's sign-in message", async () => {
+    mocks.getCurrentUser.mockResolvedValue(null);
+    mocks.resolveDocumentCapability.mockResolvedValue({ itemId: ITEM_ID, role: "editor" });
+    await expect(addItemCommentAction("writer", ITEM_ID, "No")).rejects.toThrow("Sign in to use comments");
+    expect(mocks.createItemComment).not.toHaveBeenCalled();
     expect(mocks.recordAction).not.toHaveBeenCalled();
   });
 });

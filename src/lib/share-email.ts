@@ -6,30 +6,29 @@
 
 import type { Blog, Post } from "@/lib/content";
 import { getBlog } from "@/lib/store";
-import { blogPostPath } from "@/lib/public-paths";
+import { blogPostPath, tenantHomePath } from "@/lib/public-paths";
 import { rootDomainUrl } from "@/lib/site-url";
 
 export async function sendShareInviteEmail(opts: {
   to: string;
-  role: "editor" | "commenter" | "viewer";
-  post: Post;
   handle: string;
   inviterName: string;
-}): Promise<"sent" | "not_sent"> {
+} & ({ role: "editor" | "commenter" | "viewer"; post: Post }
+  | { role: "member" | "guest"; post?: never })): Promise<"sent" | "not_sent"> {
   const server = process.env.AUTH_EMAIL_SERVER;
   const from =
     process.env.AUTH_EMAIL_FROM ?? "TextText <noreply@TextText.app>";
   if (!server || !from) return "not_sent";
 
   const blog = await getBlog(opts.handle).catch(() => null);
-  const path = blogPostPath(
+  const path = opts.post ? blogPostPath(
     (blog ?? { handle: opts.handle }) as Pick<Blog, "handle" | "username">,
     { slug: opts.post.slug },
-  );
+  ) : tenantHomePath(opts.handle);
   const origin = rootDomainUrl().toString().replace(/\/$/, "");
   const url = `${origin}${path}`;
   const verb = opts.role === "editor" ? "edit" : opts.role === "commenter" ? "comment on" : "read";
-  const title = opts.post.title.trim() || "an untitled draft";
+  const title = opts.post ? opts.post.title.trim() || "an untitled draft" : blog?.name?.trim() || opts.handle;
 
   const { createTransport } = await import("nodemailer");
   const transport = createTransport(server);
@@ -38,7 +37,8 @@ export async function sendShareInviteEmail(opts: {
     from,
     subject: `${opts.inviterName} shared "${title}" with you`,
     text: [
-      `${opts.inviterName} invited you to ${verb} "${title}".`,
+      opts.post ? `${opts.inviterName} invited you to ${verb} "${title}".`
+        : `${opts.inviterName} invited you to the workspace "${title}" as a ${opts.role}.`,
       "",
       `Open it: ${url}`,
       "",

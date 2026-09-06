@@ -24,3 +24,20 @@ it("does not claim sent for an SMTP rejection or a transport failure", async () 
   mocks.sendMail.mockRejectedValue(new Error("offline"));
   await expect(sendShareInviteEmail(input)).rejects.toThrow("offline");
 });
+
+it.each(["member", "guest"] as const)("sends workspace invitation with the %s role and workspace URL", async (role) => {
+  mocks.sendMail.mockResolvedValue({ accepted: [input.to] });
+  const common = { to: input.to, handle: input.handle, inviterName: input.inviterName };
+  await expect(sendShareInviteEmail({ ...common, role })).resolves.toBe("sent");
+  expect(mocks.sendMail).toHaveBeenCalledWith(expect.objectContaining({
+    text: expect.stringContaining(`as a ${role}.`),
+  }));
+  const text = mocks.sendMail.mock.calls[0][0].text;
+  expect(text).toContain("/t/demo");
+  expect(text).toContain(`Sign in with this email address (${input.to})`);
+});
+it("reports unconfigured workspace mail honestly", async () => {
+  vi.stubEnv("AUTH_EMAIL_SERVER", "");
+  await expect(sendShareInviteEmail({ to: input.to, handle: "demo", inviterName: "Owner", role: "guest" })).resolves.toBe("not_sent");
+  expect(mocks.sendMail).not.toHaveBeenCalled();
+});

@@ -105,6 +105,7 @@ type CollabProviderOptions = {
    * sessions log was reset from posts.body). The local Y.Doc is now stale and
    * must be preserved for explicit recovery before opening a fresh document. */
   onRetired?: (epoch: number) => void;
+  onAccessLost?: (message: string) => void;
   onRecovery?: (copies: MaterializationRecovery[], durable: boolean) => void;
 };
 
@@ -120,7 +121,7 @@ type OutboxSubscriber = {
   onError?: CollabProviderOptions["onError"];
   /** Called when the relay reports this session lost access (401/403), so the
    * subscribing provider tears its poll/heartbeat loops down too. */
-  onFatal?: () => void;
+  onFatal?: (status: number) => void;
   /** Called with the old epoch before the subscribing document is retired. */
   onRetired?: (epoch: number) => void;
 };
@@ -486,18 +487,11 @@ async function flushOutbox(postId: string, outbox: Outbox) {
         }
       }
     } else if (isAccessLoss(res.status)) {
-      // Fatal: this session lost access. Drop the queue (it can never be
-      // delivered) and stop every provider on this post, instead of spamming
-      // the relay every retry interval.
-      outbox.pending.length = 0;
-      report("You no longer have edit access to this item.");
-      for (const sub of outbox.subscribers.values()) {
-        try {
-          sub.onFatal?.();
-        } catch {
-          // teardown of one subscriber must not block the others
-        }
+      // Freeze and quarantine pending edits instead of discarding local work.
+      for (const sub of [...outbox.subscribers.values()]) {
+        try { sub.onFatal?.(res.status); } catch { /* Continue other teardowns. */ }
       }
+      await retireOutbox(outbox, outbox.epoch);
     } else if (isPermanentPushError(res.status)) {
       // This batch will never be accepted (malformed / too large). Drop just
       // it so it can never poison-pill the queue, and keep delivering the rest.
@@ -580,6 +574,7 @@ export class CollabProvider implements CollaborationTransport {
   private pollRetries = 0;
   private baselineApplied = false;
   private retiredEpoch: number | null = null;
+  private accessLost = false;
   private documentEpoch: number | null = null;
 
   /** Never relabel a retired Y.Doc with the replacement outbox's epoch. */
@@ -588,7 +583,7 @@ export class CollabProvider implements CollaborationTransport {
   }
 
   get materializationBlocked(): boolean {
-    return this.retiredEpoch !== null;
+    return this.accessLost || this.retiredEpoch !== null;
   }
 
   /** All autosave and keepalive materializations use this same epoch envelope. */
@@ -602,6 +597,7 @@ export class CollabProvider implements CollaborationTransport {
       body: JSON.stringify({ handle, state: u8ToBase64(Y.encodeStateAsUpdate(this.doc)), epoch }),
       keepalive,
     });
+    if (isAccessLoss(response.status)) this.loseAccess(response.status);
     if (response.status === 409 && !this.materializationBlocked && this.outbox) {
       // Stop relay pushes as well. The subscriber preserves the live Y.Doc,
       // including edits made after this request was encoded.
@@ -610,6 +606,25 @@ export class CollabProvider implements CollaborationTransport {
       if (!this.materializationBlocked) this.retireDocument(epoch);
     }
     return response;
+  }
+
+  private loseAccess(status: number): void {
+    if (this.accessLost) return;
+    this.accessLost = true;
+    const message = accessLossMessage(status);
+    try {
+      this.opts.onAccessLost?.(message);
+      this.opts.onError?.(message);
+    } finally {
+      const outbox = this.outbox;
+      this.stop();
+      if (outbox) {
+        for (const sub of [...outbox.subscribers.values()]) {
+          try { sub.onFatal?.(status); } catch { /* Continue other teardowns. */ }
+        }
+        void retireOutbox(outbox, outbox.epoch);
+      }
+    }
   }
 
   private retireDocument(epoch: number): void {
@@ -672,7 +687,7 @@ export class CollabProvider implements CollaborationTransport {
       onError: this.opts.onError,
       // A push that 401/403s means this session lost access; tear down this
       // provider's poll + heartbeat loops too, not just the outbox.
-      onFatal: () => this.stop(),
+      onFatal: (status) => this.loseAccess(status),
       // The generation was retired: signal the editor to remount onto a fresh
       // doc (which reseeds from posts.body), then stop this provider.
       onRetired: (epoch) => this.retireDocument(epoch),
@@ -1047,8 +1062,7 @@ export class CollabProvider implements CollaborationTransport {
           },
         );
         if (isAccessLoss(res.status)) {
-          this.opts.onError?.(accessLossMessage(res.status));
-          this.stop();
+          this.loseAccess(res.status);
           return { authoritative: false, remoteEmpty: false };
         }
         if (!res.ok) {
@@ -1147,8 +1161,7 @@ export class CollabProvider implements CollaborationTransport {
           },
         );
         if (isAccessLoss(res.status)) {
-          this.opts.onError?.(accessLossMessage(res.status));
-          this.stop();
+          this.loseAccess(res.status);
           return;
         }
         if (!res.ok) {
@@ -1226,8 +1239,7 @@ export class CollabProvider implements CollaborationTransport {
           signal,
         });
         if (isAccessLoss(joined.status)) {
-          this.opts.onError?.(accessLossMessage(joined.status));
-          this.stop();
+          this.loseAccess(joined.status);
           return;
         }
         if (!joined.ok || this.stopped || signal.aborted) return;
@@ -1266,8 +1278,7 @@ export class CollabProvider implements CollaborationTransport {
         signal,
       });
       if (isAccessLoss(res.status)) {
-        this.opts.onError?.(accessLossMessage(res.status));
-        this.stop();
+        this.loseAccess(res.status);
         return;
       }
       if (res.status === 409) {
@@ -1302,8 +1313,7 @@ export class CollabProvider implements CollaborationTransport {
         signal: this.abort.signal,
       });
       if (isAccessLoss(res.status)) {
-        this.opts.onError?.("You no longer have access to this item.");
-        this.stop();
+        this.loseAccess(res.status);
         return;
       }
       if (!res.ok) return;

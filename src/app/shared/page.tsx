@@ -12,7 +12,7 @@ import "./shared.css";
 
 export const metadata: Metadata = {
   title: "Shared with me",
-  description: "Posts other people have shared with you.",
+  description: "Items and workspaces other people have shared with you.",
 };
 
 export default async function SharedPage() {
@@ -24,7 +24,7 @@ export default async function SharedPage() {
         <main className="shared-main">
           <h1 className="shared-title">Shared with me</h1>
           <p className="shared-lede">
-            Sign in to see the posts people have shared with you.
+            Sign in to see the items and workspaces people have shared with you.
           </p>
           <form action="/api/auth/signin" method="get">
             <input type="hidden" name="callbackUrl" value="/shared" />
@@ -51,7 +51,7 @@ export default async function SharedPage() {
         </Link>
         <h1 className="shared-title">Shared with me</h1>
         <p className="shared-lede">
-          Posts other people invited you to view or edit.
+          Items and workspaces other people invited you to join, view, comment on, or edit.
         </p>
         {entries.length === 0 ? (
           <p className="shared-empty">Nothing has been shared with you yet.</p>

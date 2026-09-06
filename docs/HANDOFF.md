@@ -4679,3 +4679,51 @@ both themes, the item-type route answers 400 to a non-object body, default
 collection ordering sorts by timestamp, and an exhausted repair returns its
 last sanitized reason with the concrete fix. The reviewer's two evidence tests
 that asserted the old defects now assert the fixed behavior.
+
+Shipped: build 1057 (`132ebae0`, item-type fixes), deployment `dpl_C5iG98TxdRgQweET93EMhE4u8kua`, page
+stamp `tt-1057-132ebae0`, Mac app 0.182 build 1057 installed. Live gates green.
+
+Probes on the local production build of `132ebae0` (build 1057): rail early
+versus late differs only in the status text rows; reading polls presence twice
+per 8 s with no heartbeat, editing joins and heartbeats; interaction suite
+17/17; reader keys and bar geometry unchanged; the delete probe's deletion
+holds and the probe restores the note; the Add agent sheet renders with the
+sheet tokens in both themes with focus inside and Escape returning focus; the
+two-browser sharing probe shows the guest's insertion in the owner's editor in
+2.0 s and the deletion in 2.0 s, both sessions as editors in the row and in
+presence, and the stored body clean afterwards. Baseline before the freshness
+fix: a guest's public item page never followed the owner's edit within 60 s.
+
+Sharing access fixes landed in the tree (`astra/out7/fix-sharing-access`): the
+relay GET re-resolves access right before returning a held result and answers
+403 on loss; 401, 403 and 410 are terminal for the provider (materialization
+becomes ineligible, transport stops, local text stays for recovery); named
+permissions are evaluated before a capability cookie and a weaker capability
+cannot downgrade a named editor; `set_access` accepts commenter for items and
+folders (workspace roles stay member and guest; tool docs regenerated);
+Shared with me computes the effective role per item and shows Comment; a
+workspace member or guest invitation produces one discoverable workspace entry
+and an invitation email; remote caret labels choose black or white ink by
+contrast (minimum 5.06:1 in both themes). The reviewer's comment regressions
+stay red until the comments patch lands.
+
+Sharing comments and freshness fixes landed in the tree
+(`astra/out7/fix-sharing-comments`): the public item page gives named
+commenters and editors a Comments control on the action bar and the anchored
+comment layer; the comment actions honor an item-scoped capability cookie
+additively while keeping attribution to the signed-in account; comments refresh
+15 s after each completed read while the document is visible, with one request
+at a time; a failed load shows "Could not load comments." with Retry outside the
+popover; a non-owner's public page polls a new read-only item revision endpoint
+and refreshes the rendered document when the revision changes, without
+publishing presence. Reviewer tests both agents carried were merged by
+ownership (comment tests from the comments agent, provider, relay and sharing
+tests from the access agent).
+
+Filled comment buttons: white text on the brand accent measured 4.02:1 in light
+mode (Apple blue) and 2.28:1 in dark mode (the pale tint). New tokens
+`--ac-accent-fill` and `--ac-accent-fill-ink` in `apple.css` give filled
+controls a deeper blue with white ink in light mode and the tint with dark navy
+ink in dark mode (both above 4.5:1); the brand accent is unchanged for links
+and selection. `ReaderComments.module.css` uses the pair; the reviewer's
+contrast test measures it.

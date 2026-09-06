@@ -189,6 +189,11 @@ export async function GET(
       interval = Math.min(Math.round(interval * 1.6), POLL_MAX_INTERVAL_MS);
     }
   }
+  // The grant may have been revoked while this request was held. Re-resolve
+  // both named and capability access before disclosing any result or baseline.
+  if (!(await getCollabRequestAccess(request, postId)).role) {
+    return Response.json({ error: "No access to this post" }, { status: 403 });
+  }
   const seq = updates.length > 0 ? updates[updates.length - 1].seq : since;
   return Response.json({
     updates,

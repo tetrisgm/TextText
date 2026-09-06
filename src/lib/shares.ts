@@ -19,6 +19,7 @@ import {
   isValidAccessEmail,
   isWorkspaceMemberRole,
   normalizeAccessEmail,
+  roleForTarget,
 } from "@/lib/permissions";
 import { getUserIdBySub } from "@/lib/store";
 
@@ -62,11 +63,13 @@ function cleanScopeRole(
 }
 
 function cleanItemRole(value: unknown): ShareRole {
-  return value === "editor" ? "editor" : "viewer";
+  const role = typeof value === "string" ? roleForTarget(value, "item", "item") : null;
+  return isItemShareRole(role) ? role : "viewer";
 }
 
 function maxShareRole(current: ShareRole | undefined, next: ShareRole): ShareRole {
-  return current === "editor" || next === "editor" ? "editor" : "viewer";
+  const rank = { viewer: 0, commenter: 1, editor: 2 };
+  return current && rank[current] > rank[next] ? current : next;
 }
 
 function auditTargetType(scopeType: CollaboratorScopeType): "workspace" | "folder" | "item" {
@@ -264,8 +267,8 @@ export async function revokeScopeShare(
 
 async function listSharedWithMe(
   user: ShareUser | null,
-): Promise<Array<{ postId: string; role: ShareRole }>> {
-  if (!db || !user) return [];
+): Promise<{ items: Array<{ postId: string; role: ShareRole }>; workspaces: Map<string, WorkspaceShareRole> }> {
+  if (!db || !user) return { items: [], workspaces: new Map() };
   const userId = user.userId ?? await getUserIdBySub(user.sub);
   const email = user.email ? normalizeShareEmail(user.email) : "";
   const minePredicates: SQL[] = [];
@@ -277,33 +280,39 @@ async function listSharedWithMe(
     );
     if (emailPredicate) minePredicates.push(emailPredicate);
   }
-  if (minePredicates.length === 0) return [];
+  if (minePredicates.length === 0) return { items: [], workspaces: new Map() };
   const minePredicate =
     minePredicates.length === 1 ? minePredicates[0] : or(...minePredicates);
-  if (!minePredicate) return [];
+  if (!minePredicate) return { items: [], workspaces: new Map() };
   const rows = await db
     .select()
     .from(collaborators)
     .where(and(minePredicate, isNull(collaborators.revokedAt)));
-  const mine = rows;
+  const mine = rows.filter((row) => row.scopeType === "workspace"
+    ? isWorkspaceMemberRole(row.role) || row.role === "admin"
+    : (row.scopeType === "item" || row.scopeType === "folder") && roleForTarget(row.role, row.scopeType, "item") !== null);
+  const workspaces = new Map<string, WorkspaceShareRole>();
+  for (const row of mine.filter((row) => row.scopeType === "workspace")) {
+    const role = row.role === "member" || row.role === "admin" ? "member" : "guest";
+    if (workspaces.get(row.scopeId) !== "member") workspaces.set(row.scopeId, role);
+  }
   const itemIds = new Set<string>();
   const directRoles = new Map<string, ShareRole>();
 
   for (const row of mine) {
     if (row.scopeType === "item") {
       itemIds.add(row.scopeId);
-      directRoles.set(row.scopeId, cleanItemRole(row.role));
+      directRoles.set(row.scopeId, maxShareRole(directRoles.get(row.scopeId), cleanItemRole(row.role)));
     }
   }
 
   const folderIds = mine
     .filter((row) => row.scopeType === "folder")
     .map((row) => row.scopeId);
-  const folderRoleById = new Map(
-    mine
-      .filter((row) => row.scopeType === "folder")
-      .map((row) => [row.scopeId, cleanItemRole(row.role)]),
-  );
+  const folderRoleById = new Map<string, ShareRole>();
+  for (const row of mine.filter((row) => row.scopeType === "folder")) {
+    folderRoleById.set(row.scopeId, maxShareRole(folderRoleById.get(row.scopeId), cleanItemRole(row.role)));
+  }
   if (folderIds.length > 0) {
     const folderRows = await db
       .select({ id: folders.id, blogId: folders.blogId, parentId: folders.parentId })
@@ -312,55 +321,62 @@ async function listSharedWithMe(
     const blogsTouched = new Set(folderRows.map((folder) => folder.blogId));
     for (const blogId of blogsTouched) {
       const allFolders = await db
-        .select({ id: folders.id, parentId: folders.parentId })
+        .select({ id: folders.id, parentId: folders.parentId, path: folders.path })
         .from(folders)
         .where(and(eq(folders.blogId, blogId), isNull(folders.deletedAt)));
-      const visibleFolderIds = new Set<string>();
-      let folderRole: ShareRole = "viewer";
-      let changed = true;
+      const effectiveRoles = new Map<string, ShareRole>();
       for (const folder of folderRows.filter((entry) => entry.blogId === blogId)) {
-        visibleFolderIds.add(folder.id);
-        folderRole = maxShareRole(folderRole, folderRoleById.get(folder.id) ?? "viewer");
+        effectiveRoles.set(folder.id, folderRoleById.get(folder.id)!);
       }
+      // Propagate each ancestor's grant only to its own descendants. A role
+      // upgrade also propagates, even when a child already has a weaker grant.
+      let changed = true;
       while (changed) {
         changed = false;
         for (const folder of allFolders) {
-          if (
-            folder.parentId &&
-            visibleFolderIds.has(folder.parentId) &&
-            !visibleFolderIds.has(folder.id)
-          ) {
-            visibleFolderIds.add(folder.id);
+          const inherited = folder.parentId ? effectiveRoles.get(folder.parentId) : undefined;
+          if (!inherited) continue;
+          const role = maxShareRole(effectiveRoles.get(folder.id), inherited);
+          if (role !== effectiveRoles.get(folder.id)) {
+            effectiveRoles.set(folder.id, role);
             changed = true;
           }
         }
       }
+      const defaultFolderId = allFolders.find((folder) => folder.path === "blog")?.id;
       const postRows = await db
-        .select({ id: posts.id })
+        .select({ id: posts.id, folderId: posts.folderId })
         .from(posts)
         .where(
           and(
             eq(posts.blogId, blogId),
-            inArray(posts.folderId, [...visibleFolderIds]),
+            or(
+              inArray(posts.folderId, [...effectiveRoles.keys()]),
+              defaultFolderId && effectiveRoles.has(defaultFolderId) ? isNull(posts.folderId) : undefined,
+            ),
             isNull(posts.deletedAt),
           ),
         );
       for (const post of postRows) {
+        const role = effectiveRoles.get(post.folderId ?? defaultFolderId ?? "");
+        if (!role) continue;
         itemIds.add(post.id);
-        directRoles.set(post.id, maxShareRole(directRoles.get(post.id), folderRole));
+        directRoles.set(post.id, maxShareRole(directRoles.get(post.id), role));
       }
     }
   }
 
-  return [...itemIds].map((postId) => ({
+  return { items: [...itemIds].map((postId) => ({
     postId,
-    role: directRoles.get(postId) ?? "viewer",
-  }));
+    role: directRoles.get(postId)!,
+  })), workspaces };
 }
 
 export type SharedWithMeEntry = {
+  /** Workspace entries use the workspace ID here and have no item slug. */
   postId: string;
-  role: ShareRole;
+  scopeType: "item" | "workspace";
+  role: ScopeShareRole;
   title: string;
   slug: string;
   blogHandle: string;
@@ -373,12 +389,15 @@ export async function getSharedPostsForUser(
   user: ShareUser | null,
 ): Promise<SharedWithMeEntry[]> {
   if (!db || !user) return [];
-  const shares = await listSharedWithMe(user);
-  if (shares.length === 0) return [];
-  const roleByPost = new Map(shares.map((s) => [s.postId, s.role]));
-  const rows = await db
+  const userId = user.userId ?? await getUserIdBySub(user.sub);
+  const shares = await listSharedWithMe({ ...user, userId });
+  if (shares.items.length === 0 && shares.workspaces.size === 0) return [];
+  const roleByPost = new Map(shares.items.map((s) => [s.postId, s.role]));
+  const rows = shares.items.length ? await db
     .select({
       id: posts.id,
+      blogId: blogs.id,
+      ownerId: blogs.ownerId,
       title: posts.title,
       slug: posts.slug,
       updatedAt: posts.updatedAt,
@@ -390,12 +409,14 @@ export async function getSharedPostsForUser(
     .from(posts)
     .innerJoin(blogs, eq(posts.blogId, blogs.id))
     .leftJoin(users, eq(blogs.ownerId, users.id))
-    .where(inArray(posts.id, [...roleByPost.keys()]));
-  return rows
+    .where(and(inArray(posts.id, [...roleByPost.keys()]), isNull(blogs.deletedAt))) : [];
+  const entries: SharedWithMeEntry[] = rows
     .filter((row) => !row.deletedAt)
     .map((row) => ({
       postId: row.id,
-      role: roleByPost.get(row.id) ?? "viewer",
+      scopeType: "item" as const,
+      role: row.ownerId && row.ownerId === userId ? "editor" as const
+        : maxShareRole(roleByPost.get(row.id), shares.workspaces.get(row.blogId) === "member" ? "editor" : "viewer"),
       title: row.title,
       slug: row.slug,
       blogHandle: row.blogHandle,
@@ -404,4 +425,21 @@ export async function getSharedPostsForUser(
       updatedAt: row.updatedAt.toISOString(),
     }))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  if (shares.workspaces.size) {
+    const workspaceRows = await db.select({
+      id: blogs.id, blogHandle: blogs.handle, blogName: blogs.name,
+      blogUsername: users.username, updatedAt: blogs.createdAt,
+    }).from(blogs).leftJoin(users, eq(blogs.ownerId, users.id))
+      .where(and(inArray(blogs.id, [...shares.workspaces.keys()]), isNull(blogs.deletedAt)));
+    for (const row of workspaceRows) {
+      const role = shares.workspaces.get(row.id);
+      if (!role) continue;
+      entries.push({
+        postId: row.id, scopeType: "workspace", role, title: row.blogName,
+        slug: "", blogHandle: row.blogHandle, blogName: row.blogName,
+        blogUsername: row.blogUsername ?? null, updatedAt: row.updatedAt.toISOString(),
+      });
+    }
+  }
+  return entries.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }

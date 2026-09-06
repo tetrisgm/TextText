@@ -66,9 +66,18 @@ describe("sharing management actions", () => {
     await expect(shareScopeAction("demo", "item", itemId, "guest@example.com", "viewer")).rejects.toThrow("audit transaction failed");
     expect(mocks.sendShareInviteEmail).not.toHaveBeenCalled();
   });
-  it("reports no email for workspace invitations", async () => {
+  it("reports unconfigured email for workspace invitations", async () => {
+    mocks.sendShareInviteEmail.mockResolvedValue("not_sent");
     await expect(shareScopeAction("demo", "workspace", "workspace", "guest@example.com", "guest"))
       .resolves.toEqual({ accessGranted: true, emailStatus: "not_sent" });
-    expect(mocks.sendShareInviteEmail).not.toHaveBeenCalled();
+    expect(mocks.sendShareInviteEmail).toHaveBeenCalledWith(expect.objectContaining({ role: "guest", handle: "demo" }));
   });
+});
+
+it.each(["sent", "failed"])("workspace grant survives email %s", async (emailStatus) => {
+  if (emailStatus === "failed") mocks.sendShareInviteEmail.mockRejectedValue(new Error("SMTP unavailable"));
+  else mocks.sendShareInviteEmail.mockResolvedValue(emailStatus);
+  await expect(shareScopeAction("demo", "workspace", "workspace", "guest@example.com", "member"))
+    .resolves.toEqual({ accessGranted: true, emailStatus });
+  expect(mocks.sendShareInviteEmail).toHaveBeenCalledWith(expect.objectContaining({ role: "member", handle: "demo" }));
 });

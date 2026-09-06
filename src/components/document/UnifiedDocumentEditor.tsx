@@ -64,6 +64,7 @@ import {
 } from "@/lib/documents/model";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { DocumentRenderer } from "./DocumentRenderer";
+import { peerLabelInk } from "@/lib/collab/peer-color";
 import { MarkdownSurface } from "./MarkdownSurface";
 import { TemplateGallery } from "./TemplateGallery";
 import {
@@ -351,7 +352,7 @@ function SelectionMirror({
         <span
           className="tt-remote-caret"
           key={`caret-${selection.clientId}-${start}`}
-          style={{ "--tt-peer": selection.color } as CSSProperties}
+          style={{ "--tt-peer": selection.color, "--tt-peer-ink": peerLabelInk(selection.color) } as CSSProperties}
         >
           <span>{selection.userName}</span>
         </span>,
@@ -367,7 +368,7 @@ function SelectionMirror({
       active ? (
         <mark
           key={`selection-${start}-${end}`}
-          style={{ "--tt-peer": active.color } as CSSProperties}
+          style={{ "--tt-peer": active.color, "--tt-peer-ink": peerLabelInk(active.color) } as CSSProperties}
         >
           {text}
         </mark>
@@ -675,6 +676,7 @@ export function UnifiedDocumentEditor({
   const [recoveryCopies, setRecoveryCopies] = useState<MaterializationRecovery[]>([]);
   const [recoveryDurable, setRecoveryDurable] = useState(true);
   const [recoveryDownloaded, setRecoveryDownloaded] = useState(false);
+  const [accessLoss, setAccessLoss] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     const copies = readMaterializationRecoveries(collab.postId);
@@ -730,6 +732,7 @@ export function UnifiedDocumentEditor({
 
   const updateDocumentSnapshot = useCallback(
     (next: DocumentSnapshot) => {
+      if (recoveryBlockedRef.current) return;
       publishDocument(next);
       if (!ready && networkEnabled) {
         preReadyLocalRef.current = next;
@@ -914,6 +917,12 @@ export function UnifiedDocumentEditor({
         }
       },
       onRetired: preserveRecovery,
+      onAccessLost: (message) => {
+        if (cancelled) return;
+        preserveRecovery(provider.learnedEpoch ?? 0);
+        setAccessLoss(message);
+        setError(message);
+      },
       onRecovery: (copies, durable) => {
         recoveryBlockedRef.current = true;
         if (!cancelled) {
@@ -1083,6 +1092,7 @@ export function UnifiedDocumentEditor({
 
   const updateText = useCallback(
     (field: EditableField, value: string) => {
+      if (recoveryBlockedRef.current) return;
       promoteOnEdit();
       const normalized = field === "title" ? value.replace(/[\r\n]+/g, " ") : value;
       const base = currentLocalDocument();
@@ -1358,7 +1368,7 @@ export function UnifiedDocumentEditor({
     return (
       <section className="tt-unified-editor tt-baseline-failure" role="alert">
         <div className="tt-baseline-failure-copy">
-          <h1>This document changed elsewhere</h1>
+          <h1>{accessLoss ?? "This document changed elsewhere"}</h1>
           <p>{recoveryDurable
             ? "Your local copy is kept on this device. Download it to recover your edits."
             : "Device storage is unavailable. Download your local copy before closing this page."}</p>
@@ -1651,7 +1661,7 @@ export function UnifiedDocumentEditor({
         .tt-document-editor .tt-collaborative-mirror{position:absolute;z-index:1;inset:0;pointer-events:none;overflow:hidden;color:transparent}
         .tt-document-editor .tt-collaborative-mirror mark{background:color-mix(in srgb,var(--tt-peer) 28%,transparent);color:transparent;border-radius:2px}
         .tt-document-editor .tt-remote-caret{position:relative;border-inline-start:2px solid var(--tt-peer);margin-inline-start:-1px;color:transparent}
-        .tt-document-editor .tt-remote-caret>span{position:absolute;left:-2px;bottom:100%;padding:2px 5px;background:var(--tt-peer);color:#fff;font:600 10px/1.2 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;white-space:nowrap;border-radius:3px}
+        .tt-document-editor .tt-remote-caret>span{position:absolute;left:-2px;bottom:100%;padding:2px 5px;background:var(--tt-peer);color:var(--tt-peer-ink);font:600 10px/1.2 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;white-space:nowrap;border-radius:3px}
         .tt-document-editor .tt-field-body textarea,.tt-document-editor .tt-field-body .tt-collaborative-mirror{min-height:36vh;text-align:start}
         /* The writing surface renders the source itself, styled, so what you
            type looks like what a reader gets without the document stopping
@@ -1689,7 +1699,7 @@ export function UnifiedDocumentEditor({
         .tt-md-quote{color:color-mix(in srgb,currentColor 76%,transparent);font-style:italic}
         .tt-md-peer{background:color-mix(in srgb,var(--tt-peer) 26%,transparent);border-radius:2px}
         .tt-md-remote-caret{display:inline;position:relative;pointer-events:none;user-select:none}
-        .tt-md-remote-caret::after{content:attr(data-name);position:absolute;left:-2px;bottom:100%;padding:2px 5px;background:var(--tt-peer);color:#fff;font:600 10px/1.2 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;white-space:nowrap;border-radius:3px}
+        .tt-md-remote-caret::after{content:attr(data-name);position:absolute;left:-2px;bottom:100%;padding:2px 5px;background:var(--tt-peer);color:var(--tt-peer-ink);font:600 10px/1.2 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;white-space:nowrap;border-radius:3px}
         @media(forced-colors:active){.tt-md-marker{color:GrayText}}
         .tt-document-editor .tt-field-body textarea{resize:none}
         .tt-unified-presence{display:flex;align-items:center;gap:4px;padding-inline:3px}

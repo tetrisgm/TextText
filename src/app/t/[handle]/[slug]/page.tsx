@@ -33,6 +33,8 @@ import {
 } from "@/lib/store";
 import type { Blog, Post } from "@/lib/content";
 import { blogFeedAlternateTypes } from "@/lib/feed-links";
+import { PublicReaderFreshness } from "@/components/document/PublicReaderFreshness";
+import { readerRevision } from "@/lib/reader-revision";
 import { UnifiedDocumentReader } from "@/components/document/UnifiedDocumentReader";
 import { StandaloneUnifiedDocumentEditor } from "@/components/document/StandaloneUnifiedDocumentEditor";
 import { PostActionBar } from "@/components/PostActionBar";
@@ -287,6 +289,9 @@ export async function PostPageForHandle({
     Boolean(itemAccess?.canComment) ||
     capabilityAccess?.role === "editor" ||
     capabilityAccess?.role === "commenter";
+  const canUseComments = Boolean(
+    viewer && (canEdit || itemAccess?.canView || capabilityAccess),
+  );
   const editMode = canEditPost && editRequested;
   if (!canEdit && post.starred !== undefined) {
     post = { ...post, starred: undefined };
@@ -524,6 +529,11 @@ export async function PostPageForHandle({
         post={post}
         template={template}
         wikiLinkTargets={wikiLinkTargets}
+        comments={
+          !canEdit && canUseComments
+            ? { canComment: canCommentPost, canResolve: canEditPost }
+            : undefined
+        }
       />
     );
 
@@ -584,8 +594,17 @@ export async function PostPageForHandle({
             postPath={currentPostPath}
             canEditPost={canEditPost}
             canManagePost={canEdit}
-            canCommentPost={canCommentPost}
+            canCommentPost={canUseComments && canCommentPost}
+            canViewComments={canUseComments}
           />
+          {post.id && (
+            <PublicReaderFreshness postId={post.id} revision={readerRevision(post)} />
+          )}
+          {!viewer && canCommentPost && (
+            <p className="public-report-footer">
+              <a href="/signin">Sign in to use comments</a>
+            </p>
+          )}
           {reader}
           {/* Guideline 1.2 and plain decency: anyone who can read a published
               page can say it should not be here, without an account. */}

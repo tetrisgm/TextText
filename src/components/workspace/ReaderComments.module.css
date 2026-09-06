@@ -63,8 +63,8 @@
   height: 15px;
   border-radius: 8px;
   padding: 0 3px;
-  background: var(--ac-accent);
-  color: var(--ac-on-accent);
+  background: var(--ac-accent-fill);
+  color: var(--ac-accent-fill-ink);
   font-size: 9px;
   font-weight: 700;
   line-height: 15px;
@@ -173,8 +173,8 @@
   border: 0;
   border-radius: 7px;
   padding: 0 10px;
-  background: var(--ac-accent);
-  color: var(--ac-on-accent);
+  background: var(--ac-accent-fill);
+  color: var(--ac-accent-fill-ink);
   font: 600 var(--ac-fs-footnote) / 1 var(--ac-font-text);
   cursor: pointer;
 }
@@ -204,3 +204,44 @@
     left: auto !important;
   }
 }
+
+.loadFailure {
+  position: fixed;
+  bottom: 16px;
+  left: 16px;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 16px;
+  border: 1px solid var(--ac-separator);
+  border-radius: 8px;
+  background: var(--ac-bg);
+  color: var(--ac-label);
+  pointer-events: auto;
+  font: 400 var(--ac-fs-subheadline) / 1.4 var(--ac-font-text);
+}
+
+.loadFailure button,
+.threadList button {
+  min-height: 32px;
+  border: 1px solid var(--ac-separator);
+  border-radius: 6px;
+  padding: 8px;
+  background: var(--ac-bg);
+  color: var(--ac-label);
+  font: inherit;
+  cursor: pointer;
+}
+
+.threadList {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: var(--ac-fs-subheadline);
+}
+
+.threadList p { margin: 0; }
+.threadList button { display: grid; gap: 8px; text-align: left; overflow-wrap: anywhere; }
+.loadFailure button:focus-visible,
+.threadList button:focus-visible { outline: none; box-shadow: var(--ac-focus); }

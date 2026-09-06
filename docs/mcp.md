@@ -183,7 +183,7 @@ or workspace selector that could cross that boundary.
 | `rename_folder` | `sync` | Rename one folder. Its id and path do not change. |
 | `delete_folder` | `sync` | Move one folder subtree to Trash. Restorable; never permanently deleted. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it. |
 | `restore_folder` | `sync` | Restore one folder subtree from Trash. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
-| `set_access` | `sync` | Grant or change one person's role on the workspace, a folder, or an item, by email. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
+| `set_access` | `sync` | Grant or change one person's role by email: member or guest on a workspace; editor, commenter, or viewer on a folder or item. Item and workspace invitations report email delivery status. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
 | `revoke_access` | `sync` | Revoke one person's access to the workspace, a folder, or an item. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
 <!-- /generated:tool-table -->
 

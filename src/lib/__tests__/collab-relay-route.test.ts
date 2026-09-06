@@ -250,3 +250,30 @@ describe("collab relay route", () => {
     expect(res.status).toBe(409);
   });
 });
+
+// Round 7: a held request must not disclose updates created after revocation.
+it("round7: rechecks access before returning a held poll", async () => {
+  vi.useFakeTimers();
+  try {
+    const update = realUpdate();
+    mocks.collabUpdatesSince.mockResolvedValueOnce([]).mockImplementation(async () => {
+      mocks.getCollabRequestAccess.mockResolvedValue({ role: null, trashed: false });
+      return [{ seq: 42, update }];
+    });
+    const response = GET(read("?since=41&wait=25"), ctx);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect((await response).status).toBe(403);
+  } finally { vi.useRealTimers(); }
+});
+
+it("rechecks access on an empty held baseline response too", async () => {
+  vi.useFakeTimers();
+  mocks.collabUpdatesSince.mockResolvedValue([]);
+  const pending = GET(read("?since=0&wait=1"), ctx);
+  await vi.advanceTimersByTimeAsync(0);
+  mocks.getCollabRequestAccess.mockResolvedValue({ role: null, user: null, trashed: false });
+  await vi.advanceTimersByTimeAsync(1000);
+  const response = await pending;
+  expect(response.status).toBe(403);
+  expect(await response.json()).not.toHaveProperty("baseline");
+});

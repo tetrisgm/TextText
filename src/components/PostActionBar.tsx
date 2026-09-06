@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { OPEN_READER_COMMENTS } from "@/lib/reader-comments-events";
 import {
   useCallback,
   useEffect,
@@ -51,6 +52,7 @@ type CommonProps = {
   canEditPost?: boolean;
   canManagePost?: boolean;
   canCommentPost?: boolean;
+  canViewComments?: boolean;
   onBookmarkCaptureChange?: (post: Post) => void;
   onNavigate?: (path: string) => Promise<void> | void;
   onSearch?: () => void;
@@ -1038,6 +1040,16 @@ export function PostActionBar(props: Props) {
             ) : props.onSearch ? (
               <WorkspaceSearchButton onSearch={props.onSearch} />
             ) : null}
+            {props.mode === "read" && props.post.id && (props.canCommentPost || props.canViewComments) && (
+              <button
+                type="button"
+                className="post-action-share ac-btn ac-btn-gray"
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={() => window.dispatchEvent(new CustomEvent(OPEN_READER_COMMENTS, { detail: { postId: props.post.id } }))}
+              >
+                Comments
+              </button>
+            )}
             <ParticipantsRow key={props.post.id} postId={props.post.id} handle={props.blog.handle} canReviewChanges={props.owner} />
             {(canEditPost || bookmarkControls) && (
               <div className="post-action-owner-group">

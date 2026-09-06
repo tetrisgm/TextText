@@ -934,3 +934,53 @@ it("does not invent epoch zero when catch-up omits its generation", async () => 
   expect(await provider.materialize("demo", true)).toBeNull();
   provider.destroy();
 });
+
+it("round7: access loss also disables materialization retries", async () => {
+  const never = new Promise<Response>(() => {});
+  let catchup = true;
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/presence")) return jsonResponse({ presence: [] });
+    if (url.endsWith("/materialize")) return jsonResponse({ error: "No access" }, 403);
+    if (catchup) { catchup = false; return catchUpResponse({ epoch: 3 }); }
+    return never;
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const doc = new Y.Doc();
+  const provider = providerFor(doc, "round7-revoked-materialize");
+  try {
+    await provider.start();
+    expect((await provider.materialize("writer"))?.status).toBe(403);
+    doc.getText("body").insert(0, "Still typing after revocation");
+    expect(await provider.materialize("writer")).toBeNull();
+  } finally { provider.destroy(); doc.destroy(); }
+});
+
+it.each([401, 403, 410])("materialization %s preserves text, signals recovery, and stops every transport loop", async (status) => {
+  vi.useFakeTimers();
+  let catchup = true;
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/presence")) return jsonResponse({ presence: [] });
+    if (url.endsWith("/materialize")) return jsonResponse({ error: "No access" }, status);
+    if (catchup) { catchup = false; return catchUpResponse({ epoch: 3 }); }
+    return new Promise<Response>(() => {});
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const onAccessLost = vi.fn(), onError = vi.fn(), doc = new Y.Doc();
+  const provider = new CollabProvider(doc, { postId: `materialize-terminal-${status}`, userName: "Ada", color: "#112233", canPush: true, onAccessLost, onError });
+  try {
+    await provider.start();
+    doc.getText("body").insert(0, "Recover this local text");
+    expect((await provider.materialize("writer"))?.status).toBe(status);
+    expect(onAccessLost).toHaveBeenCalledOnce();
+    expect(onError).toHaveBeenCalledWith(status === 410 ? "This item was moved to Trash." : "You no longer have access to this item.");
+    expect(doc.getText("body").toString()).toBe("Recover this local text");
+    expect(provider.materializationBlocked).toBe(true);
+    const calls = fetcher.mock.calls.length;
+    expect(await provider.materialize("writer", true)).toBeNull();
+    provider.enqueueCurrentState();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetcher.mock.calls).toHaveLength(calls);
+  } finally { provider.destroy(); doc.destroy(); }
+});

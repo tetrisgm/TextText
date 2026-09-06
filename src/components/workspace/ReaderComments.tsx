@@ -20,6 +20,8 @@ import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { groupCommentThreads } from "@/components/workspace/comment-threads";
 import { locateWorkspaceItemTextSelection } from "@/lib/ai/workspace-item-draft";
 import styles from "./ReaderComments.module.css";
+import { startVisiblePoll } from "@/lib/visible-poll";
+import { OPEN_READER_COMMENTS } from "@/lib/reader-comments-events";
 
 type SelectionAnchor = {
   end: number;
@@ -158,11 +160,13 @@ function CommentIcon() {
 
 export function ReaderComments({
   canResolve,
+  canComment = true,
   handle,
   postId,
   sourceBody,
 }: {
   canResolve: boolean;
+  canComment?: boolean;
   handle: string;
   postId: string;
   sourceBody: string;
@@ -179,6 +183,10 @@ export function ReaderComments({
   const [replyBody, setReplyBody] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const retryRef = useRef<(() => Promise<void>) | null>(null);
+  const mutationVersion = useRef(0);
+  const savingRef = useRef(false);
   const threads = useMemo(() => groupCommentThreads(comments), [comments]);
   const activeThread = threads.find((thread) => thread.root.id === activeThreadId);
 
@@ -192,26 +200,51 @@ export function ReaderComments({
   useEscapeLayer(composing || Boolean(activeThreadId), "Comment", closePopover);
 
   useEffect(() => {
-    let active = true;
-    listItemCommentsAction(handle, postId)
-      .then((next) => {
-        if (active) setComments(next);
-      })
-      .catch((loadError) => {
-        if (active) setError(errorMessage(loadError, "Could not load comments."));
-      });
+    const poll = startVisiblePoll(async (signal) => {
+      if (savingRef.current) return;
+      const version = mutationVersion.current;
+      try {
+        const next = await listItemCommentsAction(handle, postId);
+        if (signal.aborted || version !== mutationVersion.current) return;
+        setComments((current) =>
+          JSON.stringify(current) === JSON.stringify(next) ? current : next,
+        );
+        setLoadError(null);
+      } catch {
+        if (!signal.aborted && version === mutationVersion.current) {
+          setLoadError("Could not load comments.");
+        }
+      }
+    });
+    retryRef.current = poll.refresh;
     return () => {
-      active = false;
+      retryRef.current = null;
+      poll.stop();
     };
   }, [handle, postId]);
+
+  useEffect(() => {
+    const open = (event: Event) => {
+      if ((event as CustomEvent<{ postId: string }>).detail?.postId !== postId) return;
+      const root = readerProse(rootRef.current);
+      setSelection(canComment && root ? selectionAnchor(root, sourceBody) : null);
+      setComposing(true);
+      setActiveThreadId(null);
+      window.requestAnimationFrame(() => composerRef.current?.focus());
+    };
+    window.addEventListener(OPEN_READER_COMMENTS, open);
+    return () => window.removeEventListener(OPEN_READER_COMMENTS, open);
+  }, [canComment, postId, sourceBody]);
 
   // Quote Ranges are resolved ONCE per thread set and reused: resolving one
   // walks the entire article text, and doing that per thread on every scroll
   // frame was the reader's costliest listener. A frame now only reads rects,
   // and identical positions skip the state write entirely.
-  const quoteRangesRef = useRef<{ key: string; ranges: Map<string, Range> } | null>(
-    null,
-  );
+  const quoteRangesRef = useRef<{
+    key: string;
+    body: string;
+    ranges: Map<string, Range>;
+  } | null>(null);
   const updateThreadPositions = useCallback(() => {
     const root = readerProse(rootRef.current);
     if (!root) return;
@@ -225,6 +258,7 @@ export function ReaderComments({
     const stale =
       !cache ||
       cache.key !== key ||
+      cache.body !== sourceBody ||
       [...cache.ranges.values()].some(
         (range) => !root.contains(range.startContainer),
       );
@@ -237,7 +271,7 @@ export function ReaderComments({
         );
         if (range) ranges.set(thread.root.id, range);
       }
-      cache = { key, ranges };
+      cache = { key, body: sourceBody, ranges };
       quoteRangesRef.current = cache;
     }
     const rootRect = root.getBoundingClientRect();
@@ -266,7 +300,7 @@ export function ReaderComments({
         ? current
         : next,
     );
-  }, [sourceBody.length, threads]);
+  }, [sourceBody, threads]);
 
   useEffect(() => {
     let frame = 0;
@@ -293,7 +327,7 @@ export function ReaderComments({
 
   useEffect(() => {
     const capture = () => {
-      if (composing || activeThreadId) return;
+      if (!canComment || composing || activeThreadId) return;
       const root = readerProse(rootRef.current);
       setSelection(root ? selectionAnchor(root, sourceBody) : null);
     };
@@ -303,7 +337,7 @@ export function ReaderComments({
       document.removeEventListener("pointerup", capture);
       document.removeEventListener("keyup", capture);
     };
-  }, [activeThreadId, composing, sourceBody]);
+  }, [activeThreadId, canComment, composing, sourceBody]);
 
   useEffect(() => {
     if (!composing && !activeThreadId) return;
@@ -325,7 +359,9 @@ export function ReaderComments({
   const submitComment = async (event: FormEvent) => {
     event.preventDefault();
     const clean = body.trim();
-    if (!clean || !selection || saving) return;
+    if (!clean || !canComment || saving) return;
+    mutationVersion.current += 1;
+    savingRef.current = true;
     setSaving(true);
     setError(null);
     try {
@@ -334,10 +370,10 @@ export function ReaderComments({
           handle,
           postId,
           clean,
-          "body",
-          selection.exact,
-          selection.start,
-          selection.end,
+          selection ? "body" : undefined,
+          selection?.exact,
+          selection?.start,
+          selection?.end,
         ),
       );
       closePopover();
@@ -346,6 +382,7 @@ export function ReaderComments({
     } catch (saveError) {
       setError(errorMessage(saveError, "Could not add comment."));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -353,7 +390,9 @@ export function ReaderComments({
   const submitReply = async (event: FormEvent) => {
     event.preventDefault();
     const clean = replyBody.trim();
-    if (!clean || !activeThread || saving) return;
+    if (!clean || !canComment || !activeThread || saving) return;
+    mutationVersion.current += 1;
+    savingRef.current = true;
     setSaving(true);
     setError(null);
     try {
@@ -364,12 +403,15 @@ export function ReaderComments({
     } catch (saveError) {
       setError(errorMessage(saveError, "Could not add reply."));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const toggleResolution = async () => {
     if (!activeThread || !canResolve || saving) return;
+    mutationVersion.current += 1;
+    savingRef.current = true;
     setSaving(true);
     setError(null);
     try {
@@ -381,6 +423,7 @@ export function ReaderComments({
     } catch (saveError) {
       setError(errorMessage(saveError, "Could not update comment."));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -410,11 +453,21 @@ export function ReaderComments({
             window.innerHeight - 340,
           ),
         }
-      : null;
+      : composing
+        ? { right: 16, top: 80 }
+        : null;
 
   return (
     <div ref={rootRef} className={`applecms ${styles.layer}`} aria-live="polite">
-      {selection && !composing && !activeThreadId && selectionPosition && (
+      {loadError && (
+        <div className={styles.loadFailure} role="status">
+          <span>{loadError}</span>
+          <button type="button" onClick={() => void retryRef.current?.()}>
+            Retry
+          </button>
+        </div>
+      )}
+      {canComment && selection && !composing && !activeThreadId && selectionPosition && (
         <button
           type="button"
           className={styles.selectionButton}
@@ -456,10 +509,10 @@ export function ReaderComments({
           className={styles.popover}
           style={popoverPosition}
           role="dialog"
-          aria-label={composing ? "Comment on selection" : "Comment thread"}
+          aria-label={composing ? (selection ? "Comment on selection" : "Comments") : "Comment thread"}
         >
           <header>
-            <strong>{composing ? "Comment on selection" : "Comment"}</strong>
+            <strong>{composing ? (selection ? "Comment on selection" : "Comments") : "Comment"}</strong>
             <button type="button" aria-label="Close comments" onClick={closePopover}>
               ×
             </button>
@@ -468,6 +521,23 @@ export function ReaderComments({
             <blockquote>
               {composing ? selection?.exact : activeThread?.root.anchor?.exactQuote}
             </blockquote>
+          )}
+          {composing && !selection && (
+            <div className={styles.threadList}>
+              {threads.length === 0 && !loadError && <p>No comments yet.</p>}
+              {canComment && <p>Select text to comment on a passage, or comment on the item below.</p>}
+              {threads.map((thread) => (
+                <button key={thread.root.id} type="button" onClick={() => {
+                  setComposing(false);
+                  setActiveThreadId(thread.root.id);
+                  setSelection(null);
+                }}>
+                  <strong>{thread.root.authorName}</strong>
+                  <span>{thread.root.body}</span>
+                  {thread.root.resolved && <small>Resolved</small>}
+                </button>
+              ))}
+            </div>
           )}
           {activeThread && (
             <div className={styles.thread}>
@@ -480,7 +550,7 @@ export function ReaderComments({
             </div>
           )}
           {error && <p className={styles.error}>{error}</p>}
-          {composing ? (
+          {canComment && (composing ? (
             <form onSubmit={submitComment}>
               <textarea
                 ref={composerRef}
@@ -517,7 +587,7 @@ export function ReaderComments({
                 </button>
               )}
             </>
-          )}
+          ))}
         </section>
       )}
     </div>

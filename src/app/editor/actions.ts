@@ -13,6 +13,7 @@ import { isAuthConfigured } from "@/auth";
 import { getCurrentUser } from "@/lib/session";
 import type { BlogPatch, ItemComment, PostContentPatch } from "@/lib/store";
 import {
+  resolveDocumentCapability,
   getItemAccessSummary,
   revokeItemAccessLink,
   countAllPosts,
@@ -59,6 +60,8 @@ import {
   resolveWorkspaceAccess,
 } from "@/lib/permissions";
 import { after } from "next/server";
+import { cookies } from "next/headers";
+import { documentCapabilityCookieName } from "@/lib/document-capability";
 import { lightCaptureBookmark } from "@/lib/bookmark-fetch";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import { cleanPlanTier, planLimits } from "@/lib/product-limits";
@@ -915,11 +918,22 @@ async function accessibleItemForComments(
   const user = await getCurrentUser();
   if (!user) throw new Error("Sign in to use comments");
   const access = await resolveItemAccess({ handle, postId, user });
-  if (!access.canView) throw new Error("You cannot view comments on this item");
-  if (permission === "comment" && !access.canComment) {
+  const token = (await cookies()).get(documentCapabilityCookieName(postId))?.value;
+  const resolved = token ? await resolveDocumentCapability(token) : null;
+  const capability = resolved?.itemId === postId ? resolved : null;
+  const capabilityCanComment =
+    capability?.role === "commenter" || capability?.role === "editor";
+  if (!access.canView && !capability) {
+    throw new Error("You cannot view comments on this item");
+  }
+  if (permission === "comment" && !access.canComment && !capabilityCanComment) {
     throw new Error("You cannot comment on this item");
   }
-  if (permission === "edit" && !access.canEditContent) {
+  if (
+    permission === "edit" &&
+    !access.canEditContent &&
+    capability?.role !== "editor"
+  ) {
     throw new Error("You cannot resolve comments on this item");
   }
   const actorUserId =
@@ -1197,12 +1211,13 @@ export async function shareScopeAction(
     invitedBySub: scope.user.sub,
   });
   let emailStatus: "sent" | "not_sent" | "failed" = "not_sent";
-  if (scope.scopeType === "item" && scope.post) {
+  if ((scope.scopeType === "item" && scope.post) || scope.scopeType === "workspace") {
     try {
       emailStatus = await sendShareInviteEmail({
         to: share.email,
-        role: role === "editor" ? "editor" : role === "commenter" ? "commenter" : "viewer",
-        post: scope.post,
+        ...(scope.post
+          ? { role: role === "editor" ? "editor" as const : role === "commenter" ? "commenter" as const : "viewer" as const, post: scope.post }
+          : { role: role === "member" ? "member" as const : "guest" as const }),
         handle: scope.handle,
         inviterName: scope.user.name ?? scope.user.email ?? "Someone",
       });

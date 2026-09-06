@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   hasActiveCoEditors: vi.fn(async () => false),
   importItemAssetFromUrl: vi.fn(),
   inviteScopeShare: vi.fn(),
+  sendShareInviteEmail: vi.fn(),
   listItemAssetReferences: vi.fn(),
   listItemComments: vi.fn(),
   listAgentChanges: vi.fn(),
@@ -60,6 +61,7 @@ const mocks = vi.hoisted(() => ({
   upsertPresence: vi.fn(),
 }));
 
+vi.mock("@/lib/share-email", () => ({ sendShareInviteEmail: mocks.sendShareInviteEmail }));
 vi.mock("@/lib/audit", () => ({ recordAction: mocks.recordAction }));
 vi.mock("@/lib/collab", () => ({
   agentSelectionAtEnd: mocks.agentSelectionAtEnd,
@@ -2383,6 +2385,7 @@ describe("MCP workspace tool adapter", () => {
     mocks.listScopeShares.mockResolvedValue([share]);
     mocks.inviteScopeShare.mockResolvedValue(share);
 
+    mocks.sendShareInviteEmail.mockResolvedValue("not_sent");
     const entries = registrations();
     const listAccess = entries.find((entry) => entry.name === "list_access");
     const setAccess = entries.find((entry) => entry.name === "set_access");
@@ -2410,6 +2413,8 @@ describe("MCP workspace tool adapter", () => {
     expect(
       [listed, changed, revoked].every((result) => result.isError !== true),
     ).toBe(true);
+    expect(JSON.parse((changed.content[0] as { text: string }).text)).toMatchObject({ accessGranted: true, emailStatus: "not_sent" });
+    expect(mocks.sendShareInviteEmail).toHaveBeenCalledWith(expect.objectContaining({ to: share.email, role: "member" }));
     expect(mocks.listScopeShares).toHaveBeenCalledWith("workspace", "blog-1");
     expect(mocks.inviteScopeShare).toHaveBeenCalledWith(
       expect.objectContaining({

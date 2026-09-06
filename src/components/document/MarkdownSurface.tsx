@@ -1,5 +1,7 @@
 "use client";
 
+import { peerLabelInk } from "@/lib/collab/peer-color";
+
 // The writing surface for the body.
 //
 // The body is Markdown and stays Markdown: `content.body` is a string, the Y
@@ -689,6 +691,7 @@ export function MarkdownSurface({
         mark.contentEditable = "false";
         mark.dataset.name = caret.userName;
         mark.style.setProperty("--tt-peer", caret.color);
+        mark.style.setProperty("--tt-peer-ink", peerLabelInk(caret.color));
         wrapper.appendChild(mark);
         caretIndex += 1;
       }

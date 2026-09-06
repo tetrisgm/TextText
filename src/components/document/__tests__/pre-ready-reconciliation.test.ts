@@ -126,7 +126,7 @@ it("leaves all metadata untouched when only local text changed",()=>{
 it("ledgers typing and metadata even after a partial catch-up installed the baseline",()=>{
  const initial=snapshot("alpha DELETE omega"),doc=new Y.Doc();applyDocumentSnapshot(doc,initial);
  const ledger={current:null as ReturnType<typeof snapshot>|null};
- const bindings={doc,networkEnabled:true,ready:false,preReadyLocalRef:ledger,
+ const bindings={doc,networkEnabled:true,ready:false,preReadyLocalRef:ledger,recoveryBlockedRef:{current:false},
   publishDocument:vi.fn(),setSaveState:vi.fn(),hasDocumentSnapshot,applyDocumentSnapshot,
   userEditOrigin:{current:{}},localOrigin:{current:{}},bodyMirrorRef:{current:{}},
   currentLocalDocument:()=>ledger.current??initial,promoteOnEdit:vi.fn(),replaceYText,
@@ -139,6 +139,14 @@ it("ledgers typing and metadata even after a partial catch-up installed the base
  const tagged=structuredClone(ledger.current!);tagged.content.tags=["local"];
  updateMetadata(tagged);
  expect(ledger.current?.content.tags).toEqual(["local"]);
+ expect(documentSnapshotFromYDoc(doc)).toEqual(initial);
+ // Access-loss recovery synchronously blocks native editing callbacks as well
+ // as materializations, even before React replaces the surface with recovery.
+ bindings.recoveryBlockedRef.current=true;
+ const preserved=structuredClone(ledger.current);
+ updateText("body","must not be accepted");
+ updateMetadata(snapshot("must not be accepted"));
+ expect(ledger.current).toEqual(preserved);
  expect(documentSnapshotFromYDoc(doc)).toEqual(initial);
  doc.destroy();
 });

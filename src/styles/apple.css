@@ -60,6 +60,14 @@
 
   /* tint */
   --ac-accent: #007AFF;
+
+  /* Filled controls: the brand accent stays for links and selection; a fill
+
+     and its ink are chosen so small button text reaches 4.5:1 in this theme. */
+
+  --ac-accent-fill: #0062cc;
+
+  --ac-accent-fill-ink: #ffffff;
   --ac-on-accent: #FFFFFF;
   --ac-red: #c52a22;
   --ac-tinted-fill: rgba(0,122,255,0.15);
@@ -100,6 +108,14 @@
   --workspace-pane-shadow: 0 0 18px rgba(0,0,0,0.22);
   --workspace-tab-rule: #e5e7eb;
   --ac-accent: #61b5e1;
+
+  /* Filled controls: the brand accent stays for links and selection; a fill
+
+     and its ink are chosen so small button text reaches 4.5:1 in this theme. */
+
+  --ac-accent-fill: #61b5e1;
+
+  --ac-accent-fill-ink: #0b1f33;
   --ac-on-accent: #ffffff;
   --ac-accent-contrast: #ffffff;
   --ac-accent-soft: rgba(97,181,225,0.16);
@@ -143,6 +159,14 @@
     --workspace-pane-shadow: 0 0 18px rgba(0,0,0,0.22);
     --workspace-tab-rule: #e5e7eb;
     --ac-accent: #61b5e1;
+
+    /* Filled controls: the brand accent stays for links and selection; a fill
+
+       and its ink are chosen so small button text reaches 4.5:1 in this theme. */
+
+    --ac-accent-fill: #61b5e1;
+
+    --ac-accent-fill-ink: #0b1f33;
     --ac-on-accent: #ffffff;
     --ac-accent-contrast: #ffffff;
     --ac-accent-soft: rgba(97,181,225,0.16);

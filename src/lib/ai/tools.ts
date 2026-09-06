@@ -142,7 +142,7 @@ const customTemplateId = templateId.refine(
 const templateVersion = z.number().int().positive();
 
 const scopeType = z.enum(["workspace", "folder", "item"]);
-const accessRole = z.enum(["member", "guest", "editor", "viewer"]);
+const accessRole = z.enum(["member", "guest", "editor", "commenter", "viewer"]);
 const accessTargetInput = {
   scope_type: scopeType,
   scope_id: z
@@ -183,7 +183,7 @@ function validateAccessTarget(
   const valid =
     value.scope_type === "workspace"
       ? ["member", "guest"].includes(value.role)
-      : ["editor", "viewer"].includes(value.role);
+      : ["editor", "commenter", "viewer"].includes(value.role);
   if (!valid) {
     context.addIssue({
       code: "custom",
@@ -191,7 +191,7 @@ function validateAccessTarget(
       message:
         value.scope_type === "workspace"
           ? "Workspace roles are member or guest."
-          : "Folder and item roles are editor or viewer.",
+          : "Folder and item roles are editor, commenter, or viewer.",
     });
   }
 }
@@ -1099,7 +1099,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   set_access: defineTool("set_access", {
     title: "Set access",
     description:
-      "Grant or change one person's role on the workspace, a folder, or an item, by email.",
+      "Grant or change one person's role by email: member or guest on a workspace; editor, commenter, or viewer on a folder or item. Item and workspace invitations report email delivery status.",
     inputSchema: z
       .object({
         ...accessTargetInput,

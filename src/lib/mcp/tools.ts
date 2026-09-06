@@ -1,3 +1,4 @@
+import { sendShareInviteEmail } from "@/lib/share-email";
 import { hasItemAgentScope, itemAgentAccess, itemAgentAllows } from "@/lib/item-agent-access";
 import { agentChangeContext } from "@/lib/agent-change-context.server";
 import { AgentChangeConflictError } from "@/lib/agent-changes";
@@ -3105,7 +3106,25 @@ async function executeWorkspaceCommand(
           auditActionName: audit.actionName,
           auditInputSummary: audit.inputSummary,
         });
-        return jsonResult({ share });
+        let emailStatus: "sent" | "not_sent" | "failed" = "not_sent";
+        if (target.scopeType === "workspace" || target.scopeType === "item") {
+          try {
+            const common = { to: share.email, handle: target.blog.handle, inviterName: target.blog.name };
+            if (target.scopeType === "workspace") {
+              emailStatus = await sendShareInviteEmail({
+                ...common, role: input.role === "member" ? "member" : "guest",
+              });
+            } else {
+              const post = await getPostById(target.blog.handle, target.scopeId);
+              if (!post) throw new Error("Invited item is unavailable");
+              emailStatus = await sendShareInviteEmail({
+                ...common, post,
+                role: input.role === "editor" ? "editor" : input.role === "commenter" ? "commenter" : "viewer",
+              });
+            }
+          } catch { emailStatus = "failed"; }
+        }
+        return jsonResult({ share, accessGranted: true, emailStatus });
       } catch (error) {
         return errorResult(
           error instanceof Error ? error.message : "Access could not be set.",

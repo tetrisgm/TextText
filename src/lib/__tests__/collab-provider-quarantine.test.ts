@@ -176,3 +176,16 @@ it("quarantine and its acknowledgment preserve a newer durable queue written by 
   expect(await h.providerModule.acknowledgeRetiredOutboxes(recovery.copies)).toBe(true);
   expect(h.storage.records.get(postId)).toEqual(newer);
 });
+
+it.each([401, 403, 410])("quarantines an unmounted outbox after push access loss %s", async (status) => {
+  const postId = `quarantine-access-loss-${status}`, h = await setup(postId);
+  h.respond(Response.json({ error: "Access lost" }, { status }));
+  await tick();
+  const recovery = await h.providerModule.readRetiredOutboxes(postId);
+  expect(recovery.durable).toBe(true);
+  expect(recovery.copies[0].document?.content.body).toBe("alpha LOCAL ONLY");
+  expect(h.storage.records.has(postId)).toBe(false);
+  const calls = h.fetcher.mock.calls.length;
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(h.fetcher.mock.calls).toHaveLength(calls);
+});

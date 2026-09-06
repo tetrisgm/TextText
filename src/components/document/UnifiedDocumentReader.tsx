@@ -1,3 +1,4 @@
+import { ReaderComments } from "@/components/workspace/ReaderComments";
 import type { Blog, Post } from "@/lib/content";
 import { requireDocumentSnapshot } from "@/lib/documents/model";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
@@ -21,29 +22,43 @@ export function UnifiedDocumentReader({
   post,
   template,
   wikiLinkTargets,
+  comments,
 }: {
   blog: Blog;
   post: Post;
   template: TemplateDefinition;
   wikiLinkTargets?: WikiLinkRenderTargets;
+  comments?: { canComment: boolean; canResolve: boolean };
 }) {
   const document = requireDocumentSnapshot(
     post.document,
     `Item ${post.id ?? post.slug}`,
   );
   return (
-    <DocumentRenderer
-      document={document}
-      documentId={post.id ?? post.slug}
-      template={template}
-      wikiLinkTargets={wikiLinkTargets}
-      metadata={{
-        author: blog.author,
-        date: publishedDate(post),
-        readingTime: post.readingTime
-          ? `${post.readingTime} min read`
-          : undefined,
-      }}
-    />
+    <>
+      <DocumentRenderer
+        document={document}
+        documentId={post.id ?? post.slug}
+        template={template}
+        wikiLinkTargets={wikiLinkTargets}
+        metadata={{
+          author: blog.author,
+          date: publishedDate(post),
+          readingTime: post.readingTime
+            ? `${post.readingTime} min read`
+            : undefined,
+        }}
+      />
+      {comments && post.id && (
+        <ReaderComments
+          key={post.id}
+          handle={blog.handle}
+          postId={post.id}
+          sourceBody={document.content.body}
+          canComment={comments.canComment}
+          canResolve={comments.canResolve}
+        />
+      )}
+    </>
   );
 }

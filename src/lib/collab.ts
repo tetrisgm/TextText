@@ -90,11 +90,9 @@ export async function collabAccess(
   // A non-UUID postId would make the Postgres uuid cast throw; reject it as
   // "no access" (403) rather than letting it surface as a 500.
   if (!UUID_RE.test(postId)) return null;
-  if (capabilityRole === "editor") return "editor";
-  if (capabilityRole === "commenter" || capabilityRole === "viewer") {
-    return "viewer";
-  }
-  if (!user) return null;
+  const capabilityAccess = capabilityRole === "editor" ? "editor"
+    : capabilityRole === "commenter" || capabilityRole === "viewer" ? "viewer" : null;
+  if (!user) return capabilityAccess;
   const rows = await db
     .select({ handle: blogs.handle })
     .from(posts)
@@ -104,9 +102,9 @@ export async function collabAccess(
   const post = rows[0];
   if (!post) return null;
   const access = await resolveItemAccess({ handle: post.handle, postId, user });
-  if (access.canEditContent) return "editor";
+  if (access.canEditContent || capabilityAccess === "editor") return "editor";
   if (access.canView) return "viewer";
-  return null;
+  return capabilityAccess;
 }
 
 /** The current log generation for a post (0 when it has no collab_state row). */
