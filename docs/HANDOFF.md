@@ -4907,3 +4907,35 @@ unchanged; interaction 17/17; delete-and-restore intact; the Add agent sheet
 and the context picker (This item pressed, search, add, focus return) render
 with the sheet tokens in both themes. Committed locally as `fe0f00f1`; push and
 promotion as build 1062 wait for the network.
+
+## 2026-09-06: working from a foreign 192.168.1.0/24 network
+
+Three separate faults, all from the subnet collision the fleet notes describe.
+Every fix below is reversible and none touched the WireGuard profile or its
+AllowedIPs.
+
+1. DNS was dead. The tunnel pushes the home router 192.168.1.1 as resolver, but
+   this network handed the Mac 192.168.1.1 as its own en0 address, so every
+   lookup went to itself. The Wi-Fi service had no DNS of its own, and setting
+   one does not help because the tunnel owns the default route and its resolver
+   is primary. Fixed at runtime by overriding the primary service's DNS:
+   `sudo scutil` set `State:/Network/Service/<PrimaryService>/DNS` to 1.1.1.1
+   and 1.0.0.1. Reverts when the tunnel reconnects.
+2. NAS and PC were unreachable. A connected /24 on en0 beats the tunnel's
+   default route, so 192.168.1.50 and 192.168.1.68 went out the local LAN.
+   Fixed with host routes, the documented remedy:
+   `sudo route -n add -host 192.168.1.50 -interface utun8` and the same for
+   192.168.1.68. NAS answers on SSH 2022 and SMB 445; the PC answers on 22.
+   Reverts on reconnect or reboot.
+3. HTTPS still hung after DNS worked. TCP connected and the TLS Client Hello
+   went out, but the certificate reply never arrived: an MTU blackhole. Packets
+   up to 1400 bytes passed and 1428 did not, while utun8 claimed 1420. Fixed
+   with `sudo ifconfig utun8 mtu 1380`. GitHub and texttext.app then answered
+   200 in about 1.5 s. Reverts on reconnect.
+
+One persistent change to undo when home: the Wi-Fi service now has explicit DNS
+servers. Clear them with `sudo networksetup -setdnsservers Wi-Fi Empty`.
+
+Shipped: build 1062 (`177f24fc`, round-nine assistant fixes plus their probe
+record), page stamp `tt-1062-177f24fc`, Mac app 0.182 build 1062 installed.
+Suite 2785 passed; live gates green (43 Mac tests, 23 workflow checks).
