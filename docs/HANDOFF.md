@@ -4812,3 +4812,14 @@ Agent artifacts live under the session scratchpad
 `/private/tmp/claude-501/-Users-shokunin-dev-TextText/8a7bdd20-ca1d-4cca-86a4-9fabccb1f8f1/scratchpad/astra/`
 (briefs, outputs `out/` through `out8/`, logs) and the private work copies under
 `.texttext/probe/astra-*/work` (ignored by git; safe to delete).
+
+Probes on the local production build of `6dfd1874` (build 1059): sharing
+propagation 1.0 s and 2.0 s, reader freshness 9.1 s, presence modes, interaction
+17/17, delete-and-restore and the Add agent sheet all as before. Two notes for
+the next session: the rail's first paint now differs from the loaded rail in
+about 36 rows, 12 of them the status text and the rest near the composer where
+the new Context row appears after hydration, so the static rail shell
+(`AssistantRailShell.tsx`) should reserve that row the way it reserves the
+status line; and `contextpicker.mts` did not find the Context row by class or
+label, so the picker's live rendering in both themes is unverified by probe
+(its unit and UI tests pass).
