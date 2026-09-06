@@ -4899,3 +4899,11 @@ goes through the WireGuard tunnel (utun8, 10.6.0.3) and no traffic gets out;
 the local gateway is 192.168.1.254 on the same 192.168.1.0/24 range as home,
 the foreign-network case in the fleet notes. Nothing was changed; the owner
 decides on the tunnel. Push and promotion wait for the network.
+
+Probes on the local production build of `fe0f00f1` (round-nine fixes): rail
+early versus late differs only in the status text rows 63 to 74 despite the
+shell now painting attachments, Stop, approvals and sync status; presence modes
+unchanged; interaction 17/17; delete-and-restore intact; the Add agent sheet
+and the context picker (This item pressed, search, add, focus return) render
+with the sheet tokens in both themes. Committed locally as `fe0f00f1`; push and
+promotion as build 1062 wait for the network.
