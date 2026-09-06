@@ -4823,3 +4823,9 @@ the new Context row appears after hydration, so the static rail shell
 status line; and `contextpicker.mts` did not find the Context row by class or
 label, so the picker's live rendering in both themes is unverified by probe
 (its unit and UI tests pass).
+
+Shipped: build 1060 (`ad6b7f24` plus the docs commit `6c5c9e2b`), deployment
+`dpl_DCofNbee6AcS7aKu6vPXzqntdM2H`, page stamp `tt-1060-6c5c9e2b`, Mac app 0.182 build 1060 installed.
+Suite 2759 passed; live gates green. The first promotion attempt was refused
+only because the handoff changed while gates ran; the rerun landed. Wrap-up
+complete: tree clean, no agents running.
