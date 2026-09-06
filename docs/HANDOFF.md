@@ -4977,3 +4977,39 @@ from a normal connection or the local production build.
 The real Safari and trackpad pass is the one item no agent can do. A twelve
 point checklist is at `astra/../safari-pass.md` in the session scratchpad and
 was sent to the owner.
+
+## 2026-09-07: round ten reviewed before landing, and sent back
+
+All five round-ten patches applied cleanly on their own, so they went through an
+independent review workflow (six agents: one reviewer per patch plus a planner
+that built five merge orders in a throwaway clone and measured them). Nothing
+was landed. The reviews are saved beside the patches as `review-*.json` and
+`integration-plan.json` in the session scratchpad.
+
+Verdicts: motion and firstrun on hold, the other three land with fixes. What the
+review caught that reading the notes did not:
+
+- Motion: the rail resize preview scales a clipped node, so dragging the rail
+  wider shows no widening at all, and release quantises the width to four fixed
+  values rather than the width you chose.
+- First run: a connection notice rendered outside the `.applecms` scope uses
+  untokenised colours, so it is wrong in dark mode; it sits in normal flow above
+  a `100dvh` shell and breaks the layout whenever it appears; it says offline for
+  any pool refresh failure; and "This document is empty." shows over documents
+  that have assets or a subtitle.
+- Accessibility: the save pill lost its `:empty` guard and now shows a permanent
+  empty pill; the announcer says something untrue on load and then goes silent
+  for real saves; the px to rem pass converted only the heights of six
+  width/height pairs, so those controls distort at the 200 percent text size the
+  patch exists to support.
+- The oversized-paste fix tells the person "This document changed elsewhere",
+  which is false: the relay refused the payload. The provider's correct sentence
+  is overwritten before it reaches the screen.
+- Merged-tree-only hazards that no single patch shows: two patches add a second
+  `ref` to the same JSX element and git merges it silently (only tsc catches it),
+  a React shim in an accessibility test lacks `useLayoutEffect` which motion
+  introduces, a contrast test parses hex but not `var()`, and the merged save
+  pill is permanently visible with no conflict, no type error and no failing test.
+
+Apply order once the repairs land: fix-qa10, mac-platform, a11y, motion,
+firstrun, with the per-file resolutions in `integration-plan.json`.
