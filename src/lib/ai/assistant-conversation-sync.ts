@@ -1,3 +1,5 @@
+import { cleanAssistantContextChoice, type AssistantContextChoice } from "./context-choice";
+
 // Generous counts, because losing an old discussion is worse than holding
 // it: the real protection is the byte budget below (and the store's own
 // storage budget), which evicts by recency instead of an arbitrary count.
@@ -19,6 +21,7 @@ export type SyncedAssistantConversation = {
   contextKey: string;
   title: string;
   pinned: boolean;
+  contextChoice?: AssistantContextChoice;
   metadataUpdatedAt: string;
   createdAt: string;
   updatedAt: string;
@@ -216,6 +219,7 @@ function cleanConversation(value: unknown): SyncedAssistantConversation | null {
     contextKey: record.contextKey.slice(0, 512),
     title: record.title.trim().replace(SECRET_VALUE, "[redacted]").slice(0, 80) || "New chat",
     pinned: record.pinned === true,
+    ...(record.contextChoice ? { contextChoice: cleanAssistantContextChoice(record.contextChoice) } : {}),
     metadataUpdatedAt: validTimestamp(record.metadataUpdatedAt, updatedAt),
     createdAt,
     updatedAt,
@@ -364,8 +368,8 @@ function mergeConversation(
   const rightMetadataWins =
     right.metadataUpdatedAt > left.metadataUpdatedAt ||
     (right.metadataUpdatedAt === left.metadataUpdatedAt &&
-      canonical({ title: right.title, pinned: right.pinned }) >
-        canonical({ title: left.title, pinned: left.pinned }));
+      canonical({ title: right.title, pinned: right.pinned, contextChoice: right.contextChoice ?? null }) >
+        canonical({ title: left.title, pinned: left.pinned, contextChoice: left.contextChoice ?? null }));
   return {
     id: left.id,
     contextKey:
@@ -374,6 +378,7 @@ function mergeConversation(
         : [left.contextKey, right.contextKey].sort()[0]!,
     title: rightMetadataWins ? right.title : left.title,
     pinned: rightMetadataWins ? right.pinned : left.pinned,
+    ...((rightMetadataWins ? right : left).contextChoice ? { contextChoice: (rightMetadataWins ? right : left).contextChoice } : {}),
     metadataUpdatedAt:
       right.metadataUpdatedAt > left.metadataUpdatedAt
         ? right.metadataUpdatedAt
@@ -430,9 +435,9 @@ export function assistantConversationEvictedByCap(
  * history. Each browser profile keeps its own; none belongs in the shared copy.
  */
 export function isAssistantConversationHistory<
-  T extends { deletedAt?: string; pinned: boolean; messages: readonly unknown[] },
+  T extends { deletedAt?: string; pinned: boolean; messages: readonly unknown[]; contextChoice?: AssistantContextChoice },
 >(conversation: T): boolean {
-  return Boolean(conversation.deletedAt) || conversation.pinned || conversation.messages.length > 0;
+  return Boolean(conversation.deletedAt) || Boolean(conversation.contextChoice) || conversation.pinned || conversation.messages.length > 0;
 }
 
 /**

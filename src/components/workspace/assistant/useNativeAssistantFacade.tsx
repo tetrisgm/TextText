@@ -1,5 +1,7 @@
 "use client";
 
+import { DEFAULT_CONTEXT_CHOICE } from "@/lib/ai/context-choice";
+
 import {
   memo,
   useCallback,
@@ -127,6 +129,8 @@ function inertResult(
 ): NativeAssistantResult {
   return {
     activeCloudProvider: null,
+    contextChoice: DEFAULT_CONTEXT_CHOICE,
+    setContextChoice: queuedMethod(entry, "setContextChoice", false, undefined),
     activeConversationId: null,
     conversationContextKey: contextKey,
     conversationStoreKey: null,

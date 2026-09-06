@@ -408,3 +408,22 @@ describe("inline preview decisions", () => {
     expect(cleanAssistantConversationSyncPayload(JSON.parse(JSON.stringify(forward)))[0].messages[0].inlinePreview).toMatchObject({ status: "discarded" });
   });
 });
+
+it("cleans context metadata to five unique ids without copied source content", () => {
+  const ids = Array.from({ length: 6 }, (_, i) => `00000000-0000-4000-8000-00000000000${i}`);
+  const [result] = cleanAssistantConversationSyncPayload([{ ...chat("choice"), contextChoice: {
+    includeItem: false, includeSelection: false, workspaceIndex: true,
+    itemIds: [ids[0], ids[0], "private body text", ...ids], title: "Private title", body: "Private body", selection: "Private passage",
+  } }]);
+  expect(result.contextChoice).toEqual({ includeItem: false, includeSelection: false, workspaceIndex: true, itemIds: ids.slice(0, 5) });
+  expect(JSON.stringify(result)).not.toContain("Private");
+});
+it("merges offline context choices as deterministic metadata, including equal-clock conflicts", () => {
+  const left = [{ ...chat("choice"), contextChoice: { includeItem: true, includeSelection: true, workspaceIndex: false, itemIds: [] } }];
+  const right = [{ ...chat("choice"), contextChoice: { includeItem: false, includeSelection: true, workspaceIndex: true, itemIds: [] } }];
+  const merged = mergeAssistantConversationSyncPayloads(left, right);
+  expect(merged).toEqual(mergeAssistantConversationSyncPayloads(right, left));
+  expect(mergeAssistantConversationSyncPayloads(merged, merged)).toEqual(merged);
+  right[0].metadataUpdatedAt = "2026-08-25T12:00:00.000Z";
+  expect(mergeAssistantConversationSyncPayloads(left, right)[0].contextChoice).toEqual(right[0].contextChoice);
+});

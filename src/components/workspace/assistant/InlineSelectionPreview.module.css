@@ -104,3 +104,7 @@
 }
 .refinementField input:disabled { opacity: 0.55; }
 @media (pointer: coarse) { .refinementField input { min-height: 44px; } }
+
+.context { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--assistant-rail-secondary); font: inherit; font-size: 12px; }
+.context button { border: 1px solid var(--assistant-rail-divider); border-radius: 6px; padding: 0 8px; min-height: 24px; background: var(--assistant-control-fill); color: var(--assistant-rail-primary); font: inherit; font-size: 12px; cursor: pointer; }
+.context button:focus-visible { outline: 2px solid var(--assistant-composer-focus); outline-offset: 2px; }

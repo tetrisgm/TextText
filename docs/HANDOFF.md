@@ -4727,3 +4727,39 @@ controls a deeper blue with white ink in light mode and the tint with dark navy
 ink in dark mode (both above 4.5:1); the brand accent is unchanged for links
 and selection. `ReaderComments.module.css` uses the pair; the reviewer's
 contrast test measures it.
+
+Shipped: build 1058 (`784c863d`, sharing access, comments and reader freshness
+fixes), deployment `dpl_5q798LVhTE3gibfCzyzddHnQUFup`, page stamp `tt-1058-784c863d`, Mac app 0.182
+build 1058 installed. Suite 2691 passed; live gates green.
+
+Probes on the local production build of `784c863d` (build 1058): the first rail
+capture on a cold server showed the item list, not the rail, because the item
+open had not finished; a warm rerun is back to the status text rows only, and
+`probe-run.sh` now warms the server before that capture. Presence, interaction
+17/17, reader keys, bar geometry, delete-and-restore and the Add agent sheet are
+unchanged. Sharing: the guest's public page now shows the Comments control; the
+guest's insertion reaches the owner in 1.0 s and the deletion in 2.1 s. Reader
+freshness: the guest's public page follows the owner's edit in 9.1 s (never,
+before this build).
+
+Assistant context picker landed in the tree (`astra/out7/context-picker`): a
+Context row above the composer with This item, Selection, up to five added
+items from a labelled title search, and a Whole workspace index toggle; the
+choice is thread metadata (ids only) that persists and syncs; requested items
+travel as related ids with a person origin and are resolved inside the verified
+workspace under a 24,000-character budget with truncation stated in the prompt;
+the inline preview notes its context and offers Selection only, which Try again
+and Refine honor.
+
+Round-eight QA of the shipped sharing, comments, freshness and item-type code
+(`astra/out8/qa-shipped.md`, tests only): one P1 (the relay POST and the
+materialize route authorize before reading a streamed body, so a revoked
+editor who held the stream open can finish a push or a canonical save), six
+P2s (a late successful poll mutates the document after terminal access loss;
+presence GET returns peers fetched after revocation; discovery drops legacy
+workspace editor, commenter, reviewer and viewer grants that permissions still
+honor; the reader-revision endpoint decides public eligibility from a snapshot
+read before authorization finished; repeated visibility events issue
+overlapping refreshes; any string compiles as a date filter operand) and one P3
+(Trash reported as generic access loss on two read paths). An Astra agent is
+implementing all eight against the reviewer's tests (`round8-fix-shipped`).

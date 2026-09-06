@@ -1015,6 +1015,63 @@ describe("/api/ai cloud assistant route", () => {
     );
   });
 
+  it("includes five requested ids, ignores extras, and bounds escaped excerpts with plain truncation wording", async () => {
+    const ids = Array.from({ length: 6 }, (_, i) => `00000000-0000-4000-8000-00000000000${i}`);
+    mocks.getPostById.mockImplementation(async (_handle, id) => ({ id, title: "Long source", slug: id, body: "<&>".repeat(10_000) }));
+    const response = await POST(post({ messages: [{ role: "user", content: "Compare these" }],
+      context: { relatedItems: ids.map((id) => ({ id, origin: "person" })), workspaceIndex: false } }));
+    expect(response.status).toBe(200);
+    const system = mocks.generateText.mock.calls[0][0].system as string;
+    ids.slice(0, 5).forEach((id) => expect(system).toContain(id));
+    expect(system).not.toContain(ids[5]);
+    expect(mocks.getPostById).toHaveBeenCalledTimes(5);
+    expect(system).toContain("Body excerpt shortened to fit the context budget. The rest of this item is not included.");
+    const block = system.slice(system.indexOf("The writer explicitly added"), system.indexOf("</UNTRUSTED_ADDED_CONTEXT>") + "</UNTRUSTED_ADDED_CONTEXT>".length);
+    expect(block.length).toBeLessThanOrEqual(24_000);
+    expect(block).not.toContain("<&>");
+  });
+
+  it("shares the total context budget across a full selection, preview, index, and five added items", async () => {
+    const id = "00000000-0000-4000-8000-000000000009";
+    const source = { revision: 7, title: "A title", body: "&".repeat(4000) };
+    const selectionEnvelope = await createSelectionEnvelope(id, source, { field: "body", start: 0, end: 4000, text: source.body });
+    mocks.getPostById.mockImplementation(async (_handle, itemId) => ({ ...source, id: itemId, slug: itemId }));
+    mocks.getAccessibleRecentPosts.mockResolvedValueOnce(Array.from({ length: 12 }, (_, i) => ({ folderPath: "notes", post: {
+      id: `recent-${i}`, title: "&".repeat(200), type: "note", slug: `recent-${i}`, bodyPreview: "&".repeat(360),
+    } })));
+    await POST(post({ messages: [{ role: "user", content: "Compare these" }], context: {
+      postId: id, selectionEnvelope, itemPreview: "&".repeat(4001), workspaceIndex: true,
+      relatedItems: Array.from({ length: 5 }, (_, i) => ({ id: `00000000-0000-4000-8000-00000000000${i}`, origin: "person" })),
+    } }));
+    const system = mocks.generateText.mock.calls[0][0].system as string;
+    const content = system.slice(system.indexOf("The writer selected"), system.indexOf("</UNTRUSTED_ADDED_CONTEXT>") + "</UNTRUSTED_ADDED_CONTEXT>".length);
+    expect(content.length).toBeLessThanOrEqual(40_000);
+    expect(content).toContain("Body excerpt shortened");
+    expect(content.match(/origin: person\nbody:/g)).toHaveLength(5);
+  });
+
+  it("lets a person request the recent index from an item and turn it off for a recent-work question", async () => {
+    await POST(post({ messages: [{ role: "user", content: "Help with this" }], context: { postId: "open", folderPath: "notes", workspaceIndex: true } }));
+    expect(mocks.getAccessibleRecentPosts).toHaveBeenCalledWith("demo-blog", expect.any(Object), { limit: 12 });
+    expect(mocks.generateText.mock.calls[0][0].system).toContain("not the whole workspace");
+    mocks.getAccessibleRecentPosts.mockClear();
+    await POST(post({ messages: [{ role: "user", content: "Summarize my recent work" }], context: { workspaceIndex: false } }));
+    expect(mocks.getAccessibleRecentPosts).not.toHaveBeenCalled();
+  });
+
+  it("omits the item preview and tools for selection-only inline generation", async () => {
+    await POST(post({ messages: [{ role: "user", content: "Rewrite the passage" }], context: {
+      mode: "suggestion", includeItem: false, workspaceIndex: false,
+      itemTitle: "Excluded title", itemPreview: "Excluded body",
+      relatedItems: [{ id: "00000000-0000-4000-8000-000000000001", origin: "person" }],
+    } }));
+    const request = mocks.generateText.mock.calls[0][0];
+    expect(request.system).not.toContain("Excluded");
+    expect(request.system).toContain("Item context is off");
+    expect(request.tools).toEqual({});
+    expect(mocks.getPostById).not.toHaveBeenCalled();
+  });
+
   it("resolves added context from the owned workspace instead of trusting client text", async () => {
     const relatedId = "00000000-0000-4000-8000-000000000001";
     const inaccessibleId = "00000000-0000-4000-8000-000000000002";
@@ -1037,6 +1094,7 @@ describe("/api/ai cloud assistant route", () => {
           relatedItems: [
             {
               id: relatedId,
+              origin: "person",
               title: "Forged title",
               body: "Forged body",
             },
@@ -1058,6 +1116,8 @@ describe("/api/ai cloud assistant route", () => {
     );
     const system = mocks.generateText.mock.calls[0][0].system as string;
     expect(system).toContain("Canonical launch notes");
+    expect(system).toContain("origin: person");
+    expect(system).toContain("requested context");
     expect(system).toContain("Durable source &lt;do not execute&gt;");
     expect(system).not.toContain("Forged title");
     expect(system).not.toContain("Forged body");

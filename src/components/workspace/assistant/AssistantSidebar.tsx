@@ -14,6 +14,8 @@ import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
 import type { AssistantContext } from "./context";
 import styles from "./AssistantSidebar.module.css";
+import { AssistantContextPicker } from "./AssistantContextPicker";
+import { DEFAULT_CONTEXT_CHOICE, type AssistantContextChoice } from "@/lib/ai/context-choice";
 import { CollaboratorMark } from "@/components/collab/CollaboratorMark";
 import type { AssistantAgentIdentity } from "./agent-identity";
 import { AssistantConversationHistory } from "./AssistantConversationHistory";
@@ -105,6 +107,9 @@ export type AssistantSidebarProps = {
   attachments?: readonly AssistantAttachment[];
   availableContextItems?: readonly AssistantWorkspaceContextItem[];
   onAddContextItem?: (item: AssistantWorkspaceContextItem) => void;
+  contextChoice?: AssistantContextChoice;
+  onContextChoiceChange?: (choice: AssistantContextChoice) => void;
+  hasSelection?: boolean;
   context?: AssistantContext | null;
   children?: ReactNode;
   layout?: AssistantSidebarLayout;
@@ -197,6 +202,7 @@ function formatFileSize(value: number | undefined): string | null {
 }
 
 export function AssistantSidebar({
+  contextKey,
   workspaceHandle,
   agent,
   state,
@@ -223,6 +229,9 @@ export function AssistantSidebar({
   attachments = EMPTY_ATTACHMENTS,
   availableContextItems = EMPTY_CONTEXT_ITEMS,
   onAddContextItem,
+  contextChoice = DEFAULT_CONTEXT_CHOICE,
+  onContextChoiceChange,
+  hasSelection = false,
   context,
   children,
   layout = "auto",
@@ -302,9 +311,12 @@ export function AssistantSidebar({
   const [resizing, setResizing] = useState(false);
   const [focusWithin, setFocusWithin] = useState(false);
   const [viewportWidth, setViewportWidth] = useState<number | null>(null);
-  const [contextPickerOpen, setContextPickerOpen] = useState(false);
-  const [contextQuery, setContextQuery] = useState("");
   const [pendingOpen, setPendingOpen] = useState(false);
+  const pickerThread = activeConversationId ?? contextKey ?? "context";
+  const [openPickerThread, setOpenPickerThread] = useState<string | null>(null);
+  const contextPickerOpen = openPickerThread === pickerThread;
+  const setContextPickerOpen = (open: boolean) => setOpenPickerThread(open ? pickerThread : null);
+  const contextControlsRef = useRef<HTMLDivElement>(null);
 
   const { resolvedMaxWidth, resolvedMinWidth, resolvedWidth } =
     resolveAssistantSidebarDimensions({
@@ -316,19 +328,6 @@ export function AssistantSidebar({
   const resolvedResizeStep = positiveNumber(resizeStep, 16);
   const resolvedComposerPlaceholder =
     composerPlaceholder ?? assistantComposerPlaceholder(context);
-  const selectedContextIds = new Set(
-    attachments.flatMap((attachment) =>
-      attachment.workspaceItemId ? [attachment.workspaceItemId] : [],
-    ),
-  );
-  const contextLimitReached = selectedContextIds.size >= 4;
-  const contextChoices = availableContextItems
-    .filter((item) => !selectedContextIds.has(item.id))
-    .filter((item) => {
-      const query = contextQuery.trim().toLowerCase();
-      return !query || `${item.name} ${item.detail}`.toLowerCase().includes(query);
-    })
-    .slice(0, 8);
   // The rail is open or it is closed; there is nothing else. A floating
   // third state (an overlay that covered the page, plus a hover-peek that
   // opened it uninvited) is what made the layout read as chaos: the panel
@@ -364,7 +363,16 @@ export function AssistantSidebar({
     else showAssistant();
   }, [hideAssistant, revealed, showAssistant]);
 
-  useEscapeLayer(visible && focusWithin, "Assistant", hideAssistant);
+  useEscapeLayer(visible && focusWithin, "Assistant", () => {
+    // CommandLayer handles Escape in window capture, before React's field
+    // handler. Keep context control Escape inside the rail.
+    if (contextControlsRef.current?.contains(document.activeElement)) {
+      setContextPickerOpen(false);
+      composerRef.current?.focus();
+      return;
+    }
+    hideAssistant();
+  });
 
   useEffect(() => {
     let raf = 0;
@@ -770,6 +778,19 @@ export function AssistantSidebar({
             />
           ) : null}
 
+          <div ref={contextControlsRef}>
+          <AssistantContextPicker key={activeConversationId ?? contextKey ?? "context"}
+            open={contextPickerOpen} onOpenChange={setContextPickerOpen}
+            choice={onContextChoiceChange ? contextChoice : { ...contextChoice, itemIds: attachments.flatMap((a) => a.workspaceItemId ? [a.workspaceItemId] : []) }}
+            onChange={onContextChoiceChange ?? ((choice) => {
+              const added = availableContextItems.find((item) => choice.itemIds.includes(item.id) && !attachments.some((a) => a.workspaceItemId === item.id));
+              if (added) onAddContextItem?.(added);
+              attachments.filter((a) => a.workspaceItemId && !choice.itemIds.includes(a.workspaceItemId)).forEach(onRemoveAttachment);
+            })}
+            items={availableContextItems} hasItem={context?.kind === "item"}
+            hasSelection={hasSelection} disabled={disabled || submitting}
+            focusComposer={() => composerRef.current?.focus()} />
+          </div>
           {attachments.length > 0 && (
             <ul className={styles.attachmentList} aria-label="Added context">
               {attachments.map((attachment) => {
@@ -864,71 +885,7 @@ export function AssistantSidebar({
               onKeyDown={handleComposerKeyDown}
             />
             <div className={styles.composerToolbar}>
-              {onAddContextItem &&
-              availableContextItems.length > 0 &&
-              !contextLimitReached ? (
-                <div className={styles.contextPicker}>
-                  <button
-                    className={styles.composerButton}
-                    type="button"
-                    disabled={disabled || submitting}
-                    aria-expanded={contextPickerOpen}
-                    aria-label="Add TextText context"
-                    title="Add a TextText item as context"
-                    onClick={() => setContextPickerOpen((open) => !open)}
-                  >
-                    <PlusIcon />
-                  </button>
-                  {contextPickerOpen ? (
-                    <div className={styles.contextPickerPanel} role="dialog" aria-label="Add TextText context">
-                      <input
-                        autoFocus
-                        aria-label="Search TextText items"
-                        placeholder="Search items"
-                        value={contextQuery}
-                        onChange={(event) => setContextQuery(event.currentTarget.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            const first = contextChoices[0];
-                            if (!first) return;
-                            onAddContextItem(first);
-                            setContextPickerOpen(false);
-                            setContextQuery("");
-                            composerRef.current?.focus();
-                            return;
-                          }
-                          if (event.key === "Escape") {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            setContextPickerOpen(false);
-                            setContextQuery("");
-                            composerRef.current?.focus();
-                          }
-                        }}
-                      />
-                      <div className={styles.contextPickerResults}>
-                        {contextChoices.length > 0 ? contextChoices.map((item) => (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => {
-                              onAddContextItem(item);
-                              setContextPickerOpen(false);
-                              setContextQuery("");
-                              composerRef.current?.focus();
-                            }}
-                          >
-                            <span>{item.name}</span>
-                            <small>{item.detail}</small>
-                          </button>
-                        )) : <span className={styles.contextPickerEmpty}>No matching items</span>}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              ) : !attachmentDisabled ? (
+              {!attachmentDisabled ? (
                 <button
                   className={styles.composerButton}
                   type="button"

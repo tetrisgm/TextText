@@ -2711,7 +2711,7 @@ function LocalWorkspaceShell({
   );
   const assistantSelection =
     assistantTarget.view.level === "edit" && assistantTarget.view.postId
-      ? readOpenWorkspaceItemSelection(assistantTarget.view.postId)
+      ? (readOpenWorkspaceItemDraft(assistantTarget.view.postId)?.selection ?? readOpenWorkspaceItemDraft(assistantTarget.view.postId)?.writingSelection ?? null)
       : null;
   const assistantContext = assistantContextChipWithSelection(
     assistantTarget.chip,
@@ -5379,7 +5379,9 @@ function LocalWorkspaceShell({
           onComposerChange={assistantComposer.setText}
           attachments={assistantComposer.draft.attachments}
           availableContextItems={assistantContextItems}
-          onAddContextItem={assistantComposer.addContextItem}
+          contextChoice={assistant.contextChoice}
+          onContextChoiceChange={assistant.setContextChoice}
+          hasSelection={Boolean(assistantSelection)}
           onFilesSelected={assistantComposer.addFiles}
           onRemoveAttachment={(attachment) =>
             assistantComposer.removeAttachment(attachment.id)

@@ -104,6 +104,8 @@ import {
 } from "@/lib/ai/native-item-type";
 import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
 import type { ItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
+import { assistantConversationContextChoice, setAssistantConversationContextChoice } from "./conversation-store";
+import { DEFAULT_CONTEXT_CHOICE, type AssistantContextChoice } from "@/lib/ai/context-choice";
 import {
   nativeAssistantTurnPrompt,
   nativeWorkspaceIndex,
@@ -719,6 +721,12 @@ export function useNativeAssistant({
         ? activeAssistantConversationId(conversationStoreKey, contextKey)
         : null,
     () => null,
+  );
+  const contextChoice = useSyncExternalStore(
+    subscribeAssistantConversations,
+    () => conversationStoreKey && activeConversationId
+      ? assistantConversationContextChoice(conversationStoreKey, activeConversationId) : DEFAULT_CONTEXT_CHOICE,
+    () => DEFAULT_CONTEXT_CHOICE,
   );
   const threadKey = `${conversationStoreKey ?? "server"}\u001f${activeConversationId ?? "server"}`;
 
@@ -1513,6 +1521,7 @@ export function useNativeAssistant({
       const displayPrompt = formatAssistantSubmission(prompt, attachments);
       const priorCloudMessages = cloudConversationHistory(threadFor(thread));
       const submittedView = getViewRef.current();
+      const chosenContext = contextChoice;
       appendToThread(thread, "user", displayPrompt);
       setThreadBusy(thread, true);
       /**
@@ -1551,20 +1560,19 @@ export function useNativeAssistant({
               ).prompt
             : modelPrompt
           : await buildCloudAssistantPrompt(modelPrompt, attachments);
+        const relatedIds = [...new Set([...chosenContext.itemIds, ...attachments.flatMap((a) => a.workspaceItemId ? [a.workspaceItemId] : [])])].slice(0, 5);
+        // Cloud requests carry ids only. The route resolves readable bodies,
+        // even when the browser has not cached those documents.
         const relatedItems = (
           await Promise.all(
-            attachments
-              .filter((attachment) => attachment.workspaceItemId)
-              .slice(0, 4)
-              .map(async (attachment) => {
-                const id = attachment.workspaceItemId;
-                if (!id) return null;
+            (nativeReady ? relatedIds : [])
+              .map(async (id) => {
                 const item = await readItemTextRef.current(id).catch(() => null);
                 return item
                   ? {
                       id,
-                      title: item.title.trim() || attachment.name,
-                      body: item.body.slice(0, 6000),
+                      title: item.title.trim() || "Untitled",
+                      body: item.body,
                     }
                   : null;
               }),
@@ -1580,7 +1588,7 @@ export function useNativeAssistant({
                 .catch(() => null)
             : null;
           const openSelection = open
-            ? resolveWorkspaceItemTextSelection(open)
+            ? resolveWorkspaceItemTextSelection({ ...open, selection: open.selection ?? open.writingSelection })
             : null;
           const ownerPrompt = await getWorkspaceAgentPromptAction(
             handle,
@@ -1595,7 +1603,7 @@ export function useNativeAssistant({
             nativeAssistantTurnPrompt({
               context: tools.describeContext(submittedView),
               item:
-                open && submittedView.postId
+                open && submittedView.postId && chosenContext.includeItem
                   ? {
                       id: submittedView.postId,
                       title: open.title,
@@ -1605,10 +1613,8 @@ export function useNativeAssistant({
                   : null,
               request: preparedPrompt,
               relatedItems,
-              selection: openSelection,
-              workspaceIndex: open
-                ? null
-                : nativeWorkspaceIndex(getPoolRef.current()),
+              selection: chosenContext.includeSelection ? openSelection : null,
+              workspaceIndex: chosenContext.workspaceIndex ? nativeWorkspaceIndex(getPoolRef.current()) : null,
             }),
             ownerPrompt,
           );
@@ -1686,7 +1692,7 @@ export function useNativeAssistant({
               .catch(() => null)
           : null;
         const openSelection = open
-          ? resolveWorkspaceItemTextSelection(open)
+          ? resolveWorkspaceItemTextSelection({ ...open, selection: open.selection ?? open.writingSelection })
           : null;
         const cloudAbortController = new AbortController();
         activeCloudAbortRef.current.set(thread, cloudAbortController);
@@ -1743,12 +1749,14 @@ export function useNativeAssistant({
           level: submittedView.level,
           folderPath: submittedView.folderPath,
           postId: submittedView.postId,
-          itemTitle: open?.title,
-          selectionEnvelope: open && submittedView.postId
+          itemTitle: chosenContext.includeItem ? open?.title : undefined,
+          selectionEnvelope: chosenContext.includeSelection && open && submittedView.postId
             ? await createSelectionEnvelope(submittedView.postId, open, openSelection)
             : undefined,
-          itemPreview: open?.body?.slice(0, 4000),
-          relatedItems: relatedItems.map((item) => ({ id: item.id })),
+          itemPreview: chosenContext.includeItem ? open?.body?.slice(0, 4001) : undefined,
+          includeItem: chosenContext.includeItem,
+          workspaceIndex: chosenContext.workspaceIndex,
+          relatedItems: relatedIds.map((id) => ({ id, origin: "person" })),
           ...(cloudAttachments.length > 0
             ? { attachments: cloudAttachments }
             : {}),
@@ -1851,6 +1859,7 @@ export function useNativeAssistant({
     [
       contextKey,
       contextLabel,
+      contextChoice,
       conversationStoreKey,
       handle,
       nativeConnection,
@@ -1875,9 +1884,11 @@ export function useNativeAssistant({
     return createInlinePreview(request, {
       active,
       read: () => readItemTextRef.current(request.itemId),
-      generate: async (envelope, prompt, signal, delta) => {
+      generate: async (envelope, prompt, signal, delta, includeItem) => {
         if (!active()) throw new Error(SELECTION_INVALID_ERROR);
+        const item = includeItem ? await readItemTextRef.current(request.itemId) : null;
         const result = await cloudAssistantTurn(handle, prompt, {
+          includeItem, workspaceIndex: false, itemTitle: item?.title, itemPreview: item?.body.slice(0, 4001),
           level: view.level, folderPath: view.folderPath, postId: request.itemId,
           selectionEnvelope: envelope, mode: "suggestion",
         }, {
@@ -2599,6 +2610,10 @@ export function useNativeAssistant({
   return {
     activeCloudProvider: ownerScopeReady ? activeCloudProvider : null,
     activeConversationId,
+    contextChoice,
+    setContextChoice: (choice: AssistantContextChoice) => {
+      if (conversationStoreKey && activeConversationId) setAssistantConversationContextChoice(conversationStoreKey, activeConversationId, choice);
+    },
     conversationContextKey: contextKey,
     conversationStoreKey,
     searchConversations: (query: string) =>

@@ -171,7 +171,7 @@ describe("assistant sidebar UI", () => {
         onFilesSelected: () => {},
         onRemoveAttachment: () => {},
         attachmentDisabled: true,
-        attachments: Array.from({ length: 4 }, (_, index) => ({
+        attachments: Array.from({ length: 5 }, (_, index) => ({
           id: `context-${index}`,
           name: `Note ${index}`,
           workspaceItemId: `note-${index}`,
@@ -183,7 +183,7 @@ describe("assistant sidebar UI", () => {
       }),
     );
 
-    expect(html).not.toContain('aria-label="Add TextText context"');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Add TextText context"/);
     expect(html).toContain('aria-label="Added context"');
   });
 

@@ -1,3 +1,4 @@
+import { cleanAssistantContextChoice, DEFAULT_CONTEXT_CHOICE, type AssistantContextChoice } from "@/lib/ai/context-choice";
 import type { AssistantMessage } from "./useNativeAssistant";
 import {
   MAX_SYNCED_ASSISTANT_CONVERSATIONS,
@@ -29,6 +30,7 @@ type AssistantConversation = Omit<
   AssistantConversationSummary,
   "messageCount"
 > & {
+  contextChoice?: AssistantContextChoice;
   metadataUpdatedAt: string;
   messages: AssistantMessage[];
   /** Deletion tombstone; kept so the server merge cannot resurrect the chat. */
@@ -133,6 +135,7 @@ function cleanConversation(value: unknown): AssistantConversation | null {
     contextKey: conversation.contextKey,
     title: conversation.title.trim().slice(0, 80) || DEFAULT_TITLE,
     pinned: conversation.pinned === true,
+    ...(conversation.contextChoice ? { contextChoice: cleanAssistantContextChoice(conversation.contextChoice) } : {}),
     metadataUpdatedAt:
       typeof conversation.metadataUpdatedAt === "string"
         ? conversation.metadataUpdatedAt
@@ -620,7 +623,7 @@ export function createAssistantConversation(
 ): string {
   const state = loadWorkspace(handle);
   const active = ensureActiveConversation(handle, contextKey);
-  if (active && active.messages.length === 0) return active.id;
+  if (active && active.messages.length === 0 && !active.contextChoice) return active.id;
   const created = createConversationRecord(contextKey);
   state.conversations = trimConversations([created, ...state.conversations]);
   state.activeByContext = {
@@ -911,4 +914,17 @@ export function resetAssistantConversationStore() {
   legacyHandlesByScope.clear();
   listeners.clear();
   fallbackId = 0;
+}
+
+/** Stable snapshot for useSyncExternalStore, isolated to one chat. */
+export function assistantConversationContextChoice(handle: string, conversationId: string): AssistantContextChoice {
+  return loadWorkspace(handle).conversations.find((c) => c.id === conversationId && !c.deletedAt)?.contextChoice ?? DEFAULT_CONTEXT_CHOICE;
+}
+export function setAssistantConversationContextChoice(handle: string, conversationId: string, value: AssistantContextChoice) {
+  const contextChoice = cleanAssistantContextChoice(value);
+  if (!contextChoice) return;
+  replaceConversation(handle, conversationId, (conversation) => {
+    const timestamp = new Date(Math.max(Date.now(), Date.parse(conversation.metadataUpdatedAt) + 1)).toISOString();
+    return { ...conversation, contextChoice, metadataUpdatedAt: timestamp, updatedAt: timestamp };
+  });
 }

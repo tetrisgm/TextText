@@ -17,7 +17,9 @@ type CloudAssistantContext = {
   /** The opening of the body, bounded. The model can read the rest. */
   itemPreview?: string;
   /** IDs for TextText items the server must resolve in this workspace. */
-  relatedItems?: Array<{ id: string }>;
+  relatedItems?: Array<{ id: string; origin?: "person" }>;
+  includeItem?: boolean;
+  workspaceIndex?: boolean;
   /** Bounded image parts uploaded over HTTPS for the hosted model. */
   attachments?: CloudAssistantAttachment[];
   /** Suggestion turns are server-limited to read-only workspace tools. */

@@ -1,6 +1,8 @@
 import { createSelectionEnvelope, validateSelectionEditEnvelope } from "@/lib/ai/selection-envelope";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  assistantConversationContextChoice,
+  setAssistantConversationContextChoice,
   activateAssistantConversation,
   activeAssistantConversation,
   activeAssistantConversationId,
@@ -657,4 +659,25 @@ describe("assistant conversation history", () => {
       assistantConversationSummaries("writer", "root").length,
     ).toBeGreaterThan(stored.conversations.length);
   });
+});
+
+it("persists context per thread, reloads it, and syncs ids and flags without transcript content", () => {
+  browserStorage();
+  const first = activeAssistantConversationId("writer", "root")!;
+  const choice = { includeItem: false, includeSelection: true, workspaceIndex: true,
+    itemIds: ["00000000-0000-4000-8000-000000000001"] };
+  setAssistantConversationContextChoice("writer", first, choice);
+  expect(assistantConversationMessages("writer", first)).toEqual([]);
+  const payload = assistantConversationSyncPayload("writer");
+  expect(payload).toHaveLength(1);
+  expect(payload[0].contextChoice).toEqual(choice);
+  expect(payload[0].messages).toEqual([]);
+  expect(Object.keys(payload[0].contextChoice!).sort()).toEqual(["includeItem", "includeSelection", "itemIds", "workspaceIndex"]);
+  resetAssistantConversationStore();
+  expect(assistantConversationContextChoice("writer", first)).toEqual(choice);
+  const second = createAssistantConversation("writer", "root");
+  expect(second).not.toBe(first);
+  expect(assistantConversationContextChoice("writer", second)).toEqual({ includeItem: true, includeSelection: true, workspaceIndex: false, itemIds: [] });
+  mergeSyncedAssistantConversations("other-device", payload);
+  expect(assistantConversationContextChoice("other-device", first)).toEqual(choice);
 });

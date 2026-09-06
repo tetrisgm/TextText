@@ -516,3 +516,40 @@ it("requires a recaptured caret to regenerate after its source body changes", as
   expect(s.generate.mock.calls[1][1]).toContain('"before":"New body","after":""');
   expect(s.controller.snapshot().envelope).toMatchObject({ start: 8, end: 8 });
 });
+
+it("uses the next-generation item switch for Try again, Refine, and Retry", async () => {
+  const s = setup("rewrite");
+  await ready(s);
+  expect(s.generate.mock.calls[0]).toHaveLength(5);
+  expect(s.generate.mock.calls[0].at(4)).toBe(true);
+  s.controller.setIncludeItem(false);
+  s.controller.tryAgain();
+  await vi.waitFor(() => expect(s.generate).toHaveBeenCalledTimes(2));
+  await vi.waitFor(() => expect(s.controller.snapshot().status).toBe("ready"));
+  expect(s.generate.mock.calls[1].at(4)).toBe(false);
+  s.controller.refine("Shorter");
+  await vi.waitFor(() => expect(s.generate).toHaveBeenCalledTimes(3));
+  await vi.waitFor(() => expect(s.controller.snapshot().status).toBe("ready"));
+  expect(s.generate.mock.calls[2].at(4)).toBe(false);
+  s.controller.setIncludeItem(true);
+  s.controller.tryAgain();
+  s.controller.stop();
+  s.controller.setIncludeItem(false);
+  s.controller.retry();
+  await vi.waitFor(() => expect(s.controller.snapshot().status).toBe("ready"));
+  expect(s.generate.mock.calls.at(-1)?.at(4)).toBe(false);
+});
+it("removes caret surrounding text from cached prompts when item context is switched off", async () => {
+  const s = setup("continue", { caret: 7 });
+  await ready(s);
+  expect(s.generate.mock.calls[0][1]).toContain('"before"');
+  s.controller.setIncludeItem(false);
+  s.controller.tryAgain();
+  await vi.waitFor(() => expect(s.generate).toHaveBeenCalledTimes(2));
+  await vi.waitFor(() => expect(s.controller.snapshot().status).toBe("ready"));
+  expect(s.generate.mock.calls[1][1]).not.toContain('"before"');
+  expect(s.generate.mock.calls[1][1]).not.toContain("Before");
+  s.controller.refine("Shorter");
+  await vi.waitFor(() => expect(s.generate).toHaveBeenCalledTimes(3));
+  expect(s.generate.mock.calls[2][1]).not.toContain('"before"');
+});

@@ -57,6 +57,7 @@ import {
 } from "@/lib/ai/provider-catalog";
 import { workspaceAgentPromptForOwner } from "@/lib/ai/workspace-agent-instructions.server";
 import { readBoundedJson } from "@/lib/http/bounded-json";
+import { addedContextBlock, boundedContextText, MAX_ADDED_CONTEXT_CHARS, MAX_TURN_CONTEXT_CHARS } from "@/lib/ai/context-excerpts";
 import { TENANT_HANDLE_RE } from "@/lib/tenants";
 
 export const dynamic = "force-dynamic";
@@ -166,6 +167,8 @@ type AssistantViewContext = {
   selectionEnvelope?: SelectionEnvelope;
   itemPreview?: unknown;
   relatedItems?: unknown;
+  includeItem?: unknown;
+  workspaceIndex?: unknown;
   attachments?: unknown;
   mode?: unknown;
 };
@@ -606,15 +609,15 @@ async function recentWorkspaceContext({
   messages: readonly ModelMessage[];
   user: AccessUser;
 }): Promise<{ note: string; items: RecentWorkspaceContextItem[] }> {
-  if (!RECENT_SUMMARY_INTENT.test(lastUserText(messages))) {
+  const view = viewContext(context);
+  if (view.workspaceIndex === false || (view.workspaceIndex !== true && !RECENT_SUMMARY_INTENT.test(lastUserText(messages)))) {
     return { note: "", items: [] };
   }
-  const view = viewContext(context);
-  if (typeof view.postId === "string" && view.postId) {
+  if (view.workspaceIndex !== true && typeof view.postId === "string" && view.postId) {
     return { note: "", items: [] };
   }
   const folderPath =
-    typeof view.folderPath === "string" && view.folderPath.trim()
+    view.workspaceIndex !== true && typeof view.folderPath === "string" && view.folderPath.trim()
       ? view.folderPath.trim()
       : null;
   const entries = await getAccessibleRecentPosts(handle, user, {
@@ -624,10 +627,8 @@ async function recentWorkspaceContext({
   const index = recentItemIndex(entries);
   const note = [
     "A bounded, access-checked recent item index is included below. For a high-level recent-work summary, answer from this index immediately. Read an item only when the request needs detail the index does not contain.",
-    fencedUntrusted(
-      "UNTRUSTED_RECENT_ITEM_INDEX",
-      index || "No recent items are visible in this scope.",
-    ),
+    `<UNTRUSTED_RECENT_ITEM_INDEX>\n${boundedContextText(index || "No recent items are visible in this scope.", 8_000)}\n</UNTRUSTED_RECENT_ITEM_INDEX>`,
+    "This is a bounded index of up to 12 recent readable items, not the whole workspace. Index text may be shortened to fit the context budget.",
   ].join("\n\n");
   const items = entries.slice(0, 12).flatMap(({ folderPath, post }) =>
     post.id
@@ -646,6 +647,7 @@ async function recentWorkspaceContext({
 }
 
 type RelatedWorkspaceContextItem = {
+  origin?: "person";
   id: string;
   title: string;
   body: string;
@@ -658,9 +660,10 @@ async function relatedWorkspaceContext(
 ): Promise<RelatedWorkspaceContextItem[]> {
   const view = viewContext(context);
   if (!Array.isArray(view.relatedItems)) return [];
+  const requestedItems = view.relatedItems.slice(0, 5);
   const ids = [
     ...new Set(
-      view.relatedItems.slice(0, 4).flatMap((entry) => {
+      requestedItems.flatMap((entry) => {
         if (!entry || typeof entry !== "object") return [];
         const id = (entry as Record<string, unknown>).id;
         return typeof id === "string" && isUuid(id.trim()) ? [id.trim()] : [];
@@ -674,6 +677,9 @@ async function relatedWorkspaceContext(
     post?.id
       ? [
           {
+            ...(requestedItems.some((entry: unknown) => entry && typeof entry === "object" &&
+              (entry as Record<string, unknown>).id === post.id && (entry as Record<string, unknown>).origin === "person")
+              ? { origin: "person" as const } : {}),
             id: post.id,
             title: post.title?.trim() || "Untitled",
             body: post.body || "",
@@ -687,6 +693,7 @@ async function relatedWorkspaceContext(
 function buildSystem(
   context: unknown,
   relatedItems: readonly RelatedWorkspaceContextItem[] = [],
+  recentNote = "",
 ): string {
   const view = viewContext(context);
   const bits: string[] = [];
@@ -715,7 +722,7 @@ function buildSystem(
   // "this document" is answerable without a round trip and a long document
   // never dominates the prompt.
   const parts = [head];
-  if (typeof view.itemTitle === "string" && view.itemTitle.trim()) {
+  if (view.includeItem !== false && typeof view.itemTitle === "string" && view.itemTitle.trim()) {
     parts.push(
       "The current item has this untrusted title:",
       fencedUntrusted("UNTRUSTED_ITEM_TITLE", view.itemTitle.slice(0, 200)),
@@ -727,28 +734,19 @@ function buildSystem(
       fencedUntrusted("UNTRUSTED_SELECTION", JSON.stringify(view.selectionEnvelope)),
     );
   }
-  if (typeof view.itemPreview === "string" && view.itemPreview.trim()) {
+  if (view.includeItem !== false && typeof view.itemPreview === "string" && view.itemPreview.trim()) {
     parts.push(
       "The current item begins with the following untrusted workspace data:",
-      fencedUntrusted(
-        "UNTRUSTED_ITEM_PREVIEW",
-        view.itemPreview.slice(0, 4000),
-      ),
-      "Use read_item for the rest.",
+      `<UNTRUSTED_ITEM_PREVIEW>\n${boundedContextText(view.itemPreview, 4000)}\n</UNTRUSTED_ITEM_PREVIEW>`,
+      "The item preview is limited to 4,000 characters and may be shortened to fit the context budget. The rest of this item is not included. Use read_item if more is needed.",
     );
   }
-  if (relatedItems.length > 0) {
-    const related = relatedItems.map(
-      (item) =>
-        `id: ${item.id.slice(0, 128)}\ntitle: ${item.title.slice(0, 200)}\nbody:\n${item.body.slice(0, 6000)}`,
-    );
-    if (related.length > 0) {
-      parts.push(
-        "The writer explicitly added these TextText items as context:",
-        fencedUntrusted("UNTRUSTED_ADDED_CONTEXT", related.join("\n\n")),
-      );
-    }
+  if (recentNote) parts.push(recentNote);
+  if (view.mode === "suggestion" && view.includeItem === false) {
+    parts.push("Use only the supplied passage and refinement for this generation. Item context is off and workspace tools are unavailable.");
   }
+  const used = parts.slice(1).join("\n\n").length;
+  if (relatedItems.length) parts.push(addedContextBlock(relatedItems, Math.min(MAX_ADDED_CONTEXT_CHARS, MAX_TURN_CONTEXT_CHARS - used - 2)));
   return parts.join(`\n\n`);
 }
 
@@ -841,7 +839,11 @@ export async function POST(request: Request) {
     );
   }
   let selectionEnvelope: SelectionEnvelope | undefined;
-  const selectionView = viewContext(body.context);
+  const suppliedView = viewContext(body.context);
+  const selectionView = suppliedView.mode === "suggestion" && suppliedView.includeItem === false
+    ? { ...suppliedView, relatedItems: [], workspaceIndex: false, itemTitle: undefined, itemPreview: undefined }
+    : suppliedView;
+  body.context = selectionView;
   try {
     if (selectionView.selection !== undefined) {
       throw new Error(typeof selectionView.selection === "string" &&
@@ -994,7 +996,8 @@ export async function POST(request: Request) {
     return items;
   }, []);
 
-  const tools = {
+  const selectionOnly = requestView.mode === "suggestion" && requestView.includeItem === false;
+  const tools = selectionOnly ? {} : {
     ...guardedCloudAssistantTools(
       actor,
       (proposal) => writeProposals.push(proposal),
@@ -1009,8 +1012,7 @@ export async function POST(request: Request) {
   const modelRequest = {
     model,
     system:
-      buildSystem(body.context, relatedContext) +
-      (recentContext.note ? `\n\n${recentContext.note}` : "") +
+      buildSystem(body.context, relatedContext, recentContext.note) +
       (workspaceAgentPrompt ? `\n\n${workspaceAgentPrompt}` : "") +
       outboundSystemNote(
         reachable.map((entry) => entry.connection.name),

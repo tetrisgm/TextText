@@ -151,6 +151,14 @@ export function InlineSelectionPreview({ controller, surface, readSelection, onC
       <div className={styles.header}>
         {INLINE_ACTIONS.find((action) => action.id === state.action)?.label} · {state.title} · {isBodyCaret(state.envelope) ? "At caret" : `${state.words} selected ${state.words === 1 ? "word" : "words"}`}
       </div>
+      <div className={styles.context}>
+        <span>{state.includeItem !== false ? "Context: this passage and the item" : "Context: this passage only"}</span>
+        <button type="button" aria-label="Include item context for the next generation" aria-pressed={state.includeItem !== false}
+          disabled={changing || state.status === "applied" || state.status === "undone"}
+          onClick={() => controller.setIncludeItem(state.includeItem === false)}>
+          {state.includeItem !== false ? "Selection only" : "Include item"}
+        </button>
+      </div>
       <div className={styles.body} aria-live="off">{state.text}</div>
       <div className={styles.status} role="status" aria-live="polite" aria-atomic="true">{INLINE_STATUS_LABELS[state.status]}</div>
       {state.error && <div className={styles.error}>{state.error}</div>}

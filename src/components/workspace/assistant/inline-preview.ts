@@ -26,6 +26,7 @@ export type InlinePreviewRecord = {
   appliedEdit?: InlineEdit;
   /** Instructions belong to this preview decision, not separate transcript turns. */
   refinements?: string[];
+  includeItem?: boolean;
 };
 export type InlineEdit = {
   field: WorkspaceItemTextSelection["field"]; start: number; end: number;
@@ -34,7 +35,7 @@ export type InlineEdit = {
 };
 type Dependencies = {
   read: () => Promise<WorkspaceItemTextSnapshot>;
-  generate: (envelope: SelectionEnvelope, prompt: string, signal: AbortSignal, delta: (text: string) => void) => Promise<{ text: string; selectionEnvelope?: SelectionEnvelope }>;
+  generate: (envelope: SelectionEnvelope, prompt: string, signal: AbortSignal, delta: (text: string) => void, includeItem: boolean) => Promise<{ text: string; selectionEnvelope?: SelectionEnvelope }>;
   execute: (edit: InlineEdit) => Promise<void>;
   persist: (record: InlinePreviewRecord) => void;
   active: () => boolean;
@@ -43,11 +44,11 @@ export function isBodyCaret(selection: WorkspaceItemTextSelection | null | undef
   return selection?.field === "body" && selection.text === "" &&
     Number.isSafeInteger(selection.start) && selection.start >= 0 && selection.start === selection.end;
 }
-export function inlinePrompt(request: InlineRequest, refinement?: QuickActionRefinement, source?: WorkspaceItemTextSnapshot): string {
-  const action = request.action === "continue" && isBodyCaret(request.selection) && source
+export function inlinePrompt(request: InlineRequest, refinement?: QuickActionRefinement, source?: WorkspaceItemTextSnapshot, includeItem = true): string {
+  const action = request.action === "continue" && isBodyCaret(request.selection) && source && includeItem
     ? quickActionPrompt("continue", source, request.selection)
     : request.action === "translate"
-    ? `Translate the entire selection into ${request.language === "Document language" ? "the primary language of the document (read the document if needed)" : request.language?.trim() || "English"}.`
+    ? `Translate the entire selection into ${request.language === "Document language" ? (includeItem ? "the primary language of the document (read the document if needed)" : "the language of the selected passage") : request.language?.trim() || "English"}.`
     : request.action === "continue"
       ? "Write a continuation immediately after the selection. Return only the new continuation, without repeating the selection. Include the leading and trailing whitespace needed at the insertion point."
       : request.action === "excerpt"
@@ -81,7 +82,7 @@ export function createInlinePreview(request: InlineRequest, deps: Dependencies) 
   let state: InlinePreviewRecord = {
     action: request.action, itemId: request.itemId, title: "Current item",
     words: request.selection.text.trim().split(/\s+/u).filter(Boolean).length,
-    status: "generating", text: "",
+    status: "generating", text: "", includeItem: true,
   };
   let source: WorkspaceItemTextSnapshot | undefined;
   let applied: { edit: InlineEdit; result: string } | undefined;
@@ -89,7 +90,7 @@ export function createInlinePreview(request: InlineRequest, deps: Dependencies) 
   let generation = 0;
   let pendingRelease = 0;
   let started = false;
-  let lastAttempt: { envelope: SelectionEnvelope; prompt: string } | undefined;
+  let lastAttempt: { envelope: SelectionEnvelope; refinement?: QuickActionRefinement } | undefined;
   const listeners = new Set<() => void>();
   const emit = (patch: Partial<InlinePreviewRecord>, durable = true) => {
     state = { ...state, ...patch };
@@ -110,6 +111,7 @@ export function createInlinePreview(request: InlineRequest, deps: Dependencies) 
   async function generate(selection = request.selection, attempt?: typeof lastAttempt, refinements = state.refinements, recaptured = false) {
     if (!active() || state.status === "applying" || state.status === "applied" || state.uncertain) return;
     controller?.abort();
+    const includeItem = state.includeItem !== false;
     const turn = ++generation;
     const abort = new AbortController();
     controller = abort;
@@ -130,10 +132,10 @@ export function createInlinePreview(request: InlineRequest, deps: Dependencies) 
       if (!live()) return;
       if (!envelope) throw new Error(SELECTION_INVALID_ERROR);
       assertCurrent(envelope, read);
-      const prompt = attempt?.prompt ?? inlinePrompt({ ...request, selection: envelope }, undefined, source);
-      lastAttempt = { envelope, prompt };
+      const prompt = inlinePrompt({ ...request, selection: envelope }, attempt?.refinement, source, includeItem);
+      lastAttempt = { envelope, refinement: attempt?.refinement };
       emit({ envelope, title: read.title || "Untitled", words: envelope.text.trim().split(/\s+/u).filter(Boolean).length });
-      const answer = await deps.generate(envelope, prompt, abort.signal, buffer.push);
+      const answer = await deps.generate(envelope, prompt, abort.signal, buffer.push, includeItem);
       buffer.finish();
       if (!live()) return;
       const acknowledged = await validateSelectionEnvelope(answer.selectionEnvelope);
@@ -166,6 +168,9 @@ export function createInlinePreview(request: InlineRequest, deps: Dependencies) 
       emit({ status: "discarded" });
       return true;
     },
+    setIncludeItem(includeItem: boolean) {
+      if (active() && !["applying", "applied"].includes(state.status)) emit({ includeItem });
+    },
     tryAgain() {
       if (state.status !== "ready" || !lastAttempt) return;
       void generate(lastAttempt.envelope, lastAttempt);
@@ -173,9 +178,9 @@ export function createInlinePreview(request: InlineRequest, deps: Dependencies) 
     refine(instruction: string) {
       const trimmed = instruction.trim();
       if (!active() || state.status !== "ready" || !state.envelope || !trimmed) return false;
-      const attempt = { envelope: state.envelope, prompt: inlinePrompt({ ...request, selection: state.envelope }, {
+      const attempt = { envelope: state.envelope, refinement: {
         currentOutput: state.text, instruction: trimmed,
-      }, source) };
+      } };
       void generate(state.envelope, attempt, [...(state.refinements ?? []), trimmed]);
       return true;
     },
