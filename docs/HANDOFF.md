@@ -5065,3 +5065,9 @@ first pass handed over as static metadata, and guards against the silent
 failure mode where pointing at the bundle instead of `extract.actionsdata`
 writes an empty bundle with exit 0. Verified from the shipped bundle: 10
 intents, 4 App Shortcuts, 4 parameter summaries.
+
+Shipped: build 1063 (`feb33b1d`), deployment `dpl_GNyRzy8cs87NhuAiaFeJ61WyFeGu`, page stamp
+`tt-1063-feb33b1d`, Mac app 0.182 build 1063 installed. Suite 3215 passed,
+interaction 17 of 17, 43 Mac tests, 23 live workflow checks. This is round ten
+in production: spring driven motion, Mac platform depth with working Shortcuts,
+accessibility, first run and empty states, and the two data loss fixes.
