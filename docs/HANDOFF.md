@@ -5049,3 +5049,19 @@ leaves the DOM at about 750 ms, and a closing tab stays mounted until it rests.
 The checks now wait for the palette to detach and count only tabs a person can
 reach (`.workspace-tab:not([inert])`, which is the same element the motion
 wrapper marks inert). Back to 17 of 17.
+
+The Mac app then failed to build, and the message blamed the wrong thing. The
+App Intents metadata processor reported that `parameterSummary` "must have a
+compile-time static value", but the Swift was correct: the compiler had emitted
+proper const-value records for all four. `mac/scripts/appintents-metadata.sh`
+was invoking the processor with `--module-name TextText`, which is not a module
+in this package (the intents live in `TextTextAppIntents` and the shortcuts
+provider in `TextTextApp`, renamed because the CLI product owns `TextText` on a
+case-insensitive volume), so every const-value lookup missed. The mismatch
+predates this release and stayed invisible because literal properties need no
+const values; parameter summaries are the first thing here that does. The
+script now runs two passes, the intents module then the app module with the
+first pass handed over as static metadata, and guards against the silent
+failure mode where pointing at the bundle instead of `extract.actionsdata`
+writes an empty bundle with exit 0. Verified from the shipped bundle: 10
+intents, 4 App Shortcuts, 4 parameter summaries.
