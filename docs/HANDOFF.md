@@ -5140,3 +5140,21 @@ one group, so redo cannot rebuild the oversized update. The quarantine path
 stays as the backstop for anything still refused. Tested with real Yjs,
 including a peer inserting inside the first received chunk while deleting the
 original text.
+
+Shipped: build 1065 (`2d9c7995`), page stamp `tt-1065-2d9c7995`, Mac app 0.182
+build 1065 installed. Verified against that build, not against a stale server:
+suite 3262 passed, interaction 17 of 17, 43 Mac tests, 23 live workflow checks.
+Probes: rail first paint differs from the loaded rail only in the status text
+rows; reading polls presence twice per 8 s with no heartbeat while editing
+joins and heartbeats; reader keys, bar geometry and the tab strip unchanged; the
+delete probe's deletion holds and it restores the note. The context picker
+renders in both themes with This item pressed, a working search, a removable
+chip and focus returning to the composer. Two browsers sharing an item: the
+guest's insertion reaches the owner in 1.5 s and the deletion in 2.0 s, both
+sessions listed as editors.
+
+Open, and none of it blocking: the native checks that need a person at the
+machine (cursor shapes, trackpad momentum, grabbing the rail mid-motion, pinch
+zoom, and an IME during a delayed Accept); and the changelog for builds 1052 to
+1065, which needs the TextText connector authorized before any entry can be
+written.
