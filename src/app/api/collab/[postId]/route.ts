@@ -1,3 +1,4 @@
+import { MAX_UPDATE_CHARS } from "@/lib/collab/limits";
 // Realtime co-editing relay for one post.
 //
 //   POST /api/collab/{postId}  {updates: base64[], epoch}  -> {seq, epoch} | {retired, epoch}
@@ -36,10 +37,8 @@ const POLL_INTERVAL_MS = 700;
 // far fewer DB round-trips than a flat 700ms poll would.
 const POLL_MAX_INTERVAL_MS = 4000;
 const MAX_UPDATES_PER_POST = 64;
-// A single Yjs update is a small binary diff; 512 KB base64 is already far
-// larger than any real edit, so anything bigger is rejected rather than
-// stored forever in the append log.
-const MAX_UPDATE_CHARS = 512 * 1024;
+// Text writers use this shared ceiling with room for Yjs overhead.
+// Oversized non-text or pathological updates still fail closed below.
 // 64 maximum-size base64 updates plus their small JSON envelope. Enforce this
 // while streaming so an authenticated client cannot make the server buffer an
 // arbitrarily large body before the per-update validation below runs.

@@ -1,3 +1,5 @@
+import { replaceSharedText } from "@/lib/collab/text-transactions";
+import { MAX_UPDATE_CHARS } from "@/lib/collab/limits";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -70,7 +72,7 @@ function harness({ pending = true, idle = false } = {}) {
   const setSaveState = vi.fn();
   const setError = vi.fn();
   const bindings = {
-    ...refs, doc, Y, hasDocumentSnapshot, documentSnapshotFromYDoc, applyDocumentSnapshot,
+    ...refs, doc, Y, replaceSharedText, hasDocumentSnapshot, documentSnapshotFromYDoc, applyDocumentSnapshot,
     useCallback: (callback: unknown) => callback,
     networkEnabled: true, collab: { canEdit: true, postId: "probe" }, blog: { handle: "probe" },
     publishDocument, onMaterialized, setSaveState, setError,
@@ -390,4 +392,36 @@ it("does not resurrect a peer insertion deleted before relay delivery", async ()
   expect(bodyOf(peer)).toBe(h.visible());
   expect(locallyGenerated).not.toHaveBeenCalled();
   peer.destroy();
+});
+
+
+it("publishes a large editor paste once while emitting bounded Yjs updates", () => {
+  const h = harness({ pending: false });
+  const pasted = "😀漢\n".repeat(150_000);
+  const updates: Uint8Array[] = [];
+  h.doc.on("update", (update) => updates.push(update));
+  h.type(`alpha ${pasted} omega`);
+  expect(h.publishDocument).toHaveBeenCalledTimes(1);
+  expect(h.visible()).toBe(`alpha ${pasted} omega`);
+  expect(bodyOf(h.doc)).toBe(h.visible());
+  expect(updates.length).toBeGreaterThan(1);
+  for (const update of updates) expect(Buffer.from(update).toString("base64").length).toBeLessThan(MAX_UPDATE_CHARS);
+});
+
+it("keeps the surface caret at the end of the complete large paste", () => {
+  const h = harness({ pending: false });
+  const surface = readFileSync(new URL("../MarkdownSurface.tsx", import.meta.url), "utf8");
+  const start = surface.indexOf("  const replaceRange =");
+  const code = ts.transpileModule(surface.slice(start, surface.indexOf("  const onBeforeInput =", start)), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  const pendingCaretRef = { current: 0 }, rangeRef = { current: { anchor: 0, head: 0 } };
+  const bindings = { value: BODY, pendingCaretRef, rangeRef, allSelectedRef: { current: true }, onChange: h.type };
+  const replace = new Function(...Object.keys(bindings), `${code}; return replaceRange;`)(...Object.values(bindings));
+  const paste = "😀漢\n".repeat(150_000);
+  replace(6, 12, paste);
+  expect(bodyOf(h.doc)).toBe(`alpha ${paste} omega`);
+  expect(h.publishDocument).toHaveBeenCalledTimes(1);
+  expect(pendingCaretRef.current).toBe(6 + paste.length);
+  expect(rangeRef.current).toEqual({ anchor: 6 + paste.length, head: 6 + paste.length });
 });

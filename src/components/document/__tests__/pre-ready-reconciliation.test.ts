@@ -1,3 +1,4 @@
+import { replaceSharedText } from "@/lib/collab/text-transactions";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { it, expect, vi } from "vitest";
@@ -11,7 +12,7 @@ function compile(source:string,name:string,bindings:Record<string,unknown>){
  const js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
  return new Function(...Object.keys(bindings),js+`;return ${name};`)(...Object.values(bindings));
 }
-const replaceYText=compile(editor.slice(editor.indexOf("function replaceYText("),editor.indexOf("\nfunction selectionForField(")),"replaceYText",{});
+const replaceYText=compile(editor.slice(editor.indexOf("function replaceYText("),editor.indexOf("\nfunction selectionForField(")),"replaceYText",{replaceSharedText});
 const overlayPreReadyEdits=compile(editor.slice(editor.indexOf("export function overlayPreReadyEdits("),editor.indexOf("\nfunction bytesToBase64(")).replace("export function","function"),"overlayPreReadyEdits",{});
 const snapshot=(body:string)=>validateDocumentSnapshot({schemaVersion:1,content:{title:"Probe",body,fields:{},tags:[],assets:[]},presentation:{template:{id:"texttext.note",version:1},theme:{}}});
 // Give the readiness harness a real startup history, then make surgical peer

@@ -1,3 +1,4 @@
+import { spliceText, transactTextChanges } from "./text-transactions";
 import * as Y from "yjs";
 import { applyDocumentBaseline, documentText, documentAssets, documentFields, documentPresentation, documentTags, documentTheme } from "@/lib/collab/document";
 import type { DocumentSnapshot } from "@/lib/documents/model";
@@ -194,12 +195,9 @@ export function applyPreReadyTextOperations(target: Y.Text, operations: Hunk[], 
       .map((h) => ({ start: inferred.baseline.length - h.end, end: inferred.baseline.length - h.start, insert: reverse(h.insert) })).reverse();
     if (JSON.stringify(forward) !== JSON.stringify(backward)) return false;
   }
-  target.doc?.transact(() => {
-    for (const h of operations) {
-      if (h.end > h.start) target.delete(h.start, h.end - h.start);
-      if (h.insert) target.insert(h.start, h.insert);
-    }
-  }, origin);
+  if (target.doc) transactTextChanges(target.doc, origin, (function* () {
+    for (const h of operations) yield* spliceText(target, h.start, h.end - h.start, h.insert);
+  })());
   return true;
 }
 

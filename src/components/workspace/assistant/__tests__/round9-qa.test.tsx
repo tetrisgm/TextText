@@ -1,3 +1,4 @@
+import { MAX_UPDATE_CHARS } from "@/lib/collab/limits";
 import React from "react";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
@@ -70,7 +71,7 @@ describe("round9 review regressions", () => {
           compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
         }).outputText;
         const append = vi.fn(async () => ({ seq: 2 }));
-        const deps = { db: {}, Y, Buffer, applyDocumentMutation, documentSnapshotFromYDoc,
+        const deps = { db: {}, Y, Buffer, MAX_UPDATE_CHARS, applyDocumentMutation, documentSnapshotFromYDoc,
           loadCurrentCollabDocument: async () => ({ document: doc, epoch: 1, mutationVersion: 2 }),
           getPostStoreContext: async () => ({ post: { revision: 7 } }),
           validateSelectionEditEnvelope: envelopes.validateSelectionEditEnvelope,

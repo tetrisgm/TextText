@@ -1,5 +1,7 @@
 "use client";
 
+import { DocumentUndoManager, replaceSharedText } from "@/lib/collab/text-transactions";
+
 import { dismissOpenDetails } from "@/components/accessibility/keyboard";
 import { StatusAnnouncement } from "@/components/accessibility/StatusAnnouncement";
 import { EditorSaveNotice, editorSaveLabel } from "./EditorSaveNotice";
@@ -271,10 +273,7 @@ function replaceYText(
   }
   if (mirror) mirror.applying = true;
   try {
-    target.doc?.transact(() => {
-      if (currentSuffix > prefix) target.delete(prefix, currentSuffix - prefix);
-      if (valueSuffix > prefix) target.insert(prefix, value.slice(prefix, valueSuffix));
-    }, origin);
+    replaceSharedText(target, prefix, currentSuffix - prefix, value.slice(prefix, valueSuffix), origin);
   } finally {
     if (mirror) {
       mirror.applying = false;
@@ -538,7 +537,7 @@ export function UnifiedDocumentEditor({
       // arriving afterwards supersedes it - so instances captured at mount
       // are orphaned by the time anyone types, and undo silently does
       // nothing. The root map is never replaced.
-      new Y.UndoManager(
+      new DocumentUndoManager(
         documentRoot(doc),
         {
           trackedOrigins: new Set([userEditOriginValue]),
@@ -1050,13 +1049,13 @@ export function UnifiedDocumentEditor({
         preserveRecovery(provider.learnedEpoch ?? 0);
         return;
       }
-      doc.transact(() => {
+      {
         for (const { field, operations } of plans) {
           applyPreReadyTextOperations(documentText(doc, field), operations, localOrigin.current);
         }
         // This writes metadata entries only and cannot undo text reconciliation.
         if (overlaid) applyPreReadyMetadata(doc, overlaid, localOrigin.current);
-      }, localOrigin.current);
+      }
       preReadyLocalRef.current = null;
       publishDocument(documentSnapshotFromYDoc(doc));
       readyRef.current = true;

@@ -1,6 +1,7 @@
 import { inverseTextChange, type AgentTextChange } from "@/lib/agent-changes";
 import type { SelectionEnvelope } from "@/lib/ai/selection-envelope";
 import * as Y from "yjs";
+import { spliceText, transactTextChanges } from "./text-transactions";
 import {
   validateDocumentSnapshot,
   type DocumentAsset,
@@ -20,8 +21,8 @@ export type DocumentMutation = {
   appendBody?: string;
   /**
    * Replace one Markdown section body against the live Y.Text. The expected
-   * body is checked inside the same transaction before any characters are
-   * changed, so an edit elsewhere can merge while an edit to this section
+   * body is checked before any characters are changed. Bounded transactions
+   * run synchronously, so an edit elsewhere can merge while an edit to this section
    * fails closed.
    */
   bodySection?: {
@@ -166,10 +167,10 @@ export function replaceMarkdownSectionBodyIfUnchanged(
   return replacingSectionBody(markdown, section, replacementBody);
 }
 
-function replaceLiveBodySection(
+function* replaceLiveBodySection(
   target: Y.Text,
   mutation: NonNullable<DocumentMutation["bodySection"]>,
-): void {
+): Generator<void> {
   const current = target.toString();
   const updated = replaceMarkdownSectionBodyIfUnchanged(
     current,
@@ -196,14 +197,13 @@ function replaceLiveBodySection(
   }
   const deleteCount = current.length - prefix - suffix;
   const insertion = updated.slice(prefix, updated.length - suffix);
-  if (deleteCount) target.delete(prefix, deleteCount);
-  if (insertion) target.insert(prefix, insertion);
+  yield* spliceText(target, prefix, deleteCount, insertion);
 }
 
-function replaceLiveTextRange(
+function* replaceLiveTextRange(
   target: Y.Text,
   mutation: NonNullable<DocumentMutation["textRange"]>,
-): void {
+): Generator<void> {
   const current = target.toString();
   if (
     !Number.isInteger(mutation.start) ||
@@ -216,10 +216,7 @@ function replaceLiveTextRange(
     throw new DocumentTextRangeConflictError();
   }
   const deleteCount = mutation.end - mutation.start;
-  if (deleteCount) target.delete(mutation.start, deleteCount);
-  if (mutation.replacementText) {
-    target.insert(mutation.start, mutation.replacementText);
-  }
+  yield* spliceText(target, mutation.start, deleteCount, mutation.replacementText);
 }
 
 function root(doc: Y.Doc): Y.Map<unknown> {
@@ -266,10 +263,9 @@ function array(rootMap: Y.Map<unknown>, key: string): Y.Array<unknown> {
   return value;
 }
 
-function replaceText(target: Y.Text, value: string): void {
+function* replaceText(target: Y.Text, value: string): Generator<void> {
   if (target.toString() === value) return;
-  target.delete(0, target.length);
-  if (value) target.insert(0, value);
+  yield* spliceText(target, 0, target.length, value);
 }
 
 function replaceMap(
@@ -299,12 +295,12 @@ export function applyDocumentSnapshot(
   origin: unknown = "document-seed",
 ): void {
   const snapshot = validateDocumentSnapshot(snapshotInput);
-  doc.transact(() => {
+  transactTextChanges(doc, origin, (function* () {
     const rootMap = root(doc);
     rootMap.set("schemaVersion", snapshot.schemaVersion);
-    replaceText(text(rootMap, "title"), snapshot.content.title);
-    replaceText(text(rootMap, "subtitle"), snapshot.content.subtitle ?? "");
-    replaceText(text(rootMap, "body"), snapshot.content.body);
+    yield* replaceText(text(rootMap, "title"), snapshot.content.title);
+    yield* replaceText(text(rootMap, "subtitle"), snapshot.content.subtitle ?? "");
+    yield* replaceText(text(rootMap, "body"), snapshot.content.body);
     replaceMap(map(rootMap, "fields"), snapshot.content.fields);
     replaceArray(array(rootMap, "tags"), snapshot.content.tags);
     replaceArray(array(rootMap, "assets"), snapshot.content.assets);
@@ -318,7 +314,7 @@ export function applyDocumentSnapshot(
       new Set(["theme"]),
     );
     replaceMap(map(presentation, "theme"), snapshot.presentation.theme);
-  }, origin);
+  })());
 }
 
 export function applyDocumentMutation(
@@ -327,7 +323,7 @@ export function applyDocumentMutation(
   origin: unknown = "document-mutation",
 ): boolean {
   let applied = true;
-  doc.transact(() => {
+  transactTextChanges(doc, origin, (function* () {
     const rootMap = root(doc);
     if (mutation.revertChanges && Object.keys(mutation).some((key) =>
       key !== "revertChanges" && key !== "operationId")) {
@@ -383,16 +379,16 @@ export function applyDocumentMutation(
       inverseTextChange(change, text(rootMap, change.field).toString()));
     const operations = map(rootMap, APPLIED_OPERATIONS_KEY);
     for (const inverse of inverses ?? []) {
-      replaceLiveTextRange(text(rootMap, inverse.field), inverse);
+      yield* replaceLiveTextRange(text(rootMap, inverse.field), inverse);
     }
     if (mutation.title !== undefined) {
-      replaceText(text(rootMap, "title"), mutation.title);
+      yield* replaceText(text(rootMap, "title"), mutation.title);
     }
     if (mutation.subtitle !== undefined) {
-      replaceText(text(rootMap, "subtitle"), mutation.subtitle ?? "");
+      yield* replaceText(text(rootMap, "subtitle"), mutation.subtitle ?? "");
     }
     if (mutation.body !== undefined) {
-      replaceText(text(rootMap, "body"), mutation.body);
+      yield* replaceText(text(rootMap, "body"), mutation.body);
     }
     if (mutation.appendBody !== undefined) {
       const fragment = mutation.appendBody.trim();
@@ -400,16 +396,16 @@ export function applyDocumentMutation(
         const body = text(rootMap, "body");
         const current = body.toString().trimEnd();
         if (current.length < body.length) {
-          body.delete(current.length, body.length - current.length);
+          yield* spliceText(body, current.length, body.length - current.length, "");
         }
-        body.insert(body.length, current ? `\n\n${fragment}` : fragment);
+        yield* spliceText(body, body.length, 0, current ? `\n\n${fragment}` : fragment);
       }
     }
     if (mutation.bodySection !== undefined) {
-      replaceLiveBodySection(text(rootMap, "body"), mutation.bodySection);
+      yield* replaceLiveBodySection(text(rootMap, "body"), mutation.bodySection);
     }
     if (mutation.textRange !== undefined) {
-      replaceLiveTextRange(
+      yield* replaceLiveTextRange(
         text(rootMap, mutation.textRange.field),
         mutation.textRange,
       );
@@ -453,7 +449,7 @@ export function applyDocumentMutation(
         for (const entry of oldest) operations.delete(entry.key);
       }
     }
-  }, origin);
+  })());
   return applied;
 }
 

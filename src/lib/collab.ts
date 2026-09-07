@@ -1,3 +1,4 @@
+import { MAX_UPDATE_CHARS } from "@/lib/collab/limits";
 import { agentTextChanges, type AgentTextChange } from "@/lib/agent-changes";
 import { agentChangeCte } from "@/lib/agent-change-sql.server";
 import {
@@ -251,7 +252,8 @@ export async function prepareCollabBaseline(
 }
 
 /**
- * Append one Yjs update, FENCED on the epoch the client caught up under. The
+ * Append one Yjs update or an atomic command's bounded updates, FENCED on the
+ * epoch the client caught up under. The
  * insert lands iff `clientEpoch` still equals the post's current generation
  * (one atomic statement), so an offline/lapsed editor whose retained edits flush
  * after the log was retired is rejected rather than merged into the new epoch
@@ -259,13 +261,17 @@ export async function prepareCollabBaseline(
  */
 export async function appendCollabUpdate(
   postId: string,
-  updateBase64: string,
+  updateBase64: string | string[],
   clientEpoch: number,
   audit?: AuditEntry,
   expectedRevision?: number,
   change?: { expectedVersion?: number; changes: AgentTextChange[]; revert?: { id: string; userId: string } },
 ): Promise<{ seq: number } | { retired: true }> {
   if (!db) throw new Error("collab needs a database");
+  const updates = typeof updateBase64 === "string" ? [updateBase64] : updateBase64;
+  if (!updates.length || updates.some((update) => update.length > MAX_UPDATE_CHARS)) {
+    throw new Error("Collaboration update is too large or empty.");
+  }
   const values = audit ? auditValues(audit) : null;
   // One statement: the fence bumps the generation's mutation counter (and,
   // when asked, checks the post revision and the caller's expected counter),
@@ -286,10 +292,19 @@ export async function appendCollabUpdate(
           )
         `}
       RETURNING post_id
-    ), appended AS (
+    ), inserted AS (
       INSERT INTO ${collabUpdates} (post_id, "update", epoch)
-      SELECT post_id, ${updateBase64}, ${clientEpoch}::int FROM fenced
+      ${typeof updateBase64 === "string" ? sql`
+        SELECT post_id, ${updateBase64}, ${clientEpoch}::int FROM fenced
+      ` : sql`
+        SELECT post_id, chunk.value, ${clientEpoch}::int FROM fenced
+        CROSS JOIN jsonb_array_elements_text(${JSON.stringify(updates)}::jsonb)
+          WITH ORDINALITY AS chunk(value, ordinal)
+        ORDER BY chunk.ordinal
+      `}
       RETURNING seq
+    ), appended AS (
+      SELECT max(seq) AS seq FROM inserted HAVING count(*) > 0
     ), audited AS (${values ? sql`
       INSERT INTO ${actionAudit}
         (actor_user_id, actor_type, action_name, target_type, target_id, input_summary, output_summary)
@@ -454,11 +469,15 @@ export async function applyLiveDocumentMutation(
         }
       }
       const before = Y.encodeStateVector(loaded.document);
-      const applied = applyDocumentMutation(
-        loaded.document,
-        mutation,
-        "external-agent",
-      );
+      const chunks: Uint8Array[] = [];
+      const collect = (update: Uint8Array) => chunks.push(update);
+      loaded.document.on("update", collect);
+      let applied: boolean;
+      try {
+        applied = applyDocumentMutation(loaded.document, mutation, "external-agent");
+      } finally {
+        loaded.document.off("update", collect);
+      }
       if (!applied) {
         return {
           snapshot: documentSnapshotFromYDoc(loaded.document),
@@ -472,10 +491,13 @@ export async function applyLiveDocumentMutation(
           auditRecorded: Boolean(mutation.operationId),
         };
       }
-      const update = Y.encodeStateAsUpdate(loaded.document, before);
+      const update = Buffer.from(Y.encodeStateAsUpdate(loaded.document, before)).toString("base64");
+      // Keep one row for ordinary edits. Large edits retain transaction
+      // boundaries, with all rows, the operation id, audit and change receipt
+      // committed under ONE version fence. Never publish a partial command.
       const appended = await appendCollabUpdate(
         postId,
-        Buffer.from(update).toString("base64"),
+        update.length <= MAX_UPDATE_CHARS ? update : chunks.map((chunk) => Buffer.from(chunk).toString("base64")),
         loaded.epoch,
         audit,
         selection?.revision ?? source?.revision,

@@ -289,3 +289,38 @@ it("checks a downgrade between batch appends and audits only the accepted append
   expect(mocks.appendCollabUpdate).toHaveBeenCalledWith(postId, expect.any(String), 3,
     expect.objectContaining({ actorType: "human", actionName: "collab.append", targetId: postId }));
 });
+
+it("enforces exactly the shared update ceiling, so a relay-only limit change fails this test", async () => {
+  const { MAX_UPDATE_CHARS } = await import("@/lib/collab/limits");
+  const encodeAt = (bytes: number) => {
+    const probe = new Y.Doc(); probe.clientID = 42;
+    probe.getText("body").insert(0, "x".repeat(bytes));
+    const overhead = Y.encodeStateAsUpdate(probe).length - bytes;
+    const doc = new Y.Doc(); doc.clientID = 42;
+    doc.getText("body").insert(0, "x".repeat(bytes - overhead));
+    const update = Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
+    probe.destroy(); doc.destroy(); return update;
+  };
+  const below = encodeAt(Math.floor(MAX_UPDATE_CHARS / 4) * 3);
+  const above = encodeAt(Math.floor(MAX_UPDATE_CHARS / 4) * 3 + 3);
+  expect(below.length).toBe(MAX_UPDATE_CHARS);
+  expect(above.length).toBe(MAX_UPDATE_CHARS + 4);
+  expect((await POST(push({ updates: [below], epoch: 3 }), ctx)).status).toBe(200);
+  mocks.appendCollabUpdate.mockClear();
+  expect((await POST(push({ updates: [above], epoch: 3 }), ctx)).status).toBe(400);
+  expect(mocks.appendCollabUpdate).not.toHaveBeenCalled();
+});
+
+it("accepts every bounded transaction of a paste that one insertion would refuse", async () => {
+  const { replaceSharedText } = await import("@/lib/collab/text-transactions");
+  const doc = new Y.Doc(), updates: string[] = [];
+  doc.on("update", (update) => updates.push(Buffer.from(update).toString("base64")));
+  replaceSharedText(doc.getText("body"), 0, 0, "😀漢".repeat(200_000), "paste");
+  expect(updates.length).toBeGreaterThan(1);
+  expect((await POST(push({ updates, epoch: 3 }), ctx)).status).toBe(200);
+  expect(mocks.appendCollabUpdate).toHaveBeenCalledTimes(updates.length);
+  const peer = new Y.Doc();
+  for (const [, update] of mocks.appendCollabUpdate.mock.calls) Y.applyUpdate(peer, Buffer.from(update, "base64"));
+  expect(peer.getText("body").toString()).toBe(doc.getText("body").toString());
+  doc.destroy(); peer.destroy();
+});

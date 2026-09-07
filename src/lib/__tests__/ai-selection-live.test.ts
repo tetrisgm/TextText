@@ -192,3 +192,40 @@ describe("independent source precondition at the live write boundary", () => {
     expect(mocks.execute).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("large live agent writes", () => {
+  it("appends bounded rows under one version fence with exactly one audit and receipt", async () => {
+    const { MAX_UPDATE_CHARS } = await import("@/lib/collab/limits");
+    const body = "😀漢".repeat(200_000);
+    const result = await applyLiveDocumentMutation(id, { body, operationId: "large-agent-write" }, audit);
+    expect(result).toMatchObject({ snapshot: { content: { body } }, auditRecorded: true, seq: 9 });
+    // One baseline preparation statement, then ONE atomic command append.
+    expect(mocks.execute).toHaveBeenCalledTimes(2);
+    const query = new PgDialect().sqlToQuery(mocks.execute.mock.calls.at(-1)![0]);
+    expect(query.sql).toContain("mutation_version =");
+    expect(query.sql).toContain("WITH ORDINALITY");
+    expect(query.sql).toContain("ORDER BY chunk.ordinal");
+    expect(query.sql).toContain("SELECT max(seq) AS seq FROM inserted HAVING count(*) > 0");
+    expect(query.sql.match(/INSERT INTO "action_audit"/g)).toHaveLength(1);
+    expect(query.sql).toContain("FROM appended");
+    const encoded = query.params.find((value) => typeof value === "string" && value.startsWith('["')) as string;
+    const updates = JSON.parse(encoded) as string[];
+    expect(updates.length).toBeGreaterThan(1);
+    const peer = new Y.Doc(); Y.applyUpdate(peer, Buffer.from(baseline, "base64"));
+    for (const update of updates) {
+      expect(update.length).toBeLessThan(MAX_UPDATE_CHARS);
+      Y.applyUpdate(peer, Buffer.from(update, "base64"));
+    }
+    expect(documentSnapshotFromYDoc(peer).content.body).toBe(body);
+    const { applyDocumentMutation } = await import("@/lib/collab/document");
+    expect(applyDocumentMutation(peer, { body, operationId: "large-agent-write" })).toBe(false);
+    peer.destroy();
+  });
+
+  it("does not append any of a rejected large guarded write", async () => {
+    const edit = await mutation(); edit.textRange.replacementText = "x".repeat(600_000);
+    mocks.execute.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] });
+    await expect(applyLiveDocumentMutation(id, edit, audit)).rejects.toThrow(SELECTION_STALE_ERROR);
+    expect(mocks.execute).toHaveBeenCalledTimes(2);
+  });
+});

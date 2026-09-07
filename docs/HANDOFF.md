@@ -5127,3 +5127,16 @@ settles, so the gate was reporting a network condition as a defective build.
 The installer now matches the documented policy: the report must still be this
 exact build and written after the install began, a `fail` still blocks, and a
 warning is printed with its checks and allowed through.
+
+Large pastes no longer stop the document. The relay's per-update ceiling now
+lives in `src/lib/collab/limits.ts` and is imported by the relay, the text
+writer and the server append boundary, and the insertion budget is derived from
+it so the two cannot drift apart. A very large insertion is applied through one
+shared bounded splice, each chunk its own Yjs transaction, so every entry point
+is covered at a choke point rather than caller by caller: native input and
+paste, the agent and assistant write path, full snapshot replacement and
+seeding, and pre-ready reconciliation. Undo keeps bounded stack items marked as
+one group, so redo cannot rebuild the oversized update. The quarantine path
+stays as the backstop for anything still refused. Tested with real Yjs,
+including a peer inserting inside the first received chunk while deleting the
+original text.
