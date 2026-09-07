@@ -5071,3 +5071,31 @@ Shipped: build 1063 (`feb33b1d`), deployment `dpl_GNyRzy8cs87NhuAiaFeJ61WyFeGu`,
 interaction 17 of 17, 43 Mac tests, 23 live workflow checks. This is round ten
 in production: spring driven motion, Mac platform depth with working Shortcuts,
 accessibility, first run and empty states, and the two data loss fixes.
+
+## 2026-09-07: verification of the merged result found six more
+
+The merged round ten had never been reviewed as a whole, so a verification pass
+ran against shipped build 1063 looking specifically at the seams. It found one
+P1 and five others, each with a failing test (`astra/out12/verify.md`, tests in
+`verify.diff`):
+
+- P1, text loss. Text typed before the document is ready is dropped when an
+  older recovery record arrives and blocks the editor. The pre-ready ledger is
+  never snapshotted as its own recovery copy.
+- Surfaces that are logically closed but still springing out stay interactive
+  and announced: not inert, not aria-hidden, focus not released. Tabbing during
+  the exit reaches a control that is on its way off screen.
+- Overlapping modals snapshot and restore each other's inert values, so the
+  background can end up permanently inert or wrongly interactive.
+- Retirement defaults its reason to document-changed, so an access loss or a
+  trashed item still produces "This document changed elsewhere" after a
+  restart. The same false claim as before, reached by a different path.
+- A reachable server that fails is labelled Offline, which is not true.
+- The look preview calls a document blank when it has a subtitle, fields or
+  tags, and shows canned example content instead of the person's own.
+
+An agent is fixing all six against those tests. Note for later: the false-cause
+family has now appeared three times through three different paths (the shared
+error line, the retirement default, and the original hardcoded heading). It is
+worth one deliberate pass that makes the recovery screen derive every word from
+a recorded cause, rather than fixing each new route as it appears.
