@@ -5041,3 +5041,11 @@ them in parallel on disjoint files, and two found more than the failure:
 - The accessibility test's React shim lacked `useLayoutEffect`, which motion
   introduces through three separate hooks, and a motion test destructured the
   tab children that accessibility had prepended a help span to.
+
+The interaction suite briefly read 15 of 17 after the merge, and neither was a
+regression. Both checks counted elements while an exit spring was still
+running: the command palette is invisible by about 300 ms after Escape but
+leaves the DOM at about 750 ms, and a closing tab stays mounted until it rests.
+The checks now wait for the palette to detach and count only tabs a person can
+reach (`.workspace-tab:not([inert])`, which is the same element the motion
+wrapper marks inert). Back to 17 of 17.

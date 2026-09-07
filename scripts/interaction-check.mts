@@ -141,7 +141,10 @@ await check("cmd+k opens the palette and escape closes it", async () => {
   await pause(800);
   const open = await page.locator(".command-palette").count();
   await page.keyboard.press("Escape");
-  await pause(600);
+  // The palette fades out under a spring and leaves the DOM when it rests, so
+  // wait for the element to go rather than sampling mid-exit. It is invisible
+  // to a person well before this; what is asserted here is that it really goes.
+  await page.locator(".command-palette").waitFor({ state: "detached", timeout: 4000 }).catch(() => {});
   const closed = await page.locator(".command-palette").count();
   return open === 1 && closed === 0 ? "opened and closed" : `FAIL ${open}/${closed}`;
 });
@@ -169,14 +172,18 @@ await check("shift+cmd+L cycles the appearance", async () => {
 });
 
 await check("opening a second item makes a second tab", async () => {
+  // Count only the tabs a person can see and reach. A closing tab stays in the
+  // DOM until its exit spring rests, and counting those makes the number
+  // depend on how fast the machine is rather than on what happened.
+  const present = () => page.locator(".workspace-tab:not([inert])").count();
   await rows().nth(1).click();
   await pause(2000);
-  const one = await page.locator(".workspace-tab").count();
+  const one = await present();
   await page.keyboard.press("Backspace");
   await pause(1400);
   await rows().nth(3).click();
   await pause(2000);
-  const two = await page.locator(".workspace-tab").count();
+  const two = await present();
   return two >= one ? `${one} then ${two} tabs` : `FAIL ${one} then ${two}`;
 });
 
