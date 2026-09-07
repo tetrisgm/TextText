@@ -22,6 +22,7 @@ class Control {
   querySelectorAll(): Control[] { return this.children.flatMap(child => [child, ...child.querySelectorAll()]); }
   getClientRects() { return this.visible ? [{}] : []; }
   toggleAttribute(name: string, value: boolean) { if (name === "inert") this.inert = value; }
+  getAttribute(name: string) { return this.attributes.get(name) ?? null; }
   hasAttribute(name: string) { return this.attributes.has(name); }
   focus() { if (!this.isConnected || this.disabled || this.closest('[inert]')) return; doc.activeElement = this; }
 }
@@ -134,4 +135,28 @@ it("Escape closes the nearest open disclosure and returns focus to its summary",
   expect(dismissOpenDetails(input as unknown as EventTarget, event)).toBe(true);
   expect(details.open).toBe(false); expect(doc.activeElement).toBe(summary);
   expect(event.preventDefault).toHaveBeenCalledOnce(); expect(event.stopPropagation).toHaveBeenCalledOnce();
+});
+
+
+it.each(["upper", "lower"])("overlapping modal branches restore only their original inert values when %s closes first", first => {
+  const trigger = new Control("trigger"), permanent = new Control("permanent"); permanent.inert = true;
+  const lower = new Control("lower").append(new Control("lower close"));
+  const upper = new Control("upper").append(new Control("upper close"));
+  const upperBranch = new Control("portal").append(upper);
+  doc.body.append(trigger, permanent, lower, upperBranch); trigger.focus();
+  const closeLower = mount(lower); expect(upperBranch.inert).toBe(true);
+  const closeUpper = mount(upper); expect(upperBranch.inert).toBe(false);
+  expect(doc.activeElement).toBe(upper.children[0]);
+  if (first === "lower") { closeLower(); expect(trigger.inert).toBe(true); closeUpper(); }
+  else { closeUpper(); expect(trigger.inert).toBe(true); closeLower(); }
+  expect(trigger.inert).toBe(false); expect(permanent.inert).toBe(true); expect(upperBranch.inert).toBe(false);
+});
+
+it("keeps a logically closed lower surface inert after the upper modal exits", () => {
+  const lower = new Control("lower").append(new Control("lower close"));
+  const upper = new Control("upper").append(new Control("upper close"));
+  doc.body.append(lower, upper); const closeLower = mount(lower), closeUpper = mount(upper);
+  lower.attributes.set("aria-hidden", "true"); lower.inert = true;
+  closeLower(); closeUpper();
+  expect(lower.inert).toBe(true); expect(upper.inert).toBe(false);
 });

@@ -5,6 +5,7 @@
 // monolith.
 
 
+import { isDocumentBlank } from "@/components/document/TemplateGallery";
 import {
   useCallback,
   useEffect,
@@ -305,9 +306,7 @@ export function WorkspacePostReader({
         onSearchValueChange={setFindQuery}
         onBookmarkContentModeChange={setBookmarkContentMode}
       />
-      {document && !document.content.title.trim() && !document.content.body.trim() &&
-        !document.content.subtitle?.trim() && !document.content.assets.length && !document.content.tags.length &&
-        Object.values(document.content.fields).every((value) => value == null || value === "" || (Array.isArray(value) && value.length === 0)) && (
+      {document && isDocumentBlank(document) && (
         <div className="workspace-post-body-status">
           <p>This document is empty. {canManagePost ? "Start writing to add its first words." : "Its author has not added any text yet."}</p>
           {canManagePost && <button type="button" className="ac-btn ac-btn-gray" onClick={() => void onNavigate(blogWorkspacePostEditPath(blog, folderPathForPoolPost(pool, poolPost), post))}>Start writing</button>}

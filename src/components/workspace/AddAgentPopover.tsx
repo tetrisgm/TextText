@@ -41,8 +41,7 @@ export function AddAgentPopover({ handle, postId, marks, grants, loadError, relo
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const popover = useRef<HTMLDivElement>(null);
-  const { close: closePopover, open: openPopover } = usePopoverMotion(popover, trigger);
-  const [open, setOpen] = useState(false);
+  const { close: closePopover, open: openPopover, logicalOpen: open, present } = usePopoverMotion(popover, trigger);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   useEscapeLayer(open, "Add agent", closePopover);
   useEffect(() => {
@@ -73,13 +72,13 @@ export function AddAgentPopover({ handle, postId, marks, grants, loadError, relo
         reload();
       }}
       onToggle={(event) => {
-        const next = event.newState === "open"; setOpen(next);
-        if (next) popover.current?.querySelector<HTMLButtonElement>("button")?.focus();
+        const next = event.newState === "open";
+        if (next && open) popover.current?.querySelector<HTMLButtonElement>("button")?.focus();
         else if (document.activeElement === document.body || popover.current?.contains(document.activeElement)) trigger.current?.focus();
       }}>
       <div className={styles.header}><strong id={`${id}-title`}>Add agent</strong>
         <button autoFocus type="button" className={styles.close} aria-label="Close add agent" onClick={closePopover}>×</button></div>
-      {open && <ConnectionForm handle={handle} postId={postId} marks={marks} reload={reload} />}
+      {present && <ConnectionForm handle={handle} postId={postId} marks={marks} reload={reload} />}
       {loadError && <div><p role="alert">Item connections could not be loaded.</p><button type="button" className={styles.action} onClick={reload}>Refresh connections</button></div>}
       {grants.length > 0 && <div className={styles.history}><strong>Item connections</strong>
         {grants.map((grant) => <section key={grant.id}>

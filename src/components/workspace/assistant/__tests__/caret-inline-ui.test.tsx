@@ -21,7 +21,7 @@ function compile(source: string, dependencies: Record<string, unknown>) {
 function component(name: string, hooks: object) {
   const exports: Record<string, unknown> = {};
   const modules: Record<string, unknown> = {
-    "@/lib/motion/react": { useExitMotion: (_ref: unknown, close: () => void) => close },
+    "@/lib/motion/react": { useExitMotion: (_ref: unknown, close: () => void) => Object.assign(close, { open: true, closing: false }) },
     react: hooks, "react/jsx-runtime": jsx, "./inline-preview": inline,
     "@/lib/ai/quick-actions": quick, "@/lib/ai/selection-envelope": envelopes,
     "@/components/document/inline-selection-surface": surfaces,

@@ -45,6 +45,7 @@ import { AiConnectionSettings } from "../AiConnectionSettings";
 import { AssistantConversation } from "../assistant/AssistantConversation";
 import { emptyDocumentSnapshot, type DocumentSnapshot } from "@/lib/documents/model";
 import { getBuiltinTemplate } from "@/lib/presentation/templates";
+import { isDocumentBlank } from "@/components/document/TemplateGallery";
 import { EditorSaveNotice, editorSaveLabel } from "@/components/document/EditorSaveNotice";
 import ErrorPage from "@/app/error";
 import GlobalError from "@/app/global-error";
@@ -204,5 +205,15 @@ describe("document emptiness", () => {
   ] as Partial<DocumentSnapshot["content"]>[])("does not label meaningful content empty: %j", content => {
     const document = { ...emptyPost.document, content: { ...emptyPost.document.content, ...content } };
     expect(render(reader(document))).not.toContain("This document is empty.");
+    expect(isDocumentBlank(document)).toBe(false);
   });
+});
+
+
+it("unconfirmed catch-up does not diagnose an offline connection or a failed save", () => {
+  expect(editorSaveLabel("unconfirmed", true)).toBe("Connection not confirmed");
+  const html = render(<EditorSaveNotice state="unconfirmed" onRetry={vi.fn()} />);
+  expect(html).toContain("The connection has not been confirmed.");
+  expect(html).not.toContain("You are offline"); expect(html).not.toContain("failed");
+  expect(html).not.toContain("Reconnect");
 });

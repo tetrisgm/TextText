@@ -1,8 +1,10 @@
 import type { DocumentSnapshot } from "@/lib/documents/model";
 
-export type RecoveryReason = "document-changed" | "sync-rejected" | "outbox-conflict";
+export type RecoveryReason = "document-changed" | "sync-rejected" | "outbox-conflict" | "access-lost" | "trashed" | "local-recovery";
 
 export function recoveryHeading(copies: Pick<MaterializationRecovery, "reason">[]): string {
+  if (copies.some((copy) => copy.reason === "trashed")) return "This document was moved to Trash";
+  if (copies.some((copy) => copy.reason === "access-lost")) return "Access to this document was lost";
   if (copies.some((copy) => copy.reason === "sync-rejected")) return "These edits could not be synced";
   if (copies.length && copies.every((copy) => copy.reason === "document-changed")) return "This document changed elsewhere";
   return "Your local edits need recovery";

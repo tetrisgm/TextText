@@ -3,6 +3,26 @@
 import { useEffect, type RefObject } from "react";
 
 const dialogs: HTMLElement[] = [];
+// Baselines belong to the manager, never to another modal's temporary snapshot.
+const inertBaselines = new Map<HTMLElement, boolean>();
+function updateModalInert() {
+  for (const [element, original] of inertBaselines) {
+    element.toggleAttribute("inert", original || element.getAttribute?.("aria-hidden") === "true");
+  }
+  const root = dialogs.at(-1);
+  if (!root) { inertBaselines.clear(); return; }
+  // Only the top modal defines the blocked branches, so it cannot inherit an
+  // inert ancestor installed by a lower dialog, including non-LIFO exits.
+  for (let branch: HTMLElement = root; branch.parentElement; branch = branch.parentElement) {
+    for (const sibling of branch.parentElement.children) {
+      if (sibling !== branch && sibling instanceof HTMLElement && !sibling.contains(root)) {
+        if (!inertBaselines.has(sibling)) inertBaselines.set(sibling, sibling.inert);
+        sibling.toggleAttribute("inert", true);
+      }
+    }
+    if (branch.parentElement === document.body) break;
+  }
+}
 const selector = 'button, a[href], input, select, textarea, summary, [tabindex], [contenteditable="true"]';
 
 export function dialogControls(root: HTMLElement): HTMLElement[] {
@@ -21,17 +41,8 @@ export function useDialogFocus(ref: RefObject<HTMLElement | null>, open: boolean
     if (!open || !root) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const returnRegion = previous?.closest<HTMLElement>('main, [role="main"], nav, aside');
-    const inert: Array<[HTMLElement, boolean]> = [];
-    for (let branch: HTMLElement = root; branch.parentElement; branch = branch.parentElement) {
-      for (const sibling of branch.parentElement.children) {
-        if (sibling !== branch && sibling instanceof HTMLElement && !sibling.contains(root)) {
-          inert.push([sibling, sibling.inert]);
-          sibling.toggleAttribute("inert", true);
-        }
-      }
-      if (branch.parentElement === document.body) break;
-    }
     dialogs.push(root);
+    updateModalInert();
     const top = () => dialogs.at(-1) === root;
     const focusFirst = () => (dialogControls(root)[0] ?? root).focus({ preventScroll: true });
     if (!root.hasAttribute('tabindex')) root.tabIndex = -1;
@@ -61,7 +72,7 @@ export function useDialogFocus(ref: RefObject<HTMLElement | null>, open: boolean
       document.removeEventListener('focusin', focusin);
       const wasTop = top();
       dialogs.splice(dialogs.indexOf(root), 1);
-      for (const [element, value] of inert) element.toggleAttribute("inert", value);
+      updateModalInert();
       if (!wasTop) return;
       // A command may deliberately focus its destination before this cleanup.
       const active = document.activeElement;

@@ -23,6 +23,7 @@ interface TestElement extends EventTarget {
   children: TestElement[]; className: string; isConnected: boolean;
   ownerDocument: { createElement: () => TestElement; body: null; documentElement: null };
   getBoundingClientRect: () => { left: number; top: number; width: number; height: number; right: number; bottom: number };
+  getAttribute: (name: string) => string | null;
   setAttribute: (name: string, value: string) => void; hasAttribute: (name: string) => boolean;
   closest: (selector: string) => TestElement | null;
   appendChild: (child: TestElement) => void; remove: ReturnType<typeof vi.fn>;
@@ -43,6 +44,7 @@ export function element(rect = { left: 100, top: 80, width: 360, height: 200 }):
     style: style as TestElement["style"], writes, dataset: {} as Record<string, string>, children, className: "", isConnected: true,
     ownerDocument: { createElement: () => element(), body: null, documentElement: null },
     getBoundingClientRect: () => ({ ...rect, right: rect.left + rect.width, bottom: rect.top + rect.height }),
+    getAttribute: (name: string) => attrs.get(name) ?? null,
     setAttribute: (name: string, value: string) => { attrs.set(name, value); },
     hasAttribute: (name: string) => attrs.has(name),
     closest: (): TestElement | null => null,

@@ -7,7 +7,7 @@
 import { decodePresenceAwareness, encodePresenceAwareness } from "@/lib/collab/presence-awareness";
 import * as Y from "yjs";
 import { documentSnapshotFromYDoc, hasDocumentSnapshot } from "@/lib/collab/document";
-import type { MaterializationRecovery, RecoveryReason } from "@/lib/collab/materialization-recovery";
+import { readMaterializationRecoveries, type MaterializationRecovery, type RecoveryReason } from "@/lib/collab/materialization-recovery";
 import {
   applyAwarenessUpdate,
   encodeAwarenessUpdate,
@@ -87,7 +87,7 @@ export type PresencePeer = {
 
 type CollabStartResult =
   | { authoritative: true; remoteEmpty: boolean; baselineRevision: number }
-  | { authoritative: false; remoteEmpty: false };
+  | { authoritative: false; remoteEmpty: false; failure?: "offline" | "server" | "unconfirmed" };
 
 type CollabProviderOptions = {
   postId: string;
@@ -104,7 +104,7 @@ type CollabProviderOptions = {
   /** The local stream stopped and must be preserved for explicit recovery.
    * The reason distinguishes a server generation change from a rejected push. */
   onRetired?: (epoch: number, reason: RecoveryReason) => void;
-  onAccessLost?: (message: string) => void;
+  onAccessLost?: (message: string, reason: RecoveryReason) => void;
   onRecovery?: (copies: MaterializationRecovery[], durable: boolean) => void;
 };
 
@@ -308,6 +308,13 @@ export async function readRetiredOutboxes(postId: string): Promise<{
   return { copies: entries.map(({ record }) => record.copy), durable: entries.every((entry) => entry.durable) };
 }
 
+/** Reopening must offer both the typing ledger and the older retired stream. */
+export async function readDocumentRecoveries(postId: string) {
+  const retired = await readRetiredOutboxes(postId);
+  const local = readMaterializationRecoveries(postId);
+  return { copies: [...local, ...retired.copies.filter((copy) => !local.some((saved) => saved.id === copy.id))], durable: retired.durable };
+}
+
 /** Only the explicit download/open-current-version UI acknowledges quarantine. */
 export async function acknowledgeRetiredOutboxes(copies: MaterializationRecovery[]): Promise<boolean> {
   const selected = copies.filter((copy) => copy.outboxKey);
@@ -413,7 +420,7 @@ function removePendingBatch(outbox: Outbox, batch: Uint8Array[]) {
   }
 }
 
-async function retireOutbox(outbox: Outbox, epoch: number, reason: RecoveryReason = "document-changed"): Promise<void> {
+async function retireOutbox(outbox: Outbox, epoch: number, reason: RecoveryReason): Promise<void> {
   if (outbox.retirementWrite) return outbox.retirementWrite;
   const previousEpoch = outbox.epoch;
   const postId = Array.from(outboxes.entries()).find(([, value]) => value === outbox)?.[0];
@@ -537,7 +544,7 @@ async function flushOutbox(postId: string, outbox: Outbox) {
         // posts.body). Quarantine stale edits so they cannot merge over the
         // reseeded body, and tell every provider on
         // this post to offer recovery before opening a fresh doc.
-        await retireOutbox(outbox, typeof data.epoch === "number" ? data.epoch : batchEpoch);
+        await retireOutbox(outbox, typeof data.epoch === "number" ? data.epoch : batchEpoch, "document-changed");
       } else {
         // Only an acknowledged push removes edits. Remove the exact update
         // objects in this request, preserving newer edits queued in flight.
@@ -553,7 +560,7 @@ async function flushOutbox(postId: string, outbox: Outbox) {
       for (const sub of [...outbox.subscribers.values()]) {
         try { sub.onFatal?.(res.status); } catch { /* Continue other teardowns. */ }
       }
-      await retireOutbox(outbox, outbox.epoch);
+      await retireOutbox(outbox, outbox.epoch, res.status === 410 ? "trashed" : "access-lost");
     } else if (isPermanentPushError(res.status)) {
       // Later Yjs operations may depend on this batch's missing clocks. Freeze
       // the whole stream and preserve all pending work plus its dependencies,
@@ -663,9 +670,9 @@ export class CollabProvider implements CollaborationTransport {
     if (response.status === 409 && !this.materializationBlocked && this.outbox) {
       // Stop relay pushes as well. The subscriber preserves the live Y.Doc,
       // including edits made after this request was encoded.
-      if (this.outbox.epoch === epoch) await retireOutbox(this.outbox, epoch);
+      if (this.outbox.epoch === epoch) await retireOutbox(this.outbox, epoch, "document-changed");
       // Unmount already removed this subscriber; still preserve its rejected state.
-      if (!this.materializationBlocked) this.retireDocument(epoch);
+      if (!this.materializationBlocked) this.retireDocument(epoch, "document-changed");
     }
     return response;
   }
@@ -675,7 +682,7 @@ export class CollabProvider implements CollaborationTransport {
     this.accessLost = true;
     const message = accessLossMessage(status);
     try {
-      this.opts.onAccessLost?.(message);
+      this.opts.onAccessLost?.(message, status === 410 ? "trashed" : "access-lost");
       this.opts.onError?.(message);
     } finally {
       const outbox = this.outbox;
@@ -684,12 +691,12 @@ export class CollabProvider implements CollaborationTransport {
         for (const sub of [...outbox.subscribers.values()]) {
           try { sub.onFatal?.(status); } catch { /* Continue other teardowns. */ }
         }
-        void retireOutbox(outbox, outbox.epoch);
+        void retireOutbox(outbox, outbox.epoch, status === 410 ? "trashed" : "access-lost");
       }
     }
   }
 
-  private retireDocument(epoch: number, reason: RecoveryReason = "document-changed"): void {
+  private retireDocument(epoch: number, reason: RecoveryReason): void {
     this.retiredEpoch = this.documentEpoch ?? epoch;
     try {
       this.opts.onRetired?.(this.retiredEpoch, reason);
@@ -1014,7 +1021,7 @@ export class CollabProvider implements CollaborationTransport {
   private async finishStart(outbox: Outbox): Promise<CollabStartResult> {
     await outbox.hydrated;
     if (outbox.retirementWrite) await outbox.retirementWrite;
-    const recovery = await readRetiredOutboxes(this.opts.postId);
+    const recovery = await readDocumentRecoveries(this.opts.postId);
     if (recovery.copies.length) {
       this.retiredEpoch = recovery.copies[0].epoch ?? outbox.epoch;
       this.opts.onRecovery?.(recovery.copies, recovery.durable);
@@ -1120,6 +1127,7 @@ export class CollabProvider implements CollaborationTransport {
     const signal = this.abort.signal;
     const obsolete = () => this.stopped || signal.aborted || generation !== this.networkGeneration;
     let sawRemoteUpdate = false;
+    let reachedServer = false;
     let baselineRevision: number | null = null;
     try {
       while (!obsolete()) {
@@ -1133,13 +1141,14 @@ export class CollabProvider implements CollaborationTransport {
               : undefined,
           },
         );
+        reachedServer = true;
         if (obsolete()) return { authoritative: false, remoteEmpty: false };
         if (isAccessLoss(res.status)) {
           this.loseAccess(res.status);
           return { authoritative: false, remoteEmpty: false };
         }
         if (!res.ok) {
-          return { authoritative: false, remoteEmpty: false };
+          return { authoritative: false, remoteEmpty: false, failure: "server" };
         }
         const data = (await res.json()) as {
           updates?: unknown;
@@ -1164,7 +1173,7 @@ export class CollabProvider implements CollaborationTransport {
               ? data.epoch
               : 0;
           if (this.outbox.epochKnown && responseEpoch !== this.outbox.epoch) {
-            await retireOutbox(this.outbox, responseEpoch);
+            await retireOutbox(this.outbox, responseEpoch, "document-changed");
             return { authoritative: false, remoteEmpty: false };
           }
           this.outbox.epoch = responseEpoch;
@@ -1209,7 +1218,9 @@ export class CollabProvider implements CollaborationTransport {
         }
       }
     } catch {
-      // Offline start: the editor still works locally; polling retries.
+      // A transport failure is not evidence of offline status by itself.
+      return { authoritative: false, remoteEmpty: false,
+        failure: reachedServer ? "server" : typeof navigator !== "undefined" && navigator.onLine === false ? "offline" : "unconfirmed" };
     }
     return { authoritative: false, remoteEmpty: false };
   }
@@ -1265,7 +1276,7 @@ export class CollabProvider implements CollaborationTransport {
             this.documentEpoch = data.epoch;
             scheduleOutbox(this.opts.postId, this.outbox, 0);
           } else if (data.epoch !== this.outbox.epoch) {
-            await retireOutbox(this.outbox, data.epoch);
+            await retireOutbox(this.outbox, data.epoch, "document-changed");
             return;
           }
           this.documentEpoch ??= data.epoch;

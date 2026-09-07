@@ -66,6 +66,9 @@ export function InlineSelectionPreview({ controller, surface, readSelection, onC
   const [instruction, setInstruction] = useState("");
   const surfaceRef = useRef(surface);
   const changing = state.status === "applying";
+  useLayoutEffect(() => {
+    if (closePreview.closing) surfaceRef.current.restore();
+  }, [closePreview.closing]);
   const discard = () => {
     if (!controller.discard()) return;
     closePreview();
@@ -142,9 +145,10 @@ export function InlineSelectionPreview({ controller, surface, readSelection, onC
   }, [controller, state.itemId, state.envelope, surface]);
 
   return (
-    <div ref={ref} style={{ transformOrigin: "0 0" }} tabIndex={0} role="region" aria-label="Selection preview"
+    <div ref={ref} style={{ transformOrigin: "0 0" }} tabIndex={closePreview.open ? 0 : -1} inert={closePreview.closing} aria-hidden={closePreview.closing} role="region" aria-label="Selection preview"
       className={`${styles.palette} ${styles.preview}`} data-state={state.status}
       onKeyDown={(event) => {
+        if (!closePreview.open) return;
         // Local handler only: document Cmd+Enter must never accept a preview.
         const action = previewKeyAction(event.key, event.metaKey, event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229, state.status);
         if (!action) return;
@@ -165,14 +169,14 @@ export function InlineSelectionPreview({ controller, surface, readSelection, onC
         </button>
       </div>
       <div className={styles.body} aria-live="off">{state.text}</div>
-      <div className={styles.status} role="status" aria-live="polite" aria-atomic="true">{INLINE_STATUS_LABELS[state.status]}</div>
+      <div className={styles.status} role={closePreview.open ? "status" : undefined} aria-live={closePreview.open ? "polite" : "off"} aria-atomic="true">{INLINE_STATUS_LABELS[state.status]}</div>
       {state.error && <div className={styles.error}>{state.error}</div>}
       <div className={styles.actions}>
         {state.status === "generating" && <button type="button" onClick={() => controller.stop()}>Stop</button>}
         {(state.status === "ready" || changing) && <button type="button" disabled={changing} onClick={() => void controller.accept()}>
           {changing ? "Applying" : state.action === "summarize" ? "Insert below" : "Accept"}
         </button>}
-        {state.status === "applied" && <button type="button" disabled={state.uncertain} onClick={() => void controller.undo()}>Undo</button>}
+        {state.status === "applied" && <button type="button" disabled={closePreview.closing || state.uncertain} onClick={() => void controller.undo()}>Undo</button>}
         {(state.status === "ready" || state.status === "failed" || state.status === "stale" || changing) &&
           <button type="button" disabled={changing} onClick={discard}>Discard</button>}
         {state.status === "ready" && state.action === "summarize" &&

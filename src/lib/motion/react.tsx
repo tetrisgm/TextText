@@ -40,14 +40,20 @@ export function useSurfaceMotion(ref: RefObject<HTMLElement | null>, open: boole
   return control;
 }
 
-/** For surfaces whose owner unmounts them on close. No timer and no input lock. */
+/** Logical closure releases interaction while the presentation finishes its spring. */
 export function useExitMotion(ref: RefObject<HTMLElement | null>, onClose: () => void, options: {
   mounted?: boolean; visible?: boolean; origin?: RefObject<MotionOrigin | null>; identity?: unknown;
 } = {}) {
   const [open, setOpen] = useState(true);
   const [identity, setIdentity] = useState(options.identity);
   if (identity !== options.identity) { setIdentity(options.identity); setOpen(true); }
+  const logicalOpen = open && (options.visible ?? true);
   const close = useCallback(() => setOpen(false), []);
-  useSurfaceMotion(ref, open && (options.visible ?? true), { ...options, onRest: (shown) => { if (!shown) onClose(); } });
-  return close;
+  useLayoutEffect(() => {
+    if (!ref.current) return;
+    ref.current.inert = !logicalOpen;
+    ref.current.setAttribute("aria-hidden", String(!logicalOpen));
+  }, [ref, logicalOpen, options.mounted]);
+  useSurfaceMotion(ref, logicalOpen, { ...options, onRest: (shown) => { if (!shown) onClose(); } });
+  return Object.assign(close, { open: logicalOpen, closing: !logicalOpen });
 }

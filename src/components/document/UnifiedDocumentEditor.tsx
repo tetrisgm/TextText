@@ -87,7 +87,7 @@ export type UnifiedEditorCollab = {
   canEdit: boolean;
 };
 
-type SaveState = "local" | "saving" | "saved" | "offline" | "error";
+type SaveState = "local" | "saving" | "saved" | "offline" | "error" | "unconfirmed";
 type EditableField = "title" | "subtitle" | "body";
 
 type RemoteSelection = {
@@ -688,20 +688,8 @@ export function UnifiedDocumentEditor({
   // recovery did not have.
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const [accessLoss, setAccessLoss] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    const copies = readMaterializationRecoveries(collab.postId);
-    if (copies.length) {
-      recoveryBlockedRef.current = true;
-      queueMicrotask(() => {
-        if (!cancelled) setRecoveryCopies(copies);
-      });
-    }
-    return () => { cancelled = true; };
-  }, [collab.postId]);
   const preserveRecovery = useCallback((epoch: number, reason?: RecoveryReason) => {
     if (recoveryBlockedRef.current) return;
-    recoveryBlockedRef.current = true;
     const copy: MaterializationRecovery = {
       id: crypto.randomUUID(),
       postId: collab.postId,
@@ -711,12 +699,29 @@ export function UnifiedDocumentEditor({
       document: preReadyLocalRef.current ?? (hasDocumentSnapshot(doc)
         ? documentSnapshotFromYDoc(doc) : documentRef.current),
     };
-    setRecoveryDurable(keepMaterializationRecovery(copy));
+    const durable = keepMaterializationRecovery(copy);
+    recoveryBlockedRef.current = true;
+    setRecoveryDurable(durable);
     setRecoveryCopies([copy]);
     setSaveState("error");
     setError(`${recoveryHeading([copy])}. Download your local copy before reopening.`);
+    return { copy, durable };
   }, [collab.postId, doc]);
   const materializeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    // Networked editors discover both stores together through provider startup.
+    if (networkEnabled) return;
+    let cancelled = false;
+    const copies = readMaterializationRecoveries(collab.postId);
+    if (copies.length) {
+      if (preReadyLocalRef.current) preserveRecovery(copies[0].epoch ?? 0, "local-recovery");
+      recoveryBlockedRef.current = true;
+      queueMicrotask(() => {
+        if (!cancelled) setRecoveryCopies((previous) => [...previous, ...copies]);
+      });
+    }
+    return () => { cancelled = true; };
+  }, [collab.postId, networkEnabled, preserveRecovery]);
   const materializeQueueRef = useRef(Promise.resolve());
   // Every CRDT mutation invalidates requests encoded before it, including
   // remote edits and mutations while another request is queued or in flight.
@@ -929,17 +934,20 @@ export function UnifiedDocumentEditor({
         }
       },
       onRetired: preserveRecovery,
-      onAccessLost: (message) => {
+      onAccessLost: (message, reason) => {
         if (cancelled) return;
-        preserveRecovery(provider.learnedEpoch ?? 0);
+        preserveRecovery(provider.learnedEpoch ?? 0, reason);
         setAccessLoss(message);
         setError(message);
       },
       onRecovery: (copies, durable) => {
+        // Persist the independent typing ledger before recovery takes ownership.
+        const local = preReadyLocalRef.current
+          ? preserveRecovery(copies[0]?.epoch ?? 0, "local-recovery") : undefined;
         recoveryBlockedRef.current = true;
         if (!cancelled) {
-          setRecoveryCopies(copies);
-          setRecoveryDurable(durable);
+          setRecoveryCopies((previous) => [...previous, ...copies.filter((copy) => !previous.some((saved) => saved.id === copy.id))]);
+          setRecoveryDurable((previous) => previous && durable && (local?.durable ?? true));
           setSaveState("error");
         }
       },
@@ -1053,7 +1061,7 @@ export function UnifiedDocumentEditor({
       publishDocument(documentSnapshotFromYDoc(doc));
       readyRef.current = true;
       setReady(true);
-      setSaveState(!result.authoritative ? "offline" :
+      setSaveState(!result.authoritative ? result.failure === "offline" ? "offline" : result.failure === "server" ? "error" : "unconfirmed" :
         localMaterializationVersionRef.current > savedMaterializationVersionRef.current ? "local" : "saved");
     });
 
@@ -1369,9 +1377,7 @@ export function UnifiedDocumentEditor({
       <section className="tt-unified-editor tt-baseline-failure" role="alert">
         <div className="tt-baseline-failure-copy">
           <h1>{accessLoss ?? recoveryHeading(recoveryCopies)}</h1>
-          <p>{accessLoss
-            ? "Editing has stopped. Ask the owner for access before reopening the document."
-            : "Editing has stopped so none of your text is lost."}</p>
+          <p>Editing has stopped. Download the recovery copies before reopening.</p>
           <p>{recoveryDurable
             ? "Your local copy is kept on this device. Download it to recover your edits."
             : "Device storage is unavailable. Download your local copy before closing this page."}</p>

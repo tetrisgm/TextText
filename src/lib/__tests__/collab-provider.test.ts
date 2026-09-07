@@ -266,6 +266,7 @@ describe("CollabProvider startup and outbox", () => {
     await expect(provider.start()).resolves.toEqual({
       authoritative: false,
       remoteEmpty: false,
+      failure: "server",
     });
     provider.destroy();
   });
@@ -983,4 +984,20 @@ it.each([401, 403, 410])("materialization %s preserves text, signals recovery, a
     await vi.advanceTimersByTimeAsync(60_000);
     expect(fetcher.mock.calls).toHaveLength(calls);
   } finally { provider.destroy(); doc.destroy(); }
+});
+
+
+it.each([
+  [true, "transport", "unconfirmed"], [false, "transport", "offline"],
+  [true, "503", "server"], [false, "503", "server"], [false, "invalid-json", "server"],
+] as const)("classifies catch-up with online=%s and response=%s as %s", async (online, response, failure) => {
+  vi.useFakeTimers(); vi.stubGlobal("navigator", { onLine: online });
+  vi.stubGlobal("fetch", vi.fn(async () => {
+    if (response === "transport") throw new TypeError("Network request failed");
+    return new Response(response === "503" ? "Unavailable" : "invalid-json", { status: response === "503" ? 503 : 200 });
+  }));
+  const doc = new Y.Doc();
+  const provider = new CollabProvider(doc, { postId: `failure-${online}-${response}`, userName: "QA", color: "#000000", canPush: false, presence: false });
+  try { expect(await provider.start()).toEqual({ authoritative: false, remoteEmpty: false, failure }); }
+  finally { provider.destroy(); doc.destroy(); }
 });

@@ -23,6 +23,8 @@ import { DocumentRenderer } from "./DocumentRenderer";
 import { useDialogFocus } from "@/components/accessibility/useDialogFocus";
 import styles from "./TemplateGallery.module.css";
 
+export { isBlank as isDocumentBlank };
+
 function exampleFor(template: TemplateDefinition): DocumentSnapshot {
   const exemplar = exemplarFor(template.id);
   const example = template.example;
@@ -47,6 +49,9 @@ function isBlank(document: DocumentSnapshot): boolean {
   return (
     !document.content.title.trim() &&
     !document.content.body.trim() &&
+    !document.content.subtitle?.trim() &&
+    !document.content.tags.length &&
+    Object.values(document.content.fields).every((value) => value == null || value === "" || (Array.isArray(value) && value.length === 0)) &&
     !document.content.assets.length
   );
 }
@@ -141,7 +146,7 @@ export function TemplateGallery({
   );
   // One ref for the backdrop: the exit spring and the focus trap share it.
   // It is declared above useExitMotion, which needs it first.
-  useDialogFocus(motionRef, true);
+  useDialogFocus(motionRef, onClose.open);
   const cardRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const backRef = useRef<HTMLButtonElement>(null);
   const continueRef = useRef<HTMLButtonElement>(null);
@@ -154,6 +159,7 @@ export function TemplateGallery({
     : null;
 
   useEffect(() => {
+    if (!onClose.open) return;
     const bodyOverflow = window.document.body.style.overflow;
     const rootOverflow = window.document.documentElement.style.overflow;
     window.document.body.style.overflow = "hidden";
@@ -162,7 +168,7 @@ export function TemplateGallery({
       window.document.body.style.overflow = bodyOverflow;
       window.document.documentElement.style.overflow = rootOverflow;
     };
-  }, []);
+  }, [onClose.open]);
 
   const openPreview = useCallback((template: TemplateDefinition) => {
     setPreview(template);
@@ -191,6 +197,7 @@ export function TemplateGallery({
   }, [importDraft, onClose, preview]);
 
   useEffect(() => {
+    if (!onClose.open) return;
     const handle = (event: globalThis.KeyboardEvent) => {
       if (event.key !== "Escape" && event.key !== "Backspace") return;
       const target = event.target as HTMLElement | null;
@@ -201,7 +208,7 @@ export function TemplateGallery({
     };
     window.addEventListener("keydown", handle, true);
     return () => window.removeEventListener("keydown", handle, true);
-  }, [back]);
+  }, [back, onClose.open]);
 
   const handleGridKey = (event: KeyboardEvent<HTMLDivElement>) => {
     const columns = window.matchMedia("(max-width: 620px)").matches

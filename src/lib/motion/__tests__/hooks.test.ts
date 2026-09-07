@@ -162,3 +162,46 @@ it("gives the shortcuts sheet its own rightward path when the open palette chang
   expect(node.style.transform).toMatch(/^translateX/); expect(Number(node.style.opacity)).toBeGreaterThan(0);
   h.time.settle(); expect(node.style.transform).toBe("translateX(0px)"); h.dispose();
 });
+
+it("exposes logical closure separately from presence and restores semantics on a replacement preview", () => {
+  preferences(); const h = harness(), node = element(), ref = { current: asElement(node) }, onClose = vi.fn();
+  type Exit = (() => void) & { open: boolean; closing: boolean };
+  const first = {}, second = {};
+  const close = h.render<Exit>("useExitMotion", ref, onClose, { identity: first });
+  h.time.settle(); expect(close.open).toBe(true); close();
+  const closing = h.render<Exit>("useExitMotion", ref, onClose, { identity: first });
+  expect(closing.closing).toBe(true); expect(closing.open).toBe(false);
+  expect(asElement(node).inert).toBe(true); expect(node.getAttribute("aria-hidden")).toBe("true");
+  expect(onClose).not.toHaveBeenCalled();
+  const reopened = h.render<Exit>("useExitMotion", ref, onClose, { identity: second });
+  expect(reopened.open).toBe(true); expect(reopened.closing).toBe(false);
+  expect(asElement(node).inert).toBe(false); expect(node.getAttribute("aria-hidden")).toBe("false");
+  h.time.settle(); expect(onClose).not.toHaveBeenCalled(); h.dispose();
+});
+
+it("native popover returns focus and aria ownership at logical close, preserving content until rest", () => {
+  preferences(); const h = harness("popover.ts"), node = element(), button = element();
+  vi.stubGlobal("requestAnimationFrame", h.time.clock.request); vi.stubGlobal("cancelAnimationFrame", h.time.clock.cancel);
+  const document = { activeElement: null as unknown }; vi.stubGlobal("document", document);
+  let nativeOpen = false;
+  Object.assign(node, { matches: () => nativeOpen, contains: (target: unknown) => target === node });
+  Object.assign(button, { focus: vi.fn(() => { document.activeElement = button; }) });
+  node.showPopover.mockImplementation(() => { nativeOpen = true; node.dispatchEvent(Object.assign(new Event("beforetoggle"), { newState: "open" })); });
+  node.hidePopover.mockImplementation(() => { nativeOpen = false; });
+  const ref = { current: node }, trigger = { current: button };
+  type Control = { open: () => void; close: () => void; logicalOpen: boolean; closing: boolean; present: boolean };
+  const control = h.render<Control>("usePopoverMotion", ref, trigger);
+  control.open(); h.time.settle(); document.activeElement = node; control.close();
+  const closing = h.render<Control>("usePopoverMotion", ref, trigger);
+  expect(document.activeElement).toBe(button);
+  expect(closing).toMatchObject({ logicalOpen: false, closing: true, present: true });
+  expect(button.getAttribute("aria-expanded")).toBe("false");
+  expect(node.getAttribute("aria-hidden")).toBe("true"); expect(asElement(node).inert).toBe(true);
+  expect(nativeOpen).toBe(true);
+  control.open();
+  expect(node.getAttribute("aria-hidden")).toBe("false"); expect(asElement(node).inert).toBe(false);
+  h.time.settle(); expect(nativeOpen).toBe(true);
+  control.close(); h.time.settle();
+  expect(h.render<Control>("usePopoverMotion", ref, trigger).present).toBe(false);
+  expect(nativeOpen).toBe(false); h.dispose();
+});

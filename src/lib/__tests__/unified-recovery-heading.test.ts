@@ -38,6 +38,9 @@ afterEach(() => vi.unstubAllGlobals());
 it.each([
   ["sync-rejected", "These edits could not be synced"],
   ["outbox-conflict", "Your local edits need recovery"],
+  ["access-lost", "Access to this document was lost"],
+  ["trashed", "This document was moved to Trash"],
+  ["local-recovery", "Your local edits need recovery"],
   ["document-changed", "This document changed elsewhere"],
   [undefined, "Your local edits need recovery"],
 ] as const)("renders truthful recovery copy for %s, including after reopening", (reason, heading) => {

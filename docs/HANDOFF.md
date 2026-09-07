@@ -5099,3 +5099,16 @@ family has now appeared three times through three different paths (the shared
 error line, the retirement default, and the original hardcoded heading). It is
 worth one deliberate pass that makes the recovery screen derive every word from
 a recorded cause, rather than fixing each new route as it appears.
+
+All six landed. Retirement functions now require an explicit cause rather than
+defaulting to document-changed, so the false-message family is closed
+structurally rather than one route at a time: epoch and materialization
+conflicts say document-changed, a rejected relay push says the edits could not
+sync, access rejection says access lost, and HTTP 410 says trashed. Pre-ready
+typing is snapshotted as its own recovery copy before the editor is blocked.
+Exit springs expose logical open and closing, and go inert and aria-hidden at
+logical close while staying mounted until they rest. Modal inert state is owned
+centrally and recomputed from the surviving stack. A failing but reachable
+server is no longer called offline. One blank-document predicate is now shared
+by the reader and the look preview, and it counts subtitle, tags, fields and
+assets, with zero and false preserved as real values.

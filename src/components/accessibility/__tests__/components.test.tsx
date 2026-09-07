@@ -23,7 +23,7 @@ vi.mock("@/components/keyboard/CommandLayer", () => ({ useEscapeLayer: vi.fn() }
 // own. Rest it at once: a dismissal is then observable in the same tick, as it
 // was before surfaces animated out, and onClose still means "the panel closed".
 vi.mock("@/lib/motion/react", async original => ({ ...await original<typeof import("@/lib/motion/react")>(),
-  useExitMotion: (_ref: unknown, onClose: () => void) => onClose,
+  useExitMotion: (_ref: unknown, onClose: () => void) => Object.assign(onClose, { open: true, closing: false }),
 }));
 vi.mock("@/app/editor/actions", () => ({ listItemCommentsAction: vi.fn(async () => []), addItemCommentAction: vi.fn(async () => []), replyItemCommentAction: vi.fn(async () => []), resolveItemCommentAction: vi.fn(async () => []), reopenItemCommentAction: vi.fn(async () => []) }));
 vi.mock("@/app/editor/agent-connect-actions", () => ({ createItemAgentAction: vi.fn(), prepareLocalItemAgentAction: vi.fn(), removeItemAgentAction: vi.fn() }));
