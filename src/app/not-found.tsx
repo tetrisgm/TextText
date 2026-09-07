@@ -26,8 +26,8 @@ export default function NotFound() {
       <div aria-hidden="true" style={markStyle}>
         404
       </div>
-      <h1 className="not-found-title">This page does not exist.</h1>
-      <p style={copyStyle}>The link may have moved, or the page may be private.</p>
+      <h1 className="not-found-title">This page is unavailable</h1>
+      <p style={copyStyle}>Check the address, or go home to find another page.</p>
       <Link className="not-found-home-link" href="/">
         Go home
       </Link>

@@ -21,6 +21,7 @@ import {
   resolveItemCommentAction,
 } from "@/app/editor/actions";
 import type { ItemCommentView } from "@/app/editor/actions";
+import { useDialogFocus } from "@/components/accessibility/useDialogFocus";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import {
   groupCommentThreads,
@@ -157,6 +158,9 @@ export function CommentsDialog({
   onOpenCountChange,
 }: CommentsDialogProps) {
   const titleId = useId();
+  const dialogRef = useRef<HTMLElement>(null);
+  useDialogFocus(dialogRef, open);
+  const [notice, setNotice] = useState("");
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [comments, setComments] = useState<ItemCommentView[]>([]);
   const [loadedPostId, setLoadedPostId] = useState<string | null>(null);
@@ -168,6 +172,7 @@ export function CommentsDialog({
   const [composer, setComposer] = useState("");
   const [replyBody, setReplyBody] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const threads = useMemo(() => groupCommentThreads(comments), [comments]);
   const openThreads = useMemo(
     () => threads.filter((thread) => !thread.root.resolved),
@@ -191,6 +196,7 @@ export function CommentsDialog({
       .then((nextComments) => {
         if (!active) return;
         setComments(nextComments);
+        setLoadFailed(false);
         setLoadedPostId(postId);
         setError(null);
         setReplyingId(null);
@@ -199,14 +205,13 @@ export function CommentsDialog({
       .catch((loadError) => {
         if (active) {
           setComments([]);
+          setLoadFailed(true);
           setLoadedPostId(postId);
           setError(errorMessage(loadError, "Could not load comments."));
         }
       });
-    const frame = window.requestAnimationFrame(() => composerRef.current?.focus());
     return () => {
       active = false;
-      window.cancelAnimationFrame(frame);
     };
   }, [handle, open, postId]);
 
@@ -237,6 +242,7 @@ export function CommentsDialog({
         resolvedAt: null,
         anchor: null,
       };
+      setNotice("");
       setCreating(true);
       setError(null);
       setComposer("");
@@ -244,6 +250,7 @@ export function CommentsDialog({
       setComments((current) => [...current, optimistic]);
       try {
         setComments(await addItemCommentAction(handle, postId, body));
+        setNotice("Comment posted.");
       } catch (createError) {
         setComments(previous);
         setComposer(body);
@@ -275,6 +282,7 @@ export function CommentsDialog({
         resolvedAt: null,
         anchor: null,
       };
+      setNotice("");
       setReplying(true);
       setError(null);
       setComments((current) => [...current, optimistic]);
@@ -284,6 +292,8 @@ export function CommentsDialog({
           await replyItemCommentAction(handle, postId, parentId, body),
         );
         setReplyingId(null);
+        setNotice("Reply posted.");
+        composerRef.current?.focus();
       } catch (replyError) {
         setComments(previous);
         setReplyBody(body);
@@ -301,6 +311,7 @@ export function CommentsDialog({
       const resolved = !thread.root.resolved;
       const previous = comments;
       const resolvedAt = resolved ? new Date().toISOString() : null;
+      setNotice("");
       setResolvingId(thread.root.id);
       setError(null);
       setComments((current) =>
@@ -315,6 +326,7 @@ export function CommentsDialog({
           ? resolveItemCommentAction
           : reopenItemCommentAction;
         setComments(await action(handle, postId, thread.root.id));
+        setNotice(resolved ? "Comment resolved." : "Comment reopened.");
       } catch (resolveError) {
         setComments(previous);
         setError(
@@ -335,6 +347,7 @@ export function CommentsDialog({
   return (
     <div className={`applecms ${styles.backdrop}`} onMouseDown={closeFromBackdrop}>
       <section
+        ref={dialogRef}
         className={styles.panel}
         role="dialog"
         aria-modal="true"
@@ -357,7 +370,7 @@ export function CommentsDialog({
           </button>
         </header>
 
-        <div className={styles.segmented} aria-label="Comment status">
+        <div className={styles.segmented} role="group" aria-label="Comment status">
           <button
             type="button"
             aria-pressed={mode === "open"}
@@ -374,6 +387,7 @@ export function CommentsDialog({
           </button>
         </div>
 
+        <p className="ac-sr-only" role="status" aria-atomic="true">{notice}</p>
         {error && (
           <p className={styles.error} role="status">
             {error}
@@ -385,7 +399,7 @@ export function CommentsDialog({
             <div className={styles.emptyState}>Loading comments</div>
           ) : visibleThreads.length === 0 ? (
             <div className={styles.emptyState}>
-              {mode === "open" ? "No open comments" : "No resolved comments"}
+              {loadFailed ? "Comments could not be loaded. Close and reopen comments to retry. Your document text has not changed." : mode === "open" ? "No open comments. Add a question or feedback below." : "No resolved comments. Comments you mark resolved will appear here."}
             </div>
           ) : (
             visibleThreads.map((thread) => (
@@ -446,6 +460,7 @@ export function CommentsDialog({
                         type="button"
                         disabled={replying}
                         onClick={() => {
+                          composerRef.current?.focus();
                           setReplyingId(null);
                           setReplyBody("");
                         }}

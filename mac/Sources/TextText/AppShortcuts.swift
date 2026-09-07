@@ -25,22 +25,20 @@ struct TextTextAppShortcutsProvider: AppShortcutsProvider {
             systemImageName: "magnifyingglass"
         )
         AppShortcut(
-            intent: CreateBookmarkFromURLIntent(),
+            intent: AppendTextToDocumentIntent(),
             phrases: [
-                "Save a bookmark in \(.applicationName)",
-                "Bookmark a URL in \(.applicationName)",
+                "Append text in \(.applicationName)",
             ],
-            shortTitle: "Bookmark",
-            systemImageName: "bookmark"
+            shortTitle: "Append text",
+            systemImageName: "text.append"
         )
         AppShortcut(
-            intent: GetRecentDocumentsIntent(),
+            intent: OpenDocumentIntent(),
             phrases: [
-                "Show recent TextText documents in \(.applicationName)",
-                "Get recent documents in \(.applicationName)",
+                "Open an item in \(.applicationName)",
             ],
-            shortTitle: "Recent",
-            systemImageName: "clock"
+            shortTitle: "Open item",
+            systemImageName: "doc"
         )
     }
 }

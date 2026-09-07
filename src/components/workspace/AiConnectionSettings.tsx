@@ -108,7 +108,7 @@ export function AiConnectionSettings({
                 : "Connect once, then ask the agent to read or change the document you have open."
               : cloudConfigured
                 ? "The assistant is ready in the right sidebar. Ask it to read or change the document you have open."
-                : "Add one provider key, then ask the agent to read or change the document you have open."}
+                : "No provider key is saved. Add a key to use the assistant here. Your documents remain available without AI."}
           </p>
           {ready && connection?.lastHealthCheckAt ? (
             <p className={styles.verification}>
@@ -150,7 +150,7 @@ export function AiConnectionSettings({
           </button>
         ) : (
           <a className={styles.secondary} href="#api-key-connections">
-            Set up the in-app assistant
+            Add a provider key
           </a>
         )}
       </article>
@@ -170,7 +170,7 @@ export function AiConnectionSettings({
           <p>
             {embeddedAgent
               ? "The standalone Mac edition includes a local TextText plugin for Claude and Codex."
-              : "A remote client that accepts bearer-authenticated MCP can connect through the hosted TextText endpoint."}
+              : "Connect another AI app to read and edit the items you give it access to."}
           </p>
           <a className={styles.secondary} href="/connect">
             Open connection setup

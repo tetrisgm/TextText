@@ -91,7 +91,8 @@ public final class WorkspaceSpotlightIndexer {
     }
 
     public static func searchableItem(for document: WorkspaceSpotlightDocument) -> CSSearchableItem? {
-        guard !isInternal(relativePath: document.relativePath) else { return nil }
+        guard !isInternal(relativePath: document.relativePath),
+              document.status != "trashed" else { return nil }
         let attributes = attributeSet(for: document)
         let item = CSSearchableItem(
             uniqueIdentifier: document.textTextId,

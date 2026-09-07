@@ -86,12 +86,12 @@ export function ItemTypeCollectionPreview({ items, template, label }: {
           </select>
         </label>
       ) : null}
-      <p className={styles.collectionPreviewNote}>Collection query preview. Layout spacing is approximate.</p>
+      <p className={styles.collectionPreviewNote}>Folder preview. Spacing may differ in the saved view.</p>
       {sorted.length === 0 ? (
         <div className={styles.emptyPreview}>
           <span aria-hidden="true">□</span>
           <strong>{items.length ? "No matching items" : "No items yet"}</strong>
-          <p>{items.length ? "No preview items match this view's filters." : "The folder stays quiet until its first item is added."}</p>
+          <p>{items.length ? "No items match this view. Choose another saved view above or adjust its filters." : "This folder has no items to preview. Add an item in the folder, or choose sample content above to try this template."}</p>
         </div>
       ) : collection.layout === "calendar" && dated ? (
         <CalendarPreview key={`${activeId}-${dated.byDay.keys().next().value ?? "empty"}`} groups={dated} />

@@ -1,5 +1,8 @@
 "use client";
 
+import type { MotionOrigin } from "@/lib/motion/origin";
+import { useExitMotion } from "@/lib/motion/react";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent } from "react";
 import {
@@ -17,6 +20,7 @@ import {
   type TemplateLibraryFilter,
 } from "@/lib/presentation/template-library";
 import { DocumentRenderer } from "./DocumentRenderer";
+import { useDialogFocus } from "@/components/accessibility/useDialogFocus";
 import styles from "./TemplateGallery.module.css";
 
 function exampleFor(template: TemplateDefinition): DocumentSnapshot {
@@ -82,7 +86,9 @@ export function TemplateGallery({
   library,
   targetItemCount = 0,
   onApply,
-  onClose,
+  onClose: finishClose,
+  motionOpen = true,
+  motionOrigin,
   onDuplicate,
   onImport,
   onRestoreVersion,
@@ -93,6 +99,8 @@ export function TemplateGallery({
   targetItemCount?: number;
   onApply: (template: TemplateDefinition) => void;
   onClose: () => void;
+  motionOpen?: boolean;
+  motionOrigin?: MotionOrigin | null;
   onDuplicate?: (
     template: TemplateDefinition,
     name: string,
@@ -112,6 +120,9 @@ export function TemplateGallery({
   const applied = document.presentation.template;
   const isApplied = (template: TemplateDefinition) =>
     template.id === applied.id && template.version === applied.version;
+  const motionRef = useRef<HTMLDivElement>(null);
+  const originRef = useRef(motionOrigin ?? null);
+  const onClose = useExitMotion(motionRef, finishClose, { visible: motionOpen, ...(motionOrigin ? { origin: originRef } : {}) });
   const [preview, setPreview] = useState<TemplateDefinition | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<TemplateLibraryFilter>("all");
@@ -128,6 +139,9 @@ export function TemplateGallery({
     () => filterTemplateLibrary(entries, query, filter),
     [entries, filter, query],
   );
+  // One ref for the backdrop: the exit spring and the focus trap share it.
+  // It is declared above useExitMotion, which needs it first.
+  useDialogFocus(motionRef, true);
   const cardRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const backRef = useRef<HTMLButtonElement>(null);
   const continueRef = useRef<HTMLButtonElement>(null);
@@ -180,7 +194,7 @@ export function TemplateGallery({
     const handle = (event: globalThis.KeyboardEvent) => {
       if (event.key !== "Escape" && event.key !== "Backspace") return;
       const target = event.target as HTMLElement | null;
-      if (target?.matches("input, textarea, [contenteditable=true]")) return;
+      if (event.key === "Backspace" && target?.matches("input, textarea, [contenteditable=true]")) return;
       event.preventDefault();
       event.stopPropagation();
       back();
@@ -260,6 +274,7 @@ export function TemplateGallery({
       );
     return (
       <div
+        ref={motionRef}
         className={styles.backdrop}
         role="dialog"
         aria-modal="true"
@@ -337,13 +352,14 @@ export function TemplateGallery({
     const folderNames = previewEntry?.impact.folderNames ?? [];
     return (
       <div
+        ref={motionRef}
         className={styles.backdrop}
         role="dialog"
         aria-modal="true"
         aria-label="Preview look"
         onKeyDown={(event) => {
           const target = event.target as HTMLElement | null;
-          if (target?.matches("input, textarea, [contenteditable=true]")) return;
+          if (event.key === "Backspace" && target?.matches("input, textarea, [contenteditable=true]")) return;
           if (event.key === "ArrowRight") {
             event.preventDefault();
             step(1);
@@ -531,6 +547,7 @@ export function TemplateGallery({
   };
   return (
     <div
+      ref={motionRef}
       className={styles.backdrop}
       role="dialog"
       aria-modal="true"

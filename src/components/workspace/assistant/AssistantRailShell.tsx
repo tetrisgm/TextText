@@ -1,5 +1,8 @@
 "use client";
 
+import { useSurfaceMotion } from "@/lib/motion/react";
+import { useRailResize } from "@/lib/motion/use-rail";
+
 import { AssistantAttachmentList, AssistantHistorySync, StopIcon } from "./AssistantRailDetails";
 import { AssistantContextPicker } from "./AssistantContextPicker";
 import { DEFAULT_CONTEXT_CHOICE } from "@/lib/ai/context-choice";
@@ -45,6 +48,7 @@ type DeferredShellProps = "width" | "onWidthChange" | "onFilesSelected" | "onRem
 export type AssistantRailShellProps = AssistantSidebarProps & {
   /** The conversation context key, so the shell can peek at the replica. */
   contextKey?: string;
+  motionOnRest?: (shown: boolean) => void;
   shellOnQuickAction?: (action: NativeQuickActionId, language?: string) => unknown;
   shellOnSubmit?: (submission: AssistantComposerSubmission) => unknown;
   shellViewerName?: string | null;
@@ -201,6 +205,7 @@ export function AssistantRailShell({
   const titleId = useId();
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const draftRef = useRef(composerValue);
+  const panelRef = useRef<HTMLElement>(null);
   const panelId = props.panelId ?? `assistant-sidebar-${generatedPanelId}`;
   const agent = agentProp ?? CLAUDE_SHELL_AGENT;
   const starterContext = starterContextFromChip(context ?? {});
@@ -212,6 +217,8 @@ export function AssistantRailShell({
     (composerValue.trim().length > 0 || attachments.length > 0);
   const { resolvedMaxWidth, resolvedMinWidth, resolvedWidth } =
     resolveAssistantSidebarDimensions({ maxWidth, minWidth, width });
+  useSurfaceMotion(panelRef, state !== "hidden", { path: "rail", skipInitial: true, onRest: props.motionOnRest, snapshot: props.motionSnapshot });
+  const resizeMotion = useRailResize(panelRef, resolvedWidth, resolvedMinWidth, resolvedMaxWidth, props.onWidthChange ?? (() => {}));
   const rootStyle = {
     ...style,
     "--assistant-sidebar-width": `${resolvedWidth}px`,
@@ -247,6 +254,7 @@ export function AssistantRailShell({
   }, []);
 
   useEffect(() => {
+    if (state === "hidden") return;
     const onToggleShortcut = (event: KeyboardEvent) => {
       if (
         event.defaultPrevented ||
@@ -263,7 +271,7 @@ export function AssistantRailShell({
     };
     window.addEventListener("keydown", onToggleShortcut, true);
     return () => window.removeEventListener("keydown", onToggleShortcut, true);
-  }, [onStateChange]);
+  }, [onStateChange, state]);
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -301,6 +309,9 @@ export function AssistantRailShell({
       style={rootStyle}
     >
       <aside
+        ref={panelRef}
+        inert={state === "hidden"}
+        aria-hidden={state === "hidden"}
         id={panelId}
         className={styles.panel}
         aria-labelledby={titleId}
@@ -323,7 +334,17 @@ export function AssistantRailShell({
           aria-valuetext={`${resolvedWidth} pixels wide`}
           title="Resize assistant sidebar"
           onFocus={() => void activate()}
-          onPointerDown={() => void activate()}
+          onPointerDown={(event) => { void activate(); resizeMotion.onPointerDown(event); }}
+          onPointerMove={resizeMotion.onPointerMove}
+          onPointerUp={resizeMotion.onPointerUp}
+          onPointerCancel={resizeMotion.onPointerCancel}
+          onLostPointerCapture={resizeMotion.onLostPointerCapture}
+          onKeyDown={(event) => {
+            const next: number | ((target: number) => number) | null = event.key === "Home" ? resolvedMinWidth : event.key === "End" ? resolvedMaxWidth
+              : event.key === "ArrowLeft" ? (target) => target + 16 * (event.shiftKey ? 4 : 1)
+              : event.key === "ArrowRight" ? (target) => target - 16 * (event.shiftKey ? 4 : 1) : null;
+            if (next !== null) { event.preventDefault(); resizeMotion.keyboard(next); }
+          }}
         />
 
         <header className={styles.header}>

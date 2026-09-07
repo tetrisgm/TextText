@@ -1541,7 +1541,7 @@ export function PostFolderSidebar({
             <span className="post-editor-folder-icon" aria-hidden="true">
               <HomeIcon />
             </span>
-            <span className="post-editor-folder-name">Home</span>
+            <span className="post-editor-folder-name">All items</span>
           </button>
         </div>
         <div className="post-editor-special-folders">
@@ -1781,6 +1781,11 @@ export function WorkspaceSidebarChrome({
     }
     if (collapsed) onToggleCollapsed();
   }, [collapsed, onToggleCollapsed]);
+  useEffect(() => {
+    if (!canManageFolders) return;
+    window.addEventListener(NEW_FOLDER_EVENT, openSidebar);
+    return () => window.removeEventListener(NEW_FOLDER_EVENT, openSidebar);
+  }, [canManageFolders, openSidebar]);
   const toggleSidebar = useCallback(() => {
     if (window.matchMedia(WORKSPACE_COMPACT_MEDIA_QUERY).matches) {
       setMobileOpen(false);

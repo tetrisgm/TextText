@@ -1,6 +1,16 @@
 import type { DocumentSnapshot } from "@/lib/documents/model";
 
+export type RecoveryReason = "document-changed" | "sync-rejected" | "outbox-conflict";
+
+export function recoveryHeading(copies: Pick<MaterializationRecovery, "reason">[]): string {
+  if (copies.some((copy) => copy.reason === "sync-rejected")) return "These edits could not be synced";
+  if (copies.length && copies.every((copy) => copy.reason === "document-changed")) return "This document changed elsewhere";
+  return "Your local edits need recovery";
+}
+
 export type MaterializationRecovery = {
+  /** Optional for recovery records written before reasons were recorded. */
+  reason?: RecoveryReason;
   id: string;
   postId: string;
   epoch: number | null;

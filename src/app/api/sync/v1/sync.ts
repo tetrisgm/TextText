@@ -306,6 +306,7 @@ function syncManifestOptions(
 }
 
 type SyncManifestItem = MarkdownFolderItem & {
+  spotlightEligible: boolean;
   representation: FileRepresentation;
   /** Hash of the complete structured document envelope for package clients. */
   documentHash: string;
@@ -348,6 +349,7 @@ export function renderSyncFolderManifest(
         ...item,
         file: syncFilePath(post),
         representation: syncFileRepresentation(post),
+        spotlightEligible: spotlightEligible(post, folder),
         documentHash: document.hash,
         documentSize: new TextEncoder().encode(document.text).length,
       };
@@ -358,4 +360,11 @@ export function renderSyncFolderManifest(
 /** One manifest v2 entry for a post, as PUT/POST return it. */
 export function syncManifestItem(blog: Blog, post: Post): SyncManifestItem {
   return renderSyncFolderManifest(blog, [post]).items[0];
+}
+
+/** Private items never leave the app through Spotlight. Missing folder or
+ * visibility metadata is private. Trashed items are excluded by the store. */
+export function spotlightEligible(post: Post, folder?: Folder): boolean {
+  const visibility = post.visibility;
+  return folder?.mode === "blog" && (visibility === "public" || visibility === "link");
 }

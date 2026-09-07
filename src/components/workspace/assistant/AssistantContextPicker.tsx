@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useMotionPresence, useSurfaceMotion } from "@/lib/motion/react";
+
+import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import { MAX_PERSON_CONTEXT_ITEMS, type AssistantContextChoice } from "@/lib/ai/context-choice";
 import type { AssistantWorkspaceContextItem } from "./AssistantSidebar";
 import styles from "./AssistantSidebar.module.css";
@@ -12,10 +14,13 @@ export function contextItemChoices(items: readonly AssistantWorkspaceContextItem
     (!term || `${item.name} ${item.detail}`.toLowerCase().includes(term))).slice(0, 8);
 }
 
-export function AssistantContextSearch({ items, selected, onAdd, onClose }: {
+export function AssistantContextSearch({ items, selected, onAdd, onClose, motionOpen = true, motionOnRest, trigger }: {
   items: readonly AssistantWorkspaceContextItem[]; selected: readonly string[];
   onAdd: (item: AssistantWorkspaceContextItem) => void; onClose: () => void;
+  motionOpen?: boolean; motionOnRest?: (shown: boolean) => void; trigger?: RefObject<HTMLElement | null>;
 }) {
+  const panel = useRef<HTMLDivElement>(null);
+  useSurfaceMotion(panel, motionOpen, { origin: trigger, onRest: motionOnRest });
   const [query, setQuery] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
   const id = useId();
@@ -24,7 +29,7 @@ export function AssistantContextSearch({ items, selected, onAdd, onClose }: {
   const activeChoiceId = choices[active]?.id;
   useEffect(() => { document.getElementById(`${id}-${active}`)?.scrollIntoView({ block: "nearest" }); }, [id, active, query, activeChoiceId]);
   const add = (item: AssistantWorkspaceContextItem) => { onAdd(item); onClose(); };
-  return <div className={styles.contextPickerPanel} role="dialog" aria-label="Add TextText context"
+  return <div ref={panel} inert={!motionOpen} aria-hidden={!motionOpen} className={styles.contextPickerPanel} role="dialog" aria-label="Add TextText context"
     onKeyDown={(event) => {
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
     }}>
@@ -59,6 +64,9 @@ export function AssistantContextPicker({ choice, onChange, items, hasItem, hasSe
   disabled?: boolean; focusComposer: () => void;
   open?: boolean; onOpenChange?: (open: boolean) => void;
 }) {
+  const trigger = useRef<HTMLButtonElement>(null);
+  const motionOpen = open && !disabled && choice.itemIds.length < MAX_PERSON_CONTEXT_ITEMS;
+  const presence = useMotionPresence(motionOpen);
   const close = () => { onOpenChange?.(false); focusComposer(); };
   return <div className={styles.contextRow} role="group" aria-label="Context for the next turn"
     title="Controls context supplied with the next turn. Earlier conversation remains available, and the assistant can use workspace tools when needed."
@@ -73,7 +81,10 @@ export function AssistantContextPicker({ choice, onChange, items, hasItem, hasSe
     {choice.itemIds.map((id) => {
       const name = items.find((item) => item.id === id)?.name ?? "Unavailable item";
       return <button key={id} type="button" disabled={disabled} aria-label={`Remove context ${name}`}
-        title={name} onClick={() => onChange({ ...choice, itemIds: choice.itemIds.filter((itemId) => itemId !== id) })}>
+        title={name} onClick={() => {
+          focusComposer();
+          onChange({ ...choice, itemIds: choice.itemIds.filter((itemId) => itemId !== id) });
+        }}>
         <span>{name}</span><span aria-hidden="true">×</span>
       </button>;
     })}
@@ -81,10 +92,11 @@ export function AssistantContextPicker({ choice, onChange, items, hasItem, hasSe
       title="Include a bounded index of up to 12 recent readable items, not every document body"
       onClick={() => onChange({ ...choice, workspaceIndex: !choice.workspaceIndex })}>Whole workspace index</button>
     <div className={styles.contextPicker}>
-      <button type="button" disabled={disabled || choice.itemIds.length >= MAX_PERSON_CONTEXT_ITEMS}
+      <button ref={trigger} type="button" disabled={disabled || choice.itemIds.length >= MAX_PERSON_CONTEXT_ITEMS}
         aria-label="Add TextText context" aria-haspopup="dialog" aria-expanded={open}
         title={`Add up to ${MAX_PERSON_CONTEXT_ITEMS} items`} onClick={() => onOpenChange?.(!open)}>Add</button>
-      {open && !disabled && choice.itemIds.length < MAX_PERSON_CONTEXT_ITEMS && <AssistantContextSearch
+      {presence.present && <AssistantContextSearch
+        motionOpen={motionOpen} motionOnRest={presence.onRest} trigger={trigger}
         items={items} selected={choice.itemIds} onClose={close}
         onAdd={(item) => onChange({ ...choice, itemIds: [...choice.itemIds, item.id] })} />}
     </div>

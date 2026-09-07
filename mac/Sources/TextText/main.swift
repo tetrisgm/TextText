@@ -6,6 +6,11 @@ import TextTextAppIntents
 // truth), never by scanning or writing the File Provider mount. Registered
 // before the run loop so it is always in place before any intent runs.
 WorkspaceIntentServerRegistry.makeServer = { WorkspaceIntentServerFactory.make() }
+NativeWorkspaceCommandRegistry.makeServer = {
+    guard let credentials = StateStore().loadCredentials() else { return nil }
+    return ServerClient(origin: resolveServerOrigin(credentials: credentials), token: credentials.token)
+}
+NativeWorkspaceCommandRegistry.openURL = { NSWorkspace.shared.open($0) }
 
 // App-owned release/runtime verification. This uses the same checks the
 // installed app runs on first launch and each day, without creating UI.

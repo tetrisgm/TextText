@@ -4,7 +4,7 @@ import { INLINE_STATUS_LABELS } from "./InlineSelectionPreview";
 import { INLINE_ACTIONS } from "./inline-preview";
 import { QuickActionControl } from "./QuickActionControl";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AssistantMessage } from "./useNativeAssistant";
 import type { AssistantJob } from "@/lib/ai/jobs";
 import type { NativeQuickActionId } from "@/lib/ai/quick-actions";
@@ -455,6 +455,8 @@ export function AssistantConversation({
     decision: "approve" | "deny",
   ) => Promise<void> | void;
 }) {
+  const [hasSubmitted, setHasSubmitted] = useState(submitting);
+  if (submitting && !hasSubmitted) setHasSubmitted(true);
   const threadRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   /** Whether the person is watching the end of the transcript right now. */
@@ -611,10 +613,10 @@ export function AssistantConversation({
               {connected
                 ? workflowHeading(context)
                 : nativeConnection?.state === "unavailable"
-                  ? "Set up the in-app assistant once, then write here beside your documents."
+                  ? "No AI is connected. Set up the assistant to work beside your documents, or keep writing on your own."
                   : nativeConnection?.state === "runtime-missing"
-                    ? "Set up the in-app assistant to keep the conversation inside TextText."
-                    : "Connect once. The agent reads and writes the document you have open."}
+                    ? "The assistant is not ready on this device. Set it up here, or keep writing on your own."
+                    : "Connect an AI to help read and edit the document you have open. You can keep writing without connecting."}
             </p>
           </div>
           {!connected && (
@@ -684,9 +686,12 @@ export function AssistantConversation({
       ref={threadRef}
       className={styles.thread}
       role="log"
-      aria-live="polite"
-      aria-relevant="additions text"
+      aria-label="Conversation"
+      aria-live="off"
     >
+      <span className="ac-sr-only" role="status" aria-atomic="true">
+        {submitting ? "Assistant is working." : hasSubmitted ? "Assistant is ready." : ""}
+      </span>
       {jobsStrip}
       {quickActionBar}
       {visibleMessages.map((message, messageIndex) => {
@@ -820,6 +825,7 @@ export function AssistantConversation({
               data-stale={actionable ? undefined : true}
             >
               <span>{boundedFailureText(displayedMessageText(message))}</span>
+              {actionable && <p>The assistant stopped before finishing. Your message is still here. Some changes may already have been made; review the document before trying again.</p>}
               {actionable ? (
                 <div className={styles.errorActions}>
                   {precedingUserMessage && onRetry ? (
@@ -827,12 +833,12 @@ export function AssistantConversation({
                       type="button"
                       onClick={() => void onRetry(precedingUserMessage.text)}
                     >
-                      Try again
+                      Retry message
                     </button>
                   ) : null}
                   {aiSettingsHref ? (
                     <a href={aiSettingsHref} onClick={onOpenAiSettings}>
-                      Verify connection
+                      Check AI connection
                     </a>
                   ) : null}
                 </div>
@@ -939,7 +945,7 @@ export function AssistantConversation({
           dot that moves, because a still grey word is not evidence that
           anything is happening. */}
       {submitting && (
-        <div className={styles.working} role="status">
+        <div className={styles.working}>
           <span className={styles.workingDot} aria-hidden="true" />
           <span>
             {latestProgress

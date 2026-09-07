@@ -37,6 +37,8 @@
 			<array>
 				<string>net.daringfireball.markdown</string>
 				<string>public.plain-text</string>
+				<string>org.textbundle.pack</string>
+				<string>org.textbundle.package</string>
 			</array>
 		</dict>
 		<key>NSExtensionPointIdentifier</key>

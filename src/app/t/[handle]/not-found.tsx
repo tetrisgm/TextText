@@ -16,9 +16,10 @@ export default function TenantNotFound() {
         priority
         unoptimized
       />
-      <h1 className="not-found-title">This page does not exist.</h1>
+      <h1 className="not-found-title">This item is unavailable</h1>
+      <p>The link may be incorrect, or the item may have moved or its access may have changed. Check the link with the person who shared it.</p>
       <Link className="not-found-home-link" href="/">
-        Back to the blog
+        Go home
       </Link>
     </main>
   );

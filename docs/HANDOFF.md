@@ -5013,3 +5013,31 @@ review caught that reading the notes did not:
 
 Apply order once the repairs land: fix-qa10, mac-platform, a11y, motion,
 firstrun, with the per-file resolutions in `integration-plan.json`.
+
+## 2026-09-07: round ten landed after repair and merge
+
+All five patches were sent back with their reviewers' blockers and returned as
+`*-v2` in `astra/out10/`. Merged in the measured order (fix-qa10, mac-platform,
+a11y, motion, firstrun). Four textual conflicts appeared, exactly the four the
+planner predicted, and were resolved with its per-file strategies: ShareDialog
+keeps the focus hook and drops the superseded effect, the sidebar stylesheet
+takes the motion selector with the accessibility unit, the tab bar keeps the
+accessibility behaviour over the motion render mechanism, and the template
+gallery collapses to one backdrop ref. Two silent duplicate-ref hazards, which
+git merges without complaint and only a typecheck catches, were collapsed in
+the command palette and the template gallery.
+
+Twelve tests then failed that fail in no single patch. Three subagents fixed
+them in parallel on disjoint files, and two found more than the failure:
+
+- The merged recovery screen still rendered the editor's shared `error` under
+  the corrected heading, so an oversized paste could still claim the document
+  changed elsewhere one line lower. That screen now has its own error state,
+  and the test binds the stale message deliberately as a regression guard.
+- My own tab bar resolution was wrong. Returning null for a tab with no index
+  unmounted exiting tabs immediately, so the exit spring never ran, `onRest`
+  never fired, and entries were stranded in the retained list forever. Exiting
+  tabs now stay mounted and simply cannot claim selection or focus.
+- The accessibility test's React shim lacked `useLayoutEffect`, which motion
+  introduces through three separate hooks, and a motion test destructured the
+  tab children that accessibility had prepended a help span to.

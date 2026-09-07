@@ -10,13 +10,13 @@
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
   border: 1px solid var(--ac-separator, rgba(128, 128, 128, 0.3));
   border-radius: 999px;
-  padding: 9px 18px;
+  padding: 0.5625rem 1.125rem;
   background: var(--ac-bg, rgba(28, 28, 30, 0.92));
   color: var(--ac-label, #fff);
-  font: 600 13px/1.2 var(--ac-font-text, system-ui, sans-serif);
+  font: 600 0.8125rem/1.2 var(--ac-font-text, system-ui, sans-serif);
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.22);
   backdrop-filter: blur(20px) saturate(180%);
 }

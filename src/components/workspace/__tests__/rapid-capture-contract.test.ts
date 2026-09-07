@@ -46,11 +46,11 @@ describe("rapid capture contract", () => {
     expect(folderPage).toContain("Retry");
     expect(folderPage).toContain("View unsaved text for ${capture.title}");
     expect(folderPage).toContain("Copy unsaved text for ${capture.title}");
-    expect(folderPage).toContain("Discard unsaved capture ${capture.title}");
+    expect(folderPage).toContain("Discard unsaved item ${capture.title}");
     expect(folderPage).toContain("window.confirm(");
     expect(folderPage).toContain("onOpenCapturedItem(capture.post!)");
     expect(folderPage).toContain("await onDeleteItem(capture.post)");
-    expect(folderPage).toContain("Could not undo capture");
+    expect(folderPage).toContain("Could not undo the save.");
   });
 
   it("keeps intentional folder creation as create-and-open", () => {
@@ -113,7 +113,7 @@ describe("rapid capture contract", () => {
       "Retry saving ${capture.title}",
       "View unsaved text for ${capture.title}",
       "Copy unsaved text for ${capture.title}",
-      "Discard unsaved capture ${capture.title}",
+      "Discard unsaved item ${capture.title}",
       "Undo saving ${capture.title}",
     ]) {
       expect(folderPage).toContain(label);

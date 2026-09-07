@@ -916,7 +916,7 @@ it("notifies recovery when an unload materialization is rejected after destroy",
   provider.destroy();
   save.resolve(jsonResponse({ retired: true }, 409));
   await pending;
-  expect(onRetired).toHaveBeenCalledWith(5);
+  expect(onRetired).toHaveBeenCalledWith(5, "document-changed");
   expect(provider.materializationBlocked).toBe(true);
   expect(await provider.materialize("demo", true)).toBeNull();
 });

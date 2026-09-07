@@ -1,5 +1,8 @@
 "use client";
 
+import Link from "next/link";
+import { blogHomePath } from "@/lib/public-paths";
+
 // Trash, Shared and Starred pages and the multi-select toolbar.
 // Extracted from the PostWorkspaceShell monolith.
 
@@ -208,7 +211,7 @@ export function TrashPage({
         </p>
       )}
       {rootTrashedFolders.length === 0 && visibleTrashedPosts.length === 0 ? (
-        <p className="workspace-collection-empty">Trash is empty.</p>
+        <p className="workspace-collection-empty">Trash is empty. Items you delete stay here until you restore or permanently delete them. <Link href={blogHomePath(pool.blog)}>Browse your items</Link></p>
       ) : (
         <div className="workspace-trash-list">
           {rootTrashedFolders.map((folder) => (
@@ -319,7 +322,7 @@ export function SharedPage({ pool }: { pool: WorkspacePoolPayload }) {
         <SharedWithMe entries={entries} />
       ) : (
         <p className="workspace-collection-empty">
-          Nothing has been shared with you yet.
+          No shared items yet. Documents and folders other people share with you appear here. Ask the owner for an invitation using your sign-in email. <Link href={blogHomePath(pool.blog)}>Browse your items</Link>
         </p>
       )}
     </main>
@@ -341,7 +344,7 @@ export function StarredPage({
       </header>
       {posts.length === 0 ? (
         <p className="workspace-collection-empty">
-          Star an item to keep it here.
+          No starred items yet. Star an item to keep it close at hand. <Link href={blogHomePath(pool.blog)}>Find an item to star</Link>
         </p>
       ) : (
         <div

@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0 }));
 vi.mock("react", async (original) => ({
   ...await original<typeof import("react")>(),
+  useRef: (current: unknown) => ({ current }),
   useId: () => "context-search",
   useEffect: () => {},
   useState: (initial: unknown) => {
@@ -14,6 +15,10 @@ vi.mock("react", async (original) => ({
       hooks.values[index] = typeof value === "function" ? value(hooks.values[index]) : value;
     }];
   },
+}));
+vi.mock("@/lib/motion/react", () => ({
+  useSurfaceMotion: () => {},
+  useMotionPresence: (open: boolean) => ({ present: open, onRest: () => {} }),
 }));
 import { AssistantContextPicker, AssistantContextSearch } from "../AssistantContextPicker";
 import { DEFAULT_CONTEXT_CHOICE } from "@/lib/ai/context-choice";
@@ -55,6 +60,8 @@ it("opens Add, changes a chip, removes an item, and returns focus to the compose
   tree = render();
   invoke(find(tree, (e) => e.props["aria-label"] === "Remove context One"), "onClick");
   expect(choice.itemIds).toEqual([]);
+  expect(focusComposer).toHaveBeenCalledOnce();
+  focusComposer.mockClear();
   tree = render();
   invoke(find(tree, (e) => e.props["aria-label"] === "Add TextText context"), "onClick");
   tree = render();

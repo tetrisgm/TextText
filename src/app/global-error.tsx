@@ -2,6 +2,7 @@
 
 type GlobalErrorProps = {
   error: Error & { digest?: string };
+  retry?: () => void;
   unstable_retry?: () => void;
   reset?: () => void;
 };
@@ -163,10 +164,11 @@ body {
 
 export default function GlobalError({
   error,
+  retry: retryView,
   unstable_retry,
   reset,
 }: GlobalErrorProps) {
-  const retry = unstable_retry ?? reset;
+  const retry = retryView ?? unstable_retry ?? reset ?? (() => window.location.reload());
   const errorId = errorReference(error);
 
   return (
@@ -178,9 +180,9 @@ export default function GlobalError({
           <div aria-hidden="true" className="error-mark">
             500
           </div>
-          <h1 className="not-found-title">Something went wrong.</h1>
+          <h1 className="not-found-title">This view could not be loaded</h1>
           <p className="error-copy">
-            We could not load this view. Try again, or return home.
+            Try loading this page again, or go home.
           </p>
           <p className="error-id">
             Error id <code>{errorId}</code>

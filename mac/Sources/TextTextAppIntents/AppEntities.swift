@@ -41,18 +41,19 @@ public struct TextTextDocumentEntityQuery: EntityStringQuery {
     public init() {}
 
     public func entities(for identifiers: [String]) async throws -> [TextTextDocumentEntity] {
-        let actions = WorkspaceIntentActions()
+        let actions = try NativeItemActions()
         return identifiers.compactMap { id in
-            try? TextTextDocumentEntity(record: actions.document(id: id))
+            try? TextTextDocumentEntity(record: actions.read(id: id))
         }
     }
 
     public func entities(matching string: String) async throws -> [TextTextDocumentEntity] {
-        try WorkspaceIntentActions().searchDocuments(query: string, limit: 20).map(TextTextDocumentEntity.init(record:))
+        try NativeItemActions().search(query: string, limit: 20).map(TextTextDocumentEntity.init(record:))
     }
 
     public func suggestedEntities() async throws -> [TextTextDocumentEntity] {
-        try WorkspaceIntentActions().recentDocuments(limit: 10).map(TextTextDocumentEntity.init(record:))
+        // Search supplies choices; no stale local suggestions survive sign-out.
+        return []
     }
 }
 

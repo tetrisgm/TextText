@@ -159,7 +159,7 @@ export function UniversalItemComposer({
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const lastFocusRequestKey = useRef(focusRequestKey);
+  const lastFocusRequestKey = useRef(0);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [captures, setCaptures] = useState<InboxCapture[]>([]);
@@ -203,7 +203,7 @@ export function UniversalItemComposer({
         setError(
           actionErrorMessage(
             storageError,
-            "TextText could not protect this capture locally",
+            "Device storage is unavailable. Keep this page open and copy your text before leaving.",
           ),
         );
         return false;
@@ -259,7 +259,7 @@ export function UniversalItemComposer({
             if (!receipt || receipt.itemId !== savedPost.id) {
               patchCapture(capture.id, {
                 error:
-                  "The item was saved without an exact receipt. Retry to confirm it.",
+                  "The save could not be confirmed. Retry to check whether this item was saved.",
                 post: undefined,
                 status: "failed",
               });
@@ -286,7 +286,7 @@ export function UniversalItemComposer({
         });
         if (!created) {
           patchCapture(capture.id, {
-            error: "TextText could not start this capture.",
+            error: "This item could not be saved. Your unsaved text is available below.",
             post: undefined,
             status: "failed",
           });
@@ -297,7 +297,7 @@ export function UniversalItemComposer({
         patchCapture(capture.id, {
           error: actionErrorMessage(
             captureError,
-            "TextText could not start this capture",
+            "This item could not be saved. Your unsaved text is available below.",
           ),
           post: undefined,
           status: "failed",
@@ -328,7 +328,7 @@ export function UniversalItemComposer({
       const queued = enqueueCapture(capturesRef.current, capture);
       if (!queued.some((entry) => entry.id === capture.id)) {
         setError(
-          "Six captures still need attention. Retry or dismiss one first.",
+          "Six unsaved items need attention. Retry or discard one before saving another.",
         );
         return false;
       }
@@ -355,7 +355,7 @@ export function UniversalItemComposer({
         window.requestAnimationFrame(() => inputRef.current?.focus());
       } catch (deleteError) {
         patchCapture(capture.id, {
-          error: actionErrorMessage(deleteError, "Could not undo capture"),
+          error: actionErrorMessage(deleteError, "Could not undo the save. The item may still be in your workspace."),
           status: "saved",
         });
       }
@@ -368,7 +368,7 @@ export function UniversalItemComposer({
       await navigator.clipboard.writeText(capture.raw);
       setError(null);
     } catch (copyError) {
-      setError(actionErrorMessage(copyError, "Could not copy capture text"));
+      setError(actionErrorMessage(copyError, "Could not copy your text. Open View text and copy it manually."));
     }
   }, []);
 
@@ -376,7 +376,7 @@ export function UniversalItemComposer({
     (capture: InboxCapture) => {
       if (
         !window.confirm(
-          `Discard the unsaved capture “${capture.title}”? This cannot be undone.`,
+          `Discard the unsaved item “${capture.title}”? This cannot be undone.`,
         )
       ) {
         return;
@@ -409,7 +409,7 @@ export function UniversalItemComposer({
         return;
       }
       if (capturesInPlace && !captureQueueReady) {
-        setError("Finishing capture recovery. Your text is still here.");
+        setError("Restoring unsaved items. Your text is still here. Try saving again in a moment.");
         inputRef.current?.focus();
         return;
       }
@@ -466,7 +466,7 @@ export function UniversalItemComposer({
         return;
       }
       if (capturesInPlace) {
-        setError("TextText could not start this capture.");
+        setError("This item could not be saved. Your unsaved text is available below.");
         return;
       }
 
@@ -575,7 +575,7 @@ export function UniversalItemComposer({
           was just clutter (owner, 2026-09-04). A save that FAILED leaves no
           other trace, so that one stays. */}
       {failedCaptures.length > 0 && (
-        <div className="universal-item-receipts" aria-label="Recent captures">
+        <div className="universal-item-receipts" aria-label="Unsaved items">
           {failedCaptures.map((capture) => (
             <div
               className={`universal-item-receipt is-${capture.status}`}
@@ -621,14 +621,14 @@ export function UniversalItemComposer({
                       aria-label={`Retry saving ${capture.title}`}
                       onClick={() => runInPlaceCapture(capture)}
                     >
-                      Retry
+                      Retry saving
                     </button>
                     <details className="universal-item-receipt-raw">
                       <summary
                         className="ac-btn ac-btn-plain"
                         aria-label={`View unsaved text for ${capture.title}`}
                       >
-                        View
+                        View text
                       </summary>
                       <pre>{capture.raw}</pre>
                     </details>
@@ -638,12 +638,12 @@ export function UniversalItemComposer({
                       aria-label={`Copy unsaved text for ${capture.title}`}
                       onClick={() => void copyCaptureRaw(capture)}
                     >
-                      Copy
+                      Copy text
                     </button>
                     <button
                       type="button"
                       className="ac-btn ac-btn-plain"
-                      aria-label={`Discard unsaved capture ${capture.title}`}
+                      aria-label={`Discard unsaved item ${capture.title}`}
                       onClick={() => discardCapture(capture)}
                     >
                       Discard

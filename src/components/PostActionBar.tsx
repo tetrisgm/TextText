@@ -20,6 +20,9 @@ import {
 import { CLOSE_EDIT_MENU_EVENT } from "@/components/PostShortcuts";
 import { useCaptureStatus } from "@/components/bookmarks/useCaptureStatus";
 import type { CaptureStatusResponse } from "@/components/bookmarks/useCaptureStatus";
+import { usePopoverFocus } from "@/components/accessibility/useDialogFocus";
+import { moveMenuFocus } from "@/components/accessibility/keyboard";
+import { StatusAnnouncement } from "@/components/accessibility/StatusAnnouncement";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
 import { shortcutLabelForCommand } from "@/lib/commands/workspace";
@@ -92,7 +95,7 @@ type ReadState = {
   sourceVersion: string;
   dirty: boolean;
   draft: DraftState;
-  saveState: SaveState;
+  saveState: SaveState | "idle";
   error: string | null;
 };
 
@@ -385,6 +388,7 @@ function useDismissPopover<T extends HTMLElement>(
   onClose: () => void,
 ) {
   useEscapeLayer(open, "Popover", onClose);
+  usePopoverFocus(ref, open, '[role="menu"], [role="dialog"]');
 
   useEffect(() => {
     if (!open) return;
@@ -479,7 +483,7 @@ export function PostActionBar(props: Props) {
     sourceVersion: incomingSourceVersion,
     dirty: false,
     draft: initialDraft(props.post),
-    saveState: "saved",
+    saveState: "idle",
     error: null,
   }));
   const canEditPost = props.canEditPost ?? props.owner;
@@ -525,7 +529,7 @@ export function PostActionBar(props: Props) {
         sourceVersion: incomingSourceVersion,
         dirty: false,
         draft: initialDraft(props.post),
-        saveState: "saved",
+        saveState: "idle",
         error: null,
       };
     });
@@ -817,10 +821,15 @@ export function PostActionBar(props: Props) {
     );
 
   const readStatus =
-    props.mode === "read" && readSaveState !== "saved" ? (
-      <span className={`post-share-status is-${readSaveState}`} role="status">
-        {readSaveState === "saving" ? "Saving" : readError}
-      </span>
+    props.mode === "read" ? (
+      <>
+        {(readSaveState === "saving" || readSaveState === "error") && (
+          <span className={`post-share-status is-${readSaveState}`}>
+            {readSaveState === "saving" ? "Saving" : readError || "Could not save"}
+          </span>
+        )}
+        <StatusAnnouncement message={readSaveState === "idle" ? null : readSaveState === "saving" ? "Saving" : readSaveState === "error" ? readError || "Could not save" : "Saved"} />
+      </>
     ) : null;
 
   const previousPath =
@@ -892,6 +901,7 @@ export function PostActionBar(props: Props) {
         className="post-action-share ac-btn ac-btn-gray"
         aria-expanded={shareOpen}
         aria-label="Share post"
+        aria-haspopup="dialog"
         onClick={openShare}
       >
         <span className="post-action-button-icon">
@@ -1073,6 +1083,7 @@ export function PostActionBar(props: Props) {
                         <div
                           className="post-edit-menu post-turn-into-menu"
                           data-post-edit-menu-open="true"
+                          onKeyDown={(event) => moveMenuFocus(event.currentTarget, event)}
                           role="menu"
                           aria-label="Turn into"
                         >
@@ -1121,6 +1132,7 @@ export function PostActionBar(props: Props) {
                       <div
                         className="post-edit-menu"
                         data-post-edit-menu-open="true"
+                        onKeyDown={(event) => moveMenuFocus(event.currentTarget, event)}
                         role="menu"
                         aria-label="Post actions"
                       >

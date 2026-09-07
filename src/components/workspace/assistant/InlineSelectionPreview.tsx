@@ -1,5 +1,7 @@
 "use client";
 
+import { useExitMotion } from "@/lib/motion/react";
+
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { captureInlineSelectionSurface, type InlineSelectionSurface } from "@/components/document/inline-selection-surface";
 import { readOpenWorkspaceItemDraft, subscribeOpenWorkspaceItemDrafts, type WorkspaceItemTextSelection } from "@/lib/ai/workspace-item-draft";
@@ -59,12 +61,14 @@ export function InlineSelectionPreview({ controller, surface, readSelection, onC
 }) {
   const state = useSyncExternalStore(controller.subscribe, controller.snapshot, controller.snapshot);
   const ref = useRef<HTMLDivElement>(null);
+  const rowOrigin = useRef(null);
+  const closePreview = useExitMotion(ref, onClose, { origin: rowOrigin, identity: controller });
   const [instruction, setInstruction] = useState("");
   const surfaceRef = useRef(surface);
   const changing = state.status === "applying";
   const discard = () => {
     if (!controller.discard()) return;
-    onClose();
+    closePreview();
     surfaceRef.current.restore();
   };
 
@@ -138,7 +142,7 @@ export function InlineSelectionPreview({ controller, surface, readSelection, onC
   }, [controller, state.itemId, state.envelope, surface]);
 
   return (
-    <div ref={ref} tabIndex={0} role="region" aria-label="Selection preview"
+    <div ref={ref} style={{ transformOrigin: "0 0" }} tabIndex={0} role="region" aria-label="Selection preview"
       className={`${styles.palette} ${styles.preview}`} data-state={state.status}
       onKeyDown={(event) => {
         // Local handler only: document Cmd+Enter must never accept a preview.
@@ -176,7 +180,7 @@ export function InlineSelectionPreview({ controller, surface, readSelection, onC
         {state.status === "ready" && <button type="button" onClick={() => controller.tryAgain()}>Try again</button>}
         {(state.status === "stale" || (state.status === "failed" && !state.uncertain)) &&
           <button type="button" onClick={() => controller.retry(readSelection())}>{state.status === "stale" ? "Regenerate" : "Retry"}</button>}
-        {(state.status === "applied" || state.status === "undone") && <button type="button" onClick={onClose}>Close</button>}
+        {(state.status === "applied" || state.status === "undone") && <button type="button" onClick={closePreview}>Close</button>}
       </div>
       {(["ready", "generating", "applying"] as InlineStatus[]).includes(state.status) &&
         <InlinePreviewRefinement value={instruction} disabled={state.status !== "ready"}

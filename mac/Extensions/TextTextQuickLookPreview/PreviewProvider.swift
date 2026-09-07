@@ -3,6 +3,17 @@ import Foundation
 import TextTextShareCore
 
 public enum QuickLookMarkdownPreview {
+    public static func html(forFile url: URL) throws -> String {
+        let markdown: String
+        if ["textpack", "textbundle"].contains(url.pathExtension.lowercased()) {
+            markdown = try TextPackPreviewReader.markdown(at: url)
+        } else {
+            markdown = try TextPackPreviewReader.plainText(at: url)
+        }
+        // No filesystem root is granted to untrusted preview content.
+        return TextTextMarkdownPreviewRenderer.renderHTML(markdown: markdown)
+    }
+
     public static func html(for markdown: String, fileURL: URL? = nil) -> String {
         TextTextMarkdownPreviewRenderer.renderHTML(
             markdown: markdown,
@@ -51,11 +62,7 @@ public final class PreviewProvider: QLPreviewProvider {
         completionHandler handler: @escaping (QLPreviewReply?, Error?) -> Void
     ) {
         do {
-            let data = try Data(contentsOf: request.fileURL)
-            guard let markdown = String(data: data, encoding: .utf8) else {
-                throw CocoaError(.fileReadInapplicableStringEncoding)
-            }
-            let html = QuickLookMarkdownPreview.html(for: markdown, fileURL: request.fileURL)
+            let html = try QuickLookMarkdownPreview.html(forFile: request.fileURL)
             let htmlData = Data(html.utf8)
             let reply = QLPreviewReply(
                 dataOfContentType: .html,

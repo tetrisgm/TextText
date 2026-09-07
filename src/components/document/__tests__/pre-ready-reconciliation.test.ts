@@ -3,6 +3,7 @@ import ts from "typescript";
 import { it, expect, vi } from "vitest";
 import * as Y from "yjs";
 import { applyDocumentSnapshot, applyDocumentBaseline, documentSnapshotFromYDoc, documentText, hasDocumentSnapshot } from "@/lib/collab/document";
+import { recoveryHeading } from "@/lib/collab/materialization-recovery";
 import { validateDocumentSnapshot } from "@/lib/documents/model";
 import { capturePreReadyTextBaseline, preReadyTextOperations, applyPreReadyTextOperations, applyPreReadyMetadata } from "@/lib/collab/pre-ready";
 const editor=readFileSync("src/components/document/UnifiedDocumentEditor.tsx","utf8");
@@ -241,7 +242,7 @@ it.each(["same visible replacement", "repeated insertion", "disjoint suffix"])("
   applyPreReadyTextOperations,publishDocument:vi.fn(),provider:{learnedEpoch:5},
   recoveryBlockedRef:{current:false},collab:{postId:"post"},Y,
   bytesToBase64:(bytes:Uint8Array)=>Buffer.from(bytes).toString("base64"),
-  useCallback:(fn:unknown)=>fn,keepMaterializationRecovery,setRecoveryDurable:vi.fn(),
+  useCallback:(fn:unknown)=>fn,keepMaterializationRecovery,recoveryHeading,setRecoveryDurable:vi.fn(),
   setRecoveryCopies:vi.fn(),setSaveState:vi.fn(),setError:vi.fn()};
  const preserveSource=editor.slice(editor.indexOf("  const preserveRecovery = useCallback("),editor.indexOf("  const materializeTimerRef ="));
  const preserveRecovery=compile(preserveSource,"preserveRecovery",bindings);

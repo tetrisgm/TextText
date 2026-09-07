@@ -23,6 +23,7 @@ function WindowedRows<T>({
 }) {
   const anchorRef = useRef<HTMLDivElement>(null);
   const rowPxRef = useRef(72);
+  const [rowPx, setRowPx] = useState(72);
   const [span, setSpan] = useState({ start: 0, end: Math.min(items.length, 40) });
   // Derived-state correction during render: the selected row must exist in
   // the DOM before the shell's scroll-into-view effect looks for it.
@@ -92,9 +93,12 @@ function WindowedRows<T>({
     const top = firstRow.getBoundingClientRect().top;
     const bottom = lastRow.getBoundingClientRect().bottom;
     const px = (bottom - top) / count;
-    if (px > 8 && Number.isFinite(px)) rowPxRef.current = px;
+    if (px > 8 && Number.isFinite(px)) {
+      rowPxRef.current = px;
+      setRowPx(px);
+    }
   });
-  const px = rowPxRef.current;
+  const px = rowPx;
   return (
     <>
       <div
@@ -227,7 +231,7 @@ import {
   displayModeForCollectionView,
   selectCollectionView,
 } from "@/lib/presentation/collection-views";
-import { blogPostPath } from "@/lib/public-paths";
+import { blogHomePath, blogPostPath } from "@/lib/public-paths";
 import { updateFolder } from "@/lib/pool/store";
 import { shouldSuppressNativeItemSelection } from "@/lib/workspace-selection";
 import {
@@ -341,7 +345,9 @@ function FolderEmptyCard({
   actionLabel,
   children,
   onAction,
+  homeHref,
 }: {
+  homeHref?: string;
   actionLabel?: ReactNode;
   children: string;
   onAction?: () => void;
@@ -358,6 +364,7 @@ function FolderEmptyCard({
           {actionLabel}
         </button>
       )}
+      {homeHref && <p><Link href={homeHref}>Browse all items</Link></p>}
     </article>
   );
 }
@@ -676,6 +683,7 @@ function UniversalFolderContents({
   handle,
   items,
   canCreateItems,
+  captureFocusRequestKey,
   canEditItems,
   onCreateItem,
   onCaptureResolved,
@@ -690,13 +698,16 @@ function UniversalFolderContents({
   selectedPostId,
   selectedPostIds,
   viewMode,
+  hideEmpty = false,
 }: {
+  hideEmpty?: boolean;
   availableTemplates?: readonly TemplateDefinition[];
   blog: Blog;
   folder: Folder;
   handle: string;
   items: Post[];
   canCreateItems: boolean;
+  captureFocusRequestKey?: number;
   canEditItems: boolean;
   onCreateItem?: FolderCreateItem;
   onCaptureResolved?: FolderCaptureResolved;
@@ -740,6 +751,8 @@ function UniversalFolderContents({
   );
   const initialSavedView = collectionDefinition?.collection.defaultView ?? "";
   const [savedViewId, setSavedViewId] = useState(initialSavedView);
+  const [unfilteredFolderId, setUnfilteredFolderId] = useState<string | null>(null);
+  const showAllItems = unfilteredFolderId === folder.id;
   const savedViewFolder = useRef(folder.id);
   const savedViewKey = savedViews.map((view) => view.id).join("\u0000");
   useEffect(() => {
@@ -788,8 +801,8 @@ function UniversalFolderContents({
       title: post.title,
       fields: post.document?.content.fields ?? {},
     })),
-    activeCollection,
-  ), [activeCollection, items]);
+    showAllItems && activeCollection ? { ...activeCollection, filters: [] } : activeCollection,
+  ), [activeCollection, items, showAllItems]);
   const sorted = useMemo(() => collectionRows.map((entry) => entry.post), [collectionRows]);
 
   // A calendar folder places items on a month grid by the template's dateBy
@@ -831,6 +844,7 @@ function UniversalFolderContents({
           folder={folder}
           handle={handle}
           onCreateItem={onCreateItem}
+          focusRequestKey={captureFocusRequestKey}
         />
       )}
       {savedViews.length > 0 ? (
@@ -839,7 +853,7 @@ function UniversalFolderContents({
           <select
             aria-label="Folder view"
             value={savedViewId}
-            onChange={(event) => setSavedViewId(event.currentTarget.value)}
+            onChange={(event) => { setSavedViewId(event.currentTarget.value); setUnfilteredFolderId(null); }}
           >
             {!collectionDefinition?.collection.defaultView ? (
               <option value="">Main</option>
@@ -852,20 +866,22 @@ function UniversalFolderContents({
           </select>
         </label>
       ) : null}
+      {showAllItems && <p>Showing all folder items. <button type="button" className="ac-btn ac-btn-gray" onClick={() => setUnfilteredFolderId(null)}>Restore view filters</button></p>}
       <section className="post-folder-page-items" aria-label="Folder items">
-        {sorted.length === 0 ? (
+        {sorted.length === 0 ? (hideEmpty ? null : (
           <FolderEmptyCard
-            actionLabel={canCreateItems ? "Create an item" : undefined}
+            homeHref={blogHomePath(blog)}
+            actionLabel={items.length ? "Show all folder items" : canCreateItems ? (folder.mode === "bookmarks" ? "Save a bookmark" : folder.mode === "notes" ? "Write a note" : "Write an article") : undefined}
             onAction={
-              canCreateItems
+              items.length ? () => setUnfilteredFolderId(folder.id) : canCreateItems
                 ? () =>
                     dispatchFolderUiEvent(CREATE_FOLDER_ITEM_EVENT, folder.id)
                 : undefined
             }
           >
-            Nothing here yet.
+            {items.length ? "No items match this view. Show all folder items to remove its filters." : canCreateItems ? "This folder is empty. Keep related items together here. Create the first one to get started." : "This folder is empty. Items added by its owner will appear here."}
           </FolderEmptyCard>
-        ) : folder.mode === "bookmarks" && usesBuiltInLook ? (
+        )) : folder.mode === "bookmarks" && usesBuiltInLook ? (
           <div
             className={`bookmark-folder-collection is-${viewMode}`}
             role="listbox"
@@ -1542,6 +1558,7 @@ export function FolderPage({
   onOpenTag,
   createBookmarkRequestKey,
   editRequestKey = 0,
+  captureFocusRequestKey = 0,
   searchFocusRequestKey = 0,
   onSelectPost,
   selectedPostId,
@@ -1569,6 +1586,7 @@ export function FolderPage({
   createBookmarkRequestKey?: number;
   editRequestKey?: number;
   searchFocusRequestKey?: number;
+  captureFocusRequestKey?: number;
   onSelectPost?: (postId: string) => void;
   selectedPostId?: string | null;
   selectedPostIds?: ReadonlySet<string>;
@@ -1701,12 +1719,19 @@ export function FolderPage({
           </button>
         </div>
       )}
+      {filterQuery && filteredItems.length === 0 ? (
+        <FolderEmptyCard actionLabel="Clear folder search" onAction={() => setFilterQuery("")} homeHref={blogHomePath(blog)}>
+          No items match your search in this folder. Try a different word or clear the search.
+        </FolderEmptyCard>
+      ) : null}
       <UniversalFolderContents
         availableTemplates={availableTemplates}
         blog={blog}
         folder={folder}
         handle={handle}
         items={filteredItems}
+        captureFocusRequestKey={captureFocusRequestKey}
+        hideEmpty={Boolean(filterQuery) && filteredItems.length === 0}
         canCreateItems={canCreateItems}
         canEditItems={canEditItems}
         onCreateItem={onCreateItem}

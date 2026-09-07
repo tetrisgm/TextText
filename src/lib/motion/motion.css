@@ -1,0 +1,41 @@
+/* Motion owns transform and opacity on these local app surfaces. */
+[data-motion-surface] { transition: none !important; animation: none !important; }
+[data-motion-material]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  border-radius: inherit;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  opacity: var(--motion-material-opacity, 0);
+}
+[data-motion-solid="true"] {
+  background: var(--motion-solid-ground, var(--ac-bg, var(--bg, #fff))) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+[data-motion-solid="true"]::after { display: none; }
+[data-motion-material][data-motion-animating]::after { will-change: opacity; }
+[data-motion-contrast="true"] { outline: 1px solid var(--motion-border, var(--ac-label, var(--ink, #1d1d1f))); outline-offset: -1px; }
+[data-motion-press] { transition: none !important; }
+@media (prefers-reduced-transparency: reduce) {
+  [data-motion-material] { background: var(--motion-solid-ground, var(--ac-bg, var(--bg, #fff))) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+  [data-motion-material]::after { display: none; }
+}
+@media (prefers-contrast: more) {
+  [data-motion-material] { outline: 1px solid var(--motion-border, var(--ac-label, var(--ink, #1d1d1f))); outline-offset: -1px; }
+}
+
+/* Fixed material layer; selection itself cross-fades on its own spring. */
+.workspace-tab[data-motion-tab] { background: transparent; }
+.motion-tab-highlight {
+  position: absolute; inset: 0; border-radius: inherit;
+  background: var(--workspace-tab-page, var(--workspace-pane-ground));
+  pointer-events: none; z-index: -1;
+}
+[data-motion-tab] { isolation: isolate; }
+
+.command-palette { --motion-solid-ground: var(--palette-ground); --motion-border: var(--palette-ink); }
+.command-palette--sheet { --motion-solid-ground: var(--sheet-bg); --motion-border: var(--sheet-ink); }

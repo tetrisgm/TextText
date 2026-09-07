@@ -1,5 +1,7 @@
 "use client";
 
+import { useMotionPresence, useSurfaceMotion } from "@/lib/motion/react";
+
 import {
   useCallback,
   useEffect,
@@ -16,6 +18,7 @@ import {
   shareScopeAction,
   updateScopeShareRoleAction,
 } from "@/app/editor/actions";
+import { useDialogFocus } from "@/components/accessibility/useDialogFocus";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import type { ItemAccessSummary } from "@/lib/store";
 import type { ScopeShare, ScopeShareRole } from "@/lib/shares";
@@ -77,10 +80,21 @@ function shareUrlFromLocation(): string {
 }
 
 export function ShareDialog(props: ShareDialogProps) {
-  if (!props.open) return null;
+  const [closing, setClosing] = useState(false);
+  const [previousOpen, setPreviousOpen] = useState(props.open);
+  if (props.open !== previousOpen) { setPreviousOpen(props.open); setClosing(false); }
+  const visible = props.open && !closing;
+  const motion = useMotionPresence(visible);
+  if (!motion.present) return null;
   return <ShareDialogContent
     key={`${props.handle}:${props.scopeType ?? "item"}:${props.scopeId ?? props.postId}`}
     {...props}
+    open={visible}
+    onClose={() => setClosing(true)}
+    motionOnRest={(shown) => {
+      motion.onRest(shown);
+      if (!shown && closing) { props.onClose(); setClosing(false); }
+    }}
   />;
 }
 
@@ -94,7 +108,8 @@ function ShareDialogContent({
   subtitle,
   open,
   onClose,
-}: ShareDialogProps) {
+  motionOnRest,
+}: ShareDialogProps & { motionOnRest: (shown: boolean) => void }) {
   const resolvedScopeId = scopeId ?? postId ?? "";
   const resolvedSubtitle = subtitle ?? postTitle ?? scopeCopy(scopeType);
   const titleId = useId();
@@ -105,6 +120,7 @@ function ShareDialogContent({
   const [summary, setSummary] = useState<ItemAccessSummary | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [managedScope, setManagedScope] = useState<ItemAccessSummary["inherited"][number] | null>(null);
+  useSurfaceMotion(dialogRef, open, { mounted: !managedScope, onRest: motionOnRest });
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [shares, setShares] = useState<ScopeShare[]>([]);
   const [email, setEmail] = useState("");
@@ -155,13 +171,7 @@ function ShareDialogContent({
     };
   }, [reload]);
 
-  useEffect(() => {
-    const previous = document.activeElement;
-    dialogRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
-    return () => {
-      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
-    };
-  }, [managedScope]);
+  useDialogFocus(dialogRef, open && !managedScope);
 
   useEscapeLayer(open && !managedScope, "Share dialog", onClose);
 
@@ -292,7 +302,7 @@ function ShareDialogContent({
     }
   }, [scopeType, summary]);
 
-  if (!open || !resolvedScopeId) return null;
+  if (!resolvedScopeId) return null;
 
   if (managedScope) return <ShareDialog
     handle={handle} scopeType={managedScope.scopeType} scopeId={managedScope.scopeId}
@@ -306,25 +316,12 @@ function ShareDialogContent({
   const options = roleOptions(scopeType);
 
   return (
-    <div className={`applecms ${styles.backdrop}`} onMouseDown={closeFromBackdrop}>
+    <div className={`applecms ${styles.backdrop}`} onMouseDown={closeFromBackdrop} inert={!open} aria-hidden={!open} style={{ pointerEvents: open ? undefined : "none" }}>
       <section
         ref={dialogRef}
-        onKeyDown={(event) => {
-          if (event.key !== "Tab") return;
-          const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
-            'button:not(:disabled), input:not(:disabled), select:not(:disabled), a[href]',
-          ));
-          const first = controls[0];
-          const last = controls[controls.length - 1];
-          if (event.shiftKey && document.activeElement === first) {
-            event.preventDefault(); last?.focus();
-          } else if (!event.shiftKey && document.activeElement === last) {
-            event.preventDefault(); first?.focus();
-          }
-        }}
         className={styles.dialog}
         role="dialog"
-        aria-modal="true"
+        aria-modal={open ? true : undefined}
         aria-labelledby={titleId}
         onMouseDown={(event) => event.stopPropagation()}
       >

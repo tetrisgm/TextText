@@ -96,10 +96,10 @@ describe("workspace simplification contract", () => {
   });
 
   it("gives every empty state an action instead of pointing at the composer", () => {
-    expect(folderSource).toContain("Nothing here yet.");
+    expect(folderSource).toContain("This folder is empty.");
     expect(folderSource).not.toContain("to create the first item");
-    expect(shellSource).toContain("Your first TextText loop");
-    expect(shellSource).toContain("Save your first thought");
+    expect(shellSource).toContain("A place for your notes, articles, and bookmarks");
+    expect(shellSource).toContain("Write your first note");
     expect(shellSource).not.toContain("Create your first item above");
     expect(shellSource).toContain("Show all items");
   });
@@ -137,12 +137,12 @@ describe("workspace simplification contract", () => {
     expect(assistantSidebarStyles).toContain(
       '@media (min-width: 561px) and (max-width: 900px)',
     );
-    expect(assistantSidebarStyles).toContain("width: min(320px, 50vw)");
+    expect(assistantSidebarStyles).toContain("width: min(20rem, 50vw)");
     expect(workspaceStyles).toContain(
       ".post-editor-shell.has-assistant-open .workspace-root-page",
     );
     expect(workspaceStyles).toContain(
-      "padding-right: calc(min(320px, 50vw) + 48px)",
+      "padding-right: calc(min(20rem, 50vw) + 3rem)",
     );
     expect(workspaceStyles).toContain(
       ".post-editor-shell.has-assistant-open .universal-item-receipt",
@@ -163,7 +163,7 @@ describe("workspace simplification contract", () => {
     expect(workspaceStyles).toContain(
       ".workspace-recent.is-view-list .workspace-recent-list",
     );
-    expect(workspaceStyles).toContain("padding-left: 22px");
+    expect(workspaceStyles).toContain("padding-left: 1.375rem");
     expect(workspaceStyles).toContain("@media (hover: none)");
     expect(workspaceStyles).toContain(".workspace-item-actions-trigger");
   });

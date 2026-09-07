@@ -69,6 +69,7 @@ type RendererProps = {
   wikiLinkTargets?: WikiLinkRenderTargets;
   /** Miniature context: render media as a still, never a live embed. */
   preview?: boolean;
+  landmark?: "main";
 };
 
 type CollectionRendererProps = Omit<RendererProps, "className"> & {
@@ -1316,6 +1317,7 @@ function DocumentRendererContent({
   className,
   wikiLinkTargets,
   preview,
+  landmark,
 }: RendererProps) {
   const scopeId = `tt-${documentId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) || "document"}`;
   const theme = { ...template.theme, ...document.presentation.theme };
@@ -1326,6 +1328,8 @@ function DocumentRendererContent({
   // the window.
   return (
     <article
+      role={landmark}
+      aria-label={landmark ? "Read item" : undefined}
       id={scopeId}
       className={["tt-document", className].filter(Boolean).join(" ")}
       data-template={template.id}

@@ -172,6 +172,8 @@ export function WorkspaceSettings({
       setAiSettings(next);
       if (next.provider) setAiProvider(next.provider);
       if (next.model) setAiModel(next.model);
+    }).catch(() => {
+      if (!cancelled) setAiError("AI settings could not be loaded. Your documents are unchanged. Return to items and reopen settings to retry.");
     });
     return () => {
       cancelled = true;
@@ -193,7 +195,7 @@ export function WorkspaceSettings({
         if (!cancelled) {
           setTokens([]);
           setTokensVisible(false);
-          setTokensError("Could not load connected app tokens.");
+          setTokensError("Connected AI apps could not be loaded. Reopen settings to retry.");
         }
       } finally {
         if (!cancelled) setTokensLoading(false);
@@ -388,6 +390,7 @@ export function WorkspaceSettings({
           }
         />
 
+        {aiError && !aiSettings && <p className={styles.error} role="alert">{aiError}</p>}
         {aiSettings?.allowed && (
           <section className={styles.section} aria-labelledby="settings-ai">
             <div className={styles.sectionHeader}>
@@ -403,11 +406,11 @@ export function WorkspaceSettings({
             />
             <AgentInstructionsSettings handle={blog.handle} />
             <h3 className={styles.subsectionTitle} id="api-key-connections">
-              API key connections
+              AI provider keys
             </h3>
             <p className={styles.aiNotConfigured}>
-              These advanced connections use your provider API account. Keys are
-              encrypted and scoped to this workspace.
+              Use a key from your AI provider to enable the assistant. The key is
+              encrypted and used only in this workspace.
             </p>
             {aiSettings.configured && !aiEditing ? (
               <div className={styles.aiStatus}>
@@ -535,7 +538,7 @@ export function WorkspaceSettings({
               </form>
             )}
             {!aiSettings.configured && !aiEditing && (
-              <p className={styles.aiNotConfigured}>Not configured</p>
+              <p className={styles.aiNotConfigured}>No provider key saved. Add a key above to use this provider, or keep writing without AI.</p>
             )}
             {aiError && (
               <p className={styles.error} role="alert">
@@ -556,7 +559,7 @@ export function WorkspaceSettings({
 
         <McpConnections handle={blog.handle} onCountChange={setMcpCount} />
 
-        {(tokensVisible || Boolean(account)) && (
+        {(tokensVisible || Boolean(account) || Boolean(tokensError)) && (
           <section
             className={styles.section}
             id="settings-connected-clients"
@@ -564,12 +567,12 @@ export function WorkspaceSettings({
           >
             <div className={styles.sectionHeader}>
               <div>
-                <h2 id="settings-connections">Connected clients</h2>
-                <p>To connect an agent to one item, open the item and choose Add agent in its participant row or the command palette. Manage existing app and workspace tokens here.</p>
+                <h2 id="settings-connections">Connected AI apps</h2>
+                <p>To connect an agent to one item, open the item and choose Add agent in its participant row or the command palette. Manage the apps that can access your workspace here.</p>
                 <button type="button" className={styles.connectionAddLink} onClick={onBack}>Return to items</button>
               </div>
               <a href="/connect" className={styles.connectionAddLink}>
-                Add client token
+                Connect an AI app
               </a>
             </div>
 
@@ -630,7 +633,7 @@ export function WorkspaceSettings({
               </ul>
             ) : (
               <p className={styles.aiNotConfigured}>
-                No connected clients yet.
+                {!tokensError && <>No AI apps connected yet. Connect an app to work with the items you allow it to access. <a href="/connect">Connect an AI app</a></>}
               </p>
             )}
 

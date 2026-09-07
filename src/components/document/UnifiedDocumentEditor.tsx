@@ -1,5 +1,9 @@
 "use client";
 
+import { dismissOpenDetails } from "@/components/accessibility/keyboard";
+import { StatusAnnouncement } from "@/components/accessibility/StatusAnnouncement";
+import { EditorSaveNotice, editorSaveLabel } from "./EditorSaveNotice";
+
 import {
   useCallback,
   useEffect,
@@ -42,6 +46,8 @@ import {
   readMaterializationRecoveries,
   acknowledgeMaterializationRecoveries,
   type MaterializationRecovery,
+  type RecoveryReason,
+  recoveryHeading,
 } from "@/lib/collab/materialization-recovery";
 import { ParticipantsRow } from "@/components/workspace/ParticipantsRow";
 import { WorkspaceActionBarPortal } from "@/components/workspace/WorkspaceActionBarPortal";
@@ -676,6 +682,11 @@ export function UnifiedDocumentEditor({
   const [recoveryCopies, setRecoveryCopies] = useState<MaterializationRecovery[]>([]);
   const [recoveryDurable, setRecoveryDurable] = useState(true);
   const [recoveryDownloaded, setRecoveryDownloaded] = useState(false);
+  // Separate from `error`: only failures raised on the recovery screen itself
+  // may be shown there. The shared editor error can still hold an earlier
+  // message ("This document changed elsewhere") that names a cause this
+  // recovery did not have.
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const [accessLoss, setAccessLoss] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -688,13 +699,14 @@ export function UnifiedDocumentEditor({
     }
     return () => { cancelled = true; };
   }, [collab.postId]);
-  const preserveRecovery = useCallback((epoch: number) => {
+  const preserveRecovery = useCallback((epoch: number, reason?: RecoveryReason) => {
     if (recoveryBlockedRef.current) return;
     recoveryBlockedRef.current = true;
     const copy: MaterializationRecovery = {
       id: crypto.randomUUID(),
       postId: collab.postId,
       epoch,
+      reason,
       state: bytesToBase64(Y.encodeStateAsUpdate(doc)),
       document: preReadyLocalRef.current ?? (hasDocumentSnapshot(doc)
         ? documentSnapshotFromYDoc(doc) : documentRef.current),
@@ -702,7 +714,7 @@ export function UnifiedDocumentEditor({
     setRecoveryDurable(keepMaterializationRecovery(copy));
     setRecoveryCopies([copy]);
     setSaveState("error");
-    setError("This document changed elsewhere. Download your local copy before reopening.");
+    setError(`${recoveryHeading([copy])}. Download your local copy before reopening.`);
   }, [collab.postId, doc]);
   const materializeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const materializeQueueRef = useRef(Promise.resolve());
@@ -1237,6 +1249,7 @@ export function UnifiedDocumentEditor({
 
   const handleKeyboard = useCallback(
     (event: KeyboardEvent<HTMLElement>) => {
+      if (event.defaultPrevented || dismissOpenDetails(event.target, event)) return;
       if (event.key === "Escape") {
         event.preventDefault();
         void stopEditing();
@@ -1348,27 +1361,17 @@ export function UnifiedDocumentEditor({
     setSaveState("local");
     setProviderAttempt((attempt) => attempt + 1);
   }, []);
-  const saveStateLabel =
-    saveState === "local"
-      ? networkEnabled
-        ? "Saved"
-        : "Saved on this device"
-      : saveState === "offline"
-        ? "Saved on this device"
-        : saveState === "error"
-          ? error ?? "Could not sync"
-          : saveState === "saving"
-            ? "Saving"
-            : saveState === "saved"
-              ? "Saved"
-              : "";
+  const saveStateLabel = editorSaveLabel(saveState, networkEnabled, ready, error);
 
   if (!active) return null;
   if (recoveryCopies.length) {
     return (
       <section className="tt-unified-editor tt-baseline-failure" role="alert">
         <div className="tt-baseline-failure-copy">
-          <h1>{accessLoss ?? "This document changed elsewhere"}</h1>
+          <h1>{accessLoss ?? recoveryHeading(recoveryCopies)}</h1>
+          <p>{accessLoss
+            ? "Editing has stopped. Ask the owner for access before reopening the document."
+            : "Editing has stopped so none of your text is lost."}</p>
           <p>{recoveryDurable
             ? "Your local copy is kept on this device. Download it to recover your edits."
             : "Device storage is unavailable. Download your local copy before closing this page."}</p>
@@ -1383,12 +1386,13 @@ export function UnifiedDocumentEditor({
           }}>Download local copy</button>
           <button type="button" className="ac-btn ac-btn-gray" disabled={!recoveryDownloaded} onClick={async () => {
             if (!await acknowledgeRetiredOutboxes(recoveryCopies)) {
-              setError("Your local recovery copy could not be acknowledged. Please try again.");
+              setRecoveryError("Your local recovery copy could not be acknowledged. Please try again.");
               return;
             }
             acknowledgeMaterializationRecoveries(recoveryCopies);
             window.location.reload();
           }}>Open current version</button>
+          {recoveryError && <p>{recoveryError}</p>}
         </div>
       </section>
     );
@@ -1398,15 +1402,24 @@ export function UnifiedDocumentEditor({
       <section className="tt-unified-editor tt-baseline-failure" role="alert">
         <div className="tt-baseline-failure-copy">
           <h1>This document could not be loaded for editing</h1>
+          <p>The saved version could not be loaded. Any text entered here has not been confirmed by the server. Keep this page open and retry, or download your local copy.</p>
           <button type="button" className="ac-btn ac-btn-gray" onClick={retryBaseline}>
-            Retry
+            Reload document
           </button>
+          <button type="button" className="ac-btn ac-btn-gray" onClick={() => {
+            const url = URL.createObjectURL(new Blob([JSON.stringify(currentLocalDocument(), null, 2)], { type: "application/json" }));
+            const link = window.document.createElement("a");
+            link.href = url;
+            link.download = `texttext-local-${collab.postId}.json`;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+          }}>Download local copy</button>
         </div>
       </section>
     );
   }
   return (
-    <section className="tt-unified-editor" data-ai-item-id={collab.postId} onKeyDown={handleKeyboard}>
+    <section className="tt-unified-editor" role="main" aria-label="Edit item" data-ai-item-id={collab.postId} onKeyDown={handleKeyboard}>
       {choosingTemplate && availableTemplates && availableTemplates.length > 0 && (
         <TemplateGallery
           document={document}
@@ -1425,7 +1438,7 @@ export function UnifiedDocumentEditor({
         />
       )}
       <WorkspaceActionBarPortal>
-        <div className="post-top-action-bar applecms is-edit" aria-label="Document controls">
+        <div className="post-top-action-bar applecms is-edit" role="group" aria-label="Document controls">
           <div className="post-action-toolbar ac-chrome">
             {leadingControls}
         <ParticipantsRow key={collab.postId} postId={networkEnabled ? collab.postId : null}
@@ -1536,9 +1549,10 @@ export function UnifiedDocumentEditor({
           <button type="button" className="ac-btn ac-btn-gray" onClick={() => void stopEditing()}>
             Stop editing
           </button>
-            <div className={`tt-save-state is-${saveState}`} role="status" aria-live="polite">
+            <div className={`tt-save-state is-${saveState}`}>
               {saveStateLabel}
             </div>
+            <StatusAnnouncement message={saveStateLabel || null} />
           </div>
         </div>
       </WorkspaceActionBarPortal>
@@ -1600,6 +1614,8 @@ export function UnifiedDocumentEditor({
           </div>
         </div>
       )}
+      <EditorSaveNotice state={saveState} onRetry={() => void flushMaterialization()} />
+      {!document.content.title.trim() && !document.content.body.trim() && <p className="workspace-post-body-status">Start with a title or write below. Use Stop editing above to return to reading.</p>}
       {/* No byline while writing: an author and a reading time are reader
           chrome, and showing them here turns the page into a preview of
           itself instead of the thing being written.
@@ -1647,7 +1663,7 @@ export function UnifiedDocumentEditor({
       <style>{`
         .tt-unified-editor{min-height:100%;background:var(--paper,#fff)}
         .tt-document-editor{min-height:100vh;padding-bottom:3rem}
-        @media(max-width:700px){.tt-document-editor{padding-top:56px}.tt-look-name{display:none}.tt-field-row.is-embedded{grid-template-columns:1fr;gap:5px;padding-inline:8px}}
+        @media(max-width:700px){.tt-document-editor{padding-top:3.5rem}.tt-look-name{display:none}.tt-field-row.is-embedded{grid-template-columns:1fr;gap:0.3125rem;padding-inline:0.5rem}}
         .tt-document-editor .tt-collaborative-field{position:relative;width:100%;min-width:0}
         .tt-document-editor .tt-collaborative-field textarea,.tt-document-editor .tt-collaborative-mirror{box-sizing:border-box;width:100%;margin:0;padding:0;border:0;outline:0;background:transparent;color:inherit;font:inherit;line-height:inherit;letter-spacing:0;white-space:pre-wrap;overflow-wrap:anywhere;resize:none;text-align:inherit}
         .tt-document-editor .tt-collaborative-field textarea{position:relative;z-index:2;display:block;caret-color:var(--tt-accent);overflow:visible}
@@ -1660,8 +1676,8 @@ export function UnifiedDocumentEditor({
         @media(forced-colors:active){.tt-document-editor .tt-collaborative-field:focus-within::before{content:"";position:absolute;inset:-4px -8px;outline:2px solid Highlight;pointer-events:none}}
         .tt-document-editor .tt-collaborative-mirror{position:absolute;z-index:1;inset:0;pointer-events:none;overflow:hidden;color:transparent}
         .tt-document-editor .tt-collaborative-mirror mark{background:color-mix(in srgb,var(--tt-peer) 28%,transparent);color:transparent;border-radius:2px}
-        .tt-document-editor .tt-remote-caret{position:relative;border-inline-start:2px solid var(--tt-peer);margin-inline-start:-1px;color:transparent}
-        .tt-document-editor .tt-remote-caret>span{position:absolute;left:-2px;bottom:100%;padding:2px 5px;background:var(--tt-peer);color:var(--tt-peer-ink);font:600 10px/1.2 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;white-space:nowrap;border-radius:3px}
+        .tt-document-editor .tt-remote-caret{position:relative;border-inline-start:2px solid var(--tt-peer);margin-inline-start:-0.0625rem;color:transparent}
+        .tt-document-editor .tt-remote-caret>span{position:absolute;left:-2px;bottom:100%;padding:0.125rem 0.3125rem;background:var(--tt-peer);color:var(--tt-peer-ink);font:600 0.625rem/1.2 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;white-space:nowrap;border-radius:3px}
         .tt-document-editor .tt-field-body textarea,.tt-document-editor .tt-field-body .tt-collaborative-mirror{min-height:36vh;text-align:start}
         /* The writing surface renders the source itself, styled, so what you
            type looks like what a reader gets without the document stopping
@@ -1699,87 +1715,87 @@ export function UnifiedDocumentEditor({
         .tt-md-quote{color:color-mix(in srgb,currentColor 76%,transparent);font-style:italic}
         .tt-md-peer{background:color-mix(in srgb,var(--tt-peer) 26%,transparent);border-radius:2px}
         .tt-md-remote-caret{display:inline;position:relative;pointer-events:none;user-select:none}
-        .tt-md-remote-caret::after{content:attr(data-name);position:absolute;left:-2px;bottom:100%;padding:2px 5px;background:var(--tt-peer);color:var(--tt-peer-ink);font:600 10px/1.2 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;white-space:nowrap;border-radius:3px}
+        .tt-md-remote-caret::after{content:attr(data-name);position:absolute;left:-2px;bottom:100%;padding:0.125rem 0.3125rem;background:var(--tt-peer);color:var(--tt-peer-ink);font:600 0.625rem/1.2 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;white-space:nowrap;border-radius:3px}
         @media(forced-colors:active){.tt-md-marker{color:GrayText}}
         .tt-document-editor .tt-field-body textarea{resize:none}
-        .tt-unified-presence{display:flex;align-items:center;gap:4px;padding-inline:3px}
-        .tt-person-presence,.tt-agent-avatar{display:grid;place-items:center;width:25px;height:25px;border:2px solid var(--ac-material,#fff);border-radius:50%;color:#fff;font-size:10px;font-weight:700}
-        .tt-person-presence+.tt-person-presence{margin-inline-start:-9px}
-        .tt-agent-presence{display:inline-flex;align-items:center;max-width:132px;min-width:0;padding:2px 8px 2px 2px;gap:5px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:999px;background:var(--ac-fill-4,rgba(118,118,128,.08));color:var(--ink,#1d1d1f);font-size:11px;font-weight:600}
+        .tt-unified-presence{display:flex;align-items:center;gap:0.25rem;padding-inline:0.1875rem}
+        .tt-person-presence,.tt-agent-avatar{display:grid;place-items:center;width:1.5625rem;height:1.5625rem;border:2px solid var(--ac-material,#fff);border-radius:50%;color:#fff;font-size:0.625rem;font-weight:700}
+        .tt-person-presence+.tt-person-presence{margin-inline-start:-0.5625rem}
+        .tt-agent-presence{display:inline-flex;align-items:center;max-width:132px;min-width:0;padding:0.125rem 0.5rem 0.125rem 0.125rem;gap:0.3125rem;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:999px;background:var(--ac-fill-4,rgba(118,118,128,.08));color:var(--ink,#1d1d1f);font-size:0.6875rem;font-weight:600}
         .tt-agent-avatar{flex:0 0 auto;border-style:double;border-width:3px}
         .tt-agent-avatar>span{display:contents}
-        .tt-agent-avatar svg{width:13px;height:13px;fill:currentColor}
+        .tt-agent-avatar svg{width:0.8125rem;height:0.8125rem;fill:currentColor}
         .tt-agent-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-        .tt-save-state{position:fixed;right:calc(72px + var(--workspace-rail-inset,0px));bottom:calc(24px + var(--workspace-hints-height,0px));z-index:220;min-height:1rem;padding:5px 9px;border:1px solid color-mix(in srgb,var(--ink,#1d1d1f) 12%,transparent);border-radius:6px;background:var(--paper,#fff);color:var(--muted,#6e6e73);font-size:12px;pointer-events:none}
+        .tt-save-state{position:fixed;right:calc(72px + var(--workspace-rail-inset,0px));bottom:calc(24px + var(--workspace-hints-height,0px));z-index:220;min-height:1rem;padding:0.3125rem 0.5625rem;border:1px solid color-mix(in srgb,var(--ink,#1d1d1f) 12%,transparent);border-radius:6px;background:var(--paper,#fff);color:var(--muted,#6e6e73);font-size:0.75rem;pointer-events:none}
         .tt-save-state:empty{display:none}.tt-save-state.is-error{color:#b42318}@media(prefers-color-scheme:dark){.tt-save-state.is-error{color:#ff8a80}}
-        .tt-look-button{display:inline-flex;align-items:center;gap:5px}.tt-look-name{max-width:9rem;overflow:hidden;color:var(--muted,#6e6e73);font-weight:500;text-overflow:ellipsis;white-space:nowrap}
-        .tt-editor-more{position:relative}.tt-editor-more>summary{display:grid;place-items:center;box-sizing:border-box;min-width:30px;height:30px;padding:0 8px;border:0;border-radius:6px;background:var(--ac-fill-4,rgba(118,118,128,.12));color:var(--ink,#1d1d1f);font:700 11px/1 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;letter-spacing:1px;cursor:pointer;list-style:none}.tt-editor-more>summary::-webkit-details-marker{display:none}.tt-editor-more[open]>summary{background:var(--ac-fill-3,rgba(118,118,128,.2))}
-        .tt-editor-more-menu{position:absolute;z-index:420;top:calc(100% + 6px);right:0;min-width:160px;padding:5px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:8px;background:color-mix(in srgb,var(--paper,#fff) 94%,transparent);box-shadow:0 12px 32px rgba(0,0,0,.16);backdrop-filter:blur(24px) saturate(150%)}.tt-editor-more-menu button{width:100%;padding:7px 9px;border:0;border-radius:5px;background:transparent;color:var(--ink,#1d1d1f);font:500 13px/1.25 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;text-align:left;cursor:pointer}.tt-editor-more-menu button:hover{background:color-mix(in srgb,currentColor 10%,transparent)}.tt-editor-more-menu button.tt-editor-more-destructive{color:var(--tt-destructive,#d70015)}
-        .tt-field-row{display:flex;align-items:center;gap:10px;margin:2px 0;font-size:14px;color:var(--ink,#1d1d1f)}
+        .tt-look-button{display:inline-flex;align-items:center;gap:0.3125rem}.tt-look-name{max-width:9rem;overflow:hidden;color:var(--muted,#6e6e73);font-weight:500;text-overflow:ellipsis;white-space:nowrap}
+        .tt-editor-more{position:relative}.tt-editor-more>summary{display:grid;place-items:center;box-sizing:border-box;min-width:30px;height:1.875rem;padding:0 0.5rem;border:0;border-radius:6px;background:var(--ac-fill-4,rgba(118,118,128,.12));color:var(--ink,#1d1d1f);font:700 0.6875rem/1 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;letter-spacing:0.0625rem;cursor:pointer;list-style:none}.tt-editor-more>summary::-webkit-details-marker{display:none}.tt-editor-more[open]>summary{background:var(--ac-fill-3,rgba(118,118,128,.2))}
+        .tt-editor-more-menu{position:absolute;z-index:420;top:calc(100% + 6px);right:0;min-width:160px;padding:0.3125rem;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:8px;background:color-mix(in srgb,var(--paper,#fff) 94%,transparent);box-shadow:0 12px 32px rgba(0,0,0,.16);backdrop-filter:blur(24px) saturate(150%)}.tt-editor-more-menu button{width:100%;padding:0.4375rem 0.5625rem;border:0;border-radius:5px;background:transparent;color:var(--ink,#1d1d1f);font:500 0.8125rem/1.25 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;text-align:left;cursor:pointer}.tt-editor-more-menu button:hover{background:color-mix(in srgb,currentColor 10%,transparent)}.tt-editor-more-menu button.tt-editor-more-destructive{color:var(--tt-destructive,#d70015)}
+        .tt-field-row{display:flex;align-items:center;gap:0.625rem;margin:0.125rem 0;font-size:0.875rem;color:var(--ink,#1d1d1f)}
         .tt-field-row.is-richtext{align-items:flex-start}
-        .tt-field-label{flex:0 0 8.5rem;color:var(--muted,#6e6e73);font-size:12px;font-weight:600;letter-spacing:.01em}
-        .tt-field-row.is-embedded{position:relative;display:grid;grid-template-columns:minmax(6.5rem,8.5rem) minmax(0,1fr);align-items:center;gap:12px;width:100%;box-sizing:border-box;margin:0;padding:4px 12px}
+        .tt-field-label{flex:0 0 8.5rem;color:var(--muted,#6e6e73);font-size:0.75rem;font-weight:600;letter-spacing:.01em}
+        .tt-field-row.is-embedded{position:relative;display:grid;grid-template-columns:minmax(6.5rem,8.5rem) minmax(0,1fr);align-items:center;gap:0.75rem;width:100%;box-sizing:border-box;margin:0;padding:0.25rem 0.75rem}
         .tt-field-row.is-embedded>.tt-field-label{position:static;width:auto;height:auto;padding:0;margin:0;overflow:visible;clip:auto;white-space:normal;border:0}
         .tt-field-row.is-embedded>.tt-field-input,.tt-field-row.is-embedded>.tt-field-multienum,.tt-field-row.is-embedded>.tt-rows-editor,.tt-field-row.is-embedded>.tt-people-picker,.tt-field-row.is-embedded>.tt-status-workflow-control{width:100%}
-        .tt-field-row.is-embedded>.tt-field-input.is-checkbox{width:16px;justify-self:start}
+        .tt-field-row.is-embedded>.tt-field-input.is-checkbox{width:1rem;justify-self:start}
         .tt-field-row.is-image.is-embedded{justify-content:center;margin:1.2rem 0}
         .tt-field-row.is-image.is-embedded .tt-image-field-control.is-canvas{position:relative;display:block;width:100%;overflow:visible}
-        .tt-field-row.is-image.is-embedded .tt-image-field-preview{display:block;width:100%;height:auto;max-height:min(62vh,680px);border:0;border-radius:0;background:transparent;object-fit:cover}
-        .tt-field-row.is-image.is-embedded .tt-image-field-actions{position:absolute;right:12px;bottom:12px;padding:4px;border:1px solid color-mix(in srgb,#fff 26%,transparent);border-radius:8px;background:rgba(29,29,31,.72);box-shadow:0 4px 14px rgba(0,0,0,.16);opacity:0;backdrop-filter:blur(18px) saturate(140%);transition:opacity 140ms ease}
+        .tt-field-row.is-image.is-embedded .tt-image-field-preview{display:block;width:100%;height:auto;max-height:min(62vh,42.5rem);border:0;border-radius:0;background:transparent;object-fit:cover}
+        .tt-field-row.is-image.is-embedded .tt-image-field-actions{position:absolute;right:12px;bottom:12px;padding:0.25rem;border:1px solid color-mix(in srgb,#fff 26%,transparent);border-radius:8px;background:rgba(29,29,31,.72);box-shadow:0 4px 14px rgba(0,0,0,.16);opacity:0;backdrop-filter:blur(18px) saturate(140%);transition:opacity 140ms ease}
         .tt-field-row.is-image.is-embedded .tt-image-field-control:hover .tt-image-field-actions,.tt-field-row.is-image.is-embedded .tt-image-field-control:focus-within .tt-image-field-actions{opacity:1}
         .tt-field-row.is-image.is-embedded .tt-image-field-actions button,.tt-field-row.is-image.is-embedded .tt-image-field-picker>summary{background:transparent;color:#fff}
         .tt-field-row.is-image.is-embedded .tt-image-field-actions button{color:#ff6961}
-        .tt-field-input{flex:1 1 auto;min-width:0;box-sizing:border-box;padding:5px 8px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:14px}
+        .tt-field-input{flex:1 1 auto;min-width:0;box-sizing:border-box;padding:0.3125rem 0.5rem;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:0.875rem}
         .tt-field-input:focus{outline:2px solid var(--tt-accent,#0071e3);outline-offset:1px;border-color:transparent}
-        .tt-field-input.is-checkbox{flex:0 0 auto;width:16px;height:16px;accent-color:var(--tt-accent,#0071e3)}
+        .tt-field-input.is-checkbox{flex:0 0 auto;width:1rem;height:1rem;accent-color:var(--tt-accent,#0071e3)}
         .tt-field-input.is-number{max-width:9rem}
         .tt-field-input.is-select{appearance:auto}
-        .tt-status-workflow-control{flex:1 1 auto;min-width:0;display:grid;gap:4px}
-        .tt-status-workflow-control>small{color:var(--muted,#6e6e73);font-size:11px;line-height:1.3}
-        .tt-people-picker{position:relative;flex:1 1 auto;min-width:0;display:grid;gap:7px}
-        .tt-people-selection{display:flex;flex-wrap:wrap;gap:6px}
-        .tt-people-empty{color:var(--muted,#6e6e73);font-size:12px}
-        .tt-person-chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:3px 5px 3px 3px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:999px;background:color-mix(in srgb,var(--ink,#1d1d1f) 4%,transparent);font-size:12px;font-weight:600}
+        .tt-status-workflow-control{flex:1 1 auto;min-width:0;display:grid;gap:0.25rem}
+        .tt-status-workflow-control>small{color:var(--muted,#6e6e73);font-size:0.6875rem;line-height:1.3}
+        .tt-people-picker{position:relative;flex:1 1 auto;min-width:0;display:grid;gap:0.4375rem}
+        .tt-people-selection{display:flex;flex-wrap:wrap;gap:0.375rem}
+        .tt-people-empty{color:var(--muted,#6e6e73);font-size:0.75rem}
+        .tt-person-chip{display:inline-flex;align-items:center;gap:0.375rem;max-width:100%;padding:0.1875rem 0.3125rem 0.1875rem 0.1875rem;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:999px;background:color-mix(in srgb,var(--ink,#1d1d1f) 4%,transparent);font-size:0.75rem;font-weight:600}
         .tt-person-chip>span:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-        .tt-person-chip>button{display:grid;width:18px;height:18px;place-items:center;padding:0;border:0;border-radius:50%;background:transparent;color:var(--muted,#6e6e73);font:inherit;cursor:pointer}
+        .tt-person-chip>button{display:grid;width:1.125rem;height:1.125rem;place-items:center;padding:0;border:0;border-radius:50%;background:transparent;color:var(--muted,#6e6e73);font:inherit;cursor:pointer}
         .tt-person-chip>button:hover{background:color-mix(in srgb,var(--ink,#1d1d1f) 9%,transparent);color:var(--ink,#1d1d1f)}
-        .tt-person-avatar{display:grid;flex:0 0 24px;width:24px;height:24px;place-items:center;border-radius:50%;background:color-mix(in srgb,var(--tt-accent,#0071e3) 14%,var(--paper,#fff));color:var(--tt-accent,#0071e3);font-size:10px;font-weight:750;letter-spacing:.02em}
-        .tt-people-picker-menu{position:relative;width:100%;max-width:100%;font-size:12px}
-        .tt-people-manual{position:relative;width:max-content;max-width:100%;font-size:12px}
+        .tt-person-avatar{display:grid;flex:0 0 1.5rem;width:1.5rem;height:1.5rem;place-items:center;border-radius:50%;background:color-mix(in srgb,var(--tt-accent,#0071e3) 14%,var(--paper,#fff));color:var(--tt-accent,#0071e3);font-size:0.625rem;font-weight:750;letter-spacing:.02em}
+        .tt-people-picker-menu{position:relative;width:100%;max-width:100%;font-size:0.75rem}
+        .tt-people-manual{position:relative;width:max-content;max-width:100%;font-size:0.75rem}
         .tt-people-picker-menu>summary,.tt-people-manual>summary{width:max-content;max-width:100%;padding:0;border:0;color:var(--tt-accent,#0071e3);font-weight:650;cursor:pointer;list-style:none}
         .tt-people-picker-menu>summary::-webkit-details-marker,.tt-people-manual>summary::-webkit-details-marker{display:none}
         .tt-people-picker-menu>summary[aria-disabled=true],.tt-people-manual>summary[aria-disabled=true]{opacity:.45;cursor:default}
-        .tt-people-picker-popover{position:absolute;left:0;z-index:40;width:min(320px,calc(100vw - 32px));margin-top:7px;padding:8px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:10px;background:var(--paper,#fff);box-shadow:0 16px 44px rgba(0,0,0,.16)}
-        .tt-people-picker-popover>.tt-field-input{width:100%;margin-bottom:7px}
-        .tt-people-options{display:grid;gap:2px;max-height:240px;overflow:auto}
-        .tt-people-options>button{display:grid;grid-template-columns:24px minmax(0,1fr) 18px;align-items:center;gap:8px;width:100%;padding:7px;border:0;border-radius:7px;background:transparent;color:var(--ink,#1d1d1f);text-align:left;cursor:pointer}
+        .tt-people-picker-popover{position:absolute;left:0;z-index:40;width:min(320px,calc(100vw - 32px));margin-top:0.4375rem;padding:0.5rem;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:10px;background:var(--paper,#fff);box-shadow:0 16px 44px rgba(0,0,0,.16)}
+        .tt-people-picker-popover>.tt-field-input{width:100%;margin-bottom:0.4375rem}
+        .tt-people-options{display:grid;gap:0.125rem;max-height:15rem;overflow:auto}
+        .tt-people-options>button{display:grid;grid-template-columns:1.5rem minmax(0,1fr) 1.125rem;align-items:center;gap:0.5rem;width:100%;padding:0.4375rem;border:0;border-radius:7px;background:transparent;color:var(--ink,#1d1d1f);text-align:left;cursor:pointer}
         .tt-people-options>button:hover,.tt-people-options>button.is-selected{background:color-mix(in srgb,var(--ink,#1d1d1f) 7%,transparent)}
         .tt-people-options>button>span:nth-child(2){display:grid;min-width:0}
-        .tt-people-options strong{overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
-        .tt-people-options small{color:var(--muted,#6e6e73);font-size:10px}
-        .tt-people-options>p{margin:10px;color:var(--muted,#6e6e73);text-align:center}
+        .tt-people-options strong{overflow:hidden;font-size:0.75rem;text-overflow:ellipsis;white-space:nowrap}
+        .tt-people-options small{color:var(--muted,#6e6e73);font-size:0.625rem}
+        .tt-people-options>p{margin:0.625rem;color:var(--muted,#6e6e73);text-align:center}
         .tt-people-manual[open]{width:100%}
-        .tt-people-manual>div{display:flex;align-items:center;gap:6px;margin-top:6px}
+        .tt-people-manual>div{display:flex;align-items:center;gap:0.375rem;margin-top:0.375rem}
         .tt-people-manual .tt-field-input{width:100%}
-        .tt-people-manual button{padding:5px 10px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:6px;background:transparent;color:var(--ink,#1d1d1f);font:inherit;font-weight:650;cursor:pointer}
+        .tt-people-manual button{padding:0.3125rem 0.625rem;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:6px;background:transparent;color:var(--ink,#1d1d1f);font:inherit;font-weight:650;cursor:pointer}
         .tt-field-details{max-width:44rem;margin:0 auto;padding:0 1.5rem 4rem}
-        .tt-field-details-title{display:inline-flex;align-items:center;gap:7px;margin:0;padding:5px 0;color:var(--muted,#6e6e73);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;list-style:none}
+        .tt-field-details-title{display:inline-flex;align-items:center;gap:0.4375rem;margin:0;padding:0.3125rem 0;color:var(--muted,#6e6e73);font-size:0.75rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;list-style:none}
         .tt-field-details-title::-webkit-details-marker{display:none}
-        .tt-field-details-title::before{content:"›";display:inline-block;font-size:15px;line-height:1;transition:transform 140ms ease}
+        .tt-field-details-title::before{content:"›";display:inline-block;font-size:0.9375rem;line-height:1;transition:transform 140ms ease}
         .tt-field-details[open]>.tt-field-details-title::before{transform:rotate(90deg)}
-        .tt-field-details-count{min-width:16px;padding:2px 5px;border-radius:999px;background:color-mix(in srgb,currentColor 14%,transparent);font-size:10px;letter-spacing:0;text-align:center}
+        .tt-field-details-count{min-width:16px;padding:0.125rem 0.3125rem;border-radius:999px;background:color-mix(in srgb,currentColor 14%,transparent);font-size:0.625rem;letter-spacing:0;text-align:center}
         .tt-field-details-body{padding-top:.4rem}
-        .tt-field-multienum{display:flex;flex-wrap:wrap;gap:6px}
-        .tt-field-choice{padding:3px 10px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:999px;background:transparent;color:var(--ink,#1d1d1f);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+        .tt-field-multienum{display:flex;flex-wrap:wrap;gap:0.375rem}
+        .tt-field-choice{padding:0.1875rem 0.625rem;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:999px;background:transparent;color:var(--ink,#1d1d1f);font:inherit;font-size:0.75rem;font-weight:600;cursor:pointer}
         .tt-field-choice.is-active{background:var(--tt-accent,#0071e3);border-color:var(--tt-accent,#0071e3);color:#fff}
-        .tt-image-field-control{display:flex;flex:1 1 auto;align-items:center;min-width:0;gap:10px}.tt-image-field-preview,.tt-image-field-placeholder{display:grid;place-items:center;box-sizing:border-box;width:88px;height:56px;flex:0 0 88px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:6px;background:var(--ac-fill-4,rgba(118,118,128,.08));object-fit:cover;color:var(--muted,#6e6e73);font-size:11px}.tt-image-field-actions{display:flex;align-items:center;gap:6px}.tt-image-field-actions button,.tt-image-field-picker>summary{padding:5px 9px;border:0;border-radius:6px;background:var(--ac-fill-4,rgba(118,118,128,.1));color:var(--ink,#1d1d1f);font:500 12px/1.25 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;cursor:pointer;list-style:none}.tt-image-field-actions button{color:var(--tt-destructive,#d70015)}.tt-image-field-picker{position:relative}.tt-image-field-picker>summary::-webkit-details-marker{display:none}.tt-image-field-popover{position:absolute;z-index:360;top:calc(100% + 6px);left:0;box-sizing:border-box;width:min(320px,70vw);padding:12px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:8px;background:color-mix(in srgb,var(--paper,#fff) 94%,transparent);box-shadow:0 12px 32px rgba(0,0,0,.16);backdrop-filter:blur(24px) saturate(150%)}.tt-image-field-popover label{display:block;margin-bottom:6px;color:var(--muted,#6e6e73);font-size:11px;font-weight:600}
-        .tt-rows-editor{display:flex;flex:1 1 auto;flex-direction:column;gap:6px;min-width:0}
-        .tt-rows-editor-row{display:flex;align-items:center;gap:6px;min-width:0}
+        .tt-image-field-control{display:flex;flex:1 1 auto;align-items:center;min-width:0;gap:0.625rem}.tt-image-field-preview,.tt-image-field-placeholder{display:grid;place-items:center;box-sizing:border-box;width:88px;height:3.5rem;flex:0 0 88px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:6px;background:var(--ac-fill-4,rgba(118,118,128,.08));object-fit:cover;color:var(--muted,#6e6e73);font-size:0.6875rem}.tt-image-field-actions{display:flex;align-items:center;gap:0.375rem}.tt-image-field-actions button,.tt-image-field-picker>summary{padding:0.3125rem 0.5625rem;border:0;border-radius:6px;background:var(--ac-fill-4,rgba(118,118,128,.1));color:var(--ink,#1d1d1f);font:500 0.75rem/1.25 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;cursor:pointer;list-style:none}.tt-image-field-actions button{color:var(--tt-destructive,#d70015)}.tt-image-field-picker{position:relative}.tt-image-field-picker>summary::-webkit-details-marker{display:none}.tt-image-field-popover{position:absolute;z-index:360;top:calc(100% + 6px);left:0;box-sizing:border-box;width:min(320px,70vw);padding:0.75rem;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:8px;background:color-mix(in srgb,var(--paper,#fff) 94%,transparent);box-shadow:0 12px 32px rgba(0,0,0,.16);backdrop-filter:blur(24px) saturate(150%)}.tt-image-field-popover label{display:block;margin-bottom:0.375rem;color:var(--muted,#6e6e73);font-size:0.6875rem;font-weight:600}
+        .tt-rows-editor{display:flex;flex:1 1 auto;flex-direction:column;gap:0.375rem;min-width:0}
+        .tt-rows-editor-row{display:flex;align-items:center;gap:0.375rem;min-width:0}
         .tt-rows-editor-row .tt-field-input{flex:1 1 0;min-width:3rem}
         .tt-rows-editor-row .tt-field-input.is-checkbox{flex:0 0 auto}
-        .tt-rows-editor-remove{flex:0 0 auto;width:22px;height:22px;border:0;border-radius:50%;background:transparent;color:var(--muted,#6e6e73);font-size:15px;line-height:1;cursor:pointer}
+        .tt-rows-editor-remove{flex:0 0 auto;width:1.375rem;height:1.375rem;border:0;border-radius:50%;background:transparent;color:var(--muted,#6e6e73);font-size:0.9375rem;line-height:1;cursor:pointer}
         .tt-rows-editor-remove:hover{background:color-mix(in srgb,var(--ink,#1d1d1f) 8%,transparent)}
-        .tt-rows-editor-add{align-self:flex-start;padding:4px 12px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:6px;background:transparent;color:var(--tt-accent,#0071e3);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+        .tt-rows-editor-add{align-self:flex-start;padding:0.25rem 0.75rem;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:6px;background:transparent;color:var(--tt-accent,#0071e3);font:inherit;font-size:0.75rem;font-weight:600;cursor:pointer}
         @media(max-width:700px){.tt-people-picker-popover{right:0;left:auto}}
         @media(prefers-color-scheme:dark){.tt-unified-editor{--paper:#1c1c1e;--ink:#f5f5f7;--muted:#a1a1a6}.tt-field-input,.tt-field-choice,.tt-rows-editor-add,.tt-person-chip,.tt-people-picker-popover,.tt-people-manual button{border-color:rgba(255,255,255,.18)}}
         @media(prefers-reduced-motion:reduce){.tt-unified-editor *{transition:none!important;animation:none!important}}

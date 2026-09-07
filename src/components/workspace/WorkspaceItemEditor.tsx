@@ -230,7 +230,7 @@ export function LocalUnifiedWorkspacePostEditor({
     // read as ghosting); reaching here without a document is a sub-frame
     // transient or an error.
     return documentState.entry.status === "error" ? (
-      <ErrorBody message={documentState.entry.error} />
+      <ErrorBody message={documentState.entry.error} onRetry={() => documentState.load(true)} homeHref={homePath} />
     ) : null;
   }
 

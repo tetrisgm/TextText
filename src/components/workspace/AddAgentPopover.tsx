@@ -1,5 +1,7 @@
 "use client";
 
+import { usePopoverMotion } from "@/lib/motion/popover";
+
 import { useEffect, useId, useRef, useState } from "react";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { createItemAgentAction, prepareLocalItemAgentAction, removeItemAgentAction, type listItemAgentsAction } from "@/app/editor/agent-connect-actions";
@@ -12,12 +14,15 @@ export function RemoveItemAgent({ grant, handle, postId, onRemoved }: {
   grant: ItemAgentGrant; handle: string; postId: string; onRemoved: (id: string) => void;
 }) {
   const [confirm, setConfirm] = useState(false);
+  const actionRef = useRef<HTMLButtonElement>(null);
+  const changingRef = useRef(false);
+  useEffect(() => { if (changingRef.current) actionRef.current?.focus(); }, [confirm]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   return <div>
-    {!confirm ? <button type="button" className={styles.action} onClick={() => setConfirm(true)}>Remove agent</button> : <>
+    {!confirm ? <button ref={actionRef} type="button" className={styles.action} onClick={() => { changingRef.current = true; setConfirm(true); }}>Remove agent</button> : <>
       <p>Remove {grant.name} from this item? This revokes this connection. Changes already made remain.</p>
-      <button type="button" className={styles.action} disabled={busy} onClick={async () => {
+      <button ref={actionRef} type="button" className={styles.action} disabled={busy} onClick={async () => {
         setBusy(true); setError("");
         try { await removeItemAgentAction(handle, postId, grant.id); onRemoved(grant.id); }
         catch { setError("Could not confirm removal. Refresh connections before retrying."); }
@@ -36,23 +41,24 @@ export function AddAgentPopover({ handle, postId, marks, grants, loadError, relo
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const popover = useRef<HTMLDivElement>(null);
+  const { close: closePopover, open: openPopover } = usePopoverMotion(popover, trigger);
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
-  useEscapeLayer(open, "Add agent", () => popover.current?.hidePopover());
+  useEscapeLayer(open, "Add agent", closePopover);
   useEffect(() => {
     const show = (event: Event) => {
       if ((event as CustomEvent<{ postId: string }>).detail?.postId !== postId) return;
-      trigger.current?.focus(); popover.current?.showPopover();
+      trigger.current?.focus(); openPopover();
     };
     window.addEventListener(OPEN_ADD_AGENT_EVENT, show);
     return () => window.removeEventListener(OPEN_ADD_AGENT_EVENT, show);
-  }, [postId]);
+  }, [postId, openPopover]);
   useEffect(() => {
     if (!open) return;
-    const close = () => popover.current?.hidePopover();
+    const close = closePopover;
     window.addEventListener("resize", close);
     return () => window.removeEventListener("resize", close);
-  }, [open]);
+  }, [open, closePopover]);
   return <>
     <button ref={trigger} type="button" className={styles.trigger} popoverTarget={id}
       aria-haspopup="dialog" aria-expanded={open} aria-controls={id} aria-label="Add agent" title="Add agent">
@@ -69,17 +75,17 @@ export function AddAgentPopover({ handle, postId, marks, grants, loadError, relo
       onToggle={(event) => {
         const next = event.newState === "open"; setOpen(next);
         if (next) popover.current?.querySelector<HTMLButtonElement>("button")?.focus();
-        else trigger.current?.focus();
+        else if (document.activeElement === document.body || popover.current?.contains(document.activeElement)) trigger.current?.focus();
       }}>
       <div className={styles.header}><strong id={`${id}-title`}>Add agent</strong>
-        <button autoFocus type="button" className={styles.close} aria-label="Close add agent" onClick={() => popover.current?.hidePopover()}>×</button></div>
+        <button autoFocus type="button" className={styles.close} aria-label="Close add agent" onClick={closePopover}>×</button></div>
       {open && <ConnectionForm handle={handle} postId={postId} marks={marks} reload={reload} />}
       {loadError && <div><p role="alert">Item connections could not be loaded.</p><button type="button" className={styles.action} onClick={reload}>Refresh connections</button></div>}
       {grants.length > 0 && <div className={styles.history}><strong>Item connections</strong>
         {grants.map((grant) => <section key={grant.id}>
           <p>{grant.name} · {grant.role === "edit" ? "Read and edit" : "Read-only"}</p>
           <p>{grant.expiresAt && `Expiry: ${new Date(grant.expiresAt).toLocaleDateString()}`}</p>
-          <RemoveItemAgent grant={grant} handle={handle} postId={postId} onRemoved={(removedId) => { onRemoved(removedId); popover.current?.hidePopover(); }} />
+          <RemoveItemAgent grant={grant} handle={handle} postId={postId} onRemoved={(removedId) => { onRemoved(removedId); closePopover(); }} />
         </section>)}
       </div>}
     </div>

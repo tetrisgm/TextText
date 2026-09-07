@@ -94,8 +94,7 @@ export function McpConnections({
         }
       } catch {
         if (!cancelled) {
-          setState({ allowed: false, connections: [] });
-          onCountChange?.(0);
+          setError("External tools could not be loaded. Your documents are unchanged. Reopen settings to retry.");
         }
       }
     })();
@@ -123,7 +122,12 @@ export function McpConnections({
     [busy, onCountChange],
   );
 
-  if (!state?.allowed) return null;
+  if (!state?.allowed) return error ? (
+    <section className={styles.section} aria-labelledby="settings-mcp">
+      <h2 id="settings-mcp">External tools</h2>
+      <p className={styles.empty} role="alert">{error}</p>
+    </section>
+  ) : null;
 
   const connections = state.connections;
 
@@ -131,7 +135,7 @@ export function McpConnections({
     <section className={styles.section} aria-labelledby="settings-mcp">
       <div className={styles.header}>
         <div>
-          <h2 id="settings-mcp">Connected MCP servers</h2>
+          <h2 id="settings-mcp">External tools</h2>
           <p>
             Tools from other apps, available to your assistant. Figma, a
             calendar, anything that speaks MCP.
@@ -153,7 +157,7 @@ export function McpConnections({
 
       {connections.length === 0 && !adding && (
         <p className={styles.empty}>
-          Nothing connected. Your assistant works on this workspace only.
+          No external tools connected. Add a server to let the assistant use tools from another service. You can keep using TextText without them.
         </p>
       )}
 

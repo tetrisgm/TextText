@@ -4,6 +4,7 @@ import type { Post } from "@/lib/content";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  resolveApiToken: vi.fn(),
   agentSelectionAtEnd: vi.fn(),
   applyLiveDocumentMutation: vi.fn(),
   attachItemAsset: vi.fn(),
@@ -61,6 +62,7 @@ const mocks = vi.hoisted(() => ({
   upsertPresence: vi.fn(),
 }));
 
+vi.mock("@/lib/api-tokens", () => ({ resolveApiToken: mocks.resolveApiToken }));
 vi.mock("@/lib/share-email", () => ({ sendShareInviteEmail: mocks.sendShareInviteEmail }));
 vi.mock("@/lib/audit", () => ({ recordAction: mocks.recordAction }));
 vi.mock("@/lib/collab", () => ({
@@ -144,6 +146,7 @@ import {
   resolveMcpScopeAccess,
   runWorkspaceToolForSession,
 } from "@/lib/mcp/tools";
+import { POST as nativeCommand } from "@/app/api/app/commands/route";
 import { renderItemFile } from "@/lib/mcp/items";
 import { listTools } from "@/lib/mcp/registry";
 
@@ -566,6 +569,40 @@ describe("MCP workspace tool adapter", () => {
       targetId: id,
       inputSummary: "Agent: Codex; edit:notes",
     });
+  });
+
+  it.each(["read", "", "sync item:one:read"])("refuses native mutations without an unrestricted sync token (%s)", async scopes => {
+    mocks.resolveApiToken.mockResolvedValue({ sub: "sub-1", userId: "user-1", scopes });
+    const response = await nativeCommand(new Request("https://texttext.test/api/app/commands", {
+      method: "POST", body: JSON.stringify({ name: "append_to_item", args: {} }),
+    }));
+    expect(response.status).toBe(403);
+    expect(mocks.savePost).not.toHaveBeenCalled();
+    expect(mocks.getOwnedBlog).not.toHaveBeenCalled();
+  });
+
+  it("carries an owner Shortcut append through real auth and execution to the audited store write", async () => {
+    mocks.resolveApiToken.mockResolvedValue({ sub: "sub-1", userId: "user-1", scopes: "sync" });
+    const post = {
+      id: "99999999-9999-4999-8999-999999999999", folderId: "blog", type: "article",
+      slug: "draft", title: "Draft", excerpt: "", body: "Before", status: "draft",
+      pinned: false, revision: 5,
+    } as const;
+    mocks.getPostById.mockResolvedValue(post);
+    mocks.savePost.mockResolvedValue({ ...post, body: "Before\n\nAfter", revision: 6 });
+    const response = await nativeCommand(new Request("https://texttext.test/api/app/commands", {
+      method: "POST", body: JSON.stringify({ name: "append_to_item", args: {
+        id: post.id, markdown: "After", if_match_hash: persistedHash(post),
+      }, actorType: "ai", handle: "foreign" }),
+    }));
+    expect(response.status).toBe(200);
+    expect(mocks.savePost).toHaveBeenCalledWith("local",
+      expect.objectContaining({ id: post.id, body: "Before\n\nAfter" }),
+      expect.objectContaining({ expectedRevision: 5, audit: expect.objectContaining({
+        actorUserId: "user-1", actorType: "human", actionName: "mcp.append_to_item", targetId: post.id,
+      }) }));
+    expect(mocks.upsertPresence).not.toHaveBeenCalled();
+    expect(mocks.createAgentAwareness).not.toHaveBeenCalled();
   });
 
   it("runs a tool for an in-app session actor with full workspace capability", async () => {

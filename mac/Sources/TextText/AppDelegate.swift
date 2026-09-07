@@ -40,7 +40,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                                            // never download into a translocated/Downloads copy
     private var statusItem: NSStatusItem!
     private var statusWindow: StatusWindowController?
-    private var webWindow: WebAppWindowController?
+    private var primaryWebWindow: WebAppWindowController?
+    private var additionalWebWindows: [WebAppWindowController] = []
+    private var webWindow: WebAppWindowController? {
+        get {
+            if let controller = NSApp.keyWindow?.windowController as? WebAppWindowController { return controller }
+            return primaryWebWindow
+        }
+        set { primaryWebWindow = newValue }
+    }
+    private let nativeMenu = NativeWorkspaceMenu()
     private var sharingServicePicker: NSSharingServicePicker?
     private var quickCaptureController: QuickCaptureController?
     private var quickCaptureRecoveryController: QuickCaptureRecoveryController?
@@ -65,7 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private var spotlightIndexedSignatures: [String: String] = [:]
     // Spotlight indexes from the server manifest (the mount's .textpack bodies are
     // zipped and carry no textTextId). Cache per-folder etags + items so an unchanged
-    // folder is a cheap 304 and a transient failure reuses the last good list.
+    // folder is a cheap 304. Failed refreshes clear this access evidence.
     private var spotlightFolderETags: [String: String] = [:]
     private var spotlightManifestCache: [String: [ManifestItem]] = [:]
     private let spotlightQueue = DispatchQueue(label: "com.example.texttext.mac.spotlight", qos: .utility)
@@ -182,6 +191,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                 self?.fileProviderStatusMonitor.snapshot.severity == .working })
         }
         NSApp.mainMenu = buildMainMenu()
+        nativeMenu.install(on: NSApp.mainMenu!)
+        nativeMenu.requestState = { [weak self] in self?.webWindow?.requestNativeMenuState() }
+        nativeMenu.invoke = { [weak self] id in self?.webWindow?.runNativeMenuCommand(id) }
+        nativeMenu.isWorkspaceKey = { [weak self] in self?.webWindow?.window?.isKeyWindow == true }
+        if let window = webWindow { configureNativeWindow(window) }
 
         linkController = LinkController(store: store)
         // The File Provider mount is the only document sync path. Sign-in
@@ -292,7 +306,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         // ask the system which items it owns. openExternalOrFileProviderItem
         // routes TextText items to the managed opener and everything else to
         // external import.
-        for url in fileURLs {
+        let urlDrops = fileURLs.filter { !$0.isFileURL && NativeItemDrop.accepts($0) }
+        if !urlDrops.isEmpty { importDroppedURLs(urlDrops) }
+        for url in fileURLs where url.isFileURL || !NativeItemDrop.accepts(url) {
             guard OpenFileHandler.isSupported(url) else {
                 appendActivity("Could not open \(url.lastPathComponent): unsupported file type")
                 continue
@@ -1242,6 +1258,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             self.spotlightIndexer = WorkspaceSpotlightIndexer()
             self.spotlightIndexRootPath = rootPath
             self.spotlightIndexedSignatures = [:]
+            self.spotlightFolderETags = [:]
+            self.spotlightManifestCache = [:]
             // Reconcile with what earlier runs indexed: a changed root drops
             // the whole domain; the same root seeds the known-id set so items
             // deleted while the app was not running get removed on the first
@@ -1278,16 +1296,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         spotlightQueue.asyncAfter(deadline: .now() + 1, execute: work)
     }
 
-    /// spotlightQueue only. Build the identity index from server manifests and
-    /// submit only added, changed, or removed ids. A partial manifest pass skips
-    /// removals and unions the ids it did see with the prior set.
+    /// spotlightQueue only. Missing access evidence clears the index.
+    private func clearSpotlightIndex() {
+        (spotlightIndexer ?? WorkspaceSpotlightIndexer()).removeAll()
+        spotlightIndexedIds = []
+        spotlightIndexedSignatures = [:]
+        spotlightFolderETags = [:]
+        spotlightManifestCache = [:]
+        try? FileManager.default.removeItem(at: spotlightStateURL)
+    }
+
     private func refreshSpotlightIndex() {
         guard let indexer = spotlightIndexer else { return }
         // Source of truth is the server manifest, not a file scan: the mount's
-        // .textpack bodies are zipped and carry no textTextId. Skip (never destroy
-        // the existing index) when signed out or the workspace cache is cold.
+        // .textpack bodies are zipped and carry no textTextId. Signed-out or
+        // unavailable workspace state cannot authorize a local index.
         guard let credentials = store.loadCredentials(),
-              let workspace = store.cachedWorkspace() else { return }
+              let workspace = store.cachedWorkspace() else { clearSpotlightIndex(); return }
         let client = ServerClient(
             origin: resolveServerOrigin(credentials: credentials),
             token: credentials.token)
@@ -1299,8 +1324,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         var signatures: [String: String] = [:]
         let foldersById = Dictionary(
             uniqueKeysWithValues: workspace.folders.map { ($0.id, $0) })
-        // A degenerate empty folder list must never compute removed = everything.
-        var healthy = !workspace.folders.isEmpty
         for folder in workspace.folders {
             let items: [ManifestItem]
             switch client.manifest(
@@ -1313,40 +1336,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             case .success(.notModified):
                 items = spotlightManifestCache[folder.id] ?? []
             case .failure:
-                // Keep the last good list; a transient failure must not drop ids.
-                healthy = false
-                items = spotlightManifestCache[folder.id] ?? []
+                // An offline cache cannot prove continued access. Remove indexed
+                // content even on transient failures; the next change repopulates it.
+                clearSpotlightIndex()
+                return
             }
             for item in items {
-                guard let id = item.id, !id.isEmpty else { continue }
+                guard item.spotlightEligible == true, let id = item.id, !id.isEmpty else { continue }
                 let relativePath = Self.spotlightRelativePath(
                     item: item, folder: folder, workspace: workspace,
                     foldersById: foldersById)
-                documents.append(makeSpotlightDocument(
-                    item: item, workspaceHandle: workspace.blog.handle,
-                    relativePath: relativePath, mountRoot: mountRoot))
-                signatures[id] = Self.spotlightSignature(
+                let signature = Self.spotlightSignature(
                     item: item, folder: folder,
                     workspaceHandle: workspace.blog.handle,
                     relativePath: relativePath)
+                var document = makeSpotlightDocument(
+                    item: item, workspaceHandle: workspace.blog.handle,
+                    relativePath: relativePath, mountRoot: mountRoot)
+                if spotlightIndexedSignatures[id] != signature {
+                    do {
+                        let read = try client.command("read_item", args: ["id": id])
+                        guard let markdown = read["markdown"] as? String else { clearSpotlightIndex(); return }
+                        document.textContent = String(TextTextMarkdownPreviewRenderer.parse(markdown).body.prefix(100_000))
+                    } catch { clearSpotlightIndex(); return }
+                }
+                documents.append(document)
+                signatures[id] = signature
             }
         }
 
+        guard store.loadCredentials()?.token == credentials.token else {
+            clearSpotlightIndex()
+            return
+        }
         let currentIds = Set(signatures.keys)
         let changed = documents.filter {
             spotlightIndexedSignatures[$0.textTextId] != signatures[$0.textTextId]
         }
-        // Only a fully-healthy pass may remove ids, so a transient manifest
-        // failure never drops still-present posts.
-        let removed = healthy ? spotlightIndexedIds.subtracting(currentIds) : []
+        let removed = spotlightIndexedIds.subtracting(currentIds)
         if !removed.isEmpty {
-            indexer.remove(ids: Array(removed))
+            let done = DispatchSemaphore(value: 0)
+            var succeeded = false
+            indexer.remove(ids: Array(removed)) { error in succeeded = error == nil; done.signal() }
+            guard done.wait(timeout: .now() + 15) == .success, succeeded else { return }
             // Forget removed signatures so a reappearing id is indexed again.
             for id in removed { spotlightIndexedSignatures[id] = nil }
         }
-        if !changed.isEmpty { indexer.indexDocuments(changed) }
+        if !changed.isEmpty {
+            let done = DispatchSemaphore(value: 0)
+            var succeeded = false
+            indexer.indexDocuments(changed) { error in succeeded = error == nil; done.signal() }
+            guard done.wait(timeout: .now() + 15) == .success, succeeded else { return }
+        }
 
-        let knownIds = healthy ? currentIds : spotlightIndexedIds.union(currentIds)
+        let knownIds = currentIds
         spotlightIndexedIds = knownIds
         for (id, signature) in signatures {
             spotlightIndexedSignatures[id] = signature
@@ -1480,7 +1523,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         NSApp.activate(ignoringOtherApps: true)
         let picker = NSSharingServicePicker(items: [url])
         sharingServicePicker = picker
-        if let button = statusItem.button {
+        if let view = webWindow?.window?.contentView {
+            picker.show(relativeTo: NSRect(x: view.bounds.midX, y: view.bounds.maxY - 30, width: 1, height: 1), of: view, preferredEdge: .minY)
+        } else if let button = statusItem.button {
             picker.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         } else {
             NSPasteboard.general.clearContents()
@@ -1614,7 +1659,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     /// Everything that has to happen once credentials exist, whichever way they
     /// arrived: the sheet, or a device link from the CLI.
     private func handleSignedIn(_ credentials: Credentials) {
-        webWindow?.establishSession(token: credentials.token)
+        primaryWebWindow?.establishSession(token: credentials.token)
+        for controller in additionalWebWindows { controller.establishSession(token: credentials.token) }
         // Fetch+cache the workspace, then register the File Provider domain
         // (never a mirror pass). seedCachedWorkspaceIfNeeded calls
         // syncFileProviderDomain() once account.json is cached.
@@ -1624,6 +1670,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         // drain them now that credentials exist.
         retryShareInboxDrain()
         retryQuickCaptureDrain()
+        drainPendingExternalImports()
         refreshUI()
         // Signing in configures folder sync; bring the workspace forward.
         NSApp.activate(ignoringOtherApps: true)
@@ -1646,6 +1693,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         // Local-only by design: the server-side revoke route may not exist
         // yet; degrade gracefully. The folder and its files stay put.
         store.deleteCredentials()
+        spotlightQueue.async { [weak self] in self?.clearSpotlightIndex() }
         removeFileProviderDomain()
         appendActivity("Signed out; local files kept")
         // Take the window somewhere that says what happened. Clearing the
@@ -1654,7 +1702,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         // a person who had just pressed Sign out was shown their own blog with
         // nothing in it, because nothing of theirs is published. It reads
         // exactly like the account being emptied.
-        webWindow?.signOut()
+        primaryWebWindow?.signOut()
+        for controller in additionalWebWindows { controller.signOut() }
         refreshUI()
     }
 
@@ -2741,6 +2790,114 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     /// bringing it to the front. Called at launch so the first summon shows a
     /// window that is already warm, and so a login launch can wait hidden in
     /// the background instead of stealing focus the moment the session starts.
+    private func configureNativeWindow(_ controller: WebAppWindowController) {
+        controller.onNativeMenuState = { [weak self, weak controller] entries in
+            guard let self, let controller, controller === self.webWindow, let menu = NSApp.mainMenu else { return }
+            self.nativeMenu.update(entries, main: menu)
+        }
+        controller.onDropURLs = { [weak self] in self?.importDroppedURLs($0) }
+        controller.onSharePath = { [weak self] path in
+            guard let self, let url = URL(string: path, relativeTo: resolveServerOrigin(credentials: self.store.loadCredentials())) else { return }
+            self.presentSharePicker(for: url.absoluteURL)
+        }
+        controller.makeExportPromise = { [weak self] id, title in
+            guard let self else { return nil }
+            return NativeTextPackPromise(title: title) { [weak self] completion in
+                guard let self else { completion(nil, CocoaError(.userCancelled)); return }
+                self.exportItem(id: id, completion: completion)
+            }
+        }
+        controller.onClose = { [weak self, weak controller] in
+            guard let self, let controller else { return }
+            self.additionalWebWindows.removeAll { $0 === controller }
+        }
+        controller.requestNativeMenuState()
+    }
+
+    @objc private func newWorkspaceWindowAction() {
+        let credentials = store.loadCredentials()
+        let origin = resolveServerOrigin(credentials: credentials)
+        let home = store.cachedWorkspace().map { "/@" + $0.blog.handle }
+        let controller = WebAppWindowController(
+            origin: origin, startPath: "/start?to=home",
+            appToken: credentials?.token, workspaceHomePath: home,
+            onSystemSignInRequested: { [weak self] in self?.signIn() },
+            onSignOutRequested: { [weak self] in self?.signOut() },
+            onLinked: { [weak self] token, origin in self?.handleAppLinked(token: token, origin: origin) })
+        // Secondary windows keep independent page state; only the primary frame is restored.
+        controller.window?.setFrameAutosaveName("")
+        additionalWebWindows.append(controller)
+        configureNativeWindow(controller)
+        controller.window?.cascadeTopLeft(from: webWindow?.window?.frame.origin ?? .zero)
+        controller.present()
+    }
+
+    static func restoredItemPath(origin: URL, handle: String?, signedIn: Bool) -> String? {
+        guard signedIn, let handle else { return nil }
+        let home = "/@" + handle
+        let path = UserDefaults.standard.string(forKey: NativeWindowRestoration.key(origin: origin, homePath: home))
+        return path.flatMap { NativeWindowRestoration.accepts($0, homePath: home) ? $0 : nil }
+    }
+
+    private func importDroppedURLs(_ urls: [URL]) {
+        guard urls.count <= 20 else {
+            let alert = NSAlert()
+            alert.messageText = "Import up to 20 items at a time"
+            alert.runModal()
+            return
+        }
+        guard let credentials = store.loadCredentials() else {
+            let alert = NSAlert()
+            alert.messageText = "Sign in to import dropped items"
+            alert.informativeText = "These items were not imported. After signing in, drop them again."
+            alert.runModal()
+            signIn()
+            return
+        }
+        let client = ServerClient(origin: resolveServerOrigin(credentials: credentials), token: credentials.token)
+        // Refresh the destination window for this batch even if another becomes key.
+        let destination = webWindow
+        openFileQueue.async { [weak self, weak destination] in
+            let result = NativeItemDrop.importBatch(urls) { args in
+                _ = try client.command("create_item", args: args)
+            }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                for name in result.imported { self.appendActivity("Imported \(name)") }
+                if !result.imported.isEmpty { destination?.reloadFromOrigin() }
+                if !result.failures.isEmpty {
+                    let alert = NSAlert()
+                    alert.messageText = "Could not import dropped items"
+                    alert.informativeText = result.failures.joined(separator: "\n")
+                    alert.runModal()
+                }
+            }
+        }
+    }
+
+    private func exportItem(id: String, completion: @escaping (URL?, Error?) -> Void) {
+        guard let credentials = store.loadCredentials(), let handle = store.cachedWorkspace()?.blog.handle,
+              let domain = registeredFileProviderDomain, let manager = NSFileProviderManager(for: domain) else {
+            completion(nil, CocoaError(.fileReadNoPermission)); return
+        }
+        openFileQueue.async { [weak self] in
+            do {
+                _ = try ServerClient(origin: resolveServerOrigin(credentials: credentials), token: credentials.token).command("read_item", args: ["id": id])
+            } catch { completion(nil, error); return }
+            let identifier = NSFileProviderItemIdentifier(rawValue: TextTextItemIdentifier.file(handle: handle, id: id).rawValue)
+            manager.getUserVisibleURL(for: identifier) { url, error in
+                guard let url else { completion(nil, error ?? CocoaError(.fileNoSuchFile)); return }
+                guard url.pathExtension.lowercased() == "textpack", self?.store.loadCredentials()?.token == credentials.token else {
+                    completion(nil, CocoaError(.fileReadNoPermission)); return
+                }
+                // NativeTextPackPromise advertises a coordinated representation.
+                // Let the consumer coordinate at read time instead of lending it
+                // a URL under a coordination scope that has already ended.
+                completion(url, nil)
+            }
+        }
+    }
+
     private func warmMainWindow(path: String? = nil) {
         if webWindow == nil {
             let credentials = store.loadCredentials()
@@ -2748,7 +2905,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             let cachedHandle = store.cachedWorkspace()?.blog.handle
             webWindow = WebAppWindowController(
                 origin: origin,
-                startPath: path ?? "/start?to=home",
+                startPath: path ?? Self.restoredItemPath(origin: origin, handle: cachedHandle, signedIn: credentials != nil) ?? "/start?to=home",
                 appToken: credentials?.token,
                 // Lets the cookie fast path land on the workspace directly
                 // instead of paying the /start redirect hop.
@@ -2788,10 +2945,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         // Drain anything shared before this Mac was linked.
         retryShareInboxDrain()
         retryQuickCaptureDrain()
+        drainPendingExternalImports()
+        refreshUI()
+    }
+
+    private func drainPendingExternalImports() {
         let pending = pendingExternalImports
         pendingExternalImports.removeAll()
         for item in pending { importExternalNote(item) }
-        refreshUI()
     }
 
     // MARK: Status / settings window
@@ -2917,6 +3078,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         main.addItem(fileItem)
         let file = NSMenu(title: "File")
         fileItem.submenu = file
+        let newWindow = file.addItem(withTitle: "New window", action: #selector(newWorkspaceWindowAction), keyEquivalent: "n")
+        newWindow.keyEquivalentModifierMask = [.command, .option]
+        newWindow.target = self
         let quickCapture = file.addItem(
             withTitle: "Quick capture",
             action: #selector(quickCaptureAction),
@@ -2939,21 +3103,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             keyEquivalent: "")
         failedCaptures.target = self
         file.addItem(.separator())
-        let newNote = file.addItem(
-            withTitle: "New note",
-            action: #selector(newNoteAction),
-            keyEquivalent: "n")
-        newNote.target = self
+
 
         let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
         main.addItem(editItem)
         let edit = NSMenu(title: "Edit")
         editItem.submenu = edit
-        let undo = edit.addItem(withTitle: "Undo", action: #selector(undoAction), keyEquivalent: "z")
-        undo.target = self
-        let redo = edit.addItem(withTitle: "Redo", action: #selector(redoAction), keyEquivalent: "Z")
-        redo.target = self
-        edit.addItem(.separator())
         _ = edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         _ = edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         _ = edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
@@ -2965,24 +3120,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         viewItem.submenu = view
         let reload = view.addItem(withTitle: "Reload", action: #selector(reloadWebWindowAction), keyEquivalent: "r")
         reload.target = self
-
-        // Until now the trackpad swipe was the only way forward: no key, no
-        // menu item. A mouse could go back but never return.
-        let historyItem = NSMenuItem(title: "History", action: nil, keyEquivalent: "")
-        main.addItem(historyItem)
-        let history = NSMenu(title: "History")
-        historyItem.submenu = history
-        let back = history.addItem(withTitle: "Back", action: #selector(goBackAction), keyEquivalent: "[")
-        back.target = self
-        let forward = history.addItem(withTitle: "Forward", action: #selector(goForwardAction), keyEquivalent: "]")
-        forward.target = self
+        let fullScreen = view.addItem(withTitle: "Enter full screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
+        fullScreen.keyEquivalentModifierMask = [.command, .control]
 
         let windowItem = NSMenuItem(title: "Window", action: nil, keyEquivalent: "")
         main.addItem(windowItem)
         let window = NSMenu(title: "Window")
         windowItem.submenu = window
         _ = window.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
-        let close = window.addItem(withTitle: "Close", action: #selector(closeTabAction), keyEquivalent: "w")
+        _ = window.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        _ = window.addItem(withTitle: "Bring all to front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
+        let close = file.addItem(withTitle: "Close", action: #selector(closeTabAction), keyEquivalent: "w")
         close.target = self
         NSApp.windowsMenu = window
 

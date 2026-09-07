@@ -593,8 +593,8 @@ describe("assistant sidebar UI", () => {
 
     expect(html).toContain("The provider timed out.");
     expect(html).toContain("The provider failed again.");
-    expect(html.match(/Try again/g)).toHaveLength(1);
-    expect(html.match(/Verify connection/g)).toHaveLength(1);
+    expect(html.match(/Retry message/g)).toHaveLength(1);
+    expect(html.match(/Check AI connection/g)).toHaveLength(1);
     expect(html.match(/data-stale/g)).toHaveLength(1);
   });
 
@@ -795,7 +795,7 @@ describe("assistant sidebar UI", () => {
       }),
     );
 
-    expect(html).toContain("Set up the in-app assistant once");
+    expect(html).toContain("No AI is connected.");
     expect(html).not.toContain("Continue with ChatGPT");
     expect(html).toContain('aria-label="Connect an AI"');
     expect(html).toContain('href="/@writer?view=settings#api-key-connections"');
@@ -848,8 +848,8 @@ describe("assistant sidebar UI", () => {
 
     expect(html).toContain("The provider did not answer.");
     expect(html).not.toContain("another attempt");
-    expect(html).toContain("Try again");
-    expect(html).toContain("Verify connection");
+    expect(html).toContain("Retry message");
+    expect(html).toContain("Check AI connection");
   });
 
   it("explains selected-text context and unavailable attachments", () => {

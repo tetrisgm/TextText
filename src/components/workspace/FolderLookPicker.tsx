@@ -8,6 +8,7 @@
 // same gallery a person already knows from choosing an item's look: a folder is
 // not a different kind of thing to style.
 
+import { captureMotionOrigin } from "@/lib/motion/origin";
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -56,7 +57,7 @@ export function FolderLookPicker({
   handle,
   folderPath,
   folderName,
-  onClose,
+  onClose: finishClose,
   onChanged,
 }: {
   handle: string;
@@ -65,6 +66,9 @@ export function FolderLookPicker({
   onClose: () => void;
   onChanged?: () => void;
 }) {
+  const [motionOrigin] = useState(captureMotionOrigin);
+  const [motionOpen, setMotionOpen] = useState(true);
+  const onClose = useCallback(() => setMotionOpen(false), []);
   const [state, setState] = useState<FolderLookState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
@@ -171,7 +175,9 @@ export function FolderLookPicker({
         templates={state.templates}
         library={state.library}
         targetItemCount={state.targetItemCount}
-        onClose={onClose}
+        motionOrigin={motionOrigin}
+        motionOpen={motionOpen}
+        onClose={finishClose}
         onApply={(selected) => apply(selected.id, selected.version)}
         onDuplicate={async (selected, name) => {
           const result = await duplicateFolderLookAction(

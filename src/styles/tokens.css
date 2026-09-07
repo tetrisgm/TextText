@@ -8,17 +8,17 @@
      full-width list feeling like paper rather than a spreadsheet. */
   --ink: #15171c;
   --ink-2: #363b46;
-  --muted: #6b7080;
+  --muted: #585e6d;
   --hairline: #e3e5ec;
   --hairline-2: #eef0f5;
   --bg: #fbfbfd;
   --bg-soft: #f2f3f7;
   --bg-soft-2: #f7f8fb;
-  --accent: #0066cc;
+  --accent: #0055ad;
   --accent-pressed: #004e9f;
-  --destructive: #d70015;
-  --positive: #248a3d;
-  --warning: #a05a00;
+  --destructive: #b50012;
+  --positive: #1b7030;
+  --warning: #824900;
   --sidebar-bg: rgba(243, 244, 248, 0.92);
   --toolbar-bg: rgba(251, 251, 253, 0.86);
   --selection-bg: rgba(0, 122, 255, 0.1);
@@ -57,15 +57,15 @@
 [data-theme="dark"] {
   --ink: #e9ebf1;
   --ink-2: #c2c7d4;
-  --muted: #8b92a3;
+  --muted: #adb3c1;
   --hairline: #262b36;
   --hairline-2: #1d222c;
   --bg: #0d0f13;
   --bg-soft: #161922;
   --bg-soft-2: #1b1f2a;
-  --accent: #0a84ff;
-  --accent-pressed: #409cff;
-  --destructive: #ff453a;
+  --accent: #459fff;
+  --accent-pressed: #8ac3ff;
+  --destructive: #ff827a;
   --positive: #30d158;
   --warning: #ff9f0a;
   --sidebar-bg: rgba(18, 21, 27, 0.94);
@@ -84,15 +84,15 @@
   :root:not([data-theme="light"]) {
     --ink: #e9ebf1;
     --ink-2: #c2c7d4;
-    --muted: #8b92a3;
+    --muted: #adb3c1;
     --hairline: #262b36;
     --hairline-2: #1d222c;
     --bg: #0d0f13;
     --bg-soft: #161922;
     --bg-soft-2: #1b1f2a;
-    --accent: #0a84ff;
-    --accent-pressed: #409cff;
-    --destructive: #ff453a;
+    --accent: #459fff;
+    --accent-pressed: #8ac3ff;
+    --destructive: #ff827a;
     --positive: #30d158;
     --warning: #ff9f0a;
     --sidebar-bg: rgba(18, 21, 27, 0.94);

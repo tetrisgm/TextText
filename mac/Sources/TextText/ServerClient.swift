@@ -1,5 +1,6 @@
 import Foundation
 import TextTextFileProviderKit
+import TextTextAppIntents
 
 // MARK: Wire types (exactly what the TextText platform's routes emit)
 
@@ -37,6 +38,7 @@ struct ManifestItem: Codable {
     let updatedAt: String?
     let url: String?
     var canonicalUrl: String? = nil
+    var spotlightEligible: Bool? = nil
 }
 
 private struct ManifestEnvelope: Codable {
@@ -369,6 +371,20 @@ final class ServerClient: SyncClient {
         }
     }
 
+    func command(_ name: String, args: [String: Any]) throws -> [String: Any] {
+        let body = try JSONSerialization.data(withJSONObject: ["name": name, "args": args])
+        switch send("POST", "/api/app/commands", headers: ["Content-Type": "application/json"], body: body) {
+        case .failure(let error): throw error
+        case .success(let reply):
+            guard (200..<300).contains(reply.status),
+                  let envelope = try JSONSerialization.jsonObject(with: reply.data) as? [String: Any],
+                  let result = envelope["result"] as? [String: Any] else {
+                throw ClientFailure.http(reply.status, "The workspace command failed")
+            }
+            return result
+        }
+    }
+
     private func send(
         _ method: String, _ path: String,
         headers: [String: String] = [:], body: Data? = nil
@@ -400,3 +416,5 @@ final class ServerClient: SyncClient {
         return result
     }
 }
+
+extension ServerClient: NativeWorkspaceCommandServer {}

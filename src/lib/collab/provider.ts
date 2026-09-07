@@ -7,7 +7,7 @@
 import { decodePresenceAwareness, encodePresenceAwareness } from "@/lib/collab/presence-awareness";
 import * as Y from "yjs";
 import { documentSnapshotFromYDoc, hasDocumentSnapshot } from "@/lib/collab/document";
-import type { MaterializationRecovery } from "@/lib/collab/materialization-recovery";
+import type { MaterializationRecovery, RecoveryReason } from "@/lib/collab/materialization-recovery";
 import {
   applyAwarenessUpdate,
   encodeAwarenessUpdate,
@@ -42,7 +42,7 @@ function accessLossMessage(status: number): string {
 }
 
 /** A payload the server will never accept (malformed / too large / not an
- * editor). Retrying the SAME batch loops forever; drop it instead. */
+ * editor). Retrying the same batch cannot succeed; require local recovery. */
 function isPermanentPushError(status: number): boolean {
   return status === 400 || status === 413 || status === 422;
 }
@@ -101,10 +101,9 @@ type CollabProviderOptions = {
   onError?: (message: string) => void;
   expectedBaselineRevision?: number;
   onBaselineMismatch?: (serverRevision: number) => void;
-  /** The server retired this document's log generation (its stale between-
-   * sessions log was reset from posts.body). The local Y.Doc is now stale and
-   * must be preserved for explicit recovery before opening a fresh document. */
-  onRetired?: (epoch: number) => void;
+  /** The local stream stopped and must be preserved for explicit recovery.
+   * The reason distinguishes a server generation change from a rejected push. */
+  onRetired?: (epoch: number, reason: RecoveryReason) => void;
   onAccessLost?: (message: string) => void;
   onRecovery?: (copies: MaterializationRecovery[], durable: boolean) => void;
 };
@@ -123,7 +122,7 @@ type OutboxSubscriber = {
    * subscribing provider tears its poll/heartbeat loops down too. */
   onFatal?: (status: number) => void;
   /** Called with the old epoch before the subscribing document is retired. */
-  onRetired?: (epoch: number) => void;
+  onRetired?: CollabProviderOptions["onRetired"];
 };
 
 type Outbox = {
@@ -147,7 +146,12 @@ type Outbox = {
   hydrated: Promise<void>;
   /** Full baseline plus dependencies received while operations are pending. */
   recoveryUpdates: Uint8Array[];
+  /** Revision of the hydrated baseline, independent of this mount's expected
+   * revision. Null means an older row did not record its seed generation. */
+  restoredBaselineRevision?: number | null;
   persistence: Promise<void>;
+  /** Exact operations acknowledged by this queue, awaiting durable removal. */
+  acknowledged: Set<string>;
   retirement: RetiredOutbox | null;
   retirementWrite: Promise<void> | null;
 };
@@ -203,30 +207,81 @@ async function readStoredOutbox(postId: string): Promise<StoredOutbox | null> {
   });
 }
 
+/** A legacy/other-tab row can only share a queue after its generation is known
+ * to match. A queue may attach learned metadata to its own pre-catch-up row. */
+function sameOutboxGeneration(live: StoredOutbox, outbox: Outbox): boolean {
+  const covered = () => {
+    const updates = new Set([...outbox.pending.map(u8ToBase64), ...outbox.acknowledged]);
+    return live.updates.every((update) => updates.has(update));
+  };
+  if (live.baselineRevision !== outbox.baselineRevision &&
+      !(live.baselineRevision == null && outbox.baselineRevision != null && covered())) return false;
+  if (Boolean(live.epochKnown) === outbox.epochKnown) return live.epoch === outbox.epoch;
+  return !live.epochKnown && outbox.epochKnown && covered();
+}
+
+/** Remove only operations included in an acknowledgment/recovery copy. Keep
+ * the baseline intact: other operations may depend on the removed identities. */
+function removeStoredOperations(store: IDBObjectStore, live: StoredOutbox, covered: Set<string>): void {
+  const updates = live.updates.filter((update) => !covered.has(update));
+  if (updates.length === live.updates.length) return;
+  if (updates.length) store.put({ ...live, updates });
+  else store.delete(live.postId);
+}
+
 function persistOutbox(postId: string, outbox: Outbox): Promise<void> {
-  // Serialize writes with quarantine. An older pending write must never
-  // recreate the deliverable queue after the retirement transaction commits.
+  // Serialize this queue's writes with quarantine. Cross-tab serialization is
+  // provided by IDB's readwrite transaction, including the read and merge.
   outbox.persistence = outbox.persistence.then(async () => {
     if (outbox.retirement) return;
     const database = await openOutboxDatabase();
     if (!database) return;
-    await new Promise<void>((resolve) => {
+    const acknowledged = new Set(outbox.acknowledged);
+    let conflict = false;
+    const saved = await new Promise<boolean>((resolve) => {
       const transaction = database.transaction(OUTBOX_STORE, "readwrite");
       const store = transaction.objectStore(OUTBOX_STORE);
-      if (outbox.pending.length === 0) store.delete(postId);
-      else store.put({
-        postId,
-        updates: outbox.pending.map(u8ToBase64),
-        epoch: outbox.epoch,
-        epochKnown: outbox.epochKnown,
-        baselineRevision: outbox.baselineRevision,
-        baseline: outbox.recoveryUpdates.length
-          ? u8ToBase64(Y.mergeUpdates(outbox.recoveryUpdates)) : undefined,
-      } satisfies StoredOutbox);
-      transaction.oncomplete = transaction.onerror = transaction.onabort = () => {
-        database.close(); resolve();
+      const request = store.get(postId);
+      request.onsuccess = () => {
+        const live = request.result as StoredOutbox | undefined;
+        if (live && !sameOutboxGeneration(live, outbox)) {
+          // Never overwrite or relabel another generation. Preserve this
+          // document separately through recovery, leaving that row untouched.
+          conflict = outbox.pending.length > 0;
+          return;
+        }
+        const updates = [...new Set([
+          ...(live?.updates ?? []).filter((update) => !acknowledged.has(update)),
+          ...outbox.pending.map(u8ToBase64),
+        ])];
+        if (!updates.length) {
+          if (live) store.delete(postId);
+          return;
+        }
+        let baseline: string | undefined;
+        try {
+          const dependencies = [...outbox.recoveryUpdates];
+          if (live?.baseline) dependencies.push(base64ToU8(live.baseline));
+          baseline = dependencies.length ? u8ToBase64(Y.mergeUpdates(dependencies)) : undefined;
+        } catch {
+          // A corrupt older baseline must not erase either queue. Preserve the
+          // current document separately and leave the unreadable row intact.
+          conflict = outbox.pending.length > 0;
+          return;
+        }
+        store.put({
+          postId, updates,
+          epoch: outbox.epoch,
+          epochKnown: outbox.epochKnown,
+          baselineRevision: outbox.baselineRevision ?? live?.baselineRevision ?? null,
+          baseline,
+        } satisfies StoredOutbox);
       };
+      transaction.oncomplete = () => { database.close(); resolve(true); };
+      transaction.onerror = transaction.onabort = () => { database.close(); resolve(false); };
     });
+    if (saved && !conflict) for (const update of acknowledged) outbox.acknowledged.delete(update);
+    if (conflict) void retireOutbox(outbox, outbox.epoch, "outbox-conflict");
   }).catch(() => undefined);
   return outbox.persistence;
 }
@@ -269,8 +324,8 @@ export async function acknowledgeRetiredOutboxes(copies: MaterializationRecovery
       const request = store.get(copy.postId);
       request.onsuccess = () => {
         const live = request.result as StoredOutbox | undefined;
-        if (live && live.epoch === copy.epoch && live.updates.every((update) => copy.updates?.includes(update))) {
-          store.delete(copy.postId);
+        if (live && live.epoch === copy.epoch && live.baselineRevision === copy.baselineRevision) {
+          removeStoredOperations(store, live, new Set(copy.updates ?? []));
         }
       };
     }
@@ -298,6 +353,7 @@ async function hydrateOutbox(postId: string, outbox: Outbox): Promise<void> {
   }
   outbox.pending.unshift(...restored);
   if (stored.baseline) {
+    outbox.restoredBaselineRevision = Number.isInteger(stored.baselineRevision) ? stored.baselineRevision : null;
     try { outbox.recoveryUpdates.unshift(base64ToU8(stored.baseline)); } catch { /* Raw operations remain recoverable. */ }
   }
   if (!outbox.epochKnown && stored.epochKnown) {
@@ -325,6 +381,7 @@ function outboxFor(postId: string, base: string): Outbox {
     hydrated: Promise.resolve(),
     recoveryUpdates: [],
     persistence: Promise.resolve(),
+    acknowledged: new Set(),
     retirement: null,
     retirementWrite: null,
   };
@@ -349,11 +406,14 @@ function releaseOutbox(postId: string, outbox: Outbox) {
 function removePendingBatch(outbox: Outbox, batch: Uint8Array[]) {
   for (const update of batch) {
     const index = outbox.pending.indexOf(update);
-    if (index >= 0) outbox.pending.splice(index, 1);
+    if (index >= 0) {
+      outbox.pending.splice(index, 1);
+      outbox.acknowledged.add(u8ToBase64(update));
+    }
   }
 }
 
-async function retireOutbox(outbox: Outbox, epoch: number): Promise<void> {
+async function retireOutbox(outbox: Outbox, epoch: number, reason: RecoveryReason = "document-changed"): Promise<void> {
   if (outbox.retirementWrite) return outbox.retirementWrite;
   const previousEpoch = outbox.epoch;
   const postId = Array.from(outboxes.entries()).find(([, value]) => value === outbox)?.[0];
@@ -363,7 +423,7 @@ async function retireOutbox(outbox: Outbox, epoch: number): Promise<void> {
   // responsible for retaining the outbox or its reconstruction dependencies.
   const key = `retired:${postId}:${previousEpoch}:${crypto.randomUUID()}`;
   const copy: MaterializationRecovery = {
-    id: key, outboxKey: key, postId, epoch: previousEpoch,
+    id: key, outboxKey: key, postId, epoch: previousEpoch, reason,
     baselineRevision: outbox.baselineRevision,
     state: "", updates: outbox.pending.map(u8ToBase64),
   };
@@ -380,15 +440,17 @@ async function retireOutbox(outbox: Outbox, epoch: number): Promise<void> {
   }
   const record: RetiredOutbox = { postId: key, documentPostId: postId, copy };
   outbox.retirement = record;
-  if (outbox.pending.length) retiredOutboxes.set(key, { record, durable: false });
+  const hasRecovery = outbox.pending.length > 0 || outbox.recoveryUpdates.length > 0;
+  if (hasRecovery) retiredOutboxes.set(key, { record, durable: false });
   for (const sub of outbox.subscribers.values()) {
-    try { sub.onRetired?.(previousEpoch); } catch { /* One teardown cannot block recovery. */ }
+    try { sub.onRetired?.(previousEpoch, reason); } catch { /* One teardown cannot block recovery. */ }
   }
   outbox.retirementWrite = (async () => {
     await outbox.persistence;
-    // Empty queues have nothing to quarantine. Nonempty queues are removed
-    // ONLY by the same transaction that commits the complete recovery record.
-    if (outbox.pending.length) {
+    // A hydrated baseline can still contain recoverable edits even if every
+    // pending payload was unreadable. Remove covered operations only in the
+    // transaction that commits the complete recovery record.
+    if (hasRecovery) {
       const database = await openOutboxDatabase();
       if (!database) return;
       const saved = await new Promise<boolean>((resolve) => {
@@ -400,8 +462,8 @@ async function retireOutbox(outbox: Outbox, epoch: number): Promise<void> {
           const live = request.result as StoredOutbox | undefined;
           // Another tab may have persisted newer work at this post key. Only
           // delete operations explicitly covered by this quarantine record.
-          if (live && live.epoch === previousEpoch && live.updates.every((update) => copy.updates?.includes(update))) {
-            store.delete(postId);
+          if (live && live.epoch === previousEpoch && live.baselineRevision === copy.baselineRevision) {
+            removeStoredOperations(store, live, new Set(copy.updates ?? []));
           }
         };
         transaction.oncomplete = () => { database.close(); resolve(true); };
@@ -493,11 +555,11 @@ async function flushOutbox(postId: string, outbox: Outbox) {
       }
       await retireOutbox(outbox, outbox.epoch);
     } else if (isPermanentPushError(res.status)) {
-      // This batch will never be accepted (malformed / too large). Drop just
-      // it so it can never poison-pill the queue, and keep delivering the rest.
-      removePendingBatch(outbox, batch);
-      outbox.retries = 0;
-      report("Some edits could not be synced and were dropped.");
+      // Later Yjs operations may depend on this batch's missing clocks. Freeze
+      // the whole stream and preserve all pending work plus its dependencies,
+      // including edits captured while the rejected request was in flight.
+      report("These edits could not be synced. Download your local copy before reopening.");
+      await retireOutbox(outbox, outbox.epoch, "sync-rejected");
     } else {
       // Transient (5xx / rate limit): keep the batch and back off.
       outbox.retries += 1;
@@ -627,10 +689,10 @@ export class CollabProvider implements CollaborationTransport {
     }
   }
 
-  private retireDocument(epoch: number): void {
+  private retireDocument(epoch: number, reason: RecoveryReason = "document-changed"): void {
     this.retiredEpoch = this.documentEpoch ?? epoch;
     try {
-      this.opts.onRetired?.(this.retiredEpoch);
+      this.opts.onRetired?.(this.retiredEpoch, reason);
     } finally {
       this.stop();
     }
@@ -690,7 +752,7 @@ export class CollabProvider implements CollaborationTransport {
       onFatal: (status) => this.loseAccess(status),
       // The generation was retired: signal the editor to remount onto a fresh
       // doc (which reseeds from posts.body), then stop this provider.
-      onRetired: (epoch) => this.retireDocument(epoch),
+      onRetired: (epoch, reason) => this.retireDocument(epoch, reason),
     });
     this.startPromise = this.finishStart(outbox);
     return this.startPromise;
@@ -965,7 +1027,7 @@ export class CollabProvider implements CollaborationTransport {
     // A remounted editor gets every durable local operation after the canonical
     // baseline. This ordering prevents two independent seed histories from
     // duplicating the document when the device reconnects.
-    for (const update of outbox.pending) {
+    for (const update of [...outbox.recoveryUpdates, ...outbox.pending]) {
       try {
         Y.applyUpdate(this.doc, update, REMOTE_ORIGIN);
       } catch {
@@ -1020,6 +1082,13 @@ export class CollabProvider implements CollaborationTransport {
     }
     const revision = Number(data.revision);
     const outbox = this.outbox;
+    if (outbox?.restoredBaselineRevision !== undefined &&
+        outbox.restoredBaselineRevision !== revision) {
+      // Never combine independently seeded histories, including legacy rows
+      // with no seed revision or rows whose pending payloads failed to decode.
+      void retireOutbox(outbox, outbox.epoch, "outbox-conflict");
+      return null;
+    }
     if (
       outbox &&
       outbox.pending.length > 0 &&

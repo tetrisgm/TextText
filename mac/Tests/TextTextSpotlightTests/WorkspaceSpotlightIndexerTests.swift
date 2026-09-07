@@ -30,6 +30,15 @@ final class WorkspaceSpotlightIndexerTests: XCTestCase {
         XCTAssertEqual(attributes.relatedUniqueIdentifier, "texttext-1")
     }
 
+    func testTrashedItemsAreExcluded() {
+        var document = WorkspaceSpotlightDocument(
+            textTextId: "one", workspaceHandle: "demo", title: "One", kind: "article",
+            status: "published", relativePath: "Blog/One.textpack",
+            fileURL: URL(fileURLWithPath: "/tmp/One.textpack"))
+        XCTAssertNotNil(WorkspaceSpotlightIndexer.searchableItem(for: document))
+        document.status = "trashed"
+        XCTAssertNil(WorkspaceSpotlightIndexer.searchableItem(for: document))
+    }
     func testInternalWorkspacePathsAreExcluded() throws {
         let document = WorkspaceSpotlightDocument(
             textTextId: "hidden",

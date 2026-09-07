@@ -2,11 +2,11 @@
 
 import {
   useCallback,
-  useEffect,
   useId,
   useRef,
 } from "react";
 import { createPortal } from "react-dom";
+import { useDialogFocus } from "@/components/accessibility/useDialogFocus";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 
 type ConfirmationDialogProps = {
@@ -36,25 +36,8 @@ export function ConfirmationDialog({
   const messageId = useId();
   const cancelRef = useRef<HTMLButtonElement | null>(null);
   const confirmRef = useRef<HTMLButtonElement | null>(null);
-  const restoreFocusRef = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    restoreFocusRef.current =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-    const frame = window.requestAnimationFrame(() => {
-      confirmRef.current?.focus({ preventScroll: true });
-    });
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.setTimeout(() => {
-        restoreFocusRef.current?.focus({ preventScroll: true });
-        restoreFocusRef.current = null;
-      }, 0);
-    };
-  }, [open]);
+  const dialogRef = useRef<HTMLElement>(null);
+  useDialogFocus(dialogRef, open);
 
   const runConfirm = useCallback(() => {
     if (!confirming) onConfirm();
@@ -90,12 +73,6 @@ export function ConfirmationDialog({
           cancel();
           return;
         }
-        if (event.key === "Enter") {
-          event.preventDefault();
-          event.stopPropagation();
-          runConfirm();
-          return;
-        }
         if (event.key === "ArrowRight" || event.key === "ArrowDown") {
           event.preventDefault();
           focusButton("next");
@@ -119,6 +96,7 @@ export function ConfirmationDialog({
       }}
     >
       <section
+        ref={dialogRef}
         className="confirmation-dialog"
         role="alertdialog"
         aria-modal="true"

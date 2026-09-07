@@ -119,6 +119,7 @@ import type {ReactNode } from "react";
 import dynamic from "next/dynamic";
 import {
   updateBlogAction,
+  createRootFolderAction,
 } from "@/app/editor/actions";
 import {
   type FolderCaptureResolved,
@@ -169,6 +170,7 @@ import {
   type WorkspaceDeepSearchMatch,
   type WorkspaceSearchResult,
 } from "@/lib/workspace-search";
+import { refreshWorkspacePool } from "@/lib/pool/store";
 import { chipCensus } from "@/lib/workspace/item-labels";
 import {
   WORKSPACE_DOCUMENT_OPENED_EVENT,
@@ -228,13 +230,9 @@ export function WorkspaceRootSearchActionBar({ children }: { children: ReactNode
 
 export function WorkspaceRootLanding({
   canManageItems,
-  captureFocusRequestKey,
   focusRequestKey,
-  onCreateItem,
-  onEditCreatedPost,
   onOpenPost,
   onOpenSection,
-  onDeletePost,
   onQueryChange,
   onSelectPost,
   onSelectSection,
@@ -251,13 +249,9 @@ export function WorkspaceRootLanding({
   settingsHref,
 }: {
   canManageItems: boolean;
-  captureFocusRequestKey: number;
   focusRequestKey: number;
-  onCreateItem?: FolderCreateItem;
-  onEditCreatedPost: (postId: string) => void;
   onOpenPost: (postId: string) => void;
   onOpenSection: (folderPath: string) => void;
-  onDeletePost?: FolderDeleteItem;
   onQueryChange: (query: string) => void;
   onSelectPost: (postId: string) => void;
   onSelectSection: (folderPath: string) => void;
@@ -272,7 +266,7 @@ export function WorkspaceRootLanding({
   onConnectAssistant?: () => void;
   onOpenAssistant: () => void;
   onBuildItemType: () => void;
-  onFocusCapture: () => void;
+  onFocusCapture: (folderPath: string) => void;
   onUseAssistantPrompt: (prompt: string) => void;
   settingsHref: string;
 }) {
@@ -281,6 +275,8 @@ export function WorkspaceRootLanding({
     query: string;
     matches: WorkspaceDeepSearchMatch[];
   }>({ query: "", matches: [] });
+  const [searchFailure, setSearchFailure] = useState<string | null>(null);
+  const [searchAttempt, setSearchAttempt] = useState(0);
   const [sort, setSort] = useState<SidebarDocumentSort>("recent");
   // Home's layout is the workspace's one stored layout choice, so it travels
   // with the workspace instead of with the browser that set it. Every folder
@@ -301,7 +297,7 @@ export function WorkspaceRootLanding({
       if (!canManageItems) return;
       void updateBlogAction({ homeLayout }, pool.blog.handle).catch(() => {
         setRecentViewMode(previous);
-        setHomeViewError("Could not save");
+        setHomeViewError("The layout could not be saved. Your items are unchanged. Choose the layout again to retry.");
       });
     },
     [canManageItems, pool.blog.handle, recentViewMode],
@@ -309,14 +305,36 @@ export function WorkspaceRootLanding({
   const [itemFilter, setItemFilter] = useState<
     "all" | "article" | "note" | "bookmark"
   >("all");
-  const creationFolders = useMemo(() => rootSectionFolders(pool), [pool]);
-  const creationFolder = creationFolders[0];
   // The server cannot see localStorage. Start both sides from the same list,
   // then layer personal recency on after hydration so a previously opened
   // document cannot reorder the Library while React is attaching to it.
   const [openHistory, setOpenHistory] = useState<WorkspaceDocumentOpenHistory>(
     {},
   );
+  const [firstFolder, setFirstFolder] = useState<Folder | null>(null);
+  const [creatingFirstFolder, setCreatingFirstFolder] = useState(false);
+  const [firstFolderError, setFirstFolderError] = useState<string | null>(null);
+  const creationFolders = useMemo(() => rootSectionFolders(pool), [pool]);
+  const creationFolder = creationFolders.find((folder) => folder.mode === "notes");
+  const createFirstFolder = async () => {
+    if (creatingFirstFolder || !canManageItems) return;
+    setCreatingFirstFolder(true);
+    setFirstFolderError(null);
+    try {
+      const folder = await createRootFolderAction(pool.blog.handle, "Notes");
+      setFirstFolder(folder);
+      void refreshWorkspacePool(pool.blog.handle, pool.blogId);
+    } catch {
+      setFirstFolderError("The notes folder could not be confirmed. No note has been saved. Check your connection and try again.");
+    } finally {
+      setCreatingFirstFolder(false);
+    }
+  };
+  const openFirstNote = () => {
+    if (creationFolder) onFocusCapture(creationFolder.path);
+    else if (firstFolder) void refreshWorkspacePool(pool.blog.handle, pool.blogId);
+    else void createFirstFolder();
+  };
   const activeId = selectedSectionPath
     ? `workspace-root-section-${domSafeId(selectedSectionPath)}`
     : selectedPostId
@@ -444,11 +462,11 @@ export function WorkspaceRootLanding({
         signal: controller.signal,
       })
         .then(async (response) => {
-          if (!response.ok) return null;
+          if (!response.ok) throw new Error("Search unavailable");
           return (await response.json()) as { matches?: unknown };
         })
         .then((payload) => {
-          if (!payload || !Array.isArray(payload.matches)) return;
+          if (!payload || !Array.isArray(payload.matches)) throw new Error("Search unavailable");
           const matches = payload.matches.filter(
             (candidate): candidate is WorkspaceDeepSearchMatch =>
               Boolean(
@@ -462,17 +480,19 @@ export function WorkspaceRootLanding({
                     "number",
               ),
           );
+          if (controller.signal.aborted) return;
+          setSearchFailure(null);
           setDeepSearch({ query: cleanSearchQuery, matches });
         })
         .catch(() => {
-          // Search stays useful from its bounded local index while offline.
+          if (!controller.signal.aborted) setSearchFailure(cleanSearchQuery);
         });
     }, 150);
     return () => {
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [cleanSearchQuery, dateKey, pool.blog.handle, source]);
+  }, [cleanSearchQuery, dateKey, pool.blog.handle, source, searchAttempt]);
 
   const changeQuery = (nextQuery: string) => {
     onQueryChange(nextQuery);
@@ -566,7 +586,7 @@ export function WorkspaceRootLanding({
           <section className="workspace-search-page workspace-tag-page">
             <header>
               <button type="button" onClick={() => changeQuery("")}>
-                Back
+                Show all items
               </button>
               <h1 id="workspace-root-title">#{query}</h1>
             </header>
@@ -576,7 +596,7 @@ export function WorkspaceRootLanding({
               aria-activedescendant={activeId}
             >
               {tagPosts.length === 0 ? (
-                <p>No items with this tag.</p>
+                <p>No items with this tag. Open an item and add this tag to find it here.</p>
               ) : (
                 tagPosts.map((post) => (
                   <WorkspacePostOption
@@ -595,13 +615,13 @@ export function WorkspaceRootLanding({
           <div className="workspace-date-results">
             <header>
               <button type="button" onClick={() => changeQuery("")}>
-                Back
+                Show all items
               </button>
               <h1 id="workspace-root-title">Activity on {dateLabel}</h1>
             </header>
             {dateActivity.created.length === 0 &&
             dateActivity.edited.length === 0 ? (
-              <p>No items were created or edited that day.</p>
+              <p>No items were created or edited that day. Choose another date or show all items.</p>
             ) : (
               <div
                 className="workspace-date-sections"
@@ -648,13 +668,17 @@ export function WorkspaceRootLanding({
         ) : bodyMode === "search" ? (
           <section className="workspace-search-page">
             <h1 id="workspace-root-title">Search results</h1>
+            {searchFailure === cleanSearchQuery && <div className="workspace-library-error" role="status">
+              <p>Full search is unavailable. These results only include items stored on this device. Your text has not changed.</p>
+              <button type="button" className="ac-btn ac-btn-gray" onClick={() => setSearchAttempt((attempt) => attempt + 1)}>Retry search</button>
+            </div>}
             <div
               className="workspace-search-results"
               role="listbox"
               aria-activedescendant={activeId}
             >
               {results.length === 0 ? (
-                <p>No matches. Try a title, phrase, or date.</p>
+                <div><p>No matching items. Try a different word, title, or date.</p><button type="button" className="ac-btn ac-btn-gray" onClick={() => changeQuery("")}>Clear search</button></div>
               ) : (
                 results.map((result) => {
                   if (result.kind === "post") {
@@ -712,7 +736,7 @@ export function WorkspaceRootLanding({
           </section>
         ) : (
           <>
-            {canManageItems && showStartHere && !hasPersonalItems ? (
+            {canManageItems && showStartHere && !hasPersonalItems && pool.posts.length > 0 ? (
               <section className="workspace-start-here" aria-label="Start here">
                 <div>
                   <strong>Make TextText yours</strong>
@@ -731,14 +755,15 @@ export function WorkspaceRootLanding({
                   </span>
                 </div>
                 <div className="workspace-start-here-actions">
-                  <button type="button" onClick={onFocusCapture}>Capture a thought</button>
-                  <button type="button" onClick={onBuildItemType}>Build an item type</button>
+                  <button type="button" disabled={creatingFirstFolder} onClick={openFirstNote}>{creationFolder ? "Write a note" : creatingFirstFolder ? "Creating notes folder" : firstFolder ? "Refresh folders" : "Create a notes folder"}</button>
+                  <button type="button" onClick={onBuildItemType}>Create a template</button>
                   {assistantReady ? (
                     <button type="button" onClick={() => onUseAssistantPrompt("Build a reusable project tracker with status, owner, priority, due date, and a folder view grouped by status. Show me the structure before applying it.")}>Try the assistant</button>
                   ) : (
                     <a href={`${settingsHref}#settings-connection-gallery`}>Connect an AI</a>
                   )}
                 </div>
+                {firstFolderError && <p role="alert">{firstFolderError}</p>}
                 <button type="button" className="workspace-start-here-dismiss" aria-label="Dismiss Start here" onClick={dismissStartHere}>Done</button>
               </section>
             ) : null}
@@ -801,32 +826,35 @@ export function WorkspaceRootLanding({
                   {itemFilter === "all" ? (
                     <div className="workspace-first-loop">
                       <div>
-                        <strong>Your first TextText loop</strong>
-                        <span>One thought becomes durable, findable work.</span>
+                        <strong>A place for your notes, articles, and bookmarks</strong>
+                        <span>{creationFolder ? "Write a note or paste a link to start your first item." : "Create a notes folder to start your first item."}</span>
                       </div>
                       <ol>
                         <li>
                           <b>1</b>
-                          <span><strong>Capture</strong> Save a thought above.</span>
+                          <span><strong>Create</strong> {creationFolder ? "Open a folder to write and save a note." : "Create a notes folder to hold your writing."}</span>
                         </li>
                         <li>
                           <b>2</b>
-                          <span><strong>Find</strong> Press / and search any words you remember.</span>
+                          <span><strong>Find</strong> Browse folders in the sidebar or search your words above.</span>
                         </li>
                         <li>
                           <b>3</b>
-                          <span><strong>Change</strong> Open it, ask your AI, then review the receipt.</span>
+                          <span><strong>Edit</strong> Open an item to write. The assistant beside it can help when you connect an AI.</span>
                         </li>
                       </ol>
-                      {canManageItems && creationFolder ? (
+                      {canManageItems ? (
                         <button
                           type="button"
                           className="ac-btn ac-btn-filled"
-                          onClick={onFocusCapture}
+                          disabled={creatingFirstFolder}
+                          onClick={openFirstNote}
                         >
-                          Save your first thought
+                          {creationFolder ? "Write your first note" : creatingFirstFolder ? "Creating notes folder" : firstFolder ? "Refresh folders" : "Create a notes folder"}
                         </button>
                       ) : null}
+                      {firstFolder && !creationFolder && <p>The notes folder was created. Refresh folders to open it.</p>}
+                      {firstFolderError && <p role="alert">{firstFolderError}</p>}
                     </div>
                   ) : (
                     <>
@@ -955,7 +983,7 @@ export function LocalWorkspaceContent({
   onConnectAssistant?: () => void;
   onOpenAssistant: () => void;
   onBuildItemType: (folderPath?: string) => void;
-  onFocusCapture: () => void;
+  onFocusCapture: (folderPath: string) => void;
   onUseAssistantPrompt: (prompt: string) => void;
 }) {
   // Stable identity for the section's items: FolderPage memoizes its sort,
@@ -978,13 +1006,9 @@ export function LocalWorkspaceContent({
   const rootPage = (
     <WorkspaceRootLanding
       canManageItems={canManagePost}
-      captureFocusRequestKey={captureFocusRequestKey}
       focusRequestKey={searchFocusRequestKey}
-      onCreateItem={onCreateItem}
-      onEditCreatedPost={(postId) => onOpenPostId(postId, "edit")}
       onOpenPost={onOpenPostId}
       onOpenSection={onOpenSection}
-      onDeletePost={onDeleteItem}
       onQueryChange={onQueryChange}
       onSelectPost={onSelectPost}
       onSelectSection={onSelectSection}
@@ -1070,6 +1094,7 @@ export function LocalWorkspaceContent({
           onDragItems={onDragItems}
           onOpenTag={onOpenTag}
           onItemClick={onItemClick}
+          captureFocusRequestKey={captureFocusRequestKey}
           createBookmarkRequestKey={createBookmarkRequestKey}
           editRequestKey={editFolderRequestKey}
           searchFocusRequestKey={searchFocusRequestKey}
@@ -1106,14 +1131,10 @@ export function LocalWorkspaceContent({
 
   useWarmFolderPageChunk(pool.folders.length > 0);
   useWarmEditorChunk(canEditItems);
-  const [warmEditorReady, setWarmEditorReady] = useState(false);
+  const [warmEditorPostId, setWarmEditorPostId] = useState<string | null>(null);
   const activePostId = activePost?.id ?? null;
   useEffect(() => {
-    if (!activePostId) {
-      setWarmEditorReady(false);
-      return;
-    }
-    setWarmEditorReady(false);
+    if (!activePostId) return;
     const idle = (
       window as unknown as {
         requestIdleCallback?: (fn: () => void, o?: { timeout: number }) => number;
@@ -1121,15 +1142,16 @@ export function LocalWorkspaceContent({
       }
     ).requestIdleCallback;
     if (idle) {
-      const handle = idle(() => setWarmEditorReady(true), { timeout: 1200 });
+      const handle = idle(() => setWarmEditorPostId(activePostId), { timeout: 1200 });
       return () =>
         (window as unknown as { cancelIdleCallback?: (h: number) => void })
           .cancelIdleCallback?.(handle);
     }
-    const timer = window.setTimeout(() => setWarmEditorReady(true), 200);
+    const timer = window.setTimeout(() => setWarmEditorPostId(activePostId), 200);
     return () => window.clearTimeout(timer);
   }, [activePostId]);
 
+  const warmEditorReady = Boolean(activePostId) && warmEditorPostId === activePostId;
   const editorVisible =
     Boolean(activePost) &&
     (view.level === "edit" || activePost?.type === "note");

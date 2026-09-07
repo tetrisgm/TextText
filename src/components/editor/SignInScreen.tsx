@@ -18,9 +18,9 @@ export function SignInScreen() {
         </Link>
         <div className="ac-toolbar-title ac-toolbar-title-grow">Editor</div>
       </div>
-      <div className="ac-signin">
+      <main className="ac-signin" aria-labelledby="signin-title">
         <div className="ac-signin-card">
-          <h1 className="ac-signin-title">Sign in to TextText</h1>
+          <h1 id="signin-title" className="ac-signin-title">Sign in to TextText</h1>
           <p className="ac-signin-sub">
             Your posts live on your own blog. Sign in to continue.
           </p>
@@ -39,7 +39,7 @@ export function SignInScreen() {
           )}
           {devLoginEnabled && <DevSignIn />}
         </div>
-      </div>
+      </main>
     </div>
   );
 }

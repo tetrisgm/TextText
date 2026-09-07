@@ -144,7 +144,7 @@ it("quarantines the persisted old baseline after restart before applying a repla
   const doc=new Y.Doc(),retired=vi.fn();
   const provider=new restarted.CollabProvider(doc,{postId,userName:"Probe",color:"#000000",canPush:true,onRetired:retired});
   await provider.start();
-  expect(retired).toHaveBeenCalledExactlyOnceWith(5);
+  expect(retired).toHaveBeenCalledExactlyOnceWith(5, "document-changed");
   const recovery=await restarted.readRetiredOutboxes(postId);
   expect(recovery.copies[0].document?.content.body).toBe("alpha LOCAL ONLY");
   expect(recovery.copies[0].baselineRevision).toBe(1);

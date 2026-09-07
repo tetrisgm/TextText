@@ -37,6 +37,7 @@ export function UnifiedDocumentReader({
   return (
     <>
       <DocumentRenderer
+        landmark="main"
         document={document}
         documentId={post.id ?? post.slug}
         template={template}

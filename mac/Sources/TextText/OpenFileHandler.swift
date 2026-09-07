@@ -97,7 +97,10 @@ enum OpenFileHandler {
     }
 
     static func externalNoteImport(for url: URL) throws -> ExternalNoteImport {
-        let text = try text(at: url)
+        try externalNoteImport(for: url, text: text(at: url))
+    }
+
+    static func externalNoteImport(for url: URL, text: String) -> ExternalNoteImport {
         let parsed = TextTextMarkdownPreviewRenderer.parse(text)
         let title = nonempty(parsed.frontMatter["title"])
             ?? url.deletingPathExtension().lastPathComponent

@@ -1,5 +1,7 @@
 "use client";
 
+import { installPressFeedback } from "@/lib/motion/press";
+
 import {
   createContext,
   startTransition,
@@ -11,6 +13,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { nativeMenuEntries, runNativeMenuCommand } from "@/lib/commands/native-menu";
 import { OPEN_ADD_AGENT_EVENT } from "@/lib/agent-connect";
 import { useRouter } from "next/navigation";
 import { isTypingTarget } from "@/components/keyboard/typing-target";
@@ -83,6 +86,7 @@ function isKeyboardShortcutsKey(event: KeyboardEvent): boolean {
 }
 
 export function CommandLayer({ children }: { children: ReactNode }) {
+  useEffect(() => installPressFeedback(document), []);
   const router = useRouter();
   const { pool } = useWorkspacePool();
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -189,6 +193,38 @@ export function CommandLayer({ children }: { children: ReactNode }) {
     }),
     [closePalette, openPalette, openShortcuts, router, showToast],
   );
+
+  useEffect(() => {
+    const nativeWindow = window as typeof window & {
+      webkit?: { messageHandlers?: { textTextApp?: { postMessage: (body: unknown) => void } } };
+    };
+    const bridge = nativeWindow.webkit?.messageHandlers?.textTextApp;
+    if (!bridge) return;
+    const blocked = () => paletteOpenRef.current || escapeStackRef.current.length > 0;
+    const publish = () => bridge.postMessage({
+      action: "nativeMenuState", entries: nativeMenuEntries(commandContext(), blocked()),
+      item: (() => {
+        const ws = commandContext().workspace;
+        const id = ws?.activePostId ?? ws?.selectedPostId;
+        const post = id ? ws?.getPost(id) : null;
+        return post && !blocked() ? { id: post.id, title: post.title } : null;
+      })(),
+      restorePath: window.location.pathname + window.location.search,
+    });
+    const invoke = (event: Event) => {
+      const id = (event as CustomEvent).detail;
+      runCommand(() => { runNativeMenuCommand(commandContext(), id, blocked()); });
+      publish();
+    };
+    window.addEventListener("texttext:native-menu-request", publish);
+    window.addEventListener("texttext:native-menu-command", invoke);
+    publish();
+    return () => {
+      window.removeEventListener("texttext:native-menu-request", publish);
+      window.removeEventListener("texttext:native-menu-command", invoke);
+      bridge.postMessage({ action: "nativeMenuState", entries: [] });
+    };
+  }, [commandContext, workspaceSurface, pool, paletteOpen]);
 
   const registerKey = useCallback((binding: KeyBinding) => {
     keyBindingsRef.current = [...keyBindingsRef.current, binding];

@@ -16,6 +16,7 @@ import {
   resolveItemCommentAction,
   type ItemCommentView,
 } from "@/app/editor/actions";
+import { usePopoverFocus } from "@/components/accessibility/useDialogFocus";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { groupCommentThreads } from "@/components/workspace/comment-threads";
 import { locateWorkspaceItemTextSelection } from "@/lib/ai/workspace-item-draft";
@@ -182,6 +183,7 @@ export function ReaderComments({
   const [body, setBody] = useState("");
   const [replyBody, setReplyBody] = useState("");
   const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const retryRef = useRef<(() => Promise<void>) | null>(null);
@@ -362,6 +364,7 @@ export function ReaderComments({
     if (!clean || !canComment || saving) return;
     mutationVersion.current += 1;
     savingRef.current = true;
+    setNotice("");
     setSaving(true);
     setError(null);
     try {
@@ -376,6 +379,7 @@ export function ReaderComments({
           selection?.end,
         ),
       );
+      setNotice("Comment posted.");
       closePopover();
       window.getSelection()?.removeAllRanges();
       setSelection(null);
@@ -393,6 +397,7 @@ export function ReaderComments({
     if (!clean || !canComment || !activeThread || saving) return;
     mutationVersion.current += 1;
     savingRef.current = true;
+    setNotice("");
     setSaving(true);
     setError(null);
     try {
@@ -400,6 +405,7 @@ export function ReaderComments({
         await replyItemCommentAction(handle, postId, activeThread.root.id, clean),
       );
       setReplyBody("");
+      setNotice("Reply posted.");
     } catch (saveError) {
       setError(errorMessage(saveError, "Could not add reply."));
     } finally {
@@ -412,6 +418,7 @@ export function ReaderComments({
     if (!activeThread || !canResolve || saving) return;
     mutationVersion.current += 1;
     savingRef.current = true;
+    setNotice("");
     setSaving(true);
     setError(null);
     try {
@@ -419,6 +426,7 @@ export function ReaderComments({
         ? reopenItemCommentAction
         : resolveItemCommentAction;
       setComments(await action(handle, postId, activeThread.root.id));
+      setNotice(activeThread.root.resolved ? "Comment reopened." : "Comment resolved.");
       if (!activeThread.root.resolved) closePopover();
     } catch (saveError) {
       setError(errorMessage(saveError, "Could not update comment."));
@@ -457,13 +465,16 @@ export function ReaderComments({
         ? { right: 16, top: 80 }
         : null;
 
+  usePopoverFocus(popoverRef, Boolean((composing || activeThread) && popoverPosition));
+
   return (
-    <div ref={rootRef} className={`applecms ${styles.layer}`} aria-live="polite">
+    <div ref={rootRef} className={`applecms ${styles.layer}`}>
+      <span className="ac-sr-only" role="status" aria-atomic="true">{notice}</span>
       {loadError && (
         <div className={styles.loadFailure} role="status">
-          <span>{loadError}</span>
+          <span>{loadError} Your document text has not changed. Reload comments to try again.</span>
           <button type="button" onClick={() => void retryRef.current?.()}>
-            Retry
+            Reload comments
           </button>
         </div>
       )}
@@ -549,13 +560,14 @@ export function ReaderComments({
               ))}
             </div>
           )}
-          {error && <p className={styles.error}>{error}</p>}
+          {error && <p className={styles.error} role="alert">{error}</p>}
           {canComment && (composing ? (
             <form onSubmit={submitComment}>
               <textarea
                 ref={composerRef}
                 value={body}
                 rows={3}
+                aria-label="Add a comment"
                 placeholder="Add a comment"
                 onChange={(event) => setBody(event.currentTarget.value)}
               />
@@ -569,6 +581,7 @@ export function ReaderComments({
                 <textarea
                   value={replyBody}
                   rows={2}
+                  aria-label="Reply to comment"
                   placeholder="Reply"
                   onChange={(event) => setReplyBody(event.currentTarget.value)}
                 />

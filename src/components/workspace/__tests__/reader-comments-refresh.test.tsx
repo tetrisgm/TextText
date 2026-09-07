@@ -55,7 +55,7 @@ it("does not list comments while hidden, and cleans up after leaving the item", 
 });
 function retryButton(node: ReactNode): ReactElement<{ onClick: () => void }> | undefined {
   if (!React.isValidElement<{ children?: ReactNode; onClick?: () => void }>(node)) return;
-  if (node.type === "button" && node.props.children === "Retry") return node as ReactElement<{ onClick: () => void }>;
+  if (node.type === "button" && node.props.children === "Reload comments") return node as ReactElement<{ onClick: () => void }>;
   for (const child of React.Children.toArray(node.props.children)) { const found = retryButton(child); if (found) return found; }
 }
 it("offers an outside-popover retry that recovers a failed initial load", async () => {

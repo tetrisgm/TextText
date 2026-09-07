@@ -15,6 +15,7 @@ import type {
 } from "react";
 import { BacklinksPanel } from "@/components/BacklinksPanel";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 
 // The reader pulls DocumentRenderer, and with it react-markdown's package
 // graph (unified, micromark, mdast, hast - about 300KB across ~97 packages).
@@ -61,6 +62,7 @@ import type {
 } from "@/lib/pool/types";
 import {
   blogWorkspacePostPath,
+  blogWorkspacePostEditPath,
   workspacePublicPostUrl,
 } from "@/lib/public-paths";
 import { localizeRemoteMarkdownImages } from "@/lib/markdown-images";
@@ -76,8 +78,14 @@ import {
 
 
 
-export function ErrorBody({ message }: { message: string }) {
-  return <p className="workspace-post-body-status">{message}</p>;
+export function ErrorBody({ message, onRetry, homeHref = "/" }: { message: string; onRetry?: () => void; homeHref?: string }) {
+  return <div className="workspace-post-body-status">
+    <p>This item could not be loaded.</p>
+    <p>{message}</p>
+    <p>Check your connection and try loading it again.</p>
+    {onRetry && <button type="button" className="ac-btn ac-btn-gray" onClick={onRetry}>Reload item</button>}
+    <p><Link href={homeHref}>Back to your items</Link></p>
+  </div>;
 }
 
 export function safeBookmarkViewUrl(value: string | undefined): string {
@@ -120,7 +128,7 @@ export function BookmarkViewBody({ post }: { post: Post }) {
     );
   }
 
-  return <ErrorBody message="This bookmark capture is not available yet." />;
+  return <div className="workspace-post-body-status"><p>This bookmark has no page capture yet. Your saved link is still available.</p>{safeBookmarkViewUrl(post.capture?.url) && <a href={safeBookmarkViewUrl(post.capture?.url)}>Open original page</a>}</div>;
 }
 
 export function WorkspacePostReader({
@@ -297,6 +305,19 @@ export function WorkspacePostReader({
         onSearchValueChange={setFindQuery}
         onBookmarkContentModeChange={setBookmarkContentMode}
       />
+      {document && !document.content.title.trim() && !document.content.body.trim() &&
+        !document.content.subtitle?.trim() && !document.content.assets.length && !document.content.tags.length &&
+        Object.values(document.content.fields).every((value) => value == null || value === "" || (Array.isArray(value) && value.length === 0)) && (
+        <div className="workspace-post-body-status">
+          <p>This document is empty. {canManagePost ? "Start writing to add its first words." : "Its author has not added any text yet."}</p>
+          {canManagePost && <button type="button" className="ac-btn ac-btn-gray" onClick={() => void onNavigate(blogWorkspacePostEditPath(blog, folderPathForPoolPost(pool, poolPost), post))}>Start writing</button>}
+          <p><Link href={sectionPath} onClick={(event) => {
+            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            void onNavigate(sectionPath);
+          }}>Back to your items</Link></p>
+        </div>
+      )}
       {post.type === "bookmark" && bookmarkContentMode === "capture" ? (
         <BookmarkViewBody post={post} />
       ) : document ? (
@@ -306,7 +327,7 @@ export function WorkspacePostReader({
           template={template}
         />
       ) : entry.status === "error" ? (
-        <ErrorBody message={entry.error} />
+        <ErrorBody message={entry.error} onRetry={() => load(true)} homeHref={homePath} />
       ) : // Never a skeleton: the view only switches here once the document
       // is locally available (openPoolPost gates on it), so this branch is
       // a sub-frame transient at most and must paint nothing.

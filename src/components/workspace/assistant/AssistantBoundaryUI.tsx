@@ -1,9 +1,13 @@
 "use client";
 
+import type { MotionSnapshot } from "@/lib/motion/surface";
+import { useMotionPresence } from "@/lib/motion/react";
+
 import {
   useCallback,
   useEffect,
   useId,
+  useRef,
   useSyncExternalStore,
   type ComponentProps,
 } from "react";
@@ -164,12 +168,13 @@ function AssistantLauncher(props: AssistantSidebarProps) {
 
 export function LazyAssistantSidebar(props: AssistantRailShellProps) {
   const modules = useAssistantBoundary();
-  if (modules) return <modules.sidebar.AssistantSidebar {...props} />;
-  return props.state === "hidden" ? (
-    <AssistantLauncher {...props} />
-  ) : (
-    <AssistantRailShell {...props} />
-  );
+  const motion = useMotionPresence(props.state !== "hidden");
+  const motionSnapshot = useRef<MotionSnapshot | null>(null);
+  if (modules) return <modules.sidebar.AssistantSidebar {...props} motionSnapshot={motionSnapshot} />;
+  return <>
+    {props.state === "hidden" && <AssistantLauncher {...props} />}
+    {motion.present && <AssistantRailShell {...props} motionOnRest={motion.onRest} motionSnapshot={motionSnapshot} />}
+  </>;
 }
 
 export function LazyAssistantConversation(

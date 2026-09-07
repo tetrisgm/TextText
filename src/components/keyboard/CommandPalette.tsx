@@ -1,7 +1,10 @@
 "use client";
 
+import { useMotionPresence, useSurfaceMotion } from "@/lib/motion/react";
+
 import {
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -26,7 +29,8 @@ import {
   blogHomePath,
   blogPostPath,
 } from "@/lib/public-paths";
-import { folderPathForPoolPost } from "@/lib/pool/selectors";
+
+import { useDialogFocus } from "@/components/accessibility/useDialogFocus";
 
 export const OPEN_COMMAND_PALETTE_EVENT = "texttext:open-command-palette";
 export const OPEN_KEYBOARD_SHORTCUTS_EVENT = "texttext:open-keyboard-shortcuts";
@@ -182,6 +186,7 @@ export function CommandPalette({
   shortcutsOpen: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const resultsId = useId();
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const [fallbackPool, setFallbackPool] =
@@ -191,6 +196,14 @@ export function CommandPalette({
   const pool = ctx.pool ?? fallbackPool;
   const paletteOpen = open && !shortcutsOpen;
   const dialogOpen = open;
+  const presence = useMotionPresence(dialogOpen);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
+  // One ref serves the focus trap and the spring; the panel stays mounted
+  // through the exit, so the trap must follow the same element.
+  useDialogFocus(panelRef, dialogOpen);
+  useSurfaceMotion(panelRef, dialogOpen, { mounted: presence.present, path: shortcutsOpen ? "sheet" : "scale", onRest: presence.onRest });
+  useSurfaceMotion(backdropRef, dialogOpen, { mounted: presence.present, path: "fade" });
 
   const closeDialog = () => {
     onClose();
@@ -332,7 +345,7 @@ export function CommandPalette({
   const selectedIndex =
     results.length === 0 ? 0 : Math.min(selected, results.length - 1);
 
-  if (!dialogOpen) return null;
+  if (!presence.present) return null;
 
   const runSelected = () => {
     const result = results[selectedIndex];
@@ -368,6 +381,10 @@ export function CommandPalette({
 
   return (
     <div
+      ref={backdropRef}
+      inert={!dialogOpen}
+      aria-hidden={!dialogOpen}
+      style={{ pointerEvents: dialogOpen ? undefined : "none" }}
       className={`command-palette-backdrop applecms${
         shortcutsOpen ? " is-sheet" : ""
       }`}
@@ -382,9 +399,10 @@ export function CommandPalette({
       }}
     >
       <div
+        ref={panelRef}
         className={`command-palette${shortcutsOpen ? " command-palette--sheet" : ""}`}
         role="dialog"
-        aria-modal="true"
+        aria-modal={dialogOpen ? true : undefined}
         aria-label={shortcutsOpen ? "Keyboard shortcuts" : "Command palette"}
       >
         {shortcutsOpen ? (
@@ -445,6 +463,12 @@ export function CommandPalette({
             <input
               ref={inputRef}
               className="command-palette-input"
+              role="combobox"
+              aria-label="Search items and commands"
+              aria-autocomplete="list"
+              aria-expanded="true"
+              aria-controls={resultsId}
+              aria-activedescendant={results.length ? `${resultsId}-${selectedIndex}` : undefined}
               value={query}
               placeholder="Search or type / for commands"
               autoCapitalize="none"
@@ -457,7 +481,7 @@ export function CommandPalette({
               }}
               onKeyDown={onInputKeyDown}
             />
-            <div className="command-palette-results" role="listbox">
+            <div id={resultsId} className="command-palette-results" role="listbox" aria-label="Items and commands">
               {results.length === 0 ? (
                 <div className="command-palette-empty">No results</div>
               ) : (
@@ -468,6 +492,8 @@ export function CommandPalette({
                     className={`command-palette-row${
                       index === selectedIndex ? " is-selected" : ""
                     }`}
+                    id={`${resultsId}-${index}`}
+                    tabIndex={-1}
                     role="option"
                     aria-selected={index === selectedIndex}
                     onMouseMove={(event) => {

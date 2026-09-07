@@ -5,6 +5,7 @@ import Link from "next/link";
 
 type ErrorPageProps = {
   error: Error & { digest?: string };
+  retry?: () => void;
   unstable_retry?: () => void;
   reset?: () => void;
 };
@@ -69,10 +70,11 @@ const buttonStyle: CSSProperties = {
 
 export default function ErrorPage({
   error,
+  retry: retryView,
   unstable_retry,
   reset,
 }: ErrorPageProps) {
-  const retry = unstable_retry ?? reset;
+  const retry = retryView ?? unstable_retry ?? reset ?? (() => window.location.reload());
   const errorId = errorReference(error);
 
   return (
@@ -80,9 +82,9 @@ export default function ErrorPage({
       <div aria-hidden="true" style={markStyle}>
         500
       </div>
-      <h1 className="not-found-title">Something went wrong.</h1>
+      <h1 className="not-found-title">This view could not be loaded</h1>
       <p style={copyStyle}>
-        We could not load this view. Try again, or return home.
+        Try loading this page again, or go home.
       </p>
       <p style={idStyle}>
         Error id <code style={codeStyle}>{errorId}</code>

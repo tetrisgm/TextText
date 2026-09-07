@@ -1,5 +1,9 @@
 "use client";
 
+import type { MotionSnapshot } from "@/lib/motion/surface";
+import { useSurfaceMotion } from "@/lib/motion/react";
+import { useRailResize } from "@/lib/motion/use-rail";
+
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type {
   ChangeEvent,
@@ -7,8 +11,8 @@ import type {
   FocusEvent as ReactFocusEvent,
   FormEvent,
   KeyboardEvent as ReactKeyboardEvent,
-  PointerEvent as ReactPointerEvent,
   ReactNode,
+  RefObject,
 } from "react";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
@@ -143,15 +147,9 @@ export type AssistantSidebarProps = {
   panelId?: string;
   className?: string;
   style?: CSSProperties;
+  motionSnapshot?: RefObject<MotionSnapshot | null>;
   edgePeeking?: boolean;
   onEdgePeekEngage?: () => void;
-};
-
-type ResizeSession = {
-  lastWidth: number | null;
-  pointerId: number;
-  startWidth: number;
-  startX: number;
 };
 
 const EMPTY_ATTACHMENTS: readonly AssistantAttachment[] = [];
@@ -163,10 +161,6 @@ function classNames(...classes: Array<string | false | null | undefined>) {
 
 function positiveNumber(value: number, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? value : fallback;
-}
-
-function clamp(value: number, minimum: number, maximum: number): number {
-  return Math.min(maximum, Math.max(minimum, value));
 }
 
 export function isAssistantToggleShortcut(
@@ -204,6 +198,7 @@ export function AssistantSidebar({
   onModelChange,
   width,
   onWidthChange,
+  motionSnapshot,
   composerValue,
   onComposerChange,
   onSubmit,
@@ -291,8 +286,6 @@ export function AssistantSidebar({
   const previousStateRef = useRef(state);
   const focusOnOpenRef = useRef(true);
   const pointerWithinRef = useRef(false);
-  const resizeSessionRef = useRef<ResizeSession | null>(null);
-  const [resizing, setResizing] = useState(false);
   const [focusWithin, setFocusWithin] = useState(false);
   const [viewportWidth, setViewportWidth] = useState<number | null>(null);
   const [pendingOpen, setPendingOpen] = useState(false);
@@ -320,6 +313,8 @@ export function AssistantSidebar({
   // saved values still parse; it means open.
   const visible = state !== "hidden";
   const revealed = visible;
+  useSurfaceMotion(panelRef, visible, { path: "rail", skipInitial: true, snapshot: motionSnapshot });
+  const resizeMotion = useRailResize(panelRef, resolvedWidth, resolvedMinWidth, resolvedMaxWidth, onWidthChange);
   const canSubmit =
     !disabled &&
     !submitDisabled &&
@@ -412,86 +407,18 @@ export function AssistantSidebar({
     pointerWithinRef.current = false;
   };
 
-  const requestWidth = (nextWidth: number) => {
-    onWidthChange(
-      Math.round(clamp(nextWidth, resolvedMinWidth, resolvedMaxWidth)),
-    );
-  };
-
-  const beginResize = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!visible || event.button !== 0) return;
-
-    event.preventDefault();
-    resizeSessionRef.current = {
-      lastWidth: null,
-      pointerId: event.pointerId,
-      startWidth: resolvedWidth,
-      startX: event.clientX,
-    };
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setResizing(true);
-  };
-
-  // Dragging writes the layout variable directly and commits the width to
-  // the store ONCE on release. Committing per pointermove re-rendered the
-  // whole workspace shell (and re-wrote localStorage and a cookie) for every
-  // mouse position, which is exactly the resize choppiness reported.
-  const applyDragWidth = (next: number) => {
-    const clamped = Math.round(clamp(next, resolvedMinWidth, resolvedMaxWidth));
-    const shell = panelRef.current?.closest<HTMLElement>(".post-editor-shell");
-    (shell ?? document.documentElement).style.setProperty(
-      "--workspace-assistant-width",
-      `${clamped}px`,
-    );
-    return clamped;
-  };
-
-  const continueResize = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const session = resizeSessionRef.current;
-    if (!session || session.pointerId !== event.pointerId) return;
-
-    event.preventDefault();
-    session.lastWidth = applyDragWidth(
-      session.startWidth + session.startX - event.clientX,
-    );
-  };
-
-  const commitResize = (session: ResizeSession) => {
-    if (session.lastWidth !== null) onWidthChange(session.lastWidth);
-  };
-
-  const finishResize = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const session = resizeSessionRef.current;
-    if (!session || session.pointerId !== event.pointerId) return;
-
-    resizeSessionRef.current = null;
-    setResizing(false);
-    commitResize(session);
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-  };
-
-  const loseResizeCapture = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const session = resizeSessionRef.current;
-    if (session?.pointerId !== event.pointerId) return;
-    resizeSessionRef.current = null;
-    setResizing(false);
-    commitResize(session);
-  };
-
   const resizeFromKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const step = resolvedResizeStep * (event.shiftKey ? 4 : 1);
-    let nextWidth: number | null = null;
+    let nextWidth: number | ((target: number) => number) | null = null;
 
-    if (event.key === "ArrowLeft") nextWidth = resolvedWidth + step;
-    if (event.key === "ArrowRight") nextWidth = resolvedWidth - step;
+    if (event.key === "ArrowLeft") nextWidth = (target) => target + step;
+    if (event.key === "ArrowRight") nextWidth = (target) => target - step;
     if (event.key === "Home") nextWidth = resolvedMinWidth;
     if (event.key === "End") nextWidth = resolvedMaxWidth;
     if (nextWidth === null) return;
 
     event.preventDefault();
-    requestWidth(nextWidth);
+    resizeMotion.keyboard(nextWidth);
   };
 
   const chooseFiles = (event: ChangeEvent<HTMLInputElement>) => {
@@ -548,7 +475,6 @@ export function AssistantSidebar({
       className={classNames("applecms", styles.root, className)}
       data-assistant-sidebar=""
       data-layout={layout}
-      data-resizing={resizing ? "true" : undefined}
       data-state={state}
       style={rootStyle}
       onPointerEnter={handleRootPointerEnter}
@@ -609,11 +535,12 @@ export function AssistantSidebar({
           aria-valuetext={`${resolvedWidth} pixels wide`}
           title="Resize assistant sidebar"
           onKeyDown={resizeFromKeyboard}
-          onLostPointerCapture={loseResizeCapture}
-          onPointerCancel={finishResize}
-          onPointerDown={beginResize}
-          onPointerMove={continueResize}
-          onPointerUp={finishResize}
+          onPointerDown={resizeMotion.onPointerDown}
+          onPointerMove={resizeMotion.onPointerMove}
+          onPointerUp={resizeMotion.onPointerUp}
+          onPointerCancel={resizeMotion.onPointerCancel}
+          onLostPointerCapture={resizeMotion.onLostPointerCapture}
+
         />
 
         <header className={styles.header}>

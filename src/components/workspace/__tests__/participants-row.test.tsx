@@ -14,6 +14,8 @@ describe("participant row markup", () => {
     const html = renderToStaticMarkup(<ParticipantsRow postId="item" handle="owner" canReviewChanges />);
     expect(html).toContain('aria-label="Add agent"');
     expect(html).toContain('aria-label="Close add agent"');
+    expect(html.match(/popover="auto"/g)).toHaveLength(1);
+    expect(html).not.toContain('popover="manual"');
     expect(html).not.toContain("Copy token");
   });
   it("hides connection controls for viewers and unsaved items", () => {

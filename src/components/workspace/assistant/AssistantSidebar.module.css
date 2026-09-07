@@ -66,6 +66,8 @@
 }
 
 .panel {
+  --motion-solid-ground: var(--assistant-rail-ground);
+  --motion-border: var(--assistant-rail-primary);
   position: absolute;
   inset: 0 0 0 auto;
   z-index: 1;
@@ -85,10 +87,7 @@
   pointer-events: auto;
   transform: translateX(0);
   visibility: visible;
-  transition:
-    transform 180ms ease,
-    opacity 180ms ease,
-    visibility 0s linear 0s;
+
 }
 
 .root[data-layout="inline"][data-state="hidden"] .panel {
@@ -105,10 +104,7 @@
   pointer-events: none;
   transform: translateX(calc(100% + 12px));
   visibility: hidden;
-  transition:
-    transform 180ms ease,
-    opacity 180ms ease,
-    visibility 0s linear 180ms;
+
 }
 
 /* Hover-peek: the collapsed right rail reveals the panel as an interactive
@@ -119,10 +115,7 @@
   transform: translateX(0);
   visibility: visible;
   box-shadow: -18px 0 44px -34px rgba(0, 0, 0, 0.58);
-  transition:
-    transform 180ms ease,
-    opacity 180ms ease,
-    visibility 0s linear 0s;
+
 }
 
 /* The closed rail survives as a small round presence at the bottom right,
@@ -139,8 +132,8 @@
 
 .launcher {
   position: relative;
-  width: 40px;
-  height: 40px;
+  width: 2.5rem;
+  height: 2.5rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -167,10 +160,10 @@
   transform: scale(0.97);
 }
 .launcherAvatar,.agentAvatar { display:grid; place-items:center; color:#fff; border-radius:50%; flex:0 0 auto; }
-.launcherAvatar { width:26px; height:26px; }
-.launcherAvatar svg,.agentAvatar svg { width:15px; height:15px; }
-.agentAvatar { width:18px; height:18px; filter:grayscale(1); opacity:.62; }
-.agentAvatar svg { width:12px; height:12px; }
+.launcherAvatar { width:1.625rem; height:1.625rem; }
+.launcherAvatar svg,.agentAvatar svg { width:0.9375rem; height:0.9375rem; }
+.agentAvatar { width:1.125rem; height:1.125rem; filter:grayscale(1); opacity:.62; }
+.agentAvatar svg { width:0.75rem; height:0.75rem; }
 
 .root[data-layout="inline"][data-state="hidden"] .launcherWrap {
   right: 4px;
@@ -193,8 +186,8 @@
 .launcher svg,
 .iconButton svg,
 .composerButton svg {
-  width: 14px;
-  height: 14px;
+  width: 0.875rem;
+  height: 0.875rem;
   display: block;
 }
 
@@ -202,7 +195,7 @@
   position: absolute;
   inset: 0 auto 0 -5px;
   z-index: 4;
-  width: 10px;
+  width: 0.625rem;
   outline: none;
   cursor: ew-resize;
   touch-action: none;
@@ -214,17 +207,15 @@
   top: 0;
   bottom: 0;
   left: 4px;
-  width: 1px;
+  width: 0.0625rem;
   background: transparent;
-  transition:
-    width 180ms ease,
-    background-color 180ms ease;
+
 }
 
 .resizer:hover::before,
 .resizer:focus-visible::before,
-.root[data-resizing="true"] .resizer::before {
-  width: 3px;
+.panel[data-motion-resizing="true"] .resizer::before {
+  width: 0.1875rem;
   background: var(--ac-accent, #007aff);
 }
 
@@ -234,16 +225,16 @@
   flex: 0 0 auto;
   display: grid;
   gap: 0;
-  padding: 34px 26px 10px;
+  padding: 2.125rem 1.625rem 0.625rem;
   border-bottom: 0;
 }
 
 .titleRow {
   min-width: 0;
-  min-height: 32px;
+  min-height: 2rem;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
 .title {
@@ -253,7 +244,7 @@
   overflow: hidden;
   margin: 0;
   color: var(--assistant-rail-primary);
-  font: 500 18px / 1.25 var(
+  font: 500 1.125rem / 1.25 var(
       --ac-font-text,
       -apple-system,
       BlinkMacSystemFont,
@@ -272,27 +263,27 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 8px;
+  gap: 0.25rem 0.5rem;
 }
 
 .historySync {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0 8px;
+  gap: 0 0.5rem;
   /* Reserved even while empty: the static shell and the loaded rail share
      this height, so the first sync result never moves the rail. */
-  min-height: calc(12px * 1.4);
+  min-height: calc(0.75rem * 1.4);
   color: var(--assistant-rail-secondary);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.4;
 }
 
 .retrySync {
   /* Sits inside the reserved status line; a taller control would push the
      whole rail down the moment a sync fails. Coarse pointers get 32px below. */
-  min-height: calc(12px * 1.4);
-  padding: 0 2px;
+  min-height: calc(0.75rem * 1.4);
+  padding: 0 0.125rem;
   border: 0;
   border-radius: 4px;
   background: transparent;
@@ -308,16 +299,16 @@
 }
 
 @media (pointer: coarse) {
-  .retrySync { min-height: 44px; }
+  .retrySync { min-height: 2.75rem; }
 }
 
 .pendingLabel {
   flex: 0 0 auto;
   border-radius: 0;
-  padding: 2px 3px;
+  padding: 0.125rem 0.1875rem;
   background: transparent;
   color: var(--assistant-rail-secondary);
-  font: 550 11px/1.2 var(--ac-font-text, -apple-system, sans-serif);
+  font: 550 0.6875rem/1.2 var(--ac-font-text, -apple-system, sans-serif);
 }
 
 button.pendingLabel {
@@ -335,8 +326,8 @@ button.pendingLabel {
   z-index: 5;
   top: calc(100% + 8px);
   right: 0;
-  width: min(260px, calc(100vw - 32px));
-  padding: 10px;
+  width: min(16.25rem, calc(100vw - 2rem));
+  padding: 0.625rem;
   border: 1px solid var(--ac-hairline, rgba(0, 0, 0, 0.12));
   border-radius: 10px;
   background: var(--ac-bg, #fff);
@@ -345,13 +336,13 @@ button.pendingLabel {
 
 .pendingPopover > strong {
   display: block;
-  padding: 2px 4px 8px;
-  font-size: 12px;
+  padding: 0.125rem 0.25rem 0.5rem;
+  font-size: 0.75rem;
 }
 
 .pendingPopover ul {
   display: grid;
-  gap: 3px;
+  gap: 0.1875rem;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -362,10 +353,10 @@ button.pendingLabel {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 0.5rem;
   border: 0;
   border-radius: 7px;
-  padding: 8px;
+  padding: 0.5rem;
   background: transparent;
   color: var(--ac-label, #1d1d1f);
   text-align: left;
@@ -391,19 +382,19 @@ button.pendingLabel {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 4px;
+  gap: 0.25rem;
 }
 
 .modelSelect {
-  width: 68px;
-  height: 24px;
-  padding: 0 17px 0 2px;
+  width: 4.25rem;
+  height: 1.5rem;
+  padding: 0 1.0625rem 0 0.125rem;
   overflow: hidden;
   border: 0;
   border-radius: 0;
   background-color: transparent;
   color: var(--assistant-rail-secondary);
-  font: 500 11px / 1 var(--ac-font-text, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font: 500 0.6875rem / 1 var(--ac-font-text, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
   text-overflow: ellipsis;
   cursor: pointer;
 }
@@ -417,7 +408,7 @@ button.pendingLabel {
   --assistant-rail-ground: #2b2b2e;
   --assistant-rail-divider: #45454a;
   --assistant-rail-primary: #f2f2f4;
-  --assistant-rail-secondary: #aaaab0;
+  --assistant-rail-secondary: #b6b6bc;
   --assistant-rail-scroll-thumb: #66666d;
   --assistant-composer-ground: #343438;
   --assistant-composer-border: #4b4b51;
@@ -434,7 +425,7 @@ button.pendingLabel {
     --assistant-rail-ground: #2b2b2e;
     --assistant-rail-divider: #45454a;
     --assistant-rail-primary: #f2f2f4;
-    --assistant-rail-secondary: #aaaab0;
+    --assistant-rail-secondary: #b6b6bc;
     --assistant-rail-scroll-thumb: #66666d;
     --assistant-composer-ground: #343438;
     --assistant-composer-border: #4b4b51;
@@ -466,8 +457,8 @@ button.pendingLabel {
 }
 
 .iconButton {
-  width: 24px;
-  height: 24px;
+  width: 1.5rem;
+  height: 1.5rem;
   border-radius: 4px;
   color: var(--assistant-rail-secondary);
 }
@@ -487,14 +478,14 @@ button.pendingLabel {
 /* Inside the composer field, scope reads as a plain metadata line. */
 .contextChip {
   min-width: 0;
-  max-width: calc(100% - 4px);
+  max-width: calc(100% - 0.25rem);
   width: fit-content;
-  height: 20px;
+  height: 1.25rem;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 0.3125rem;
   overflow: hidden;
-  margin: 0 2px 6px;
+  margin: 0 0.125rem 0.375rem;
   border-radius: 0;
   padding: 0;
   background: transparent;
@@ -502,8 +493,8 @@ button.pendingLabel {
 }
 
 .contextIcon {
-  width: 12px;
-  height: 12px;
+  width: 0.75rem;
+  height: 0.75rem;
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -512,8 +503,8 @@ button.pendingLabel {
 }
 
 .contextIcon svg {
-  width: 12px;
-  height: 12px;
+  width: 0.75rem;
+  height: 0.75rem;
   display: block;
 }
 
@@ -521,7 +512,7 @@ button.pendingLabel {
 .contextDetail {
   min-width: 0;
   overflow: hidden;
-  font: 550 var(--ac-fs-caption1, 12px) / 1 var(
+  font: 550 var(--ac-fs-caption1, 0.75rem) / 1 var(
       --ac-font-text,
       -apple-system,
       BlinkMacSystemFont,
@@ -559,7 +550,7 @@ button.pendingLabel {
 }
 
 .content:hover { scrollbar-color: var(--assistant-rail-scroll-thumb) transparent; }
-.content::-webkit-scrollbar { width: 6px; }
+.content::-webkit-scrollbar { width: 0.375rem; }
 .content::-webkit-scrollbar-track,
 .content::-webkit-scrollbar-thumb { background: transparent; }
 .content::-webkit-scrollbar-thumb { border-radius: 999px; }
@@ -571,15 +562,15 @@ button.pendingLabel {
   flex: 0 0 auto;
   display: grid;
   gap: 0;
-  padding: 8px 13px 18px;
+  padding: 0.5rem 0.8125rem 1.125rem;
 }
 
 .attachmentList {
   min-width: 0;
   display: flex;
-  gap: 12px;
+  gap: 0.75rem;
   overflow-x: auto;
-  margin: 0 0 8px;
+  margin: 0 0 0.5rem;
   padding: 0;
   list-style: none;
   scrollbar-width: thin;
@@ -587,12 +578,12 @@ button.pendingLabel {
 
 .attachmentChip {
   min-width: 0;
-  max-width: min(240px, calc(100vw - 40px));
-  height: 32px;
+  max-width: min(15rem, calc(100vw - 2.5rem));
+  height: 2rem;
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
+  gap: 0.375rem;
   border: 0;
   border-radius: 0;
   padding: 0;
@@ -601,8 +592,8 @@ button.pendingLabel {
 }
 
 .attachmentIcon {
-  width: 16px;
-  height: 16px;
+  width: 1rem;
+  height: 1rem;
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -611,8 +602,8 @@ button.pendingLabel {
 }
 
 .attachmentIcon svg {
-  width: 16px;
-  height: 16px;
+  width: 1rem;
+  height: 1rem;
   display: block;
 }
 
@@ -620,7 +611,7 @@ button.pendingLabel {
   min-width: 0;
   display: grid;
   flex: 1 1 auto;
-  gap: 1px;
+  gap: 0.0625rem;
   overflow: hidden;
 }
 
@@ -635,7 +626,7 @@ button.pendingLabel {
 
 .attachmentName {
   color: var(--assistant-rail-primary);
-  font: 550 var(--ac-fs-caption1, 12px) / 1.05 var(
+  font: 550 var(--ac-fs-caption1, 0.75rem) / 1.05 var(
       --ac-font-text,
       -apple-system,
       BlinkMacSystemFont,
@@ -646,7 +637,7 @@ button.pendingLabel {
 
 .attachmentSize {
   color: var(--assistant-rail-secondary);
-  font: 400 var(--ac-fs-caption2, 11px) / 1 var(
+  font: 400 var(--ac-fs-caption2, 0.6875rem) / 1 var(
       --ac-font-text,
       -apple-system,
       BlinkMacSystemFont,
@@ -656,14 +647,14 @@ button.pendingLabel {
 }
 
 .removeAttachmentButton {
-  width: 24px;
-  height: 24px;
+  width: 1.5rem;
+  height: 1.5rem;
   border-radius: var(--ac-radius-control, 6px);
 }
 
 .removeAttachmentButton svg {
-  width: 14px;
-  height: 14px;
+  width: 0.875rem;
+  height: 0.875rem;
   display: block;
 }
 
@@ -687,16 +678,16 @@ button.pendingLabel {
 
 .textarea {
   width: 100%;
-  min-height: 40px;
-  max-height: 160px;
+  min-height: 2.5rem;
+  max-height: 10rem;
   overflow-y: auto;
   border: 1px solid var(--assistant-composer-border);
   border-bottom: 0;
   border-radius: 10px 10px 0 0;
-  padding: 10px 11px 4px;
+  padding: 0.625rem 0.6875rem 0.25rem;
   background: var(--assistant-composer-ground);
   color: var(--assistant-rail-primary);
-  font: 400 13px / 1.4 var(
+  font: 400 0.8125rem / 1.4 var(
       --ac-font-text,
       -apple-system,
       BlinkMacSystemFont,
@@ -724,15 +715,15 @@ button.pendingLabel {
 }
 
 .composerToolbar {
-  min-height: 32px;
+  min-height: 2rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 0.5rem;
   border: 1px solid var(--assistant-composer-border);
   border-top: 0;
   border-radius: 0 0 10px 10px;
-  padding: 2px 5px 5px;
+  padding: 0.125rem 0.3125rem 0.3125rem;
   background: var(--assistant-composer-ground);
   box-shadow: 0 8px 18px -16px rgba(0, 0, 0, 0.42);
 }
@@ -750,22 +741,22 @@ button.pendingLabel {
   z-index: 4;
   bottom: calc(100% + 6px);
   left: 0;
-  width: min(292px, calc(100vw - 42px));
+  width: min(18.25rem, calc(100vw - 2.625rem));
   display: grid;
-  gap: 6px;
+  gap: 0.375rem;
   border: 1px solid var(--ac-hairline);
   border-radius: 10px;
-  padding: 7px;
+  padding: 0.4375rem;
   background: var(--ac-bg);
   box-shadow: var(--ac-shadow-popover, 0 8px 28px rgba(0, 0, 0, 0.16));
 }
 
 .contextPickerPanel > input {
   width: 100%;
-  min-height: 30px;
+  min-height: 1.875rem;
   border: 1px solid var(--ac-hairline);
   border-radius: 7px;
-  padding: 5px 8px;
+  padding: 0.3125rem 0.5rem;
   background: var(--ac-fill-5, var(--ac-bg));
   color: var(--ac-label);
   font: 500 var(--ac-fs-footnote) / 1.2 var(--ac-font-text);
@@ -777,19 +768,19 @@ button.pendingLabel {
 }
 
 .contextPickerResults {
-  max-height: 224px;
+  max-height: 14rem;
   display: grid;
-  gap: 2px;
+  gap: 0.125rem;
   overflow: auto;
 }
 
 .contextPickerResults > button {
   min-width: 0;
   display: grid;
-  gap: 2px;
+  gap: 0.125rem;
   border: 0;
   border-radius: 7px;
-  padding: 7px 8px;
+  padding: 0.4375rem 0.5rem;
   background: transparent;
   color: var(--ac-label);
   text-align: left;
@@ -823,27 +814,27 @@ button.pendingLabel {
 }
 
 .contextPickerEmpty {
-  padding: 9px 8px;
+  padding: 0.5625rem 0.5rem;
 }
 
 .composerButton {
-  width: 26px;
-  height: 26px;
+  width: 1.625rem;
+  height: 1.625rem;
   border-radius: 50%;
   color: var(--assistant-rail-secondary);
 }
 
 .submitButton {
-  width: 26px;
-  height: 26px;
+  width: 1.625rem;
+  height: 1.625rem;
   border-radius: 50%;
   background: var(--assistant-send-ground);
   color: var(--assistant-send-ink);
 }
 
 .submitButton svg {
-  width: 14px;
-  height: 14px;
+  width: 0.875rem;
+  height: 0.875rem;
 }
 
 .submitButton:hover {
@@ -887,7 +878,7 @@ button.pendingLabel {
 @media (hover: none) {
   .resizer {
     left: -7px;
-    width: 14px;
+    width: 0.875rem;
   }
 
   .resizer::before {
@@ -922,7 +913,7 @@ button.pendingLabel {
    area without coupling its grid to the assistant again. */
 @media (min-width: 561px) and (max-width: 900px) {
   .root[data-layout="auto"][data-state] {
-    width: min(320px, 50vw);
+    width: min(20rem, 50vw);
   }
 }
 
@@ -955,8 +946,8 @@ button.pendingLabel {
   position: absolute;
   top: -1px;
   right: -1px;
-  width: 9px;
-  height: 9px;
+  width: 0.5625rem;
+  height: 0.5625rem;
   border-radius: 50%;
   border: 1.5px solid var(--ac-mat-bg, rgba(246, 246, 246, 0.96));
   background: var(--ac-accent, #0a84ff);
@@ -967,16 +958,16 @@ button.pendingLabel {
   position: absolute;
   top: -6px;
   right: -6px;
-  min-width: 18px;
-  height: 18px;
+  min-width: 1.125rem;
+  height: 1.125rem;
   display: grid;
   place-items: center;
-  padding: 0 4px;
+  padding: 0 0.25rem;
   border: 2px solid var(--ac-bg, #fff);
   border-radius: 999px;
-  background: var(--ac-accent, #0a84ff);
-  color: #fff;
-  font: 700 10px/1 var(--ac-font-text, -apple-system, sans-serif);
+  background: var(--ac-accent-fill);
+  color: var(--ac-accent-fill-ink);
+  font: 700 0.625rem/1 var(--ac-font-text, -apple-system, sans-serif);
 }
 
 @keyframes assistant-launcher-pulse {
@@ -992,11 +983,11 @@ button.pendingLabel {
 
 @media (pointer: coarse) {
   .historySync {
-    min-height: 32px;
+    min-height: 2rem;
   }
 
   .retrySync {
-    min-height: 32px;
+    min-height: 2rem;
   }
 }
 
@@ -1004,18 +995,18 @@ button.pendingLabel {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 8px 0;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
   color: var(--assistant-rail-secondary);
-  font: inherit; font-size: 12px;
+  font: inherit; font-size: 0.75rem;
 }
 .contextRow button {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
   max-width: 100%;
-  min-height: 24px;
-  padding: 0 8px;
+  min-height: 1.5rem;
+  padding: 0 0.5rem;
   border: 1px solid var(--assistant-composer-border);
   border-radius: 6px;
   background: var(--assistant-composer-ground);
@@ -1033,11 +1024,21 @@ button.pendingLabel {
 .contextRow button[aria-pressed="false"] { color: var(--assistant-rail-secondary); }
 .contextRow button:focus-visible { outline: 2px solid var(--assistant-composer-focus); outline-offset: 2px; }
 .contextRow button:disabled { cursor: default; opacity: 0.5; }
-.contextRow .contextPickerPanel { gap: 8px; padding: 8px; border-radius: 6px; bottom: calc(100% + 8px); }
-.contextRow .contextPickerPanel input { min-height: 32px; padding: 8px; border-radius: 6px; }
-.contextRow .contextPickerResults { gap: 8px; }
-.contextRow .contextPickerResults button { display: grid; padding: 8px; text-align: left; }
+.contextRow .contextPickerPanel { gap: 0.5rem; padding: 0.5rem; border-radius: 6px; bottom: calc(100% + 8px); }
+.contextRow .contextPickerPanel input { min-height: 2rem; padding: 0.5rem; border-radius: 6px; }
+.contextRow .contextPickerResults { gap: 0.5rem; }
+.contextRow .contextPickerResults button { display: grid; padding: 0.5rem; text-align: left; }
 
 .contextRow { position: relative; }
 .contextRow > .contextPicker { position: static; }
 .contextRow .contextPickerPanel { max-width: 100%; background: var(--assistant-composer-ground); color: var(--assistant-rail-primary); }
+
+@media (prefers-contrast: more) {
+  .root {
+    --assistant-rail-divider: var(--assistant-rail-primary);
+    --assistant-composer-border: var(--assistant-rail-primary);
+  }
+}
+
+/* The spring owns presentation, including the closing interval. */
+.panel[data-motion-surface] { visibility: visible; }

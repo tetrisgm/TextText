@@ -177,6 +177,7 @@ import {
   updatePostDocument,
   useWorkspacePool,
 } from "@/lib/pool/store";
+import { WorkspaceConnectionNotice } from "@/components/workspace/WorkspaceConnectionNotice";
 import { WorkspaceProvider } from "@/lib/pool/WorkspaceProvider";
 import { useWorkspaceLiveSync } from "@/lib/pool/useWorkspaceLiveSync";
 import type {
@@ -4541,11 +4542,6 @@ function LocalWorkspaceShell({
       const desiredMode: FolderMode =
         kind === "note" ? "notes" : kind === "bookmark" ? "bookmarks" : "blog";
       const current = viewRef.current;
-      if (current.level === "root" || current.level === "search") {
-        if (current.level === "search") navigateRoot();
-        setCaptureFocusRequestKey((value) => value + 1);
-        return;
-      }
       const currentFolder =
         displayPoolRef.current.folders.find(
           (folder) =>
@@ -4565,7 +4561,7 @@ function LocalWorkspaceShell({
           : { type: kind, folderPath },
       );
     },
-    [createWorkspaceItem, navigateRoot],
+    [createWorkspaceItem],
   );
 
   // Shown once per session, and only for a selection someone built rather
@@ -5131,9 +5127,10 @@ function LocalWorkspaceShell({
       onBuildItemType={(folderPath = "") =>
         setItemTypeStudioFolderPath(folderPath)
       }
-      onFocusCapture={() =>
-        setCaptureFocusRequestKey((value) => value + 1)
-      }
+      onFocusCapture={(folderPath) => {
+        navigateSection(folderPath);
+        setCaptureFocusRequestKey((value) => value + 1);
+      }}
     />
   );
 
@@ -5265,6 +5262,9 @@ function LocalWorkspaceShell({
         />
         <div
           ref={contentRef}
+          id="workspace-item-panel"
+          role={openedPostId ? "tabpanel" : undefined}
+          aria-labelledby={openedPostId ? `workspace-tab-${openedPostId}` : undefined}
           tabIndex={-1}
           onFocusCapture={(event) => {
             activateRegion("body");
@@ -5284,6 +5284,7 @@ function LocalWorkspaceShell({
             localViewActiveFolder(view) === "blog" ? " is-blog-folder-view" : ""
           }`}
         >
+          <WorkspaceConnectionNotice handle={displayPool.blog.handle} blogId={displayPool.blogId} />
           {content}
         </div>
 

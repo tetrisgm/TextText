@@ -13,6 +13,24 @@ import os
 /// with real actions can replace this later; this is the "normal behavior"
 /// floor.
 final class AppWebView: WKWebView {
+    var onDropURLs: (([URL]) -> Void)?
+    private func externalURLs(_ info: NSDraggingInfo) -> [URL] {
+        guard info.draggingSource == nil else { return [] }
+        return (info.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] ?? []).filter(NativeItemDrop.accepts)
+    }
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        externalURLs(sender).isEmpty ? super.draggingEntered(sender) : .copy
+    }
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        externalURLs(sender).isEmpty ? super.draggingUpdated(sender) : .copy
+    }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let urls = externalURLs(sender)
+        guard !urls.isEmpty else { return super.performDragOperation(sender) }
+        onDropURLs?(urls)
+        return true
+    }
+
     private static let browserChromeIdentifiers: Set<String> = [
         "WKMenuItemIdentifierGoBack",
         "WKMenuItemIdentifierGoForward",
@@ -209,7 +227,7 @@ struct WebAppStartupNavigation {
 /// workspace. An unlinked Mac sends account authentication and device approval
 /// to the system browser, then returns to the workspace with both credentials.
 final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
-    WKUIDelegate, WKScriptMessageHandler {
+    WKUIDelegate, WKScriptMessageHandler, NSWindowDelegate {
     private enum CodexRequestKind: Equatable {
         case initialize
         case accountRead
@@ -229,6 +247,14 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     private let onSystemSignInRequested: () -> Void
     /// Clears the native credential when the web workspace signs out.
     private let onSignOutRequested: () -> Void
+    var onClose: (() -> Void)?
+    private(set) var restorablePath: String?
+    var onDropURLs: (([URL]) -> Void)?
+    var onSharePath: ((String) -> Void)?
+    var makeExportPromise: ((String, String) -> NativeTextPackPromise?)?
+    private var exportItem: (id: String, title: String)?
+    private var exportButton: NativeExportButton?
+    var onNativeMenuState: (([[String: Any]]) -> Void)?
     private var startupNavigation: WebAppStartupNavigation
     private var appToken: String?
     /// Set while the launch is betting that the last run's web session cookie
@@ -435,6 +461,23 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         window.tabbingMode = .disallowed
 
         super.init(window: window)
+        window.delegate = self
+        webView.registerForDraggedTypes(webView.registeredDraggedTypes + [.fileURL, .URL])
+        webView.onDropURLs = { [weak self] urls in self?.onDropURLs?(urls) }
+        let accessory = NSTitlebarAccessoryViewController()
+        let dragButton = NativeExportButton(frame: NSRect(x: 0, y: 0, width: 32, height: 24))
+        dragButton.image = NSImage(systemSymbolName: "doc", accessibilityDescription: "Drag item as TextPack")
+        dragButton.bezelStyle = .inline
+        dragButton.toolTip = "Drag the selected item to Finder or Mail"
+        dragButton.isEnabled = false
+        dragButton.makePromise = { [weak self] in
+            guard let self, let item = self.exportItem else { return nil }
+            return self.makeExportPromise?(item.id, item.title)
+        }
+        accessory.view = dragButton
+        accessory.layoutAttribute = .right
+        window.addTitlebarAccessoryViewController(accessory)
+        exportButton = dragButton
         // Registered AFTER super.init so self is available; the weak proxy
         // keeps the retain cycle from pinning the window open.
         ucc.add(WeakScriptHandler(self), name: "textTextApp")
@@ -673,6 +716,19 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     }
 
     /// Navigate the web view to a path on the origin (used after linking).
+    func windowDidBecomeKey(_ notification: Notification) { requestNativeMenuState() }
+    func windowWillClose(_ notification: Notification) { onClose?() }
+
+    func requestNativeMenuState() {
+        webView.evaluateJavaScript("window.dispatchEvent(new Event('texttext:native-menu-request'))", completionHandler: nil)
+    }
+
+    func runNativeMenuCommand(_ id: String) {
+        guard let data = try? JSONSerialization.data(withJSONObject: id, options: .fragmentsAllowed),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('texttext:native-menu-command', {detail: \(json)}))", completionHandler: nil)
+    }
+
     func load(path: String) {
         if startupNavigation.replaceBeforeStart(with: path) { return }
         webView.load(request(for: path))
@@ -1651,10 +1707,32 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     ) {
         guard message.name == "textTextApp",
               message.frameInfo.isMainFrame,
+              message.frameInfo.securityOrigin.protocol.lowercased() == origin.scheme?.lowercased(),
+              message.frameInfo.securityOrigin.port == (origin.port ?? 0),
               message.frameInfo.securityOrigin.host.lowercased() ==
                 (origin.host ?? "").lowercased(),
               let body = message.body as? [String: Any]
         else { return }
+        if body["action"] as? String == "nativeMenuState",
+           let entries = body["entries"] as? [[String: Any]] {
+            onNativeMenuState?(entries)
+            if let item = body["item"] as? [String: String], let id = item["id"],
+               TextTextItemLink.isValidItemId(id), let title = item["title"] {
+                exportItem = (id, title)
+            } else { exportItem = nil }
+            exportButton?.isEnabled = exportItem != nil
+            if let path = body["restorePath"] as? String,
+               NativeWindowRestoration.accepts(path, homePath: workspaceHomePath), appToken != nil {
+                restorablePath = path
+                UserDefaults.standard.set(path, forKey: NativeWindowRestoration.key(origin: origin, homePath: workspaceHomePath))
+            }
+            return
+        }
+        if body["action"] as? String == "nativeShare", let path = body["path"] as? String,
+           NativeWindowRestoration.accepts(path, homePath: workspaceHomePath) {
+            onSharePath?(path)
+            return
+        }
         // The unreachable-origin page's Retry button.
         if body["action"] as? String == "retry" {
             webView.load(request(for: startupNavigation.path))
@@ -1854,6 +1932,9 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
            path != "/signin", path != "/" {
             directSessionLoadPending = false
         }
+        onNativeMenuState?([])
+        exportItem = nil
+        exportButton?.isEnabled = false
         // First content is about to paint; lift the launch placeholder. A
         // server-rendered page has real content at commit, so this hands off
         // to the web view rather than to a white gap.

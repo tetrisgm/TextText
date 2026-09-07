@@ -117,8 +117,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await verifyTextTextApiToken(request);
-  if (!auth) return noStore({ error: "Sign in to TextText on this Mac" }, 401);
+  const initialAuth = await verifyTextTextApiToken(request);
+  if (!initialAuth) return noStore({ error: "Sign in to TextText on this Mac" }, 401);
 
   const requestedName = boundedHeader(request, "x-texttext-agent-name", 120);
   const requestedIntent = boundedHeader(
@@ -138,6 +138,11 @@ export async function POST(request: Request) {
   if (!body) {
     return noStore({ error: "Send a JSON body" }, 400);
   }
+  // Uploads can outlive revocation, expiry, or a scope change. Dispatch and
+  // proposal actors must use the current connection, never the admission check.
+  const auth = await verifyTextTextApiToken(request);
+  if (!auth) return noStore({ error: "Sign in to TextText on this Mac" }, 401);
+
   const rawName = typeof body.name === "string" ? body.name : "";
   const proposalMode = body.mode === "proposal" || rawName.startsWith("proposal:");
   const name = rawName.startsWith("proposal:") ? rawName.slice("proposal:".length) : rawName;

@@ -4,7 +4,7 @@ import Foundation
 @available(macOS 13.0, *)
 public struct CreateDocumentIntent: AppIntent {
     public static var title: LocalizedStringResource = "Create document"
-    public static var description = IntentDescription("Create a local markdown document in the TextText workspace.")
+    public static var description = IntentDescription("Create a note in your signed-in TextText workspace.")
 
     @Parameter(title: "Title")
     public var titleText: String
@@ -12,13 +12,17 @@ public struct CreateDocumentIntent: AppIntent {
     @Parameter(title: "Body", default: "")
     public var body: String
 
-    @Parameter(title: "Folder path", default: "Notes")
+    @Parameter(title: "Folder path", default: "")
     public var folderPath: String
+
+    public static var parameterSummary: some ParameterSummary {
+        Summary("Create \(\.$titleText) in \(\.$folderPath)") { \.$body }
+    }
 
     public init() {}
 
     public func perform() async throws -> some IntentResult & ReturnsValue<TextTextDocumentEntity> {
-        let record = try WorkspaceIntentActions().createDocument(title: titleText, body: body, folderPath: folderPath)
+        let record = try NativeItemActions().create(title: titleText, body: body, folder: folderPath)
         return .result(value: TextTextDocumentEntity(record: record))
     }
 }
@@ -26,15 +30,21 @@ public struct CreateDocumentIntent: AppIntent {
 @available(macOS 13.0, *)
 public struct OpenDocumentIntent: AppIntent {
     public static var title: LocalizedStringResource = "Open document"
-    public static var description = IntentDescription("Return the local deep link for a workspace document.")
+    public static var description = IntentDescription("Open an accessible item in TextText.")
 
     @Parameter(title: "Document")
     public var document: TextTextDocumentEntity
 
+    public static var parameterSummary: some ParameterSummary {
+        Summary("Open \(\.$document)")
+    }
+
     public init() {}
 
     public func perform() async throws -> some IntentResult & ReturnsValue<URL> {
-        let url = try WorkspaceIntentActions().openDocument(id: document.id)
+        let url = try NativeItemActions().open(id: document.id)
+        let opened = await NativeWorkspaceCommandRegistry.openURL(url)
+        guard opened else { throw WorkspaceIntentServerError.transport("Could not open TextText") }
         return .result(value: url)
     }
 }
@@ -42,7 +52,7 @@ public struct OpenDocumentIntent: AppIntent {
 @available(macOS 13.0, *)
 public struct AppendTextToDocumentIntent: AppIntent {
     public static var title: LocalizedStringResource = "Append text to document"
-    public static var description = IntentDescription("Append markdown text to a local workspace document.")
+    public static var description = IntentDescription("Append text to an item in your signed-in TextText workspace.")
 
     @Parameter(title: "Document")
     public var document: TextTextDocumentEntity
@@ -50,10 +60,14 @@ public struct AppendTextToDocumentIntent: AppIntent {
     @Parameter(title: "Text")
     public var text: String
 
+    public static var parameterSummary: some ParameterSummary {
+        Summary("Append \(\.$text) to \(\.$document)")
+    }
+
     public init() {}
 
     public func perform() async throws -> some IntentResult & ReturnsValue<TextTextDocumentEntity> {
-        let record = try WorkspaceIntentActions().appendText(text, toDocument: document.id)
+        let record = try NativeItemActions().append(id: document.id, text: text)
         return .result(value: TextTextDocumentEntity(record: record))
     }
 }
@@ -61,7 +75,7 @@ public struct AppendTextToDocumentIntent: AppIntent {
 @available(macOS 13.0, *)
 public struct SearchDocumentsIntent: AppIntent {
     public static var title: LocalizedStringResource = "Search documents"
-    public static var description = IntentDescription("Search local workspace documents by title and body.")
+    public static var description = IntentDescription("Search accessible items by title and body.")
 
     @Parameter(title: "Query")
     public var query: String
@@ -69,10 +83,14 @@ public struct SearchDocumentsIntent: AppIntent {
     @Parameter(title: "Limit", default: 10)
     public var limit: Int
 
+    public static var parameterSummary: some ParameterSummary {
+        Summary("Search for \(\.$query)") { \.$limit }
+    }
+
     public init() {}
 
     public func perform() async throws -> some IntentResult & ReturnsValue<[TextTextDocumentEntity]> {
-        let records = try WorkspaceIntentActions().searchDocuments(query: query, limit: limit)
+        let records = try NativeItemActions().search(query: query, limit: limit)
         return .result(value: records.map(TextTextDocumentEntity.init(record:)))
     }
 }
