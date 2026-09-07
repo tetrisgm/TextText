@@ -5112,3 +5112,18 @@ centrally and recomputed from the surviving stack. A failing but reachable
 server is no longer called offline. One blank-document predicate is now shared
 by the reader and the look preview, and it counts subtitle, tags, fields and
 assets, with zero and false preserved as real values.
+
+Build 1064 rolled back twice on the same check, and it was not a flake and not a
+regression. `mac/scripts/install-local.sh` demanded a strict `pass` from the
+installed app's runtime health, while `release/ship.sh` already documents the
+opposite policy in a comment: a residual warning, `finder.provider` above all,
+must not wedge a release because the File Provider reports warning while its
+domain is still working. The evidence: the health report for build 1063, the one
+live in production, also says warning, with `mount_enumerated`, `mount_resolved`
+and `workspace_visible` all true, `mount_entry_count` 2, and the readiness probe
+exhausting 120 samples over 72 seconds without the provider ever calling itself
+healthy. On this network the provider syncs through the tunnel and never
+settles, so the gate was reporting a network condition as a defective build.
+The installer now matches the documented policy: the report must still be this
+exact build and written after the install began, a `fail` still blocks, and a
+warning is printed with its checks and allowed through.

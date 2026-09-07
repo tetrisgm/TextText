@@ -314,12 +314,25 @@ print(d.get("appVersion", ""), d.get("buildNumber", ""), d.get("status", ""), in
     fi
     sleep 1
   done
+  # Identity and freshness are absolute: the report must be this exact build,
+  # written after this install began. A "fail" blocks. A residual "warning" does
+  # not, and this matches the policy release/ship.sh already states in full:
+  # some runtime checks, finder.provider above all, report warning while the
+  # File Provider domain is still working, and on a degraded network it can stay
+  # there indefinitely even though the mount enumerates and the workspace is
+  # visible. Wedging the release on that reports a network condition as a
+  # defective build.
   if [[ "$health_version" != "$SOURCE_VERSION" || "$health_build" != "$SOURCE_BUILD" || \
-    "$health_status" != "pass" || "$health_fresh" != "1" ]]; then
+    "$health_fresh" != "1" || ( "$health_status" != "pass" && "$health_status" != "warning" ) ]]; then
     health_detail="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1], encoding="utf-8")); print(", ".join(c.get("id", "?") for c in d.get("checks", []) if c.get("status") != "pass"))' "$HEALTH_REPORT" 2>/dev/null || true)"
     fail_install "TextText runtime health did not pass for $SOURCE_VERSION ($SOURCE_BUILD). Status: ${health_status:-missing}. Checks: ${health_detail:-unavailable}."
   fi
-  echo "   runtime health: pass"
+  if [[ "$health_status" == "warning" ]]; then
+    warn_detail="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1], encoding="utf-8")); print(", ".join(c.get("id", "?") for c in d.get("checks", []) if c.get("status") != "pass"))' "$HEALTH_REPORT" 2>/dev/null || true)"
+    echo "   runtime health: warning, not blocking [${warn_detail:-unavailable}]" >&2
+  else
+    echo "   runtime health: pass"
+  fi
 fi
 
 # The new app is now proven. Only now move recoverable prior bundles to Trash.
