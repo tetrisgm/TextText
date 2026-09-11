@@ -5291,3 +5291,59 @@ worth fixing on this path.
 31 tests cover the walk; 524 Mac tests and 3262 web tests green. Not yet
 measured end to end: that needs a build installed over the shipped one, which is
 the owner's call.
+
+## Materialization made fast, and a measurement that was not (2026-09-11)
+
+Three changes landed on top of the bounded walk.
+
+`findFile` in WorkspaceEnumerator scanned folders one after another, so locating
+one post cost a round trip per folder, and `consistentFetch` pays that twice for
+every `fetchContents` because it reads the item either side of the content to
+prove the revision held still. At 182 ms and ten folders that is seconds per
+file, which is what made materializing a workspace take minutes. The scan now
+fans out. The serial order was load bearing for exactly one case: a post that
+moves mid-scan appears under both parents, and the later fetch was the current
+one. Concurrent reads cannot claim that, so when more than one folder claims a
+post those folders are asked again, in order, and the later answer wins. The
+race cost is paid only when there is a race. The fake sync API had to become
+concurrency safe to test it, and now records peak manifest fetches in flight so
+a serial loop cannot pass.
+
+Then the first materialization campaign was held for ten seconds after launch,
+so it cannot compete with the web view's first load for the link.
+
+What is measured, and what is not. The walk finishing is real and large: on
+build 1066 it was off the stack within about 23 seconds and stayed quiet
+through 53, against the old walk still enumerating five minutes in. A change of
+that size is not a measurement artifact.
+
+The launch numbers taken after build 1065 are not trustworthy and should be
+discarded. Build 1066 measured a 4206 ms median against 1065's 2822 ms, and the
+round trip was unchanged, so it looked like the faster walk was now saturating
+the link during launch. Build 1067 then measured worse still, and the app shell
+milestone, which the walk cannot touch, had drifted from 488 ms to about
+1500 ms. That is when the machine was checked: load average 41.93, an unrelated
+Go build and mediaanalysisd. The 1065 baseline was taken on an idle machine, so
+nothing after it is comparable.
+
+So the causal claim in the commit message of `9650a1eb` is unsupported. The hold
+is still the right behaviour on its own terms, because nothing in the app waits
+on materialization and background network work does not belong in the first
+paint window, but it is a precaution rather than a measured fix, and it should
+not be cited as evidence that the walk was delaying launch. Outstanding: one
+clean launch comparison on an idle machine.
+
+Build 0.182 (1067) is installed locally, attested, with the release gate green.
+Nothing was published: no migrations, no Vercel deploy, no appcast. That path is
+`verify-release.ts`, then the workflow capability receipt, then the build
+attestation, then `build-app.sh` and `install-local.sh`, which is what
+`promote-local.sh` runs before its deploy half.
+
+Two notes for whoever ships next. `mac/Info.plist` still carries build 1002 from
+the 0.182 release on 2026-09-01, because the stamp is deliberately not
+committed; `promote-local.sh` takes max(plist, installed) + 1 and is correct,
+while `ship.sh --local-install` derives from the plist alone and would have
+produced 1003, a downgrade. And the amplification underneath is only half
+addressed: `findFile` fans out now, but `CentralAttachmentsEnumerator.documentItems`
+still walks folders serially, and `LiveTextTextSyncAPI` uses an ephemeral session
+that caches nothing, so the same workspace and manifests are refetched per call.
