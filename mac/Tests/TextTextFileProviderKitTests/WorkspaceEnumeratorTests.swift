@@ -9,6 +9,57 @@ final class WorkspaceEnumeratorTests: XCTestCase {
         WorkspaceEnumerator(api: api, handle: "demo", workspaceName: "Demo", readOnly: readOnly)
     }
 
+    // MARK: Finding one file among the folders
+
+    func testFindingAFileFetchesEveryManifestAtOnce() async {
+        let api = Fixtures.standardWorkspace()
+        let e = enumr(api)
+
+        guard case .success(let item) = await e.item(for: FI("p3")) else {
+            return XCTFail("could not find the file")
+        }
+
+        XCTAssertEqual(item.identifier, FI("p3"))
+        XCTAssertEqual(item.parentIdentifier, F("drafts"))
+        XCTAssertEqual(api.manifestCalls, 4, "one per folder, no more")
+        XCTAssertGreaterThan(
+            api.peakConcurrentManifests, 1,
+            "a serial loop never has two manifest fetches in flight, and that "
+                + "loop is what made materializing a file cost a round trip per folder")
+    }
+
+    func testFindingAFileStillFailsWhenAManifestDoes() async {
+        let api = Fixtures.standardWorkspace()
+        api.failManifest = .network("offline")
+        let e = enumr(api)
+
+        guard case .failure = await e.item(for: FI("p3")) else {
+            return XCTFail("a partial view of the workspace must not answer")
+        }
+    }
+
+    func testAFileClaimedByTwoFoldersIsSettledByAskingThemInOrder() async {
+        // The item moved while the manifests were in flight, so both its old
+        // and its new parent list it. Concurrent reads cannot say which is
+        // current, so the folders that claim it are asked again, in order, and
+        // the later answer wins.
+        let api = Fixtures.standardWorkspace()
+        api.manifests["notes"] = (api.manifests["notes"] ?? []) + [
+            Fixtures.entry(id: "p1", file: "hello.md", kind: "note", title: "Hello"),
+        ]
+        let e = enumr(api)
+
+        guard case .success(let item) = await e.item(for: FI("p1")) else {
+            return XCTFail("could not resolve the contested file")
+        }
+
+        XCTAssertEqual(
+            item.parentIdentifier, F("notes"),
+            "notes comes after blog in the workspace, so its answer is the later one")
+        XCTAssertGreaterThan(
+            api.manifestCalls, 4, "the contested folders are asked a second time")
+    }
+
     // MARK: Root / workspace enumeration
 
     func testRootListsTheWorkspaceContainer() async {

@@ -297,6 +297,15 @@ public struct WorkspaceEnumerator: Sendable {
         return .success(TextTextFilename.disambiguate(folderItems + files))
     }
 
+    /// The item for one post, wherever it lives.
+    ///
+    /// Every folder's manifest is fetched at once. Scanning them one after
+    /// another cost a round trip per folder before a single file could be read,
+    /// and the extension pays this twice for every fetchContents, because
+    /// consistentFetch reads the item either side of the content to prove the
+    /// revision held still. On a link with a 182 ms round trip and ten folders
+    /// that was several seconds per file, which is what made materializing a
+    /// workspace take minutes.
     private func findFile(postId: String) async -> Result<TextTextItem, TextTextSyncError> {
         let ws: TextTextWorkspace
         switch await api.workspace() {
@@ -304,30 +313,86 @@ public struct WorkspaceEnumerator: Sendable {
         case .success(let value): ws = value
         }
 
-        // Scan each manifest once. A moved item can briefly appear in both its
-        // old and new parent; the later occurrence is authoritative.
+        let entriesByFolder: [String: [TextTextManifestItem]]
+        switch await allManifests(for: ws.folders.map(\.id)) {
+        case .failure(let error): return .failure(error)
+        case .success(let value): entriesByFolder = value
+        }
+
+        // Which folders claim it. Exactly one is the normal answer.
+        let claiming = ws.folders.filter { folder in
+            item(postId: postId, inFolder: folder.id,
+                 entries: entriesByFolder[folder.id] ?? [], workspace: ws) != nil
+        }
+        if claiming.isEmpty { return .failure(.notFound) }
+        if claiming.count == 1, let only = claiming.first,
+           let found = item(postId: postId, inFolder: only.id,
+                            entries: entriesByFolder[only.id] ?? [], workspace: ws) {
+            return .success(found)
+        }
+
+        // More than one folder claims it, so the item moved while the manifests
+        // were in flight. Reads taken at the same instant cannot say which
+        // parent is current, so ask the folders that claim it again, in order,
+        // and let the later answer win: the move happened after the earlier
+        // fetch, so the later fetch reflects the server. This is what the serial
+        // scan relied on, now paid only when there is an actual race.
         var found: TextTextItem?
-        for folder in ws.folders {
+        for folder in claiming {
             switch await api.manifest(folderId: folder.id) {
             case .failure(let error): return .failure(error)
             case .success(let entries):
-                let subfolders = ws.folders
-                    .filter { $0.parentId == folder.id }
-                    .map { TextTextItemMapper.item(
-                        for: $0, handle: handle, readOnly: readOnly) }
-                let files = entries.compactMap { TextTextItemMapper.item(
-                    for: $0, inFolder: folder.id, handle: handle,
-                    readOnly: readOnly) }
-                let siblings = TextTextFilename.disambiguate(
-                    subfolders + files)
-                if let item = siblings.first(where: {
-                    $0.identifier == .file(handle: handle, id: postId)
-                }) {
+                if let item = item(postId: postId, inFolder: folder.id,
+                                   entries: entries, workspace: ws) {
                     found = item
                 }
             }
         }
         return found.map(Result.success) ?? .failure(.notFound)
+    }
+
+    /// Every folder's manifest, concurrently. The first failure wins, because a
+    /// partial view of the workspace is how an item ends up looking like it
+    /// moved or vanished.
+    private func allManifests(
+        for folderIds: [String]
+    ) async -> Result<[String: [TextTextManifestItem]], TextTextSyncError> {
+        let api = self.api
+        return await withTaskGroup(
+            of: (String, Result<[TextTextManifestItem], TextTextSyncError>).self
+        ) { group in
+            for id in folderIds {
+                group.addTask { (id, await api.manifest(folderId: id)) }
+            }
+            var entries: [String: [TextTextManifestItem]] = [:]
+            var failure: TextTextSyncError?
+            for await (id, result) in group {
+                switch result {
+                case .failure(let error): if failure == nil { failure = error }
+                case .success(let value): entries[id] = value
+                }
+            }
+            if let failure { return .failure(failure) }
+            return .success(entries)
+        }
+    }
+
+    /// The post's item as its own folder presents it, with the filename it gets
+    /// among its siblings. Files and subfolders share one Finder namespace, so
+    /// the name is only correct once both have been disambiguated together.
+    private func item(
+        postId: String, inFolder folderId: String,
+        entries: [TextTextManifestItem], workspace: TextTextWorkspace
+    ) -> TextTextItem? {
+        let subfolders = workspace.folders
+            .filter { $0.parentId == folderId }
+            .map { TextTextItemMapper.item(for: $0, handle: handle, readOnly: readOnly) }
+        let files = entries.compactMap {
+            TextTextItemMapper.item(
+                for: $0, inFolder: folderId, handle: handle, readOnly: readOnly)
+        }
+        return TextTextFilename.disambiguate(subfolders + files)
+            .first { $0.identifier == .file(handle: handle, id: postId) }
     }
 
 }

@@ -11,6 +11,15 @@ final class FakeTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
     var artifactContents: [String: TextTextArtifactContent]
     var cursor: String
 
+    /// findFile fetches every folder's manifest concurrently, so the counters
+    /// and the one-shot failure flags below are touched from several tasks at
+    /// once. Without this they lose increments and the tests flake.
+    private let lock = NSLock()
+    /// The most manifest fetches that were ever in flight together, which is
+    /// how a test tells a concurrent fan-out from a serial loop.
+    private(set) var peakConcurrentManifests = 0
+    private var inFlightManifests = 0
+
     /// Force a specific failure on the next call of a given kind, for error
     /// path tests. Consumed on use.
     var failWorkspace: TextTextSyncError?
@@ -42,19 +51,37 @@ final class FakeTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
     }
 
     func workspace() async -> Result<TextTextWorkspace, TextTextSyncError> {
+        lock.lock()
         workspaceCalls += 1
-        if let failWorkspace { self.failWorkspace = nil; return .failure(failWorkspace) }
-        return .success(workspaceValue)
+        let forced = failWorkspace
+        if forced != nil { failWorkspace = nil }
+        let value = workspaceValue
+        lock.unlock()
+        if let forced { return .failure(forced) }
+        return .success(value)
     }
 
     func manifest(folderId: String) async -> Result<[TextTextManifestItem], TextTextSyncError> {
+        lock.lock()
         manifestCalls += 1
-        if let failManifest { self.failManifest = nil; return .failure(failManifest) }
-        return .success(manifests[folderId] ?? [])
+        inFlightManifests += 1
+        peakConcurrentManifests = max(peakConcurrentManifests, inFlightManifests)
+        let forced = failManifest
+        if forced != nil { failManifest = nil }
+        let entries = manifests[folderId] ?? []
+        lock.unlock()
+        // Yield so concurrent callers actually overlap here; a serial loop
+        // cannot raise peakConcurrentManifests no matter how often it yields.
+        await Task.yield()
+        lock.lock()
+        inFlightManifests -= 1
+        lock.unlock()
+        if let forced { return .failure(forced) }
+        return .success(entries)
     }
 
     func fileText(postId: String) async -> Result<TextTextFileContent, TextTextSyncError> {
-        fileTextCalls += 1
+        lock.lock(); fileTextCalls += 1; lock.unlock()
         guard let content = files[postId] else { return .failure(.notFound) }
         return .success(content)
     }
@@ -62,7 +89,7 @@ final class FakeTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
     func documentArtifacts(
         postId: String
     ) async -> Result<TextTextArtifactManifest, TextTextSyncError> {
-        documentArtifactCalls += 1
+        lock.lock(); documentArtifactCalls += 1; lock.unlock()
         guard let manifest = artifactManifests[postId] else {
             return .failure(.notFound)
         }
@@ -70,7 +97,7 @@ final class FakeTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
     }
 
     func artifactData(url: URL) async -> Result<TextTextArtifactContent, TextTextSyncError> {
-        artifactDataCalls += 1
+        lock.lock(); artifactDataCalls += 1; lock.unlock()
         guard let content = artifactContents[url.absoluteString] else {
             return .failure(.notFound)
         }
