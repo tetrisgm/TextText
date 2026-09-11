@@ -120,6 +120,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     /// campaign.
     private var materializationCursor: MaterializationCursor?
     private var materializationCancellation: MaterializationCancellation?
+    private let launchedAt = Date()
+    /// How long after launch the walk stays out of the way.
+    ///
+    /// Launch is the one time this must yield. The web view's first load is
+    /// several serialized round trips on a slow link, and a walk beside it
+    /// competes for the same link: bounding the walk cut it from over five
+    /// minutes to under one, and that alone moved a cold launch from a 2.8 s
+    /// median to 4.2 s, because the walk went from too slow to issue requests
+    /// to fast enough to saturate. Nothing waits on materialization, so it can
+    /// wait for the window. Ten seconds clears a measured first paint with
+    /// room to spare.
+    private static let materializationLaunchHold: TimeInterval = 10
 
     // MARK: Lifecycle
 
@@ -2276,6 +2288,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         let activeGeneration: Int
         if attempt == 0 {
             if isMaterializing { return }
+            let sinceLaunch = Date().timeIntervalSince(launchedAt)
+            if sinceLaunch < Self.materializationLaunchHold {
+                // Not yet. Hold the first campaign until the window has had the
+                // link to itself, and coalesce every trigger that arrives in
+                // the meantime onto one deferred start.
+                let work = DispatchWorkItem { [weak self] in self?.materializeWorkspace() }
+                materializationRetry?.cancel()
+                materializationRetry = work
+                DispatchQueue.main.asyncAfter(
+                    deadline: .now() + (Self.materializationLaunchHold - sinceLaunch),
+                    execute: work)
+                return
+            }
             isMaterializing = true
             materializationEpoch += 1
             activeGeneration = materializationEpoch
