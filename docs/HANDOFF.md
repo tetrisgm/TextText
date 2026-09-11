@@ -5158,3 +5158,63 @@ machine (cursor shapes, trackpad momentum, grabbing the rail mid-motion, pinch
 zoom, and an IME during a delayed Accept); and the changelog for builds 1052 to
 1065, which needs the TextText connector authorized before any entry can be
 written.
+
+## Cold launch, measured (2026-09-11)
+
+The earlier figure in these notes, a roughly 5.4 s wait before the web view
+appeared, was a measurement artifact and should be ignored. WebKit keeps
+`com.apple.WebKit.WebContent` and `.Networking` processes alive long after the
+app quits; a set 55 minutes old was observed with no app running. The old
+harness matched those by name, so it never saw the launch's own WebContent and
+latched onto a later one. `mac/scripts/measure-launch.py` now snapshots pids
+before launching, waits for the previous run's services to exit, and reports
+only a pid it has not seen before. It is run by hand; nothing schedules it.
+
+Nine cold launches against production, from this network, medians:
+
+| milestone | median | what it means |
+| --- | --- | --- |
+| process | 60 ms | the app pid exists |
+| webView.load | 488 ms | WebContent spawns, the first byte is finally asked for |
+| page running | 1604 ms | WebContent has burned 150 ms of CPU |
+| settled | 2822 ms | WebContent CPU flat for 800 ms |
+
+The app's own share is the first 488 ms, and it splits cleanly. Anchoring on
+the `TextText server origin:` line the app writes to stderr (captured with
+`open --stderr`), three runs gave 47 to 58 ms to the process, 339 to 373 ms to
+`warmMainWindow`, and 450 to 749 ms to `webView.load`. So about 300 ms is
+AppKit and framework startup before any of our window code runs, and about
+105 ms is constructing the WKWebView plus the two serialized cookie store hops
+(`setAppCookie` then `getAllCookies`) that the first navigation waits on.
+Identical against a local origin, so none of it is network.
+
+Everything after that is the network, and it is latency, not bandwidth or our
+payload. Round trip to texttext.app over the tunnel is 182 ms average
+(155 to 240 ms). A cold request costs 0.79 s: 0.16 s for TCP, another 0.17 s
+for TLS, then 0.47 s to first byte. A warm request on the same connection
+costs 0.29 s. Size does not matter: a 9 byte 404 takes 0.59 s and an 8.3 KB
+chunk takes 0.60 s. The clearest proof is the same page in the same engine:
+`/signin` loaded in Playwright WebKit, 226 KB over 18 resources either way,
+took 1.40 to 1.69 s against production and 64 to 130 ms against a local
+production build, with first contentful paint at 1.22 to 1.52 s versus 40 ms.
+
+Total CPU across a launch is about 0.9 s (app 0.37 s, WebContent 0.52 s) out of
+2.8 s wall, so roughly two thirds of the launch is spent waiting on a link with
+a 182 ms round trip. At a normal home round trip this should land near a
+second. That is an extrapolation, not a measurement; it has not been measured
+from home.
+
+One thing found while measuring, unrelated to first paint and not fixed here.
+`materializeWorkspace` starts a full recursive walk of the File Provider mount
+on every launch. `sample` showed it blocked in `getattrlistbulk` under
+`warmAndMaterialize`, and on this link it was still enumerating five minutes
+after launch while using 0.2 s of CPU. It runs on a utility queue and the main
+thread was idle in every sample, so first paint is unaffected, but it keeps the
+File Provider path and the network busy through launch and long past it. The
+doc comment above it also no longer matches the code: it says the walk descends
+with `contentsOfDirectory` rather than a lazy deep enumerator, and the code
+uses `FileManager.enumerator`, which is exactly that lazy deep enumerator.
+
+Merged branches cleaned up the same day: 23 merged `origin/codex/*` branches
+deleted, along with local `live-collab-proof` and `worktree-wf_095db4f0-290-2`
+and remote `origin/live-collab-proof`. Origin now carries main and HEAD only.
