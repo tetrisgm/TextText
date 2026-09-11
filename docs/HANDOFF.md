@@ -5218,3 +5218,76 @@ uses `FileManager.enumerator`, which is exactly that lazy deep enumerator.
 Merged branches cleaned up the same day: 23 merged `origin/codex/*` branches
 deleted, along with local `live-collab-proof` and `worktree-wf_095db4f0-290-2`
 and remote `origin/live-collab-proof`. Origin now carries main and HEAD only.
+
+## The launch-time File Provider walk, bounded (2026-09-11)
+
+`materializeWorkspace` kicked off a walk of the whole mount on every launch and
+every remote change. The walk had no deadline, no work cap and no cancellation,
+and on the measured link it was still enumerating five minutes after launch on
+0.2 s of CPU. It runs on a utility queue and the main thread was idle in every
+sample, so first paint was never affected, but it held the File Provider path
+and the network open through launch and long past it.
+
+The walk now lives in `mac/Sources/TextText/WorkspaceMaterialization.swift`,
+where it can be tested without a mount. A pass is bounded by wall clock first
+(15 s) with listing and download counts as backstops, and it is resumable: the
+cursor holds directories rather than a position in an enumeration, so a pass
+that runs out of budget hands the next one what it still owes. That costs
+almost nothing to repeat, because the File Provider header is explicit that
+traversals of materialized directories never reach the extension, unlike
+traversals of dataless ones.
+
+The cursor is campaign state, not process state. A campaign always starts a
+fresh walk from the root, the way the old walk did on every trigger. An earlier
+draft carried the position between campaigns and the review caught what that
+costs: a folder deleted or renamed on another client can never be listed again,
+so it sits on the cursor forever, the campaign never restarts at the root, and
+files added remotely stop being downloaded at all. Restarting each campaign is
+what makes the walk self-healing.
+
+Two correctness holes went with it. The old walk built its enumerator with no
+`errorHandler`, and the Foundation header is clear that the handler is where
+per-directory errors surface, so a folder that failed to list was skipped in
+silence; the cold signal was `files.isEmpty`, which cannot see a partly failed
+walk. One folder timing out therefore looked complete, no retry ran, and those
+files stayed dataless. Listing a directory at a time restores that signal, and
+this is also what the old doc comment always claimed the code did: it said the
+walk descended with `contentsOfDirectory` "rather than a lazy deep enumerator",
+while the code used `FileManager.enumerator`, which is exactly that. The one
+signal the old walk did have, a whole tree that yielded no files, is kept as
+`filesSeen`, because a folder that lists successfully but empty is the
+documented cold-enumeration failure.
+
+The other hole was `isMaterializing`, which is the gate every trigger is tested
+against. Two paths abandoned a campaign without clearing it, and either one
+turns materialization off for the life of the process: a retry that found no
+`NSFileProviderManager` returned early, and `scheduleFileProviderMaterialization`
+cancelled a live campaign's retry and then called in at attempt 0, where the
+gate dropped it. Both predate this change. Every abandon path now goes through
+`endMaterializationCampaign`.
+
+Three more findings from the review round, all fixed: a handful of files that
+never materialize used to consume every pass's download budget and starve the
+rest of the workspace, so a campaign now remembers them and stops asking until
+the next one; a directory abandoned part way re-queued the subdirectories it had
+already walked, so the queue regrew every pass, and a visited set stops that;
+and subdirectories are now queued before any file is touched, so what the walk
+knows about the shape of the tree does not depend on how much budget was left.
+A pass that made progress no longer counts against the five-attempt cap either,
+because that cap exists to stop a campaign retrying a cold tree forever, not to
+stop one that is working through a backlog.
+
+Known and not fixed. The budget is honoured between filesystem operations, so a
+single listing or download that blocks is still bounded only by the extension's
+own timeout; bounding it from the app would mean abandoning threads on the most
+expensive operation in the system, which is worse. And the amplification
+underneath is untouched: materializing one file makes the extension re-resolve
+it through `findFile` in WorkspaceEnumerator, which fetches the workspace and
+then every folder's manifest in a serial loop that does not break early, over a
+`URLSessionConfiguration.ephemeral` session that caches nothing. That is why a
+file is worth several round trips rather than one, and it is the next thing
+worth fixing on this path.
+
+31 tests cover the walk; 524 Mac tests and 3262 web tests green. Not yet
+measured end to end: that needs a build installed over the shipped one, which is
+the owner's call.

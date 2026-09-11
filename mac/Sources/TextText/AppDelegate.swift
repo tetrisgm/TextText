@@ -112,6 +112,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private var materializationEpoch = 0
     private var materializationRetry: DispatchWorkItem?
     private var isMaterializing = false
+    /// What the walk still owes, for the campaign that is running. A new
+    /// campaign always starts a fresh walk from the root, the way the walk this
+    /// replaced did on every trigger, so a folder that was deleted or renamed
+    /// stops being discovered and files added since the last campaign are
+    /// found. The position is only worth keeping between the retries of one
+    /// campaign.
+    private var materializationCursor: MaterializationCursor?
+    private var materializationCancellation: MaterializationCancellation?
 
     // MARK: Lifecycle
 
@@ -2111,7 +2119,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                   self.fileProviderDesiredIdentity == identity else { return }
             self.materializeWorkspace()
         }
-        materializationRetry?.cancel()
+        // Not just a cancel: cancelling the retry of a live campaign leaves
+        // isMaterializing true, and the work item below calls in at attempt 0,
+        // where the gate drops it. Invalidating ends the campaign and fences
+        // any pass still running, so the fresh one can actually start.
+        invalidateMaterialization()
         materializationRetry = work
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
@@ -2239,10 +2251,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     /// Provider file materializes on read). Off the main thread, coalesced, and
     /// retried on a delay: a COLD first enumeration right after a domain
     /// (re)register can time out and cache a folder as empty, so we re-drive the
-    /// walk until the tree lists fully and no file is still dataless. We descend
-    /// with contentsOfDirectory (which forces each folder's enumeration) rather
-    /// than a lazy deep enumerator, so a folder that failed to list is retried
-    /// even when it exposed no files to notice.
+    /// walk until the tree lists fully and no file is still dataless.
+    ///
+    /// One pass is bounded and resumable, and WorkspaceMaterialization says why.
+    /// What matters here is that a pass now ends on a budget instead of running
+    /// until the tree is exhausted, so this can no longer hold the File Provider
+    /// path open for minutes, and that the position survives the pass, so the
+    /// bound costs progress rather than repeating it.
     private func materializeWorkspace(attempt: Int = 0, generation: Int? = nil) {
         if !Thread.isMainThread {
             DispatchQueue.main.async { [weak self] in
@@ -2251,13 +2266,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             return
         }
         guard let domain = registeredFileProviderDomain,
-              let manager = NSFileProviderManager(for: domain) else { return }
+              let manager = NSFileProviderManager(for: domain) else {
+            // A retry owns a campaign. Walking away from one without ending it
+            // leaves isMaterializing true, and every later trigger is then
+            // dropped by the gate below for the life of the process.
+            if attempt > 0 { endMaterializationCampaign() }
+            return
+        }
         let activeGeneration: Int
         if attempt == 0 {
             if isMaterializing { return }
             isMaterializing = true
             materializationEpoch += 1
             activeGeneration = materializationEpoch
+            materializationCancellation = MaterializationCancellation()
+            // A campaign is a fresh walk. See materializationCursor.
+            materializationCursor = nil
         } else {
             guard let generation, generation == materializationEpoch else { return }
             activeGeneration = generation
@@ -2265,23 +2289,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         manager.getUserVisibleURL(for: .rootContainer) { [weak self] rootURL, _ in
             DispatchQueue.main.async {
                 guard let self, activeGeneration == self.materializationEpoch else { return }
-                guard let root = rootURL else { self.isMaterializing = false; return }
+                guard let root = rootURL else {
+                    self.endMaterializationCampaign()
+                    return
+                }
                 self.fileProviderUserVisibleURL = root
                 // The mount is the sole content source now: (re)point Spotlight
                 // at it here so the launch race and every remote change re-drive
                 // indexing against the freshly-resolved root.
                 self.configureSpotlightIndexing(root: root)
                 self.refreshUI()
+                // A cursor for a different root describes a tree that is gone,
+                // so `resumed(at:)` keeps the position only when the mount is
+                // the same one.
+                let cursor = self.materializationCursor?.resumed(at: root)
+                    ?? MaterializationCursor.starting(at: root)
+                let cancellation = self.materializationCancellation
                 DispatchQueue.global(qos: .utility).async {
                 let scoped = root.startAccessingSecurityScopedResource()
-                let incomplete = Self.warmAndMaterialize(root)
+                let outcome = WorkspaceMaterialization.runPass(
+                    cursor: cursor,
+                    budget: .standard,
+                    filesystem: LiveMaterializationFilesystem(),
+                    now: Date.init,
+                    isCancelled: { cancellation?.isCancelled ?? false })
                 if scoped { root.stopAccessingSecurityScopedResource() }
                 DispatchQueue.main.async {
                     guard activeGeneration == self.materializationEpoch else { return }
-                    if incomplete && attempt < 5 {
+                    self.materializationCursor =
+                        outcome.cursor.isFinished ? nil : outcome.cursor
+                    self.reportMaterialization(outcome)
+                    // A pass that got somewhere does not count against the
+                    // attempt cap. The cap is there to stop a campaign that is
+                    // retrying a cold tree forever, and a bounded pass now ends
+                    // on its budget with work still owed, which is the opposite
+                    // case: stopping there would leave the mount half
+                    // downloaded until some unrelated trigger came along.
+                    // Progress is finite, so a productive campaign still ends.
+                    let progressed = outcome.downloaded > 0
+                        || outcome.cursor.visited.count > cursor.visited.count
+                    let nextAttempt = progressed ? 0 : attempt + 1
+                    if outcome.incomplete && nextAttempt <= 5 {
                         let work = DispatchWorkItem { [weak self] in
                             self?.materializeWorkspace(
-                                attempt: attempt + 1, generation: activeGeneration)
+                                attempt: max(nextAttempt, 1), generation: activeGeneration)
                         }
                         self.materializationRetry?.cancel()
                         self.materializationRetry = work
@@ -2296,62 +2347,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         }
     }
 
-    private func invalidateMaterialization() {
-        materializationEpoch += 1
+    /// Stop the campaign that is running, if one is. Every path that abandons a
+    /// campaign has to come through here: isMaterializing is the gate every
+    /// trigger is tested against, so a campaign that ends without clearing it
+    /// silently turns materialization off for the rest of the process.
+    private func endMaterializationCampaign() {
         materializationRetry?.cancel()
         materializationRetry = nil
+        // A pass already on the queue cannot be pulled back, so tell it to stop
+        // between listings instead of leaving it to finish a tree the app has
+        // stopped believing in.
+        materializationCancellation?.cancel()
+        materializationCancellation = nil
+        materializationCursor = nil
         isMaterializing = false
     }
 
-    /// Walk the whole tree (a deep enumerator's readdir traversal forces each
-    /// dataless folder to enumerate) and read every regular file or TextBundle
-    /// package so all content and package assets stay available offline.
-    /// Returns true if the tree still looks cold: nothing enumerated yet, or a
-    /// file is still dataless after the read. The caller retries on that signal,
-    /// which covers a cold first walk that reached only the top level before the
-    /// deeper folders had enumerated.
-    private static func warmAndMaterialize(_ root: URL) -> Bool {
-        let fm = FileManager.default
-        let coordinator = NSFileCoordinator()
-        var files: [(url: URL, isPackage: Bool)] = []
-        var containsLegacySidecar = false
-        if let walker = fm.enumerator(
-            at: root,
-            includingPropertiesForKeys: [.isRegularFileKey, .isPackageKey]) {
-            for case let url as URL in walker {
-                if url.pathExtension.lowercased() == "assets" {
-                    containsLegacySidecar = true
-                }
-                let values = try? url.resourceValues(
-                    forKeys: [.isRegularFileKey, .isPackageKey])
-                let isPackage = values?.isPackage == true
-                if values?.isRegularFile == true || isPackage {
-                    files.append((url, isPackage))
-                    if isPackage { walker.skipDescendants() }
-                }
-            }
-        }
-        var incomplete = files.isEmpty || containsLegacySidecar
-        for file in files where isDataless(file.url) {
-            var err: NSError?
-            coordinator.coordinate(
-                readingItemAt: file.url,
-                options: file.isPackage ? .forUploading : [],
-                error: &err
-            ) { u in
-                _ = try? Data(contentsOf: u) // reading downloads it
-            }
-            if isDataless(file.url) { incomplete = true }
-        }
-        return incomplete
+    /// End the campaign and make any pass still in flight unable to report:
+    /// the epoch it was started under is gone, so its result is discarded
+    /// instead of scheduling a retry for a tree that has been replaced.
+    private func invalidateMaterialization() {
+        materializationEpoch += 1
+        endMaterializationCampaign()
     }
 
-    /// Whether a File Provider file is still a dataless placeholder (SF_DATALESS
-    /// in st_flags), i.e. its content has not been downloaded yet.
-    private static func isDataless(_ url: URL) -> Bool {
-        var st = stat()
-        guard lstat(url.path, &st) == 0 else { return false }
-        return (st.st_flags & UInt32(bitPattern: SF_DATALESS)) != 0
+    /// Say what a pass cost, because nothing did. A walk that ran for five
+    /// minutes on every launch went unnoticed for months partly because it
+    /// reported nothing at all, and every number in the budget is a guess until
+    /// there is something to read it against.
+    private func reportMaterialization(_ outcome: MaterializationOutcome) {
+        guard !outcome.wasCancelled else { return }
+        guard outcome.stoppedOnBudget || outcome.failedListings > 0
+            || outcome.stillDataless > 0 || outcome.unclassified > 0 else {
+            if outcome.downloaded > 0 {
+                appendActivity("Downloaded \(outcome.downloaded) items for offline use")
+            }
+            return
+        }
+        var parts: [String] = []
+        if outcome.downloaded > 0 {
+            parts.append("downloaded \(outcome.downloaded)")
+        }
+        if !outcome.cursor.isFinished {
+            parts.append("\(outcome.cursor.pending.count) folders to go")
+        }
+        if outcome.failedListings > 0 {
+            parts.append("\(outcome.failedListings) did not list yet")
+        }
+        if outcome.stillDataless > 0 {
+            parts.append("\(outcome.stillDataless) did not download yet")
+        }
+        if outcome.unclassified > 0 {
+            parts.append("\(outcome.unclassified) unreadable")
+        }
+        let detail = parts.isEmpty ? "nothing to do yet" : parts.joined(separator: ", ")
+        appendActivity("Still setting up offline files: \(detail)")
     }
 
     /// Publish the credential handoff to the shared keychain group the File
