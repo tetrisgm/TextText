@@ -16,6 +16,6 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Collaboration uses full-document Yjs, awareness, and epoch fencing. UI, assistant, and MCP share workspace commands; the app never calls its own MCP endpoint.
 - External agents use hosted `/api/mcp`; local agents use `texttext` CLI, never a restored loopback server. AI architecture: `docs/ai-sidebar-architecture.md`; development providers: `docs/AI-DEVELOPMENT.md` when needed.
 - Release only when asked, using human-invoked `release/ship.sh` (`npm run ship`). Never automate builds/releases/reinstalls through jobs, hooks, schedules, commits, watchers, or installer scripts. Debug locally, never through public update channels.
-- `.env.local`, development, tests, builds, and gates use local Postgres, never production Neon. Release secrets: login Keychain service `texttext-release`, accounts `DATABASE_URL`/`BLOB_READ_WRITE_TOKEN`, accessed by `release/secrets.sh`. Missing secrets stop release; no plaintext credentials.
+- Local development/tests/builds use local Postgres, never production Neon. Before database or release-secret work, read `docs/DATABASE-OPERATIONS.md`.
 - Shipped product changes use `texttext:project-changelog` and the existing `Shoku's Space/My Notes/TextText Changelog.textpack`; verify the shipped version. No repository changelog copy; infrastructure-only changes need no entry.
 - No GitHub Actions workflows, secrets, or runners. GitHub hosts git; tests run locally on the Mac.

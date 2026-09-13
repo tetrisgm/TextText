@@ -1,0 +1,5351 @@
+# TextText handoff
+
+Read `AGENTS.md` first; it is the contract. This file is the durable working
+state: the goal, the scorecard, and the facts that keep future sessions from
+relearning. Keep this shape: short sections, bullets, newest decisions win.
+Narratives live in `git log`.
+
+## The goal (owner, 2026-08-14)
+
+TextText is a proven agent canvas. An agent connected any way (CLI, hosted
+MCP, in-app assistant) can do real document work on par with pen.dev and
+paper.design's canvas manipulation and Notion AI's documented capabilities.
+Done means each capability exercised against a running build by a real agent
+connection and observed in the UI. Green tests do not count; observed
+behavior does. Prior sessions' claims (especially Codex-era) are treated as
+unverified until exercised. The Notion-look polish continues, but behavior
+outranks look, and the owner's Notion screenshots set the bar, not the old
+polish ledger.
+
+## MVP release-readiness checkpoint (2026-08-30)
+
+- Production serves `texttext-afdd73eb-1788148937` from
+  `https://write-8obeiqitq-shoku-s-projects.vercel.app`. Its canonical-domain
+  verification passed for the landing page, sign-in, app version, appcast,
+  session exchange, client chunk, and deployment identity.
+- A signed sandboxed TestFlight candidate is prepared at
+  `/Users/shokunin/Downloads/TextText-0.181-190-MVP-TestFlight.pkg`: version
+  `0.181 (190)`, arm64 main app plus Share, Quick Look, and File Provider
+  extensions, Apple Distribution application signature, and 3rd Party Mac
+  Developer Installer package signature. SHA-256 is
+  `3ecab355f1f7b40ec82d391485cc50a25c05b1011082baa6b1231eff26675b9b`.
+  It was not uploaded or installed.
+- Observed in the signed-in standalone app against production: quick capture,
+  body editing, quit/reopen persistence, AI search and read with a proof
+  receipt, and an exact AI append with an `Appended` proof receipt and visible
+  persisted text. The append defect found during this pass is fixed: model
+  tools no longer offer whole-body replacement, their descriptions name the
+  targeted alternatives, and native append stays an atomic guarded workspace
+  command instead of being reserialized as a whole-document update.
+- Observed Settings showed the provider connection, disconnect path, MCP
+  connection area, Apple and Google identity state, and connected client
+  history. Client history now shows eight entries initially with an explicit
+  Show all action instead of rendering all 197 historical tokens.
+- Observed sharing showed the current role, people, general access, and invite
+  form. No invitation or access change was sent. Observed Trash showed Restore,
+  Delete permanently, and Empty Trash; Empty Trash correctly required explicit
+  confirmation naming all 55 items and irreversibility, and the confirmation
+  was cancelled.
+- Final web gates passed: 221 files and 1,788 tests, TypeScript, production
+  build with 45 pages, and lint with zero errors (14 pre-existing warnings).
+  The latest unchanged native baseline also passed 461 Swift tests and the
+  43/43 Apple matrix. Package fixture and install-preparation fixture passed.
+- The remaining owner/device checks are deliberately external: upload build
+  190 to TestFlight, install that TestFlight copy, then exercise Touch ID and
+  the exact packaged sign-in UI. No App Store Connect upload, TestFlight
+  install, release record, or public Mac update was performed in this pass.
+
+## Current shipped checkpoint (2026-08-29)
+
+### Publishing app icon (2026-08-30)
+
+- Replaced the former serif `W` mark with the actual newspaper emoji `📰`,
+  matching the owner's convention for app logos and making publishing and
+  text the first visual signal rather than notes.
+- Regenerated every macOS AppIcon PNG size and `mac/AppIcon.icns` from the
+  checked-in renderer, and updated the Next.js favicon and Apple touch icon.
+- `npm run lint`, `npm run build`, and `npm run mac:build` pass after the icon
+  change. No release or TestFlight action was performed.
+
+- `main` includes the guarded folder-look CAS fix (`f05e6735`) and the
+  deterministic visual contract gate (`verify:look-contract`).
+- The look gate renders all 29 resolvable templates as item and collection
+  views in system and dark/editorial themes.
+- Semantic confirmation is shipped for browser publish/unpublish, restore, and
+  sharing/access changes; CLI destructive actions stage owner-reviewable
+  proposals, and the assistant UI labels their origin and approval action.
+  Releases and TestFlight remain owner-triggered.
+- Product decision: TextText does not need a separate Plan mode. The app is a
+  fast notes workspace; proposals and previews are the right confirmation
+  mechanism for risky actions.
+- Trash is reversible by default. `empty_trash` is the explicit,
+  owner-confirmed permanent purge available through agent surfaces.
+- Settings now has an integrations gallery showing TextText AI, Codex,
+  Claude/Codex clients, and MCP connections without exposing provider secrets.
+
+## First-run and AI activation checkpoint (2026-08-30)
+
+- An owner whose workspace contains only the two private Documentation guides
+  now sees one dismissible Start here card on Library Home. It leads directly
+  to quick capture, the AI item-type studio, AI connection or a prefilled
+  project-tracker request, and the concise Welcome guide. It disappears after
+  the owner creates working content or dismisses it; existing workspaces do not
+  gain another onboarding surface.
+- The root assistant starters now demonstrate the product claim instead of
+  generic chat: sourced synthesis, a reusable project-tracker item type, and a
+  reviewable organization proposal. Trash exposes the already guarded Empty
+  Trash workflow.
+- Settings shows an honest connection inventory and exposes Verify connection
+  whenever the in-app assistant can run. The action returns to Home with the
+  canonical connection-proof prompt prefilled; it does not require a localhost
+  bridge or a separate diagnostic tool. The local Codex card appears only when
+  the standalone Mac host reports that capability; browser and Store surfaces
+  do not advertise a local runtime they cannot use.
+- Pending assistant proposals are counted across the entire owner workspace.
+  The closed launcher shows the count, and the open header exposes each chat
+  waiting for approval. Choosing one activates its durable conversation and
+  navigates back to the item or workspace place where the proposal began.
+- Release migrations update the two starter guides only when their title,
+  canonical note snapshot, and body hash still exactly match a previously
+  shipped version. A changed title, body, field, tag, asset, theme, template, or
+  concurrent revision leaves the user's guide untouched. New workspaces still
+  receive only Welcome to TextText and Connect an AI.
+- Observed in the signed-in `/@visual-demo` running build: the Settings
+  inventory rendered configured provider, client, MCP, and sign-in state plus
+  Verify connection; a fresh assistant chat rendered the three new workspace
+  workflows. The demo already contains working documents, so the empty-library
+  Start here condition is covered by the UI contract test rather than claimed
+  as observed there.
+- Verification passed: 210 web test files with 1,753 tests, 537 Swift tests,
+  the production Next build, the standalone Swift build, TypeScript, and lint
+  with zero errors. Existing lint warnings remain. No TestFlight build, store
+  upload, deployment, release record, or installation occurred.
+
+## Current AI implementation handoff (2026-08-25)
+
+- The current source boundary is `4118c930` (`Finish guarded agentic
+  assistant`). Commit `cbf89e1c` adds the durable implementation runbook and
+  links it from the architecture and product ledger. At the start of this
+  handoff pass, local `main` was clean and matched `origin/main` at
+  `cbf89e1c`.
+- A new session should read `AGENTS.md`, then
+  `docs/agentic-assistant-runbook.md`, then
+  `docs/ai-sidebar-architecture.md`. The runbook is the maintenance map for
+  data ownership, owner gates, cloud and native turn lifecycles, proposal
+  states, outbound MCP approval, evidence semantics, edition differences,
+  safe change recipes, verification, and deliberate gaps. This file records
+  observed state; `docs/agentic-text-product.md` records the competitive
+  promise and parity ledger.
+- Six surfaces must not be conflated: the cloud in-app assistant, standalone
+  native assistant, signed-in local `texttext` CLI, inbound hosted MCP,
+  outbound MCP used by the cloud assistant, and the private native item-type
+  utility turn. They use different credentials and execution boundaries. The
+  web app does not call its own MCP endpoint. Local agents do not require File
+  Provider or a localhost bridge.
+- The guarded implementation is complete in source: exact owner and workspace
+  checks, durable bounded chat history, instructions and explicit skills,
+  truthful model receipts, structured attachments, Found versus Read proof,
+  durable cloud write proposals, terminal ambiguity after an unreceipted side
+  effect, exact-shortcut outbound MCP with destination and tool fingerprints,
+  native owner/workspace/conversation fencing, and a Settings inventory with
+  disconnect and revoke controls. The detailed implementation facts and file
+  owners are in the runbook rather than duplicated here.
+- Running-build proof used a real Keychain-backed Anthropic connection. It
+  covered a streamed answer, grounded Found and Read evidence, an inert
+  create-note proposal, reload persistence, and a follow-up using durable
+  context. The live outbound MCP evaluation covered discovery, proposal-only
+  execution, approval receipts, hostile remote descriptions,
+  `input_required`, and fixture cleanup. The final implementation gate passed
+  182 web test files with 1,260 tests, a 45-page production build, 526
+  standalone Swift tests, 525 Store Swift tests, the 48-point Apple matrix,
+  TypeScript, lint, 30 migrations, agent integration verification, and the
+  outbound MCP evaluation. The documentation pass reran all 1,260 web tests.
+- “Everything is done” is not an accurate product claim. The deliberate gaps
+  include indexed external services, semantic
+  workspace retrieval and answer-level citations, broader media and document
+  computation, team or page-backed skills, rendered-output inspection,
+  unattended export verification, Plan mode, and custom background agents.
+  They are inventory, not an authorized roadmap; the owner has not selected
+  the next one to implement. The full current list is in the runbook.
+- The 2026-08-25 handoff gate exposed a date-coupled conversation merge test:
+  its remote message used a fixed August 24 timestamp, so the assertion changed
+  behavior when the real clock crossed that date. The fixture now derives a
+  timestamp one second after its generated local message. The focused 10-test
+  file and the full 182-file, 1,260-test web suite pass after the correction;
+  runtime merge behavior did not change.
+- TestFlight work, App Store Connect changes, release records, deployments,
+  installations, and public release actions remain deferred. The owner also
+  deferred hands-on Touch ID and Google sign-in testing. No such action was
+  performed by the guarded assistant or documentation passes. Store builds
+  use supported App Sandbox and HTTPS paths and compile out local process and
+  local MCP machinery; the primary AI architecture does not depend on the
+  optional Finder File Provider integration described in older diagnostic
+  notes below.
+
+## AI runtime observed proof correction (2026-08-23)
+
+- The earlier parity pass was not complete when it was first reported. Its
+  tests were green, but the required running-build observation had not happened.
+  The first real hosted turn exposed an empty reply that the UI mislabeled as
+  `Done`, and the first reload exposed a persisted-job hydration mismatch.
+- The deterministic Anthropic-shaped provider now implements the provider's
+  streaming protocol instead of returning a non-streaming response to
+  `streamText`. A provider stream error is terminal and can no longer be
+  followed by an empty successful completion. The route also overrides the AI
+  SDK's raw-error logger so provider error objects do not enter server logs.
+- Assistant job SSR uses a stable empty snapshot, then restores bounded client
+  history after hydration. Interrupted or failed jobs retain truthful activity
+  instead of a permanent `Thinking` label or a hydration error.
+- Observed in the signed-in `/@visual-demo` workspace against the running app:
+  a hosted reply streamed useful text; a deliberately slow run exposed Stop and
+  stopped with a failed receipt; a reload recovered the interrupted job; a
+  provider failure remained a failure with no fake answer; Save to Notes created
+  a private note and returned its Open receipt; thumbs-up persisted as pressed;
+  a fresh tab hydrated with restored jobs and no console error.
+- Repeated through `scripts/dev-with-ai.sh` with the real Anthropic key loaded
+  from the login Keychain. Claude Sonnet 5 streamed `REAL STREAM OK` in about
+  1.4 seconds, then completed a separate read-only workspace-tool turn in about
+  3.2 seconds and correctly reported the synthetic demo's seven items. Neither
+  turn logged a browser error or exposed the key.
+- This proves the corrected runtime loop, not competitive completeness. Current
+  gaps versus the referenced products remain searchable durable chat history,
+  editable agent instructions and reusable skills, automatic or per-turn model
+  choice, semantic retrieval with citations across connected sources, richer
+  file analysis, and a uniform approval/review surface for freeform writes.
+  No release or store action occurred.
+- After the observed proof, TypeScript, targeted lint, 1,088 web tests across
+  162 files, 522 Swift tests, the production build, and the live outbound-MCP
+  evaluator all pass. The evaluator proves a real streamed assistant turn can
+  call an allowed remote tool, resist a hostile tool description, preserve an
+  `input_required` result, and remove its temporary connection afterward.
+
+## Connection management pass (2026-08-23)
+
+- Settings now opens with a Connections overview linking to the configured
+  provider, native Codex state, client capabilities, outbound MCP servers, and
+  sign-in methods. Client-token loading no longer depends on the destructive
+  account-summary endpoint, so collaborators and valid signed-in states do not
+  lose their connection list.
+- `api_tokens.kind` records whether a capability is hosted MCP, TextText app,
+  CLI, native, manual, or other. Existing rows backfill to `manual`; new app
+  and hosted MCP capabilities are labeled at creation and can be revoked from
+  Settings without exposing their secret.
+- The standalone native Codex bridge now exposes Disconnect. It stops the
+  embedded TextText runtime and clears its session state, while explicitly not
+  claiming to sign the person out of Codex in another application.
+- Configured browser and Store AI connections accept bounded local text and
+  Markdown attachments. Images remain on the standalone native OCR path.
+- Verification after this pass: 1,076 web tests, 522 Swift tests, TypeScript,
+  lint, the production web build, migration coverage, and the agent integration
+  verifier all pass. The build retains the known duplicate-Yjs warnings.
+
+## AI runtime parity pass (2026-08-23)
+
+- The in-app assistant now uses one streamed turn contract for hosted AI and
+  native Codex. Hosted turns emit newline-delimited start, text, tool progress,
+  completion, and error events over HTTPS. The sidebar renders live text and
+  tool activity, and Stop aborts the request without requiring a local server.
+- Assistant jobs persist in bounded local storage. A reload or app close marks
+  an interrupted run as failed with a truthful explanation instead of leaving
+  a permanently running spinner. Quick actions use the same job history and
+  streamed progress as freeform turns.
+- A completed answer can be saved to Notes with a server-authoritative receipt
+  and idempotency key. Answers expose thumbs-up and thumbs-down feedback that
+  records only bounded metadata in `action_audit`, never the answer body. The
+  receipt shows the provider and selected model so a person can understand what
+  produced it.
+- Configured hosted providers accept bounded text, Markdown, and image
+  attachments over HTTPS. Image data is validated at the route boundary and
+  passed to vision-capable models as image parts; native OCR remains available
+  for the standalone app. No localhost or loopback service is required.
+- The shipped interaction contract is documented in
+  `docs/ai-sidebar-architecture.md` and `/docs/ai`. Remaining deliberate
+  boundaries are OAuth/PKCE connector onboarding (ruled unnecessary by the
+  owner), server-side scheduled automations, semantic long-term memory, and a
+  full proposal/approval surface for arbitrary freeform cloud mutations.
+- Verification after this pass: 1,087 web tests across 162 files, 522 Swift
+  tests, TypeScript, targeted lint, and the production web build all pass. The
+  build retains four known non-blocking duplicate-Yjs warnings. No TestFlight,
+  App Store Connect, release-record, or update-channel action occurred.
+
+## Agentic text inbox loop (2026-08-20)
+
+- The product loop is now explicit: capture instantly, retrieve from any
+  authorized AI, make a visible guarded change, then verify or recover. The
+  competitive contract and Pen/Paper inventory live in
+  `docs/agentic-text-product.md`.
+- Library capture accepts a thought, note, link, or AI answer without leaving
+  the current view. Text routes to Notes and URLs route to Bookmarks through
+  the shared `create_item` command. A durable six-item queue keeps the raw
+  input and stable idempotency key before clearing the composer. Reload,
+  rapid capture, Retry, View, Copy, Discard, confirmed Undo, and queue-full
+  recovery are covered.
+- Browser, standalone Mac quick capture, signed-in `texttext capture`, Claude
+  and Codex plugin skills, and hosted MCP use the same routing semantics. A
+  successful capture returns an authoritative receipt with the exact title,
+  destination, item id, and Open action. Browser capture also keeps a
+  server-confirmed Undo beside each of the six durable receipts. Native Quick
+  Capture persists the same six-receipt history per workspace, offers exact
+  Open, and performs a revision-guarded, server-confirmed Undo only after the
+  authenticated credential still resolves to that receipt's workspace. A
+  failure or account switch preserves the receipt. The UI never predicts
+  success from model prose or requested arguments.
+- Retrieval uses one normalized ranked token matcher in Library, MCP, and the
+  local CLI. `texttext search` returns exact ids, snippets, hashes, and folder
+  paths; `texttext read <id>` resolves the exact item. Read-only credentials
+  can search and read, while mutation commands still require full scope.
+- Assistant receipts are derived only from validated command results. Added
+  TextText context is capped at four items, resolved canonically inside the
+  authenticated workspace, and included in `Read` proof only when that item
+  was actually loaded for the turn. Client-supplied titles and bodies are not
+  trusted. Native writes report Updated only after acknowledgement, known
+  authorization and stale-write failures roll back, whole-document replacement
+  requires a hash, and targeted text or section edits keep their narrower
+  guards. Completed receipts survive a later provider error instead of being
+  replaced by a false total failure.
+- Recent-work summaries use an access-scoped, newest-first SQL query capped at
+  12 items. Selection quick actions are server-enforced read-only until Apply,
+  and user content is fenced as untrusted context so text inside a note cannot
+  grant the assistant write access.
+- External-agent folder, template, asset, capture-status, comment, restore,
+  publish, and document mutations now write their attributed audit atomically
+  with the mutation. Failed storage or audit work cannot leave an unaudited
+  content change behind.
+- Visual proof covers Library capture, six simultaneous receipts, assistant
+  safe areas, and failed-capture recovery at 1440, 768, and 375 pixels in both
+  themes. The same matrix proves pinned navigation and assistant rails, exact
+  search and Open, source-linked summaries, guarded Apply and Undo, and failed
+  provider recovery. A disposable native app proves Return and Shift-Return,
+  URL routing, recovery Copy and Retry, confirmation-gated Discard, exact Open,
+  light and dark appearance, and the guarded Undo confirmation. The native
+  bridge proof uses a disposable local item and exercises zero-tool summary,
+  exact read, guarded live edit, AI audit, Apply, and Undo.
+- The final settled-tree gate passed TypeScript, lint with zero errors, 1,073
+  web tests across 160 files, 522 Swift tests, both agent integration
+  verifiers, the official plugin validator, all five skill validators, the
+  full native browser bridge, standalone app and CLI source builds, the Store
+  source build and entitlement scan, and the 44-page production web build.
+  The Store binary has no Sparkle link; the standalone release build retains
+  Sparkle 2.9.5. The web build retains four known non-blocking duplicate-Yjs
+  warnings at serialized route boundaries.
+- The current real native Codex rerun is blocked before product execution by
+  the signed-in ChatGPT account's usage limit until August 26 at 8:31 PM. It
+  made zero dynamic tool calls. Prior real native Codex proof remains valid for
+  the unchanged App Server isolation path, while the current native bridge
+  rerun proves the final browser prompt, read, guarded edit, AI audit, proposal,
+  Apply, and Undo path. Do not call the quota-blocked rerun green.
+- One saved-workspace visual session reached `/api/ai` but returned 502 before
+  generation. A separate request through the documented Keychain-backed
+  `dev-with-ai` path selected Anthropic Claude Sonnet 5 and returned 200 in
+  about 1.2 seconds with zero tools, proving the route, SDK, and catalog model
+  against a real provider. The earlier failure is isolated to that saved
+  workspace/runtime state or a transient provider failure. The UI states that
+  no change occurred and offers Retry and Verify connection. Do not present
+  deterministic-provider screenshots as evidence of a live Anthropic response.
+- This is source work only. No app was installed, no deployment or promotion
+  ran, and no TestFlight, App Store Connect, release-record, or update-channel
+  action occurred. The installed and public app remain unchanged until the
+  owner deliberately promotes a later commit.
+
+## Capability scorecard
+
+- [x] Create with substance: agent-created note with body, right folder,
+  idempotent replay on the same key. Observed 2026-08-14.
+- [x] Complete rewrite under observation: agent replaced an open document's
+  entire body; the change appeared live with the agent's presence chip and
+  its named cursor at the end of its own text. Observed 2026-08-14.
+- [x] Transform: note became a Broadsheet article via set_item_template,
+  retitled with excerpt and tags via update_item; rendered look verified in
+  the open browser. Observed 2026-08-14.
+- [x] Workspace operations: search matches titles and body text;
+  append_to_item replayed=true on a same-key retry with exactly one block in
+  the body, which is the changelog pattern. Observed 2026-08-14.
+- [x] Rules under agency: every agent mutation has an action_audit row typed
+  external_agent; a real foreign-workspace item id reads back as not-in-this-
+  workspace (fails closed, no existence oracle); comments land attributed to
+  the agent. Observed 2026-08-14.
+- Both agent papercuts are fixed (2026-08-15) and verified live:
+  set_item_template takes template_version optionally and defaults to the
+  look's current version, and append_to_item takes `markdown` like its
+  siblings while still accepting the original `markdown_fragment`.
+- How to run the loop: mint a token (POST /api/link/start, approve in a
+  signed-in browser, poll), then drive `/api/mcp` per the transport contract
+  in scratchpad agent.py: `_meta` trio in the body plus MCP-Protocol-Version,
+  Mcp-Method, and Mcp-Name headers. 33 tools.
+
+## The spec and the removal pass (2026-08-14)
+
+- `docs/SPEC.md` is the owner-ratified constitution: five pillars plus an
+  explicit out-of-scope list. Code no pillar justifies gets removed.
+- The REMOVE bucket is done, five commits, ~5,900 lines: legacy TipTap
+  editor cluster (14 deps), legacy project-gallery reader and its CSS,
+  App Store listing draft, merge-accounts and spent repair scripts, the
+  entire guest/anonymous/claim machinery (plan tier, tokens, cookies, UI),
+  and 27 dead exports. `blogs.edit_token_hash` drops via
+  `scripts/migrate-drop-edit-token-hash.mjs` at next release.
+- SUSPECT bucket ruled by the owner 2026-08-14: assistant skills, demo
+  mode (the seed module and the store's demo branches), `bench/`, and both
+  dated docs (deleted, not archived) are all gone.
+- The one ruling not carried out as written: the collaboration verifiers
+  were not duplicates. My audit read `verify-collaboration-live.ts` and
+  `verify-live-collaboration.ts` as one check under two names. They are
+  four layers (in-process merge on the release gate, database soak with an
+  offline reconnect, two real browsers proving a human SEES a caret, and
+  epoch fencing cited from `db/schema.ts`). Renamed to
+  `verify-collaboration-{database,browsers,epoch}.ts` instead of deleted;
+  all four are listed in `docs/document-types.md`. Say so if you still want
+  them cut.
+- Postgres is now required. A missing `DATABASE_URL` throws
+  `TextText requires DATABASE_URL` from store.ts instead of quietly serving
+  fixture content. `scripts/setup-local-db.sh` no longer seeds; the database
+  starts empty and signing in provisions the workspace.
+- Kept by ruling: the `project` "Media post" item type. It is the
+  video-focused blog post (the shape ramine.net publishes), not a legacy
+  gallery. Its reader is the DocumentRenderer gallery node.
+## The two build pillars (2026-08-15)
+
+- **Outbound MCP is built.** Workspace Settings has Connected MCP servers;
+  TextText handshakes, lists tools, stores them, and the connection is saved
+  OFF until the owner allows it. Remote tools are namespaced `slug__tool`,
+  the URL is SSRF-checked before every connection, descriptions are capped
+  and fenced, tokens are encrypted with `lib/secret-box.ts`. Proof:
+  `npm run eval:mcp:outbound` drives Settings in Chromium against
+  `scripts/mock-mcp-server.mjs` and reads the mock's own log to show the call
+  arrived. The mock ships a deliberately hostile tool description; the run
+  asserts from the receiving side that no document text was forwarded.
+- **Template management is built.** The folder menu has Change look (the
+  agent could do this and a person could not). Retiring a look exists for the
+  first time, in the UI-facing store and as `retire_document_template`. Proof:
+  `npm run eval:folder-look`, both themes.
+- **`/docs/mcp` is the reference**, generated from the tool registry so it
+  cannot drift: 33+ tools grouped by what they do, eight client setups with
+  real commands, a verify step, the outbound direction, and the safety
+  boundary. A test fails if a tool name is ever hardcoded there.
+
+## Outbound MCP after the 2026-07-28 revision (2026-08-15)
+
+- The revision retired `initialize`, replaced server-initiated requests with
+  Multi Round-Trip Requests (`resultType: "input_required"`), and added
+  `ttlMs`/`cacheScope` to list results. Our INBOUND server was already built
+  to it: `server/discover` answers, every result carries `resultType`, and
+  the cacheable lists carry hints. Verified live, not read off a comment.
+- The outbound CLIENT was not, because I wrote it by learning our own
+  server's errors rather than from the spec. Three defects, all fixed:
+  `input_required` read as an empty success and returned "Done."; the
+  retired `initialize` cost a round trip per connection per turn; cache
+  hints were ignored so every message re-listed every server.
+- OAuth was ruled unnecessary (owner, 2026-08-15). Local servers need no
+  auth, and hosted ones mostly issue static tokens. The cost is a worse
+  first five minutes and any OAuth-only server being unconnectable.
+  Note that DCR is deprecated in favour of CIMD if this is ever revisited.
+- Per-call approval was dropped: MRTR is the protocol's own mechanism, so
+  bespoke approval UI would have been reinventing it worse.
+
+## Historical local MCP exploration (superseded 2026-08-20)
+
+- Paper, pen.dev, and Figma can expose loopback MCP endpoints tied to their
+  desktop applications. That comparison informed the product, but TextText
+  does not offer loopback endpoints in Workspace Settings in this release.
+- TextText's local Claude and Codex integration is the signed-in `texttext`
+  CLI in the standalone Mac edition. It does not start an MCP server, request
+  a workspace token, or depend on File Provider.
+- Outbound TextText MCP connections use public HTTPS addresses. Browser and
+  Store editions cannot expose the capability-gated native loopback bridge,
+  and public product copy must not advertise it as an available setup path.
+
+## Templates simplified to A+B (owner, 2026-08-15)
+
+- The authoring API is GONE: `customize_document_template`,
+  `preview_document_template`, `presentation/operations.ts`, two test files
+  and two eval scripts, plus most of the system prompt, which had become a
+  manual for a vocabulary nobody could use. ~1,400 lines.
+- Making a look is now: shape a document, then "Save as look" in its menu, or
+  `save_item_as_look` for an agent. A look is a template plus the theme the
+  document carries. `saveDocumentAsLook` in store.ts is the one implementation.
+- Verified live: `npm run eval:save-as-look` drives the real menu in Chromium,
+  names a look, checks the document did not change, and confirms the look is
+  in the workspace's templates. The gallery's own rendering is proven by
+  `npm run eval:folder-look`.
+- Known rough edge: a look saved during a session shows up in the picker on
+  the next load, because the gallery reads the pool fetched at page load.
+- The catalogue is ten. Cutting it to nine left no look declaring
+  `collection.layout: "timeline"`, so a blog could not read as a dated run at
+  all once folder looks took over how an index renders. `texttext.timeline`
+  restores it (owner ruling 2026-08-16): Article's document, field for field,
+  with a timeline index. It sits after the original five, which stay first and
+  byte-compatible. `single` was NOT restored, deliberately; `now` still exists
+  and still resolves for documents pinned to it.
+- `blog.cardStyle` is deleted (owner ruling 2026-08-16), column and all:
+  `scripts/migrate-drop-card-style.mjs`. It chose whether published cards
+  showed their cover, it was set from the same Blog popover the layout picker
+  lived in, and it lost its only UI when that popover went. Card style is a
+  property of how a folder index renders, and looks govern those now, so a
+  second stored answer on the workspace row was the shape the ruling removed.
+  A Covers toggle was built on Home first and deleted before it shipped:
+  `WorkspacePostOption` renders no covers, so it would have been a control on
+  Home that silently changed the published Blog page. Cards always show the
+  cover they have.
+- `npm run eval:home-layout` is the live proof, both themes. It needs
+  `NEXT_PUBLIC_ROOT_DOMAIN=localhost:3000` on the dev server, because the
+  published Blog page is a workspace subdomain.
+
+## The blank landing page, and why it was blank (fixed 2026-08-16)
+
+A signed-out visitor at `/` saw white above the fold, in every browser and in
+a production build. The DOM was correct, the layout was correct, the h1
+reported opacity 1 and hit-tested as itself, and nothing painted, not even a
+background colour set on it by hand.
+
+The cause was one rule in the document engine:
+
+    .tt-document:not(.tt-collection-item):not([data-preview])::before {
+      content: ""; position: fixed; inset: 0; z-index: -1;
+      background: var(--paper, #fff);
+    }
+
+A document that IS the page paints its paper across the window, which is
+right for a reader. The landing page embeds a look demo further down, and that
+demo threw the same fixed, full-window sheet over everything above it. The
+sections after the demo painted because they come later in paint order; the
+hero did not. A `position: fixed` div appended at runtime painted on top,
+which is what made it look like a compositor fault rather than a stacking one.
+
+The fix is the mechanism the engine already had: an embedded document passes
+`preview`. Three of five call sites were not passing it. The rule now carries
+the hazard in a comment, because the guard is opt-out and the set of places a
+document can be embedded is open-ended.
+
+`npm run sweep` now fails on a surface that comes back blank. It compares the
+PNG byte length of a capture against a flat 8x8 of the same page: a surface
+with text and rules compresses far worse than a rectangle. That check is the
+only thing in this session that would have caught it, and cheap.
+
+Two traps worth keeping:
+
+- `IntersectionObserver({trackVisibility: true})` is not a paint oracle. It
+  reported the heading invisible in states where the page painted, and a
+  bisect built on it named an innocent rule with total confidence. Pixels, or
+  nothing.
+- Disabling one stylesheet at a time proves nothing here, because the engine
+  CSS is injected by the renderer itself as well as by the page. Removing the
+  page-level copy while the renderer kept emitting its own is why the CSS
+  looked exonerated for an hour.
+
+## Traps found while building these
+
+- `position: fixed` does not escape an ancestor with `backdrop-filter`. The
+  look gallery opened from the sidebar rendered inside a 260px column with
+  its card names cut to three letters. Portal to `document.body`.
+- A dead-export sweep removed `textTextChangeSequence` from `db/schema.ts`.
+  Nothing imported it, and drizzle-kit builds its model from that module's
+  exports, so the next `drizzle-kit push` tried to DROP the sequence that
+  `posts.revision` defaults from. Schema declarations are load-bearing
+  without importers.
+- Never truncate a JSON body before parsing it. The outbound client capped
+  the raw reply, which turned a large but legitimate `tools/list` into a
+  parse error rather than protecting anything.
+- A controlled checkbox bound to server state ignores the click for a whole
+  round trip and reads as broken. Keep an optimistic override until the
+  server answers.
+
+## Historical implementation notes (superseded as backlog)
+
+These observations are retained because they still explain old failure modes.
+They are not the current priority order. The scorecard above is now fully
+checked, real-provider proof occurred in later passes, and current product gaps
+live in `docs/agentic-assistant-runbook.md`. File Provider notes in this section
+describe the optional Finder representation; they are not requirements for the
+in-app assistant, local CLI, or hosted MCP.
+
+- The scorecard that was once unfinished is now fully checked.
+- Fixed observation hazards: verify `window.innerWidth` is nonzero before
+  trusting any browser measurement (a restarted pane can be 0x0 and serves
+  stale compositor frames to screenshots).
+- The in-app assistant lane is exercisable without a real key:
+  `node scripts/mock-ai-provider.mjs` plus
+  `TEXTTEXT_AI_BASE_URL=http://localhost:3999/v1 npm run dev`, then save any
+  fake key in workspace settings. Exercised 2026-08-14: greeting, root and
+  item-named starters, quick actions, chat round trip with provider
+  attribution, and the Rewrite proposal cycle (preview, apply, undo) all
+  observed live. This remains the deterministic development path; later
+  sections record the separate real-provider proof.
+- Feature docs (`/docs/features`) grow only with exercised behavior, and
+  `npm run eval:features` now enforces that: it drives the claims the page
+  makes and names the ones it cannot drive. It caught /connect still promising
+  OAuth after the removal. Add a check when you add a claim.
+- `npm run sweep` photographs every surface, both themes, for a design pass.
+  It asserts nothing on purpose. It is what found the landing page.
+- Installed-app auth verification (sign out, auth sheet round trip) still
+  pending.
+- Mac round trip 2026-08-16. The app builds, installs, launches, renders
+  correctly in BOTH themes, is signed in, opens Home on List (the new
+  default), and talks to the dev server. Screenshots taken unattended.
+- Screen Recording was NEVER the blocker; the 2026-08-15 note claiming it was
+  is wrong. `screencapture -l <window>` returns a window's own backing store,
+  and a WKWebView renders its content out of process, so the web view is not
+  in it: that is the black rectangle, on a machine with the permission
+  granted. `-R` failed separately because the rect was taken from
+  CGWindowList without checking it fits the display. Capture the whole screen
+  with `screencapture -x` and read that. The display here is 1800x1169 points
+  at 2x, so a full capture is 3600x2338.
+- FIXED 2026-08-16: the Mac app never linked, and the cause was the state
+  directory. `AppGroupContainer.choose` picked the first candidate that
+  EXISTED. The team-prefixed group container survives on disk from an earlier
+  install, so it existed, but a Developer ID build is not sandboxed and its
+  entitlement names the bare group id, so every write into the team-prefixed
+  path was denied. StateStore writes through `try?`, so the denial was silent:
+  `saveCredentials` appeared to work, `loadCredentials` returned nil a
+  millisecond later, the app never linked, and no File Provider domain was
+  ever registered. The window looked healthy throughout because the web view
+  carries its own session cookie.
+- Existence is now not the test; writability is. `AppGroupContainer.isWritable`
+  probes with a real file create, because POSIX permissions on that directory
+  say yes and the sandbox still says no. When no candidate is writable the
+  resolver returns nil and StateStore keeps state in Application Support,
+  which is where the Developer ID build always kept it. Two regression tests
+  cover it in StateStoreLocationTests.
+- How it was found, for the next silent-failure hunt: an os_log at every branch
+  of the link path, streamed live across a relaunch
+  (`log stream --predicate 'subsystem == "app.texttext"' --info --debug`). The
+  trace read "linked: credentials saved" and then "seed: NO CREDENTIALS" three
+  lines later, which named the bug in one screen after a day of reading code
+  that all looked correct. `log show` after the fact returned nothing for this
+  process; only `log stream` during the run worked.
+- Verified after the fix, with no override: credentials persist, the domain
+  registers, and `~/Library/CloudStorage/TextText-TextText` exists.
+- The mount then did not enumerate, and that turned out to be a SETTING, not
+  a bug: `fileproviderctl dump app.texttext.mac.fileprovider` reports
+  `domain: t{6}t ... (user-disabled)`. macOS has TextText's File Provider
+  switched off, so the system never launches the extension, every
+  NSFileCoordinator request fails with FP -2011, and `pkd` is never even asked.
+  Nothing the app does can override it; it is the owner's toggle in
+  System Settings > General > Login Items & Extensions > File Providers.
+- Compare states when diagnosing this, they are distinct and the wording is
+  the diagnosis: Synology reads "temporarily disconnected", Write reads
+  "extension not found", TextText read "user-disabled".
+- The app can read `NSFileProviderDomain.userEnabled` on macOS. The current
+  SDK declares it available on macOS 11 and later, and the implementation is
+  covered by the Mac build and health tests. A linked domain that the user
+  disabled reports a runtime warning but does not invalidate an otherwise
+  healthy release build. A missing, enabled-but-unusable, or broken domain
+  still fails health. The app does not toggle the setting on the user's behalf.
+- App Store record 1.0 vs shipped 0.175: submission-time only.
+
+## Workflow and dev loop
+
+- Work on `main` in `~/dev/TextText` (contract of 2026-08-12; no worktrees,
+  no merge-gate). A stale pre-commit hook still demands merge-gate; commit
+  with `OWNER_OVERRIDE=1`. The hook is a persistent job, not ours to remove.
+- Dev loop: use `npm run try`. It starts the local server, opens an isolated Mac
+  app against it, and tears both down. `mac/scripts/install-local.sh` replaces
+  the owner's canonical `/Applications/TextText.app`; it is a promotion tool,
+  not a development preview command.
+- Dev builds (http origin) are Safari-inspectable and append one layout line
+  per load to `$(getconf DARWIN_USER_TEMP_DIR)/texttext-layout.log`. Trust the
+  probe over screenshots; computer-use screenshots downscale and lie about
+  geometry.
+- The Mac webview ignores synthetic automation clicks (hover works, real
+  clicks work); drive the same UI in a browser at localhost instead.
+- `window.__ttDraftDebug` (dev only) reads the selection draft store; every
+  writer in that store fails silent by design.
+- HMR resets module-level state (the draft store empties); reload the page
+  before concluding anything after editing `workspace-item-draft.ts`.
+- Verification tools: `npm run eval:collaboration:browser` drives two people
+  and an agent through 24 checks; the release gate runs live workspace
+  proofs. Local Postgres only; production Neon never leaves release lanes.
+- Releases, deploys, uploads: owner-ask only. TestFlight build numbers burn
+  on upload; next is 183+.
+
+## Design: the Notion polish loop
+
+- Loop discipline: name the loudest deltas, fix, screenshot light and dark at
+  1400, commit, repeat.
+- Rounds landed 2026-08-14:
+  - `d90650df` rail state machine is binary; overlay state and hover-peek
+    deleted; pin button gone; saved "open" reads as docked.
+  - `8aa78c43` centered 1000px content column; quiet search field; sidebar
+    boundary is a color not a line; unboxed item icons and create box.
+  - `249384da` bare-glyph history arrows and toggles; counts as facts;
+    whispering section headings.
+  - `4714b447` `--workspace-rail-inset`: the shell publishes how much right
+    edge the docked rail owns; ALL fixed chrome adds it to its right offset.
+    Any new fixed element must add the inset or it will sit on the rail.
+  - `a3065460` + `27666973` connect CTAs as per-path rows (see AI rail).
+- Starters and connect rows are soft filled cards (Notion), not hairline
+  outlines; scrollbars thin and trackless; toolbar controls surface on hover.
+- DESIGN.md rules bind: both themes always, sentence case, no em dashes,
+  taste over decoration.
+
+## Assistant and AI rail
+
+- One layout mechanism: pinned = real grid column via `has-assistant-pinned`;
+  hidden = module overlay off-canvas, clipped (`overflow: clip` on the
+  overlay root; a translated hidden panel otherwise adds one panel-width of
+  horizontal scroll to every page).
+- Sizing the rail with `!important` is banned; three stacked mechanisms once
+  reserved 600px for a 240px rail.
+- Connect state lists every path from `AGENT_INTEGRATIONS`: Claude/Codex copy
+  one install command, ChatGPT links to its apps page, MCP copies
+  `https://texttext.app/api/mcp`, API key is the quiet line. Copy must run
+  `execCommand` synchronously inside the click's activation, then fall back
+  to the async API; the reverse order spends the activation and goes mute.
+- The hosted MCP URL and sibling strings are lowercase on purpose; a
+  mixed-case copy of the origin already broke Mac sign-in once
+  (case-sensitive host comparison).
+- Starters render only with a provider connected; they name the open item,
+  clip titles at 48 chars, and map Trash/Shared to their own sets.
+- `assistantAgentIdentity()` is the one derivation of which AI is present
+  (native connection wins, else cloud provider); it feeds the rail header,
+  the bottom-right avatar launcher, and document presence. The inline copies
+  it replaced had drifted (API-key AIs never appeared on documents).
+- Agent presence is real Yjs awareness for MCP agents and the in-app
+  assistant alike (`runWorkspaceToolForSession` -> `agentPresence`,
+  actorType "ai", connection name "Assistant").
+- The selection pipeline: the editor registers the open item's draft and
+  mirrors every selection into `workspace-item-draft` (its "subtitle" maps to
+  the store's "excerpt"). The selection toolbar reads that store, never
+  `window.getSelection()` (blind to textareas), and refreshes on a 60ms
+  settle after mouseup/keyup/selectionchange. It once shipped fully dead with
+  a green suite: the store had no writer.
+- A running turn reports itself in one place: inline, under the message that
+  started it (`.working`, a pulsing dot and the progress line). The jobs strip
+  above the conversation lists only work the person cannot see, filtered by
+  `jobsForOtherThreads`; the launcher's count still covers every job in the
+  workspace. Listing the current thread's turn at the top announced it in the
+  one place the person was not looking (owner report, 2026-08-26).
+- The transcript follows its own end while the person is within 32px of it,
+  driven by a `ResizeObserver` on the thread and a scroll listener that
+  releases the pin the moment they scroll up. It used to scroll only when a
+  message was added, so a streamed answer grew past the bottom edge and took
+  the working line off screen about two seconds in. `npm run eval:turn-progress`
+  fails on the old behavior with "in in out out out".
+- A cloud write is a PROPOSAL: the model stages exact arguments, the person
+  approves them with Apply change, and only then does the executor run. Three
+  things had to be true for that to work and none of them were, until
+  2026-08-26. `npm run eval:assistant-create` drives the whole flow for a note,
+  a bookmark, an article, and a described item type (folder, then
+  create_item_type, then an entry in it) and watches each land.
+- Which turns carry write tools is a trust boundary, not a convenience: item
+  text reaches the model fenced as untrusted data, and a turn asked only to
+  summarize must not hold a tool an injected instruction could reach. The
+  gate reads the person's own message. It is a LEXICON, so it has near misses,
+  and "Give the reading log its own look" was one: the write surface vanished
+  and the assistant answered with something agreeable. The list is wider now,
+  `HAND_ME_BACK` keeps "give me a summary" read-only, and `readOnlyTurnNote`
+  makes the remaining misses speak instead of failing silently.
+- The assistant conversation sync is a bounded, redacted COPY, never the
+  authority for what is on screen. Its cleaner refuses to store a write
+  proposal it could not reproduce exactly, which is right for a copy, and its
+  depth bound of 8 could not reach the leaves of a `create_item_type`
+  blueprint (nine levels down). Merging that copy back took the approval card
+  off the screen about a second after it appeared while the change sat pending
+  on the server. Depth is 16, and `keepLocalWriteProposals` puts back what the
+  copy could not carry.
+- A write that cannot even be STAGED now reports the reason as a failed
+  workspace call. Before, a proposal rejected at validation left no card and
+  no error, only the model's prose.
+- `/docs/features` documents only exercised behavior, by rule stated on the
+  page. `/docs` indexes it.
+
+- The native turn deadline measures SILENCE, not work. It was an absolute
+  30s clock started at `turn/start` and never extended, so a real Codex turn
+  over a long prompt was interrupted mid-answer and the person was told the
+  agent took too long while it was still typing (owner report, 2026-08-26).
+  `WebAppWindowController.codexTurnProgress(method:)` names the events that
+  restart the clock; the per-tool deadline is a separate 8s and unchanged.
+
+## Measuring the AI look suite (2026-08-27)
+
+- Nine briefs now, not five. The original five covered prose, plain notes,
+  pages, tasks and links. The four added reach primitives none of them touched:
+  checklist and facts (recipe-cards), gallery (photo-journal), heatmap over
+  dates (habit-tracker), rows and quotes (reading-notes). A primitive the suite
+  never asks for is a primitive nobody finds out is broken.
+- `docs/sidebar-looks-baseline.json` is a COMMITTED baseline of the shape of
+  each answer: whether a look was applied, what the index and item show, and
+  which fields are inline vs buried. Measured from the RENDERED page, never
+  from the blueprint JSON. Drift is reported per brief; accepting it is a
+  deliberate `--update-baseline`.
+- It deliberately tracks only what should hold still. The model is not
+  deterministic, so fonts, sizes and colours differ every run and comparing
+  them would cry wolf every time. It still does not score: it says what
+  changed, and the screenshots are still judged by eye.
+- FIRST FINDING, unfixed: `habit-tracker` applies a look and produces NO fields
+  at all (`inline: [], buried: []`) with an index that errors
+  "no collection item on the page", though the brief asks for a date, a
+  distance and a day grid. `todo-list` gets Completed and Priority inline but
+  not the due date. That is the model's design quality, not the engine, and it
+  is now visible instead of invisible.
+
+## texttext new: the hang was a symptom, the silence was the bug (2026-08-27)
+
+- Reported as "hangs three minutes and creates nothing". It does not hang on
+  its own: every case reproduces clean now, including a duplicate title (the
+  CLI already de-duplicates the FILENAME as `Title [uuid].textpack`).
+- The hang was the broken deployment. `create` writes into the File Provider
+  root and `replaceItemAt` on that volume blocks until the extension commits,
+  and the extension was waiting on a workspace returning 500s
+  (`column api_tokens.kind does not exist`). Fixing the migration fixed it.
+- The filesystem call cannot be interrupted, so the fix is to stop it being
+  SILENT: `announcingSlowWork` in the CLI prints, after 8s, what it is waiting
+  on and why that can take minutes. It wraps `withActor`, which every mutating
+  command goes through, so new/write/append/edit/capture all get it.
+- `DocumentStore.create` had NO test. It has five now: round-trip, folder
+  honoured, missing folder refused, same filename refused rather than
+  overwritten, and no temporary debris left behind.
+
+## npm run evals (2026-08-27)
+
+- One command runs every browser eval and reports THREE states: passed, failed,
+  and could-not-run. The third is the point. Nothing ran these before: eighteen
+  scripts, six in the release gate, every browser one outside it, so
+  `eval:item-type` was dead long enough that a session called its failure
+  environmental and `eval:sidebar` was being killed by every deploy. Both looked
+  exactly like "nobody has run this yet".
+- A missing precondition is never a pass and never a failure. It is named, with
+  the command that fixes it, and only real failures set the exit code, so the
+  runner is trustworthy on a machine that is not fully set up.
+- Preconditions checked up front: dev server on :3000, mock provider on :3999,
+  a local `.next` build, the codex CLI, and a LOCAL DATABASE_URL.
+- `npm run evals -- --list` prints the matrix without running anything;
+  `npm run evals -- turn` runs the subset whose name matches.
+- 12 passed, 0 failed, 0 blocked as of this date.
+
+## The page can tell when it is out of date (2026-08-27)
+
+- A Mac window keeps the bundle it loaded, so a deploy never reaches an app
+  that is already open. A fix shipped at 12:33, the deployed artifact contained
+  it, and a window open since before that showed the old behaviour at 14:15.
+  The owner reported a fixed bug as broken and was right to: nothing on screen
+  could have told them.
+- `next.config.ts` now inlines the same build id into the client (`env:
+  NEXT_PUBLIC_BUILD_ID`) and `/api/app/build` returns it. Both come from the
+  build, not the runtime environment, so the endpoint answers for whichever
+  deployment handled the request. `compareBuild` in `src/lib/deployed-build.ts`
+  holds the decision, away from React and the network, with its own tests.
+- `UpdatedBuildNotice` checks on focus and visibility (when a person returns to
+  an app they left open) and otherwise every ten minutes. It NEVER reloads by
+  itself: a reload mid-sentence would throw away unsaved writing, and being
+  out of date is not urgent enough to take that risk for someone.
+- It stays silent when the id is "development", where `next dev` reports the
+  same value forever while the code changes on every save, and silent when the
+  endpoint is unreachable. Saying nothing beats nagging.
+
+## capabilities is gone (owner ruling, 2026-08-27)
+
+- A look used to declare which product features its items supported: assets,
+  capture, collaboration, comments, import, publish, responses, search. It was
+  declared on all eleven built-ins, derived for every AI-generated type, and
+  read by NOTHING. The only code that touched it checked the array for
+  duplicates. It sat exactly where "what editing does this item type support"
+  belongs, so a future session would have assumed it worked.
+- Deleted, with `migrate-drop-template-capabilities.mjs` stripping the key from
+  stored definitions. That migration is not optional: `templateDefinitionSchema`
+  is strict, so a stored look still carrying the key fails to parse once the
+  field is gone. It stripped 211 looks from a local dev database; production had
+  no stored looks at all.
+- `blueprint.audience` ("private" | "publishable") went the same way, and the
+  argument for keeping it did not survive being checked. It was defended here as
+  telling the model what it was designing. It had no `.describe()` (unlike
+  `styleReference` directly above it), no mention in any prompt, no UI, and no
+  reader. Its one real job had been deriving the `publish` capability, which the
+  bullet above deleted. Removed from the schema, the three starters, the JSON
+  shape in `ITEM_TYPE_BLUEPRINT_FORMAT`, the mock provider, and six test
+  fixtures.
+- No migration was needed, and the difference from capabilities is worth
+  keeping straight: a blueprint is a transient INPUT that compiles to a
+  `TemplateDefinition` and is then discarded. Nothing stores one, so no stored
+  row can carry a stale key. `itemTypeBlueprintSchema` stays `.strict()`; a
+  model that emits `audience` from habit gets a repair round-trip
+  (`itemTypeBlueprintRepairPrompt`, wired at `api/ai/item-type/route.ts`), which
+  is what makes strictness safe here.
+- The live question this leaves open: when the AI invents a type and no folder
+  is named, nothing about the type itself informs where it lands. Placement
+  comes from folder mode alone. `audience` looked like it answered that and
+  never did.
+- What publishable actually means is still enforced, by folder mode at the
+  intent layer ("publishing refuses notes and bookmarks at the intent layer").
+
+## Driven in the real app, not described (2026-08-27)
+
+- Everything below was verified by typing the owner's own prompt into the
+  installed Mac app through computer-use and reading the result out of the
+  production database. The handoff note that the Mac webview "ignores synthetic
+  automation clicks" is about JS-dispatched events; real OS-level clicks work,
+  so the app IS drivable and a session should drive it rather than ask.
+- Verified in-app: the working line appears for the whole turn ("Working with
+  the TextText Agent"); a repeated title no longer collides
+  (project-requirements-2, -3); the note body is byte-for-byte the pasted text
+  (1341 bytes in, 1341 stored, every line verbatim); `##` markers are hidden in
+  edit mode with list bullets kept; the sort reads "Recently opened"; and a
+  receipt carries no Save-to-Notes or thumbs while a plain answer still does.
+- The clipboard is shared with the person. A paste picked up a path they had
+  copied seconds earlier and sent it as the prompt. Re-write the clipboard and
+  VERIFY the composer contents before submitting; do not assume a write stuck.
+
+## Two notes may share a title (2026-08-27)
+
+- The slug comes from the title and `(folder_id, slug)` is unique among live
+  rows, so asking for a second note called the same thing as the first threw a
+  constraint violation that reached the person as "The item could not be saved.
+  Try again." Trying again produced the same collision forever, and the owner
+  hit it on the second run of their own prompt.
+- `freeSlugInFolder` in `createDraftInFolder` picks the next free slug. Every
+  create path goes through that function, so the rule is there and not in each
+  caller that derives a slug. `eval:native-create` asks for the same note twice
+  in one run; without the fix it fails with the exact 409 the owner saw.
+
+## The Mac app keeps running the JS it started with (2026-08-27)
+
+- A deploy does not reach an open app window. The WKWebView holds the bundle it
+  loaded, so fixes land in production and the person keeps using the old code:
+  the marker hiding shipped at 12:33 and an app open since before that still
+  showed every `##` at 14:15. Verified the deployed artifact DID contain the
+  rule, so this is staleness and not a missing deploy.
+- There is no version-skew signal in the app: nothing compares the running
+  build with the deployed one and nothing offers a reload. `NEXT_DEPLOYMENT_ID`
+  exists for Server Action skew, which is a different problem and does not help
+  an idle window. Quitting and reopening is the only cure today.
+- This makes every "reload and try" instruction load-bearing, and it makes
+  bug reports ambiguous: a report may describe code that is no longer live.
+
+## What keeps the writing surface safe to change (2026-08-27)
+
+- The surface styles markdown with FOUR HAND-ROLLED REGEXES (heading, quote,
+  list, inline emphasis/code). The reader parses with remark + remark-gfm.
+  These are two implementations and they WILL drift: the reader knows tables,
+  strikethrough, footnotes and wiki links that the regexes do not. Do not treat
+  that as a bug to chase construct by construct.
+- The drift is cosmetic, and only cosmetic, while ONE property holds: the
+  segments concatenate back to the input, character for character. Everything
+  downstream is absolute offsets into that same string. `segmentsForValue` is
+  exported for that invariant, and
+  `markdown-surface-invariant.test.ts` pins it over a construct corpus (tables,
+  strikethrough, wiki links, fences, footnotes, unicode, empty lines) plus 2000
+  seeded-random strings, so a construct nobody has written yet is covered the
+  day it appears. It also checks every segment's stamped line number, which is
+  what `revealLine` matches against.
+- An unstyled construct looks plain. A segmenter that drops one character moves
+  every offset in the product while the document still looks right. The first
+  is a cosmetic gap; the second is the failure mode worth a property test.
+
+## eval:sidebar needs a LOCAL build, and it is the AI look suite (2026-08-27)
+
+- It was dead, and not for its own reasons. It serves `.next` with
+  `next start`, and it signs in through the dev sign-in, which is compiled away
+  unless the build carried AUTH_DEV_LOGIN=1. `vercel build --prod` (i.e. every
+  `npm run deploy:web`) leaves exactly such a build in `.next`, so deploying
+  broke this eval with no other trace. Run `npm run build` first;
+  `deploy-web.sh` now says so on the way out, and the eval refuses with the
+  reason instead of waiting 30s for a form that is not coming.
+- It also needs the `codex` (or `claude`) CLI on PATH as the model, and says
+  which one is missing.
+- This IS the "how good is the AI at generating document types" suite. Five
+  briefs today: Medium blog, Apple Notes, Notion pages, Todoist to-dos,
+  Raindrop bookmarks. It drives the real system prompt, the real tool set and
+  the real executor, and deliberately does NOT score itself: it produces
+  before/index/item/editor screenshots to be judged by eye against the
+  reference the brief names. Scoring a look by asserting on its JSON is how an
+  earlier version passed while producing pages nobody would ship.
+
+## Markdown syntax shows on the line you are writing on (2026-08-27)
+
+- The body was never a textarea. `MarkdownSurface` is a contenteditable that
+  renders THE SOURCE, styled, in one `pre-wrap` element with inline spans and
+  literal newlines, so `textContent` is exactly the source. That is why the
+  fix is small: CodeMirror would have replaced an architecture that was
+  already right.
+- Markers are HIDDEN, never removed. `selectionOffsets` walks text nodes
+  (`createTreeWalker(SHOW_TEXT)`), which CSS cannot move, so `Y.Text`,
+  `textRange`, `bodySection` and `if_match_hash` are all untouched. Anything
+  that starts REMOVING marker text moves every offset in the product while the
+  document still looks right, which is the worst way for this to fail;
+  `eval:markdown-surface` asserts the markers are still in the DOM.
+- Only syntax the styling already speaks for hides (`tt-md-syntax`: headings,
+  strong, em, code). List and quote markers stay: nothing else on the line says
+  "list", so hiding `- ` turned a list into paragraphs. That was caught by
+  looking at the screenshot, not by the assertions, which had all passed.
+- Slots are named by kind now: `slots.prose` for markdown bindings,
+  `slots.bindings` for plain. `case "prose"` falls back to `bindings`, so an
+  older caller is unaffected. `richtext` fields use the same surface, minus
+  peer carets, which they never had.
+- `eval:sidebar` fails at DEV SIGN-IN and has nothing to do with this. It fails
+  identically with `src/` stashed to the pre-change tree. Another silently dead
+  eval, not yet chased.
+
+## The person's text is the person's (2026-08-27)
+
+- "Create a note about: <2,500 words pasted in>" came back as the agent's
+  SUMMARY of that text, reorganized into sections and bullets, and the reply
+  said so proudly. Neither prompt told it not to.
+- `SUPPLIED_CONTENT_RULE` in `src/lib/ai/system-prompt.ts` is the one copy.
+  The cloud system prompt and `nativeAssistantTurnPrompt` both include it, and
+  `supplied-content-rule.test.ts` fails if either stops. Two prompts with two
+  versions of a rule is the same shape as the placement bug: the copies drift
+  and the worse one wins.
+- STILL OPEN, and it is not a tweak: the editor shows raw markdown markers
+  (`##`, `-`) because it is a transparent `<textarea>` over a styled `<pre>`
+  mirror. The mirror must keep exact character alignment with the textarea
+  under it, so it cannot hide characters without breaking the caret. Notion or
+  Medium behavior needs a real rich-text editor (ProseMirror/Lexical/TipTap)
+  with markdown input rules, not a change to the mirror.
+
+## The native turn went quiet the moment it started (2026-08-27)
+
+- `submit` sets the thread busy, then the native branch hands the turn to the
+  bridge and RETURNS FROM INSIDE THE TRY. The finally then cleared the busy
+  flag immediately, so the rail showed nothing at all for the whole turn: no
+  working line, no dot, an empty panel while the agent worked. A native turn is
+  settled by its own turn-completed and error handlers, so the finally now
+  skips the clear when `handedToNativeAgent` is set.
+- Only `submit` hands off this way. `runQuickAction` is cloud-only, and
+  `generateItemTypeBlueprint` runs its own promise with its own busy handling.
+- `eval:native-create` holds the fake turn open (NATIVE_TURN_DELAY_MS, default
+  2500) and asserts the working line is on screen while the agent thinks. It
+  fails with "nothing appeared under the message for the whole turn".
+- Save-to-Notes and the thumbs belong on an ANSWER, not a receipt. A message
+  carrying artifact proofs reports work the assistant DID; offering to save
+  "Created the note X in Notes" into Notes is absurd, and rating a receipt is
+  meaningless. Both are suppressed when `message.artifactProofs` is non-empty.
+- The Library's "recent" sort keys on how recently you OPENED an item, with
+  updatedAt only as a tiebreak, so a brand new item does not appear at the top.
+  It said "Recently updated" while "Last edited" was the option that actually
+  sorted by update time. Renamed to "Recently opened".
+
+## One rule for where an unplaced item goes (2026-08-27)
+
+- The contract says the UI, the in-app assistant and MCP call ONE
+  workspace-command surface. For "where does an item with no folder go" that
+  was not true: `agent-tools.ts` answered it client-side in
+  `normalizeLegacyNativeArgs` before the request left the browser, so the
+  executor's rule never ran on the native lane. Two copies of a rule is one
+  rule and one bug in waiting, and that is exactly how it went: the same fix
+  had to be made twice, and the client's worse answer was the one that shipped.
+- The adapter no longer decides. It normalizes a folder the person NAMED (so
+  "Notes" and "notes" agree) and passes `kind` through; `mcp/tools.ts` places
+  it, and the adapter reports the destination from the executor's receipt.
+- The good error moved with the rule. The client used to say "No folder at path
+  bookmarks", which is clearer than falling through to blog and hitting the
+  kind-versus-mode check, so the executor says it now instead.
+- Test both lanes after touching this: `eval:native-create` and
+  `eval:assistant-create`. They should agree by construction now, which is the
+  point.
+
+## The two lanes create items differently (2026-08-27)
+
+- A CLOUD write is staged as a proposal the owner approves; a NATIVE (connected
+  agent) tool call runs immediately through `createWorkspaceAgentTools`. They
+  resolve a missing destination in SEPARATE code, so a routing fix in one
+  proves nothing about the other. `eval:assistant-create` covers the cloud
+  lane; `eval:native-create` covers the native one.
+- Telling them apart from a screenshot: the native lane labels its answers
+  "Answered by OpenAI" (hardcoded), and it stages no proposal, so an owner with
+  zero rows in `ai_write_proposals` has never used the cloud lane. That is how
+  the 2026-08-26 report was placed on the native lane after the fact.
+- The native lane had the cloud lane's old receipt hole: a refused command was
+  handed to the agent and nowhere else, so the rail showed only the model's
+  retelling ("Saved that as a note." over a note that was never created) and
+  the job still read Done. It now appends the command's own words to the
+  transcript and the job says "Nothing changed".
+- When neutering a client-side fix to prove an eval has teeth, WAIT for the dev
+  server to rebuild. A six-second wait served a stale bundle and the eval
+  passed against code that was no longer there, which reads exactly like a
+  toothless test. Twenty seconds plus a request, then run.
+
+## Two loops and a language, built (2026-08-28)
+
+- `docs/render-spec.md` is the template language written down: 22 render nodes,
+  8 collection layouts, 10 field types, 10 theme axes, the closed binding
+  grammar. `render-spec-doc.test.ts` reads the vocabulary back out of the Zod
+  schemas at runtime and checks both directions, so neither the page nor the
+  schema can move alone. Verified it fails by deleting `poll` from the page.
+- `eval:item-verbs` drives a real model with the person's own sentence and then
+  reads the workspace back: add a section without disturbing the prose, retitle
+  without touching the body, summarise three notes into a fourth, tag across
+  items, refuse an item that does not exist. Assertions are on durable state,
+  never on the model's summary.
+- Two failures it found first were the harness, not the product. It cut tool
+  results to 1500 characters where the product sends them whole, so list_items
+  overflowed and ids fell off the end. And a stable per-task email reused the
+  workspace, seeding a second copy of every note, so the model edited the older
+  duplicate while the assertion read the newer: passing alone, failing in a
+  batch. Check that shape before believing a model-driven eval.
+- The agent harness moved to `scripts/eval-agent-harness.ts`, shared by the
+  look suite and the verb suite.
+
+## PostType is gone; there is one vocabulary (2026-08-28)
+
+- `PostType` and `ItemKind` were the same five values with two spelled
+  differently in storage: `project` was `media_post`, `talk` was `video_post`,
+  and two converter functions existed only to translate between the pair.
+- `scripts/migrate-post-type-to-item-kind.mjs` renames the two enum values.
+  `ALTER TYPE ... RENAME VALUE` is atomic and touches no rows: values keep
+  their identity, only the spelling changes. Locally that was one item each.
+  It refuses rather than guesses if both spellings are somehow present.
+- Run it BEFORE the deploy that removes PostType. A database renamed ahead of
+  the code reads fine on the new code, and it is idempotent.
+- `PostType` now has zero references. The two converters were identity
+  functions once the values matched, and are deleted. `POST_TYPE_BY_VOCAB`
+  still accepts both spellings when parsing a file, so a `.textpack` written
+  before today still imports.
+- 13 of 13 browser evals, 1,571 unit tests.
+
+## Eval flakiness is machine load, not always code (2026-08-28)
+
+- Three evals failed in one suite run, three different ones in the next, and
+  every one of them passed alone. After killing the dev server, the mock and
+  stray Playwright processes and starting fresh: 13 of 13.
+- The signature is failures that MOVE between runs. A regression fails the same
+  check every time. One of the intermediate failures was the model writing a
+  Risks section without bullet points, which is model variance, not a defect.
+- Before believing a suite result, check what else is running. Hours of
+  Playwright browsers and model CLIs leave the machine unable to meet the
+  timeouts these evals assume.
+
+## An item goes where its type lives (2026-08-28)
+
+- `create_item` chose its destination from `kind`, a closed list of five, and
+  resolved `template_id` further down, AFTER the destination was already
+  decided. So the thing an item actually is never influenced where it landed.
+- That is the wrong shape for a product whose item types are designed by the
+  assistant. Ask for a running log and a Runs type gets made on notes/running,
+  and the next create still routes as if the only kinds were the built-in five.
+- It now looks for the folder whose default look IS that type, and uses it. No
+  table mapping kinds to folders is needed: the folder using a type is the
+  folder that type was made for. The `kind` branch stays as the fallback for
+  callers that pass no type, and is the next thing that can go.
+- Same shape as the visibility change earlier today. Both were asking a closed
+  five-value enum a question only the open world can answer, and in both cases
+  the answer was already sitting on the folder.
+
+## Visibility comes from the folder now (2026-08-28)
+
+- Owner's design call: item kinds are created by the assistant, so the set is
+  open and growing. A person should not be coerced into five fixed types. That
+  makes a closed enum the wrong shape, and it takes the enum's last real job
+  with it.
+- `resolveDocumentVisibility` used to force private when the item's TYPE was
+  note or bookmark, through a parameter the code itself named
+  `compatibilityType`. It now asks the FOLDER. "Is a runs-9eef4c private?" has
+  no answer once kinds are open; "is the folder it lives in private?" always
+  does, and it is the question the person answered when they filed the thing.
+- Fail closed at every step: no folder is private, no request is private, and a
+  private folder overrides an explicit request to publish. Resolved AFTER the
+  folder is loaded in savePost, because the folder is what decides it.
+- ONE BEHAVIOUR CHANGED, deliberately and pinned by a test. A note moved into
+  Blog can now be published. The old rule made it private forever because its
+  type said note. This takes two explicit acts, moving and then publishing, and
+  "notes stay unlisted" still holds: an item moved out of Notes is not in Notes.
+  `setPostFolder` changes only folderId, so moving alone publishes nothing.
+- `posts.type` is still stored and still drives folder placement for new items.
+  Removing the column is the remaining step and needs a migration.
+
+## A wedged dev server passed the precondition (2026-08-28)
+
+- An eval run reported 12 of 13 failing, with symptoms pointing everywhere
+  except the cause: sign-in forms that never appeared, "the page may be
+  private", a look suite that demanded a rebuild. The dev server was returning
+  404 for every route including /api/app/build.
+- The `server` precondition used `reachable()`, which accepts any status under
+  500, so a server that 404s everything reported `ok`. Now it requires a 200
+  from /api/app/build. A precondition that cannot tell serving from dead is
+  worse than none, because its "ok" is believed.
+- I nearly attributed that run to the visibility change. Restarting the server
+  on the same code gave 12 of 13 passing. Check the server before the diff.
+- `eval:item-type` failed once afterwards on the people picker and then passed
+  three consecutive runs at 21 of 21, and passes at HEAD too. Recorded as the
+  known timing flake rather than a regression: the picker does not filter on
+  visibility, and the resolved visibility is identical for every item whose
+  folder and type agree, which is all of them.
+
+## One concept, four names (2026-08-28)
+
+Owner: if the code cannot be safely changed, simplify the design rather than
+the tooling. Went looking for concepts that could be one thing.
+
+"What kind of item is this" was spelled four ways:
+
+- `PostType` = article | project | talk | note | bookmark (what is stored)
+- `ItemKind` = article | media_post | video_post | note | bookmark (what is
+  shown, and what the file's `kind:` frontmatter carries)
+- `MarkdownItemKind`, a third name for the same five values
+- `FolderMode` and the folder path, which both restate it again
+
+Two of those are now gone. `ItemKind` also listed `feed_item` and `group_post`,
+and the `Surface` type listed `feeds` and `group`, for surfaces that were never
+built: each appeared exactly once, in its own declaration. With those removed
+`ItemKind` and `MarkdownItemKind` are identical, so the second name went, and
+`Surface` went with them. `folderPathForPostType` and `folderModeForPostType`
+were the same mapping written out twice; both names stay because the intents
+differ, a path to look up against versus a mode to branch on, but the mapping
+exists once now.
+
+STILL OPEN, and the real one: `PostType` and `ItemKind` are the SAME five
+values with two of them renamed, `project` to `media_post` and `talk` to
+`video_post`, and two converter functions exist solely to translate between
+them. 261 occurrences. Collapsing them removes the concept, and it needs the
+owner's word, because `type:` is a stored column and `kind:` is in the
+frontmatter of every file on disk. That is a data migration, not a refactor.
+
+## Two things verified against the database rather than by test (2026-08-29)
+
+There is no database-backed test infrastructure here; store tests cover pure
+functions. Both of these were checked by running against local Postgres, and
+both are the kind of thing a unit test with a mocked store would have asserted
+about the mock rather than about the behaviour.
+
+**The revision guard on restyling.** A write carrying a stale revision matches
+zero rows; the same write without the guard matches one. That second number is
+what used to happen to a collaborator's words.
+
+**Paging through a folder.** With a page size of 2 against a 34-item folder:
+pass one changed 2 and reported 32 left, pass two changed 2 and reported 30.
+Before the fix the second pass changed nothing, because the slice was taken
+from all rows rather than from the ones still needing work, so every pass
+looked at the same first page and skipped it as already done.
+
+## What the fifth pass found in the goal-closing work (2026-08-29)
+
+Every one was real, and the shape of them is worth keeping:
+
+- **Every frozen preview had an empty folder.** The resolver asked
+  `getAccessibleFolders(handle, null)`, and that returns nothing at all for a
+  null user, so the owner read "from " with a gap. The proposal is owner-only
+  before it runs, so there was nothing to filter against.
+- **Drift ignored the folder** even though the folder was shown and therefore
+  approved.
+- **A proposal with no preview skipped the drift check** rather than refusing.
+  The block only ran when the metadata happened to parse.
+- **The approval checked revisions and then handed the executor only ids**,
+  which re-read and adopted whatever it found. A change in between became the
+  version deleted rather than conflicting with the one approved.
+- **`organize_items` checked that the destination was reachable, not that it
+  was writable**, which `move_item` has always checked; and its own description
+  promised a folder-kind check that did not exist.
+- **Its receipt lied twice**: a null move counted as success, and an item whose
+  tags landed before the move failed was reported unchanged.
+
+Four of the six are the same mistake in different clothes: a guard that reads
+correctly and is asked the wrong question, or asked at the wrong moment.
+
+## Both goals closed (2026-08-29)
+
+The plan in `docs/plans/two-goals.md` has the full state. In short:
+
+Goal one needed a UI entry point, which existed nowhere: the server action, the
+studio prop and the studio's history all took a look to reopen and nothing
+offered it. "Change this look" sits on a folder's menu now.
+
+Goal two needed deletion and a batch. Deletion reached the browser by making a
+proposal a real confirmation - a frozen, server-resolved preview in words a
+person can judge, and approval that drops anything which moved since they saw
+it - rather than by lifting the rule that kept destructive commands out, which
+is what I tried first and a review correctly called a security regression.
+
+The batch is `organize_items`, and building it found a good bug: the first
+version passed `folderId` to `savePost`, which does not move anything. On an
+update `savePost` keeps the row's existing folder; only an insert takes the one
+it is given. The tags landed, nothing moved, and every unit test passed. The
+eval caught it, because it asked whether the notes were in the folder rather
+than whether the call returned ok.
+
+## Four adversarial passes, and what survived them (2026-08-29)
+
+gpt-5.6-sol at max reasoning reviewed the plan, then the work, three more
+times. The second, third and fourth passes each opened by failing it, and each
+was right: every pass found real defects in the fixes for the previous one.
+
+The pattern worth carrying forward is that the defects got smaller and more
+specific each round, and none of them was found by the tests. They were found
+by someone reading the code against a claim. Specifically:
+
+- Two fixes were correct in the store and collapsed one layer out, at the
+  boundary where a person or an agent is actually told something.
+- One fix was correct for the path it was written for and skipped by a second
+  path that inserts directly.
+- One "fix" introduced a double count in the same commit that was about
+  counting honestly.
+- One comment claimed something was impossible after I verified only the narrow
+  case. It was not impossible; it works now.
+
+What is knowingly still open, rather than believed closed:
+
+- A concurrent re-pin of a folder can be overwritten during an update. The
+  version race is closed; this one is not.
+- Nothing offers a person the reopen-a-look path. The server, the action and
+  the studio all take it; the workspace UI has no entry point.
+- Highlight offsets assume escapes are the only thing resolved before a text
+  node exists. Character references are not handled, and are stated as such.
+- `a ==b== c` marks "b". That is the syntax working as written, not a defect:
+  the fix would refuse `a ==key== word`, which is what people actually type.
+
+## The two goals, and what it took to move them (2026-08-29)
+
+Plan in `docs/plans/two-goals.md`. Written, torn apart by gpt-5.6-sol at max
+reasoning, rewritten, built, verified twice more, and repaired after each pass.
+
+**What the reviews were worth.** The first found the sharpest gap against the
+owner's own words - an agent on this Mac had five verbs, and the plan asserted
+it had all of them - plus three fixes that were wrong rather than incomplete.
+The second found real defects in all four commits that followed, including one
+my own test had written down as correct. The third found that the widened
+surface was unreachable from the actual `texttext` binary, so the capability
+was claimed and not delivered.
+
+Every one was verified in the code before being acted on. Most held. Three did
+not survive contact with a later pass: the four-state distinction collapsed
+again one layer out, retired looks stayed resurrectable through restore and
+through the sync installer, and I claimed a backslash escape for `==highlight==`
+was impossible after checking only the text node. The node's position still
+spans the original source and the VFile still holds the backslash, so it was
+not impossible; it works now. Verifying the narrow claim and generalising it
+was the mistake, not the checking.
+
+**Habits worth keeping.**
+
+- Three test suites shipped this session could not fail. Two were the same
+  mistake: the renderer inlines the stylesheet, so asserting on the whole SSR
+  output matches the CSS rather than the element. Everything shipped afterwards
+  was mutation-tested - break the guard, watch the test fail - and one that did
+  not hold was found that way.
+- Two claims in comments were invented rather than checked, and the second
+  correction was also wrong. A comment described a backslash-escape mechanism
+  for `==highlight==` that did not exist. Checking showed remark strips the
+  escape before any plugin sees the TEXT NODE, and I concluded it was therefore
+  impossible - which is false, because the node's position still spans the
+  original source and the VFile still holds the backslash. It works now.
+  Verifying the narrow claim and generalising from it was the error both times.
+- An eval caught what no unit test could: `update_item_type` worked and no
+  model could find it, because `list_document_templates` described itself as
+  listing templates and answered with 24,000 characters of render trees. Ten
+  tool calls and two failures became two calls and none.
+
+**Where the goals stand.** A person can describe a kind of item, get it, and
+change it afterwards by asking. `eval:item-verbs -- change-item-type` proves
+the CHANGE half against a real model: the type is seeded directly by the task's
+setup, and the model is given only the later "add somewhere to say how it felt"
+request. It asserts fields and versions, not how the page looks. Creation from
+a person's words is covered by the item-type evals; visual output is covered by
+nothing that can fail. The assistant can
+read, update, highlight, organise and act across items; eight eval tasks cover
+it. It still cannot delete, publish or share from the browser or the local CLI,
+because those need a confirmation flow that does not exist, and there is no
+bounded batch command.
+
+## eval:item-verbs, dated receipt (2026-08-29)
+
+A review pointed out that "21 checks, passing" appeared in a plan with nothing
+in the repository to support it, and that a green `npm run evals` can also mean
+the relevant suites were blocked. So: run against a real model on 2026-08-29,
+all seven tasks passed, every check.
+
+    add-section  retitle  summarize-into-note  tag-several
+    highlight  act-across-items  refuse-missing
+
+Two of those are new, and they were written because the owner's own examples of
+what the assistant is for were not covered anywhere.
+
+`highlight` asks, in a person's words, for the most important sentence to be
+highlighted, and says nothing about syntax. It passes now because `==like
+this==` exists; before that the model bolded things, which means something
+else. The model found the syntax from the tool description and marked one
+sentence, leaving every other word identical.
+
+`act-across-items` asks for a different closing line in each of three notes. It
+passes on the agent lane and used eight tool calls to do three notes: list,
+then read and append per note. The browser lane capped at eight steps, so the
+same request was already at the ceiling with three notes; that ceiling is 24
+now (`src/app/api/ai/route.ts:56`) and reaching it is reported rather than
+passed off as a finished answer. A raised ceiling is not a batch command
+though: `update_item` still updates one item (`tools.ts:721`), so "act on many"
+is still N calls, and N is still bounded.
+
+## What a max-effort review found after I called it finished (2026-08-29)
+
+gpt-5.6-sol at `max` reasoning, 425k tokens, pointed at my own conclusion that
+the simplification was done. Verdict: "You stopped exactly where the real
+simplification begins." Three concrete bugs, all verified and fixed, plus one
+architectural finding that reframes the whole effort.
+
+**A malformed look destroyed the words.** The embedded template was validated
+as part of the whole sync envelope, so an unreadable look threw in
+`parseSyncDocumentEnvelope`, the PUT route caught it and returned 400, and the
+document never reached the save. The comment at that route promised "a
+malformed or unwelcome look must not fail the write: the person's words are
+the thing being saved" and the code did the opposite. I wrote both. Fixed with
+`.catch(undefined)` on the template so a bad look degrades to no look; four
+tests, three of which fail without it.
+
+**A note showed its metadata line twice.** `headerNode` emits one for every
+shape that is not an article, and a second was pushed just before the header
+for notes. No test counted nodes. Fixed, with a per-shape count pinned.
+
+**`display: "section"` on a number, date, boolean or enum threw at compile
+time** with "prose cannot consume number binding ...", naming a node the model
+never wrote and cannot see. The schema accepted it, the compiler routed it to
+prose, the render validator refused. Guarded like cover and toggle.
+
+**The finding that matters most: the built-ins' distinctiveness is not in the
+grammar, it is in CSS keyed to their ids.** `styles.ts` carries 166 rules
+matching `data-template="texttext.*"` across the 11 built-in ids, and that
+section is 54% of the file. An assistant-created type gets an id like
+`runs-9eef4c`, which matches none of them. So an AI-designed look cannot reach
+the visual quality of a built-in no matter how good the grammar becomes, and
+no amount of primitive reduction changes that. If AI-created documents are
+meant to look as good as the built-ins, this is the thing to fix, not the node
+count.
+
+Corrections to my own reasoning it forced:
+
+- "The AI never sees the render vocabulary" is FALSE for agents.
+  `list_document_templates` returns complete definitions and `create_item_type`
+  returns the compiled one. I had found this myself earlier in the session and
+  then argued the opposite.
+- "Legacy files mean the schema can never shrink" confuses the import boundary
+  with the engine model. `schemaVersion`, `engineVersion` and `formatVersion`
+  all exist and none dispatches anything: they are labels, not a migration
+  system. A v2 is possible; it is expensive, not impossible.
+- "The two-layer design already exists" is FALSE. The blueprint is compiled at
+  save and DISCARDED, so the semantic source is destroyed and the compiled
+  output is what gets stored, exported, imported and handed to agents. That is
+  two public languages with the higher-level one thrown away, not source plus
+  IR.
+- Total public concept surface it counted: ~90, above 110 if layer-specific
+  variants are not deduplicated. The three merges I made removed three names
+  from that.
+
+## Where the simplification landed (2026-08-29)
+
+Done, verified by 13 of 13 browser evals including nine real-model briefs:
+
+- Render nodes: `meta`, `space` and `media` accepted and rendered; seven legacy
+  spellings normalise into them AT THE RENDERER. Canonical set 22 -> 18. Legacy
+  acceptance is permanent, so the schema itself grew, 17 union members to 20.
+- Authoring grammar: scalar `display: "fact"` and collection `index` removed,
+  both being second names for something already expressible. `cover` and
+  `toggle` now refused on the wrong field type instead of being ignored.
+- The nine-brief look suite ran clean and the new guards never fired, so the
+  repair-convergence risk they introduce is not live in practice.
+
+Left alone on purpose:
+
+- `stack` absorbing `group`/`masthead`: not behaviour-preserving. Three
+  genuinely different CSS treatments; merging moves the discriminator rather
+  than removing it.
+- `field` absorbing `badge`/`toggle`, `rows` absorbing `checklist`: both need
+  nested unions to stay sound, and "field" already means the stored schema.
+- Base collection versus `defaultView`: the compiler does discard base settings
+  when a default view is named, which is real duplication, BUT `FolderPage`
+  uses the presence of `defaultView` to decide whether to offer a separate
+  "Main" entry in the view switcher. It is a product behaviour, not just
+  redundancy, so the fix is a design change rather than a deletion.
+
+The rule that made all of this safe: reduce what the model is OFFERED, keep
+what is STORED permissive. Only the transient half can shrink.
+
+## The render vocabulary is not the one the AI writes (2026-08-29)
+
+- The primitive reduction was aimed at the render nodes. Three merges in, two
+  measurements stopped it.
+- The schema GREW, 17 union members to 20, and always will: legacy spellings
+  must be accepted permanently because an exported `.textpack` carries a whole
+  look and never expires. Only the CANONICAL set the renderer uses shrinks,
+  22 to 18.
+- The AI never sees render nodes. It writes BLUEPRINTS
+  (`item-type-generation.ts`), which the compiler turns into render specs, and
+  `render-spec.md` says the page is deliberately not fed to the model. So
+  reducing render-node names does nothing for "the AI generates document kinds
+  from a simple grammar".
+- The two-layer design was already there: `people` compiles to
+  `reference + semantic`, `recurrence` to `enum` with preset options. Small
+  primitive set, richer authoring vocabulary on top.
+- Work redirected to the BLUEPRINT grammar, which is transient. Saving compiles
+  it and persists only the TemplateDefinition, so it can change with no
+  migration and no compatibility layer. That is the lever the render spec does
+  not have.
+
+## Silently ignored beats wrongly rejected, but not by much (2026-08-29)
+
+- The compiler honours `display: "cover"` only when the field is an image and
+  `display: "toggle"` only when it is a boolean. Anywhere else it fell through
+  and the instruction vanished. A model asking for a cover on a text field got
+  a plain fact and no explanation, which is the one outcome it cannot learn
+  from.
+- Both are refused now, naming the field and its type. Codex confirmed the
+  message reaches BOTH paths: the studio's repair prompt carries it verbatim,
+  and `create_item_type` returns it as `arguments_invalid`.
+- The cost, and it is real: a generation that used to succeed with a silently
+  downgraded field can now end in a visible failure if repair does not converge
+  within its bounded retries. That is the trade, taken deliberately.
+- The rule cannot live in the emitted JSON Schema, because a conditional is not
+  expressible there and `superRefine` is dropped from the generated schema. So
+  it is stated in `ITEM_TYPE_BLUEPRINT_FORMAT` as well. Without that, a
+  tool-using model learns the rule only by having a call refused.
+
+## Two dead choices in the authoring grammar (2026-08-29)
+
+- Scalar `display: "fact"` was never branched on. A plain scalar falls into the
+  facts strip whether it says "fact" or "auto". Removed. Computed fields keep
+  their "fact", where it is the meaningful not-"progress" case.
+- Collection `index` is the same layout as `list`: the page renderers map one
+  to the other and say so in `content.ts`. Removed from the blueprint and the
+  studio picker. 34 stored looks still carry `index` and still validate,
+  because `collectionRenderSchema` keeps accepting it. Verified both.
+- The split that makes this safe: reduce what the model is OFFERED, keep what
+  is STORED permissive. Only the transient half can shrink.
+- A `.transform()` was the first attempt at folding "fact" into "auto". It
+  broke 16 test files with "Transforms cannot be represented in JSON Schema":
+  the blueprint schema becomes the tool argument schema handed to agents, so it
+  must stay representable. Removal, not aliasing, is the move there.
+
+## Every marker in the render gate was vacuous (2026-08-28)
+
+- `scripts/verify-template-render.ts` proves a composed node "left markup" by
+  searching the rendered HTML for its class. Every render embeds the whole
+  engine stylesheet, which contains a rule for each of those classes, so
+  `html.includes("tt-badge")` was true for every template whatever the renderer
+  did. All ten markers, since the gate was written.
+- Found while adding two more and testing whether they had teeth. They did not,
+  and neither did the originals.
+- It matches `class="..."` now. Verified by disabling renderer normalisation:
+  7 templates fail, and 0 with it back. It also renders `collection.item`
+  through `DocumentCollectionRenderer`, which was never walked, and covers all
+  29 resolvable looks rather than the 11 active ones.
+- The lesson generalises past this file: a substring check against a document
+  that carries its own stylesheet proves nothing. Anchor on markup.
+
+## Reader first, or the rollback floor moves under you (2026-08-28)
+
+- Step 1 of the primitive reduction first normalised legacy node names ON
+  PARSE. Codex's review of the diff found that this rewrites the object every
+  serializer downstream then writes out, so sync, look export and newly
+  compiled item types would all have begun emitting the new vocabulary at once.
+- A `.textpack` exported after that cannot be read by an earlier build, and no
+  database migration reaches a bundle already on someone's disk. The rollback
+  floor would have moved without anyone saying so.
+- Normalisation happens at the RENDERER now. Both spellings are accepted and
+  both render; nothing new is emitted. Reverting the commit leaves nothing
+  behind that an older build cannot read.
+- The compatibility floor is therefore permanent. A later step removes legacy
+  EMISSION, never legacy acceptance.
+- Reviewing the plan did not find this. Reviewing the diff did.
+
+## PostWorkspaceShell cannot be split by script (2026-08-28)
+
+- 7,226 lines, 93 top-level definitions. The sidebar looked like a clean seam:
+  lines 1054 to 2198 are entirely sidebar (folder tree, its keyboard nav, the
+  activity strip, the chrome) and all four components are file-local.
+- Extracting it left 49 unresolved names, of which only 14 were local and all
+  of those were sidebar-adjacent leaves that belong in the module. So the seam
+  IS clean and the extraction is worth doing.
+- It was not completed. Five successive attempts at scripted surgery each
+  produced a different wrong edit: a pruner that counted references only inside
+  one file and deleted two components the pages import, then cascaded into a
+  2,789-line one; an import-stripper that ate destructured props; another that
+  ate an aliased import; a prologue extractor that ran past the imports into a
+  function body; and a block-end detector that took a fragment of a neighbouring
+  function, which silently damaged the source file as well as the target.
+- Do this one by hand, or with a tool that parses TypeScript rather than
+  matching text. Every heuristic above looked right on inspection and was wrong
+  on real code, and two of them were caught only because `tsc` failed
+  afterwards. On a file this size, a `tsc`-clean bad edit is entirely possible.
+
+## What is NOT bloat, checked (2026-08-28)
+
+Owner's scope: create documents with the AI, ask the AI to act, templates,
+collaboration. Everything measured against that. Four things looked like
+candidates and are not:
+
+- **The seven "unreferenced" API routes** (`files/[id]/assets`, `artifacts`,
+  `collab/materialize`, `collab/presence`, `folders/[id]/manifest`,
+  `post/body`, `items/capture-status`, 936 lines) are all LIVE. The Mac builds
+  those URLs by interpolation, so a literal search for the stripped path finds
+  nothing. Verified by searching the tail segment instead: between 3 and 13
+  call sites each. Deleting on the first result would have removed working
+  API.
+- **`src/lib/pool/`** (1,900 lines) is the workspace payload the UI and the
+  assistant context both read. Core, despite the opaque name.
+- **app-health** (~3,430 lines across TS and Swift) is out of PRODUCT scope,
+  but `release/ship.sh` and `release/promote-local.sh` both consume its
+  attestation and call `verify-app-health.sh`. Removing it breaks shipping.
+  Out of scope is not the same as removable.
+- **The 18 retired templates** (~2,000 lines of templates.ts) are kept
+  resolvable for pinned documents, and every one of them has a pinned document
+  in the local database because the showcase creates one per exemplar. Whether
+  any real document uses them is a production question, and production is the
+  owner's to check.
+- All 32 npm dependencies are imported somewhere.
+
+The rule this keeps proving: search for how a thing is CONSTRUCTED, not how it
+is declared. Dynamic URLs, interpolated ids and re-exports all hide the reader.
+
+## Superseded limbs, left attached (2026-08-28)
+
+- Owner's read of the repeated write-with-no-reader failures: the substrate is
+  convoluted enough that dead code is the ambient condition, so a new piece of
+  it does not stand out. Checked, and it holds.
+- `src/app/editor/actions.ts` carried nine server actions nothing called, each
+  PAIRED with the live one that replaced it: `savePostAction` beside
+  `saveEditablePostAction`, `createPostAndRedirectAction` beside
+  `createWorkspacePostAction`, and a whole `sharePostAction` /
+  `revokePostShareAction` / `listPostSharesAction` trio beside the `*Scope*`
+  ones that superseded them. Every migration added the new limb and left the
+  old one attached. With their now-orphaned helpers that was 297 lines.
+- The former loopback MCP client file was retired when the
+  contract said agents on this Mac use the CLI. Its three functions were dead;
+  what remained was one type, a dead private helper and a re-export nobody
+  imported. The type moved to its only user and the file is gone.
+- 469 lines removed in total, tests unchanged at 1559, lint warnings 60 -> 58.
+- STILL OUTSTANDING, and the largest single piece: `PostWorkspaceShell.tsx` is
+  7,339 lines with 97 top-level definitions, 178 hook calls, and 31 imports it
+  never uses, including whole components it no longer renders. Not touched
+  here: it is the main workspace UI and splitting it is a change with real
+  risk, not a cleanup.
+- Method note: the first audit reported 26 dead exports and a later run of the
+  SAME script reported 149. The first run had been truncated. Neither number
+  was the answer: 125 of the 149 are merely exported and used only in their own
+  file, and 10 of the remaining 24 were used by scripts/ or mac/, which the
+  src-only search never looked at. The verified figure was 14. Widen the search
+  to the whole repo before calling anything dead.
+
+## Audit: which new code had a reader, and which only had a writer (2026-08-28)
+
+- After being caught reporting phase 3 done when half of it did not work, I
+  audited every symbol added in this run for call sites versus test files.
+  Three had no proof the path executes:
+  - `installDocumentTemplate`: the route branch is guarded on `access.blogId`,
+    and every existing test's access mock omits it, so the branch was never
+    entered and the suite passed regardless. There is now a test that supplies
+    a blogId, and it fails when the branch is disabled.
+  - `itemTypeExamplesFor`: unit tested in isolation, and nothing asserted the
+    block reached the prompt. Deleting the call site left every test green.
+  - `templatesForPosts` / `templateForPost`: call sites and zero tests, so the
+    route could have stopped resolving a look unnoticed.
+- All three now have tests, and each was verified to FAIL when the production
+  line is removed. A test that cannot fail is worth less than no test, because
+  it is counted.
+- The general shape, third time in two days: code that is written and never
+  read looks exactly like code that works. `capabilities`, then the outbound
+  half of `template.json`, then these. The check is cheap: for anything new,
+  find the read, and make something fail when it goes away.
+
+## The look travelled out and never back (2026-08-28)
+
+- Shipping `template.json` was called done when only half of it existed. The
+  definition flowed server to envelope to bundle to file, and nothing read it
+  back: `encodeSyncDocument` never sent a template, the write route never
+  accepted one, and no import path applied one. A textpack carried its look
+  everywhere and the receiving side threw it away.
+- Closed. The Mac sends `template` on create and on both PUT paths, the write
+  route installs it, and `installDocumentTemplate` stores it at the EXACT id
+  and version the document is pinned to. Not `createDocumentTemplateVersion`,
+  which bumps to the next free version and would leave the document pointing
+  at a look the workspace does not have.
+- A look already present wins over the arriving one, and a malformed one is
+  dropped rather than failing the write. The words are what is being saved.
+- The protocol gained the look-carrying calls with forwarding defaults, so the
+  test fakes still conform and only the live client transports it.
+- The lesson is the one from `capabilities` in a new coat: a value written by
+  one side and read by nobody looks exactly like a working feature. Trace the
+  read before believing the write.
+
+## The look suite, after the measurement was fixed (2026-08-28)
+
+- Every one of the nine briefs now records fields and an index that renders.
+  habit-tracker, which a plan described as producing "no fields at all", records
+  runDate, distance and notes; reading-notes records six. Neither was a model
+  failure. The eval was measuring the folder it seeded while the assistant put
+  its type on a folder of its own.
+- The baseline was re-recorded, which is normally laundering and is not here:
+  the measurement target changed on purpose, so the old numbers describe a
+  different question. The drift it reported was almost entirely additive, more
+  fields visible rather than fewer, which is what a measurement fix looks like.
+- `create_item_type` now applies the same quality bar the studio route applies.
+  A type that promises structure and has no properties is refused with a
+  sentence the model can act on. Until then the tool had no opinion and the
+  studio's revision round existed on only one of the two lanes reaching the
+  same executor. Check both lanes whenever you add a rule to either.
+
+## Corrections to two things I had wrong (2026-08-28)
+
+- **There are 11 built-in templates, not 29.** Grepping `id: "texttext.*"` in
+  templates.ts counts the 18 RETIRED definitions too, which are kept resolvable
+  only so documents pinned to them still render. `BUILTIN_TEMPLATES` is the
+  active set. Anything showing templates to a model must use the active set:
+  the retired ones were taken out of the catalogue at the owner's request.
+- **The textpack already carried the fields and the template reference.**
+  `info.json` does not, which is what I checked, but the bundle also writes
+  `document.json` with the whole `DocumentSnapshot`, and the sync envelope has
+  carried it all along "so presentation-only edits cannot disappear during
+  sync". The real gap was narrower: an id and a version mean nothing outside
+  the workspace that stores the look. `template.json` now sits beside
+  `document.json` with the definition inlined, and the reference stays, so a
+  workspace that knows the look uses its own copy and everyone else renders
+  from the file.
+- Look for the existing mechanism before building one. I had a second copy of
+  presentation-in-frontmatter written and passing tsc before finding the
+  envelope that already did it.
+
+## The look suite fought the dev server for .next (2026-08-28)
+
+- `npm run evals` reported "12 passed" on 2026-08-27 and could not be made to
+  do it again from a clean start the next day. The suite was not flaky; it was
+  order-dependent, and nothing recorded the order.
+- `eval:sidebar` spawned its own `next start -p 3180`, which serves whatever
+  `.next` holds. `next dev` on 3000, which the other eleven evals need, writes
+  that same directory. So did `vercel build --prod` during a deploy. Whichever
+  wrote last decided whether the eval could sign in, and the preflight blamed
+  the build every time, including when nothing was listening on 3180 at all.
+  Nothing anywhere documented how a server was supposed to get onto that port.
+- It now reuses a server that is already answering and only spawns one when
+  nothing is there, so its need is "server" and not "build". The preflight
+  tells "nothing is answering" apart from "answered, but the build has no dev
+  sign-in", because those want opposite fixes.
+- `buildHasDevSignIn()` in the runner only checked that `.next/BUILD_ID`
+  existed. It reported `ok build` for a build with no dev sign-in in it, which
+  is the precondition reporting the opposite of the truth. Deleted.
+- Drift in the look baseline does NOT set the exit code, by design: it prints
+  and returns 0. Worth knowing before reading a run as green. On 2026-08-28,
+  seven of nine briefs drifted with no relevant code change, which says the
+  baseline pins the model's field labels rather than the engine's behaviour.
+  Left as-is and not laundered with `--update-baseline`.
+
+## tsc passes files tsx cannot run (2026-08-28)
+
+- `npx tsc --noEmit` checks `scripts/` as ESM. `tsx` runs them as CJS, where a
+  top-level await is a hard transform error. So the gate can be fully green on
+  a script that dies on its first line, and the eval runner reports it as a
+  plain FAIL with an esbuild stack where the reason should be.
+- `src/lib/__tests__/scripts-load-under-tsx.test.ts` transforms every
+  `scripts/*.ts` the way tsx does. On the first run it found
+  `finish-pending-account-deletions.ts`, which ends in `await main()` and could
+  never have run, despite a header documenting the exact command for a human to
+  type. That script finishes interrupted account purges, so the failure was
+  sitting in front of deleting data someone had asked to have deleted.
+
+## Browser eval state, all green (2026-08-27)
+
+- Run with `NEXT_PUBLIC_ROOT_DOMAIN=localhost:3000 TEXTTEXT_AI_BASE_URL=http://localhost:3999/v1 npm run dev`
+  plus `node scripts/mock-ai-provider.mjs`. Both matter: without the root
+  domain the tenant subdomain serves the marketing landing (eval:home-layout
+  now says so instead of failing four look checks), and without the mock every
+  assistant turn answers "The assistant could not finish that."
+- Green as of this date: `eval:features`, `eval:home-layout`, `eval:folder-look`,
+  `eval:save-as-look`, `eval:item-type`, `eval:assistant-create`,
+  `eval:turn-receipt`, `eval:turn-progress`, `eval:native-create`.
+- `eval:item-type`'s first run after a recompile can fail two board checks on
+  timing. It passes on a warm server; two consecutive clean runs is the bar.
+
+## The item-type eval was dead, and why (2026-08-27)
+
+- `npm run eval:item-type` had been failing at its third check for long enough
+  that a session called it environmental. It is not: it injects its own
+  `window.webkit.messageHandlers.textTextApp` shim and needs no real agent.
+- Its fake bridge predated conversation fencing. Every native event is now
+  checked against `nativeConversationRef` and the turn fence, and the item-type
+  design turn runs in its own invisible conversation (`item-type:<id>`), so an
+  event with no `conversationId` is answered with "this assistant turn is no
+  longer active" and the studio waits out its 120s timeout. The shim now echoes
+  the id it was given. 22 behaviours run again.
+- The lesson generalizes: a hand-written fake of the native bridge is a second
+  implementation of a protocol, and it rots silently. When a native contract
+  changes, `scripts/verify-item-type-live.ts` is the other end of it.
+- Its first two checks kept passing while everything after them was dead, which
+  is what made it look like a flake rather than a wall. The failure now names
+  the URL, whether the turn was posted, and what the studio is showing.
+
+## Deploying the web app alone (2026-08-27)
+
+- `npm run deploy:web` (`release/deploy-web.sh`) is the ONLY hand path to
+  production for the web app. It is not a release: no Mac version, no appcast,
+  no store. `release/ship.sh` still owns those.
+- It exists because a hand-run `vercel build && vercel deploy --prod` is three
+  steps short of safe, and on 2026-08-27 all three bit in one evening:
+  1. **The database was behind the build.** ship.sh migrates first; the hand
+     path did not. A build expecting `api_tokens.kind` went live against a
+     database without it. Every HTML route answered 200 and the Mac window
+     showed "Cannot reach https://texttext.app", because the only request that
+     reached the broken query was its session exchange, and a malformed token
+     is rejected before the query, so hand probing showed a healthy 401.
+  2. **The domain does not follow a CLI deploy reliably.** texttext.app is an
+     alias that must be promoted, and sometimes the deploy takes it and
+     sometimes it does not. "Deployed" read as "live" while the old build
+     served.
+  3. **Nothing checked.** The breakage was found by looking at the app.
+- So the script migrates, builds, deploys, records what the DOMAIN currently
+  serves (`vercel inspect texttext.app`, not the newest deployment), promotes,
+  waits to SEE the new deployment id on the domain, verifies, and puts the old
+  one back if verification fails.
+- `npm run verify:deployment <origin>` is that verification on its own. Its
+  load-bearing probe is `POST /api/app/session` with a WELL-FORMED unknown
+  token: 401 is healthy, 5xx means the build and the database disagree.
+- Traps found while building it, all of which produced a failed deploy and no
+  production change: a user-configured `NEXT_DEPLOYMENT_ID` must be unique per
+  project (so it carries a timestamp, not just the commit); a dev server on
+  :3000 writes `.next` while the build reads it, and Vercel then rejects the
+  output with no message; and `vercel promote` exits 409 when the deploy
+  already took the domain, which under `set -e` skipped the verification.
+- The Mac window now names the failing URL and the error domain and code on its
+  unreachable page, and logs the same line to `app.texttext.mac:web-navigation`.
+  "Cannot reach" with neither is a dead end: a policy cancel, a DNS failure and
+  a refused connection all read the same. WebKitErrorDomain 102 is the app's own
+  `decisionHandler(.cancel)`, not an unreachable server.
+
+## Mac app: editions, TestFlight, sign-in
+
+- Distribution model (owner, 2026-08-11): Developer ID + Sparkle is the
+  everyday lane; TestFlight for shareable builds; no Store submission.
+- One canonical install at `/Applications/TextText.app`, either edition.
+  `release/ship.sh` replaces any edition and sweeps numbered duplicates;
+  `npm run testflight:prepare` handles the reverse direction before a
+  TestFlight install (Apple's installer will not overwrite a Developer ID
+  copy; it creates "TextText 2.app").
+- Both editions share state in `<app group container>/TextText` via
+  `AppGroupContainer`; outside the sandbox the system's `containerURL()`
+  answer is a lie (naive path) and is trusted only when
+  `APP_SANDBOX_CONTAINER_ID` is set. One-time copy migration, container wins.
+  `~/Library/Group Containers` is unreadable from a shell; "0 files" from
+  `find` there means nothing.
+- Store builds require: `com.apple.application-identifier` +
+  team id signed into every bundle whose profile asserts them (90886);
+  `LSMinimumSystemVersion` in extension plists (90360); a compiled
+  `Assets.car` with `CFBundleIconName` (ITMS-90546, passes local validation
+  and fails after upload). Profiles live in gitignored `mac/profiles/`;
+  Store builds only work from a checkout that has them.
+- Sign-in is an `ASWebAuthenticationSession` sheet against
+  `/connect/app/native` (callback scheme hard-coded server-side; the app
+  rejects unknown `state`). Device-link (`/connect/link`) remains for CLI and
+  headless. Google refuses OAuth in embedded webviews; that is why the sheet
+  exists.
+- Sign-out is one native operation: web asks the bridge, the app clears
+  credentials/index/File Provider state, then clears only the host's Auth.js
+  cookies and loads `/signin`. The old split sign-out (web-only or
+  native-only) produced the owner-sees-public-empty-blog dead end.
+- `getBlogEditAccess` compares `blogs.owner_id` with the session `userId`
+  (resolving legacy JWTs through `user_identities`), never provider subjects.
+- ASC credentials: login Keychain service `asc` (JSON: `key_id`,
+  `issuer_id`); .p8 in `~/.appstoreconnect/private_keys`. TestFlight internal
+  group "Internal"; the owner must be enrolled as a tester like anyone else.
+- `release/prepare-testflight-build.sh` is the non-uploading package boundary.
+  It builds the Store edition, verifies Apple Distribution signing, arm64 app
+  and extensions, App Sandbox, application identifier, team-prefixed app
+  group, embedded profile, and absence of Sparkle, then signs a `.pkg` with a
+  3rd Party Mac Developer Installer identity. It never uploads, installs, opens
+  TestFlight, or changes `/Applications/TextText.app`.
+  On 2026-08-19, the real Apple Distribution build completed with all three
+  signed arm64 extensions, and the command produced a 3rd Party Mac Developer
+  Installer-signed `0.181 (184)` package in an isolated temporary directory.
+  Signature verification passed; the proof package was moved to Trash. Nothing
+  was uploaded or installed.
+- `npm run testflight:build:test` is the fixture contract for that boundary and
+  is a required release check. It proves that an unsandboxed app or a zero
+  build number cannot become a TestFlight package.
+- `npm run eval:native-codex` is the real standalone-channel runtime probe. It
+  verifies the signed-in account, a read-only ephemeral thread, isolation from
+  inherited MCP servers, one safe dynamic tool call, and the exact response.
+  It is deliberately not a release gate because provider availability and
+  account usage limits are external. A quota failure remains red and must not
+  be described as runtime proof.
+- Channel capabilities are intentionally different. The standalone Developer
+  ID app can launch the local Codex runtime and includes
+  `Contents/Helpers/texttext`. The App Sandbox prevents TestFlight from
+  launching `~/.local/bin/codex`, and the Store bundle excludes the CLI. In
+  TestFlight, use a provider API key or an external hosted MCP/app connection.
+- The hosted MCP endpoint uses manually created `wsk_` workspace bearer tokens.
+  TextText has no OAuth authorization server. OAuth-only clients cannot connect,
+  and ChatGPT custom MCP availability varies by plan, role, and workspace
+  policy. Do not promise a universal one-click ChatGPT connection.
+
+## Finder and CLI verification (2026-08-19)
+
+- The bundled CLI used to turn every File Provider enumeration error into an
+  empty list because `DocumentStore.list()` used `try? ... ?? []`. It now fails
+  with an actionable unavailable-workspace error. It lists and edits
+  `.textpack`, `.textbundle`, `.md`, and `.txt`, and skips the auxiliary `Data`
+  tree. An isolated CLI round trip proved list, read, append, lint, and reread
+  against a real `.textpack` without touching owner data.
+- The GUI does not own a local sync index; File Provider is the sole sync owner.
+  The obsolete index schema and transition health check were removed on
+  2026-08-30. Existing legacy index and trash bytes are left untouched and
+  ignored.
+- A File Provider status with zero pending errors is not proof that Finder is
+  usable. For a linked account whose domain is enabled or unknown,
+  `finder.provider` passes only after the real CloudStorage root enumerates and
+  exposes at least one workspace folder. The root-level attachment `Data`
+  directory does not count as a workspace.
+- On 2026-08-19 the installed mount existed at
+  `~/Library/CloudStorage/TextText-TextText`, but shell enumeration returned
+  `Operation not permitted`, and `fileproviderctl dump
+  app.texttext.mac.fileprovider` showed the provider and mount xattrs without an
+  active `domain:` section. That state is not a successful Finder proof. If it
+  persists and Finder access is wanted, the owner can enable TextText in
+  **System Settings > General > Login Items & Extensions > File Providers** and
+  reopen TextText. Finder access is optional. A registered domain that the user
+  disabled is a healthy app state and is recorded only in numeric health
+  metrics. An absent domain for a linked account and an enabled domain that
+  cannot expose a workspace remain health failures.
+
+## Public URLs (live since 0.175)
+
+- Shape: `<handle>.texttext.app/<folder path>/<slug>` on a sessionless public
+  origin; the proxy strips Cookie/Authorization and preflights locations so
+  drafts, private items, dead tombstones, missing paths, and unknown hosts
+  all return byte-identical constant 404s.
+- Private work stays on the root origin (`/@writer/...`), which keeps auth,
+  editing, shares, collaboration.
+- `posts.folder_id` is required; live uniqueness is `(folder_id, slug)`;
+  `public_url_tombstones` + DB triggers reserve every public path across
+  rename/move/unpublish/trash/merge/delete; a tombstone redirects only while
+  its target is still public; advisory locks serialize path checks.
+- One eligibility rule everywhere: public visibility AND published status AND
+  article-like type. Feeds, sitemap, OG, JSON, robots, sync canonicals all
+  emit workspace origins and enforce it.
+- Legacy flat `/t/` and `/@` links redirect through frozen tombstones only
+  for pre-migration items.
+- Public footer links to the platform (report) must be absolute; relative
+  links get rewritten as tenant content.
+- Owner constraint: a content leak torpedoes the app. Leak tests live with
+  the migration; keep them green.
+
+## Data and canonical documents
+
+- One schema-v1 `DocumentSnapshot` is the content model; store.ts is the only
+  access point; visibility fails closed; every mutation audits.
+- Search/list projections (title/body columns) are derived from the snapshot;
+  the invariant lives with the canonical-documents work (2026-08-10).
+- Account deletion: CLOSE (atomic) then PURGE (resumable); tombstones fence
+  resurrection; audit rows are anonymized, never deleted.
+- Account merge tooling was removed 2026-08-14 (spec: superseded by
+  `user_identities` provider linking; recoverable in git history).
+- Starter guides seed at provisioning (`starterAgentGuideValues`);
+  `backfillWorkspaceAgentGuides()` retrofits older workspaces; both are
+  idempotent per `(folder_id, slug)`.
+
+## AI-assisted item types (2026-08-19)
+
+- Home, every folder menu, and the Assistant open one focused item-type
+  studio. A prompt or the Editorial publication, Project board, and Quick
+  notes starters produces one validated blueprint for both an item page and
+  its folder page.
+- `item-type-blueprint.ts` is the complete input contract. It compiles fields,
+  item layout, collection layout, safe theme tokens, and example content into
+  one immutable `TemplateDefinition`. Internal fields are hidden from the
+  document editor.
+- The UI, in-app assistant tools, and hosted MCP use
+  `createItemTypeForWorkspace()` as the single persistence path. Saving can
+  set a folder default and can explicitly restyle existing folder items. New
+  items inherit the folder type.
+- The focused studio prefers the native Codex with ChatGPT connection for
+  custom prompts. It registers a preview-only `preview_item_type` dynamic
+  tool, validates the returned blueprint, and saves nothing until Done. A
+  direct provider API key remains a fallback, not a requirement for this path.
+- `npm run eval:item-type` drives the real browser flow through creation,
+  inheritance, editing generated properties, board movement, and reuse from
+  the Look gallery. `npm run eval:features` checks the documented entry,
+  starters, and dual previews.
+- `/docs/item-types` is the public guide. A private Notes guide titled "Build
+  item types with AI" is provisioned and backfilled with the other AI guides.
+- The visual sweep covers 1440, 768, and 375 pixels in light and dark. On
+  2026-08-19 every listed surface painted with no horizontal overflow. The
+  item-type prompt, item preview, folder preview, controls, and guide were
+  also inspected as pixels at desktop, tablet, and phone sizes.
+- Real Keychain-backed Anthropic prompts were exercised for Medium-like
+  essays, a Notion-like task board with a checklist, and Apple Notes-like
+  notes. Provider generation uses validated JSON rather than the provider's
+  constrained grammar because the complete blueprint exceeds Anthropic's
+  optional-property limit. One bounded repair pass handles invalid model JSON.
+- The focused studio keeps a 30-revision local design history with undo, redo,
+  branching, version switching, and a before/current comparison. Preview modes
+  cover wide, tablet, and phone frames plus sample, real folder, empty, and
+  stress content. A deterministic preflight scores the current blueprint and
+  blocks Done only for important findings.
+- Blueprints can model people and document relations, recurrence, validated
+  values, conditional sections, computed facts, and status workflows. Status
+  controls expose only the initial state or transitions allowed from the
+  current state. People fields store canonical document references and use a
+  searchable workspace picker with a manual ID fallback.
+- Collections can preserve multiple named views with their own layout,
+  filters, grouping, date field, and multi-sort. A compact folder control
+  switches views without changing the underlying documents.
+- The Look library is a searchable visual catalog with Mine, Workspace, and
+  TextText sources, real rendered previews, impact counts, Remix and Save as
+  new, validated JSON import, export, immutable versions, and restore-forward.
+- Native assistant turns are grounded in the active view, document, and safe
+  selected text. Transformation shortcuts expose the same workspace update
+  tools as typed instructions; Structure produces a reversible full-body
+  proposal rather than editing around the document command surface.
+- The final 2026-08-19 gate passed 924 web tests, 456 Swift tests, TypeScript,
+  the 42-page production build, the item-type, feature, look, home-layout,
+  outbound MCP, collaboration, and real-model sidebar evaluations, plus 36
+  inspected light/dark screenshots across 1440, 768, and 375 pixel widths.
+
+## Agentic writing simplification (source, 2026-08-20)
+
+- The product now has one primary agentic-writing loop in the right rail:
+  choose the current document or workspace context, ask for a concrete change,
+  watch bounded progress, and read the attributed result. Selection quick
+  actions use an explicit proposal with Apply and Undo. Provider plumbing and
+  fallback connection paths stay progressively disclosed.
+- Home no longer repeats an AI setup card. The rail starts the work, Workspace
+  Settings manages providers, and the public guides explain the available
+  channels. `/docs/recipes` is a small visual recipe gallery with copyable
+  prompts and real TextText screenshots for connection proof, folder-to-draft,
+  selection rewrite, and Undo.
+- Connect is edition-aware. The standalone Mac edition can offer its bundled
+  local Claude and Codex plugins and eligible ChatGPT/Codex native account.
+  Browser and Store editions lead with the API-key in-app assistant and can
+  describe hosted bearer MCP as an advanced external-client path. Store and
+  browser surfaces do not advertise the standalone CLI or local loopback MCP.
+- The local Claude and Codex plugins no longer bundle an MCP configuration or
+  ask for an exported token. They call the `texttext` helper inside the
+  signed-in standalone app. Hosted `/api/mcp` remains the explicit path for a
+  remote client that can securely store a bearer credential.
+- The CLI no longer depends on File Provider or a localhost server. It reads
+  the signed-in app credential, discovers workspace paths through sync
+  manifests, and sends create, read, update, and append operations through the
+  shared authenticated workspace-command executor. `TEXTTEXT_WORKSPACE_ROOT`
+  is the only explicit offline file mode.
+- Remote CLI writes use command hashes, bounded input, workspace and scope
+  checks, stable idempotency keys, and attributed audits. Whole-document writes
+  refuse an active-editor conflict. Section edits use a guarded section
+  mutation against the live Yjs document so concurrent changes outside that
+  section survive and a changed target section conflicts.
+- Agent-driven content, status, restore, comment, access, share, and live Yjs
+  mutations now couple the data change and `action_audit` row atomically.
+  A failed audit cannot leave an unattributed change, and an idempotent retry
+  cannot duplicate either the content operation or its audit.
+- Native recent-work summaries receive a bounded workspace index and answer
+  from it without tool calls. A real signed-in Codex evaluation proves the
+  read-only sandbox, disabled inherited MCP servers, numeric JSON-RPC request
+  IDs, bounded failure recovery, and exact dynamic-tool completion. A separate
+  browser/WK bridge evaluation uses a disposable local document to prove the
+  rendered summary, real command execution, visible edit, AI audit, proposal,
+  Apply, and Undo, then removes its fixture.
+- The desktop shell gives the center document or library sole vertical scroll
+  ownership. Left navigation and the assistant remain pinned. The visual sweep
+  asserts that contract on Home, folders, editor, Starred, Shared, Trash, and
+  Settings at 1440, 768, and 375 pixels in both themes.
+- The settled-tree gate passes 995 web tests, 493 Swift tests, TypeScript,
+  lint with zero errors, both agent integration verifiers, the real native
+  Codex evaluation, the browser/native bridge evaluation, the transactional
+  local-promotion fixtures, and the 43-page production build. The build still
+  reports the known non-blocking duplicate-Yjs warning from separate Turbopack
+  route chunks; one installed Yjs version and serialized route boundaries were
+  verified.
+- TestFlight preparation, App Store Connect changes, release records, and live
+  Apple/Google account consent remain owner-run gates and were not performed in
+  this source pass.
+
+## Agentic writing promotion (2026-08-20)
+
+- Source commit `9889818dca14b5e33b55664b17aae73ac269f0e8` was promoted through
+  the deliberate production and canonical-local lane as TextText 0.181 build
+  194. Production deployment `dpl_G5N6z6xfJWGp7wPqJYDBi1XvUVSY` is ready at
+  `write-n5tzam0pm-shoku-s-projects.vercel.app`, and `texttext.app` points to
+  that exact deployment. The prior immutable deployment was recorded before
+  the alias changed.
+- The production migration set and canonical document audit passed with 953
+  documents, 919 live items, 34 trashed items, and all 953 using TextPack. The
+  authenticated production smoke passed all 17 folder, item, comment, cover,
+  sharing, access, capture, audit, and cleanup checks.
+- The transactional installer replaced the single canonical app at
+  `/Applications/TextText.app`, launched it, and passed fresh runtime health.
+  Independent verification found one matching bundle, one app process, the
+  production server origin, a strict valid Developer ID signature, and the
+  arm64 app plus three signed extensions.
+- The installed app was inspected and exercised directly. The center library
+  scrolls while both sidebars remain pinned. A real recent-work request showed
+  visible progress in about one second, completed successfully, and returned a
+  grounded summary of the workspace without fallback or waiting prose.
+- `/Applications/TextText.app/Contents/Helpers/texttext ls` succeeds against
+  the signed-in workspace without a File Provider mount. No TestFlight,
+  App Store Connect, Sparkle publication, or release-record action occurred.
+
+## Local promotion and TestFlight state (2026-08-19)
+
+- The complete promotion gate now passes 926 web tests, 460 Swift tests, 17
+  local live workflows, 17 production MCP workflows, the production database
+  audit, a protected immutable-deployment smoke, and the public origin smoke.
+  Vercel protects immutable deployment URLs even when `texttext.app` is public,
+  so the exact-deployment check uses authenticated `vercel curl`. Plain curl is
+  redirected to Vercel SSO and is not an application 500.
+- If `vercel rollback` refuses an older immutable target, promotion now restores
+  the prior production target by repointing the canonical alias. Both failed
+  2026-08-19 promotion attempts left production on
+  `write-nkrmtve2w-shoku-s-projects.vercel.app` and restored the canonical local
+  app to 0.181 (184).
+- The 0.181 (185), (187), and (188) Developer ID candidates were rejected by
+  the transactional installer and automatically restored 0.181 (184). Those
+  runs exposed an overly strict assumption that a user-disabled optional File
+  Provider domain made the entire app unhealthy. The two storage checks now
+  record that state without degrading app health, while an absent or enabled
+  but unusable linked domain still fails.
+- On 2026-08-20 the production-origin Developer ID app 0.181 (189) passed the
+  complete release-quality gate, staged 19-check health verification, and live
+  installed health. The installer replaced the canonical app at
+  `/Applications/TextText.app`; exactly one matching bundle and one process
+  remained. Its `TextTextServerOrigin` is `https://texttext.app`. The gate
+  passed 929 web tests, 461 Swift tests, authenticated MCP isolation and token
+  revocation, 17 sharing workflows, 17 sync workflows, four-client
+  collaboration, and 48 Apple checks. No deployment, TestFlight upload, App
+  Store Connect change, or release record was made.
+- A signed, sandboxed 0.181 (186) TestFlight installer package was prepared at
+  `/Users/shokunin/Downloads/TextText-0.181-186-TestFlight.pkg`. It contains the
+  arm64 app and all three signed extensions, uses the Apple Distribution app
+  identity and 3rd Party Mac Developer Installer package identity, excludes
+  Sparkle, and has SHA-256
+  `e569c4245716f784f0ed153bc179a6dd150f65421778a5983ec6fa6fd7f12a3e`.
+  It has not been uploaded or installed.
+- Store builds use a manifest that excludes Sparkle. `build-store.sh` now
+  restores the standalone `Package.resolved` on every exit so TestFlight
+  preparation cannot remove the standalone Sparkle pin or dirty the checkout.
+- The native Codex dynamic-tool evaluation is green against the owner's
+  existing ChatGPT Pro session. It starts an ephemeral read-only thread with
+  approvals disabled, disables four inherited MCP servers, completes exactly
+  one fixed safe tool call, and requires the exact final response. The eval
+  accepts numeric JSON-RPC request id zero and reads the authoritative final
+  agent item rather than combining commentary with the answer.
+
+## Source-only App Store and AI verification (2026-08-20)
+
+- No TestFlight build, package, upload, install, App Store Connect change, or
+  release record was performed in this pass.
+- Store compilation reaches `TextTextWorkspaceCore` and compiles the local
+  Codex executable locator out under `TEXTTEXT_STORE`. The Store binary scan is
+  clean for local Codex paths, the bundled CLI, Sparkle, updater/appcast code,
+  relocation helpers, and non-system dynamic libraries. The standalone edition
+  retains its local Codex and CLI capabilities.
+- Full verification passed: 147 web test files with 929 tests, 461 Swift tests,
+  the production Next build with 42 static pages, both agent integration
+  verifiers, and the real native Codex evaluation described above.
+- The API-key and external MCP paths lead the Store-safe connection UX. The
+  standalone edition conditionally offers the local ChatGPT/Codex connection.
+  Assistant, settings, and connect surfaces were photographed at 1440, 768,
+  and 375 pixels in both themes. The narrow assistant now uses a viewport
+  overlay, and the 375-pixel settings cards no longer clip horizontally.
+- A disposable `npm run try` build loaded the signed-in workspace in the native
+  WKWebView, rendered the Library and assistant, and reached the ready
+  "Chat with Codex" state. It did not replace `/Applications/TextText.app`.
+
+## Guarded agentic assistant completion (source, 2026-08-24)
+
+- `docs/agentic-assistant-runbook.md` is the canonical implementation and
+  maintenance reference for this work. It documents the data model,
+  authorization sequence, cloud and native lifecycles, native scope fence,
+  proposal state machines, outbound MCP approval boundary, evidence semantics,
+  edition matrix, regression history, verification commands, and deliberate
+  gaps. Future Codex and Claude sessions should begin there, then use
+  `docs/ai-sidebar-architecture.md` for the system overview and this section for
+  the last observed proof.
+- An initial completeness claim was incorrect. Three adversarial audit passes
+  subsequently found and closed owner-scope mismatches, native relaunch
+  continuity, proposal race and ambiguity handling, misleading provenance,
+  collaborator selection actions, and accidental outbound discovery from
+  ordinary prose. This section supersedes earlier assistant implementation
+  claims where they conflict.
+- Assistant conversations now have durable owner-only records with stable
+  conversation IDs, search, pinning, reopening, bounded cross-device sync, and
+  bounded prior-turn context. Cloud follow-ups receive the durable transcript.
+  A native App Server thread restores that transcript only when attaching a
+  durable conversation to a fresh ephemeral thread, so relaunches preserve
+  context without duplicating messages.
+- The assistant offers a truthful Auto model choice plus exact supported model
+  choices and records the provider and actual model used. Workspace owners can
+  set standing instructions and explicit slash or at-sign skills. The composer
+  accepts bounded text, structured data, images, PDF, DOCX, XLSX, and PPTX
+  attachments. Model Markdown is rendered through the safe renderer and never
+  loads remote tracking images.
+- Workspace grounding distinguishes documents merely Found from documents
+  actually Read. Source proof cards are derived from server receipts, not
+  model prose. Eligible cloud workspace changes and every outbound MCP call are
+  inert durable proposals until the owner approves the exact stored arguments.
+  The standalone native path retains its explicit confirmation gates for
+  publication, access, restore, Trash, and destructive asset actions. A stale
+  proposal decision replays the authoritative durable outcome. A successful
+  side effect whose receipt cannot be saved is terminal and ambiguous, with no
+  blind retry.
+- Connected MCP servers are never discovered because their natural-language
+  name appears in a prompt. Settings shows a unique literal shortcut such as
+  `@mcp:paper`; only that exact token authorizes discovery for the current turn.
+  Every external call still requires proposal review. Approval revalidates an
+  HMAC fingerprint covering the destination, credential identity, and tool
+  definition before execution. Shortcut collisions fail closed.
+- Assistant status, provider data, transcripts, jobs, item-type generation,
+  quick actions, and selection actions remain hidden or disabled until the
+  displayed workspace is proven to be the caller's owned workspace. The API
+  verifies the same workspace handle before reading configuration, context, or
+  executing the privileged assistant command transport. Native registration,
+  status, and events are owner-gated; every turn is fenced to its initiating
+  opaque owner scope, workspace, and conversation, and navigation cancels it.
+  Private assistant status and proposal responses are `private, no-store`.
+- Settings now inventories connected AI providers and MCP servers, shows how
+  each connection is used, and exposes disconnect or removal controls. The
+  standalone local agent path uses the signed-in `texttext` CLI. Store builds
+  compile out the local Codex locator and local MCP bridge, retain only ordinary
+  App Sandbox entitlements, and do not restore a loopback service.
+- Observed behavior used a real Keychain-backed Anthropic provider. An exact
+  prompt returned `LIVE AI OK` with an Anthropic and Claude model receipt; a
+  grounded question produced distinct Found and Read proof; a create-note
+  proposal remained inert and was dismissed; reload retained the conversation;
+  and a follow-up answered from prior durable context. The outbound MCP browser
+  evaluation passed discovery, proposal-only execution, approval receipts,
+  hostile-description resistance, input-required handling, and cleanup.
+- Final source gates passed 182 web test files with 1,260 tests, the 45-page
+  production Next build, 526 standalone Swift tests, 525 Store Swift tests,
+  the 48-point Apple acceptance matrix, TypeScript, lint with zero errors,
+  30 current migrations, the token-free agent integration verifier, and the
+  outbound MCP browser evaluation.
+- Deliberate remaining product gaps are not described as complete: no
+  first-party OAuth connector gallery or indexed Slack, Drive, Jira, GitHub,
+  mail, and calendar search; no embeddings or cross-service semantic ranker;
+  no answer-level inline citations beyond source artifact cards; no generic
+  archive, audio, video, transcription, cloud OCR, spreadsheet computation, or
+  code sandbox; no team, page-backed, or automatically learned skills; no
+  model-readable screenshot verification tool; no bundled unattended batch
+  runner; no multi-step Plan mode; and no scheduled custom background agents.
+  A persistent background job requires the owner's explicit approval.
+- No TestFlight build, store upload, release record, deployment, installation,
+  or public release action was performed in this pass.
+
+## Deep architecture and performance review (source, 2026-08-30)
+
+- Source checkpoint `9d501bef` is the end of a repository-wide review covering
+  canonical content loading, workspace queries, browser runtime work, assistant
+  rendering and persistence, collaboration traffic, native mirror remnants,
+  CSS ownership, and production bundling. The work landed as small commits on
+  `main`; no release, deployment, installation, TestFlight action, App Store
+  Connect change, or release record was made.
+- Workspace list payloads no longer carry full canonical documents. The lazy
+  item endpoint and IndexedDB cache carry one validated `DocumentSnapshot` plus
+  its revision. Reader, editor, workspace actions, and agent tools now use that
+  canonical cache directly. The temporary body-only facade and response field
+  were deleted after its final callers migrated. Optimistic item IDs transfer
+  their canonical cache entry to the durable server ID and fence late responses.
+- Workspace pages no longer query every canonical JSON document to build their
+  list or wiki-link index. List metadata comes from the bounded list projection;
+  wiki-link extraction selects only `id` and `body`, and only rows containing
+  wiki-link syntax. Public backlink extraction uses the complete body of only
+  published public link sources, so links beyond the 2 KB list preview work
+  without exposing private sources.
+- Browser search keeps the immediate title, excerpt, and 2 KB preview index,
+  then issues one 150 ms debounced, access-filtered server query for deeper body
+  matches. It receives at most short excerpts, never whole private documents.
+  MCP search uses the same bounded candidate query, and `read_item` combines
+  compact accessible metadata with only the accessible bodies containing wiki
+  links. The former full-workspace document loaders are deleted.
+- Repeated folder resolution now builds one weakly held folder-ID index per pool
+  instead of scanning folders for every item and render. Folder and capture
+  images are lazy, videos use no preload, public video covers acquire a source
+  only near the viewport, and reader/editor collaboration polling and presence
+  stop while the page is hidden and resume immediately when visible.
+- Assistant text deltas are coalesced on a 50 ms boundary, conversation storage
+  writes are capped at once per second while streaming and flush immediately at
+  terminal state, and bounded history is persisted. Transcript/history sync now
+  lives in `AssistantConversationState`; the workspace shell observes only the
+  stable active conversation ID, so streamed tokens do not redraw the library,
+  editor, and navigation tree. Native and cloud confirmation behavior and the
+  900 ms hosted conversation sync cadence are unchanged.
+- The Mac app has one workspace watcher, FSEvents. Typed Spotlight metadata
+  replaced the old synthesized Markdown/reparse path. The retired mirror sync
+  engine, orphaned native editor product, `WorkspaceFileCoordinator`,
+  `WorkspaceLayout`, `WorkspaceChangeScanner`, `WorkspaceIndexStore`,
+  `WorkspaceSyncIndex`, obsolete StateStore index/trash helpers, and the stale
+  `sync.index` health check are gone. A regression proves arbitrary legacy
+  `index.json` and trash bytes survive StateStore initialization and sign-out;
+  no on-disk user data was removed or rewritten.
+- `cards.css` now loads with `PostCard`, and `workspace.css` loads only under the
+  `/t/*` and `/u/*` workspace layouts. Non-workspace routes shed 30,317 minified
+  CSS bytes and 5,180 gzip bytes; the remaining root CSS measured 189,883 raw
+  and 33,025 gzip. Manifest tests lock both ownership boundaries and retain the
+  original cascade and light/dark rules.
+- The duplicate-Yjs warning was one physical Yjs install embedded into five
+  independent Turbopack server/SSR chunks. `yjs` and `y-protocols` are paired in
+  `serverExternalPackages`, so all server imports use Node's module cache. The
+  final production build has no duplicate warning and no server source map that
+  embeds Yjs. Client bundles remain route-owned and unchanged.
+- Final independent verification passed 220 web test files with 1,785 tests,
+  461 Swift tests, TypeScript, lint with zero errors, the 43-point Apple
+  acceptance matrix, and the 45-page Next production build. Lint still reports
+  14 non-blocking warnings, including existing script dead-code warnings, three
+  editor hook-dependency warnings, two intentional raw-image warnings, one tag
+  input ARIA warning, and three old store declarations.
+- Measured remaining limits are explicit. Deep body search uses a bounded SQL
+  token candidate query rather than a dedicated full-text index, so a very large
+  workspace may eventually warrant a normalized search column or Postgres FTS.
+  `PostWorkspaceShell.tsx` remains a large component even though assistant
+  transcript churn is isolated. The residual global CSS is still sizeable, but
+  the next blocks did not yet have a proven single route owner and were not
+  moved speculatively.
+
+## Hacker News and Product Hunt launch pass (in progress, 2026-09-01)
+
+- The active objective is launch readiness for Hacker News and Product Hunt,
+  not TestFlight or the App Store. The launch scope is the public repository,
+  direct Mac download, landing page, first-run workspace flow, agentic proof,
+  performance and production checks, launch copy, and reproducible evidence.
+- GitHub is public at `github.com/tetrisgm/TextText`. Repository description,
+  homepage, topics, README, MCP documentation, secret scanning, and push
+  protection are current. Source licensing is intentionally not invented: no
+  third-party reuse license is granted until the owner chooses one.
+- Direct release 0.182 build 1002 is live. The Developer ID archive is signed,
+  notarized, stapled, independently downloaded, and accepted by Gatekeeper.
+  SHA-256 is
+  `c3d83a911d7e6310fcb39c5c5c1dca1be156d57c0b1d7a48982b595803681ba2`.
+  Download, appcast, and release URLs are `texttext.app/download`,
+  `texttext.app/appcast.xml`, and GitHub release `v0.182`.
+- Launch copy, the HN post, Product Hunt listing and maker comment, concise demo
+  script, gallery order, FAQ, go/no-go list, links, and deliberate nonclaims are
+  in `docs/launch/launch-kit.md` at commit `3d890502`.
+- A real Codex model evaluation passed before this handoff: one summary turn in
+  5.298 seconds with zero tools and one provider-failure turn in 4.544 seconds
+  with exactly one failed tool call and no retry or tool escape. The public
+  landing page and live GitHub star count were visually checked in the browser.
+- The first-run production browser check found a real routing chain that the
+  automated gate did not catch. Commits `38c1ca4f`, `e8192e58`, and `eb24e711`
+  now keep edit URLs on authenticated tenant routes, preserve the item's folder
+  path, and forward edit query parameters through catch-all folder routes.
+  Commit `01ff6aa5` makes the current identity table authoritative over a stale
+  JWT `userId` for workspace ownership. Production tracing proved the item
+  exists, its folder is `blog`, resolution is exact, and the pre-fix rejection
+  was specifically `canEdit: false`. The temporary trace was removed before
+  commit.
+- Commit `7e51bdfa` prevents the claimed-username public redirect from running
+  in authenticated edit mode. It is deployed as
+  `texttext-7e51bdfa-1788285343` at
+  `write-nlncjvqbz-shoku-s-projects.vercel.app`; deployment verification passed.
+  The original browser tab retained its previous redirect chain and reported
+  `ERR_TOO_MANY_REDIRECTS`. A fresh browser tab then opened the authenticated
+  folder-qualified editor directly, and a fresh `/start` request completed the
+  same route end to end. Visible proof included folder navigation, the title
+  and body editors, local save status, and the assistant panel. The first-run
+  routing blocker is resolved; reuse a fresh tab when verifying redirect
+  changes so an old browser error document does not masquerade as production.
+- Every coherent routing fix above was pushed to `main`. The latest full source
+  gate passed 221 web test files with 1,790 tests, 461 Swift tests, and
+  TypeScript. The production deploy verifier passed all seven probes.
+- Launch security audit found critical Auth.js advisories and high Next.js
+  request-boundary advisories in the previous lockfile. Commit `361a0799`
+  upgrades Next.js from 16.2.10 to 16.3.4, NextAuth beta 31 to beta 32, Auth
+  core to 0.41.3, Nodemailer 7.0.13 to the newest peer-supported 8.0.11, and
+  the paired ESLint config to 16.3.4. TypeScript, all 1,790 web tests, the
+  47-page production build, lint with zero errors, and all 461 Swift tests pass
+  on that dependency set. The audit has no critical advisory left. It still
+  reports high Nodemailer advisories because the patched 9.1 release is outside
+  Auth.js 0.41.3's declared peer range; forcing that unsupported combination
+  was tested and rejected. TextText never supplies the vulnerable raw message,
+  remote file, transport name, OAuth2 token-fetch, or user-controlled envelope
+  options. Revisit when Auth.js declares Nodemailer 9 support instead of hiding
+  the peer mismatch with a forced install. The dependency set is deployed in
+  production deployment `texttext-7cc8d74b-1788286011` at
+  `write-5xeggrsg6-shoku-s-projects.vercel.app`; all seven deployment probes
+  passed. In a fresh signed-in browser, `/signin` returned to the workspace and
+  `/start` opened the folder-qualified editor after the upgrade.
+- The 21-case live MCP workflow verifier passed against a local production
+  server and removed its isolated scratch workspace. It covered folder Trash
+  and restore, rename, item creation, living briefs and source versions,
+  comments, cover assets, sharing role changes and revocation, bookmark
+  recapture, and mutation audit rows. The token-free agent integration verifier
+  also passed five skills, two Claude commands, the Claude parser, the Codex
+  manifest contract, and explicit hosted MCP.
+- Five uncached samples of each public launch surface all returned 200. Maximum
+  total times observed from this Mac were 176 ms for `/`, 503 ms for `/signin`
+  including its cold sample, 178 ms for `/download`, 316 ms for `/docs/ai`
+  including its cold sample, and 275 ms for `/.well-known/mcp.json`. The local
+  app-health database had zero reports, so it cannot serve as release evidence;
+  the deployed verifier and live browser checks are the current production
+  evidence.
+- The installed `texttext:project-changelog` skill was applied. The configured
+  changelog path `Shoku's Space/My Notes/TextText Changelog.textpack` is not in
+  the current signed-in workspace, and exact search found no matching changelog.
+  Per the repository contract, no duplicate repository or workspace changelog
+  was created.
+- `docs/launch/launch-kit.md` now has the final launch status. Engineering and
+  distribution are ready, but the public HN or Product Hunt post is a no-go
+  until the owner connects the intended production AI provider, records the
+  real 45 to 60 second disposable-content workflow, exports the five 16:10
+  frames from that run, and performs the launch-day sign-in and AI smoke test.
+  Do not fabricate those assets from mocks or move a Keychain secret through an
+  agent log. The source-license choice is separate and remains with the owner.
+- A real external-agent launch-demo workspace now exists in the signed-in
+  account under `documentation`: `Launch demo: source notes`, `Launch demo:
+  user feedback`, and `Launch brief`. Codex created and revised these through
+  the installed signed TextText CLI, not through a mock or the in-app
+  assistant. Opening `Launch brief` in production exposed a sidebar defect:
+  its actual Documentation folder was ignored and Notes was highlighted from
+  the generic note template. `PostReadWorkspaceShell` now derives its initial
+  folder and return path from the pool post's persisted `folderId`, with a UI
+  contract regression test. The focused test and `tsc --noEmit` pass. These
+  three explicitly labeled documents are disposable launch-demo content; they
+  have not been deleted or moved to Trash.
+- Production Settings exposed another launch-facing truth problem while the
+  gallery was being captured: 197 rotated `OAuth: Codex` credentials were
+  described as 197 active clients. The credentials remain intact, but Settings
+  now groups live tokens by client name and kind, presents the logical client
+  once, and makes Disconnect revoke every live credential in that group after
+  its existing inline confirmation. Counts now say connected clients rather
+  than treating credential rotations as separate apps. Focused grouping and
+  gallery tests plus TypeScript pass. No production credential was revoked as
+  part of this change.
+
+## Usability pass (owner pivot, 2026-09-01)
+
+- The owner paused further launch-goal work. The active objective is making
+  the app more usable day to day. The owner named three frictions, in order:
+  the AI rail reads as garbage and scary messages next to Notion's and
+  Lovable's assistants, AI creation of new item types is messy and poor, and
+  connecting an agent to the app is messy.
+- `c442364b` quiets the transcript: the owner-scope check retries and
+  rechecks on focus before showing "Assistant unavailable" (a transient
+  failure right after sign-in used to brand the rail unavailable for the
+  actual owner until reload); the "Answered by" receipt appears only when
+  the producer changes; only the newest failure keeps Try again and Verify
+  connection while older ones compact to a muted line; failure ink mixes
+  toward body ink; the jobs strip lists finished work for five minutes
+  instead of pinning twenty stale jobs with red dots forever.
+- `a647e658` fixes the jobs-strip papercut: a row now activates the
+  conversation the job reports into before navigating.
+- `0ad54682` adds durable chat deletion. The history picker gained a
+  per-row delete with inline confirm. Deletion is a tombstone because the
+  conversation sync is a union merge by id: a plain removal came back from
+  the server replica within one cycle. Tombstones shed title and messages,
+  win the merge in both directions, and are bounded separately from live
+  chats. Verified across a reload and sync round trip.
+- `66b5e3e9` fixes the loudest item-type mess: generated types rendered
+  each enum and people field as its own unlabeled badge, so item pages
+  opened on bare stacked pills. Simple fields now compile into one labeled
+  facts table (the built-in templates' shape); table cells keep enum tints
+  and URL links; a standalone boolean toggle now carries its field label
+  ("◯ Complete"). The AI look suite's committed baseline measures the
+  rendered page, so expect deliberate drift on its next live run.
+- `7bee386f` collapses the stacked connection sections in Settings: the
+  four-tile Connections overview is deleted, the gallery is the one entry
+  surface and carries provider · model status, and the RECOMMENDED card
+  reads Connected with Try in TextText once a key is saved.
+- Remaining item-type quality work is model-output quality (missing
+  fields for briefed data, e.g. todo-list due date not inline), which
+  needs a live-model `eval:sidebar` run to judge; the deterministic
+  quality preflight already covers blueprint-level gaps.
+- `8c891bec` makes the Mac app a launcher-style summon, per owner ask
+  ("boot faster, available on a keypress like Raycast"). Launch at login
+  is now on by default for an installed build (`applyLoginItemDefaultIfNeeded`
+  in AppDelegate, applied once via `TextTextLoginItemDefaultApplied`,
+  guarded to `isInstalled` so dev/Downloads builds never register a login
+  item). The window is warmed at launch (`warmMainWindow`) and revealed
+  once, on first `applicationDidBecomeActive`; a login launch stays warm
+  and hidden in the background until summoned. The window gains
+  `.moveToActiveSpace` so it appears on the current Space. Hotkeys
+  rebound: Cmd+Shift+Space summons/dismisses the window (dismiss only when
+  it is the front key window), quick capture moved to Cmd+Shift+C. This is
+  a user-facing shortcut change (Cmd+Shift+Space was quick capture).
+  Compiles; 461 Swift tests pass. NOT verified live in the running app:
+  the owner declined desktop control this session, so the Space-switch,
+  summon toggle, and login-launch-hidden behaviors are unobserved and
+  should be eyeballed in a real build before release.
+- Cold-start measurement (owner clarified "starts faster" = the launch
+  itself, not summoning a resident app). Debug build against a warm
+  localhost server, timed with a temporary BootTrace probe (since removed):
+  process main to end of `didFinishLaunching` ~150ms with the window
+  already warmed at ~139ms; web content committed/painted ~280ms after
+  that. The native path is not the bottleneck; the WKWebView load
+  dominates, and over the network rendering the real signed-in workspace
+  is larger still. Not measured: the signed-in workspace load (the
+  isolated dev app is unlinked and lands on `/`), which is the heaviest
+  real case and is web-app work (Next.js bundle + data), not native boot.
+- `57d11e48` removes the blank-white-webview flash at launch: the web view
+  now sits under a `LaunchPlaceholderView` painting `windowBackgroundColor`
+  plus a dimmed app icon, lifted on first `didCommit` (didFinish backstop).
+  Native only; the actual web load time is unchanged, this fixes perceived
+  startup. Verified: launches clean, 461 Swift tests pass. Not eyeballed
+  live (owner declined desktop control).
+- `829be8b3` closes the owner's real ask ("open from zero and start typing
+  a note basically instantly, like Apple Notes"). The launch surface on a
+  linked Mac is now a focused capture composer using the shared
+  `QuickCaptureTextView` semantics (Return saves through the durable
+  outbox, Shift-Return newline, Esc skips); web content lifts it only when
+  the composer is empty, and a save or Esc before the web is ready leaves
+  the quiet splash. Launch also skips the uncacheable session-exchange
+  POST when the last run's auth cookie is still present, loading the
+  destination directly with an automatic fallback to the token exchange if
+  it lands on /signin or "/". Compiles, launches clean unlinked, 461 Swift
+  tests pass. The linked-Mac composer, the cookie fast path against
+  production, and the fallback all still need a signed-in build eyeballed;
+  none were observable in this session's unlinked isolated app.
+- The mock provider's FAIL_STREAM trigger matches the whole transcript, so
+  one failed test prompt poisons every later turn of that conversation.
+  Start a fresh chat when evaluating with the mock.
+
+## Local install of build 1004 and the sync poisoning (2026-09-02)
+
+- Splash refinement + launch cuts (`194e3ce8`, installed as 0.182 1007,
+  gated install "runtime health: pass"): the splash is a bare
+  window-background surface, no icon (owner ruling). The cookie fast path
+  lands on "/@handle" directly, skipping the /start redirect hop, guarded
+  by a signed-in probe on didFinish (the public reader answers the same
+  URL with 200, so only the workspace sidebar's presence settles the
+  bet; fallback is the token exchange). warmMainWindow moved to the top
+  of didFinishLaunching so the workspace request goes on the wire before
+  updater/menu/controller setup. Remaining launch cost is workspace SSR
+  TTFB plus hydration, which is web-side work.
+- OWNER RULING (2026-09-02): NO launch capture composer. On first open of
+  1005 the mini "save a note" card read as a useless step flashing before
+  the item list, because launch-at-login plus the session fast path make
+  the workspace arrive almost immediately. `c506a161` removes it; launch
+  shows only the quiet splash (app surface + dimmed icon over the white
+  webview) straight into the workspace. Do not re-add a launch-time
+  input surface. 0.182 (1006) with the removal passed the full gated
+  install ("runtime health: pass") and is the installed canonical app.
+- SUPERSEDED by 0.182 (1005): after both fixes below landed and the sync
+  validator fix was deployed, the PROPER gated install passed end to end
+  ("runtime health: pass, installed, launched, and verified"), replacing
+  the hand-swapped 1004 with 1005 built from `d9c3e9aa`. The runtime
+  report shows overall pass with finder.provider settling after 41
+  readiness samples (~20s), which the old 11-sample probe budget would
+  have failed. The hand-swap paragraph below is history.
+- Build 0.182 (1004) with the instant-typing launch work was installed at
+  /Applications, HAND-SWAPPED past install-local's runtime
+  health gate with the owner's knowledge. The previous 1002 bundle is
+  preserved in the session scratchpad as TextText-1002-previous.app for
+  rollback. The full release gate, attestation, Developer ID signature,
+  and pre-install health (18 checks) all passed; only the runtime
+  finder.provider check blocked, and it blocked the SHIPPED 1002 equally.
+- Root cause chain, so nobody re-derives it: dev instances launched via
+  `swift run` share the canonical StateStore and credentials, and
+  `syncFileProviderDomain` persists a File Provider handoff whose origin
+  comes from `resolveServerOrigin`, so a dev run with
+  TEXTTEXT_SERVER=http://localhost:3000 rewrote the REAL extension's
+  handoff to localhost. When the dev server stopped, every content fetch
+  failed FP -1004 and pending items went into hour-long backoff.
+  Relaunching the installed app re-persists the production handoff, and
+  `sudo pkill fileproviderd` (owner-approved) cleared the wedged daemon.
+- FIXED `d9c1232e`: a run with TEXTTEXT_SERVER set now refuses to write
+  the File Provider handoff, register/remove the domain, or unregister on
+  sign-out; TEXTTEXT_DEV_FILEPROVIDER=1 is the escape hatch for actual
+  File Provider work against a local server. Pure decision function with
+  tests.
+- FIXED `47054661`, deployed as `texttext-47054661-1788339962` (all seven
+  probes passed): the "Document assets changed during materialization"
+  wedge was four sync hash sites rendering WITHOUT the post's folder path
+  and inlined look while the file GET renders WITH them: the artifacts
+  manifest, structured PUT If-Match, and the shared If-Match helper used
+  by PATCH and DELETE. Any templated document could therefore never
+  match, so guarded writes 412'd and the File Provider refused to
+  materialize it forever. All four sites now render with GET's exact
+  inputs; regression tests pin the agreement (artifacts manifest, PATCH,
+  DELETE, structured PUT for a templated document off the blog folder).
+  Verified against production: all 17 previously stuck documents fetch
+  OK from the mount, pending-indexable is 0. This also means the strict
+  install-local health gate should pass again once the old backoff retry
+  records drain.
+- Note for test authors: sync-file-patch-route.test.ts has order-dependent
+  mock leakage (clearAllMocks keeps implementations); new describe blocks
+  belong at the end of the file or must reset every implementation they
+  can inherit.
+- A registered app bundle under mac/build gets elected by pluginkit for
+  the File Provider extension and fights the /Applications copy during
+  installs; `lsregister -u` the build path and keep install sources
+  outside the repo. Also `docs.no_rot` requires mac/build/TextText.app to
+  exist because scripts name that path, so the built bundle must be
+  restored there after an install.
+- `5edfb259` widened the Finder readiness probe from ~5s to up to 60s
+  (exits when settled); a post-update extension restart legitimately
+  syncs longer than 5s, so launch health always sampled out mid-sync and
+  install-local rolled updates back.
+
+## Editor and workspace-route performance pass (2026-09-02)
+
+- Owner ask: profile the workspace route and fix editor input lag on
+  large buffers (most editors lag past 10kB, die at 1MB).
+- Editor, `987d4251`, deployed: a keystroke used to rebuild the whole
+  surface (129k spans at 1MB) inside ONE inline formatting context whose
+  full layout cost 1.9s, giving ~1,050ms/keystroke at 900kB and 17ms at
+  88kB. Now: per-line block rows spliced by a line diff
+  (lineSplice/lineOverlaySignatures, tested), literal newlines kept but
+  zero-height, content-visibility:auto rows, bare text nodes for plain
+  runs, native beforeinput interception for structural edits (React's
+  onBeforeInput is a shim without inputType - never use it for this),
+  offset-exact copy/cut, spellcheck off past 40kB. Result: 53ms p50 per
+  keystroke at 900kB, textarea-parity in Chromium, live styling kept.
+  Verified: markdown-surface eval passes, collaboration browser eval
+  21/24 (humans, carets, agents, three-way merge all green).
+- RESOLVED: the 3 failing collab checks were the eval HARNESS parsing
+  the workspace handle from the item URL as the literal "t" under the
+  2026-09-01 /t/ routing, so the executor correctly 403'd a nonexistent
+  workspace. 01ff6aa5 is innocent (a curl repro as the dev-login owner
+  passed the owner check). With the handle extraction fixed the eval is
+  24/24. Second trap re-hit: deploy-web.sh leaves .next without dev
+  sign-in; run `npm run build` before any browser eval.
+- Workspace route, `0f3eaff7`, deployed: opening a document in edit mode
+  SSR'd the full reader render as shell children that the shell never
+  shows (it opens straight into the editor; later views are
+  client-rendered from the pool). Cutting it took 900kB-doc edit TTFB
+  from 4,279ms to 280ms on the production build locally.
+- `Document-Policy: js-profiling` now ships on all responses, so `new
+  Profiler()` works in the running app; that is how the keystroke time
+  was attributed (90% native, no JS stack) after DevTools-free bisection.
+- Measurement traps that burned time here: curl against /t/ item URLs
+  returns a __next_error__ shell (16kB) with a 200 - benchmark item SSR
+  in a real browser; execCommand fires input but NOT beforeinput and
+  Chromium DROPS newlines from execCommand insertText in this structure;
+  a long-hidden Browser pane intensively throttles timers (use
+  MessageChannel ticks to settle React) and never fires rAF.
+- RESOLVED (f78777ef): the workspace-home queries ran in four serial
+  waves, not as duplicates - username lookup, blog core, viewer
+  identity, then the nine-query pool batch; over Neon each wave is a
+  full HTTPS round trip. The username lookup now seeds the handle-keyed
+  core cache, getBlogEditAccess resolves record and identity in
+  parallel, resolveWorkspaceAccess is skipped for the owner, and the
+  pool fires optimistically once the JWT names the owner. Two waves
+  remain (the /@ route's username hop is inherent). Local prod TTFB
+  89ms to 21ms. `TEXTTEXT_DB_TRACE=1` on any run stamps query issue
+  times to stderr - that is how waves are found.
+- RESOLVED (689e4aca): the owner's READ view of a huge document SSR'd
+  the full reader as children that LocalWorkspaceShell DROPS (it
+  declares children in its prop type and never destructures them - the
+  same finding as the edit-mode branch, one level wider), and the
+  shell's `post` prop serialized the body and snapshot two more times.
+  Reader skipped and post slimmed whenever the pool shell takes over:
+  900kB fixture read view 3.27s to 0.12s TTFB, response 6.8MB to
+  1.14MB. Public reader and plain owner shell unchanged. Collab eval
+  24/24, suite green.
+- Local perf fixtures perf-100kb / perf-1mb / perf-8mb and
+  windowed-integrity live in the dev database under
+  visual-demo/documentation (owner visual-demo@texttext.local).
+- Editor performance, 2026-09-02 (`31792a05`, `a7bcf49a`), owner ruling
+  "as little overhead as possible, max FPS, instant keystrokes": an
+  honest harness (scripts/bench-editor-input.ts, real typed keys,
+  input-to-paint, Chromium AND WebKit vs a plain-textarea baseline)
+  showed the previously claimed "textarea parity" was fiction - 149ms
+  per keystroke / 15fps scroll in Chromium at 1MB, and 12 SECONDS per
+  keystroke in WebKit, the engine the Mac app runs. After the fixes:
+  1MB types at 7.3ms p50 / 119fps in Chromium (the textarea itself:
+  10.2ms) and 23ms / 59fps in WebKit (textarea: 52ms); 8MB at 11ms /
+  25ms; keystroke cost no longer scales with buffer size.
+- What it was, in causal order (each isolated by a no-JS structure
+  bench, a CDP CPU profile via scripts/bench-editor-profile.ts, or a
+  devtools trace via scripts/bench-editor-trace.ts - never guessed):
+  content-visibility:auto on the line rows (4s/keystroke in WebKit and
+  13fps scroll in Chromium with ZERO JS on the page; removed, never
+  bring it back); our own Selection.removeAllRanges/addRange caret
+  restore on every keystroke (a third of the burst; now skipped when
+  the line's fresh wrapper isEqualNode the live one); a second full
+  snapshot rebuild + React render per keystroke from the local-origin
+  Yjs echo; the whole-document contenteditable's native editing cost
+  (~30ms/key at 1MB, the article's point - fixed by windowing: past
+  150k chars only viewport-adjacent lines materialize between two
+  contenteditable=false spacers, prefix + editable text + suffix IS the
+  source); then the O(document)-per-keystroke stragglers: value
+  re-split (now incremental line splice), Y.Text.toString (now a
+  mirror), per-char diff scans (now blockwise memcmp), eager
+  encodeStateAsUpdate+base64 per keystroke in scheduleMaterialization
+  (now encoded at flush; this alone was ~half the 8MB burst as GC), and
+  markdownSubtitle regex-splitting the entire body per draft merge.
+- Windowed correctness is proven by scripts/verify-windowed-surface.ts:
+  edits at top/middle/bottom with scroll jumps round-trip BYTE-EXACT
+  through publish -> Yjs -> materialize -> reload, and select-all
+  copies the whole document. Reset the fixture between runs (body +
+  collab_state + collab_updates), or the previous run's edits fail it.
+- Editor measurement traps, new batch: the Event Timing API drops
+  events under 16ms (silence can mean "fast"); the hidden Browser pane
+  reports visibilityState "hidden" so rAF-based latency probes record
+  NOTHING there - Playwright headless composites frames and is the
+  honest harness; macOS Home/End scroll without moving the caret;
+  MarkdownSurface used to carry a literal NUL and \x01 as string-key
+  separators, which made the FILE read as binary (grep goes silent,
+  Edit tools miss) - they are gone, do not reintroduce invisible bytes.
+- Schema v1 caps content.body at 10,000,000 chars: a 38MB fixture 500s
+  at validation, fail-closed. Raising the cap is an owner decision;
+  within the cap the editor holds its numbers (8MB measured).
+- WebKit here is Playwright WebKit: per the browser-verification
+  contract it proves engine timing, not real-Safari behavior. The Mac
+  app after deploy is the real check.
+- Owner follow-up after typing in the app (2026-09-02): a skeleton
+  flash on document open, and an FPS drop while moving the mouse over
+  buttons. Fixed (`5e9660ae`, deployed): document bodies prefetch on
+  row hover/focus/selection and the eight most recent warm on idle
+  (open click-to-content worst case 401ms to ~110ms, skeleton gone for
+  hover-opens); the left-edge peek handler no longer runs
+  getComputedStyle/getSelection/matchMedia on every window pointermove
+  (now one coordinate compare, unbound entirely when the sidebar is
+  expanded); the spatial tilt handler no longer dirties style per move
+  on list rows (grid-only, checked once per hover).
+  scripts/bench-workspace-interaction.ts is the lane. The hover jank
+  was reported in the real app; the local harness already ran at max
+  FPS before the fix, so the removed costs are attributed by code, not
+  by a reproduced regression - re-verify by feel in the app.
+- Owner follow-up 2 (2026-09-02): "everything blinks and moves a
+  little on any action" in the reader. Root cause (`2f8cfd8f`,
+  deployed): the components map passed to ReactMarkdown was rebuilt
+  per render, so its inline img/a renderers were NEW COMPONENT TYPES
+  every time and React remounted all reader media on any workspace
+  re-render (reproduced: 0/2 img DOM nodes survived a click; now 2/2,
+  scripts/verify-reader-stability.mjs is the lane). Component maps for
+  ReactMarkdown must be module-level constants - the assistant
+  transcript had the same bug. Markdown is also memo()d so unchanged
+  bodies are not re-parsed per interaction.
+- Reading keys, same commit: Space/Shift+Space commands scrolled the
+  WINDOW but the workspace scrolls .post-editor-content, so they did
+  nothing; they and g/G now target the real scroller, and opening a
+  read view focuses it so PageUp/Down/arrows are native browser
+  scrolling. Fixture reader-images lives in the dev DB (raw insert:
+  opens via the workspace list; direct slug URL 404s because raw
+  inserts skip the slug index the app writes).
+- Owner follow-up 3 (2026-09-02, `393b109d`, deployed): held Space did
+  not repeat and fast paging made the page jump. The command layer
+  swallowed key auto-repeat (preventDefault + return on event.repeat)
+  and replaced native scrolling with hard window-style jumps; Space and
+  Shift+Space now DEFER to the browser when the reader scroller is
+  focused (CommandShortcut.nativeWhenReaderFocused - verified native in
+  Chromium and WebKit, defaultPrevented false, presses accumulate), and
+  held Ctrl-D/U + j/k/arrows honor repeat (CommandShortcut.repeats).
+  The jumping was also real layout shift: lazy reader images had no
+  dimensions and WebKit has NO scroll anchoring. Images now take
+  width/height from their document asset when it carries them (the
+  ReactMarkdown components map is WeakMap-cached per dimensions map -
+  createContext is not available in shared RSC modules, and component
+  identity must stay stable or images remount); undimensioned images
+  loading above the viewport compensate scrollTop by their height.
+- Owner ruling (2026-09-02, `c01b5102`, deployed): keyboard behavior is
+  native-grade BY POLICY, not per-key - the target is Raycast/Sublime/
+  Superhuman. CommandShortcut repeat is now default-on; only commands
+  that misfire on repeat carry `once: true` (create/delete/star/edit/
+  open/dialogs/palette/saves). Never swallow a key: a repeat on a
+  one-shot is still preventDefaulted, nothing else is eaten. Measured
+  j/k selection keystroke-to-paint: 6.4ms Chromium / 11ms WebKit p50
+  (bench-workspace-interaction.ts now measures it).
+- Same ruling: the "updated - reload?" notice is BANNED. A stale build
+  reloads itself: instantly when the window is hidden, else after 15s
+  hands-off idle (UpdatedBuildNotice.tsx renders null and does exactly
+  this; pagehide flushes saves so nothing is lost). Do not bring the
+  prompt back.
+- Bench honesty note: the 20s "slow open" for the article fixture was
+  the BENCH's readiness check matching the hidden warm-editor pane's
+  empty action bar (first in document order). Check every matching
+  surface for text, not the first. All four first rows open in
+  44-107ms in both engines.
+- Monolith split (2026-09-02, `60912212`, deployed):
+  PostWorkspaceShell.tsx went 7,773 -> 3,779 lines along real seams:
+  lib/workspace/local-view.ts (URL<->view + pure helpers),
+  lib/workspace/draft-sessions.ts (open editors' unsaved state),
+  WorkspaceSidebarChrome.tsx (sidebar + assistant-pref stores, tree,
+  resize), WorkspaceRootPages.tsx (root/search/tag + content router),
+  WorkspaceSpecialPages.tsx (trash/shared/starred + toolbar),
+  WorkspaceItemViews.tsx (open item read/edit views),
+  lib/use-client-hydrated.ts. External surface unchanged (pages import
+  only the two shells). The source-contract tests read shell + split
+  modules as one corpus - keep new extractions in that list. All
+  benches at baseline; the split is organization, not behavior.
+- Selection store (2026-09-02, `c21efd2b`, deployed): selection moved
+  out of shell React state into src/lib/workspace/selection-store.ts;
+  WorkspacePostOption extracted to its own module and self-subscribed
+  to its two bits (selected/active props deleted at all sites). j/k at
+  300 items: 6.4ms Chromium / 6.0ms WebKit p50 (WebKit was 11).
+  DELIBERATELY NOT DONE: removing the shell's own subscription - the
+  profiler puts the remaining shell render at ~3-4ms vs ~6ms native
+  paint, and cutting it requires converting effectiveSelectedPostId(s)
+  consumers (assistant context memo, command-surface objects at the
+  setWorkspaceSurface sites, delete/move callbacks,
+  LocalWorkspaceContent props) to lazy store reads + leaf
+  subscriptions. The dependency map is in this entry; do it when a
+  measured workspace makes those 3-4ms matter. The monster file is
+  7,700 lines after the extraction: split further only along real
+  seams (LocalWorkspaceContent, sidebar chrome, the editor wrappers) -
+  never split for line count alone.
+- Structural pass (2026-09-02, `f4082713`, deployed), after the owner
+  pushed past symptom fixes: the two architectural leaks were (1)
+  UNSTABLE IDENTITY - the shell built FolderPage's items array fresh
+  every render, busting every downstream useMemo per keystroke (the
+  general lesson: identity is the contract; a fresh .map() at a
+  component boundary silently defeats all memoization below it), and
+  (2) UNBOUNDED MOUNTS - a folder mounted every row (~0.5ms each,
+  linear in workspace size). FolderPage's blog-feed and list layouts
+  now render through WindowedRows (viewport + overscan between
+  measured spacers; the window follows selection like the editor
+  follows the caret; grid/calendar still full-mount). Proven on a
+  seeded 300-item workspace: 24 rows mounted instead of 300,
+  switch-in size-independent, WebKit worst-case j/k halved. Scale
+  fixtures: workspace scale-test (dev DB, owner
+  scale-test@texttext.local, 300 notes); benches accept
+  BENCH_EMAIL/BENCH_HANDLE. The remaining known monolith debt:
+  LocalWorkspaceShell still holds all state in one component - a
+  selection store with self-subscribing rows would shrink the
+  re-render blast radius to the rows that changed; not yet needed at
+  measured sizes.
+- Whole-app performance pass (2026-09-02, `3e71e2e4`, deployed), owner
+  ruling: no interaction may unfold a performance surprise, and bloat -
+  code recomputing what it already had - is the disease. A ranked audit
+  of every high-frequency listener produced 13 findings; the fixes are
+  deletions of redundant work (see the commit). Worst: the editor
+  walked the ENTIRE body out of the CRDT into a fresh string on every
+  caret move for the draft-store selection slice. The permanent lane is
+  scripts/bench-workspace-matrix.ts: 13 interactions timed
+  trigger-to-paint in both engines; current table all ~15-110ms real
+  (driver floor row calibrates). Run it after workspace changes.
+- The CSS + React-identity half completed by hand (`b6..` see git):
+  list rows are memo'd (the widest re-render fan-out; win scales with
+  workspace size). The stylesheet sweep found no cheap safe wins - no
+  transition:all, :has() is structural not per-interaction, grid-card
+  shadow transitions fire on enter/leave only, and backdrop-filter
+  chrome holds 60fps under the scroll benches. ReactMarkdown components
+  maps were the only inline-type instances and both are fixed.
+- Owner follow-ups (2026-09-02, `7c804523`, deployed): swipe
+  back/forward churn was the URL-to-view parser taking the FIRST path
+  segment as the slug - every folder-scoped item URL parsed as unknown
+  and fell to root, then a URL sync corrected it (forward literally
+  never rendered the item in the harness; now 12-19ms). The left
+  sidebar was unresizable (handle inherited pointer-events:none AND
+  the region's overflow clip left a ~5px sliver; now a fixed sibling
+  on the width variable), both sidebar drags are imperative with one
+  store commit on release (per-move commits re-rendered the shell per
+  mouse position = the choppiness), and the width variable must be
+  written on .post-editor-shell too (its stylesheet default shadows a
+  root write). Item opens are gated on local document availability -
+  skeletons are BANNED (LoadingBody deleted); a cold open holds the
+  current view for the fetch and swaps atomically.
+- Owner follow-ups (2026-09-02, `14b065da`, deployed; app build 1008
+  installed): click-drag from a document's margins now starts native
+  text selection - the workspace marquee (whose preventDefault killed
+  it) runs only in list views. The Mac app's right-click menu lost
+  WKWebView's Back/Reload browser chrome (AppWebView.willOpenMenu
+  strips nav items, keeps WebKit text/selection/link items, floors at
+  Select All so a right-click never does nothing); a bespoke action
+  menu can replace that floor later. The 10px sidebar resize handle at
+  the pane edge is NOT the reader margin - a probe 40px left of the
+  prose lands on it; measure geometry before blaming selection.
+- Owner follow-ups (2026-09-02, `73ea85c1`, deployed): the assistant
+  rail popped in after the document painted (SSR snapshot hard-coded
+  "hidden"). wr_assistant_state/width cookies are a FACT CACHE - the
+  client records what it last resolved, SSR paints it first; the
+  never-persist-the-window-default semantics are untouched
+  (src/lib/workspace-assistant-prefs.ts). And wheel over the pinned
+  rail's empty background scrolled nothing (reads as page margin);
+  unconsumable wheel now forwards to .post-editor-content. Sweep-
+  verified: zero dead wheel positions across the window in both
+  engines.
+
+## Workspace kernel migration (2026-09-02)
+
+Owner ruling after the monolith split ("had you built this like a
+performance optimization focused engineer, you would have not built
+this this way"): rebuild the workspace read/mutate paths the way they
+would have been designed from scratch. Four stages, all landed:
+
+- Stage 1, indexed kernel (src/lib/workspace/kernel.ts): the pool
+  payload is an immutable snapshot, so each snapshot gets ONE index
+  build (by id, slug, folder path, tag, template key, starred, plus
+  inbound links resolved once) cached in a WeakMap keyed on the
+  payload. The selectors in src/lib/pool/selectors.ts keep their
+  signatures and route to map lookups; partial pools (unit tests)
+  fall back to the old linear scans. Folder buckets are shared
+  arrays - stable identity per snapshot is the point.
+- Stage 2, command bus (src/lib/workspace/command-bus.ts): row-level
+  actions (itemClick/openPost/selectPost/openTag/requestDeletePost)
+  are module calls, not props. The shell registers latest-ref-backed
+  handlers once; WorkspacePostOption calls the bus at event time and
+  lost its five callback props, so parents stopped threading them
+  (WorkspaceRootLanding and StarredPage shed them entirely). A row
+  re-renders only for its own selection bits or a real data change.
+- Stage 3, idle-time materialize encode (UnifiedDocumentEditor): the
+  debounced flush encoded + base64ed the whole Y.Doc synchronously -
+  a visible hitch when the 500ms timer fired mid-burst at large
+  sizes. The encode now waits for requestIdleCallback (1s timeout)
+  inside the flush queue; keepalive flushes (pagehide/unmount)
+  encode immediately since idle time may never come. The dead
+  pendingMaterializationStateRef was deleted. A full worker-thread
+  Y.Doc mirror was considered and deliberately deferred: after the
+  idle move nothing measurable remains on the input path, and a
+  worker doubles document memory and adds a protocol.
+- Stage 4, progressive card grids (FolderPage GrowingGrid): bookmark
+  cards and both universal-card grids mount 60 cards and grow by 60
+  via an IntersectionObserver sentinel (rootMargin 600px, gridColumn
+  1/-1); the selected card is always mounted so keyboard selection
+  and scroll-into-view work past the mounted edge. True windowing
+  was rejected for grids: multi-column flow with non-uniform heights
+  has no cheap spacer arithmetic, and the cost being cut is initial
+  mount, not steady-state DOM. List layouts keep WindowedRows.
+
+Verification (all green before push): suite 223 files / 1,819 tests;
+collab browser eval 24/24 twice; verify-reader-stability clean;
+bench-workspace-matrix within budget in both engines;
+scale-test 300-item lane 120fps hover / j-k 6-9ms;
+scripts/verify-growing-grid.ts (new lane) proves the notes folder
+windows to ~21 list rows and grows 60 -> 300 cards on scroll;
+verify-windowed-surface all checks pass.
+
+Fixture facts learned re-running verify-windowed-surface: the app
+reads and writes `document->content->body`; `content.fields.body` is
+a vestigial copy in old fixture rows - resetting only fields.body
+does nothing. And the collab server flushes in-memory doc state to
+collab_state on graceful shutdown, so a reset must SIGKILL :3131
+FIRST, then update posts.document/body + delete the post's
+collab_state/collab_updates rows, then start the server.
+
+## Owner follow-ups after build 1009 (2026-09-02)
+
+- The "giant white padding" left of an opened item: workspace.css (the
+  last-word CSS layer) pinned the sidebar CARD to the static 260px
+  token while the content margin, region and fixed chrome followed the
+  draggable --workspace-sidebar-width - dragging the sidebar wider
+  than 260 turned every extra pixel into white gap. One variable now
+  sizes all of it. Lesson: when a width is user-draggable, grep every
+  stylesheet layer for competing width declarations on the same
+  element; workspace.css intentionally out-cascades broadsheet.css.
+- Swipe back "giant refresh": the inner scroller had no cross-view
+  scroll memory, so back landed at the top of a freshly painted list.
+  List views now remember scroll continuously (scroll listener with a
+  collapsed-surface guard; navigation-time reads are unreliable
+  because selecting a note swaps in the warmed editor surface and
+  clamps the scroller to 0 first). Restore retries a few frames if
+  the surface is still collapsed.
+- Swipe forward "white page": popstate switched the view immediately;
+  a cold document rendered the reader's deliberate nothing-yet branch
+  for the whole fetch. History traversal into an item now uses the
+  same hold-then-swap gate as click-opens.
+- Bookmark reading page redesigned source-first (owner: "closer to
+  Raindrop"): domain eyebrow above the title (host text, full URL in
+  the link + title attr), tighter masthead, and display-time stripping
+  of readable-body opening blocks that repeat the masthead
+  (src/lib/bookmark-display.ts). The renderer shows the host for any
+  field bound as both its own text and href.
+- Caveat honored from the browser-verification contract: popstate
+  behavior is proven in Playwright WebKit; the trackpad gesture feel
+  itself needs the owner's hands on the deployed build.
+- White pixel specks left of the text during a sidebar drag (dark
+  mode): WebKit repaint artifacts, not DOM - a hit-test scan of the
+  gutter found no element, and Playwright screenshots cannot show
+  them (screenshotting forces a full composite). Cause: the content
+  margin's 0.18s ease chasing every pointer sample (continuous
+  reflow) over the sidebar's live backdrop-filter layer. Fix: an
+  is-sidebar-resizing root class suspends both during the drag;
+  removing it on release recomposites and clears leftovers. Verify
+  artifact-class fixes by hand in the real app, never by screenshot.
+- Dev fixture: visual-demo/bookmarks/probe-bookmark-capture (cloned
+  capture bookmark, id 11111111-2222-4333-8444-555555555501) exists
+  for bookmark-reader work. Folder rows select on click and open on
+  Enter; home rows open on click.
+- The swipe white-page had a second, deeper cause (build 1010): the
+  native WKWebView gesture renders stored page SNAPSHOTS during the
+  drag, and pushState entries have no snapshot, so WebKit slid a
+  white page regardless of what the app rendered after popstate. The
+  app now sets allowsBackForwardNavigationGestures = false and the
+  workspace recognizes the swipe itself from wheel deltas (window
+  gated on __TEXTTEXT_APP__; horizontal dominance past ~90px, one
+  firing per gesture, ceded to horizontally scrollable content),
+  driving the same history entries through the gated popstate path.
+  Browsers keep the native gesture; the recognizer is app-only.
+- Navigation slides (owner ask): view transitions on every hierarchy
+  change, push from the right / pop from the left, new view always on
+  top (WebKit ignores z-index on the transition pseudos - the
+  old-on-top drill-out grammar silently loses its top layer there).
+  Only .post-editor-content carries a view-transition-name; the pair
+  is overflow:clip or the outgoing snapshot slides across the
+  sidebar. Playwright WebKit renders the live incoming layer blank on
+  pop (home list) while Chromium renders it perfectly - treat that as
+  a Playwright compositing artifact, but confirm pop in the real app
+  before trusting it. Animated paths cost ~180ms to content in the
+  matrix (capture + deferred update), a deliberate trade.
+- PLATFORM FACT (measured 2026-09-02, on-screen WKWebView probe in
+  scratch Swift): this macOS's WKWebView exposes
+  document.startViewTransition, runs the callback and swaps content,
+  but NEVER runs the pseudo-element animations - an 800ms transition
+  "finishes" in 7ms. Safari has the full feature; WKWebView's flag
+  set lags, and enabling it needs private API (App Store risk). So
+  the app uses a live-element slide (animateContentSlide, 220ms WAAPI
+  on .post-editor-content) and browsers keep the two-layer view
+  transition. Re-test the probe before assuming a newer macOS fixed
+  it. Navigation slides deliberately ignore prefers-reduced-motion
+  (owner runs Reduce Motion on system-wide and wants them; owner
+  decision 2026-09-02).
+- TESTING TRAP (cost several rounds): a background/non-active
+  WKWebView window FREEZES its animation + rAF clock - getAnimations
+  reports playState "running" while currentTime stays 0 and no
+  transform paints. So a headless Swift WKWebView harness proves
+  NOTHING about animation visibility (the earlier "view transitions
+  are inert / finish in 7ms" reads were this artifact, not real
+  behavior). Same family as the hidden-Browser-pane rAF trap. Judge
+  animation in the focused app or a Playwright page (those tick), or
+  on the owner's screen.
+- Back/forward in the app is an INTERACTIVE finger-tracking drag
+  (owner ask, chose it over auto-slide). See runViewTransition and
+  the app-only wheel drag effect in PostWorkspaceShell: a cloneNode
+  of the outgoing view overlays the content region, history moves so
+  the destination renders underneath, and the clone tracks the swipe
+  to reveal it (both views on screen, Safari-style). Release >45%
+  commits, else snaps back and undoes the move. History entries carry
+  ttNavIndex in history.state so the drag knows if a back/forward
+  target exists. navAnimationSuppressed keeps the drag's own popstate
+  from double-animating. Feel is the owner's trackpad to judge.
+- The gesture is RECOGNIZED NATIVELY (build 1011): the web wheel
+  stream cannot track a finger (scroll deltas, not position; no
+  fingers-up signal; ~1s momentum tail), which made the drag flick to
+  an instant commit then latch. AppWebView.scrollWheel reads NSEvent
+  phase + scrollingDeltaX (what Safari uses), treats a
+  horizontal-dominant swipe as navigation, forwards begin/move/end
+  plus cumulative travel to window.__ttNavSwipe, and hands
+  vertical/diagonal gestures back to the web view as normal scroll
+  (momentum after fingers-up is consumed). The page translates the
+  clone 1:1. Sign convention assumes natural scrolling (swipe right =
+  back = positive scrollingDeltaX); flip in AppWebView and the
+  __ttNavSwipe begin branch if a user has natural scrolling off.
+  Cancel corrects to the recorded ttNavIndex so a fast flick cannot
+  strand the view.
+- Hardening (build 1013): the interactive drag navigates at gesture
+  START so the destination renders live under the clone, which is what
+  makes the reveal possible but also the source of its failure modes.
+  Fixed: (a) forward cancel animated real content off-screen with
+  fill:forwards then cleared the inline transform - the fill kept
+  applying, stranding it blank; settle now cancels the animation and
+  pins the resting transform, and forward cancel holds the item off
+  behind the frozen home clone until home renders (no flash). (b) a
+  hold timer cancels an abandoned gesture (fingers stop, no release).
+  (c) release velocity from the native layer (points/sec, smoothed)
+  lets a flick commit on short travel (FLICK_VELOCITY). (d) the
+  content that swaps under the clone has overflow:hidden for the drag
+  so its scrollbar does not flicker. Settle is 220ms decel ease.
+  Remaining inherent cost of navigate-at-start: a start-then-hold has
+  navigated underneath (clone + hidden scrollbar hide it); only a
+  true dual-mount would avoid the nav entirely, deliberately not built.
+- SUPERSEDED by the snapshot rewrite (build 1013 web, commit a6481f97):
+  the drag no longer navigates mid-gesture at all. The shell snapshots
+  each view (cloneNode) as it is left, keyed by ttNavIndex
+  (navSnapshotsRef, captured in navigateToView and popstate; pruned to
+  +/-2 of the current index). A swipe reveals the destination from its
+  snapshot; back slides the real item away over the home snapshot,
+  forward slides the item snapshot in over real home. Commit navigates
+  ONCE (popstate suppressed via navAnimationSuppressed, capture
+  suppressed via suppressSnapshotCaptureRef); cancel removes the
+  overlay and clears one transform - zero navigation, zero redraw
+  (fixes the tiny-swipe-cancel redraw). This is the iOS/Ionic model:
+  both views present, commit only on release. Tuning: COMMIT_FRACTION
+  0.35, FLICK_VELOCITY 600, 240ms decel settle.
+- RELEASE-LANE BUG hit here, NOT fixed (needs owner call): a pure-web
+  change does not need a new app build, BUT promote-local.sh always
+  rebuilds+reinstalls the app and gates on install-local.sh, which
+  hard-requires runtime health status == "pass". The finder.provider
+  (File Provider domain) check legitimately reports a transient
+  "warning" for a few seconds after a fresh bundle swap, then settles
+  to pass - ship.sh documents this and treats a residual warning as
+  non-blocking, but install-local.sh does not, so promote-local rolled
+  back build 1014 even though health settled to pass moments later
+  (confirmed: latest.json showed finder.provider pass right after).
+  For a web-only change, skip promote-local and run `npm run
+  deploy:web` (the installed app auto-reloads). For a real app change,
+  install-local.sh should tolerate a residual warning whose only
+  non-pass checks are known-transient (align it with ship.sh), or
+  lengthen HEALTH_WAIT_SECONDS - owner to decide.
+
+## Item scroll, assistant memory, history limits (2026-09-03)
+
+- Item scroll persistence (`e1b38a8b`): a shell-level restore alone
+  cannot work. An item's scroller mounts short, GROWS its height over
+  many frames, and resets to 0 as it does, so the one set that appears
+  to succeed is undone (measured: the position only sticks if
+  re-applied for ~900ms). The restore HOLDS the target across a window
+  and yields on real input (wheel/pointer/key), with recording
+  suppressed meanwhile so the mount's own scroll-to-0 cannot clobber
+  the saved value. Keyed per post (read and edit share one surface),
+  persisted per workspace in localStorage (debounced off the scroll
+  path), so a reopen after a quit resumes too.
+- Per-view assistant memory ALREADY EXISTED (`0743a338`): conversations
+  are keyed by context (`item:<id>`, folder, workspace), persisted per
+  owner scope, and server-synced. What read as "the chat is forgotten"
+  was two other things: the reload churn fixed in `a8685d67` (the app
+  reloaded on nearly every swipe and reset the rail), and the
+  transcript's first paint - before the owner scope resolves the rail
+  has no messages and rendered the "Good evening" empty state over a
+  view that had a real discussion. The state boundary now reports
+  `hydrating`, and the rail holds one quiet line until the remembered
+  thread is read back. Do not "rebuild" this feature; test it instead.
+- History limits (`10ee2b3b`): 60 chats / 200 messages -> 500 / 2,000.
+  The DB check constraint had to move in step
+  (migrate-raise-assistant-history-limits.mjs): a payload the browser
+  considers legal was otherwise rejected by
+  `workspace_assistant_conversation_history_count <= 60` and
+  cross-device sync stopped converging SILENTLY (the sync action
+  swallows errors by design). Counts are now the coarse bound and
+  bytes the real one: sync already capped 16KB/message,
+  512KB/conversation, 4MB/workspace, but the browser's save enforced
+  counts only, so a big history would blow the origin quota, setItem
+  would throw, and persistence would degrade to memory with no signal.
+  saveWorkspace now serializes within a 3MB budget, shedding
+  tombstones then the oldest unpinned chats, retrying once at half the
+  budget. In-memory history is untouched, so nothing vanishes
+  mid-session.
+- Testing note: the workspace list is sorted by recency, so opening
+  "row index 0" twice does NOT reopen the same item - target rows by
+  `data-workspace-post-id`. And Enter on a folder-list row activates
+  its anchor natively, which is a FULL page load that resets all
+  client state; click the row's handler instead when testing
+  client-side navigation.
+
+- Swipe white page, THIRD and final cause (`9e53e58a`): two bugs in the
+  snapshot clone, both proven on a production build with a pixel
+  coverage probe (sample the content region, count non-white).
+  (1) `cloneNode` copies ATTRIBUTES, not PROPERTIES - a textarea's or
+  input's current text lives in `.value` and did not come across, so an
+  item open in the editor cloned to an empty box. Copy the live values
+  (`textContent` is what a DETACHED textarea renders, `.value` alone is
+  not enough), plus inner scroll offsets recorded to
+  `data-tt-scroll-top/left` and re-applied AFTER attach - a detached
+  node has no layout, so assigning `scrollTop` before insertion is a
+  silent no-op. (2) the back drag set `content.style.visibility =
+  "hidden"`; with no destination snapshot cached (a RELOAD empties
+  navSnapshotsRef while ttNavIndex survives - exactly the owner's short
+  swipe after an auto-update) the strip the moving clone uncovered had
+  nothing behind it, so it showed white. The overlays already cover the
+  content region, so hiding the real view bought nothing. Measured
+  after: mid-drag coverage equals the pre-drag baseline (26% vs 26%,
+  previously pure white at every sample), the cached case still
+  underlays real destination rows, and an abandoned short swipe leaves
+  the URL unchanged with ZERO page loads.
+- Measurement trap that cost a cycle: a one-line note's page is
+  legitimately ~96% white, so "mostly white" proves nothing there.
+  Repro clone fidelity against a CONTENT-RICH item
+  (visual-demo/documentation "Reader images") and compare mid-drag
+  coverage to the same view's pre-drag baseline, never to an absolute
+  threshold.
+
+## Navigation history: what actually owns the index (2026-09-03)
+
+- **Next owns `history.state`, and it DROPS foreign keys on restore.**
+  Measured after a reload: every entry except the current one comes back
+  with only `__NA` and `__PRIVATE_NEXTJS_INTERNALS_TREE`; our
+  `ttNavIndex` is gone. The swipe used to refuse any gesture whose entry
+  had no stamp, so after a refresh nothing navigated at all. The shell's
+  own `navIndexRef` is the truth now; the stamp is an optimization,
+  re-written by MERGING into whatever state is there.
+- **Never pass a bare state object to `replaceState`/`pushState`.**
+  Dropping Next's keys makes the router treat the entry as foreign, and
+  traversing onto it does a FULL DOCUMENT LOAD. That is what reset the
+  client mid-swipe and emptied `navSnapshotsRef`, after which every
+  forward swipe went blind. Symptom to recognize: a `page.on("load")`
+  counter ticking during a same-document back.
+- `stampNavIndex` also fires on `pagehide`/`beforeunload`. Timers racing
+  Next's async state rewrites are best-effort; the stamp only has to be
+  correct at the instant the page goes away, because that is what the
+  next load reads back to rebuild the trail.
+- **The hierarchy fallback must not use `navigateUp`.** It is an ordinary
+  forward navigation, so it pushed an entry and truncated the forward
+  stack - the phantom history the owner saw, and why a forward swipe
+  could never return to the item. `navigateUpAsBack` manufactures the
+  missing entry instead (parent at 0, current at 1, then `back()`), so
+  the fallback is a real back step with a working forward direction.
+- **Forward REQUIRES the destination snapshot**, so the +/-2 prune radius
+  silently capped forward at two steps ("it stops before the item I
+  opened last"). Radius is `NAV_SNAPSHOT_RADIUS = 8`; past it the
+  gesture navigates on release rather than doing nothing, because a
+  refused gesture reads as a broken app.
+- **A hole in the trail array destroyed the stored history.** A reload
+  rebuilt the in-memory trail from an empty array and filled only the
+  current index; JSON writes holes as `null`, `readNavTrail` rejects
+  null entries, so every reload wiped the trail. `writeNavTrail` now
+  refuses a sparse or unaddressed trail - INDEX-READ the array, because
+  `.some()` skips holes - and a reload adopts the stored trail rather
+  than rebuilding it, which restores the forward entries too.
+- Verification recipe (all on a production build, `npm run build` first):
+  click four sidebar folders, then read `history.state.ttNavIndex`, the
+  `texttext:nav-trail:` value, and a `page.on("load")` counter after
+  every synthetic `__ttNavSwipe` step. Park the mouse inside the content
+  first: with the pointer at 0,0 `overHorizontalScroller()` can refuse a
+  gesture and look like a navigation bug.
+
+## One back path, depth, and landing (2026-09-03)
+
+- **There is exactly one way back: `navigateBack`.** Swipe, its
+  no-snapshot path, Backspace and Escape all call it. Do not reach for
+  `navigateUp` from a key binding: it is an ordinary forward navigation,
+  so it pushes an entry and truncates the forward stack. `navigateUp`
+  survives only for after-delete, where returning to the deleted item
+  would be wrong. Escape still leaves edit mode directly (`kind: "read"`
+  is not a history step). `j`/`k` are list selection, not history.
+- **Snapshot depth is a memory question, navigation depth is not.**
+  Measured on a production build: a 300-item workspace list snapshot is
+  ~540 nodes / 48KB of markup (the list is windowed, so it does NOT grow
+  with item count), an opened item ~677 nodes / 122KB, and `cloneNode`
+  costs 0.55ms. Past the window a gesture still commits without the live
+  reveal, so raising it buys smoothness, never reach. The persisted trail
+  (`MAX_ENTRIES = 200`, URLs only) is what decides how far a relaunched
+  app can walk.
+- **15 vs 30 is a memory question, not a speed one.** Measured with CDP
+  after 40 distinct pushes then back-swipes from the deep end: radius 15
+  retains ~11,900 detached nodes, radius 30 ~22,900, and BOTH give a
+  257ms median swipe and 4.4MB of JS heap growth. Time is flat because
+  the cache is a Map lookup plus a prune over at most 61 keys per
+  navigation. `NAV_SNAPSHOT_RADIUS = 30` (owner asked for depth).
+- Measuring this: force `HeapProfiler.collectGarbage` twice before
+  reading `Performance.getMetrics`, or the heap number is just whenever
+  GC last ran and swamps the difference. And make the walk push
+  MONOTONICALLY - an open/back loop bounces between two entries and
+  never fills the window, which made two radii measure identical.
+  `JSHeapUsedSize` does not count DOM nodes; watch `Nodes` instead.
+- **The landing flash was the overlay lifting too early.** It lifted when
+  its slide finished, while the destination was still arriving: images in
+  a freshly mounted view have to decode (the bookmark card's picture
+  "suddenly appearing"), and a remembered scroll position is applied
+  after the first paint, so the view jumped and the scrollbar snapped to
+  size. `afterLanded` existed but was dead code; it now gates the lift on
+  `destinationReady` - every `img.complete`, plus `scrollSettledRef`,
+  which the scroll restore sets the first time the target actually
+  sticks. Capped at 500ms, and skipped for a back slide with no cached
+  snapshot, which would otherwise hold an empty panel.
+- Measuring a flash: screenshot a clip of the content region in a tight
+  loop through the landing and diff consecutive frames. After the fix
+  every frame past the slide is 0% changed, including the frame the
+  overlay lifts on. A flash shows as a late spike.
+
+## Forward affordances, the visit log, and a WebKit traversal trap (2026-09-03)
+
+- **WebKit DROPS a history traversal issued in the same task as a
+  `pushState`.** Measured directly: `replaceState` + `pushState` +
+  `history.back()` in one synchronous block leaves the URL exactly where
+  it was, no error; deferring the traversal by a single frame lands it
+  every time (0ms fails, 16/50/120/250ms all succeed, and `history.go(-1)`
+  behaves identically). `manufactureBackTo` therefore defers through two
+  rAFs. `navigateUpAsBack` had shipped with the same-task form and worked
+  only by timing luck. If a manufactured back step ever "does nothing",
+  this is why.
+- **Forward now has affordances.** Until this change the trackpad swipe
+  was the ONLY way forward: no key, no menu item, so a mouse could go
+  back but never return. `Cmd+[` / `Cmd+]` are bound in the web command
+  set (bare `[`/`]` are previous/next post), and the Mac shell has a
+  History menu whose Back and Forward call `window.__ttNavGo`, the same
+  one way back and forward everything else uses. WKWebView's own
+  `goBack()` would bypass all of it, so do not reach for it.
+- **The visit log is not the back-stack.** The browser truncates the
+  forward entries every time you go somewhere new, so open A, back, open
+  B, back leaves nothing behind you even though you were just looking at
+  A. `lib/workspace/nav-history` keeps an append-only log of landed
+  hrefs (cap 300, persisted per workspace) and `navigateBack` falls
+  through to it once the real stack is exhausted, manufacturing a real
+  back step each time. Verified: after that branch, back retraces
+  notes -> root -> blog -> root and forward returns. A back-walk moves
+  the cursor and does NOT append, or every step would add a new newest
+  entry and the walk would never move.
+- **"Recently opened" tie-broke on `updatedAt`, so background writes
+  reordered it.** Anything the person has opened carries an open record,
+  so the tiebreak only ever orders documents they have NOT opened - and
+  a sync from another device, a bookmark capture finishing, or an agent
+  edit would silently jump one to the top of a list labelled by open
+  time, with nobody having opened anything (owner, 2026-09-03). It now
+  breaks ties on `createdAt`, which cannot move, so the unopened group
+  holds still and a newly created item still lands at the top of it.
+  "Last edited" is the sort that follows updates.
+- **Deleting the open item used to leave it behind you.** `afterDelete`
+  called `navigateUp`, which pushes, so one step back landed on a
+  document that no longer exists. It now REPLACES the entry. Not
+  exercised end to end - the create shortcut did not open an item in the
+  headless harness - so confirm it by hand if you are in this code.
+
+## Undo and redo, from the CRDT (2026-09-03)
+
+- **The browser's undo cannot work on this editor.** The surface is a
+  `contentEditable="plaintext-only"` rendered by React from the source
+  string, so native undo mutates DOM that React rewrites a moment later.
+  MarkdownSurface now intercepts `historyUndo`/`historyRedo` in
+  `beforeinput` and preventDefaults them; the binding drives
+  `Y.UndoManager` instead. The Mac Edit menu's `undo:` selector had the
+  same problem - it reached WebKit's own stack - and now raises the
+  app's document-history events.
+- **Track the ROOT MAP, never the Y.Texts.** `text()` creates a Y.Text on
+  demand when the document is still empty, and a remote baseline
+  arriving afterwards supersedes it, so instances captured at mount are
+  orphaned by the time anyone types and undo silently does nothing
+  (measured: this exact bug, undo appearing dead on a real document).
+  `documentRoot(doc)` is exported for this; `doc.getMap` always returns
+  the same instance and the map is never replaced.
+- **`localOrigin` tags seeding as well as edits, so undo must NOT track
+  it.** There is now a separate `userEditOrigin` on the typing path only.
+  Tracking `localOrigin` would let the second Cmd+Z undo the document
+  seed and empty the document - there is a test for exactly that
+  (`collab/__tests__/document-undo.test.ts`), plus one proving undo does
+  not reach through a collaborator's work, which is the whole reason to
+  use Yjs for this rather than hand-rolling a stack.
+- Undo republishes explicitly. `handleDocumentUpdate`'s remote branch
+  skips publishing while a local save is in flight, which would have
+  left an undo invisible, so the UndoManager's own origin gets its own
+  branch that publishes and schedules the save.
+- The shortcut is gated on `documentHistoryAvailable()` - whether an
+  editor is mounted - not on `viewLevel === "edit"`. Notes edit in
+  place and the root view has its own composer, so the view level is the
+  wrong question; and with no editor mounted Cmd+Z should fall through
+  so plain fields keep their native undo.
+- Verified end to end on `/@visual-demo/documentation/reader-images?edit=1`
+  (a 7.7KB body): Cmd+Z removes the typing, Cmd+Shift+Z restores it, and
+  sixteen undos past the beginning leave the document intact. All 24
+  live collaboration checks still pass, which is the lane that matters
+  after touching CRDT origins.
+- STILL TEXT ONLY. Structural changes (template swap, move, trash) go
+  through `updateDocumentSnapshot` on `localOrigin` and are deliberately
+  not undoable yet; making them undoable means deciding what a
+  cross-document undo stack even means.
+
+## Editor-grade quality of life (2026-09-03)
+
+- **Outline** (`lib/document-outline.ts`): headings become palette entries
+  labelled with a leading hash, so Shift+Cmd+O opens the palette on "#"
+  and typing refines. Jumping scrolls by row height first and lets the
+  WINDOWED surface materialize around the target, then lands on the real
+  row - the target line usually has no DOM node when the jump starts.
+  Two traps: `dynamicWorkspaceCommands` used to bail when `ctx.pool` was
+  null, which is exactly the state the editor routes are in; and
+  `publishDocument` only fires on CHANGES, so registering the body there
+  left the outline empty on any document nobody had typed in yet. The
+  editor registers its body from state instead.
+- **Find and replace** (`lib/document-replace.ts`): literal, never a
+  regular expression. It goes through `updateText`, so it is ONE ordinary
+  local edit - it syncs like any other and a single Cmd+Z takes the whole
+  replacement back. Placement matters: the reader's find field belongs to
+  PostActionBar and exists only on the read view, while the EDIT bar is
+  rendered by UnifiedDocumentEditor itself and had no find field at all.
+  Find and replace live in the editor's own toolbar and carry their own
+  find input.
+- **Undo now covers document structure.** `updateDocumentSnapshot`
+  (fields, the look) carries `userEditOrigin` instead of `localOrigin`,
+  so it joins typing in the undo stack while seeding stays out.
+- **Trash has an Undo**, because it is a pool and database mutation and
+  cannot ride the CRDT's undo: the toast carries the action, restoring
+  locally and calling the same `restore-post` operation the Trash page
+  uses. `useCommandToast` is the door into the toast from outside the
+  command system.
+- **TABS, not a split pane** (owner, 2026-09-03: "Split pane can't be a
+  downgrade. Make it tabs, like Sublime Text"). The read-only side pane
+  was replaced outright - see `lib/workspace/tabs.ts`. A tab is not a
+  second view: selecting one navigates the workspace to that item exactly
+  as clicking it in a list does, so the open document is always the real,
+  fully editable one. That is why tabs suit a shell whose model is one
+  view at a time, where a split pane could only be a lesser copy.
+  Cmd+W closes (falling back to closing the WINDOW only when no document
+  is open - the Mac Window menu asks `window.__ttCloseTab` first),
+  Shift+Cmd+T reopens the last closed one, Ctrl+Tab and Shift+Ctrl+Tab
+  cycle, Cmd+Enter opens the highlighted row as a background tab, tabs
+  persist per workspace and can be dragged to reorder, and closing the
+  open one lands on its neighbour.
+- **Cmd-click opens a background tab; OPTION-click toggles selection**
+  (owner, 2026-09-03). Two standards collide on these rows because a row
+  is a link AND a list item: browsers say Cmd-click opens a tab, the
+  macOS HIG says Cmd-click toggles a list selection. The owner chose the
+  browser reading, and toggling landed on Option after Ctrl was tried and
+  rejected - Ctrl is macOS's secondary-click alias, so it raised a
+  context menu on every pick and needed a suppression hack to work at
+  all. Option has no such baggage and the hack is gone.
+  `lib/workspace/selection-modifiers.ts` holds the rules and is platform
+  aware: Ctrl still toggles off Apple platforms, where it is the norm and
+  carries no menu. Shift extends a range, with or without Option. Middle
+  click opens a row and closes a tab.
+- The new-tab branch must run BEFORE the selection handler, or Cmd-click
+  opens a tab and resets the selection to that one row on the way past.
+- **`deploy:web` and `promote:local` rebuild `.next` WITHOUT dev sign-in.**
+  Running either in the background while a local probe server is up
+  silently breaks every later probe: sign-in stops working, so the
+  workspace routes 307 to the production tenant host and Playwright
+  reports "a server with the specified hostname could not be found".
+  Rebuild with `npm run build` and restart before probing again.
+- **Preview tabs promote on a real EDIT, not on the view level.** Notes
+  edit in place, so `view.level === "edit"` is true the moment one opens
+  and promoting on it made every note permanent immediately. Promotion
+  now happens inside the editor's `updateText`, which is a keystroke.
+- **The tab strip's drag uses a REF for the dragged id**, not React
+  state: drop can fire before a state update flushes (a fast drag, or
+  events dispatched back to back) and then reads null and does nothing.
+  State drives the styling only.
+- **Undo puts the caret back where the edit was**, as Sublime does. Each
+  Y.UndoManager stack item carries the selection in its `meta` at
+  `stack-item-added`, and `stack-item-popped` asks the surface for it
+  through `pendingCaretRef` - the surface's own "place the caret on the
+  next reconcile" channel, which the CRDT's value change then triggers.
+  Measured: type at the top, move to the end, Cmd+Z - the caret returns
+  to offset 0 rather than staying at 7778.
+- The tab strip must CLEAR the floating chrome, not share its band: the
+  action pills sit at `top: 8px` and the editor's toolbar grows with find
+  and replace, so a strip beside them ends up underneath and swallows
+  clicks (measured: the find input intercepted the tab close button).
+  `padding-top: 48px` puts it below them.
+- Harness limits worth knowing: the Browser pane cannot send Cmd+\\ (it
+  reports an empty `key`), and its screenshots and `location` reads are
+  unreliable under viewport emulation - geometry from
+  `getBoundingClientRect` and `elementFromPoint` is the trustworthy read.
+  Playwright's find field is laid out at 0x0 on the item routes; drive
+  React's controlled inputs through the native value setter plus an
+  `input` event instead. Clicking a folder row in headless WebKit can
+  fail to open the item because the body prefetch dies with an "access
+  control checks" error; navigate to the item URL directly instead. And
+  Playwright's modifier and middle clicks on a LINK go through WebKit's
+  own link gestures and never reach React - dispatch the MouseEvent
+  directly (`new MouseEvent("click", { altKey: true, bubbles: true })`)
+  to test them.
+- **Probes that type into a document damage fixtures.** Three separate
+  strings were typed into visual-demo documents this session when a find
+  field was not focused and the keystrokes reached the body instead
+  (`/connection` inside "screen", `Z` and `/with` and `/image` inside
+  reader-images). All were found by querying
+  `posts.document::text ilike '%needle%'` and repaired THROUGH the app so
+  the collaborative state stayed consistent, never with raw SQL. Sweep
+  for artifacts before finishing a session that typed into documents.
+- Recently-opened drift: re-run of the owner's exact pattern - 14 rounds
+  of open an item, go back, read the home order - found ZERO unexplained
+  reorderings; only documents that were actually opened moved.
+
+## Selection, and telling people which keys exist (2026-09-03)
+
+- Keyboard multi-select ALREADY worked (`selection.extend-previous/next`,
+  Shift+Arrow) - it was simply undiscoverable, which is most of why the
+  key hints below exist. `Cmd+A` (`selection.select-all`) and `Escape`
+  back to a single row were genuinely missing and are new.
+- **A marquee can now start ON a row**, not only in the gutter beside it.
+  Two things were needed and neither is obvious: a row is a LINK, and a
+  link drags itself, which swallows the pointermove stream the marquee
+  needs (`draggable={false}` plus `-webkit-user-drag: none`); and the
+  gesture cannot be taken outright with `preventDefault`, because the
+  row's own click still has to be able to open it - so the handler calls
+  `setPointerCapture` instead and decides only once the pointer has
+  moved 5px. A drag that starts sets `suppressNextRowClickRef`, which the
+  row's click handler consumes, so the click at the end of a drag selects
+  instead of opening.
+- **Key hints** (`lib/commands/hints.ts`, `WorkspaceKeyHints`): the bar
+  along the bottom, Superhuman style. Hints are DERIVED from the command
+  table and filtered by the same `when` the keyboard uses, so the bar can
+  never advertise a key that would do nothing, and renaming a command
+  renames its hint. It re-reads on a revision string that includes
+  `mounted`, because the command surface registers in an effect and a
+  first read before that finds no workspace and shows nothing - that was
+  a real bug, caught only because the bar rendered empty.
+- Rows carry a `title` naming the click modifiers, which is the hover
+  half of the same idea.
+- Harness note: the Browser pane's `javascript_tool` can evaluate against
+  a stale document after a navigation and report an empty DOM while the
+  screenshot plainly shows the element. Trust the screenshot, or re-run
+  the query.
+
+## The rest of the list behaviours (2026-09-03)
+
+- **Right click opens a real menu** (`WorkspaceRowContextMenu`), at the
+  pointer, acting on the SELECTION rather than only the row under it -
+  right clicking outside the selection moves it, inside it leaves it
+  alone, as every file list does. Escape closes it through the app's
+  `useEscapeLayer`, NOT a private keydown listener: the first attempt
+  used one and Escape did nothing.
+- **Drag items into a folder.** A row is draggable only once SELECTED,
+  which is what lets the rubber-band and the move share the same pixel:
+  an always-draggable row lets the browser's own drag preempt the
+  marquee. The drop is delegated off `[data-workspace-sidebar-path]`.
+  Two traps: a server action called from a plain DOM listener throws
+  React #441, so the move runs inside `startTransition`; and a move that
+  the server refuses used to roll back in silence, which is how the
+  `posts_folder_slug_idx` conflict (an item whose slug already exists in
+  the destination) looked like nothing happening. There is a toast now.
+  That constraint is now handled properly: `setPostFolder` RE-SLUGS on
+  move (`freeSlugInFolder`) instead of refusing, and pushes the old slug
+  into `slug_history` so links already shared still resolve. Verified on
+  the exact collision: "Connect your AI tools" moved into Documentation
+  beside "Connect an AI" and became `connect-your-ai-tools-2` with the
+  old slug in history. The failure toast remains for anything else the
+  server refuses.
+- Cmd+D duplicates, Cmd+C / Cmd+V copy and paste items (an app clipboard
+  of ids, not the system one - what is being copied is a document).
+  Home/End and Cmd+Up/Down jump to the ends of a list. Move and star now
+  offer an Undo toast, as trash already did.
+- **Holding Cmd re-renders the hint bar** to show what Cmd does here,
+  which is the actual Superhuman trick. `metaKeyHintsFor` prefers the
+  Cmd spelling of a command that has several - while Cmd is held, "Home"
+  is the wrong answer to "what does Cmd do".
+- **Bare-letter type-ahead is deliberately NOT implemented.** Single
+  letters are commands here (c, s, e, m, g, j, k), and a scheme where
+  some letters jump to an item and others act on it is worse than none.
+  `/` filters the list as you type, which does the same job better; it
+  only needed to be discoverable, so it is in the hint bar now.
+
+## Library chrome, trimmed (2026-09-04)
+
+- The Library's capture RECEIPTS now render only for failures. A save
+  that worked has already put the item in the list right below it, so
+  the "Saved to notes / Open / Undo" line was pure clutter (owner). A
+  failure leaves no other trace, so that one stays - deleting the strip
+  outright would have made a failed capture silent. The rapid-capture
+  contract test asserts the new rule.
+- The "Build a new item type with AI" prompt is gone from the Library
+  for the same reason. The command still exists elsewhere.
+- **The Library page is the list and nothing else.** The "Library"
+  heading and the capture composer went too - the owner meant the whole
+  screen capture, and said so twice (2026-09-04). Creating from Home is
+  now `c`, the command palette, or the composer inside a folder, which
+  is the same one component; only the Home instance was removed. The
+  batch-4 UI contract asserts the absence rather than the presence.
+- The key-hint bar is a near-black pill with NO border stroke: the
+  hairline ring drew the eye to the container rather than the keys
+  (owner). Its text colours are fixed white-on-dark rather than the
+  page's ink, because the pill is its own surface in both themes.
+
+## Superhuman refit, steps 3 to 6 (2026-09-04)
+
+Facts worth keeping from the interface refit, in the order they bit.
+
+- **The workspace list is `.workspace-item-option`, not `.post-folder-row`.**
+  `.post-folder-row` is `FolderPage`, which is the PUBLISHED page at
+  `/t/<handle>`. Step 2's row metrics landed there and did nothing for the
+  workspace for a whole step. Both surfaces now carry the one-line
+  treatment; when you change row typography, change both.
+- **Row metrics at 300 items:** height 51px, pitch 51px, 18 per 900px
+  screen, ~25 rows mounted whatever the count. The list windows by an
+  IntersectionObserver sentinel with a 600px root margin (`GrowingGrid` in
+  `FolderPage.tsx`), NOT by an assumed row height, so a shorter row costs
+  nothing there.
+- **A multicol box with a definite height fragments SIDEWAYS.** The
+  shortcut sheet's shared rule is `columns: 1` with a capped height, which
+  scrolls. Docking it as a full-height panel gave it a definite height, and
+  every group after the first was laid out in an off-screen column to the
+  right. `columns: auto` takes an element out of multicol entirely; that is
+  the fix, not a column-count of 1.
+- **Contrast has to be composited, not read.** `getComputedStyle` returns
+  `rgba(255,255,255,0.62)`; measuring that against black reports 21:1 when
+  the real figure is 7.85:1. Composite the ink over its ground first. Doing
+  this honestly found the selection fill failing: `#4a95e4` gives white
+  3.1:1. It is `#2f6fd0` now, which measures 4.88 light and 5.91 dark.
+- **A selection fill has to name every element that sets its own colour.**
+  The workspace row's preview and date are a bare `small` and `time` with
+  their own `color`, and the list rules match them at the same specificity,
+  so the selected-ink rules have to come LAST in `workspace.css`. Grey on
+  the fill measured 2.1:1 before that.
+- **Synthetic KeyboardEvents do not reach the command layer in WebKit
+  probes; `page.keyboard.press` does.** Four probe runs read as "the command
+  never fires" before that was the answer. Also: after dev sign-in, focus is
+  in the assistant composer, so a probe's keystrokes go there until it
+  clicks something in the list first.
+- **Dev sign-in provisions its own workspace from the email**, ignoring a
+  blog you seeded under a hand-picked handle, and `blogs_owner_idx` is
+  unique, so a scratch workspace needs its own scratch user. Seed through
+  the store, publish through `savePost`, and tear down user, blog, folders
+  and posts together.
+- Back and forward in the floating chrome called `window.history` directly,
+  which is a fourth way to navigate past the swipe, the keys and the Mac
+  menu. They go through the shell's `__ttNavGo` now, falling back to the raw
+  call only on server-rendered pages that have no shell.
+- **Teaching surfaces read the command table.** `commandTip(id)` in
+  `hints.ts` backs `ShortcutTooltip`'s `command` prop; the hint bar and the
+  sheet already derived from the table. A test asserts it. The cost is that
+  `ShortcutTooltip` now pulls `WORKSPACE_COMMANDS`, which imports the
+  editor's server actions, so any vitest suite rendering a tooltip needs the
+  `@/app/editor/actions` mock.
+- **The document's own measure was left alone.** The plan asked for ~65
+  characters; `--tt-measure: 46rem` lives in the presentation system and is
+  what PUBLISHED pages use, so narrowing it would reflow every published
+  document, and setting it only in the workspace would make writing and
+  reading disagree. The 720px cap on the document column brings the
+  workspace measure to ~75 characters instead. One line in
+  `src/lib/presentation/styles.ts` if the owner wants the rest.
+
+## What the refit broke, and why (2026-09-04)
+
+The owner tested build 1027 and reported ten things. The causes are worth
+keeping, because most of them are one mistake wearing different clothes.
+
+- **A live `backdrop-filter` over content that moves is not free.** Three of
+  them went over the article (two round history buttons, a stepper pill).
+  This is already recorded further up for the sidebar drag; it is equally
+  true of a scrolling document and of a swipe. Opaque grounds instead.
+- **`max-content` in a row is a trap during a swipe.** The swipe lays the
+  clone out against a container that is still narrowing, so a
+  `minmax(0, max-content)` title column resolved to almost nothing and every
+  title painted as one or two characters before popping back.
+- **But a flex row hands its full width up to an `auto` grid track.**
+  `.workspace-recent` and `.workspace-recent-list` are grids with one
+  implicit column. A grid row's `minmax(0, 1fr)` preview contributed nothing
+  to max-content; a flex row's nowrap preview contributes all of it, and the
+  track grew to 1648px inside a 750px column. Any list container that holds
+  a truncating row needs `grid-template-columns: minmax(0, 1fr)` explicitly.
+  A truncating flex child also needs `flex: 1 1 0` and its own `min-width: 0`
+  on the text element.
+- **`.post-editor-shell.applecms` redefines `--bg-soft`/`--bg-soft-2`** to a
+  near-black scale of its own. A token that reads as a light grey at `:root`
+  paints almost black inside the workspace. Derive from `--ink` and `--bg`
+  for anything inside the shell.
+- **A view transition's GROUP animates the snapshot's size.** Two views are
+  rarely the same height, so the content scaled as it slid and settled a few
+  pixels when the real DOM took over. Pin both images (`object-fit: none`,
+  `object-position: top left`, `height: 100%`) and set
+  `::view-transition-group(...) { animation: none }`.
+- **Arriving by history is not opening.** Back, forward and the swipe all
+  land through popstate; recording them re-sorted Recently opened while
+  someone was only moving through items they had already seen.
+- **The swipe clone is appended to `.post-editor-shell`, not to
+  `.workspace-document-layout`.** A rule scoped to the layout does not match
+  the clone, so the document inside it renders differently mid-gesture. Scope
+  document rules to `.post-editor-content`, which the clone carries.
+- **Padding inside a scroller only moves content that is in flow.** The hint
+  bar's clearance has to be on the column, or positioned children (the
+  editor's save state, the action bars) stay underneath it.
+- **One action, one control.** The action bar has carried previous/next post
+  as left and right chevrons all along; the refit added a second pair as up
+  and down chevrons elsewhere.
+- **DESIGN.md's accent rule is load-bearing.** "The accent never floods a
+  surface" is what the tinted sidebar row violated, and it is what read as
+  "a lot of blues".
+
+**Measured, headless WebKit, click-to-content for opening an item** (20
+samples, first run after a server restart discarded, three runs each):
+pre-refit 73ms p50, build 1027 92ms, after these fixes ~85ms. Run-to-run
+noise reached +/-15ms by the end of the session, so the residual gap is at
+the edge of what this harness resolves. The harness cannot see compositing,
+which is where the blur layers cost the most, so it understates what the
+real app felt. `scripts/bench-workspace-interaction.ts` reloads the page
+before every sample and takes four; that variance is a page load, not the
+interaction.
+
+## Verifying a visual change (2026-09-04)
+
+Three scripts, meant to be used together. All three need a production build
+served on :3131 with `AUTH_DEV_LOGIN=1` and the `visual-demo` fixture:
+
+```bash
+npm run build
+AUTH_DEV_LOGIN=1 npx next start -p 3131 &
+```
+
+- **`scripts/visual-surfaces.mts <dir>`** walks thirty surfaces in both
+  themes - home, a selection, all three view modes, an item read and edited,
+  the palette, the shortcut panel, starred, shared, trash, a collection,
+  search and a published page - and writes a screenshot of each. Run it
+  before a change and after.
+  The walk aborts every off-origin request: a fixture bookmark of
+  texttext.app renders that site's favicon, so the suite was racing the
+  network and one row flickered depending on whether the image arrived in
+  time. A screenshot suite that depends on the network measures the network.
+- **`scripts/visual-diff.mjs <before> <after> <tmp>`** compares two such
+  runs, per surface, with the bounding box of anything that moved. Two runs
+  of the SAME build are pixel-identical, so any difference at all is the
+  change you made. (It was not always: a bookmark thumbnail flickered until
+  the icon started being drawn first, which is worth remembering as the kind
+  of thing a regression suite tells you about your app.)
+- **`scripts/interaction-check.mts`** drives sixteen real flows and asserts
+  the outcome - open, back, j/k, shift-extend, Cmd+A, search, the palette,
+  the shortcut panel, the appearance cycle, tabs opened, closed and
+  reopened, the sidebar, the hint bar, a hover tooltip - and reports anything
+  thrown along the way. A benchmark says how long something took; this says
+  whether it worked. It is what found a 404 nobody had noticed.
+- **`scripts/runtime-profile.mts`** asks Chromium for style recalculations,
+  layouts and script time per interaction - a hover sweep, a scroll, and the
+  window between clicking a row and the reader being readable. Counters, not
+  wall-clock: a laptop that has been building all evening cannot resolve a
+  15ms difference in a stopwatch, but it counts work exactly. Current
+  figures: a hover costs about half a millisecond, a scroll is negligible,
+  and an open costs 17 recalcs, 11 layouts and 38ms of script before the
+  reader is readable.
+- **`scripts/memory-retention.mts`** reports RETAINED heap after forcing
+  collection twice, every six open-and-backs. Reading `JSHeapUsedSize`
+  without forcing collection first is meaningless - it swung between 400MB
+  and 1.7GB for identical code and sent two investigations down the wrong
+  path in one sitting. **Open standing finding: the workspace retains about
+  1.7MB per open-and-back** (22MB settled at start, 52MB after eighteen),
+  with the same six documents cycling, so it is not document content being
+  cached - it is something allocated per mount and held. Two hypotheses are
+  ruled out: the in-memory body cache (bounded in that scenario anyway, and
+  an LRU on it changed nothing), and the editor's Y.Doc (destroying it on
+  unmount made things worse, not better). Finding the retainer needs a heap
+  snapshot with retaining paths.
+- **`scripts/storage-writes.mts`** counts IndexedDB writes per store across
+  three opens of one document. A count is immune to machine load, which is
+  the only reason this was findable on a night when wall-clock swung thirty
+  to one. It found the workspace writing an 8MB document to disk 180 times
+  per open, 1.2GB an open, because every path that sets a ready body
+  persisted it and building a large document into the CRDT sets it many
+  times as content arrives. Coalescing to one write per idle took three opens
+  from 551 puts / 3864MB to 12 puts / 37MB.
+- **`node scripts/find-dead-css.mjs [--write]`** lists (or removes) every
+  rule whose selectors are built entirely from classes no source file
+  mentions. Verify a `--write` with the surface walk above. It parses with
+  postcss on purpose: a hand-rolled pass produced invalid CSS.
+
+**The reference screenshots are recoverable from the session transcript.**
+Owner-pasted images live base64 in `~/.claude/projects/<project>/<id>.jsonl`
+as `{type:"image",source:{data}}` inside `type:"user"` lines. Extracting them
+turns "match the design" into measurement: sample colours per pixel, find
+columns by scanning a row band for ink, find row rhythm by scanning a column.
+That is how every number in the visual pass was arrived at.
+
+**The workspace does not use tokens.css.** `.post-editor-shell` bridges the
+semantic tokens to the Apple system palette in apple.css (`--ac-label`,
+`--ac-bg`, ...). A change to `tokens.css` reaches the published site and
+nothing else. This cost a whole refit step before anyone noticed.
+
+## The open item rebuilt to Superhuman's structure (2026-09-05, build 1045)
+
+The owner's goal, set with /goal after seeing build 1044: match the Superhuman
+screenshots precisely, both themes, verify visually, do not stop until close.
+The failures were structural, not metric: fixed chrome floating over the
+document, a sheet capped at 700px leaving a dead strip to the rail, the title
+in a sticky card, the edit toolbar as a floating panel. The owner added a
+rule mid-work: **one action bar across the whole column, same height and
+slots in every view, so the back button is always in the same place.**
+
+What landed (gpt-5.6-sol passes, integrated in order frame, rail, action bar,
+reading pane; each verified by eye at 1800x1169 with a 418px sidebar in both
+themes against ref-10 light and ref-08 dark):
+- `WorkspaceSidebarChrome` prepends a `.workspace-action-bar-host` into
+  `.post-editor-content`, a 3-column grid (history 96px | middle | right).
+  `PostActionBar` portals the read bar into the right slot
+  (`WorkspaceActionBarPortal`). The list's search sits in the middle slot.
+- The sheet spans the column; the winning cap was a LATER
+  `max-width: 700px` at ~line 3683 that beat the earlier full-width override.
+- Title as a plain heading with one byline; body ~18px in a ~710px measure.
+- Rail: `#ffffff` light ground, dark ground aligned to the document ground,
+  secondary text raised from 2.76:1 to 5.41:1, composer as a rounded input.
+
+Second pass on the same day (build 1045): the editing pane now portals its
+toolbar into the bar's right slot through `WorkspaceActionBarPortal`, which
+moved to its own module (`src/components/workspace/WorkspaceActionBarPortal.tsx`)
+because importing it from `PostActionBar` pulled next-auth's `next/server`
+into the editor's import graph and took `pre-ready-edits.test.ts` down at
+load: 1905 tests read as 1901 with no failure line, the four cases simply
+vanished. A file that fails to import disappears from the count; check
+`Test Files` as well as `Tests`. The editing-pane diff keeps the offline
+`applyDocumentBaseline` fallback and adds a visible failure state only from
+`onError`; retry re-runs the provider effect via a `providerAttempt` counter.
+The edit title inherited `#29292c` from `.post-editor-content .tt-document`,
+a light ink hard-coded by an earlier pass, so in dark it was dark-on-dark; it
+is now `var(--ink)`. A second literal at ~line 3325 (prose and edit-surface
+ink) is covered by a later dark override and was left alone; it is a latent
+hazard for any selector that override misses. The polish pass turned the
+read bar's controls into monochrome glyphs, lightened the title and byline.
+
+Cold load, second attempt, decided against: extracting `UniversalItemComposer`
+so `FolderPage` can lazy-load is a clean move (392 of 399 distinct removed
+lines reappear verbatim; every other file is an import path) but the deferred
+FolderPage chunk is only 48KB by emitted-manifest comparison (1969 -> 1921KB),
+under the 60KB bar set for it, and the sandbox could not bind a port to run
+the browser probe or the interaction suite (`listen EPERM`). Not applied; the
+diff is at the session scratchpad `sol/out/composer.diff` if the bar changes.
+The finding that matters: what remains on the critical graph is SHARED -
+zod ~322KB, presentation/templates ~157KB, the assistant ~202KB,
+react-markdown's residual ~270KB. Cold load will not move meaningfully
+without a real boundary around one of those, each of which is a product
+decision (the assistant has 55 call sites in the shell; zod/mini changes the
+validator; the templates are the document model). Two safe levers were tried
+today and yielded 28KB and 48KB. Locally cold load is 2.1-2.5s including dev
+sign-in; the owner's 5s is the Vercel round trip plus the ~1.9MB parse on a
+loaded machine.
+
+Two things found by the interaction suite, not by looking:
+- Two bars alive after cmd+W / shift+cmd+T shared one `justify-content:
+  flex-end` slot and overflowed LEFT over the arrows. More precisely, a note
+  opened via cmd-click lands in edit mode whose toolbar is not portaled and
+  renders as a sticky full-width band at the bar's y. The host now stacks at
+  z 230 above any in-content bar (17/17 restored); the edit toolbar's portal
+  is the editing-pane pass still in flight.
+- A first editing-pane diff deleted the `applyDocumentBaseline` fallback in
+  `provider.start().then` (the offline seed) to show a failure state. Rejected:
+  fail visibly only from `onError`; the re-brief says so verbatim.
+
+Perf, decided against: a Sol pass swapped zod imports across 13 files
+including `documents/model.ts` for 28KB (1976 -> 1948). Not applied; the
+schema-v1 contract is not worth 28KB. Its real finding: `FolderPage` cannot
+lazy-load until `UniversalItemComposer` (~540 lines of loss-protection and
+retry) is extracted from it. Timings on this build, WebKit, local production
+server: cold load 2.1-2.5s including dev sign-in, warm reload 0.5-0.65s, open
+item ~50ms, edit ready ~30ms. The owner's 5s cold is the network path to
+Vercel plus the ~1.9MB parse on a loaded machine.
+
+## "Insane amount of errors" (2026-09-05): what the recording actually showed
+
+The owner recorded build 1042 in the Mac app at 1800x1169 logical (3600x2338
+native), sidebar resized to about 418px, dark mode, a tab open. Three things
+were visible; two were bugs, one was a gap.
+
+**Wrong turn first, so nobody repeats it.** An unauthenticated fetch of
+`https://texttext.app/editor` returns the sign-in page, which never loads
+`workspace.css`. Comparing that page's stylesheets against a local build
+"proved" production lacked the parity CSS. It did not. `vercel inspect
+texttext.app` resolves the alias authoritatively, and Turbopack chunk names
+are content hashes, so `curl` of a local chunk's filename on production
+(200 and `cmp` identical) settles whether the deploy matches. A deployment's
+own "Aliases" list in `vercel inspect <url>` is stale metadata and omitted the
+custom domain on the live one. Also: zsh ties `$path` to `$PATH`; a loop
+variable named `path` empties PATH for the rest of that shell.
+
+**Bug 1: scroll leaks across views.** "Notes" rendered as "es", "Bookmarks"
+as "okmarks", the heading sliced by the fixed history arrows. It never
+reproduced fresh at any window size, sidebar width or theme, because
+`.post-folder-page` reserves 72px above its heading. It reproduced the moment
+the probe scrolled the editor first: the shared `.post-editor-content`
+scroller kept 464px, the folder clamped it to 72, and the heading sat at y=40
+under arrows fixed at 46-82. The scroll-memory restore in PostWorkspaceShell
+returned early when a view had no saved position, leaving the scroller
+wherever the last view had put it. A view with nothing to return to now
+resets to 0 (207e93ce). Probe: `.texttext/probe/clipcheck.mts` with
+`SCROLLPREV=600 SBW=418 VW=1800 VH=1169`.
+
+**Bug 2: the edit toolbar sat on the arrows.** "Codex" read as "ex". The Sol
+pass pinned `.post-top-action-bar.is-edit` to `sidebar + 10px`; the arrows are
+at `sidebar + 8px`, 80px wide, same `top:46px` row. Reproduced at every size.
+Now `sidebar + 98px`, the clearance the filter strip already uses (759bfc72).
+The collapsed-sidebar variant is 98px by reasoning, not by probe: the collapse
+toggle is not in the edit view's chrome. The arrows' own `left` is not
+declared in any stylesheet grep found; it measures sidebar + 8 live.
+
+**Gap: the folder view was never restyled** (closed in d3794a4a, build 1044). The home list got the Superhuman
+rows; a folder still renders FolderPage's older rows (star in the leading
+slot, hairline dividers, "Sep 4, 2026" dates, a bordered composer). It is a
+different component and sat outside every agent's ownership. Note for anyone
+restyling it: bare `.post-folder-*` selectors are shared with the PUBLISHED
+folder page; workspace-only changes must be scoped under `.post-editor-shell`.
+
+Closing it took two Sol passes (89 and 62 inventory rows) and one measured
+correction: the row shell's right bleed was copied from the home list at
+-38px and carried every folder row 30px under the assistant rail, clipping
+its date to "SEP 4, 202". The list sits 8px inside the column, so 8px it is.
+A block-level scope check (parse the diff's added rules, assert every
+`.post-folder-*` selector starts with `.post-editor-shell`) is the right test
+for anything touching FolderPage; a per-line grep flags multi-line selectors
+falsely. One parity nit remains on the home list: a bookmark row keeps its
+type glyph in the leading slot where Superhuman draws nothing.
+
+**Not a bug, probably:** "Welcome to TextText" showed an empty editor with
+"Saved on this device". That label is the `local` state, which
+`flushMaterialization` enters when `hasDocumentSnapshot(doc)` is false, and in
+that state nothing is written. Locally the same document renders all 1611
+chars. Reads as a collab baseline that never arrived under that evening's
+load average of 53, not a document saved empty. Unverified against production
+data; the owner was asked whether the note still has its content.
+
+Playwright's WebKit binary vanished mid-investigation (`npx playwright install
+webkit` restored it); dependencies were unchanged since 2026-09-01, so that was
+a cache eviction, not an agent.
+
+## An edit that came back (2026-09-04, FOUND and FIXED)
+
+The owner deleted a selection from a large bookmark; the delete landed, then
+the document reverted to its exact pre-edit state, repeatedly. Frames from
+the recording show the deletion applied correctly and then the whole
+document restored - a baseline superseding the local edit, not a corruption.
+
+**Not reproduced.** A delete of six lines, and a select-all delete, on a
+note, a bookmark, an article and the 100kB fixture, all hold for at least
+seven seconds. The owner's case had two things the fixtures do not: an
+assistant action that had run and hit a usage limit, and a captured bookmark
+body several times larger than anything here.
+
+Ruled out by reading: the AI quick-action path is guarded.
+`resolveWorkspaceItemTextEdit` refuses to apply a proposal whose captured
+`source` no longer matches the live field, returning `reason: "stale"`, so a
+proposal built before an edit cannot clobber it. And `ensurePostDocument`
+refuses to install a cached or fetched body while `locallyDirtyBodies` holds
+the key, which `updatePostDocument` sets on every local edit.
+
+### Second pass: the mouse-selection lead, and what it actually turned up
+
+The owner's follow-up said the trigger is a **mouse highlight** followed by
+Backspace, not the keyboard selection the first pass used. That turned out not
+to be the difference, but chasing it found a real defect elsewhere.
+
+**Still not reproduced.** Every mouse gesture was driven against a real
+surface: drag inside, drag released below / above / left / right of the
+surface, over a markdown link, double-click, triple-click, whole-document
+drag - on a note, on a 24kB bookmark carrying links and headings, and across a
+reload. Every deletion matched its selection and held. The fragment visible in
+the recording (`w.gamedeveloper.com/author/hugo-bille)`) is correct behaviour:
+the blue selection ends mid-URL, so the delete correctly leaves the tail.
+
+Ruled out by test as well as by reading: an out-of-band metadata write against
+a live edit (the edit survives); the catch-up baseline (`baselineApplied`
+guards re-application inside a session); the proposal apply/undo path, which
+re-reads the item and verifies `current[field].slice(start, end)` before
+sending a **ranged** `text_edit`, so a stale proposal cannot restore a whole
+body.
+
+**A caution about the first pass's gesture matrix.** Its per-gesture reset
+silently failed, so most gestures ran against an already-emptied document and
+proved nothing. A reset of a post's body is not complete until the collab log
+is retired too; see below for why.
+
+### What was found: a stale log silently discards an out-of-band body write
+
+`prepareCollabBaseline` gates the reseed-and-retire on
+`hasActiveCoEditors(postId)` - with no `exceptClientId`, so it counts **the
+asking client itself**. `hasActiveCoEditors` documents that this is wrong
+("A caller that publishes its own presence before it writes must not count
+itself"); the parameter existed and was never passed.
+
+`resumeNetworkLoops` starts the catch-up and the presence heartbeat
+concurrently, so a client routinely races its own presence row into the table
+before its own `since=0` read is served. A reopen inside the presence window
+does the same with the previous session's row.
+
+Measured, on a post whose stored body and log disagreed:
+
+```
+posts.body      = 756 chars (posts.revision 23765)
+collab baseline = 756 chars (baselineRevision 23747)
+collab replayed =   0 chars after 3 updates  <- what the editor opens
+```
+
+The reseed that should have retired that log was skipped, so the log won and
+the stored body was discarded with no error anywhere. Any body written outside
+the collab materialize is exposed: an agent write, another device, a restore.
+
+**Fixed** by forwarding the asking client on the catch-up read
+(`?since=…&clientId=…`) and passing it to `hasActiveCoEditors`. A lone editor
+now reseeds; genuine co-editing by someone else still defers, which is what
+the guard was for. Covered by `collab-relay-route.test.ts` (the route forwards
+it) and `collab-provider.test.ts` (every catch-up read carries it).
+
+This is the same class as the owner's report and worth having fixed, but it is
+**not** confirmed to be what they saw: their sequence had no out-of-band
+writer that I can see. Their report stays open.
+
+### Third pass: found it. A materialize response applied out of order.
+
+`gpt-5.6-sol` (codex exec) diagnosed it from the code while a second session
+worked the bundle; the reproduction and verification below are mine.
+
+`flushMaterialization` in `UnifiedDocumentEditor.tsx` fences the REQUEST on
+`localVersion <= savedMaterializationVersionRef.current`, encodes the doc, and
+posts it. The RESPONSE was applied unconditionally:
+
+```ts
+if (result.document) {
+  applyDocumentSnapshot(doc, result.document, "materialized");
+```
+
+`applyDocumentSnapshot` reaches `replaceText`, which does
+`target.delete(0, target.length)` then re-inserts. So a response describing a
+state captured BEFORE a deletion wipes the live `Y.Text` and refills it with
+the pre-delete text - and the save already queued behind it then persists the
+restoration. That is the owner's sentence exactly: it brings back everything
+and deletes it.
+
+**Reproduced against a production build** by holding the first `/materialize`
+response in Playwright, deleting a mouse selection while it was in flight, and
+releasing it:
+
+```
+materialize in flight: yes (749 chars)
+deleted 84 chars: 749 -> 671
+  +800ms after release: 749 chars   <<< 78 CHARS CAME BACK
+```
+
+`.texttext/probe/materialize-race.mts`. With the fix the same probe holds at
+671, and the stored body goes 756 -> 673 (756 + 1 typed - 84 deleted), so the
+deletion still persists: skipping the stale acknowledgement is safe because
+`scheduleMaterialization` bumps the version AND schedules a flush, so a newer
+request is always already pending.
+
+The fix fences the response on the version its request described, and reports
+`local` rather than `saved` when it declines, so the UI does not claim saved
+while a newer flush is outstanding. Pinned by
+`src/components/document/__tests__/materialize-response-fence.test.ts`, whose
+first case asserts the destructive behaviour the fence prevents.
+
+Why the earlier passes missed it: every probe deleted once and waited. The
+window is only open while a materialize request is in flight, so the delete has
+to land inside it. The owner's session had an assistant run writing the body,
+which starts exactly that request.
+
+Two corrections to the earlier notes: the windowing threshold is 150,000
+characters, not ~100kB, so the 100kB fixture never exercised windowing; and
+windowing is not required for this bug at all, though a larger document widens
+the window.
+
+
+### Fixture damage, and how it was undone
+
+The first pass's delete probes emptied three fixture documents outright:
+`Connect an AI` (1218 chars to 0), `Perf test 100kB` (88712 to 2) and 444
+chars from `Windowed integrity fixture`; this pass emptied
+`What makes quiet tools work` (135 to 72) before the harness was made
+non-destructive. All four were recovered by replaying `collab_updates` over
+`collab_state.baselineUpdate` and taking the longest reconstruction, then
+written back through `savePostContentPatch` and fenced with
+`prepareCollabBaseline`. `Connect an AI` also carried an older probe's slash
+command typed into a word (`scre/connectionen`), repaired to `screen`.
+
+The collab log is the only history this app keeps, and `prepareCollabBaseline`
+**deletes** retired-epoch rows - so dump a recovery before retiring anything.
+
+Destructive editor probes now run against a disposable document that is
+created, reset and removed by the harness, never against the owner's fixtures.
+
+
+**Two of my own changes combined into exactly this failure and are out.**
+The in-memory body cache had gained an LRU, and the IndexedDB write had been
+deferred to requestIdleCallback with a two second timeout. Together: evict
+the entry for a document being edited, and `ensurePostDocument` stops
+returning early, re-hydrates from a disk copy that is up to two seconds
+stale, and installs the pre-edit body. The eviction guards (listeners,
+dirty, in-flight) make that unlikely rather than impossible, and "unlikely"
+is not good enough when the cost is someone's edits. The LRU is reverted
+outright - it had no measured benefit - and the write delay is 60ms, which
+keeps three quarters of the write collapse (14 puts per three opens against
+551 before any of this, 12 with the idle version).
+
+If it recurs, the thing to capture is which path installed the old body:
+instrument `setBodyEntry` to log its caller and the body length whenever the
+new length is greater than the old while `locallyDirtyBodies` holds the key.
+That condition is exactly "something restored content during an edit" and it
+should never be true.
+
+## Resolved episodes (one line each, dates in git log)
+
+- Apple consent screen "write app": appleid.apple.com caches its own copy;
+  only a portal Save syncs it.
+- Sparkle stays: it serves the Developer ID lane; TestFlight serves sharing.
+- `runtimeServerDeploymentId: false` in next.config.ts prevents the E970
+  all-routes-500 outage; do not remove.
+- Looks are named Article/Note/Bookmark/Gallery/Talk/Checklist/Project/
+  Newsletter; a test fails on competitor names.
+- 56-agent visual critique and the 24-check collaboration proof exist as
+  repeatable verification lanes.
+
+## 2026-09-05 Reader sheet, list scale, cold load
+
+Visual pass against the Superhuman references at the owner's 1800x1169
+viewport (sidebar 418), both themes, verified by pixel sampling and
+side-by-side composites rather than by computed style alone.
+
+- The reading pane is a white card (6px radius, 27px inset, soft shadow)
+  on an off-white ground, `#eef1f6` light / `#26272b` dark with the card
+  `#333438`. The document engine paints a fixed viewport-sized page ground
+  as `.tt-document::before`; inside the workspace it covered the ground, so
+  workspace.css suppresses it with a selector mirroring the engine's
+  (`:not(.tt-collection-item):not([data-preview])`), because a plainer
+  selector loses on specificity and silently does nothing. The tab strip
+  and action bar take the same ground so the header reads as one surface.
+- Body type 16px on 1.6; reading ink `#232428` light, `#e4e4e8` dark via
+  `--workspace-reader-ink`. Two dark rules pinned `#f1f1f3` literally and
+  had to be routed through the token.
+- List rows 47px pitch, 15px titles, sidebar rows 46px, search as an icon
+  in the bar (agent inventory `listscale`).
+- Cold load, local production build, dev login cookie present:
+  home first byte 1034ms -> 57ms, list visible 1227ms -> 127ms, warm
+  reload ~530ms -> ~100ms. The whole second was `getAllPosts`:
+  `wordCountSql()` falls back to splitting the body on whitespace when
+  `word_count` is null, and one 7MB fixture row was null, so every home
+  render regex-split 7MB. `scripts/migrate-backfill-word-count.mjs` fills
+  the nulls and is in the release migration list (promote:local runs it);
+  the fallback is bounded to the first 256KB so an unmigrated giant row
+  can never cost that again (its count is an estimate until backfilled).
+- Chunks: the editor (Yjs, 228KB) and the assistant boundary now wait for
+  the window load event plus a quiet period (`src/lib/after-load-idle.ts`)
+  instead of an idle slot during the pool fetch, which fired before the
+  list was visible. FolderPage takes the engine stylesheet from
+  `DocumentEngineStyles.tsx` and loads `DocumentCollectionRenderer` on
+  demand, so the list bundle no longer imports react-markdown.
+- Still on the cold path by design: the assistant rail is open at startup,
+  so its controller, sidebar and conversation chunks (about 450KB) and the
+  react-markdown graph they reference (239KB) load before the list. The
+  next lever is rendering the rail's static shell without the controller
+  until first interaction. Also still there: zod (351KB) through the pool
+  payload validation; `zod/mini` would mean rewriting ~2900 lines of
+  schema, and the shim an agent proposed saved 27KB, so it was not taken.
+- Attributing chunks: `TEXTTEXT_SOURCE_MAPS=1 TEXTTEXT_NEXT_DIST_DIR=.texttext/probe/next-maps AUTH_DEV_LOGIN=1 npx next build`
+  then pair each chunk with its map through the `sourceMappingURL` comment
+  (names do not match otherwise). Probes live in `.texttext/probe/`
+  (gitignored): `waterfall.mts`, `chunktime.mts`, `servertime.mts`,
+  `flowcheck.mts`, `typeprobe.mts`.
+
+### Changelog entry pending (2026-09-05)
+
+The `texttext:project-changelog` entry for this pass could not be written
+from this session: `~/.local/bin/texttext` is a dangling link into a deleted
+visual fixture (`.texttext/native-undo-visual-fixture/...`), the installed
+app's helper at `/Applications/TextText.app/Contents/Helpers/texttext` works
+but addresses the app's active workspace (Bookmarks, Documentation, Notes;
+no changelog), and the MCP server needed authorization. Draft, newest on top
+under the version that shipped:
+
+- The reading pane is a card on a soft ground, with the title and actions
+  in one bar across the top, in both light and dark mode.
+- Reading text is 16px on a roomier line, with darker ink in light mode
+  and softer ink in dark mode.
+- The list is denser: rows sit closer together with slightly larger
+  titles, and search is an icon in the bar.
+- The workspace opens faster. The home view no longer recounts words in
+  every document on each load.
+
+### Shipped 2026-09-05: TextText 0.182 build 1047
+
+`npm run promote:local` at 06:43: gates passed in 1m11s (load 13),
+deployment `dpl_9DEzFR5L2YFZ5fztoBysYGSCAZM2` aliased to texttext.app,
+production migrations ran (`migrate-backfill-word-count`: 0 production rows
+had a null word_count, so the fallback never fired there; the bound stays as
+insurance), app installed and verified. Production serves the reader rules:
+the chunk carrying `.tt-document:not(.tt-collection-item):not([data-preview])::before`
+returns 200 from texttext.app. Final captures of the shipped build at
+1800x1169 in both themes: list, folder, reader and edit, composited against
+ref-00/02/10, pixel-sampled dark (sidebar `#303036`, content `#2c2d31`,
+rail `#2b2b2e`).
+
+### Cold path, second pass (2026-09-05, after build 1047)
+
+- Server chain for the owner's home render: batch one (blog, query, cookies,
+  viewer, edit record, with `getBlogEditAccess` started before it), then the
+  pool parts started optimistically, then the Blog folder's saved layout.
+  The layout query depended only on the handle but was awaited after the
+  pool; it now starts with it (`homeLayoutPromise` in
+  `src/app/t/[handle]/page.tsx`). For the owner the folder items come from
+  the pool and the folder access check is skipped, so the render is two
+  sequential round trips. Locally invisible (1ms latency); on Vercel to Neon
+  each sequential trip is the cost of this page.
+- Right after hydration the client POSTs three Server Actions, all the
+  assistant's: `getAssistantConversationCacheScopeAction`
+  (useNativeAssistant.ts), `getWorkspaceAgentSkillMetadataAction`
+  (AssistantSkillLauncher.tsx) and `syncAssistantConversationsAction`
+  (AssistantConversationState.tsx, 900ms after mount). They looked like
+  route re-renders in the waterfall (POST to `/@handle` with only
+  `next-router-state-tree`); `.texttext/probe/rscwho.mts` wraps fetch and
+  records the `next-action` id, mapped to a name through the client chunk's
+  `createServerReference` call. The conversation sync also wrote the
+  history row on every launch even when the merge changed nothing;
+  `syncWorkspaceAssistantConversationHistory` now compares canonical
+  fingerprints and returns without writing. All three actions move off the
+  cold path once the rail renders from a static shell (agent brief
+  `sol/brief-rail.md`; diff pending).
+- `refreshWorkspacePool` fetches `/api/workspace/pool` (JSON), not the route.
+- Production wire sizes are brotli: the six largest chunks (352 to 144KB raw)
+  are 77 to 39KB on the wire, so JS transfer is not where a 5-second launch
+  goes; server round trips and the assistant's startup work are.
+- Not measured: the owner's real workspace on production. Screen access to
+  the app was declined and Claude in Chrome was not connected, so the
+  numbers above are local; the shipped build's production first byte for a
+  signed-in owner is still unmeasured from this side.
+- zod (352KB raw, 77KB wire) reaches the list path through four value
+  imports, not through the pool payload: `presentation/templates.ts` runs
+  `validateTemplateDefinition` over every builtin at module init and
+  `FolderPage` imports it; `documents/legacy.ts` imports
+  `validateDocumentSnapshot` for its value and `pool/selectors.ts` imports
+  `legacyTemplateId` from it; `pool/storage.ts` parses rehydrated documents
+  with `documentSnapshotSchema.safeParse`; `WorkspaceSidebarChrome` imports
+  `FolderLookPicker`, which imports `validateDocumentSnapshot`. Everything
+  else imports types only. Taking zod off the cold path means validating
+  the static builtins in `src/lib/__tests__/builtin-templates.test.ts`
+  instead of at every launch (check first whether the schema fills defaults
+  the raw definitions lack), moving `legacyTemplateId` to a zod-free
+  module, loading the document schema lazily in the storage parser, and
+  loading the look picker on demand. That is a contract question for the
+  owner ("render specs are validated data"), so it was not done here.
+
+### Shipped 2026-09-05: TextText 0.182 build 1048
+
+Second promotion of the day (07:24, load 11): the parallelized home render
+and the write-free conversation sync. Deployment
+`dpl_HLkkTsXoffPDtJ5iC9NPSgLcSJVk` aliased to texttext.app, migrations ran
+(no null word counts), app installed. The assistant rail static shell was
+still being drafted by the agent at this point and is not in this build.
+
+### Assistant rail static shell (2026-09-05, commit e2cd781f)
+
+The rail paints from `AssistantRailShell` until its controller loads. Shell
+and loaded rail are pixel-identical at 1800x1169 (`.texttext/probe/railsame.mts`
+crops the rail right after the list is visible and again seven seconds
+later; ffmpeg difference max 0). The boundary loads after window load plus
+2.5s quiet, on first interaction with the shell, or at once when the
+persisted replica shows the active chat holds messages
+(`replica-peek.ts`, read-only scan of the owner-scoped
+`texttext:assistant-conversations:v1:` keys). The shell hides the new-chat
+button until a conversation exists, as the real rail does; shown, it
+truncated the title. Chunk timing on the local production build: the
+controller (127KB), sidebar (26KB), conversation (18KB + 24KB), skills (50KB)
+and editor (228KB) now arrive about 700ms after the list is visible.
+
+Still early: the workspace shell (235KB, includes the rail shell), a 108KB
+chunk with the shell's CSS module maps and starters, react-markdown
+(239KB) and the presence chunk (94KB). Neither of the last two is imported
+statically by any client module in src any more (the reader in
+`page.tsx` is dynamic too), yet Turbopack still lists them in the page's
+shared client chunk list (see `page_client-reference-manifest.js`, where
+every client component of the page carries the same list). A source-mapped
+build is the way to find the module that keeps them there.
+
+### react-markdown found (2026-09-05)
+
+The chain was `WorkspaceSidebarChrome` -> `FolderLookPicker` (static) ->
+`TemplateGallery` -> `DocumentRenderer` -> react-markdown. Source greps for
+importers of `DocumentRenderer` missed it because the gallery imports it
+with a relative path; the source-mapped build showed `DocumentRenderer.tsx`
+in a small chunk of its own whose two known importers were dynamic
+entries, which pointed at a third importer. The picker is now a dynamic
+import. Early set on the local production build: 2725KB at the start of
+the day, 1936KB now; the 58KB presence chunk that remains early is the
+action bar with `usePresence`, which is on screen at startup by design.
+
+### Shipped 2026-09-05: TextText 0.182 build 1049
+
+Third promotion of the day: the assistant rail static shell, the on-demand
+look picker (react-markdown off the home load) and the dynamic single-post
+reader. Deployment `dpl_DSUbM66mNNeP2f4cPE2pDB9edi5B` aliased to texttext.app, migrations ran, app
+installed; the production chunk carrying the shell's stylesheet returns
+200. Local early script set 1936KB (2725KB this morning).
+
+### Signed-in production launch, measured from outside (2026-09-05, build 1049)
+
+Screen access to the app was declined, so the launch was timed by process
+sampling instead: quit the installed app, `open -a TextText`, then every
+half second read CPU for the host process and for the WebKit WebContent and
+Networking processes that appeared after launch. The host process is busy
+until about 1.7s. WebKit processes appear at 0.7s, web CPU peaks at 1.8s
+(parsing and first render of texttext.app with the owner's session) and is
+quiet, under 10% for two seconds, from 2.9s after launch. Idle CPU is a
+proxy for "rendered", not a paint timestamp, but it is the real client, the
+real session and production. Sampler: python in the shell, no probe file;
+the earlier `nettop`-based attempt blocked and was dropped.
+
+### From the owner's recording (2026-09-05, after build 1049)
+
+- Deleted text coming back: a pre-ready edit race. The surface edits the
+  local ledger before the provider is ready; when the collab catch-up
+  landed, `handleDocumentUpdate`'s remote branch published the server
+  snapshot over the surface. Guarded now (`readyRef` + ledger). Reproduce
+  with `.texttext/probe/deleterepro3.mts` (900ms delay on /api/collab, edit
+  within two seconds of launch); the flag `window.__ttEditorInspect = true`
+  before mount exposes `window.__ttEditor()` with ready/ledger/ydoc/surface
+  lengths. The window was widened by warming the editor chunk late; it now
+  warms 300ms after load.
+- Scroll jumps on scrolling up: this WebKit (605.1.15, Safari 26.5) has
+  overflow-anchor; the reader's own compensation doubled it. Feature-detect
+  in `scroll-anchoring.ts`; the old onLoad compensation is gone.
+- Scrollbar under the shortcut bar: `.post-editor-content` takes its grid
+  row minus `--workspace-hints-height` (the row is a fixed track, so a
+  margin only overflowed it).
+- Edit opening off from the reading position: `reading-anchor.ts`; the
+  shell dispatches the caret event with `align: "top"` once the surface is
+  laid out; the scroll restore yields while an anchor is pending.
+- Blank window at launch: about two seconds in the recording, matching the
+  process-sampling number (WebKit processes at 0.7s, idle at 2.9s).
+  Function and database are both in us-east-1, so it is not cross-region.
+
+### Adversarial review round (2026-09-05, Codex gpt-6-astra low)
+
+Briefs and full reports are in the session scratchpad
+(`scratchpad/astra/out/*.md`); the confident diffs were applied (commit
+"Take the confident fixes from six adversarial reviews"). Still open,
+ranked by the reviewers:
+
+- Sync P1: materialization does not carry the client's learned epoch, so a
+  retired local state can be written back after an out-of-band body
+  write; require and check the epoch server-side. P1: while a local save
+  is pending, remote CRDT updates are hidden from the surface and can then
+  be deleted by a stale acknowledgment; publish the merged CRDT and fence
+  acknowledgments against every in-flight generation. P1 (partly fixed):
+  pre-ready text reconciliation overwrites other clients' text with the
+  whole local field; needs a range-based merge.
+- Sharing P1: presence routes let a viewer delete or forge another
+  participant's awareness (bind sessions to the account and a
+  server-issued credential). P1: the share dialog always says "Only people
+  invited"; show the real access summary (public, link grants, inherited).
+- Agents P1: hosted MCP executes confirmation-worthy tools (empty_trash,
+  publish) directly; route them through the proposal service. P1: an
+  agent's edit cannot be undone by the person (undo tracks the human origin
+  only); add durable per-item agent change records with revert. P2:
+  presence and attribution around agent writes are inconsistent.
+- AI sidebar P1: selections over 4,000 characters are truncated for the
+  model but replaced in full; carry a validated selection envelope and
+  refuse over-budget requests visibly. P2: history sync never retries or
+  refreshes on an idle device. P2: selection actions do not stream inline
+  or offer accept/discard; the report carries a concrete UI spec (preview
+  under the passage, states, keys). P2: no Translate or Continue writing.
+- Item types P1: updating a type does not migrate existing values or
+  workflows (compare field ids, kinds, enums before applying). P1: the
+  studio ignores the chosen save scope when editing. P2: multi-select row
+  subfields compile but cannot be stored. P2: the folder preview does not
+  reflect the real collection query.
+- UI: an Apple-style participant row (people and agents as 24px marks in
+  the bar) is specified in the agents and sharing reports.
+
+### Shipped 2026-09-05: TextText 0.182 build 1051
+
+Fifth promotion of the day: the six reviews' confident fixes and the four
+UI items (Sublime-style tabs, reading keys, appearance in Cmd+K, the bar
+with New item and New folder). The active tab's page colour was still
+overridden in that build; fixed in the following commit, to ship with the
+next promotion.
+
+### Implementation round launched (2026-09-05, Codex gpt-6-astra high)
+
+Eight agents, briefs in the session scratchpad (`astra/impl/*.md`), each
+delivering a diff plus notes to `astra/out2/`: sync-epoch (epoch on
+materialize), sync-pending (publish merged CRDT during a pending save,
+fence every in-flight generation), sharing-presence (bind presence
+sessions to the account), sharing-dialog (truthful access summary),
+agents-proposals (hosted MCP destructive tools through proposals),
+agents-undo (durable agent change records with revert), ai-selection
+(validated selection envelope, no silent truncation), item-types-migrate
+(compare schemas before applying a successor; honour the studio's save
+scope). Still to assign after these land: Notion-style inline selection
+preview with accept/discard and streaming, Translate and Continue writing
+quick actions, history sync retry, the participant row in the bar.
+
+
+### Agent change history scratch candidate (2026-09-05)
+
+- `agents-undo.diff` is an unapplied Finding 2 implementation, developed under
+  `.texttext/probe/astra-impl-agents-undo/work`. It adds private durable text
+  history, authenticated connection/run attribution, workspace list/revert
+  commands, and conservative inverses through the audited Yjs write path.
+- Human Cmd+Z origins are unchanged. The inverse covers canonical title,
+  subtitle and body; overlapping or ambiguous later text returns a comparison.
+- Unit/transport/Yjs tests and TypeScript pass. A local Postgres integration
+  suite is included, but this sandbox denied both TCP and Unix socket access
+  with `EPERM`; database execution is not verified. No migration or release ran.
+
+### Implementation round landed (2026-09-05)
+
+Eight Codex diffs (gpt-6-astra, high effort) merged, with the collisions
+resolved by hand where two of them rewrote the same seams:
+
+- Sync: materialization carries the client's learned collab epoch; the
+  route and materializer reject a missing or stale epoch with 409 and lock
+  `collab_state` for the canonical write; a 409 stops that document's relay
+  and shows a recovery panel with the local copy. Remote CRDT updates now
+  reach the surface while a save is pending; every request carries its own
+  fence (document mutation version plus local version, captured when the
+  provider encodes), and an older acknowledgment can no longer replace a
+  newer merge. The two diffs met in `flushMaterialization`; the merge keeps
+  the provider request with the epoch and the per-request fences.
+- Sharing: presence sessions are registered (`join`) and return a
+  server-issued credential that every heartbeat and leave must present;
+  awareness payloads are decoded and bounded; viewers cannot mutate others'
+  rows. The share dialog renders a server-derived access summary
+  (visibility, links, direct and inherited grants) and separates Access
+  granted from Email sent.
+- Agents: hosted MCP stages destructive and audience-changing tools, and
+  whole-body rewrites, as owner proposals with a review page at
+  `/proposals/[id]`. Durable `agent_changes` records (migration
+  `migrate-add-agent-changes.mjs`, in the release list; `collab_state`
+  gains `mutation_version`) capture every agent text change with connection
+  and run ids; `list_agent_changes` and `revert_agent_change` are on the
+  command surface. `appendCollabUpdate` is one fenced statement now: the
+  counter bump, the optional revision check from the epoch work, the
+  append, the audit and the change record.
+- AI: a validated selection envelope (item, field, revision, offsets, full
+  text, hash) travels from the passage toolbar through `/api/ai` to the
+  proposal; selections over 4,000 characters are refused with a visible
+  message; stale envelopes fail closed at apply time.
+- Item types: successor blueprints are compared field by field before a
+  version is inserted or applied; incompatible changes name the field;
+  the studio has an explicit edit save scope and shows target folders.
+- UI re-review: the bar's New folder now works at the root through a new
+  `createRootFolder` store operation and action (root folders had only
+  ever been provisioned); Starred, Shared and Trash create at the root;
+  Enter and Space on the bar's tools no longer open the background
+  selection; reading keys yield to the sidebar region; IME composition
+  Enter no longer submits a folder name.
+
+Tests: 2175 across 259 files after aligning contract tests with the new
+tools (in the implementation's order, revert idempotent), executor calls
+carrying actor attribution, single deletion in the previewable set, and
+the live-apply mocks including the mutation counter read.
+
+### Writing quick actions scratch candidate (2026-09-05)
+
+- The Finding 6 candidate adds Translate and Continue writing to both rail
+  action lists, using the existing Apply/Undo proposal flow. The original six
+  commands and prompts are unchanged. Translate offers common languages plus
+  Document language; replacement coverage uses the 4,000-character envelope.
+- The two new commands retain the editor's last caret across focus transfer,
+  invalidated by field changes. Continue inserts after that caret or selection
+  and retains surrounding text with a full-field expected-text guard.
+- Scratch verification: 78 focused Vitest tests, TypeScript, and patch apply
+  check passed. Lint has zero errors and one existing unused-import warning.
+  Browser rendering was blocked by unavailable Playwright binaries and a
+  Chrome launch abort. This candidate has not been applied or released.
+
+## 2026-09-05: round three landed, gate repaired, sync round four running
+
+Applied from the Astra round-three outputs (scratchpad `astra/out3/`):
+
+- Sharing re-review patch: the relay GET only honors a `clientId` exclusion
+  when the `X-TextText-Presence-Session` header verifies for an editor
+  principal (a viewer could copy an editor's public row ID from presence and
+  permit an epoch rotation); the presence POST authorizes after the bounded
+  body read so a withheld body can no longer hold permission across a
+  revocation; link revoke controls carry distinct accessible names.
+- Translate and Continue writing quick actions (rail action bars, durable
+  proposals, Apply/Undo), with a retained writing selection across editor blur.
+- Assistant history sync loop with backoff, a Saved/Syncing/Synced/Offline
+  status and Retry sync, and an owner-scoped store key on the server action.
+- One `ParticipantsRow` on the action bar's right slot for reader and editor:
+  live presence with role, popovers, and Review changes for agent sessions.
+
+Gate: `workflow.live_clients` failed in the promotion with "presence did not
+include every client" because `activePresence` now counts only server-issued
+rows (`p-` or `agent-` prefixes) and the four-client script picked its own
+IDs. `scripts/verify-collaboration-database.ts` now issues a presence session
+per client through `issuePresenceSession`, as the route does.
+
+Tests adapted: `collab-relay-route.test.ts` (credential-backed exclusion plus a
+bare-ID negative case), `batch4-ui-contract.test.ts` (presence call moved to
+`ParticipantsRow.tsx`).
+
+Sync re-review (`astra/out3/rereview-sync.md`) left four P1 edit-loss paths
+open, none with a one-line fix: the materialize acknowledgment applies a plain
+snapshot and can duplicate an unseen peer edit; pre-ready whole-field
+reconciliation still destroys disjoint peer edits; epoch retirement after
+unmount discards the outbox without a recovery copy; a pre-ready metadata edit
+overlays unrelated remote groups. A round-four Astra implementation agent is
+running on all four (`astra/briefs/impl4-sync.md`, output `astra/out4/`).
+Still running from round three: inline AI preview and item-type shapes.
+
+Shipped: build 1052 (`7cb2f1ba`), Vercel deployment
+`dpl_GGzkK2g6wNBYFJnrULczaSui5t3Y` aliased to texttext.app (page stamp
+`tt-1052-7cb2f1ba`), Mac app 0.182 build 1052 installed. The live-clients gate
+passed against production after the four-client script fix.
+
+Next in the tree, unshipped: item-type row shapes and the folder preview
+(`astra/out3/item-types-shape.diff`: row subfields with multiplicity fail
+compilation with a repair message, studio preview shares collection querying
+and grouping with the production folder), and the participant row loads its
+zod-backed change parser on demand so zod stays off the reader's cold path
+(`participant-change-summary.ts` holds the formatter).
+
+## 2026-09-05: probes after build 1052, and the fixes they forced
+
+Against a local production build of the landed round: interaction suite 17/17,
+reader keys (ArrowDown x2 352, PageDown 1343, PageUp 352), bar top 36 equals
+content top, tab strip 36 with the active tab at 31, delete-and-hold not
+restored. Two regressions, both fixed in the tree:
+
+- The rail's first paint no longer matched the loaded rail (railsame YMAX 177,
+  rows 38 to 284): the history-sync status line appears under the title only
+  after the controller loads, pushing the whole header down. The static shell
+  (`AssistantRailShell.tsx`) now mirrors the `titleAndSync` wrapper with an
+  empty status line, `.historySync` reserves its height, and the sidebar always
+  renders the line. Expect the only remaining difference to be the status
+  text itself.
+- Presence was polled about three times per interval in edit mode: the
+  reader's action bar stays mounted (display none) beside the editor's bar,
+  each with a participant row and its own poll. `usePresence` now keeps one
+  poller per item shared by every subscriber (module-level entries, visibility
+  pause, abort on last unsubscribe). Participant popovers say "Browser session"
+  or "Browser session 2 of 3" instead of printing the row ID.
+
+Also in the tree: the inline AI selection preview (`astra/out3/ai-inline-preview`,
+Rewrite/Summarize/Excerpt/Translate/Continue previewed in the document column
+with Accept, Discard, Undo, Regenerate; Cmd+Enter accepts, Escape discards),
+the selection actions ref write moved out of render. The `railsame` probe's
+`shell` flag is stale (`data-assistant-shell` no longer exists); its pixel
+comparison is the real check.
+
+## Item-level agent connection patch (2026-09-05, not shipped)
+
+- Private-copy implementation adds owner-only Add agent in the participant row
+  and command palette. Local instructions address the exact item id through
+  the signed-in standalone CLI with a unique self-declared label. Reads now
+  publish audited presence, so no disposable proof note is needed.
+- Remote tokens reuse `api_tokens` with an explicit item scope and seven-day
+  expiry. An allowlist at hosted dispatch and the shared executor limits these
+  tokens to reading and guarded content edits on their item. No broad sync,
+  browser-session exchange, cross-item backlinks, sharing, or publishing.
+- Secrets are one-time values in the open sheet, separate from non-secret
+  configuration and agent instructions. Item grants remain discoverable and
+  revocable after the sheet closes. Token creation and revocation are atomic
+  with their audit, including Settings calls through the existing token module.
+- Remote presence is keyed to the verified token id. Local presence remains a
+  self-declared session label on a shared app credential, so per-label removal
+  cannot revoke access. Claude Desktop's OAuth-only connector is not offered a
+  bearer token. Both limitations are explicit in the sheet.
+- This patch is not applied to the shared checkout or deployed. Verification
+  details and exact test counts accompany the delivered agent-connect.md.
+
+## 2026-09-05: what the local probes forced after the round-three merge
+
+- The warm editor mounted behind the reader (first idle after an open) ran
+  the full collaboration provider, so a person merely reading joined presence
+  as an editor session, heartbeated, and polled presence at 1.2 s. The
+  provider now takes `presence: boolean` and `setPresenceEnabled()`; the
+  editor passes its `active` flag, so presence follows the shown editor while
+  the document stays live underneath. Readers publish nothing, as designed.
+- Assistant history sync showed a permanent "Retry sync" locally. Two causes,
+  both fixed: the action collapsed refusal and failure into one answer, so a
+  collaborator would retry forever (the action now marks server failures
+  `transient`, the loop treats a plain refusal as local-only); and the local
+  history row had hit the table's 500-conversation check constraint with 497
+  empty "New chat" placeholders, one per fresh browser profile per item. The
+  client payload now skips empty unpinned chats, and the server merge caps
+  under the limit (`capAssistantConversationSyncPayload`: empties first, then
+  old tombstones, then the oldest unpinned chats) instead of failing.
+- Round-four Astra outputs landed: the four sync P1 fixes (acknowledgment as
+  persistence evidence only, operation-level pre-ready reconciliation in
+  `src/lib/collab/pre-ready.ts`, outbox quarantine on retirement independent of
+  subscribers, per-entry metadata overlay) and the item-level Add agent flow
+  (`AddAgentPopover.tsx`, `agent-connect-actions.ts`, Cmd+K command, Settings
+  pointing at the item-level path).
+
+Promotion of `ce870406` failed at `workflow.live_clients` in 7 s: the token
+loop (`scripts/test-token-mcp-loop.ts`) could not delete its scratch user
+because token creation and revocation now write `action_audit` rows with the
+actor, and that column has no cascade. The teardown deletes the scratch
+user's audit rows first. The stray scratch user from that run was removed by
+hand from the local database.
+
+History placeholders: the server merge now drops empty unpinned undeleted
+chats always (`isAssistantConversationHistory`), not only above the limit, and
+the client acknowledgement compares its syncable subset with the server's
+cleaned list. Before this, a workspace with 497 placeholder chats on the server
+stayed "Saved on this device" forever after every real conversation had synced.
+
+Second gate failure (`282012a2`): the sharing workflow evaluator could not
+delete its scratch posts because agent tool calls now leave `collab_presence`
+rows (announced around every MCP mutation; rows outlive the 15 s stale window
+and the column has no cascade). `scripts/verify-workflow-live.ts` now deletes
+presence, relay updates and relay state for the scratch posts before the
+posts. Three scratch workspaces left behind locally were removed by hand. This
+mattered for production too: the promotion drives a scratch workspace against
+texttext.app and tears it down in the production database.
+
+## 2026-09-05: build 1053 shipped; round-five reviews and their fixes
+
+Shipped: build 1053 (`b1fb3cd6`), deployment `dpl_QsCsNkdBVB8gZsKWeStZyHa3w8eZ`,
+page stamp `tt-1053-b1fb3cd6`, Mac app 0.182 build 1053 installed.
+
+Three low-effort Astra re-reviews of the landed code (`astra/out5/`):
+
+- Agents and presence (`agents.md`): no P1. Fixed in the tree: the MCP
+  transport now reads the bounded body before resolving the token, so a
+  request opened before a revocation cannot dispatch under the revoked
+  identity; item tokens may run `server/discover`; the provider fences presence
+  joins and reads with a generation counter, so returning to reading mid-join
+  gives the issued row back instead of heartbeating it; the presence hook
+  hydrates from the real snapshot, empty included. The reviewer's four probes
+  were flipped into guarantees and kept.
+- Inline AI, writing commands, history sync (`ai2.md`): no P1, five P2s.
+  Fixed: capacity pruning no longer evicts fresh deletion tombstones (only
+  those older than 30 days, and only after empty chats and before live
+  chats); a device whose oldest chats fall past the cap no longer re-uploads
+  forever (`assistantConversationEvictedByCap` makes the acknowledgement
+  cap-aware); history writes are audited (`assistant.history.sync`, counts
+  only); an Escape restore whose rows were virtualized away goes through the
+  caret request. Open: an excerpt acceptance has no source precondition of its
+  own (needs a command-schema change); native IME during a delayed Accept is
+  an unverified path. Notion gaps the reviewer ranked: no refinement prompt
+  inside the preview, caret-based drafting still goes through the rail, no
+  context picker.
+- Sync merge (`sync2.md`, rerun after the first attempt refused the wording):
+  two P1s and one P2 in `src/lib/collab/pre-ready.ts`: hunk boundaries inside
+  surrogate pairs destroy emoji; plain-string alignment can delete a peer's
+  identical-looking insertion; equal-offset insertions apply in reverse. An
+  Astra implementation agent is on all three (`astra/briefs/impl6-preready.md`,
+  output `astra/out6/`), with the reviewer's failing tests as the acceptance
+  bar.
+
+Probes on the local production build before promoting 1054: interaction
+17/17; rail early versus late differs only in rows 63 to 74 (the status text
+itself); reading polls presence twice in 8 s with no heartbeat, editing joins
+and heartbeats; the Add agent popover opens at 352x292 with the sheet tokens
+in both themes (light rgb(252,252,253) on rgb(52,53,58) ink, dark
+rgb(44,45,49) on rgb(229,231,235)), focus lands inside, Escape closes it and
+returns focus to the Add agent mark, every control is named, no em dash.
+
+## 2026-09-05: live verification against real providers and the hosted agent path
+
+Both development provider keys were already in the login Keychain (services
+`texttext-dev-anthropic` and `texttext-dev-openai`, stored 2026-08-15) and
+validated against each provider's model listing (Anthropic 200 with 11 models
+including claude-sonnet-5; OpenAI 200 with 125 models). No new keys were
+minted. `AUTH_DEV_LOGIN=1 ./scripts/dev-with-ai.sh` loads the Anthropic key and
+serves on 3001 when 3000 is busy.
+
+Hosted agent path, proven end to end on the dev server with a Playwright probe
+(`.texttext/probe/agent-live.mts`; the token never left the page): Add agent
+sheet, client Codex, Hosted MCP, Read and edit; the one-time token, the Codex
+configuration and the instruction render; with the token, `server/discover`,
+`tools/list`, `read_item` and `append_to_item` on the item answer 200, another
+item and `delete_item` answer 403 "This token only permits reading or editing
+its item"; presence shows Codex as an agent editor; the participant row shows
+"Codex, Working, Agent session"; the sheet reports "connected to this item";
+after Remove agent the token answers 401. `initialize` answers 404 by design:
+this transport has no handshake (`docs/mcp.md`), discovery replaces it.
+
+Inline AI against a real model: still being verified. The selection toolbar
+renders all five actions with the dev key; Playwright cannot click it as
+"stable" because it re-renders continuously (a coordinate click works). Two
+things found on the way and fixed in the tree: the preview controller is now
+released on a microtask (`release()`), since strict mode's effect re-run in
+development disposed it and every generation failed with "Generation stopped
+when you left the document"; the probe preludes wait for hydration before
+using the dev sign-in form, which otherwise submits natively as a GET.
+
+Local production server on 3131: its stylesheet chunk answers 500 after the
+dev server ran from the same checkout; rebuild before the next probe run and
+do not run `next dev` and `next start` from one `.next` again.
+
+Inline AI against a real model, resolved: the pool list carries no `revision`
+(kept small), so an item opened from the pool gave the editor `post.revision`
+undefined. That keyed the canonical Yjs baseline on revision 0, silenced the
+provider's baseline check, and made every selection-aware action refuse the
+passage as "not saved yet" (the envelope needs a safe integer revision).
+`WorkspaceItemEditor` now takes the revision from the cached document payload
+(the body fetch), falling back to the initial document and the pool post. A
+contract test in `batch4-ui-contract.test.ts` pins it. Second fix: the route's
+read-only note ("this turn has no tools that change anything...") went into
+suggestion turns too, and the model echoed it inside the replacement text with
+an em dash; suggestion turns now get a replacement-only note (`ai-route.test.ts`
+covers it). With both, Rewrite on a 60-character passage reaches Ready in 3 to
+7 seconds with clean replacement text from claude-sonnet-5, Cmd+Enter applies
+it, and the change is recorded in `agent_changes`.
+
+Probe artifacts, not product defects: the typed variant of the probe typed
+over the live selection and deleted the fixture's first sixty characters, and
+a mid-word selection made the model complete the word twice ("blockkk"). The
+fixture was repaired through `/api/ai/tools` `update_item` text edits. Headless
+WebKit never reports the selection toolbar as stable although it is one
+element with one rect across 30 frames; probes click by position or in page.
+
+Real-model evidence (dev server on 3001, Anthropic key from the Keychain,
+`.texttext/probe/ai-live.mts`): Rewrite on the fixture's first sixty
+characters reached Ready in 3 s; the model returned "Paragraph 1 with a good
+amount of running text so each block" and nothing else; Cmd+Enter applied it
+(stored head changed, revision 25120 to 25121); Undo restored the original
+(revision 25122). Two `/api/ai` calls of 1.3 s and 1.5 s.
+
+Shipped: build 1055 (`44f9a178`), deployment `dpl_8CvB1rN7U8SvaNM7MBbqjzwoLmVN`, page stamp
+`tt-1055-44f9a178`, Mac app 0.182 build 1055 installed. Live gates green (23
+workflow checks, 43 Mac tests). Round seven running: a QA review of today's
+code and an implementation of caret-based inline drafting
+(`astra/briefs/round7-*.md`, output `astra/out7/`).
+
+Round-seven QA review (`astra/out7/qa-review.md`, tests-only patch applied): no
+P1. Fixed in the tree with the reviewer's four regressions now passing:
+- P2: `WorkspaceItemEditor` paired a body from the pool or initial document
+  with a revision from the body cache; a stale cache seeded the canonical Yjs
+  baseline with the wrong identities and fed the provider a wrong expected
+  revision. Body and revision now come from one source
+  (`document-cache-guard.test.ts`).
+- P3: the shared presence poller let a read started before a hide/show cycle
+  republish departed peers and block the fresh read; each entry now carries a
+  generation bumped on both transitions (`presence-lifecycle.test.ts`).
+- P3: provider presence reads and heartbeats could complete out of order within
+  one generation; a sequence number lets only the newest response apply
+  (`collab-presence-provider.test.ts`).
+
+Leftover: the hosted-agent probes left scratch item grants ("Codex") on the
+"Reader images fixture" item in the local database; the Add agent sheet lists
+them with Remove agent. They are seven-day item tokens on a demo item; remove
+them from the sheet or let them expire. The cleanup probe's prelude did not
+open the item on that run, so they were not removed automatically.
+
+Caret-based inline drafting landed (`astra/out7/caret-inline`): with a caret in
+the body and no selection, Continue writing from the rail or from a Continue
+affordance that appears 800 ms after activity opens the same inline preview
+anchored at the caret row; the envelope accepts an empty body range, Accept
+inserts at the caret through the guarded text edit, Undo removes exactly the
+inserted text, Discard restores the caret, and body equality supplements the
+revision guard so unsaved local typing makes the preview stale. Discard
+restoration clamps both endpoints after the body shrinks.
+
+Shipped: build 1056 (`c722d5e2`, caret drafting, on top of `76e34224` with
+the round-seven QA fixes), deployment `dpl_8tasCmywUFBwYWt6vPEvDVVGd8uH`, page stamp
+`tt-1056-c722d5e2`, Mac app 0.182 build 1056 installed. Live gates green.
+Next probe run adds `.texttext/probe/share-live.mts`: the owner grants a second
+dev account editor access to the fixture through `set_access`, the guest signs
+in and types in the shared item, and the owner's open editor must show the text
+live and the guest in the participant row, then the deletion.
+
+Sharing, proven live with two browsers (`.texttext/probe/share-live.mts`, local
+production build of `c722d5e2`): the owner grants `second-editor@texttext.local`
+editor access to the fixture through `set_access` (scope_type item); the guest
+signs in with the dev login, sees "Shared with me 1", opens the item, and the
+public page's Edit control opens the editor at `?edit=1`; the guest's typing
+appears in the owner's open editor in 1.5 s, the owner's participant row shows
+"second-editor, Editing" beside "visual-demo, Editing", presence lists both as
+editors, and the guest's deletion reaches the owner in 2.0 s. The stored body is
+clean afterwards. The editor grant for that account is still on the fixture.
+
+Probe lesson: `deleterepro.mts` deleted twelve characters from the "Quiet tools"
+note on every run and never restored them; over the day it emptied the note,
+and its last verdict ("the deleted text came back") was the empty string
+matching itself. The probe now restores what it removes and reports an empty
+note as inconclusive. The note's text is being recovered from the relay log.
+
+The "Quiet tools" note was restored to "The essential machines recede into the
+work." (recovered from the relay log's insert operations, written back through
+`update_item`, revision 25221). The delete probe now types back what it removes.
+
+Round-seven sharing QA (`astra/out7/qa-sharing.md`, tests-only patch): two
+P1s (a held relay poll returns new updates after the caller's access is
+revoked; a 403 on materialization leaves the editor accepting edits and
+retrying), eight P2s (a viewer capability cookie downgrades a named editor;
+public named commenters have no comment entry point; capability-only
+commenters are rejected by the comment actions; the command schema cannot grant
+Can comment; Shared with me reports wrong roles; workspace invitations are
+undiscoverable and unmailed; an open reader never learns of others' comments;
+comment-load failures are invisible) and one P3 (caret label contrast), plus
+the public reader staying a snapshot while others edit. Two Astra agents are
+implementing them (`round7-fix-sharing-access`, `round7-fix-sharing-comments`)
+against the reviewer's tests; a third is closing the item-type findings.
+
+Item-type fixes landed in the tree (`astra/out7/fix-item-types`): rating scales
+are whole numbers from 1 to 10 (unsuitable stored scales render as numeric
+text), a render boundary contains one bad card (`DocumentRenderBoundary.tsx`),
+filter operands are typed against their property for base and saved views with
+a repair message, `isSafeLinkHref` rejects control characters before scheme
+recognition, `--ac-label-3` and `--ac-red` now reach 4.5:1 on both grounds in
+both themes, the item-type route answers 400 to a non-object body, default
+collection ordering sorts by timestamp, and an exhausted repair returns its
+last sanitized reason with the concrete fix. The reviewer's two evidence tests
+that asserted the old defects now assert the fixed behavior.
+
+Shipped: build 1057 (`132ebae0`, item-type fixes), deployment `dpl_C5iG98TxdRgQweET93EMhE4u8kua`, page
+stamp `tt-1057-132ebae0`, Mac app 0.182 build 1057 installed. Live gates green.
+
+Probes on the local production build of `132ebae0` (build 1057): rail early
+versus late differs only in the status text rows; reading polls presence twice
+per 8 s with no heartbeat, editing joins and heartbeats; interaction suite
+17/17; reader keys and bar geometry unchanged; the delete probe's deletion
+holds and the probe restores the note; the Add agent sheet renders with the
+sheet tokens in both themes with focus inside and Escape returning focus; the
+two-browser sharing probe shows the guest's insertion in the owner's editor in
+2.0 s and the deletion in 2.0 s, both sessions as editors in the row and in
+presence, and the stored body clean afterwards. Baseline before the freshness
+fix: a guest's public item page never followed the owner's edit within 60 s.
+
+Sharing access fixes landed in the tree (`astra/out7/fix-sharing-access`): the
+relay GET re-resolves access right before returning a held result and answers
+403 on loss; 401, 403 and 410 are terminal for the provider (materialization
+becomes ineligible, transport stops, local text stays for recovery); named
+permissions are evaluated before a capability cookie and a weaker capability
+cannot downgrade a named editor; `set_access` accepts commenter for items and
+folders (workspace roles stay member and guest; tool docs regenerated);
+Shared with me computes the effective role per item and shows Comment; a
+workspace member or guest invitation produces one discoverable workspace entry
+and an invitation email; remote caret labels choose black or white ink by
+contrast (minimum 5.06:1 in both themes). The reviewer's comment regressions
+stay red until the comments patch lands.
+
+Sharing comments and freshness fixes landed in the tree
+(`astra/out7/fix-sharing-comments`): the public item page gives named
+commenters and editors a Comments control on the action bar and the anchored
+comment layer; the comment actions honor an item-scoped capability cookie
+additively while keeping attribution to the signed-in account; comments refresh
+15 s after each completed read while the document is visible, with one request
+at a time; a failed load shows "Could not load comments." with Retry outside the
+popover; a non-owner's public page polls a new read-only item revision endpoint
+and refreshes the rendered document when the revision changes, without
+publishing presence. Reviewer tests both agents carried were merged by
+ownership (comment tests from the comments agent, provider, relay and sharing
+tests from the access agent).
+
+Filled comment buttons: white text on the brand accent measured 4.02:1 in light
+mode (Apple blue) and 2.28:1 in dark mode (the pale tint). New tokens
+`--ac-accent-fill` and `--ac-accent-fill-ink` in `apple.css` give filled
+controls a deeper blue with white ink in light mode and the tint with dark navy
+ink in dark mode (both above 4.5:1); the brand accent is unchanged for links
+and selection. `ReaderComments.module.css` uses the pair; the reviewer's
+contrast test measures it.
+
+Shipped: build 1058 (`784c863d`, sharing access, comments and reader freshness
+fixes), deployment `dpl_5q798LVhTE3gibfCzyzddHnQUFup`, page stamp `tt-1058-784c863d`, Mac app 0.182
+build 1058 installed. Suite 2691 passed; live gates green.
+
+Probes on the local production build of `784c863d` (build 1058): the first rail
+capture on a cold server showed the item list, not the rail, because the item
+open had not finished; a warm rerun is back to the status text rows only, and
+`probe-run.sh` now warms the server before that capture. Presence, interaction
+17/17, reader keys, bar geometry, delete-and-restore and the Add agent sheet are
+unchanged. Sharing: the guest's public page now shows the Comments control; the
+guest's insertion reaches the owner in 1.0 s and the deletion in 2.1 s. Reader
+freshness: the guest's public page follows the owner's edit in 9.1 s (never,
+before this build).
+
+Assistant context picker landed in the tree (`astra/out7/context-picker`): a
+Context row above the composer with This item, Selection, up to five added
+items from a labelled title search, and a Whole workspace index toggle; the
+choice is thread metadata (ids only) that persists and syncs; requested items
+travel as related ids with a person origin and are resolved inside the verified
+workspace under a 24,000-character budget with truncation stated in the prompt;
+the inline preview notes its context and offers Selection only, which Try again
+and Refine honor.
+
+Round-eight QA of the shipped sharing, comments, freshness and item-type code
+(`astra/out8/qa-shipped.md`, tests only): one P1 (the relay POST and the
+materialize route authorize before reading a streamed body, so a revoked
+editor who held the stream open can finish a push or a canonical save), six
+P2s (a late successful poll mutates the document after terminal access loss;
+presence GET returns peers fetched after revocation; discovery drops legacy
+workspace editor, commenter, reviewer and viewer grants that permissions still
+honor; the reader-revision endpoint decides public eligibility from a snapshot
+read before authorization finished; repeated visibility events issue
+overlapping refreshes; any string compiles as a date filter operand) and one P3
+(Trash reported as generic access loss on two read paths). An Astra agent is
+implementing all eight against the reviewer's tests (`round8-fix-shipped`).
+
+Shipped: build 1059 (`6dfd1874`, assistant context picker), deployment
+`dpl_4NqjsmoDWvRVsm9vPNXEk3vcrQWU`, page stamp `tt-1059-6dfd1874`, Mac app 0.182 build 1059 installed.
+Suite 2710 passed; live gates green.
+
+## 2026-09-05: state at wrap-up (owner leaving for the airport)
+
+Round-eight fixes landed in the tree (`astra/out8/fix-shipped`, all eight
+findings, reviewer tests byte-for-byte unchanged and green): the relay POST and
+the materialize route re-authorize after the bounded body has fully arrived;
+presence GET fetches then re-resolves access before disclosing, and POST
+heartbeat and leave do the same; reader freshness coalesces refreshes by target
+revision with a retry window; discovery normalizes legacy workspace grants the
+way permissions do; date filter operands must be valid `YYYY-MM-DD`; catch-up
+and polling reject stopped, aborted or obsolete continuations after every
+await; the reader-revision endpoint decides eligibility and revision from one
+final live lookup; Trash answers 410 with its reason on the relay GET's final
+check and both presence reads. This is being promoted as build 1060 by the
+sequence in `seq19.log`; if that promotion did not finish, run
+`npm run promote:local` from a clean tree after `npx vitest run`.
+
+Shipped today: builds 1052 through 1059 (1060 in flight). Verified live: inline
+AI against claude-sonnet-5 (Rewrite, Accept, Undo), the hosted agent path with
+a one-time item token (read, append, refusals, presence, participant row,
+revocation), two-browser sharing (1 to 2 s propagation both ways, both editors
+in the row and presence), public reader freshness (guest page follows an edit
+in about 9 s), the Add agent sheet in both themes, reader keys, the Sublime-style
+tabs, the top action bar, the appearance switch in Cmd+K.
+
+Open, in priority order:
+- Native verification not done headless: IME composition during a delayed
+  Accept; real Safari pointer and trackpad behavior on the deployed build (the
+  owner denied computer-use access to the app; Claude in Chrome was not
+  connected). Pixel evidence exists for the rail, tabs and bars.
+- Scratch data on the local database: an editor grant for
+  `second-editor@texttext.local` and Codex item grants on the "Reader images
+  fixture" item (remove from the Share dialog or the Add agent sheet, or let
+  the seven-day tokens expire).
+- Probe niceties: `openlatency.mts` times out on its click and never printed a
+  number; the selection toolbar is never "stable" for headless WebKit (click
+  by position or in page).
+- Reviews to consider next: a QA pass over the caret drafting and the context
+  picker (both shipped without a dedicated re-review), and the Notion parity
+  list in `astra/out5/ai2.md` is now closed for its three ranked gaps.
+
+Agent artifacts live under the session scratchpad
+`/private/tmp/claude-501/-Users-shokunin-dev-TextText/8a7bdd20-ca1d-4cca-86a4-9fabccb1f8f1/scratchpad/astra/`
+(briefs, outputs `out/` through `out8/`, logs) and the private work copies under
+`.texttext/probe/astra-*/work` (ignored by git; safe to delete).
+
+Probes on the local production build of `6dfd1874` (build 1059): sharing
+propagation 1.0 s and 2.0 s, reader freshness 9.1 s, presence modes, interaction
+17/17, delete-and-restore and the Add agent sheet all as before. Two notes for
+the next session: the rail's first paint now differs from the loaded rail in
+about 36 rows, 12 of them the status text and the rest near the composer where
+the new Context row appears after hydration, so the static rail shell
+(`AssistantRailShell.tsx`) should reserve that row the way it reserves the
+status line; and `contextpicker.mts` did not find the Context row by class or
+label, so the picker's live rendering in both themes is unverified by probe
+(its unit and UI tests pass).
+
+Shipped: build 1060 (`ad6b7f24` plus the docs commit `6c5c9e2b`), deployment
+`dpl_DCofNbee6AcS7aKu6vPXzqntdM2H`, page stamp `tt-1060-6c5c9e2b`, Mac app 0.182 build 1060 installed.
+Suite 2759 passed; live gates green. The first promotion attempt was refused
+only because the handoff changed while gates ran; the rerun landed. Wrap-up
+complete: tree clean, no agents running.
+
+## 2026-09-05, late: rail shell parity, context picker verified, scratch cleaned
+
+The two follow-ups from the last probe run were probe artifacts plus one real
+gap. The shared probe prelude (`.texttext/probe/tok.mts`) grew when it was
+hardened, so probes built from a fixed line count lost their sign-in or their
+item click and measured the workspace root; that is why the Context row showed
+no "This item" chip and the Add agent mark was "missing". Probes now start from
+`.texttext/probe/prelude.mts`. Regenerated, the context picker probe shows the
+row with This item pressed, Whole workspace index, and Add; the search combobox
+takes focus with a listbox of matches, adding "Quiet tools" makes a removable
+chip, Enter returns focus to the composer, and the chips use the sheet tokens in
+both themes. The real gap: the static rail shell had no Context row, so the
+composer moved when the controller loaded; `AssistantRailShell.tsx` now paints
+the same row (This item when an item is open, Whole workspace index, Add) wired
+to its activate handler. Scratch data removed: the second dev account's editor
+share (`revoke_access`) and the Codex item grants (Remove agent in the sheet).
+
+Shipped: build 1061 (`c9e71302`, Context row in the static rail shell),
+deployment `dpl_AN2sN9bEBiqdbbykB5pts7HsSZ8U`, page stamp `tt-1061-c9e71302`, Mac app 0.182 build 1061
+installed. Rail parity after the fix: early versus late differ only in the
+status text rows 63 to 74, as before the Context row existed.
+
+## State at final wrap-up (owner boarding)
+
+Round-nine QA of caret drafting and the context picker
+(`astra/out9/qa-assistant.md`, tests only, 14 failing regressions): one P1, a
+caret preview's empty-range envelope binds revision and offsets but not the
+source body, so after a peer edit at the same revision Accept can insert at a
+stale offset and Undo can remove the wrong text; six P2s (the Context note
+describes the next setting as if it produced the shown result; pinning on
+another device overwrites context preferences through a shared metadata clock;
+Tab dismisses the Continue affordance; the preview's shortcuts ignore the IME
+keyCode 229 fallback; an unresolvable chosen context item is dropped silently;
+Continue from a metadata caret uses the legacy path) and two P3s. An Astra
+agent (`round9-fix-assistant`, high effort) is implementing all of them
+against the reviewer's tests; its patch will appear at
+`/private/tmp/claude-501/-Users-shokunin-dev-TextText/8a7bdd20-ca1d-4cca-86a4-9fabccb1f8f1/scratchpad/astra/out9/fix-assistant.diff`
+with notes beside it. To land it from a clean tree: `git apply` the diff,
+`npx tsc --noEmit -p tsconfig.json`, `npx vitest run`, commit, push,
+`npm run promote:local`. Until then the caret P1 is open in production;
+selection-based previews are unaffected.
+
+Everything else is shipped: builds 1052 through 1061, tree clean at the commit
+recording this, no other agents running. Open items unchanged from the earlier
+wrap-up section: native IME and real Safari pointer checks.
+
+## 2026-09-06: round-nine fixes landed locally; network blocked at a foreign site
+
+The round-nine agent finished after the previous session ended
+(`astra/out9/fix-assistant`, 24 files): selection envelopes carry a SHA-256
+source hash of the whole field and empty body ranges require it, so a caret
+Accept or Undo after a peer edit at the same revision is refused instead of
+landing on the wrong text; the preview's Context note records the context each
+generation actually used and the switch is labelled "Next generation"; context
+preferences have their own update clock so pinning elsewhere cannot overwrite
+them; the static rail shell also paints attachments, Stop while submitting,
+approval counts and the sync status; Tab moves into the Continue toolbar
+instead of dismissing it; the preview shortcuts honor the IME keyCode 229
+fallback; the route reports each requested context id as read or unavailable
+and says so in the prompt; Continue refuses metadata carets with an
+explanation; the picker keeps a usable active option when results disappear.
+Applied to the shared tree with typecheck and lint clean; full suite and local
+probes run before the commit.
+
+Connectivity from this Mac at the owner's father's place: the default route
+goes through the WireGuard tunnel (utun8, 10.6.0.3) and no traffic gets out;
+the local gateway is 192.168.1.254 on the same 192.168.1.0/24 range as home,
+the foreign-network case in the fleet notes. Nothing was changed; the owner
+decides on the tunnel. Push and promotion wait for the network.
+
+Probes on the local production build of `fe0f00f1` (round-nine fixes): rail
+early versus late differs only in the status text rows 63 to 74 despite the
+shell now painting attachments, Stop, approvals and sync status; presence modes
+unchanged; interaction 17/17; delete-and-restore intact; the Add agent sheet
+and the context picker (This item pressed, search, add, focus return) render
+with the sheet tokens in both themes. Committed locally as `fe0f00f1`; push and
+promotion as build 1062 wait for the network.
+
+## 2026-09-06: working from a foreign 192.168.1.0/24 network
+
+Three separate faults, all from the subnet collision the fleet notes describe.
+Every fix below is reversible and none touched the WireGuard profile or its
+AllowedIPs.
+
+1. DNS was dead. The tunnel pushes the home router 192.168.1.1 as resolver, but
+   this network handed the Mac 192.168.1.1 as its own en0 address, so every
+   lookup went to itself. The Wi-Fi service had no DNS of its own, and setting
+   one does not help because the tunnel owns the default route and its resolver
+   is primary. Fixed at runtime by overriding the primary service's DNS:
+   `sudo scutil` set `State:/Network/Service/<PrimaryService>/DNS` to 1.1.1.1
+   and 1.0.0.1. Reverts when the tunnel reconnects.
+2. NAS and PC were unreachable. A connected /24 on en0 beats the tunnel's
+   default route, so 192.168.1.50 and 192.168.1.68 went out the local LAN.
+   Fixed with host routes, the documented remedy:
+   `sudo route -n add -host 192.168.1.50 -interface utun8` and the same for
+   192.168.1.68. NAS answers on SSH 2022 and SMB 445; the PC answers on 22.
+   Reverts on reconnect or reboot.
+3. HTTPS still hung after DNS worked. TCP connected and the TLS Client Hello
+   went out, but the certificate reply never arrived: an MTU blackhole. Packets
+   up to 1400 bytes passed and 1428 did not, while utun8 claimed 1420. Fixed
+   with `sudo ifconfig utun8 mtu 1380`. GitHub and texttext.app then answered
+   200 in about 1.5 s. Reverts on reconnect.
+
+One persistent change to undo when home: the Wi-Fi service now has explicit DNS
+servers. Clear them with `sudo networksetup -setdnsservers Wi-Fi Empty`.
+
+Shipped: build 1062 (`177f24fc`, round-nine assistant fixes plus their probe
+record), page stamp `tt-1062-177f24fc`, Mac app 0.182 build 1062 installed.
+Suite 2785 passed; live gates green (43 Mac tests, 23 workflow checks).
+
+## 2026-09-06: round ten, the award-quality gaps
+
+After build 1062 the functional work is done and hardened. What was left, from
+an honest assessment, is what a reviewer actually judges. Five Astra agents are
+on it in private copies (`astra/briefs/round10-*.md`, outputs `astra/out10/`):
+
+- `motion`: the biggest gap. The app has 127 CSS transition and keyframe
+  declarations, no springs, no gesture tracking and nothing interruptible. The
+  brief is Apple's own fluid-interface standard: a hand-rolled rAF spring in
+  `src/lib/motion` with damping and response rather than duration, motion that
+  starts from the live presentation value, 1:1 pointer tracking with grab
+  offset, velocity handoff on release, momentum projection with the 0.998
+  deceleration form, rubber-banding at boundaries, symmetric enter and exit
+  anchored to the trigger, and reduced motion as a real path rather than a
+  disable. Applied to the rail and its resize handle, popovers and sheets, the
+  inline preview, the tab strip and press feedback.
+- `mac-platform`: the Mac app has a strong File Provider and nothing else that
+  makes it a Mac app. No App Intents or Shortcuts, no Spotlight, no drag and
+  drop, no Quick Look, no sharing. The brief covers menu bar depth, drag and
+  drop both directions, Shortcuts, Spotlight, Quick Look and window restoration.
+- `a11y`: keyboard-only paths, focus order and return, roles and landmarks,
+  live regions, large text at 200 percent, prefers-contrast and forced colors,
+  and computed contrast from the real tokens.
+- `firstrun`: every empty, failed and first-run state, with copy.
+- `qa10`: an adversarial pass aiming for the clean bar. Rounds eight and nine
+  each still found a P1; the goal is a round that finds none.
+
+Two findings from my own checks. The blank screen at launch already has a fix:
+`WebAppWindowController` puts a `LaunchPlaceholderView` in the container and
+lifts it on first commit with a backstop on navigation finish, so the window is
+never white. And production timings measured from here are contaminated by the
+tunnel (615 ms to first byte), so the launch number worth trusting has to come
+from a normal connection or the local production build.
+
+The real Safari and trackpad pass is the one item no agent can do. A twelve
+point checklist is at `astra/../safari-pass.md` in the session scratchpad and
+was sent to the owner.
+
+## 2026-09-07: round ten reviewed before landing, and sent back
+
+All five round-ten patches applied cleanly on their own, so they went through an
+independent review workflow (six agents: one reviewer per patch plus a planner
+that built five merge orders in a throwaway clone and measured them). Nothing
+was landed. The reviews are saved beside the patches as `review-*.json` and
+`integration-plan.json` in the session scratchpad.
+
+Verdicts: motion and firstrun on hold, the other three land with fixes. What the
+review caught that reading the notes did not:
+
+- Motion: the rail resize preview scales a clipped node, so dragging the rail
+  wider shows no widening at all, and release quantises the width to four fixed
+  values rather than the width you chose.
+- First run: a connection notice rendered outside the `.applecms` scope uses
+  untokenised colours, so it is wrong in dark mode; it sits in normal flow above
+  a `100dvh` shell and breaks the layout whenever it appears; it says offline for
+  any pool refresh failure; and "This document is empty." shows over documents
+  that have assets or a subtitle.
+- Accessibility: the save pill lost its `:empty` guard and now shows a permanent
+  empty pill; the announcer says something untrue on load and then goes silent
+  for real saves; the px to rem pass converted only the heights of six
+  width/height pairs, so those controls distort at the 200 percent text size the
+  patch exists to support.
+- The oversized-paste fix tells the person "This document changed elsewhere",
+  which is false: the relay refused the payload. The provider's correct sentence
+  is overwritten before it reaches the screen.
+- Merged-tree-only hazards that no single patch shows: two patches add a second
+  `ref` to the same JSX element and git merges it silently (only tsc catches it),
+  a React shim in an accessibility test lacks `useLayoutEffect` which motion
+  introduces, a contrast test parses hex but not `var()`, and the merged save
+  pill is permanently visible with no conflict, no type error and no failing test.
+
+Apply order once the repairs land: fix-qa10, mac-platform, a11y, motion,
+firstrun, with the per-file resolutions in `integration-plan.json`.
+
+## 2026-09-07: round ten landed after repair and merge
+
+All five patches were sent back with their reviewers' blockers and returned as
+`*-v2` in `astra/out10/`. Merged in the measured order (fix-qa10, mac-platform,
+a11y, motion, firstrun). Four textual conflicts appeared, exactly the four the
+planner predicted, and were resolved with its per-file strategies: ShareDialog
+keeps the focus hook and drops the superseded effect, the sidebar stylesheet
+takes the motion selector with the accessibility unit, the tab bar keeps the
+accessibility behaviour over the motion render mechanism, and the template
+gallery collapses to one backdrop ref. Two silent duplicate-ref hazards, which
+git merges without complaint and only a typecheck catches, were collapsed in
+the command palette and the template gallery.
+
+Twelve tests then failed that fail in no single patch. Three subagents fixed
+them in parallel on disjoint files, and two found more than the failure:
+
+- The merged recovery screen still rendered the editor's shared `error` under
+  the corrected heading, so an oversized paste could still claim the document
+  changed elsewhere one line lower. That screen now has its own error state,
+  and the test binds the stale message deliberately as a regression guard.
+- My own tab bar resolution was wrong. Returning null for a tab with no index
+  unmounted exiting tabs immediately, so the exit spring never ran, `onRest`
+  never fired, and entries were stranded in the retained list forever. Exiting
+  tabs now stay mounted and simply cannot claim selection or focus.
+- The accessibility test's React shim lacked `useLayoutEffect`, which motion
+  introduces through three separate hooks, and a motion test destructured the
+  tab children that accessibility had prepended a help span to.
+
+The interaction suite briefly read 15 of 17 after the merge, and neither was a
+regression. Both checks counted elements while an exit spring was still
+running: the command palette is invisible by about 300 ms after Escape but
+leaves the DOM at about 750 ms, and a closing tab stays mounted until it rests.
+The checks now wait for the palette to detach and count only tabs a person can
+reach (`.workspace-tab:not([inert])`, which is the same element the motion
+wrapper marks inert). Back to 17 of 17.
+
+The Mac app then failed to build, and the message blamed the wrong thing. The
+App Intents metadata processor reported that `parameterSummary` "must have a
+compile-time static value", but the Swift was correct: the compiler had emitted
+proper const-value records for all four. `mac/scripts/appintents-metadata.sh`
+was invoking the processor with `--module-name TextText`, which is not a module
+in this package (the intents live in `TextTextAppIntents` and the shortcuts
+provider in `TextTextApp`, renamed because the CLI product owns `TextText` on a
+case-insensitive volume), so every const-value lookup missed. The mismatch
+predates this release and stayed invisible because literal properties need no
+const values; parameter summaries are the first thing here that does. The
+script now runs two passes, the intents module then the app module with the
+first pass handed over as static metadata, and guards against the silent
+failure mode where pointing at the bundle instead of `extract.actionsdata`
+writes an empty bundle with exit 0. Verified from the shipped bundle: 10
+intents, 4 App Shortcuts, 4 parameter summaries.
+
+Shipped: build 1063 (`feb33b1d`), deployment `dpl_GNyRzy8cs87NhuAiaFeJ61WyFeGu`, page stamp
+`tt-1063-feb33b1d`, Mac app 0.182 build 1063 installed. Suite 3215 passed,
+interaction 17 of 17, 43 Mac tests, 23 live workflow checks. This is round ten
+in production: spring driven motion, Mac platform depth with working Shortcuts,
+accessibility, first run and empty states, and the two data loss fixes.
+
+## 2026-09-07: verification of the merged result found six more
+
+The merged round ten had never been reviewed as a whole, so a verification pass
+ran against shipped build 1063 looking specifically at the seams. It found one
+P1 and five others, each with a failing test (`astra/out12/verify.md`, tests in
+`verify.diff`):
+
+- P1, text loss. Text typed before the document is ready is dropped when an
+  older recovery record arrives and blocks the editor. The pre-ready ledger is
+  never snapshotted as its own recovery copy.
+- Surfaces that are logically closed but still springing out stay interactive
+  and announced: not inert, not aria-hidden, focus not released. Tabbing during
+  the exit reaches a control that is on its way off screen.
+- Overlapping modals snapshot and restore each other's inert values, so the
+  background can end up permanently inert or wrongly interactive.
+- Retirement defaults its reason to document-changed, so an access loss or a
+  trashed item still produces "This document changed elsewhere" after a
+  restart. The same false claim as before, reached by a different path.
+- A reachable server that fails is labelled Offline, which is not true.
+- The look preview calls a document blank when it has a subtitle, fields or
+  tags, and shows canned example content instead of the person's own.
+
+An agent is fixing all six against those tests. Note for later: the false-cause
+family has now appeared three times through three different paths (the shared
+error line, the retirement default, and the original hardcoded heading). It is
+worth one deliberate pass that makes the recovery screen derive every word from
+a recorded cause, rather than fixing each new route as it appears.
+
+All six landed. Retirement functions now require an explicit cause rather than
+defaulting to document-changed, so the false-message family is closed
+structurally rather than one route at a time: epoch and materialization
+conflicts say document-changed, a rejected relay push says the edits could not
+sync, access rejection says access lost, and HTTP 410 says trashed. Pre-ready
+typing is snapshotted as its own recovery copy before the editor is blocked.
+Exit springs expose logical open and closing, and go inert and aria-hidden at
+logical close while staying mounted until they rest. Modal inert state is owned
+centrally and recomputed from the surviving stack. A failing but reachable
+server is no longer called offline. One blank-document predicate is now shared
+by the reader and the look preview, and it counts subtitle, tags, fields and
+assets, with zero and false preserved as real values.
+
+Build 1064 rolled back twice on the same check, and it was not a flake and not a
+regression. `mac/scripts/install-local.sh` demanded a strict `pass` from the
+installed app's runtime health, while `release/ship.sh` already documents the
+opposite policy in a comment: a residual warning, `finder.provider` above all,
+must not wedge a release because the File Provider reports warning while its
+domain is still working. The evidence: the health report for build 1063, the one
+live in production, also says warning, with `mount_enumerated`, `mount_resolved`
+and `workspace_visible` all true, `mount_entry_count` 2, and the readiness probe
+exhausting 120 samples over 72 seconds without the provider ever calling itself
+healthy. On this network the provider syncs through the tunnel and never
+settles, so the gate was reporting a network condition as a defective build.
+The installer now matches the documented policy: the report must still be this
+exact build and written after the install began, a `fail` still blocks, and a
+warning is printed with its checks and allowed through.
+
+Large pastes no longer stop the document. The relay's per-update ceiling now
+lives in `src/lib/collab/limits.ts` and is imported by the relay, the text
+writer and the server append boundary, and the insertion budget is derived from
+it so the two cannot drift apart. A very large insertion is applied through one
+shared bounded splice, each chunk its own Yjs transaction, so every entry point
+is covered at a choke point rather than caller by caller: native input and
+paste, the agent and assistant write path, full snapshot replacement and
+seeding, and pre-ready reconciliation. Undo keeps bounded stack items marked as
+one group, so redo cannot rebuild the oversized update. The quarantine path
+stays as the backstop for anything still refused. Tested with real Yjs,
+including a peer inserting inside the first received chunk while deleting the
+original text.
+
+Shipped: build 1065 (`2d9c7995`), page stamp `tt-1065-2d9c7995`, Mac app 0.182
+build 1065 installed. Verified against that build, not against a stale server:
+suite 3262 passed, interaction 17 of 17, 43 Mac tests, 23 live workflow checks.
+Probes: rail first paint differs from the loaded rail only in the status text
+rows; reading polls presence twice per 8 s with no heartbeat while editing
+joins and heartbeats; reader keys, bar geometry and the tab strip unchanged; the
+delete probe's deletion holds and it restores the note. The context picker
+renders in both themes with This item pressed, a working search, a removable
+chip and focus returning to the composer. Two browsers sharing an item: the
+guest's insertion reaches the owner in 1.5 s and the deletion in 2.0 s, both
+sessions listed as editors.
+
+Open, and none of it blocking: the native checks that need a person at the
+machine (cursor shapes, trackpad momentum, grabbing the rail mid-motion, pinch
+zoom, and an IME during a delayed Accept); and the changelog for builds 1052 to
+1065, which needs the TextText connector authorized before any entry can be
+written.
+
+## Cold launch, measured (2026-09-11)
+
+The earlier figure in these notes, a roughly 5.4 s wait before the web view
+appeared, was a measurement artifact and should be ignored. WebKit keeps
+`com.apple.WebKit.WebContent` and `.Networking` processes alive long after the
+app quits; a set 55 minutes old was observed with no app running. The old
+harness matched those by name, so it never saw the launch's own WebContent and
+latched onto a later one. `mac/scripts/measure-launch.py` now snapshots pids
+before launching, waits for the previous run's services to exit, and reports
+only a pid it has not seen before. It is run by hand; nothing schedules it.
+
+Nine cold launches against production, from this network, medians:
+
+| milestone | median | what it means |
+| --- | --- | --- |
+| process | 60 ms | the app pid exists |
+| webView.load | 488 ms | WebContent spawns, the first byte is finally asked for |
+| page running | 1604 ms | WebContent has burned 150 ms of CPU |
+| settled | 2822 ms | WebContent CPU flat for 800 ms |
+
+The app's own share is the first 488 ms, and it splits cleanly. Anchoring on
+the `TextText server origin:` line the app writes to stderr (captured with
+`open --stderr`), three runs gave 47 to 58 ms to the process, 339 to 373 ms to
+`warmMainWindow`, and 450 to 749 ms to `webView.load`. So about 300 ms is
+AppKit and framework startup before any of our window code runs, and about
+105 ms is constructing the WKWebView plus the two serialized cookie store hops
+(`setAppCookie` then `getAllCookies`) that the first navigation waits on.
+Identical against a local origin, so none of it is network.
+
+Everything after that is the network, and it is latency, not bandwidth or our
+payload. Round trip to texttext.app over the tunnel is 182 ms average
+(155 to 240 ms). A cold request costs 0.79 s: 0.16 s for TCP, another 0.17 s
+for TLS, then 0.47 s to first byte. A warm request on the same connection
+costs 0.29 s. Size does not matter: a 9 byte 404 takes 0.59 s and an 8.3 KB
+chunk takes 0.60 s. The clearest proof is the same page in the same engine:
+`/signin` loaded in Playwright WebKit, 226 KB over 18 resources either way,
+took 1.40 to 1.69 s against production and 64 to 130 ms against a local
+production build, with first contentful paint at 1.22 to 1.52 s versus 40 ms.
+
+Total CPU across a launch is about 0.9 s (app 0.37 s, WebContent 0.52 s) out of
+2.8 s wall, so roughly two thirds of the launch is spent waiting on a link with
+a 182 ms round trip. At a normal home round trip this should land near a
+second. That is an extrapolation, not a measurement; it has not been measured
+from home.
+
+One thing found while measuring, unrelated to first paint and not fixed here.
+`materializeWorkspace` starts a full recursive walk of the File Provider mount
+on every launch. `sample` showed it blocked in `getattrlistbulk` under
+`warmAndMaterialize`, and on this link it was still enumerating five minutes
+after launch while using 0.2 s of CPU. It runs on a utility queue and the main
+thread was idle in every sample, so first paint is unaffected, but it keeps the
+File Provider path and the network busy through launch and long past it. The
+doc comment above it also no longer matches the code: it says the walk descends
+with `contentsOfDirectory` rather than a lazy deep enumerator, and the code
+uses `FileManager.enumerator`, which is exactly that lazy deep enumerator.
+
+Merged branches cleaned up the same day: 23 merged `origin/codex/*` branches
+deleted, along with local `live-collab-proof` and `worktree-wf_095db4f0-290-2`
+and remote `origin/live-collab-proof`. Origin now carries main and HEAD only.
+
+## The launch-time File Provider walk, bounded (2026-09-11)
+
+`materializeWorkspace` kicked off a walk of the whole mount on every launch and
+every remote change. The walk had no deadline, no work cap and no cancellation,
+and on the measured link it was still enumerating five minutes after launch on
+0.2 s of CPU. It runs on a utility queue and the main thread was idle in every
+sample, so first paint was never affected, but it held the File Provider path
+and the network open through launch and long past it.
+
+The walk now lives in `mac/Sources/TextText/WorkspaceMaterialization.swift`,
+where it can be tested without a mount. A pass is bounded by wall clock first
+(15 s) with listing and download counts as backstops, and it is resumable: the
+cursor holds directories rather than a position in an enumeration, so a pass
+that runs out of budget hands the next one what it still owes. That costs
+almost nothing to repeat, because the File Provider header is explicit that
+traversals of materialized directories never reach the extension, unlike
+traversals of dataless ones.
+
+The cursor is campaign state, not process state. A campaign always starts a
+fresh walk from the root, the way the old walk did on every trigger. An earlier
+draft carried the position between campaigns and the review caught what that
+costs: a folder deleted or renamed on another client can never be listed again,
+so it sits on the cursor forever, the campaign never restarts at the root, and
+files added remotely stop being downloaded at all. Restarting each campaign is
+what makes the walk self-healing.
+
+Two correctness holes went with it. The old walk built its enumerator with no
+`errorHandler`, and the Foundation header is clear that the handler is where
+per-directory errors surface, so a folder that failed to list was skipped in
+silence; the cold signal was `files.isEmpty`, which cannot see a partly failed
+walk. One folder timing out therefore looked complete, no retry ran, and those
+files stayed dataless. Listing a directory at a time restores that signal, and
+this is also what the old doc comment always claimed the code did: it said the
+walk descended with `contentsOfDirectory` "rather than a lazy deep enumerator",
+while the code used `FileManager.enumerator`, which is exactly that. The one
+signal the old walk did have, a whole tree that yielded no files, is kept as
+`filesSeen`, because a folder that lists successfully but empty is the
+documented cold-enumeration failure.
+
+The other hole was `isMaterializing`, which is the gate every trigger is tested
+against. Two paths abandoned a campaign without clearing it, and either one
+turns materialization off for the life of the process: a retry that found no
+`NSFileProviderManager` returned early, and `scheduleFileProviderMaterialization`
+cancelled a live campaign's retry and then called in at attempt 0, where the
+gate dropped it. Both predate this change. Every abandon path now goes through
+`endMaterializationCampaign`.
+
+Three more findings from the review round, all fixed: a handful of files that
+never materialize used to consume every pass's download budget and starve the
+rest of the workspace, so a campaign now remembers them and stops asking until
+the next one; a directory abandoned part way re-queued the subdirectories it had
+already walked, so the queue regrew every pass, and a visited set stops that;
+and subdirectories are now queued before any file is touched, so what the walk
+knows about the shape of the tree does not depend on how much budget was left.
+A pass that made progress no longer counts against the five-attempt cap either,
+because that cap exists to stop a campaign retrying a cold tree forever, not to
+stop one that is working through a backlog.
+
+Known and not fixed. The budget is honoured between filesystem operations, so a
+single listing or download that blocks is still bounded only by the extension's
+own timeout; bounding it from the app would mean abandoning threads on the most
+expensive operation in the system, which is worse. And the amplification
+underneath is untouched: materializing one file makes the extension re-resolve
+it through `findFile` in WorkspaceEnumerator, which fetches the workspace and
+then every folder's manifest in a serial loop that does not break early, over a
+`URLSessionConfiguration.ephemeral` session that caches nothing. That is why a
+file is worth several round trips rather than one, and it is the next thing
+worth fixing on this path.
+
+31 tests cover the walk; 524 Mac tests and 3262 web tests green. Not yet
+measured end to end: that needs a build installed over the shipped one, which is
+the owner's call.
+
+## Materialization made fast, and a measurement that was not (2026-09-11)
+
+Three changes landed on top of the bounded walk.
+
+`findFile` in WorkspaceEnumerator scanned folders one after another, so locating
+one post cost a round trip per folder, and `consistentFetch` pays that twice for
+every `fetchContents` because it reads the item either side of the content to
+prove the revision held still. At 182 ms and ten folders that is seconds per
+file, which is what made materializing a workspace take minutes. The scan now
+fans out. The serial order was load bearing for exactly one case: a post that
+moves mid-scan appears under both parents, and the later fetch was the current
+one. Concurrent reads cannot claim that, so when more than one folder claims a
+post those folders are asked again, in order, and the later answer wins. The
+race cost is paid only when there is a race. The fake sync API had to become
+concurrency safe to test it, and now records peak manifest fetches in flight so
+a serial loop cannot pass.
+
+Then the first materialization campaign was held for ten seconds after launch,
+so it cannot compete with the web view's first load for the link.
+
+What is measured, and what is not. The walk finishing is real and large: on
+build 1066 it was off the stack within about 23 seconds and stayed quiet
+through 53, against the old walk still enumerating five minutes in. A change of
+that size is not a measurement artifact.
+
+The launch numbers taken after build 1065 are not trustworthy and should be
+discarded. Build 1066 measured a 4206 ms median against 1065's 2822 ms, and the
+round trip was unchanged, so it looked like the faster walk was now saturating
+the link during launch. Build 1067 then measured worse still, and the app shell
+milestone, which the walk cannot touch, had drifted from 488 ms to about
+1500 ms. That is when the machine was checked: load average 41.93, an unrelated
+Go build and mediaanalysisd. The 1065 baseline was taken on an idle machine, so
+nothing after it is comparable.
+
+So the causal claim in the commit message of `9650a1eb` is unsupported. The hold
+is still the right behaviour on its own terms, because nothing in the app waits
+on materialization and background network work does not belong in the first
+paint window, but it is a precaution rather than a measured fix, and it should
+not be cited as evidence that the walk was delaying launch. Outstanding: one
+clean launch comparison on an idle machine.
+
+Build 0.182 (1067) is installed locally, attested, with the release gate green.
+Nothing was published: no migrations, no Vercel deploy, no appcast. That path is
+`verify-release.ts`, then the workflow capability receipt, then the build
+attestation, then `build-app.sh` and `install-local.sh`, which is what
+`promote-local.sh` runs before its deploy half.
+
+Two notes for whoever ships next. `mac/Info.plist` still carries build 1002 from
+the 0.182 release on 2026-09-01, because the stamp is deliberately not
+committed; `promote-local.sh` takes max(plist, installed) + 1 and is correct,
+while `ship.sh --local-install` derives from the plist alone and would have
+produced 1003, a downgrade. And the amplification underneath is only half
+addressed: `findFile` fans out now, but `CentralAttachmentsEnumerator.documentItems`
+still walks folders serially, and `LiveTextTextSyncAPI` uses an ephemeral session
+that caches nothing, so the same workspace and manifests are refetched per call.
+
+2026-09-13: Owner-requested instruction cleanup: AGENTS.md 648 → 305 words; removed repetition/stale build-lane guidance where present, retained safeguards and linked task-specific procedures where extracted. Local project checks passed; application code unchanged.
