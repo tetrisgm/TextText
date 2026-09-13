@@ -5347,3 +5347,5 @@ produced 1003, a downgrade. And the amplification underneath is only half
 addressed: `findFile` fans out now, but `CentralAttachmentsEnumerator.documentItems`
 still walks folders serially, and `LiveTextTextSyncAPI` uses an ephemeral session
 that caches nothing, so the same workspace and manifests are refetched per call.
+
+2026-09-13: Owner-requested instruction cleanup: AGENTS.md 648 → 305 words; removed repetition/stale build-lane guidance where present, retained safeguards and linked task-specific procedures where extracted. Local project checks passed; application code unchanged.
