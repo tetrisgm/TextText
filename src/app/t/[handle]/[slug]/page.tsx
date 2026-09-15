@@ -11,7 +11,7 @@ import {
   getAccessibleAllPosts,
   getAccessibleFolderCounts,
   getAccessibleFolders,
-  getAllPosts,
+  getWorkspacePoolPosts,
   getBlog,
   getFolderCounts,
   getFolderById,
@@ -350,7 +350,7 @@ export async function PostPageForHandle({
   let wikiLinkSources: Awaited<ReturnType<typeof getWorkspaceWikiLinkSources>> = [];
   if (canEdit) {
     [allPosts, folders, counts, slugAliases, wikiLinkSources] = await Promise.all([
-      getAllPosts(handle),
+      getWorkspacePoolPosts(handle),
       getFolders(handle),
       getFolderCounts(handle),
       getPostSlugAliases(handle),

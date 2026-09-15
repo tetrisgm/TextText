@@ -218,6 +218,14 @@ export const blogs = pgTable(
      * started on cards no matter what the app said its default was.
      */
     homeLayout: text("home_layout").notNull().default("list"),
+    /**
+     * Days an imported article stays before automatic cleanup may consider
+     * it, unless its source folder overrides it or a hold protects it. Only
+     * feed-imported items ever carry an expiry; manual items never do.
+     */
+    readingRetentionDays: integer("reading_retention_days")
+      .notNull()
+      .default(90),
     ownerId: uuid("owner_id").references(() => users.id),
     /**
      * Durable workspace change high-water-mark: the largest `revision` ever
@@ -707,6 +715,16 @@ export const posts = pgTable(
     pinned: boolean("pinned").notNull().default(false),
     /** Personal workspace favorite. Deliberately independent from public pinning. */
     starred: boolean("starred").notNull().default(false),
+    /**
+     * How the item arrived: "manual" for anything a person or agent authored
+     * or saved, "feed" for an article a feed connection imported. Imported
+     * items are ordinary items in every way but one: the whole-workspace pool
+     * payload the client hydrates on load (getAllPosts) leaves them out, and
+     * reading views page them from the server instead. Fifty thousand
+     * articles must not become fifty thousand rows in every workspace load.
+     * See docs/reading-architecture.md.
+     */
+    origin: text("origin").notNull().default("manual"),
     publishedAt: timestamp("published_at"),
     /**
      * Monotonic per-mutation version from the shared `texttext_change_seq`
@@ -742,10 +760,15 @@ export const posts = pgTable(
     index("posts_blog_starred_order_idx")
       .on(t.blogId, t.starred.desc(), t.updatedAt.desc(), t.createdAt.desc())
       .where(sql`${t.deletedAt} is null`),
+    // The pool query's predicate: every live manual item of a workspace.
+    index("posts_blog_origin_idx")
+      .on(t.blogId, t.origin)
+      .where(sql`${t.deletedAt} is null`),
     check(
       "posts_visibility_valid",
       sql`${t.visibility} in ('private', 'link', 'public')`,
     ),
+    check("posts_origin_valid", sql`${t.origin} in ('manual', 'feed')`),
     check(
       "posts_document_schema_v1_valid",
       sql`coalesce((
@@ -1104,5 +1127,305 @@ export const collabPresence = pgTable(
   (t) => [
     primaryKey({ columns: [t.postId, t.clientId] }),
     index("collab_presence_post_idx").on(t.postId, t.updatedAt),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Reading: feed connections, receipts, provenance, read state, holds, jobs.
+//
+// Everything below is a sidecar to ordinary items. An imported article is a
+// posts row like any other (kind bookmark, origin "feed"); these tables say
+// where it came from, why it is still here, who has read it, and what work is
+// pending for it. Deleting a post cascades its sidecars; deleting a sidecar
+// never touches a post. docs/reading-architecture.md is the overview.
+// ---------------------------------------------------------------------------
+
+/**
+ * One feed subscription, owned by exactly one source folder. The folder is an
+ * ordinary bookmarks-mode subfolder; this row is what makes it a source.
+ */
+export const feedConnections = pgTable(
+  "feed_connections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    blogId: uuid("blog_id")
+      .notNull()
+      .references(() => blogs.id),
+    folderId: uuid("folder_id")
+      .notNull()
+      .references(() => folders.id),
+    /** The URL actually fetched. May carry a private token: display through
+     * `redactedEndpoint`, never log it, never put it in a prompt. */
+    endpointUrl: text("endpoint_url").notNull(),
+    /** Credential-free normalized identity used for one-per-workspace. */
+    endpointKey: text("endpoint_key").notNull(),
+    /** "rss" | "atom" | "jsonfeed" once known */
+    feedFormat: text("feed_format"),
+    publisherTitle: text("publisher_title"),
+    siteUrl: text("site_url"),
+    /** "active" | "paused" | "detached" */
+    state: text("state").notNull().default("active"),
+    /** Health vocabulary from the plan; "checking" until the first fetch. */
+    health: text("health").notNull().default("checking"),
+    healthDetail: text("health_detail"),
+    etag: text("etag"),
+    lastModified: text("last_modified"),
+    lastCheckedAt: timestamp("last_checked_at"),
+    lastSuccessAt: timestamp("last_success_at"),
+    lastImportAt: timestamp("last_import_at"),
+    consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+    nextCheckAt: timestamp("next_check_at"),
+    /** null inherits blogs.readingRetentionDays; 0 means until deleted */
+    retentionDays: integer("retention_days"),
+    initialImportLimit: integer("initial_import_limit").notNull().default(100),
+    policyVersion: integer("policy_version").notNull().default(1),
+    createdById: uuid("created_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    deletedAt: timestamp("deleted_at"),
+  },
+  (t) => [
+    uniqueIndex("feed_connections_blog_endpoint_idx")
+      .on(t.blogId, t.endpointKey)
+      .where(sql`${t.deletedAt} is null and ${t.state} <> 'detached'`),
+    // One active feed per source folder (V1 rule).
+    uniqueIndex("feed_connections_folder_active_idx")
+      .on(t.folderId)
+      .where(sql`${t.deletedAt} is null and ${t.state} <> 'detached'`),
+    index("feed_connections_due_idx")
+      .on(t.nextCheckAt)
+      .where(sql`${t.deletedAt} is null and ${t.state} = 'active'`),
+    check(
+      "feed_connections_state_valid",
+      sql`${t.state} in ('active', 'paused', 'detached')`,
+    ),
+    check(
+      "feed_connections_health_valid",
+      sql`${t.health} in ('healthy', 'checking', 'stale', 'failing', 'rate_limited', 'moved', 'auth_required', 'unsupported', 'degraded', 'disabled')`,
+    ),
+    check(
+      "feed_connections_retention_valid",
+      sql`${t.retentionDays} is null or ${t.retentionDays} >= 0`,
+    ),
+  ],
+);
+
+/**
+ * One row per (connection, feed entry) ever seen. This is the idempotency
+ * and retention ledger: a retransmitted entry updates lastSeenAt and nothing
+ * else; an expired entry keeps its row as the tombstone that stops the next
+ * poll from importing it again.
+ */
+export const feedReceipts = pgTable(
+  "feed_receipts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => feedConnections.id, { onDelete: "cascade" }),
+    blogId: uuid("blog_id").notNull(),
+    /** Stable external entry identity; see feed-identity.ts. */
+    externalKey: text("external_key").notNull(),
+    postId: uuid("post_id").references(() => posts.id, { onDelete: "set null" }),
+    firstImportedAt: timestamp("first_imported_at").defaultNow().notNull(),
+    lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
+    contentHash: text("content_hash"),
+    /** Retention lease: null means no automatic expiry. */
+    expiresAt: timestamp("expires_at"),
+    /** Tombstone: automatic cleanup removed the item at this time. */
+    expiredAt: timestamp("expired_at"),
+    /** "active" | "expired" | "detached" */
+    status: text("status").notNull().default("active"),
+  },
+  (t) => [
+    uniqueIndex("feed_receipts_connection_key_idx").on(
+      t.connectionId,
+      t.externalKey,
+    ),
+    index("feed_receipts_post_idx").on(t.postId),
+    index("feed_receipts_expiry_idx")
+      .on(t.blogId, t.expiresAt)
+      .where(sql`${t.status} = 'active' and ${t.expiresAt} is not null`),
+    check(
+      "feed_receipts_status_valid",
+      sql`${t.status} in ('active', 'expired', 'detached')`,
+    ),
+  ],
+);
+
+/**
+ * Publisher facts about an imported item, kept beside the document rather
+ * than inside it so a person's own title or folder changes never rewrite
+ * what the publisher said.
+ */
+export const readingProvenance = pgTable(
+  "reading_provenance",
+  {
+    postId: uuid("post_id")
+      .primaryKey()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    blogId: uuid("blog_id").notNull(),
+    connectionId: uuid("connection_id").references(() => feedConnections.id, {
+      onDelete: "set null",
+    }),
+    publisherTitle: text("publisher_title").notNull(),
+    publisherName: text("publisher_name"),
+    authors: text("authors")
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
+    /** The feed entry's own permalink. */
+    permalink: text("permalink"),
+    /** The link the entry points at, when it is not the permalink. */
+    externalUrl: text("external_url"),
+    /** Tracking parameters stripped; identity hint, not proof. */
+    canonicalUrl: text("canonical_url"),
+    publishedAt: timestamp("published_at"),
+    sourceUpdatedAt: timestamp("source_updated_at"),
+    /** "full" | "excerpt" | "metadata": what the feed actually supplied. */
+    availability: text("availability").notNull(),
+    language: text("language"),
+    /** Hash of the normalized source content this item currently shows. */
+    sourceHash: text("source_hash").notNull(),
+    normalizationVersion: integer("normalization_version").notNull().default(1),
+    capturedAt: timestamp("captured_at").defaultNow().notNull(),
+    revisionCount: integer("revision_count").notNull().default(1),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("reading_provenance_blog_published_idx").on(t.blogId, t.publishedAt),
+    index("reading_provenance_canonical_idx").on(t.blogId, t.canonicalUrl),
+    check(
+      "reading_provenance_availability_valid",
+      sql`${t.availability} in ('full', 'excerpt', 'metadata')`,
+    ),
+  ],
+);
+
+/**
+ * Immutable capture of one source version. The item's document is what a
+ * reader sees; a revision is what a citation can pin to when the publisher
+ * changes the text later.
+ */
+export const readingSourceRevisions = pgTable(
+  "reading_source_revisions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    postId: uuid("post_id")
+      .notNull()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    sourceHash: text("source_hash").notNull(),
+    title: text("title").notNull(),
+    bodyMarkdown: text("body_markdown").notNull(),
+    availability: text("availability").notNull(),
+    capturedAt: timestamp("captured_at").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("reading_source_revisions_post_hash_idx").on(
+      t.postId,
+      t.sourceHash,
+    ),
+    index("reading_source_revisions_post_idx").on(t.postId, t.capturedAt),
+  ],
+);
+
+/** Per-person read state. Absent row means unread. */
+export const readingReadState = pgTable(
+  "reading_read_state",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    postId: uuid("post_id")
+      .notNull()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    /** null after an explicit Mark unread; a row with null is still unread */
+    readAt: timestamp("read_at"),
+    readRevisionId: uuid("read_revision_id"),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.postId] }),
+    index("reading_read_state_post_idx").on(t.postId),
+  ],
+);
+
+/**
+ * Why an imported item may not be cleaned up. Independently addressable:
+ * removing one reason never removes another, and cleanup checks the whole
+ * set at commit time, not a cached flag.
+ */
+export const retentionHolds = pgTable(
+  "retention_holds",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    postId: uuid("post_id")
+      .notNull()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    blogId: uuid("blog_id").notNull(),
+    reason: text("reason").notNull(),
+    /** The originating object, so the hold can be found and released with it. */
+    sourceId: text("source_id").notNull().default(""),
+    /** Pinned source revision for evidentiary holds. */
+    revisionId: uuid("revision_id"),
+    createdById: uuid("created_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    /** Leases only; durable user work never expires on its own. */
+    expiresAt: timestamp("expires_at"),
+    releasedAt: timestamp("released_at"),
+  },
+  (t) => [
+    uniqueIndex("retention_holds_active_idx")
+      .on(t.postId, t.reason, t.sourceId)
+      .where(sql`${t.releasedAt} is null`),
+    index("retention_holds_blog_idx").on(t.blogId, t.postId),
+    check(
+      "retention_holds_reason_valid",
+      sql`${t.reason} in ('manual_save', 'starred', 'keep', 'comment', 'reference', 'keep_summary', 'proposal_lease', 'processing_lease', 'used_in_work')`,
+    ),
+  ],
+);
+
+/**
+ * Durable bounded work. A request handler enqueues; a bounded runner leases
+ * and executes; effects are idempotent so at-least-once is safe. Nothing here
+ * polls on its own: the runner is invoked by requests and by the owner.
+ */
+export const readingJobs = pgTable(
+  "reading_jobs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    blogId: uuid("blog_id").notNull(),
+    kind: text("kind").notNull(),
+    /** Idempotency: kind + target + version. A queued duplicate is a no-op. */
+    opKey: text("op_key").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    /** "queued" | "running" | "done" | "failed" | "dead" | "cancelled" */
+    status: text("status").notNull().default("queued"),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(5),
+    leaseUntil: timestamp("lease_until"),
+    leaseOwner: text("lease_owner"),
+    runAfter: timestamp("run_after").defaultNow().notNull(),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    finishedAt: timestamp("finished_at"),
+  },
+  (t) => [
+    uniqueIndex("reading_jobs_open_op_idx")
+      .on(t.blogId, t.opKey)
+      .where(sql`${t.status} in ('queued', 'running')`),
+    index("reading_jobs_runnable_idx")
+      .on(t.runAfter)
+      .where(sql`${t.status} = 'queued'`),
+    check(
+      "reading_jobs_status_valid",
+      sql`${t.status} in ('queued', 'running', 'done', 'failed', 'dead', 'cancelled')`,
+    ),
   ],
 );

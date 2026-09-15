@@ -19,6 +19,12 @@ export interface Blog {
   /** one-line standing profile bio */
   bioLine?: string;
   /**
+   * Days an imported article stays before automatic cleanup may consider it,
+   * unless its source folder overrides it or a hold protects it. Only
+   * feed-imported items ever carry an expiry.
+   */
+  readingRetentionDays?: number;
+  /**
    * How Home, the workspace landing, lays its items out. This is the one
    * stored layout choice in the workspace: every folder page, Blog included,
    * takes its layout from the look on the folder.
@@ -260,6 +266,12 @@ export interface Post {
   pinned?: boolean;
   /** owner-only personal favorite; never affects public listing or visibility */
   starred?: boolean;
+  /**
+   * "manual" for anything authored or saved by a person or agent, "feed" for
+   * an article a feed connection imported. Imported items are ordinary items;
+   * the flag exists so the whole-workspace pool can leave them out.
+   */
+  origin?: "manual" | "feed";
   gallery?: GalleryItem[];
   links?: LinkRef[];
   /** normalized workspace tags, independent of folders */

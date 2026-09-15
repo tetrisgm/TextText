@@ -36,7 +36,7 @@ import {
   blogJsonFeedHref,
 } from "@/lib/feed-links";
 import {
-  getAllPosts,
+  getWorkspacePoolPosts,
   getBlogEditRecord,
   getAccessibleFolderCounts,
   getAccessibleFolderPosts,
@@ -127,7 +127,7 @@ async function loadWorkspacePoolParts(
   ] = await Promise.all([
     getFolders(handle),
     getFolderCounts(handle),
-    getAllPosts(handle),
+    getWorkspacePoolPosts(handle),
     getWorkspaceWikiLinkSources(handle),
     getPostSlugAliases(handle),
     getTrashedFolders(handle),

@@ -1,6 +1,6 @@
 import { resolveWorkspaceAccess, type AccessUser } from "@/lib/permissions";
 import {
-  getAllPosts,
+  getWorkspacePoolPosts,
   getBlog,
   getFolderCounts,
   getFolders,
@@ -53,7 +53,7 @@ export async function getWorkspacePoolForOwner(
   ] = await Promise.all([
     getFolders(handle),
     getFolderCounts(handle),
-    getAllPosts(handle),
+    getWorkspacePoolPosts(handle),
     getWorkspaceWikiLinkSources(handle),
     getPostSlugAliases(handle),
     getTrashedFolders(handle),

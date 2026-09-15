@@ -163,6 +163,7 @@ type PostFolderRow = Pick<PostRow, "id" | "folderId" | "type">;
 type PostListRow = Pick<
   PostRow,
   | "id"
+  | "origin"
   | "blogId"
   | "folderId"
   | "representation"
@@ -207,6 +208,7 @@ type BlogRow = {
   accent: string | null;
   bioLine: string | null;
   homeLayout: string | null;
+  readingRetentionDays?: number | null;
   author: string | null;
 };
 export type BlogPatch = {
@@ -365,6 +367,7 @@ function mapPost(row: PostRow): Post {
     status: row.status,
     pinned: row.pinned,
     starred: row.starred,
+    origin: row.origin === "feed" ? "feed" : "manual",
     folderId: row.folderId ?? undefined,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -429,6 +432,7 @@ function mapPostList(row: PostListRow): Post {
     status: row.status,
     pinned: row.pinned,
     starred: row.starred,
+    origin: row.origin === "feed" ? "feed" : "manual",
     folderId: row.folderId ?? undefined,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -486,6 +490,7 @@ function postListSelection() {
     status: posts.status,
     pinned: posts.pinned,
     starred: posts.starred,
+    origin: posts.origin,
     publishedAt: posts.publishedAt,
     createdAt: posts.createdAt,
     updatedAt: posts.updatedAt,
@@ -520,6 +525,7 @@ function mapBlog(row: BlogRow): Blog {
     accent: row.accent ?? undefined,
     bioLine: row.bioLine ?? undefined,
     homeLayout: cleanStoredHomeLayout(row.homeLayout),
+    readingRetentionDays: row.readingRetentionDays ?? undefined,
   };
 }
 
@@ -560,6 +566,7 @@ export async function getBlogByUsername(
 async function selectPosts(
   handle: string,
   publishedOnly: boolean,
+  options: { manualOnly?: boolean } = {},
 ): Promise<Post[]> {
   const rows = await db!
     .select(postListSelection())
@@ -580,6 +587,7 @@ async function selectPosts(
             eq(blogs.handle, handle),
             isNull(blogs.deletedAt),
             isNull(posts.deletedAt),
+            options.manualOnly ? eq(posts.origin, "manual") : undefined,
           ),
     )
     .orderBy(
@@ -701,6 +709,26 @@ const getAllPostsCached = cache(getAllPostsUncached);
 
 export async function getAllPosts(handle: string): Promise<Post[]> {
   return getAllPostsCached(handle);
+}
+
+async function getWorkspacePoolPostsUncached(handle: string): Promise<Post[]> {
+  if (!db) throw new Error(NO_DATABASE);
+  return selectPosts(handle, false, { manualOnly: true });
+}
+
+const getWorkspacePoolPostsCached = cache(getWorkspacePoolPostsUncached);
+
+/**
+ * Every live item a person authored or saved: what the client pool hydrates
+ * on a workspace load. Feed-imported articles are not here on purpose. They
+ * are ordinary items reachable by id, by search, by folder page and in
+ * Finder, but a workspace that follows two hundred feeds cannot ship fifty
+ * thousand rows in every load; reading views page them from the server. Use
+ * getAllPosts when the question is about everything, such as what deleting a
+ * folder would remove.
+ */
+export async function getWorkspacePoolPosts(handle: string): Promise<Post[]> {
+  return getWorkspacePoolPostsCached(handle);
 }
 
 export type WorkspaceWikiLinkSource = {
@@ -1111,6 +1139,13 @@ export async function getPostSlugAliases(
       ),
     );
   return resolvableSlugAliases(rows);
+}
+
+/** The workspace row id for a handle. For server-side reading work that runs
+ * without a signed-in user, such as a feed poll; every other caller resolves
+ * access first and gets the id from that. */
+export async function workspaceIdForHandle(handle: string): Promise<string> {
+  return blogIdFor(handle);
 }
 
 async function blogIdFor(handle: string): Promise<string> {
@@ -2686,6 +2721,11 @@ type CreateDraftOptions = {
       | "duration"
     >
   >;
+  /**
+   * "feed" for an article a feed connection imported; "manual" otherwise.
+   * See posts.origin. Only the reading importer sets this.
+   */
+  origin?: "manual" | "feed";
 };
 
 function postTypeBelongsInFolder(type: ItemKind, mode: FolderMode): boolean {
@@ -2835,6 +2875,7 @@ export async function createDraftInFolder(
       status: "draft",
       pinned: false,
       starred: seed.starred,
+      origin: options.origin ?? "manual",
       publishedAt: null,
     })
     .returning({ id: posts.id, revision: posts.revision });
@@ -3451,7 +3492,7 @@ export async function getAccessibleAllPosts(
   user: AccessUser | null,
 ): Promise<Post[]> {
   if (!db || !user) return [];
-  const allPosts = await getAllPosts(handle);
+  const allPosts = await getWorkspacePoolPosts(handle);
   const ids = await accessiblePostIdsForUser(handle, user);
   if (ids === "all") return allPosts;
   return allPosts.filter((post) => Boolean(post.id && ids.has(post.id)));
@@ -6301,6 +6342,7 @@ export async function getOwnedBlog(sub: string): Promise<Blog | null> {
       accent: blogs.accent,
       bioLine: blogs.bioLine,
       homeLayout: blogs.homeLayout,
+      readingRetentionDays: blogs.readingRetentionDays,
       author: users.name,
     })
     .from(blogs)
@@ -6620,6 +6662,7 @@ export async function updateBlogByHandle(
         accent: blogs.accent,
         bioLine: blogs.bioLine,
         homeLayout: blogs.homeLayout,
+        readingRetentionDays: blogs.readingRetentionDays,
         author: users.name,
       })
       .from(blogs)
