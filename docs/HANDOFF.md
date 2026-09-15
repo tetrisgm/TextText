@@ -98,3 +98,44 @@ Still needing the owner: the native checks that need a person at the machine
 (cursor shapes, trackpad momentum, grabbing the rail mid-motion, pinch zoom, an
 IME during a delayed Accept), and the changelog for 1052 to 1067, which needs
 the TextText connector authorized.
+
+## finder.provider: found, fixed, green (2026-09-15)
+
+The provider has warned on every launch since 2026-08-30. It is fixed, and
+build 1072 installs with `runtime health: pass`, 18 of 18 checks, no warning.
+
+The stuck pending item was never a document. It is the hidden **trash
+container**, listing itself as its own parent. The extension declines to serve
+that identifier on purpose (`noSuchItem`, see FileProviderExtension) so it is
+not aliased to the root, and the framework then keeps it pending indefinitely.
+The status monitor counted it as one file syncing, so the provider reported
+itself `.working` forever, the readiness probe exhausted all 120 samples over
+66 seconds, and the check warned. `45291e0c` counts only items a person is
+waiting on. Readiness now settles in one sample, so this also takes 66 seconds
+of blocking work out of every launch's health report.
+
+Fixing it exposed a coupling the stall had hidden. Where the mount lives was
+published only as a side effect of the materialization walk, and that walk is
+now held ten seconds past launch, so the health check ran with
+`mount_resolved` 0 and failed. `20afbba8` publishes the mount's location at
+domain reconcile instead, which is where it belonged: Open Folder, Spotlight
+and the health check all want it and none of them care about downloads.
+
+Three corrections from the hunt, recorded because each one cost time:
+
+- The `.DS_Store` in the mount root was a **guess, and wrong**. `d60c7626`
+  still stands on its own terms, because a create the provider will never
+  accept should end the conversation rather than be retried forever, but its
+  commit message reads as a diagnosis and is not one.
+- **zsh has its own `log` builtin.** Every `log show` and `log stream` in this
+  session was hitting it, not `/usr/bin/log`, and failing with "too many
+  arguments" that was easy to read as "nothing in the log". The earlier note
+  that fileproviderd redacts our domain was never a finding; the log had never
+  been queried. Use the absolute path, and `--info`, or `Logger.info` lines do
+  not appear.
+- **`npx tsx scripts/verify-release.ts` can hang after it finishes.** The
+  script completes and prints its result, then `npm exec` sits at 0% CPU with
+  node already gone and never exits, so the receipt is never written and the
+  next step correctly refuses the stale one. Run `./node_modules/.bin/tsx`
+  instead. Chain release pipeline steps with `&&`, not `;`: a failed gate
+  otherwise still reaches the build.
