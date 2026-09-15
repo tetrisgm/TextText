@@ -43,10 +43,14 @@ was run locally. Production has not been migrated (not authorized).
 
 Open:
 
-- Embeddings against a live OpenAI key are unverified here (no dev key in
-  `.env.local`); the retrieval path is proved with a deterministic embedder.
-- Native Mac File Provider with large feed folders: unmeasured. Imported
-  items are ordinary posts to sync; a 5,000-item folder will appear there.
+- Embeddings verified live (`d81acbc9`) with the Keychain OpenAI dev key,
+  passed through the environment only: text-embedding-3-small@512, 20
+  articles in one batched call (1.1 s), and a meaning-only query finds the
+  right article. Indexing is one coalesced job per workspace, 64 items per
+  provider call.
+- Native Mac File Provider: the sync manifest listing for a 5,000-item feed
+  folder is 99 ms server-side (`a4649e3e`). The enumerator's own cost on a
+  device is still unmeasured.
 - `TEXTTEXT_READING_CLEANUP` stays off; the owner's preview/run route works.
 - The dev server needed a restart before edits to `bookmark-fetch.ts` took
   effect in the reading routes; if a feed shows "unsupported" after a

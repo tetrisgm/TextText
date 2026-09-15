@@ -8,7 +8,7 @@ import {
   readingReadState,
   readingSourceRevisions,
 } from "@/lib/db/schema";
-import { auditCteFrom, recordAction, type AuditActorType } from "@/lib/audit";
+import { auditCteFrom, auditInsertQuery, type AuditActorType } from "@/lib/audit";
 import { getPostSlugAliases, getWorkspaceWikiLinkSources, workspaceIdForHandle } from "@/lib/store";
 import { extractWikiLinks } from "@/lib/wikilinks";
 import { durableHoldExistsSql, holdInsertQuery, holdReleaseQuery } from "./holds";
@@ -57,22 +57,25 @@ export async function setKeep(input: {
     .from(posts)
     .where(and(eq(posts.blogId, blogId), inArray(posts.id, input.postIds), isNull(posts.deletedAt)));
   if (owned.length === 0) return { changed: 0 };
+  // Holds and their audit rows commit together; the writes are addressed by
+  // id and always affect their row, which is what auditInsertQuery requires.
   await executeAtomicBatch((executor) =>
-    owned.map((row) =>
+    owned.flatMap((row) => [
       input.keep
         ? holdInsertQuery(executor, { postId: row.id, blogId, reason: "keep", createdById: input.actor.userId })
         : holdReleaseQuery(executor, { postId: row.id, reason: "keep" }),
-    ),
+      auditInsertQuery(
+        {
+          actorUserId: input.actor.userId,
+          actorType: input.actor.actorType,
+          actionName: input.keep ? "reading.keep_item" : "reading.unkeep_item",
+          targetType: "item",
+          targetId: row.id,
+        },
+        executor,
+      ),
+    ]),
   );
-  for (const row of owned) {
-    await recordAction({
-      actorUserId: input.actor.userId,
-      actorType: input.actor.actorType,
-      actionName: input.keep ? "reading.keep_item" : "reading.unkeep_item",
-      targetType: "item",
-      targetId: row.id,
-    });
-  }
   return { changed: owned.length };
 }
 
