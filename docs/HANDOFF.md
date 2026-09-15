@@ -16,6 +16,42 @@
 
 For other topics, search `HANDOFF-history-2026-09-13.md` by term, then read that section. Implementation and checks are in their source files and git history; this entry point does not duplicate them.
 
+## Source-fed reading landed locally (2026-09-16)
+
+Implemented from `MASTER_PLAN.md` (owner's local copy) under explicit local
+authorization; not deployed, not released, no jobs installed. Decisions and
+flags: [reading-architecture.md](reading-architecture.md). Spec amendment:
+[SPEC.md, Pillar 6](SPEC.md). Tool policy: [ai-sidebar-architecture.md](ai-sidebar-architecture.md),
+[mcp.md](mcp.md).
+
+Commits, in order: `fd2aa3ef` schema, parsing, ingestion, jobs, paged lists;
+`9a16dcf6` reading folder view and Add feeds; `245f59c5` retention holds and
+cleanup; `5359e432` hybrid search, embeddings, four agent tools; `1396bff9`
+front-page module, Summaries, Save brief, Manage sources, OPML; `1d327a37`
+scale proof and two fetch fixes.
+
+Validation: `npx vitest run` 3305 passing; `npm run test:reading:db` 62
+passing against local Postgres (ingestion, retention, search, overview,
+scale at 5,000 items); typecheck and lint clean. Verified in the dev server
+with the `second-editor` fixture: Add feeds discovered and followed
+hnrss.org, the folder listed 20 articles, the parent Bookmarks folder showed
+the same items, an article opened as an ordinary bookmark, Save brief wrote
+and opened a note, Manage sources listed the feed with its health.
+
+Migration: `scripts/migrate-add-reading.mjs` is on the `db:push` chain and
+was run locally. Production has not been migrated (not authorized).
+
+Open:
+
+- Embeddings against a live OpenAI key are unverified here (no dev key in
+  `.env.local`); the retrieval path is proved with a deterministic embedder.
+- Native Mac File Provider with large feed folders: unmeasured. Imported
+  items are ordinary posts to sync; a 5,000-item folder will appear there.
+- `TEXTTEXT_READING_CLEANUP` stays off; the owner's preview/run route works.
+- The dev server needed a restart before edits to `bookmark-fetch.ts` took
+  effect in the reading routes; if a feed shows "unsupported" after a
+  restart, Check now re-polls it.
+
 ## Launch is not network bound after all (2026-09-15)
 
 Measured build 1067 on a quiet machine (load 4.16) at home: default route en0,
