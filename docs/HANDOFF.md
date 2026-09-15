@@ -154,8 +154,13 @@ session. Authorize it in claude.ai connector settings, or run `/mcp` from an
 interactive terminal, and the entry for 1052 to 1072 can be written in one pass.
 
 **The native checks cannot be done with synthetic input, by anyone.** This is
-not a matter of permission. A macOS screen capture does not include the pointer,
-so a cursor shape cannot be read back from a screenshot. Synthetic scroll events
+mostly not a matter of permission. One correction to an earlier draft of this
+note: `screencapture -C` DOES include the pointer, and Screen Recording is
+granted on this Mac, so check 1 below is technically reachable by warping the
+pointer onto the divider and capturing. It was not done because it means
+bringing TextText to the front and taking the pointer while the owner is
+working in another app, which is not something to do unasked. Offer it; do not
+assume it. The rest stand: synthetic scroll events
 carry no momentum, so trackpad deceleration cannot be exercised. There is no
 pinch gesture available to drive the Mac app. Synthetic typing bypasses IME
 composition entirely, which is the thing under test. And the project contract
