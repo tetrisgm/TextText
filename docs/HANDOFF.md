@@ -51,6 +51,20 @@ Open:
 - Native Mac File Provider: the sync manifest listing for a 5,000-item feed
   folder is 99 ms server-side (`a4649e3e`). The enumerator's own cost on a
   device is still unmeasured.
+- Adversarial review by Codex (read-only, 15 findings) drove one more
+  commit: receipts are claimed before items exist (no orphan or duplicate on
+  a crash or concurrent poll), source refresh is revision-guarded so a
+  concurrent edit wins, holds insert from the live post row with `FOR SHARE`
+  so protection and cleanup serialize, read state only touches items the
+  person can see, job completion is fenced to its lease, one poll per
+  connection at a time, conditional-fetch validators advance only when every
+  entry reconciled, a new feed's own initial poll runs on add and the folder
+  drains the queue in bounded passes, `search_reading` includes saved
+  bookmarks, deleting a comment thread releases its replies' holds, detached
+  feeds' receipts still expire, Keep/cleanup/read-all are audited in their
+  transactions, and the docs no longer claim a staged rail `add_feed`. Two
+  narrow windows and the pre-existing DNS-rebinding residual are recorded in
+  `reading-architecture.md`.
 - `TEXTTEXT_READING_CLEANUP` stays off; the owner's preview/run route works.
 - The dev server needed a restart before edits to `bookmark-fetch.ts` took
   effect in the reading routes; if a feed shows "unsupported" after a

@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { blogs, posts, readingEmbeddings, users } from "@/lib/db/schema";
 import { getWorkspaceAiConfigForOwner } from "@/lib/ai/workspace-ai-config.server";
@@ -132,7 +132,7 @@ export async function indexPendingPosts(
       and(
         eq(posts.blogId, blogId),
         isNull(posts.deletedAt),
-        eq(posts.origin, "feed"),
+        or(eq(posts.origin, "feed"), eq(posts.type, "bookmark")),
         sql`(${readingEmbeddings.postId} is null or ${readingEmbeddings.updatedAt} < ${posts.updatedAt} or ${readingEmbeddings.model} <> ${provider.model})`,
       ),
     )

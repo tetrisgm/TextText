@@ -88,6 +88,10 @@ function createFakeDb(state: FakeState) {
               const call: Call = { fields, table, cond };
               calls.selects.push(call);
               return {
+                // A bare `await db.select()...where()` (no limit/orderBy).
+                then(resolve: (rows: unknown) => unknown, reject?: (error: unknown) => unknown) {
+                  return Promise.resolve(state.selectRows.shift() ?? []).then(resolve, reject);
+                },
                 limit(limit: number) {
                   call.limit = limit;
                   return Promise.resolve(
@@ -484,7 +488,9 @@ describe("item comment mutations", () => {
   });
 
   it("returns a deleted row so callers can audit the item and comment", async () => {
-    const { calls } = setup({ deleteRows: [[commentRow()]] });
+    // Deletion first reads the thread's replies (none here) so their holds
+    // can be released with the parent's.
+    const { calls } = setup({ selectRows: [[]], deleteRows: [[commentRow()]], insertRows: [[]] });
 
     const deleted = await deleteItemComment(ITEM_ID, COMMENT_ID, {
       actorUserId: USER_ID,

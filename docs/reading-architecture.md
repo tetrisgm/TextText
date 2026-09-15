@@ -65,7 +65,7 @@ Tools derive from `src/lib/ai/tools.ts` and keep each surface's policy:
 | `list_reading_sources` | read | read | read (server) |
 | `search_reading` | read | read | read (server) |
 | `keep_item` | direct, audited | direct | staged proposal |
-| `add_feed` | direct, audited | refused (fetches a chosen URL) | staged proposal |
+| `add_feed` | direct, audited | refused (fetches a chosen URL) | not available: open-world tools are never staged; feeds are added from the folder menu |
 
 Visibility fails closed: every reading query intersects with the folders the
 caller can access, and a caller with no access sees an empty list.
@@ -78,6 +78,19 @@ to a byte ceiling (8 MB), and conditional headers keep a healthy feed cheap.
 Parsing refuses DOCTYPE and entity declarations before the XML parser sees
 them. Discovery verifies advertised and conventional feed paths by fetching
 and parsing; it never fabricates a candidate.
+
+## Residual risks, recorded
+
+- DNS rebinding between the gate's lookup and the socket connect is a known
+  residual of the shared `fetchPublicResource` (documented there); the feed
+  fetcher inherits it and adds no new exposure.
+- Cleanup and protection serialize on the post row (holds insert with
+  `FOR SHARE` on the live post; the sweep's guarded UPDATE re-checks holds and
+  stars), so a hold that commits first is honored. A note that cites an
+  expiring article saved during the milliseconds between the sweep's
+  reference scan and its guarded UPDATE is not protected by that sweep; the
+  article moves to Trash, where it is restorable, and the next poll never
+  re-imports it.
 
 ## Not verified here
 

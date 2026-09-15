@@ -210,16 +210,35 @@ describe.skipIf(!enabled)("retention holds and cleanup against Postgres", () => 
     expect(preview.expiring).toEqual([]);
   });
 
+  it("RET-02b: deleting a parent comment releases its replies' holds too", async () => {
+    const id = byUrl.get("https://r.example/keep")!;
+    const actor = { actorUserId: userId, actorType: "human" as const, actorName: "Me" };
+    const parent = await store.createItemComment({ itemId: id, body: "Thread" }, actor);
+    await store.createItemComment({ itemId: id, body: "Reply", parentId: parent.id }, actor);
+    expect((await activeHolds(id)).filter((reason) => reason === "comment")).toHaveLength(2);
+    await store.deleteItemComment(id, parent.id, actor);
+    expect((await activeHolds(id)).filter((reason) => reason === "comment")).toHaveLength(0);
+  });
+
+  it("RET-06b: read state ignores ids outside the person's reach", async () => {
+    const mine = byUrl.get("https://r.example/keep")!;
+    const written = await retention.setReadState({ handle, user, postIds: [mine, crypto.randomUUID()], read: true });
+    expect(written).toBe(1);
+    const rows = await db!.select().from(schema.readingReadState).where(eq(schema.readingReadState.userId, userId));
+    expect(rows.map((row) => row.postId)).toEqual([mine]);
+    await retention.setReadState({ handle, user, postIds: [mine], read: false });
+  });
+
   it("RET-06: read state is the person's own and drives the Unread view", async () => {
     const id = byUrl.get("https://r.example/keep")!;
-    await retention.setReadState({ userId, postIds: [id], read: true });
+    await retention.setReadState({ handle, user, postIds: [id], read: true });
     const unread = await list.listReadingItems({
       handle,
       user,
       scope: { folderPath: "bookmarks", includeDescendants: true, state: "unread", dateBasis: "published" },
     });
     expect(unread.items.map((item) => item.id)).not.toContain(id);
-    await retention.setReadState({ userId, postIds: [id], read: false });
+    await retention.setReadState({ handle, user, postIds: [id], read: false });
     const again = await list.listReadingItems({
       handle,
       user,

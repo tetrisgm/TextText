@@ -1,4 +1,5 @@
 import { listReadingItems, readingFolderSummary, resolveReadingFolderIds, type ReadingScope } from "@/lib/reading/list.server";
+import { recordAction } from "@/lib/audit";
 import { setKeep, setReadState, setReadStateForScope } from "@/lib/reading/retention.server";
 import { handleFrom, json, jsonError, readJson, requireOwner, requireReader } from "../_shared";
 
@@ -70,6 +71,14 @@ export async function POST(request: Request) {
       const folderPath = typeof body.folder === "string" ? body.folder : "";
       const { blogId, folderIds } = await resolveReadingFolderIds({ handle, user: reader.user, folderPath, includeDescendants: true });
       const count = await setReadStateForScope({ userId: reader.user.userId, blogId, folderIds });
+      await recordAction({
+        actorUserId: reader.user.userId,
+        actorType: "human",
+        actionName: "reading.mark_all_read",
+        targetType: "folder",
+        targetId: folderPath || null,
+        outputSummary: `${count} items`,
+      });
       return json({ ok: true, count });
     }
     if (ids.length === 0) return jsonError("Missing ids", 400);
@@ -77,8 +86,8 @@ export async function POST(request: Request) {
       const reader = await requireReader(handle);
       if (!reader.ok) return reader.response;
       if (!reader.user?.userId) return jsonError("Sign in to track what you have read", 401);
-      await setReadState({ userId: reader.user.userId, postIds: ids, read: action === "read" });
-      return json({ ok: true, count: ids.length });
+      const count = await setReadState({ handle, user: reader.user, postIds: ids, read: action === "read" });
+      return json({ ok: true, count });
     }
     if (action === "keep" || action === "unkeep") {
       const owner = await requireOwner(handle);

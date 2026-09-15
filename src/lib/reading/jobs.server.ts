@@ -59,6 +59,8 @@ export async function enqueueReadingJob(input: {
  */
 export async function leaseReadingJobs(options: {
   blogId?: string;
+  /** Lease only this job, when a request needs one specific piece of work done now. */
+  opKey?: string;
   limit: number;
   now?: Date;
   owner: string;
@@ -77,6 +79,7 @@ export async function leaseReadingJobs(options: {
         or (status = 'running' and lease_until is not null and lease_until < ${now})
       )
       ${options.blogId ? sql`and blog_id = ${options.blogId}` : sql``}
+      ${options.opKey ? sql`and op_key = ${options.opKey}` : sql``}
       order by run_after asc
       limit ${limit}
       for update skip locked
@@ -108,11 +111,17 @@ function rowFromSql(row: Record<string, unknown>): ReadingJobRow {
   };
 }
 
-export async function completeReadingJob(id: string, now = new Date()): Promise<void> {
-  await requireDb()
+/**
+ * Completion and failure are fenced to the lease: a runner that outlived its
+ * lease, and whose job another runner has since taken, changes nothing.
+ */
+export async function completeReadingJob(job: Pick<ReadingJobRow, "id" | "leaseOwner">, now = new Date()): Promise<boolean> {
+  const rows = await requireDb()
     .update(readingJobs)
     .set({ status: "done", finishedAt: now, updatedAt: now, leaseUntil: null, leaseOwner: null })
-    .where(eq(readingJobs.id, id));
+    .where(and(eq(readingJobs.id, job.id), eq(readingJobs.status, "running"), job.leaseOwner ? eq(readingJobs.leaseOwner, job.leaseOwner) : sql`true`))
+    .returning({ id: readingJobs.id });
+  return rows.length > 0;
 }
 
 export async function failReadingJob(job: ReadingJobRow, error: string, now = new Date()): Promise<void> {
@@ -130,7 +139,7 @@ export async function failReadingJob(job: ReadingJobRow, error: string, now = ne
       leaseOwner: null,
       updatedAt: now,
     })
-    .where(eq(readingJobs.id, job.id));
+    .where(and(eq(readingJobs.id, job.id), eq(readingJobs.status, "running"), job.leaseOwner ? eq(readingJobs.leaseOwner, job.leaseOwner) : sql`true`));
 }
 
 export async function cancelOpenReadingJobs(blogId: string, opKeyPrefix: string, now = new Date()): Promise<number> {
@@ -159,12 +168,14 @@ export type RunReadingJobsReport = {
 export async function runReadingJobs(options: {
   executors: Partial<Record<ReadingJobKind, ReadingJobExecutor>>;
   blogId?: string;
+  opKey?: string;
   limit?: number;
   owner?: string;
   now?: Date;
 }): Promise<RunReadingJobsReport> {
   const jobs = await leaseReadingJobs({
     blogId: options.blogId,
+    opKey: options.opKey,
     limit: options.limit ?? 5,
     now: options.now,
     owner: options.owner ?? `runner:${process.pid}`,
@@ -180,7 +191,7 @@ export async function runReadingJobs(options: {
     }
     try {
       await executor(job);
-      await completeReadingJob(job.id);
+      await completeReadingJob(job);
       report.done += 1;
     } catch (error) {
       await failReadingJob(job, error instanceof Error ? error.message : String(error));

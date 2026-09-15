@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   blogs,
@@ -15,6 +15,7 @@ import {
   getFolderById,
   getOwnerPlan,
   getPostById,
+  PostConflictError,
   savePostContentPatch,
 } from "@/lib/store";
 import { cleanPlanTier, planLimits } from "@/lib/product-limits";
@@ -149,15 +150,56 @@ async function importEntry(input: {
       await database.update(feedReceipts).set({ lastSeenAt: now }).where(eq(feedReceipts.id, receipt.id));
       return "suppressed";
     }
-    if (receipt.contentHash === contentHash || !receipt.postId) {
+    if (!receipt.postId) {
+      // A receipt without its item: an earlier import stopped between the
+      // two writes. Finish it now instead of leaving the entry unreachable.
+      return materializeEntry({ ...input, receiptId: receipt.id, contentHash });
+    }
+    if (receipt.contentHash === contentHash) {
       await database.update(feedReceipts).set({ lastSeenAt: now }).where(eq(feedReceipts.id, receipt.id));
       return "unchanged";
     }
     return applySourceRevision({ ...input, receipt, contentHash });
   }
 
-  // A brand new entry becomes an ordinary item, through the store, with the
-  // same validation, projection and audit as anything a person creates.
+  // The receipt is claimed first, so the same entry can never become two
+  // items: a concurrent poll loses on the unique index before anything is
+  // visible, and a crash after this point leaves a receipt the next poll
+  // completes rather than an orphan item it would duplicate.
+  const claimed = await database
+    .insert(feedReceipts)
+    .values({
+      connectionId: connection.id,
+      blogId: connection.blogId,
+      externalKey: entry.externalKey,
+      postId: null,
+      firstImportedAt: now,
+      lastSeenAt: now,
+      contentHash,
+      expiresAt: retentionExpiry(now, connection, input.workspaceDefaultDays),
+      status: "active",
+    })
+    .onConflictDoNothing({ target: [feedReceipts.connectionId, feedReceipts.externalKey] })
+    .returning({ id: feedReceipts.id });
+  if (claimed.length === 0) return "unchanged";
+  return materializeEntry({ ...input, receiptId: claimed[0].id, contentHash });
+}
+
+/** Create the item for a claimed receipt, then its provenance and first revision. */
+async function materializeEntry(input: {
+  handle: string;
+  connection: FeedConnectionRow;
+  entry: NormalizedEntry;
+  feed: NormalizedFeed;
+  now: Date;
+  publisherName: string;
+  receiptId: string;
+  contentHash: string;
+}): Promise<EntryDecision> {
+  const { entry, connection, now, contentHash } = input;
+  const database = requireDb();
+  // An ordinary item, through the store, with the same validation,
+  // projection and audit as anything a person creates.
   const publishedAt = usableFeedDate(entry.publishedAt, now);
   const sourceUpdatedAt = usableFeedDate(entry.updatedAt, now);
   const permalink = entry.permalink ?? entry.externalUrl;
@@ -182,51 +224,33 @@ async function importEntry(input: {
     },
   });
   if (!post.id) throw new Error("Imported item has no id");
-
-  const firstImportedAt = now;
-  // The receipt is the idempotency record. A concurrent poll that raced us
-  // to the same entry loses on the unique index and we keep its item out.
-  const receiptInsert = await database
-    .insert(feedReceipts)
+  await database
+    .update(feedReceipts)
+    .set({ postId: post.id, contentHash, lastSeenAt: now })
+    .where(eq(feedReceipts.id, input.receiptId));
+  await database
+    .insert(readingProvenance)
     .values({
-      connectionId: connection.id,
-      blogId: connection.blogId,
-      externalKey: entry.externalKey,
       postId: post.id,
-      firstImportedAt,
-      lastSeenAt: now,
-      contentHash,
-      expiresAt: retentionExpiry(firstImportedAt, connection, input.workspaceDefaultDays),
-      status: "active",
+      blogId: connection.blogId,
+      connectionId: connection.id,
+      publisherTitle: entry.title,
+      publisherName: input.publisherName,
+      authors: entry.authors,
+      permalink: entry.permalink,
+      externalUrl: entry.externalUrl,
+      canonicalUrl: canonicalizeUrl(entry.permalink ?? entry.externalUrl),
+      publishedAt,
+      sourceUpdatedAt,
+      availability: entry.availability,
+      language: entry.language,
+      sourceHash: contentHash,
+      normalizationVersion: NORMALIZATION_VERSION,
+      capturedAt: now,
+      revisionCount: 1,
+      updatedAt: now,
     })
-    .onConflictDoNothing({ target: [feedReceipts.connectionId, feedReceipts.externalKey] })
-    .returning({ id: feedReceipts.id });
-  if (receiptInsert.length === 0) {
-    // Lost the race: another poll already imported this entry. Remove ours
-    // so the entry appears exactly once, and treat it as unchanged.
-    await database.delete(posts).where(eq(posts.id, post.id));
-    return "unchanged";
-  }
-  await database.insert(readingProvenance).values({
-    postId: post.id,
-    blogId: connection.blogId,
-    connectionId: connection.id,
-    publisherTitle: entry.title,
-    publisherName: input.publisherName,
-    authors: entry.authors,
-    permalink: entry.permalink,
-    externalUrl: entry.externalUrl,
-    canonicalUrl: canonicalizeUrl(entry.permalink ?? entry.externalUrl),
-    publishedAt,
-    sourceUpdatedAt,
-    availability: entry.availability,
-    language: entry.language,
-    sourceHash: contentHash,
-    normalizationVersion: NORMALIZATION_VERSION,
-    capturedAt: now,
-    revisionCount: 1,
-    updatedAt: now,
-  });
+    .onConflictDoNothing();
   await database
     .insert(readingSourceRevisions)
     .values({
@@ -298,12 +322,17 @@ async function applySourceRevision(input: {
     post.title === previousSource[0].title &&
     (post.body === previousSource[0].body || post.body === itemBody({ ...entry, bodyMarkdown: previousSource[0].body }));
 
+  let applied = untouched;
   if (untouched) {
-    await savePostContentPatch(
+    // Guarded on the revision we compared against: an edit that lands between
+    // the read and this write makes the save miss, and the edit wins.
+    try {
+      await savePostContentPatch(
       input.handle,
       post,
       { title: entry.title, body: itemBody(entry) },
       {
+        expectedRevision: post.revision,
         audit: {
           actorUserId: input.connection.createdById,
           actorType: "human",
@@ -314,6 +343,10 @@ async function applySourceRevision(input: {
         },
       },
     );
+    } catch (error) {
+      if (!(error instanceof PostConflictError)) throw error;
+      applied = false;
+    }
   }
   await database
     .update(readingProvenance)
@@ -321,16 +354,16 @@ async function applySourceRevision(input: {
       publisherTitle: entry.title,
       sourceUpdatedAt: usableFeedDate(entry.updatedAt, now),
       availability: entry.availability,
-      ...(untouched ? { sourceHash: contentHash } : {}),
+      ...(applied ? { sourceHash: contentHash } : {}),
       revisionCount: sql`${readingProvenance.revisionCount} + 1`,
       updatedAt: now,
     })
     .where(eq(readingProvenance.postId, post.id));
   await database
     .update(feedReceipts)
-    .set({ lastSeenAt: now, contentHash: untouched ? contentHash : receipt.contentHash })
+    .set({ lastSeenAt: now, contentHash: applied ? contentHash : receipt.contentHash })
     .where(eq(feedReceipts.id, receipt.id));
-  if (untouched) await enqueueIndexItem(input.connection.blogId, post.id);
+  if (applied) await enqueueIndexItem(input.connection.blogId, post.id);
   return "updated";
 }
 
@@ -363,6 +396,20 @@ export async function pollFeedConnection(
     detail: null,
   };
   if (!connection || connection.deletedAt || connection.state !== "active") return base;
+
+  // One poll per connection at a time. The claim is the row itself: a poll
+  // that started in the last minute is still running, so this one yields.
+  const claimed = await database
+    .update(feedConnections)
+    .set({ lastCheckedAt: now })
+    .where(
+      and(
+        eq(feedConnections.id, connection.id),
+        or(isNull(feedConnections.lastCheckedAt), sql`${feedConnections.lastCheckedAt} < ${new Date(now.getTime() - 60_000)}`),
+      ),
+    )
+    .returning({ id: feedConnections.id });
+  if (claimed.length === 0 && !options.manual) return { ...base, detail: "Another check is running" };
 
   const handle = await handleFor(connection.blogId);
   const folder = await getFolderById(handle, connection.folderId);
@@ -500,8 +547,11 @@ export async function pollFeedConnection(
       feedFormat: feed.format,
       publisherTitle: connection.publisherTitle ?? feed.title,
       siteUrl: connection.siteUrl ?? feed.siteUrl,
-      etag: fetched.etag,
-      lastModified: fetched.lastModified,
+      // A conditional fetch would hide the entries that failed or were
+      // deferred this time behind a 304, so validators advance only when
+      // every entry in the document was reconciled.
+      etag: report.skipped === 0 ? fetched.etag : null,
+      lastModified: report.skipped === 0 ? fetched.lastModified : null,
       consecutiveFailures: 0,
       lastCheckedAt: now,
       lastSuccessAt: now,

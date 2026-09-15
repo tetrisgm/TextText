@@ -50,6 +50,7 @@ import type {
 } from "./content";
 import {
   auditCteFrom,
+  auditInsertQuery,
   recordAction,
   type AuditActorType,
   type AuditEntry,
@@ -5062,23 +5063,33 @@ export async function deleteItemComment(
 ): Promise<ItemComment> {
   if (!db) throw new Error("deleteItemComment requires DATABASE_URL");
   const actor = cleanItemCommentActor(actorContext);
+  // Replies go with their parent (FK cascade), so their holds go too. Only
+  // these comments' holds; any other reason to keep the item stands.
+  const replies = await db
+    .select({ id: itemComments.id })
+    .from(itemComments)
+    .where(and(eq(itemComments.parentId, commentId), eq(itemComments.postId, itemId)));
   const [deleted] = await executeAtomicBatch((executor) => [
     executor
       .delete(itemComments)
       .where(and(eq(itemComments.id, commentId), eq(itemComments.postId, itemId)))
       .returning(),
-    // Only this comment's hold; any other reason to keep the item stands.
-    holdReleaseQuery(executor, { postId: itemId, reason: "comment", sourceId: commentId }),
+    ...[commentId, ...replies.map((reply) => reply.id)].map((id) =>
+      holdReleaseQuery(executor, { postId: itemId, reason: "comment", sourceId: id }),
+    ),
+    auditInsertQuery(
+      {
+        actorUserId: actor.actorUserId,
+        actorType: actor.actorType,
+        actionName: "delete_item_comment",
+        targetType: "item",
+        targetId: itemId,
+        inputSummary: commentId,
+      },
+      executor,
+    ),
   ]);
   if (!deleted[0]) throw new Error("Comment not found");
-  await recordAction({
-    actorUserId: actor.actorUserId,
-    actorType: actor.actorType,
-    actionName: "delete_item_comment",
-    targetType: "item",
-    targetId: itemId,
-    inputSummary: commentId,
-  });
   return mapItemComment(deleted[0]);
 }
 

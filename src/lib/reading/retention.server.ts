@@ -10,6 +10,8 @@ import {
 } from "@/lib/db/schema";
 import { auditCteFrom, auditInsertQuery, type AuditActorType } from "@/lib/audit";
 import { getPostSlugAliases, getWorkspaceWikiLinkSources, workspaceIdForHandle } from "@/lib/store";
+import type { AccessUser } from "@/lib/permissions";
+import { resolveReadingFolderIds } from "./list.server";
 import { extractWikiLinks } from "@/lib/wikilinks";
 import { durableHoldExistsSql, holdInsertQuery, holdReleaseQuery } from "./holds";
 import { itemBody } from "./ingest.server";
@@ -79,23 +81,38 @@ export async function setKeep(input: {
   return { changed: owned.length };
 }
 
-/** Per-person read state; never a workspace fact and never a reason to keep or drop an item. */
+/**
+ * Per-person read state; never a workspace fact and never a reason to keep
+ * or drop an item. Only items the person can see in this workspace are
+ * written; anything else in the list is dropped, so a foreign id is neither
+ * marked nor confirmed to exist.
+ */
 export async function setReadState(input: {
-  userId: string;
+  handle: string;
+  user: AccessUser;
   postIds: string[];
   read: boolean;
   now?: Date;
-}): Promise<void> {
+}): Promise<number> {
   const database = requireDb();
-  if (input.postIds.length === 0) return;
+  const userId = input.user.userId;
+  if (!userId || input.postIds.length === 0) return 0;
+  const { blogId, folderIds } = await resolveReadingFolderIds({ handle: input.handle, user: input.user, folderPath: "", includeDescendants: true });
+  if (folderIds.length === 0) return 0;
+  const visible = await database
+    .select({ id: posts.id })
+    .from(posts)
+    .where(and(eq(posts.blogId, blogId), isNull(posts.deletedAt), inArray(posts.id, input.postIds), inArray(posts.folderId, folderIds)));
+  if (visible.length === 0) return 0;
   const now = input.now ?? new Date();
   await database
     .insert(readingReadState)
-    .values(input.postIds.map((postId) => ({ userId: input.userId, postId, readAt: input.read ? now : null, updatedAt: now })))
+    .values(visible.map((row) => ({ userId, postId: row.id, readAt: input.read ? now : null, updatedAt: now })))
     .onConflictDoUpdate({
       target: [readingReadState.userId, readingReadState.postId],
       set: { readAt: input.read ? now : null, updatedAt: now },
     });
+  return visible.length;
 }
 
 /** Mark every live reading item in these folders read for one person. Bounded by the scope, one statement. */
@@ -171,7 +188,8 @@ export async function previewCleanup(input: {
     .where(
       and(
         eq(feedReceipts.blogId, blogId),
-        eq(feedReceipts.status, "active"),
+        // Detached feeds keep their receipts' policies; only a tombstone is out.
+        inArray(feedReceipts.status, ["active", "detached"]),
         lt(feedReceipts.expiresAt, now),
         isNull(posts.deletedAt),
         eq(posts.origin, "feed"),
@@ -271,9 +289,20 @@ export async function runCleanup(input: {
   // sweep both see them without recomputing.
   if (!input.dryRun && preview.protected.length > 0) {
     await executeAtomicBatch((executor) =>
-      preview.protected.map((item) =>
+      preview.protected.flatMap((item) => [
         holdInsertQuery(executor, { postId: item.postId, blogId, reason: item.reason, createdById: null }),
-      ),
+        auditInsertQuery(
+          {
+            actorUserId: input.actor.userId,
+            actorType: input.actor.actorType,
+            actionName: "reading.protect_item",
+            targetType: "item",
+            targetId: item.postId,
+            inputSummary: item.reason,
+          },
+          executor,
+        ),
+      ]),
     );
   }
   if (input.dryRun) {

@@ -61,6 +61,8 @@ export async function POST(request: Request) {
       imported = await runReadingJobs({
         executors: { poll_feed: runPollFeedJob, index_item: runIndexItemJob },
         blogId: owner.blogId,
+        // This feed's first poll, not whatever else is queued.
+        opKey: `poll_feed:${result.connection.id}:initial`,
         limit: 1,
         owner: `add-feed:${owner.ownerId}`,
       });

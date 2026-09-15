@@ -123,6 +123,10 @@ describe.skipIf(!enabled)("feed ingestion against Postgres (P1 vertical slice)",
       .from(schema.posts)
       .where(and(eq(schema.posts.blogId, blogId), eq(schema.posts.origin, "feed")));
     expect(posts).toHaveLength(3);
+    // Every receipt was claimed first and then completed with its item.
+    const claimed = await db!.select().from(schema.feedReceipts).where(eq(schema.feedReceipts.connectionId, connectionId));
+    expect(claimed).toHaveLength(3);
+    expect(claimed.every((receipt) => receipt.postId !== null)).toBe(true);
     for (const post of posts) {
       expect(post.type).toBe("bookmark");
       expect(post.visibility).toBe("private");

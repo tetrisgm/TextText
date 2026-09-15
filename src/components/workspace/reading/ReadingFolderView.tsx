@@ -181,8 +181,16 @@ export function ReadingFolderView({
     tickedFor.current = folder.path;
     void (async () => {
       try {
-        const result = await tickReading(handle, 3);
-        if (result.ran.done > 0) await loadFirstPage("compare");
+        // Drain what is queued in a few bounded passes rather than one, so a
+        // freshly added feed's import and indexing finish while the folder is
+        // open instead of waiting for the next visit.
+        let done = 0;
+        for (let pass = 0; pass < 4; pass += 1) {
+          const result = await tickReading(handle, 3);
+          done += result.ran.done;
+          if ((result.jobs.queued ?? 0) === 0) break;
+        }
+        if (done > 0) await loadFirstPage("compare");
       } catch {
         // A failed background check is not an error the folder needs to show.
       }

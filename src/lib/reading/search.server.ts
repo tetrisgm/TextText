@@ -1,4 +1,4 @@
-import { and, desc, eq, exists, ilike, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { folders, posts, readingEmbeddings, readingProvenance } from "@/lib/db/schema";
 import type { AccessUser } from "@/lib/permissions";
@@ -128,9 +128,10 @@ export async function searchReading(input: {
   }
 
   const includeManual = input.scope?.includeManual ?? true;
-  const readingItem = includeManual
-    ? or(eq(posts.origin, "feed"), exists(database.select({ one: sql`1` }).from(readingProvenance).where(eq(readingProvenance.postId, posts.id))))
-    : eq(posts.origin, "feed");
+  // Saved bookmarks sit beside imported ones in reading folders and the
+  // tool promises them, so a bookmark counts whether a person or a feed
+  // saved it.
+  const readingItem = includeManual ? or(eq(posts.origin, "feed"), eq(posts.type, "bookmark")) : eq(posts.origin, "feed");
   const inScope = and(eq(posts.blogId, blogId), isNull(posts.deletedAt), inArray(posts.folderId, folderIds), readingItem);
 
   const lexicalRows =

@@ -1,5 +1,5 @@
 import { sql, type SQL } from "drizzle-orm";
-import { retentionHolds } from "@/lib/db/schema";
+import { posts, retentionHolds } from "@/lib/db/schema";
 import type { Database } from "@/lib/db/client";
 
 /**
@@ -37,17 +37,19 @@ export function holdInsertQuery(
   database: Database,
   hold: HoldKey & { blogId: string; createdById?: string | null; expiresAt?: Date | null },
 ) {
-  return database
-    .insert(retentionHolds)
-    .values({
-      postId: hold.postId,
-      blogId: hold.blogId,
-      reason: hold.reason,
-      sourceId: hold.sourceId ?? "",
-      createdById: hold.createdById ?? null,
-      expiresAt: hold.expiresAt ?? null,
-    })
-    .onConflictDoNothing();
+  // Insert-select from the live post row, locked FOR SHARE for the rest of
+  // the transaction. Cleanup updates that same row, so the two serialize:
+  // a hold that commits first is seen by cleanup's re-check, and a hold that
+  // arrives after cleanup finds no live row and inserts nothing.
+  return database.execute(sql`
+    insert into ${retentionHolds} (post_id, blog_id, reason, source_id, created_by_id, expires_at)
+    select p.id, ${hold.blogId}::uuid, ${hold.reason}, ${hold.sourceId ?? ""}, ${hold.createdById ?? null}::uuid, ${hold.expiresAt ?? null}::timestamp
+    from ${posts} p
+    where p.id = ${hold.postId}::uuid and p.deleted_at is null
+    for share of p
+    on conflict do nothing
+    returning post_id
+  `);
 }
 
 export function holdReleaseQuery(database: Database, hold: HoldKey, now = new Date()) {
@@ -72,8 +74,9 @@ export function holdInsertCte(input: {
   fromCte: string;
 }): SQL {
   return sql`INSERT INTO ${retentionHolds} (post_id, blog_id, reason, source_id, created_by_id)
-    SELECT ${input.postId}::uuid, ${input.blogId}, ${input.reason}, ${input.sourceId}, ${input.createdById}::uuid
+    SELECT p.id, ${input.blogId}, ${input.reason}, ${input.sourceId}, ${input.createdById}::uuid
     FROM ${sql.identifier(input.fromCte)}
+    JOIN ${posts} p ON p.id = ${input.postId}::uuid AND p.deleted_at IS NULL
     ON CONFLICT DO NOTHING`;
 }
 

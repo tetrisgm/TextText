@@ -1,6 +1,6 @@
 import { enqueueDueFeedPolls, runPollFeedJob } from "@/lib/reading/ingest.server";
 import { enqueueReadingJob, readingJobCounts, runReadingJobs } from "@/lib/reading/jobs.server";
-import { runIndexItemJob } from "@/lib/reading/embeddings.server";
+import { enqueueIndexItem, runIndexItemJob } from "@/lib/reading/embeddings.server";
 import { enqueueRetentionSweep, runRetentionJob } from "@/lib/reading/retention.server";
 import { handleFrom, json, jsonError, readJson, requireOwner } from "../_shared";
 
@@ -24,6 +24,9 @@ export async function POST(request: Request) {
   const limit = typeof body.limit === "number" ? Math.max(1, Math.min(10, Math.trunc(body.limit))) : 3;
   const queued = await enqueueDueFeedPolls(owner.blogId, enqueueReadingJob);
   await enqueueRetentionSweep(owner.blogId);
+  // Reconciles missing or stale vectors, including after a key is configured
+  // later; a no-op when nothing is pending.
+  await enqueueIndexItem(owner.blogId);
   const ran = await runReadingJobs({
     executors: { poll_feed: runPollFeedJob, retention_enforce: runRetentionJob, index_item: runIndexItemJob },
     blogId: owner.blogId,
