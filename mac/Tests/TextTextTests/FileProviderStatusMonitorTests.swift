@@ -315,3 +315,36 @@ final class FileProviderDomainWriteGuardTests: XCTestCase {
             ]))
     }
 }
+
+/// The health report used to say the provider was working without saying why,
+/// which is what made a provider that reports itself busy forever impossible to
+/// diagnose from a report.
+final class FileProviderStatusCauseTests: XCTestCase {
+    func testASyncingSnapshotCarriesWhatItIsBusyWith() {
+        let snapshot = FileProviderStatusSnapshot.make(
+            pendingCount: 3, uploadingFraction: 0.25, downloadingFraction: nil)
+
+        XCTAssertEqual(snapshot.severity, .working)
+        XCTAssertEqual(snapshot.pendingCount, 3)
+        XCTAssertEqual(snapshot.uploadingFraction, 0.25)
+        XCTAssertNil(snapshot.downloadingFraction)
+    }
+
+    func testABusySnapshotWithNoPendingFilesStillNamesTheTransfer() {
+        let snapshot = FileProviderStatusSnapshot.make(
+            pendingCount: 0, uploadingFraction: nil, downloadingFraction: 0.5)
+
+        XCTAssertEqual(snapshot.severity, .working)
+        XCTAssertEqual(snapshot.pendingCount, 0)
+        XCTAssertEqual(snapshot.downloadingFraction, 0.5)
+    }
+
+    func testAnIdleProviderIsHealthyAndCarriesNoCause() {
+        let snapshot = FileProviderStatusSnapshot.make(
+            pendingCount: 0, uploadingFraction: nil, downloadingFraction: nil)
+
+        XCTAssertEqual(snapshot.severity, .healthy)
+        XCTAssertEqual(snapshot.pendingCount, 0)
+        XCTAssertNil(snapshot.uploadingFraction)
+    }
+}

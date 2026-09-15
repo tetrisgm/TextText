@@ -916,6 +916,10 @@ final class AppHealthReporter {
             "mount_enumerated": mount.enumerated ? 1 : 0,
             "workspace_visible": mount.workspaceVisible ? 1 : 0,
             "mount_entry_count": Double(mount.entryCount),
+            // Why the provider called itself busy, not just that it did.
+            "pending_count": Double(snapshot.pendingCount),
+            "uploading_fraction": snapshot.uploadingFraction ?? -1,
+            "downloading_fraction": snapshot.downloadingFraction ?? -1,
         ])
     }
 

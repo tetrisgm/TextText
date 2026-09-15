@@ -13,6 +13,13 @@ struct FileProviderStatusSnapshot: Equatable {
     var title: String
     var detail: String
     var severity: Severity
+    /// What the provider said it was busy with. The health report recorded only
+    /// that the provider was working, never why, so a provider that reports
+    /// itself busy forever was not diagnosable from a report: see the
+    /// finder.provider entry in docs/HANDOFF.md for 2026-09-15.
+    var pendingCount: Int = 0
+    var uploadingFraction: Double? = nil
+    var downloadingFraction: Double? = nil
 
     static let unavailable = FileProviderStatusSnapshot(
         symbolName: "icloud.slash",
@@ -54,7 +61,10 @@ struct FileProviderStatusSnapshot: Equatable {
                 detail: transferDetail.isEmpty
                     ? "All Markdown remains available locally."
                     : transferDetail + ". All Markdown remains available locally.",
-                severity: .working)
+                severity: .working,
+                pendingCount: pendingCount,
+                uploadingFraction: uploadingFraction,
+                downloadingFraction: downloadingFraction)
         }
 
         return FileProviderStatusSnapshot(
