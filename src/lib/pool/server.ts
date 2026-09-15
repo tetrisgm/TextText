@@ -1,4 +1,5 @@
 import { resolveWorkspaceAccess, type AccessUser } from "@/lib/permissions";
+import { listWorkspaceReadingSources } from "@/lib/reading/sources.server";
 import {
   getWorkspacePoolPosts,
   getBlog,
@@ -50,6 +51,7 @@ export async function getWorkspacePoolForOwner(
     trashedPosts,
     sharedEntries,
     templates,
+    readingSources,
   ] = await Promise.all([
     getFolders(handle),
     getFolderCounts(handle),
@@ -60,6 +62,7 @@ export async function getWorkspacePoolForOwner(
     getTrashedPosts(handle),
     getSharedPostsForUser(user?.sub ? { ...user, sub: user.sub } : null),
     listDocumentTemplates(access.blogId),
+    listWorkspaceReadingSources(handle),
   ]);
   const wikiLinks = workspaceWikiLinkMetadata(wikiLinkSources, slugAliases);
 
@@ -73,6 +76,7 @@ export async function getWorkspacePoolForOwner(
     trashedPosts,
     sharedEntries,
     templates,
+    readingSources,
     ...wikiLinks,
   });
 }

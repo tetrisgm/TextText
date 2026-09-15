@@ -7,7 +7,7 @@ import { runReadingJobs } from "@/lib/reading/jobs.server";
 import { runPollFeedJob } from "@/lib/reading/ingest.server";
 import { feedErrorResponse, handleFrom, json, jsonError, readJson, requireOwner } from "../../_shared";
 
-export { dynamic } from "../../_shared";
+export const dynamic = "force-dynamic";
 
 /**
  * POST { handle, action: "pause" | "resume" | "detach" | "refresh", keepAllItems? }

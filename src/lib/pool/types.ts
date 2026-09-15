@@ -51,6 +51,19 @@ export type WorkspacePoolPost = {
   revision?: number;
 };
 
+/** One feed connection, as the client needs it: which folder is a source,
+ * and how it is doing. Bounded by the number of feeds, never by items. */
+export type WorkspaceReadingSource = {
+  id: string;
+  folderId: string;
+  folderPath: string;
+  state: "active" | "paused" | "detached";
+  health: string;
+  healthDetail: string | null;
+  lastSuccessAt: string | null;
+  publisherTitle: string | null;
+};
+
 export type WorkspacePoolPayload = {
   version: 1;
   blogId: string;
@@ -58,6 +71,8 @@ export type WorkspacePoolPayload = {
   folders: Folder[];
   counts: Record<string, number>;
   posts: WorkspacePoolPost[];
+  /** Feed connections in the workspace; empty when reading is unused. */
+  readingSources?: WorkspaceReadingSource[];
   /** Immutable template versions available to this workspace. */
   templates: TemplateDefinition[];
   trashedPosts?: WorkspacePoolPost[];

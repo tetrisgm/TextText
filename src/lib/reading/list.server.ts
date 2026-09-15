@@ -32,6 +32,7 @@ export type ReadingScope = {
 
 export type ReadingListItem = {
   id: string;
+  origin: "manual" | "feed";
   title: string;
   publisherTitle: string;
   publisherName: string | null;
@@ -153,6 +154,7 @@ export async function listReadingItems(input: {
       folderName: folders.name,
       starred: posts.starred,
       createdAt: posts.createdAt,
+      origin: posts.origin,
       publisherTitle: readingProvenance.publisherTitle,
       publisherName: readingProvenance.publisherName,
       permalink: readingProvenance.permalink,
@@ -170,18 +172,18 @@ export async function listReadingItems(input: {
       orderAt: orderExpr,
     })
     .from(posts)
-    .innerJoin(readingProvenance, eq(readingProvenance.postId, posts.id))
+    .leftJoin(readingProvenance, eq(readingProvenance.postId, posts.id))
     .innerJoin(folders, eq(folders.id, posts.folderId))
     .leftJoin(readingReadState, readJoin)
     .where(
       and(
         eq(posts.blogId, blogId),
-        eq(posts.origin, "feed"),
         isNull(posts.deletedAt),
         inArray(posts.folderId, folderIds),
         input.scope.state === "unread" ? isNull(readingReadState.readAt) : undefined,
         input.scope.state === "kept"
           ? or(
+              sql`${posts.origin} <> 'feed'`,
               eq(posts.starred, true),
               sql`exists (select 1 from ${retentionHolds} where ${retentionHolds.postId} = ${posts.id} and ${retentionHolds.releasedAt} is null and ${retentionHolds.reason} in (${sql.join(DURABLE_HOLDS.map((reason) => sql`${reason}`), sql`, `)}))`,
             )
@@ -203,8 +205,9 @@ export async function listReadingItems(input: {
   return {
     items: page.map((row) => ({
       id: row.id,
-      title: row.title || row.publisherTitle,
-      publisherTitle: row.publisherTitle,
+      origin: row.origin === "feed" ? "feed" : "manual",
+      title: row.title || row.publisherTitle || "Untitled",
+      publisherTitle: row.publisherTitle ?? row.title,
       publisherName: row.publisherName,
       folderId: row.folderId,
       folderPath: row.folderPath,
@@ -213,13 +216,18 @@ export async function listReadingItems(input: {
       externalUrl: row.externalUrl,
       publishedAt: row.publishedAt ? new Date(row.publishedAt).toISOString() : null,
       receivedAt: new Date(row.createdAt).toISOString(),
-      availability: row.availability as ReadingListItem["availability"],
+      availability: (row.availability ?? "full") as ReadingListItem["availability"],
       excerpt: row.excerpt ?? null,
       authors: row.authors ?? [],
       read: row.readAt !== null && row.readAt !== undefined,
       starred: row.starred,
-      kept: row.starred || (row.keptReasons ?? []).length > 0,
-      keptReasons: [...(row.starred ? ["starred"] : []), ...(row.keptReasons ?? []).filter((reason) => reason !== "starred")],
+      // A hand-saved bookmark is durable by definition; it never expires.
+      kept: row.origin !== "feed" || row.starred || (row.keptReasons ?? []).length > 0,
+      keptReasons: [
+        ...(row.origin !== "feed" ? ["manual_save"] : []),
+        ...(row.starred ? ["starred"] : []),
+        ...(row.keptReasons ?? []).filter((reason) => reason !== "starred"),
+      ],
       expiresAt: row.expiresAt ? new Date(row.expiresAt).toISOString() : null,
       slug: row.slug,
     })),
@@ -298,7 +306,6 @@ export async function readingFolderSummary(input: {
       .where(
         and(
           eq(posts.blogId, blogId),
-          eq(posts.origin, "feed"),
           isNull(posts.deletedAt),
           inArray(posts.folderId, folderIds),
         ),

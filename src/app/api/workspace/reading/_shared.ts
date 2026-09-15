@@ -4,7 +4,6 @@ import { resolveWorkspaceAccess, type AccessUser } from "@/lib/permissions";
 import { readingFlags } from "@/lib/reading/flags";
 import { FeedConnectionError } from "@/lib/reading/connections.server";
 
-export const dynamic = "force-dynamic";
 
 export function jsonError(message: string, status: number, code?: string) {
   return Response.json(

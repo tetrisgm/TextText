@@ -1,7 +1,7 @@
 import { listReadingItems, readingFolderSummary, type ReadingScope } from "@/lib/reading/list.server";
 import { handleFrom, json, jsonError, requireReader } from "../_shared";
 
-export { dynamic } from "../_shared";
+export const dynamic = "force-dynamic";
 
 /**
  * GET ?handle=&folder=&descendants=1&state=all|unread|kept&dateBasis=published|received&cursor=&limit=

@@ -14,7 +14,7 @@ import {
   requireReader,
 } from "../_shared";
 
-export { dynamic } from "../_shared";
+export const dynamic = "force-dynamic";
 
 /** GET ?handle=  -> every connection in the workspace, endpoints redacted. */
 export async function GET(request: Request) {

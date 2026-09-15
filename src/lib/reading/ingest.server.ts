@@ -18,6 +18,7 @@ import {
   savePostContentPatch,
 } from "@/lib/store";
 import { cleanPlanTier, planLimits } from "@/lib/product-limits";
+import { slugify } from "@/lib/post-edit-draft";
 import { canonicalizeUrl, sha256, usableFeedDate } from "./feed-identity";
 import { fetchFeedDocument, type FeedFetchOutcome } from "./fetch.server";
 import { FeedParseError, parseFeed, type NormalizedEntry, type NormalizedFeed } from "./feed-parse";
@@ -162,6 +163,7 @@ async function importEntry(input: {
     origin: "feed",
     initial: {
       type: "bookmark",
+      slug: slugify(entry.title, `item-${Date.now().toString(36)}`),
       title: entry.title,
       excerpt: entry.excerpt ?? undefined,
       body: itemBody(entry),

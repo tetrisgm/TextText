@@ -1,7 +1,7 @@
 import { discoverFeedCandidates } from "@/lib/reading/fetch.server";
 import { handleFrom, json, jsonError, readJson, requireOwner } from "../_shared";
 
-export { dynamic } from "../_shared";
+export const dynamic = "force-dynamic";
 
 /**
  * POST { handle, input } -> verified feed candidates for a URL or a site.

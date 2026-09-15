@@ -57,6 +57,7 @@ import {
   listDocumentTemplates,
 } from "@/lib/store";
 import { workspaceWikiLinkMetadata } from "@/lib/pool/server";
+import { listWorkspaceReadingSources } from "@/lib/reading/sources.server";
 import {
   formatArticleDate,
   isVideoFile,
@@ -124,6 +125,7 @@ async function loadWorkspacePoolParts(
     trashedPosts,
     sharedEntries,
     templates,
+    readingSources,
   ] = await Promise.all([
     getFolders(handle),
     getFolderCounts(handle),
@@ -134,6 +136,7 @@ async function loadWorkspacePoolParts(
     getTrashedPosts(handle),
     getSharedPostsForUser(viewer),
     listDocumentTemplates(blogId),
+    listWorkspaceReadingSources(handle),
   ]);
   return {
     folders,
@@ -145,6 +148,7 @@ async function loadWorkspacePoolParts(
     trashedPosts,
     sharedEntries,
     templates,
+    readingSources,
   };
 }
 type BlogHomeQuery = {
@@ -581,6 +585,7 @@ export async function BlogHomeForHandle({
       trashedPosts: parts.trashedPosts,
       sharedEntries: parts.sharedEntries,
       templates: parts.templates,
+      readingSources: parts.readingSources,
       ...workspaceWikiLinkMetadata(parts.wikiLinkSources, parts.slugAliases),
     });
   })();

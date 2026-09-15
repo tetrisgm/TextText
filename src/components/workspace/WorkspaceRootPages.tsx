@@ -1102,6 +1102,9 @@ export function LocalWorkspaceContent({
           selectedPostId={selectedPostId}
           selectedPostIds={selectedPostIds}
           availableTemplates={pool.templates}
+          readingSources={pool.readingSources}
+          blogId={pool.blogId}
+          onOpenFolderPath={onOpenSection}
         />
       );
     }

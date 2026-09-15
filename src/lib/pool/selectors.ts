@@ -177,6 +177,7 @@ export function workspacePoolFromParts({
   templates = [...BUILTIN_TEMPLATES],
   outboundLinks = {},
   slugAliases = {},
+  readingSources = [],
 }: {
   blog: Blog;
   blogId: string;
@@ -189,6 +190,7 @@ export function workspacePoolFromParts({
   templates?: TemplateDefinition[];
   outboundLinks?: WorkspacePoolPayload["outboundLinks"];
   slugAliases?: WorkspacePoolPayload["slugAliases"];
+  readingSources?: WorkspacePoolPayload["readingSources"];
 }): WorkspacePoolPayload {
   return {
     version: 1,
@@ -196,6 +198,7 @@ export function workspacePoolFromParts({
     blog,
     folders,
     counts,
+    readingSources,
     posts: posts
       .map((post) => narrowPostFromPost(post, blogId))
       .filter((post): post is WorkspacePoolPost => Boolean(post)),

@@ -2,7 +2,7 @@ import { enqueueDueFeedPolls, runPollFeedJob } from "@/lib/reading/ingest.server
 import { enqueueReadingJob, readingJobCounts, runReadingJobs } from "@/lib/reading/jobs.server";
 import { handleFrom, json, jsonError, readJson, requireOwner } from "../_shared";
 
-export { dynamic } from "../_shared";
+export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**

@@ -1,6 +1,11 @@
 
 "use client";
 
+import { AddFeedsDialog } from "@/components/workspace/reading/AddFeedsDialog";
+import { ReadingFolderView, readingSourcesUnder } from "@/components/workspace/reading/ReadingFolderView";
+import { refreshWorkspacePool } from "@/lib/pool/store";
+import type { WorkspaceReadingSource } from "@/lib/pool/types";
+
 /**
  * Windowed rows for the folder's long list layouts: only the viewport's rows
  * (plus overscan) are mounted, between two spacer divs sized from a measured
@@ -383,6 +388,7 @@ function FolderActionBar({
   searchValue,
   onSearchValueChange,
   onDeleteFolder,
+  onAddFeeds,
 }: {
   blog: Blog;
   folder: Folder;
@@ -397,6 +403,7 @@ function FolderActionBar({
   searchValue: string;
   onSearchValueChange: (value: string) => void;
   onDeleteFolder?: FolderDeleteFolder;
+  onAddFeeds?: () => void;
 }) {
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -503,6 +510,19 @@ function FolderActionBar({
                   >
                     Rename
                   </button>
+                  {onAddFeeds && (
+                    <button
+                      type="button"
+                      className="folder-action-menu-item"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onAddFeeds();
+                      }}
+                    >
+                      Add feeds
+                    </button>
+                  )}
                   {onDeleteFolder && (
                     <button
                       type="button"
@@ -1565,6 +1585,9 @@ export function FolderPage({
   selectedPostIds,
   onDeleteFolder,
   canShareFolders = true,
+  readingSources,
+  blogId,
+  onOpenFolderPath,
 }: {
   availableTemplates?: readonly TemplateDefinition[];
   blog: Blog;
@@ -1592,6 +1615,10 @@ export function FolderPage({
   selectedPostIds?: ReadonlySet<string>;
   onDeleteFolder?: FolderDeleteFolder;
   canShareFolders?: boolean;
+  /** Feed connections in the workspace; a folder with any at or under it reads as a source folder. */
+  readingSources?: WorkspaceReadingSource[];
+  blogId?: string;
+  onOpenFolderPath?: (folderPath: string) => void;
 }) {
   // A look says what shape its index is; the view control is the reader's
   // override on top of that. Without this, a look declaring `list` still got
@@ -1668,6 +1695,11 @@ export function FolderPage({
     );
   }, [filterQuery, items]);
 
+  const sourcesHere = readingSourcesUnder(readingSources, folder.path);
+  const isReadingFolder = folder.mode === "bookmarks" && sourcesHere.length > 0;
+  const canAddFeeds = canEditItems && folder.mode === "bookmarks" && Boolean(blogId);
+  const [addFeedsOpen, setAddFeedsOpen] = useState(false);
+
   const visibleSelectedPostId =
     selectedPostId && filteredItems.some((post) => post.id === selectedPostId)
       ? selectedPostId
@@ -1696,6 +1728,7 @@ export function FolderPage({
         searchValue={filterQuery}
         onSearchValueChange={setFilterQuery}
         onDeleteFolder={onDeleteFolder}
+        onAddFeeds={canAddFeeds ? () => setAddFeedsOpen(true) : undefined}
       />
       <header className="post-folder-page-header">
         <FolderTitleEditor
@@ -1703,9 +1736,11 @@ export function FolderPage({
           handle={handle}
           canEdit={canEditItems}
         />
-        <p className="post-folder-page-count">
-          {items.length} {items.length === 1 ? "item" : "items"}
-        </p>
+        {!isReadingFolder && (
+          <p className="post-folder-page-count">
+            {items.length} {items.length === 1 ? "item" : "items"}
+          </p>
+        )}
       </header>
       {filterQuery && (
         <div className="post-folder-filter-chip" role="status">
@@ -1724,6 +1759,36 @@ export function FolderPage({
           No items match your search in this folder. Try a different word or clear the search.
         </FolderEmptyCard>
       ) : null}
+      {addFeedsOpen && blogId && (
+        <AddFeedsDialog
+          handle={handle}
+          parentFolderPath={folder.path}
+          parentFolderName={folder.name}
+          defaultRetentionDays={blog.readingRetentionDays ?? 90}
+          onClose={() => setAddFeedsOpen(false)}
+          onAdded={async (result) => {
+            setAddFeedsOpen(false);
+            // The new source folder was created on the server; the pool has
+            // to learn it before the shell can open it.
+            if (blogId) await refreshWorkspacePool(handle, blogId).catch(() => undefined);
+            onOpenFolderPath?.(result.folderPath);
+          }}
+        />
+      )}
+      {isReadingFolder && !filterQuery && blogId ? (
+        <ReadingFolderView
+          blog={blog}
+          folder={folder}
+          handle={handle}
+          blogId={blogId}
+          sources={sourcesHere}
+          canEdit={canEditItems}
+          selectedPostId={selectedPostId}
+          onOpenPost={onOpenPost}
+          onSelectPost={onSelectPost}
+          onAddFeeds={canAddFeeds ? () => setAddFeedsOpen(true) : undefined}
+        />
+      ) : (
       <UniversalFolderContents
         availableTemplates={availableTemplates}
         blog={blog}
@@ -1747,6 +1812,7 @@ export function FolderPage({
         selectedPostIds={selectedPostIds}
         viewMode={viewMode}
       />
+      )}
     </main>
   );
 }
