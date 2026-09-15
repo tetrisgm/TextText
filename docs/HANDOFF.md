@@ -139,3 +139,55 @@ Three corrections from the hunt, recorded because each one cost time:
   next step correctly refuses the stale one. Run `./node_modules/.bin/tsx`
   instead. Chain release pipeline steps with `&&`, not `;`: a failed gate
   otherwise still reaches the build.
+
+## The two tasks that need the owner, narrowed (2026-09-15)
+
+**The changelog is blocked on the connector, and the CLI is not a way around
+it.** Checked rather than assumed: `texttext do get_workspace` from
+`/Applications/TextText.app/Contents/Helpers/texttext` reaches handle
+`leshokunin`, "Ramine's blog", as owner, and its folders are blog, notes,
+bookmarks and documentation. `Shoku's Space` is a separate workspace and is not
+linked on this Mac, so the local CLI cannot see
+`Shoku's Space/My Notes/TextText Changelog.textpack` at all. Only the hosted
+`/api/mcp` connector reaches it, and that is unauthorized in a non-interactive
+session. Authorize it in claude.ai connector settings, or run `/mcp` from an
+interactive terminal, and the entry for 1052 to 1072 can be written in one pass.
+
+**The native checks cannot be done with synthetic input, by anyone.** This is
+not a matter of permission. A macOS screen capture does not include the pointer,
+so a cursor shape cannot be read back from a screenshot. Synthetic scroll events
+carry no momentum, so trackpad deceleration cannot be exercised. There is no
+pinch gesture available to drive the Mac app. Synthetic typing bypasses IME
+composition entirely, which is the thing under test. And the project contract
+requires a real pointer or trackpad before any of this is called fixed, so even
+a convincing synthetic pass would not count.
+
+The pass below is the whole of it, against the installed build 1072. Each line
+says what to do and what it should look like.
+
+1. **Cursor over the assistant rail's edge.** Put the pointer on the divider
+   between the rail and the document. It should become the horizontal resize
+   cursor and stay that way while the pointer is on the divider, with no flicker
+   back to the arrow as it crosses. Then drag: the cursor must not change to a
+   text I-beam mid-drag.
+2. **Trackpad momentum in the reader.** Open a long item, flick two fingers
+   upward and let go. It should keep travelling and decelerate smoothly to a
+   stop rather than halting when your fingers lift, and it must not overshoot
+   the end of the document and snap back hard. `src/lib/motion/spring.ts`
+   projects the throw with deceleration 0.998.
+3. **Grab the rail mid-motion.** Toggle the assistant rail open or closed and,
+   while it is still moving, grab it and drag. It should come with your finger
+   from wherever it currently is, without jumping to its start or end position
+   first. That is the one thing the springs are built for.
+4. **Pinch zoom.** Pinch on a document. Whatever it does, it must be consistent
+   and reversible: no drift, no stuck zoom level, no layout left behind at the
+   wrong scale.
+5. **IME during a delayed Accept.** Switch to a Japanese or Chinese input source,
+   select a passage, ask the assistant to rewrite it, and begin typing into the
+   composer while the answer is still coming. Then press Accept. Composition must
+   not be committed early by the Accept, and the Accept must not fire from a key
+   that was meant for the IME. The guards are the `isComposing` and `keyCode ===
+   229` checks in WorkspaceSidebarChrome and AssistantContextPicker.
+
+Report which of the five misbehave and what you saw; each maps to a specific
+place in the motion or composition code.
