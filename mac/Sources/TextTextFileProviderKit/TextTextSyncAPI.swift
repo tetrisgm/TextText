@@ -202,3 +202,38 @@ public extension TextTextSyncAPI {
     }
 
 }
+
+public extension TextTextSyncAPI {
+    /// Every named folder's manifest, fetched at once.
+    ///
+    /// Scanning folders one after another is a round trip apiece before
+    /// anything can be answered, and both callers do it on a path a person is
+    /// waiting on: locating one file to download, and listing the attachments
+    /// view. On a slow link that was the difference between seconds and
+    /// minutes.
+    ///
+    /// The first failure wins. A partial view of the workspace is how an item
+    /// ends up looking like it moved or vanished, so a caller gets the whole
+    /// picture or none of it.
+    func manifests(
+        forFolders folderIds: [String]
+    ) async -> Result<[String: [TextTextManifestItem]], TextTextSyncError> {
+        await withTaskGroup(
+            of: (String, Result<[TextTextManifestItem], TextTextSyncError>).self
+        ) { group in
+            for id in folderIds {
+                group.addTask { (id, await self.manifest(folderId: id)) }
+            }
+            var entries: [String: [TextTextManifestItem]] = [:]
+            var failure: TextTextSyncError?
+            for await (id, result) in group {
+                switch result {
+                case .failure(let error): if failure == nil { failure = error }
+                case .success(let value): entries[id] = value
+                }
+            }
+            if let failure { return .failure(failure) }
+            return .success(entries)
+        }
+    }
+}

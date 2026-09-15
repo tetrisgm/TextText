@@ -151,19 +151,24 @@ final class CentralAttachmentsEnumerator: NSObject, NSFileProviderEnumerator {
         case .success(let value): workspace = value
         }
 
+        // Every folder at once. Serially this was a round trip per folder
+        // before the attachments view could show anything. Order does not
+        // matter here: the result is sorted by filename below.
+        let entriesByFolder: [String: [TextTextManifestItem]]
+        switch await api.manifests(forFolders: workspace.folders.map(\.id)) {
+        case .failure(let error): return .failure(error)
+        case .success(let value): entriesByFolder = value
+        }
+
         var sourceItems: [TextTextItem] = []
         for folder in workspace.folders {
-            switch await api.manifest(folderId: folder.id) {
-            case .failure(let error): return .failure(error)
-            case .success(let entries):
-                sourceItems.append(contentsOf: entries.compactMap {
-                    TextTextItemMapper.item(
-                        for: $0, inFolder: folder.id, handle: handle,
-                        readOnly: false)
-                }.filter { item in
-                    item.representation == .markdown || item.representation == .text
-                })
-            }
+            sourceItems.append(contentsOf: (entriesByFolder[folder.id] ?? []).compactMap {
+                TextTextItemMapper.item(
+                    for: $0, inFolder: folder.id, handle: handle,
+                    readOnly: false)
+            }.filter { item in
+                item.representation == .markdown || item.representation == .text
+            })
         }
 
         return await withTaskGroup(of: TextTextItem?.self) { group in

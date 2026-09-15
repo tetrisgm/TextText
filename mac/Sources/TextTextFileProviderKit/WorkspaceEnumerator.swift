@@ -314,7 +314,7 @@ public struct WorkspaceEnumerator: Sendable {
         }
 
         let entriesByFolder: [String: [TextTextManifestItem]]
-        switch await allManifests(for: ws.folders.map(\.id)) {
+        switch await api.manifests(forFolders: ws.folders.map(\.id)) {
         case .failure(let error): return .failure(error)
         case .success(let value): entriesByFolder = value
         }
@@ -349,32 +349,6 @@ public struct WorkspaceEnumerator: Sendable {
             }
         }
         return found.map(Result.success) ?? .failure(.notFound)
-    }
-
-    /// Every folder's manifest, concurrently. The first failure wins, because a
-    /// partial view of the workspace is how an item ends up looking like it
-    /// moved or vanished.
-    private func allManifests(
-        for folderIds: [String]
-    ) async -> Result<[String: [TextTextManifestItem]], TextTextSyncError> {
-        let api = self.api
-        return await withTaskGroup(
-            of: (String, Result<[TextTextManifestItem], TextTextSyncError>).self
-        ) { group in
-            for id in folderIds {
-                group.addTask { (id, await api.manifest(folderId: id)) }
-            }
-            var entries: [String: [TextTextManifestItem]] = [:]
-            var failure: TextTextSyncError?
-            for await (id, result) in group {
-                switch result {
-                case .failure(let error): if failure == nil { failure = error }
-                case .success(let value): entries[id] = value
-                }
-            }
-            if let failure { return .failure(failure) }
-            return .success(entries)
-        }
     }
 
     /// The post's item as its own folder presents it, with the filename it gets
