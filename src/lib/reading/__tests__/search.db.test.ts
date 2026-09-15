@@ -121,6 +121,23 @@ describe.skipIf(!enabled)("reading search against Postgres", () => {
     }
   });
 
+  it("SEARCH-02b: pending indexing embeds in one batch and skips unchanged text", async () => {
+    let calls = 0;
+    const counting: Embedder = { ...fakeEmbedder, embed: (texts) => (calls += 1, fakeEmbedder.embed(texts)) };
+    await db!.delete(schema.readingEmbeddings).where(eq(schema.readingEmbeddings.blogId, blogId));
+    const first = await embeddings.indexPendingPosts(blogId, counting);
+    expect(first).toEqual({ indexed: 4, remaining: false });
+    expect(calls).toBe(1);
+    // Touch one post so it is selected again; its text is unchanged, so no call.
+    const [post] = await db!.select({ id: schema.posts.id }).from(schema.posts).where(and(eq(schema.posts.blogId, blogId), eq(schema.posts.origin, "feed"))).limit(1);
+    await db!.update(schema.posts).set({ updatedAt: new Date(Date.now() + 1000) }).where(eq(schema.posts.id, post.id));
+    const second = await embeddings.indexPendingPosts(blogId, counting);
+    expect(second).toEqual({ indexed: 0, remaining: false });
+    expect(calls).toBe(1);
+    const third = await embeddings.indexPendingPosts(blogId, counting);
+    expect(third.indexed).toBe(0);
+  });
+
   it("SEARCH-03: meaning finds what words miss, and a result found both ways leads", async () => {
     // "undo a release" shares no word with "Rollback explained" but the same concepts.
     const semanticOnly = await search.searchReading({ handle, user, query: "undo a release", embedder: fakeEmbedder });
