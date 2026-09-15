@@ -282,3 +282,25 @@ the handle by its cursor glyph first. Keystrokes sent through System Events go
 to whatever is frontmost, not to the app you think. And the rail, the open tab,
 the scroll position and the rail's open state all had to be put back by hand
 afterwards; the document was verified unchanged through the CLI.
+
+## The changelog is drafted, and its scope was wrong (2026-09-15)
+
+Production serves `tt-1065-2d9c7995`. Builds 1066 to 1072 were only ever
+installed locally on this Mac; nothing was promoted. So the entry covers 1052
+to 1065, the builds that actually shipped. Repeated references to "1052 to 1072"
+earlier in this session were wrong, and a changelog claiming unshipped work
+would have been a false statement to readers.
+
+The entry is written and waiting at `.texttext/changelog-1052-1065.md`, which is
+git-ignored so it stays local. It is house style, no em dashes, and describes
+only user-facing change. Once the connector is authorized:
+
+```
+texttext append "Shoku's Space/My Notes/TextText Changelog" \
+  --from .texttext/changelog-1052-1065.md
+```
+
+or the `texttext:project-changelog` skill, which appends exactly once. Check the
+heading separator against the entries already in that document before appending:
+the format was inferred from the Chiptunes changelog in this workspace, which is
+a different project, and the real one could not be read from this Mac.
