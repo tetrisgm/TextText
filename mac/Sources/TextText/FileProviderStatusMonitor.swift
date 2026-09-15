@@ -1,5 +1,11 @@
 import FileProvider
 import Foundation
+import os
+
+/// Local only. The pending set is the one thing the health report cannot carry:
+/// a filename is the person's own content and the report is uploaded, so the
+/// items are named here, in the system log on this Mac, and counted there.
+private let pendingLog = Logger(subsystem: "app.texttext.mac", category: "fileprovider")
 
 struct FileProviderStatusSnapshot: Equatable {
     enum Severity: Equatable {
@@ -351,6 +357,12 @@ private final class PendingItemsObserver:
         defer { lock.unlock() }
         guard !finished else { return }
         count += updatedItems.count
+        for item in updatedItems {
+            // The identifier is opaque; the filename is the person's content and
+            // stays redacted.
+            pendingLog.info(
+                "pending item \(item.itemIdentifier.rawValue, privacy: .public) parent \(item.parentItemIdentifier.rawValue, privacy: .public) name \(item.filename, privacy: .private)")
+        }
     }
 
     func finishEnumerating(upTo nextPage: NSFileProviderPage?) {
