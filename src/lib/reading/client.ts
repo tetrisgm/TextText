@@ -3,6 +3,8 @@
 import type { FeedConnectionView } from "./connections.server";
 import type { FeedCandidate } from "./fetch.server";
 import type { ReadingFolderSummary, ReadingListItem, ReadingListPage, ReadingScope } from "./list.server";
+import type { ReadingOverview } from "./overview.server";
+import type { ReadingSummary } from "./summaries.server";
 
 /**
  * The browser's view of the reading API. Thin on purpose: every function is
@@ -10,7 +12,7 @@ import type { ReadingFolderSummary, ReadingListItem, ReadingListPage, ReadingSco
  * server resolves access itself.
  */
 
-export type { FeedConnectionView, FeedCandidate, ReadingFolderSummary, ReadingListItem, ReadingListPage, ReadingScope };
+export type { FeedConnectionView, FeedCandidate, ReadingFolderSummary, ReadingListItem, ReadingListPage, ReadingScope, ReadingOverview, ReadingSummary };
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -125,4 +127,41 @@ export function cleanupReading(
     method: "POST",
     body: JSON.stringify({ handle, mode }),
   });
+}
+
+export function fetchReadingOverview(handle: string): Promise<ReadingOverview> {
+  return request(`/api/workspace/reading/overview?handle=${encodeURIComponent(handle)}`);
+}
+
+export function fetchReadingSummaries(handle: string, folderPath: string): Promise<{ summaries: ReadingSummary[]; considered: number; singles: number }> {
+  const params = new URLSearchParams({ handle, folder: folderPath });
+  return request(`/api/workspace/reading/summaries?${params.toString()}`);
+}
+
+export function saveReadingBrief(handle: string, folderPath?: string | null): Promise<{ id: string; slug: string; folderPath: string; items: number }> {
+  return request(`/api/workspace/reading/brief?handle=${encodeURIComponent(handle)}`, {
+    method: "POST",
+    body: JSON.stringify({ handle, folder: folderPath ?? "" }),
+  });
+}
+
+export function markReadingScopeRead(handle: string, folderPath: string): Promise<{ ok: true; count: number }> {
+  return request(`/api/workspace/reading/items?handle=${encodeURIComponent(handle)}`, {
+    method: "POST",
+    body: JSON.stringify({ handle, action: "read_all", folder: folderPath }),
+  });
+}
+
+export function importOpml(input: { handle: string; parentFolderPath: string; opml: string }): Promise<{
+  results: Array<{ url: string; title: string | null; status: "added" | "existing" | "failed"; detail?: string; folderPath?: string }>;
+  skipped: number;
+}> {
+  return request(`/api/workspace/reading/opml?handle=${encodeURIComponent(input.handle)}`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function opmlExportUrl(handle: string): string {
+  return `/api/workspace/reading/opml?handle=${encodeURIComponent(handle)}`;
 }

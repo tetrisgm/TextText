@@ -95,6 +95,23 @@ export async function setReadState(input: {
     });
 }
 
+/** Mark every live reading item in these folders read for one person. Bounded by the scope, one statement. */
+export async function setReadStateForScope(input: { userId: string; blogId: string; folderIds: string[]; now?: Date }): Promise<number> {
+  const database = requireDb();
+  if (input.folderIds.length === 0) return 0;
+  const now = input.now ?? new Date();
+  const result = await database.execute(sql`
+    insert into ${readingReadState} (user_id, post_id, read_at, updated_at)
+    select ${input.userId}::uuid, p.id, ${now}, ${now}
+    from ${posts} p
+    where p.blog_id = ${input.blogId} and p.deleted_at is null and p.origin = 'feed'
+      and p.folder_id in (${sql.join(input.folderIds.map((id) => sql`${id}::uuid`), sql`, `)})
+    on conflict (user_id, post_id) do update set read_at = excluded.read_at, updated_at = excluded.updated_at
+    returning post_id
+  `);
+  return result.rows.length;
+}
+
 export type CleanupCandidate = {
   postId: string;
   receiptId: string;

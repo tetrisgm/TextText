@@ -1,6 +1,7 @@
 "use client";
 
 import { scheduleAfterLoadIdle } from "@/lib/after-load-idle";
+import { ReadingOverviewModule } from "@/components/workspace/reading/ReadingOverviewModule";
 
 // The workspace's root, search and tag pages plus the content router that
 // picks between them. Extracted from the PostWorkspaceShell monolith.
@@ -767,6 +768,17 @@ export function WorkspaceRootLanding({
                 <button type="button" className="workspace-start-here-dismiss" aria-label="Dismiss Start here" onClick={dismissStartHere}>Done</button>
               </section>
             ) : null}
+            {(pool.readingSources?.length ?? 0) > 0 && (
+              <ReadingOverviewModule
+                handle={pool.blog.handle}
+                blogId={pool.blogId}
+                canManage={canManageItems}
+                assistantReady={assistantReady}
+                onOpenPost={onOpenPost}
+                onOpenSection={onOpenSection}
+                onUseAssistantPrompt={onUseAssistantPrompt}
+              />
+            )}
             <section className={`workspace-recent is-view-${recentViewMode}`}>
               <header className="workspace-library-toolbar">
                 <div

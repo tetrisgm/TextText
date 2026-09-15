@@ -7,12 +7,15 @@ import { postFromPoolPost } from "@/lib/pool/selectors";
 import type { WorkspacePoolPost, WorkspaceReadingSource } from "@/lib/pool/types";
 import {
   fetchReadingPage,
+  fetchReadingSummaries,
+  markReadingScopeRead,
   setReadingItemsKept,
   setReadingItemsRead,
   tickReading,
   type ReadingFolderSummary,
   type ReadingListItem,
   type ReadingScope,
+  type ReadingSummary,
 } from "@/lib/reading/client";
 import styles from "./Reading.module.css";
 
@@ -101,6 +104,8 @@ export function ReadingFolderView({
   onAddFeeds?: () => void;
 }) {
   void blog;
+  const [view, setView] = useState<"articles" | "summaries">("articles");
+  const [summaries, setSummaries] = useState<{ summaries: ReadingSummary[]; singles: number; considered: number } | null>(null);
   const [state, setState] = useState<ReadingScope["state"]>("all");
   const [dateBasis, setDateBasis] = useState<ReadingScope["dateBasis"]>("published");
   const scope = useMemo<ReadingScope>(
@@ -183,6 +188,21 @@ export function ReadingFolderView({
       }
     })();
   }, [canEdit, folder.path, handle, loadFirstPage, sources]);
+
+  useEffect(() => {
+    if (view !== "summaries") return;
+    let cancelled = false;
+    void fetchReadingSummaries(handle, folder.path)
+      .then((result) => {
+        if (!cancelled) setSummaries(result);
+      })
+      .catch((caught: unknown) => {
+        if (!cancelled) setError(caught instanceof Error ? caught.message : "Could not build summaries");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [folder.path, handle, view]);
 
   const loadMore = useCallback(async () => {
     if (!cursor || loadingMore) return;
@@ -297,10 +317,10 @@ export function ReadingFolderView({
 
       <div className={styles.controls} role="toolbar" aria-label="Reading view">
         <div className={styles.segment} role="group" aria-label="View">
-          <button type="button" aria-pressed>
+          <button type="button" aria-pressed={view === "articles"} onClick={() => setView("articles")}>
             Articles
           </button>
-          <button type="button" aria-pressed={false} disabled title="Summaries arrive with the next release">
+          <button type="button" aria-pressed={view === "summaries"} onClick={() => setView("summaries")}>
             Summaries
           </button>
         </div>
@@ -320,6 +340,22 @@ export function ReadingFolderView({
           </button>
         </div>
         <span className={styles.spacer} />
+        {summary && summary.unreadCount !== null && summary.unreadCount > 0 && (
+          <button
+            type="button"
+            className={styles.button}
+            onClick={() => {
+              void markReadingScopeRead(handle, folder.path)
+                .then(() => {
+                  setItems((current) => current.map((item) => ({ ...item, read: true })));
+                  setSummary((current) => (current ? { ...current, unreadCount: 0 } : current));
+                })
+                .catch((caught: unknown) => setError(caught instanceof Error ? caught.message : "Could not mark as read"));
+            }}
+          >
+            Mark all read
+          </button>
+        )}
         {canEdit && (
           <button type="button" className={styles.button} onClick={() => void refresh()} disabled={refreshing}>
             {refreshing ? "Checking…" : "Refresh"}
@@ -345,7 +381,44 @@ export function ReadingFolderView({
 
       {error && <p className={styles.error} role="alert">{error}</p>}
 
-      {!loading && items.length === 0 ? (
+      {view === "summaries" ? (
+        !summaries ? (
+          <p className={styles.note}>Grouping the same news from different sources…</p>
+        ) : summaries.summaries.length === 0 ? (
+          <div className={styles.empty}>
+            <p>No Summaries yet. A Summary appears when more than one source carries the same news.</p>
+          </div>
+        ) : (
+          <ul className={styles.list} aria-label={`Summaries in ${folder.name}`}>
+            {summaries.summaries.map((summary) => (
+              <li key={summary.id} className={styles.summary}>
+                <div className={styles.main}>
+                  <p className={styles.source}>
+                    <span>{summary.sources.join(" · ")}</span>
+                  </p>
+                  <h3 className={styles.headline}>{summary.headline}</h3>
+                </div>
+                <div className={styles.side}>
+                  <time dateTime={summary.latestAt}>{relativeTime(summary.latestAt)}</time>
+                  <span>
+                    {summary.members.length} articles{summary.unread > 0 ? `, ${summary.unread} unread` : ""}
+                  </span>
+                </div>
+                <ul className={styles.summaryMembers}>
+                  {summary.members.map((member) => (
+                    <li key={member.id} className={styles.summaryMember} data-read={member.read ? "true" : "false"}>
+                      <button type="button" onClick={() => open(member)}>
+                        {member.title}
+                      </button>
+                      <span>{member.publisherName ?? member.sourceFolderName}</span>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : !loading && items.length === 0 ? (
         <div className={styles.empty}>
           {sources.length === 0 ? (
             <>

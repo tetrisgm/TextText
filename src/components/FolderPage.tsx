@@ -2,6 +2,7 @@
 "use client";
 
 import { AddFeedsDialog } from "@/components/workspace/reading/AddFeedsDialog";
+import { ManageSourcesDialog } from "@/components/workspace/reading/ManageSourcesDialog";
 import { ReadingFolderView, readingSourcesUnder } from "@/components/workspace/reading/ReadingFolderView";
 import { refreshWorkspacePool } from "@/lib/pool/store";
 import type { WorkspaceReadingSource } from "@/lib/pool/types";
@@ -389,6 +390,7 @@ function FolderActionBar({
   onSearchValueChange,
   onDeleteFolder,
   onAddFeeds,
+  onManageSources,
 }: {
   blog: Blog;
   folder: Folder;
@@ -404,6 +406,7 @@ function FolderActionBar({
   onSearchValueChange: (value: string) => void;
   onDeleteFolder?: FolderDeleteFolder;
   onAddFeeds?: () => void;
+  onManageSources?: () => void;
 }) {
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -521,6 +524,19 @@ function FolderActionBar({
                       }}
                     >
                       Add feeds
+                    </button>
+                  )}
+                  {onManageSources && (
+                    <button
+                      type="button"
+                      className="folder-action-menu-item"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onManageSources();
+                      }}
+                    >
+                      Manage sources
                     </button>
                   )}
                   {onDeleteFolder && (
@@ -1699,6 +1715,8 @@ export function FolderPage({
   const isReadingFolder = folder.mode === "bookmarks" && sourcesHere.length > 0;
   const canAddFeeds = canEditItems && folder.mode === "bookmarks" && Boolean(blogId);
   const [addFeedsOpen, setAddFeedsOpen] = useState(false);
+  const [manageSourcesOpen, setManageSourcesOpen] = useState(false);
+  const [readingRefresh, setReadingRefresh] = useState(0);
 
   const visibleSelectedPostId =
     selectedPostId && filteredItems.some((post) => post.id === selectedPostId)
@@ -1729,6 +1747,7 @@ export function FolderPage({
         onSearchValueChange={setFilterQuery}
         onDeleteFolder={onDeleteFolder}
         onAddFeeds={canAddFeeds ? () => setAddFeedsOpen(true) : undefined}
+        onManageSources={canAddFeeds && isReadingFolder ? () => setManageSourcesOpen(true) : undefined}
       />
       <header className="post-folder-page-header">
         <FolderTitleEditor
@@ -1775,8 +1794,19 @@ export function FolderPage({
           }}
         />
       )}
+      {manageSourcesOpen && blogId && (
+        <ManageSourcesDialog
+          handle={handle}
+          blogId={blogId}
+          folderPath={folder.path}
+          folderName={folder.name}
+          onClose={() => setManageSourcesOpen(false)}
+          onChanged={() => setReadingRefresh((tick) => tick + 1)}
+        />
+      )}
       {isReadingFolder && !filterQuery && blogId ? (
         <ReadingFolderView
+          key={readingRefresh}
           blog={blog}
           folder={folder}
           handle={handle}

@@ -1,0 +1,273 @@
+"use client";
+
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { refreshWorkspacePool } from "@/lib/pool/store";
+import { fetchFeedConnections, importOpml, manageFeed, opmlExportUrl, type FeedConnectionView } from "@/lib/reading/client";
+import styles from "./Reading.module.css";
+
+/**
+ * Manage sources: every feed at or under a folder, with its health and the
+ * three non-destructive verbs (pause, resume, detach), plus OPML in and out.
+ * Deleting a feed's folder stays the folder's own flow, with its preview.
+ */
+
+function relativeTime(iso: string | null): string {
+  if (!iso) return "never";
+  const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  return `${Math.round(hours / 24)} d ago`;
+}
+
+const HEALTH_LABEL: Record<string, string> = {
+  healthy: "Healthy",
+  checking: "Checking",
+  stale: "Stale",
+  degraded: "Having trouble",
+  rate_limited: "Rate limited",
+  failing: "Failing",
+  moved: "Moved",
+  auth_required: "Needs sign-in",
+  unsupported: "Unsupported",
+  disabled: "Paused",
+};
+
+export function ManageSourcesDialog({
+  handle,
+  blogId,
+  folderPath,
+  folderName,
+  onClose,
+  onChanged,
+}: {
+  handle: string;
+  blogId: string;
+  folderPath: string;
+  folderName: string;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const titleId = useId();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [connections, setConnections] = useState<FeedConnectionView[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [importReport, setImportReport] = useState<string | null>(null);
+  const [detaching, setDetaching] = useState<FeedConnectionView | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const result = await fetchFeedConnections(handle);
+      setConnections(
+        result.connections.filter(
+          (connection) =>
+            connection.state !== "detached" &&
+            (connection.folderPath === folderPath || connection.folderPath.startsWith(`${folderPath}/`)),
+        ),
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not load sources");
+    }
+  }, [folderPath, handle]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (!cancelled) return load();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [load]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (detaching) setDetaching(null);
+        else onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [detaching, onClose]);
+
+  const act = useCallback(
+    async (connection: FeedConnectionView, action: "pause" | "resume" | "refresh" | "detach", keepAllItems = false) => {
+      setBusy(connection.id);
+      setError(null);
+      try {
+        await manageFeed({ handle, id: connection.id, action, keepAllItems });
+        await load();
+        if (action === "detach") await refreshWorkspacePool(handle, blogId).catch(() => undefined);
+        onChanged();
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "That did not work");
+      } finally {
+        setBusy(null);
+      }
+    },
+    [blogId, handle, load, onChanged],
+  );
+
+  const onImportFile = useCallback(
+    async (file: File) => {
+      setBusy("import");
+      setError(null);
+      setImportReport(null);
+      try {
+        const text = await file.text();
+        const report = await importOpml({ handle, parentFolderPath: folderPath, opml: text });
+        const added = report.results.filter((entry) => entry.status === "added").length;
+        const existing = report.results.filter((entry) => entry.status === "existing").length;
+        const failed = report.results.filter((entry) => entry.status === "failed");
+        setImportReport(
+          [
+            `${added} added`,
+            existing ? `${existing} already followed` : null,
+            failed.length ? `${failed.length} could not be added: ${failed.map((entry) => entry.title ?? entry.url).join(", ")}` : null,
+            report.skipped ? `${report.skipped} skipped past the limit of one import` : null,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+        );
+        await refreshWorkspacePool(handle, blogId).catch(() => undefined);
+        await load();
+        onChanged();
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "Could not import that file");
+      } finally {
+        setBusy(null);
+        if (fileRef.current) fileRef.current.value = "";
+      }
+    },
+    [blogId, folderPath, handle, load, onChanged],
+  );
+
+  return (
+    <div
+      className={`applecms ${styles.backdrop}`}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section className={styles.panel} role="dialog" aria-modal="true" aria-labelledby={titleId} onMouseDown={(event) => event.stopPropagation()}>
+        <header className={styles.panelHeader}>
+          <div>
+            <h2 id={titleId}>Sources in {folderName}</h2>
+            <p>Pause a feed to stop checking it. Detach to keep the folder as an ordinary folder.</p>
+          </div>
+          <button type="button" className={styles.iconButton} aria-label="Close" onClick={onClose}>
+            ×
+          </button>
+        </header>
+        <div className={styles.panelBody}>
+          {error && <p className={styles.error} role="alert">{error}</p>}
+          {importReport && <p className={styles.note} role="status">{importReport}</p>}
+          {connections === null ? (
+            <p className={styles.note}>Loading…</p>
+          ) : connections.length === 0 ? (
+            <p className={styles.note}>No feeds here yet.</p>
+          ) : (
+            <ul className={styles.candidates} aria-label="Sources">
+              {connections.map((connection) => (
+                <li key={connection.id} className={styles.sourceRow}>
+                  <div>
+                    <strong>{connection.publisherTitle ?? connection.folderName}</strong>
+                    <small>
+                      {connection.folderPath} · {connection.endpoint}
+                    </small>
+                    <small className={styles.health}>
+                      <span className={styles.healthDot} data-health={connection.state === "paused" ? "disabled" : connection.health} aria-hidden="true" />
+                      {connection.state === "paused" ? "Paused" : (HEALTH_LABEL[connection.health] ?? connection.health)}
+                      {connection.healthDetail ? ` · ${connection.healthDetail}` : ""} · last delivered {relativeTime(connection.lastSuccessAt)}
+                      {" · "}
+                      {connection.effectiveRetentionDays === 0 ? "kept until deleted" : `kept ${connection.effectiveRetentionDays} days`}
+                    </small>
+                  </div>
+                  <div className={styles.controls}>
+                    <button type="button" className={styles.button} disabled={busy === connection.id || connection.state === "paused"} onClick={() => void act(connection, "refresh")}>
+                      Check now
+                    </button>
+                    {connection.state === "paused" ? (
+                      <button type="button" className={styles.button} disabled={busy === connection.id} onClick={() => void act(connection, "resume")}>
+                        Resume
+                      </button>
+                    ) : (
+                      <button type="button" className={styles.button} disabled={busy === connection.id} onClick={() => void act(connection, "pause")}>
+                        Pause
+                      </button>
+                    )}
+                    <button type="button" className={styles.button} disabled={busy === connection.id} onClick={() => setDetaching(connection)}>
+                      Detach
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          {detaching && (
+            <div className={styles.confirm} role="alertdialog" aria-label="Detach source">
+              <p>
+                Detach <strong>{detaching.publisherTitle ?? detaching.folderName}</strong>? The folder and its articles stay; nothing new arrives. Keep every
+                article it has delivered, or let the ones nobody kept expire on schedule?
+              </p>
+              <div className={styles.controls}>
+                <button type="button" className={styles.button} onClick={() => setDetaching(null)}>
+                  Cancel
+                </button>
+                <span className={styles.spacer} />
+                <button
+                  type="button"
+                  className={styles.button}
+                  onClick={() => {
+                    const target = detaching;
+                    setDetaching(null);
+                    void act(target, "detach", false);
+                  }}
+                >
+                  Detach, expire on schedule
+                </button>
+                <button
+                  type="button"
+                  className={styles.primary}
+                  onClick={() => {
+                    const target = detaching;
+                    setDetaching(null);
+                    void act(target, "detach", true);
+                  }}
+                >
+                  Detach and keep everything
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+        <footer className={styles.panelFooter}>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".opml,.xml,text/xml,text/x-opml"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void onImportFile(file);
+            }}
+          />
+          <button type="button" className={styles.button} disabled={busy === "import"} onClick={() => fileRef.current?.click()}>
+            {busy === "import" ? "Importing…" : "Import OPML"}
+          </button>
+          <a className={styles.button} href={opmlExportUrl(handle)} download>
+            Export OPML
+          </a>
+          <span className={styles.spacer} />
+          <button type="button" className={styles.primary} onClick={onClose}>
+            Done
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
+}

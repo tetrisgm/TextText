@@ -184,6 +184,32 @@ describe.skipIf(!enabled)("retention holds and cleanup against Postgres", () => 
     expect(live).toHaveLength(5);
   });
 
+  it("OVER-01: the overview counts unread per source and a saved brief is a note of citations that protects them", async () => {
+    const overview = await import("@/lib/reading/overview.server");
+    const before = await overview.readingOverview({ handle, user });
+    expect(before.sources).toHaveLength(1);
+    expect(before.totals.items).toBe(5);
+    expect(before.totals.unread).toBe(5);
+    expect(before.latest.length).toBeGreaterThan(0);
+    expect(before.latest.every((item) => !item.read)).toBe(true);
+
+    const brief = await overview.saveReadingBrief({ handle, user, actor: { userId, actorType: "human" } });
+    expect(brief.folderPath).toBe("notes");
+    expect(brief.items).toBe(5);
+    const note = await store.getPostById(handle, brief.id);
+    expect(note?.type).toBe("note");
+    expect(note?.title.startsWith("Reading brief, ")).toBe(true);
+    for (const url of ["star", "comment", "keep", "ref", "edit"]) {
+      const post = await store.getPostById(handle, byUrl.get(`https://r.example/${url}`)!);
+      expect(note?.body).toContain(`[[${post!.slug}|`);
+      expect(note?.body).toContain(`https://r.example/${url}`);
+    }
+    // Everything the brief links is now a reference the sweep respects.
+    const later = new Date(Date.now() + 100 * 24 * 60 * 60 * 1000);
+    const preview = await retention.previewCleanup({ handle, now: later });
+    expect(preview.expiring).toEqual([]);
+  });
+
   it("RET-06: read state is the person's own and drives the Unread view", async () => {
     const id = byUrl.get("https://r.example/keep")!;
     await retention.setReadState({ userId, postIds: [id], read: true });

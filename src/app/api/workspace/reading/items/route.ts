@@ -1,5 +1,5 @@
-import { listReadingItems, readingFolderSummary, type ReadingScope } from "@/lib/reading/list.server";
-import { setKeep, setReadState } from "@/lib/reading/retention.server";
+import { listReadingItems, readingFolderSummary, resolveReadingFolderIds, type ReadingScope } from "@/lib/reading/list.server";
+import { setKeep, setReadState, setReadStateForScope } from "@/lib/reading/retention.server";
 import { handleFrom, json, jsonError, readJson, requireOwner, requireReader } from "../_shared";
 
 export const dynamic = "force-dynamic";
@@ -61,8 +61,18 @@ export async function POST(request: Request) {
   const ids = Array.isArray(body.ids)
     ? body.ids.filter((id: unknown): id is string => typeof id === "string" && id.length > 0).slice(0, 200)
     : [];
-  if (ids.length === 0) return jsonError("Missing ids", 400);
   try {
+    if (action === "read_all") {
+      // Everything currently in a folder scope, for this person only.
+      const reader = await requireReader(handle);
+      if (!reader.ok) return reader.response;
+      if (!reader.user?.userId) return jsonError("Sign in to track what you have read", 401);
+      const folderPath = typeof body.folder === "string" ? body.folder : "";
+      const { blogId, folderIds } = await resolveReadingFolderIds({ handle, user: reader.user, folderPath, includeDescendants: true });
+      const count = await setReadStateForScope({ userId: reader.user.userId, blogId, folderIds });
+      return json({ ok: true, count });
+    }
+    if (ids.length === 0) return jsonError("Missing ids", 400);
     if (action === "read" || action === "unread") {
       const reader = await requireReader(handle);
       if (!reader.ok) return reader.response;

@@ -124,6 +124,31 @@ async function itemCountsByFolder(blogId: string, folderIds: string[]): Promise<
   return new Map(rows.map((row) => [row.folderId, row.count]));
 }
 
+/**
+ * The real endpoints, for the owner's OPML export only. Views never carry
+ * them because a feed address can embed a token; the export is the one place
+ * the owner asks for the address back.
+ */
+export async function feedEndpointsForOwner(
+  handle: string,
+): Promise<Array<{ id: string; endpointUrl: string; siteUrl: string | null; publisherTitle: string | null; folderPath: string; folderName: string }>> {
+  const blogId = await workspaceIdForHandle(handle);
+  const [rows, allFolders] = await Promise.all([
+    requireDb()
+      .select()
+      .from(feedConnections)
+      .where(and(eq(feedConnections.blogId, blogId), isNull(feedConnections.deletedAt), sql`${feedConnections.state} <> 'detached'`))
+      .orderBy(desc(feedConnections.createdAt)),
+    getFolders(handle),
+  ]);
+  const folderById = new Map(allFolders.map((folder) => [folder.id, folder]));
+  return rows.flatMap((row) => {
+    const folder = folderById.get(row.folderId);
+    if (!folder) return [];
+    return [{ id: row.id, endpointUrl: row.endpointUrl, siteUrl: row.siteUrl, publisherTitle: row.publisherTitle, folderPath: folder.path, folderName: folder.name }];
+  });
+}
+
 export async function listFeedConnections(handle: string): Promise<FeedConnectionView[]> {
   const blogId = await workspaceIdForHandle(handle);
   const [rows, allFolders, defaultRetention] = await Promise.all([

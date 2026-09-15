@@ -99,10 +99,15 @@ export async function resolveReadingFolderIds(input: {
 }): Promise<{ blogId: string; folderIds: string[] }> {
   const blogId = await workspaceIdForHandle(input.handle);
   const allFolders = await getFolders(input.handle);
+  const accessible = await accessibleFolderIdsForUser(input.handle, input.user);
+  // "" means every folder the person can see: the workspace-wide views.
+  if (input.folderPath === "") {
+    const all = allFolders.map((folder) => folder.id);
+    return { blogId, folderIds: accessible === "all" ? all : all.filter((id) => accessible.has(id)) };
+  }
   const target = allFolders.find((folder) => folder.path === input.folderPath);
   if (!target) return { blogId, folderIds: [] };
   const subtree = input.includeDescendants ? await subtreeFolderIds(blogId, target.path) : [target.id];
-  const accessible = await accessibleFolderIdsForUser(input.handle, input.user);
   const folderIds = accessible === "all" ? subtree : subtree.filter((id) => accessible.has(id));
   return { blogId, folderIds };
 }
