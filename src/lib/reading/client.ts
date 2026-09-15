@@ -99,3 +99,30 @@ export function tickReading(handle: string, limit = 3): Promise<{
     body: JSON.stringify({ handle, limit }),
   });
 }
+
+export function setReadingItemsRead(handle: string, ids: string[], read: boolean): Promise<{ ok: true; count: number }> {
+  return request(`/api/workspace/reading/items?handle=${encodeURIComponent(handle)}`, {
+    method: "POST",
+    body: JSON.stringify({ handle, action: read ? "read" : "unread", ids }),
+  });
+}
+
+export function setReadingItemsKept(handle: string, ids: string[], keep: boolean): Promise<{ ok: true; count: number }> {
+  return request(`/api/workspace/reading/items?handle=${encodeURIComponent(handle)}`, {
+    method: "POST",
+    body: JSON.stringify({ handle, action: keep ? "keep" : "unkeep", ids }),
+  });
+}
+
+export function cleanupReading(
+  handle: string,
+  mode: "preview" | "run",
+): Promise<
+  | { expiring: Array<{ id: string; title: string; expiresAt: string }>; protected: Array<{ id: string; title: string; reason: string }>; truncated: boolean }
+  | { trashed: number; protected: number; skipped: number; truncated: boolean; dryRun: boolean }
+> {
+  return request(`/api/workspace/reading/cleanup?handle=${encodeURIComponent(handle)}`, {
+    method: "POST",
+    body: JSON.stringify({ handle, mode }),
+  });
+}

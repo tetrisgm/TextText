@@ -9,6 +9,13 @@ vi.mock("@/lib/db/client", () => ({
   get db() {
     return holder.db;
   },
+  // The real helper runs the built queries in one transaction; the fake runs
+  // them in order against the same fake db, which is all these tests observe.
+  async executeAtomicBatch(build: (executor: unknown) => readonly PromiseLike<unknown>[]) {
+    const results: unknown[] = [];
+    for (const query of build(holder.db)) results.push(await query);
+    return results;
+  },
 }));
 
 const {

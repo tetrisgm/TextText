@@ -7,6 +7,8 @@ import { postFromPoolPost } from "@/lib/pool/selectors";
 import type { WorkspacePoolPost, WorkspaceReadingSource } from "@/lib/pool/types";
 import {
   fetchReadingPage,
+  setReadingItemsKept,
+  setReadingItemsRead,
   tickReading,
   type ReadingFolderSummary,
   type ReadingListItem,
@@ -214,14 +216,37 @@ export function ReadingFolderView({
   // calling it in the same tick finds nothing. The effect runs after the
   // shell has re-rendered against the merged pool, with a fresh handler.
   const pendingOpen = useRef<WorkspacePoolPost | null>(null);
+  const patchItem = useCallback((id: string, patch: Partial<ReadingListItem>) => {
+    setItems((current) => current.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry)));
+  }, []);
   const open = useCallback(
     (item: ReadingListItem) => {
       const poolPost = poolPostFor(item, blogId);
       pendingOpen.current = poolPost;
       addPost(poolPost);
       onSelectPost?.(item.id);
+      if (!item.read) {
+        // Opening is reading. Optimistic, personal, and never in the way of
+        // the open itself.
+        patchItem(item.id, { read: true });
+        setSummary((current) =>
+          current && current.unreadCount !== null ? { ...current, unreadCount: Math.max(0, current.unreadCount - 1) } : current,
+        );
+        void setReadingItemsRead(handle, [item.id], true).catch(() => patchItem(item.id, { read: false }));
+      }
     },
-    [blogId, onSelectPost],
+    [blogId, handle, onSelectPost, patchItem],
+  );
+  const toggleKeep = useCallback(
+    (item: ReadingListItem) => {
+      const keep = !item.keptReasons.includes("keep");
+      const reasons = keep ? [...item.keptReasons, "keep"] : item.keptReasons.filter((reason) => reason !== "keep");
+      patchItem(item.id, { keptReasons: reasons, kept: item.origin !== "feed" || item.starred || reasons.length > 0 });
+      void setReadingItemsKept(handle, [item.id], keep).catch(() =>
+        patchItem(item.id, { keptReasons: item.keptReasons, kept: item.kept }),
+      );
+    },
+    [handle, patchItem],
   );
   useEffect(() => {
     const post = pendingOpen.current;
@@ -384,6 +409,20 @@ export function ReadingFolderView({
                   {relativeTime(item.publishedAt ?? item.receivedAt)}
                 </time>
                 {item.folderPath !== folder.path && <span>{item.sourceFolderName}</span>}
+                {canEdit && item.origin === "feed" && (
+                  <button
+                    type="button"
+                    className={styles.keep}
+                    aria-pressed={item.keptReasons.includes("keep")}
+                    title={item.keptReasons.includes("keep") ? "Stop keeping this article" : "Keep this article past cleanup"}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      toggleKeep(item);
+                    }}
+                  >
+                    {item.keptReasons.includes("keep") ? "Kept" : "Keep"}
+                  </button>
+                )}
               </div>
             </li>
           ))}

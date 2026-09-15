@@ -56,7 +56,8 @@ import {
 } from "./audit";
 import { getBlogCore, getBlogCoreByUsername } from "./blog-core";
 import { folderModeForPostType } from "./markdown-files";
-import { db } from "./db/client";
+import { holdInsertCte, holdInsertQuery, holdReleaseQuery } from "./reading/holds";
+import { db, executeAtomicBatch } from "./db/client";
 import {
   actionAudit,
   apiTokens,
@@ -4850,8 +4851,18 @@ export async function createItemComment(
     "changed",
     sql`${itemId}::text`,
   );
+  // A comment is a person's work on the item, so its retention hold lands in
+  // the same statement as the comment row.
+  const holdCte = holdInsertCte({
+    postId: itemId,
+    blogId: sql`(select blog_id from ${posts} where id = ${itemId}::uuid)`,
+    reason: "comment",
+    sourceId: sql`changed.id::text`,
+    createdById: actor.actorUserId ?? null,
+    fromCte: "changed",
+  });
   const result = await db.execute(sql`
-    WITH changed AS ${changed}, audit AS (${auditCte})
+    WITH changed AS ${changed}, audit AS (${auditCte}), hold AS (${holdCte})
     SELECT id FROM changed
   `);
   const insertedId = (result.rows[0] as { id?: string } | undefined)?.id;
@@ -5051,10 +5062,14 @@ export async function deleteItemComment(
 ): Promise<ItemComment> {
   if (!db) throw new Error("deleteItemComment requires DATABASE_URL");
   const actor = cleanItemCommentActor(actorContext);
-  const deleted = await db
-    .delete(itemComments)
-    .where(and(eq(itemComments.id, commentId), eq(itemComments.postId, itemId)))
-    .returning();
+  const [deleted] = await executeAtomicBatch((executor) => [
+    executor
+      .delete(itemComments)
+      .where(and(eq(itemComments.id, commentId), eq(itemComments.postId, itemId)))
+      .returning(),
+    // Only this comment's hold; any other reason to keep the item stands.
+    holdReleaseQuery(executor, { postId: itemId, reason: "comment", sourceId: commentId }),
+  ]);
   if (!deleted[0]) throw new Error("Comment not found");
   await recordAction({
     actorUserId: actor.actorUserId,
@@ -5654,15 +5669,23 @@ export async function setPostStarred(
 ): Promise<Post> {
   if (!db) throw new Error("setPostStarred requires DATABASE_URL");
   const blogId = await blogIdFor(handle);
-  const updated = await db
-    .update(posts)
-    // Personal stars participate in sync and the local-first pool, so they
-    // advance the same mutation cursor as every other post change.
-    .set({ starred, updatedAt: new Date() })
-    .where(
-      and(eq(posts.id, id), eq(posts.blogId, blogId), isNull(posts.deletedAt)),
-    )
-    .returning();
+  // The star and its retention hold commit together: a starred import is
+  // protected from cleanup by the same write that starred it, and unstarring
+  // releases only the star's own hold, never a comment's or a Keep's.
+  const [updated] = await executeAtomicBatch((executor) => [
+    executor
+      .update(posts)
+      // Personal stars participate in sync and the local-first pool, so they
+      // advance the same mutation cursor as every other post change.
+      .set({ starred, updatedAt: new Date() })
+      .where(
+        and(eq(posts.id, id), eq(posts.blogId, blogId), isNull(posts.deletedAt)),
+      )
+      .returning(),
+    starred
+      ? holdInsertQuery(executor, { postId: id, blogId, reason: "starred" })
+      : holdReleaseQuery(executor, { postId: id, reason: "starred" }),
+  ]);
   if (!updated[0]) throw new Error("Post not found");
   return mapPost(updated[0]);
 }

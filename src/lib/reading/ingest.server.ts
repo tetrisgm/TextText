@@ -98,7 +98,8 @@ function retentionExpiry(
   return new Date(firstImportedAt.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
-function itemBody(entry: NormalizedEntry): string {
+/** The body an untouched imported item carries; exported so cleanup can tell a person's edit from source text. */
+export function itemBody(entry: Pick<NormalizedEntry, "bodyMarkdown" | "permalink" | "externalUrl">): string {
   if (entry.bodyMarkdown) return entry.bodyMarkdown;
   // Metadata-only entries still get a body a reader can act on: the link.
   const target = entry.permalink ?? entry.externalUrl;

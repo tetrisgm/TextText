@@ -1,5 +1,6 @@
 import { enqueueDueFeedPolls, runPollFeedJob } from "@/lib/reading/ingest.server";
 import { enqueueReadingJob, readingJobCounts, runReadingJobs } from "@/lib/reading/jobs.server";
+import { enqueueRetentionSweep, runRetentionJob } from "@/lib/reading/retention.server";
 import { handleFrom, json, jsonError, readJson, requireOwner } from "../_shared";
 
 export const dynamic = "force-dynamic";
@@ -21,8 +22,9 @@ export async function POST(request: Request) {
   if (!owner.ok) return owner.response;
   const limit = typeof body.limit === "number" ? Math.max(1, Math.min(10, Math.trunc(body.limit))) : 3;
   const queued = await enqueueDueFeedPolls(owner.blogId, enqueueReadingJob);
+  await enqueueRetentionSweep(owner.blogId);
   const ran = await runReadingJobs({
-    executors: { poll_feed: runPollFeedJob },
+    executors: { poll_feed: runPollFeedJob, retention_enforce: runRetentionJob },
     blogId: owner.blogId,
     limit,
     owner: `tick:${owner.ownerId}`,

@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { DURABLE_HOLD_REASONS } from "./holds";
 import { db } from "@/lib/db/client";
 import {
   feedConnections,
@@ -64,7 +65,7 @@ export type ReadingListPage = {
 };
 
 const MAX_PAGE = 100;
-const DURABLE_HOLDS = ["manual_save", "starred", "keep", "comment", "reference", "keep_summary", "used_in_work"];
+const DURABLE_HOLDS = DURABLE_HOLD_REASONS;
 
 function requireDb() {
   if (!db) throw new Error("Reading lists need DATABASE_URL");

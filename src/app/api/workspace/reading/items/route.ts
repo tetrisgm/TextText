@@ -1,5 +1,6 @@
 import { listReadingItems, readingFolderSummary, type ReadingScope } from "@/lib/reading/list.server";
-import { handleFrom, json, jsonError, requireReader } from "../_shared";
+import { setKeep, setReadState } from "@/lib/reading/retention.server";
+import { handleFrom, json, jsonError, readJson, requireOwner, requireReader } from "../_shared";
 
 export const dynamic = "force-dynamic";
 
@@ -44,5 +45,44 @@ export async function GET(request: Request) {
     return json({ ...page, summary });
   } catch (error) {
     return jsonError(error instanceof Error ? error.message : "Could not list reading", 500);
+  }
+}
+
+/**
+ * POST { handle, action: "read" | "unread" | "keep" | "unkeep", ids: string[] }
+ * Read state is the signed-in person's own. Keep is a workspace decision, so
+ * it is the owner's.
+ */
+export async function POST(request: Request) {
+  const body = await readJson(request);
+  const handle = handleFrom(request, body);
+  if (!handle) return jsonError("Missing workspace handle", 400);
+  const action = body.action;
+  const ids = Array.isArray(body.ids)
+    ? body.ids.filter((id: unknown): id is string => typeof id === "string" && id.length > 0).slice(0, 200)
+    : [];
+  if (ids.length === 0) return jsonError("Missing ids", 400);
+  try {
+    if (action === "read" || action === "unread") {
+      const reader = await requireReader(handle);
+      if (!reader.ok) return reader.response;
+      if (!reader.user?.userId) return jsonError("Sign in to track what you have read", 401);
+      await setReadState({ userId: reader.user.userId, postIds: ids, read: action === "read" });
+      return json({ ok: true, count: ids.length });
+    }
+    if (action === "keep" || action === "unkeep") {
+      const owner = await requireOwner(handle);
+      if (!owner.ok) return owner.response;
+      const result = await setKeep({
+        handle,
+        postIds: ids,
+        keep: action === "keep",
+        actor: { userId: owner.ownerId, actorType: "human" },
+      });
+      return json({ ok: true, count: result.changed });
+    }
+    return jsonError("Unknown action", 400);
+  } catch (error) {
+    return jsonError(error instanceof Error ? error.message : "Could not update items", 500);
   }
 }
