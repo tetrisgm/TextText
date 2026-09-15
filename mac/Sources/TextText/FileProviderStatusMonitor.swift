@@ -323,7 +323,7 @@ private enum PendingItemsObserverError: LocalizedError {
     }
 }
 
-private final class PendingItemsObserver:
+final class PendingItemsObserver:
     NSObject, NSFileProviderEnumerationObserver, FileProviderPendingEnumeration
 {
     private let enumerator: any NSFileProviderEnumerator
@@ -356,13 +356,30 @@ private final class PendingItemsObserver:
         lock.lock()
         defer { lock.unlock() }
         guard !finished else { return }
-        count += updatedItems.count
         for item in updatedItems {
             // The identifier is opaque; the filename is the person's content and
             // stays redacted.
             pendingLog.info(
                 "pending item \(item.itemIdentifier.rawValue, privacy: .public) parent \(item.parentItemIdentifier.rawValue, privacy: .public) name \(item.filename, privacy: .private)")
+            guard Self.isUserItem(item.itemIdentifier) else { continue }
+            count += 1
         }
+    }
+
+    /// Whether a pending entry is a file a person is waiting on.
+    ///
+    /// The framework's own containers can sit in the pending set indefinitely
+    /// and mean nothing to anyone. The hidden trash container does exactly
+    /// that here: the extension declines to serve it (`noSuchItem`, see
+    /// FileProviderExtension) precisely so it is not aliased to the root, and
+    /// the framework then keeps it pending forever, listing itself as its own
+    /// parent. Counting that as one file syncing left the provider reporting
+    /// itself busy for every readiness sample, and the finder.provider health
+    /// check warning on every launch since 2026-08-30.
+    static func isUserItem(_ identifier: NSFileProviderItemIdentifier) -> Bool {
+        identifier != .rootContainer
+            && identifier != .workingSet
+            && identifier != .trashContainer
     }
 
     func finishEnumerating(upTo nextPage: NSFileProviderPage?) {

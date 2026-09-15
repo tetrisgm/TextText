@@ -348,3 +348,23 @@ final class FileProviderStatusCauseTests: XCTestCase {
         XCTAssertNil(snapshot.uploadingFraction)
     }
 }
+
+/// The framework's own containers can sit in the pending set forever. Counting
+/// them as files a person is waiting on is what kept the provider reporting
+/// itself busy on every launch: see docs/HANDOFF.md, 2026-09-15.
+final class PendingItemClassificationTests: XCTestCase {
+    func testTheFrameworksOwnContainersAreNotFilesAnyoneIsWaitingOn() {
+        XCTAssertFalse(PendingItemsObserver.isUserItem(.rootContainer))
+        XCTAssertFalse(PendingItemsObserver.isUserItem(.workingSet))
+        XCTAssertFalse(
+            PendingItemsObserver.isUserItem(.trashContainer),
+            "the hidden trash container sits pending forever and means nothing")
+    }
+
+    func testAnOrdinaryItemStillCounts() {
+        XCTAssertTrue(PendingItemsObserver.isUserItem(
+            NSFileProviderItemIdentifier(rawValue: "file:demo:post-1")))
+        XCTAssertTrue(PendingItemsObserver.isUserItem(
+            NSFileProviderItemIdentifier(rawValue: "folder:demo:notes")))
+    }
+}
