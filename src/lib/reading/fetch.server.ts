@@ -1,4 +1,4 @@
-import { fetchPublicResource } from "@/lib/bookmark-fetch";
+import { fetchPublicResource, isFetchableBookmarkUrl } from "@/lib/bookmark-fetch";
 import {
   FeedParseError,
   MAX_FEED_BYTES,
@@ -113,11 +113,24 @@ export async function fetchFeedDocument(
       };
     }
     if (!response) {
+      // The gate answers null for a private or unfetchable address, and also
+      // for a lookup that failed or a redirect chain it would not follow. Only
+      // the first is a fact about the address; the rest are this attempt's,
+      // and a feed must not be marked unsupported because DNS blinked once.
+      let parsed: URL | null = null;
+      try {
+        parsed = new URL(url);
+      } catch {
+        parsed = null;
+      }
+      if (!parsed || !isFetchableBookmarkUrl(parsed)) {
+        return { kind: "error", reason: "blocked", status: null, detail: "That address is not a public feed address" };
+      }
       return {
         kind: "error",
-        reason: "blocked",
+        reason: "network",
         status: null,
-        detail: "That address is not a public feed address",
+        detail: "The feed's address could not be resolved or followed this time",
       };
     }
     if (response.status === 304) return { kind: "not_modified" };

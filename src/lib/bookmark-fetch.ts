@@ -99,6 +99,8 @@ export async function hostResolvesToPublicOnly(host: string): Promise<boolean> {
 /** Fetch one public HTTP resource while validating every redirect hop. Returning
  * null means the URL was malformed, resolved privately, or exceeded the redirect
  * limit. Callers still own timeouts, response type checks, and size limits. */
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
 export async function fetchPublicResource(
   input: string | URL,
   init: RequestInit = {},
@@ -114,7 +116,10 @@ export async function fetchPublicResource(
     if (!isFetchableBookmarkUrl(current)) return null;
     if (!(await hostResolvesToPublicOnly(current.hostname))) return null;
     const response = await fetch(current, { ...init, redirect: "manual" });
-    if (response.status < 300 || response.status >= 400) return response;
+    // Only real redirects are followed. 304 Not Modified is a 3xx with no
+    // Location, and a conditional request (feeds send If-None-Match) must
+    // get it back rather than be treated as a broken redirect.
+    if (!REDIRECT_STATUSES.has(response.status)) return response;
 
     const location = response.headers.get("location");
     if (!location) return null;

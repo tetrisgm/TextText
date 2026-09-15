@@ -1,0 +1,181 @@
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { and, eq } from "drizzle-orm";
+
+// Against local Postgres only, opted in with TEXTTEXT_READING_DB_TEST=1
+// (npm run test:reading:db). Seeds a scratch workspace with thousands of
+// imported items by direct insert and proves the bounds the plan requires:
+// the whole-workspace pool does not grow, and every reading query stays paged.
+const enabled = process.env.TEXTTEXT_READING_DB_TEST === "1" && Boolean(process.env.DATABASE_URL);
+const ITEMS = Number(process.env.TEXTTEXT_READING_SCALE_ITEMS ?? 5000);
+
+describe.skipIf(!enabled)(`reading at scale (${ITEMS} imported items)`, () => {
+  let db: typeof import("@/lib/db/client").db;
+  let schema: typeof import("@/lib/db/schema");
+  let store: typeof import("@/lib/store");
+  let connections: typeof import("@/lib/reading/connections.server");
+  let ingest: typeof import("@/lib/reading/ingest.server");
+  let list: typeof import("@/lib/reading/list.server");
+  let overview: typeof import("@/lib/reading/overview.server");
+  let summaries: typeof import("@/lib/reading/summaries.server");
+  let search: typeof import("@/lib/reading/search.server");
+  let userId = "";
+  let blogId = "";
+  let handle = "";
+  let folderPath = "";
+  let connectionId = "";
+  const user = { sub: "", userId: "", email: "", name: "Scale Test" };
+  const timings: Record<string, number> = {};
+
+  async function timed<T>(name: string, run: () => Promise<T>): Promise<T> {
+    const started = performance.now();
+    const result = await run();
+    timings[name] = Math.round(performance.now() - started);
+    return result;
+  }
+
+  const feedUrl = "https://feeds.example/scale/rss.xml";
+  const fetcher: typeof import("@/lib/reading/fetch.server").fetchFeedDocument = async (url) => {
+    if (url !== feedUrl) return { kind: "error", reason: "not_found", status: 404, detail: "gone" };
+    const body = `<?xml version="1.0"?><rss version="2.0"><channel><title>Scale Feed</title><link>https://scale.example/</link><item><guid isPermaLink="false">seed</guid><title>Seed article</title><link>https://scale.example/seed</link><pubDate>Mon, 01 Sep 2026 10:00:00 GMT</pubDate><description>Seed body.</description></item></channel></rss>`;
+    return { kind: "ok", status: 200, body, contentType: "application/rss+xml", etag: null, lastModified: null, finalUrl: url };
+  };
+
+  beforeAll(async () => {
+    const url = new URL(process.env.DATABASE_URL!);
+    if (!["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) throw new Error("Only local Postgres is allowed");
+    ({ db } = await import("@/lib/db/client"));
+    schema = await import("@/lib/db/schema");
+    store = await import("@/lib/store");
+    connections = await import("@/lib/reading/connections.server");
+    ingest = await import("@/lib/reading/ingest.server");
+    list = await import("@/lib/reading/list.server");
+    overview = await import("@/lib/reading/overview.server");
+    summaries = await import("@/lib/reading/summaries.server");
+    search = await import("@/lib/reading/search.server");
+    if (!db) throw new Error("no db");
+    const stamp = `${Date.now().toString(36)}-${process.pid}`;
+    handle = `scale-reading-${stamp}`;
+    const [created] = await db
+      .insert(schema.users)
+      .values({ appleSub: `scale-reading-${stamp}`, username: handle, email: `${handle}@example.invalid`, name: "Scale Test" })
+      .returning({ id: schema.users.id });
+    userId = created.id;
+    user.sub = `scale-reading-${stamp}`;
+    user.userId = userId;
+    user.email = `${handle}@example.invalid`;
+    const [blog] = await db.insert(schema.blogs).values({ handle, name: "Scale Test", ownerId: userId }).returning({ id: schema.blogs.id });
+    blogId = blog.id;
+    await store.ensureWorkspaceFolders(blogId);
+    const added = await connections.addFeedConnection({ handle, parentFolderPath: "bookmarks", endpointUrl: feedUrl, actor: { userId, actorType: "human" }, fetcher });
+    folderPath = added.folder.path;
+    connectionId = added.connection.id;
+    await ingest.pollFeedConnection(connectionId, { fetcher, initial: true });
+
+    // One real imported item is the template; the rest are copies with their
+    // own ids, slugs, titles, receipts and provenance, inserted in batches.
+    const [seed] = await db.select().from(schema.posts).where(and(eq(schema.posts.blogId, blogId), eq(schema.posts.origin, "feed")));
+    const [seedReceipt] = await db.select().from(schema.feedReceipts).where(eq(schema.feedReceipts.postId, seed.id));
+    const [seedProvenance] = await db.select().from(schema.readingProvenance).where(eq(schema.readingProvenance.postId, seed.id));
+    const BATCH = 500;
+    const started = performance.now();
+    for (let offset = 0; offset < ITEMS; offset += BATCH) {
+      const rows = Array.from({ length: Math.min(BATCH, ITEMS - offset) }, (_, index) => {
+        const n = offset + index;
+        const id = crypto.randomUUID();
+        const createdAt = new Date(Date.UTC(2026, 8, 1) + n * 60_000);
+        return {
+          post: {
+            id,
+            blogId,
+            folderId: seed.folderId,
+            type: seed.type,
+            slug: `scale-${n}`,
+            title: `Scale article ${n} about topic ${n % 37}`,
+            body: `Body ${n}. ${n % 5 === 0 ? "rollback " : ""}text of a synthetic article.`,
+            document: { ...seed.document, content: { ...seed.document.content, title: `Scale article ${n}` } },
+            visibility: seed.visibility,
+            templateId: seed.templateId,
+            templateVersion: seed.templateVersion,
+            origin: "feed",
+            createdAt,
+            updatedAt: createdAt,
+          },
+          receipt: {
+            connectionId,
+            blogId,
+            externalKey: `scale:${n}`,
+            postId: id,
+            firstImportedAt: createdAt,
+            lastSeenAt: createdAt,
+            contentHash: `h${n}`,
+            expiresAt: seedReceipt.expiresAt,
+            status: "active",
+          },
+          provenance: {
+            ...seedProvenance,
+            postId: id,
+            publisherTitle: `Scale article ${n}`,
+            permalink: `https://scale.example/${n}`,
+            canonicalUrl: `https://scale.example/${n}`,
+            publishedAt: createdAt,
+            capturedAt: createdAt,
+            updatedAt: createdAt,
+          },
+        };
+      });
+      await db.insert(schema.posts).values(rows.map((row) => row.post));
+      await db.insert(schema.feedReceipts).values(rows.map((row) => row.receipt));
+      await db.insert(schema.readingProvenance).values(rows.map((row) => row.provenance));
+    }
+    timings.seed = Math.round(performance.now() - started);
+  }, 120_000);
+
+  afterAll(async () => {
+    if (!db || !blogId) return;
+    await db.delete(schema.readingJobs).where(eq(schema.readingJobs.blogId, blogId));
+    await db.delete(schema.posts).where(eq(schema.posts.blogId, blogId));
+    await db.delete(schema.feedConnections).where(eq(schema.feedConnections.blogId, blogId));
+    await db.delete(schema.folders).where(eq(schema.folders.blogId, blogId));
+    await db.delete(schema.actionAudit).where(eq(schema.actionAudit.actorUserId, userId));
+    await db.delete(schema.blogs).where(eq(schema.blogs.id, blogId));
+    await db.delete(schema.users).where(eq(schema.users.id, userId));
+  });
+
+  it("PERF-01: the whole-workspace pool does not grow with imported items", async () => {
+    const pool = await timed("pool", () => store.getWorkspacePoolPosts(handle));
+    expect(pool.filter((post) => post.origin === "feed")).toHaveLength(0);
+    const counts = await store.getFolderCounts(handle);
+    expect(counts[folderPath]).toBeGreaterThanOrEqual(ITEMS);
+  });
+
+  it("PERF-02: the folder list, summary, overview, Summaries, and search stay bounded", async () => {
+    const page = await timed("firstPage", () =>
+      list.listReadingItems({ handle, user, scope: { folderPath: "bookmarks", includeDescendants: true, state: "all", dateBasis: "published" }, limit: 40 }),
+    );
+    expect(page.items).toHaveLength(40);
+    expect(page.nextCursor).not.toBeNull();
+    const second = await timed("secondPage", () =>
+      list.listReadingItems({ handle, user, scope: { folderPath: "bookmarks", includeDescendants: true, state: "all", dateBasis: "published" }, cursor: page.nextCursor, limit: 40 }),
+    );
+    expect(second.items).toHaveLength(40);
+    expect(second.items[0].id).not.toBe(page.items[0].id);
+    const unread = await timed("unreadPage", () =>
+      list.listReadingItems({ handle, user, scope: { folderPath, includeDescendants: false, state: "unread", dateBasis: "received" }, limit: 40 }),
+    );
+    expect(unread.items).toHaveLength(40);
+    const summary = await timed("summary", () => list.readingFolderSummary({ handle, user, folderPath: "bookmarks" }));
+    expect(summary.itemCount).toBeGreaterThanOrEqual(ITEMS);
+    const view = await timed("overview", () => overview.readingOverview({ handle, user }));
+    expect(view.totals.items).toBeGreaterThanOrEqual(ITEMS);
+    expect(view.latest.length).toBeLessThanOrEqual(8);
+    const grouped = await timed("summaries", () => summaries.readingSummaries({ handle, user, folderPath: "bookmarks" }));
+    expect(grouped.considered).toBeLessThanOrEqual(300);
+    const found = await timed("search", () => search.searchReading({ handle, user, query: "rollback", embedder: null, limit: 20 }));
+    expect(found.results).toHaveLength(20);
+    console.log(`[reading scale] ${ITEMS} items: ${JSON.stringify(timings)}`);
+    for (const [name, ms] of Object.entries(timings)) {
+      if (name === "seed") continue;
+      expect(ms, `${name} took ${ms} ms`).toBeLessThan(2000);
+    }
+  });
+});

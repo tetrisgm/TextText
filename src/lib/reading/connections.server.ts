@@ -6,7 +6,7 @@ import type { Folder } from "@/lib/content";
 import { createSubfolder, getFolders, workspaceIdForHandle } from "@/lib/store";
 import { endpointKey, redactedEndpoint } from "./feed-identity";
 import { readingFlags } from "./flags";
-import { enqueueReadingJob } from "./jobs.server";
+import { cancelOpenReadingJobs, enqueueReadingJob } from "./jobs.server";
 import { fetchFeedDocument } from "./fetch.server";
 import { parseFeed } from "./feed-parse";
 
@@ -429,7 +429,10 @@ export async function requestFeedRefresh(
   const row = await feedConnectionById(handle, id);
   if (!row) throw new FeedConnectionError("Feed not found", "not_found");
   if (row.state !== "active") return { queued: false };
-  // Coalesced: an open poll job for this connection absorbs the request.
+  // A person asking now outranks a scheduled retry that is waiting out its
+  // backoff: cancel whatever poll is open for this connection, then queue one
+  // that runs immediately. Two people asking at once still collapse to one.
+  await cancelOpenReadingJobs(row.blogId, `poll_feed:${row.id}:`);
   const queued = await enqueueReadingJob({
     blogId: row.blogId,
     kind: "poll_feed",
