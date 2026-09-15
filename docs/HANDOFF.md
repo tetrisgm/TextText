@@ -142,6 +142,11 @@ Three corrections from the hunt, recorded because each one cost time:
 
 ## The two tasks that need the owner, narrowed (2026-09-15)
 
+**The changelog is blocked on the connector, definitively.** This Mac holds a
+single workspace credential, scoped to one workspace, so there is no local path
+to another one at all: not the CLI, not the mount, not the app. Checked once so
+nobody checks again.
+
 **The changelog is blocked on the connector, and the CLI is not a way around
 it.** Checked rather than assumed: `texttext do get_workspace` from
 `/Applications/TextText.app/Contents/Helpers/texttext` reaches handle
