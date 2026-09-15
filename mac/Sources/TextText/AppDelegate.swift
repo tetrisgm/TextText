@@ -1973,6 +1973,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         registeredFileProviderDomain = domain
         fileProviderStatusMonitor.bind(to: domain)
         fileProviderReconcileIdentity = nil
+        // Where the mount lives is a cheap question, and everything that wants
+        // an answer (Open Folder, Spotlight, the health check) is blocked until
+        // it has one. It used to be answered only as a side effect of the
+        // materialization walk, so holding that walk until ten seconds past
+        // launch also withheld the mount's location for ten seconds, and the
+        // launch health report failed because the mount had not resolved yet.
+        resolveFileProviderRoot(domain: domain)
         if existingDomain, !handoff.workspaces.isEmpty,
            Self.needsFileProviderSchemaRepair(
             storedVersion: UserDefaults.standard.integer(
@@ -2391,6 +2398,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     /// End the campaign and make any pass still in flight unable to report:
     /// the epoch it was started under is gone, so its result is discarded
     /// instead of scheduling a retry for a tree that has been replaced.
+    /// Publish where the mount is, independent of whether anything is being
+    /// downloaded into it.
+    private func resolveFileProviderRoot(domain: NSFileProviderDomain) {
+        guard let manager = NSFileProviderManager(for: domain) else { return }
+        let epoch = fileProviderDomainEpoch
+        manager.getUserVisibleURL(for: .rootContainer) { [weak self] url, _ in
+            DispatchQueue.main.async {
+                guard let self, let url,
+                      self.fileProviderDomainEpoch == epoch else { return }
+                guard self.fileProviderUserVisibleURL != url else { return }
+                self.fileProviderUserVisibleURL = url
+                self.configureSpotlightIndexing(root: url)
+                self.refreshUI()
+            }
+        }
+    }
+
     private func invalidateMaterialization() {
         materializationEpoch += 1
         endMaterializationCampaign()
