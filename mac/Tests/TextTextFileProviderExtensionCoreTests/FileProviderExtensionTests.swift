@@ -1796,3 +1796,69 @@ final class FileProviderExtensionTests: XCTestCase {
         XCTAssertTrue(api.deleteCalls.isEmpty)
     }
 }
+
+/// Finder writes into the mount root whether or not the provider wants it to.
+/// Answering those creates with a generic read-only error left them in the
+/// pending set and retried forever: see docs/HANDOFF.md, 2026-09-15.
+final class UnsyncableCreateTests: XCTestCase {
+    private func ext(_ api: TextTextSyncAPI?) -> FileProviderExtension {
+        let domain = NSFileProviderDomain(
+            identifier: NSFileProviderDomainIdentifier(rawValue: "texttext"),
+            displayName: "TextText")
+        return FileProviderExtension(
+            domain: domain, apiFactory: { _ in api },
+            descriptorsProvider: {
+                [FileProviderWorkspace(
+                    name: "Demo", handle: "demo",
+                    origin: "https://example.test", token: "token")]
+            },
+            temporaryDirectoryProvider: nil,
+            copyLinkHandler: { _ in true },
+            openURLHandler: { _ in true })
+    }
+
+    func testAFinderMetadataFileAtTheRootIsExcludedFromSyncNotRetried() {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        let template = ReimportTemplateItem(
+            id: "ds-store", parent: TextTextItemIdentifier.rootContainer.rawValue,
+            filename: ".DS_Store", contentType: .data)
+        let exp = expectation(description: "excluded")
+        var err: Error?
+
+        _ = ext(api).createItem(
+            basedOn: template, fields: [], contents: nil,
+            options: [], request: NSFileProviderRequest()
+        ) { _, _, _, error in
+            err = error; exp.fulfill()
+        }
+        wait(for: [exp], timeout: 5)
+
+        let nsError = err as NSError?
+        XCTAssertEqual(nsError?.domain, NSFileProviderErrorDomain)
+        XCTAssertEqual(
+            nsError?.code, NSFileProviderError.excludedFromSync.rawValue,
+            "a create the provider will never accept has to end the conversation")
+        XCTAssertTrue(api.createFileCalls.isEmpty, "nothing reaches the server")
+    }
+
+    func testACreateInsideAWorkspaceContainerIsAlsoExcluded() {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        let template = ReimportTemplateItem(
+            id: "stray", parent: "workspace:demo",
+            filename: "stray.md", contentType: .data)
+        let exp = expectation(description: "excluded")
+        var err: Error?
+
+        _ = ext(api).createItem(
+            basedOn: template, fields: [], contents: nil,
+            options: [], request: NSFileProviderRequest()
+        ) { _, _, _, error in
+            err = error; exp.fulfill()
+        }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertEqual(
+            (err as NSError?)?.code, NSFileProviderError.excludedFromSync.rawValue,
+            "a workspace container holds only its system folders")
+    }
+}

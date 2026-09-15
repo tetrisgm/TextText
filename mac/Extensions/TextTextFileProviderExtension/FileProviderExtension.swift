@@ -733,8 +733,10 @@ public final class FileProviderExtension: NSObject,
     ) {
         guard case .folder(let handle, let parentId)? = TextTextItemIdentifier(itemTemplate.parentItemIdentifier) else {
             // New items must land inside a workspace folder (the root holds the
-            // workspace containers, and a workspace holds only its system folders).
-            done(nil, Self.readOnlyError()); return
+            // workspace containers, and a workspace holds only its system
+            // folders). Nothing here will ever be syncable, so say so once
+            // rather than leaving it pending forever.
+            done(nil, Self.excludedFromSyncError()); return
         }
         guard let api = apiFactory(handle) else {
             done(nil, Self.fpError(.notAuthenticated)); return
@@ -1806,5 +1808,22 @@ public final class FileProviderExtension: NSObject,
 
     private static func readOnlyError() -> NSError {
         NSError(domain: NSCocoaErrorDomain, code: NSFeatureUnsupportedError)
+    }
+
+    /// A create the provider is never going to accept, answered so the system
+    /// stops asking.
+    ///
+    /// A generic read-only error does not end the conversation: the item stays
+    /// in the provider's pending set and the create is retried indefinitely. A
+    /// .DS_Store that Finder wrote into the mount root on 2026-08-30 was still
+    /// pending on 2026-09-15, which is what kept the provider reporting itself
+    /// busy for every readiness probe and the finder.provider health check
+    /// warning on every launch, on two different networks.
+    ///
+    /// This error tells the system to exclude the item instead. It re-asks only
+    /// when the item's metadata changes, so the rule is re-evaluated without
+    /// being retried.
+    private static func excludedFromSyncError() -> NSError {
+        fpError(.excludedFromSync)
     }
 }
