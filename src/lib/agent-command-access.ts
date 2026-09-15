@@ -40,6 +40,8 @@ const LOCAL_READS: readonly WorkspaceToolName[] = [
   "read_item",
   "review_brief_sources",
   "search",
+  "list_reading_sources",
+  "search_reading",
   // Publishes a focus event so the person's app follows the agent to the item
   // it is working on. A read of the item, and a nudge to a window the owner is
   // already looking at.
@@ -74,10 +76,16 @@ const LOCAL_WRITES: readonly WorkspaceToolName[] = [
   "save_item_as_look",
   "set_folder_template",
   "set_item_template",
+  // Keeping an article is a retention note on an existing item, never a
+  // change to what it says or who sees it.
+  "keep_item",
 ];
 
 /** Refused here, each for a reason stated above. */
 export const LOCAL_AGENT_DENIED: readonly WorkspaceToolName[] = [
+  // Fetches a URL the model chose, the same outbound channel add_item_asset
+  // opens. Feeds are added from the app or the hosted surface.
+  "add_feed",
   "delete_item",
   // Batch deletion is confirmation-gated like the single one. It reaches this
   // machine through a staged proposal the owner approves in the app, not by

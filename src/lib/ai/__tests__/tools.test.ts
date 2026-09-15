@@ -51,6 +51,10 @@ const EXPECTED_NAMES = [
   "restore_folder",
   "set_access",
   "revoke_access",
+  "list_reading_sources",
+  "search_reading",
+  "keep_item",
+  "add_feed",
 ] as const;
 
 const DESTRUCTIVE_TOOLS = new Set([
@@ -88,6 +92,7 @@ const IDEMPOTENT_WRITES = new Set([
   "retire_document_template",
   "set_item_template",
   "empty_trash",
+  "keep_item",
 ]);
 
 const CONFIRMED_TOOLS = new Set([
@@ -104,7 +109,7 @@ const CONFIRMED_TOOLS = new Set([
   "retire_document_template",
 ]);
 
-const OPEN_WORLD_TOOLS = new Set(["recapture_bookmark", "add_item_asset"]);
+const OPEN_WORLD_TOOLS = new Set(["recapture_bookmark", "add_item_asset", "add_feed"]);
 
 describe("workspace tool contract", () => {
   it("defines the complete safe workspace surface once", () => {

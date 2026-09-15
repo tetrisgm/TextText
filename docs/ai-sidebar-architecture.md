@@ -39,9 +39,9 @@ and that runbook are the canonical entry point for future implementation work.
   but no permanent delete.
 
 <!-- generated:tool-contract -->
-## Shared 41-tool contract
+## Shared 45-tool contract
 
-The 12 read-scope tools are:
+The 14 read-scope tools are:
 
 1. `get_workspace`
 2. `list_folders`
@@ -55,8 +55,10 @@ The 12 read-scope tools are:
 10. `list_responses`
 11. `list_document_templates`
 12. `list_agent_changes`
+13. `list_reading_sources`
+14. `search_reading`
 
-The 29 sync-scope tools are:
+The 31 sync-scope tools are:
 
 1. `list_access`
 2. `create_item_type`
@@ -87,6 +89,8 @@ The 29 sync-scope tools are:
 27. `restore_folder`
 28. `set_access`
 29. `revoke_access`
+30. `keep_item`
+31. `add_feed`
 <!-- /generated:tool-contract -->
 
 `list_access` is read-only but requires `sync` because membership information is
@@ -94,6 +98,14 @@ workspace administration data. The contract has no permanent-delete tool.
 Folder and item deletion move content to Trash. Restores, publication changes,
 access changes, and destructive asset operations require explicit human
 confirmation immediately before execution.
+
+Reading tools follow the surface policies already in force. `list_reading_sources`
+and `search_reading` are reads everywhere. `keep_item` is a metadata write the
+signed-in CLI may make directly; the rail assistant stages it like every write.
+`add_feed` fetches a URL the model chose, so it is refused on the local CLI lane
+for the same reason as `add_item_asset`, runs directly on the hosted surface, and
+is staged in the rail. Reading lives outside the client pool, so the in-app
+adapter runs all four on the server (`docs/reading-architecture.md`).
 
 MCP live-item mutations accept an optional `if_match_hash`. External callers
 should always send the latest hash from `list_items`, `search`, or the previous

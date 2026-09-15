@@ -1128,6 +1128,47 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     destructive: true,
     idempotent: true,
   }),
+  list_reading_sources: defineTool("list_reading_sources", {
+    title: "List reading sources",
+    description:
+      "List the feeds this workspace follows: each one's folder path, publisher, state, health, and when it last delivered. Read-only.",
+    inputSchema: emptyInput(),
+  }),
+  search_reading: defineTool("search_reading", {
+    title: "Search reading",
+    description:
+      "Search imported articles and saved bookmarks the person can see, optionally within one folder and its subfolders. Combines word matching with meaning-based matching when the workspace has embeddings, and says which found each result. Every result carries the item id, folder, publisher, and original link to cite. Read-only.",
+    inputSchema: z
+      .object({
+        query: z.string().trim().min(1).max(500),
+        folder_path: folderPath.optional().describe("Limit to this folder and its subfolders."),
+        limit: z.number().int().min(1).max(50).optional().describe("Defaults to 20."),
+      })
+      .strict(),
+  }),
+  keep_item: defineTool("keep_item", {
+    title: "Keep item",
+    description:
+      "Keep one imported article past its source's cleanup window, or stop keeping it. Keeping never removes another reason the item is kept, such as a star or a comment.",
+    inputSchema: z.object({ id, keep: z.boolean().optional().describe("Defaults to true.") }).strict(),
+    mutability: "write",
+    idempotent: true,
+  }),
+  add_feed: defineTool("add_feed", {
+    title: "Add feed",
+    description:
+      "Follow a feed: a feed or site address becomes its own folder under a bookmarks folder and fills with articles over time. The address is fetched and verified before anything is created.",
+    inputSchema: z
+      .object({
+        url: z.string().trim().url().max(2048),
+        parent_path: folderPath.describe('The bookmarks folder to add it under, such as "bookmarks".'),
+        name: z.string().trim().min(1).max(120).optional().describe("Folder name; defaults to the feed's title."),
+        retention_days: z.number().int().min(0).max(3650).optional().describe("0 keeps articles until deleted; omitted uses the workspace default."),
+      })
+      .strict(),
+    mutability: "write",
+    openWorld: true,
+  }),
 } as const;
 
 export type WorkspaceToolName = keyof typeof WORKSPACE_TOOL_DEFINITIONS;

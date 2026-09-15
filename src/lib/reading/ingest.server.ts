@@ -19,6 +19,7 @@ import {
 } from "@/lib/store";
 import { cleanPlanTier, planLimits } from "@/lib/product-limits";
 import { slugify } from "@/lib/post-edit-draft";
+import { enqueueIndexItem } from "./embeddings.server";
 import { canonicalizeUrl, sha256, usableFeedDate } from "./feed-identity";
 import { fetchFeedDocument, type FeedFetchOutcome } from "./fetch.server";
 import { FeedParseError, parseFeed, type NormalizedEntry, type NormalizedFeed } from "./feed-parse";
@@ -237,6 +238,7 @@ async function importEntry(input: {
       capturedAt: now,
     })
     .onConflictDoNothing();
+  await enqueueIndexItem(connection.blogId, post.id);
   return "created";
 }
 
@@ -328,6 +330,7 @@ async function applySourceRevision(input: {
     .update(feedReceipts)
     .set({ lastSeenAt: now, contentHash: untouched ? contentHash : receipt.contentHash })
     .where(eq(feedReceipts.id, receipt.id));
+  if (untouched) await enqueueIndexItem(input.connection.blogId, post.id);
   return "updated";
 }
 

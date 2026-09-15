@@ -89,6 +89,29 @@ Nothing else is.
   account (`user_identities`); signing in with a second provider connects,
   never forks.
 
+## Pillar 6: reading from sources (amendment 2026-09-16)
+
+- A workspace follows feeds. Adding one creates an ordinary folder under a
+  bookmarks folder and fills it, progressively, with ordinary bookmark items:
+  same schema, same editor, same looks, same sharing rules (private by
+  default, never published from a bookmarks folder). A parent folder shows the
+  combined articles of every feed folder beneath it.
+- Imported text is source material. A person's own contributions are what the
+  workspace keeps: a star, a comment, or Keep protects an item in the same
+  write as the act, a link from a note or an edit protects it at cleanup time,
+  and undoing one protection never removes another. Unprotected articles move
+  to Trash after the source's retention window; nothing is hard-deleted and an
+  expired article is never re-imported.
+- Retained reading takes part in search and in the assistant with evidence:
+  word matching always, meaning-based matching when the workspace has an
+  OpenAI key, and every result names the item, its folder, the publisher, and
+  the original link. The word is "Summary", never "Story".
+- Ingestion, indexing, and cleanup are bounded jobs that run from requests
+  and the owner's tick; nothing installs a scheduler. The reading list is
+  paged from the server and never enters the whole-workspace client pool.
+- Not in scope: a browser, browsing recall, micro-apps, monitors, and
+  scheduled briefs.
+
 ## Platforms
 
 The Mac app and the web are equals. The Mac app is how the product feels

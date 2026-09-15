@@ -249,6 +249,22 @@ await sql`
     ON reading_jobs (run_after) WHERE status = 'queued'
 `;
 
+console.log("Creating reading_embeddings...");
+await sql`
+  CREATE TABLE IF NOT EXISTS reading_embeddings (
+    post_id uuid PRIMARY KEY REFERENCES posts(id) ON DELETE CASCADE,
+    blog_id uuid NOT NULL,
+    model text NOT NULL,
+    dims integer NOT NULL,
+    vector real[] NOT NULL,
+    text_hash text NOT NULL,
+    updated_at timestamp NOT NULL DEFAULT now()
+  )
+`;
+await sql`
+  CREATE INDEX IF NOT EXISTS reading_embeddings_blog_idx ON reading_embeddings (blog_id)
+`;
+
 const [summary] = await sql`
   SELECT
     (SELECT count(*)::int FROM posts WHERE origin = 'feed') AS feed_items,

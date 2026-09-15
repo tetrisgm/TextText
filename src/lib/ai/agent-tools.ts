@@ -1171,6 +1171,20 @@ export function createWorkspaceAgentTools(
         await refreshPoolAfterMutation();
         return { ok: true, ...result };
       }
+
+      // Reading lives outside the client pool by design (a workspace can
+      // follow thousands of articles), so these read and write on the server.
+      case "list_reading_sources":
+        return runRemote("list_reading_sources", args as WorkspaceToolInput<"list_reading_sources">);
+      case "search_reading":
+        return runRemote("search_reading", args as WorkspaceToolInput<"search_reading">);
+      case "keep_item":
+        return runRemote("keep_item", args as WorkspaceToolInput<"keep_item">);
+      case "add_feed": {
+        const result = await runRemote("add_feed", args as WorkspaceToolInput<"add_feed">);
+        await refreshPoolAfterMutation();
+        return result;
+      }
     }
   };
 

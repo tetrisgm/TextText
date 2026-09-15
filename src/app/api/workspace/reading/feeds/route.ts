@@ -2,6 +2,7 @@ import {
   addFeedConnection,
   listFeedConnections,
 } from "@/lib/reading/connections.server";
+import { runIndexItemJob } from "@/lib/reading/embeddings.server";
 import { runReadingJobs } from "@/lib/reading/jobs.server";
 import { runPollFeedJob } from "@/lib/reading/ingest.server";
 import {
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
     let imported = null;
     if (result.created) {
       imported = await runReadingJobs({
-        executors: { poll_feed: runPollFeedJob },
+        executors: { poll_feed: runPollFeedJob, index_item: runIndexItemJob },
         blogId: owner.blogId,
         limit: 1,
         owner: `add-feed:${owner.ownerId}`,

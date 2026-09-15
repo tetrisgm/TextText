@@ -3451,6 +3451,115 @@ async function executeWorkspaceCommand(
         return saveErrorResult(error);
       }
     }
+
+    case "list_reading_sources": {
+      const resolved = await requireWorkspace(extra);
+      if (isToolResult(resolved)) return resolved;
+      const { listFeedConnections } = await import("@/lib/reading/connections.server");
+      const folders = await getAccessibleFolders(resolved.blog.handle, accessUser(extra));
+      const visible = new Set(folders.map((folder) => folder.id));
+      const connections = await listFeedConnections(resolved.blog.handle);
+      return jsonResult({
+        sources: connections
+          .filter((connection) => visible.has(connection.folderId))
+          .map((connection) => ({
+            id: connection.id,
+            folder_path: connection.folderPath,
+            publisher: connection.publisherTitle,
+            endpoint: connection.endpoint,
+            state: connection.state,
+            health: connection.health,
+            health_detail: connection.healthDetail,
+            last_delivered_at: connection.lastSuccessAt,
+            retention_days: connection.retentionDays,
+          })),
+      });
+    }
+
+    case "search_reading": {
+      const input = args as WorkspaceToolInput<"search_reading">;
+      const resolved = await requireWorkspace(extra);
+      if (isToolResult(resolved)) return resolved;
+      const { searchReading } = await import("@/lib/reading/search.server");
+      const report = await searchReading({
+        handle: resolved.blog.handle,
+        user: accessUser(extra),
+        query: input.query,
+        scope: { folderPath: input.folder_path ?? null },
+        limit: input.limit,
+      });
+      return jsonResult({
+        query: report.query,
+        semantic: report.semantic,
+        unembedded: report.unembedded,
+        note: report.semantic
+          ? undefined
+          : "Word matching only: this workspace has no embeddings, so meaning-based matches were not searched.",
+        results: report.results.map((result) => ({
+          id: result.id,
+          title: result.title,
+          folder_path: result.folderPath,
+          origin: result.origin,
+          publisher: result.publisherName,
+          permalink: result.permalink,
+          published_at: result.publishedAt,
+          snippet: result.snippet,
+          match: result.match,
+        })),
+      });
+    }
+
+    case "keep_item": {
+      const input = args as WorkspaceToolInput<"keep_item">;
+      const resolved = await requireWorkspace(extra, true);
+      if (isToolResult(resolved)) return resolved;
+      const post = await getPostById(resolved.blog.handle, input.id);
+      if (!post?.id) return errorResult("Item not found.");
+      const { setKeep } = await import("@/lib/reading/retention.server");
+      const actor = mcpAuditEntry(extra, "reading.keep_item", "item", post.id);
+      const result = await setKeep({
+        handle: resolved.blog.handle,
+        postIds: [post.id],
+        keep: input.keep ?? true,
+        actor: { userId: actor.actorUserId ?? null, actorType: actor.actorType },
+      });
+      return jsonResult({ id: post.id, kept: input.keep ?? true, changed: result.changed === 1 });
+    }
+
+    case "add_feed": {
+      const input = args as WorkspaceToolInput<"add_feed">;
+      const resolved = await requireWorkspace(extra, true);
+      if (isToolResult(resolved)) return resolved;
+      const { addFeedConnection, FeedConnectionError } = await import("@/lib/reading/connections.server");
+      const actor = mcpAuditEntry(extra, "reading.add_feed", "folder", undefined, input.url);
+      try {
+        const added = await addFeedConnection({
+          handle: resolved.blog.handle,
+          parentFolderPath: input.parent_path,
+          endpointUrl: input.url,
+          name: input.name ?? null,
+          retentionDays: input.retention_days ?? null,
+          actor: { userId: actor.actorUserId ?? null, actorType: actor.actorType },
+        });
+        revalidateBlogPaths(resolved.blog);
+        return jsonResult({
+          created: added.created,
+          folder: folderSummary(added.folder),
+          source: {
+            id: added.connection.id,
+            publisher: added.connection.publisherTitle,
+            endpoint: added.connection.endpoint,
+            state: added.connection.state,
+          },
+          note: added.created
+            ? "The first articles arrive as the workspace polls; nothing is imported synchronously here."
+            : "This feed was already followed; that folder is returned.",
+        });
+      } catch (error) {
+        if (error instanceof FeedConnectionError) return errorResult(error.message);
+        return errorResult(error instanceof Error ? error.message : "Could not add the feed.");
+      }
+    }
   }
 }
 

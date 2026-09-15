@@ -1,5 +1,6 @@
 import { enqueueDueFeedPolls, runPollFeedJob } from "@/lib/reading/ingest.server";
 import { enqueueReadingJob, readingJobCounts, runReadingJobs } from "@/lib/reading/jobs.server";
+import { runIndexItemJob } from "@/lib/reading/embeddings.server";
 import { enqueueRetentionSweep, runRetentionJob } from "@/lib/reading/retention.server";
 import { handleFrom, json, jsonError, readJson, requireOwner } from "../_shared";
 
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
   const queued = await enqueueDueFeedPolls(owner.blogId, enqueueReadingJob);
   await enqueueRetentionSweep(owner.blogId);
   const ran = await runReadingJobs({
-    executors: { poll_feed: runPollFeedJob, retention_enforce: runRetentionJob },
+    executors: { poll_feed: runPollFeedJob, retention_enforce: runRetentionJob, index_item: runIndexItemJob },
     blogId: owner.blogId,
     limit,
     owner: `tick:${owner.ownerId}`,

@@ -13,6 +13,7 @@ import {
   pgSequence,
   pgTable,
   primaryKey,
+  real,
   text,
   timestamp,
   uuid,
@@ -1428,4 +1429,27 @@ export const readingJobs = pgTable(
       sql`${t.status} in ('queued', 'running', 'done', 'failed', 'dead', 'cancelled')`,
     ),
   ],
+);
+
+/**
+ * One embedding per item, for semantic retrieval over retained reading.
+ * Stored as a plain real[] with unit length, so cosine similarity is a dot
+ * product in SQL and no extension is required; a pgvector index is a later
+ * change to this one table, not to the retrieval contract. text_hash makes
+ * re-indexing idempotent: unchanged text is never sent to a provider twice.
+ */
+export const readingEmbeddings = pgTable(
+  "reading_embeddings",
+  {
+    postId: uuid("post_id")
+      .primaryKey()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    blogId: uuid("blog_id").notNull(),
+    model: text("model").notNull(),
+    dims: integer("dims").notNull(),
+    vector: real("vector").array().notNull(),
+    textHash: text("text_hash").notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [index("reading_embeddings_blog_idx").on(t.blogId)],
 );

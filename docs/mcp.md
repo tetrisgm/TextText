@@ -109,8 +109,8 @@ Manual tokens currently carry `sync` access and remain valid until revoked.
 <!-- generated:scope-table -->
 | Scope | Access |
 |-------|--------|
-| `read` | Call the 12 read-scope tools: `get_workspace`, `list_folders`, `list_items`, `read_item`, `review_brief_sources`, `open_item`, `search`, `list_trash`, `list_comments`, `list_responses`, `list_document_templates`, `list_agent_changes`. |
-| `sync` | Call all 41 tools, including the 29 that mutate content or read administration data. It also grants every `read` operation. |
+| `read` | Call the 14 read-scope tools: `get_workspace`, `list_folders`, `list_items`, `read_item`, `review_brief_sources`, `open_item`, `search`, `list_trash`, `list_comments`, `list_responses`, `list_document_templates`, `list_agent_changes`, `list_reading_sources`, `search_reading`. |
+| `sync` | Call all 45 tools, including the 31 that mutate content or read administration data. It also grants every `read` operation. |
 <!-- /generated:scope-table -->
 
 A mutation attempted with a `read` token returns `403 insufficient_scope` and
@@ -140,7 +140,7 @@ or workspace selector that could cross that boundary.
   cover and asset references use the same audited command surface.
 
 <!-- generated:tool-table -->
-## Tools (41)
+## Tools (45)
 
 | Tool | Scope | Effect |
 |------|-------|--------|
@@ -185,6 +185,10 @@ or workspace selector that could cross that boundary.
 | `restore_folder` | `sync` | Restore one folder subtree from Trash. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
 | `set_access` | `sync` | Grant or change one person's role by email: member or guest on a workspace; editor, commenter, or viewer on a folder or item. Item and workspace invitations report email delivery status. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
 | `revoke_access` | `sync` | Revoke one person's access to the workspace, a folder, or an item. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
+| `list_reading_sources` | `read` or `sync` | List the feeds this workspace follows: each one's folder path, publisher, state, health, and when it last delivered. Read-only. |
+| `search_reading` | `read` or `sync` | Search imported articles and saved bookmarks the person can see, optionally within one folder and its subfolders. Combines word matching with meaning-based matching when the workspace has embeddings, and says which found each result. Every result carries the item id, folder, publisher, and original link to cite. Read-only. |
+| `keep_item` | `sync` | Keep one imported article past its source's cleanup window, or stop keeping it. Keeping never removes another reason the item is kept, such as a star or a comment. |
+| `add_feed` | `sync` | Follow a feed: a feed or site address becomes its own folder under a bookmarks folder and fills with articles over time. The address is fetched and verified before anything is created. |
 <!-- /generated:tool-table -->
 
 ## Source preconditions for generated field edits
