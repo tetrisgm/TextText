@@ -172,10 +172,19 @@ describe.skipIf(!enabled)(`reading at scale (${ITEMS} imported items)`, () => {
     expect(grouped.considered).toBeLessThanOrEqual(300);
     const found = await timed("search", () => search.searchReading({ handle, user, query: "rollback", embedder: null, limit: 20 }));
     expect(found.results).toHaveLength(20);
+    // The Mac File Provider enumerates a folder through the sync manifest,
+    // which lists every direct child. Imported items are ordinary posts to
+    // it, so a large feed folder is exactly this call.
+    const manifestPosts = await timed("syncManifestPosts", () =>
+      store.getAccessibleFolderPostFiles(handle, folderPath, user, { exact: true }),
+    );
+    expect(manifestPosts.length).toBeGreaterThanOrEqual(ITEMS);
     console.log(`[reading scale] ${ITEMS} items: ${JSON.stringify(timings)}`);
     for (const [name, ms] of Object.entries(timings)) {
-      if (name === "seed") continue;
+      if (name === "seed" || name === "syncManifestPosts") continue;
       expect(ms, `${name} took ${ms} ms`).toBeLessThan(2000);
     }
+    // Not a budget the plan sets; recorded so the native cost is a number.
+    expect(timings.syncManifestPosts, `sync manifest took ${timings.syncManifestPosts} ms`).toBeLessThan(10_000);
   });
 });
