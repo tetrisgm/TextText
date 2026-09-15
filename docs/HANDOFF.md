@@ -153,14 +153,32 @@ linked on this Mac, so the local CLI cannot see
 session. Authorize it in claude.ai connector settings, or run `/mcp` from an
 interactive terminal, and the entry for 1052 to 1072 can be written in one pass.
 
-**The native checks cannot be done with synthetic input, by anyone.** This is
-mostly not a matter of permission. One correction to an earlier draft of this
-note: `screencapture -C` DOES include the pointer, and Screen Recording is
-granted on this Mac, so check 1 below is technically reachable by warping the
-pointer onto the divider and capturing. It was not done because it means
-bringing TextText to the front and taking the pointer while the owner is
-working in another app, which is not something to do unasked. Offer it; do not
-assume it. The rest stand: synthetic scroll events
+**The native checks cannot be done with synthetic input, by anyone.** The
+cursor one was attempted properly on 2026-09-15 and the attempt is worth
+recording, because the rig works and the conclusion does not.
+
+`screencapture -C` does include the pointer and Screen Recording is granted
+here, and a pointer can be warped with `CGWarpMouseCursorPosition`. Measuring
+the glyph's bounding box separates cursors cleanly: the arrow is 62 by 103
+device pixels, the I-beam 32 by 66. A sweep of twenty positions across the
+rail boundary, 1504 to 1561 in logical points, returned the arrow every time,
+which looks like a missing `ew-resize`.
+
+It is not a finding. A warped pointer does not deliver mouse-move events, so
+WebKit never runs its cursor or hover logic. The proof is that the resizer
+carries `title="Resize assistant sidebar"` and four seconds resting on the
+divider raised no tooltip at all. Posting real `mouseMoved` CGEvents needs
+Accessibility permission for the calling process, which is a system permission
+grant, so this still needs either that grant or a person. Do not report a
+missing resize cursor on the strength of a warp: this repo has a documented
+history of false cursor fixes.
+
+Two things to keep. The rig is reusable and cheap. And the CSS is fine:
+`.resizer` in `AssistantSidebar.module.css` does set `cursor: ew-resize`, on a
+0.625rem handle at `inset: 0 auto 0 -5px`, so an earlier note here that no
+cursor CSS existed was a grep that missed the `assistant/` subdirectory.
+
+The rest stand: synthetic scroll events
 carry no momentum, so trackpad deceleration cannot be exercised. There is no
 pinch gesture available to drive the Mac app. Synthetic typing bypasses IME
 composition entirely, which is the thing under test. And the project contract
