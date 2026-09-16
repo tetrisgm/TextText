@@ -1,5 +1,11 @@
 {
   "git": {
     "deploymentEnabled": false
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/workspace/reading/cron",
+      "schedule": "*/15 * * * *"
+    }
+  ]
 }

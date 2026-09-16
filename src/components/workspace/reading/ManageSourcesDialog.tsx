@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { refreshWorkspacePool } from "@/lib/pool/store";
-import { fetchFeedConnections, importOpml, manageFeed, opmlExportUrl, type FeedConnectionView } from "@/lib/reading/client";
+import { fetchDigestSetting, fetchFeedConnections, importOpml, manageFeed, opmlExportUrl, readingExportUrl, sendDigestNow, setDigestHour, type FeedConnectionView } from "@/lib/reading/client";
 import styles from "./Reading.module.css";
 
 /**
@@ -57,6 +57,20 @@ export function ManageSourcesDialog({
   const [importReport, setImportReport] = useState<string | null>(null);
   const [detaching, setDetaching] = useState<FeedConnectionView | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const [digest, setDigest] = useState<{ hour: number | null; sentOn: string | null } | null>(null);
+  const [digestNotice, setDigestNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (folderPath !== "") return;
+    let cancelled = false;
+    void fetchDigestSetting(handle)
+      .then((setting) => {
+        if (!cancelled) setDigest(setting);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [folderPath, handle]);
   const [draft, setDraft] = useState<{ name: string; retention: string; muted: string }>({ name: "", retention: "", muted: "" });
 
   const beginEdit = (connection: FeedConnectionView) => {
@@ -319,6 +333,62 @@ export function ManageSourcesDialog({
             </div>
           )}
         </div>
+        {folderPath === "" && (
+          <div className={styles.panelBody} style={{ paddingTop: 0 }}>
+            <div className={styles.settings}>
+              <label className={styles.field}>
+                Daily digest email (UTC hour)
+                <select
+                  value={digest?.hour === null || digest === null ? "" : String(digest.hour)}
+                  onChange={(event) => {
+                    const value = event.target.value === "" ? null : Number(event.target.value);
+                    void setDigestHour(handle, value)
+                      .then(setDigest)
+                      .catch((caught: unknown) => setError(caught instanceof Error ? caught.message : "Could not save the digest hour"));
+                  }}
+                >
+                  <option value="">Off</option>
+                  {Array.from({ length: 24 }, (_, hour) => (
+                    <option key={hour} value={hour}>
+                      {String(hour).padStart(2, "0")}:00
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className={styles.field}>
+                Alerts and what arrived in the last day, sent to the owner&apos;s email.
+                <div className={styles.controls}>
+                  <button
+                    type="button"
+                    className={styles.button}
+                    disabled={busy === "digest"}
+                    onClick={() => {
+                      setBusy("digest");
+                      setDigestNotice(null);
+                      void sendDigestNow(handle)
+                        .then((report) =>
+                          setDigestNotice(
+                            report.sent
+                              ? `Sent ${report.articles} articles and ${report.alerts} alerts to ${report.to}.`
+                              : report.reason === "nothing_new"
+                                ? "Nothing new in the last day."
+                                : report.reason === "mailer_unavailable"
+                                  ? "Email is not configured on this deployment."
+                                  : "The owner account has no email address.",
+                          ),
+                        )
+                        .catch((caught: unknown) => setDigestNotice(caught instanceof Error ? caught.message : "Could not send"))
+                        .finally(() => setBusy(null));
+                    }}
+                  >
+                    {busy === "digest" ? "Sending…" : "Send a digest now"}
+                  </button>
+                  {digestNotice && <span className={styles.note}>{digestNotice}</span>}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         <footer className={styles.panelFooter}>
           <input
             ref={fileRef}
@@ -335,6 +405,12 @@ export function ManageSourcesDialog({
           </button>
           <a className={styles.button} href={opmlExportUrl(handle)} download>
             Export OPML
+          </a>
+          <a className={styles.button} href={readingExportUrl(handle, folderPath, "all", "json")} download title="Every article in scope, as JSON">
+            Export articles
+          </a>
+          <a className={styles.button} href={readingExportUrl(handle, folderPath, "kept", "csv")} download title="Starred, kept, and commented articles, as CSV">
+            Export kept (CSV)
           </a>
           <span className={styles.spacer} />
           <button type="button" className={styles.primary} onClick={onClose}>

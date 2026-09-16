@@ -313,6 +313,12 @@ await sql`
 `;
 await sql`CREATE INDEX IF NOT EXISTS reading_saved_searches_blog_idx ON reading_saved_searches (blog_id)`;
 
+console.log("Adding polling cadence, digest, and alert columns...");
+await sql`ALTER TABLE feed_connections ADD COLUMN IF NOT EXISTS poll_interval_minutes integer NOT NULL DEFAULT 30`;
+await sql`ALTER TABLE blogs ADD COLUMN IF NOT EXISTS reading_digest_hour integer`;
+await sql`ALTER TABLE blogs ADD COLUMN IF NOT EXISTS reading_digest_sent_on text`;
+await sql`ALTER TABLE reading_saved_searches ADD COLUMN IF NOT EXISTS notify boolean NOT NULL DEFAULT false`;
+
 const [summary] = await sql`
   SELECT
     (SELECT count(*)::int FROM posts WHERE origin = 'feed') AS feed_items,

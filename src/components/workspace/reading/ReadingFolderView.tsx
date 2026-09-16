@@ -13,6 +13,7 @@ import {
   fetchSavedSearches,
   saveSearch,
   searchReadingList,
+  setSavedSearchAlert,
   type SavedReadingSearch,
   fetchReadingSummaries,
   markReadingScopeRead,
@@ -164,6 +165,8 @@ export function ReadingFolderView({
   const [direction, setDirection] = useState<"newest" | "oldest">(initialPrefs.direction);
   const [readOnScroll, setReadOnScroll] = useState<boolean>(() => (typeof window === "undefined" ? false : loadReadOnScroll()));
   const [focusIndex, setFocusIndex] = useState<number>(-1);
+  // Taken once per mount: "days left" does not need to tick.
+  const [nowMs] = useState(() => Date.now());
   useEffect(() => {
     savePrefs(folder.path, { view, state, dateBasis, direction });
   }, [dateBasis, direction, folder.path, state, view]);
@@ -647,6 +650,18 @@ export function ReadingFolderView({
               {canEdit && (
                 <button
                   type="button"
+                  aria-pressed={entry.notify}
+                  title={entry.notify ? "Alert on: new matches are kept and lead the daily digest" : "Turn on an alert for new matches"}
+                  onClick={() => {
+                    void setSavedSearchAlert(handle, entry.id, !entry.notify).then(reloadSaved).catch(() => undefined);
+                  }}
+                >
+                  {entry.notify ? "Alert on" : "Alert"}
+                </button>
+              )}
+              {canEdit && (
+                <button
+                  type="button"
                   aria-label={`Remove saved search ${entry.name}`}
                   onClick={() => {
                     void deleteSavedSearchRequest(handle, entry.id).then(reloadSaved).catch(() => undefined);
@@ -779,7 +794,7 @@ export function ReadingFolderView({
                 {item.excerpt && <p className={styles.excerpt}>{item.excerpt}</p>}
                 <p className={styles.rowMeta}>
                   {item.origin === "feed" && <span>{AVAILABILITY_LABEL[item.availability]}</span>}
-                  {item.kept && (
+                  {item.kept ? (
                     <span className={styles.kept}>
                       {item.keptReasons.includes("starred")
                         ? "Starred"
@@ -787,7 +802,11 @@ export function ReadingFolderView({
                           ? "Saved by you"
                           : "Kept"}
                     </span>
-                  )}
+                  ) : item.origin === "feed" ? (
+                    <span title="Not kept: it leaves on the feed's schedule unless you star, keep, comment on, or link to it">
+                      {item.expiresAt ? `Passing through, ${Math.max(1, Math.ceil((new Date(item.expiresAt).getTime() - nowMs) / 86_400_000))} d left` : "Passing through"}
+                    </span>
+                  ) : null}
                 </p>
               </div>
               <div className={styles.side}>

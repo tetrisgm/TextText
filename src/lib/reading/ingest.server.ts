@@ -40,6 +40,20 @@ import type { ReadingJobRow } from "./jobs.server";
  */
 
 export const DEFAULT_POLL_INTERVAL_MS = 30 * 60 * 1000;
+const MIN_POLL_MINUTES = 10;
+const MAX_POLL_MINUTES = 24 * 60;
+
+/**
+ * Next cadence from what this check found: news halves the wait, a quiet
+ * check stretches it by half, within ten minutes and a day. A feed that
+ * posts hourly settles near fifteen minutes; one that posts weekly drifts to
+ * daily, and nothing is polled more often than it earns.
+ */
+export function nextPollIntervalMinutes(current: number, brought: "news" | "nothing"): number {
+  const base = Number.isFinite(current) && current > 0 ? current : 30;
+  const next = brought === "news" ? Math.floor(base / 2) : Math.ceil(base * 1.5);
+  return Math.max(MIN_POLL_MINUTES, Math.min(MAX_POLL_MINUTES, next));
+}
 const FAILURE_BACKOFF_MS = [5, 15, 60, 240, 720].map((minutes) => minutes * 60 * 1000);
 const NORMALIZATION_VERSION = 1;
 const MAX_ITEMS_PER_POLL = 200;
@@ -462,7 +476,8 @@ export async function pollFeedConnection(
         consecutiveFailures: 0,
         lastCheckedAt: now,
         lastSuccessAt: now,
-        nextCheckAt: new Date(now.getTime() + DEFAULT_POLL_INTERVAL_MS),
+        pollIntervalMinutes: nextPollIntervalMinutes(connection.pollIntervalMinutes, "nothing"),
+        nextCheckAt: new Date(now.getTime() + nextPollIntervalMinutes(connection.pollIntervalMinutes, "nothing") * 60_000),
         updatedAt: now,
       })
       .where(eq(feedConnections.id, connection.id));
@@ -593,7 +608,8 @@ export async function pollFeedConnection(
       lastCheckedAt: now,
       lastSuccessAt: now,
       lastImportAt: report.created > 0 || firstImport ? now : connection.lastImportAt,
-      nextCheckAt: new Date(now.getTime() + DEFAULT_POLL_INTERVAL_MS),
+      pollIntervalMinutes: nextPollIntervalMinutes(connection.pollIntervalMinutes, report.created > 0 ? "news" : "nothing"),
+      nextCheckAt: new Date(now.getTime() + nextPollIntervalMinutes(connection.pollIntervalMinutes, report.created > 0 ? "news" : "nothing") * 60_000),
       updatedAt: now,
     })
     .where(eq(feedConnections.id, connection.id));
@@ -669,6 +685,22 @@ export async function enqueueDueFeedPolls(
 }
 
 /** Item ids under a set of source folders, for tests and previews. */
+/** Every workspace with a check due; the cron's work list. */
+export async function blogsWithDueFeeds(now = new Date(), limit = 200): Promise<string[]> {
+  const rows = await requireDb()
+    .selectDistinct({ blogId: feedConnections.blogId })
+    .from(feedConnections)
+    .where(
+      and(
+        eq(feedConnections.state, "active"),
+        sql`${feedConnections.deletedAt} is null`,
+        sql`(${feedConnections.nextCheckAt} is null or ${feedConnections.nextCheckAt} <= ${now})`,
+      ),
+    )
+    .limit(limit);
+  return rows.map((row) => row.blogId);
+}
+
 export async function feedItemIdsInFolders(blogId: string, folderIds: string[]): Promise<string[]> {
   if (folderIds.length === 0) return [];
   const rows = await requireDb()

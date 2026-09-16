@@ -21,6 +21,7 @@ export type SavedReadingSearch = {
   /** Up to the bound; "50+" past it. */
   unread: number | null;
   unreadCapped: boolean;
+  notify: boolean;
 };
 
 const COUNT_BOUND = 50;
@@ -61,7 +62,7 @@ export async function listSavedSearches(input: {
         unread = report.results.length;
         unreadCapped = report.results.length >= COUNT_BOUND;
       }
-      return { id: row.id, name: row.name, query: row.query, folderPath: row.folderPath, unread, unreadCapped };
+      return { id: row.id, name: row.name, query: row.query, folderPath: row.folderPath, unread, unreadCapped, notify: row.notify };
     }),
   );
 }
@@ -89,7 +90,7 @@ export async function createSavedSearch(input: {
     targetId: input.folderPath || null,
     inputSummary: query,
   });
-  return { id: row.id, name: row.name, query: row.query, folderPath: row.folderPath, unread: null, unreadCapped: false };
+  return { id: row.id, name: row.name, query: row.query, folderPath: row.folderPath, unread: null, unreadCapped: false, notify: row.notify };
 }
 
 export async function deleteSavedSearch(input: { handle: string; id: string; actor: { userId: string | null; actorType: AuditActorType } }): Promise<boolean> {
@@ -107,4 +108,31 @@ export async function deleteSavedSearch(input: { handle: string; id: string; act
     inputSummary: deleted[0].query,
   });
   return true;
+}
+
+/** Turn an alert on or off for a saved search. */
+export async function setSavedSearchNotify(input: { handle: string; id: string; notify: boolean; actor: { userId: string | null; actorType: AuditActorType } }): Promise<boolean> {
+  const blogId = await workspaceIdForHandle(input.handle);
+  const updated = await requireDb()
+    .update(readingSavedSearches)
+    .set({ notify: input.notify })
+    .where(and(eq(readingSavedSearches.blogId, blogId), eq(readingSavedSearches.id, input.id)))
+    .returning({ id: readingSavedSearches.id, query: readingSavedSearches.query });
+  if (updated.length === 0) return false;
+  await recordAction({
+    actorUserId: input.actor.userId,
+    actorType: input.actor.actorType,
+    actionName: input.notify ? "reading.enable_alert" : "reading.disable_alert",
+    targetType: "folder",
+    inputSummary: updated[0].query,
+  });
+  return true;
+}
+
+/** Saved searches with alerts on, for the digest and the keep-on-match pass. */
+export async function alertingSearches(blogId: string): Promise<Array<{ id: string; name: string; query: string; folderPath: string }>> {
+  return requireDb()
+    .select({ id: readingSavedSearches.id, name: readingSavedSearches.name, query: readingSavedSearches.query, folderPath: readingSavedSearches.folderPath })
+    .from(readingSavedSearches)
+    .where(and(eq(readingSavedSearches.blogId, blogId), eq(readingSavedSearches.notify, true)));
 }

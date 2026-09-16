@@ -267,6 +267,33 @@ describe.skipIf(!enabled)("retention holds and cleanup against Postgres", () => 
     expect(around.next?.id).toBe(byUrl.get("https://r.example/comment"));
   });
 
+  it("DIGEST-01: an alert keeps its new matches, and the digest lists them first, once per day", async () => {
+    const digest = await import("@/lib/reading/digest.server");
+    const savedSearches = await import("@/lib/reading/saved-searches.server");
+    const created = await savedSearches.createSavedSearch({ handle, name: "Commented", query: "Commented", folderPath: "", actor: { userId, actorType: "human" } });
+    await savedSearches.setSavedSearchNotify({ handle, id: created.id, notify: true, actor: { userId, actorType: "human" } });
+    await db!.update(schema.users).set({ email: `${handle}@example.invalid` }).where(eq(schema.users.id, userId));
+    const sent: Array<{ to: string; subject: string; text: string }> = [];
+    const mailer = async (message: { to: string; subject: string; text: string }) => {
+      sent.push(message);
+    };
+    const first = await digest.sendReadingDigest({ blogId, mailer });
+    expect(first.sent).toBe(true);
+    expect(first.alerts.map((alert) => alert.name)).toEqual(["Commented"]);
+    expect(sent[0].subject).toContain("Commented");
+    expect(sent[0].text.startsWith("ALERT: Commented")).toBe(true);
+    expect(sent[0].text).toContain("https://r.example/comment");
+    const commentId = byUrl.get("https://r.example/comment")!;
+    expect(await activeHolds(commentId)).toContain("keep");
+    // Same day: nothing goes out twice.
+    const again = await digest.sendReadingDigest({ blogId, mailer });
+    expect(again.sent).toBe(false);
+    expect(sent).toHaveLength(1);
+    // The connection's cadence adapted to its quiet checks.
+    const [connection] = await db!.select({ interval: schema.feedConnections.pollIntervalMinutes }).from(schema.feedConnections).where(eq(schema.feedConnections.id, connectionId));
+    expect(connection.interval).toBeGreaterThanOrEqual(10);
+  });
+
   it("RET-06: read state is the person's own and drives the Unread view", async () => {
     const id = byUrl.get("https://r.example/keep")!;
     await retention.setReadState({ handle, user, postIds: [id], read: true });

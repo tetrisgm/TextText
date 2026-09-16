@@ -227,6 +227,9 @@ export const blogs = pgTable(
     readingRetentionDays: integer("reading_retention_days")
       .notNull()
       .default(90),
+    /** UTC hour for the daily reading digest email; null means no digest. */
+    readingDigestHour: integer("reading_digest_hour"),
+    readingDigestSentOn: text("reading_digest_sent_on"),
     ownerId: uuid("owner_id").references(() => users.id),
     /**
      * Durable workspace change high-water-mark: the largest `revision` ever
@@ -1180,6 +1183,8 @@ export const feedConnections = pgTable(
     retentionDays: integer("retention_days"),
     /** Entries whose title or text contains one of these never become items. */
     mutedKeywords: text("muted_keywords").array().notNull().default(sql`'{}'::text[]`),
+    /** Adaptive cadence: halves when a check brings news, stretches when it does not, within bounds. */
+    pollIntervalMinutes: integer("poll_interval_minutes").notNull().default(30),
     /** Where the publisher now serves the feed, when a check followed a permanent redirect; offered, never adopted silently. */
     movedToUrl: text("moved_to_url"),
     initialImportLimit: integer("initial_import_limit").notNull().default(100),
@@ -1490,6 +1495,8 @@ export const readingSavedSearches = pgTable(
     query: text("query").notNull(),
     /** "" means every reading folder the person can see. */
     folderPath: text("folder_path").notNull().default(""),
+    /** Alert: new matches are kept and lead the daily digest. */
+    notify: boolean("notify").notNull().default(false),
     createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },

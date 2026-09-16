@@ -212,3 +212,24 @@ export function saveSearch(handle: string, input: { name: string; query: string;
 export function deleteSavedSearchRequest(handle: string, id: string): Promise<{ ok: boolean }> {
   return request(`/api/workspace/reading/searches?handle=${encodeURIComponent(handle)}`, { method: "DELETE", body: JSON.stringify({ handle, id }) });
 }
+
+export function setSavedSearchAlert(handle: string, id: string, notify: boolean): Promise<{ ok: boolean }> {
+  return request(`/api/workspace/reading/searches?handle=${encodeURIComponent(handle)}`, { method: "PATCH", body: JSON.stringify({ handle, id, notify }) });
+}
+
+export function fetchDigestSetting(handle: string): Promise<{ hour: number | null; sentOn: string | null }> {
+  return request(`/api/workspace/reading/digest?handle=${encodeURIComponent(handle)}`);
+}
+
+export function setDigestHour(handle: string, hour: number | null): Promise<{ hour: number | null; sentOn: string | null }> {
+  return request(`/api/workspace/reading/digest?handle=${encodeURIComponent(handle)}`, { method: "POST", body: JSON.stringify({ handle, hour }) });
+}
+
+export function sendDigestNow(handle: string): Promise<{ sent: boolean; reason: string | null; articles: number; alerts: number; to: string | null }> {
+  return request(`/api/workspace/reading/digest?handle=${encodeURIComponent(handle)}`, { method: "POST", body: JSON.stringify({ handle, action: "send" }) });
+}
+
+export function readingExportUrl(handle: string, folderPath: string, state: "all" | "kept", format: "json" | "csv"): string {
+  const params = new URLSearchParams({ handle, folder: folderPath, state, format });
+  return `/api/workspace/reading/export?${params.toString()}`;
+}

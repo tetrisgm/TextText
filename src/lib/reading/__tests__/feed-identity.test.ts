@@ -82,3 +82,16 @@ describe("usableFeedDate (ING-06 dates)", () => {
     expect(usableFeedDate("1980-01-01T00:00:00Z", now)).toBeNull();
   });
 });
+
+import { nextPollIntervalMinutes } from "../ingest.server";
+
+describe("adaptive poll cadence", () => {
+  it("halves on news, stretches by half when quiet, and stays within ten minutes and a day", () => {
+    expect(nextPollIntervalMinutes(30, "news")).toBe(15);
+    expect(nextPollIntervalMinutes(15, "news")).toBe(10);
+    expect(nextPollIntervalMinutes(10, "news")).toBe(10);
+    expect(nextPollIntervalMinutes(30, "nothing")).toBe(45);
+    expect(nextPollIntervalMinutes(1200, "nothing")).toBe(1440);
+    expect(nextPollIntervalMinutes(0, "nothing")).toBe(45);
+  });
+});
