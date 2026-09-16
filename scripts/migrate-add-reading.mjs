@@ -265,6 +265,20 @@ await sql`
   CREATE INDEX IF NOT EXISTS reading_embeddings_blog_idx ON reading_embeddings (blog_id)
 `;
 
+console.log("Creating reading_summary_texts...");
+await sql`
+  CREATE TABLE IF NOT EXISTS reading_summary_texts (
+    cluster_key text PRIMARY KEY,
+    blog_id uuid NOT NULL,
+    model text NOT NULL,
+    text text NOT NULL,
+    created_at timestamp NOT NULL DEFAULT now()
+  )
+`;
+await sql`
+  CREATE INDEX IF NOT EXISTS reading_summary_texts_blog_idx ON reading_summary_texts (blog_id)
+`;
+
 const [summary] = await sql`
   SELECT
     (SELECT count(*)::int FROM posts WHERE origin = 'feed') AS feed_items,

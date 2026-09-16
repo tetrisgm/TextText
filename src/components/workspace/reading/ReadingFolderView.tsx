@@ -105,7 +105,7 @@ export function ReadingFolderView({
 }) {
   void blog;
   const [view, setView] = useState<"articles" | "summaries">("articles");
-  const [summaries, setSummaries] = useState<{ summaries: ReadingSummary[]; singles: number; considered: number } | null>(null);
+  const [summaries, setSummaries] = useState<{ summaries: Array<ReadingSummary & { text: string | null }>; singles: number; considered: number } | null>(null);
   const [state, setState] = useState<ReadingScope["state"]>("all");
   const [dateBasis, setDateBasis] = useState<ReadingScope["dateBasis"]>("published");
   const scope = useMemo<ReadingScope>(
@@ -405,6 +405,7 @@ export function ReadingFolderView({
                     <span>{summary.sources.join(" · ")}</span>
                   </p>
                   <h3 className={styles.headline}>{summary.headline}</h3>
+                  {summary.text && <p className={styles.summaryText}>{summary.text}</p>}
                 </div>
                 <div className={styles.side}>
                   <time dateTime={summary.latestAt}>{relativeTime(summary.latestAt)}</time>

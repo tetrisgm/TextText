@@ -133,7 +133,10 @@ export function fetchReadingOverview(handle: string): Promise<ReadingOverview> {
   return request(`/api/workspace/reading/overview?handle=${encodeURIComponent(handle)}`);
 }
 
-export function fetchReadingSummaries(handle: string, folderPath: string): Promise<{ summaries: ReadingSummary[]; considered: number; singles: number }> {
+export function fetchReadingSummaries(
+  handle: string,
+  folderPath: string,
+): Promise<{ summaries: Array<ReadingSummary & { text: string | null }>; considered: number; singles: number }> {
   const params = new URLSearchParams({ handle, folder: folderPath });
   return request(`/api/workspace/reading/summaries?${params.toString()}`);
 }

@@ -9,6 +9,7 @@
 // the first kilobytes of well-formed head sections, and a malformed page
 // just yields fewer fields, never an error the user sees.
 
+import { Agent } from "undici";
 import dns from "node:dns/promises";
 import net from "node:net";
 import { saveBookmarkCapture } from "@/lib/store";
@@ -81,19 +82,56 @@ export function isFetchableBookmarkUrl(url: URL): boolean {
  * be public. This closes hostname tricks (*.localhost, nip.io, sslip.io) and
  * names that resolve to internal IPs, because they all ultimately resolve to
  * a private address. Re-run on every redirect hop. A resolution failure or
- * any private address rejects. (A determined DNS-rebinding TOCTOU between
- * this lookup and the socket connect is a known residual; acceptable for a
- * low-value note-taking fetch on serverless with no interesting loopback.)
+ * any private address rejects. fetchPublicResource then connects only to the
+ * addresses this check saw, closing the lookup-then-connect gap.
  */
 export async function hostResolvesToPublicOnly(host: string): Promise<boolean> {
-  if (net.isIP(host)) return !isPrivateIP(host);
+  return (await resolvePublicAddresses(host)) !== null;
+}
+
+/**
+ * The addresses a host resolves to, when every one of them is public; null
+ * otherwise. Callers that go on to connect pin the socket to these exact
+ * addresses, so the name cannot be answered differently between the check
+ * and the connection.
+ */
+export async function resolvePublicAddresses(
+  host: string,
+): Promise<Array<{ address: string; family: 4 | 6 }> | null> {
+  if (net.isIP(host)) {
+    const family = net.isIPv6(host) ? 6 : 4;
+    return isPrivateIP(host) ? null : [{ address: host, family }];
+  }
   try {
     const results = await dns.lookup(host, { all: true });
-    if (results.length === 0) return false;
-    return results.every((r) => !isPrivateIP(r.address));
+    if (results.length === 0) return null;
+    if (!results.every((r) => !isPrivateIP(r.address))) return null;
+    return results.map((r) => ({ address: r.address, family: r.family === 6 ? 6 : 4 }));
   } catch {
-    return false;
+    return null;
   }
+}
+
+/**
+ * A dispatcher whose connections go only to the addresses already checked.
+ * TLS still verifies the hostname (servername stays the name), so this
+ * changes where the socket goes, not what it trusts.
+ */
+function pinnedDispatcher(addresses: Array<{ address: string; family: 4 | 6 }>): Agent {
+  return new Agent({
+    connect: {
+      lookup(_hostname, options, callback) {
+        // net asks for all addresses on newer Node (happy eyeballs); either
+        // shape gets only what the check saw.
+        if (options && typeof options === "object" && "all" in options && options.all) {
+          (callback as unknown as (error: null, addresses: Array<{ address: string; family: 4 | 6 }>) => void)(null, addresses);
+          return;
+        }
+        const first = addresses[0]!;
+        callback(null, first.address, first.family);
+      },
+    },
+  });
 }
 
 /** Fetch one public HTTP resource while validating every redirect hop. Returning
@@ -114,8 +152,18 @@ export async function fetchPublicResource(
 
   for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop += 1) {
     if (!isFetchableBookmarkUrl(current)) return null;
-    if (!(await hostResolvesToPublicOnly(current.hostname))) return null;
-    const response = await fetch(current, { ...init, redirect: "manual" });
+    const addresses = await resolvePublicAddresses(current.hostname);
+    if (!addresses) return null;
+    // Pin the connection to the checked addresses: a name that answers with
+    // a public address for the check and a private one for the connect
+    // (DNS rebinding) reaches nothing, because the connect never asks again.
+    const dispatcher = pinnedDispatcher(addresses);
+    let response: Response;
+    try {
+      response = await fetch(current, { ...init, redirect: "manual", dispatcher } as RequestInit);
+    } finally {
+      void dispatcher.close().catch(() => undefined);
+    }
     // Only real redirects are followed. 304 Not Modified is a 3xx with no
     // Location, and a conditional request (feeds send If-None-Match) must
     // get it back rather than be treated as a broken redirect.

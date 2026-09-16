@@ -80,6 +80,7 @@
     "react-dom": "19.2.4",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "undici": "^6.28.0",
     "y-protocols": "^1.0.7",
     "yjs": "^13.6.31",
     "zod": "^4.4.3"

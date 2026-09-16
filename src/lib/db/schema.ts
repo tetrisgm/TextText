@@ -1453,3 +1453,20 @@ export const readingEmbeddings = pgTable(
   },
   (t) => [index("reading_embeddings_blog_idx").on(t.blogId)],
 );
+
+/**
+ * Model-written text for a Summary, cached by the set of member articles it
+ * was written from. Regenerated only when the membership changes, so a
+ * folder view never pays for a model call twice for the same grouping.
+ */
+export const readingSummaryTexts = pgTable(
+  "reading_summary_texts",
+  {
+    clusterKey: text("cluster_key").primaryKey(),
+    blogId: uuid("blog_id").notNull(),
+    model: text("model").notNull(),
+    text: text("text").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [index("reading_summary_texts_blog_idx").on(t.blogId)],
+);

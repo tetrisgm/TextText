@@ -81,6 +81,17 @@ describe("isPrivateIPv4 (the DNS-resolution gate's classifier)", () => {
 });
 
 describe("fetchPublicResource", () => {
+  it("pins every connection to the addresses it checked", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit & { dispatcher?: unknown }) => {
+      expect(init?.dispatcher).toBeDefined();
+      return new Response("ok", { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const response = await fetchPublicResource("https://example.com/");
+    expect(response?.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("returns a 304 Not Modified instead of treating it as a broken redirect", async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 304 }));
     vi.stubGlobal("fetch", fetchMock);
