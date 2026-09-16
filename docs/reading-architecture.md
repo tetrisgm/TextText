@@ -107,14 +107,31 @@ and parsing; it never fabricates a candidate.
   `reading_digest_sent_on` is the once-per-day key.
 - **Export**: `GET /api/workspace/reading/export` (JSON or CSV, all or kept,
   bounded to 5,000 rows).
+- **Feedbin-compatible API**: base URL `https://texttext.app/api/feedbin/v2`,
+  HTTP Basic with any username and a TextText API token as the password.
+  authentication, subscriptions (list, create, rename, delete as detach),
+  feeds/:id, feeds/:id/entries, taggings, tags, entries (ids, page/per_page,
+  read=false, starred=true, since, mode=extended, Link: rel=next),
+  entries/:id, unread_entries and starred_entries (GET ids, POST mark, DELETE
+  unmark, and the POST .../delete forms). Ids are 52-bit numbers from the
+  UUID's first thirteen hex digits, JSON-safe, shared with the Reader
+  surface, which pads them to sixteen hex digits in its tag form.
+- **Bookmark migration**: `GET/POST /api/workspace/reading/bookmarks-html`
+  reads and writes Netscape bookmark files (browsers, Pinboard, Instapaper,
+  Raindrop): imports become saved bookmarks with their date, tags, folders,
+  and description, skipped by canonical address when already saved; export
+  writes only the person's own bookmarks. Manage sources accepts either an
+  OPML or a bookmark file in one Import button.
 - **Reader-compatible API**: base URL `https://texttext.app/api/reader`.
   Password is a TextText API token (email ignored). Implements ClientLogin,
   token, user-info, subscription/list, tag/list, unread-count,
   stream/items/ids (with continuation), stream/items/contents,
   stream/contents/*, edit-tag (read, starred), mark-all-as-read,
   subscription/edit and quickadd (subscribe, unsubscribe as detach keeping
-  everything, rename). Item ids are the first sixteen hex digits of the UUID.
-  Labels are the feed folders' parent folders.
+  everything, rename). Labels are the feed folders' parent folders. Both
+  surfaces were exercised over HTTP against the dev server with a real token
+  (ClientLogin, user-info, subscription/list, stream/items/ids; Basic auth,
+  subscriptions, paged entries with Link, unread_entries).
 
 ## Residual risks, recorded
 

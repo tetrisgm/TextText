@@ -233,3 +233,12 @@ export function readingExportUrl(handle: string, folderPath: string, state: "all
   const params = new URLSearchParams({ handle, folder: folderPath, state, format });
   return `/api/workspace/reading/export?${params.toString()}`;
 }
+
+export function importBookmarksHtmlRequest(input: { handle: string; parentFolderPath: string; html: string }): Promise<{ added: number; skipped: number; failed: number; folders: number; considered: number }> {
+  return request(`/api/workspace/reading/bookmarks-html?handle=${encodeURIComponent(input.handle)}`, { method: "POST", body: JSON.stringify(input) });
+}
+
+export function bookmarksHtmlExportUrl(handle: string, folderPath: string): string {
+  const params = new URLSearchParams({ handle, folder: folderPath });
+  return `/api/workspace/reading/bookmarks-html?${params.toString()}`;
+}

@@ -262,6 +262,66 @@ describe.skipIf(!enabled)("reading search against Postgres", () => {
     await tokens.revokeApiToken(userId, (await tokens.listApiTokens(userId))[0].id);
   });
 
+  it("FEEDBIN-01: a Feedbin client can list subscriptions, page entries, and edit unread and starred state", async () => {
+    const feedbin = await import("@/lib/reading/feedbin-api.server");
+    const tokens = await import("@/lib/api-tokens");
+    const { raw } = await tokens.createApiToken(userId, "NetNewsWire", { scopes: "sync" });
+    const basic = Buffer.from(`anyone@example.invalid:${raw}`).toString("base64");
+    const identity = (await feedbin.feedbinIdentity(new Request("https://x.test/", { headers: { authorization: `Basic ${basic}` } })))!;
+    expect(identity.handle).toBe(handle);
+    const subs = await feedbin.subscriptions(identity);
+    expect(subs.length).toBe(2);
+    expect(Number.isSafeInteger(subs[0].id)).toBe(true);
+    const page = await feedbin.entries(identity, new URLSearchParams({ per_page: "2", page: "1" }));
+    expect(page.items).toHaveLength(2);
+    expect(page.nextPage).toBe(2);
+    expect(Number.isSafeInteger(page.items[0].id)).toBe(true);
+    expect(page.items[0].content).toContain("<p>");
+    const second = await feedbin.entries(identity, new URLSearchParams({ per_page: "2", page: "2" }));
+    expect(second.items.map((entry) => entry.id)).not.toContain(page.items[0].id);
+    const one = page.items[0].id;
+    const byIds = await feedbin.entries(identity, new URLSearchParams({ ids: String(one) }));
+    expect(byIds.items.map((entry) => entry.id)).toEqual([one]);
+    // An earlier test marked everything read; mark one unread, see it, read it again.
+    expect(await feedbin.setUnread(identity, [one], true)).toEqual([one]);
+    expect(await feedbin.unreadEntryIds(identity)).toContain(one);
+    expect(await feedbin.setUnread(identity, [one], false)).toEqual([one]);
+    expect(await feedbin.unreadEntryIds(identity)).not.toContain(one);
+    expect(await feedbin.setStarred(identity, [one], true)).toEqual([one]);
+    expect(await feedbin.starredEntryIds(identity)).toContain(one);
+    const feedEntries = await feedbin.entries(identity, new URLSearchParams({ starred: "true" }), subs[0].feed_id);
+    expect(feedEntries.items.every((entry) => entry.feed_id === subs[0].feed_id)).toBe(true);
+    expect(await feedbin.renameSubscription(identity, subs[0].id, "Renamed feed")).toBe(true);
+    expect((await feedbin.subscriptions(identity)).some((entry) => entry.title === "Renamed feed" || entry.id === subs[0].id)).toBe(true);
+    await tokens.revokeApiToken(userId, (await tokens.listApiTokens(userId)).find((token) => token.name === "NetNewsWire")!.id);
+  });
+
+  it("BOOKMARKS-01: a browser export becomes saved bookmarks in their folders, once", async () => {
+    const migration = await import("@/lib/reading/bookmarks-migration.server");
+    const html = `<!DOCTYPE NETSCAPE-Bookmark-file-1><DL><p>
+      <DT><H3>Tools</H3><DL><p>
+        <DT><A HREF="https://tools.example/a" ADD_DATE="1700000000" TAGS="cli">Tool A</A>
+        <DD>The first tool.
+      </DL><p>
+      <DT><A HREF="https://plain.example/b">Plain B</A>
+    </DL><p>`;
+    const first = await migration.importBookmarksHtml({ handle, html, parentFolderPath: "bookmarks", actor: { userId, actorType: "human" } });
+    expect(first).toMatchObject({ added: 2, skipped: 0, failed: 0, folders: 1 });
+    const again = await migration.importBookmarksHtml({ handle, html, parentFolderPath: "bookmarks", actor: { userId, actorType: "human" } });
+    expect(again).toMatchObject({ added: 0, skipped: 2 });
+    const folders = await store.getFolders(handle);
+    const tools = folders.find((folder) => folder.path === "bookmarks/tools");
+    expect(tools?.mode).toBe("bookmarks");
+    const saved = await db!.select({ title: schema.posts.title, origin: schema.posts.origin, tags: schema.posts.tags, createdAt: schema.posts.createdAt }).from(schema.posts).where(and(eq(schema.posts.blogId, blogId), eq(schema.posts.folderId, tools!.id)));
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ title: "Tool A", origin: "manual", tags: ["cli"] });
+    expect(saved[0].createdAt.toISOString()).toBe("2023-11-14T22:13:20.000Z");
+    const exported = await migration.exportBookmarksHtml({ handle, folderPath: "bookmarks" });
+    expect(exported).toContain('HREF="https://tools.example/a"');
+    expect(exported).toContain('TAGS="cli"');
+    expect(exported).not.toContain("https://s.example/1");
+  });
+
   it("SEARCH-04: a folder scope narrows results and an unreadable scope returns nothing", async () => {
     const scoped = await search.searchReading({ handle, user, query: "gpu", scope: { folderPath: sourceFolderPath }, embedder: null });
     expect(scoped.results.map((result) => result.title)).toEqual(["Building a GPU driver"]);

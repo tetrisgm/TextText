@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { refreshWorkspacePool } from "@/lib/pool/store";
-import { fetchDigestSetting, fetchFeedConnections, importOpml, manageFeed, opmlExportUrl, readingExportUrl, sendDigestNow, setDigestHour, type FeedConnectionView } from "@/lib/reading/client";
+import { bookmarksHtmlExportUrl, fetchDigestSetting, fetchFeedConnections, importBookmarksHtmlRequest, importOpml, manageFeed, opmlExportUrl, readingExportUrl, sendDigestNow, setDigestHour, type FeedConnectionView } from "@/lib/reading/client";
 import styles from "./Reading.module.css";
 
 /**
@@ -168,6 +168,23 @@ export function ManageSourcesDialog({
       setImportReport(null);
       try {
         const text = await file.text();
+        // A browser or Pinboard export is a bookmark file, not a feed list.
+        if (/NETSCAPE-Bookmark-file|<DL>|<DT><A\s/i.test(text) && !/<opml/i.test(text)) {
+          const result = await importBookmarksHtmlRequest({ handle, parentFolderPath: folderPath || "bookmarks", html: text });
+          setImportReport(
+            [
+              `${result.added} bookmarks added`,
+              result.folders ? `${result.folders} folders created` : null,
+              result.skipped ? `${result.skipped} already saved` : null,
+              result.failed ? `${result.failed} failed` : null,
+            ]
+              .filter(Boolean)
+              .join(" · "),
+          );
+          await refreshWorkspacePool(handle, blogId).catch(() => undefined);
+          onChanged();
+          return;
+        }
         const report = await importOpml({ handle, parentFolderPath: folderPath, opml: text });
         const added = report.results.filter((entry) => entry.status === "added").length;
         const existing = report.results.filter((entry) => entry.status === "existing").length;
@@ -393,7 +410,7 @@ export function ManageSourcesDialog({
           <input
             ref={fileRef}
             type="file"
-            accept=".opml,.xml,text/xml,text/x-opml"
+            accept=".opml,.xml,.html,.htm,text/xml,text/x-opml,text/html"
             hidden
             onChange={(event) => {
               const file = event.target.files?.[0];
@@ -401,8 +418,11 @@ export function ManageSourcesDialog({
             }}
           />
           <button type="button" className={styles.button} disabled={busy === "import"} onClick={() => fileRef.current?.click()}>
-            {busy === "import" ? "Importing…" : "Import OPML"}
+            {busy === "import" ? "Importing…" : "Import OPML or bookmarks"}
           </button>
+          <a className={styles.button} href={bookmarksHtmlExportUrl(handle, folderPath)} download title="Your saved bookmarks as a browser bookmark file">
+            Export bookmarks
+          </a>
           <a className={styles.button} href={opmlExportUrl(handle)} download>
             Export OPML
           </a>

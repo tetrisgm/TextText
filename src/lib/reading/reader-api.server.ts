@@ -42,17 +42,34 @@ function requireDb() {
   return db;
 }
 
+/**
+ * Fifty-two bits of the UUID (thirteen hex digits): small enough to survive
+ * JSON numbers in Feedbin-style clients (IEEE doubles carry 53 bits) and
+ * signed 64-bit parsing in Reader-style ones. The Reader tag form pads to
+ * sixteen hex digits as the protocol expects.
+ */
+const ID_HEX_DIGITS = 13;
+
+export function readerItemShortHex(uuid: string): string {
+  return uuid.replace(/-/g, "").slice(0, ID_HEX_DIGITS).toLowerCase();
+}
+
 export function readerItemHex(uuid: string): string {
-  return uuid.replace(/-/g, "").slice(0, 16).toLowerCase();
+  return readerItemShortHex(uuid).padStart(16, "0");
 }
 
 export function readerItemLongId(uuid: string): string {
-  return BigInt(`0x${readerItemHex(uuid)}`).toString();
+  return BigInt(`0x${readerItemShortHex(uuid)}`).toString();
 }
 
-/** Accepts the long decimal form, the hex form, or the full tag URI; returns a UUID prefix for lookup. */
-export function readerItemPrefix(id: string): string | null {
-  let hex = id.trim();
+/** The same id as a JSON-safe number, for the Feedbin surface. */
+export function readerItemNumber(uuid: string): number {
+  return Number(BigInt(`0x${readerItemShortHex(uuid)}`));
+}
+
+/** Accepts the decimal form, the hex form, or the full tag URI; returns a UUID prefix for lookup. */
+export function readerItemPrefix(id: string | number): string | null {
+  let hex = String(id).trim();
   const tag = hex.match(/reader\/item\/([0-9a-fA-F]{16})$/);
   if (tag) hex = tag[1];
   else if (/^\d+$/.test(hex)) {
@@ -62,9 +79,9 @@ export function readerItemPrefix(id: string): string | null {
       return null;
     }
   }
-  if (!/^[0-9a-fA-F]{16}$/.test(hex)) return null;
-  const lower = hex.toLowerCase();
-  return `${lower.slice(0, 8)}-${lower.slice(8, 12)}-${lower.slice(12, 16)}`;
+  if (!/^[0-9a-fA-F]{13,16}$/.test(hex)) return null;
+  const short = hex.toLowerCase().padStart(16, "0").slice(16 - ID_HEX_DIGITS);
+  return `${short.slice(0, 8)}-${short.slice(8, 12)}-${short.slice(12, 13)}`;
 }
 
 export async function readerIdentity(request: Request, tokenFromBody?: string | null): Promise<ReaderIdentity | null> {
@@ -169,13 +186,19 @@ export async function streamItemIds(identity: ReaderIdentity, params: URLSearchP
     limit: Math.min(100, limit),
   });
   const olderThan = params.get("ot") ? Number(params.get("ot")) * 1000 : null;
+  const connections = await listFeedConnections(identity.handle);
+  const streamByFolder = new Map(connections.map((connection) => [connection.folderId, `feed/${connection.id}`]));
   const refs = page.items
     .filter((item) => olderThan === null || new Date(item.publishedAt ?? item.receivedAt).getTime() >= olderThan)
-    .map((item) => ({ id: readerItemLongId(item.id), directStreamIds: [`feed/${item.folderId}`], timestampUsec: String(new Date(item.publishedAt ?? item.receivedAt).getTime() * 1000) }));
+    .map((item) => ({
+      id: readerItemLongId(item.id),
+      directStreamIds: [streamByFolder.get(item.folderId) ?? `feed/${item.folderId}`],
+      timestampUsec: String(new Date(item.publishedAt ?? item.receivedAt).getTime() * 1000),
+    }));
   return { itemRefs: refs, ...(page.nextCursor ? { continuation: page.nextCursor } : {}) };
 }
 
-async function itemsByIds(identity: ReaderIdentity, ids: string[]): Promise<ReadingListItem[]> {
+export async function itemsByIds(identity: ReaderIdentity, ids: Array<string | number>): Promise<ReadingListItem[]> {
   const prefixes = ids.map(readerItemPrefix).filter((prefix): prefix is string => Boolean(prefix)).slice(0, 200);
   if (prefixes.length === 0) return [];
   const rows = await requireDb()

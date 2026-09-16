@@ -16,6 +16,16 @@
 
 For other topics, search `HANDOFF-history-2026-09-13.md` by term, then read that section. Implementation and checks are in their source files and git history; this entry point does not duplicate them.
 
+## Client sync finished, Feedbin API, bookmark migration (2026-09-16)
+
+After 0.185: item ids moved to 52 bits (JSON-safe and signed-64-safe) for
+both client surfaces; a Feedbin v2 API at `/api/feedbin/v2` (Basic auth,
+password = API token); Netscape bookmark import and export in Manage
+sources; home no longer shows a phantom scrollbar; the Cmd hint layer no
+longer sticks. Both client APIs exercised over HTTP on the dev server with a
+minted token. Not yet shipped. Real-client runs (Reeder, NetNewsWire) still
+to be observed by the owner.
+
 ## Reading, the Feedbin and Reader gaps (2026-09-16)
 
 Landed on `main` after the 0.183 release, not yet shipped: keyboard triage

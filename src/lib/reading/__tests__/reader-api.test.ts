@@ -3,13 +3,15 @@ import { markdownToHtmlLite, readerItemHex, readerItemLongId, readerItemPrefix }
 
 describe("Reader API item ids", () => {
   const uuid = "508c2cd7-1175-4419-9f4f-494b99bd9d15";
-  it("maps a UUID to a 64-bit id and back to a lookup prefix in every accepted form", () => {
-    expect(readerItemHex(uuid)).toBe("508c2cd711754419");
+  it("maps a UUID to a 52-bit id and back to a lookup prefix in every accepted form", () => {
+    expect(readerItemHex(uuid)).toBe("000508c2cd711754");
     const long = readerItemLongId(uuid);
-    expect(long).toBe(BigInt("0x508c2cd711754419").toString());
-    expect(readerItemPrefix(long)).toBe("508c2cd7-1175-4419");
-    expect(readerItemPrefix("tag:google.com,2005:reader/item/508c2cd711754419")).toBe("508c2cd7-1175-4419");
-    expect(readerItemPrefix("508c2cd711754419")).toBe("508c2cd7-1175-4419");
+    expect(long).toBe(BigInt("0x508c2cd711754").toString());
+    expect(Number(long)).toBeLessThanOrEqual(Number.MAX_SAFE_INTEGER);
+    expect(readerItemPrefix(long)).toBe("508c2cd7-1175-4");
+    expect(readerItemPrefix(Number(long))).toBe("508c2cd7-1175-4");
+    expect(readerItemPrefix("tag:google.com,2005:reader/item/000508c2cd711754")).toBe("508c2cd7-1175-4");
+    expect(readerItemPrefix("000508c2cd711754")).toBe("508c2cd7-1175-4");
     expect(readerItemPrefix("nonsense")).toBeNull();
   });
 
