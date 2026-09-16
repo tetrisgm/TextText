@@ -52,6 +52,7 @@ migrations=(
   scripts/migrate-add-template-authoring-source.mjs
   scripts/migrate-backfill-word-count.mjs
   scripts/migrate-add-agent-changes.mjs
+  scripts/migrate-add-reading.mjs
 )
 
 missing=()
