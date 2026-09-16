@@ -240,6 +240,22 @@ if [ "$SKIP_WEB_DEPLOY" != "1" ]; then
   npx tsx "$ROOT/scripts/work-unit.ts" run \
     --name web.production_deploy --timeout 1800 --no-reuse -- \
     npx vercel deploy --prebuilt --prod --yes
+
+  # texttext.app is an alias that a CLI deploy does not move on its own
+  # (0.183 deployed as "ready" while the domain kept serving 0.182 and the
+  # old build's appcast proxy answered 502). Promote the newest production
+  # deployment explicitly; "already the current production deployment" is
+  # success.
+  echo ">> promote to texttext.app"
+  NEWEST="$(npx vercel ls --prod 2>/dev/null | grep -Eo 'https://write-[a-z0-9-]+\.vercel\.app' | head -1)"
+  [ -n "$NEWEST" ] || { echo "Could not read the newest production deployment." >&2; exit 1; }
+  PROMOTE_OUTPUT="$(npx vercel promote "$NEWEST" --yes 2>&1)" || {
+    case "$PROMOTE_OUTPUT" in
+      *"already the current production deployment"*) echo "   (the deploy had already taken the domain)" ;;
+      *) echo "$PROMOTE_OUTPUT" >&2; echo "!! could not promote $NEWEST" >&2; exit 1 ;;
+    esac
+  }
+  echo "   promoted $NEWEST"
 fi
 
 ORIGIN="${TEXTTEXT_PRODUCT_ORIGIN:-}"

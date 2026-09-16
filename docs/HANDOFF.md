@@ -38,8 +38,20 @@ hnrss.org, the folder listed 20 articles, the parent Bookmarks folder showed
 the same items, an article opened as an ordinary bookmark, Save brief wrote
 and opened a note, Manage sources listed the feed with its health.
 
-Migration: `scripts/migrate-add-reading.mjs` is on the `db:push` chain and
-was run locally. Production has not been migrated (not authorized).
+Shipped as 0.183 (build 1073) on 2026-09-16 via `release/ship.sh`: production
+migrated (`migrate-add-reading` created the reading tables, including
+`reading_embeddings` and `reading_summary_texts`), Mac app notarized and on
+the appcast, web promoted to texttext.app and verified
+(`scripts/verify-deployment.ts` pass; `/api/app/version` 0.183/1073).
+`TEXTTEXT_READING_CLEANUP=1` is set in Vercel production and `.env.local`.
+Changelog entry written to the TextText Changelog textpack. Later commits
+after the review: DNS pinning in the fetch gate (`1f706c75`), model-written
+Summary text, batched embeddings.
+
+Release lesson: the CLI deploy left texttext.app on 0.182 for ~10 minutes
+while the old build's appcast proxy answered 502; `ship.sh` now promotes the
+newest production deployment explicitly (the step `deploy-web.sh` already
+had).
 
 Open:
 
