@@ -1,7 +1,9 @@
 import {
+  adoptMovedFeed,
   detachFeedConnection,
   requestFeedRefresh,
   setFeedConnectionState,
+  updateFeedConnectionSettings,
 } from "@/lib/reading/connections.server";
 import { runReadingJobs } from "@/lib/reading/jobs.server";
 import { runPollFeedJob } from "@/lib/reading/ingest.server";
@@ -46,6 +48,27 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           : null;
         return json({ ...queued, ran });
       }
+      case "settings": {
+        const settings = (body.settings ?? {}) as Record<string, unknown>;
+        return json({
+          connection: await updateFeedConnectionSettings(
+            handle,
+            id,
+            {
+              ...(typeof settings.name === "string" ? { name: settings.name } : {}),
+              ...(settings.retentionDays === null || typeof settings.retentionDays === "number"
+                ? { retentionDays: settings.retentionDays as number | null }
+                : {}),
+              ...(Array.isArray(settings.mutedKeywords)
+                ? { mutedKeywords: settings.mutedKeywords.filter((word: unknown): word is string => typeof word === "string") }
+                : {}),
+            },
+            actor,
+          ),
+        });
+      }
+      case "adopt_move":
+        return json({ connection: await adoptMovedFeed(handle, id, actor) });
       default:
         return jsonError("Unknown action", 400);
     }

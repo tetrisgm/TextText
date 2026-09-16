@@ -149,6 +149,52 @@ describe.skipIf(!enabled)("reading search against Postgres", () => {
     expect(both.results[0]).toMatchObject({ title: "Rollback explained", match: "both" });
   });
 
+  it("DEDUPE-01: the same article from a second feed shows once, and only the copy received first", async () => {
+    const list = await import("@/lib/reading/list.server");
+    const second = await connections.addFeedConnection({
+      handle,
+      parentFolderPath: "bookmarks",
+      endpointUrl: "https://feeds.example/search/mirror.xml",
+      actor: { userId, actorType: "human" },
+      fetcher: async (url) =>
+        url === "https://feeds.example/search/mirror.xml"
+          ? {
+              kind: "ok",
+              status: 200,
+              body: rss([entry("m-1", "Rollback explained (mirror)", "https://s.example/1?utm_source=mirror", "<p>Mirror copy.</p>", "Mon, 01 Sep 2026 11:00:00 GMT")]),
+              contentType: "application/rss+xml",
+              etag: null,
+              lastModified: null,
+              finalUrl: url,
+            }
+          : { kind: "error", reason: "not_found", status: 404, detail: "gone" },
+    });
+    await ingest.pollFeedConnection(second.connection.id, {
+      initial: true,
+      fetcher: async (url) => ({
+        kind: "ok",
+        status: 200,
+        body: rss([entry("m-1", "Rollback explained (mirror)", "https://s.example/1?utm_source=mirror", "<p>Mirror copy.</p>", "Mon, 01 Sep 2026 11:00:00 GMT")]),
+        contentType: "application/rss+xml",
+        etag: null,
+        lastModified: null,
+        finalUrl: url,
+      }),
+    });
+    const all = await db!.select({ id: schema.posts.id }).from(schema.posts).where(and(eq(schema.posts.blogId, blogId), eq(schema.posts.origin, "feed")));
+    expect(all).toHaveLength(5);
+    const page = await list.listReadingItems({ handle, user, scope: { folderPath: "bookmarks", includeDescendants: true, state: "all", dateBasis: "published" } });
+    expect(page.items).toHaveLength(4);
+    expect(page.items.map((item) => item.title)).toContain("Rollback explained");
+    expect(page.items.map((item) => item.title)).not.toContain("Rollback explained (mirror)");
+    const summary = await list.readingFolderSummary({ handle, user, folderPath: "bookmarks" });
+    expect(summary.itemCount).toBe(4);
+    // Decided at import for the workspace: the later copy is hidden everywhere,
+    // including its own folder; the article is read where it first arrived.
+    const mirror = await list.listReadingItems({ handle, user, scope: { folderPath: second.folder.path, includeDescendants: true, state: "all", dateBasis: "published" } });
+    expect(mirror.items).toEqual([]);
+  });
+
   it("SEARCH-04: a folder scope narrows results and an unreadable scope returns nothing", async () => {
     const scoped = await search.searchReading({ handle, user, query: "gpu", scope: { folderPath: sourceFolderPath }, embedder: null });
     expect(scoped.results.map((result) => result.title)).toEqual(["Building a GPU driver"]);

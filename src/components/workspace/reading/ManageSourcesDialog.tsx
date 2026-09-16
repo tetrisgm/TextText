@@ -56,6 +56,41 @@ export function ManageSourcesDialog({
   const [error, setError] = useState<string | null>(null);
   const [importReport, setImportReport] = useState<string | null>(null);
   const [detaching, setDetaching] = useState<FeedConnectionView | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState<{ name: string; retention: string; muted: string }>({ name: "", retention: "", muted: "" });
+
+  const beginEdit = (connection: FeedConnectionView) => {
+    setEditing(connection.id);
+    setDraft({
+      name: connection.folderName,
+      retention: connection.retentionDays === null ? "" : String(connection.retentionDays),
+      muted: connection.mutedKeywords.join(", "),
+    });
+  };
+  const saveEdit = async (connection: FeedConnectionView) => {
+    setBusy(connection.id);
+    setError(null);
+    try {
+      await manageFeed({
+        handle,
+        id: connection.id,
+        action: "settings",
+        settings: {
+          name: draft.name.trim() && draft.name.trim() !== connection.folderName ? draft.name.trim() : undefined,
+          retentionDays: draft.retention.trim() === "" ? null : Number(draft.retention),
+          mutedKeywords: draft.muted.split(/[,\n]/).map((word) => word.trim()).filter(Boolean),
+        },
+      });
+      setEditing(null);
+      await refreshWorkspacePool(handle, blogId).catch(() => undefined);
+      await load();
+      onChanged();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not save settings");
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -64,7 +99,7 @@ export function ManageSourcesDialog({
         result.connections.filter(
           (connection) =>
             connection.state !== "detached" &&
-            (connection.folderPath === folderPath || connection.folderPath.startsWith(`${folderPath}/`)),
+            (folderPath === "" || connection.folderPath === folderPath || connection.folderPath.startsWith(`${folderPath}/`)),
         ),
       );
     } catch (caught) {
@@ -95,7 +130,7 @@ export function ManageSourcesDialog({
   }, [detaching, onClose]);
 
   const act = useCallback(
-    async (connection: FeedConnectionView, action: "pause" | "resume" | "refresh" | "detach", keepAllItems = false) => {
+    async (connection: FeedConnectionView, action: "pause" | "resume" | "refresh" | "detach" | "adopt_move", keepAllItems = false) => {
       setBusy(connection.id);
       setError(null);
       try {
@@ -156,7 +191,7 @@ export function ManageSourcesDialog({
       <section className={styles.panel} role="dialog" aria-modal="true" aria-labelledby={titleId} onMouseDown={(event) => event.stopPropagation()}>
         <header className={styles.panelHeader}>
           <div>
-            <h2 id={titleId}>Sources in {folderName}</h2>
+            <h2 id={titleId}>{folderPath === "" ? "All sources" : `Sources in ${folderName}`}</h2>
             <p>Pause a feed to stop checking it. Detach to keep the folder as an ordinary folder.</p>
           </div>
           <button type="button" className={styles.iconButton} aria-label="Close" onClick={onClose}>
@@ -203,7 +238,46 @@ export function ManageSourcesDialog({
                     <button type="button" className={styles.button} disabled={busy === connection.id} onClick={() => setDetaching(connection)}>
                       Detach
                     </button>
+                    <button type="button" className={styles.button} aria-expanded={editing === connection.id} onClick={() => (editing === connection.id ? setEditing(null) : beginEdit(connection))}>
+                      Settings
+                    </button>
                   </div>
+                  {connection.movedToUrl && (
+                    <div className={styles.confirm} role="status">
+                      <p>
+                        The publisher now serves this feed at <strong>{connection.movedToUrl}</strong>. Checks still follow the old address for now.
+                      </p>
+                      <div className={styles.controls}>
+                        <button type="button" className={styles.primary} disabled={busy === connection.id} onClick={() => void act(connection, "adopt_move")}>
+                          Use the new address
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {editing === connection.id && (
+                    <div className={styles.settings}>
+                      <label className={styles.field}>
+                        Folder name
+                        <input value={draft.name} maxLength={120} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} />
+                      </label>
+                      <label className={styles.field}>
+                        Keep articles for (days; blank = workspace default, 0 = until deleted)
+                        <input type="number" min={0} max={3650} value={draft.retention} onChange={(event) => setDraft((current) => ({ ...current, retention: event.target.value }))} />
+                      </label>
+                      <label className={styles.field}>
+                        Mute articles containing (comma separated)
+                        <input value={draft.muted} placeholder="sponsored, giveaway" onChange={(event) => setDraft((current) => ({ ...current, muted: event.target.value }))} />
+                      </label>
+                      <div className={styles.controls}>
+                        <button type="button" className={styles.button} onClick={() => setEditing(null)}>
+                          Cancel
+                        </button>
+                        <button type="button" className={styles.primary} disabled={busy === connection.id} onClick={() => void saveEdit(connection)}>
+                          Save settings
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>

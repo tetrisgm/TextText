@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { folders, posts, readingReadState } from "@/lib/db/schema";
+import { folders, posts, readingProvenance, readingReadState } from "@/lib/db/schema";
 import type { AccessUser } from "@/lib/permissions";
 import { createDraftInFolder, getAccessibleFolders } from "@/lib/store";
 import { slugify } from "@/lib/post-edit-draft";
@@ -50,7 +50,16 @@ export async function readingOverview(input: { handle: string; user: AccessUser 
     })
     .from(posts)
     .innerJoin(folders, eq(folders.id, posts.folderId))
-    .where(and(eq(posts.blogId, blogId), isNull(posts.deletedAt), eq(posts.origin, "feed"), inArray(posts.folderId, sourceFolderIds)))
+    .leftJoin(readingProvenance, eq(readingProvenance.postId, posts.id))
+    .where(
+      and(
+        eq(posts.blogId, blogId),
+        isNull(posts.deletedAt),
+        eq(posts.origin, "feed"),
+        inArray(posts.folderId, sourceFolderIds),
+        isNull(readingProvenance.duplicateOfPostId),
+      ),
+    )
     .groupBy(posts.folderId);
   const byFolder = new Map(perFolder.map((row) => [row.folderId, row]));
 

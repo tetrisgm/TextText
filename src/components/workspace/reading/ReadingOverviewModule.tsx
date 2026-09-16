@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { addPost, refreshWorkspacePool } from "@/lib/pool/store";
 import type { WorkspacePoolPost } from "@/lib/pool/types";
 import { fetchReadingOverview, saveReadingBrief, setReadingItemsRead, type ReadingListItem, type ReadingOverview } from "@/lib/reading/client";
+import { ManageSourcesDialog } from "./ManageSourcesDialog";
 import styles from "./Reading.module.css";
 
 /**
@@ -67,6 +68,10 @@ export function ReadingOverviewModule({
   const [notice, setNotice] = useState<string | null>(null);
   const pendingOpen = useRef<string | null>(null);
   const [openTick, setOpenTick] = useState(0);
+  const [managing, setManaging] = useState(false);
+  const reload = useCallback(() => {
+    void fetchReadingOverview(handle).then(setOverview).catch(() => undefined);
+  }, [handle]);
 
   useEffect(() => {
     let cancelled = false;
@@ -169,8 +174,23 @@ export function ReadingOverviewModule({
               {saving ? "Saving…" : "Save brief"}
             </button>
           )}
+          {canManage && (
+            <button type="button" className={styles.button} onClick={() => setManaging(true)}>
+              Manage sources
+            </button>
+          )}
         </div>
       </header>
+      {managing && (
+        <ManageSourcesDialog
+          handle={handle}
+          blogId={blogId}
+          folderPath=""
+          folderName="all folders"
+          onClose={() => setManaging(false)}
+          onChanged={reload}
+        />
+      )}
       {notice && <p className={styles.note} role="status">{notice}</p>}
       <ul className={styles.sourceChips} aria-label="Sources">
         {overview.sources.map((source) => (

@@ -67,6 +67,9 @@ export type ReadingListPage = {
 };
 
 const MAX_PAGE = 100;
+
+/** Later copies of the same canonical link are hidden; the first one shows. */
+const notDuplicateSql = () => isNull(readingProvenance.duplicateOfPostId);
 const DURABLE_HOLDS = DURABLE_HOLD_REASONS;
 
 function requireDb() {
@@ -188,6 +191,7 @@ export async function listReadingItems(input: {
         eq(posts.blogId, blogId),
         isNull(posts.deletedAt),
         inArray(posts.folderId, folderIds),
+        notDuplicateSql(),
         input.scope.state === "unread" ? isNull(readingReadState.readAt) : undefined,
         input.scope.state === "kept"
           ? or(
@@ -315,11 +319,13 @@ export async function readingFolderSummary(input: {
           : sql<number>`0`,
       })
       .from(posts)
+      .leftJoin(readingProvenance, eq(readingProvenance.postId, posts.id))
       .where(
         and(
           eq(posts.blogId, blogId),
           isNull(posts.deletedAt),
           inArray(posts.folderId, folderIds),
+          notDuplicateSql(),
         ),
       ),
   ]);

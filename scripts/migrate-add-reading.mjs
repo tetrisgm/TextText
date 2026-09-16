@@ -265,6 +265,26 @@ await sql`
   CREATE INDEX IF NOT EXISTS reading_embeddings_blog_idx ON reading_embeddings (blog_id)
 `;
 
+console.log("Adding feed_connections settings columns...");
+await sql`ALTER TABLE feed_connections ADD COLUMN IF NOT EXISTS muted_keywords text[] NOT NULL DEFAULT '{}'::text[]`;
+await sql`ALTER TABLE feed_connections ADD COLUMN IF NOT EXISTS moved_to_url text`;
+
+console.log("Adding reading_provenance.duplicate_of_post_id...");
+await sql`ALTER TABLE reading_provenance ADD COLUMN IF NOT EXISTS duplicate_of_post_id uuid`;
+await sql`CREATE INDEX IF NOT EXISTS reading_provenance_duplicate_idx ON reading_provenance (blog_id, duplicate_of_post_id)`;
+// Backfill: every later live feed copy of a canonical link points at the earliest one.
+await sql`
+  UPDATE reading_provenance rp
+  SET duplicate_of_post_id = first.id
+  FROM (
+    SELECT rp2.post_id, first_value(p.id) OVER (PARTITION BY rp2.blog_id, rp2.canonical_url ORDER BY p.created_at, p.id) AS id
+    FROM reading_provenance rp2
+    JOIN posts p ON p.id = rp2.post_id
+    WHERE rp2.canonical_url IS NOT NULL AND p.deleted_at IS NULL AND p.origin = 'feed'
+  ) first
+  WHERE first.post_id = rp.post_id AND first.id <> rp.post_id AND rp.duplicate_of_post_id IS NULL
+`;
+
 console.log("Creating reading_summary_texts...");
 await sql`
   CREATE TABLE IF NOT EXISTS reading_summary_texts (

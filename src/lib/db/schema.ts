@@ -1178,6 +1178,10 @@ export const feedConnections = pgTable(
     nextCheckAt: timestamp("next_check_at"),
     /** null inherits blogs.readingRetentionDays; 0 means until deleted */
     retentionDays: integer("retention_days"),
+    /** Entries whose title or text contains one of these never become items. */
+    mutedKeywords: text("muted_keywords").array().notNull().default(sql`'{}'::text[]`),
+    /** Where the publisher now serves the feed, when a check followed a permanent redirect; offered, never adopted silently. */
+    movedToUrl: text("moved_to_url"),
     initialImportLimit: integer("initial_import_limit").notNull().default(100),
     policyVersion: integer("policy_version").notNull().default(1),
     createdById: uuid("created_by_id").references(() => users.id, {
@@ -1283,6 +1287,8 @@ export const readingProvenance = pgTable(
     externalUrl: text("external_url"),
     /** Tracking parameters stripped; identity hint, not proof. */
     canonicalUrl: text("canonical_url"),
+    /** Set at import when an earlier live feed item in this workspace already carries the same canonical link; lists hide it. */
+    duplicateOfPostId: uuid("duplicate_of_post_id"),
     publishedAt: timestamp("published_at"),
     sourceUpdatedAt: timestamp("source_updated_at"),
     /** "full" | "excerpt" | "metadata": what the feed actually supplied. */
@@ -1298,6 +1304,7 @@ export const readingProvenance = pgTable(
   (t) => [
     index("reading_provenance_blog_published_idx").on(t.blogId, t.publishedAt),
     index("reading_provenance_canonical_idx").on(t.blogId, t.canonicalUrl),
+    index("reading_provenance_duplicate_idx").on(t.blogId, t.duplicateOfPostId),
     check(
       "reading_provenance_availability_valid",
       sql`${t.availability} in ('full', 'excerpt', 'metadata')`,

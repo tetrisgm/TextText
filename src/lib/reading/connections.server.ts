@@ -3,7 +3,7 @@ import { db } from "@/lib/db/client";
 import { blogs, feedConnections, feedReceipts, folders, posts, readingProvenance } from "@/lib/db/schema";
 import { recordAction, type AuditEntry } from "@/lib/audit";
 import type { Folder } from "@/lib/content";
-import { createSubfolder, getFolders, workspaceIdForHandle } from "@/lib/store";
+import { createSubfolder, getFolders, renameFolder, workspaceIdForHandle } from "@/lib/store";
 import { endpointKey, redactedEndpoint } from "./feed-identity";
 import { readingFlags } from "./flags";
 import { cancelOpenReadingJobs, enqueueReadingJob } from "./jobs.server";
@@ -41,6 +41,8 @@ export type FeedConnectionView = {
   nextCheckAt: string | null;
   retentionDays: number | null;
   effectiveRetentionDays: number;
+  mutedKeywords: string[];
+  movedToUrl: string | null;
   itemCount: number;
   createdAt: string;
 };
@@ -56,6 +58,7 @@ export class FeedConnectionError extends Error {
       | "not_a_feed"
       | "unreachable"
       | "not_found"
+      | "invalid"
       | "conflict",
   ) {
     super(message);
@@ -102,6 +105,8 @@ export function connectionView(
     nextCheckAt: iso(row.nextCheckAt),
     retentionDays: row.retentionDays,
     effectiveRetentionDays: row.retentionDays ?? defaultRetentionDays,
+    mutedKeywords: row.mutedKeywords ?? [],
+    movedToUrl: row.movedToUrl ? redactedEndpoint(row.movedToUrl) : null,
     itemCount,
     createdAt: row.createdAt.toISOString(),
   };
@@ -420,6 +425,95 @@ export async function detachFeedConnection(
     inputSummary: options.keepAllItems ? "keep all items" : "keep current policies",
   });
   return viewFor(handle, updated[0]);
+}
+
+export type FeedSettingsPatch = {
+  name?: string;
+  retentionDays?: number | null;
+  mutedKeywords?: string[];
+};
+
+/**
+ * Per-feed settings. A retention change re-leases every receipt that is
+ * still passing through (kept articles have holds and are untouched); a name
+ * change renames the folder the ordinary way; muted keywords apply to what
+ * arrives next, never to what is already here.
+ */
+export async function updateFeedConnectionSettings(
+  handle: string,
+  id: string,
+  patch: FeedSettingsPatch,
+  actor: AddFeedInput["actor"],
+): Promise<FeedConnectionView> {
+  const row = await feedConnectionById(handle, id);
+  if (!row) throw new FeedConnectionError("Feed not found", "not_found");
+  const database = requireDb();
+  const now = new Date();
+  const update: Partial<typeof feedConnections.$inferInsert> = { updatedAt: now };
+  if (patch.mutedKeywords !== undefined) {
+    update.mutedKeywords = [...new Set(patch.mutedKeywords.map((word) => word.trim().toLocaleLowerCase()).filter((word) => word.length >= 2))].slice(0, 50);
+  }
+  if (patch.retentionDays !== undefined) {
+    const days = patch.retentionDays === null ? null : Math.max(0, Math.min(3650, Math.trunc(patch.retentionDays)));
+    update.retentionDays = days;
+    const effective = days ?? (await blogRetentionDefault(row.blogId));
+    await database
+      .update(feedReceipts)
+      .set({
+        expiresAt: effective <= 0 ? null : sql`${feedReceipts.firstImportedAt} + (${effective} * interval '1 day')`,
+      })
+      .where(and(eq(feedReceipts.connectionId, row.id), eq(feedReceipts.status, "active")));
+  }
+  await database.update(feedConnections).set(update).where(eq(feedConnections.id, row.id));
+  if (patch.name && patch.name.trim()) {
+    await renameFolder(handle, row.folderId, patch.name.trim(), {
+      audit: { actorUserId: actor.userId, actorType: actor.actorType, actionName: "reading.rename_feed", targetType: "folder", targetId: row.folderId },
+    });
+  }
+  await recordAction({
+    actorUserId: actor.userId,
+    actorType: actor.actorType,
+    actionName: "reading.update_feed_settings",
+    targetType: "folder",
+    targetId: row.folderId,
+    inputSummary: Object.keys(patch).join(","),
+  });
+  const fresh = await feedConnectionById(handle, id);
+  return viewFor(handle, fresh!);
+}
+
+/** Take the address a permanent redirect pointed at. The owner's choice, made once. */
+export async function adoptMovedFeed(handle: string, id: string, actor: AddFeedInput["actor"]): Promise<FeedConnectionView> {
+  const row = await feedConnectionById(handle, id);
+  if (!row) throw new FeedConnectionError("Feed not found", "not_found");
+  const movedToUrl = row.movedToUrl;
+  const movedKey = movedToUrl ? endpointKey(movedToUrl) : null;
+  if (!movedToUrl || !movedKey) throw new FeedConnectionError("This feed has not moved", "invalid");
+  const [updated] = await requireDb()
+    .update(feedConnections)
+    .set({
+      endpointUrl: movedToUrl,
+      endpointKey: movedKey,
+      movedToUrl: null,
+      etag: null,
+      lastModified: null,
+      health: "checking",
+      healthDetail: null,
+      consecutiveFailures: 0,
+      nextCheckAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(feedConnections.id, row.id))
+    .returning();
+  await recordAction({
+    actorUserId: actor.userId,
+    actorType: actor.actorType,
+    actionName: "reading.adopt_moved_feed",
+    targetType: "folder",
+    targetId: row.folderId,
+    inputSummary: redactedEndpoint(movedToUrl),
+  });
+  return viewFor(handle, updated);
 }
 
 export async function requestFeedRefresh(

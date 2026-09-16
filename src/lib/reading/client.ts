@@ -83,8 +83,9 @@ export function addFeed(input: {
 export function manageFeed(input: {
   handle: string;
   id: string;
-  action: "pause" | "resume" | "detach" | "refresh";
+  action: "pause" | "resume" | "detach" | "refresh" | "settings" | "adopt_move";
   keepAllItems?: boolean;
+  settings?: { name?: string; retentionDays?: number | null; mutedKeywords?: string[] };
 }): Promise<{ connection?: FeedConnectionView; queued?: boolean }> {
   return request(`/api/workspace/reading/feeds/${encodeURIComponent(input.id)}?handle=${encodeURIComponent(input.handle)}`, {
     method: "POST",

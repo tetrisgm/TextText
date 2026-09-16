@@ -1,6 +1,6 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { feedConnections, folders, posts, readingReadState } from "@/lib/db/schema";
+import { feedConnections, folders, posts, readingProvenance, readingReadState } from "@/lib/db/schema";
 import type { WorkspaceReadingSource } from "@/lib/pool/types";
 import { workspaceIdForHandle } from "@/lib/store";
 
@@ -25,7 +25,8 @@ export async function listWorkspaceReadingSources(
           unread: sql<number>`count(*) filter (where not exists (select 1 from ${readingReadState} r where r.post_id = ${posts.id} and r.user_id = ${viewerUserId} and r.read_at is not null))::int`,
         })
         .from(posts)
-        .where(and(eq(posts.blogId, blogId), isNull(posts.deletedAt), eq(posts.origin, "feed")))
+        .leftJoin(readingProvenance, eq(readingProvenance.postId, posts.id))
+        .where(and(eq(posts.blogId, blogId), isNull(posts.deletedAt), eq(posts.origin, "feed"), isNull(readingProvenance.duplicateOfPostId)))
         .groupBy(posts.folderId)
     : [];
   const unreadByFolder = new Map(unreadRows.map((row) => [row.folderId, Number(row.unread)]));

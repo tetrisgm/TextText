@@ -21,7 +21,7 @@ import {
 import { cleanPlanTier, planLimits } from "@/lib/product-limits";
 import { slugify } from "@/lib/post-edit-draft";
 import { enqueueIndexItem } from "./embeddings.server";
-import { canonicalizeUrl, sha256, usableFeedDate } from "./feed-identity";
+import { canonicalizeUrl, endpointKey, sha256, usableFeedDate } from "./feed-identity";
 import { fetchFeedDocument, type FeedFetchOutcome } from "./fetch.server";
 import { FeedParseError, parseFeed, type NormalizedEntry, type NormalizedFeed } from "./feed-parse";
 import type { FeedConnectionRow } from "./connections.server";
@@ -82,6 +82,12 @@ function healthFor(fetch: FeedFetchOutcome): { health: string; detail: string } 
     default:
       return { health: "failing", detail: fetch.detail };
   }
+}
+
+function isMuted(entry: NormalizedEntry, mutedKeywords: readonly string[]): boolean {
+  if (mutedKeywords.length === 0) return false;
+  const haystack = `${entry.title}\n${entry.bodyText}`.toLocaleLowerCase();
+  return mutedKeywords.some((word) => word && haystack.includes(word.toLocaleLowerCase()));
 }
 
 function contentHashFor(entry: NormalizedEntry): string {
@@ -228,6 +234,27 @@ async function materializeEntry(input: {
     .update(feedReceipts)
     .set({ postId: post.id, contentHash, lastSeenAt: now })
     .where(eq(feedReceipts.id, input.receiptId));
+  // The same article from another feed: point at the copy that arrived
+  // first so lists show one. Decided once here, so no list pays for it.
+  const canonicalUrl = canonicalizeUrl(entry.permalink ?? entry.externalUrl);
+  const earlier = canonicalUrl
+    ? await database
+        .select({ id: posts.id })
+        .from(readingProvenance)
+        .innerJoin(posts, eq(posts.id, readingProvenance.postId))
+        .where(
+          and(
+            eq(readingProvenance.blogId, connection.blogId),
+            eq(readingProvenance.canonicalUrl, canonicalUrl),
+            isNull(readingProvenance.duplicateOfPostId),
+            isNull(posts.deletedAt),
+            eq(posts.origin, "feed"),
+            sql`${posts.id} <> ${post.id}::uuid`,
+          ),
+        )
+        .orderBy(posts.createdAt, posts.id)
+        .limit(1)
+    : [];
   await database
     .insert(readingProvenance)
     .values({
@@ -239,7 +266,8 @@ async function materializeEntry(input: {
       authors: entry.authors,
       permalink: entry.permalink,
       externalUrl: entry.externalUrl,
-      canonicalUrl: canonicalizeUrl(entry.permalink ?? entry.externalUrl),
+      canonicalUrl,
+      duplicateOfPostId: earlier[0]?.id ?? null,
       publishedAt,
       sourceUpdatedAt,
       availability: entry.availability,
@@ -510,6 +538,12 @@ export async function pollFeedConnection(
         report.skipped += 1;
         continue;
       }
+      // Muted words stop an entry at the door; one already here is not
+      // pulled back out, and a word unmuted later lets the next poll take it.
+      if (seen.length === 0 && isMuted(entry, connection.mutedKeywords ?? [])) {
+        report.suppressed += 1;
+        continue;
+      }
       const decision = await importEntry({
         handle,
         connection,
@@ -545,6 +579,9 @@ export async function pollFeedConnection(
           ? `${report.skipped} entries could not be imported`
           : null,
       feedFormat: feed.format,
+      // A check that landed somewhere else followed a redirect. Remember the
+      // new address so the owner can adopt it; nothing changes on its own.
+      movedToUrl: endpointKey(fetched.finalUrl) !== endpointKey(connection.endpointUrl) ? fetched.finalUrl : connection.movedToUrl,
       publisherTitle: connection.publisherTitle ?? feed.title,
       siteUrl: connection.siteUrl ?? feed.siteUrl,
       // A conditional fetch would hide the entries that failed or were

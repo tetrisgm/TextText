@@ -229,6 +229,18 @@ describe.skipIf(!enabled)("retention holds and cleanup against Postgres", () => 
     await retention.setReadState({ handle, user, postIds: [mine], read: false });
   });
 
+  it("SET-01: retention changes re-lease passing articles and muted words stop new ones", async () => {
+    const view = await connections.updateFeedConnectionSettings(handle, connectionId, { retentionDays: 0, mutedKeywords: ["Sponsored"] }, { userId, actorType: "human" });
+    expect(view.effectiveRetentionDays).toBe(0);
+    expect(view.mutedKeywords).toEqual(["sponsored"]);
+    const receipts = await db!.select().from(schema.feedReceipts).where(and(eq(schema.feedReceipts.connectionId, connectionId), eq(schema.feedReceipts.status, "active")));
+    expect(receipts.every((receipt) => receipt.expiresAt === null)).toBe(true);
+    const back = await connections.updateFeedConnectionSettings(handle, connectionId, { retentionDays: 30 }, { userId, actorType: "human" });
+    expect(back.effectiveRetentionDays).toBe(30);
+    const released = await db!.select().from(schema.feedReceipts).where(and(eq(schema.feedReceipts.connectionId, connectionId), eq(schema.feedReceipts.status, "active")));
+    expect(released.every((receipt) => receipt.expiresAt !== null)).toBe(true);
+  });
+
   it("RET-06: read state is the person's own and drives the Unread view", async () => {
     const id = byUrl.get("https://r.example/keep")!;
     await retention.setReadState({ handle, user, postIds: [id], read: true });
