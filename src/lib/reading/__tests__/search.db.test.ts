@@ -195,6 +195,33 @@ describe.skipIf(!enabled)("reading search against Postgres", () => {
     expect(mirror.items).toEqual([]);
   });
 
+  it("OPS-01: operators narrow by feed, read state, date, and star; saved searches count unread", async () => {
+    const retention = await import("@/lib/reading/retention.server");
+    const savedSearches = await import("@/lib/reading/saved-searches.server");
+    const feedOnly = await search.searchReading({ handle, user, query: "feed:Search", embedder: null });
+    expect(feedOnly.results.length).toBe(4);
+    const mirrorOnly = await search.searchReading({ handle, user, query: 'feed:"Search Feed" is:unread', embedder: null });
+    expect(mirrorOnly.results.length).toBe(4);
+    const gpu = mirrorOnly.results.find((result) => result.title.includes("GPU"))!;
+    await retention.setReadState({ handle, user, postIds: [gpu.id], read: true });
+    const unread = await search.searchReading({ handle, user, query: "is:unread", embedder: null });
+    expect(unread.results.map((result) => result.title)).not.toContain("Building a GPU driver");
+    expect(unread.results.length).toBe(3);
+    const dated = await search.searchReading({ handle, user, query: "after:2026-09-02", embedder: null });
+    expect(dated.results).toEqual([]);
+    const before = await search.searchReading({ handle, user, query: "before:2026-09-02 rollback", embedder: null });
+    expect(before.results.map((result) => result.title)).toEqual(["Rollback explained"]);
+    await store.setPostStarred(handle, gpu.id, true);
+    const starred = await search.searchReading({ handle, user, query: "is:starred", embedder: null });
+    expect(starred.results.map((result) => result.id)).toEqual([gpu.id]);
+
+    const created = await savedSearches.createSavedSearch({ handle, name: "Rollbacks", query: "rollback", folderPath: "", actor: { userId, actorType: "human" } });
+    const listed = await savedSearches.listSavedSearches({ handle, user, folderPath: "bookmarks", withCounts: true });
+    expect(listed.map((entry) => entry.name)).toContain("Rollbacks");
+    expect(listed.find((entry) => entry.id === created.id)?.unread).toBe(1);
+    expect(await savedSearches.deleteSavedSearch({ handle, id: created.id, actor: { userId, actorType: "human" } })).toBe(true);
+  });
+
   it("SEARCH-04: a folder scope narrows results and an unreadable scope returns nothing", async () => {
     const scoped = await search.searchReading({ handle, user, query: "gpu", scope: { folderPath: sourceFolderPath }, embedder: null });
     expect(scoped.results.map((result) => result.title)).toEqual(["Building a GPU driver"]);

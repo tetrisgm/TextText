@@ -299,6 +299,20 @@ await sql`
   CREATE INDEX IF NOT EXISTS reading_summary_texts_blog_idx ON reading_summary_texts (blog_id)
 `;
 
+console.log("Creating reading_saved_searches...");
+await sql`
+  CREATE TABLE IF NOT EXISTS reading_saved_searches (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    blog_id uuid NOT NULL REFERENCES blogs(id) ON DELETE CASCADE,
+    name text NOT NULL,
+    query text NOT NULL,
+    folder_path text NOT NULL DEFAULT '',
+    created_by_id uuid REFERENCES users(id) ON DELETE SET NULL,
+    created_at timestamp NOT NULL DEFAULT now()
+  )
+`;
+await sql`CREATE INDEX IF NOT EXISTS reading_saved_searches_blog_idx ON reading_saved_searches (blog_id)`;
+
 const [summary] = await sql`
   SELECT
     (SELECT count(*)::int FROM posts WHERE origin = 'feed') AS feed_items,

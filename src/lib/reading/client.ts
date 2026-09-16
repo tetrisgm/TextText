@@ -5,6 +5,7 @@ import type { FeedCandidate } from "./fetch.server";
 import type { ReadingFolderSummary, ReadingListItem, ReadingListPage, ReadingScope } from "./list.server";
 import type { ReadingOverview } from "./overview.server";
 import type { ReadingSummary } from "./summaries.server";
+import type { SavedReadingSearch } from "./saved-searches.server";
 
 /**
  * The browser's view of the reading API. Thin on purpose: every function is
@@ -12,7 +13,7 @@ import type { ReadingSummary } from "./summaries.server";
  * server resolves access itself.
  */
 
-export type { FeedConnectionView, FeedCandidate, ReadingFolderSummary, ReadingListItem, ReadingListPage, ReadingScope, ReadingOverview, ReadingSummary };
+export type { FeedConnectionView, FeedCandidate, ReadingFolderSummary, ReadingListItem, ReadingListPage, ReadingScope, ReadingOverview, ReadingSummary, SavedReadingSearch };
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -192,4 +193,22 @@ export function extractReadingItem(
     method: "POST",
     body: JSON.stringify({ handle, action: "extract", ids: [id] }),
   });
+}
+
+export function searchReadingList(handle: string, folderPath: string, query: string): Promise<{ items: ReadingListItem[]; semantic: boolean; total: number }> {
+  const params = new URLSearchParams({ handle, folder: folderPath, q: query });
+  return request(`/api/workspace/reading/search?${params.toString()}`);
+}
+
+export function fetchSavedSearches(handle: string, folderPath: string): Promise<{ searches: SavedReadingSearch[] }> {
+  const params = new URLSearchParams({ handle, folder: folderPath });
+  return request(`/api/workspace/reading/searches?${params.toString()}`);
+}
+
+export function saveSearch(handle: string, input: { name: string; query: string; folder: string }): Promise<{ search: SavedReadingSearch }> {
+  return request(`/api/workspace/reading/searches?handle=${encodeURIComponent(handle)}`, { method: "POST", body: JSON.stringify({ handle, ...input }) });
+}
+
+export function deleteSavedSearchRequest(handle: string, id: string): Promise<{ ok: boolean }> {
+  return request(`/api/workspace/reading/searches?handle=${encodeURIComponent(handle)}`, { method: "DELETE", body: JSON.stringify({ handle, id }) });
 }

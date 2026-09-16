@@ -1477,3 +1477,21 @@ export const readingSummaryTexts = pgTable(
   },
   (t) => [index("reading_summary_texts_blog_idx").on(t.blogId)],
 );
+
+/** A saved reading search: a query that behaves like a feed, with an unread count. */
+export const readingSavedSearches = pgTable(
+  "reading_saved_searches",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    blogId: uuid("blog_id")
+      .notNull()
+      .references(() => blogs.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    query: text("query").notNull(),
+    /** "" means every reading folder the person can see. */
+    folderPath: text("folder_path").notNull().default(""),
+    createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [index("reading_saved_searches_blog_idx").on(t.blogId)],
+);

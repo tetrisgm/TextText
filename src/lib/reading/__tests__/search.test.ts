@@ -42,3 +42,21 @@ describe("reading search primitives", () => {
     expect(text.length).toBe(6000);
   });
 });
+
+import { parseReadingQuery } from "../search.server";
+
+describe("reading query operators", () => {
+  it("separates operators, phrases, and free text", () => {
+    const parsed = parseReadingQuery('feed:"Hacker News" is:unread is:starred before:2026-09-10 after:2026-09-01 "gpu driver" rollback');
+    expect(parsed).toMatchObject({ feed: "Hacker News", unread: true, starred: true, kept: false, text: "rollback", phrases: ["gpu driver"] });
+    expect(parsed.before?.toISOString()).toBe("2026-09-10T00:00:00.000Z");
+    expect(parsed.after?.toISOString()).toBe("2026-09-01T00:00:00.000Z");
+  });
+
+  it("keeps unknown operators and bad dates as text", () => {
+    const parsed = parseReadingQuery("re:thing before:yesterday is:kept");
+    expect(parsed.text).toBe("re:thing before:yesterday");
+    expect(parsed.kept).toBe(true);
+    expect(parsed.before).toBeNull();
+  });
+});

@@ -8,7 +8,12 @@ import { addPost } from "@/lib/pool/store";
 import { postFromPoolPost } from "@/lib/pool/selectors";
 import type { WorkspacePoolPost, WorkspaceReadingSource } from "@/lib/pool/types";
 import {
+  deleteSavedSearchRequest,
   fetchReadingPage,
+  fetchSavedSearches,
+  saveSearch,
+  searchReadingList,
+  type SavedReadingSearch,
   fetchReadingSummaries,
   markReadingScopeRead,
   setReadingItemsKept,
@@ -130,6 +135,8 @@ export function ReadingFolderView({
   sources,
   canEdit,
   selectedPostId,
+  query = "",
+  onQueryChange,
   onOpenPost,
   onSelectPost,
   onAddFeeds,
@@ -141,6 +148,9 @@ export function ReadingFolderView({
   sources: WorkspaceReadingSource[];
   canEdit: boolean;
   selectedPostId?: string | null;
+  /** The folder's search box; operators feed:, is:unread, is:starred, is:kept, before:, after: apply. */
+  query?: string;
+  onQueryChange?: (query: string) => void;
   onOpenPost?: (post: Post) => void;
   onSelectPost?: (postId: string) => void;
   onAddFeeds?: () => void;
@@ -260,6 +270,57 @@ export function ReadingFolderView({
       cancelled = true;
     };
   }, [folder.path, handle, view]);
+
+  // A search replaces the list: one bounded, ranked result set from the
+  // server, in the list's row shape, so every row control keeps working.
+  const searchQuery = query.trim();
+  const [searchState, setSearchState] = useState<{ query: string; items: ReadingListItem[]; semantic: boolean } | null>(null);
+  useEffect(() => {
+    if (!searchQuery) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void searchReadingList(handle, folder.path, searchQuery)
+        .then((result) => {
+          if (!cancelled) setSearchState({ query: searchQuery, items: result.items, semantic: result.semantic });
+        })
+        .catch((caught: unknown) => {
+          if (!cancelled) setError(caught instanceof Error ? caught.message : "Could not search");
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [folder.path, handle, searchQuery]);
+  const searching = Boolean(searchQuery);
+  const searchResults = searchState?.query === searchQuery ? searchState : null;
+
+  const [saved, setSaved] = useState<SavedReadingSearch[] | null>(null);
+  const reloadSaved = useCallback(() => {
+    void fetchSavedSearches(handle, folder.path)
+      .then((result) => setSaved(result.searches))
+      .catch(() => undefined);
+  }, [folder.path, handle]);
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (!cancelled) reloadSaved();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadSaved]);
+  const saveCurrentSearch = useCallback(async () => {
+    if (!searchQuery) return;
+    const name = window.prompt("Name this search", searchQuery);
+    if (name === null) return;
+    try {
+      await saveSearch(handle, { name, query: searchQuery, folder: folder.path });
+      reloadSaved();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not save the search");
+    }
+  }, [folder.path, handle, reloadSaved, searchQuery]);
 
   const loadMore = useCallback(async () => {
     if (!cursor || loadingMore) return;
@@ -459,6 +520,7 @@ export function ReadingFolderView({
     setPendingNew(null);
   }, [pendingNew]);
 
+  const rows = searching ? (searchResults?.items ?? []) : items;
   const newCount = pendingNew
     ? pendingNew.filter((item) => !items.some((entry) => entry.id === item.id)).length
     : 0;
@@ -569,6 +631,47 @@ export function ReadingFolderView({
         )}
       </div>
 
+      {(saved?.length ?? 0) > 0 || searching ? (
+        <div className={styles.savedRow} role="group" aria-label="Saved searches">
+          {saved?.map((entry) => (
+            <span key={entry.id} className={styles.savedChip} data-active={searchQuery === entry.query ? "true" : undefined}>
+              <button type="button" onClick={() => onQueryChange?.(entry.query)} title={entry.query}>
+                {entry.name}
+                {entry.unread !== null && entry.unread > 0 && (
+                  <small>
+                    {entry.unread}
+                    {entry.unreadCapped ? "+" : ""}
+                  </small>
+                )}
+              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  aria-label={`Remove saved search ${entry.name}`}
+                  onClick={() => {
+                    void deleteSavedSearchRequest(handle, entry.id).then(reloadSaved).catch(() => undefined);
+                  }}
+                >
+                  ×
+                </button>
+              )}
+            </span>
+          ))}
+          {searching && (
+            <span className={styles.note}>
+              {searchResults ? `${searchResults.items.length} ${searchResults.items.length === 1 ? "result" : "results"}${searchResults.semantic ? ", by words and meaning" : ""}` : "Searching…"}
+              {" · "}
+              <span title="feed:name, is:unread, is:starred, is:kept, before:2026-09-01, after:2026-08-01, and quoted phrases">operators</span>
+            </span>
+          )}
+          {searching && canEdit && !saved?.some((entry) => entry.query === searchQuery) && (
+            <button type="button" className={styles.button} onClick={() => void saveCurrentSearch()}>
+              Save search
+            </button>
+          )}
+        </div>
+      ) : null}
+
       {newCount > 0 && (
         <div className={styles.newBar} role="status">
           <span>
@@ -620,9 +723,11 @@ export function ReadingFolderView({
             ))}
           </ul>
         )
-      ) : !loading && items.length === 0 ? (
+      ) : (searching ? searchResults && rows.length === 0 : !loading && items.length === 0) ? (
         <div className={styles.empty}>
-          {sources.length === 0 ? (
+          {searching ? (
+            <p>Nothing matches {searchQuery}.</p>
+          ) : sources.length === 0 ? (
             <>
               <p>This folder does not follow any feeds yet.</p>
               {canEdit && onAddFeeds && (
@@ -641,7 +746,7 @@ export function ReadingFolderView({
         </div>
       ) : (
         <ul ref={listRef} className={styles.list} role="listbox" aria-label={`Articles in ${folder.name}`} aria-busy={loading}>
-          {items.map((item, index) => (
+          {rows.map((item, index) => (
             <li
               key={item.id}
               className={styles.row}
@@ -723,7 +828,7 @@ export function ReadingFolderView({
         </ul>
       )}
 
-      {cursor && view === "articles" && (
+      {cursor && view === "articles" && !searching && (
         <button type="button" className={`${styles.button} ${styles.more}`} onClick={() => void loadMore()} disabled={loadingMore}>
           {loadingMore ? "Loading…" : "Load more"}
         </button>

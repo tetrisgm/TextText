@@ -1773,7 +1773,7 @@ export function FolderPage({
           </button>
         </div>
       )}
-      {filterQuery && filteredItems.length === 0 ? (
+      {filterQuery && !isReadingFolder && filteredItems.length === 0 ? (
         <FolderEmptyCard actionLabel="Clear folder search" onAction={() => setFilterQuery("")} homeHref={blogHomePath(blog)}>
           No items match your search in this folder. Try a different word or clear the search.
         </FolderEmptyCard>
@@ -1804,7 +1804,7 @@ export function FolderPage({
           onChanged={() => setReadingRefresh((tick) => tick + 1)}
         />
       )}
-      {isReadingFolder && !filterQuery && blogId ? (
+      {isReadingFolder && blogId ? (
         <ReadingFolderView
           key={readingRefresh}
           blog={blog}
@@ -1814,6 +1814,8 @@ export function FolderPage({
           sources={sourcesHere}
           canEdit={canEditItems}
           selectedPostId={selectedPostId}
+          query={filterQuery}
+          onQueryChange={setFilterQuery}
           onOpenPost={onOpenPost}
           onSelectPost={onSelectPost}
           onAddFeeds={canAddFeeds ? () => setAddFeedsOpen(true) : undefined}
