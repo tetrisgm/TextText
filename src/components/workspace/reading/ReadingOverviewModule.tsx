@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { addPost, refreshWorkspacePool } from "@/lib/pool/store";
 import type { WorkspacePoolPost } from "@/lib/pool/types";
-import { fetchReadingOverview, saveReadingBrief, setReadingItemsRead, type ReadingListItem, type ReadingOverview } from "@/lib/reading/client";
+import { fetchReadingOverview, saveReadingBrief, setReadingItemsRead, tickReading, type ReadingListItem, type ReadingOverview } from "@/lib/reading/client";
 import { ManageSourcesDialog } from "./ManageSourcesDialog";
 import styles from "./Reading.module.css";
 
@@ -74,19 +74,40 @@ export function ReadingOverviewModule({
     void fetchReadingOverview(handle).then(setOverview).catch(() => undefined);
   }, [handle]);
 
+  // The app is its own scheduler: opening the front page checks stale
+  // sources in a few bounded passes, then reads the overview.
   useEffect(() => {
     let cancelled = false;
-    void fetchReadingOverview(handle)
-      .then((result) => {
+    const STALE_MS = 30 * 60 * 1000;
+    void (async () => {
+      if (canManage) {
+        try {
+          const first = await fetchReadingOverview(handle);
+          const newest = Math.max(0, ...first.sources.map((source) => (source.lastSuccessAt ? new Date(source.lastSuccessAt).getTime() : 0)));
+          if (first.sources.length > 0 && Date.now() - newest > STALE_MS) {
+            for (let pass = 0; pass < 3; pass += 1) {
+              const result = await tickReading(handle, 3);
+              if ((result.jobs.queued ?? 0) === 0) break;
+            }
+          } else if (!cancelled) {
+            setOverview(first);
+            return;
+          }
+        } catch {
+          // A failed check is not an error the front page needs to show.
+        }
+      }
+      return fetchReadingOverview(handle).then((result) => {
         if (!cancelled) setOverview(result);
-      })
+      });
+    })()
       .catch(() => {
         if (!cancelled) setOverview({ sources: [], totals: { items: 0, unread: null, newSince24h: 0 }, latest: [] });
       });
     return () => {
       cancelled = true;
     };
-  }, [handle]);
+  }, [canManage, handle]);
 
   // Same two-step open as the folder view: merge into the pool, then open
   // once the shell has re-rendered with a handler that can see the item.

@@ -96,13 +96,15 @@ and parsing; it never fabricates a candidate.
 - **Search**: operators `feed:`, `is:unread`, `is:starred`, `is:kept`,
   `before:`, `after:`, quoted phrases. Saved searches (`reading_saved_searches`)
   behave like feeds with a bounded unread count; `notify` makes one an alert.
-- **Cadence and cron**: `feed_connections.poll_interval_minutes` halves on
-  news and stretches by half when quiet (10 min to 24 h). `vercel.json`
-  schedules `GET /api/workspace/reading/cron` every fifteen minutes; the route
-  requires `Authorization: Bearer $CRON_SECRET` and refuses without it.
-- **Digest**: `blogs.reading_digest_hour` (UTC) sends one email a day to the
-  owner: alerts first (new matches are kept), then the day's articles by
-  source; `reading_digest_sent_on` is the once-per-day key.
+- **Cadence, no scheduler**: `feed_connections.poll_interval_minutes` halves
+  on news and stretches by half when quiet (10 min to 24 h). The app is its
+  own heartbeat: the front page and any reading folder call
+  `POST /api/workspace/reading/tick` when sources look stale, in bounded
+  passes; nothing arrives while nobody opens the workspace, by design.
+- **Digest**: `blogs.reading_digest_hour` (UTC). The tick sends one email to
+  the owner the first time the workspace is touched after that hour: alerts
+  first (new matches are kept), then the day's articles by source;
+  `reading_digest_sent_on` is the once-per-day key.
 - **Export**: `GET /api/workspace/reading/export` (JSON or CSV, all or kept,
   bounded to 5,000 rows).
 - **Reader-compatible API**: base URL `https://texttext.app/api/reader`.

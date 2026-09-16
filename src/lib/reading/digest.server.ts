@@ -153,16 +153,21 @@ export async function sendReadingDigest(input: { blogId: string; now?: Date; mai
   return { handle: row.handle, to: row.email, alerts, articles: articles.length, sent: true };
 }
 
-/** Workspaces whose digest hour is this UTC hour and that have not been sent today. */
-export async function blogsDueForDigest(now = new Date()): Promise<string[]> {
-  const hour = now.getUTCHours();
+/**
+ * Whether this workspace's digest is due: its hour has passed today and
+ * nothing has been sent today. There is no scheduler; the app's own tick
+ * asks this on the requests it already serves, so the digest goes out the
+ * first time the workspace is touched after its hour.
+ */
+export async function digestDue(blogId: string, now = new Date()): Promise<boolean> {
   const day = now.toISOString().slice(0, 10);
-  const rows = await requireDb()
-    .select({ id: blogs.id })
+  const [row] = await requireDb()
+    .select({ hour: blogs.readingDigestHour, sentOn: blogs.readingDigestSentOn })
     .from(blogs)
-    .where(and(isNull(blogs.deletedAt), eq(blogs.readingDigestHour, hour), sql`coalesce(${blogs.readingDigestSentOn}, '') <> ${day}`))
-    .limit(200);
-  return rows.map((row) => row.id);
+    .where(and(eq(blogs.id, blogId), isNull(blogs.deletedAt)))
+    .limit(1);
+  if (!row || row.hour === null) return false;
+  return now.getUTCHours() >= row.hour && row.sentOn !== day;
 }
 
 export async function readingDigestSetting(blogId: string): Promise<{ hour: number | null; sentOn: string | null }> {
