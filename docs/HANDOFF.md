@@ -23,8 +23,11 @@ both client surfaces; a Feedbin v2 API at `/api/feedbin/v2` (Basic auth,
 password = API token); Netscape bookmark import and export in Manage
 sources; home no longer shows a phantom scrollbar; the Cmd hint layer no
 longer sticks. Both client APIs exercised over HTTP on the dev server with a
-minted token. Not yet shipped. Real-client runs (Reeder, NetNewsWire) still
-to be observed by the owner.
+minted token. Shipped as 0.186 (build 1076) on 2026-09-16; production
+answers 401 to unauthenticated calls on both surfaces. Real-client runs
+(Reeder, NetNewsWire) still to be observed by the owner: server
+`https://texttext.app/api/reader` or `https://texttext.app/api/feedbin/v2`,
+any email, an API token as the password.
 
 ## Reading, the Feedbin and Reader gaps (2026-09-16)
 
