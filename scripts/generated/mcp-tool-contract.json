@@ -42,7 +42,11 @@
     "delete_folder",
     "restore_folder",
     "set_access",
-    "revoke_access"
+    "revoke_access",
+    "list_reading_sources",
+    "search_reading",
+    "keep_item",
+    "add_feed"
   ],
   "readScope": [
     "get_workspace",
@@ -56,10 +60,13 @@
     "list_comments",
     "list_responses",
     "list_document_templates",
-    "list_agent_changes"
+    "list_agent_changes",
+    "list_reading_sources",
+    "search_reading"
   ],
   "openWorld": [
     "add_item_asset",
-    "recapture_bookmark"
+    "recapture_bookmark",
+    "add_feed"
   ]
 }
