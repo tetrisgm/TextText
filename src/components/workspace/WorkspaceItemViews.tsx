@@ -5,6 +5,7 @@
 // monolith.
 
 
+import { ReadingReaderBar } from "@/components/workspace/reading/ReadingReaderBar";
 import { isDocumentBlank } from "@/components/document/TemplateGallery";
 import {
   useCallback,
@@ -306,6 +307,16 @@ export function WorkspacePostReader({
         onSearchValueChange={setFindQuery}
         onBookmarkContentModeChange={setBookmarkContentMode}
       />
+      {poolPost.origin === "feed" && (
+        <ReadingReaderBar
+          blog={blog}
+          blogId={pool.blogId}
+          postId={poolPost.id}
+          canManage={canManagePost}
+          onNavigate={onNavigate}
+          onReload={() => load(true)}
+        />
+      )}
       {document && isDocumentBlank(document) && (
         <div className="workspace-post-body-status">
           <p>This document is empty. {canManagePost ? "Start writing to add its first words." : "Its author has not added any text yet."}</p>

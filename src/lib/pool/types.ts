@@ -49,6 +49,8 @@ export type WorkspacePoolPost = {
   updatedAt?: string;
   /** Monotonic compare-and-swap version for the canonical document. */
   revision?: number;
+  /** "feed" for an imported article merged into the pool from a reading list. */
+  origin?: "manual" | "feed";
 };
 
 /** One feed connection, as the client needs it: which folder is a source,

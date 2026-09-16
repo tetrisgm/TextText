@@ -38,6 +38,7 @@ function poolPostFor(item: ReadingListItem, blogId: string): WorkspacePoolPost {
     starred: item.starred,
     createdAt: item.receivedAt,
     updatedAt: item.receivedAt,
+    origin: item.origin,
   };
 }
 

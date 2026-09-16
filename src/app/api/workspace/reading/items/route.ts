@@ -1,6 +1,7 @@
 import { listReadingItems, readingFolderSummary, resolveReadingFolderIds, type ReadingScope } from "@/lib/reading/list.server";
 import { recordAction } from "@/lib/audit";
 import { setKeep, setReadState, setReadStateForScope } from "@/lib/reading/retention.server";
+import { extractFullContent } from "@/lib/reading/extract.server";
 import { handleFrom, json, jsonError, readJson, requireOwner, requireReader } from "../_shared";
 
 export const dynamic = "force-dynamic";
@@ -89,6 +90,12 @@ export async function POST(request: Request) {
       if (!reader.user?.userId) return jsonError("Sign in to track what you have read", 401);
       const count = await setReadState({ handle, user: reader.user, postIds: ids, read: action === "read" });
       return json({ ok: true, count });
+    }
+    if (action === "extract") {
+      const owner = await requireOwner(handle);
+      if (!owner.ok) return owner.response;
+      const result = await extractFullContent({ handle, postId: ids[0], actor: { userId: owner.ownerId, actorType: "human" } });
+      return json(result);
     }
     if (action === "keep" || action === "unkeep") {
       const owner = await requireOwner(handle);

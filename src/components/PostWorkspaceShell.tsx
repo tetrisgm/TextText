@@ -1747,7 +1747,11 @@ function LocalWorkspaceShell({
           ? "edit"
           : mode;
       const nextFolderPath =
-        folderPath ?? folderPathForPoolPost(currentPool, post);
+        // An imported article opened from a parent folder's combined list
+        // lives in its own feed folder; its address must say so.
+        post.origin === "feed"
+          ? folderPathForPoolPost(currentPool, post)
+          : (folderPath ?? folderPathForPoolPost(currentPool, post));
       const currentView = viewRef.current;
       // Reading to editing the same item: remember the block at the top of
       // the reader so the editor opens on it (see reading-anchor.ts). The

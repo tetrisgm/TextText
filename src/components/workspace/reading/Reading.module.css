@@ -639,3 +639,16 @@ a.button {
   color: var(--ac-label);
   font: 400 var(--ac-fs-body) / 1.5 var(--ac-font-text);
 }
+
+/* Inside an open article */
+
+.readerBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ac-sp-2);
+  max-width: var(--content-max, 72rem);
+  margin: 0 auto 1rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--ac-separator);
+}

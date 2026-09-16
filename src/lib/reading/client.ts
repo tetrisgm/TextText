@@ -170,3 +170,26 @@ export function importOpml(input: { handle: string; parentFolderPath: string; op
 export function opmlExportUrl(handle: string): string {
   return `/api/workspace/reading/opml?handle=${encodeURIComponent(handle)}`;
 }
+
+export function fetchReadingNeighbors(
+  handle: string,
+  id: string,
+  dateBasis: "published" | "received" = "published",
+): Promise<{ previous: ReadingListItem | null; next: ReadingListItem | null; current: ReadingListItem | null }> {
+  const params = new URLSearchParams({ handle, id, dateBasis });
+  return request(`/api/workspace/reading/neighbors?${params.toString()}`);
+}
+
+export function extractReadingItem(
+  handle: string,
+  id: string,
+): Promise<
+  | { outcome: "applied"; characters: number }
+  | { outcome: "recorded"; characters: number; reason: "edited" }
+  | { outcome: "unavailable"; reason: "no_link" | "unreachable" | "not_readable" }
+> {
+  return request(`/api/workspace/reading/items?handle=${encodeURIComponent(handle)}`, {
+    method: "POST",
+    body: JSON.stringify({ handle, action: "extract", ids: [id] }),
+  });
+}

@@ -84,6 +84,7 @@ export function narrowPostFromPost(
     publishedAt: post.status === "published" ? post.date : undefined,
     status: post.status,
     pinned: post.pinned,
+    origin: post.origin,
     starred: post.starred,
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,

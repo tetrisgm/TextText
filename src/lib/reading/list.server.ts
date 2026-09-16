@@ -31,6 +31,8 @@ export type ReadingScope = {
   dateBasis: "published" | "received";
   /** Newest first unless asked; oldest first is how Reader people catch up. */
   direction?: "newest" | "oldest";
+  /** Only these items, when a caller needs the list's shape for a few ids. */
+  ids?: string[];
 };
 
 export type ReadingListItem = {
@@ -56,6 +58,8 @@ export type ReadingListItem = {
   keptReasons: string[];
   expiresAt: string | null;
   slug: string;
+  /** This row's position in the list's own order; pass as `cursor` to page from it. */
+  cursor: string;
 };
 
 export type ReadingListPage = {
@@ -192,6 +196,7 @@ export async function listReadingItems(input: {
         isNull(posts.deletedAt),
         inArray(posts.folderId, folderIds),
         notDuplicateSql(),
+        input.scope.ids && input.scope.ids.length > 0 ? inArray(posts.id, input.scope.ids) : undefined,
         input.scope.state === "unread" ? isNull(readingReadState.readAt) : undefined,
         input.scope.state === "kept"
           ? or(
@@ -245,6 +250,7 @@ export async function listReadingItems(input: {
         ...(row.keptReasons ?? []).filter((reason) => reason !== "starred"),
       ],
       expiresAt: row.expiresAt ? new Date(row.expiresAt).toISOString() : null,
+      cursor: encodeCursor({ at: new Date(row.orderAt).toISOString(), id: row.id }),
       slug: row.slug,
     })),
     nextCursor,
@@ -357,4 +363,37 @@ function sha(value: string): string {
     hash = (hash * 31 + value.charCodeAt(index)) | 0;
   }
   return (hash >>> 0).toString(16);
+}
+
+/**
+ * The articles before and after one item in its own folder, by the given
+ * date basis, newest first: "previous" is newer, "next" is older, the way a
+ * list reads down. Two one-row pages, so the reader never loads the folder.
+ */
+export async function readingNeighbors(input: {
+  handle: string;
+  user: AccessUser | null;
+  postId: string;
+  dateBasis?: ReadingScope["dateBasis"];
+}): Promise<{ previous: ReadingListItem | null; next: ReadingListItem | null; current: ReadingListItem | null }> {
+  const database = requireDb();
+  const dateBasis = input.dateBasis ?? "published";
+  const rows = await database
+    .select({ folderPath: folders.path })
+    .from(posts)
+    .innerJoin(folders, eq(folders.id, posts.folderId))
+    .where(and(eq(posts.id, input.postId), isNull(posts.deletedAt)))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return { previous: null, next: null, current: null };
+  const scope = { folderPath: row.folderPath, includeDescendants: true, state: "all" as const, dateBasis };
+  // The item's own cursor comes from the list, so the neighbour queries page
+  // from exactly the position the list would give it.
+  const current = (await listReadingItems({ handle: input.handle, user: input.user, scope: { ...scope, ids: [input.postId] }, limit: 1 })).items[0] ?? null;
+  if (!current) return { previous: null, next: null, current: null };
+  const [older, newer] = await Promise.all([
+    listReadingItems({ handle: input.handle, user: input.user, scope: { ...scope, direction: "newest" }, cursor: current.cursor, limit: 1 }),
+    listReadingItems({ handle: input.handle, user: input.user, scope: { ...scope, direction: "oldest" }, cursor: current.cursor, limit: 1 }),
+  ]);
+  return { previous: newer.items[0] ?? null, next: older.items[0] ?? null, current };
 }

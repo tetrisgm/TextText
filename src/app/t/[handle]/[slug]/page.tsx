@@ -371,6 +371,12 @@ export async function PostPageForHandle({
         ? await getAccessibleFolderCounts(handle, viewer)
         : {};
   }
+  // Imported articles stay out of the whole-workspace pool by design; the
+  // one this address names still has to be in it, or a reload of an open
+  // article would land on not-found.
+  if (post.origin === "feed" && post.id && !allPosts.some((entry) => entry.id === post.id)) {
+    allPosts = [...allPosts, post];
+  }
   const adjacent = await adjacentPromise;
   const [trashedFolders, trashedPosts] = canEdit
     ? await Promise.all([getTrashedFolders(handle), getTrashedPosts(handle)])

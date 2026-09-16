@@ -25,6 +25,7 @@ function item(id: string, title: string, at: string, extra: Partial<ReadingListI
     keptReasons: [],
     expiresAt: null,
     slug: id,
+    cursor: id,
     ...extra,
   };
 }

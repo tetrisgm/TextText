@@ -241,6 +241,32 @@ describe.skipIf(!enabled)("retention holds and cleanup against Postgres", () => 
     expect(released.every((receipt) => receipt.expiresAt !== null)).toBe(true);
   });
 
+  it("EXTRACT-01: the original page becomes the body when untouched, a source version only when edited", async () => {
+    const extract = await import("@/lib/reading/extract.server");
+    const page = `<html><body><article><h1>Kept one</h1>${Array.from({ length: 6 }, (_, i) => `<p>Full paragraph ${i} of the original article with more than enough words to be kept by the extractor.</p>`).join("")}</article></body></html>`;
+    const fetcher: import("@/lib/reading/extract.server").ExtractFetcher = async () => ({ ok: true, html: page, status: 200 });
+    const keepId = byUrl.get("https://r.example/keep")!;
+    const applied = await extract.extractFullContent({ handle, postId: keepId, actor: { userId, actorType: "human" }, fetcher });
+    expect(applied.outcome).toBe("applied");
+    const post = await store.getPostById(handle, keepId);
+    expect(post?.body).toContain("Full paragraph 0");
+    const provenance = await db!.select().from(schema.readingProvenance).where(eq(schema.readingProvenance.postId, keepId));
+    expect(provenance[0].availability).toBe("full");
+    // The edited item keeps the person's words; the extraction is recorded, not applied.
+    const editId = byUrl.get("https://r.example/edit")!;
+    const recorded = await extract.extractFullContent({ handle, postId: editId, actor: { userId, actorType: "human" }, fetcher });
+    expect(recorded.outcome).toBe("recorded");
+    expect((await store.getPostById(handle, editId))?.body).toContain("My annotation");
+    const versions = await db!.select().from(schema.readingSourceRevisions).where(eq(schema.readingSourceRevisions.postId, editId));
+    expect(versions.some((version) => version.sourceHash.startsWith("extract:"))).toBe(true);
+    // Neighbours in the source folder, newest first: keep (10:02) sits between comment (10:01) and ref (10:03).
+    const list = await import("@/lib/reading/list.server");
+    const around = await list.readingNeighbors({ handle, user, postId: keepId });
+    expect(around.current?.id).toBe(keepId);
+    expect(around.previous?.id).toBe(byUrl.get("https://r.example/ref"));
+    expect(around.next?.id).toBe(byUrl.get("https://r.example/comment"));
+  });
+
   it("RET-06: read state is the person's own and drives the Unread view", async () => {
     const id = byUrl.get("https://r.example/keep")!;
     await retention.setReadState({ handle, user, postIds: [id], read: true });
