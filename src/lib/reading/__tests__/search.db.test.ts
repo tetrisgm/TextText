@@ -96,6 +96,7 @@ describe.skipIf(!enabled)("reading search against Postgres", () => {
     await db.delete(schema.folders).where(eq(schema.folders.blogId, blogId));
     await db.delete(schema.actionAudit).where(eq(schema.actionAudit.actorUserId, userId));
     await db.delete(schema.blogs).where(eq(schema.blogs.id, blogId));
+    await db.delete(schema.apiTokens).where(eq(schema.apiTokens.userId, userId));
     await db.delete(schema.users).where(eq(schema.users.id, userId));
   });
 
@@ -220,6 +221,45 @@ describe.skipIf(!enabled)("reading search against Postgres", () => {
     expect(listed.map((entry) => entry.name)).toContain("Rollbacks");
     expect(listed.find((entry) => entry.id === created.id)?.unread).toBe(1);
     expect(await savedSearches.deleteSavedSearch({ handle, id: created.id, actor: { userId, actorType: "human" } })).toBe(true);
+  });
+
+  it("READER-01: a Reader client can sign in with a token, sync, and edit read and starred state", async () => {
+    const reader = await import("@/lib/reading/reader-api.server");
+    const tokens = await import("@/lib/api-tokens");
+    const { raw } = await tokens.createApiToken(userId, "Reeder", { scopes: "sync" });
+    expect(await reader.clientLogin("not-a-token")).toBeNull();
+    expect((await reader.clientLogin(raw))?.auth).toBe(raw);
+    const identity = (await reader.readerIdentity(new Request("https://x.test/", { headers: { authorization: `GoogleLogin auth=${raw}` } })))!;
+    expect(identity.handle).toBe(handle);
+
+    const subs = await reader.subscriptionList(identity);
+    expect(subs.subscriptions.length).toBe(2);
+    expect(subs.subscriptions[0].categories[0].id).toBe("user/-/label/bookmarks");
+    const counts = await reader.unreadCount(identity);
+    const total = counts.unreadcounts.find((entry) => entry.id === "user/-/state/com.google/reading-list")!;
+    expect(total.count).toBeGreaterThan(0);
+
+    const ids = await reader.streamItemIds(identity, new URLSearchParams({ s: "user/-/state/com.google/reading-list", xt: "user/-/state/com.google/read", n: "100" }));
+    expect(ids.itemRefs.length).toBe(total.count);
+    const first = ids.itemRefs[0].id;
+    const contents = await reader.streamContents(identity, new URLSearchParams(), [first], "https://x.test");
+    expect(contents.items).toHaveLength(1);
+    expect(contents.items[0].id).toMatch(/^tag:google\.com,2005:reader\/item\/[0-9a-f]{16}$/);
+    expect(contents.items[0].summary.content).toContain("<p>");
+    expect(contents.items[0].categories).not.toContain("user/-/state/com.google/read");
+
+    await reader.editTag(identity, [first], ["user/-/state/com.google/read", "user/-/state/com.google/starred"], []);
+    const after = await reader.streamContents(identity, new URLSearchParams(), [first], "https://x.test");
+    expect(after.items[0].categories).toContain("user/-/state/com.google/read");
+    expect(after.items[0].categories).toContain("user/-/state/com.google/starred");
+    const starred = await reader.streamItemIds(identity, new URLSearchParams({ s: "user/-/state/com.google/starred" }));
+    expect(starred.itemRefs.map((ref) => ref.id)).toContain(first);
+
+    const marked = await reader.markAllAsRead(identity, "user/-/state/com.google/reading-list");
+    expect(marked).toBeGreaterThan(0);
+    const remaining = await reader.streamItemIds(identity, new URLSearchParams({ s: "user/-/state/com.google/reading-list", xt: "user/-/state/com.google/read" }));
+    expect(remaining.itemRefs).toEqual([]);
+    await tokens.revokeApiToken(userId, (await tokens.listApiTokens(userId))[0].id);
   });
 
   it("SEARCH-04: a folder scope narrows results and an unreadable scope returns nothing", async () => {

@@ -79,6 +79,41 @@ Parsing refuses DOCTYPE and entity declarations before the XML parser sees
 them. Discovery verifies advertised and conventional feed paths by fetching
 and parsing; it never fabricates a candidate.
 
+## Reading like Reader (added 2026-09-16)
+
+- **Keyboard**: in a reading folder j/k move, o or Enter opens, m toggles
+  read, s stars, e keeps, v opens the original; inside an article n/j and
+  p/k step older and newer. "Read as I scroll" and "Mark above read" are in
+  the folder. Per-folder view preferences persist in the browser.
+- **One copy**: a later feed copy of the same canonical link is marked
+  `reading_provenance.duplicate_of_post_id` at import and hidden everywhere.
+- **Per-feed settings**: rename, retention (re-leases receipts still passing
+  through), muted words (stop entries at the door). A permanent redirect is
+  remembered as `moved_to_url` and offered, never adopted alone.
+- **Full text**: `extract.server.ts` fetches the original through the gate,
+  finds the article without a DOM, and records it as a source revision:
+  applied when untouched, recorded otherwise.
+- **Search**: operators `feed:`, `is:unread`, `is:starred`, `is:kept`,
+  `before:`, `after:`, quoted phrases. Saved searches (`reading_saved_searches`)
+  behave like feeds with a bounded unread count; `notify` makes one an alert.
+- **Cadence and cron**: `feed_connections.poll_interval_minutes` halves on
+  news and stretches by half when quiet (10 min to 24 h). `vercel.json`
+  schedules `GET /api/workspace/reading/cron` every fifteen minutes; the route
+  requires `Authorization: Bearer $CRON_SECRET` and refuses without it.
+- **Digest**: `blogs.reading_digest_hour` (UTC) sends one email a day to the
+  owner: alerts first (new matches are kept), then the day's articles by
+  source; `reading_digest_sent_on` is the once-per-day key.
+- **Export**: `GET /api/workspace/reading/export` (JSON or CSV, all or kept,
+  bounded to 5,000 rows).
+- **Reader-compatible API**: base URL `https://texttext.app/api/reader`.
+  Password is a TextText API token (email ignored). Implements ClientLogin,
+  token, user-info, subscription/list, tag/list, unread-count,
+  stream/items/ids (with continuation), stream/items/contents,
+  stream/contents/*, edit-tag (read, starred), mark-all-as-read,
+  subscription/edit and quickadd (subscribe, unsubscribe as detach keeping
+  everything, rename). Item ids are the first sixteen hex digits of the UUID.
+  Labels are the feed folders' parent folders.
+
 ## Residual risks, recorded
 
 - DNS rebinding between the gate's lookup and the socket connect is a known

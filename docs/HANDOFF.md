@@ -16,6 +16,23 @@
 
 For other topics, search `HANDOFF-history-2026-09-13.md` by term, then read that section. Implementation and checks are in their source files and git history; this entry point does not duplicate them.
 
+## Reading, the Feedbin and Reader gaps (2026-09-16)
+
+Landed on `main` after the 0.183 release, not yet shipped: keyboard triage
+and read-on-scroll, sidebar unread counts, one copy per article, per-feed
+settings with muted words and moved-feed adoption, full-text extraction and
+in-article prev/next, deep links to imported articles, search operators and
+saved searches with alerts, adaptive polling behind a Vercel cron
+(`CRON_SECRET` set in production), a daily digest email, article export, and
+a Google Reader-compatible API at `/api/reader`. Details:
+[reading-architecture.md](reading-architecture.md), section "Reading like
+Reader". Ship with `npm run ship`; the migration is idempotent and listed.
+
+Open: the digest and cron are unexercised in production until the next
+release; Vercel Hobby plans run crons at most daily, so the fifteen-minute
+schedule needs Pro (check the plan before relying on it). Newsletter-by-email
+and richer discovery were declined for now.
+
 ## Source-fed reading landed locally (2026-09-16)
 
 Implemented from `MASTER_PLAN.md` (owner's local copy) under explicit local

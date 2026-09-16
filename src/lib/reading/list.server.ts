@@ -27,7 +27,7 @@ import { subtreeFolderIds } from "./connections.server";
 export type ReadingScope = {
   folderPath: string;
   includeDescendants: boolean;
-  state: "all" | "unread" | "kept";
+  state: "all" | "unread" | "kept" | "starred";
   dateBasis: "published" | "received";
   /** Newest first unless asked; oldest first is how Reader people catch up. */
   direction?: "newest" | "oldest";
@@ -198,6 +198,7 @@ export async function listReadingItems(input: {
         notDuplicateSql(),
         input.scope.ids && input.scope.ids.length > 0 ? inArray(posts.id, input.scope.ids) : undefined,
         input.scope.state === "unread" ? isNull(readingReadState.readAt) : undefined,
+        input.scope.state === "starred" ? eq(posts.starred, true) : undefined,
         input.scope.state === "kept"
           ? or(
               sql`${posts.origin} <> 'feed'`,
