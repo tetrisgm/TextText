@@ -62,6 +62,8 @@ export type WorkspaceReadingSource = {
   healthDetail: string | null;
   lastSuccessAt: string | null;
   publisherTitle: string | null;
+  /** Unread for the signed-in viewer; null when there is no viewer. */
+  unread: number | null;
 };
 
 export type WorkspacePoolPayload = {

@@ -1,5 +1,6 @@
 "use client";
 
+import { readingUnreadByFolder } from "@/components/workspace/reading/unread";
 import { requestDocumentCaret } from "@/lib/document-history-events";
 import type { Appearance } from "@/lib/workspace/appearance";
 import {
@@ -5163,6 +5164,7 @@ function LocalWorkspaceShell({
         canManageSharing={canManageSharing}
         collapsed={effectiveSidebarCollapsed}
         counts={displayPool.counts}
+        unread={readingUnreadByFolder(displayPool.readingSources)}
         documents={displayPool.posts}
         folders={displayPool.folders}
         homeActive={view.level === "root" || view.level === "search"}

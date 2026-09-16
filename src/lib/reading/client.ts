@@ -40,6 +40,7 @@ export function fetchReadingPage(input: {
     descendants: input.scope.includeDescendants ? "1" : "0",
     state: input.scope.state,
     dateBasis: input.scope.dateBasis,
+    direction: input.scope.direction ?? "newest",
   });
   if (input.cursor) params.set("cursor", input.cursor);
   if (input.limit) params.set("limit", String(input.limit));

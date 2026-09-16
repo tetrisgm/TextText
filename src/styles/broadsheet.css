@@ -2757,6 +2757,11 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   font: 500 11px/1 var(--font-body);
   text-align: center;
 }
+.post-editor-folder-count.is-unread {
+  color: var(--ink);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
 .post-editor-special-folders {
   display: grid;
   gap: 2px;

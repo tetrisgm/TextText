@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isTypingTarget } from "@/components/keyboard/typing-target";
+import { toggleEditablePostStarredAction } from "@/app/editor/actions";
 import type { Blog, Folder, Post } from "@/lib/content";
 import { addPost } from "@/lib/pool/store";
 import { postFromPoolPost } from "@/lib/pool/selectors";
@@ -29,6 +31,45 @@ import styles from "./Reading.module.css";
  */
 
 const STALE_AFTER_MS = 30 * 60 * 1000;
+
+type ReadingPrefs = {
+  view: "articles" | "summaries";
+  state: ReadingScope["state"];
+  dateBasis: ReadingScope["dateBasis"];
+  direction: "newest" | "oldest";
+};
+const DEFAULT_PREFS: ReadingPrefs = { view: "articles", state: "all", dateBasis: "published", direction: "newest" };
+
+/** Per-folder view preferences and the read-on-scroll choice, this browser only. */
+function loadPrefs(folderPath: string): ReadingPrefs {
+  try {
+    const raw = window.localStorage.getItem(`texttext:reading-prefs:${folderPath}`);
+    if (!raw) return DEFAULT_PREFS;
+    const parsed = JSON.parse(raw) as Partial<ReadingPrefs>;
+    return {
+      view: parsed.view === "summaries" ? "summaries" : "articles",
+      state: parsed.state === "unread" || parsed.state === "kept" ? parsed.state : "all",
+      dateBasis: parsed.dateBasis === "received" ? "received" : "published",
+      direction: parsed.direction === "oldest" ? "oldest" : "newest",
+    };
+  } catch {
+    return DEFAULT_PREFS;
+  }
+}
+function savePrefs(folderPath: string, prefs: ReadingPrefs) {
+  try {
+    window.localStorage.setItem(`texttext:reading-prefs:${folderPath}`, JSON.stringify(prefs));
+  } catch {
+    // Preferences are a convenience; a blocked store changes nothing.
+  }
+}
+function loadReadOnScroll(): boolean {
+  try {
+    return window.localStorage.getItem("texttext:reading:read-on-scroll") === "1";
+  } catch {
+    return false;
+  }
+}
 
 const AVAILABILITY_LABEL: Record<ReadingListItem["availability"], string> = {
   full: "Full feed text",
@@ -104,13 +145,20 @@ export function ReadingFolderView({
   onAddFeeds?: () => void;
 }) {
   void blog;
-  const [view, setView] = useState<"articles" | "summaries">("articles");
+  const initialPrefs = useMemo(() => loadPrefs(folder.path), [folder.path]);
+  const [view, setView] = useState<"articles" | "summaries">(initialPrefs.view);
   const [summaries, setSummaries] = useState<{ summaries: Array<ReadingSummary & { text: string | null }>; singles: number; considered: number } | null>(null);
-  const [state, setState] = useState<ReadingScope["state"]>("all");
-  const [dateBasis, setDateBasis] = useState<ReadingScope["dateBasis"]>("published");
+  const [state, setState] = useState<ReadingScope["state"]>(initialPrefs.state);
+  const [dateBasis, setDateBasis] = useState<ReadingScope["dateBasis"]>(initialPrefs.dateBasis);
+  const [direction, setDirection] = useState<"newest" | "oldest">(initialPrefs.direction);
+  const [readOnScroll, setReadOnScroll] = useState<boolean>(() => (typeof window === "undefined" ? false : loadReadOnScroll()));
+  const [focusIndex, setFocusIndex] = useState<number>(-1);
+  useEffect(() => {
+    savePrefs(folder.path, { view, state, dateBasis, direction });
+  }, [dateBasis, direction, folder.path, state, view]);
   const scope = useMemo<ReadingScope>(
-    () => ({ folderPath: folder.path, includeDescendants: true, state, dateBasis }),
-    [dateBasis, folder.path, state],
+    () => ({ folderPath: folder.path, includeDescendants: true, state, dateBasis, direction }),
+    [dateBasis, direction, folder.path, state],
   );
   const [items, setItems] = useState<ReadingListItem[]>([]);
   const [summary, setSummary] = useState<ReadingFolderSummary | null>(null);
@@ -283,6 +331,127 @@ export function ReadingFolderView({
     onOpenPost?.(postFromPoolPost(post));
   }, [onOpenPost]);
 
+  const setRead = useCallback(
+    (item: ReadingListItem, read: boolean) => {
+      patchItem(item.id, { read });
+      setSummary((current) =>
+        current && current.unreadCount !== null
+          ? { ...current, unreadCount: Math.max(0, current.unreadCount + (read ? -1 : 1)) }
+          : current,
+      );
+      void setReadingItemsRead(handle, [item.id], read).catch(() => patchItem(item.id, { read: !read }));
+    },
+    [handle, patchItem],
+  );
+  const markAboveRead = useCallback(
+    (index: number) => {
+      const above = items.slice(0, index).filter((item) => !item.read);
+      if (above.length === 0) return;
+      setItems((current) => current.map((item, position) => (position < index ? { ...item, read: true } : item)));
+      setSummary((current) =>
+        current && current.unreadCount !== null ? { ...current, unreadCount: Math.max(0, current.unreadCount - above.length) } : current,
+      );
+      void setReadingItemsRead(handle, above.map((item) => item.id), true).catch(() => undefined);
+    },
+    [handle, items],
+  );
+  const toggleStar = useCallback(
+    (item: ReadingListItem) => {
+      const starred = !item.starred;
+      patchItem(item.id, { starred, kept: item.origin !== "feed" || starred || item.keptReasons.length > 0 });
+      void toggleEditablePostStarredAction(handle, item.id).catch(() => patchItem(item.id, { starred: item.starred, kept: item.kept }));
+    },
+    [handle, patchItem],
+  );
+  const openOriginal = useCallback((item: ReadingListItem) => {
+    const target = item.permalink ?? item.externalUrl;
+    if (!target) return;
+    window.open(target, "_blank", "noopener,noreferrer");
+    if (!item.read) setRead(item, true);
+  }, [setRead]);
+
+  // Reader's keyboard: j/k move, o or Enter opens, m toggles read, s stars,
+  // v opens the original, k(eep) is taken by "previous", so Keep is e.
+  const focusIndexRef = useRef(focusIndex);
+  useEffect(() => {
+    focusIndexRef.current = focusIndex;
+  }, [focusIndex]);
+  useEffect(() => {
+    if (view !== "articles") return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      const current = focusIndexRef.current;
+      const item = current >= 0 ? items[current] : undefined;
+      switch (event.key) {
+        case "j":
+          event.preventDefault();
+          setFocusIndex(Math.min(items.length - 1, current + 1));
+          break;
+        case "k":
+          event.preventDefault();
+          setFocusIndex(Math.max(0, current - 1));
+          break;
+        case "o":
+        case "Enter":
+          if (!item) return;
+          event.preventDefault();
+          open(item);
+          break;
+        case "m":
+          if (!item) return;
+          event.preventDefault();
+          setRead(item, !item.read);
+          break;
+        case "s":
+          if (!item) return;
+          event.preventDefault();
+          toggleStar(item);
+          break;
+        case "e":
+          if (!item) return;
+          event.preventDefault();
+          toggleKeep(item);
+          break;
+        case "v":
+          if (!item) return;
+          event.preventDefault();
+          openOriginal(item);
+          break;
+        default:
+          return;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [items, open, openOriginal, setRead, toggleKeep, toggleStar, view]);
+  useEffect(() => {
+    if (focusIndex < 0) return;
+    const row = document.querySelector<HTMLElement>(`[data-reading-folder] [data-reading-index="${focusIndex}"]`);
+    row?.scrollIntoView({ block: "nearest" });
+    if (focusIndex >= items.length - 5 && cursor && !loadingMore) void Promise.resolve().then(() => loadMore());
+  }, [cursor, focusIndex, items.length, loadMore, loadingMore]);
+
+  // Read as you scroll: a row whose bottom edge has passed the top of the
+  // viewport counts as read. Off unless the person turns it on.
+  const listRef = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    if (!readOnScroll || view !== "articles" || !listRef.current) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting || entry.boundingClientRect.bottom > 0) continue;
+          const id = (entry.target as HTMLElement).dataset.workspacePostId;
+          const item = items.find((candidate) => candidate.id === id);
+          if (item && !item.read) setRead(item, true);
+        }
+      },
+      { root: null, threshold: 0 },
+    );
+    for (const row of listRef.current.querySelectorAll('[role="option"]')) observer.observe(row);
+    return () => observer.disconnect();
+  }, [items, readOnScroll, setRead, view]);
+
   const showPending = useCallback(() => {
     if (!pendingNew) return;
     setItems(pendingNew);
@@ -347,6 +516,29 @@ export function ReadingFolderView({
             Received
           </button>
         </div>
+        <div className={styles.segment} role="group" aria-label="Direction">
+          <button type="button" aria-pressed={direction === "newest"} onClick={() => setDirection("newest")}>
+            Newest
+          </button>
+          <button type="button" aria-pressed={direction === "oldest"} onClick={() => setDirection("oldest")}>
+            Oldest first
+          </button>
+        </div>
+        <label className={styles.toggle} title="Articles you scroll past count as read">
+          <input
+            type="checkbox"
+            checked={readOnScroll}
+            onChange={(event) => {
+              setReadOnScroll(event.target.checked);
+              try {
+                window.localStorage.setItem("texttext:reading:read-on-scroll", event.target.checked ? "1" : "0");
+              } catch {
+                // fine
+              }
+            }}
+          />
+          Read as I scroll
+        </label>
         <span className={styles.spacer} />
         {summary && summary.unreadCount !== null && summary.unreadCount > 0 && (
           <button
@@ -447,17 +639,23 @@ export function ReadingFolderView({
           )}
         </div>
       ) : (
-        <ul className={styles.list} role="listbox" aria-label={`Articles in ${folder.name}`} aria-busy={loading}>
-          {items.map((item) => (
+        <ul ref={listRef} className={styles.list} role="listbox" aria-label={`Articles in ${folder.name}`} aria-busy={loading}>
+          {items.map((item, index) => (
             <li
               key={item.id}
               className={styles.row}
               role="option"
               aria-selected={selectedPostId === item.id}
               data-read={item.read ? "true" : "false"}
+              data-focused={focusIndex === index ? "true" : undefined}
+              data-reading-index={index}
               data-workspace-post-id={item.id}
               tabIndex={0}
-              onClick={() => open(item)}
+              onFocus={() => setFocusIndex(index)}
+              onClick={() => {
+                setFocusIndex(index);
+                open(item);
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
@@ -491,6 +689,19 @@ export function ReadingFolderView({
                   {relativeTime(item.publishedAt ?? item.receivedAt)}
                 </time>
                 {item.folderPath !== folder.path && <span>{item.sourceFolderName}</span>}
+                {index > 0 && items.slice(0, index).some((above) => !above.read) && (
+                  <button
+                    type="button"
+                    className={styles.keep}
+                    title="Mark everything above this article as read"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      markAboveRead(index);
+                    }}
+                  >
+                    Mark above read
+                  </button>
+                )}
                 {canEdit && item.origin === "feed" && (
                   <button
                     type="button"

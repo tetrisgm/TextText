@@ -158,6 +158,25 @@
   background: var(--ac-fill-3);
 }
 
+.row[data-focused="true"] {
+  box-shadow: inset 3px 0 0 var(--ac-accent, #3478f6);
+  background: var(--ac-fill-3);
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--ac-accent, #3478f6);
+  outline-offset: -2px;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--ac-label-2);
+  font: 500 var(--ac-fs-footnote) / 1.2 var(--ac-font-text);
+  cursor: pointer;
+}
+
 .unreadDot {
   width: 0.4375rem;
   height: 0.4375rem;

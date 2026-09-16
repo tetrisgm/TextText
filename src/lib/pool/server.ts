@@ -62,7 +62,7 @@ export async function getWorkspacePoolForOwner(
     getTrashedPosts(handle),
     getSharedPostsForUser(user?.sub ? { ...user, sub: user.sub } : null),
     listDocumentTemplates(access.blogId),
-    listWorkspaceReadingSources(handle),
+    listWorkspaceReadingSources(handle, user?.userId ?? null),
   ]);
   const wikiLinks = workspaceWikiLinkMetadata(wikiLinkSources, slugAliases);
 

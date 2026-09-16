@@ -136,7 +136,7 @@ async function loadWorkspacePoolParts(
     getTrashedPosts(handle),
     getSharedPostsForUser(viewer),
     listDocumentTemplates(blogId),
-    listWorkspaceReadingSources(handle),
+    listWorkspaceReadingSources(handle, viewer?.userId ?? null),
   ]);
   return {
     folders,

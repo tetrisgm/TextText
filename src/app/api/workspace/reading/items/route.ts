@@ -29,6 +29,7 @@ export async function GET(request: Request) {
     includeDescendants: url.searchParams.get("descendants") !== "0",
     state,
     dateBasis,
+    direction: url.searchParams.get("direction") === "oldest" ? "oldest" : "newest",
   };
   const cursor = url.searchParams.get("cursor");
   const limitParam = Number(url.searchParams.get("limit") ?? "");

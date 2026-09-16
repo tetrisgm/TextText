@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { DURABLE_HOLD_REASONS } from "./holds";
 import { db } from "@/lib/db/client";
 import {
@@ -29,6 +29,8 @@ export type ReadingScope = {
   includeDescendants: boolean;
   state: "all" | "unread" | "kept";
   dateBasis: "published" | "received";
+  /** Newest first unless asked; oldest first is how Reader people catch up. */
+  direction?: "newest" | "oldest";
 };
 
 export type ReadingListItem = {
@@ -128,7 +130,7 @@ export async function listReadingItems(input: {
     includeDescendants: input.scope.includeDescendants,
   });
   const userId = input.user?.userId ?? null;
-  const fingerprint = sha(`${blogId}|${userId ?? "anon"}|${[...folderIds].sort().join(",")}|${input.scope.state}|${input.scope.dateBasis}`);
+  const fingerprint = sha(`${blogId}|${userId ?? "anon"}|${[...folderIds].sort().join(",")}|${input.scope.state}|${input.scope.dateBasis}|${input.scope.direction ?? "newest"}`);
   if (folderIds.length === 0) {
     return { items: [], nextCursor: null, scope: { ...input.scope, folderIds: 0 }, scopeFingerprint: fingerprint };
   }
@@ -195,11 +197,15 @@ export async function listReadingItems(input: {
             )
           : undefined,
         cursor
-          ? sql`(${orderExpr}, ${posts.id}) < (${new Date(cursor.at)}::timestamp, ${cursor.id}::uuid)`
+          ? input.scope.direction === "oldest"
+            ? sql`(${orderExpr}, ${posts.id}) > (${new Date(cursor.at)}::timestamp, ${cursor.id}::uuid)`
+            : sql`(${orderExpr}, ${posts.id}) < (${new Date(cursor.at)}::timestamp, ${cursor.id}::uuid)`
           : undefined,
       ),
     )
-    .orderBy(desc(orderExpr), desc(posts.id))
+    .orderBy(
+      ...(input.scope.direction === "oldest" ? [asc(orderExpr), asc(posts.id)] : [desc(orderExpr), desc(posts.id)]),
+    )
     .limit(limit + 1);
 
   const page = rows.slice(0, limit);

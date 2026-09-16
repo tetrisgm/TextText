@@ -973,6 +973,7 @@ function FolderTreeNav({
   folders,
   activeFolder,
   counts,
+  unread,
   collapsed,
   prefetchFolders = true,
   canManageSharing,
@@ -988,6 +989,8 @@ function FolderTreeNav({
   folders: Folder[];
   activeFolder: SidebarFolderId | null;
   counts: Record<string, number>;
+  /** Unread reading items per folder path, for folders that follow feeds. */
+  unread?: Record<string, number>;
   collapsed: boolean;
   prefetchFolders?: boolean;
   canManageSharing: boolean;
@@ -1146,6 +1149,7 @@ function FolderTreeNav({
     const isExpanded = expanded.has(folder.id);
     const selected = folder.path === activeFolder;
     const count = counts[folder.path] ?? 0;
+    const unreadCount = unread?.[folder.path] ?? 0;
     const canNest = folder.path.split("/").length < MAX_FOLDER_DEPTH;
     const indent = depth * 15;
     return (
@@ -1190,10 +1194,16 @@ function FolderTreeNav({
               className="post-editor-folder-trailing"
               data-folder-more-root={folder.path}
             >
-              {count > 0 && (
-                <span className="post-editor-folder-count" aria-hidden="true">
-                  {count}
+              {unreadCount > 0 ? (
+                <span className="post-editor-folder-count is-unread" title={`${unreadCount} unread of ${count}`}>
+                  {unreadCount}
                 </span>
+              ) : (
+                count > 0 && (
+                  <span className="post-editor-folder-count" aria-hidden="true">
+                    {count}
+                  </span>
+                )
               )}
               <button
                 type="button"
@@ -1426,6 +1436,7 @@ export function PostFolderSidebar({
   activeFolder,
   collapsed,
   counts,
+  unread,
   documents = [],
   prefetchFolders = true,
   canManageFolders = false,
@@ -1451,6 +1462,8 @@ export function PostFolderSidebar({
   activeFolder: SidebarFolderId | null;
   collapsed: boolean;
   counts: Record<string, number>;
+  /** Unread reading items per folder path, for folders that follow feeds. */
+  unread?: Record<string, number>;
   documents?: WorkspacePoolPost[];
   prefetchFolders?: boolean;
   canManageFolders?: boolean;
@@ -1632,6 +1645,7 @@ export function PostFolderSidebar({
           folders={navFolders}
           activeFolder={activeFolder}
           counts={counts}
+          unread={unread}
           collapsed={collapsed}
           prefetchFolders={prefetchFolders}
           canManageFolders={canManageFolders}
@@ -1680,6 +1694,7 @@ export function WorkspaceSidebarChrome({
   canManageFolders = false,
   canManageSharing = false,
   counts,
+  unread,
   documents = [],
   folders,
   homeActive = activeFolder === null,
@@ -1709,6 +1724,8 @@ export function WorkspaceSidebarChrome({
   canManageFolders?: boolean;
   canManageSharing?: boolean;
   counts: Record<string, number>;
+  /** Unread reading items per folder path, for folders that follow feeds. */
+  unread?: Record<string, number>;
   documents?: WorkspacePoolPost[];
   folders: Folder[];
   homeActive?: boolean;
@@ -1906,6 +1923,7 @@ export function WorkspaceSidebarChrome({
           canManageFolders={canManageFolders}
           canManageSharing={canManageSharing}
           counts={counts}
+          unread={unread}
           documents={documents}
           folders={folders}
           homeActive={homeActive}
