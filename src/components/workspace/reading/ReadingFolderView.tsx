@@ -511,7 +511,7 @@ export function ReadingFolderView({
         </ul>
       )}
 
-      {cursor && (
+      {cursor && view === "articles" && (
         <button type="button" className={`${styles.button} ${styles.more}`} onClick={() => void loadMore()} disabled={loadingMore}>
           {loadingMore ? "Loading…" : "Load more"}
         </button>
