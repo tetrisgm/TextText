@@ -6492,3 +6492,13 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   width: 1rem;
   height: 1rem;
 }
+
+/* The home and the utility collections used to insist on 100dvh while they
+   sit inside a scroller that is the row minus the fixed hint bar, under a
+   52px action bar. The sum always exceeded the scroller, so a home with
+   three items showed a scrollbar with nowhere to go (owner, 2026-09-16). Fill
+   the scroller exactly instead: its height minus the bar it also holds. */
+.post-editor-shell .post-editor-content .workspace-root-page,
+.post-editor-shell .post-editor-content .workspace-collection-page {
+  min-height: calc(100% - var(--workspace-action-bar-height, 3.25rem));
+}

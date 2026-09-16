@@ -29,16 +29,41 @@ export function WorkspaceKeyHints({
   const [metaHeld, setMetaHeld] = useState(false);
 
   // Holding Cmd asks "what does this modifier do here", and the bar answers.
+  //
+  // The layer must never stick. The app is often brought forward with Cmd
+  // held (Cmd-Tab, a Cmd-click on the Dock), so the webview sees the keydown
+  // and never the keyup; a bar that then opened on the Cmd layer read as the
+  // wrong default. So: any event that carries metaKey=false clears it, so do
+  // blur and hiding, and a held layer expires on its own.
   useEffect(() => {
-    const sync = (event: KeyboardEvent) => setMetaHeld(event.metaKey);
-    const clear = () => setMetaHeld(false);
-    window.addEventListener("keydown", sync);
-    window.addEventListener("keyup", sync);
+    let timer: number | null = null;
+    const set = (held: boolean) => {
+      setMetaHeld(held);
+      if (timer !== null) window.clearTimeout(timer);
+      timer = held ? window.setTimeout(() => setMetaHeld(false), 4000) : null;
+    };
+    const fromKey = (event: KeyboardEvent) => set(event.metaKey);
+    const fromPointer = (event: MouseEvent) => {
+      if (!event.metaKey) set(false);
+    };
+    const clear = () => set(false);
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") set(false);
+    };
+    window.addEventListener("keydown", fromKey);
+    window.addEventListener("keyup", fromKey);
+    window.addEventListener("pointerdown", fromPointer);
+    window.addEventListener("pointermove", fromPointer);
     window.addEventListener("blur", clear);
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
-      window.removeEventListener("keydown", sync);
-      window.removeEventListener("keyup", sync);
+      if (timer !== null) window.clearTimeout(timer);
+      window.removeEventListener("keydown", fromKey);
+      window.removeEventListener("keyup", fromKey);
+      window.removeEventListener("pointerdown", fromPointer);
+      window.removeEventListener("pointermove", fromPointer);
       window.removeEventListener("blur", clear);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
 
