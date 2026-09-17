@@ -893,6 +893,24 @@ export async function countAllPosts(handle: string): Promise<number> {
   return Number(rows[0]?.count ?? 0);
 }
 
+/** Imported feed articles only: the reader's cache, bounded apart from authored work. */
+export async function countFeedPosts(handle: string): Promise<number> {
+  if (!db) throw new Error(NO_DATABASE);
+  const rows = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(posts)
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .where(
+      and(
+        eq(blogs.handle, handle),
+        isNull(blogs.deletedAt),
+        isNull(posts.deletedAt),
+        eq(posts.origin, "feed"),
+      ),
+    );
+  return Number(rows[0]?.count ?? 0);
+}
+
 export async function getAdjacentPublishedPosts(
   handle: string,
   postKey: string,

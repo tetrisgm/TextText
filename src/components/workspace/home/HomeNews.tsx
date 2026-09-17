@@ -24,7 +24,7 @@ import {
 import { AddFeedsDialog } from "@/components/workspace/reading/AddFeedsDialog";
 import { ManageSourcesDialog } from "@/components/workspace/reading/ManageSourcesDialog";
 import { STARTER_FEEDS } from "@/lib/reading/starter-feeds";
-import { publisherFor, usableExcerpt } from "./publisher";
+import { publisherFor } from "./publisher";
 import styles from "./Home.module.css";
 
 /**
@@ -176,6 +176,7 @@ export function HomeNews({
   // once it is following something it chose, or chose to be empty.
   const [starter, setStarter] = useState<"unknown" | "starting" | "own">("unknown");
   const starterRan = useRef(false);
+  const tabsRef = useRef<HTMLUListElement | null>(null);
   const [saving, setSaving] = useState(false);
   // Set when data arrives, never during render, so server and client agree.
   const [now, setNow] = useState(0);
@@ -455,6 +456,18 @@ export function HomeNews({
     [data?.topics],
   );
 
+  // The strip scrolls, so the chosen tab is brought into view: one picked by
+  // keyboard, or restored from the URL, must never sit off the end of it.
+  useEffect(() => {
+    const strip = tabsRef.current;
+    const current = strip?.querySelector<HTMLElement>('[aria-current="true"]');
+    if (!strip || !current) return;
+    const left = current.offsetLeft - strip.offsetLeft;
+    if (left < strip.scrollLeft || left + current.offsetWidth > strip.scrollLeft + strip.clientWidth) {
+      strip.scrollTo({ left: Math.max(0, left - 16), behavior: "smooth" });
+    }
+  }, [topic, data?.topics]);
+
   const focusIndexRef = useRef(focusIndex);
   useEffect(() => {
     focusIndexRef.current = focusIndex;
@@ -608,7 +621,9 @@ export function HomeNews({
   // of headlines reading as a wall of text.
   const heroes = useMemo(() => {
     const chosen = new Set<number>();
-    let previous = -99;
+    // -1, not -infinity: the original never opens on a photograph. Two
+    // compact rows, then the picture.
+    let previous = -1;
     units.forEach((unit, index) => {
       const image = unit.kind === "summary" ? unit.imageUrl : unit.item.imageUrl;
       if (image && index - previous >= HERO_GAP) {
@@ -618,11 +633,11 @@ export function HomeNews({
     });
     return chosen;
   }, [units]);
-  // The clusters worth a strip of their own, newest first. Without an image
-  // the card still works: the headline and the count carry it.
+  // Chosen by the server across the whole window, not by this page, and
+  // already lifted out of the list below.
   const headlines = useMemo(
-    () => units.filter((unit): unit is Extract<HomeUnit, { kind: "summary" }> => unit.kind === "summary" && unit.sources.length > 1).slice(0, 6),
-    [units],
+    () => (data?.headlines ?? []).filter((unit): unit is Extract<HomeUnit, { kind: "summary" }> => unit.kind === "summary"),
+    [data?.headlines],
   );
 
   // With nothing followed, the modes and topics control nothing, and the news
@@ -659,27 +674,56 @@ export function HomeNews({
           </div>
         </div>
       )}
+      {/* One strip, the way the app this copies had one: For You and then the
+          subjects, at a size that makes it the navigation rather than a
+          caption. Everything that is not a subject lives behind the button at
+          its end, so the strip stays a strip. */}
       {!noSources && (
-      <header className={styles.header}>
-        <div className={styles.modes} role="group" aria-label="News mode">
-          <button type="button" aria-pressed={mode === "forYou"} onClick={() => setMode("forYou")}>
-            For you
-          </button>
-          <button type="button" aria-pressed={mode === "latest"} onClick={() => setMode("latest")}>
-            Latest
-          </button>
-        </div>
-        <span className={styles.spacer} />
-        <div className={styles.utilities}>
-          {unhealthy.length > 0 && (
-            <button type="button" className={styles.attention} onClick={() => setManaging(true)} title={unhealthy[0].healthDetail ?? undefined}>
-              <span className={styles.attentionDot} aria-hidden="true" />
-              {unhealthy.length === 1 ? "1 source needs attention" : `${unhealthy.length} sources need attention`}
-            </button>
-          )}
+        <nav className={styles.strip} aria-label="Channels">
+          <ul className={styles.tabs} ref={tabsRef}>
+            <li>
+              <button
+                type="button"
+                className={styles.tab}
+                aria-current={topic === null ? "true" : undefined}
+                onClick={() => setTopic(null)}
+              >
+                For You
+              </button>
+            </li>
+            {(data?.topics ?? []).map((entry) => (
+              <li key={entry.id}>
+                <button
+                  type="button"
+                  className={styles.tab}
+                  aria-current={topic === entry.id ? "true" : undefined}
+                  onClick={() => setTopic(entry.id)}
+                  title={
+                    entry.kind === "channel"
+                      ? entry.detail || undefined
+                      : entry.kind === "search"
+                        ? `Saved search: ${entry.detail}`
+                        : entry.kind === "derived"
+                          ? `Grouped by what the articles are about: ${entry.detail}`
+                          : "One source"
+                  }
+                >
+                  {entry.label}
+                </button>
+              </li>
+            ))}
+          </ul>
           <div className={styles.menuWrap}>
-            <button type="button" className={styles.menuButton} aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((value) => !value)}>
-              Sources
+            <button
+              type="button"
+              className={styles.stripMore}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              aria-label="News options"
+              onClick={() => setMenuOpen((value) => !value)}
+            >
+              <span aria-hidden="true">•••</span>
+              {unhealthy.length > 0 && <span className={styles.attentionDot} aria-hidden="true" />}
             </button>
             {menuOpen && (
               <div className={styles.menu} role="menu" onMouseLeave={() => setMenuOpen(false)}>
@@ -689,9 +733,23 @@ export function HomeNews({
                     {overview.totals.unread !== null ? `, ${overview.totals.unread} unread` : ""}, {overview.sources.length} {overview.sources.length === 1 ? "source" : "sources"}
                   </small>
                 )}
+                <button
+                  type="button"
+                  role="menuitemcheckbox"
+                  aria-checked={mode === "latest"}
+                  onClick={() => { setMenuOpen(false); setMode(mode === "latest" ? "forYou" : "latest"); }}
+                >
+                  Newest first
+                  {mode === "latest" && <span aria-hidden="true">✓</span>}
+                </button>
                 {canManage && (
                   <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); setManaging(true); }}>
                     Manage sources
+                  </button>
+                )}
+                {unhealthy.length > 0 && (
+                  <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); setManaging(true); }} title={unhealthy[0].healthDetail ?? undefined}>
+                    {unhealthy.length === 1 ? "1 source needs attention" : `${unhealthy.length} sources need attention`}
                   </button>
                 )}
                 {assistantReady && (
@@ -707,24 +765,7 @@ export function HomeNews({
               </div>
             )}
           </div>
-        </div>
-      </header>
-      )}
-      {!noSources && data && data.topics.length > 0 && (
-        <ul className={styles.topics} aria-label="Topics">
-          <li>
-            <button type="button" aria-pressed={topic === null} onClick={() => setTopic(null)}>
-              All
-            </button>
-          </li>
-          {data.topics.map((entry) => (
-            <li key={entry.id}>
-              <button type="button" aria-pressed={topic === entry.id} onClick={() => setTopic(entry.id)} title={entry.kind === "search" ? `Saved search: ${entry.detail}` : `Source folder`}>
-                {entry.label}
-              </button>
-            </li>
-          ))}
-        </ul>
+        </nav>
       )}
       {addingFeeds && (
         <AddFeedsDialog
@@ -785,7 +826,6 @@ export function HomeNews({
         <>
           <div className={`${styles.sectionHead} ${styles.carouselHead}`}>
             <h2 className={styles.sectionTitle}>Headlines</h2>
-            <span className={styles.sectionMore}>{headlines.length} stories, several sources each</span>
           </div>
           <ul className={styles.carousel} aria-label="Headlines">
             {headlines.map((unit) => (
@@ -850,7 +890,6 @@ export function HomeNews({
                 <div className={styles.body}>
                   <PublisherRow item={item} at={unit.latestAt} now={now} />
                   <h3 className={styles.headline}>{item.title}</h3>
-                  {lead && usableExcerpt(item.excerpt) && <p className={styles.excerpt}>{usableExcerpt(item.excerpt)}</p>}
                   {/* Unread is the default state of a feed, so it is said by
                       the headline's full ink rather than by a chip on every
                       row. Only what is true of the few is written down. */}
@@ -957,9 +996,7 @@ export function HomeNews({
                     <em>{unit.textStale ? "Summary, earlier coverage" : "Summary"}</em>
                     {unit.text}
                   </p>
-                ) : (
-                  lead && usableExcerpt(representative.excerpt) && <p className={styles.excerpt}>{usableExcerpt(representative.excerpt)}</p>
-                )}
+                ) : null}
                 <p className={styles.sources} onClick={(event) => event.stopPropagation()}>
                   {unit.seenRevision > 0 && unit.coverageRevision > unit.seenRevision ? (
                     <span className={styles.state}>New coverage</span>

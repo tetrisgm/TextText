@@ -86,7 +86,7 @@ export function manageFeed(input: {
   id: string;
   action: "pause" | "resume" | "detach" | "refresh" | "settings" | "adopt_move";
   keepAllItems?: boolean;
-  settings?: { name?: string; retentionDays?: number | null; mutedKeywords?: string[] };
+  settings?: { name?: string; retentionDays?: number | null; mutedKeywords?: string[]; channel?: string | null };
 }): Promise<{ connection?: FeedConnectionView; queued?: boolean }> {
   return request(`/api/workspace/reading/feeds/${encodeURIComponent(input.id)}?handle=${encodeURIComponent(input.handle)}`, {
     method: "POST",

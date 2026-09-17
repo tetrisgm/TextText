@@ -15,6 +15,7 @@
     "mac:build": "swift build --package-path mac",
     "mac:test": "swift test --package-path mac",
     "reading:images:backfill": "node --env-file=.env.local --import tsx scripts/backfill-reading-images.mjs",
+    "reading:channels:backfill": "node --env-file=.env.local --import tsx scripts/backfill-feed-channels.mjs",
     "test:db": "TEXTTEXT_READING_DB_TEST=1 node --env-file=.env.local node_modules/vitest/vitest.mjs run .db.test.ts",
     "test:reading:db": "npm run test:db",
     "build": "node scripts/next-build.mjs",

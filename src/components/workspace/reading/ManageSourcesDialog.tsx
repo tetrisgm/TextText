@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { refreshWorkspacePool } from "@/lib/pool/store";
+import { CHANNELS, isChannel } from "@/lib/reading/channels";
 import { bookmarksHtmlExportUrl, fetchDigestSetting, fetchFeedConnections, importBookmarksHtmlRequest, importOpml, manageFeed, opmlExportUrl, readingExportUrl, sendDigestNow, setDigestHour, type FeedConnectionView } from "@/lib/reading/client";
 import styles from "./Reading.module.css";
 
@@ -33,6 +34,14 @@ const HEALTH_LABEL: Record<string, string> = {
   unsupported: "Unsupported",
   disabled: "Paused",
 };
+
+/** Built once: a fresh array of options per row per render is what makes the
+ * React compiler give up on memoizing this component. */
+const CHANNEL_OPTIONS = CHANNELS.map((name) => (
+  <option key={name} value={name}>
+    {name}
+  </option>
+));
 
 export function ManageSourcesDialog({
   handle,
@@ -81,6 +90,7 @@ export function ManageSourcesDialog({
       muted: connection.mutedKeywords.join(", "),
     });
   };
+
   const saveEdit = async (connection: FeedConnectionView) => {
     setBusy(connection.id);
     setError(null);
@@ -130,6 +140,23 @@ export function ManageSourcesDialog({
       cancelled = true;
     };
   }, [load]);
+
+  /** Moving a source to another channel. Saved at once: there is nothing to
+   * confirm, and the strip is expected to change straight away. */
+  const setChannel = async (connection: FeedConnectionView, channel: string) => {
+    if ((connection.channel ?? "") === channel) return;
+    setBusy(connection.id);
+    setError(null);
+    try {
+      await manageFeed({ handle, id: connection.id, action: "settings", settings: { channel: channel || null } });
+      await load();
+      onChanged();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not change the channel");
+    } finally {
+      setBusy(null);
+    }
+  };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -254,6 +281,24 @@ export function ManageSourcesDialog({
                     </small>
                   </div>
                   <div className={styles.controls}>
+                    {/* A source's channel is the one thing about it a person
+                        changes often, because it decides which tab the
+                        articles appear under. It is a control on the row,
+                        not a field inside Settings. */}
+                    <label className={styles.channel}>
+                      <span>Channel</span>
+                      <select
+                        value={connection.channel ?? ""}
+                        disabled={busy === connection.id}
+                        onChange={(event) => void setChannel(connection, event.target.value)}
+                      >
+                        <option value="">Not in a channel</option>
+                        {CHANNEL_OPTIONS}
+                        {connection.channel && !isChannel(connection.channel) && (
+                          <option value={connection.channel}>{connection.channel}</option>
+                        )}
+                      </select>
+                    </label>
                     <button type="button" className={styles.button} disabled={busy === connection.id || connection.state === "paused"} onClick={() => void act(connection, "refresh")}>
                       Check now
                     </button>

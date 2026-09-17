@@ -4,7 +4,7 @@ import { actionAudit } from "@/lib/db/schema";
 import { recordAction, type AuditEntry } from "@/lib/audit";
 import { getFolders } from "@/lib/store";
 import { addFeedConnection, listFeedConnections } from "./connections.server";
-import { STARTER_ACTION, STARTER_FEEDS, STARTER_STARTED } from "./starter-feeds";
+import { STARTER_ACTION, STARTER_FEEDS, STARTER_STARTED, type StarterFeed } from "./starter-feeds";
 
 /**
  * Giving a workspace its first sources, exactly once.
@@ -26,6 +26,32 @@ const BATCH = 6;
  * looking Home with room left for the person's own work.
  */
 const STARTER_IMPORT = 8;
+
+/**
+ * One source per channel, then the next of each, and so on.
+ *
+ * The catalogue is written grouped by subject because that is how a person
+ * reads it, but following it in that order gives the first batch entirely to
+ * Technology, and a workspace opened before the rest arrive has five tabs
+ * with nothing behind them. Round robin means every channel has an article
+ * in it from the first pass.
+ */
+export function roundRobinByChannel(feeds: readonly StarterFeed[]): StarterFeed[] {
+  const queues = new Map<string, StarterFeed[]>();
+  for (const feed of feeds) {
+    const queue = queues.get(feed.topic);
+    if (queue) queue.push(feed);
+    else queues.set(feed.topic, [feed]);
+  }
+  const out: StarterFeed[] = [];
+  while (out.length < feeds.length) {
+    for (const queue of queues.values()) {
+      const next = queue.shift();
+      if (next) out.push(next);
+    }
+  }
+  return out;
+}
 
 function requireDb() {
   if (!db) throw new Error("Starter sources need DATABASE_URL");
@@ -83,7 +109,7 @@ export async function applyStarterFeeds(input: {
   // stored under the address it settled on, and comparing addresses made a
   // part-finished set look like somebody else's workspace.
   const followedNames = new Set(following.map((connection) => connection.folderName));
-  const outstanding = STARTER_FEEDS.filter((feed) => !followedNames.has(feed.name));
+  const outstanding = roundRobinByChannel(STARTER_FEEDS.filter((feed) => !followedNames.has(feed.name)));
   const limit = Math.max(1, Math.min(STARTER_FEEDS.length, input.limit ?? BATCH));
   const pending = outstanding.slice(0, limit);
   if (!started) {
@@ -105,6 +131,9 @@ export async function applyStarterFeeds(input: {
         parentFolderPath: parent.path,
         endpointUrl: feed.url,
         name: feed.name,
+        // The catalogue's topic IS the channel: a workspace opens with a
+        // strip of subjects, not a strip of publisher names.
+        channel: feed.topic,
         initialImportLimit: STARTER_IMPORT,
         actor: input.actor,
         // The same key every time, so a retried pass reopens the connection

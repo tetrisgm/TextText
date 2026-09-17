@@ -1,3 +1,5 @@
+import { tidyPublisherName } from "@/lib/reading/publisher-name";
+
 /**
  * Who published an item, the mark that stands for them, and whether an
  * excerpt is worth showing.
@@ -15,6 +17,8 @@
  * so the same publisher is the same colour every time, and free, because it
  * costs no request.
  */
+
+export { tidyPublisherName } from "@/lib/reading/publisher-name";
 
 export type PublisherIdentity = {
   /** The name to show before the headline. */
@@ -105,11 +109,12 @@ export function publisherFor(item: {
   externalUrl?: string | null;
   permalink?: string | null;
 }): PublisherIdentity {
-  const feedName =
+  const feedName = tidyPublisherName(
     (item.publisherName ?? "").trim() ||
-    (item.publisherTitle ?? "").trim() ||
-    (item.sourceFolderName ?? "").trim() ||
-    "Unknown";
+      (item.publisherTitle ?? "").trim() ||
+      (item.sourceFolderName ?? "").trim() ||
+      "Unknown",
+  );
   const linkHost = hostOf(item.externalUrl) ?? hostOf(item.permalink);
   // A feed whose name does not belong to the site it links to is an
   // aggregator, and the site is the publisher a person would recognise. The

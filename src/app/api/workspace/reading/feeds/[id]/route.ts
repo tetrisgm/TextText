@@ -59,6 +59,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
               ...(settings.retentionDays === null || typeof settings.retentionDays === "number"
                 ? { retentionDays: settings.retentionDays as number | null }
                 : {}),
+              ...(settings.channel === null || typeof settings.channel === "string"
+                ? { channel: settings.channel as string | null }
+                : {}),
               ...(Array.isArray(settings.mutedKeywords)
                 ? { mutedKeywords: settings.mutedKeywords.filter((word: unknown): word is string => typeof word === "string") }
                 : {}),

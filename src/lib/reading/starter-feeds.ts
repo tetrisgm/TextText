@@ -12,10 +12,12 @@
  * was fetched and parsed before it was written down.
  */
 
+import type { Channel } from "./channels";
+
 export type StarterFeed = {
-  /** The group it belongs to, which becomes nothing in the data: it is only
-   * here so the list reads as a catalogue rather than sixteen URLs. */
-  topic: string;
+  /** The channel this source feeds. A name from `channels.ts`, so a fresh
+   * workspace opens with a strip of subjects rather than sixteen URLs. */
+  topic: Channel;
   name: string;
   url: string;
   site: string;

@@ -10,7 +10,7 @@ import {
 } from "@/lib/db/schema";
 import { recordAction } from "@/lib/audit";
 import {
-  countAllPosts,
+  countFeedPosts,
   createDraftInFolder,
   getFolderById,
   getOwnerPlan,
@@ -21,6 +21,7 @@ import {
 import { cleanPlanTier, planLimits } from "@/lib/product-limits";
 import { slugify } from "@/lib/post-edit-draft";
 import { enqueueIndexItem } from "./embeddings.server";
+import { channelForSource } from "./channels";
 import { canonicalizeUrl, endpointKey, sha256, usableFeedDate } from "./feed-identity";
 import { fetchFeedDocument, type FeedFetchOutcome } from "./fetch.server";
 import { FeedParseError, parseFeed, type NormalizedEntry, type NormalizedFeed } from "./feed-parse";
@@ -558,7 +559,7 @@ export async function pollFeedConnection(
 
   // Budget: the workspace's plan cap and the connection's own limits.
   const tier = cleanPlanTier(await getOwnerPlan(handle));
-  const remainingCapacity = Math.max(0, planLimits(tier).maxPosts - (await countAllPosts(handle)));
+  const remainingCapacity = Math.max(0, planLimits(tier).maxFeedItems - (await countFeedPosts(handle)));
   const firstImport = !connection.lastImportAt;
   const perPoll = Math.min(
     MAX_ITEMS_PER_POLL,
@@ -634,6 +635,20 @@ export async function pollFeedConnection(
       movedToUrl: endpointKey(fetched.finalUrl) !== endpointKey(connection.endpointUrl) ? fetched.finalUrl : connection.movedToUrl,
       publisherTitle: connection.publisherTitle ?? feed.title,
       siteUrl: connection.siteUrl ?? feed.siteUrl,
+      // A source followed before channels existed is placed here, from what
+      // this check just learned about it, and only while nothing has decided
+      // yet. The owner's own choice is the last word, including the choice to
+      // leave a source out of every channel.
+      ...(connection.channelPlacedAt
+        ? {}
+        : {
+            channel: channelForSource({
+              publisherTitle: connection.publisherTitle ?? feed.title,
+              siteUrl: connection.siteUrl ?? feed.siteUrl,
+              endpointUrl: connection.endpointUrl,
+            }),
+            channelPlacedAt: now,
+          }),
       // A conditional fetch would hide the entries that failed or were
       // deferred this time behind a 304, so validators advance only when
       // every entry in the document was reconciled.

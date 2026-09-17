@@ -4,6 +4,7 @@ import { blogs, feedConnections, feedReceipts, folders, posts, readingProvenance
 import { recordAction, type AuditEntry } from "@/lib/audit";
 import type { Folder } from "@/lib/content";
 import { createSubfolder, getFolders, renameFolder, workspaceIdForHandle } from "@/lib/store";
+import { channelForSource } from "./channels";
 import { endpointKey, redactedEndpoint } from "./feed-identity";
 import { readingFlags } from "./flags";
 import { cancelOpenReadingJobs, enqueueReadingJob } from "./jobs.server";
@@ -33,6 +34,8 @@ export type FeedConnectionView = {
   publisherTitle: string | null;
   siteUrl: string | null;
   state: "active" | "paused" | "detached";
+  /** The subject whose tab this source feeds; null means unplaced. */
+  channel: string | null;
   health: string;
   healthDetail: string | null;
   lastCheckedAt: string | null;
@@ -97,6 +100,7 @@ export function connectionView(
     publisherTitle: row.publisherTitle,
     siteUrl: row.siteUrl,
     state: row.state as FeedConnectionView["state"],
+    channel: row.channel,
     health: row.health,
     healthDetail: row.healthDetail,
     lastCheckedAt: iso(row.lastCheckedAt),
@@ -203,6 +207,9 @@ export type AddFeedInput = {
   endpointUrl: string;
   /** Overrides the feed's own title as the folder name. */
   name?: string | null;
+  /** The subject this source feeds. Undefined asks channels.ts to place it;
+   * null follows it without a channel. */
+  channel?: string | null;
   retentionDays?: number | null;
   initialImportLimit?: number | null;
   actor: { userId: string | null; actorType: AuditEntry["actorType"] };
@@ -317,6 +324,11 @@ export async function addFeedConnection(input: AddFeedInput): Promise<AddFeedRes
       publisherTitle: parsed.title,
       siteUrl: parsed.siteUrl,
       state: "active",
+      channel:
+        input.channel !== undefined
+          ? input.channel
+          : channelForSource({ name: folderName, publisherTitle: parsed.title, siteUrl: parsed.siteUrl, endpointUrl: fetched.finalUrl }),
+      channelPlacedAt: new Date(),
       health: "checking",
       retentionDays,
       initialImportLimit,
@@ -431,6 +443,8 @@ export type FeedSettingsPatch = {
   name?: string;
   retentionDays?: number | null;
   mutedKeywords?: string[];
+  /** "" and null both clear it, so a source can leave a channel. */
+  channel?: string | null;
 };
 
 /**
@@ -452,6 +466,11 @@ export async function updateFeedConnectionSettings(
   const update: Partial<typeof feedConnections.$inferInsert> = { updatedAt: now };
   if (patch.mutedKeywords !== undefined) {
     update.mutedKeywords = [...new Set(patch.mutedKeywords.map((word) => word.trim().toLocaleLowerCase()).filter((word) => word.length >= 2))].slice(0, 50);
+  }
+  if (patch.channel !== undefined) {
+    const trimmed = typeof patch.channel === "string" ? patch.channel.trim().slice(0, 40) : "";
+    update.channel = trimmed.length > 0 ? trimmed : null;
+    update.channelPlacedAt = now;
   }
   if (patch.retentionDays !== undefined) {
     const days = patch.retentionDays === null ? null : Math.max(0, Math.min(3650, Math.trunc(patch.retentionDays)));

@@ -58,6 +58,7 @@ migrations=(
   scripts/migrate-add-home-news.mjs
   scripts/migrate-add-post-revisions.mjs
   scripts/migrate-add-reading-image-checked.mjs
+  scripts/migrate-add-feed-channel.mjs
 )
 
 missing=()

@@ -1167,6 +1167,11 @@ export const feedConnections = pgTable(
     feedFormat: text("feed_format"),
     publisherTitle: text("publisher_title"),
     siteUrl: text("site_url"),
+    /** The subject whose tab this source feeds; null means no channel. */
+    channel: text("channel"),
+    /** When the channel was last decided, by placement or by the owner. Null
+     * means nothing has decided yet, which is the only state a poll fills. */
+    channelPlacedAt: timestamp("channel_placed_at"),
     /** "active" | "paused" | "detached" */
     state: text("state").notNull().default("active"),
     /** Health vocabulary from the plan; "checking" until the first fetch. */

@@ -3,7 +3,9 @@ import { db } from "@/lib/db/client";
 import { posts, readingEmbeddings, readingSummaries, readingTopics, retentionHolds } from "@/lib/db/schema";
 import type { AccessUser } from "@/lib/permissions";
 import { countHiddenSummaries, listReadingPreferences, listSummaryState, workspaceIdForHandle } from "@/lib/store";
-import { listFeedConnections } from "./connections.server";
+import { CHANNEL_PREFIX, channelTopicId, sortChannels } from "./channels";
+import { tidyPublisherName } from "./publisher-name";
+import { listFeedConnections, type FeedConnectionView } from "./connections.server";
 import { listReadingItems, type ReadingListItem } from "./list.server";
 import { cosine, meanVector, rankCandidates, snapshotId, type RankCandidate, type RankPreferences, type RankTerm } from "./rank";
 import { listSavedSearches } from "./saved-searches.server";
@@ -27,6 +29,11 @@ import { withSummaryTexts } from "./summary-text.server";
 export const HOME_CONSIDERED = 300;
 const PAGE = 20;
 const MAX_TOPICS = 12;
+/** Sources read for one channel page. Past this the channel is a folder, not a tab. */
+const MAX_CHANNEL_SOURCES = 24;
+/** Cards in the Headlines strip. Fewer than this and it is not a strip. */
+const MAX_HEADLINES = 6;
+const MIN_HEADLINES = 2;
 const CANDIDATE_DAYS = 7;
 const AFFINITY_SAMPLE = 40;
 
@@ -38,8 +45,10 @@ function requireDb() {
 export type HomeTopic = {
   id: string;
   label: string;
-  /** "search" reuses a saved search exactly; "source" is one feed's folder; "derived" comes from the embedded corpus. */
-  kind: "search" | "source" | "derived";
+  /** "channel" is a subject several sources feed; "search" reuses a saved
+   * search exactly; "source" is one feed's folder; "derived" comes from the
+   * embedded corpus. */
+  kind: "channel" | "search" | "source" | "derived";
   detail: string | null;
 };
 
@@ -73,6 +82,11 @@ export type HomeNews = {
   modeLabel: string;
   topic: string | null;
   topics: HomeTopic[];
+  /** The stories several sources are covering, for the strip of cards above
+   * the list. Chosen across the whole window rather than from the page, so
+   * the module is the same whichever page you are on, and never a duplicate
+   * of what is directly under it. */
+  headlines: HomeUnit[];
   units: HomeUnit[];
   nextOffset: number | null;
   considered: number;
@@ -124,8 +138,12 @@ export function unitsFrom(items: ReadingListItem[], summaries: SummaryLike[], op
   return options.ordered ? units : units.sort((left, right) => new Date(right.latestAt).getTime() - new Date(left.latestAt).getTime());
 }
 
-export function parseTopic(topic: string | null | undefined): { kind: "search"; id: string } | { kind: "source"; folderPath: string } | { kind: "derived"; id: string } | null {
+export function parseTopic(topic: string | null | undefined): { kind: "channel"; name: string } | { kind: "search"; id: string } | { kind: "source"; folderPath: string } | { kind: "derived"; id: string } | null {
   if (!topic) return null;
+  if (topic.startsWith(CHANNEL_PREFIX)) {
+    const name = topic.slice(CHANNEL_PREFIX.length).trim();
+    return name ? { kind: "channel", name } : null;
+  }
   if (topic.startsWith("search:")) return { kind: "search", id: topic.slice(7) };
   if (topic.startsWith("source:")) return { kind: "source", folderPath: topic.slice(7) };
   if (topic.startsWith("derived:")) return { kind: "derived", id: topic.slice(8) };
@@ -140,25 +158,72 @@ function topicIdOf(row: TopicRow): string {
   return `derived:${row.id}`;
 }
 
+/** The channels this workspace's own sources are in, in catalogue order. */
+export function channelTopicsFrom(connections: FeedConnectionView[]): HomeTopic[] {
+  const members = new Map<string, FeedConnectionView[]>();
+  for (const connection of connections) {
+    if (connection.state === "detached" || !connection.channel) continue;
+    const list = members.get(connection.channel);
+    if (list) list.push(connection);
+    else members.set(connection.channel, [connection]);
+  }
+  return sortChannels([...members.keys()]).map((name) => {
+    const sources = members.get(name) ?? [];
+    return {
+      id: channelTopicId(name),
+      label: name,
+      kind: "channel" as const,
+      // The strip says a subject; the title says which publishers are behind
+      // it, because a channel nobody can see inside is a black box.
+      detail: sources
+        .map((source) => tidyPublisherName(source.publisherTitle ?? source.folderName))
+        .slice(0, 8)
+        .join(", "),
+    };
+  });
+}
+
+/**
+ * The strip across the top of the news.
+ *
+ * Subjects, in this order: channels, then the person's saved searches, then
+ * the clusters the corpus derived. Publishers are deliberately absent, the
+ * way they were absent from the strip in the app this copies; they are one
+ * click away under Sources. The one exception is a workspace whose sources
+ * are all unplaced, where a strip of publishers beats no strip at all.
+ */
 async function homeTopics(handle: string, user: AccessUser | null, blogId: string): Promise<{ topics: HomeTopic[]; rows: TopicRow[] }> {
-  const rows = await requireDb().select().from(readingTopics).where(eq(readingTopics.blogId, blogId)).orderBy(readingTopics.position);
+  const [rows, connections] = await Promise.all([
+    requireDb().select().from(readingTopics).where(eq(readingTopics.blogId, blogId)).orderBy(readingTopics.position),
+    listFeedConnections(handle),
+  ]);
+  const channels = channelTopicsFrom(connections);
   if (rows.length > 0) {
     const queries = new Map((await listSavedSearches({ handle, user })).map((search) => [search.id, search.query]));
-    const topics: HomeTopic[] = [];
+    const rest: HomeTopic[] = [];
     for (const row of rows) {
+      if (row.kind === "source") continue; // publishers are not subjects
       if (row.kind === "search" && row.ref && !queries.has(row.ref)) continue; // the saved search is gone
-      topics.push({ id: topicIdOf(row), label: row.label, kind: row.kind === "derived" ? "derived" : row.kind === "search" ? "search" : "source", detail: row.kind === "derived" ? `${row.memberCount} articles` : row.kind === "search" && row.ref ? (queries.get(row.ref) ?? null) : row.ref });
+      rest.push({ id: topicIdOf(row), label: row.label, kind: row.kind === "derived" ? "derived" : "search", detail: row.kind === "derived" ? `${row.memberCount} articles` : row.ref ? (queries.get(row.ref) ?? null) : null });
     }
-    return { rows, topics: topics.slice(0, MAX_TOPICS) };
+    const topics = [...channels, ...rest];
+    if (topics.length > 0) return { rows, topics: topics.slice(0, MAX_TOPICS) };
   }
-  // Nothing materialized yet (a workspace that just added feeds): the live
-  // list, so the strip is never empty for want of a tick.
-  const [searches, connections] = await Promise.all([listSavedSearches({ handle, user }), listFeedConnections(handle)]);
+  // Nothing to show as a subject: the live list, so a workspace that just
+  // added feeds is never left with a strip of one tab.
+  const [searches] = await Promise.all([listSavedSearches({ handle, user })]);
   const topics: HomeTopic[] = [
+    ...channels,
     ...searches.filter((search) => !search.folderPath).map((search) => ({ id: `search:${search.id}`, label: search.name, kind: "search" as const, detail: search.query })),
-    ...connections.filter((connection) => connection.state !== "detached").map((connection) => ({ id: `source:${connection.folderPath}`, label: connection.publisherTitle ?? connection.folderName, kind: "source" as const, detail: connection.folderPath })),
   ];
-  return { rows: [], topics: topics.slice(0, MAX_TOPICS) };
+  if (topics.length === 0) {
+    topics.push(
+      ...connections
+        .filter((connection) => connection.state !== "detached")
+        .map((connection) => ({ id: `source:${connection.folderPath}`, label: connection.publisherTitle ?? connection.folderName, kind: "source" as const, detail: connection.folderPath })),
+    );
+  }
+  return { rows, topics: topics.slice(0, MAX_TOPICS) };
 }
 
 async function recentItems(input: { handle: string; user: AccessUser | null; folderPath: string; considered: number }): Promise<ReadingListItem[]> {
@@ -177,6 +242,30 @@ async function recentItems(input: { handle: string; user: AccessUser | null; fol
     if (!cursor) break;
   }
   return items.slice(0, input.considered);
+}
+
+/**
+ * A channel's window: every source in it, newest first, merged. One bounded
+ * pass per source rather than one over everything, so a channel of two
+ * publishers is as deep as a channel of eight instead of being crowded out
+ * by whichever source posts most.
+ */
+async function channelItems(input: { handle: string; user: AccessUser | null; folderPaths: string[]; considered: number }): Promise<ReadingListItem[]> {
+  if (input.folderPaths.length === 0) return [];
+  const share = Math.max(20, Math.ceil(input.considered / input.folderPaths.length));
+  const pages = await Promise.all(
+    input.folderPaths.slice(0, MAX_CHANNEL_SOURCES).map((folderPath) =>
+      recentItems({ handle: input.handle, user: input.user, folderPath, considered: share }),
+    ),
+  );
+  const seen = new Set<string>();
+  const merged: ReadingListItem[] = [];
+  for (const item of pages.flat()) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    merged.push(item);
+  }
+  return merged.sort((left, right) => timeOf(right) - timeOf(left)).slice(0, input.considered);
 }
 
 /** The items of a derived topic, by nearest centroid; without vectors an item is not in any derived topic. */
@@ -361,6 +450,13 @@ export async function readingHome(input: {
     const found = await searchReadingItems({ handle: input.handle, user: input.user, query, limit: 50 });
     items = found.items.filter((item) => item.origin === "feed").sort((left, right) => timeOf(right) - timeOf(left));
     topicNote = found.semantic ? null : "Matched by the search's exact words.";
+  } else if (topic?.kind === "channel") {
+    const connections = await listFeedConnections(input.handle);
+    const folderPaths = connections
+      .filter((connection) => connection.state !== "detached" && connection.channel === topic.name)
+      .map((connection) => connection.folderPath);
+    items = await channelItems({ handle: input.handle, user: input.user, folderPaths, considered: HOME_CONSIDERED });
+    if (folderPaths.length === 0) topicNote = "No sources are in this channel yet.";
   } else {
     items = await recentItems({ handle: input.handle, user: input.user, folderPath: topic?.kind === "source" ? topic.folderPath : "", considered: HOME_CONSIDERED });
   }
@@ -388,14 +484,25 @@ export async function readingHome(input: {
     units = unitsFrom(items, summaries);
     modeLabel = "Newest first";
   }
-  const page = units.slice(offset, offset + limit);
+  // Headlines: the clusters with more than one source behind them, lifted
+  // out of the list so they are not shown twice. A single card is not a
+  // strip, so below the minimum the stories stay in the list where they
+  // read perfectly well on their own.
+  const candidates = units.filter(
+    (unit): unit is Extract<HomeUnit, { kind: "summary" }> => unit.kind === "summary" && unit.sources.length > 1,
+  );
+  const headlines = candidates.length >= MIN_HEADLINES ? candidates.slice(0, MAX_HEADLINES) : [];
+  const lifted = new Set(headlines.map((unit) => unit.id));
+  const listed = lifted.size > 0 ? units.filter((unit) => !lifted.has(unit.id)) : units;
+  const page = listed.slice(offset, offset + limit);
   return {
     mode,
     modeLabel,
     topic: activeTopic?.id ?? null,
     topics,
+    headlines,
     units: page,
-    nextOffset: offset + limit < units.length ? offset + limit : null,
+    nextOffset: offset + limit < listed.length ? offset + limit : null,
     considered: items.length,
     topicNote,
     snapshot,

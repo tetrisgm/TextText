@@ -699,3 +699,22 @@ a.button {
   border-left: 1px solid var(--ac-separator);
   color: var(--ac-label-3);
 }
+
+/* The channel a source feeds. A control on the row rather than a field
+   inside Settings: it decides which tab the articles show up under, which is
+   the thing a person comes to this dialog to change. */
+.channel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--ac-label-secondary);
+  font: 500 0.75rem / 1.2 var(--ac-font-text);
+}
+.channel select {
+  border: 1px solid var(--ac-separator);
+  border-radius: 7px;
+  padding: 0.1875rem 0.375rem;
+  background: var(--ac-bg-elevated, transparent);
+  color: var(--ac-label);
+  font: 500 0.8125rem / 1.2 var(--ac-font-text);
+}

@@ -155,8 +155,11 @@ type BlogHomeQuery = {
   date?: string | string[];
   folder?: string | string[];
   layout?: string | string[];
+  /** The news ordering and the chosen channel, which the Home reads back. */
+  news?: string | string[];
   q?: string | string[];
   tag?: string | string[];
+  topic?: string | string[];
   view?: string | string[];
 };
 
@@ -558,8 +561,13 @@ export async function BlogHomeForHandle({
       "date",
       "folder",
       "layout",
+      // The news channel and its ordering: a link to a channel that lands on
+      // For You is a broken link, and this redirect is on the path every
+      // shared workspace URL takes.
+      "news",
       "q",
       "tag",
+      "topic",
       "view",
     ] as const) {
       const value = queryValue(query[key]);
