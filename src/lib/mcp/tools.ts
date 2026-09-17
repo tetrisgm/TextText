@@ -3560,6 +3560,34 @@ async function executeWorkspaceCommand(
         return errorResult(error instanceof Error ? error.message : "Could not add the feed.");
       }
     }
+    case "hide_summary": {
+      const input = args as WorkspaceToolInput<"hide_summary">;
+      const resolved = await requireWorkspace(extra);
+      if (isToolResult(resolved)) return resolved;
+      const user = accessUser(extra);
+      if (!user.userId) return errorResult("This connection has no person to hide it for.");
+      const { setSummaryHidden, workspaceIdForHandle } = await import("@/lib/store");
+      await setSummaryHidden({ userId: user.userId, blogId: await workspaceIdForHandle(resolved.blog.handle), summaryId: input.summary_id, hidden: input.hidden ?? true, actor: { actorType: mcpActorType(extra) } });
+      return jsonResult({ ok: true, summary_id: input.summary_id, hidden: input.hidden ?? true });
+    }
+    case "set_reading_preference": {
+      const input = args as WorkspaceToolInput<"set_reading_preference">;
+      const resolved = await requireWorkspace(extra);
+      if (isToolResult(resolved)) return resolved;
+      const user = accessUser(extra);
+      if (!user.userId) return errorResult("This connection has no person to keep preferences for.");
+      const { setReadingPreference, workspaceIdForHandle } = await import("@/lib/store");
+      const rule = await setReadingPreference({ userId: user.userId, blogId: await workspaceIdForHandle(resolved.blog.handle), kind: input.kind, target: input.target, label: input.label ?? input.target, actor: { actorType: mcpActorType(extra) } });
+      return jsonResult({ rule });
+    }
+    case "clear_reading_preferences": {
+      const resolved = await requireWorkspace(extra);
+      if (isToolResult(resolved)) return resolved;
+      const user = accessUser(extra);
+      if (!user.userId) return errorResult("This connection has no person to clear preferences for.");
+      const { clearReadingPreferences, workspaceIdForHandle } = await import("@/lib/store");
+      return jsonResult(await clearReadingPreferences({ userId: user.userId, blogId: await workspaceIdForHandle(resolved.blog.handle), actor: { actorType: mcpActorType(extra) } }));
+    }
     case "run_command": {
       const input = args as WorkspaceToolInput<"run_command">;
       const resolved = await requireWorkspace(extra);

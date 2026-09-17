@@ -55,6 +55,9 @@ const EXPECTED_NAMES = [
   "search_reading",
   "keep_item",
   "add_feed",
+  "hide_summary",
+  "set_reading_preference",
+  "clear_reading_preferences",
   "run_command",
 ] as const;
 
@@ -73,9 +76,12 @@ const DESTRUCTIVE_TOOLS = new Set([
   "remove_item_asset",
   "retire_document_template",
   "empty_trash",
+  "clear_reading_preferences",
 ]);
 
 const IDEMPOTENT_WRITES = new Set([
+  "hide_summary",
+  "set_reading_preference",
   "revert_agent_change",
   "organize_items",
   "delete_items",
@@ -97,6 +103,7 @@ const IDEMPOTENT_WRITES = new Set([
 ]);
 
 const CONFIRMED_TOOLS = new Set([
+  "clear_reading_preferences",
   "empty_trash",
   "delete_items",
   "delete_folder",

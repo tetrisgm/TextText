@@ -3,6 +3,7 @@ import { enqueueReadingJob, readingJobCounts, runReadingJobs } from "@/lib/readi
 import { enqueueIndexItem, runIndexItemJob } from "@/lib/reading/embeddings.server";
 import { enqueueRetentionSweep, runRetentionJob } from "@/lib/reading/retention.server";
 import { digestDue, sendReadingDigest } from "@/lib/reading/digest.server";
+import { enqueueSummarize, runSummarizeJob } from "@/lib/reading/summaries-materialize.server";
 import { handleFrom, json, jsonError, readJson, requireOwner } from "../_shared";
 
 export const dynamic = "force-dynamic";
@@ -30,8 +31,11 @@ export async function POST(request: Request) {
   // Reconciles missing or stale vectors, including after a key is configured
   // later; a no-op when nothing is pending.
   await enqueueIndexItem(owner.blogId);
+  // The home page's Summaries and topics, refreshed at most every ten
+  // minutes, after polls and before the digest.
+  await enqueueSummarize(owner.blogId);
   const ran = await runReadingJobs({
-    executors: { poll_feed: runPollFeedJob, retention_enforce: runRetentionJob, index_item: runIndexItemJob },
+    executors: { poll_feed: runPollFeedJob, retention_enforce: runRetentionJob, index_item: runIndexItemJob, summarize_recent: runSummarizeJob },
     blogId: owner.blogId,
     limit,
     owner: `tick:${owner.ownerId}`,

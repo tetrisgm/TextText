@@ -1169,6 +1169,35 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     mutability: "write",
     openWorld: true,
   }),
+  hide_summary: defineTool("hide_summary", {
+    title: "Hide a Summary",
+    description:
+      "Hide one Summary from this person's For You and topic views on the home page, or show it again. Articles are untouched: nothing is read, kept, or deleted, and Latest, folders, search, and digests do not change.",
+    inputSchema: z.object({ summary_id: z.string().uuid(), hidden: z.boolean().optional().describe("Defaults to true.") }).strict(),
+    mutability: "write",
+    idempotent: true,
+  }),
+  set_reading_preference: defineTool("set_reading_preference", {
+    title: "Set a reading preference",
+    description:
+      "Ask for more or less of a topic, or less from a source, in this person's For You on the home page. A soft ranking rule, listed in Settings and undone there: not an unsubscribe, not a filter on Latest, folders, search, digests, or external clients. Topics come from list_reading_sources or the home page's topic strip (ids like source:<folder path>, search:<id>, derived:<id>).",
+    inputSchema: z
+      .object({
+        kind: z.enum(["topic_more", "topic_less", "source_less"]),
+        target: z.string().trim().min(1).max(300).describe("A topic id, or for source_less a source folder path."),
+        label: z.string().trim().min(1).max(120).optional().describe("How Settings names the rule; defaults to the target."),
+      })
+      .strict(),
+    mutability: "write",
+    idempotent: true,
+  }),
+  clear_reading_preferences: defineTool("clear_reading_preferences", {
+    title: "Clear reading preferences",
+    description: "Remove every reading preference rule and unhide every hidden Summary for this person on this workspace. For You falls back to freshness and coverage.",
+    inputSchema: emptyInput(),
+    mutability: "write",
+    confirmation: "destructive",
+  }),
   run_command: defineTool("run_command", {
     title: "Run a command from a sentence",
     description:

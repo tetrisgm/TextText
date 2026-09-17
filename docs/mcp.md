@@ -13,7 +13,7 @@ agents used with that channel connect through this hosted endpoint instead. See
 endpoint was retired in `0.146`.
 
 <!-- generated:tool-source -->
-`src/lib/ai/tools.ts` is the source of truth for the 46 tool
+`src/lib/ai/tools.ts` is the source of truth for the 49 tool
 names, schemas, mutability, confirmation requirements, and MCP
 annotations. The MCP adapter registers those definitions in
 `src/lib/mcp/tools.ts`.
@@ -110,7 +110,7 @@ Manual tokens currently carry `sync` access and remain valid until revoked.
 | Scope | Access |
 |-------|--------|
 | `read` | Call the 15 read-scope tools: `get_workspace`, `list_folders`, `list_items`, `read_item`, `review_brief_sources`, `open_item`, `search`, `list_trash`, `list_comments`, `list_responses`, `list_document_templates`, `list_agent_changes`, `list_reading_sources`, `search_reading`, `run_command`. |
-| `sync` | Call all 46 tools, including the 31 that mutate content or read administration data. It also grants every `read` operation. |
+| `sync` | Call all 49 tools, including the 34 that mutate content or read administration data. It also grants every `read` operation. |
 <!-- /generated:scope-table -->
 
 A mutation attempted with a `read` token returns `403 insufficient_scope` and
@@ -140,7 +140,7 @@ or workspace selector that could cross that boundary.
   cover and asset references use the same audited command surface.
 
 <!-- generated:tool-table -->
-## Tools (46)
+## Tools (49)
 
 | Tool | Scope | Effect |
 |------|-------|--------|
@@ -189,6 +189,9 @@ or workspace selector that could cross that boundary.
 | `search_reading` | `read` or `sync` | Search imported articles and saved bookmarks the person can see, optionally within one folder and its subfolders. Combines word matching with meaning-based matching when the workspace has embeddings, and says which found each result. Every result carries the item id, folder, publisher, and original link to cite. Read-only. |
 | `keep_item` | `sync` | Keep one imported article past its source's cleanup window, or stop keeping it. Keeping never removes another reason the item is kept, such as a star or a comment. |
 | `add_feed` | `sync` | Follow a feed: a feed or site address becomes its own folder under a bookmarks folder and fills with articles over time. The address is fetched and verified before anything is created. |
+| `hide_summary` | `sync` | Hide one Summary from this person's For You and topic views on the home page, or show it again. Articles are untouched: nothing is read, kept, or deleted, and Latest, folders, search, and digests do not change. |
+| `set_reading_preference` | `sync` | Ask for more or less of a topic, or less from a source, in this person's For You on the home page. A soft ranking rule, listed in Settings and undone there: not an unsubscribe, not a filter on Latest, folders, search, digests, or external clients. Topics come from list_reading_sources or the home page's topic strip (ids like source:<folder path>, search:<id>, derived:<id>). |
+| `clear_reading_preferences` | `sync` | Remove every reading preference rule and unhide every hidden Summary for this person on this workspace. For You falls back to freshness and coverage. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it. |
 | `run_command` | `read` or `sync` | Take one plain sentence and map it onto one existing workspace command with its arguments, using the workspace's own model. Returns the chosen command, its arguments, and why. Reads run immediately. A write runs only when execute is true and this connection may call that command; otherwise the mapped call is returned for the caller to make. There is no new capability here: every command it can pick is one the connection could already call directly, with the same permissions, proposals, and audit. |
 <!-- /generated:tool-table -->
 

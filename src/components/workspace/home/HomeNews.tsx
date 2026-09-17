@@ -9,7 +9,10 @@ import type { WorkspacePoolPost } from "@/lib/pool/types";
 import {
   fetchReadingHome,
   fetchReadingOverview,
+  markSummariesSeenRequest,
   saveReadingBrief,
+  setReadingPreferenceRequest,
+  setSummaryHiddenRequest,
   setReadingItemsKept,
   setReadingItemsRead,
   tickReading,
@@ -120,6 +123,10 @@ export function HomeNews({
   const [now] = useState(() => Date.now());
   const pendingOpen = useRef<string | null>(null);
   const [openTick, setOpenTick] = useState(0);
+  const [unitMenu, setUnitMenu] = useState<{ id: string; kind: "menu" | "less" | "why" } | null>(null);
+  const [undo, setUndo] = useState<{ label: string; run: () => Promise<void> } | null>(null);
+  const seenQueue = useRef(new Map<string, number>());
+  const seenTimer = useRef<number | null>(null);
 
   const load = useCallback(
     async (next: { mode: Mode; topic: string | null }, offset = 0) => {
@@ -278,6 +285,112 @@ export function HomeNews({
     [expanded, memberIndex],
   );
 
+  // Seen: a Summary row that stays in view for a moment is acknowledged at
+  // the coverage revision it showed, in one bounded batch. Prefetch and
+  // offscreen rows never count, and the watermark only ever rises.
+  const flushSeen = useCallback(() => {
+    seenTimer.current = null;
+    const batch = [...seenQueue.current.entries()].map(([id, revision]) => ({ id, revision }));
+    seenQueue.current.clear();
+    if (batch.length === 0) return;
+    void markSummariesSeenRequest(handle, batch).catch(() => undefined);
+  }, [handle]);
+  useEffect(() => {
+    if (mode !== "forYou") return;
+    const root = document.querySelector('[data-home-news] [role="listbox"]');
+    if (!root) return;
+    const timers = new Map<Element, number>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const element = entry.target as HTMLElement;
+          const id = element.dataset.summaryId;
+          const revision = Number(element.dataset.coverageRevision ?? 0);
+          if (!id || !revision) continue;
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+            if (!timers.has(element)) {
+              timers.set(
+                element,
+                window.setTimeout(() => {
+                  timers.delete(element);
+                  const known = seenQueue.current.get(id) ?? 0;
+                  seenQueue.current.set(id, Math.max(known, revision));
+                  if (seenTimer.current === null) seenTimer.current = window.setTimeout(flushSeen, 2000);
+                }, 400),
+              );
+            }
+          } else if (timers.has(element)) {
+            window.clearTimeout(timers.get(element));
+            timers.delete(element);
+          }
+        }
+      },
+      { root: null, threshold: [0, 0.6, 1] },
+    );
+    for (const row of root.querySelectorAll("[data-summary-id]")) observer.observe(row);
+    return () => {
+      observer.disconnect();
+      for (const timer of timers.values()) window.clearTimeout(timer);
+    };
+  }, [flushSeen, mode, units]);
+  useEffect(() => () => flushSeen(), [flushSeen]);
+
+  const removeUnit = useCallback((id: string) => {
+    setData((current) => (current ? { ...current, units: current.units.filter((unit) => unit.id !== id), hiddenCount: current.hiddenCount + 1 } : current));
+  }, []);
+  const hideSummary = useCallback(
+    (unit: Extract<HomeUnit, { kind: "summary" }>) => {
+      if (!unit.summaryId) return;
+      const summaryId = unit.summaryId;
+      removeUnit(unit.id);
+      setUnitMenu(null);
+      void setSummaryHiddenRequest(handle, summaryId, true).catch(() => undefined);
+      setUndo({
+        label: "Hidden. It stays out of For you until you show it again in Settings.",
+        run: async () => {
+          await setSummaryHiddenRequest(handle, summaryId, false);
+          await load({ mode, topic });
+        },
+      });
+    },
+    [handle, load, mode, removeUnit, topic],
+  );
+  const lessLikeThis = useCallback(
+    (unit: HomeUnit, target: { kind: "topic_less" | "source_less"; target: string; label: string }) => {
+      setUnitMenu(null);
+      removeUnit(unit.id);
+      void setReadingPreferenceRequest(handle, target)
+        .then((result) => {
+          setUndo({
+            label: target.kind === "source_less" ? `Less from ${target.label}. A soft rule for For you, listed in Settings.` : `Less about ${target.label}. A soft rule for For you, listed in Settings.`,
+            run: async () => {
+              const { removeReadingPreferenceRequest } = await import("@/lib/reading/client");
+              await removeReadingPreferenceRequest(handle, result.rule.id);
+              await load({ mode, topic });
+            },
+          });
+        })
+        .catch((caught) => setNotice(caught instanceof Error ? caught.message : "Could not save that preference"));
+    },
+    [handle, load, mode, removeUnit, topic],
+  );
+  /** What "less like this" can name for a unit: its topics by label, its sources by folder. */
+  const lessTargets = useCallback(
+    (unit: HomeUnit): Array<{ kind: "topic_less" | "source_less"; target: string; label: string }> => {
+      const topicsById = new Map((data?.topics ?? []).map((entry) => [entry.id, entry]));
+      const topics = unit.topicIds
+        .map((id) => topicsById.get(id))
+        .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry) && entry!.kind !== "source")
+        .map((entry) => ({ kind: "topic_less" as const, target: entry.id, label: entry.label }));
+      const sources = unit.kind === "summary"
+        ? unit.members.map((member) => ({ kind: "source_less" as const, target: member.folderPath, label: member.publisherName ?? member.sourceFolderName }))
+        : [{ kind: "source_less" as const, target: unit.item.folderPath, label: unit.item.publisherName ?? unit.item.sourceFolderName }];
+      const seen = new Set<string>();
+      return [...topics, ...sources].filter((entry) => (seen.has(entry.target) ? false : (seen.add(entry.target), true)));
+    },
+    [data?.topics],
+  );
+
   const focusIndexRef = useRef(focusIndex);
   useEffect(() => {
     focusIndexRef.current = focusIndex;
@@ -346,13 +459,26 @@ export function HomeNews({
           event.preventDefault();
           openOriginal(item);
           break;
+        case "x":
+          if (unit?.kind !== "summary" || !unit.summaryId) return;
+          event.preventDefault();
+          hideSummary(unit);
+          break;
+        case ",":
+          if (!unit) return;
+          event.preventDefault();
+          setUnitMenu({ id: unit.id, kind: "less" });
+          break;
+        case "Escape":
+          setUnitMenu(null);
+          return;
         default:
           return;
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [expanded, memberIndex, open, openOriginal, setRead, targetOf, toggleExpanded, toggleKeep, toggleStar, units]);
+  }, [expanded, hideSummary, memberIndex, open, openOriginal, setRead, targetOf, toggleExpanded, toggleKeep, toggleStar, units]);
   useEffect(() => {
     if (focusIndex < 0) return;
     document.querySelector<HTMLElement>(`[data-home-news] [data-unit-index="${focusIndex}"]`)?.scrollIntoView({ block: "nearest" });
@@ -460,6 +586,22 @@ export function HomeNews({
           }}
         />
       )}
+      {undo && (
+        <p className={styles.status} role="status">
+          {undo.label}{" "}
+          <button
+            type="button"
+            className={styles.action}
+            onClick={() => {
+              const pending = undo;
+              setUndo(null);
+              void pending.run().catch(() => setNotice("Could not undo"));
+            }}
+          >
+            Undo
+          </button>
+        </p>
+      )}
       {notice && <p className={styles.status} role="status">{notice}</p>}
       {error && <p className={styles.status} role="alert">{error}</p>}
       {data?.topicNote && <p className={styles.note}>{data.topicNote}</p>}
@@ -509,7 +651,38 @@ export function HomeNews({
                     <button type="button" className={styles.action} onClick={() => openOriginal(item)}>
                       Original
                     </button>
+                    <button type="button" className={styles.action} aria-haspopup="menu" aria-expanded={unitMenu?.id === unit.id} onClick={() => setUnitMenu(unitMenu?.id === unit.id ? null : { id: unit.id, kind: "less" })}>
+                      Less like this
+                    </button>
+                    {mode === "forYou" && (
+                      <button type="button" className={styles.action} onClick={() => setUnitMenu(unitMenu?.id === unit.id && unitMenu.kind === "why" ? null : { id: unit.id, kind: "why" })}>
+                        Why
+                      </button>
+                    )}
                   </div>
+                  {unitMenu?.id === unit.id && (
+                    <span className={styles.unitMenu} role="menu" onClick={(event) => event.stopPropagation()}>
+                      {unitMenu.kind === "why" ? (
+                        <>
+                          <small>Why this is here</small>
+                          {unit.reasons.length === 0 ? <button type="button" role="menuitem" disabled>Newest first</button> : unit.reasons.map((reason) => (
+                            <button key={reason.name} type="button" role="menuitem" disabled>
+                              {reason.name} {reason.value > 0 ? `+${reason.value}` : reason.value}
+                            </button>
+                          ))}
+                        </>
+                      ) : (
+                        <>
+                          <small>Less like this</small>
+                          {lessTargets(unit).map((target) => (
+                            <button key={`${target.kind}:${target.target}`} type="button" role="menuitem" onClick={() => lessLikeThis(unit, target)}>
+                              {target.kind === "source_less" ? `Less from ${target.label}` : `Less about ${target.label}`}
+                            </button>
+                          ))}
+                        </>
+                      )}
+                    </span>
+                  )}
                 </div>
                 {item.imageUrl && <img className={styles.thumb} src={item.imageUrl} alt="" loading="lazy" onError={(event) => { event.currentTarget.dataset.hidden = "true"; }} />}
               </li>
@@ -527,6 +700,8 @@ export function HomeNews({
               data-focused={focused ? "true" : "false"}
               data-read={unit.unread === 0 ? "true" : "false"}
               data-lead={lead ? "true" : "false"}
+              data-summary-id={unit.summaryId ?? undefined}
+              data-coverage-revision={unit.summaryId ? unit.coverageRevision : undefined}
               tabIndex={focused || (focusIndex < 0 && index === 0) ? 0 : -1}
               onFocus={() => setFocusIndex(index)}
               onClick={() => open(representative)}
@@ -542,7 +717,11 @@ export function HomeNews({
                 <p className={styles.eyebrow}>
                   <strong>{unit.sources.length} {unit.sources.length === 1 ? "source" : "sources"}</strong>
                   <time dateTime={unit.latestAt}>{relativeTime(unit.latestAt, now)}</time>
-                  {unit.unread > 0 && <span className={styles.state}>{unit.unread === unit.members.length ? "New to you" : `${unit.unread} unread`}</span>}
+                  {unit.seenRevision > 0 && unit.coverageRevision > unit.seenRevision ? (
+                    <span className={styles.state}>New coverage</span>
+                  ) : unit.unread > 0 ? (
+                    <span className={styles.state}>{unit.unread === unit.members.length ? "New to you" : `${unit.unread} unread`}</span>
+                  ) : null}
                 </p>
                 <h3 className={styles.headline}>{unit.headline}</h3>
                 {unit.text ? (
@@ -559,7 +738,7 @@ export function HomeNews({
                       });
                     }}
                   >
-                    <em>Summary</em>
+                    <em>{unit.textStale ? "Summary, earlier coverage" : "Summary"}</em>
                     {unit.text}
                   </p>
                 ) : (
@@ -576,7 +755,49 @@ export function HomeNews({
                     <button type="button" className={styles.action} onClick={() => openOriginal(representative)}>
                       Original
                     </button>
+                    <button type="button" className={styles.action} aria-haspopup="menu" aria-expanded={unitMenu?.id === unit.id} onClick={() => setUnitMenu(unitMenu?.id === unit.id ? null : { id: unit.id, kind: "menu" })}>
+                      More
+                    </button>
                   </span>
+                  {unitMenu?.id === unit.id && (
+                    <span className={styles.unitMenu} role="menu">
+                      {unitMenu.kind === "less" ? (
+                        <>
+                          <small>Less like this</small>
+                          {lessTargets(unit).map((target) => (
+                            <button key={`${target.kind}:${target.target}`} type="button" role="menuitem" onClick={() => lessLikeThis(unit, target)}>
+                              {target.kind === "source_less" ? `Less from ${target.label}` : `Less about ${target.label}`}
+                            </button>
+                          ))}
+                        </>
+                      ) : unitMenu.kind === "why" ? (
+                        <>
+                          <small>Why this is here</small>
+                          {unit.reasons.length === 0 ? <button type="button" role="menuitem" disabled>Newest first</button> : unit.reasons.map((reason) => (
+                            <button key={reason.name} type="button" role="menuitem" disabled>
+                              {reason.name} {reason.value > 0 ? `+${reason.value}` : reason.value}
+                            </button>
+                          ))}
+                        </>
+                      ) : (
+                        <>
+                          {unit.summaryId && (
+                            <button type="button" role="menuitem" onClick={() => hideSummary(unit)}>
+                              Hide this Summary
+                            </button>
+                          )}
+                          <button type="button" role="menuitem" onClick={() => setUnitMenu({ id: unit.id, kind: "less" })}>
+                            Less like this
+                          </button>
+                          {mode === "forYou" && (
+                            <button type="button" role="menuitem" onClick={() => setUnitMenu({ id: unit.id, kind: "why" })}>
+                              Why this is here
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </span>
+                  )}
                 </p>
               </div>
               {!lead && unit.imageUrl && <img className={styles.thumb} src={unit.imageUrl} alt="" loading="lazy" onError={(event) => { event.currentTarget.dataset.hidden = "true"; }} />}

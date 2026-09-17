@@ -47,6 +47,9 @@
     "search_reading",
     "keep_item",
     "add_feed",
+    "hide_summary",
+    "set_reading_preference",
+    "clear_reading_preferences",
     "run_command"
   ],
   "readScope": [

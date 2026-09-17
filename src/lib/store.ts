@@ -85,6 +85,8 @@ import {
   workspaceAiConfigs,
   githubInstallations,
   notificationChannels,
+  readingPreferences,
+  readingSummaryState,
 } from "./db/schema";
 import { listItemAssetReferences } from "./item-assets";
 import { localizeRemoteMarkdownImages } from "./markdown-images";
@@ -7508,4 +7510,102 @@ export async function getBlogOwnerSub(handle: string): Promise<string | null> {
     .where(and(eq(blogs.handle, handle), isNull(blogs.deletedAt)))
     .limit(1);
   return rows[0]?.sub ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Reading: what one person has seen, hidden, and asked for more or less of
+
+export type ReadingPreferenceKind = "topic_more" | "topic_less" | "source_less";
+export type ReadingPreferenceRecord = { id: string; kind: ReadingPreferenceKind; target: string; label: string; createdAt: Date };
+
+const PREFERENCE_KINDS: ReadingPreferenceKind[] = ["topic_more", "topic_less", "source_less"];
+const MAX_PREFERENCES = 60;
+
+export async function listReadingPreferences(userId: string, blogId: string): Promise<ReadingPreferenceRecord[]> {
+  if (!db) return [];
+  const rows = await db.select().from(readingPreferences).where(and(eq(readingPreferences.userId, userId), eq(readingPreferences.blogId, blogId))).orderBy(readingPreferences.createdAt);
+  return rows.map((row) => ({ id: row.id, kind: (PREFERENCE_KINDS.find((kind) => kind === row.kind) ?? "topic_less") as ReadingPreferenceKind, target: row.target, label: row.label, createdAt: row.createdAt }));
+}
+
+/** One explicit rule. Adding the same rule twice is one rule; a "more" and a "less" on the same topic replace each other. */
+export async function setReadingPreference(input: { userId: string; blogId: string; kind: ReadingPreferenceKind; target: string; label: string; actor: { actorType: AuditActorType } }): Promise<ReadingPreferenceRecord> {
+  if (!db) throw new Error("setReadingPreference requires DATABASE_URL");
+  const existing = await listReadingPreferences(input.userId, input.blogId);
+  if (existing.length >= MAX_PREFERENCES && !existing.some((rule) => rule.kind === input.kind && rule.target === input.target)) throw new Error(`Reading preferences are capped at ${MAX_PREFERENCES}`);
+  const opposite = input.kind === "topic_more" ? "topic_less" : input.kind === "topic_less" ? "topic_more" : null;
+  if (opposite) await db.delete(readingPreferences).where(and(eq(readingPreferences.userId, input.userId), eq(readingPreferences.blogId, input.blogId), eq(readingPreferences.kind, opposite), eq(readingPreferences.target, input.target)));
+  const [row] = await db
+    .insert(readingPreferences)
+    .values({ userId: input.userId, blogId: input.blogId, kind: input.kind, target: input.target, label: input.label.slice(0, 120) })
+    .onConflictDoUpdate({ target: [readingPreferences.userId, readingPreferences.blogId, readingPreferences.kind, readingPreferences.target], set: { label: input.label.slice(0, 120) } })
+    .returning();
+  await recordAction({ actorUserId: input.userId, actorType: input.actor.actorType, actionName: "reading.set_preference", targetType: "workspace", targetId: input.blogId, inputSummary: `${input.kind} ${input.label}`.slice(0, 200) });
+  return { id: row.id, kind: input.kind, target: row.target, label: row.label, createdAt: row.createdAt };
+}
+
+export async function removeReadingPreference(input: { userId: string; blogId: string; id: string; actor: { actorType: AuditActorType } }): Promise<boolean> {
+  if (!db) throw new Error("removeReadingPreference requires DATABASE_URL");
+  const deleted = await db.delete(readingPreferences).where(and(eq(readingPreferences.userId, input.userId), eq(readingPreferences.blogId, input.blogId), eq(readingPreferences.id, input.id))).returning({ label: readingPreferences.label, kind: readingPreferences.kind });
+  if (deleted.length === 0) return false;
+  await recordAction({ actorUserId: input.userId, actorType: input.actor.actorType, actionName: "reading.remove_preference", targetType: "workspace", targetId: input.blogId, inputSummary: `${deleted[0].kind} ${deleted[0].label}`.slice(0, 200) });
+  return true;
+}
+
+/** Every rule and every hidden Summary, gone. The ranking falls back to freshness and grouping. */
+export async function clearReadingPreferences(input: { userId: string; blogId: string; actor: { actorType: AuditActorType } }): Promise<{ rules: number; hidden: number }> {
+  if (!db) throw new Error("clearReadingPreferences requires DATABASE_URL");
+  const rules = await db.delete(readingPreferences).where(and(eq(readingPreferences.userId, input.userId), eq(readingPreferences.blogId, input.blogId))).returning({ id: readingPreferences.id });
+  const hidden = await db
+    .update(readingSummaryState)
+    .set({ hiddenAt: null, updatedAt: new Date() })
+    .where(and(eq(readingSummaryState.userId, input.userId), sql`${readingSummaryState.hiddenAt} is not null`, sql`${readingSummaryState.summaryId} in (select id from reading_summaries where blog_id = ${input.blogId})`))
+    .returning({ id: readingSummaryState.summaryId });
+  await recordAction({ actorUserId: input.userId, actorType: input.actor.actorType, actionName: "reading.clear_preferences", targetType: "workspace", targetId: input.blogId, outputSummary: `${rules.length} rules, ${hidden.length} hidden` });
+  return { rules: rules.length, hidden: hidden.length };
+}
+
+/** Hide or unhide one Summary for this person. Articles are untouched. */
+export async function setSummaryHidden(input: { userId: string; blogId: string; summaryId: string; hidden: boolean; actor: { actorType: AuditActorType } }): Promise<void> {
+  if (!db) throw new Error("setSummaryHidden requires DATABASE_URL");
+  const now = new Date();
+  await db
+    .insert(readingSummaryState)
+    .values({ userId: input.userId, summaryId: input.summaryId, hiddenAt: input.hidden ? now : null, updatedAt: now })
+    .onConflictDoUpdate({ target: [readingSummaryState.userId, readingSummaryState.summaryId], set: { hiddenAt: input.hidden ? now : null, updatedAt: now } });
+  await recordAction({ actorUserId: input.userId, actorType: input.actor.actorType, actionName: input.hidden ? "reading.hide_summary" : "reading.unhide_summary", targetType: "workspace", targetId: input.blogId, inputSummary: input.summaryId });
+}
+
+/**
+ * The person saw these Summaries at these coverage revisions. Monotonic: a
+ * late acknowledgment never lowers a watermark, and nothing here is an
+ * audit event; it is the same kind of row as read state.
+ */
+export async function markSummariesSeen(input: { userId: string; seen: Array<{ summaryId: string; revision: number }> }): Promise<number> {
+  if (!db) throw new Error("markSummariesSeen requires DATABASE_URL");
+  const now = new Date();
+  let count = 0;
+  for (const entry of input.seen.slice(0, 100)) {
+    if (!Number.isInteger(entry.revision) || entry.revision <= 0) continue;
+    await db
+      .insert(readingSummaryState)
+      .values({ userId: input.userId, summaryId: entry.summaryId, seenRevision: entry.revision, updatedAt: now })
+      .onConflictDoUpdate({ target: [readingSummaryState.userId, readingSummaryState.summaryId], set: { seenRevision: sql`greatest(${readingSummaryState.seenRevision}, ${entry.revision})`, updatedAt: now } });
+    count += 1;
+  }
+  return count;
+}
+
+export async function listSummaryState(userId: string, summaryIds: string[]): Promise<Map<string, { seenRevision: number; hidden: boolean }>> {
+  if (!db || summaryIds.length === 0) return new Map();
+  const rows = await db.select().from(readingSummaryState).where(and(eq(readingSummaryState.userId, userId), inArray(readingSummaryState.summaryId, summaryIds)));
+  return new Map(rows.map((row) => [row.summaryId, { seenRevision: row.seenRevision, hidden: row.hiddenAt !== null }]));
+}
+
+export async function countHiddenSummaries(userId: string, blogId: string): Promise<number> {
+  if (!db) return 0;
+  const rows = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(readingSummaryState)
+    .where(and(eq(readingSummaryState.userId, userId), sql`${readingSummaryState.hiddenAt} is not null`, sql`${readingSummaryState.summaryId} in (select id from reading_summaries where blog_id = ${blogId})`));
+  return rows[0]?.count ?? 0;
 }

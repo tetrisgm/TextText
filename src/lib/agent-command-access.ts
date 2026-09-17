@@ -62,6 +62,9 @@ const LOCAL_READS: readonly WorkspaceToolName[] = [
  * could steer. Those stay on the surfaces that can confirm.
  */
 const LOCAL_WRITES: readonly WorkspaceToolName[] = [
+  // Home page preferences: soft ranking rules the person can undo in Settings.
+  "hide_summary",
+  "set_reading_preference",
   "create_item",
   "update_item",
   "revert_agent_change",
@@ -86,6 +89,9 @@ const LOCAL_WRITES: readonly WorkspaceToolName[] = [
 
 /** Refused here, each for a reason stated above. */
 export const LOCAL_AGENT_DENIED: readonly WorkspaceToolName[] = [
+  // Wipes every rule and hidden Summary at once; confirmation-gated, so it
+  // stays on the surfaces that can ask.
+  "clear_reading_preferences",
   // Fetches a URL the model chose, the same outbound channel add_item_asset
   // opens. Feeds are added from the app or the hosted surface.
   "add_feed",

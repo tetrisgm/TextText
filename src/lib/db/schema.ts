@@ -1569,3 +1569,98 @@ export const notificationChannels = pgTable(
   },
   (t) => [index("notification_channels_blog_idx").on(t.blogId)],
 );
+
+// ---------------------------------------------------------------------------
+// The home page as a news front page: shared, derived facts once per
+// workspace, personal state once per person. None of this edits a document.
+
+/**
+ * A Summary, materialized. The grouping rule is the same one the reading
+ * views use; what this table adds is identity that survives members
+ * joining (stable_key is the oldest member's id), a coverage revision that
+ * moves only when a non-duplicate member joins or leaves, and the evidence
+ * hash the cached text was written against, so a line based on old
+ * evidence can say so instead of pretending.
+ */
+export const readingSummaries = pgTable(
+  "reading_summaries",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    blogId: uuid("blog_id").notNull(),
+    stableKey: text("stable_key").notNull(),
+    memberIds: uuid("member_ids").array().notNull(),
+    coverageRevision: integer("coverage_revision").notNull().default(1),
+    evidenceHash: text("evidence_hash").notNull(),
+    headline: text("headline").notNull(),
+    text: text("text"),
+    textModel: text("text_model"),
+    textEvidenceHash: text("text_evidence_hash"),
+    topicIds: text("topic_ids").array().notNull().default(sql`ARRAY[]::text[]`),
+    sourceNames: text("source_names").array().notNull().default(sql`ARRAY[]::text[]`),
+    representativePostId: uuid("representative_post_id"),
+    imageUrl: text("image_url"),
+    firstAt: timestamp("first_at").notNull(),
+    latestAt: timestamp("latest_at").notNull(),
+    /** Set when this Summary merged into another; readers follow the pointer. */
+    retiredInto: uuid("retired_into"),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("reading_summaries_blog_key_idx").on(t.blogId, t.stableKey), index("reading_summaries_blog_latest_idx").on(t.blogId, t.latestAt)],
+);
+
+/** Cross-source views: a saved search, a source folder, or a derived cluster of the embedded corpus. */
+export const readingTopics = pgTable(
+  "reading_topics",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    blogId: uuid("blog_id").notNull(),
+    label: text("label").notNull(),
+    /** "search" | "source" | "derived" */
+    kind: text("kind").notNull(),
+    /** The saved search id or folder path this stands for; null for derived. */
+    ref: text("ref"),
+    centroid: real("centroid").array(),
+    memberCount: integer("member_count").notNull().default(0),
+    position: integer("position").notNull().default(0),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [index("reading_topics_blog_idx").on(t.blogId)],
+);
+
+/** Per person: the coverage revision they have seen, and whether they hid the Summary. */
+export const readingSummaryState = pgTable(
+  "reading_summary_state",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    summaryId: uuid("summary_id")
+      .notNull()
+      .references(() => readingSummaries.id, { onDelete: "cascade" }),
+    seenRevision: integer("seen_revision").notNull().default(0),
+    hiddenAt: timestamp("hidden_at"),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.summaryId] })],
+);
+
+/** The whole taste profile: explicit, listed in Settings, deleted by undo. */
+export const readingPreferences = pgTable(
+  "reading_preferences",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    blogId: uuid("blog_id")
+      .notNull()
+      .references(() => blogs.id, { onDelete: "cascade" }),
+    /** "topic_more" | "topic_less" | "source_less" */
+    kind: text("kind").notNull(),
+    /** A topic id or a source folder path. */
+    target: text("target").notNull(),
+    label: text("label").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("reading_preferences_unique_idx").on(t.userId, t.blogId, t.kind, t.target), index("reading_preferences_user_blog_idx").on(t.userId, t.blogId)],
+);

@@ -142,6 +142,32 @@ export function fetchReadingHome(input: { handle: string; mode: "forYou" | "late
   return request(`/api/workspace/reading/home?${params.toString()}`);
 }
 
+export function markSummariesSeenRequest(handle: string, seen: Array<{ id: string; revision: number }>): Promise<{ ok: true; count: number }> {
+  return request(`/api/workspace/reading/home?handle=${encodeURIComponent(handle)}`, { method: "POST", body: JSON.stringify({ handle, action: "seen", seen }) });
+}
+
+export function setSummaryHiddenRequest(handle: string, id: string, hidden: boolean): Promise<{ ok: true }> {
+  return request(`/api/workspace/reading/home?handle=${encodeURIComponent(handle)}`, { method: "POST", body: JSON.stringify({ handle, action: "hide", id, hidden }) });
+}
+
+export type ReadingPreferenceView = { id: string; kind: "topic_more" | "topic_less" | "source_less"; target: string; label: string; createdAt: string };
+
+export function fetchReadingPreferences(handle: string): Promise<{ rules: ReadingPreferenceView[]; hidden: number }> {
+  return request(`/api/workspace/reading/preferences?handle=${encodeURIComponent(handle)}`);
+}
+
+export function setReadingPreferenceRequest(handle: string, input: { kind: ReadingPreferenceView["kind"]; target: string; label: string }): Promise<{ rule: ReadingPreferenceView }> {
+  return request(`/api/workspace/reading/preferences?handle=${encodeURIComponent(handle)}`, { method: "POST", body: JSON.stringify({ handle, action: "set", ...input }) });
+}
+
+export function removeReadingPreferenceRequest(handle: string, id: string): Promise<{ removed: boolean }> {
+  return request(`/api/workspace/reading/preferences?handle=${encodeURIComponent(handle)}`, { method: "POST", body: JSON.stringify({ handle, action: "remove", id }) });
+}
+
+export function clearReadingPreferencesRequest(handle: string): Promise<{ rules: number; hidden: number }> {
+  return request(`/api/workspace/reading/preferences?handle=${encodeURIComponent(handle)}`, { method: "POST", body: JSON.stringify({ handle, action: "clear" }) });
+}
+
 export function fetchReadingOverview(handle: string): Promise<ReadingOverview> {
   return request(`/api/workspace/reading/overview?handle=${encodeURIComponent(handle)}`);
 }

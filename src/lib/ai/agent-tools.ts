@@ -1182,6 +1182,12 @@ export function createWorkspaceAgentTools(
       // one anyway (batch commands list every tool), the server maps and runs.
       case "run_command":
         return runRemote("run_command", args as WorkspaceToolInput<"run_command">);
+      case "hide_summary":
+        return runRemote("hide_summary", args as WorkspaceToolInput<"hide_summary">);
+      case "set_reading_preference":
+        return runRemote("set_reading_preference", args as WorkspaceToolInput<"set_reading_preference">);
+      case "clear_reading_preferences":
+        return runRemote("clear_reading_preferences", args as WorkspaceToolInput<"clear_reading_preferences">);
       case "keep_item":
         return runRemote("keep_item", args as WorkspaceToolInput<"keep_item">);
       case "add_feed": {

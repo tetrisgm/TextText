@@ -491,3 +491,37 @@
   color: var(--ac-label-3);
   font: 400 var(--ac-fs-footnote) / 1.4 var(--ac-font-text);
 }
+
+/* A unit's own small menu, anchored under its actions. */
+.unitMenu {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0.375rem 0 0;
+  padding: 0.25rem;
+  border: 1px solid var(--ac-separator);
+  border-radius: var(--ac-radius-control);
+  background: var(--ac-fill-4);
+}
+.unitMenu small {
+  padding: 0 0.375rem;
+  color: var(--ac-label-3);
+  font: 500 var(--ac-fs-caption1, 0.75rem) / 1.3 var(--ac-font-text);
+}
+.unitMenu button {
+  border: 0;
+  border-radius: calc(var(--ac-radius-control) - 2px);
+  padding: 0.25rem 0.5rem;
+  background: transparent;
+  color: var(--ac-label);
+  font: 500 var(--ac-fs-caption1, 0.75rem) / 1.3 var(--ac-font-text);
+  cursor: pointer;
+}
+.unitMenu button:hover:not(:disabled) {
+  background: var(--ac-bg, #fff);
+}
+.unitMenu button:disabled {
+  color: var(--ac-label-2);
+  cursor: default;
+}
