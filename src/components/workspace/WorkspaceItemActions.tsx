@@ -17,6 +17,7 @@ import {
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import type { Blog, Post } from "@/lib/content";
+import { DocumentHistoryDialog } from "./DocumentHistoryDialog";
 import { updatePost } from "@/lib/pool/store";
 import { blogPostPath } from "@/lib/public-paths";
 
@@ -129,6 +130,7 @@ export function WorkspaceItemActions({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -295,6 +297,18 @@ export function WorkspaceItemActions({
           <button type="button" role="menuitem" onClick={share}>
             {copied ? "Link copied" : "Share"}
           </button>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!post.id}
+            onClick={(event) => {
+              stop(event);
+              setOpen(false);
+              setHistoryOpen(true);
+            }}
+          >
+            Earlier versions
+          </button>
           <label className="workspace-item-actions-date">
             <span>Created</span>
             <input
@@ -332,6 +346,9 @@ export function WorkspaceItemActions({
         onCancel={() => setDeleteOpen(false)}
         onConfirm={confirmDelete}
       />
+      {historyOpen && post.id && (
+        <DocumentHistoryDialog handle={handle} post={post} onClose={() => setHistoryOpen(false)} onRestored={() => router.refresh()} />
+      )}
     </div>
   );
 }

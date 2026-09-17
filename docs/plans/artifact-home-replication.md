@@ -157,7 +157,7 @@ to a curated catalogue we ship; never fake a number.
 | Reader mode | Existing full-text extraction (`extract.server.ts`), rendered as the item body. |
 | Font size, auto dark | Existing app theme; font size control in the reader bar. |
 | Personalize your feed | Interests picker over a shipped catalogue (new): topics grouped like Artifact's, each mapped to a starter set of feeds. Choosing ten topics subscribes the workspace to their feeds in bulk. |
-| Publisher curation | A shipped catalogue of feeds per topic (`src/lib/reading/catalogue.ts`), reviewed by hand, with the feed URL, site, and a short line. The person can add any feed as today. |
+| Publisher curation | A shipped catalogue of feeds per topic (a new catalogue module under `src/lib/reading/`), reviewed by hand, with the feed URL, site, and a short line. The person can add any feed as today. |
 | Your Stats | Aggregates over read state and provenance: categories read, top publishers, narrow topics (derived), counts for the last 30 days. |
 | Text to speech, comments, Discover, Links, places, reputation | Out of scope. |
 
@@ -228,7 +228,7 @@ focus, and scroll.
 Keep: `reading_summaries`, `reading_topics`, `reading_summary_state`,
 `reading_preferences`, `rank.ts`, the tick job, the home route.
 
-New tables (one migration, `scripts/migrate-add-artifact-home.mjs`,
+New tables (one migration, a new migration script beside the others in `scripts/`,
 idempotent, registered in `run-release-migrations.sh` and `db:push`):
 
 - `reading_interests` (user_id, blog_id, topic_key text, position,
@@ -251,7 +251,7 @@ idempotent, registered in `run-release-migrations.sh` and `db:push`):
   seconds): dwell, recorded by the reader on close, capped, used as the
   weak positive signal Artifact used. Never a scroll log.
 
-Catalogue: `src/lib/reading/catalogue.ts`, a hand-written list. Groups as
+Catalogue: a new catalogue module under `src/lib/reading/`, a hand-written list. Groups as
 Artifact's picker: Most Popular, Technology, Business, Science, Lifestyle,
 Health, Culture, Sports, World. Each topic: key, label, three to six feeds
 (URL, site, one line). Start with what is known to serve clean RSS: The
@@ -286,11 +286,11 @@ articles whose title matches a clickbait heuristic (question or ellipsis
 endings, "you won't believe", numbers plus "reasons"), all with the
 workspace model. Other styles are written on demand from the reader.
 
-Your Stats: `src/lib/reading/stats.server.ts`: for the last 30 days,
+Your Stats: a new stats module under `src/lib/reading/`: for the last 30 days,
 reads by category (topic), top publishers, narrow topics (derived), total
 reads and minutes (from sessions). One bounded query each.
 
-Inbox: `src/lib/reading/inbox.server.ts`: last 50 `action_audit` rows for
+Inbox: a new inbox module under `src/lib/reading/`: last 50 `action_audit` rows for
 this person and workspace with action names in a small allowlist
 (reading.send_digest, reading.alert, github.run_backup), plus alert
 matches from saved searches with `notify`.

@@ -16,6 +16,49 @@
 
 For other topics, search `HANDOFF-history-2026-09-13.md` by term, then read that section. Implementation and checks are in their source files and git history; this entry point does not duplicate them.
 
+## A note lost its text, and documents now keep a history (2026-09-17)
+
+The owner wrote a note, closed the tab, reopened it, and found two words.
+Investigated with a fanned-out review of the save path, the collaborative
+layer, the sync API, the Mac File Provider, the client pool, and recovery;
+every finding adversarially verified. Cause, in short: a successful
+autosave rebuilt the collaboration session, the rebuilt session fenced its
+own queued keystroke against the canonical post revision (which diverges
+from the collaborative baseline revision after the first materialization),
+read that as an offline device with foreign edits, and stopped the only
+writer. The editor kept accepting text, showed "saved locally", and the
+tab close discarded it. Reopening the item rotated the baseline from the
+short body and swept the update log, destroying the forensic trail. The
+text was unrecoverable: server row, canonical document, Yjs baseline and
+log, the Mac's textpack, dictation recordings, and the browser recovery
+store were all checked.
+
+Fixed in `6ff1dfb7` and the commit after it:
+
+- `post_revisions` keeps the document each write replaced, written by the
+  same statement (`src/lib/revisions.ts`, folded into every savePost path).
+  Autosaves coalesce to one version every two minutes per writer; a shrink
+  or a different kind of writer always records. A baseline rotation
+  archives the retired session's text as `collab.rotate` before the sweep.
+- The outbox fence is learned from a baseline the session caught up under,
+  never assumed from the post revision. A save no longer tears down the
+  live session. A stopped writer preserves first. A materialization with no
+  writer is an error the person sees, not "saved locally".
+- An identical file upload writes nothing, and a real one marks the
+  collaborative state materialized, so an echo cannot arm a rotation.
+- Earlier versions in the editor's menu and the item menu lists versions
+  with what changed them, marks the lossy ones, and restores one; the
+  restore is itself recorded. API: `/api/workspace/history`.
+
+Verified: a provider test that fails against the old code and passes
+against this one, four database tests over the incident's exact shape, the
+full round trip in the browser (loss recorded, shown, restored), 3369 unit
+tests, 104 database tests, lint and docs gates.
+
+Still open: Time Machine on this Mac has failed every attempt since
+2026-09-15 (`RESULT=26`), so twelve days of local state has no off-machine
+copy. Unrelated to this bug, worth fixing.
+
 ## Next: replicate Artifact on Home (2026-09-17, plan only)
 
 The owner opened 0.189 and rejected the restrained composition: the

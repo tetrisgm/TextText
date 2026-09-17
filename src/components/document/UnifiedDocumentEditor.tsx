@@ -3,6 +3,7 @@
 import { DocumentUndoManager, replaceSharedText } from "@/lib/collab/text-transactions";
 
 import { dismissOpenDetails } from "@/components/accessibility/keyboard";
+import { DocumentHistoryDialog } from "@/components/workspace/DocumentHistoryDialog";
 import { StatusAnnouncement } from "@/components/accessibility/StatusAnnouncement";
 import { EditorSaveNotice, editorSaveLabel } from "./EditorSaveNotice";
 
@@ -658,6 +659,7 @@ export function UnifiedDocumentEditor({
   const [error, setError] = useState<string | null>(null);
   const [baselineFailure, setBaselineFailure] = useState<string | null>(null);
   const [providerAttempt, setProviderAttempt] = useState(0);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [choosingTemplate, setChoosingTemplate] = useState(false);
   // "Save as look" is how a look gets made now. It takes what this document
   // already renders as and keeps it under a name; it never edits the document.
@@ -1553,6 +1555,11 @@ export function UnifiedDocumentEditor({
                   Add a description
                 </button>
               )}
+              {post.id && blog.handle && (
+                <button type="button" onClick={() => setHistoryOpen(true)}>
+                  Earlier versions
+                </button>
+              )}
               {onDelete && (
                 <button
                   type="button"
@@ -1575,6 +1582,14 @@ export function UnifiedDocumentEditor({
           </div>
         </div>
       </WorkspaceActionBarPortal>
+      {historyOpen && post.id && (
+        <DocumentHistoryDialog
+          handle={blog.handle}
+          post={post}
+          onClose={() => setHistoryOpen(false)}
+          onRestored={() => setProviderAttempt((attempt) => attempt + 1)}
+        />
+      )}
       {findActive && (
         <div className="post-action-find-row" role="search" aria-label="Find and replace">
           {/* Replace lands as one ordinary edit through updateText, which is
