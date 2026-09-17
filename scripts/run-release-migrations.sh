@@ -57,6 +57,7 @@ migrations=(
   scripts/migrate-add-notifications.mjs
   scripts/migrate-add-home-news.mjs
   scripts/migrate-add-post-revisions.mjs
+  scripts/migrate-add-reading-image-checked.mjs
 )
 
 missing=()
