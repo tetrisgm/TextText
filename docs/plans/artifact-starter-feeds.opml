@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+  <head>
+    <title>TextText starter feeds</title>
+  </head>
+  <body>
+    <outline text="Technology" title="Technology">
+      <outline type="rss" text="The Verge" title="The Verge" xmlUrl="https://www.theverge.com/rss/index.xml" htmlUrl="https://www.theverge.com"/>
+      <outline type="rss" text="Ars Technica" title="Ars Technica" xmlUrl="https://feeds.arstechnica.com/arstechnica/index" htmlUrl="https://arstechnica.com"/>
+      <outline type="rss" text="Wired" title="Wired" xmlUrl="https://www.wired.com/feed/rss" htmlUrl="https://www.wired.com"/>
+      <outline type="rss" text="TechCrunch" title="TechCrunch" xmlUrl="https://techcrunch.com/feed/" htmlUrl="https://techcrunch.com"/>
+      <outline type="rss" text="MIT Technology Review" title="MIT Technology Review" xmlUrl="https://www.technologyreview.com/feed/" htmlUrl="https://www.technologyreview.com"/>
+      <outline type="rss" text="Hacker News: Front Page" title="Hacker News: Front Page" xmlUrl="https://hnrss.org/frontpage" htmlUrl="https://news.ycombinator.com"/>
+    </outline>
+    <outline text="Science" title="Science">
+      <outline type="rss" text="Quanta Magazine" title="Quanta Magazine" xmlUrl="https://www.quantamagazine.org/feed/" htmlUrl="https://www.quantamagazine.org"/>
+      <outline type="rss" text="Nature News" title="Nature News" xmlUrl="https://www.nature.com/nature.rss" htmlUrl="https://www.nature.com"/>
+      <outline type="rss" text="NASA" title="NASA" xmlUrl="https://www.nasa.gov/news-release/feed/" htmlUrl="https://www.nasa.gov"/>
+    </outline>
+    <outline text="Design" title="Design">
+      <outline type="rss" text="Dezeen" title="Dezeen" xmlUrl="https://www.dezeen.com/feed/" htmlUrl="https://www.dezeen.com"/>
+      <outline type="rss" text="ArchDaily" title="ArchDaily" xmlUrl="https://www.archdaily.com/feed" htmlUrl="https://www.archdaily.com"/>
+    </outline>
+    <outline text="World" title="World">
+      <outline type="rss" text="BBC News: World" title="BBC News: World" xmlUrl="https://feeds.bbci.co.uk/news/world/rss.xml" htmlUrl="https://www.bbc.com/news/world"/>
+      <outline type="rss" text="The Guardian: World" title="The Guardian: World" xmlUrl="https://www.theguardian.com/world/rss" htmlUrl="https://www.theguardian.com/world"/>
+      <outline type="rss" text="NPR: News" title="NPR: News" xmlUrl="https://feeds.npr.org/1001/rss.xml" htmlUrl="https://www.npr.org"/>
+    </outline>
+    <outline text="Games" title="Games">
+      <outline type="rss" text="Polygon" title="Polygon" xmlUrl="https://www.polygon.com/rss/index.xml" htmlUrl="https://www.polygon.com"/>
+      <outline type="rss" text="Rock Paper Shotgun" title="Rock Paper Shotgun" xmlUrl="https://www.rockpapershotgun.com/feed" htmlUrl="https://www.rockpapershotgun.com"/>
+    </outline>
+  </body>
+</opml>

@@ -16,6 +16,21 @@
 
 For other topics, search `HANDOFF-history-2026-09-13.md` by term, then read that section. Implementation and checks are in their source files and git history; this entry point does not duplicate them.
 
+## Next: replicate Artifact on Home (2026-09-17, plan only)
+
+The owner opened 0.189 and rejected the restrained composition: the
+mandate is now to replicate the Artifact experience one to one and adapt
+TextText underneath. The plan, grounded in eleven original Artifact
+screens and the feature timeline, is `docs/plans/artifact-home-replication.md`:
+surface mapping, a measured visual spec, data deltas (publisher catalogue,
+interests, hidden publishers, dislikes, headline rewrites, article
+summaries, dwell sessions), ranking v2, a seven-step sequence, and the
+decisions the owner should confirm. Keep the 0.189 read model, tables,
+ranker, and tools; replace the Home UI. Until step 1 (catalogue and
+onboarding) lands, the owner's workspace shows the library because it
+follows no feeds; `docs/plans/artifact-starter-feeds.opml` (16 feeds,
+all verified) imports from Settings, Manage sources.
+
 ## Home as a personal front page (2026-09-17, shipped as 0.189)
 
 The owner's r3 brief (Artifact-style Home: For You, topics, Summaries,
