@@ -132,6 +132,18 @@ export function cleanupReading(
   });
 }
 
+export type StarterOutcome =
+  | { applied: false; reason: "already_applied" | "has_sources" | "no_folder" }
+  | { applied: true; added: number; failed: number; remaining: number };
+
+/** Give a workspace that follows nothing its starter sources, a few per call. */
+export function applyStarterFeedsRequest(handle: string): Promise<{ outcome: StarterOutcome; total: number }> {
+  return request(`/api/workspace/reading/starter?handle=${encodeURIComponent(handle)}`, {
+    method: "POST",
+    body: JSON.stringify({ handle }),
+  });
+}
+
 export type { HomeNews, HomeTopic, HomeUnit } from "./home.server";
 
 export function fetchReadingHome(input: { handle: string; mode: "forYou" | "latest"; topic: string | null; offset?: number; limit?: number }): Promise<import("./home.server").HomeNews> {

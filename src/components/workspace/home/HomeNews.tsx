@@ -15,6 +15,7 @@ import {
   setReadingItemsKept,
   setReadingItemsRead,
   tickReading,
+  applyStarterFeedsRequest,
   type HomeNews as HomeNewsData,
   type HomeUnit,
   type ReadingListItem,
@@ -22,6 +23,7 @@ import {
 } from "@/lib/reading/client";
 import { AddFeedsDialog } from "@/components/workspace/reading/AddFeedsDialog";
 import { ManageSourcesDialog } from "@/components/workspace/reading/ManageSourcesDialog";
+import { STARTER_FEEDS } from "@/lib/reading/starter-feeds";
 import { publisherFor, usableExcerpt } from "./publisher";
 import styles from "./Home.module.css";
 
@@ -170,6 +172,10 @@ export function HomeNews({
   const [menuOpen, setMenuOpen] = useState(false);
   const [managing, setManaging] = useState(false);
   const [addingFeeds, setAddingFeeds] = useState(false);
+  // "starting" while the workspace is being given its first sources, "own"
+  // once it is following something it chose, or chose to be empty.
+  const [starter, setStarter] = useState<"unknown" | "starting" | "own">("unknown");
+  const starterRan = useRef(false);
   const [saving, setSaving] = useState(false);
   // Set when data arrives, never during render, so server and client agree.
   const [now, setNow] = useState(0);
@@ -560,6 +566,42 @@ export function HomeNews({
     }
   };
 
+  // A news surface that opens empty is a broken news surface. A workspace
+  // following nothing is given the starter set once, a few publishers per
+  // pass so the page fills rather than hangs. The server decides whether it
+  // is owed: a workspace that was given them and then emptied says no, and
+  // this stops at the first refusal.
+  useEffect(() => {
+    if (!canManage || overview === null || overview.sources.length > 0 || starterRan.current) return;
+    starterRan.current = true;
+    let cancelled = false;
+    void (async () => {
+      for (let pass = 0; pass < 6; pass += 1) {
+        const result = await applyStarterFeedsRequest(handle).catch(() => null);
+        if (cancelled) return;
+        if (!result?.outcome.applied) {
+          setStarter("own");
+          return;
+        }
+        setStarter("starting");
+        if (result.outcome.remaining === 0) break;
+      }
+      if (cancelled) return;
+      await refreshWorkspacePool(handle, blogId).catch(() => undefined);
+      if (cancelled) return;
+      const fresh = await fetchReadingOverview(handle).catch(() => null);
+      if (cancelled || !fresh) return;
+      setOverview(fresh);
+      void load({ mode, topic });
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // The workspace is asked once per mount; mode and topic are read at the
+    // moment the sources land, never as reasons to ask again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blogId, canManage, handle, overview]);
+
   const unhealthy = overview?.sources.filter((source) => !["healthy", "checking"].includes(source.health)) ?? [];
   // A photograph gets the full width every few items and the rest stay
   // compact. Artifact's feed alternates this way, and it is what stops a list
@@ -587,10 +629,23 @@ export function HomeNews({
   // area would be a hole the height of a feed. The page becomes a short setup
   // block instead, and Recent follows it directly.
   const noSources = overview !== null && overview.sources.length === 0;
+  const starterTopicLabel = useMemo(() => {
+    const topics = [...new Set(STARTER_FEEDS.map((feed) => feed.topic))];
+    return `${topics.slice(0, -1).join(", ")} and ${topics[topics.length - 1]}`.toLowerCase();
+  }, []);
 
   return (
     <section className={`applecms ${styles.news}`} aria-label="News" data-home-news>
-      {noSources && (
+      {noSources && starter === "starting" && (
+        <div className={styles.setup}>
+          <h2>Setting up your news</h2>
+          <p>
+            Following {STARTER_FEEDS.length} publishers across {starterTopicLabel}. They will start arriving in a moment, and
+            you can drop any of them from Manage sources.
+          </p>
+        </div>
+      )}
+      {noSources && starter === "own" && (
         <div className={styles.setup}>
           <h2>News from the sources you follow</h2>
           <p>Add a feed and its articles arrive here, beside your own work.</p>

@@ -5,6 +5,7 @@ import { enqueueRetentionSweep, runRetentionJob } from "@/lib/reading/retention.
 import { digestDue, sendReadingDigest } from "@/lib/reading/digest.server";
 import { enqueueSummarize, runSummarizeJob } from "@/lib/reading/summaries-materialize.server";
 import { enqueueImageEnrichment, runEnrichItemJob } from "@/lib/reading/images.server";
+import { applyStarterFeeds, starterIsUnfinished } from "@/lib/reading/starter.server";
 import { handleFrom, json, jsonError, readJson, requireOwner } from "../_shared";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +28,11 @@ export async function POST(request: Request) {
   const owner = await requireOwner(handle);
   if (!owner.ok) return owner.response;
   const limit = typeof body.limit === "number" ? Math.max(1, Math.min(10, Math.trunc(body.limit))) : 3;
+  // A workspace part way through its starter set is carried the rest of the
+  // way here rather than by the browser looping over a route.
+  if (await starterIsUnfinished(owner.blogId)) {
+    await applyStarterFeeds({ handle, blogId: owner.blogId, actor: { userId: owner.ownerId, actorType: "human" } }).catch(() => undefined);
+  }
   const queued = await enqueueDueFeedPolls(owner.blogId, enqueueReadingJob);
   await enqueueRetentionSweep(owner.blogId);
   // Reconciles missing or stale vectors, including after a key is configured
