@@ -18,8 +18,13 @@ For other topics, search `HANDOFF-history-2026-09-13.md` by term, then read that
 
 ## GitHub App, backup, notifications, free-text command (2026-09-17)
 
-The four items agreed on 2026-09-17 are implemented locally on main, one
-commit each, not shipped:
+The four items agreed on 2026-09-17 shipped as TextText 0.187 on
+2026-09-17 (changelog entry written). Shipping needed three release-tooling
+fixes for the Xcode/Swift 6.4 update on this Mac: App Intents const values
+now live in suffixed build directories, SwiftPM's Swift Build layout puts
+module objects and swiftmodules beside the products under
+`mac/.build/out/Products/Release`, so `mac/scripts/embed-extensions.sh`
+and `appintents-metadata.sh` look there too. One commit each:
 
 1. `530274af` GitHub App sign-in and Connect: provider next to Apple and
    Google (`github:<id>` identity, name, avatar, verified email only),
@@ -54,12 +59,11 @@ then executed), and refused a delete on the local surface.
 
 Needs the owner's hands:
 
-- Live GitHub sign-in and Connect were not exercised end to end. The app's
-  setup URL points at texttext.app, so the install flow only completes
-  against production: ship, then Continue with GitHub on `/signin` and
-  Connect GitHub in Settings. Sign-in alone can be tried on localhost.
-  The session's Chrome extension dropped mid-run, which is why it was not
-  done here.
+- Live GitHub sign-in and Connect were not exercised end to end: they need
+  a browser signed in to GitHub, and the session's Chrome extension dropped
+  mid-run. Production is up with Continue with GitHub on `/signin`; press
+  it, then Connect GitHub in Settings, GitHub, and choose a repository. If
+  either fails, the notice under the GitHub section names the step.
 - The heartbeat backs up only while the workspace is open. If that is not
   enough, a persistent job calling `POST /api/github/backup` with
   `action: "tick"` and an owner token is the intended addition.
