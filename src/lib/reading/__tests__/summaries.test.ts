@@ -17,6 +17,7 @@ function item(id: string, title: string, at: string, extra: Partial<ReadingListI
     publishedAt: at,
     receivedAt: at,
     availability: "full",
+    imageUrl: null,
     excerpt: null,
     authors: [],
     read: extra.read ?? false,

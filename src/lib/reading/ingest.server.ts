@@ -27,6 +27,16 @@ import { FeedParseError, parseFeed, type NormalizedEntry, type NormalizedFeed } 
 import type { FeedConnectionRow } from "./connections.server";
 import type { ReadingJobRow } from "./jobs.server";
 
+/** The first image the feed attached, if any: the home page's thumbnail. */
+export function imageFromEntry(entry: { attachments?: Array<{ url: string; mimeType: string | null }> }): string | null {
+  for (const attachment of entry.attachments ?? []) {
+    const type = attachment.mimeType?.toLowerCase() ?? "";
+    const looksLikeImage = type.startsWith("image/") || (!type && /\.(jpe?g|png|webp|gif|avif)(\?|$)/i.test(attachment.url));
+    if (looksLikeImage && /^https:\/\//i.test(attachment.url)) return attachment.url.slice(0, 2000);
+  }
+  return null;
+}
+
 /**
  * Importing: one poll of one connection, in bounded batches, idempotent.
  *
@@ -282,6 +292,7 @@ async function materializeEntry(input: {
       externalUrl: entry.externalUrl,
       canonicalUrl,
       duplicateOfPostId: earlier[0]?.id ?? null,
+      imageUrl: imageFromEntry(entry),
       publishedAt,
       sourceUpdatedAt,
       availability: entry.availability,
@@ -394,6 +405,7 @@ async function applySourceRevision(input: {
     .update(readingProvenance)
     .set({
       publisherTitle: entry.title,
+      imageUrl: imageFromEntry(entry),
       sourceUpdatedAt: usableFeedDate(entry.updatedAt, now),
       availability: entry.availability,
       ...(applied ? { sourceHash: contentHash } : {}),

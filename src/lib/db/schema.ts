@@ -1294,6 +1294,8 @@ export const readingProvenance = pgTable(
     canonicalUrl: text("canonical_url"),
     /** Set at import when an earlier live feed item in this workspace already carries the same canonical link; lists hide it. */
     duplicateOfPostId: uuid("duplicate_of_post_id"),
+    /** One representative image the feed itself supplied (an image enclosure), for the home page. */
+    imageUrl: text("image_url"),
     publishedAt: timestamp("published_at"),
     sourceUpdatedAt: timestamp("source_updated_at"),
     /** "full" | "excerpt" | "metadata": what the feed actually supplied. */

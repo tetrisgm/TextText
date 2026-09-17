@@ -1,7 +1,9 @@
 "use client";
 
 import { scheduleAfterLoadIdle } from "@/lib/after-load-idle";
-import { ReadingOverviewModule } from "@/components/workspace/reading/ReadingOverviewModule";
+import { HomeNews } from "@/components/workspace/home/HomeNews";
+import { HomeRecent } from "@/components/workspace/home/HomeRecent";
+import homeStyles from "@/components/workspace/home/Home.module.css";
 import { BackupHeartbeat } from "@/components/workspace/BackupHeartbeat";
 
 // The workspace's root, search and tag pages plus the content router that
@@ -284,6 +286,8 @@ export function WorkspaceRootLanding({
   // with the workspace instead of with the browser that set it. Every folder
   // page, Blog included, takes its layout from the look on the folder; this
   // control governs Home and nothing else.
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const hasFeeds = (pool.readingSources?.length ?? 0) > 0;
   const [recentViewMode, setRecentViewMode] = useState<BlogHomeView>(
     pool.blog.homeLayout,
   );
@@ -770,17 +774,31 @@ export function WorkspaceRootLanding({
               </section>
             ) : null}
             <BackupHeartbeat handle={pool.blog.handle} enabled={canManageItems} />
-            {(pool.readingSources?.length ?? 0) > 0 && (
-              <ReadingOverviewModule
-                handle={pool.blog.handle}
-                blogId={pool.blogId}
-                canManage={canManageItems}
-                assistantReady={assistantReady}
-                onOpenPost={onOpenPost}
-                onOpenSection={onOpenSection}
-                onUseAssistantPrompt={onUseAssistantPrompt}
-              />
+            {hasFeeds && (
+              <div className={homeStyles.frame}>
+              <div className={homeStyles.home}>
+                <HomeNews
+                  handle={pool.blog.handle}
+                  blogId={pool.blogId}
+                  canManage={canManageItems}
+                  assistantReady={assistantReady}
+                  onOpenPost={onOpenPost}
+                  onOpenSection={onOpenSection}
+                  onUseAssistantPrompt={onUseAssistantPrompt}
+                />
+                <HomeRecent
+                  pool={pool}
+                  recent={recent}
+                  onOpenPost={onOpenPost}
+                  onShowAll={() => {
+                    setLibraryOpen(true);
+                    setTimeout(() => document.querySelector(".workspace-recent")?.scrollIntoView({ block: "start", behavior: "smooth" }), 0);
+                  }}
+                />
+              </div>
+              </div>
             )}
+            {(!hasFeeds || libraryOpen) && (
             <section className={`workspace-recent is-view-${recentViewMode}`}>
               <header className="workspace-library-toolbar">
                 <div
@@ -901,6 +919,7 @@ export function WorkspaceRootLanding({
                 </div>
               )}
             </section>
+            )}
           </>
         )}
       </div>

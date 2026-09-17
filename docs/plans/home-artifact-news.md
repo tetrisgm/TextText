@@ -21,7 +21,7 @@ Repository-confirmed (read for this review):
   (`src/lib/workspace-activity.ts`, `sortSidebarDocuments`); "Last edited"
   follows updates only. The pool excludes feed items by design
   (`getWorkspacePoolPosts`, manual origin only).
-- Reading module: `src/components/workspace/reading/ReadingOverviewModule.tsx`
+- Reading module (replaced by `src/components/workspace/home/` in P1): `ReadingOverviewModule.tsx`
   and `overview.server.ts`: counts, source chips with health and unread,
   the latest unread items, Catch me up, Save brief, Manage sources. It
   ticks `/api/workspace/reading/tick` when sources look stale.

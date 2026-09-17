@@ -49,6 +49,8 @@ export type ReadingListItem = {
   publishedAt: string | null;
   receivedAt: string;
   availability: "full" | "excerpt" | "metadata";
+  /** A feed-supplied image for the item, when the feed attached one. */
+  imageUrl: string | null;
   excerpt: string | null;
   authors: string[];
   read: boolean;
@@ -176,6 +178,7 @@ export async function listReadingItems(input: {
       externalUrl: readingProvenance.externalUrl,
       publishedAt: readingProvenance.publishedAt,
       availability: readingProvenance.availability,
+      imageUrl: readingProvenance.imageUrl,
       authors: readingProvenance.authors,
       readAt: readingReadState.readAt,
       keptReasons: keptSubquery,
@@ -239,6 +242,7 @@ export async function listReadingItems(input: {
       publishedAt: row.publishedAt ? new Date(row.publishedAt).toISOString() : null,
       receivedAt: new Date(row.createdAt).toISOString(),
       availability: (row.availability ?? "full") as ReadingListItem["availability"],
+      imageUrl: row.imageUrl ?? null,
       excerpt: row.excerpt ?? null,
       authors: row.authors ?? [],
       read: row.readAt !== null && row.readAt !== undefined,

@@ -132,6 +132,16 @@ export function cleanupReading(
   });
 }
 
+export type { HomeNews, HomeTopic, HomeUnit } from "./home.server";
+
+export function fetchReadingHome(input: { handle: string; mode: "forYou" | "latest"; topic: string | null; offset?: number; limit?: number }): Promise<import("./home.server").HomeNews> {
+  const params = new URLSearchParams({ handle: input.handle, mode: input.mode });
+  if (input.topic) params.set("topic", input.topic);
+  if (input.offset) params.set("offset", String(input.offset));
+  if (input.limit) params.set("limit", String(input.limit));
+  return request(`/api/workspace/reading/home?${params.toString()}`);
+}
+
 export function fetchReadingOverview(handle: string): Promise<ReadingOverview> {
   return request(`/api/workspace/reading/overview?handle=${encodeURIComponent(handle)}`);
 }
