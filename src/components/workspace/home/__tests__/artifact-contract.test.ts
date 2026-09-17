@@ -121,4 +121,31 @@ describe("the list", () => {
   it("takes its Headlines from the server rather than from the visible page", () => {
     expect(tsx).toContain("data?.headlines");
   });
+
+  it("dims what you asked less of, where it is, instead of pulling it out", () => {
+    // The original fades a hidden publisher's card to four tenths in place
+    // and leaves it in the scroll, so the list never moves under a reader.
+    expect(tsx).toContain('data-dimmed=');
+    expect(css).toContain('.unit[data-dimmed="true"]');
+    expect(/\n\.unit\[data-dimmed="true"\]\s*\{[^}]*opacity:\s*0\.4/.test(css)).toBe(true);
+    // Nothing re-ranks the page under the cursor any more.
+    expect(tsx).not.toContain("removeUnit");
+  });
+});
+
+describe("the strip stays", () => {
+  it("docks under the workspace action bar instead of scrolling away", () => {
+    const strip = /\n\.strip\s*\{([^}]*)\}/.exec(css);
+    expect(strip).not.toBeNull();
+    expect(strip![1]).toContain("position: sticky");
+    // Not 0: the action bar is sticky above it, and at 0 the strip docks
+    // behind the bar and is never seen again.
+    expect(strip![1]).toContain("--workspace-action-bar-height");
+    expect(strip![1]).toContain("background:");
+  });
+
+  it("can be walked from the keyboard", () => {
+    expect(tsx).toContain('case "[":');
+    expect(tsx).toContain('case "]":');
+  });
 });

@@ -83,8 +83,10 @@
 }
 .recent {
   min-width: 0;
+  /* Under the action bar, like the strip beside it: at 0 it docked behind
+     the bar and simply scrolled out of sight. */
   position: sticky;
-  top: 0.5rem;
+  top: calc(var(--workspace-action-bar-height, var(--ac-h-toolbar, 52px)) + 0.5rem);
 }
 .home[data-no-sources="true"] {
   grid-template-columns: minmax(0, 1fr);
@@ -199,11 +201,19 @@
    while a row separator is inset, which is how the strip reads as chrome and
    the rows read as content. */
 .strip {
+  /* It stays. The strip is the navigation, and a person four screens into
+     Technology should be one click from World without scrolling back. It
+     docks under the workspace action bar, which is sticky above it. */
+  position: sticky;
+  top: var(--workspace-action-bar-height, var(--ac-h-toolbar, 52px));
+  z-index: 3;
   display: flex;
   align-items: baseline;
   gap: 0.75rem;
   margin: 0.25rem 0 0;
+  padding-top: 0.5rem;
   border-bottom: 1px solid var(--news-line);
+  background: var(--ac-bg);
 }
 .tabs {
   display: flex;
@@ -572,6 +582,18 @@
 /* Read items step back rather than disappear. */
 .unit[data-read="true"] .headline {
   color: var(--news-ink-2);
+}
+/* Asked for less of: four tenths, where it is. The original fades a hidden
+   publisher's card in place rather than pulling it out of the scroll, so the
+   list never moves under someone who is still reading. */
+.unit[data-dimmed="true"] {
+  opacity: 0.4;
+  transition: opacity 160ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .unit[data-dimmed="true"] {
+    transition: none;
+  }
 }
 .excerpt {
   display: -webkit-box;

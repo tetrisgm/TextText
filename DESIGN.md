@@ -72,6 +72,10 @@ ink alone: no pill, no underline, no dot, and no heavier weight, because a
 heavier weight shifts every tab to its right as you move along the strip.
 Publishers never appear in the strip.
 
+**The strip stays.** It docks under the workspace action bar and the feed
+scrolls beneath it, so a person four screens into Technology is one click from
+World. `[` and `]` walk it from the keyboard.
+
 **A channel is a set of sources.** `src/lib/reading/channels.ts` holds the
 catalogue and places a new source from its host, then from the words in its
 name, then not at all, because a wrong subject is worse than none. The channel
@@ -112,6 +116,11 @@ source is covering, chosen across the whole window and lifted out of the list
 so they are never shown twice, as a strip of fixed-width cards that overflows
 with the next one peeking. Below two stories there is no strip: one card is not
 a strip, and the stories read perfectly well in the list.
+
+**Nothing moves under a reader.** Asking for less of something fades it to
+four tenths where it is and leaves it in the scroll, with an undo. Removing
+the row, or re-ranking the page, moves everything below it while a person is
+still reading; the rule takes effect on the next page either way.
 
 **Colour is furniture, never text.** The brand tones appear in section labels
 and dashboard panels. Body text and headlines are ink. Every `--news-*` colour

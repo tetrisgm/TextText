@@ -24,6 +24,7 @@ import {
 import { AddFeedsDialog } from "@/components/workspace/reading/AddFeedsDialog";
 import { ManageSourcesDialog } from "@/components/workspace/reading/ManageSourcesDialog";
 import { STARTER_FEEDS } from "@/lib/reading/starter-feeds";
+import { tidyPublisherName } from "@/lib/reading/publisher-name";
 import { publisherFor } from "./publisher";
 import styles from "./Home.module.css";
 
@@ -94,9 +95,11 @@ function writeUrlState(mode: Mode, topic: string | null) {
   window.history.replaceState(window.history.state, "", url.toString());
 }
 
+/** "The Verge and Ars Technica", from the titles their feeds give themselves. */
 function sourcesLabel(sources: string[]): string {
-  if (sources.length <= 2) return sources.join(" and ");
-  return `${sources[0]}, ${sources[1]} and ${sources.length - 2} more`;
+  const names = sources.map(tidyPublisherName);
+  if (names.length <= 2) return names.join(" and ");
+  return `${names[0]}, ${names[1]} and ${names.length - 2} more`;
 }
 
 /**
@@ -169,6 +172,8 @@ export function HomeNews({
   const [memberIndex, setMemberIndex] = useState(-1);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [openLines, setOpenLines] = useState<Set<string>>(() => new Set());
+  // Items the person has asked for less of, faded where they are.
+  const [dimmed, setDimmed] = useState<Set<string>>(() => new Set());
   const [menuOpen, setMenuOpen] = useState(false);
   const [managing, setManaging] = useState(false);
   const [addingFeeds, setAddingFeeds] = useState(false);
@@ -249,13 +254,16 @@ export function HomeNews({
     setFocusIndex(-1);
     void load({ mode: next, topic });
   };
-  const setTopic = (next: string | null) => {
-    const value = next === topic ? null : next;
-    setView({ mode, topic: value });
-    writeUrlState(mode, value);
-    setFocusIndex(-1);
-    void load({ mode, topic: value });
-  };
+  const setTopic = useCallback(
+    (next: string | null) => {
+      const value = next === topic ? null : next;
+      setView({ mode, topic: value });
+      writeUrlState(mode, value);
+      setFocusIndex(-1);
+      void load({ mode, topic: value });
+    },
+    [load, mode, topic],
+  );
 
   // Same two-step open as the folder views: merge into the pool, then open
   // once the shell has re-rendered with a handler that can see the item.
@@ -398,46 +406,62 @@ export function HomeNews({
   }, [flushSeen, mode, units]);
   useEffect(() => () => flushSeen(), [flushSeen]);
 
-  const removeUnit = useCallback((id: string) => {
-    setData((current) => (current ? { ...current, units: current.units.filter((unit) => unit.id !== id), hiddenCount: current.hiddenCount + 1 } : current));
+  /**
+   * Telling the page you want less of something dims the item where it is
+   * and leaves it in the scroll. Removing it, or re-ranking the page under
+   * the cursor, moves everything below it while a person is still reading:
+   * the original fades the card to four tenths in place for exactly this
+   * reason, and the rule takes effect on the next page either way.
+   */
+  const dim = useCallback((id: string, on: boolean) => {
+    setDimmed((current) => {
+      const next = new Set(current);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
   }, []);
   const hideSummary = useCallback(
     (unit: Extract<HomeUnit, { kind: "summary" }>) => {
       if (!unit.summaryId) return;
       const summaryId = unit.summaryId;
-      removeUnit(unit.id);
+      dim(unit.id, true);
       setUnitMenu(null);
       void setSummaryHiddenRequest(handle, summaryId, true).catch(() => undefined);
       setUndo({
         label: "Hidden. It stays out of For you until you show it again in Settings.",
         run: async () => {
           await setSummaryHiddenRequest(handle, summaryId, false);
-          await load({ mode, topic });
+          dim(unit.id, false);
         },
       });
     },
-    [handle, load, mode, removeUnit, topic],
+    [dim, handle],
   );
   const lessLikeThis = useCallback(
     (unit: HomeUnit, target: { kind: "topic_less" | "source_less"; target: string; label: string }) => {
       setUnitMenu(null);
-      // A demotion, not an exclusion: the page is re-ranked, and the unit
-      // lands wherever the rule puts it.
+      // A demotion, not an exclusion: the rule applies to the next page. This
+      // one dims and stays put, because re-ranking the list a person is
+      // reading is how you lose their place.
+      dim(unit.id, true);
       void setReadingPreferenceRequest(handle, target)
-        .then(async (result) => {
-          await load({ mode, topic });
+        .then((result) => {
           setUndo({
             label: target.kind === "source_less" ? `Less from ${target.label}. A soft rule for For you, listed in Settings.` : `Less about ${target.label}. A soft rule for For you, listed in Settings.`,
             run: async () => {
               const { removeReadingPreferenceRequest } = await import("@/lib/reading/client");
               await removeReadingPreferenceRequest(handle, result.rule.id);
-              await load({ mode, topic });
+              dim(unit.id, false);
             },
           });
         })
-        .catch((caught) => setNotice(caught instanceof Error ? caught.message : "Could not save that preference"));
+        .catch((caught) => {
+          dim(unit.id, false);
+          setNotice(caught instanceof Error ? caught.message : "Could not save that preference");
+        });
     },
-    [handle, load, mode, topic],
+    [dim, handle],
   );
   /** What "less like this" can name for a unit: its topics by label, its sources by folder. */
   const lessTargets = useCallback(
@@ -447,9 +471,12 @@ export function HomeNews({
         .map((id) => topicsById.get(id))
         .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry) && entry!.kind !== "source")
         .map((entry) => ({ kind: "topic_less" as const, target: entry.id, label: entry.label }));
+      // Named the way the row names it: "Less from The Guardian", never
+      // "Less from World news | The Guardian".
+      const named = (item: ReadingListItem) => tidyPublisherName(item.publisherName ?? item.sourceFolderName);
       const sources = unit.kind === "summary"
-        ? unit.members.map((member) => ({ kind: "source_less" as const, target: member.folderPath, label: member.publisherName ?? member.sourceFolderName }))
-        : [{ kind: "source_less" as const, target: unit.item.folderPath, label: unit.item.publisherName ?? unit.item.sourceFolderName }];
+        ? unit.members.map((member) => ({ kind: "source_less" as const, target: member.folderPath, label: named(member) }))
+        : [{ kind: "source_less" as const, target: unit.item.folderPath, label: named(unit.item) }];
       const seen = new Set<string>();
       return [...topics, ...sources].filter((entry) => (seen.has(entry.target) ? false : (seen.add(entry.target), true)));
     },
@@ -510,6 +537,16 @@ export function HomeNews({
           event.preventDefault();
           toggleExpanded(unit.id);
           break;
+        case "[":
+        case "]": {
+          const strip = [null, ...(data?.topics ?? []).map((entry) => entry.id)];
+          const at = strip.indexOf(topic);
+          if (at < 0) return;
+          const next = strip[(at + (event.key === "]" ? 1 : strip.length - 1)) % strip.length];
+          event.preventDefault();
+          setTopic(next);
+          break;
+        }
         case "o":
         case "Enter":
           if (!item) return;
@@ -555,7 +592,7 @@ export function HomeNews({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [expanded, hideSummary, memberIndex, open, openOriginal, setRead, targetOf, toggleExpanded, toggleKeep, toggleStar, units]);
+  }, [data?.topics, expanded, hideSummary, memberIndex, open, openOriginal, setRead, setTopic, targetOf, toggleExpanded, toggleKeep, toggleStar, topic, units]);
   useEffect(() => {
     if (focusIndex < 0) return;
     document.querySelector<HTMLElement>(`[data-home-news] [data-unit-index="${focusIndex}"]`)?.scrollIntoView({ block: "nearest" });
@@ -873,6 +910,7 @@ export function HomeNews({
                 data-unit-index={index}
                 data-focused={focused ? "true" : "false"}
                 data-read={item.read ? "true" : "false"}
+                data-dimmed={dimmed.has(unit.id) ? "true" : "false"}
                 data-lead={lead ? "true" : "false"}
                 tabIndex={focused || (focusIndex < 0 && index === 0) ? 0 : -1}
                 onFocus={() => setFocusIndex(index)}
@@ -956,6 +994,7 @@ export function HomeNews({
               data-unit-index={index}
               data-focused={focused ? "true" : "false"}
               data-read={unit.unread === 0 ? "true" : "false"}
+              data-dimmed={dimmed.has(unit.id) ? "true" : "false"}
               data-lead={lead ? "true" : "false"}
               data-summary-id={unit.summaryId ?? undefined}
               data-coverage-revision={unit.summaryId ? unit.coverageRevision : undefined}
