@@ -251,6 +251,20 @@ client must support a manual bearer credential because TextText does not run an
 OAuth authorization server. Plan, role, and workspace policy can limit which
 custom MCP capabilities a host makes available.
 
+## Free-text command
+
+`run_command` (MCP) and `POST /api/agent/command` (HTTP, same `wsk_` bearer)
+take one sentence and answer with the workspace command it means, arguments
+included, validated by that command's schema. Reads run at once; a write is
+returned as a plan unless `execute: true`. The candidates are exactly the
+commands the connection could invoke directly (read tools for a read-only
+connection, the local allowlist for the CLI, all of them for a full hosted
+connection), and execution goes through the same executor, so scopes,
+item-agent limits, staged proposals, and audit are unchanged. Common
+sentences are read without a model; the rest use the workspace's own AI
+key and say what is missing when there is none. The answer shape is
+`{ status: "ran" | "planned" | "unmapped", plan?, result?, note?, reason? }`.
+
 ## Sibling surface: sync API
 
 Bulk and file-level integrations use `/api/sync/v1`: workspace and folder

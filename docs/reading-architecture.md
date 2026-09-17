@@ -133,6 +133,34 @@ and parsing; it never fabricates a candidate.
   (ClientLogin, user-info, subscription/list, stream/items/ids; Basic auth,
   subscriptions, paged entries with Link, unread_entries).
 
+## Outbound notifications (added 2026-09-17)
+
+Where a workspace speaks when nothing is calling in. `notification_channels`
+holds Apprise-style URLs and plain webhooks per workspace
+(`src/lib/notifications/urls.ts` resolves each into one request in that
+service's dialect: ntfy, Discord, Slack, Telegram, Pushover, a JSON
+endpoint, a self-hosted Apprise API, or `https://` receiving
+`texttext.notification.v1` JSON). Channels choose events: `reading.digest`,
+`reading.alert` (one per alert, so a channel can take alerts alone), and
+`github.backup`.
+
+- The digest (`sendReadingDigest`) dispatches to channels alongside email.
+  A channel failure never touches the email. A workspace with channels but
+  no email address still gets its digest through them.
+- Deliveries go through `fetchPublicResource`: public hosts only, pinned
+  DNS, ten-second timeout. A self-hosted Apprise or ntfy on a private
+  address is refused by design.
+- The URL carries its own credential, as Apprise URLs do. It is stored as
+  entered, shown masked from the moment it is saved, never echoed back by
+  the API, and never logged. Only the delivery outcome is recorded on the
+  row (`last_status`, a short detail).
+- Writes go through the store (`addNotificationChannel`,
+  `updateNotificationChannel`, `removeNotificationChannel`) with
+  `notifications.*` audit rows; each dispatch writes one
+  `notifications.dispatch` row with the delivered count.
+- Settings, Notifications: add, pause, test, remove, and per-event
+  checkboxes. Outbound only: nothing new listens.
+
 ## Residual risks, recorded
 
 - DNS rebinding between the gate's lookup and the socket connect is a known

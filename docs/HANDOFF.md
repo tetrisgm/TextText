@@ -16,45 +16,68 @@
 
 For other topics, search `HANDOFF-history-2026-09-13.md` by term, then read that section. Implementation and checks are in their source files and git history; this entry point does not duplicate them.
 
-## Next direction, authorized 2026-09-17, in progress
+## GitHub App, backup, notifications, free-text command (2026-09-17)
 
-Decided with the owner after evaluating an outside design memo (a
-community static site where every publication is a git commit). The
-git-as-store model does not transfer; four pieces do. The owner authorized
-all four on 2026-09-17, locally on main, one commit per item, no ship.
+The four items agreed on 2026-09-17 are implemented locally on main, one
+commit each, not shipped:
 
-Status: item 1 is implemented and committed (sign-in provider, identity
-linking, Settings GitHub section, `/api/github/*`, `github_installations`
-table and migration, unit and DB tests, browser-checked with stub values).
-It is inert until the owner creates the GitHub App and files its five
-values; the exact names and registration are in
-`docs/sign-in-with-github.md`. Items 2 to 4 are not started. Codex review,
-architecture docs, and this section's rewrite wait for the end.
+1. `530274af` GitHub App sign-in and Connect: provider next to Apple and
+   Google (`github:<id>` identity, name, avatar, verified email only),
+   Settings, GitHub with Connect through the app's install page and its own
+   OAuth verify step, `github_installations` table, installation tokens
+   minted per call. Spec and registration: `docs/sign-in-with-github.md`.
+2. `b3d428a2` GitHub backup: textpacks plus a manifest under
+   `workspaces/<handle>/`, schema-validated before packing, only changed
+   blobs uploaded, nothing committed when nothing changed, schedule off,
+   hourly, daily, or weekly driven by the app's own heartbeat, restore as
+   import. Design: `docs/github-backup.md`.
+3. `2ddecaa1` Outbound notifications: Apprise-style URLs and webhooks per
+   workspace, digest and alerts routed through them alongside email,
+   backup outcomes as an event. Section in `docs/reading-architecture.md`.
+4. `2110b3bd` Free-text command: `run_command` tool and
+   `POST /api/agent/command`; section in `docs/mcp.md`.
 
-1. GitHub App with a Connect button. One app for sign-in and repository
-   access. Sign-in is one more provider next to Apple and Google, linked to
-   an existing account: name, avatar, verified email, nothing else. No
-   contributor grants, no "Made by" attribution, no repository-cited pages.
-2. GitHub backup. Export each workspace as textpacks plus a manifest into a
-   repository the user owns (installation token from the GitHub App, no
-   shared server secret), commit on a schedule, validate every document
-   against the schema before committing so a broken snapshot never lands.
-   Restore is import. Source of truth stays Postgres.
-3. Outbound notifications. Apprise-style notification URLs per workspace
-   plus a generic outgoing webhook; route the daily digest and saved-search
-   alerts (today email only, `src/lib/reading/digest.server.ts`) through
-   them. This is outbound and is not covered by item 4: the app speaks when
-   nothing is calling in.
-4. Free-text command on the agent API. One MCP tool or route that takes a
-   sentence and maps it onto existing workspace commands. The hosted
-   `/api/mcp` plus API tokens already are the inbound surface; bots, email
-   hooks, Shortcuts, and coding agents are clients of it. No inbox endpoint,
-   no long-running bot, no platform adapters unless wanted later, no
-   separate agent lane (the assistant and MCP are that lane).
+The GitHub App exists: `texttextapp`, App ID 4975359, owned by `tetrisgm`,
+created through the manifest flow. Its five values are in `.env.local`,
+Vercel Production (`AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET`, `GITHUB_APP_ID`,
+`GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY`), and the login Keychain
+service `texttext-github-app`. The app JWT was verified against
+`GET /app` (slug, id, permissions, owner all as registered).
 
-Contract change made the same day: the global agent contract now allows
-persistent jobs for backups and the app's own maintenance (item 2 needs
-one); jobs that build, release, or reinstall still need an ask.
+Verified: 3349 unit tests, 35 DB tests (`npm run test:reading:db` now
+covers reading, github, and notifications), tsc, eslint, docs gates.
+Browser: sign-in button, Settings GitHub and Notifications sections,
+Connect redirect with signed state, bad-state bounce, channel add and
+masking. Live HTTP: `/api/agent/command` with a minted token mapped a read
+by heuristic, a reading search, and a model-mapped `create_item` (planned,
+then executed), and refused a delete on the local surface.
+
+Needs the owner's hands:
+
+- Live GitHub sign-in and Connect were not exercised end to end. The app's
+  setup URL points at texttext.app, so the install flow only completes
+  against production: ship, then Continue with GitHub on `/signin` and
+  Connect GitHub in Settings. Sign-in alone can be tried on localhost.
+  The session's Chrome extension dropped mid-run, which is why it was not
+  done here.
+- The heartbeat backs up only while the workspace is open. If that is not
+  enough, a persistent job calling `POST /api/github/backup` with
+  `action: "tick"` and an owner token is the intended addition.
+- Codex adversarial review could not run: the Codex account hit its usage
+  limit until 2026-09-19 16:08. A fresh Claude agent did the same
+  adversarial read instead (findings and fixes below). Run
+  `codex exec --sandbox read-only` with the brief in this section's history
+  once credits return, if a second opinion is still wanted.
+
+Residual risks, recorded:
+
+- The GitHub client secret and private key passed through `security
+  add-generic-password -w` as an argument when filed (the tool offers no
+  stdin form); it was a one-off on this Mac, not in any log or source.
+- Backup restore creates items with new ids; links between restored items
+  by id are not rewritten (wiki links by title still resolve).
+- Notification URLs to private hosts are refused by the public-host gate;
+  a LAN-only ntfy or Apprise cannot be used.
 
 ## Client sync finished, Feedbin API, bookmark migration (2026-09-16)
 
