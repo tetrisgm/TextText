@@ -24,6 +24,7 @@ import {
   encodeAwarenessUpdate,
 } from "y-protocols/awareness";
 import * as Y from "yjs";
+import { recordSupersededVersion } from "@/lib/revisions";
 import { db, executeAtomicBatch } from "@/lib/db/client";
 import {
   actionAudit,
@@ -144,6 +145,60 @@ export async function getCollabBaseline(
  * new canonical document becomes the next baseline. The epoch CAS fences late
  * writers before old updates are swept.
  */
+/**
+ * Write the text a rotation is about to retire into the document's history.
+ *
+ * The rotation rebuilds the collaborative baseline from the canonical document
+ * and sweeps the retired log. When that log holds edits the canonical document
+ * never received, this is the only moment they exist anywhere, so they are
+ * recorded as a version superseded by `collab.rotate`. Best effort by design:
+ * a failure here must not block the reseed, or a corrupt log would make the
+ * document permanently unopenable.
+ */
+async function archiveRetiredSession(input: {
+  postId: string;
+  state: { epoch: number; baselineUpdate: string | null; baselineRevision: number | null };
+  canonical: { snapshot: DocumentSnapshot; revision: number; blogId: string | null; title: string | null };
+}): Promise<void> {
+  if (!db || !input.state.baselineUpdate || !input.canonical.blogId) return;
+  try {
+    const rows = await db
+      .select({ update: collabUpdates.update })
+      .from(collabUpdates)
+      .where(and(eq(collabUpdates.postId, input.postId), eq(collabUpdates.epoch, input.state.epoch)))
+      .orderBy(asc(collabUpdates.seq));
+    if (rows.length === 0) return;
+    const retired = new Y.Doc();
+    try {
+      Y.applyUpdate(retired, base64ToUpdate(input.state.baselineUpdate));
+      for (const row of rows) Y.applyUpdate(retired, base64ToUpdate(row.update));
+      const snapshot = documentSnapshotFromYDoc(retired);
+      const retiredBody = snapshot.content.body ?? "";
+      const canonicalBody = input.canonical.snapshot.content.body ?? "";
+      // Nothing to protect when the canonical document already holds at least
+      // what the session did.
+      if (retiredBody.trim().length === 0 || retiredBody === canonicalBody) return;
+      if (canonicalBody.includes(retiredBody)) return;
+      await recordSupersededVersion({
+        postId: input.postId,
+        previous: {
+          blogId: input.canonical.blogId,
+          revision: input.state.baselineRevision,
+          document: snapshot,
+          title: snapshot.content.title || input.canonical.title,
+          body: retiredBody,
+        },
+        nextBody: canonicalBody,
+        writer: { action: "collab.rotate", actorType: "human", actorUserId: null },
+      });
+    } finally {
+      retired.destroy();
+    }
+  } catch {
+    // A log that cannot be decoded is not a reason to refuse the reseed.
+  }
+}
+
 export async function prepareCollabBaseline(
   postId: string,
   /**
@@ -209,6 +264,13 @@ export async function prepareCollabBaseline(
   if (missingBaseline || externallyStale) {
     const active = await hasActiveCoEditors(postId, requestingClientId);
     if (missingBaseline || !active) {
+      // A rotation adopts the canonical document and retires the editing
+      // session that produced the log. That is a decision about what the
+      // document contains, so the text it retires is written to the document's
+      // history first. Without this, a session whose edits never reached the
+      // canonical row (the writer died, the tab closed) leaves nothing behind
+      // when the log is swept.
+      await archiveRetiredSession({ postId, state, canonical: { snapshot, revision, blogId: context.blogId, title: context.post.title ?? null } });
       // If a materialization wins the row lock, its new provenance invalidates
       // this rotation's earlier canonical read, even under the old SQL snapshot.
       const result = await db.execute(sql`
@@ -236,6 +298,9 @@ export async function prepareCollabBaseline(
         RETURNING epoch
       `);
       if (result.rows.length > 0) {
+        // The retired log is swept, but only after archiveRetiredSession has
+        // put its text in the document's history: the sweep may no longer be
+        // the last copy of anything.
         await db.execute(sql`
           DELETE FROM ${collabUpdates}
           WHERE post_id = ${postId}::uuid

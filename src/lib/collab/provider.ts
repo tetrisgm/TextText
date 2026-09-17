@@ -646,6 +646,11 @@ export class CollabProvider implements CollaborationTransport {
   private accessLost = false;
   private documentEpoch: number | null = null;
 
+  /** The epoch this session is writing under, for recovery copies. */
+  get currentEpoch(): number {
+    return this.documentEpoch ?? 0;
+  }
+
   /** Never relabel a retired Y.Doc with the replacement outbox's epoch. */
   get learnedEpoch(): number | null {
     return this.retiredEpoch ?? this.documentEpoch;
@@ -746,12 +751,14 @@ export class CollabProvider implements CollaborationTransport {
 
     const outbox = outboxFor(this.opts.postId, this.base);
     this.outbox = outbox;
-    if (
-      outbox.baselineRevision == null &&
-      Number.isInteger(this.opts.expectedBaselineRevision)
-    ) {
-      outbox.baselineRevision = this.opts.expectedBaselineRevision ?? null;
-    }
+    // The fence is LEARNED, never assumed. It may only hold a revision this
+    // outbox actually caught up under (applyBaseline below, or a restored
+    // durable row). Seeding it from the canonical post revision was wrong in a
+    // way that silenced writers: a materialization advances the post's
+    // revision while the collaborative baseline keeps its own, so the two
+    // numbers diverge by design after the first save, and a live session with
+    // one queued keystroke was then read as an offline device carrying
+    // foreign edits.
     outbox.subscribers.set(this.outboxSubscriber, {
       onError: this.opts.onError,
       // A push that 401/403s means this session lost access; tear down this
@@ -1102,9 +1109,16 @@ export class CollabProvider implements CollaborationTransport {
       outbox.baselineRevision != null &&
       outbox.baselineRevision !== revision
     ) {
+      // Reached only when this outbox caught up under a different baseline
+      // than the one now arriving, which means its pending edits really were
+      // made against a retired history. Keep them before stopping: a path that
+      // ends a session without preserving what it holds is how writing
+      // disappears. retireOutbox notifies every subscriber's onRetired, which
+      // is what writes the recovery copy.
+      void retireOutbox(outbox, outbox.epoch, "document-changed");
       this.opts.onBaselineMismatch?.(revision);
       this.opts.onError?.(
-        "This document changed while this device was offline. Local edits were kept for recovery.",
+        "This document changed elsewhere. Your unsaved edits were kept for recovery.",
       );
       this.stop();
       return null;

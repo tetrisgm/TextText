@@ -1669,3 +1669,46 @@ export const readingPreferences = pgTable(
   },
   (t) => [uniqueIndex("reading_preferences_unique_idx").on(t.userId, t.blogId, t.kind, t.target), index("reading_preferences_user_blog_idx").on(t.userId, t.blogId)],
 );
+
+/**
+ * Every version a write replaced.
+ *
+ * A row here is the document as it stood BEFORE some write superseded it, with
+ * the identity of the write that did so. Storing the superseded version rather
+ * than the new one is what makes a truncation recoverable: the moment anything
+ * shortens a document, the longer text is written here first, in the same
+ * statement, so a write can never destroy the text it replaced.
+ *
+ * It also records events that are not ordinary saves. When the collaborative
+ * baseline rotates and a retired editing session's text is about to be
+ * discarded, that text lands here as `collab.rotate`, because an event that
+ * decides what a document contains belongs in the document's history whether
+ * or not it went through the editor.
+ *
+ * Bounded by design: an ordinary keystroke-by-keystroke autosave records at
+ * most one version every two minutes per writer, while any shrink always
+ * records, and the newest versions per item are kept.
+ */
+export const postRevisions = pgTable(
+  "post_revisions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    postId: uuid("post_id")
+      .notNull()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    blogId: uuid("blog_id").notNull(),
+    /** The revision of the version stored here, not of the write that replaced it. */
+    revision: bigint("revision", { mode: "number" }),
+    document: jsonb("document").$type<DocumentSnapshot>().notNull(),
+    title: text("title"),
+    bodyLength: integer("body_length").notNull().default(0),
+    /** How many characters the replacing write removed; 0 when it grew. */
+    shrankBy: integer("shrank_by").notNull().default(0),
+    supersededByRevision: bigint("superseded_by_revision", { mode: "number" }),
+    supersededByAction: text("superseded_by_action").notNull(),
+    supersededByActorType: text("superseded_by_actor_type").notNull(),
+    supersededByActorUserId: uuid("superseded_by_actor_user_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [index("post_revisions_post_idx").on(t.postId, t.createdAt), index("post_revisions_blog_idx").on(t.blogId, t.createdAt)],
+);

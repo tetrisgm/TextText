@@ -11,6 +11,7 @@ import { sanitizePostSlug } from "@/lib/post-slug";
 import { compileItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
 
 const mocks = vi.hoisted(() => ({
+  markCollabMaterialized: vi.fn(async () => undefined),
   PostConflictError: class PostConflictError extends Error {},
   deletePostAtomic: vi.fn(),
   getPostById: vi.fn(),
@@ -63,6 +64,7 @@ vi.mock("@/lib/audit", () => ({
 
 vi.mock("@/lib/collab", () => ({
   hasActiveCoEditors: mocks.hasActiveCoEditors,
+  markCollabMaterialized: mocks.markCollabMaterialized,
 }));
 
 vi.mock("@/lib/revalidate-blog", () => ({
@@ -118,6 +120,9 @@ function patchRequest(
 function mutationRequest(
   method: "DELETE" | "PUT",
   ifMatch: string | null,
+  // An edit by default: a PUT whose content matches the stored document is an
+  // echo and writes nothing, which has its own test below.
+  markdown = "---\ntype: article\n---\n\nBody, edited on the Mac",
 ): Request {
   const headers = new Headers();
   if (ifMatch) headers.set("If-Match", ifMatch);
@@ -125,7 +130,7 @@ function mutationRequest(
   return new Request(`https://texttext.example/api/sync/v1/files/${postId}`, {
     method,
     headers,
-    body: method === "PUT" ? "---\ntype: article\n---\n\nBody" : undefined,
+    body: method === "PUT" ? markdown : undefined,
   });
 }
 
@@ -525,6 +530,19 @@ describe("sync file PUT during a live co-editing session", () => {
     expect(mocks.savePost).not.toHaveBeenCalled();
   });
 
+  it("writes nothing when the file it was handed is the file it already has", async () => {
+    // The Mac re-uploads what it just downloaded. Writing it anyway bumps the
+    // revision, which makes the collaborative baseline look changed from
+    // outside and arms a rotation on the next open.
+    mocks.hasActiveCoEditors.mockResolvedValue(false);
+    const echo = await PUT(
+      mutationRequest("PUT", `"${renderSyncFile(blog, post).hash}"`, "---\ntype: article\n---\n\nBody"),
+      { params: Promise.resolve({ postId }) },
+    );
+    expect(echo.status).toBe(200);
+    expect(mocks.savePost).not.toHaveBeenCalled();
+  });
+
   it("saves normally when no one is co-editing", async () => {
     mocks.hasActiveCoEditors.mockResolvedValue(false);
     mocks.savePost.mockResolvedValue({ ...post, body: "Body" });
@@ -535,6 +553,9 @@ describe("sync file PUT during a live co-editing session", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.savePost).toHaveBeenCalledTimes(1);
+    // The collaborative state is told this write is accounted for, so the next
+    // open does not read the baseline as changed from outside.
+    expect(mocks.markCollabMaterialized).toHaveBeenCalled();
   });
 
   it("serves the complete canonical document to textpack clients", async () => {

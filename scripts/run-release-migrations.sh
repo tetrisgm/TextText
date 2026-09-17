@@ -56,6 +56,7 @@ migrations=(
   scripts/migrate-add-github.mjs
   scripts/migrate-add-notifications.mjs
   scripts/migrate-add-home-news.mjs
+  scripts/migrate-add-post-revisions.mjs
 )
 
 missing=()

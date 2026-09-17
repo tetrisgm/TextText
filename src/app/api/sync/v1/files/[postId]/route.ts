@@ -25,7 +25,7 @@ import {
   savePostContentPatch,
 } from "@/lib/store";
 import { resolveSyncWorkspace } from "../../auth";
-import { hasActiveCoEditors } from "@/lib/collab";
+import { hasActiveCoEditors, markCollabMaterialized } from "@/lib/collab";
 import { recordAction, recordSlugChanged } from "@/lib/audit";
 import { sanitizePostSlug } from "@/lib/post-slug";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
@@ -244,6 +244,20 @@ export async function PUT(request: Request, { params }: Props) {
     // always the file's. Owners may author slug/date/status metadata. A
     // collaborator save is routed through the content-only store helper so the
     // mapped date string cannot overwrite published_at.
+    // A file whose content already matches the stored document is an echo, not
+    // an edit: the Mac re-uploads what it just downloaded. Writing it anyway
+    // bumps the revision, which makes the collaborative state look changed
+    // from outside and arms a baseline rotation on the next open.
+    const unchanged =
+      JSON.stringify(document) === JSON.stringify(requireDocumentSnapshot(post.document, "Persisted item")) &&
+      (parsed.fields.slug ?? post.slug) === post.slug &&
+      nextStatus === post.status;
+    if (unchanged) {
+      return Response.json(
+        { item: syncManifestItem(blog, post) },
+        { status: 200, headers: { "Cache-Control": "private, no-store" } },
+      );
+    }
     const saved = access.isOwner
       ? await savePost(
           blog.handle,
@@ -290,6 +304,12 @@ export async function PUT(request: Request, { params }: Props) {
       targetId: saved.id,
       inputSummary: saved.title,
     });
+    // Tell the collaborative state this write is accounted for. Without it the
+    // baseline looks stale next time the item opens, and a rotation adopts
+    // this body over the editing session's own.
+    if (saved.id && saved.revision !== undefined) {
+      await markCollabMaterialized(saved.id, saved.revision).catch(() => {});
+    }
     revalidateBlogPaths(blog, [post.slug, saved.slug]);
     // The new manifest entry (with the NEW hash) lets the client update its
     // index without refetching the file it just wrote.

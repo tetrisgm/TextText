@@ -799,6 +799,15 @@ export function UnifiedDocumentEditor({
     );
   }, [availableTemplates, document.presentation.template, template]);
 
+  // The canonical revision changes on every successful save. It must never be
+  // a dependency of the provider effect: rebuilding a live collaboration
+  // session on save is what left a document with no writer while the person
+  // kept typing.
+  const postRevisionRef = useRef(post.revision);
+  useEffect(() => {
+    postRevisionRef.current = post.revision;
+  }, [post.revision]);
+
   const flushMaterialization = useCallback(
     (keepalive = false) => {
       if (recoveryBlockedRef.current) return Promise.resolve();
@@ -841,7 +850,13 @@ export function UnifiedDocumentEditor({
           const response = await provider.materialize(blog.handle, keepalive);
           if (recoveryBlockedRef.current || provider.materializationBlocked) return;
           if (!response) {
-            setSaveState("local");
+            // The provider has no live writer, so this document is accepting
+            // text that nothing will persist. That is never "saved locally":
+            // keep a recovery copy and say so, then ask for a fresh provider.
+            preserveRecovery(provider.currentEpoch, "local-recovery");
+            setError("This document is not saving. Your text is kept on this device; reopen the item to continue.");
+            setSaveState("error");
+            setProviderAttempt((attempt) => attempt + 1);
             return;
           }
           if (!response.ok) throw new Error("Document could not be saved");
@@ -925,7 +940,7 @@ export function UnifiedDocumentEditor({
           }
         }
       },
-      expectedBaselineRevision: post.revision ?? 0,
+      expectedBaselineRevision: postRevisionRef.current ?? 0,
       onBaselineMismatch: () => {
         if (!cancelled) {
           setError("This document changed elsewhere. Local edits were kept for recovery.");
@@ -1094,7 +1109,6 @@ export function UnifiedDocumentEditor({
     doc,
     flushMaterialization,
     networkEnabled,
-    post.revision,
     publishDocument,
     providerAttempt,
     preReadyBaseline,

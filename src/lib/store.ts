@@ -89,6 +89,7 @@ import {
   readingSummaries,
   readingSummaryState,
 } from "./db/schema";
+import { bodyOf, revisionCteFrom, revisionPruneCteFrom, type RevisionWriter, type SupersededVersion } from "./revisions";
 import { listItemAssetReferences } from "./item-assets";
 import { localizeRemoteMarkdownImages } from "./markdown-images";
 import {
@@ -5999,6 +6000,35 @@ function postSaveAudit(post: Post, audit: AuditEntry | undefined): AuditEntry {
   );
 }
 
+/**
+ * What this write is about to supersede, and who is superseding it.
+ *
+ * Every content write folds these into its own statement (see
+ * src/lib/revisions.ts), so the version being replaced is written down by the
+ * same statement that replaces it. A write that matches no row records
+ * nothing, because the CTE selects from the write's own result.
+ */
+function supersededBy(audit: AuditEntry): RevisionWriter {
+  return { action: audit.actionName, actorType: audit.actorType, actorUserId: audit.actorUserId ?? null };
+}
+
+function supersededVersion(blogId: string, existingRow: PostRow | undefined): SupersededVersion | null {
+  if (!existingRow) return null;
+  let document: DocumentSnapshot;
+  try {
+    document = requireDocumentSnapshot(existingRow.document, "Superseded version");
+  } catch {
+    return null;
+  }
+  return {
+    blogId,
+    revision: existingRow.revision ?? null,
+    document,
+    title: existingRow.title ?? null,
+    body: existingRow.body ?? bodyOf(document),
+  };
+}
+
 export async function savePost(
   handle: string,
   post: Post,
@@ -6126,14 +6156,18 @@ export async function savePost(
         // The dependency on locked_epoch serializes rotation with this save.
         // A plain EXISTS against collab_state would only check the MVCC snapshot.
         const changed = updateQuery.returning({ id: posts.id, revision: posts.revision });
-        const auditCte = auditCteFrom(
-          postSaveAudit({ ...post, slug }, options.audit), "changed", sql`changed.id::text`,
-        );
+        const epochAudit = postSaveAudit({ ...post, slug }, options.audit);
+        const auditCte = auditCteFrom(epochAudit, "changed", sql`changed.id::text`);
+        const epochPrevious = supersededVersion(blogId, existingRow);
+        const historyCte = epochPrevious
+          ? revisionCteFrom({ previous: epochPrevious, nextBody: document.content.body, writer: supersededBy(epochAudit), fromCte: "changed" })
+          : sql`SELECT 1 WHERE false`;
         const result = await db.execute(sql`
           WITH locked_epoch AS MATERIALIZED (
             SELECT epoch FROM ${collabState}
             WHERE post_id = ${post.id}::uuid FOR UPDATE
-          ), changed AS ${changed}, audit AS (${auditCte}), provenance AS (
+          ), changed AS ${changed}, audit AS (${auditCte}), history AS (${historyCte}),
+          pruned AS (${revisionPruneCteFrom("changed")}), provenance AS (
             UPDATE ${collabState}
             SET materialized_revision = changed.revision, updated_at = now()
             FROM changed
@@ -6147,17 +6181,40 @@ export async function savePost(
         return mapPost({ ...existingRow!, ...base, slug, revision: Number(changedRow.revision) });
       }
       if (options.auditAlreadyRecorded) {
-        const updated = await updateQuery.returning();
-        if (updated[0]) return mapPost(updated[0]);
+        // The caller writes its own audit row, but history is not optional:
+        // fold it into this statement so the superseded version is recorded by
+        // the same write that replaces it.
+        const previous = supersededVersion(blogId, existingRow);
+        if (previous) {
+          const changed = updateQuery.returning({ id: posts.id, revision: posts.revision });
+          const writer = supersededBy(postSaveAudit({ ...post, slug }, options.audit));
+          const result = await db.execute(sql`
+            WITH changed AS ${changed},
+            history AS (${revisionCteFrom({ previous, nextBody: document.content.body, writer, fromCte: "changed" })}),
+            pruned AS (${revisionPruneCteFrom("changed")})
+            SELECT id FROM changed
+          `);
+          const savedId = (result.rows[0] as { id?: string } | undefined)?.id;
+          if (savedId) {
+            const [fresh] = await db.select().from(posts).where(and(eq(posts.id, savedId), eq(posts.blogId, blogId))).limit(1);
+            if (!fresh) throw new Error("The saved item is unavailable");
+            return mapPost(fresh);
+          }
+        } else {
+          const updated = await updateQuery.returning();
+          if (updated[0]) return mapPost(updated[0]);
+        }
       } else {
         const changed = updateQuery.returning({ id: posts.id, revision: posts.revision });
-        const auditCte = auditCteFrom(
-          postSaveAudit({ ...post, slug }, options.audit),
-          "changed",
-          sql`changed.id::text`,
-        );
+        const updateAudit = postSaveAudit({ ...post, slug }, options.audit);
+        const auditCte = auditCteFrom(updateAudit, "changed", sql`changed.id::text`);
+        const updatePrevious = supersededVersion(blogId, existingRow);
+        const historyCte = updatePrevious
+          ? revisionCteFrom({ previous: updatePrevious, nextBody: document.content.body, writer: supersededBy(updateAudit), fromCte: "changed" })
+          : sql`SELECT 1 WHERE false`;
         const result = await db.execute(sql`
-          WITH changed AS ${changed}, audit AS (${auditCte}), agent_change AS (${agentChangeCte({
+          WITH changed AS ${changed}, audit AS (${auditCte}), history AS (${historyCte}),
+          pruned AS (${revisionPruneCteFrom("changed")}), agent_change AS (${agentChangeCte({
             source: "changed", postId: sql`changed.id`, revision: sql`changed.revision`,
             changes: agentTextChanges(existingRow ? requireDocumentSnapshot(existingRow.document, "Agent change baseline") : null, document),
           })})
