@@ -513,6 +513,35 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   }
 }
 
+/* The whole library is a destination of its own, so it says which one it is
+   and offers the way back. Without this the page changed under the person
+   with nothing but the content to tell them. */
+.workspace-library-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 0 0.75rem;
+}
+.workspace-library-heading h1 {
+  margin: 0;
+  color: var(--ink);
+  font: 650 1.375rem/1.2 var(--font-ui, inherit);
+  letter-spacing: -0.014em;
+}
+.workspace-library-heading button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 500 0.875rem/1.2 var(--font-ui, inherit);
+  cursor: pointer;
+}
+.workspace-library-heading button:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
 .workspace-library-toolbar {
   min-width: 0;
   min-height: 2.75rem;

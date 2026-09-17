@@ -18,7 +18,6 @@
   /* Ink. Artifact is near-black on white and white on true black; the Apple
      chrome's own label colours are deliberately softer, so the news surface
      carries its own. */
-  --news-bg: #ffffff;
   --news-ink: #2c2c2d;
   --news-ink-2: #55565c;
   --news-ink-3: #6a6a71;
@@ -29,20 +28,12 @@
   --news-tile: #f2f2f7;
   --news-hover: rgba(0, 0, 0, 0.032);
 
-  /* The brand colours, sampled from the originals. Used for section labels
-     and dashboard panels only, never for body text. */
+  /* The one saturated colour, kept for a label that means something. */
   --news-accent: #c42d13;
-  --news-indigo: #2c18ac;
-  --news-indigo-raised: #3c30b7;
-  --news-indigo-ink: #ffffff;
-  --news-pink: #ee2359;
-  --news-sky: #d5eaf5;
-  --news-sky-ink: #10333f;
   --news-read: #1a63d6;
 }
 :global(.ac-dark) .frame,
 :global([data-theme="dark"]) .frame {
-  --news-bg: #0a0a0b;
   --news-ink: #f2f2f7;
   --news-ink-2: #a9a9b0;
   --news-ink-3: #94949b;
@@ -51,16 +42,10 @@
   --news-tile: #1c1c1d;
   --news-hover: rgba(255, 255, 255, 0.05);
   --news-accent: #ff6a4d;
-  --news-indigo: #2c18ac;
-  --news-indigo-raised: #3c30b7;
-  --news-pink: #ff4d7a;
-  --news-sky: #1d3a4a;
-  --news-sky-ink: #cfe6f7;
   --news-read: #5aa0ff;
 }
 @media (prefers-color-scheme: dark) {
   :global(:root:not([data-theme="light"])) .frame {
-    --news-bg: #0a0a0b;
     --news-ink: #f2f2f7;
     --news-ink-2: #a9a9b0;
     --news-ink-3: #94949b;
@@ -69,35 +54,35 @@
     --news-tile: #1c1c1d;
     --news-hover: rgba(255, 255, 255, 0.05);
     --news-accent: #ff6a4d;
-    --news-indigo: #2c18ac;
-  --news-indigo-raised: #3c30b7;
-    --news-pink: #ff4d7a;
-    --news-sky: #1d3a4a;
-    --news-sky-ink: #cfe6f7;
     --news-read: #5aa0ff;
   }
 }
 
-.frame {
-  background: var(--news-bg);
-}
 .home {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 19rem;
-  gap: 0 3rem;
+  grid-template-columns: minmax(0, 1fr) 17rem;
+  gap: 0 2.25rem;
   align-items: start;
   margin: 0 0 3rem;
 }
 .news {
   min-width: 0;
-  /* Artifact's headline sits in a 21em measure and wraps to three lines or
-     more. That ratio, not the type size, is what makes it read as a block. */
-  max-width: 40rem;
+  /* The reading column, not the window: a headline wraps to a block here
+     rather than running to a single long line. */
+  max-width: 45rem;
 }
 .recent {
   min-width: 0;
   position: sticky;
   top: 0.5rem;
+}
+.home[data-no-sources="true"] {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+.home[data-no-sources="true"] .recent {
+  position: static;
+  max-width: 45rem;
 }
 @container home (max-width: 62rem) {
   .home {
@@ -107,19 +92,15 @@
   .news {
     max-width: none;
   }
-  /* Narrow: the dashboard reads first, then the news. Burying the
-     workspace's own shelf below a long feed is how it stopped being a home.
-     Its panels sit side by side rather than stretching across the window. */
+  /* Narrow: Recent comes first as a short strip, then the news. Long enough
+     to resume work, short enough that a headline is still on the first
+     screen. */
   .recent {
     position: static;
     order: -1;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-    gap: 0 2.5rem;
-    align-items: start;
   }
-  .recent > .railCard {
-    grid-column: 1 / -1;
+  .recent .recentRow:nth-of-type(n + 4) {
+    display: none;
   }
 }
 
@@ -135,7 +116,7 @@
 .greeting {
   margin: 0;
   color: var(--news-ink);
-  font: 700 1.375rem / 1.15 var(--ac-font-text);
+  font: 650 1.375rem / 1.2 var(--ac-font-text);
   letter-spacing: -0.022em;
   text-wrap: balance;
 }
@@ -149,6 +130,43 @@
   font-weight: 500;
 }
 
+/* The no-source state: a short block that says what Home is for and offers
+   the one action that makes it so. Its height comes from its own content, so
+   Recent follows immediately instead of sitting below a feed-shaped hole. */
+.setup {
+  margin: 0 0 1.5rem;
+  padding: 0 0 1.25rem;
+  border-bottom: 1px solid var(--news-line);
+}
+.setup h2 {
+  margin: 0;
+  color: var(--news-ink);
+  font: 650 1.125rem / 1.25 var(--ac-font-text);
+  letter-spacing: -0.012em;
+}
+.setup p {
+  margin: 0.25rem 0 0.875rem;
+  color: var(--news-ink-2);
+  font: 400 0.9375rem / 1.45 var(--ac-font-text);
+}
+.setupActions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.setupSecondary {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--news-ink-2);
+  font: 500 0.875rem / 1.2 var(--ac-font-text);
+  cursor: pointer;
+}
+.setupSecondary:hover {
+  color: var(--news-ink);
+  text-decoration: underline;
+}
+
 /* Header: the mode switch and the utilities, kept quiet under the masthead. */
 .header {
   display: flex;
@@ -159,14 +177,14 @@
 }
 .modes {
   display: inline-flex;
-  gap: 1.125rem;
+  gap: 1rem;
 }
 .modes button {
   border: 0;
   padding: 0 0 0.125rem;
   background: transparent;
   color: var(--news-ink-3);
-  font: 700 1.3125rem / 1.15 var(--ac-font-text);
+  font: 650 1rem / 1.2 var(--ac-font-text);
   letter-spacing: -0.018em;
   cursor: pointer;
 }
@@ -190,8 +208,8 @@
    simply the black one, which is how Artifact separates it. */
 .topics {
   display: flex;
-  gap: 0 1.125rem;
-  margin: 0.375rem 0 0;
+  gap: 0 1rem;
+  margin: 0.5rem 0 0;
   padding: 0 0 0.75rem;
   list-style: none;
   overflow-x: auto;
@@ -206,7 +224,7 @@
   padding: 0;
   background: transparent;
   color: var(--news-ink-3);
-  font: 600 1.0625rem / 1.2 var(--ac-font-text);
+  font: 500 0.875rem / 1.2 var(--ac-font-text);
   letter-spacing: -0.01em;
   white-space: nowrap;
   cursor: pointer;
@@ -305,7 +323,7 @@
 .sectionTitle {
   margin: 0;
   color: var(--news-ink);
-  font: 700 1.625rem / 1.15 var(--ac-font-text);
+  font: 650 1.1875rem / 1.2 var(--ac-font-text);
   letter-spacing: -0.02em;
 }
 .sectionMore {
@@ -405,7 +423,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0 1.25rem;
-  padding: 1.125rem 0.25rem 1.125rem 0;
+  padding: 1rem 0.25rem 1rem 0;
   border-bottom: 1px solid var(--news-line);
   cursor: pointer;
 }
@@ -434,8 +452,8 @@
   background: var(--news-tile);
 }
 .thumb {
-  width: 7rem;
-  height: 7rem;
+  width: 6rem;
+  height: 6rem;
   border-radius: 10px;
   object-fit: cover;
   background: var(--news-tile);
@@ -452,9 +470,9 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin: 0 0 0.4375rem;
+  margin: 0 0 0.375rem;
   color: var(--news-ink-3);
-  font: 400 0.875rem / 1.2 var(--ac-font-text);
+  font: 400 0.8125rem / 1.2 var(--ac-font-text);
 }
 .eyebrow strong {
   color: var(--news-ink);
@@ -507,12 +525,12 @@
 .headline {
   margin: 0;
   color: var(--news-ink);
-  font: 700 1.5rem / 1.22 var(--ac-font-text);
+  font: 650 1.25rem / 1.3 var(--ac-font-text);
   letter-spacing: -0.016em;
   text-wrap: pretty;
 }
 .unit[data-lead="true"] .headline {
-  font-size: 1.75rem;
+  font-size: 1.5rem;
   line-height: 1.18;
   letter-spacing: -0.021em;
 }
@@ -558,9 +576,9 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem 0.5rem;
-  margin: 0.4375rem 0 0;
+  margin: 0.375rem 0 0;
   color: var(--news-ink-3);
-  font: 400 0.875rem / 1.3 var(--ac-font-text);
+  font: 400 0.8125rem / 1.3 var(--ac-font-text);
 }
 .sources button,
 .sources a {
@@ -679,106 +697,8 @@
   font: 400 0.875rem / 1.35 var(--ac-font-text);
 }
 
-/* ------------------------------------------------------ the dashboard rail */
-
-.railSection {
-  margin: 0 0 1.5rem;
-}
-.railCard {
-  margin: 0 0 1.25rem;
-  border-radius: 14px;
-  padding: 1rem 1.125rem 1.125rem;
-  background: var(--news-tile);
-}
-.railCard[data-tone="sky"] {
-  background: var(--news-sky);
-  color: var(--news-sky-ink);
-}
-.railCard[data-tone="indigo"] {
-  background: var(--news-indigo);
-  color: var(--news-indigo-ink);
-}
-.railHead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin: 0 0 0.75rem;
-}
-.railHead h2 {
-  margin: 0;
-  color: inherit;
-  font: 700 1.0625rem / 1.2 var(--ac-font-text);
-  letter-spacing: -0.014em;
-}
-.railHead button {
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: inherit;
-  opacity: 0.7;
-  font: 500 0.8125rem / 1.2 var(--ac-font-text);
-  cursor: pointer;
-}
-.railHead button:hover {
-  opacity: 1;
-}
-
-/* Categories as bars: the fill length is the count, which is the whole point
-   of the panel. */
-.bars {
-  display: grid;
-  gap: 0.375rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.bar {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  border-radius: 7px;
-  padding: 0.4375rem 0.625rem;
-  background: rgba(255, 255, 255, 0.14);
-  color: inherit;
-  font: 500 0.875rem / 1.25 var(--ac-font-text);
-  cursor: pointer;
-  overflow: hidden;
-  border: 0;
-  width: 100%;
-  text-align: left;
-}
-.barFill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: var(--bar, 0%);
-  background: rgba(255, 255, 255, 0.22);
-  pointer-events: none;
-}
-.barLabel,
-.barCount {
-  position: relative;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.barCount {
-  opacity: 0.75;
-  font-variant-numeric: tabular-nums;
-}
-.bar:hover .barFill {
-  background: rgba(255, 255, 255, 0.3);
-}
-.bar:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 1px;
-}
-
-/* Recent work, in the same anatomy as the feed so the dashboard reads as one
-   thing: a mark, a line of identity, then the title. */
+/* Recent: the same row anatomy as the feed, at a quieter size, so the page
+   reads as one thing rather than two systems side by side. */
 .recentHeader {
   display: flex;
   align-items: baseline;
@@ -790,7 +710,7 @@
 .recentHeader h2 {
   margin: 0;
   color: var(--news-ink);
-  font: 700 1.0625rem / 1.2 var(--ac-font-text);
+  font: 650 0.9375rem / 1.2 var(--ac-font-text);
   letter-spacing: -0.014em;
 }
 .recentHeader button {
@@ -835,7 +755,7 @@
   display: block;
   margin: 0;
   color: var(--news-ink);
-  font: 600 0.9375rem / 1.3 var(--ac-font-text);
+  font: 550 0.875rem / 1.3 var(--ac-font-text);
   letter-spacing: -0.01em;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -898,4 +818,15 @@
 .unitMenu button:disabled {
   color: var(--news-ink-3);
   cursor: default;
+}
+
+/* A horizontal strip of two cards is weak at a narrow content width, and it
+   costs the first headline its place on the first screen. The clusters it
+   holds are in the list below it either way. Last in the file, because it has
+   to outrank the strip's own display rule. */
+@container home (max-width: 62rem) {
+  .carousel,
+  .carouselHead {
+    display: none;
+  }
 }

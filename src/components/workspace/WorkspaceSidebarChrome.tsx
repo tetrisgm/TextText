@@ -1554,7 +1554,7 @@ export function PostFolderSidebar({
             <span className="post-editor-folder-icon" aria-hidden="true">
               <HomeIcon />
             </span>
-            <span className="post-editor-folder-name">All items</span>
+            <span className="post-editor-folder-name">Home</span>
           </button>
         </div>
         <div className="post-editor-special-folders">

@@ -94,17 +94,13 @@ for (const theme of ["light", "dark"]) describe(`${theme} real token contrast`, 
   });
   // Every colour the Home paints text in, over every ground it paints it on.
   for (const fg of ["--news-ink", "--news-ink-2", "--news-ink-3", "--news-accent", "--news-read"]) {
-    for (const bg of ["--news-bg", "--news-tile"]) {
+    for (const bg of ["--ac-bg", "--news-tile"]) {
       it(`${fg} on ${bg} clears small-text AA`, () => {
-        const ground = over(c(home, bg), c(home, "--news-bg"));
+        const ground = over(c(home, bg), c(home, "--ac-bg"));
         expect(ratio(over(c(home, fg), ground), ground), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
       });
     }
   }
-  it("the indigo and sky panels carry legible ink", () => {
-    expect(ratio(c(home, "--news-indigo-ink"), c(home, "--news-indigo"))).toBeGreaterThanOrEqual(4.5);
-    expect(ratio(c(home, "--news-sky-ink"), c(home, "--news-sky"))).toBeGreaterThanOrEqual(4.5);
-  });
   for (const fg of ["--assistant-rail-primary", "--assistant-rail-secondary", "--assistant-error"]) {
     for (const bg of ["--assistant-rail-ground", "--assistant-composer-ground", "--assistant-control-fill"]) {
       it(`${fg} on ${bg} clears small-text AA`, () => { expect(ratio(c(rail, fg), c(rail, bg))).toBeGreaterThanOrEqual(4.5); });

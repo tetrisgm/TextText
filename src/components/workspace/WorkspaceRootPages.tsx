@@ -288,7 +288,6 @@ export function WorkspaceRootLanding({
   // page, Blog included, takes its layout from the look on the folder; this
   // control governs Home and nothing else.
   const [libraryOpen, setLibraryOpen] = useState(false);
-  const hasFeeds = (pool.readingSources?.length ?? 0) > 0;
   const [recentViewMode, setRecentViewMode] = useState<BlogHomeView>(
     pool.blog.homeLayout,
   );
@@ -377,6 +376,49 @@ export function WorkspaceRootLanding({
         ? documentsForActivityDate(pool.posts, dateKey)
         : { created: [], edited: [] },
     [dateKey, pool.posts],
+  );
+  // The first-run guidance. It belongs to an empty workspace, not to the
+  // library view, which a new person has no reason to open.
+  const firstLoop = (
+    <div className="workspace-first-loop">
+      <div>
+        <strong>A place for your notes, articles, and bookmarks</strong>
+        <span>{creationFolder ? "Write a note or paste a link to start your first item." : "Create a notes folder to start your first item."}</span>
+      </div>
+      <ol>
+        <li>
+          <b>1</b>
+          <span><strong>Create</strong> {creationFolder ? "Open a folder to write and save a note." : "Create a notes folder to hold your writing."}</span>
+        </li>
+        <li>
+          <b>2</b>
+          <span><strong>Find</strong> Browse folders in the sidebar or search your words above.</span>
+        </li>
+        <li>
+          <b>3</b>
+          <span><strong>Edit</strong> Open an item to write. The assistant beside it can help when you connect an AI.</span>
+        </li>
+      </ol>
+      {canManageItems ? (
+        <button
+          type="button"
+          className="ac-btn ac-btn-filled"
+          disabled={creatingFirstFolder}
+          onClick={openFirstNote}
+        >
+          {creationFolder ? "Write your first note" : creatingFirstFolder ? "Creating notes folder" : firstFolder ? "Refresh folders" : "Create a notes folder"}
+        </button>
+      ) : null}
+      {firstFolder && !creationFolder && <p>The notes folder was created. Refresh folders to open it.</p>}
+      {firstFolderError && <p role="alert">{firstFolderError}</p>}
+    </div>
+  );
+
+  // A new feed's folder is created under the workspace's bookmarks root, the
+  // same parent the folder page uses when it adds one.
+  const feedsFolder = useMemo(
+    () => pool.folders.find((folder) => folder.mode === "bookmarks" && !folder.path.includes("/")),
+    [pool.folders],
   );
   const recent = useMemo(() => {
     const sorted = sortSidebarDocuments(pool.posts, sort, openHistory);
@@ -775,37 +817,52 @@ export function WorkspaceRootLanding({
               </section>
             ) : null}
             <BackupHeartbeat handle={pool.blog.handle} enabled={canManageItems} />
-            {/* The dashboard is the home whether or not any feeds are
-                followed: without them it is the workspace's own shelf, with
-                them it is also the news. */}
-            {(
+            {/* Home and the whole library are two destinations, never one page
+                stacked on the other. Home is what the workspace root shows;
+                All items switches to the library in place and says so. */}
+            {!libraryOpen && (
               <div className={homeStyles.frame}>
               <HomeMasthead handle={pool.blog.handle} />
-              <div className={homeStyles.home}>
+              {/* With nothing followed there is no news column to sit beside,
+                  so Recent follows the setup block instead of leaving a
+                  feed-shaped hole next to it. */}
+              <div className={homeStyles.home} data-no-sources={(pool.readingSources?.length ?? 0) === 0 ? "true" : undefined}>
                 <HomeNews
                   handle={pool.blog.handle}
                   blogId={pool.blogId}
                   canManage={canManageItems}
                   assistantReady={assistantReady}
+                  feedsFolderPath={feedsFolder?.path ?? "bookmarks"}
+                  feedsFolderName={feedsFolder?.name ?? "Bookmarks"}
+                  retentionDays={pool.blog.readingRetentionDays ?? 90}
                   onOpenPost={onOpenPost}
                   onOpenSection={onOpenSection}
                   onUseAssistantPrompt={onUseAssistantPrompt}
                 />
+                {recent.length === 0 ? (
+                  <div className="workspace-recent-empty">{firstLoop}</div>
+                ) : (
                 <HomeRecent
                   pool={pool}
                   recent={recent}
                   onOpenPost={onOpenPost}
-                  onOpenSection={onOpenSection}
                   onShowAll={() => {
                     setLibraryOpen(true);
-                    setTimeout(() => document.querySelector(".workspace-recent")?.scrollIntoView({ block: "start", behavior: "smooth" }), 0);
+                    setTimeout(() => window.scrollTo({ top: 0 }), 0);
                   }}
                 />
+                )}
               </div>
               </div>
             )}
-            {(!hasFeeds || libraryOpen) && (
+            {libraryOpen && (
             <section className={`workspace-recent is-view-${recentViewMode}`}>
+              <header className="workspace-library-heading">
+                <h1>All items</h1>
+                <button type="button" onClick={() => setLibraryOpen(false)}>
+                  Back to Home
+                </button>
+              </header>
               <header className="workspace-library-toolbar">
                 <div
                   className="workspace-library-filters"
@@ -862,39 +919,7 @@ export function WorkspaceRootLanding({
               {recent.length === 0 ? (
                 <div className="workspace-recent-empty">
                   {itemFilter === "all" ? (
-                    <div className="workspace-first-loop">
-                      <div>
-                        <strong>A place for your notes, articles, and bookmarks</strong>
-                        <span>{creationFolder ? "Write a note or paste a link to start your first item." : "Create a notes folder to start your first item."}</span>
-                      </div>
-                      <ol>
-                        <li>
-                          <b>1</b>
-                          <span><strong>Create</strong> {creationFolder ? "Open a folder to write and save a note." : "Create a notes folder to hold your writing."}</span>
-                        </li>
-                        <li>
-                          <b>2</b>
-                          <span><strong>Find</strong> Browse folders in the sidebar or search your words above.</span>
-                        </li>
-                        <li>
-                          <b>3</b>
-                          <span><strong>Edit</strong> Open an item to write. The assistant beside it can help when you connect an AI.</span>
-                        </li>
-                      </ol>
-                      {canManageItems ? (
-                        <button
-                          type="button"
-                          className="ac-btn ac-btn-filled"
-                          disabled={creatingFirstFolder}
-                          onClick={openFirstNote}
-                        >
-                          {creationFolder ? "Write your first note" : creatingFirstFolder ? "Creating notes folder" : firstFolder ? "Refresh folders" : "Create a notes folder"}
-                        </button>
-                      ) : null}
-                      {firstFolder && !creationFolder && <p>The notes folder was created. Refresh folders to open it.</p>}
-                      {firstFolderError && <p role="alert">{firstFolderError}</p>}
-                    </div>
-                  ) : (
+                    firstLoop                  ) : (
                     <>
                       <p>Nothing here with that filter.</p>
                       <button

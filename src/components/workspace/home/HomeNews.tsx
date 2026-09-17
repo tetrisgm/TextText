@@ -20,6 +20,7 @@ import {
   type ReadingListItem,
   type ReadingOverview,
 } from "@/lib/reading/client";
+import { AddFeedsDialog } from "@/components/workspace/reading/AddFeedsDialog";
 import { ManageSourcesDialog } from "@/components/workspace/reading/ManageSourcesDialog";
 import { publisherFor, usableExcerpt } from "./publisher";
 import styles from "./Home.module.css";
@@ -133,6 +134,10 @@ export function HomeNews({
   blogId,
   canManage,
   assistantReady,
+  /** Where a new feed's folder is created, which is the bookmarks root. */
+  feedsFolderPath,
+  feedsFolderName,
+  retentionDays,
   onOpenPost,
   onOpenSection,
   onUseAssistantPrompt,
@@ -141,6 +146,9 @@ export function HomeNews({
   blogId: string;
   canManage: boolean;
   assistantReady: boolean;
+  feedsFolderPath: string;
+  feedsFolderName: string;
+  retentionDays: number;
   onOpenPost: (postId: string) => void;
   onOpenSection: (folderPath: string) => void;
   onUseAssistantPrompt: (prompt: string) => void;
@@ -161,6 +169,7 @@ export function HomeNews({
   const [openLines, setOpenLines] = useState<Set<string>>(() => new Set());
   const [menuOpen, setMenuOpen] = useState(false);
   const [managing, setManaging] = useState(false);
+  const [addingFeeds, setAddingFeeds] = useState(false);
   const [saving, setSaving] = useState(false);
   // Set when data arrives, never during render, so server and client agree.
   const [now, setNow] = useState(0);
@@ -574,8 +583,28 @@ export function HomeNews({
     [units],
   );
 
+  // With nothing followed, the modes and topics control nothing, and the news
+  // area would be a hole the height of a feed. The page becomes a short setup
+  // block instead, and Recent follows it directly.
+  const noSources = overview !== null && overview.sources.length === 0;
+
   return (
     <section className={`applecms ${styles.news}`} aria-label="News" data-home-news>
+      {noSources && (
+        <div className={styles.setup}>
+          <h2>News from the sources you follow</h2>
+          <p>Add a feed and its articles arrive here, beside your own work.</p>
+          <div className={styles.setupActions}>
+            <button type="button" className="ac-btn ac-btn-filled" onClick={() => setAddingFeeds(true)}>
+              Add feeds
+            </button>
+            <button type="button" className={styles.setupSecondary} onClick={() => setManaging(true)}>
+              Import OPML
+            </button>
+          </div>
+        </div>
+      )}
+      {!noSources && (
       <header className={styles.header}>
         <div className={styles.modes} role="group" aria-label="News mode">
           <button type="button" aria-pressed={mode === "forYou"} onClick={() => setMode("forYou")}>
@@ -585,7 +614,6 @@ export function HomeNews({
             Latest
           </button>
         </div>
-        {data && mode === "forYou" && <span className={styles.modeNote}>{data.modeLabel}</span>}
         <span className={styles.spacer} />
         <div className={styles.utilities}>
           {unhealthy.length > 0 && (
@@ -596,7 +624,7 @@ export function HomeNews({
           )}
           <div className={styles.menuWrap}>
             <button type="button" className={styles.menuButton} aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((value) => !value)}>
-              Reading
+              Sources
             </button>
             {menuOpen && (
               <div className={styles.menu} role="menu" onMouseLeave={() => setMenuOpen(false)}>
@@ -605,6 +633,11 @@ export function HomeNews({
                     {overview.totals.newSince24h} new today
                     {overview.totals.unread !== null ? `, ${overview.totals.unread} unread` : ""}, {overview.sources.length} {overview.sources.length === 1 ? "source" : "sources"}
                   </small>
+                )}
+                {canManage && (
+                  <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); setManaging(true); }}>
+                    Manage sources
+                  </button>
                 )}
                 {assistantReady && (
                   <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onUseAssistantPrompt(catchMeUpPrompt(topic?.startsWith("source:") ? topic.slice(7) : null)); }}>
@@ -616,17 +649,13 @@ export function HomeNews({
                     {saving ? "Saving" : "Save brief"}
                   </button>
                 )}
-                {canManage && (
-                  <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); setManaging(true); }}>
-                    Manage sources
-                  </button>
-                )}
               </div>
             )}
           </div>
         </div>
       </header>
-      {data && data.topics.length > 0 && (
+      )}
+      {!noSources && data && data.topics.length > 0 && (
         <ul className={styles.topics} aria-label="Topics">
           <li>
             <button type="button" aria-pressed={topic === null} onClick={() => setTopic(null)}>
@@ -641,6 +670,22 @@ export function HomeNews({
             </li>
           ))}
         </ul>
+      )}
+      {addingFeeds && (
+        <AddFeedsDialog
+          handle={handle}
+          parentFolderPath={feedsFolderPath}
+          parentFolderName={feedsFolderName}
+          defaultRetentionDays={retentionDays}
+          onClose={() => setAddingFeeds(false)}
+          onAdded={async (result) => {
+            setAddingFeeds(false);
+            await refreshWorkspacePool(handle, blogId).catch(() => undefined);
+            void fetchReadingOverview(handle).then(setOverview).catch(() => undefined);
+            void load({ mode, topic });
+            onOpenSection(result.folderPath);
+          }}
+        />
       )}
       {managing && (
         <ManageSourcesDialog
@@ -674,18 +719,16 @@ export function HomeNews({
       {notice && <p className={styles.status} role="status">{notice}</p>}
       {error && <p className={styles.status} role="alert">{error}</p>}
       {data?.topicNote && <p className={styles.note}>{data.topicNote}</p>}
-      {data && units.length === 0 && !loading && (
+      {!noSources && data && units.length === 0 && !loading && (
         <p className={styles.empty}>
           {topic
-            ? "Nothing in this topic yet."
-            : (overview?.sources.length ?? 0) === 0
-              ? "No sources yet. Follow a feed and its news lands here, beside your own work."
-              : "Nothing has arrived yet. Sources are checked when you open the workspace."}
+            ? "Nothing in this topic yet. Clear the topic to see everything you follow."
+            : "Nothing has arrived yet. Sources are checked when you open the workspace."}
         </p>
       )}
       {headlines.length > 1 && (
         <>
-          <div className={styles.sectionHead}>
+          <div className={`${styles.sectionHead} ${styles.carouselHead}`}>
             <h2 className={styles.sectionTitle}>Headlines</h2>
             <span className={styles.sectionMore}>{headlines.length} stories, several sources each</span>
           </div>
