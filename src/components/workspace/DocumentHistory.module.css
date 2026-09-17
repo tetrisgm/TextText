@@ -54,7 +54,7 @@
 }
 .error {
   margin: 0 0 0.5rem;
-  color: #d64545;
+  color: var(--ac-red);
   font: 400 var(--ac-fs-footnote) / 1.4 var(--ac-font-text);
 }
 .list {
@@ -75,8 +75,10 @@
   color: var(--ac-label);
   font: 600 var(--ac-fs-footnote) / 1.3 var(--ac-font-text);
 }
+/* The line someone opens this dialog to find, so it takes a token that is
+   contrast checked against the panel in both themes, not a raw hex. */
 .row[data-lost="true"] strong {
-  color: #b4560f;
+  color: var(--ac-red);
 }
 .row small {
   display: block;

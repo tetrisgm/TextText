@@ -42,15 +42,20 @@ const encode = (doc: Y.Doc) => Buffer.from(Y.encodeStateAsUpdate(doc)).toString(
  * posts.revision while collab_state.baseline_revision keeps its own number.
  */
 async function setup(postId: string, baselineRevision = 1) {
+  let currentBaselineRevision = baselineRevision;
   vi.useFakeTimers();
   const storage = outboxIndexedDB();
   vi.stubGlobal("indexedDB", storage.indexedDB);
-  const baseline = new Y.Doc();
-  const snapshot = emptyDocumentSnapshot();
-  snapshot.content.body = "I truly";
-  applyDocumentBaseline(baseline, snapshot, `${postId}:${baselineRevision}`);
-  const encoded = encode(baseline);
-  baseline.destroy();
+  const encodeBaseline = (revision: number) => {
+    const baseline = new Y.Doc();
+    const snapshot = emptyDocumentSnapshot();
+    snapshot.content.body = "I truly";
+    applyDocumentBaseline(baseline, snapshot, `${postId}:${revision}`);
+    const encoded = encode(baseline);
+    baseline.destroy();
+    return encoded;
+  };
+  const encoded = encodeBaseline(baselineRevision);
 
   const pushes: { body: { updates: string[] }; respond: (response: Response) => void }[] = [];
   let seq = 0;
@@ -75,7 +80,10 @@ async function setup(postId: string, baselineRevision = 1) {
       });
     }
     if (String(input).includes("wait=0")) {
-      const payload = { updates: [], seq: 0, epoch: 5, baseline: { update: encoded, revision: baselineRevision } };
+      const payload = {
+        updates: [], seq: 0, epoch: 5,
+        baseline: { update: encoded, revision: currentBaselineRevision },
+      };
       if (!holdCatchUp) return Response.json(payload);
       // Held open so a keystroke can queue before the baseline lands, which is
       // the window the incident happened in.
@@ -87,8 +95,8 @@ async function setup(postId: string, baselineRevision = 1) {
   });
   vi.stubGlobal("fetch", fetcher);
 
-  /** One editor session. `expectedBaselineRevision` is what the editor passes: the canonical post revision. */
-  async function session(doc: Y.Doc, expectedBaselineRevision: number) {
+  /** One editor session, built exactly as the editor builds it. */
+  async function session(doc: Y.Doc) {
     const providerModule = await import("@/lib/collab/provider");
     const onRetired = vi.fn();
     const onError = vi.fn();
@@ -99,7 +107,6 @@ async function setup(postId: string, baselineRevision = 1) {
       color: "#000000",
       canPush: true,
       presence: false,
-      expectedBaselineRevision,
       onRetired,
       onError,
       onBaselineMismatch,
@@ -118,6 +125,10 @@ async function setup(postId: string, baselineRevision = 1) {
     sent,
     catchUps,
     storage,
+    /** The relay's baseline revision, which a rotation changes under a session. */
+    rebase: (revision: number) => {
+      currentBaselineRevision = revision;
+    },
     hold: (value: boolean) => {
       holdCatchUp = value;
     },
@@ -137,7 +148,7 @@ it("keeps writing after a save rebuilds the session with an edit already queued"
 
   // A first session types and its update is acknowledged, so the outbox drains
   // and is released exactly as it is after a successful autosave.
-  const first = await harness.session(doc, 0);
+  const first = await harness.session(doc);
   documentText(doc, "body").insert(7, " think");
   await vi.advanceTimersByTimeAsync(300);
   await settle();
@@ -151,7 +162,7 @@ it("keeps writing after a save rebuilds the session with an edit already queued"
   // the person types before the catch-up lands, and the baseline then arrives
   // carrying the older revision. This is the exact window the note was lost in.
   harness.hold(true);
-  const rebuilt = await harness.session(doc, 2);
+  const rebuilt = await harness.session(doc);
   documentText(doc, "body").insert(13, " this is the best episode");
   await settle();
   await harness.release();
@@ -176,30 +187,70 @@ it("keeps writing after a save rebuilds the session with an edit already queued"
   expect(documentText(doc, "body").toString()).toContain("best episode of the season");
 });
 
+it("reports a session that has not caught up as not caught up, and writes nothing", async () => {
+  // The editor branches on this. A session whose catch-up has not landed
+  // (offline, or the relay answering 5xx) still has a live writer: it has
+  // nothing to write against yet, and the poll loop heals it. Reading its null
+  // materialization as a dead writer is what locked the editor into the
+  // recovery screen on the first offline keystroke.
+  const postId = "writer-not-caught-up";
+  const harness = await setup(postId, 3);
+  const doc = new Y.Doc();
+  cleanups.push(() => doc.destroy());
+  harness.hold(true);
+  const held = await harness.session(doc);
+  documentText(doc, "body").insert(7, " typed offline");
+  await settle();
+
+  expect(held.provider.caughtUp).toBe(false);
+  expect(await held.provider.materialize("me")).toBeNull();
+
+  await harness.release();
+  await settle();
+  expect(held.provider.caughtUp).toBe(true);
+});
+
 it("preserves the queued edits when a session really is fenced out", async () => {
   const postId = "writer-fenced-preserves";
   const harness = await setup(postId, 9);
   const doc = new Y.Doc();
   cleanups.push(() => doc.destroy());
-  const session = await harness.session(doc, 0);
+  const session = await harness.session(doc);
   await settle();
 
-  // Type, then force the outbox to claim it caught up under a different
-  // baseline than the one the relay will hand back.
+  // Type. The relay holds the push open, so the edit stays pending in the
+  // outbox, which outlives this provider.
   documentText(doc, "body").insert(7, " and more");
+  await vi.advanceTimersByTimeAsync(300);
   await settle();
-  const { outboxFor } = (await import("@/lib/collab/provider")) as unknown as {
-    outboxFor?: (postId: string, base: string) => { baselineRevision: number | null };
-  };
-  void outboxFor;
+  expect(harness.sent.length).toBe(1);
   session.provider.destroy();
-
-  const fenced = await harness.session(doc, 0);
   await settle();
-  // Whether or not this particular arrangement trips the fence, the invariant
-  // under test is one-directional: a stopped writer must never leave without
-  // preserving, so a mismatch implies a retirement.
-  if (fenced.onBaselineMismatch.mock.calls.length > 0) {
-    expect(fenced.onRetired).toHaveBeenCalled();
-  }
+
+  // A rotation reseeds the document while those edits are still queued, so the
+  // next session catches up under a baseline revision the pending work was
+  // never made against. That is a genuine fence, and the only correct outcome
+  // is to stop writing AFTER preserving what the outbox holds.
+  harness.rebase(11);
+  const fenced = await harness.session(doc);
+  await settle();
+
+  expect(fenced.onBaselineMismatch).toHaveBeenCalledWith(11);
+  expect(fenced.onRetired).toHaveBeenCalled();
+  const { readRetiredOutboxes } = await import("@/lib/collab/provider");
+  const retired = await readRetiredOutboxes(postId);
+  expect(retired.copies.length).toBeGreaterThan(0);
+  const preserved = retired.copies.some((copy) => {
+    if (!copy.state) return false;
+    const rebuilt = new Y.Doc();
+    try {
+      Y.applyUpdate(rebuilt, Buffer.from(copy.state, "base64"));
+      return documentText(rebuilt, "body").toString().includes("and more");
+    } catch {
+      return false;
+    } finally {
+      rebuilt.destroy();
+    }
+  });
+  expect(preserved).toBe(true);
 });

@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ConfirmationDialog } from "@/components/ConfirmationDialog";
+import { writerOf } from "./document-history-writer";
 import type { Post } from "@/lib/content";
 import styles from "./DocumentHistory.module.css";
 
@@ -24,23 +26,6 @@ type Version = {
   preview: string;
 };
 
-const WRITER: Record<string, string> = {
-  save_document: "Edited here",
-  save_post: "Edited here",
-  "collab.materialize": "Edited here",
-  "sync.put_file": "Changed on your Mac",
-  "collab.rotate": "Kept from an editing session",
-  restore_revision: "A restore",
-};
-
-function writerOf(version: Version): string {
-  const known = WRITER[version.action];
-  if (known) return known;
-  if (version.actorType === "ai") return "The assistant";
-  if (version.actorType === "external_agent") return "A connected agent";
-  return version.action.replace(/[._]/g, " ");
-}
-
 function when(iso: string): string {
   const date = new Date(iso);
   return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
@@ -62,6 +47,7 @@ export function DocumentHistoryDialog({
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<Version | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,7 +68,7 @@ export function DocumentHistoryDialog({
   }, [handle, post.id]);
 
   const restore = async (version: Version) => {
-    if (!window.confirm(`Put this version back? The current text is kept in the history, so this can be undone.`)) return;
+    setConfirming(null);
     setBusy(version.id);
     setNotice(null);
     try {
@@ -93,7 +79,7 @@ export function DocumentHistoryDialog({
       });
       const data = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(data.error ?? "Could not restore that version");
-      setNotice("Restored. Reopen the item to see it.");
+      setNotice("Restored. The open editor has it too.");
       onRestored?.();
     } catch (caught) {
       setNotice(caught instanceof Error ? caught.message : "Could not restore that version");
@@ -103,12 +89,22 @@ export function DocumentHistoryDialog({
   };
 
   return (
-    <div className={`applecms ${styles.backdrop}`} role="presentation" onMouseDown={onClose}>
+    <div
+      className={`applecms ${styles.backdrop}`}
+      role="presentation"
+      // Only a press on the backdrop itself closes this. React sends events
+      // from a portalled child (the confirmation) up the component tree, so a
+      // press on the confirm button used to close the history out from under
+      // it and the restore never ran.
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
       <div className={styles.panel} role="dialog" aria-modal="true" aria-label="Earlier versions" onMouseDown={(event) => event.stopPropagation()}>
         <header className={styles.header}>
           <div>
             <strong>Earlier versions</strong>
-            <span>Every version a change replaced, newest first. Nothing here was thrown away.</span>
+            <span>Versions kept for this item, newest first. Frequent edits are grouped, and anything that replaced text is always kept.</span>
           </div>
           <button type="button" className="ac-btn ac-btn-plain" onClick={onClose}>
             Done
@@ -140,7 +136,7 @@ export function DocumentHistoryDialog({
                   <button type="button" className="ac-btn ac-btn-plain" onClick={() => setExpanded(expanded === version.id ? null : version.id)}>
                     {expanded === version.id ? "Less" : "More"}
                   </button>
-                  <button type="button" className="ac-btn ac-btn-plain" disabled={busy !== null} onClick={() => void restore(version)}>
+                  <button type="button" className="ac-btn ac-btn-plain" disabled={busy !== null} onClick={() => setConfirming(version)}>
                     {busy === version.id ? "Restoring" : "Put this back"}
                   </button>
                 </div>
@@ -150,6 +146,17 @@ export function DocumentHistoryDialog({
         )}
         </div>
       </div>
+      <ConfirmationDialog
+        open={confirming !== null}
+        title="Put this version back?"
+        message="The text it replaces is kept here too, so this can be undone."
+        confirmLabel="Put this back"
+        onCancel={() => setConfirming(null)}
+        onConfirm={() => {
+          const version = confirming;
+          if (version) void restore(version);
+        }}
+      />
     </div>
   );
 }

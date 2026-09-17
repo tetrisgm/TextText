@@ -801,14 +801,12 @@ export function UnifiedDocumentEditor({
     );
   }, [availableTemplates, document.presentation.template, template]);
 
-  // The canonical revision changes on every successful save. It must never be
-  // a dependency of the provider effect: rebuilding a live collaboration
-  // session on save is what left a document with no writer while the person
-  // kept typing.
-  const postRevisionRef = useRef(post.revision);
-  useEffect(() => {
-    postRevisionRef.current = post.revision;
-  }, [post.revision]);
+  // The canonical revision changes on every successful save, and nothing here
+  // reads it. It must never be a dependency of the provider effect, and it
+  // must never be handed to the provider as a fence: the session learns its
+  // own baseline revision from the relay, and seeding that fence with this
+  // number is what left a document with no writer while the person kept
+  // typing.
 
   const flushMaterialization = useCallback(
     (keepalive = false) => {
@@ -852,13 +850,28 @@ export function UnifiedDocumentEditor({
           const response = await provider.materialize(blog.handle, keepalive);
           if (recoveryBlockedRef.current || provider.materializationBlocked) return;
           if (!response) {
-            // The provider has no live writer, so this document is accepting
-            // text that nothing will persist. That is never "saved locally":
-            // keep a recovery copy and say so, then ask for a fresh provider.
-            preserveRecovery(provider.currentEpoch, "local-recovery");
-            setError("This document is not saving. Your text is kept on this device; reopen the item to continue.");
-            setSaveState("error");
-            setProviderAttempt((attempt) => attempt + 1);
+            // Two very different silences share this one null.
+            //
+            // A session that has not caught up yet (opened offline, or the
+            // relay answered the catch-up with a 5xx) has a writer; it just
+            // has nothing to write against. The poll loop keeps retrying and
+            // learns the baseline and the epoch on its own, so say the text is
+            // not saved yet, keep typing enabled, and let it heal. Blocking
+            // the editor here would make every offline keystroke end in the
+            // recovery screen.
+            //
+            // A session that cannot write again is the other case, and it is
+            // the one this document's text disappears in: keep a recovery copy,
+            // say so, and ask for a fresh provider.
+            if (provider.caughtUp) {
+              preserveRecovery(provider.currentEpoch, "local-recovery");
+              setError("This document is not saving. Your text is kept on this device; reopen the item to continue.");
+              setSaveState("error");
+              setProviderAttempt((attempt) => attempt + 1);
+              return;
+            }
+            setError("Not saved yet. This device is still catching up with the server.");
+            setSaveState(navigator.onLine ? "error" : "offline");
             return;
           }
           if (!response.ok) throw new Error("Document could not be saved");
@@ -942,7 +955,6 @@ export function UnifiedDocumentEditor({
           }
         }
       },
-      expectedBaselineRevision: postRevisionRef.current ?? 0,
       onBaselineMismatch: () => {
         if (!cancelled) {
           setError("This document changed elsewhere. Local edits were kept for recovery.");

@@ -99,7 +99,9 @@ type CollabProviderOptions = {
   awareness?: Awareness;
   onPresence?: (peers: PresencePeer[]) => void;
   onError?: (message: string) => void;
-  expectedBaselineRevision?: number;
+  /** The session's own baseline fence is LEARNED from the relay, never passed
+   * in: a caller that seeds it with the canonical post revision fences the
+   * session out of its own document the first time anything materializes. */
   onBaselineMismatch?: (serverRevision: number) => void;
   /** The local stream stopped and must be preserved for explicit recovery.
    * The reason distinguishes a server generation change from a rejected push. */
@@ -658,6 +660,18 @@ export class CollabProvider implements CollaborationTransport {
 
   get materializationBlocked(): boolean {
     return this.accessLost || this.retiredEpoch !== null;
+  }
+
+  /**
+   * Whether this session can write at all yet. False before the first
+   * successful catch-up, which is the ordinary state of a session that opened
+   * offline or against a failing relay. The poll loop keeps retrying and
+   * learns both the baseline and the epoch, so this turns true on its own.
+   * A caller must not read a null materialization as a dead writer without
+   * checking this first.
+   */
+  get caughtUp(): boolean {
+    return this.baselineApplied && this.learnedEpoch !== null;
   }
 
   /** All autosave and keepalive materializations use this same epoch envelope. */
