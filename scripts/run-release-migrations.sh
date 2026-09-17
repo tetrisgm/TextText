@@ -54,6 +54,7 @@ migrations=(
   scripts/migrate-add-agent-changes.mjs
   scripts/migrate-add-reading.mjs
   scripts/migrate-add-github.mjs
+  scripts/migrate-add-notifications.mjs
 )
 
 missing=()

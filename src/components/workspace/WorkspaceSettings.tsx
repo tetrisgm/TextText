@@ -45,6 +45,7 @@ import DeleteAccountDialog, {
 import { ShareDialog } from "./ShareDialog";
 import { ConnectionGallery } from "./ConnectionGallery";
 import { GithubSettings } from "./GithubSettings";
+import { NotificationSettings } from "./NotificationSettings";
 import styles from "./WorkspaceSettings.module.css";
 
 export function WorkspaceSettings({
@@ -661,6 +662,8 @@ export function WorkspaceSettings({
         )}
 
         <GithubSettings handle={blog.handle} />
+
+        <NotificationSettings handle={blog.handle} />
 
         {/* Only when the viewer owns an account. A collaborator, a guest
             workspace and a failed fetch all render nothing, and this

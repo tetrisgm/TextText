@@ -84,6 +84,7 @@ import {
   verificationTokens,
   workspaceAiConfigs,
   githubInstallations,
+  notificationChannels,
 } from "./db/schema";
 import { listItemAssetReferences } from "./item-assets";
 import { localizeRemoteMarkdownImages } from "./markdown-images";
@@ -7341,4 +7342,100 @@ export async function forgetGithubInstallation(blogId: string, actor: { userId: 
   if (deleted.length === 0) return false;
   await recordAction({ actorUserId: actor.userId, actorType: actor.actorType, actionName: "github.disconnect_installation", targetType: "workspace", targetId: blogId, inputSummary: deleted[0].accountLogin });
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Notification channels: where a workspace speaks
+
+export type NotificationChannelRecord = {
+  id: string;
+  blogId: string;
+  kind: "apprise" | "webhook";
+  url: string;
+  label: string;
+  enabled: boolean;
+  events: string[];
+  lastUsedAt: Date | null;
+  lastStatus: string | null;
+  lastDetail: string | null;
+  createdAt: Date;
+};
+
+function notificationChannelRecord(row: typeof notificationChannels.$inferSelect): NotificationChannelRecord {
+  return {
+    id: row.id,
+    blogId: row.blogId,
+    kind: row.kind === "webhook" ? "webhook" : "apprise",
+    url: row.url,
+    label: row.label,
+    enabled: row.enabled,
+    events: Array.isArray(row.events) ? row.events.filter((value): value is string => typeof value === "string") : [],
+    lastUsedAt: row.lastUsedAt,
+    lastStatus: row.lastStatus,
+    lastDetail: row.lastDetail,
+    createdAt: row.createdAt,
+  };
+}
+
+export async function listNotificationChannels(blogId: string): Promise<NotificationChannelRecord[]> {
+  if (!db) return [];
+  const rows = await db.select().from(notificationChannels).where(eq(notificationChannels.blogId, blogId)).orderBy(notificationChannels.createdAt);
+  return rows.map(notificationChannelRecord);
+}
+
+const MAX_NOTIFICATION_CHANNELS = 20;
+
+export async function addNotificationChannel(input: {
+  blogId: string;
+  kind: "apprise" | "webhook";
+  url: string;
+  label: string;
+  events?: string[];
+  actor: { userId: string | null; actorType: AuditActorType };
+}): Promise<NotificationChannelRecord> {
+  if (!db) throw new Error("addNotificationChannel requires DATABASE_URL");
+  const existing = await listNotificationChannels(input.blogId);
+  if (existing.length >= MAX_NOTIFICATION_CHANNELS) throw new Error(`A workspace can have ${MAX_NOTIFICATION_CHANNELS} notification channels`);
+  if (existing.some((channel) => channel.url === input.url)) throw new Error("That channel is already here");
+  const [row] = await db
+    .insert(notificationChannels)
+    .values({ blogId: input.blogId, kind: input.kind, url: input.url, label: input.label.slice(0, 120), events: input.events ?? [] })
+    .returning();
+  await recordAction({ actorUserId: input.actor.userId, actorType: input.actor.actorType, actionName: "notifications.add_channel", targetType: "workspace", targetId: input.blogId, inputSummary: input.label.slice(0, 120) });
+  return notificationChannelRecord(row);
+}
+
+export async function updateNotificationChannel(input: {
+  blogId: string;
+  channelId: string;
+  enabled?: boolean;
+  events?: string[];
+  actor: { userId: string | null; actorType: AuditActorType };
+}): Promise<NotificationChannelRecord | null> {
+  if (!db) throw new Error("updateNotificationChannel requires DATABASE_URL");
+  const [row] = await db
+    .update(notificationChannels)
+    .set({ ...(input.enabled === undefined ? {} : { enabled: input.enabled }), ...(input.events === undefined ? {} : { events: input.events }) })
+    .where(and(eq(notificationChannels.blogId, input.blogId), eq(notificationChannels.id, input.channelId)))
+    .returning();
+  if (!row) return null;
+  await recordAction({ actorUserId: input.actor.userId, actorType: input.actor.actorType, actionName: "notifications.update_channel", targetType: "workspace", targetId: input.blogId, inputSummary: `${row.label}: ${input.enabled === undefined ? "" : input.enabled ? "on" : "off"} ${input.events ? input.events.join(",") || "all" : ""}`.trim() });
+  return notificationChannelRecord(row);
+}
+
+export async function removeNotificationChannel(input: { blogId: string; channelId: string; actor: { userId: string | null; actorType: AuditActorType } }): Promise<boolean> {
+  if (!db) throw new Error("removeNotificationChannel requires DATABASE_URL");
+  const deleted = await db
+    .delete(notificationChannels)
+    .where(and(eq(notificationChannels.blogId, input.blogId), eq(notificationChannels.id, input.channelId)))
+    .returning({ label: notificationChannels.label });
+  if (deleted.length === 0) return false;
+  await recordAction({ actorUserId: input.actor.userId, actorType: input.actor.actorType, actionName: "notifications.remove_channel", targetType: "workspace", targetId: input.blogId, inputSummary: deleted[0].label });
+  return true;
+}
+
+/** How the last delivery went; the row's own note, not an audit event. */
+export async function recordNotificationDelivery(channelId: string, status: "ok" | "failed", detail: string | null, at = new Date()): Promise<void> {
+  if (!db) return;
+  await db.update(notificationChannels).set({ lastUsedAt: at, lastStatus: status, lastDetail: detail?.slice(0, 300) ?? null }).where(eq(notificationChannels.id, channelId));
 }

@@ -19,6 +19,7 @@ import {
   savePost,
   type GithubInstallationRecord,
 } from "@/lib/store";
+import { dispatchNotification } from "@/lib/notifications/dispatch.server";
 import { GithubApiError, forgetInstallationToken, githubAppConfig, installationToken, type GithubFetch } from "./app.server";
 import { buildTextpack, gitBlobSha, parseTextpack, sha256Hex, textpackFileName } from "./textpack";
 
@@ -317,6 +318,19 @@ export async function runBackup(input: { handle: string; blogId: string; actor: 
       .set({ backupLastRunAt: now, backupLastStatus: status, backupLastDetail: detail, ...(commit ? { backupLastCommit: commit } : {}), updatedAt: now })
       .where(eq(githubInstallations.blogId, input.blogId));
     await recordAction({ actorUserId: input.actor.userId, actorType: input.actor.actorType, actionName: "github.run_backup", targetType: "workspace", targetId: input.blogId, inputSummary: record.backupRepository ?? undefined, outputSummary: `${status}${detail ? `: ${detail}` : ""}` });
+    if (status !== "unchanged") {
+      const blog = await getBlog(input.handle);
+      await dispatchNotification({
+        blogId: input.blogId,
+        message: {
+          event: "github.backup",
+          title: status === "ok" ? `Backup of ${input.handle} landed` : `Backup of ${input.handle} failed`,
+          body: detail ?? "",
+          url: commit && record.backupRepository ? `https://github.com/${record.backupRepository}/commit/${commit}` : null,
+          workspace: { handle: input.handle, name: blog?.name ?? input.handle },
+        },
+      }).catch(() => undefined);
+    }
   };
   try {
     const snapshot = await buildBackupSnapshot(input.handle, now);

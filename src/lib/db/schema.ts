@@ -1540,3 +1540,30 @@ export const githubInstallations = pgTable(
   },
   (t) => [uniqueIndex("github_installations_blog_idx").on(t.blogId)],
 );
+
+// Where a workspace speaks when nothing is calling in: Apprise-style
+// notification URLs (ntfy, Discord, Slack, Telegram, Pushover, a JSON
+// endpoint, or a self-hosted Apprise API) and plain outgoing webhooks. The
+// URL carries its own credential, as Apprise URLs do, so it is shown masked
+// and never leaves the server except toward the service it names.
+export const notificationChannels = pgTable(
+  "notification_channels",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    blogId: uuid("blog_id")
+      .notNull()
+      .references(() => blogs.id, { onDelete: "cascade" }),
+    /** "apprise" for a known scheme, "webhook" for a plain https endpoint */
+    kind: text("kind").notNull(),
+    url: text("url").notNull(),
+    label: text("label").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    /** Which events reach this channel; empty means all. */
+    events: jsonb("events").$type<string[]>().notNull().default([]),
+    lastUsedAt: timestamp("last_used_at"),
+    lastStatus: text("last_status"),
+    lastDetail: text("last_detail"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [index("notification_channels_blog_idx").on(t.blogId)],
+);

@@ -2,6 +2,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { blogs, users } from "@/lib/db/schema";
 import { recordAction } from "@/lib/audit";
+import { dispatchNotification, type NotificationFetch } from "@/lib/notifications/dispatch.server";
 import { rootDomainUrl } from "@/lib/site-url";
 import { blogWorkspacePostPath } from "@/lib/public-paths";
 import { holdInsertQuery } from "./holds";
@@ -109,7 +110,7 @@ export function digestText(input: {
   return lines.join("\n");
 }
 
-export async function sendReadingDigest(input: { blogId: string; now?: Date; mailer?: DigestMailer; force?: boolean }): Promise<DigestReport> {
+export async function sendReadingDigest(input: { blogId: string; now?: Date; mailer?: DigestMailer; force?: boolean; notifier?: NotificationFetch }): Promise<DigestReport> {
   const database = requireDb();
   const now = input.now ?? new Date();
   const [row] = await database
@@ -136,11 +137,31 @@ export async function sendReadingDigest(input: { blogId: string; now?: Date; mai
     .update(blogs)
     .set({ readingDigestSentOn: day })
     .where(and(eq(blogs.id, input.blogId), input.force ? sql`true` : sql`coalesce(${blogs.readingDigestSentOn}, '') <> ${day}`));
-  if (!row.email) return { handle: row.handle, to: null, alerts, articles: articles.length, sent: false, reason: "no_email" };
   if (alerts.length === 0 && articles.length === 0) return { handle: row.handle, to: row.email, alerts, articles: 0, sent: false, reason: "nothing_new" };
   const origin = rootDomainUrl().toString().replace(/\/$/, "");
   const text = digestText({ origin, blog: { handle: row.handle, username: row.username ?? undefined, name: row.name }, alerts, articles });
   const subject = alerts.length > 0 ? `Reading: ${alerts.map((alert) => alert.name).join(", ")} and ${articles.length} more` : `Reading: ${articles.length} new ${articles.length === 1 ? "article" : "articles"}`;
+  // The workspace's own channels get the same news alongside email: one
+  // digest event, and one event per alert so a channel can subscribe to
+  // alerts alone. A channel failing never touches the email.
+  const workspace = { handle: row.handle, name: row.name };
+  const itemOf = (item: ReadingListItem) => ({ title: item.title, url: item.permalink ?? item.externalUrl ?? null, source: item.publisherName ?? item.sourceFolderName ?? null });
+  const manage = `${origin}/t/${row.handle}`;
+  const notified = await dispatchNotification({
+    blogId: input.blogId,
+    fetcher: input.notifier,
+    message: { event: "reading.digest", title: subject, body: text, url: manage, workspace, items: [...alerts.flatMap((alert) => alert.items), ...articles].slice(0, 50).map(itemOf) },
+  });
+  for (const alert of alerts) {
+    await dispatchNotification({
+      blogId: input.blogId,
+      fetcher: input.notifier,
+      message: { event: "reading.alert", title: `${alert.name}: ${alert.items.length} new`, body: alert.items.map((item) => `- ${item.title}`).join("\n"), url: manage, workspace, items: alert.items.slice(0, 50).map(itemOf) },
+    });
+  }
+  if (!row.email) {
+    return { handle: row.handle, to: null, alerts, articles: articles.length, sent: notified.some((delivery) => delivery.ok), reason: notified.some((delivery) => delivery.ok) ? undefined : "no_email" };
+  }
   try {
     await (input.mailer ?? defaultMailer)({ to: row.email, subject, text });
   } catch (error) {
