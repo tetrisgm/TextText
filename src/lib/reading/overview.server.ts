@@ -1,3 +1,4 @@
+import { readScope } from "@/lib/request-scope";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { folders, posts, readingProvenance, readingReadState } from "@/lib/db/schema";
@@ -29,7 +30,12 @@ function requireDb() {
   return db;
 }
 
-export async function readingOverview(input: { handle: string; user: AccessUser | null; now?: Date }): Promise<ReadingOverview> {
+export function readingOverview(input: { handle: string; user: AccessUser | null; now?: Date }): Promise<ReadingOverview> {
+  // The same workspace and folder list every layer under here asks for.
+  return readScope(() => overviewOf(input));
+}
+
+async function overviewOf(input: { handle: string; user: AccessUser | null; now?: Date }): Promise<ReadingOverview> {
   const database = requireDb();
   const now = input.now ?? new Date();
   const { blogId, folderIds } = await resolveReadingFolderIds({ handle: input.handle, user: input.user, folderPath: "", includeDescendants: true });
