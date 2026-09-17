@@ -154,6 +154,34 @@ function children(node: XmlObject, local: string): XmlNode[] {
   return asArray(child(node, local));
 }
 
+/**
+ * Media RSS elements by their exact prefixed name.
+ *
+ * The prefix-insensitive lookup above cannot be used for these: asking for
+ * "content" would also match content:encoded, which is the item's body, not a
+ * picture. Feeds write these with the conventional prefixes.
+ */
+function mediaImages(node: XmlObject): Array<{ url: string; mimeType: string | null }> {
+  const groups = [node, ...asArray(node["media:group"]).filter(isObject)];
+  const nodes: XmlNode[] = [];
+  for (const group of groups) {
+    if (!isObject(group)) continue;
+    nodes.push(
+      ...asArray(group["media:content"]),
+      ...asArray(group["media:thumbnail"]),
+      ...asArray(group["itunes:image"]),
+    );
+  }
+  return nodes
+    .map((entry) => ({
+      url: httpUrl(attr(entry, "url") ?? attr(entry, "href")),
+      // A thumbnail declares no type and is always a picture; a media:content
+      // may be a video, and its declared type is what rules it out.
+      mimeType: attr(entry, "type") ?? (attr(entry, "medium") === "image" ? "image/unknown" : null),
+    }))
+    .filter((entry): entry is { url: string; mimeType: string | null } => entry.url !== null);
+}
+
 function clip(value: string | null, max: number): string | null {
   if (value === null) return null;
   return value.length > max ? value.slice(0, max) : value;
@@ -254,12 +282,15 @@ function parseRss(root: XmlObject): NormalizedFeed {
       .filter((value): value is string => Boolean(value))
       .slice(0, MAX_AUTHORS);
     const body = bodyFrom(rawOf(child(item, "encoded")), rawOf(child(item, "description")));
-    const attachments = children(item, "enclosure")
-      .map((node) => ({
-        url: httpUrl(attr(node, "url")),
-        mimeType: attr(node, "type"),
-      }))
-      .filter((a): a is { url: string; mimeType: string | null } => a.url !== null);
+    const attachments = [
+      ...children(item, "enclosure")
+        .map((node) => ({
+          url: httpUrl(attr(node, "url")),
+          mimeType: attr(node, "type"),
+        }))
+        .filter((a): a is { url: string; mimeType: string | null } => a.url !== null),
+      ...mediaImages(item),
+    ];
     const entry = finishEntry({
       declaredId: guid,
       idIsPermalink,
@@ -330,10 +361,13 @@ function parseAtom(root: XmlObject): NormalizedFeed {
       content.raw ? (content.isHtml ? content.raw : escapeAsParagraphs(content.raw)) : null,
       summary.raw ? (summary.isHtml ? summary.raw : escapeAsParagraphs(summary.raw)) : null,
     );
-    const attachments = children(item, "link")
-      .filter((link) => attr(link, "rel") === "enclosure")
-      .map((link) => ({ url: httpUrl(attr(link, "href")), mimeType: attr(link, "type") }))
-      .filter((a): a is { url: string; mimeType: string | null } => a.url !== null);
+    const attachments = [
+      ...children(item, "link")
+        .filter((link) => attr(link, "rel") === "enclosure")
+        .map((link) => ({ url: httpUrl(attr(link, "href")), mimeType: attr(link, "type") }))
+        .filter((a): a is { url: string; mimeType: string | null } => a.url !== null),
+      ...mediaImages(item),
+    ];
     const titleNode = atomText(child(item, "title"));
     const entry = finishEntry({
       declaredId: id,

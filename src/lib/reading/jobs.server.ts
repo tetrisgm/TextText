@@ -13,7 +13,7 @@ import { readingJobs } from "@/lib/db/schema";
  * route; that is a deployment decision, not something this code installs.
  */
 
-export type ReadingJobKind = "poll_feed" | "index_item" | "retention_enforce" | "summarize_recent";
+export type ReadingJobKind = "poll_feed" | "index_item" | "retention_enforce" | "summarize_recent" | "enrich_item";
 
 export type ReadingJobRow = typeof readingJobs.$inferSelect;
 

@@ -4,6 +4,7 @@ import { enqueueIndexItem, runIndexItemJob } from "@/lib/reading/embeddings.serv
 import { enqueueRetentionSweep, runRetentionJob } from "@/lib/reading/retention.server";
 import { digestDue, sendReadingDigest } from "@/lib/reading/digest.server";
 import { enqueueSummarize, runSummarizeJob } from "@/lib/reading/summaries-materialize.server";
+import { enqueueImageEnrichment, runEnrichItemJob } from "@/lib/reading/images.server";
 import { handleFrom, json, jsonError, readJson, requireOwner } from "../_shared";
 
 export const dynamic = "force-dynamic";
@@ -34,8 +35,11 @@ export async function POST(request: Request) {
   // The home page's Summaries and topics, refreshed at most every ten
   // minutes, after polls and before the digest.
   await enqueueSummarize(owner.blogId);
+  // A picture for the items that arrived without one. Bounded per pass and
+  // asked once per item; a no-op when nothing is pending.
+  await enqueueImageEnrichment(owner.blogId);
   const ran = await runReadingJobs({
-    executors: { poll_feed: runPollFeedJob, retention_enforce: runRetentionJob, index_item: runIndexItemJob, summarize_recent: runSummarizeJob },
+    executors: { poll_feed: runPollFeedJob, retention_enforce: runRetentionJob, index_item: runIndexItemJob, summarize_recent: runSummarizeJob, enrich_item: runEnrichItemJob },
     blogId: owner.blogId,
     limit,
     owner: `tick:${owner.ownerId}`,

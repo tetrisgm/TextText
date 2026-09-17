@@ -21,6 +21,7 @@ import {
   type ReadingOverview,
 } from "@/lib/reading/client";
 import { ManageSourcesDialog } from "@/components/workspace/reading/ManageSourcesDialog";
+import { publisherFor, usableExcerpt } from "./publisher";
 import styles from "./Home.module.css";
 
 /**
@@ -32,6 +33,9 @@ import styles from "./Home.module.css";
  */
 
 type Mode = "forYou" | "latest";
+
+/** Items between one full-width photograph and the next. */
+const HERO_GAP = 3;
 
 export function catchMeUpPrompt(folderPath?: string | null): string {
   const scope = folderPath ? `in the "${folderPath}" folder` : "across every feed I follow";
@@ -83,6 +87,46 @@ function writeUrlState(mode: Mode, topic: string | null) {
 function sourcesLabel(sources: string[]): string {
   if (sources.length <= 2) return sources.join(" and ");
   return `${sources[0]}, ${sources[1]} and ${sources.length - 2} more`;
+}
+
+/**
+ * The row above every headline: who published it, and when. It carries a mark
+ * so the eye can find a publisher without reading, which is the whole reason
+ * a news surface has one.
+ */
+function PublisherRow({ item, at, now }: { item: ReadingListItem; at: string; now: number }) {
+  const publisher = publisherFor(item);
+  return (
+    <p className={styles.eyebrow}>
+      <span className={styles.mark} style={{ ["--mark-bg" as string]: publisher.color }} aria-hidden="true">
+        {publisher.initials}
+        {publisher.domain && (
+          // The site's own icon when it has one at the conventional path, the
+          // monogram underneath when it does not. Same posture as the bookmark
+          // cards: no referrer, lazy, and nothing is stored.
+          <img
+            src={`https://${publisher.domain}/favicon.ico`}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            referrerPolicy="no-referrer"
+            onError={(event) => event.currentTarget.remove()}
+          />
+        )}
+      </span>
+      <strong>{publisher.name}</strong>
+      <time dateTime={at}>{relativeTime(at, now)}</time>
+      {publisher.via && <span className={styles.via}>via {publisher.via}</span>}
+    </p>
+  );
+}
+
+function greetingFor(date: Date): string {
+  const hour = date.getHours();
+  if (hour < 5) return "Still up";
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
 }
 
 export function HomeNews({
@@ -509,10 +553,49 @@ export function HomeNews({
   };
 
   const unhealthy = overview?.sources.filter((source) => !["healthy", "checking"].includes(source.health)) ?? [];
-  const leadIndex = mode === "forYou" ? units.findIndex((unit) => unit.kind === "summary" && unit.imageUrl) : -1;
+  // A photograph gets the full width every few items and the rest stay
+  // compact. Artifact's feed alternates this way, and it is what stops a list
+  // of headlines reading as a wall of text.
+  const heroes = useMemo(() => {
+    const chosen = new Set<number>();
+    let previous = -99;
+    units.forEach((unit, index) => {
+      const image = unit.kind === "summary" ? unit.imageUrl : unit.item.imageUrl;
+      if (image && index - previous >= HERO_GAP) {
+        chosen.add(index);
+        previous = index;
+      }
+    });
+    return chosen;
+  }, [units]);
+  // The clusters worth a strip of their own, newest first. Without an image
+  // the card still works: the headline and the count carry it.
+  const headlines = useMemo(
+    () => units.filter((unit): unit is Extract<HomeUnit, { kind: "summary" }> => unit.kind === "summary" && unit.sources.length > 1).slice(0, 6),
+    [units],
+  );
+  const dateline = useMemo(() => {
+    const today = new Date();
+    return today.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  }, []);
 
   return (
     <section className={`applecms ${styles.news}`} aria-label="News" data-home-news>
+      <div className={styles.masthead}>
+        <div>
+          <h1 className={styles.greeting}>{greetingFor(new Date())}</h1>
+          <p className={styles.dateline}>
+            {dateline}
+            {overview && overview.totals.newSince24h > 0 && (
+              <>
+                {" · "}
+                <b>{overview.totals.newSince24h} new today</b>
+              </>
+            )}
+            {overview && overview.sources.length > 0 && ` · ${overview.sources.length} ${overview.sources.length === 1 ? "source" : "sources"}`}
+          </p>
+        </div>
+      </div>
       <header className={styles.header}>
         <div className={styles.modes} role="group" aria-label="News mode">
           <button type="button" aria-pressed={mode === "forYou"} onClick={() => setMode("forYou")}>
@@ -614,10 +697,47 @@ export function HomeNews({
       {data && units.length === 0 && !loading && (
         <p className={styles.empty}>{topic ? "Nothing in this topic yet." : "Nothing has arrived yet. Sources are checked when you open the workspace."}</p>
       )}
+      {headlines.length > 1 && (
+        <>
+          <div className={styles.sectionHead}>
+            <h2 className={styles.sectionTitle}>Headlines</h2>
+            <span className={styles.sectionMore}>{headlines.length} stories, several sources each</span>
+          </div>
+          <ul className={styles.carousel} aria-label="Headlines">
+            {headlines.map((unit) => (
+              <li
+                key={`card:${unit.id}`}
+                className={styles.card}
+                tabIndex={0}
+                role="link"
+                onClick={() => open(unit.representative)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    open(unit.representative);
+                  }
+                }}
+              >
+                {unit.imageUrl ? (
+                  <img className={styles.cardImage} src={unit.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />
+                ) : (
+                  <span className={styles.cardImage} aria-hidden="true" style={{ background: publisherFor(unit.representative).color }} />
+                )}
+                <div className={styles.cardBody}>
+                  <h3 className={styles.cardHeadline}>{unit.headline}</h3>
+                  <p className={styles.cardMeta}>
+                    {unit.members.length} {unit.members.length === 1 ? "article" : "articles"} · {unit.sources.length} sources
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       <ol className={styles.list} role="listbox" aria-label={mode === "latest" ? "Latest articles" : "News"}>
         {units.map((unit, index) => {
           const focused = index === focusIndex;
-          const lead = index === leadIndex;
+          const lead = heroes.has(index);
           if (unit.kind === "article") {
             const item = unit.item;
             return (
@@ -629,6 +749,7 @@ export function HomeNews({
                 data-unit-index={index}
                 data-focused={focused ? "true" : "false"}
                 data-read={item.read ? "true" : "false"}
+                data-lead={lead ? "true" : "false"}
                 tabIndex={focused || (focusIndex < 0 && index === 0) ? 0 : -1}
                 onFocus={() => setFocusIndex(index)}
                 onClick={() => open(item)}
@@ -639,14 +760,17 @@ export function HomeNews({
                   }
                 }}
               >
+                {lead && item.imageUrl && (
+                  <img className={styles.leadImage} src={item.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />
+                )}
                 <div className={styles.body}>
-                  <p className={styles.eyebrow}>
-                    <strong>{item.publisherName ?? item.sourceFolderName}</strong>
-                    <time dateTime={unit.latestAt}>{relativeTime(unit.latestAt, now)}</time>
-                    {!item.read && <span className={styles.state}>New to you</span>}
-                  </p>
+                  <PublisherRow item={item} at={unit.latestAt} now={now} />
                   <h3 className={styles.headline}>{item.title}</h3>
-                  {item.excerpt && <p className={styles.excerpt}>{item.excerpt}</p>}
+                  {usableExcerpt(item.excerpt) && <p className={styles.excerpt}>{usableExcerpt(item.excerpt)}</p>}
+                  <p className={styles.sources}>
+                    {item.read ? <span>Read</span> : <span className={styles.state}>New to you</span>}
+                    {item.keptReasons.includes("keep") && <span>Kept</span>}
+                  </p>
                   <div className={styles.actions} onClick={(event) => event.stopPropagation()}>
                     <button type="button" className={styles.action} aria-pressed={item.keptReasons.includes("keep")} onClick={() => toggleKeep(item)}>
                       {item.keptReasons.includes("keep") ? "Kept" : "Keep"}
@@ -690,7 +814,7 @@ export function HomeNews({
                     </span>
                   )}
                 </div>
-                {item.imageUrl && <img className={styles.thumb} src={item.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.dataset.hidden = "true"; }} />}
+                {!lead && item.imageUrl && <img className={styles.thumb} src={item.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.dataset.hidden = "true"; }} />}
               </li>
             );
           }
@@ -720,15 +844,13 @@ export function HomeNews({
             >
               {lead && unit.imageUrl && <img className={styles.leadImage} src={unit.imageUrl} alt="" loading="eager" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
               <div className={styles.body}>
-                <p className={styles.eyebrow}>
-                  <strong>{unit.sources.length} {unit.sources.length === 1 ? "source" : "sources"}</strong>
-                  <time dateTime={unit.latestAt}>{relativeTime(unit.latestAt, now)}</time>
-                  {unit.seenRevision > 0 && unit.coverageRevision > unit.seenRevision ? (
-                    <span className={styles.state}>New coverage</span>
-                  ) : unit.unread > 0 ? (
-                    <span className={styles.state}>{unit.unread === unit.members.length ? "New to you" : `${unit.unread} unread`}</span>
-                  ) : null}
-                </p>
+                {unit.sources.length > 1 && (
+                  <p className={styles.kicker}>
+                    <span aria-hidden="true">✳</span>
+                    Covered by {unit.sources.length} sources
+                  </p>
+                )}
+                <PublisherRow item={representative} at={unit.latestAt} now={now} />
                 <h3 className={styles.headline}>{unit.headline}</h3>
                 {unit.text ? (
                   <p
@@ -748,9 +870,14 @@ export function HomeNews({
                     {unit.text}
                   </p>
                 ) : (
-                  representative.excerpt && <p className={styles.excerpt}>{representative.excerpt}</p>
+                  usableExcerpt(representative.excerpt) && <p className={styles.excerpt}>{usableExcerpt(representative.excerpt)}</p>
                 )}
                 <p className={styles.sources} onClick={(event) => event.stopPropagation()}>
+                  {unit.seenRevision > 0 && unit.coverageRevision > unit.seenRevision ? (
+                    <span className={styles.state}>New coverage</span>
+                  ) : unit.unread > 0 ? (
+                    <span className={styles.state}>{unit.unread === unit.members.length ? "New to you" : `${unit.unread} unread`}</span>
+                  ) : null}
                   <button type="button" aria-expanded={isExpanded} onClick={() => toggleExpanded(unit.id)}>
                     {sourcesLabel(unit.sources)}
                   </button>

@@ -1,115 +1,201 @@
-/* Home as a personal front page: news is the main column, recent work a
-   quiet second column; on a narrow canvas (the assistant open, a small
-   window) one column with a short Recent strip first. Widths come from the
-   container the shell actually gives us, not the viewport. */
+/* Home: a news dashboard.
+ *
+ * The presentation is Artifact's, ported from a 393pt phone to a window: a
+ * continuous hairline-separated list, no card chrome, publisher identity
+ * before the headline, headlines set large and heavy, and photographs given
+ * real size when we have them. Everything here is scoped to this surface;
+ * the rest of the workspace keeps the Apple chrome.
+ *
+ * What makes it read as Artifact rather than a generic news page: the
+ * headline is the largest thing on screen, the publisher row is small and
+ * quiet above it, there are no borders or shadows around items, and colour
+ * appears only in section labels and the dashboard panels.
+ */
 .frame {
   container-type: inline-size;
   container-name: home;
+
+  /* Ink. Artifact is near-black on white and white on true black; the Apple
+     chrome's own label colours are deliberately softer, so the news surface
+     carries its own. */
+  --news-ink: #0b0b0d;
+  --news-ink-2: #55565c;
+  --news-ink-3: #6a6a71;
+  --news-line: rgba(0, 0, 0, 0.09);
+  --news-line-strong: rgba(0, 0, 0, 0.14);
+  --news-tile: #eeeef1;
+  --news-hover: rgba(0, 0, 0, 0.026);
+
+  /* The brand colours, sampled from the originals. Used for section labels
+     and dashboard panels only, never for body text. */
+  --news-accent: #c42d13;
+  --news-indigo: #3a2ce0;
+  --news-indigo-ink: #ffffff;
+  --news-pink: #ee2359;
+  --news-sky: #cfe6f7;
+  --news-sky-ink: #10333f;
+  --news-read: #1a63d6;
 }
+:global(.ac-dark) .frame,
+:global([data-theme="dark"]) .frame {
+  --news-ink: #f6f6f8;
+  --news-ink-2: #a9a9b0;
+  --news-ink-3: #94949b;
+  --news-line: rgba(255, 255, 255, 0.11);
+  --news-line-strong: rgba(255, 255, 255, 0.17);
+  --news-tile: #1b1b1f;
+  --news-hover: rgba(255, 255, 255, 0.035);
+  --news-accent: #ff6a4d;
+  --news-indigo: #4b3bf0;
+  --news-pink: #ff4d7a;
+  --news-sky: #1d3a4a;
+  --news-sky-ink: #cfe6f7;
+  --news-read: #5aa0ff;
+}
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme="light"])) .frame {
+    --news-ink: #f6f6f8;
+    --news-ink-2: #a9a9b0;
+    --news-ink-3: #94949b;
+    --news-line: rgba(255, 255, 255, 0.11);
+    --news-line-strong: rgba(255, 255, 255, 0.17);
+    --news-tile: #1b1b1f;
+    --news-hover: rgba(255, 255, 255, 0.035);
+    --news-accent: #ff6a4d;
+    --news-indigo: #4b3bf0;
+    --news-pink: #ff4d7a;
+    --news-sky: #1d3a4a;
+    --news-sky-ink: #cfe6f7;
+    --news-read: #5aa0ff;
+  }
+}
+
 .home {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 17.5rem;
-  gap: 0 2.5rem;
+  grid-template-columns: minmax(0, 1fr) 19rem;
+  gap: 0 3rem;
   align-items: start;
-  margin: 0 0 2rem;
+  margin: 0 0 3rem;
 }
 .news {
   min-width: 0;
+  max-width: 46rem;
 }
 .recent {
   min-width: 0;
   position: sticky;
   top: 0.5rem;
 }
-@container home (max-width: 56rem) {
+@container home (max-width: 62rem) {
   .home {
     grid-template-columns: minmax(0, 1fr);
-    gap: 1.5rem 0;
+    gap: 2rem 0;
+  }
+  .news {
+    max-width: none;
   }
   .recent {
     position: static;
-    order: -1;
-  }
-  /* A short strip, not a tall list, before the news. */
-  .recentRow:nth-child(n + 4) {
-    display: none;
+    order: 2;
   }
 }
 
-/* Header: one restrained row of modes and topics. */
+/* ---------------------------------------------------------------- masthead */
+
+.masthead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 0 1.25rem;
+}
+.greeting {
+  margin: 0;
+  color: var(--news-ink);
+  font: 700 1.75rem / 1.1 var(--ac-font-text);
+  letter-spacing: -0.022em;
+  text-wrap: balance;
+}
+.dateline {
+  margin: 0.25rem 0 0;
+  color: var(--news-ink-3);
+  font: 400 0.9375rem / 1.3 var(--ac-font-text);
+}
+.dateline b {
+  color: var(--news-ink-2);
+  font-weight: 500;
+}
+
+/* Header: the mode switch and the utilities, kept quiet under the masthead. */
 .header {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem 1rem;
-  margin: 0 0 0.25rem;
+  margin: 0;
 }
 .modes {
   display: inline-flex;
-  gap: 0.25rem;
-  padding: 0.125rem;
-  border-radius: var(--ac-radius-control);
-  background: var(--ac-fill-4);
+  gap: 1.125rem;
 }
 .modes button {
   border: 0;
-  border-radius: calc(var(--ac-radius-control) - 2px);
-  padding: 0.25rem 0.625rem;
+  padding: 0 0 0.125rem;
   background: transparent;
-  color: var(--ac-label-2);
-  font: 600 var(--ac-fs-footnote) / 1.2 var(--ac-font-text);
+  color: var(--news-ink-3);
+  font: 700 1.3125rem / 1.15 var(--ac-font-text);
+  letter-spacing: -0.018em;
   cursor: pointer;
 }
 .modes button[aria-pressed="true"] {
-  background: var(--ac-bg, #fff);
-  color: var(--ac-label);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  color: var(--news-ink);
+}
+.modes button:focus-visible {
+  outline: 2px solid var(--news-read);
+  outline-offset: 2px;
+  border-radius: 3px;
 }
 .modeNote {
-  color: var(--ac-label-3);
-  font: 400 var(--ac-fs-caption1, 0.75rem) / 1.3 var(--ac-font-text);
+  color: var(--news-ink-3);
+  font: 400 0.8125rem / 1.3 var(--ac-font-text);
 }
 .spacer {
   flex: 1;
 }
+
+/* The topic row: large, flat, no pills and no underline. The active topic is
+   simply the black one, which is how Artifact separates it. */
 .topics {
   display: flex;
   gap: 0 1.125rem;
-  margin: 0;
-  padding: 0;
+  margin: 0.375rem 0 0;
+  padding: 0 0 0.75rem;
   list-style: none;
   overflow-x: auto;
   scrollbar-width: none;
-  border-bottom: 1px solid var(--ac-separator);
+  border-bottom: 1px solid var(--news-line);
 }
 .topics::-webkit-scrollbar {
   display: none;
 }
 .topics button {
-  position: relative;
   border: 0;
-  padding: 0.5rem 0 0.5625rem;
+  padding: 0;
   background: transparent;
-  color: var(--ac-label-2);
-  font: 500 var(--ac-fs-footnote) / 1.2 var(--ac-font-text);
+  color: var(--news-ink-3);
+  font: 600 1.0625rem / 1.2 var(--ac-font-text);
+  letter-spacing: -0.01em;
   white-space: nowrap;
   cursor: pointer;
 }
 .topics button[aria-pressed="true"] {
-  color: var(--ac-label);
-}
-.topics button[aria-pressed="true"]::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 2px;
-  background: var(--ac-label);
+  color: var(--news-ink);
+  font-weight: 700;
 }
 .topics button:focus-visible {
-  outline: 2px solid var(--ac-accent, #3478f6);
-  outline-offset: -2px;
+  outline: 2px solid var(--news-read);
+  outline-offset: 2px;
+  border-radius: 3px;
 }
 .utilities {
   display: inline-flex;
@@ -117,70 +203,176 @@
   gap: 0.5rem;
 }
 .menuButton {
-  border: 1px solid var(--ac-separator);
-  border-radius: var(--ac-radius-control);
-  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--news-line-strong);
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
   background: transparent;
-  color: var(--ac-label-2);
-  font: 500 var(--ac-fs-footnote) / 1.2 var(--ac-font-text);
+  color: var(--news-ink-2);
+  font: 500 0.8125rem / 1.3 var(--ac-font-text);
   cursor: pointer;
 }
 .menuButton:hover {
-  color: var(--ac-label);
-  background: var(--ac-fill-4);
+  color: var(--news-ink);
+  background: var(--news-hover);
 }
 .attention {
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
-  color: var(--ac-label-2);
-  font: 500 var(--ac-fs-caption1, 0.75rem) / 1.3 var(--ac-font-text);
+  border: 0;
+  background: transparent;
+  color: var(--news-accent);
+  font: 500 0.8125rem / 1.3 var(--ac-font-text);
+  cursor: pointer;
 }
 .attentionDot {
   width: 0.4375rem;
   height: 0.4375rem;
   border-radius: 999px;
-  background: #d68b1c;
+  background: currentColor;
 }
 .menu {
   position: absolute;
+  right: 0;
   z-index: 5;
   min-width: 14rem;
-  margin-top: 0.25rem;
+  margin-top: 0.375rem;
   padding: 0.25rem;
-  border: 1px solid var(--ac-separator);
-  border-radius: var(--ac-radius-control);
+  border: 1px solid var(--news-line-strong);
+  border-radius: 10px;
   background: var(--ac-bg, #fff);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
 }
 .menu button {
   display: block;
   width: 100%;
   border: 0;
-  border-radius: calc(var(--ac-radius-control) - 2px);
+  border-radius: 6px;
   padding: 0.4375rem 0.625rem;
   background: transparent;
-  color: var(--ac-label);
-  font: 500 var(--ac-fs-footnote) / 1.2 var(--ac-font-text);
+  color: var(--news-ink);
+  font: 500 0.8125rem / 1.2 var(--ac-font-text);
   text-align: left;
   cursor: pointer;
 }
 .menu button:hover,
 .menu button:focus-visible {
-  background: var(--ac-fill-4);
+  background: var(--news-hover);
   outline: none;
 }
 .menu small {
   display: block;
   padding: 0.375rem 0.625rem 0.25rem;
-  color: var(--ac-label-3);
-  font: 400 var(--ac-fs-caption1, 0.75rem) / 1.3 var(--ac-font-text);
+  color: var(--news-ink-3);
+  font: 400 0.75rem / 1.3 var(--ac-font-text);
 }
 .menuWrap {
   position: relative;
 }
 
-/* The news list: one continuous surface. */
+/* ------------------------------------------------------- section furniture */
+
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 2rem 0 0.75rem;
+}
+.sectionTitle {
+  margin: 0;
+  color: var(--news-ink);
+  font: 700 1.5rem / 1.15 var(--ac-font-text);
+  letter-spacing: -0.02em;
+}
+.sectionMore {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--news-ink-2);
+  font: 500 0.875rem / 1.3 var(--ac-font-text);
+  cursor: pointer;
+}
+.sectionMore:hover {
+  color: var(--news-ink);
+}
+/* A coloured label above an item, the way Artifact marks a strand. */
+.kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  margin: 0 0 0.375rem;
+  color: var(--news-accent);
+  font: 600 0.8125rem / 1.2 var(--ac-font-text);
+  letter-spacing: -0.005em;
+}
+
+/* --------------------------------------------------- the headlines strip */
+
+.carousel {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 15.5rem);
+  gap: 1rem;
+  margin: 0 0 0.25rem;
+  padding: 0 0 0.5rem;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  list-style: none;
+}
+.carousel::-webkit-scrollbar {
+  display: none;
+}
+.card {
+  scroll-snap-align: start;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-width: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--news-tile);
+  cursor: pointer;
+}
+.card:hover .cardHeadline {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.card:focus-visible {
+  outline: 2px solid var(--news-read);
+  outline-offset: 2px;
+}
+.cardImage {
+  display: block;
+  width: 100%;
+  aspect-ratio: 5 / 3;
+  object-fit: cover;
+  background: var(--news-tile);
+}
+.cardBody {
+  display: grid;
+  align-content: start;
+  gap: 0.375rem;
+  padding: 0.75rem 0.875rem 0.875rem;
+}
+.cardHeadline {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 0;
+  color: var(--news-ink);
+  font: 700 1rem / 1.25 var(--ac-font-text);
+  letter-spacing: -0.012em;
+}
+.cardMeta {
+  margin: 0;
+  color: var(--news-ink-3);
+  font: 400 0.8125rem / 1.3 var(--ac-font-text);
+}
+
+/* ------------------------------------------------------------- the feed */
+
 .list {
   margin: 0;
   padding: 0;
@@ -189,42 +381,41 @@
 .unit {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.125rem 1rem;
-  padding: 0.875rem 0.25rem 0.875rem 0;
-  border-bottom: 1px solid var(--ac-separator);
+  gap: 0 1.25rem;
+  padding: 1.125rem 0.25rem 1.125rem 0;
+  border-bottom: 1px solid var(--news-line);
   cursor: pointer;
 }
 .unit:hover {
-  background: var(--workspace-row-hover, var(--ac-fill-3));
+  background: var(--news-hover);
 }
 .unit[data-focused="true"] {
-  box-shadow: inset 3px 0 0 var(--ac-accent, #3478f6);
-  background: var(--ac-fill-3);
+  box-shadow: inset 3px 0 0 var(--news-read);
+  background: var(--news-hover);
 }
 .unit:focus-visible {
-  outline: 2px solid var(--ac-accent, #3478f6);
+  outline: 2px solid var(--news-read);
   outline-offset: -2px;
 }
+/* The lead item gives its photograph the full width, above the publisher. */
 .unit[data-lead="true"] {
   grid-template-columns: minmax(0, 1fr);
-  padding-top: 0.25rem;
 }
 .leadImage {
   display: block;
   width: 100%;
   aspect-ratio: 16 / 9;
-  margin: 0 0 0.75rem;
-  border-radius: var(--ac-radius-control);
+  margin: 0 0 0.875rem;
+  border-radius: 12px;
   object-fit: cover;
-  background: var(--ac-fill-4);
+  background: var(--news-tile);
 }
 .thumb {
-  width: 6rem;
-  height: 4rem;
-  margin-top: 0.25rem;
-  border-radius: calc(var(--ac-radius-control) - 2px);
+  width: 7rem;
+  height: 7rem;
+  border-radius: 10px;
   object-fit: cover;
-  background: var(--ac-fill-4);
+  background: var(--news-tile);
 }
 .thumb[data-hidden="true"] {
   display: none;
@@ -232,51 +423,97 @@
 .body {
   min-width: 0;
 }
+
+/* The publisher row: identity before the headline, always. */
 .eyebrow {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.25rem 0.5rem;
-  margin: 0 0 0.1875rem;
-  color: var(--ac-label-2);
-  font: 500 var(--ac-fs-caption1, 0.75rem) / 1.3 var(--ac-font-text);
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.4375rem;
+  color: var(--news-ink-3);
+  font: 400 0.875rem / 1.2 var(--ac-font-text);
 }
 .eyebrow strong {
-  color: var(--ac-label);
-  font-weight: 600;
+  color: var(--news-ink);
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .eyebrow time {
-  color: var(--ac-label-3);
+  color: var(--news-ink-3);
+  white-space: nowrap;
+}
+/* The publisher mark. A favicon when we have one, and a monogram tile in the
+   publisher's own derived colour when we do not, so the row never has a hole
+   in it. */
+.mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 5px;
+  background: var(--mark-bg, var(--news-tile));
+  color: #fff;
+  font: 700 0.625rem / 1 var(--ac-font-text);
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  overflow: hidden;
+}
+.mark img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #fff;
+}
+.via {
+  color: var(--news-ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .state {
-  color: var(--ac-accent, #3478f6);
+  color: var(--news-read);
   font-weight: 600;
+  white-space: nowrap;
 }
 .headline {
-  max-width: 60ch;
   margin: 0;
-  color: var(--ac-label);
-  font: 600 var(--ac-fs-body, 0.9375rem) / 1.35 var(--ac-font-text);
-  letter-spacing: -0.005em;
+  color: var(--news-ink);
+  font: 700 1.3125rem / 1.24 var(--ac-font-text);
+  letter-spacing: -0.016em;
   text-wrap: pretty;
 }
 .unit[data-lead="true"] .headline {
-  font-size: 1.0625rem;
-  line-height: 1.3;
+  font-size: 1.625rem;
+  line-height: 1.18;
+  letter-spacing: -0.021em;
 }
+/* Read items step back rather than disappear. */
 .unit[data-read="true"] .headline {
-  font-weight: 500;
-  color: var(--ac-label-2);
+  color: var(--news-ink-2);
+}
+.excerpt {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 0.375rem 0 0;
+  color: var(--news-ink-2);
+  font: 400 0.9375rem / 1.45 var(--ac-font-text);
 }
 .line {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  max-width: 65ch;
-  margin: 0.25rem 0 0;
-  color: var(--ac-label);
-  font: 400 var(--ac-fs-footnote) / 1.45 var(--ac-font-text);
+  margin: 0.375rem 0 0;
+  color: var(--news-ink-2);
+  font: 400 0.9375rem / 1.45 var(--ac-font-text);
 }
 .line[data-open="true"] {
   display: block;
@@ -284,49 +521,43 @@
 }
 .line em {
   margin-right: 0.375rem;
-  color: var(--ac-label-3);
+  color: var(--news-accent);
   font-style: normal;
-  font-size: var(--ac-fs-caption1, 0.75rem);
+  font-weight: 600;
+  font-size: 0.75rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-.excerpt {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  max-width: 65ch;
-  margin: 0.25rem 0 0;
-  color: var(--ac-label-2);
-  font: 400 var(--ac-fs-footnote) / 1.4 var(--ac-font-text);
-}
+/* The count line under a headline, which is where Artifact puts reads and
+   comments. Ours counts sources and unread. */
 .sources {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem 0.5rem;
-  margin: 0.375rem 0 0;
-  color: var(--ac-label-3);
-  font: 400 var(--ac-fs-caption1, 0.75rem) / 1.3 var(--ac-font-text);
+  margin: 0.4375rem 0 0;
+  color: var(--news-ink-3);
+  font: 400 0.875rem / 1.3 var(--ac-font-text);
 }
 .sources button,
 .sources a {
   border: 0;
   padding: 0;
   background: transparent;
-  color: var(--ac-label-2);
+  color: var(--news-ink-3);
   font: inherit;
   cursor: pointer;
 }
 .sources button:hover,
 .sources a:hover {
+  color: var(--news-ink-2);
   text-decoration: underline;
 }
 .members {
   grid-column: 1 / -1;
-  margin: 0.5rem 0 0;
-  padding: 0 0 0 0.75rem;
-  border-left: 2px solid var(--ac-separator);
+  margin: 0.625rem 0 0;
+  padding: 0 0 0 0.875rem;
+  border-left: 2px solid var(--news-line-strong);
   list-style: none;
 }
 .member {
@@ -334,15 +565,15 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0.25rem 0.5rem;
-  padding: 0.25rem 0;
-  color: var(--ac-label-2);
-  font: 400 var(--ac-fs-footnote) / 1.35 var(--ac-font-text);
+  padding: 0.3125rem 0;
+  color: var(--news-ink-3);
+  font: 400 0.875rem / 1.35 var(--ac-font-text);
 }
 .member button {
   border: 0;
   padding: 0;
   background: transparent;
-  color: var(--ac-label);
+  color: var(--news-ink);
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -351,7 +582,7 @@
   font-weight: 600;
 }
 .member[data-focused="true"] {
-  box-shadow: inset 2px 0 0 var(--ac-accent, #3478f6);
+  box-shadow: inset 2px 0 0 var(--news-read);
   padding-left: 0.25rem;
 }
 .member button:hover {
@@ -361,7 +592,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  margin-top: 0.25rem;
+  margin-top: 0.4375rem;
   opacity: 0;
   transition: opacity 120ms ease-out;
 }
@@ -375,17 +606,17 @@
 }
 .action {
   border: 1px solid transparent;
-  border-radius: var(--ac-radius-control);
-  padding: 0.125rem 0.4375rem;
+  border-radius: 999px;
+  padding: 0.1875rem 0.5625rem;
   background: transparent;
-  color: var(--ac-label-3);
-  font: 500 var(--ac-fs-caption1, 0.75rem) / 1.3 var(--ac-font-text);
+  color: var(--news-ink-3);
+  font: 500 0.75rem / 1.3 var(--ac-font-text);
   cursor: pointer;
 }
 .action:hover,
 .action[aria-pressed="true"] {
-  border-color: var(--ac-separator);
-  color: var(--ac-label);
+  border-color: var(--news-line-strong);
+  color: var(--news-ink);
 }
 @media (prefers-reduced-motion: reduce) {
   .actions {
@@ -395,59 +626,157 @@
 .more {
   display: block;
   width: 100%;
-  margin: 0.75rem 0 0;
-  border: 1px solid var(--ac-separator);
-  border-radius: var(--ac-radius-control);
-  padding: 0.5rem;
+  margin: 1rem 0 0;
+  border: 1px solid var(--news-line-strong);
+  border-radius: 999px;
+  padding: 0.625rem;
   background: transparent;
-  color: var(--ac-label-2);
-  font: 500 var(--ac-fs-footnote) / 1.2 var(--ac-font-text);
+  color: var(--news-ink-2);
+  font: 600 0.875rem / 1.2 var(--ac-font-text);
   cursor: pointer;
 }
+.more:hover {
+  color: var(--news-ink);
+  background: var(--news-hover);
+}
 .empty {
-  padding: 2rem 0.5rem;
-  color: var(--ac-label-2);
-  font: 400 var(--ac-fs-body) / 1.45 var(--ac-font-text);
+  padding: 2.5rem 0.5rem;
+  color: var(--news-ink-2);
+  font: 400 1rem / 1.45 var(--ac-font-text);
   text-wrap: balance;
 }
 .note {
   margin: 0.5rem 0 0;
-  color: var(--ac-label-3);
-  font: 400 var(--ac-fs-caption1, 0.75rem) / 1.3 var(--ac-font-text);
+  color: var(--news-ink-3);
+  font: 400 0.8125rem / 1.3 var(--ac-font-text);
 }
 .status {
   margin: 0.5rem 0 0;
-  color: var(--ac-label-2);
-  font: 400 var(--ac-fs-footnote) / 1.35 var(--ac-font-text);
+  color: var(--news-ink-2);
+  font: 400 0.875rem / 1.35 var(--ac-font-text);
 }
 
-/* Recent work: a short quiet list. */
+/* ------------------------------------------------------ the dashboard rail */
+
+.railCard {
+  margin: 0 0 1.25rem;
+  border-radius: 14px;
+  padding: 1rem 1.125rem 1.125rem;
+  background: var(--news-tile);
+}
+.railCard[data-tone="sky"] {
+  background: var(--news-sky);
+  color: var(--news-sky-ink);
+}
+.railCard[data-tone="indigo"] {
+  background: var(--news-indigo);
+  color: var(--news-indigo-ink);
+}
+.railHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 0 0.75rem;
+}
+.railHead h2 {
+  margin: 0;
+  color: inherit;
+  font: 700 1.0625rem / 1.2 var(--ac-font-text);
+  letter-spacing: -0.014em;
+}
+.railHead button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  opacity: 0.7;
+  font: 500 0.8125rem / 1.2 var(--ac-font-text);
+  cursor: pointer;
+}
+.railHead button:hover {
+  opacity: 1;
+}
+
+/* Categories as bars: the fill length is the count, which is the whole point
+   of the panel. */
+.bars {
+  display: grid;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-radius: 7px;
+  padding: 0.4375rem 0.625rem;
+  background: rgba(255, 255, 255, 0.14);
+  color: inherit;
+  font: 500 0.875rem / 1.25 var(--ac-font-text);
+  cursor: pointer;
+  overflow: hidden;
+  border: 0;
+  width: 100%;
+  text-align: left;
+}
+.barFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--bar, 0%);
+  background: rgba(255, 255, 255, 0.22);
+  pointer-events: none;
+}
+.barLabel,
+.barCount {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.barCount {
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+.bar:hover .barFill {
+  background: rgba(255, 255, 255, 0.3);
+}
+.bar:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
+/* Recent work, in the same anatomy as the feed so the dashboard reads as one
+   thing: a mark, a line of identity, then the title. */
 .recentHeader {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   margin: 0 0 0.25rem;
-  padding: 0.5rem 0 0.5625rem;
-  border-bottom: 1px solid var(--ac-separator);
+  padding: 0 0 0.625rem;
+  border-bottom: 1px solid var(--news-line);
 }
 .recentHeader h2 {
   margin: 0;
-  color: var(--ac-label);
-  font: 600 var(--ac-fs-footnote) / 1.2 var(--ac-font-text);
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+  color: var(--news-ink);
+  font: 700 1.0625rem / 1.2 var(--ac-font-text);
+  letter-spacing: -0.014em;
 }
 .recentHeader button {
   border: 0;
   padding: 0;
   background: transparent;
-  color: var(--ac-label-2);
-  font: 500 var(--ac-fs-footnote) / 1.2 var(--ac-font-text);
+  color: var(--news-ink-2);
+  font: 500 0.8125rem / 1.2 var(--ac-font-text);
   cursor: pointer;
 }
 .recentHeader button:hover {
-  color: var(--ac-label);
-  text-decoration: underline;
+  color: var(--news-ink);
 }
 .recentList {
   margin: 0;
@@ -456,40 +785,59 @@
 }
 .recentRow {
   display: grid;
-  gap: 0.125rem;
-  padding: 0.5rem 0.25rem 0.5rem 0;
-  border-bottom: 1px solid var(--ac-separator);
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0 0.625rem;
+  padding: 0.625rem 0.25rem 0.625rem 0;
+  border-bottom: 1px solid var(--news-line);
   cursor: pointer;
 }
 .recentRow:hover {
-  background: var(--workspace-row-hover, var(--ac-fill-3));
+  background: var(--news-hover);
 }
 .recentRow:focus-visible {
-  outline: 2px solid var(--ac-accent, #3478f6);
+  outline: 2px solid var(--news-read);
   outline-offset: -2px;
 }
+.recentRow > span:last-child {
+  min-width: 0;
+}
+.recentRow .mark {
+  margin-top: 0.125rem;
+}
 .recentTitle {
+  display: block;
   margin: 0;
-  color: var(--ac-label);
-  font: 600 var(--ac-fs-footnote) / 1.3 var(--ac-font-text);
+  color: var(--news-ink);
+  font: 600 0.9375rem / 1.3 var(--ac-font-text);
+  letter-spacing: -0.01em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.recentMeta {
+  display: flex;
+  min-width: 0;
+  gap: 0.5rem;
+  margin: 0.125rem 0 0;
+  color: var(--news-ink-3);
+  font: 400 0.8125rem / 1.3 var(--ac-font-text);
+}
+.recentMeta b {
+  color: var(--news-ink-2);
+  font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.recentMeta {
-  display: flex;
-  gap: 0.5rem;
-  color: var(--ac-label-3);
-  font: 400 var(--ac-fs-caption1, 0.75rem) / 1.3 var(--ac-font-text);
-}
-.recentMeta b {
-  color: var(--ac-label-2);
-  font-weight: 500;
+.recentMeta span {
+  white-space: nowrap;
 }
 .recentEmpty {
   padding: 0.75rem 0;
-  color: var(--ac-label-3);
-  font: 400 var(--ac-fs-footnote) / 1.4 var(--ac-font-text);
+  color: var(--news-ink-3);
+  font: 400 0.875rem / 1.4 var(--ac-font-text);
 }
 
 /* A unit's own small menu, anchored under its actions. */
@@ -498,30 +846,30 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem;
-  margin: 0.375rem 0 0;
+  margin: 0.4375rem 0 0;
   padding: 0.25rem;
-  border: 1px solid var(--ac-separator);
-  border-radius: var(--ac-radius-control);
-  background: var(--ac-fill-4);
+  border: 1px solid var(--news-line-strong);
+  border-radius: 10px;
+  background: var(--ac-bg, #fff);
 }
 .unitMenu small {
   padding: 0 0.375rem;
-  color: var(--ac-label-3);
-  font: 500 var(--ac-fs-caption1, 0.75rem) / 1.3 var(--ac-font-text);
+  color: var(--news-ink-3);
+  font: 500 0.75rem / 1.3 var(--ac-font-text);
 }
 .unitMenu button {
   border: 0;
-  border-radius: calc(var(--ac-radius-control) - 2px);
+  border-radius: 6px;
   padding: 0.25rem 0.5rem;
   background: transparent;
-  color: var(--ac-label);
-  font: 500 var(--ac-fs-caption1, 0.75rem) / 1.3 var(--ac-font-text);
+  color: var(--news-ink);
+  font: 500 0.75rem / 1.3 var(--ac-font-text);
   cursor: pointer;
 }
 .unitMenu button:hover:not(:disabled) {
-  background: var(--ac-bg, #fff);
+  background: var(--news-hover);
 }
 .unitMenu button:disabled {
-  color: var(--ac-label-2);
+  color: var(--news-ink-3);
   cursor: default;
 }

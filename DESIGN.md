@@ -49,6 +49,43 @@ scale with per-size tracking, 8pt spacing grid, 6px macOS control radii,
 chrome material via backdrop-filter with a solid fallback. System font stack
 only, never a webfont pretending to be SF Pro.
 
+## 3. The Dashboard (the workspace Home)
+
+The news surface: what arrived, from feeds and from your own work, presented
+the way Artifact presented it. It lives inside the Apple chrome and keeps the
+shell's sidebar and panels, but the reading area speaks its own vocabulary,
+scoped to `src/components/workspace/home/Home.module.css` under `--news-*`.
+
+**The list, not the card.** Items sit on one continuous surface separated by
+hairlines. No borders, no shadows, no rounded card around a row, no coloured
+chrome. The only rounded rectangles are photographs and the dashboard panels.
+
+**Identity before the headline.** Every item opens with a 20px mark, the
+publisher's name, and the age. The mark is the site's own icon when it answers
+at the conventional path and a monogram in a colour derived from the name when
+it does not, so the row is never missing its anchor. A feed that names itself
+rather than the publisher (an aggregator) shows the linked site and keeps its
+own name as "via".
+
+**The headline is the largest thing on the page.** Around 21px bold with tight
+tracking, stepping to 26px for an item carrying a full-width photograph.
+Everything else is quieter than it: the publisher row at 14px, the count line
+at 14px, the excerpt at 15px in secondary ink.
+
+**Photographs get real size, on a rhythm.** A full-width 16:9 image every third
+item at most, square thumbnails otherwise, and a layout that reads correctly
+when there is no picture at all. Aspect ratios are declared so nothing shifts
+as images arrive.
+
+**Colour is furniture, never text.** The brand tones (indigo, pink, pale blue,
+the orange-red accent) appear in section labels and dashboard panels. Body text
+and headlines are ink. Every `--news-*` colour is measured against both grounds
+in `contrast.test.ts` and clears AA in both themes.
+
+**The rail is the command centre.** Collections as bars whose length is the
+count, the desk's last few items, and the articles kept to read. A number in a
+list is read; a bar is seen.
+
 ## Shared rules
 
 - No em dashes anywhere in product copy or docs (hard rule).

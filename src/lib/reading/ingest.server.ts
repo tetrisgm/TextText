@@ -27,12 +27,35 @@ import { FeedParseError, parseFeed, type NormalizedEntry, type NormalizedFeed } 
 import type { FeedConnectionRow } from "./connections.server";
 import type { ReadingJobRow } from "./jobs.server";
 
-/** The first image the feed attached, if any: the home page's thumbnail. */
-export function imageFromEntry(entry: { attachments?: Array<{ url: string; mimeType: string | null }> }): string | null {
+/**
+ * One picture for the item, for the home page.
+ *
+ * An attachment first: an enclosure or a Media RSS element is the feed saying
+ * "this is the picture". Failing that, the first image in the body the feed
+ * sent, which is how a full-content feed carries its lead photograph. Both
+ * are already in hand, so neither costs a request.
+ */
+export function imageFromEntry(entry: {
+  attachments?: Array<{ url: string; mimeType: string | null }>;
+  bodyMarkdown?: string;
+}): string | null {
   for (const attachment of entry.attachments ?? []) {
     const type = attachment.mimeType?.toLowerCase() ?? "";
     const looksLikeImage = type.startsWith("image/") || (!type && /\.(jpe?g|png|webp|gif|avif)(\?|$)/i.test(attachment.url));
     if (looksLikeImage && /^https:\/\//i.test(attachment.url)) return attachment.url.slice(0, 2000);
+  }
+  return imageFromMarkdown(entry.bodyMarkdown);
+}
+
+/** The first https image in a Markdown body, ignoring tracking pixels. */
+export function imageFromMarkdown(markdown: string | null | undefined): string | null {
+  if (!markdown) return null;
+  const pattern = /!\[[^\]]*\]\(\s*<?(https:\/\/[^\s<>)]+)>?/gi;
+  for (const match of markdown.matchAll(pattern)) {
+    const url = match[1];
+    // A one pixel beacon is not a photograph, and feeds are full of them.
+    if (/(\b1x1\b|pixel|beacon|\/track|spacer)/i.test(url)) continue;
+    if (url.length <= 2000) return url;
   }
   return null;
 }

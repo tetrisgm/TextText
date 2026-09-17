@@ -790,6 +790,7 @@ export function WorkspaceRootLanding({
                   pool={pool}
                   recent={recent}
                   onOpenPost={onOpenPost}
+                  onOpenSection={onOpenSection}
                   onShowAll={() => {
                     setLibraryOpen(true);
                     setTimeout(() => document.querySelector(".workspace-recent")?.scrollIntoView({ block: "start", behavior: "smooth" }), 0);

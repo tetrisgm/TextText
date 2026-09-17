@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FeedParseError, discoverFeedLinks, parseFeed } from "../feed-parse";
+import { imageFromEntry } from "../ingest.server";
 
 // Scenario ids from the plan's Appendix A are carried in test names so the
 // checkpoint report can be traced back to the catalog.
@@ -188,5 +189,59 @@ describe("discoverFeedLinks (ING-02 autodiscovery)", () => {
       { url: "https://site.example/feed.xml", title: "Posts", type: "application/rss+xml" },
       { url: "https://other.example/atom", title: null, type: "application/atom+xml" },
     ]);
+  });
+});
+
+describe("Media RSS pictures", () => {
+  it("takes media:content, media:thumbnail and itunes:image as image attachments", () => {
+    const xml = `<?xml version="1.0"?>
+      <rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+        <channel>
+          <title>Pictures</title>
+          <link>https://pictures.example/</link>
+          <item>
+            <title>With a media content</title>
+            <link>https://pictures.example/a</link>
+            <guid isPermaLink="false">a</guid>
+            <media:content url="https://pictures.example/a.jpg" medium="image" />
+          </item>
+          <item>
+            <title>With a thumbnail in a group</title>
+            <link>https://pictures.example/b</link>
+            <guid isPermaLink="false">b</guid>
+            <media:group><media:thumbnail url="https://pictures.example/b.jpg" /></media:group>
+          </item>
+          <item>
+            <title>With a video, which is not a picture</title>
+            <link>https://pictures.example/c</link>
+            <guid isPermaLink="false">c</guid>
+            <media:content url="https://pictures.example/c.mp4" type="video/mp4" />
+          </item>
+        </channel>
+      </rss>`;
+    const feed = parseFeed(xml, "https://pictures.example/feed.xml");
+    const [withContent, withThumbnail, withVideo] = feed.entries;
+    expect(imageFromEntry(withContent)).toBe("https://pictures.example/a.jpg");
+    expect(imageFromEntry(withThumbnail)).toBe("https://pictures.example/b.jpg");
+    expect(imageFromEntry(withVideo)).toBeNull();
+  });
+
+  it("does not mistake content:encoded for a picture", () => {
+    const xml = `<?xml version="1.0"?>
+      <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+        <channel>
+          <title>Words</title>
+          <link>https://words.example/</link>
+          <item>
+            <title>Only words</title>
+            <link>https://words.example/a</link>
+            <guid isPermaLink="false">a</guid>
+            <content:encoded><![CDATA[<p>No picture here.</p>]]></content:encoded>
+          </item>
+        </channel>
+      </rss>`;
+    const [entry] = parseFeed(xml, "https://words.example/feed.xml").entries;
+    expect(entry.attachments).toEqual([]);
+    expect(imageFromEntry(entry)).toBeNull();
   });
 });

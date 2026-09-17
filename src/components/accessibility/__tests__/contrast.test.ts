@@ -46,11 +46,17 @@ function luminance(c: Color) {
     .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
 }
 function ratio(a: Color, b: Color) { const x = luminance(a), y = luminance(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
-const paths = { base: "src/styles/tokens.css", apple: "src/styles/apple.css", rail: "src/components/workspace/assistant/AssistantSidebar.module.css" };
+const paths = { base: "src/styles/tokens.css", apple: "src/styles/apple.css", rail: "src/components/workspace/assistant/AssistantSidebar.module.css", home: "src/components/workspace/home/Home.module.css" };
 for (const theme of ["light", "dark"]) describe(`${theme} real token contrast`, () => {
   const base = { ...tokens(paths.base, ":root"), ...(theme === "dark" ? tokens(paths.base, '[data-theme="dark"]') : {}) };
   const apple = { ...base, ...tokens(paths.apple, ".applecms"), ...(theme === "dark" ? tokens(paths.apple, '[data-theme="dark"] .applecms') : {}) };
   const rail = { ...tokens(paths.rail, ".root"), ...(theme === "dark" ? tokens(paths.rail, ':global([data-theme="dark"]) .root') : {}) };
+  // The news surface carries its own ink, so it needs its own measurement.
+  const home = {
+    ...apple,
+    ...tokens(paths.home, ".frame"),
+    ...(theme === "dark" ? tokens(paths.home, ':global(.ac-dark) .frame,\n:global([data-theme="dark"]) .frame') : {}),
+  };
   const c = (map: Scope, name: string): Color => token(map, name, theme);
   for (const fg of ["--ink", "--ink-2", "--muted", "--accent", "--accent-pressed", "--destructive", "--positive", "--warning"]) {
     for (const bg of ["--bg", "--bg-soft", "--bg-soft-2", "--control-bg", "--control-bg-hover"]) {
@@ -85,6 +91,19 @@ for (const theme of ["light", "dark"]) describe(`${theme} real token contrast`, 
   });
   it("filled Apple buttons have AA ink", () => {
     expect(ratio(c(apple, "--ac-accent-fill-ink"), c(apple, "--ac-accent-fill"))).toBeGreaterThanOrEqual(4.5);
+  });
+  // Every colour the Home paints text in, over every ground it paints it on.
+  for (const fg of ["--news-ink", "--news-ink-2", "--news-ink-3", "--news-accent", "--news-read"]) {
+    for (const bg of ["--ac-bg", "--news-tile"]) {
+      it(`${fg} on ${bg} clears small-text AA`, () => {
+        const ground = over(c(home, bg), c(home, "--ac-bg"));
+        expect(ratio(over(c(home, fg), ground), ground), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
+      });
+    }
+  }
+  it("the indigo and sky panels carry legible ink", () => {
+    expect(ratio(c(home, "--news-indigo-ink"), c(home, "--news-indigo"))).toBeGreaterThanOrEqual(4.5);
+    expect(ratio(c(home, "--news-sky-ink"), c(home, "--news-sky"))).toBeGreaterThanOrEqual(4.5);
   });
   for (const fg of ["--assistant-rail-primary", "--assistant-rail-secondary", "--assistant-error"]) {
     for (const bg of ["--assistant-rail-ground", "--assistant-composer-ground", "--assistant-control-fill"]) {
