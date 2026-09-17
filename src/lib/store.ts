@@ -734,6 +734,24 @@ export async function getWorkspacePoolPosts(handle: string): Promise<Post[]> {
   return getWorkspacePoolPostsCached(handle);
 }
 
+/**
+ * Every authored item WITH its canonical document, for the GitHub backup.
+ * List reads leave the document out on purpose; a backup is the one reader
+ * that needs all of them at once, bounded so a runaway workspace cannot
+ * turn one request into a full table scan of bodies.
+ */
+export async function getWorkspacePostsWithDocuments(handle: string, limit = 5000): Promise<Post[]> {
+  if (!db) throw new Error(NO_DATABASE);
+  const rows = await db
+    .select({ post: posts })
+    .from(posts)
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .where(and(eq(blogs.handle, handle), isNull(blogs.deletedAt), isNull(posts.deletedAt), eq(posts.origin, "manual")))
+    .orderBy(posts.createdAt)
+    .limit(limit);
+  return rows.map((row) => mapPost(row.post));
+}
+
 export type WorkspaceWikiLinkSource = {
   id: string;
   body: string;

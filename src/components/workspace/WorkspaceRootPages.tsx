@@ -2,6 +2,7 @@
 
 import { scheduleAfterLoadIdle } from "@/lib/after-load-idle";
 import { ReadingOverviewModule } from "@/components/workspace/reading/ReadingOverviewModule";
+import { BackupHeartbeat } from "@/components/workspace/BackupHeartbeat";
 
 // The workspace's root, search and tag pages plus the content router that
 // picks between them. Extracted from the PostWorkspaceShell monolith.
@@ -768,6 +769,7 @@ export function WorkspaceRootLanding({
                 <button type="button" className="workspace-start-here-dismiss" aria-label="Dismiss Start here" onClick={dismissStartHere}>Done</button>
               </section>
             ) : null}
+            <BackupHeartbeat handle={pool.blog.handle} enabled={canManageItems} />
             {(pool.readingSources?.length ?? 0) > 0 && (
               <ReadingOverviewModule
                 handle={pool.blog.handle}
