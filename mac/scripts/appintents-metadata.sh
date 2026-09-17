@@ -95,8 +95,11 @@ find "$APP_SOURCE_DIR" -name '*.swift' | sort > "$TMP/app-sources.txt"
 # Split the const values by the module that emitted them. A file carrying
 # another module's records makes that module's declarations resolve against
 # the wrong --module-name, which is the failure described at the top.
-grep "/$INTENTS_MODULE\.build/" "$CONST_VALS_LIST" > "$TMP/intents-constvals.txt" || :
-grep -v "/$INTENTS_MODULE\.build/" "$CONST_VALS_LIST" > "$TMP/app-constvals.txt" || :
+# Xcode 26 names per-variant build directories with a suffix
+# (TextTextAppIntents-t.build, TextTextApp-p.build); match the module with or
+# without one, or the intents pass finds nothing and the release stops.
+grep -E "/$INTENTS_MODULE(-[a-z]+)?\.build/" "$CONST_VALS_LIST" > "$TMP/intents-constvals.txt" || :
+grep -Ev "/$INTENTS_MODULE(-[a-z]+)?\.build/" "$CONST_VALS_LIST" > "$TMP/app-constvals.txt" || :
 if [ ! -s "$TMP/intents-constvals.txt" ]; then
   echo "No .swiftconstvalues for $INTENTS_MODULE in $CONST_VALS_LIST" >&2
   echo "Every intent would export without its parameter summaries." >&2
