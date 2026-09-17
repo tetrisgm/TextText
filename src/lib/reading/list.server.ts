@@ -51,6 +51,8 @@ export type ReadingListItem = {
   availability: "full" | "excerpt" | "metadata";
   /** A feed-supplied image for the item, when the feed attached one. */
   imageUrl: string | null;
+  /** Words in the stored body, which is how long it takes to read. */
+  wordCount: number;
   excerpt: string | null;
   authors: string[];
   read: boolean;
@@ -170,6 +172,7 @@ export async function listReadingItems(input: {
       folderPath: folders.path,
       folderName: folders.name,
       starred: posts.starred,
+      wordCount: posts.wordCount,
       createdAt: posts.createdAt,
       origin: posts.origin,
       publisherTitle: readingProvenance.publisherTitle,
@@ -243,6 +246,7 @@ export async function listReadingItems(input: {
       receivedAt: new Date(row.createdAt).toISOString(),
       availability: (row.availability ?? "full") as ReadingListItem["availability"],
       imageUrl: row.imageUrl ?? null,
+      wordCount: row.wordCount ?? 0,
       excerpt: row.excerpt ?? null,
       authors: row.authors ?? [],
       read: row.readAt !== null && row.readAt !== undefined,

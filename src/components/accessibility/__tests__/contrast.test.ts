@@ -94,9 +94,9 @@ for (const theme of ["light", "dark"]) describe(`${theme} real token contrast`, 
   });
   // Every colour the Home paints text in, over every ground it paints it on.
   for (const fg of ["--news-ink", "--news-ink-2", "--news-ink-3", "--news-accent", "--news-read"]) {
-    for (const bg of ["--ac-bg", "--news-tile"]) {
+    for (const bg of ["--news-bg", "--news-tile"]) {
       it(`${fg} on ${bg} clears small-text AA`, () => {
-        const ground = over(c(home, bg), c(home, "--ac-bg"));
+        const ground = over(c(home, bg), c(home, "--news-bg"));
         expect(ratio(over(c(home, fg), ground), ground), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
       });
     }

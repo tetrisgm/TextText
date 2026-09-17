@@ -36,6 +36,13 @@ type Mode = "forYou" | "latest";
 
 /** Items between one full-width photograph and the next. */
 const HERO_GAP = 3;
+/** Words a minute, for the one number about an article we can state honestly. */
+const READING_PACE = 220;
+
+function readingTime(words: number): string | null {
+  if (!words || words < READING_PACE / 2) return null;
+  return `${Math.max(1, Math.round(words / READING_PACE))} min read`;
+}
 
 export function catchMeUpPrompt(folderPath?: string | null): string {
   const scope = folderPath ? `in the "${folderPath}" folder` : "across every feed I follow";
@@ -119,14 +126,6 @@ function PublisherRow({ item, at, now }: { item: ReadingListItem; at: string; no
       {publisher.via && <span className={styles.via}>via {publisher.via}</span>}
     </p>
   );
-}
-
-function greetingFor(date: Date): string {
-  const hour = date.getHours();
-  if (hour < 5) return "Still up";
-  if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
-  return "Good evening";
 }
 
 export function HomeNews({
@@ -574,28 +573,9 @@ export function HomeNews({
     () => units.filter((unit): unit is Extract<HomeUnit, { kind: "summary" }> => unit.kind === "summary" && unit.sources.length > 1).slice(0, 6),
     [units],
   );
-  const dateline = useMemo(() => {
-    const today = new Date();
-    return today.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
-  }, []);
 
   return (
     <section className={`applecms ${styles.news}`} aria-label="News" data-home-news>
-      <div className={styles.masthead}>
-        <div>
-          <h1 className={styles.greeting}>{greetingFor(new Date())}</h1>
-          <p className={styles.dateline}>
-            {dateline}
-            {overview && overview.totals.newSince24h > 0 && (
-              <>
-                {" · "}
-                <b>{overview.totals.newSince24h} new today</b>
-              </>
-            )}
-            {overview && overview.sources.length > 0 && ` · ${overview.sources.length} ${overview.sources.length === 1 ? "source" : "sources"}`}
-          </p>
-        </div>
-      </div>
       <header className={styles.header}>
         <div className={styles.modes} role="group" aria-label="News mode">
           <button type="button" aria-pressed={mode === "forYou"} onClick={() => setMode("forYou")}>
@@ -695,7 +675,13 @@ export function HomeNews({
       {error && <p className={styles.status} role="alert">{error}</p>}
       {data?.topicNote && <p className={styles.note}>{data.topicNote}</p>}
       {data && units.length === 0 && !loading && (
-        <p className={styles.empty}>{topic ? "Nothing in this topic yet." : "Nothing has arrived yet. Sources are checked when you open the workspace."}</p>
+        <p className={styles.empty}>
+          {topic
+            ? "Nothing in this topic yet."
+            : (overview?.sources.length ?? 0) === 0
+              ? "No sources yet. Follow a feed and its news lands here, beside your own work."
+              : "Nothing has arrived yet. Sources are checked when you open the workspace."}
+        </p>
       )}
       {headlines.length > 1 && (
         <>
@@ -766,9 +752,13 @@ export function HomeNews({
                 <div className={styles.body}>
                   <PublisherRow item={item} at={unit.latestAt} now={now} />
                   <h3 className={styles.headline}>{item.title}</h3>
-                  {usableExcerpt(item.excerpt) && <p className={styles.excerpt}>{usableExcerpt(item.excerpt)}</p>}
+                  {lead && usableExcerpt(item.excerpt) && <p className={styles.excerpt}>{usableExcerpt(item.excerpt)}</p>}
+                  {/* Unread is the default state of a feed, so it is said by
+                      the headline's full ink rather than by a chip on every
+                      row. Only what is true of the few is written down. */}
                   <p className={styles.sources}>
-                    {item.read ? <span>Read</span> : <span className={styles.state}>New to you</span>}
+                    {item.read && <span className={styles.state}>Read</span>}
+                    {readingTime(item.wordCount) && <span>{readingTime(item.wordCount)}</span>}
                     {item.keptReasons.includes("keep") && <span>Kept</span>}
                   </p>
                   <div className={styles.actions} onClick={(event) => event.stopPropagation()}>
@@ -870,17 +860,18 @@ export function HomeNews({
                     {unit.text}
                   </p>
                 ) : (
-                  usableExcerpt(representative.excerpt) && <p className={styles.excerpt}>{usableExcerpt(representative.excerpt)}</p>
+                  lead && usableExcerpt(representative.excerpt) && <p className={styles.excerpt}>{usableExcerpt(representative.excerpt)}</p>
                 )}
                 <p className={styles.sources} onClick={(event) => event.stopPropagation()}>
                   {unit.seenRevision > 0 && unit.coverageRevision > unit.seenRevision ? (
                     <span className={styles.state}>New coverage</span>
-                  ) : unit.unread > 0 ? (
-                    <span className={styles.state}>{unit.unread === unit.members.length ? "New to you" : `${unit.unread} unread`}</span>
+                  ) : unit.unread > 0 && unit.unread < unit.members.length ? (
+                    <span>{unit.unread} unread</span>
                   ) : null}
                   <button type="button" aria-expanded={isExpanded} onClick={() => toggleExpanded(unit.id)}>
                     {sourcesLabel(unit.sources)}
                   </button>
+                  {readingTime(representative.wordCount) && <span>{readingTime(representative.wordCount)}</span>}
                   <span className={styles.actions}>
                     <button type="button" className={styles.action} aria-pressed={representative.keptReasons.includes("keep")} onClick={() => toggleKeep(representative)} title="Keeps the article the headline opens, not every source">
                       {representative.keptReasons.includes("keep") ? "Kept" : "Keep"}

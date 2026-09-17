@@ -219,20 +219,22 @@ export function HomeRecent({
           </ul>
         </div>
       )}
-      <header className={styles.recentHeader}>
-        <h2>Your desk</h2>
-        <button type="button" onClick={onShowAll}>
-          All items
-        </button>
-      </header>
-      <RailRows rows={desk} now={now} empty="Nothing yet. Capture a thought and it lands here." />
+      <section className={styles.railSection}>
+        <header className={styles.recentHeader}>
+          <h2>Your desk</h2>
+          <button type="button" onClick={onShowAll}>
+            All items
+          </button>
+        </header>
+        <RailRows rows={desk} now={now} empty="Nothing yet. Capture a thought and it lands here." />
+      </section>
       {keptRows.length > 0 && (
-        <>
-          <header className={styles.recentHeader} style={{ marginTop: "1.5rem" }}>
+        <section className={styles.railSection}>
+          <header className={styles.recentHeader}>
             <h2>Kept to read</h2>
           </header>
           <RailRows rows={keptRows} now={now} empty="" />
-        </>
+        </section>
       )}
     </aside>
   );

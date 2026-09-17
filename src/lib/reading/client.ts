@@ -168,8 +168,22 @@ export function clearReadingPreferencesRequest(handle: string): Promise<{ rules:
   return request(`/api/workspace/reading/preferences?handle=${encodeURIComponent(handle)}`, { method: "POST", body: JSON.stringify({ handle, action: "clear" }) });
 }
 
+/**
+ * The overview, shared between whoever asks for it in the same moment.
+ *
+ * Two parts of the home want the same counts, and the endpoint recomputes
+ * them; without this they would each pay for it. The entry is dropped as soon
+ * as it settles, so this is a coalescer and never a cache.
+ */
+const overviewInFlight = new Map<string, Promise<ReadingOverview>>();
+
 export function fetchReadingOverview(handle: string): Promise<ReadingOverview> {
-  return request(`/api/workspace/reading/overview?handle=${encodeURIComponent(handle)}`);
+  const pending = overviewInFlight.get(handle);
+  if (pending) return pending;
+  const started = request<ReadingOverview>(`/api/workspace/reading/overview?handle=${encodeURIComponent(handle)}`)
+    .finally(() => overviewInFlight.delete(handle));
+  overviewInFlight.set(handle, started);
+  return started;
 }
 
 export function fetchReadingSummaries(

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hostOf, initialsOf, markColor, nameMatchesHost, publisherFor, usableExcerpt } from "../publisher";
+import { MARK_COLORS, hostOf, initialsOf, markColor, nameMatchesHost, publisherFor, usableExcerpt } from "../publisher";
 
 /**
  * A news row is scanned by its publisher before it is read by its headline,
@@ -38,7 +38,7 @@ describe("who published an item", () => {
     expect(initialsOf("theverge.com")).toBe("TH");
     expect(markColor("The Verge")).toBe(markColor("The Verge"));
     expect(markColor("The Verge")).not.toBe(markColor("Ars Technica"));
-    expect(markColor("x")).toMatch(/^hsl\(\d+ 58% 36%\)$/);
+    expect(MARK_COLORS).toContain(markColor("x"));
   });
 
   it("reads a host without its www, and refuses what is not a web page", () => {
@@ -51,6 +51,21 @@ describe("who published an item", () => {
     expect(nameMatchesHost("Ars Technica", "arstechnica.com")).toBe(true);
     expect(nameMatchesHost("9to5Mac", "9to5mac.com")).toBe(true);
     expect(nameMatchesHost("Hacker News: Newest", "github.com")).toBe(false);
+  });
+});
+
+describe("the monogram tiles", () => {
+  const luminance = (hex: string) =>
+    [1, 3, 5]
+      .map((index) => parseInt(hex.slice(index, index + 2), 16) / 255)
+      .map((value) => (value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4))
+      .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+
+  it("every tile carries white initials at AA", () => {
+    for (const color of MARK_COLORS) {
+      const ratio = (1 + 0.05) / (luminance(color) + 0.05);
+      expect(ratio, color).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });
 

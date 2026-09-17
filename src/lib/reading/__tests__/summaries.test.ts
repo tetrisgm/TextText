@@ -7,6 +7,7 @@ function item(id: string, title: string, at: string, extra: Partial<ReadingListI
     id,
     origin: "feed",
     title,
+    wordCount: 0,
     publisherTitle: title,
     publisherName: extra.publisherName ?? "Source A",
     folderId: "f",

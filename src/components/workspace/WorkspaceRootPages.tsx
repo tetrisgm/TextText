@@ -1,6 +1,7 @@
 "use client";
 
 import { scheduleAfterLoadIdle } from "@/lib/after-load-idle";
+import { HomeMasthead } from "@/components/workspace/home/HomeMasthead";
 import { HomeNews } from "@/components/workspace/home/HomeNews";
 import { HomeRecent } from "@/components/workspace/home/HomeRecent";
 import homeStyles from "@/components/workspace/home/Home.module.css";
@@ -774,8 +775,12 @@ export function WorkspaceRootLanding({
               </section>
             ) : null}
             <BackupHeartbeat handle={pool.blog.handle} enabled={canManageItems} />
-            {hasFeeds && (
+            {/* The dashboard is the home whether or not any feeds are
+                followed: without them it is the workspace's own shelf, with
+                them it is also the news. */}
+            {(
               <div className={homeStyles.frame}>
+              <HomeMasthead handle={pool.blog.handle} />
               <div className={homeStyles.home}>
                 <HomeNews
                   handle={pool.blog.handle}

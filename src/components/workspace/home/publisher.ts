@@ -54,15 +54,31 @@ export function initialsOf(name: string): string {
 }
 
 /**
- * A hue from the name, at a lightness that keeps white text above 4.5:1.
- * Hand-checked: L 36% clears AA against white for every hue at S 58%.
+ * The monogram tiles.
+ *
+ * A fixed set rather than a hue from a hash: a hash walks the whole wheel and
+ * a good third of it cannot carry white text at a legible contrast. Each of
+ * these is measured against white in the contrast test, so every tile in the
+ * list is readable whatever name lands on it.
  */
+export const MARK_COLORS = [
+  "#2c18ac",
+  "#b3123f",
+  "#8a3a00",
+  "#0f5c4a",
+  "#1f4fa8",
+  "#6a2b8f",
+  "#8c1d1d",
+  "#2f4858",
+] as const;
+
+/** The same publisher gets the same tile every time. */
 export function markColor(seed: string): string {
   let hash = 0;
   for (let index = 0; index < seed.length; index += 1) {
     hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
   }
-  return `hsl(${hash % 360} 58% 36%)`;
+  return MARK_COLORS[hash % MARK_COLORS.length];
 }
 
 /** Compacted for comparison: "The Verge" and "theverge.com" are the same name. */

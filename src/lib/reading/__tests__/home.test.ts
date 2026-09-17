@@ -6,7 +6,7 @@ import { clusterReadingItems } from "../summaries.server";
 function item(id: string, title: string, at: string, extra: Partial<ReadingListItem> = {}): ReadingListItem {
   return {
     id, origin: "feed", title, publisherTitle: "P", publisherName: extra.publisherName ?? "Wire", folderId: "f", folderPath: "bookmarks/wire", sourceFolderName: "Wire",
-    permalink: `https://x.example/${id}`, externalUrl: null, publishedAt: at, receivedAt: at, availability: "full", imageUrl: null, excerpt: null, authors: [],
+    permalink: `https://x.example/${id}`, externalUrl: null, publishedAt: at, receivedAt: at, availability: "full", imageUrl: null, wordCount: 0, excerpt: null, authors: [],
     read: false, starred: false, kept: false, keptReasons: [], expiresAt: null, slug: id, cursor: id, ...extra,
   };
 }
