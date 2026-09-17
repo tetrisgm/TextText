@@ -456,7 +456,7 @@ export const agentChanges = pgTable("agent_changes", {
 export const actionAudit = pgTable("action_audit", {
   id: uuid("id").defaultRandom().primaryKey(),
   actorUserId: uuid("actor_user_id").references(() => users.id),
-  /** "human" | "ai" | "external_agent" */
+  /** "human" | "ai" | "external_agent" | "system" */
   actorType: text("actor_type").notNull().default("human"),
   actionName: text("action_name").notNull(),
   /** "workspace" | "folder" | "item" | "mode" */

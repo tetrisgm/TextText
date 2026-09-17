@@ -28,7 +28,12 @@ import { sql, type SQL } from "drizzle-orm";
 import { db, type Database } from "./db/client";
 import { actionAudit } from "./db/schema";
 
-export type AuditActorType = "human" | "ai" | "external_agent";
+/**
+ * Who acted. "system" is the server acting on its own behalf, with no person
+ * and no agent behind it: a baseline rotation, a scheduled sweep. It exists so
+ * such a write can be honest instead of claiming to be a human.
+ */
+export type AuditActorType = "human" | "ai" | "external_agent" | "system";
 type AuditTargetType = "workspace" | "folder" | "item" | "mode";
 
 export type AuditEntry = {

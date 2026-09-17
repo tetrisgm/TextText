@@ -25,7 +25,7 @@ import {
   savePostContentPatch,
 } from "@/lib/store";
 import { resolveSyncWorkspace } from "../../auth";
-import { hasActiveCoEditors, markCollabMaterialized } from "@/lib/collab";
+import { hasActiveCoEditors } from "@/lib/collab";
 import { recordAction, recordSlugChanged } from "@/lib/audit";
 import { sanitizePostSlug } from "@/lib/post-slug";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
@@ -148,13 +148,11 @@ export async function PUT(request: Request, { params }: Props) {
   const structured = requestUsesSyncDocument(request);
   // Render with the same inputs GET used, the pinned look included, or a
   // faithful client editing a templated document can never satisfy If-Match.
+  const storedTemplate = structured
+    ? templateForPost(post, await templatesForPosts(blog.handle, [post]))
+    : null;
   const current = structured
-    ? renderSyncDocumentFile(
-        blog,
-        post,
-        folderPath,
-        templateForPost(post, await templatesForPosts(blog.handle, [post])),
-      )
+    ? renderSyncDocumentFile(blog, post, folderPath, storedTemplate)
     : renderSyncFile(blog, post, folderPath);
   if (!ifMatchSatisfied(ifMatch, `"${current.hash}"`)) {
     return syncError(412, "The post changed since this file was fetched");
@@ -244,15 +242,42 @@ export async function PUT(request: Request, { params }: Props) {
     // always the file's. Owners may author slug/date/status metadata. A
     // collaborator save is routed through the content-only store helper so the
     // mapped date string cannot overwrite published_at.
-    // A file whose content already matches the stored document is an echo, not
-    // an edit: the Mac re-uploads what it just downloaded. Writing it anyway
+    // A file whose content already matches what is stored is an echo, not an
+    // edit: the Mac re-uploads what it just downloaded. Writing it anyway
     // bumps the revision, which makes the collaborative state look changed
     // from outside and arms a baseline rotation on the next open.
-    const unchanged =
-      JSON.stringify(document) === JSON.stringify(requireDocumentSnapshot(post.document, "Persisted item")) &&
-      (parsed.fields.slug ?? post.slug) === post.slug &&
-      nextStatus === post.status;
-    if (unchanged) {
+    //
+    // The test is the rendered file, not the document alone, because the file
+    // carries more than the document: its date, pinned and starred all reach
+    // the row and all reach the hash. Comparing less than the write applies
+    // would drop a front matter edit and answer it with the hash of a file the
+    // client does not have. Rendering also settles key order, which a plain
+    // JSON comparison gets wrong for a structured client's exact echo.
+    const projected = {
+      ...projection,
+      accent: projection.accent ?? undefined,
+      cover: projection.cover ?? undefined,
+      coverCaption: projection.coverCaption ?? undefined,
+      coverHeight: projection.coverHeight ?? undefined,
+      links: projection.links ?? undefined,
+      videoUrl: projection.videoUrl ?? undefined,
+      venue: projection.venue ?? undefined,
+      duration: projection.duration ?? undefined,
+    };
+    const candidate: Post = access.isOwner
+      ? {
+          ...post,
+          ...projected,
+          ...parsed.fields,
+          date: parsed.fields.date ?? post.date,
+          slug: parsed.fields.slug ?? post.slug,
+          document,
+        }
+      : { ...post, ...projected, document };
+    const rendered = structured
+      ? renderSyncDocumentFile(blog, candidate, folderPath, suppliedTemplate ?? storedTemplate)
+      : renderSyncFile(blog, candidate, folderPath);
+    if (rendered.hash === current.hash) {
       return Response.json(
         { item: syncManifestItem(blog, post) },
         { status: 200, headers: { "Cache-Control": "private, no-store" } },
@@ -304,12 +329,13 @@ export async function PUT(request: Request, { params }: Props) {
       targetId: saved.id,
       inputSummary: saved.title,
     });
-    // Tell the collaborative state this write is accounted for. Without it the
-    // baseline looks stale next time the item opens, and a rotation adopts
-    // this body over the editing session's own.
-    if (saved.id && saved.revision !== undefined) {
-      await markCollabMaterialized(saved.id, saved.revision).catch(() => {});
-    }
+    // No markCollabMaterialized here. That column means "the collaborative log
+    // wrote this body", and it is the only thing that arms a baseline
+    // rotation. Setting it from a file upload makes the collab state look
+    // fresh, so the editor is served the pre-upload baseline on reopen and
+    // never merges what the Mac wrote. A genuine out-of-band write is exactly
+    // the case rotation exists for, and the echo test above already stops a
+    // re-upload from bumping the revision for nothing.
     revalidateBlogPaths(blog, [post.slug, saved.slug]);
     // The new manifest entry (with the NEW hash) lets the client update its
     // index without refetching the file it just wrote.

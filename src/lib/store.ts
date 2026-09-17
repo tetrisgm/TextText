@@ -1796,7 +1796,9 @@ export async function listPendingCaptures(handle: string): Promise<
  * Record a capture result. Owned by the capture pipeline, NEVER by the
  * markdown round-trip: a synced file can not wipe or forge capture state.
  * The readable extraction lands in the body only when the body is empty, so
- * a bookmark the owner annotated keeps their words.
+ * a bookmark the owner annotated keeps their words. The one exception is a
+ * finalized recapture, which replaces the body: that path records the version
+ * it replaces in the document's history, in the same statement.
  */
 export async function saveBookmarkCapture(
   handle: string,
@@ -1950,12 +1952,29 @@ export async function saveBookmarkCapture(
         agent ? eq(posts.revision, row.revision) : undefined),
     )
     ;
+  // A recapture can replace the body wholesale, and the body it replaces may
+  // be the owner's own commentary written around an earlier capture. That is a
+  // content write like any other, so the version it supersedes is recorded by
+  // the same statement, forced whenever the body actually changes: a longer
+  // new extraction replaces just as much as a shorter one.
+  const capturePrevious = supersededVersion(blogId, row);
+  const captureWriter: RevisionWriter = {
+    action: "capture_replaced_body",
+    actorType: agent?.actorType ?? "external_agent",
+    actorUserId: agent?.userId ?? null,
+  };
+  const captureForced = (row.body ?? "").trim().length > 0 && body !== row.body;
+  const captureHistory = capturePrevious
+    ? revisionCteFrom({ previous: capturePrevious, nextBody: body, writer: captureWriter,
+        fromCte: "changed", force: captureForced })
+    : sql`SELECT 1 WHERE false`;
   if (agent) {
     const changed = updateQuery.returning({ id: posts.id, revision: posts.revision });
     const audit = auditCteFrom({ actorUserId: agent.userId, actorType: agent.actorType,
       actionName: "agent.capture_completed", targetType: "item", targetId: postId,
     }, "changed", sql`changed.id::text`);
     const result = await db.execute(sql`WITH changed AS ${changed}, audit AS (${audit}),
+      history AS (${captureHistory}), pruned AS (${revisionPruneCteFrom("changed")}),
       agent_change AS (${agentChangeCte({ source: "changed", postId: sql`changed.id`,
         revision: sql`changed.revision`, changes: agentTextChanges(canonical, document), actor: agent,
       })}) SELECT id FROM changed`);
@@ -1963,8 +1982,13 @@ export async function saveBookmarkCapture(
     const [fresh] = await db.select().from(posts).where(eq(posts.id, postId)).limit(1);
     return fresh ? mapPost(fresh) : null;
   }
-  const updated = await updateQuery.returning();
-  return updated[0] ? mapPost(updated[0]) : null;
+  const changed = updateQuery.returning({ id: posts.id, revision: posts.revision });
+  const result = await db.execute(sql`WITH changed AS ${changed},
+    history AS (${captureHistory}), pruned AS (${revisionPruneCteFrom("changed")})
+    SELECT id FROM changed`);
+  if (!result.rows.length) return null;
+  const [fresh] = await db.select().from(posts).where(eq(posts.id, postId)).limit(1);
+  return fresh ? mapPost(fresh) : null;
 }
 
 type BookmarkCaptureGenerationPreparation =
@@ -2598,6 +2622,22 @@ export async function movePostFile(
   );
   try {
     let movedId: string | undefined;
+    // A Finder rename rewrites the document's title. The shrink measure is
+    // body-only and would never fire for it, so force the version: without it
+    // no restore can return the old title without also reverting the body.
+    const movePrevious = supersededVersion(blogId, row);
+    const moveWriter: RevisionWriter = audit
+      ? { action: audit.actionName, actorType: audit.actorType, actorUserId: audit.actorUserId ?? null }
+      : { action: "move_item_file", actorType: "human", actorUserId: null };
+    const moveHistory = movePrevious
+      ? revisionCteFrom({
+          previous: movePrevious,
+          nextBody: movePrevious.body,
+          writer: moveWriter,
+          fromCte: "changed",
+          force: set.title !== undefined,
+        })
+      : sql`SELECT 1 WHERE false`;
     if (audit) {
       // Atomic: the metadata move and its audit row commit in ONE neon-http
       // transaction. The drizzle UPDATE is embedded as the CTE body so its
@@ -2614,7 +2654,9 @@ export async function movePostFile(
         .returning({ id: posts.id, revision: posts.revision });
       const auditCte = auditCteFrom(audit, "changed", sql`changed.id::text`);
       const result = await db.execute(sql`
-        WITH changed AS ${updateQuery}, audit AS (${auditCte}), agent_change AS (${agentChangeCte({
+        WITH changed AS ${updateQuery}, audit AS (${auditCte}),
+        history AS (${moveHistory}), pruned AS (${revisionPruneCteFrom("changed")}),
+        agent_change AS (${agentChangeCte({
           source: "changed", postId: sql`changed.id`, revision: sql`changed.revision`,
           changes: agentTextChanges(requireDocumentSnapshot(row.document, "Rename baseline"), set.document ?? requireDocumentSnapshot(row.document, "Rename result")),
         })})
@@ -2622,12 +2664,17 @@ export async function movePostFile(
       `);
       movedId = (result.rows[0] as { id?: string } | undefined)?.id;
     } else {
-      const updated = await db
+      const changed = db
         .update(posts)
         .set(set)
         .where(where)
         .returning({ id: posts.id, revision: posts.revision });
-      movedId = updated[0]?.id;
+      const result = await db.execute(sql`
+        WITH changed AS ${changed}, history AS (${moveHistory}),
+        pruned AS (${revisionPruneCteFrom("changed")})
+        SELECT id FROM changed
+      `);
+      movedId = (result.rows[0] as { id?: string } | undefined)?.id;
     }
     if (movedId) {
       // Re-read the mapped row (the CTE returns raw columns; a fresh select
@@ -6192,12 +6239,17 @@ export async function savePost(
             WITH changed AS ${changed},
             history AS (${revisionCteFrom({ previous, nextBody: document.content.body, writer, fromCte: "changed" })}),
             pruned AS (${revisionPruneCteFrom("changed")})
-            SELECT id FROM changed
+            SELECT id, revision FROM changed
           `);
-          const savedId = (result.rows[0] as { id?: string } | undefined)?.id;
-          if (savedId) {
-            const [fresh] = await db.select().from(posts).where(and(eq(posts.id, savedId), eq(posts.blogId, blogId))).limit(1);
+          const savedRow = result.rows[0] as { id?: string; revision?: number | string } | undefined;
+          if (savedRow?.id) {
+            const [fresh] = await db.select().from(posts).where(and(eq(posts.id, savedRow.id), eq(posts.blogId, blogId))).limit(1);
             if (!fresh) throw new Error("The saved item is unavailable");
+            // Never report a row this statement did not write. The caller uses
+            // the returned revision to mark the collaborative state as
+            // materialized, and marking another writer's revision would tell
+            // the next reader that a body nothing materialized is current.
+            if (Number(fresh.revision) !== Number(savedRow.revision)) throw new PostConflictError();
             return mapPost(fresh);
           }
         } else {

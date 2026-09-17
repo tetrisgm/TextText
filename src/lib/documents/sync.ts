@@ -80,6 +80,16 @@ function sortedJson(value: unknown): JsonValue {
   throw new Error("The sync document contains a non-JSON value");
 }
 
+/**
+ * A comparable string for a JSON value, independent of key order. Two sides of
+ * the same document (one out of jsonb, one built in memory) serialize their
+ * keys in different orders, so plain JSON.stringify equality reports a change
+ * where there is none.
+ */
+export function stableJson(value: unknown): string {
+  return JSON.stringify(sortedJson(value));
+}
+
 export function serializeSyncDocumentEnvelope(
   envelope: SyncDocumentEnvelope,
 ): string {

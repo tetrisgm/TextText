@@ -24,7 +24,8 @@ import {
   encodeAwarenessUpdate,
 } from "y-protocols/awareness";
 import * as Y from "yjs";
-import { recordSupersededVersion } from "@/lib/revisions";
+import { recordSupersededVersion, type RevisionWriter } from "@/lib/revisions";
+import { stableJson } from "@/lib/documents/sync";
 import { db, executeAtomicBatch } from "@/lib/db/client";
 import {
   actionAudit,
@@ -34,7 +35,7 @@ import {
   collabUpdates,
   posts,
 } from "@/lib/db/schema";
-import { auditInsertQuery, auditValues, type AuditEntry } from "@/lib/audit";
+import { auditInsertQuery, auditValues, recordAction, type AuditEntry } from "@/lib/audit";
 import {
   applyDocumentMutation,
   documentText,
@@ -154,7 +155,32 @@ export async function getCollabBaseline(
  * recorded as a version superseded by `collab.rotate`. Best effort by design:
  * a failure here must not block the reseed, or a corrupt log would make the
  * document permanently unopenable.
+ *
+ * Called AFTER the epoch CAS and BEFORE the sweep, never before the CAS: an
+ * append that lands in between is still fenced on the old epoch, is accepted,
+ * and would otherwise be deleted without ever being read. That ordering is the
+ * shape of the incident this history exists for.
  */
+const ROTATION_WRITER = {
+  action: "collab.rotate",
+  actorType: "system",
+  actorUserId: null,
+} as const satisfies RevisionWriter;
+
+/**
+ * Whether two versions of a document agree on everything except the body:
+ * title, subtitle, tags, links, declared fields, assets, and the template.
+ * Key order differs between a snapshot out of jsonb and one built from a
+ * Y.Doc, so the comparison is order independent.
+ */
+function sameBesidesBody(left: DocumentSnapshot, right: DocumentSnapshot): boolean {
+  const withoutBody = (snapshot: DocumentSnapshot) => {
+    const { body: _body, ...content } = snapshot.content;
+    return { content, presentation: snapshot.presentation };
+  };
+  return stableJson(withoutBody(left)) === stableJson(withoutBody(right));
+}
+
 async function archiveRetiredSession(input: {
   postId: string;
   state: { epoch: number; baselineUpdate: string | null; baselineRevision: number | null };
@@ -176,10 +202,16 @@ async function archiveRetiredSession(input: {
       const retiredBody = snapshot.content.body ?? "";
       const canonicalBody = input.canonical.snapshot.content.body ?? "";
       // Nothing to protect when the canonical document already holds at least
-      // what the session did.
-      if (retiredBody.trim().length === 0 || retiredBody === canonicalBody) return;
-      if (canonicalBody.includes(retiredBody)) return;
-      await recordSupersededVersion({
+      // what the session did, in its body AND in everything else it carries.
+      // A session that only renamed the item, retyped a field, or changed the
+      // template has a contained body and is exactly what the body-only test
+      // used to throw away.
+      const bodyContained =
+        retiredBody.trim().length === 0 ||
+        retiredBody === canonicalBody ||
+        canonicalBody.includes(retiredBody);
+      if (bodyContained && sameBesidesBody(snapshot, input.canonical.snapshot)) return;
+      const recorded = await recordSupersededVersion({
         postId: input.postId,
         previous: {
           blogId: input.canonical.blogId,
@@ -189,8 +221,22 @@ async function archiveRetiredSession(input: {
           body: retiredBody,
         },
         nextBody: canonicalBody,
-        writer: { action: "collab.rotate", actorType: "human", actorUserId: null },
+        writer: ROTATION_WRITER,
       });
+      // The rotation is a mutation like any other, so it leaves an audit row.
+      // Nobody asked for it, which is why the actor is the system and not the
+      // person whose catch-up happened to trigger it.
+      if (recorded) {
+        await recordAction({
+          actorUserId: null,
+          actorType: ROTATION_WRITER.actorType,
+          actionName: ROTATION_WRITER.action,
+          targetType: "item",
+          targetId: input.postId,
+          inputSummary: String(input.state.epoch),
+          outputSummary: String(retiredBody.length),
+        });
+      }
     } finally {
       retired.destroy();
     }
@@ -264,13 +310,6 @@ export async function prepareCollabBaseline(
   if (missingBaseline || externallyStale) {
     const active = await hasActiveCoEditors(postId, requestingClientId);
     if (missingBaseline || !active) {
-      // A rotation adopts the canonical document and retires the editing
-      // session that produced the log. That is a decision about what the
-      // document contains, so the text it retires is written to the document's
-      // history first. Without this, a session whose edits never reached the
-      // canonical row (the writer died, the tab closed) leaves nothing behind
-      // when the log is swept.
-      await archiveRetiredSession({ postId, state, canonical: { snapshot, revision, blogId: context.blogId, title: context.post.title ?? null } });
       // If a materialization wins the row lock, its new provenance invalidates
       // this rotation's earlier canonical read, even under the old SQL snapshot.
       const result = await db.execute(sql`
@@ -298,6 +337,16 @@ export async function prepareCollabBaseline(
         RETURNING epoch
       `);
       if (result.rows.length > 0) {
+        // A rotation adopts the canonical document and retires the editing
+        // session that produced the log. That is a decision about what the
+        // document contains, so the text it retires is written to the
+        // document's history first. Without this, a session whose edits never
+        // reached the canonical row (the writer died, the tab closed) leaves
+        // nothing behind when the log is swept.
+        //
+        // After the CAS, so a late append cannot slip between the read and the
+        // sweep, and so a rotation that lost the CAS records nothing.
+        await archiveRetiredSession({ postId, state, canonical: { snapshot, revision, blogId: context.blogId, title: context.post.title ?? null } });
         // The retired log is swept, but only after archiveRetiredSession has
         // put its text in the document's history: the sweep may no longer be
         // the last copy of anything.

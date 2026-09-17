@@ -16,6 +16,7 @@ describe.skipIf(!enabled)("document history against Postgres", () => {
   let handle = "";
   let postId = "";
   let folderId = "";
+  let bookmarksFolderId = "";
 
   const longBody = ["I truly think this is the best episode of the season.", "", "The bridge scene works because it earns the silence.", "", "Three more lines so the shrink is unmistakable."].join("\n");
 
@@ -36,6 +37,7 @@ describe.skipIf(!enabled)("document history against Postgres", () => {
     await store.ensureWorkspaceFolders(blogId);
     const folders = await store.getFolders(handle);
     folderId = folders.find((folder) => folder.mode === "notes")!.id;
+    bookmarksFolderId = folders.find((folder) => folder.mode === "bookmarks")!.id;
   });
 
   afterAll(async () => {
@@ -114,6 +116,93 @@ describe.skipIf(!enabled)("document history against Postgres", () => {
     expect(afterShrink.length).toBe(afterAgent.length + 1);
     expect(afterShrink[0].shrankBy).toBeGreaterThan(0);
     expect(afterShrink[0].document.content.body).toContain("best episode of the season");
+  });
+
+  it("HIS-05: a replacement of the same length is never coalesced away", async () => {
+    // The window used to key on a net shrink, so a select-all-paste of an
+    // equally long or longer document left no copy of what it replaced.
+    const created = await store.createDraftInFolder(handle, folderId, { initial: { type: "note", title: "replacement", body: "A".repeat(400) } });
+    const replaced = created.id!;
+    const first = (await store.getPostById(handle, replaced))!;
+    await store.savePost(handle, { ...first, document: { ...first.document!, content: { ...first.document!.content, body: "B".repeat(400) } } });
+    const second = (await store.getPostById(handle, replaced))!;
+    await store.savePost(handle, { ...second, document: { ...second.document!, content: { ...second.document!.content, body: `${"C".repeat(400)} and longer` } } });
+    const rows = await db!.select().from(schema.postRevisions).where(eq(schema.postRevisions.postId, replaced)).orderBy(desc(schema.postRevisions.createdAt));
+    expect(rows.map((row) => row.document.content.body)).toEqual([
+      "B".repeat(400),
+      "A".repeat(400),
+    ]);
+  });
+
+  it("HIS-06: a rename records the title it replaced", async () => {
+    const created = await store.createDraftInFolder(handle, folderId, { initial: { type: "note", title: "Before the rename", body: "The body is untouched." } });
+    const renamed = created.id!;
+    const moved = await store.movePostFile(handle, renamed, { title: "After the rename" });
+    expect(moved?.post.title).toBe("After the rename");
+    const rows = await db!.select().from(schema.postRevisions).where(eq(schema.postRevisions.postId, renamed));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].title).toBe("Before the rename");
+    expect(rows[0].document.content.body).toBe("The body is untouched.");
+  });
+
+  it("HIS-07: a recapture that replaces the body records the owner's own words", async () => {
+    const created = await store.createDraftInFolder(handle, bookmarksFolderId, {
+      initial: { type: "bookmark", title: "example.com", body: "", links: [{ href: "https://example.invalid/article", label: "Source" }] },
+    });
+    const bookmark = created.id!;
+    const asset = { originalUrl: "https://example.invalid/hero.png", url: "/blob/hero.png" };
+    await store.saveBookmarkCapture(handle, bookmark, {
+      url: "https://example.invalid/article", title: "The article", assets: [asset],
+    }, { readableMarkdown: "![hero](https://example.invalid/hero.png)\n\nThe captured article text." });
+    const captured = (await store.getPostById(handle, bookmark))!;
+    // The owner writes around the capture, which is the state a recapture used
+    // to destroy without a trace.
+    const annotated = `My own note about this.\n\n${captured.body}`;
+    await store.savePost(handle, { ...captured, document: { ...captured.document!, content: { ...captured.document!.content, body: annotated } } });
+    const beforeRecapture = await db!.select().from(schema.postRevisions).where(eq(schema.postRevisions.postId, bookmark));
+    await store.saveBookmarkCapture(handle, bookmark, {
+      url: "https://example.invalid/article", title: "The article", assets: [asset],
+    }, { readableMarkdown: "A completely different and rather longer extraction of the page, with more words in it.", replaceCapture: true });
+    const after = (await store.getPostById(handle, bookmark))!;
+    expect(after.body).not.toContain("My own note about this.");
+    const rows = await db!.select().from(schema.postRevisions).where(eq(schema.postRevisions.postId, bookmark)).orderBy(desc(schema.postRevisions.createdAt));
+    expect(rows.length).toBe(beforeRecapture.length + 1);
+    expect(rows[0].document.content.body).toContain("My own note about this.");
+    expect(rows[0].supersededByAction).toBe("capture_replaced_body");
+  });
+
+  it("HIS-08: a long session of deletions still keeps the full document", async () => {
+    const original = "S".repeat(4000);
+    const created = await store.createDraftInFolder(handle, folderId, { initial: { type: "note", title: "long session", body: original } });
+    const trimmed = created.id!;
+    let current = (await store.getPostById(handle, trimmed))!;
+    // Each save deletes a little, which forces a row every time. Retention must
+    // not evict the one version that still holds everything.
+    for (let index = 0; index < 220; index += 1) {
+      const body = original.slice(0, original.length - (index + 1) * 10);
+      current = await store.savePost(handle, { ...current, document: { ...current.document!, content: { ...current.document!.content, body } } });
+    }
+    const rows = await db!.select().from(schema.postRevisions).where(eq(schema.postRevisions.postId, trimmed));
+    expect(rows.length).toBeLessThanOrEqual(210);
+    expect(rows.some((row) => row.document.content.body === original)).toBe(true);
+  });
+
+  it("HIS-09: two rotations racing the same session record one version", async () => {
+    const created = await store.createDraftInFolder(handle, folderId, { initial: { type: "note", title: "rotate once", body: "canonical" } });
+    const rotated = created.id!;
+    const previous = {
+      blogId,
+      revision: 1,
+      document: { ...created.document!, content: { ...created.document!.content, body: "text only the session had" } },
+      title: "rotate once",
+      body: "text only the session had",
+    };
+    const first = await revisions.recordSupersededVersion({ postId: rotated, previous, nextBody: "canonical", writer: { action: "collab.rotate", actorType: "system", actorUserId: null } });
+    const second = await revisions.recordSupersededVersion({ postId: rotated, previous, nextBody: "canonical", writer: { action: "collab.rotate", actorType: "system", actorUserId: null } });
+    expect(first).toBe(true);
+    expect(second).toBe(false);
+    const rows = await db!.select().from(schema.postRevisions).where(eq(schema.postRevisions.postId, rotated));
+    expect(rows).toHaveLength(1);
   });
 
   it("HIS-04: a guarded save that loses its race records nothing", async () => {

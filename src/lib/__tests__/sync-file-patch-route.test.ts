@@ -6,7 +6,7 @@ import {
   SYNC_DOCUMENT_CONTENT_TYPE,
   SYNC_DOCUMENT_SCHEMA,
 } from "@/lib/documents/sync";
-import { documentFromLegacyPost } from "@/lib/documents/legacy";
+import { documentFromLegacyPost, legacyProjectionFromDocument } from "@/lib/documents/legacy";
 import { sanitizePostSlug } from "@/lib/post-slug";
 import { compileItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
 
@@ -543,7 +543,76 @@ describe("sync file PUT during a live co-editing session", () => {
     expect(mocks.savePost).not.toHaveBeenCalled();
   });
 
-  it("saves normally when no one is co-editing", async () => {
+  it("writes a front matter only change, and answers with its new hash", async () => {
+    // The body is byte for byte the stored one and only the pin moved. The
+    // echo test used to compare the document alone, so this was dropped and
+    // answered with the hash of a file the client does not have.
+    mocks.hasActiveCoEditors.mockResolvedValue(false);
+    mocks.savePost.mockResolvedValue({ ...post, pinned: true });
+    const response = await PUT(
+      mutationRequest("PUT", `"${renderSyncFile(blog, post).hash}"`, "---\ntype: article\npinned: true\n---\n\nBody"),
+      { params: Promise.resolve({ postId }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.savePost).toHaveBeenCalledTimes(1);
+    const body = (await response.json()) as { item: { hash: string } };
+    expect(body.item.hash).not.toBe(renderSyncFile(blog, post).hash);
+  });
+
+  it("writes nothing when a structured client uploads the exact bytes it was served", async () => {
+    // The two sides serialize their keys in different orders: the stored
+    // document comes out of jsonb, the served one is sorted. Comparing them as
+    // JSON reported a change where there was none, so an echo bumped the
+    // revision, wrote an audit row and recorded a version for a write of
+    // nothing.
+    mocks.hasActiveCoEditors.mockResolvedValue(false);
+    const storedDocument = {
+      ...post.document!,
+      content: {
+        ...post.document!.content,
+        body: "Body\n",
+        fields: { sourceLabel: "The Paper", duration: "6 min", cover: "one", coverCaption: "two" },
+      },
+    };
+    // The row's legacy columns are the document's own projection, as every
+    // save leaves them.
+    const projected = legacyProjectionFromDocument(storedDocument);
+    const stored: Post = {
+      ...post,
+      body: projected.body,
+      title: projected.title,
+      cover: projected.cover ?? undefined,
+      coverCaption: projected.coverCaption ?? undefined,
+      duration: projected.duration ?? undefined,
+      document: storedDocument,
+    };
+    mocks.getPostById.mockResolvedValue(stored);
+    const served = await GET(
+      new Request(`https://texttext.example/api/sync/v1/files/${postId}`, {
+        headers: { Accept: SYNC_DOCUMENT_CONTENT_TYPE },
+      }),
+      { params: Promise.resolve({ postId }) },
+    );
+    const bytes = await served.text();
+    const echo = await PUT(
+      new Request(`https://texttext.example/api/sync/v1/files/${postId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": SYNC_DOCUMENT_CONTENT_TYPE,
+          "If-Match": served.headers.get("ETag") ?? "",
+        },
+        body: bytes,
+      }),
+      { params: Promise.resolve({ postId }) },
+    );
+
+    expect(echo.status).toBe(200);
+    expect(mocks.savePost).not.toHaveBeenCalled();
+    expect(mocks.savePostContentPatch).not.toHaveBeenCalled();
+  });
+
+  it("saves normally when no one is co-editing, and leaves the collaborative state alone", async () => {
     mocks.hasActiveCoEditors.mockResolvedValue(false);
     mocks.savePost.mockResolvedValue({ ...post, body: "Body" });
     const response = await PUT(
@@ -553,9 +622,10 @@ describe("sync file PUT during a live co-editing session", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.savePost).toHaveBeenCalledTimes(1);
-    // The collaborative state is told this write is accounted for, so the next
-    // open does not read the baseline as changed from outside.
-    expect(mocks.markCollabMaterialized).toHaveBeenCalled();
+    // A file upload is not a materialization. Marking it as one makes the
+    // collaborative baseline look fresh, so the editor is served the
+    // pre-upload text on reopen and this write is never merged.
+    expect(mocks.markCollabMaterialized).not.toHaveBeenCalled();
   });
 
   it("serves the complete canonical document to textpack clients", async () => {

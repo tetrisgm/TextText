@@ -249,7 +249,8 @@ function accessUser(extra: ToolContext): AccessUser {
 /** How the in-app assistant identifies itself as a collaborator. */
 const ASSISTANT_CONNECTION_NAME = "Assistant";
 
-function mcpActorType(extra: ToolContext): AuditActorType {
+/** An MCP caller is a person or an agent; the server never acts as itself here. */
+function mcpActorType(extra: ToolContext): Exclude<AuditActorType, "system"> {
   const value = extra.authInfo?.extra?.actorType;
   return value === "ai" || value === "human" ? value : "external_agent";
 }
