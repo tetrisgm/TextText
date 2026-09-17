@@ -7439,3 +7439,15 @@ export async function recordNotificationDelivery(channelId: string, status: "ok"
   if (!db) return;
   await db.update(notificationChannels).set({ lastUsedAt: at, lastStatus: status, lastDetail: detail?.slice(0, 300) ?? null }).where(eq(notificationChannels.id, channelId));
 }
+
+/** The session subject of a workspace's owner, for surfaces that act on the owner's behalf. */
+export async function getBlogOwnerSub(handle: string): Promise<string | null> {
+  if (!db) return null;
+  const rows = await db
+    .select({ sub: users.appleSub })
+    .from(blogs)
+    .innerJoin(users, eq(users.id, blogs.ownerId))
+    .where(and(eq(blogs.handle, handle), isNull(blogs.deletedAt)))
+    .limit(1);
+  return rows[0]?.sub ?? null;
+}

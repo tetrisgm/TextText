@@ -55,6 +55,7 @@ const EXPECTED_NAMES = [
   "search_reading",
   "keep_item",
   "add_feed",
+  "run_command",
 ] as const;
 
 const DESTRUCTIVE_TOOLS = new Set([

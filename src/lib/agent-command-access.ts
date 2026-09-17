@@ -28,6 +28,9 @@ import {
 
 /** Reads. Nothing here changes anything. */
 const LOCAL_READS: readonly WorkspaceToolName[] = [
+  // Maps a sentence onto one of the commands below and runs it under the
+  // same rules; a read in itself.
+  "run_command",
   "get_workspace",
   "list_folders",
   "list_items",

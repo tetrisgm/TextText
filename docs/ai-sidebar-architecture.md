@@ -39,9 +39,9 @@ and that runbook are the canonical entry point for future implementation work.
   but no permanent delete.
 
 <!-- generated:tool-contract -->
-## Shared 45-tool contract
+## Shared 46-tool contract
 
-The 14 read-scope tools are:
+The 15 read-scope tools are:
 
 1. `get_workspace`
 2. `list_folders`
@@ -57,6 +57,7 @@ The 14 read-scope tools are:
 12. `list_agent_changes`
 13. `list_reading_sources`
 14. `search_reading`
+15. `run_command`
 
 The 31 sync-scope tools are:
 

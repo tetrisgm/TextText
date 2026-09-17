@@ -13,7 +13,7 @@ agents used with that channel connect through this hosted endpoint instead. See
 endpoint was retired in `0.146`.
 
 <!-- generated:tool-source -->
-`src/lib/ai/tools.ts` is the source of truth for the 45 tool
+`src/lib/ai/tools.ts` is the source of truth for the 46 tool
 names, schemas, mutability, confirmation requirements, and MCP
 annotations. The MCP adapter registers those definitions in
 `src/lib/mcp/tools.ts`.
@@ -109,8 +109,8 @@ Manual tokens currently carry `sync` access and remain valid until revoked.
 <!-- generated:scope-table -->
 | Scope | Access |
 |-------|--------|
-| `read` | Call the 14 read-scope tools: `get_workspace`, `list_folders`, `list_items`, `read_item`, `review_brief_sources`, `open_item`, `search`, `list_trash`, `list_comments`, `list_responses`, `list_document_templates`, `list_agent_changes`, `list_reading_sources`, `search_reading`. |
-| `sync` | Call all 45 tools, including the 31 that mutate content or read administration data. It also grants every `read` operation. |
+| `read` | Call the 15 read-scope tools: `get_workspace`, `list_folders`, `list_items`, `read_item`, `review_brief_sources`, `open_item`, `search`, `list_trash`, `list_comments`, `list_responses`, `list_document_templates`, `list_agent_changes`, `list_reading_sources`, `search_reading`, `run_command`. |
+| `sync` | Call all 46 tools, including the 31 that mutate content or read administration data. It also grants every `read` operation. |
 <!-- /generated:scope-table -->
 
 A mutation attempted with a `read` token returns `403 insufficient_scope` and
@@ -140,7 +140,7 @@ or workspace selector that could cross that boundary.
   cover and asset references use the same audited command surface.
 
 <!-- generated:tool-table -->
-## Tools (45)
+## Tools (46)
 
 | Tool | Scope | Effect |
 |------|-------|--------|
@@ -189,6 +189,7 @@ or workspace selector that could cross that boundary.
 | `search_reading` | `read` or `sync` | Search imported articles and saved bookmarks the person can see, optionally within one folder and its subfolders. Combines word matching with meaning-based matching when the workspace has embeddings, and says which found each result. Every result carries the item id, folder, publisher, and original link to cite. Read-only. |
 | `keep_item` | `sync` | Keep one imported article past its source's cleanup window, or stop keeping it. Keeping never removes another reason the item is kept, such as a star or a comment. |
 | `add_feed` | `sync` | Follow a feed: a feed or site address becomes its own folder under a bookmarks folder and fills with articles over time. The address is fetched and verified before anything is created. |
+| `run_command` | `read` or `sync` | Take one plain sentence and map it onto one existing workspace command with its arguments, using the workspace's own model. Returns the chosen command, its arguments, and why. Reads run immediately. A write runs only when execute is true and this connection may call that command; otherwise the mapped call is returned for the caller to make. There is no new capability here: every command it can pick is one the connection could already call directly, with the same permissions, proposals, and audit. |
 <!-- /generated:tool-table -->
 
 ## Source preconditions for generated field edits

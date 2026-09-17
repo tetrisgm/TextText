@@ -3560,6 +3560,42 @@ async function executeWorkspaceCommand(
         return errorResult(error instanceof Error ? error.message : "Could not add the feed.");
       }
     }
+    case "run_command": {
+      const input = args as WorkspaceToolInput<"run_command">;
+      const resolved = await requireWorkspace(extra);
+      if (isToolResult(resolved)) return resolved;
+      const { runFreeTextCommand, modelMapper } = await import("@/lib/ai/free-text-command.server");
+      const scopes = extra.authInfo?.scopes ?? [];
+      const scope = resolveMcpScopeAccess(scopes);
+      // Exactly what this connection could call on its own: read tools for a
+      // read-only connection, everything for a full one, and never itself.
+      const candidates = (Object.keys(WORKSPACE_TOOL_DEFINITIONS) as WorkspaceToolName[]).filter((name) => {
+        if (name === "run_command") return false;
+        const definition = WORKSPACE_TOOL_DEFINITIONS[name];
+        if (scope === "full") return true;
+        return definition.mutability === "read" && definition.requiredScope !== "sync";
+      });
+      // The workspace's own model does the reading, keyed like every other
+      // first-party AI surface. Without one, the heuristics still answer the
+      // common sentences and the rest say what is missing.
+      let model = null;
+      try {
+        const owner = await import("@/lib/store").then((store) => store.getBlogOwnerSub(resolved.blog.handle));
+        const config = owner ? await import("@/lib/ai/workspace-ai-config.server").then((module) => module.getWorkspaceAiConfigForOwner(owner)) : null;
+        if (config) model = (await import("@/lib/ai/provider-model.server")).workspaceLanguageModel(config);
+      } catch {
+        model = null;
+      }
+      const outcome = await runFreeTextCommand({
+        text: input.text,
+        execute: input.execute ?? false,
+        context: { itemId: input.item_id, folderPath: input.folder_path },
+        candidates,
+        mapper: modelMapper(model),
+        run: (tool, toolArgs) => executeMcpTool(tool, toolArgs, extra),
+      });
+      return jsonResult(outcome);
+    }
   }
 }
 

@@ -1178,6 +1178,10 @@ export function createWorkspaceAgentTools(
         return runRemote("list_reading_sources", args as WorkspaceToolInput<"list_reading_sources">);
       case "search_reading":
         return runRemote("search_reading", args as WorkspaceToolInput<"search_reading">);
+      // The assistant already reads sentences itself; when it is offered this
+      // one anyway (batch commands list every tool), the server maps and runs.
+      case "run_command":
+        return runRemote("run_command", args as WorkspaceToolInput<"run_command">);
       case "keep_item":
         return runRemote("keep_item", args as WorkspaceToolInput<"keep_item">);
       case "add_feed": {

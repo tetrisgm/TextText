@@ -46,7 +46,8 @@
     "list_reading_sources",
     "search_reading",
     "keep_item",
-    "add_feed"
+    "add_feed",
+    "run_command"
   ],
   "readScope": [
     "get_workspace",
@@ -62,7 +63,8 @@
     "list_document_templates",
     "list_agent_changes",
     "list_reading_sources",
-    "search_reading"
+    "search_reading",
+    "run_command"
   ],
   "openWorld": [
     "add_item_asset",

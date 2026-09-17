@@ -1169,6 +1169,19 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     mutability: "write",
     openWorld: true,
   }),
+  run_command: defineTool("run_command", {
+    title: "Run a command from a sentence",
+    description:
+      "Take one plain sentence and map it onto one existing workspace command with its arguments, using the workspace's own model. Returns the chosen command, its arguments, and why. Reads run immediately. A write runs only when execute is true and this connection may call that command; otherwise the mapped call is returned for the caller to make. There is no new capability here: every command it can pick is one the connection could already call directly, with the same permissions, proposals, and audit.",
+    inputSchema: z
+      .object({
+        text: z.string().trim().min(1).max(2000).describe("What to do, in one sentence."),
+        execute: z.boolean().optional().describe("Run the mapped command even when it writes. Defaults to false: writes are returned as a plan."),
+        item_id: z.string().trim().min(1).max(200).optional().describe("The item the sentence is about, when it says 'this' or 'it'."),
+        folder_path: folderPath.optional().describe("The folder the sentence is about, when it says 'here'."),
+      })
+      .strict(),
+  }),
 } as const;
 
 export type WorkspaceToolName = keyof typeof WORKSPACE_TOOL_DEFINITIONS;
