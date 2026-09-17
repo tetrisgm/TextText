@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BACKUP_MANIFEST_SCHEMA, backupDue, commitSnapshot, parseBackupManifest, type BackupSnapshot } from "../backup.server";
+import { BACKUP_MANIFEST_SCHEMA, backupDue, commitSnapshot, parseBackupManifest, sanitizeManifest, type BackupSnapshot } from "../backup.server";
 import { buildTextpack, gitBlobSha, sha256Hex } from "../textpack";
 import { fakeGithub } from "./fake-github";
 
@@ -62,5 +62,42 @@ describe("commitSnapshot", () => {
     expect(result.commit).toBeTruthy();
     expect(github.calls).toContain("PUT /repos/octo/backup/contents/workspaces/demo/README.md");
     expect(github.headTree().has("workspaces/demo/blog/a.textpack")).toBe(true);
+  });
+});
+
+describe("the previous manifest is not trusted beyond its shape", () => {
+  it("drops entries outside the workspace prefix, with odd leaves, or without a real id", () => {
+    const good = snapshot([{ slug: "a", body: "A" }]).manifest;
+    const poisoned = {
+      ...good,
+      documents: [
+        ...good.documents,
+        { ...good.documents[0], path: ".github/workflows/deploy.yml" },
+        { ...good.documents[0], path: "workspaces/other/blog/x.textpack", folderPath: "blog" },
+        { ...good.documents[0], path: "workspaces/demo/blog/../../x.textpack" },
+        { ...good.documents[0], path: "workspaces/demo/blog/evil.yml" },
+        { ...good.documents[0], path: "workspaces/demo/Blog Ideas/x.textpack", folderPath: "Blog Ideas" },
+        { ...good.documents[0], id: "../not an id" },
+      ],
+    };
+    const clean = sanitizeManifest(poisoned, "demo");
+    expect(clean.documents.map((entry) => entry.path)).toEqual(["workspaces/demo/blog/a.textpack"]);
+  });
+
+  it("never deletes a file the workspace did not write, even when the manifest names it", async () => {
+    const github = fakeGithub();
+    await commitSnapshot({ token: "ghs", repository: "octo/backup", branch: "main", fetcher: github.fetcher }, snapshot([{ slug: "a", body: "A" }, { slug: "b", body: "B" }]), "first");
+    // Someone with push edits the manifest to claim README.md as ours.
+    const manifest = parseBackupManifest(github.fileText("workspaces/demo/manifest.json")!);
+    manifest.documents.push({ ...manifest.documents[0], path: "README.md" });
+    const readmeSha = github.headTree().get("README.md")!;
+    const sha = (await import("../textpack")).gitBlobSha(Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`));
+    github.blobs.set(sha, Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`));
+    const tree = github.headTree();
+    tree.set("workspaces/demo/manifest.json", sha);
+    github.setHead(tree);
+    await commitSnapshot({ token: "ghs", repository: "octo/backup", branch: "main", fetcher: github.fetcher }, snapshot([{ slug: "a", body: "A" }]), "second");
+    expect(github.headTree().get("README.md")).toBe(readmeSha);
+    expect(github.headTree().has("workspaces/demo/blog/b.textpack")).toBe(false);
   });
 });

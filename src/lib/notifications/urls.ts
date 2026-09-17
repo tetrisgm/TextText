@@ -70,6 +70,7 @@ export function parseNotificationUrl(raw: string): { ok: true; target: Notificat
   const service = SERVICES[scheme];
   if (!service) return { ok: false, reason: `Unsupported scheme "${scheme}". Use ntfy, discord, slack, tgram, pover, json, apprise, or https.` };
   if (scheme === "http") return { ok: false, reason: "Webhooks must use https" };
+  if (scheme === "https" && (url.username || url.password)) return { ok: false, reason: "Put credentials in the webhook path or use jsons://user:pass@host/path for Basic auth" };
   const { user, pass, host, segments } = parts(url);
   const kind: NotificationTarget["kind"] = scheme === "https" ? "webhook" : "apprise";
   switch (scheme) {
@@ -159,11 +160,13 @@ export function buildNotificationRequest(raw: string, message: NotificationMessa
     case "jsons": {
       const headers: Record<string, string> = {};
       if (user && pass) headers.Authorization = `Basic ${Buffer.from(`${user}:${pass}`).toString("base64")}`;
-      return json(`${scheme === "json" ? "http" : "https"}://${host}${url.port ? `:${url.port}` : ""}${url.pathname}${url.search}`, jsonPayload(message), headers);
+      // json:// and jsons:// both deliver over https: a credential in the
+      // URL must never travel in the clear.
+      return json(`https://${host}${url.port ? `:${url.port}` : ""}${url.pathname}${url.search}`, jsonPayload(message), headers);
     }
     case "apprise":
     case "apprises":
-      return json(`${scheme === "apprise" ? "http" : "https"}://${host}${url.port ? `:${url.port}` : ""}/notify/${encodeURIComponent(segments[0])}`, { title: message.title, body: plainText(message), type: "info", format: "text" });
+      return json(`https://${host}${url.port ? `:${url.port}` : ""}/notify/${encodeURIComponent(segments[0])}`, { title: message.title, body: plainText(message), type: "info", format: "text" });
     default:
       return json(url.toString(), jsonPayload(message));
   }

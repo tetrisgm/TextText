@@ -55,9 +55,17 @@ workspace nobody opens waits until someone does. If that is not enough for
 a workspace, a persistent job that calls the same endpoint with an owner's
 API token is the intended addition; the contract allows one for backups.
 
+The previous manifest is read back from the repository, which anyone with
+push can edit, so before it decides what to delete or fetch it is reduced
+to entries under `workspaces/<handle>/` with a folder path and a
+`.textpack` leaf the packer could have written. Choosing a public
+repository requires an explicit confirmation, because notes and bookmarks
+are unlisted by design and a public backup publishes them.
+
 ## Restore
 
-Restore is import. `restoreBackup` reads the manifest from the repository,
+Restore is import. Everything restored lands as a draft, whatever the file
+said. `restoreBackup` reads the manifest from the repository,
 and for every entry whose item id the workspace no longer has, downloads
 the textpack, recreates missing subfolders by path, and creates the item
 through the store the same way a synced file would arrive (new id, the

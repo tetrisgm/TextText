@@ -6,7 +6,7 @@ import { gitBlobSha } from "../textpack";
  * to run end to end: one repository, one branch, blobs by sha, trees as
  * flat path maps, commits as a chain.
  */
-export function fakeGithub(options: { repository?: string; defaultBranch?: string; empty?: boolean } = {}) {
+export function fakeGithub(options: { repository?: string; defaultBranch?: string; empty?: boolean; public?: boolean } = {}) {
   const repository = options.repository ?? "octo/backup";
   const branch = options.defaultBranch ?? "main";
   const blobs = new Map<string, Uint8Array>();
@@ -41,7 +41,7 @@ export function fakeGithub(options: { repository?: string; defaultBranch?: strin
     calls.push(`${method} ${path}`);
     if (path.startsWith("/app/installations/") && path.endsWith("/access_tokens")) return json(201, { token: "ghs_fake", expires_at: new Date(Date.now() + 3600_000).toISOString() });
     if (path === "/installation/repositories") return json(200, { repositories: [{ full_name: repository, private: true, default_branch: branch, permissions: { push: true } }] });
-    if (path === `/repos/${repository}`) return json(200, { default_branch: branch });
+    if (path === `/repos/${repository}`) return json(200, { default_branch: branch, private: !options.public });
     if (path === `/repos/${repository}/git/ref/heads/${branch}`) {
       const sha = refs.get(branch);
       return sha ? json(200, { object: { sha } }) : json(404, { message: "Not Found" });
@@ -102,5 +102,6 @@ export function fakeGithub(options: { repository?: string; defaultBranch?: strin
     const sha = headTree().get(file);
     return sha ? Buffer.from(blobs.get(sha)!).toString("utf8") : null;
   };
-  return { fetcher, calls, headTree, fileText, commitCount: () => commits.size, blobs };
+  const setHead = (tree: Map<string, string>) => commitTree(tree, "edited outside", refs.get(branch) ? [refs.get(branch)!] : []);
+  return { fetcher, calls, headTree, fileText, commitCount: () => commits.size, blobs, setHead };
 }

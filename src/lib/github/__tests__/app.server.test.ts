@@ -11,7 +11,7 @@ import {
   manageInstallationUrl,
   mintAppJwt,
   userAuthorizeUrl,
-  userCanSeeInstallation,
+  userControlsInstallation,
   type GithubFetch,
 } from "../app.server";
 
@@ -111,11 +111,21 @@ describe("the user half of setup", () => {
     await expect(exchangeUserCode(config, "code", "x", bad)).rejects.toThrow("incorrect or expired");
   });
 
-  it("confirms an installation only when the user can see it", async () => {
-    const fetcher: GithubFetch = async (url) =>
-      url.endsWith("/user") ? respond(200, { login: "shokunin" }) : respond(200, { installations: [{ id: 1 }, { id: 42 }] });
-    expect(await userCanSeeInstallation("ghu", 42, fetcher)).toEqual({ login: "shokunin" });
-    expect(await userCanSeeInstallation("ghu", 43, fetcher)).toBeNull();
+  it("confirms an installation only when the user controls its account", async () => {
+    const fetcher: GithubFetch = async (url) => {
+      if (url.endsWith("/user")) return respond(200, { login: "shokunin" });
+      if (url.includes("/user/installations?")) return respond(200, { installations: [{ id: 1, account: { login: "shokunin", type: "User" } }, { id: 42, account: { login: "acme", type: "Organization" } }, { id: 7, account: { login: "someone-else", type: "User" } }] });
+      if (url.endsWith("/user/memberships/orgs/acme")) return respond(200, { role: "member", state: "active" });
+      return respond(404, { message: "Not Found" });
+    };
+    expect(await userControlsInstallation("ghu", 1, fetcher)).toEqual({ login: "shokunin" });
+    // Visible through one readable repository, but not an admin: refused.
+    expect(await userControlsInstallation("ghu", 42, fetcher)).toBeNull();
+    // Visible, on another person's account: refused.
+    expect(await userControlsInstallation("ghu", 7, fetcher)).toBeNull();
+    expect(await userControlsInstallation("ghu", 43, fetcher)).toBeNull();
+    const admin: GithubFetch = async (url) => (url.endsWith("/user/memberships/orgs/acme") ? respond(200, { role: "admin", state: "active" }) : fetcher(url));
+    expect(await userControlsInstallation("ghu", 42, admin)).toEqual({ login: "shokunin" });
   });
 
   it("links point at the app and the installation settings", () => {

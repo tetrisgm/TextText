@@ -3592,7 +3592,14 @@ async function executeWorkspaceCommand(
         context: { itemId: input.item_id, folderPath: input.folder_path },
         candidates,
         mapper: modelMapper(model),
-        run: (tool, toolArgs) => executeMcpTool(tool, toolArgs, extra),
+        // The same gate the hosted registry applies to a direct call: a
+        // delete, an emptied trash, or a publish is staged for the owner,
+        // never run off a sentence.
+        run: async (tool, toolArgs) => {
+          const { hostedToolNeedsProposal, stageHostedToolProposal } = await import("./write-proposals");
+          if (hostedToolNeedsProposal(tool, toolArgs)) return { staged: true, ...(await stageHostedToolProposal(tool, toolArgs, extra)) };
+          return executeMcpTool(tool, toolArgs, extra);
+        },
       });
       return jsonResult(outcome);
     }

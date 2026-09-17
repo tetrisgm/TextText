@@ -182,15 +182,32 @@ export async function exchangeUserCode(config: Pick<GithubAppConfig, "clientId" 
   return raw.access_token;
 }
 
-/** Whether the installation is among those the user token can see, and as whom. */
-export async function userCanSeeInstallation(userToken: string, installationId: number, fetcher: GithubFetch = fetch): Promise<{ login: string } | null> {
+/**
+ * Whether the person behind the user token controls the installation: it is
+ * on their own account, or on an organization where they are an admin.
+ * Seeing an installation is not enough; a member with read access to one
+ * covered repository can see an organization installation, and binding it
+ * would hand their workspace the app's push permission over every repository
+ * the installation covers.
+ */
+export async function userControlsInstallation(userToken: string, installationId: number, fetcher: GithubFetch = fetch): Promise<{ login: string } | null> {
   const me = await apiJson<{ login: string }>(fetcher, `${API}/user`, { token: userToken });
+  let found: { account?: { login?: string; type?: string } | null } | null = null;
   for (let page = 1; page <= 5; page += 1) {
-    const raw = await apiJson<{ installations: Array<{ id: number }> }>(fetcher, `${API}/user/installations?per_page=100&page=${page}`, { token: userToken });
-    if (raw.installations.some((installation) => installation.id === installationId)) return { login: me.login };
-    if (raw.installations.length < 100) break;
+    const raw = await apiJson<{ installations: Array<{ id: number; account?: { login?: string; type?: string } | null }> }>(fetcher, `${API}/user/installations?per_page=100&page=${page}`, { token: userToken });
+    found = raw.installations.find((installation) => installation.id === installationId) ?? null;
+    if (found || raw.installations.length < 100) break;
   }
-  return null;
+  if (!found) return null;
+  const login = found.account?.login ?? "";
+  if (found.account?.type !== "Organization") return login === me.login ? { login: me.login } : null;
+  try {
+    const membership = await apiJson<{ role?: string; state?: string }>(fetcher, `${API}/user/memberships/orgs/${encodeURIComponent(login)}`, { token: userToken });
+    return membership.role === "admin" && membership.state === "active" ? { login: me.login } : null;
+  } catch (error) {
+    if (error instanceof GithubApiError && (error.status === 404 || error.status === 403)) return null;
+    throw error;
+  }
 }
 
 export function installUrl(config: Pick<GithubAppConfig, "slug">, state: string): string {

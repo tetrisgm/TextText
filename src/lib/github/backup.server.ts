@@ -1,6 +1,3 @@
-import { eq } from "drizzle-orm";
-import { db } from "@/lib/db/client";
-import { githubInstallations } from "@/lib/db/schema";
 import { recordAction, type AuditActorType } from "@/lib/audit";
 import type { Post } from "@/lib/content";
 import { validateDocumentSnapshot } from "@/lib/documents/model";
@@ -9,6 +6,7 @@ import { mergeMarkdownIntoDocument } from "@/lib/documents/sync";
 import { parsePostMarkdownFile, slugForNewFile } from "@/lib/markdown-files";
 import { renderSyncFile, templateForPost, templatesForPosts } from "@/app/api/sync/v1/sync";
 import {
+  claimGithubBackupRun,
   createDraftInFolder,
   createSubfolder,
   getBlog,
@@ -16,7 +14,9 @@ import {
   getGithubInstallation,
   getPostById,
   getWorkspacePostsWithDocuments,
+  recordGithubBackupRun,
   savePost,
+  setGithubBackupSettings,
   type GithubInstallationRecord,
 } from "@/lib/store";
 import { dispatchNotification } from "@/lib/notifications/dispatch.server";
@@ -66,13 +66,36 @@ export type BackupSnapshot = { manifest: BackupManifest; files: Map<string, Uint
 const API = "https://api.github.com";
 const MAX_DOCUMENTS = 5000;
 
-function requireDb() {
-  if (!db) throw new Error("GitHub backup needs DATABASE_URL");
-  return db;
-}
-
 export function backupPrefix(handle: string): string {
   return `workspaces/${handle}`;
+}
+
+const FOLDER_PATH_RE = /^[a-z0-9-]+(?:\/[a-z0-9-]+)*$/;
+const LEAF_RE = /^[A-Za-z0-9._-]+\.textpack$/;
+
+/**
+ * Only entries that live where this workspace's backup lives, with a leaf
+ * the packer could have written. The previous manifest is read back from
+ * the repository, which anyone with push can edit; it decides which files
+ * are deleted and which are fetched on restore, so it is not trusted
+ * beyond that shape.
+ */
+export function sanitizeManifest(manifest: BackupManifest, handle: string): BackupManifest {
+  const prefix = `${backupPrefix(handle)}/`;
+  const documents = manifest.documents.filter((entry) => {
+    if (typeof entry?.path !== "string" || !entry.path.startsWith(prefix) || entry.path.includes("..")) return false;
+    const rest = entry.path.slice(prefix.length);
+    const slash = rest.lastIndexOf("/");
+    if (slash <= 0) return false;
+    const folderPath = rest.slice(0, slash);
+    const leaf = rest.slice(slash + 1);
+    return FOLDER_PATH_RE.test(folderPath) && LEAF_RE.test(leaf) && entry.folderPath === folderPath && typeof entry.id === "string" && /^[A-Za-z0-9-]{1,64}$/.test(entry.id);
+  });
+  return { ...manifest, handle, documents };
+}
+
+function contentsUrl(repository: string, path: string, branch: string): string {
+  return `/repos/${repository}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(branch)}`;
 }
 
 export function scheduleIntervalMs(schedule: BackupSchedule): number | null {
@@ -199,8 +222,8 @@ async function headOf(ctx: RepoContext): Promise<{ commit: string; tree: string 
 
 async function previousManifest(ctx: RepoContext, handle: string): Promise<BackupManifest | null> {
   try {
-    const file = await api<{ content: string; encoding: string }>(ctx, `/repos/${ctx.repository}/contents/${backupPrefix(handle)}/manifest.json?ref=${encodeURIComponent(ctx.branch)}`);
-    return parseBackupManifest(Buffer.from(file.content, "base64").toString("utf8"));
+    const file = await api<{ content: string; encoding: string }>(ctx, contentsUrl(ctx.repository, `${backupPrefix(handle)}/manifest.json`, ctx.branch));
+    return sanitizeManifest(parseBackupManifest(Buffer.from(file.content, "base64").toString("utf8")), handle);
   } catch (error) {
     if (error instanceof GithubApiError && error.status === 404) return null;
     return null;
@@ -275,7 +298,10 @@ export async function setBackupSettings(input: {
   repository: string | null;
   branch: string | null;
   schedule: BackupSchedule;
+  /** A public repository publishes every note and bookmark; the owner must say so. */
+  allowPublic?: boolean;
   actor: { userId: string | null; actorType: AuditActorType };
+  fetcher?: GithubFetch;
 }): Promise<GithubInstallationRecord> {
   const record = await getGithubInstallation(input.blogId);
   if (!record) throw new Error("Connect GitHub first");
@@ -283,12 +309,17 @@ export async function setBackupSettings(input: {
   if (repository && !/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error("Repository must look like owner/name");
   const branch = input.branch?.trim() || null;
   if (branch && !/^[\w./-]+$/.test(branch)) throw new Error("Branch name is not valid");
-  await requireDb()
-    .update(githubInstallations)
-    .set({ backupRepository: repository, backupBranch: branch, backupSchedule: repository ? input.schedule : "off", updatedAt: new Date() })
-    .where(eq(githubInstallations.blogId, input.blogId));
-  await recordAction({ actorUserId: input.actor.userId, actorType: input.actor.actorType, actionName: "github.set_backup", targetType: "workspace", targetId: input.blogId, inputSummary: repository ? `${repository}@${branch ?? "default"} ${input.schedule}` : "off" });
-  return (await getGithubInstallation(input.blogId))!;
+  if (repository && !input.allowPublic) {
+    const config = githubAppConfig();
+    if (config) {
+      const token = await installationToken(config, record.installationId, input.fetcher ?? fetch);
+      const repo = await api<{ private: boolean }>({ token, repository, branch: "", fetcher: input.fetcher ?? fetch }, `/repos/${repository}`);
+      if (!repo.private) throw new Error("That repository is public, so every note and bookmark in this workspace would be readable by anyone. Choose a private repository, or confirm you want a public backup.");
+    }
+  }
+  const saved = await setGithubBackupSettings({ blogId: input.blogId, repository, branch, schedule: input.schedule, actor: input.actor });
+  if (!saved) throw new Error("Connect GitHub first");
+  return saved;
 }
 
 export type BackupRunReport = { ran: boolean; reason?: string; commit?: string | null; documents?: number; uploaded?: number; removed?: number };
@@ -313,11 +344,7 @@ export async function runBackup(input: { handle: string; blogId: string; actor: 
   const fetcher = input.fetcher ?? fetch;
   const now = input.now ?? new Date();
   const finish = async (status: "ok" | "unchanged" | "failed", detail: string | null, commit: string | null) => {
-    await requireDb()
-      .update(githubInstallations)
-      .set({ backupLastRunAt: now, backupLastStatus: status, backupLastDetail: detail, ...(commit ? { backupLastCommit: commit } : {}), updatedAt: now })
-      .where(eq(githubInstallations.blogId, input.blogId));
-    await recordAction({ actorUserId: input.actor.userId, actorType: input.actor.actorType, actionName: "github.run_backup", targetType: "workspace", targetId: input.blogId, inputSummary: record.backupRepository ?? undefined, outputSummary: `${status}${detail ? `: ${detail}` : ""}` });
+    await recordGithubBackupRun({ blogId: input.blogId, status, detail, commit, at: now, actor: input.actor, repository: record.backupRepository });
     if (status !== "unchanged") {
       const blog = await getBlog(input.handle);
       await dispatchNotification({
@@ -345,6 +372,12 @@ export async function runBackup(input: { handle: string; blogId: string; actor: 
     return { ran: true, commit: result.commit, documents, uploaded: result.uploaded, removed: result.removed };
   } catch (error) {
     if (error instanceof GithubApiError && error.status === 401) forgetInstallationToken(record.installationId);
+    if (error instanceof GithubApiError && error.status === 422) {
+      // The branch moved under us: another run landed first. Nothing is
+      // lost; the next run builds on it.
+      await finish("unchanged", "another backup landed first", null);
+      return { ran: true, commit: null, documents: 0, uploaded: 0, removed: 0 };
+    }
     const message = error instanceof Error ? error.message : "Backup failed";
     await finish("failed", message.slice(0, 500), null);
     return { ran: false, reason: message };
@@ -352,10 +385,13 @@ export async function runBackup(input: { handle: string; blogId: string; actor: 
 }
 
 /** Runs the backup only when the schedule says so. The app's own heartbeat calls this. */
-export async function runBackupIfDue(input: { handle: string; blogId: string; fetcher?: GithubFetch; now?: Date }): Promise<BackupRunReport> {
+export async function runBackupIfDue(input: { handle: string; blogId: string; actor: { userId: string | null; actorType: AuditActorType }; fetcher?: GithubFetch; now?: Date }): Promise<BackupRunReport> {
   const record = await getGithubInstallation(input.blogId);
-  if (!record || !backupDue(record, input.now)) return { ran: false, reason: "not due" };
-  return runBackup({ ...input, actor: { userId: null, actorType: "human" } });
+  const now = input.now ?? new Date();
+  if (!record || !backupDue(record, now)) return { ran: false, reason: "not due" };
+  const interval = scheduleIntervalMs(record.backupSchedule);
+  if (interval === null || !(await claimGithubBackupRun(input.blogId, now, interval))) return { ran: false, reason: "not due" };
+  return runBackup({ ...input, now });
 }
 
 // ---------------------------------------------------------------------------
@@ -374,6 +410,7 @@ export async function restoreBackup(input: { handle: string; blogId: string; act
   const folderIdByPath = new Map(folders.map((folder) => [folder.path, folder.id]));
   const audit = { actorUserId: input.actor.userId, actorType: input.actor.actorType, targetType: "item" as const };
   const folderFor = async (path: string): Promise<string | null> => {
+    if (!FOLDER_PATH_RE.test(path)) return null;
     const known = folderIdByPath.get(path);
     if (known) return known;
     const parts = path.split("/");
@@ -395,7 +432,7 @@ export async function restoreBackup(input: { handle: string; blogId: string; act
       }
       const folderId = await folderFor(entry.folderPath);
       if (!folderId) throw new Error(`No folder for ${entry.folderPath}`);
-      const file = await api<{ content: string }>(ctx, `/repos/${ctx.repository}/contents/${entry.path}?ref=${encodeURIComponent(ctx.branch)}`);
+      const file = await api<{ content: string }>(ctx, contentsUrl(ctx.repository, entry.path, ctx.branch));
       const parts = parseTextpack(Buffer.from(file.content, "base64"));
       const parsed = parsePostMarkdownFile(parts.markdown);
       const created = await createDraftInFolder(input.handle, folderId, { audit: { ...audit, actionName: "github.restore_item", inputSummary: entry.path.slice(0, 200) } });
@@ -416,6 +453,10 @@ export async function restoreBackup(input: { handle: string; blogId: string; act
         type: created.type,
         date: parsed.fields.date,
         slug: slugForNewFile(parsed.fields, created.slug),
+        // Restored as a draft, whatever the file said: the repository is a
+        // copy, not a place to publish from.
+        status: "draft",
+        visibility: "private",
         document,
       });
       report.restored += 1;

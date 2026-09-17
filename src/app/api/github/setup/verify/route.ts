@@ -1,4 +1,4 @@
-import { exchangeUserCode, getInstallation, githubAppConfig, userCanSeeInstallation } from "@/lib/github/app.server";
+import { exchangeUserCode, getInstallation, githubAppConfig, userControlsInstallation } from "@/lib/github/app.server";
 import { verifyInstallState } from "@/lib/github/install-state";
 import { getCurrentUser } from "@/lib/session";
 import { authSecret, clearInstallStateCookie, readInstallStateCookie, settingsRedirect, verifyRedirectUri } from "../../_shared";
@@ -29,7 +29,7 @@ export async function GET(request: Request) {
   if (!code) return settingsRedirect(request, "denied");
   try {
     const userToken = await exchangeUserCode(config, code, verifyRedirectUri(request));
-    const seen = await userCanSeeInstallation(userToken, intent.installationId);
+    const seen = await userControlsInstallation(userToken, intent.installationId);
     if (!seen) return settingsRedirect(request, "not-yours");
     const installation = await getInstallation(config, intent.installationId);
     if (!installation || installation.suspended) return settingsRedirect(request, "missing");

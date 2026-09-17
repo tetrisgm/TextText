@@ -65,9 +65,20 @@ Needs the owner's hands:
   `action: "tick"` and an owner token is the intended addition.
 - Codex adversarial review could not run: the Codex account hit its usage
   limit until 2026-09-19 16:08. A fresh Claude agent did the same
-  adversarial read instead (findings and fixes below). Run
-  `codex exec --sandbox read-only` with the brief in this section's history
-  once credits return, if a second opinion is still wanted.
+  adversarial read instead; its twelve findings were fixed in the commit
+  after the docs one (run_command now stages the same tools a direct hosted
+  call stages; Connect requires the person to own the account or be an org
+  admin, not merely see the installation; json and apprise URLs always
+  deliver over https and https webhooks refuse inline credentials; the
+  previous manifest read back from the repository is sanitized before it
+  can delete or fetch anything; installation-row writes moved into the
+  store; a public repository needs an explicit confirmation; scheduled runs
+  are claimed atomically; a lost ref race is recorded as unchanged, not
+  failed; restore lands as drafts; the settings redirect derives its origin
+  from the root domain off loopback). Left as recorded risk: a redirecting
+  notification host receives the same Authorization header on the hop.
+  Run `codex exec --sandbox read-only` with the brief in this session once
+  credits return, if a second opinion is still wanted.
 
 Residual risks, recorded:
 
@@ -78,6 +89,10 @@ Residual risks, recorded:
   by id are not rewritten (wiki links by title still resolve).
 - Notification URLs to private hosts are refused by the public-host gate;
   a LAN-only ntfy or Apprise cannot be used.
+- A notification host that answers a delivery with a redirect to another
+  origin receives the Authorization header again on the hop; hosts are
+  still gated public, so this is a misconfigured service leaking its own
+  token, not an SSRF.
 
 ## Client sync finished, Feedbin API, bookmark migration (2026-09-16)
 

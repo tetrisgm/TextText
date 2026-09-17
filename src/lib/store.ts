@@ -7335,6 +7335,64 @@ export async function saveGithubInstallation(input: {
   return githubInstallationRecord(row);
 }
 
+/** Where and how often the backup runs. Off when no repository is chosen. */
+export async function setGithubBackupSettings(input: {
+  blogId: string;
+  repository: string | null;
+  branch: string | null;
+  schedule: GithubInstallationRecord["backupSchedule"];
+  actor: { userId: string | null; actorType: AuditActorType };
+}): Promise<GithubInstallationRecord | null> {
+  if (!db) throw new Error("setGithubBackupSettings requires DATABASE_URL");
+  const [row] = await db
+    .update(githubInstallations)
+    .set({ backupRepository: input.repository, backupBranch: input.branch, backupSchedule: input.repository ? input.schedule : "off", updatedAt: new Date() })
+    .where(eq(githubInstallations.blogId, input.blogId))
+    .returning();
+  if (!row) return null;
+  await recordAction({ actorUserId: input.actor.userId, actorType: input.actor.actorType, actionName: "github.set_backup", targetType: "workspace", targetId: input.blogId, inputSummary: input.repository ? `${input.repository}@${input.branch ?? "default"} ${input.schedule}` : "off" });
+  return githubInstallationRecord(row);
+}
+
+/**
+ * Claims a scheduled run atomically: the stamp moves only if the row is
+ * still due, so two heartbeats in the same moment yield one run.
+ */
+export async function claimGithubBackupRun(blogId: string, now: Date, intervalMs: number): Promise<boolean> {
+  if (!db) throw new Error("claimGithubBackupRun requires DATABASE_URL");
+  const rows = await db
+    .update(githubInstallations)
+    .set({ backupLastRunAt: now })
+    .where(
+      and(
+        eq(githubInstallations.blogId, blogId),
+        sql`${githubInstallations.backupRepository} is not null`,
+        sql`${githubInstallations.backupSchedule} <> 'off'`,
+        sql`(${githubInstallations.backupLastRunAt} is null or ${githubInstallations.backupLastRunAt} <= ${new Date(now.getTime() - intervalMs)})`,
+      ),
+    )
+    .returning({ id: githubInstallations.id });
+  return rows.length > 0;
+}
+
+/** How a run went, on the row and in the audit log. */
+export async function recordGithubBackupRun(input: {
+  blogId: string;
+  status: "ok" | "unchanged" | "failed";
+  detail: string | null;
+  commit: string | null;
+  at: Date;
+  actor: { userId: string | null; actorType: AuditActorType };
+  repository: string | null;
+}): Promise<void> {
+  if (!db) throw new Error("recordGithubBackupRun requires DATABASE_URL");
+  await db
+    .update(githubInstallations)
+    .set({ backupLastRunAt: input.at, backupLastStatus: input.status, backupLastDetail: input.detail?.slice(0, 500) ?? null, ...(input.commit ? { backupLastCommit: input.commit } : {}), updatedAt: input.at })
+    .where(eq(githubInstallations.blogId, input.blogId));
+  await recordAction({ actorUserId: input.actor.userId, actorType: input.actor.actorType, actionName: "github.run_backup", targetType: "workspace", targetId: input.blogId, inputSummary: input.repository ?? undefined, outputSummary: `${input.status}${input.detail ? `: ${input.detail}` : ""}` });
+}
+
 /** Forgets the connection. The installation stays on GitHub until removed there. */
 export async function forgetGithubInstallation(blogId: string, actor: { userId: string | null; actorType: AuditActorType }): Promise<boolean> {
   if (!db) throw new Error("forgetGithubInstallation requires DATABASE_URL");

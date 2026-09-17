@@ -17,7 +17,7 @@ const OUTCOME_COPY: Record<string, string> = {
   expired: "The connection attempt expired or did not start here. Try Connect again.",
   "signed-out": "You were signed out during the connection. Sign in and try Connect again.",
   denied: "GitHub did not authorize the connection.",
-  "not-yours": "That installation is not one your GitHub account can see, so it was not connected.",
+  "not-yours": "That installation is not on your own GitHub account or an organization you administer, so it was not connected.",
   missing: "GitHub no longer has that installation.",
   failed: "GitHub did not answer as expected. Try Connect again.",
   "not-configured": "GitHub is not set up on this deployment.",
@@ -64,9 +64,15 @@ function BackupControls({ handle, installation, onStatus }: { handle: string; in
   };
 
   const save = async () => {
+    const chosen = options.find((entry) => entry.fullName === repository);
+    let allowPublic = false;
+    if (repository && chosen && !chosen.private) {
+      if (!window.confirm(`${repository} is public. Every note and bookmark in this workspace would be readable by anyone. Back up there anyway?`)) return;
+      allowPublic = true;
+    }
     setBusy("save");
     try {
-      const data = await post({ action: "settings", repository, branch, schedule });
+      const data = await post({ action: "settings", repository, branch, schedule, allowPublic });
       setSaved({ repository: (data.repository as string | null) ?? "", branch: (data.branch as string | null) ?? "", schedule: data.schedule as BackupSchedule });
       setSchedule(data.schedule as BackupSchedule);
       onStatus(data.repository ? `Backups go to ${data.repository as string}${data.schedule === "off" ? " when you press Back up now" : ` ${data.schedule as string}`}.` : "Backups are off.");

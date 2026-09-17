@@ -66,8 +66,10 @@ describe.skipIf(!enabled)("github backup against Postgres", () => {
   });
 
   it("BK-01: settings choose the repository and schedule, and refuse junk", async () => {
-    await expect(backup.setBackupSettings({ blogId, repository: "not a repo", branch: null, schedule: "daily", actor })).rejects.toThrow("owner/name");
-    const record = await backup.setBackupSettings({ blogId, repository: "octo/backup", branch: null, schedule: "daily", actor });
+    await expect(backup.setBackupSettings({ blogId, repository: "not a repo", branch: null, schedule: "daily", actor, fetcher: github.fetcher })).rejects.toThrow("owner/name");
+    const exposed = fakeGithub({ public: true });
+    await expect(backup.setBackupSettings({ blogId, repository: "octo/backup", branch: null, schedule: "daily", actor, fetcher: exposed.fetcher })).rejects.toThrow("public");
+    const record = await backup.setBackupSettings({ blogId, repository: "octo/backup", branch: null, schedule: "daily", actor, fetcher: github.fetcher });
     expect(record.backupRepository).toBe("octo/backup");
     expect(record.backupSchedule).toBe("daily");
     expect(backup.backupDue(record)).toBe(true);
@@ -112,6 +114,17 @@ describe.skipIf(!enabled)("github backup against Postgres", () => {
     }
   });
 
+  it("BK-03b: a scheduled run is claimed once, even when two heartbeats race", async () => {
+    const before = github.commitCount();
+    const then = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+    const [first, second] = await Promise.all([
+      backup.runBackupIfDue({ handle, blogId, actor, fetcher: github.fetcher, now: then }),
+      backup.runBackupIfDue({ handle, blogId, actor, fetcher: github.fetcher, now: then }),
+    ]);
+    expect([first.reason, second.reason].filter((reason) => reason === "not due")).toHaveLength(1);
+    expect(github.commitCount()).toBe(before);
+  });
+
   it("BK-04: restore imports what the repository has and the workspace lost, and leaves the rest alone", async () => {
     await store.deletePost(handle, secondId);
     const report = await backup.restoreBackup({ handle, blogId, actor, fetcher: github.fetcher });
@@ -121,6 +134,7 @@ describe.skipIf(!enabled)("github backup against Postgres", () => {
     expect(restored).toBeTruthy();
     expect(restored!.id).not.toBe(secondId);
     expect(restored!.type).toBe("note");
+    expect(restored!.status).toBe("draft");
     expect(restored!.body).toContain("Remember this.");
   });
 });

@@ -33,6 +33,7 @@ describe("parseNotificationUrl", () => {
     expect(parseNotificationUrl("mailto://a@b").ok).toBe(false);
     expect(parseNotificationUrl("discord://only-id").ok).toBe(false);
     expect(parseNotificationUrl("pover://tokenonly").ok).toBe(false);
+    expect(parseNotificationUrl("https://user:pass@hooks.example/x").ok).toBe(false);
   });
 });
 
@@ -51,6 +52,9 @@ describe("buildNotificationRequest", () => {
     expect(body("tgram://bot123:x/42")).toMatchObject({ chat_id: "42" });
     expect(body("pover://user@token")).toMatchObject({ token: "token", user: "user", url: message.url });
     expect(buildNotificationRequest("apprises://apprise.example/key", message).url).toBe("https://apprise.example/notify/key");
+    // The plain-looking variants still deliver over https: no cleartext credential.
+    expect(buildNotificationRequest("apprise://apprise.example/key", message).url).toBe("https://apprise.example/notify/key");
+    expect(buildNotificationRequest("json://u:p@hooks.example/notify", message).url).toBe("https://hooks.example/notify");
   });
 
   it("gives webhooks and json endpoints the full structured payload", () => {

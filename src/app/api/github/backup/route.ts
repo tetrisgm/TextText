@@ -58,6 +58,7 @@ export async function POST(request: Request) {
           repository: typeof body.repository === "string" ? body.repository : null,
           branch: typeof body.branch === "string" ? body.branch : null,
           schedule: schedule as BackupSchedule,
+          allowPublic: body.allowPublic === true,
           actor,
         });
         return json({ repository: record.backupRepository, branch: record.backupBranch, schedule: record.backupSchedule });
@@ -65,7 +66,7 @@ export async function POST(request: Request) {
       case "run":
         return json(await runBackup({ handle, blogId: who.blogId, actor }));
       case "tick":
-        return json(await runBackupIfDue({ handle, blogId: who.blogId }));
+        return json(await runBackupIfDue({ handle, blogId: who.blogId, actor }));
       case "restore":
         return json(await restoreBackup({ handle, blogId: who.blogId, actor }));
       default:
