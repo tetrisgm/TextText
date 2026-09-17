@@ -204,6 +204,34 @@ endpoint, a self-hosted Apprise API, or `https://` receiving
 - Settings, Notifications: add, pause, test, remove, and per-event
   checkboxes. Outbound only: nothing new listens.
 
+## What it costs to open (added 2026-09-18)
+
+Against local Postgres a round trip is a fraction of a millisecond, so a page
+can make fifty and still feel instant in development while taking seconds in
+the Mac app, where each one is an HTTPS request to Neon. The count is what
+the speed is made of.
+
+`npm run perf:queries` prints it for every read a person waits on. The Home
+was twenty-seven round trips for For You and fifty for a channel, most of
+them the same two questions: which workspace this handle is, and what folders
+it has. `src/lib/request-scope.ts` opens a scope around reads and holds one
+answer per question for the length of one; it does nothing when no scope is
+open, so nothing that has not opted in can be surprised by it. React's own
+`cache()` covers a rendering tree, which is not where a route handler runs.
+
+A channel cost more than the whole feed because it read every source
+separately. The strip already lists the connections and a connection carries
+its folder id, so a channel is the same single pass the feed makes, narrowed
+by `ReadingScope.onlyFolderIds`.
+
+For You is fifteen, a channel fourteen, Latest ten, the overview seven.
+`src/lib/reading/__tests__/home-query-budget.db.test.ts` fails if one grows.
+
+`npm run home:design-compare` is the other half: it captures the Home at the
+reference captures' own device metrics and runs the same pixel scan over both,
+so the proportions in DESIGN.md section 3 are checked against what a browser
+paints rather than against the stylesheet.
+
 ## Residual risks, recorded
 
 - DNS rebinding between the gate's lookup and the socket connect is a known
