@@ -227,11 +227,6 @@ by `ReadingScope.onlyFolderIds`.
 For You is fifteen, a channel fourteen, Latest ten, the overview seven.
 `src/lib/reading/__tests__/home-query-budget.db.test.ts` fails if one grows.
 
-`npm run home:design-compare` is the other half: it captures the Home at the
-reference captures' own device metrics and runs the same pixel scan over both,
-so the proportions in DESIGN.md section 3 are checked against what a browser
-paints rather than against the stylesheet.
-
 ## Residual risks, recorded
 
 - DNS rebinding between the gate's lookup and the socket connect is a known
