@@ -57,7 +57,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.189</string>
+	<string>0.190</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -70,7 +70,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>1079</string>
+	<string>1080</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSApplicationCategoryType</key>
