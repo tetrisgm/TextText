@@ -55,8 +55,24 @@ mkdir -p "$PLUGINS"
 
 # TextTextShareCore (Foundation only) is the sole library dependency of the Share
 # and Quick Look extensions; collect its release objects once.
+# Where SwiftPM leaves a module's release objects moved with Swift 6.4: the
+# classic layout is $BIN/<Module>.build/*.o; the Swift Build layout links each
+# module into one $BIN/<Module>.o, with per-file objects under
+# .build/out/Intermediates.noindex/<Package>.build/Release/<Module>-t.build.
+# Take whichever exists, newest layout first.
+module_objects() { # $1=module name; prints one object path per line
+  local module="$1"
+  if [ -f "$BIN/$module.o" ]; then
+    printf '%s\n' "$BIN/$module.o"
+  elif [ -d "$BIN/$module.build" ]; then
+    find "$BIN/$module.build" -name '*.o'
+  else
+    find "$MAC/.build/out/Intermediates.noindex" -type d -name "$module-t.build" -path '*/Release/*' 2>/dev/null \
+      | head -1 | while IFS= read -r dir; do find "$dir" -name '*.o'; done
+  fi
+}
 CORE_OBJS=()
-while IFS= read -r f; do CORE_OBJS+=("$f"); done < <(find "$BIN/TextTextShareCore.build" -name '*.o')
+while IFS= read -r f; do CORE_OBJS+=("$f"); done < <(module_objects TextTextShareCore)
 [ "${#CORE_OBJS[@]}" -gt 0 ] || { echo "no TextTextShareCore objects; run swift build -c release first" >&2; exit 1; }
 
 # The File Provider extension depends instead on the FP Kit + Bridge and
@@ -65,9 +81,11 @@ while IFS= read -r f; do CORE_OBJS+=("$f"); done < <(find "$BIN/TextTextShareCor
 # extension's own two sources are compiled fresh by embed_appex below, so do NOT
 # also link TextTextFileProviderExtensionCore objects (that would double symbols).
 FP_OBJS=()
-while IFS= read -r f; do FP_OBJS+=("$f"); done < <(find \
-  "$BIN/TextTextFileProviderKit.build" "$BIN/TextTextFileProviderBridge.build" \
-  "$BIN/ZIPFoundation.build" -name '*.o')
+while IFS= read -r f; do FP_OBJS+=("$f"); done < <(
+  module_objects TextTextFileProviderKit
+  module_objects TextTextFileProviderBridge
+  module_objects ZIPFoundation
+)
 [ "${#FP_OBJS[@]}" -gt 0 ] || { echo "no File Provider objects; run swift build -c release first" >&2; exit 1; }
 
 # $1=appex-name $2=source-dir $3=principal-suffix $4=profile $5=entitlements-template
