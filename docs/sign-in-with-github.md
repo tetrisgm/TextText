@@ -30,9 +30,19 @@ Where they go, following the Google setup:
   the values survive if an environment is rebuilt. Nothing in the release path
   reads the Keychain item; it is the backup copy.
 
+## Current registration
+
+Created 2026-09-17 through the app-manifest flow, owned by the `tetrisgm`
+GitHub account: slug `texttextapp`, App ID `4975359`, client id starting
+`Iv23`. Callbacks and setup URL as listed below; permissions Contents write,
+Metadata read, Email addresses read; webhook off; public. Values filed in
+`.env.local`, Vercel Production, and Keychain service `texttext-github-app`.
+
 ## The GitHub App registration
 
-Settings, Developer settings, GitHub Apps, New GitHub App.
+Settings, Developer settings, GitHub Apps, New GitHub App (or the manifest
+flow: one POST of the manifest, then `POST /app-manifests/{code}/conversions`
+returns the id, slug, client id, secret, and pem in one answer).
 
 - Name: `TextText`. Homepage: `https://texttext.app`.
 - Callback URLs (both): `https://texttext.app/api/auth/callback/github` and
