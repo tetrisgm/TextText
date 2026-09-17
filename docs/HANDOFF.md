@@ -16,6 +16,15 @@
 
 For other topics, search `HANDOFF-history-2026-09-13.md` by term, then read that section. Implementation and checks are in their source files and git history; this entry point does not duplicate them.
 
+## Home as a personal front page (2026-09-17, design only)
+
+The owner's r3 brief (Artifact-style Home: For You, topics, Summaries,
+Recent) was reviewed against the code. The composition, reuse and gap
+map, data delta, ranking, sequence, and checks are in
+`docs/plans/home-artifact-news.md`. No code changed; P1 needs the owner's
+go. Inspection gap: the brief's gallery and references files were not in
+the package, so two original Artifact screens were used instead.
+
 ## GitHub App, backup, notifications, free-text command (2026-09-17)
 
 The four items agreed on 2026-09-17 shipped as TextText 0.187 on
