@@ -34,11 +34,13 @@ replaced.
 
 ## 1. The evidence: Artifact's screens, from originals
 
-All 28 originals are now on disk at `~/Downloads/artifact-reference/`, with a
-captioned gallery at `artifact_news_gallery.html` in that folder. They are
-press and review material, kept locally as design reference rather than in
-the repository. The owner's own gallery and reference index were never in
-the package; these replace them.
+All 28 originals are on disk twice: at `~/Downloads/artifact-reference/`,
+where they were downloaded, and beside the owner's own recovered boards in
+`~/Downloads/ARTIFACT_VISUAL_REFERENCES_RECOVERED/`, under `screens/`, with a
+self-contained captioned gallery at `artifact_screens_local.html` there. The
+boards in that folder load their images from the web, so the local copies are
+the ones to trust when a source goes away. They are press and review
+material, kept locally as design reference rather than in the repository.
 
 Screens viewed for this plan (all originals, not reconstructions):
 TechCrunch product shot (light For You), the "Popular in your network"
