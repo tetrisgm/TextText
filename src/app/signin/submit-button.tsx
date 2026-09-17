@@ -2,7 +2,7 @@
 
 import { useFormStatus } from "react-dom";
 
-type ProviderMark = "apple" | "google";
+type ProviderMark = "apple" | "google" | "github";
 
 type SignInSubmitButtonProps = {
   className: string;
@@ -55,6 +55,22 @@ function GoogleMark() {
   );
 }
 
+function GithubMark() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="signin-provider-mark"
+      viewBox="0 0 24 24"
+      focusable="false"
+    >
+      <path
+        fill="currentColor"
+        d="M12 2C6.5 2 2 6.6 2 12.3c0 4.5 2.9 8.4 6.8 9.7.5.1.7-.2.7-.5v-1.9c-2.8.6-3.4-1.2-3.4-1.2-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.6 2.4 1.1 3 .9.1-.7.3-1.1.6-1.4-2.2-.3-4.6-1.1-4.6-5.1 0-1.1.4-2 1-2.8-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.8 1a9.4 9.4 0 0 1 5 0c1.9-1.3 2.8-1 2.8-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.8 0 4-2.4 4.8-4.6 5.1.4.3.7.9.7 1.9v2.8c0 .3.2.6.7.5 4-1.3 6.8-5.2 6.8-9.7C22 6.6 17.5 2 12 2Z"
+      />
+    </svg>
+  );
+}
+
 export function SignInSubmitButton({
   className,
   idleLabel,
@@ -71,6 +87,7 @@ export function SignInSubmitButton({
     >
       {mark === "apple" && <AppleMark />}
       {mark === "google" && <GoogleMark />}
+      {mark === "github" && <GithubMark />}
       <span>{pending ? pendingLabel : idleLabel}</span>
     </button>
   );

@@ -13,6 +13,7 @@ import {
   devLoginEnabled,
   hasAppleProvider,
   hasEmailProvider,
+  hasGithubProvider,
   hasGoogleProvider,
   SIGNIN_CALLBACK_COOKIE,
   SIGNIN_EMAIL_COOKIE,
@@ -59,7 +60,7 @@ async function rememberEmailCheck(email: string, callbackUrl: string): Promise<v
 }
 
 async function oauthSignIn(
-  provider: "apple" | "google",
+  provider: "apple" | "google" | "github",
   formData: FormData,
 ): Promise<void> {
   const callbackUrl = await formCallbackUrl(formData);
@@ -79,6 +80,11 @@ export async function signInWithApple(formData: FormData): Promise<void> {
 export async function signInWithGoogle(formData: FormData): Promise<void> {
   if (!hasGoogleProvider) backToSignIn(await formCallbackUrl(formData));
   await oauthSignIn("google", formData);
+}
+
+export async function signInWithGithub(formData: FormData): Promise<void> {
+  if (!hasGithubProvider) backToSignIn(await formCallbackUrl(formData));
+  await oauthSignIn("github", formData);
 }
 
 export async function signInWithEmail(formData: FormData): Promise<void> {

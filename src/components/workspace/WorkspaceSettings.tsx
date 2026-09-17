@@ -35,6 +35,7 @@ import { McpConnections } from "./McpConnections";
 import { AgentInstructionsSettings } from "./AgentInstructionsSettings";
 import {
   connectApple,
+  connectGithub,
   connectGoogle,
 } from "@/app/editor/connect-provider-actions";
 import DeleteAccountDialog, {
@@ -43,6 +44,7 @@ import DeleteAccountDialog, {
 } from "./DeleteAccountDialog";
 import { ShareDialog } from "./ShareDialog";
 import { ConnectionGallery } from "./ConnectionGallery";
+import { GithubSettings } from "./GithubSettings";
 import styles from "./WorkspaceSettings.module.css";
 
 export function WorkspaceSettings({
@@ -658,6 +660,8 @@ export function WorkspaceSettings({
           </section>
         )}
 
+        <GithubSettings handle={blog.handle} />
+
         {/* Only when the viewer owns an account. A collaborator, a guest
             workspace and a failed fetch all render nothing, and this
             describes the VIEWER's own account rather than the blog prop, since
@@ -682,14 +686,16 @@ export function WorkspaceSettings({
             <div className={styles.identityRow}>
               <strong>Ways to sign in</strong>
               <ul>
-                {["apple", "google", "email"].map((provider) => {
+                {["apple", "google", "github", "email"].map((provider) => {
                   const connected = account.identities.includes(provider);
                   const label =
                     provider === "apple"
                       ? "Apple"
                       : provider === "google"
                         ? "Google"
-                        : "Email link";
+                        : provider === "github"
+                          ? "GitHub"
+                          : "Email link";
                   // Every row reads the same way: the name, then its state or
                   // the one action that changes it. Three different shapes for
                   // three rows of one list is what made this read as broken.
@@ -705,7 +711,11 @@ export function WorkspaceSettings({
                       ) : (
                         <form
                           action={
-                            provider === "apple" ? connectApple : connectGoogle
+                            provider === "apple"
+                              ? connectApple
+                              : provider === "github"
+                                ? connectGithub
+                                : connectGoogle
                           }
                         >
                           <button type="submit" className="ac-btn ac-btn-plain">

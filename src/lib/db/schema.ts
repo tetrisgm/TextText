@@ -1502,3 +1502,41 @@ export const readingSavedSearches = pgTable(
   },
   (t) => [index("reading_saved_searches_blog_idx").on(t.blogId)],
 );
+
+// One GitHub App installation per workspace, added by the owner from
+// Settings. It names where the workspace backup goes and nothing else: the
+// credential that reaches the repository is a short-lived installation token
+// minted from the app's private key, never a stored secret. Removing the row
+// forgets the connection; the installation itself is the person's to remove
+// on GitHub.
+export const githubInstallations = pgTable(
+  "github_installations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    blogId: uuid("blog_id")
+      .notNull()
+      .references(() => blogs.id, { onDelete: "cascade" }),
+    installationId: bigint("installation_id", { mode: "number" }).notNull(),
+    /** The GitHub account the app is installed on. */
+    accountLogin: text("account_login").notNull(),
+    /** "User" | "Organization" */
+    accountType: text("account_type").notNull(),
+    /** "all" | "selected" */
+    repositorySelection: text("repository_selection").notNull(),
+    /** The GitHub login that completed the setup. */
+    connectedByLogin: text("connected_by_login"),
+    connectedByUserId: uuid("connected_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    /** Backup target and cadence (item 2). Null until chosen. */
+    backupRepository: text("backup_repository"),
+    backupBranch: text("backup_branch"),
+    /** "off" | "hourly" | "daily" | "weekly" */
+    backupSchedule: text("backup_schedule").notNull().default("off"),
+    backupLastRunAt: timestamp("backup_last_run_at"),
+    backupLastStatus: text("backup_last_status"),
+    backupLastDetail: text("backup_last_detail"),
+    backupLastCommit: text("backup_last_commit"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("github_installations_blog_idx").on(t.blogId)],
+);

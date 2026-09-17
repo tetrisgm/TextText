@@ -83,6 +83,7 @@ import {
   users,
   verificationTokens,
   workspaceAiConfigs,
+  githubInstallations,
 } from "./db/schema";
 import { listItemAssetReferences } from "./item-assets";
 import { localizeRemoteMarkdownImages } from "./markdown-images";
@@ -6436,6 +6437,7 @@ export async function listUserIdentities(
 
 function providerForSubject(sub: string, userId: string): string {
   if (sub.startsWith("google:")) return "google";
+  if (sub.startsWith("github:")) return "github";
   if (sub === userId) return "email";
   return "apple";
 }
@@ -7221,4 +7223,104 @@ export async function getAgentChange(postId: string, changeId: string) {
   const [revert] = await db.select({ id: agentChanges.id }).from(agentChanges)
     .where(and(eq(agentChanges.postId, postId), eq(agentChanges.revertsId, changeId))).limit(1);
   return change ? { ...change, reverted: Boolean(revert) } : null;
+}
+
+// ---------------------------------------------------------------------------
+// GitHub: one installation per workspace
+
+export type GithubInstallationRecord = {
+  id: string;
+  blogId: string;
+  installationId: number;
+  accountLogin: string;
+  accountType: "User" | "Organization";
+  repositorySelection: "all" | "selected";
+  connectedByLogin: string | null;
+  backupRepository: string | null;
+  backupBranch: string | null;
+  backupSchedule: "off" | "hourly" | "daily" | "weekly";
+  backupLastRunAt: Date | null;
+  backupLastStatus: string | null;
+  backupLastDetail: string | null;
+  backupLastCommit: string | null;
+  updatedAt: Date;
+};
+
+function githubInstallationRecord(row: typeof githubInstallations.$inferSelect): GithubInstallationRecord {
+  return {
+    id: row.id,
+    blogId: row.blogId,
+    installationId: row.installationId,
+    accountLogin: row.accountLogin,
+    accountType: row.accountType === "Organization" ? "Organization" : "User",
+    repositorySelection: row.repositorySelection === "all" ? "all" : "selected",
+    connectedByLogin: row.connectedByLogin,
+    backupRepository: row.backupRepository,
+    backupBranch: row.backupBranch,
+    backupSchedule: (["hourly", "daily", "weekly"] as const).find((value) => value === row.backupSchedule) ?? "off",
+    backupLastRunAt: row.backupLastRunAt,
+    backupLastStatus: row.backupLastStatus,
+    backupLastDetail: row.backupLastDetail,
+    backupLastCommit: row.backupLastCommit,
+    updatedAt: row.updatedAt,
+  };
+}
+
+export async function getGithubInstallation(blogId: string): Promise<GithubInstallationRecord | null> {
+  if (!db) return null;
+  const rows = await db.select().from(githubInstallations).where(eq(githubInstallations.blogId, blogId)).limit(1);
+  return rows[0] ? githubInstallationRecord(rows[0]) : null;
+}
+
+/**
+ * Remembers the installation the owner just completed. A workspace has one;
+ * connecting again replaces it, and a replaced installation drops its backup
+ * target because the repository may no longer be reachable.
+ */
+export async function saveGithubInstallation(input: {
+  blogId: string;
+  installationId: number;
+  accountLogin: string;
+  accountType: "User" | "Organization";
+  repositorySelection: "all" | "selected";
+  connectedByLogin: string | null;
+  actor: { userId: string | null; actorType: AuditActorType };
+}): Promise<GithubInstallationRecord> {
+  if (!db) throw new Error("saveGithubInstallation requires DATABASE_URL");
+  const existing = await getGithubInstallation(input.blogId);
+  const sameInstallation = existing?.installationId === input.installationId;
+  const values = {
+    installationId: input.installationId,
+    accountLogin: input.accountLogin,
+    accountType: input.accountType,
+    repositorySelection: input.repositorySelection,
+    connectedByLogin: input.connectedByLogin,
+    connectedByUserId: input.actor.userId,
+    updatedAt: new Date(),
+    ...(sameInstallation ? {} : { backupRepository: null, backupBranch: null, backupSchedule: "off", backupLastStatus: null, backupLastDetail: null, backupLastCommit: null }),
+  };
+  const [row] = await db
+    .insert(githubInstallations)
+    .values({ blogId: input.blogId, ...values })
+    .onConflictDoUpdate({ target: githubInstallations.blogId, set: values })
+    .returning();
+  await recordAction({
+    actorUserId: input.actor.userId,
+    actorType: input.actor.actorType,
+    actionName: "github.connect_installation",
+    targetType: "workspace",
+    targetId: input.blogId,
+    inputSummary: `${input.accountLogin} (${input.repositorySelection} repositories)`,
+    outputSummary: sameInstallation ? "refreshed" : existing ? "replaced" : "connected",
+  });
+  return githubInstallationRecord(row);
+}
+
+/** Forgets the connection. The installation stays on GitHub until removed there. */
+export async function forgetGithubInstallation(blogId: string, actor: { userId: string | null; actorType: AuditActorType }): Promise<boolean> {
+  if (!db) throw new Error("forgetGithubInstallation requires DATABASE_URL");
+  const deleted = await db.delete(githubInstallations).where(eq(githubInstallations.blogId, blogId)).returning({ accountLogin: githubInstallations.accountLogin });
+  if (deleted.length === 0) return false;
+  await recordAction({ actorUserId: actor.userId, actorType: actor.actorType, actionName: "github.disconnect_installation", targetType: "workspace", targetId: blogId, inputSummary: deleted[0].accountLogin });
+  return true;
 }

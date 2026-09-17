@@ -1,6 +1,6 @@
 "use server";
 
-// The Connect Apple / Connect Google buttons in Settings post here. Each
+// The Connect Apple / Google / GitHub buttons in Settings post here. Each
 // action verifies the LIVE session, mints the signed link intent for exactly
 // that user, and only then starts the ordinary provider sign-in. The jwt
 // callback (src/auth.ts) sees the intent plus the surviving session token and
@@ -9,14 +9,14 @@
 import { cookies } from "next/headers";
 import { getCurrentUser } from "@/lib/session";
 import { getUserIdBySub } from "@/lib/store";
-import { hasAppleProvider, hasGoogleProvider, signIn } from "@/auth";
+import { hasAppleProvider, hasGithubProvider, hasGoogleProvider, signIn } from "@/auth";
 import {
   LINK_INTENT_COOKIE,
   LINK_INTENT_MAX_AGE_SECONDS,
   mintLinkIntent,
 } from "@/lib/link-intent";
 
-async function beginLink(provider: "apple" | "google"): Promise<void> {
+async function beginLink(provider: "apple" | "google" | "github"): Promise<void> {
   const user = await getCurrentUser();
   if (!user) throw new Error("Connecting a provider requires signing in first");
   const userId = await getUserIdBySub(user.sub);
@@ -48,4 +48,9 @@ export async function connectApple(): Promise<void> {
 export async function connectGoogle(): Promise<void> {
   if (!hasGoogleProvider) throw new Error("Google sign-in is not configured");
   await beginLink("google");
+}
+
+export async function connectGithub(): Promise<void> {
+  if (!hasGithubProvider) throw new Error("GitHub sign-in is not configured");
+  await beginLink("github");
 }

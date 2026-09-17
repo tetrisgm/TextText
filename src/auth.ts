@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { LINK_INTENT_COOKIE, verifyLinkIntent } from "@/lib/link-intent";
 import Apple from "next-auth/providers/apple";
 import Credentials from "next-auth/providers/credentials";
+import GitHub from "next-auth/providers/github";
 import Google from "next-auth/providers/google";
 import Nodemailer from "next-auth/providers/nodemailer";
 import { eq } from "drizzle-orm";
@@ -13,6 +14,8 @@ import { isLoopbackHost } from "@/lib/loopback-host";
 import { userIdentities, users } from "@/lib/db/schema";
 
 import { resolveAppleClientSecret } from "@/lib/apple-secret";
+import { githubSignInConfig } from "@/lib/github/app.server";
+import { oauthSubjectFor } from "@/lib/oauth-subject";
 
 const appleClientId = process.env.AUTH_APPLE_ID;
 // Static AUTH_APPLE_SECRET wins; otherwise signed at boot from the .p8 key
@@ -21,6 +24,10 @@ const appleClientId = process.env.AUTH_APPLE_ID;
 const appleClientSecret = resolveAppleClientSecret();
 const googleClientId = process.env.AUTH_GOOGLE_ID;
 const googleClientSecret = process.env.AUTH_GOOGLE_SECRET;
+// GitHub is the app's own GitHub App used as an OAuth provider: name, avatar
+// and verified email only. The same app reaches repositories through
+// installations (src/lib/github/app.server.ts); that half is not sign-in.
+const github = githubSignInConfig();
 // Email magic links send over plain SMTP (MXroute): a full submission URL
 // like smtps://user:pass@host:465 or smtp://user:pass@host:587 (STARTTLS).
 const emailServer = process.env.AUTH_EMAIL_SERVER;
@@ -34,6 +41,7 @@ const PROVIDER_HINT_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 
 export const hasAppleProvider = Boolean(appleClientId && appleClientSecret);
 export const hasGoogleProvider = Boolean(googleClientId && googleClientSecret);
+export const hasGithubProvider = Boolean(github);
 
 // Email magic links need verification-token storage, so the adapter (and
 // with it the email provider) only exists when the sender is configured too.
@@ -66,7 +74,7 @@ export const devLoginEnabled =
 
 
 export const isAuthConfigured =
-  (hasAppleProvider || hasGoogleProvider || hasEmailProvider ||
+  (hasAppleProvider || hasGoogleProvider || hasGithubProvider || hasEmailProvider ||
     devLoginEnabled) &&
   Boolean(authSecret);
 
@@ -111,6 +119,17 @@ const providers = [
     : []),
   ...(googleClientId && googleClientSecret
     ? [Google({ clientId: googleClientId, clientSecret: googleClientSecret })]
+    : []),
+  ...(github
+    ? [
+        GitHub({
+          clientId: github.clientId,
+          clientSecret: github.clientSecret,
+          // A GitHub App ignores scopes; the app's own permissions decide.
+          // Asking for none keeps the consent screen honest about it.
+          authorization: { params: { scope: "" } },
+        }),
+      ]
     : []),
   ...(hasEmailProvider
     ? [
@@ -175,6 +194,8 @@ export function lastUsedProviderLabel(provider: string | undefined): string | nu
       return "Apple";
     case "google":
       return "Google";
+    case "github":
+      return "GitHub";
     case "nodemailer":
       return "email";
     case "dev-login":
@@ -220,6 +241,7 @@ const authConfig = {
     // One stable token.sub per identity, across all providers:
     //   apple  -> raw Apple sub (unchanged, existing users are keyed by it)
     //   google -> "google:<sub>"
+    //   github -> "github:<numeric account id>"
     //   email  -> "email:<lowercased address>" (the adapter user id)
     //   dev    -> "dev:<email>" (default token sub from authorize())
     async jwt({ token, user, account, profile }) {
@@ -233,7 +255,8 @@ const authConfig = {
       // just someone switching accounts). This runs BEFORE the sub overwrite
       // below, and on success returns the ORIGINAL token: the person stays who
       // they were, with one more way to be them.
-      if (account && account.type !== "email" && profile?.sub) {
+      const oauthSubject = account && account.type !== "email" ? oauthSubjectFor(account.provider, account.providerAccountId, profile) : null;
+      if (account && account.type !== "email" && oauthSubject) {
         try {
           const secret =
             process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
@@ -246,12 +269,8 @@ const authConfig = {
             typeof token.userId === "string" &&
             token.userId === intentUserId
           ) {
-            const incoming =
-              account.provider === "google"
-                ? `google:${profile.sub}`
-                : profile.sub;
             const { linkIdentityToUser } = await import("@/lib/store");
-            const outcome = await linkIdentityToUser(intentUserId, incoming);
+            const outcome = await linkIdentityToUser(intentUserId, oauthSubject);
             jar.delete(LINK_INTENT_COOKIE);
             if (outcome === "taken") {
               // That provider already belongs to another account. Refusing is
@@ -270,10 +289,8 @@ const authConfig = {
       }
       if (account?.type === "email") {
         if (user?.id) token.sub = user.id;
-      } else if (account?.provider === "google") {
-        if (profile?.sub) token.sub = `google:${profile.sub}`;
-      } else if (profile?.sub) {
-        token.sub = profile.sub;
+      } else if (oauthSubject) {
+        token.sub = oauthSubject;
       }
       if (account) {
         await rememberLastUsedProvider(account.provider);

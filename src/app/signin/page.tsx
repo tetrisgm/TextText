@@ -12,6 +12,7 @@ import {
   devLoginEnabled,
   hasAppleProvider,
   hasEmailProvider,
+  hasGithubProvider,
   hasGoogleProvider,
   isAuthConfigured,
   LAST_USED_PROVIDER_COOKIE,
@@ -21,6 +22,7 @@ import {
   signInWithApple,
   signInWithDevLogin,
   signInWithEmail,
+  signInWithGithub,
   signInWithGoogle,
 } from "./actions";
 import { sanitizeCallbackUrl } from "./callback-url";
@@ -114,7 +116,7 @@ export default async function SignInPage({ searchParams }: Props) {
     if (session?.user) redirect(callbackUrl);
   }
 
-  const hasOAuth = hasAppleProvider || hasGoogleProvider;
+  const hasOAuth = hasAppleProvider || hasGoogleProvider || hasGithubProvider;
   const cookieStore = await cookies();
   const providerLabel = lastUsedProviderLabel(
     cookieStore.get(LAST_USED_PROVIDER_COOKIE)?.value,
@@ -158,6 +160,17 @@ export default async function SignInPage({ searchParams }: Props) {
                 idleLabel="Continue with Google"
                 pendingLabel="Continuing with Google"
                 mark="google"
+              />
+            </form>
+          )}
+          {hasGithubProvider && (
+            <form action={signInWithGithub}>
+              <input type="hidden" name="callbackUrl" value={callbackUrl} />
+              <SignInSubmitButton
+                className={`ac-btn signin-btn ${hasAppleProvider || hasGoogleProvider ? "ac-btn-gray" : "ac-btn-filled"}`}
+                idleLabel="Continue with GitHub"
+                pendingLabel="Continuing with GitHub"
+                mark="github"
               />
             </form>
           )}

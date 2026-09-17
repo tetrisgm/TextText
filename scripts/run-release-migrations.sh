@@ -53,6 +53,7 @@ migrations=(
   scripts/migrate-backfill-word-count.mjs
   scripts/migrate-add-agent-changes.mjs
   scripts/migrate-add-reading.mjs
+  scripts/migrate-add-github.mjs
 )
 
 missing=()

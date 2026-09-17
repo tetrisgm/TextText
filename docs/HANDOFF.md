@@ -16,12 +16,20 @@
 
 For other topics, search `HANDOFF-history-2026-09-13.md` by term, then read that section. Implementation and checks are in their source files and git history; this entry point does not duplicate them.
 
-## Next direction, agreed but not started (2026-09-17)
+## Next direction, authorized 2026-09-17, in progress
 
 Decided with the owner after evaluating an outside design memo (a
 community static site where every publication is a git commit). The
-git-as-store model does not transfer; four pieces do. Nothing here is
-started; do not begin without the owner's go.
+git-as-store model does not transfer; four pieces do. The owner authorized
+all four on 2026-09-17, locally on main, one commit per item, no ship.
+
+Status: item 1 is implemented and committed (sign-in provider, identity
+linking, Settings GitHub section, `/api/github/*`, `github_installations`
+table and migration, unit and DB tests, browser-checked with stub values).
+It is inert until the owner creates the GitHub App and files its five
+values; the exact names and registration are in
+`docs/sign-in-with-github.md`. Items 2 to 4 are not started. Codex review,
+architecture docs, and this section's rewrite wait for the end.
 
 1. GitHub App with a Connect button. One app for sign-in and repository
    access. Sign-in is one more provider next to Apple and Google, linked to
