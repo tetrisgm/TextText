@@ -16,6 +16,38 @@
 
 For other topics, search `HANDOFF-history-2026-09-13.md` by term, then read that section. Implementation and checks are in their source files and git history; this entry point does not duplicate them.
 
+## Next direction, agreed but not started (2026-09-17)
+
+Decided with the owner after evaluating an outside design memo (a
+community static site where every publication is a git commit). The
+git-as-store model does not transfer; four pieces do. Nothing here is
+started; do not begin without the owner's go.
+
+1. GitHub App with a Connect button. One app for sign-in and repository
+   access. Sign-in is one more provider next to Apple and Google, linked to
+   an existing account: name, avatar, verified email, nothing else. No
+   contributor grants, no "Made by" attribution, no repository-cited pages.
+2. GitHub backup. Export each workspace as textpacks plus a manifest into a
+   repository the user owns (installation token from the GitHub App, no
+   shared server secret), commit on a schedule, validate every document
+   against the schema before committing so a broken snapshot never lands.
+   Restore is import. Source of truth stays Postgres.
+3. Outbound notifications. Apprise-style notification URLs per workspace
+   plus a generic outgoing webhook; route the daily digest and saved-search
+   alerts (today email only, `src/lib/reading/digest.server.ts`) through
+   them. This is outbound and is not covered by item 4: the app speaks when
+   nothing is calling in.
+4. Free-text command on the agent API. One MCP tool or route that takes a
+   sentence and maps it onto existing workspace commands. The hosted
+   `/api/mcp` plus API tokens already are the inbound surface; bots, email
+   hooks, Shortcuts, and coding agents are clients of it. No inbox endpoint,
+   no long-running bot, no platform adapters unless wanted later, no
+   separate agent lane (the assistant and MCP are that lane).
+
+Contract change made the same day: the global agent contract now allows
+persistent jobs for backups and the app's own maintenance (item 2 needs
+one); jobs that build, release, or reinstall still need an ask.
+
 ## Client sync finished, Feedbin API, bookmark migration (2026-09-16)
 
 After 0.185: item ids moved to 52 bits (JSON-safe and signed-64-safe) for
