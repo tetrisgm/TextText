@@ -16,7 +16,7 @@
 
 For other topics, search `HANDOFF-history-2026-09-13.md` by term, then read that section. Implementation and checks are in their source files and git history; this entry point does not duplicate them.
 
-## Home as a personal front page (2026-09-17, built, not shipped)
+## Home as a personal front page (2026-09-17, shipped as 0.189)
 
 The owner's r3 brief (Artifact-style Home: For You, topics, Summaries,
 Recent) was reviewed and then built the same day on the owner's "do the
@@ -28,8 +28,8 @@ numbers, and the acceptance dispositions are in
 `docs/reading-architecture.md`. Migration: `scripts/migrate-add-home-news.mjs`
 (registered). Tool docs regenerated (49 tools).
 
-Not shipped. Ship needs the owner's ask; the changelog entry is not
-written. Codex was still out of credits, so a fresh Claude agent did the
+Shipped as TextText 0.189 (build 1079) on 2026-09-17 with the changelog
+entry; the Mac at /Applications runs it. Codex was still out of credits, so a fresh Claude agent did the
 adversarial read of the two commits; its findings and fixes are in the
 proof commit.
 
