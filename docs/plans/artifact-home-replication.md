@@ -34,6 +34,12 @@ replaced.
 
 ## 1. The evidence: Artifact's screens, from originals
 
+All 28 originals are now on disk at `~/Downloads/artifact-reference/`, with a
+captioned gallery at `artifact_news_gallery.html` in that folder. They are
+press and review material, kept locally as design reference rather than in
+the repository. The owner's own gallery and reference index were never in
+the package; these replace them.
+
 Screens viewed for this plan (all originals, not reconstructions):
 TechCrunch product shot (light For You), the "Popular in your network"
 pair (light For You, search and bell), the clickbait trio (dark For You,
@@ -118,6 +124,38 @@ button that becomes "Continue". Then straight into the feed. Artifact
 asked for ten topics and suggested reading 25 articles before judging
 the recommendations.
 
+### 1.7a What the first open says
+
+Before any personalization exists, Artifact says so in a sheet over the feed:
+a progress ring at 0, "Artifact is learning", "Feed improves each time you
+read", and "Read 25 articles for Artifact to better personalize your feed.
+Track progress on your profile." (G03). This is the honest answer to the
+problem 0.189 solved with a mode label, and it is better: the app admits the
+feed is not yet personal and says exactly what closes the gap.
+
+### 1.7b Inside a topic: a Headlines carousel
+
+A topic feed opens with a "Headlines" heading and a horizontally scrolling row
+of story cards, each an image with its headline overlaid and "35 articles ·
+480 reads" beneath, then the ordinary feed continues (G07). The same Summary
+unit at two sizes: a card in the carousel, a row in the list.
+
+### 1.7c Reading History tells you how far you got
+
+Each row in Reading History carries the publisher and a progress figure:
+"22% read", "6% read", or a blue check reading "Read" (G13). Read Later uses
+the same check (G12). Artifact measured reading, not just opening.
+
+### 1.7d The profile settings menu, in full
+
+Subscriptions, Manage Interests, Content Request, Blocked Publishers, Terms of
+Service, Privacy, Push Settings, Send Feedback, Account Options, Sign out
+(G16). Profile itself leads with a progress ring and a Super Reader goal, a
+streak line, Invite Friends, then Read Later with a count, Reading History and
+Publisher Subscriptions (G15). The ring, the goal and the streak are
+gamification and stay out by the owner's brief; everything below them maps
+directly onto the Profile tab in section 2.1.
+
 ### 1.8 Ranking
 
 Curated publishers only (quality and corrections practice). Signals:
@@ -159,6 +197,9 @@ to a curated catalogue we ship; never fake a number.
 | Personalize your feed | Interests picker over a shipped catalogue (new): topics grouped like Artifact's, each mapped to a starter set of feeds. Choosing ten topics subscribes the workspace to their feeds in bulk. |
 | Publisher curation | A shipped catalogue of feeds per topic (a new catalogue module under `src/lib/reading/`), reviewed by hand, with the feed URL, site, and a short line. The person can add any feed as today. |
 | Your Stats | Aggregates over read state and provenance: categories read, top publishers, narrow topics (derived), counts for the last 30 days. |
+| Percent read (G13) | Real, and we have the input: `reading_read_sessions` plus the item's word count gives a truthful "38% read" without a scroll log. Show it in History and on a Read Later row. |
+| "Artifact is learning" (G03) | The cold-start sheet, said in TextText's terms: a ring over the feed on first open, "For you gets better as you read", with the count of articles read so far. It replaces the mode label as the honest signal, and disappears once the ranking has signal. |
+| Headlines carousel in a topic (G07) | The same Summary unit at card size, scrolled horizontally under a "Headlines" heading at the top of a topic view, leading into the story page. |
 | Text to speech, comments, Discover, Links, places, reputation | Out of scope. |
 
 ### 2.2 Desktop composition
