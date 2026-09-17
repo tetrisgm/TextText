@@ -18,6 +18,8 @@ describe.skipIf(!enabled)(`reading at scale (${ITEMS} imported items)`, () => {
   let overview: typeof import("@/lib/reading/overview.server");
   let summaries: typeof import("@/lib/reading/summaries.server");
   let search: typeof import("@/lib/reading/search.server");
+  let home: typeof import("@/lib/reading/home.server");
+  let materialize: typeof import("@/lib/reading/summaries-materialize.server");
   let userId = "";
   let blogId = "";
   let handle = "";
@@ -52,6 +54,8 @@ describe.skipIf(!enabled)(`reading at scale (${ITEMS} imported items)`, () => {
     overview = await import("@/lib/reading/overview.server");
     summaries = await import("@/lib/reading/summaries.server");
     search = await import("@/lib/reading/search.server");
+    home = await import("@/lib/reading/home.server");
+    materialize = await import("@/lib/reading/summaries-materialize.server");
     if (!db) throw new Error("no db");
     const stamp = `${Date.now().toString(36)}-${process.pid}`;
     handle = `scale-reading-${stamp}`;
@@ -186,5 +190,43 @@ describe.skipIf(!enabled)(`reading at scale (${ITEMS} imported items)`, () => {
     }
     // Not a budget the plan sets; recorded so the native cost is a number.
     expect(timings.syncManifestPosts, `sync manifest took ${timings.syncManifestPosts} ms`).toBeLessThan(10_000);
+  });
+
+  it("PERF-03: the home page's news is a bounded page whatever the corpus holds", async () => {
+    const homeTimings: Record<string, number> = {};
+    const clock = async <T,>(name: string, run: () => Promise<T>): Promise<T> => {
+      const started = performance.now();
+      const result = await run();
+      homeTimings[name] = Math.round(performance.now() - started);
+      return result;
+    };
+    const report = await clock("materialize", () => materialize.materializeSummaries({ blogId, handle, writeTexts: false }));
+    expect(report.topics).toBeGreaterThanOrEqual(1);
+    const forYou = await clock("forYouCold", () => home.readingHome({ handle, user }));
+    expect(forYou.units.length).toBeLessThanOrEqual(20);
+    expect(forYou.considered).toBeLessThanOrEqual(300);
+    expect(forYou.snapshot).toBeTruthy();
+    await clock("forYouWarm", () => home.readingHome({ handle, user }));
+    // The fixture's items are dated at the start of the month; a clock set
+    // just after them puts the whole considered window inside the
+    // seven-day candidate range, which is the expensive case.
+    const windowed = await clock("forYouRanked", () => home.readingHome({ handle, user, now: new Date("2026-09-02T12:00:00Z") }));
+    expect(windowed.units).toHaveLength(20);
+    expect(windowed.units.every((unit) => unit.reasons.length > 0)).toBe(true);
+    const second = await clock("forYouPage2", () => home.readingHome({ handle, user, offset: 20 }));
+    expect(second.units.length).toBeLessThanOrEqual(20);
+    const latest = await clock("latest", () => home.readingHome({ handle, user, mode: "latest" }));
+    expect(latest.units).toHaveLength(20);
+    const source = forYou.topics.find((topic) => topic.kind === "source")!;
+    const scoped = await clock("sourceTopic", () => home.readingHome({ handle, user, mode: "latest", topic: source.id }));
+    expect(scoped.units.length).toBeLessThanOrEqual(20);
+    const payload = JSON.stringify(forYou).length;
+    console.log(`[home scale] ${ITEMS} items: ${JSON.stringify({ ...homeTimings, payloadBytes: payload })}`);
+    for (const [name, ms] of Object.entries(homeTimings)) {
+      if (name === "materialize") continue;
+      expect(ms, `${name} took ${ms} ms`).toBeLessThan(2000);
+    }
+    expect(homeTimings.materialize, `materialize took ${homeTimings.materialize} ms`).toBeLessThan(10_000);
+    expect(payload).toBeLessThan(200_000);
   });
 });

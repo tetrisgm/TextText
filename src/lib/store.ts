@@ -86,6 +86,7 @@ import {
   githubInstallations,
   notificationChannels,
   readingPreferences,
+  readingSummaries,
   readingSummaryState,
 } from "./db/schema";
 import { listItemAssetReferences } from "./item-assets";
@@ -7532,6 +7533,7 @@ export async function setReadingPreference(input: { userId: string; blogId: stri
   if (!db) throw new Error("setReadingPreference requires DATABASE_URL");
   const existing = await listReadingPreferences(input.userId, input.blogId);
   if (existing.length >= MAX_PREFERENCES && !existing.some((rule) => rule.kind === input.kind && rule.target === input.target)) throw new Error(`Reading preferences are capped at ${MAX_PREFERENCES}`);
+  if (input.target.length > 300) throw new Error("That target is too long");
   const opposite = input.kind === "topic_more" ? "topic_less" : input.kind === "topic_less" ? "topic_more" : null;
   if (opposite) await db.delete(readingPreferences).where(and(eq(readingPreferences.userId, input.userId), eq(readingPreferences.blogId, input.blogId), eq(readingPreferences.kind, opposite), eq(readingPreferences.target, input.target)));
   const [row] = await db
@@ -7565,8 +7567,16 @@ export async function clearReadingPreferences(input: { userId: string; blogId: s
 }
 
 /** Hide or unhide one Summary for this person. Articles are untouched. */
+/** Only a Summary of this workspace can carry this person's state. */
+async function summaryBelongs(blogId: string, summaryId: string): Promise<boolean> {
+  if (!db || !/^[0-9a-f-]{36}$/i.test(summaryId)) return false;
+  const rows = await db.select({ id: readingSummaries.id }).from(readingSummaries).where(and(eq(readingSummaries.id, summaryId), eq(readingSummaries.blogId, blogId))).limit(1);
+  return rows.length > 0;
+}
+
 export async function setSummaryHidden(input: { userId: string; blogId: string; summaryId: string; hidden: boolean; actor: { actorType: AuditActorType } }): Promise<void> {
   if (!db) throw new Error("setSummaryHidden requires DATABASE_URL");
+  if (!(await summaryBelongs(input.blogId, input.summaryId))) throw new Error("No such Summary in this workspace");
   const now = new Date();
   await db
     .insert(readingSummaryState)
@@ -7580,12 +7590,17 @@ export async function setSummaryHidden(input: { userId: string; blogId: string; 
  * late acknowledgment never lowers a watermark, and nothing here is an
  * audit event; it is the same kind of row as read state.
  */
-export async function markSummariesSeen(input: { userId: string; seen: Array<{ summaryId: string; revision: number }> }): Promise<number> {
+export async function markSummariesSeen(input: { userId: string; blogId: string; seen: Array<{ summaryId: string; revision: number }> }): Promise<number> {
   if (!db) throw new Error("markSummariesSeen requires DATABASE_URL");
   const now = new Date();
+  const wanted = input.seen.slice(0, 100).filter((entry) => /^[0-9a-f-]{36}$/i.test(entry.summaryId));
+  if (wanted.length === 0) return 0;
+  const owned = new Set(
+    (await db.select({ id: readingSummaries.id }).from(readingSummaries).where(and(eq(readingSummaries.blogId, input.blogId), inArray(readingSummaries.id, wanted.map((entry) => entry.summaryId))))).map((row) => row.id),
+  );
   let count = 0;
-  for (const entry of input.seen.slice(0, 100)) {
-    if (!Number.isInteger(entry.revision) || entry.revision <= 0) continue;
+  for (const entry of wanted) {
+    if (!owned.has(entry.summaryId) || !Number.isInteger(entry.revision) || entry.revision <= 0) continue;
     await db
       .insert(readingSummaryState)
       .values({ userId: input.userId, summaryId: entry.summaryId, seenRevision: entry.revision, updatedAt: now })
@@ -7606,6 +7621,6 @@ export async function countHiddenSummaries(userId: string, blogId: string): Prom
   const rows = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(readingSummaryState)
-    .where(and(eq(readingSummaryState.userId, userId), sql`${readingSummaryState.hiddenAt} is not null`, sql`${readingSummaryState.summaryId} in (select id from reading_summaries where blog_id = ${blogId})`));
+    .where(and(eq(readingSummaryState.userId, userId), sql`${readingSummaryState.hiddenAt} is not null`, sql`${readingSummaryState.summaryId} in (select id from reading_summaries where blog_id = ${blogId} and retired_into is null)`));
   return rows[0]?.count ?? 0;
 }

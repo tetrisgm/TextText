@@ -16,14 +16,27 @@
 
 For other topics, search `HANDOFF-history-2026-09-13.md` by term, then read that section. Implementation and checks are in their source files and git history; this entry point does not duplicate them.
 
-## Home as a personal front page (2026-09-17, design only)
+## Home as a personal front page (2026-09-17, built, not shipped)
 
 The owner's r3 brief (Artifact-style Home: For You, topics, Summaries,
-Recent) was reviewed against the code. The composition, reuse and gap
-map, data delta, ranking, sequence, and checks are in
-`docs/plans/home-artifact-news.md`. No code changed; P1 needs the owner's
-go. Inspection gap: the brief's gallery and references files were not in
-the package, so two original Artifact screens were used instead.
+Recent) was reviewed and then built the same day on the owner's "do the
+whole thing": `f91be904` (composition), `176e2a4b` (materialized
+Summaries, topics, preferences, ranker), and the proof commit after them
+(PERF-03 on the 5,000-item fixture, docs, review fixes). Design, measured
+numbers, and the acceptance dispositions are in
+`docs/plans/home-artifact-news.md`; the architecture summary is in
+`docs/reading-architecture.md`. Migration: `scripts/migrate-add-home-news.mjs`
+(registered). Tool docs regenerated (49 tools).
+
+Not shipped. Ship needs the owner's ask; the changelog entry is not
+written. Codex was still out of credits, so a fresh Claude agent did the
+adversarial read of the two commits; its findings and fixes are in the
+proof commit.
+
+Dev fixture note: two scratch feeds (probe.example) were added to the
+second-editor workspace to exercise Summaries and removed afterwards; the
+owner's plan tier on that fixture user was set to paid to lift the free
+item cap during verification and left so.
 
 ## GitHub App, backup, notifications, free-text command (2026-09-17)
 

@@ -98,7 +98,7 @@ describe.skipIf(!enabled)("home personalization against Postgres", () => {
     expect(summary.summaryId).toBeTruthy();
     expect(summary.reasons.map((reason) => reason.name)).toEqual(["fresh", "several sources"]);
     expect(summary.seenRevision).toBe(0);
-    await store.markSummariesSeen({ userId, seen: [{ summaryId: summary.summaryId!, revision: 1 }] });
+    await store.markSummariesSeen({ userId, blogId, seen: [{ summaryId: summary.summaryId!, revision: 1 }] });
     const seen = await home.readingHome({ handle, user });
     const again = seen.units.find((unit) => unit.kind === "summary");
     if (!again || again.kind !== "summary") throw new Error("no summary");
@@ -106,8 +106,8 @@ describe.skipIf(!enabled)("home personalization against Postgres", () => {
     expect(again.coverageRevision).toBe(2);
     expect(again.reasons.map((reason) => reason.name)).toContain("new coverage");
     // A stale acknowledgment never lowers the watermark.
-    await store.markSummariesSeen({ userId, seen: [{ summaryId: summary.summaryId!, revision: 2 }] });
-    await store.markSummariesSeen({ userId, seen: [{ summaryId: summary.summaryId!, revision: 1 }] });
+    await store.markSummariesSeen({ userId, blogId, seen: [{ summaryId: summary.summaryId!, revision: 2 }] });
+    await store.markSummariesSeen({ userId, blogId, seen: [{ summaryId: summary.summaryId!, revision: 1 }] });
     const state = await store.listSummaryState(userId, [summary.summaryId!]);
     expect(state.get(summary.summaryId!)?.seenRevision).toBe(2);
     // Seeing reads nothing.

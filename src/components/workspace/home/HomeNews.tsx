@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { isTypingTarget } from "@/components/keyboard/typing-target";
 import { toggleEditablePostStarredAction } from "@/app/editor/actions";
 import { addPost, refreshWorkspacePool } from "@/lib/pool/store";
@@ -40,6 +39,7 @@ export function catchMeUpPrompt(folderPath?: string | null): string {
 }
 
 function relativeTime(iso: string, now: number): string {
+  if (!now) return "";
   const minutes = Math.round((now - new Date(iso).getTime()) / 60_000);
   if (minutes < 1) return "now";
   if (minutes < 60) return `${minutes} min`;
@@ -102,12 +102,11 @@ export function HomeNews({
   onOpenSection: (folderPath: string) => void;
   onUseAssistantPrompt: (prompt: string) => void;
 }) {
-  // The router's params are the same on the server and at hydration, so the
-  // first render agrees with itself; later changes are mirrored into local
-  // state and written back with replaceState so the local view machine is
-  // not asked to navigate.
-  const searchParams = useSearchParams();
-  const [{ mode, topic }, setView] = useState(() => stateFrom(searchParams));
+  // The server renders the default view; the URL's mode and topic are
+  // adopted right after hydration (a deferred update, so the first render
+  // agrees with itself) and written back with replaceState from then on,
+  // so the local view machine is never asked to navigate.
+  const [{ mode, topic }, setView] = useState<{ mode: Mode; topic: string | null }>({ mode: "forYou", topic: null });
   const [data, setData] = useState<HomeNewsData | null>(null);
   const [overview, setOverview] = useState<ReadingOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -120,7 +119,8 @@ export function HomeNews({
   const [menuOpen, setMenuOpen] = useState(false);
   const [managing, setManaging] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [now] = useState(() => Date.now());
+  // Set when data arrives, never during render, so server and client agree.
+  const [now, setNow] = useState(0);
   const pendingOpen = useRef<string | null>(null);
   const [openTick, setOpenTick] = useState(0);
   const [unitMenu, setUnitMenu] = useState<{ id: string; kind: "menu" | "less" | "why" } | null>(null);
@@ -134,6 +134,7 @@ export function HomeNews({
       setError(null);
       try {
         const page = await fetchReadingHome({ handle, mode: next.mode, topic: next.topic, offset });
+        setNow(Date.now());
         setData((current) => (offset > 0 && current ? { ...page, units: [...current.units, ...page.units] } : page));
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : "Could not load the news");
@@ -150,8 +151,12 @@ export function HomeNews({
   useEffect(() => {
     let cancelled = false;
     const STALE_MS = 30 * 60 * 1000;
-    const initial = stateFrom(searchParams);
-    void Promise.resolve().then(() => (cancelled ? undefined : load(initial)));
+    const initial = stateFrom(new URLSearchParams(window.location.search));
+    void Promise.resolve().then(() => {
+      if (cancelled) return;
+      setView(initial);
+      return load(initial);
+    });
     void (async () => {
       try {
         const first = await fetchReadingOverview(handle);
@@ -177,7 +182,6 @@ export function HomeNews({
     return () => {
       cancelled = true;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- the URL is read once, at mount
   }, [canManage, handle, load]);
 
   const setMode = (next: Mode) => {
@@ -358,9 +362,11 @@ export function HomeNews({
   const lessLikeThis = useCallback(
     (unit: HomeUnit, target: { kind: "topic_less" | "source_less"; target: string; label: string }) => {
       setUnitMenu(null);
-      removeUnit(unit.id);
+      // A demotion, not an exclusion: the page is re-ranked, and the unit
+      // lands wherever the rule puts it.
       void setReadingPreferenceRequest(handle, target)
-        .then((result) => {
+        .then(async (result) => {
+          await load({ mode, topic });
           setUndo({
             label: target.kind === "source_less" ? `Less from ${target.label}. A soft rule for For you, listed in Settings.` : `Less about ${target.label}. A soft rule for For you, listed in Settings.`,
             run: async () => {
@@ -372,7 +378,7 @@ export function HomeNews({
         })
         .catch((caught) => setNotice(caught instanceof Error ? caught.message : "Could not save that preference"));
     },
-    [handle, load, mode, removeUnit, topic],
+    [handle, load, mode, topic],
   );
   /** What "less like this" can name for a unit: its topics by label, its sources by folder. */
   const lessTargets = useCallback(
@@ -684,7 +690,7 @@ export function HomeNews({
                     </span>
                   )}
                 </div>
-                {item.imageUrl && <img className={styles.thumb} src={item.imageUrl} alt="" loading="lazy" onError={(event) => { event.currentTarget.dataset.hidden = "true"; }} />}
+                {item.imageUrl && <img className={styles.thumb} src={item.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.dataset.hidden = "true"; }} />}
               </li>
             );
           }
@@ -712,7 +718,7 @@ export function HomeNews({
                 }
               }}
             >
-              {lead && unit.imageUrl && <img className={styles.leadImage} src={unit.imageUrl} alt="" loading="eager" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
+              {lead && unit.imageUrl && <img className={styles.leadImage} src={unit.imageUrl} alt="" loading="eager" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
               <div className={styles.body}>
                 <p className={styles.eyebrow}>
                   <strong>{unit.sources.length} {unit.sources.length === 1 ? "source" : "sources"}</strong>
@@ -800,7 +806,7 @@ export function HomeNews({
                   )}
                 </p>
               </div>
-              {!lead && unit.imageUrl && <img className={styles.thumb} src={unit.imageUrl} alt="" loading="lazy" onError={(event) => { event.currentTarget.dataset.hidden = "true"; }} />}
+              {!lead && unit.imageUrl && <img className={styles.thumb} src={unit.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.dataset.hidden = "true"; }} />}
               {isExpanded && (
                 <ul className={styles.members} onClick={(event) => event.stopPropagation()}>
                   {unit.members.map((member, position) => (

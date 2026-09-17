@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { posts, readingEmbeddings, readingSummaries, readingTopics } from "@/lib/db/schema";
+import { posts, readingEmbeddings, readingPreferences, readingSummaries, readingSummaryState, readingTopics } from "@/lib/db/schema";
 import { listFeedConnections } from "./connections.server";
 import { sha256 } from "./feed-identity";
 import { listReadingItems, type ReadingListItem } from "./list.server";
@@ -24,12 +24,12 @@ import { blogs } from "@/lib/db/schema";
  */
 
 const CONSIDERED = 300;
-const TEXTS_PER_RUN = 8;
 const MAX_EMBEDDED = 2000;
 const MIN_FOR_DERIVED = 40;
 const MAX_DERIVED = 8;
 const KMEANS_ROUNDS = 8;
 const TOPIC_ASSIGN_MIN = 0.35;
+const TOPIC_SAME_MIN = 0.9;
 
 function requireDb() {
   if (!db) throw new Error("Summaries need DATABASE_URL");
@@ -132,8 +132,22 @@ async function refreshTopics(blogId: string, handle: string): Promise<TopicRow[]
   const existing = await database.select().from(readingTopics).where(eq(readingTopics.blogId, blogId));
   const keep = new Set<string>();
   const rows: TopicRow[] = [];
+  const claimed = new Set<string>();
+  const seenLabels = new Set<string>();
   for (const [position, spec] of specs.entries()) {
-    const match = existing.find((row) => row.kind === spec.kind && (spec.kind === "derived" ? row.label === spec.label : row.ref === spec.ref));
+    if (spec.kind === "derived") {
+      // Two clusters with one label would collide; the second takes a number.
+      if (seenLabels.has(spec.label)) spec.label = `${spec.label} ${seenLabels.size + 1}`;
+      seenLabels.add(spec.label);
+    }
+    // A derived topic keeps its id while its centroid stays close, so a
+    // person's rule about it survives a relabel.
+    const match = existing.find((row) => {
+      if (claimed.has(row.id) || row.kind !== spec.kind) return false;
+      if (spec.kind !== "derived") return row.ref === spec.ref;
+      return Boolean(row.centroid && spec.centroid && cosine(row.centroid, spec.centroid) >= TOPIC_SAME_MIN);
+    });
+    if (match) claimed.add(match.id);
     if (match) {
       const [updated] = await database
         .update(readingTopics)
@@ -149,7 +163,12 @@ async function refreshTopics(blogId: string, handle: string): Promise<TopicRow[]
     }
   }
   const stale = existing.filter((row) => !keep.has(row.id)).map((row) => row.id);
-  if (stale.length) await database.delete(readingTopics).where(inArray(readingTopics.id, stale));
+  if (stale.length) {
+    await database.delete(readingTopics).where(inArray(readingTopics.id, stale));
+    // A rule about a topic that no longer exists would count as a
+    // preference while applying to nothing.
+    await database.delete(readingPreferences).where(and(eq(readingPreferences.blogId, blogId), inArray(readingPreferences.target, stale.map((id) => `derived:${id}`))));
+  }
   return rows;
 }
 
@@ -224,14 +243,20 @@ export async function materializeSummaries(input: { blogId: string; handle: stri
     };
     // A cluster that absorbed another one: the row whose key is not this
     // one but shares a member is retired into the survivor.
-    const home = byKey.get(key) ?? members.map((member) => byMember.get(member.id)).find((row): row is SummaryRow => Boolean(row) && !touched.has(row!.id));
+    const byKeyRow = byKey.get(key);
+    const home = (byKeyRow && !touched.has(byKeyRow.id) ? byKeyRow : undefined) ?? members.map((member) => byMember.get(member.id)).find((row): row is SummaryRow => Boolean(row) && !touched.has(row!.id));
     if (!home) {
       const [inserted] = await database.insert(readingSummaries).values({ blogId: input.blogId, stableKey: key, coverageRevision: 1, text, textModel: text ? "cached" : null, textEvidenceHash: text ? evidence : null, ...values }).returning();
       touched.add(inserted.id);
+      byKey.set(key, inserted);
+      for (const member of members) byMember.set(member.id, inserted);
       report.created += 1;
       if (text) report.textsWritten += 1;
       continue;
     }
+    // Coverage moves only when something joins. A member ageing out of the
+    // window shrinks the set and changes the evidence, but it is not news.
+    const joined = members.some((member) => !home.memberIds.includes(member.id));
     const revised = home.evidenceHash !== evidence;
     const textChanged = text !== null && text !== home.text;
     // The key stays while the member it names is still here, so a newer
@@ -242,20 +267,32 @@ export async function materializeSummaries(input: { blogId: string; handle: stri
       .set({
         stableKey: keptKey,
         ...values,
-        coverageRevision: revised ? home.coverageRevision + 1 : home.coverageRevision,
+        coverageRevision: joined ? home.coverageRevision + 1 : home.coverageRevision,
         ...(text !== null ? { text, textModel: "cached", textEvidenceHash: evidence } : {}),
       })
       .where(eq(readingSummaries.id, home.id));
     touched.add(home.id);
+    byKey.set(keptKey, { ...home, stableKey: keptKey, memberIds: values.memberIds });
     if (revised) report.revised += 1;
     if (textChanged) report.textsWritten += 1;
     for (const member of members) {
       const other = byMember.get(member.id);
       if (other && other.id !== home.id && !touched.has(other.id)) {
         await database.update(readingSummaries).set({ retiredInto: home.id, updatedAt: new Date() }).where(eq(readingSummaries.id, other.id));
+        // What people had done to the retired row follows it: hidden stays
+        // hidden, and the watermark keeps the higher of the two.
+        await database.execute(sql`
+          insert into reading_summary_state (user_id, summary_id, seen_revision, hidden_at, updated_at)
+          select user_id, ${home.id}::uuid, seen_revision, hidden_at, now() from reading_summary_state where summary_id = ${other.id}::uuid
+          on conflict (user_id, summary_id) do update set
+            seen_revision = greatest(reading_summary_state.seen_revision, excluded.seen_revision),
+            hidden_at = coalesce(reading_summary_state.hidden_at, excluded.hidden_at),
+            updated_at = now()
+        `);
         touched.add(other.id);
         report.retired += 1;
       }
+      byMember.set(member.id, { ...home, memberIds: values.memberIds });
     }
   }
   // Rows for clusters that fell out of the window stay, so a person's seen
@@ -280,4 +317,3 @@ export async function runSummarizeJob(job: ReadingJobRow): Promise<void> {
   await materializeSummaries({ blogId: job.blogId, handle, writeTexts: true });
 }
 
-export { TEXTS_PER_RUN };

@@ -38,7 +38,7 @@ export async function POST(request: Request) {
     switch (body.action) {
       case "set": {
         const kind = KINDS.find((value) => value === body.kind);
-        if (!kind || typeof body.target !== "string" || !body.target) return jsonError("Missing kind or target", 400);
+        if (!kind || typeof body.target !== "string" || !body.target || body.target.length > 300) return jsonError("Missing kind or target", 400);
         const rule = await setReadingPreference({ userId, blogId, kind, target: body.target, label: typeof body.label === "string" && body.label ? body.label : body.target, actor });
         return json({ rule: { ...rule, createdAt: rule.createdAt.toISOString() } });
       }
@@ -51,6 +51,7 @@ export async function POST(request: Request) {
         return jsonError("Unknown action", 400);
     }
   } catch (error) {
-    return jsonError(error instanceof Error ? error.message : "Could not update preferences", 400);
+    const message = error instanceof Error ? error.message : "";
+    return jsonError(/capped|too long/.test(message) ? message : "Could not update preferences", 400);
   }
 }

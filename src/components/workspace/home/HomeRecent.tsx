@@ -16,7 +16,7 @@ import styles from "./Home.module.css";
 const KIND_LABEL: Record<string, string> = { note: "Note", article: "Draft", bookmark: "Bookmark", media_post: "Post", video_post: "Post" };
 
 function relativeTime(iso: string | undefined, now: number): string {
-  if (!iso) return "";
+  if (!iso || !now) return "";
   const minutes = Math.round((now - new Date(iso).getTime()) / 60_000);
   if (minutes < 1) return "just now";
   if (minutes < 60) return `${minutes} min ago`;
@@ -41,16 +41,21 @@ export function HomeRecent({
   onShowAll: () => void;
 }) {
   const [kept, setKept] = useState<ReadingListItem[]>([]);
-  const [now] = useState(() => Date.now());
+  // Set once the kept items arrive, never during render.
+  const [now, setNow] = useState(0);
   const limit = 6;
 
   useEffect(() => {
     let cancelled = false;
     void fetchReadingPage({ handle: pool.blog.handle, scope: { folderPath: "", includeDescendants: true, state: "kept", dateBasis: "received" }, limit: 6 })
       .then((page) => {
-        if (!cancelled) setKept(page.items.filter((item) => item.origin === "feed"));
+        if (cancelled) return;
+        setKept(page.items.filter((item) => item.origin === "feed"));
+        setNow(Date.now());
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (!cancelled) setNow(Date.now());
+      });
     return () => {
       cancelled = true;
     };

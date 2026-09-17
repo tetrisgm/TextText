@@ -1,9 +1,11 @@
 # Home as a personal front page: design review (P0)
 
-Revision: 2026-09-17, against main at 0.188.
+Revision: 2026-09-17, against main at 0.188, then built the same day.
 Brief: the owner's `RSS_ARTIFACT_PROMPT.md` and `RSS_ARTIFACT_PLAN.md` (r3).
-Status: repository-grounded design and plan. No application code, schema,
-or data was changed for this document. Implementation needs a separate go.
+Status: P1, P2, and P3 are implemented locally on main (commits
+`f91be904` composition, `176e2a4b` targeting, and the proof commit after
+them). Sections 1 to 8 are the design as reviewed; section 10 records what
+was built, measured, and left open.
 
 ## 0. What this review is grounded in
 
@@ -318,3 +320,53 @@ existing regression suites and lint; 044 is this document.
   Proposed: accept for P2, allow renaming in Settings later.
 - The 12-topic cap and the 7-day candidate window are starting values,
   chosen for the benchmark workspace, not measured.
+
+## 10. Delivered (2026-09-17)
+
+Built as designed with these deviations, each deliberate:
+
+- Topics in P1 came from saved searches and source folders; P2 added
+  derived topics from the embedded corpus (k-means, capped at 8, only past
+  40 embedded items, labelled by the two most frequent title words).
+- Seen acknowledgment: 60 percent of the row visible for 400 ms, batched
+  every two seconds, flushed on unmount. Prefetch and offscreen rows never
+  count.
+- The mode label is one of three: "Newest first" (nothing materialized
+  yet), "Ranked by freshness and coverage", "Ranked with your
+  preferences". For You is never labelled personalized when it is not.
+- `clear_reading_preferences` is confirmation-gated and hosted-only; the
+  local CLI cannot wipe a person's rules in one call.
+- Recent shows six rows on a wide canvas and three on a narrow one (CSS
+  container query on the frame around the grid), never two regions.
+- Captures were taken in the session (light, dark, tablet width with the
+  Recent strip first) and compared with the two Artifact originals; they
+  are not committed as files.
+
+Measured (local Postgres, 5,000 imported items, `scale.db.test.ts`
+PERF-03): materialize 77 ms, For you cold 43 ms, warm 40 ms, ranked over a
+full 300-item window 56 ms, page two 41 ms, Latest 42 ms, source topic 40
+ms. The seven-day window, 300 considered, 400 Summary rows, 600 vectors,
+and 20 units per page are the bounds.
+
+Acceptance dispositions (IDs from the r3 brief):
+
+| IDs | Disposition |
+|---|---|
+| 001, 002, 003, 004 | Checked in the session against the two originals, both themes, wide and tablet widths; no em dashes; copy says Summary. Captures not committed. |
+| 005 | Feed-supplied images only, https only, lazy, reserved geometry, hidden on error. Not exercised: slow or blocked hosts. |
+| 006, 007, 008, 009 | `home.db.test.ts`, `HomeRecent.tsx` (kept items by one bounded query, imports excluded), Reading menu, no-feed workspace keeps the library. |
+| 010, 011, 012, 013, 014 | `home.test.ts`, `home.db.test.ts`; URL state; saved searches reused by their query and labelled "matched by exact words". |
+| 015, 018, 019, 020, 021 | `home-personal.db.test.ts` HP-01 to HP-03: seen reads nothing and never lowers; new coverage only on a member joining; hide is per person and leaves Latest whole. |
+| 016, 017 | Keyboard flow checked live; return restores mode and topic from the URL, expansion and focus from component state within the session. Not a persisted scroll position. |
+| 022, 023, 024, 025, 026 | `rank.test.ts`, HP-04: contrasting preferences change order, reductions demote by share, reversal restores, reset clears. |
+| 027, 028, 029 | Preferences and state are per person, read only by the home read model; agents use the same store functions with audit. |
+| 030, 031, 032 | Text is written per cluster from its members only; `textStale` marks a line written against earlier evidence. Removed citations are not relabelled (topic scoping filters whole Summaries, never members). |
+| 033 | Without a key: no line, topics from searches and sources, ranking by freshness and coverage. |
+| 034, 035 | No holds created by seen, hidden, or preferences (HP-02); every route requires a reader with access and a signed-in person for personal writes. |
+| 036, 037, 038, 039 | PERF-03; no per-card model call; one job kind on the existing tick with a ten-minute op key. |
+| 040 | Empty topic and no-arrivals states have copy; "all seen" simply ranks lower, no false "All caught up". |
+| 041, 042 | Existing suites (3366 unit, 96 DB) and lint pass. |
+| 043, 044 | This section; the review below. |
+
+Open: the derived topic labels are blunt; renaming in Settings is not
+built. Return does not restore scroll position across a full reload.

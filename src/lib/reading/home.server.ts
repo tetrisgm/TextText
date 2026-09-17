@@ -143,7 +143,13 @@ function topicIdOf(row: TopicRow): string {
 async function homeTopics(handle: string, user: AccessUser | null, blogId: string): Promise<{ topics: HomeTopic[]; rows: TopicRow[] }> {
   const rows = await requireDb().select().from(readingTopics).where(eq(readingTopics.blogId, blogId)).orderBy(readingTopics.position);
   if (rows.length > 0) {
-    return { rows, topics: rows.slice(0, MAX_TOPICS).map((row) => ({ id: topicIdOf(row), label: row.label, kind: row.kind === "derived" ? "derived" : row.kind === "search" ? "search" : "source", detail: row.kind === "derived" ? `${row.memberCount} articles` : row.ref })) };
+    const queries = new Map((await listSavedSearches({ handle, user })).map((search) => [search.id, search.query]));
+    const topics: HomeTopic[] = [];
+    for (const row of rows) {
+      if (row.kind === "search" && row.ref && !queries.has(row.ref)) continue; // the saved search is gone
+      topics.push({ id: topicIdOf(row), label: row.label, kind: row.kind === "derived" ? "derived" : row.kind === "search" ? "search" : "source", detail: row.kind === "derived" ? `${row.memberCount} articles` : row.kind === "search" && row.ref ? (queries.get(row.ref) ?? null) : row.ref });
+    }
+    return { rows, topics: topics.slice(0, MAX_TOPICS) };
   }
   // Nothing materialized yet (a workspace that just added feeds): the live
   // list, so the strip is never empty for want of a tick.
@@ -171,6 +177,17 @@ async function recentItems(input: { handle: string; user: AccessUser | null; fol
     if (!cursor) break;
   }
   return items.slice(0, input.considered);
+}
+
+/** The items of a derived topic, by nearest centroid; without vectors an item is not in any derived topic. */
+async function filterByDerivedTopic(blogId: string, items: ReadingListItem[], row: TopicRow): Promise<ReadingListItem[]> {
+  if (!row.centroid || items.length === 0) return [];
+  const rows = await requireDb().select({ id: readingEmbeddings.postId, vector: readingEmbeddings.vector }).from(readingEmbeddings).where(and(eq(readingEmbeddings.blogId, blogId), inArray(readingEmbeddings.postId, items.map((item) => item.id))));
+  const vectors = new Map(rows.map((entry) => [entry.id, entry.vector]));
+  return items.filter((item) => {
+    const vector = vectors.get(item.id);
+    return vector ? cosine(vector, row.centroid!) >= 0.35 : false;
+  });
 }
 
 /** The person's Keep and star centroid, from the embedded items they deliberately kept. */
@@ -251,10 +268,15 @@ async function forYouUnits(input: { handle: string; user: AccessUser | null; blo
     const topicIds = idsByTopicRow(row.topicIds);
     if (input.scopeTopic && !topicIds.includes(input.scopeTopic)) continue;
     const sorted = members.slice().sort((left, right) => timeOf(right) - timeOf(left));
+    // A person who can see only some of the members (folder-scoped access,
+    // or a source topic narrowing the list) gets a Summary of what they can
+    // see: the sources they can see, no line written over the rest.
+    const complete = members.length === row.memberIds.length;
+    const sources = [...new Set(sorted.map((member) => member.publisherName ?? member.sourceFolderName))];
     candidates.push({
       id: row.id,
-      latestAt: row.latestAt.toISOString(),
-      sources: row.sourceNames,
+      latestAt: sorted[0] ? new Date(timeOf(sorted[0])).toISOString() : row.latestAt.toISOString(),
+      sources,
       sourcePaths: [...new Set(members.map((member) => member.folderPath))],
       topicIds,
       coverageRevision: row.coverageRevision,
@@ -264,14 +286,14 @@ async function forYouUnits(input: { handle: string; user: AccessUser | null; blo
       summary: {
         id: row.id,
         summaryId: row.id,
-        headline: row.headline,
+        headline: complete ? row.headline : sorted.map((member) => member.title).sort((left, right) => left.length - right.length)[0],
         members: sorted,
-        sources: row.sourceNames,
+        sources,
         firstAt: row.firstAt.toISOString(),
-        latestAt: row.latestAt.toISOString(),
+        latestAt: sorted[0] ? new Date(timeOf(sorted[0])).toISOString() : row.latestAt.toISOString(),
         unread: sorted.filter((member) => !member.read).length,
-        text: row.text,
-        textStale: Boolean(row.text && row.textEvidenceHash !== row.evidenceHash),
+        text: complete ? row.text : null,
+        textStale: complete && Boolean(row.text && row.textEvidenceHash !== row.evidenceHash),
         coverageRevision: row.coverageRevision,
         seenRevision: personal?.seenRevision ?? 0,
         topicIds,
@@ -341,6 +363,10 @@ export async function readingHome(input: {
     topicNote = found.semantic ? null : "Matched by the search's exact words.";
   } else {
     items = await recentItems({ handle: input.handle, user: input.user, folderPath: topic?.kind === "source" ? topic.folderPath : "", considered: HOME_CONSIDERED });
+  }
+  if (activeTopic?.kind === "derived") {
+    const row = topicRows.find((entry) => topicIdOf(entry) === activeTopic.id);
+    items = row ? await filterByDerivedTopic(blogId, items, row) : [];
   }
   let units: HomeUnit[];
   let snapshot: string | null = null;

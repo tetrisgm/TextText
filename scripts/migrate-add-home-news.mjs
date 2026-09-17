@@ -41,7 +41,8 @@ await sql`
     updated_at timestamp NOT NULL DEFAULT now()
   )
 `;
-await sql`CREATE UNIQUE INDEX IF NOT EXISTS reading_summaries_blog_key_idx ON reading_summaries (blog_id, stable_key)`;
+await sql`DROP INDEX IF EXISTS reading_summaries_blog_key_idx`;
+await sql`CREATE UNIQUE INDEX IF NOT EXISTS reading_summaries_blog_key_idx ON reading_summaries (blog_id, stable_key) WHERE retired_into IS NULL`;
 await sql`CREATE INDEX IF NOT EXISTS reading_summaries_blog_latest_idx ON reading_summaries (blog_id, latest_at)`;
 
 console.log("Creating reading_topics...");

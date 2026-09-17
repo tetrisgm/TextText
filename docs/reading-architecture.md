@@ -133,6 +133,49 @@ and parsing; it never fabricates a candidate.
   (ClientLogin, user-info, subscription/list, stream/items/ids; Basic auth,
   subscriptions, paged entries with Link, unread_entries).
 
+## Home as a personal front page (added 2026-09-17)
+
+The home page of a workspace that follows feeds is a news front page
+with recent work beside it. Design and acceptance map:
+`docs/plans/home-artifact-news.md`.
+
+- Read model: `src/lib/reading/home.server.ts`, served by
+  `GET /api/workspace/reading/home`. A unit is a Summary or a single
+  article. At most 300 recent feed items feed a page; a page is 20 units of
+  a named snapshot. Feed items never enter the client pool.
+- Materialized Summaries: `reading_summaries` (stable key, member ids,
+  coverage revision, evidence hash, cached text and the hash it was written
+  against), kept current by the tick's `summarize_recent` job
+  (`summaries-materialize.server.ts`, at most every ten minutes, as the
+  owner, after polls and before the digest). Topics: `reading_topics`
+  (saved searches, source folders, derived k-means clusters when the corpus
+  is embedded; derived only past 40 embedded items, capped at 8).
+- Ranking: `rank.ts`, version 1, no model call. Terms: freshness, new
+  coverage against the person's seen watermark, explicit interest,
+  affinity to what they keep and star (embeddings), breadth of sources,
+  minus already-seen repetition and the person's reductions; then a
+  diversity pass over the first twelve. Every term that fired travels with
+  the unit so "Why this is here" is a list, not a story. The mode label
+  says what the order is: "Newest first" before the first materialization,
+  "Ranked by freshness and coverage", or "Ranked with your preferences".
+- Personal state, in the open: `reading_summary_state` (seen revision,
+  hidden), `reading_preferences` (topic_more, topic_less, source_less).
+  Store functions with `reading.*` audit rows; Settings, Reading
+  preferences lists and undoes every rule and resets hidden Summaries.
+  Seen is recorded from rows that stayed 60 percent visible for 400 ms,
+  batched, and never lowered. Hide and preferences touch For You and topic
+  views only: Latest, folders, search, digests, alerts, exports, and the
+  Reader and Feedbin APIs read none of it.
+- Agents: `hide_summary`, `set_reading_preference`,
+  `clear_reading_preferences` (the last confirmation-gated, hosted only).
+- Keyboard: j, k, o or Enter, m, s, e, v as in reading folders; l and h
+  expand and collapse a Summary's sources; x hides; comma opens Less like
+  this; a key acts on the focused member when one is.
+- Measured on the 5,000-item fixture (`scale.db.test.ts`, PERF-03, local
+  Postgres, 2026-09-17): materialize 77 ms, For you cold 43 ms, warm 40 ms,
+  ranked over a full 300-item window 56 ms, page two 41 ms, Latest 42 ms,
+  source topic 40 ms, page payload under 1 KB per unit.
+
 ## Outbound notifications (added 2026-09-17)
 
 Where a workspace speaks when nothing is calling in. `notification_channels`

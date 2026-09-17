@@ -1605,7 +1605,12 @@ export const readingSummaries = pgTable(
     retiredInto: uuid("retired_into"),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
-  (t) => [uniqueIndex("reading_summaries_blog_key_idx").on(t.blogId, t.stableKey), index("reading_summaries_blog_latest_idx").on(t.blogId, t.latestAt)],
+  (t) => [
+    // Live rows only: a retired row keeps its key for history without
+    // blocking the key from coming back when a story regroups later.
+    uniqueIndex("reading_summaries_blog_key_idx").on(t.blogId, t.stableKey).where(sql`retired_into is null`),
+    index("reading_summaries_blog_latest_idx").on(t.blogId, t.latestAt),
+  ],
 );
 
 /** Cross-source views: a saved search, a source folder, or a derived cluster of the embedded corpus. */
