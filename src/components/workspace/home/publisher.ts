@@ -131,24 +131,3 @@ export function publisherFor(item: {
     color: markColor(name),
   };
 }
-
-/**
- * Whether an excerpt is prose worth showing under a headline.
- *
- * Aggregator feeds put a block of links in the body ("Article URL: ...
- * Comments URL: ... Points: 2"), which reads as noise under a headline and
- * is the loudest thing on the row when set at excerpt size. Strip the URLs
- * and the labels; if almost nothing is left, there was nothing to say. What
- * comes back is the prose without the links, which is what belongs under a
- * headline.
- */
-export function usableExcerpt(excerpt: string | null | undefined): string | null {
-  if (!excerpt) return null;
-  const prose = excerpt
-    .replace(/https?:\/\/\S+/g, " ")
-    .replace(/\b(article|comments?|source|link)s?\s+url\s*:?/gi, " ")
-    .replace(/\b(points?|comments?)\s*:\s*\d+/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return prose.length >= 40 ? prose : null;
-}

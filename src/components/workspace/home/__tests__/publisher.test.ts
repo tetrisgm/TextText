@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MARK_COLORS, hostOf, initialsOf, markColor, nameMatchesHost, publisherFor, usableExcerpt } from "../publisher";
+import { MARK_COLORS, hostOf, initialsOf, markColor, nameMatchesHost, publisherFor } from "../publisher";
 
 /**
  * A news row is scanned by its publisher before it is read by its headline,
@@ -66,24 +66,5 @@ describe("the monogram tiles", () => {
       const ratio = (1 + 0.05) / (luminance(color) + 0.05);
       expect(ratio, color).toBeGreaterThanOrEqual(4.5);
     }
-  });
-});
-
-describe("whether an excerpt is worth showing", () => {
-  it("drops an aggregator's block of links", () => {
-    expect(
-      usableExcerpt("Article URL: https://example.com/a Comments URL: https://news.ycombinator.com/item?id=1 Points: 2 Comments: 0"),
-    ).toBeNull();
-  });
-
-  it("keeps prose, without the links in it", () => {
-    const kept = usableExcerpt("I needed a public demo to show usage, so I compiled the whole server to WASM. https://example.com/demo");
-    expect(kept).toContain("compiled the whole server");
-    expect(kept).not.toContain("https://");
-  });
-
-  it("has nothing to say about an empty excerpt", () => {
-    expect(usableExcerpt(null)).toBeNull();
-    expect(usableExcerpt("   ")).toBeNull();
   });
 });
