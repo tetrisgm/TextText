@@ -1,3 +1,4 @@
+import { readScope } from "@/lib/request-scope";
 import { readingHome } from "@/lib/reading/home.server";
 import { markSummariesSeen, setSummaryHidden, workspaceIdForHandle } from "@/lib/store";
 import { handleFrom, json, jsonError, readJson, requireReader } from "../_shared";
@@ -6,6 +7,12 @@ export const dynamic = "force-dynamic";
 
 /** GET ?handle=&mode=forYou|latest&topic=&offset=&limit= -> the home page's news units. */
 export async function GET(request: Request) {
+  // The whole handler reads, so the permission check and the news share one
+  // answer to "which workspace is this". Nothing here writes.
+  return readScope(() => loadHome(request));
+}
+
+async function loadHome(request: Request) {
   const handle = handleFrom(request);
   if (!handle) return jsonError("Missing workspace handle", 400);
   const reader = await requireReader(handle);

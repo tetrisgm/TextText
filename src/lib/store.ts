@@ -28,6 +28,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { cache } from "react";
+import { onceInRead } from "@/lib/request-scope";
 import {
   BLOG_FOLDER_PATH,
   DEFAULT_FILE_REPRESENTATION,
@@ -3280,7 +3281,10 @@ async function getFoldersUncached(handle: string): Promise<Folder[]> {
 const getFoldersCached = cache(getFoldersUncached);
 
 export async function getFolders(handle: string): Promise<Folder[]> {
-  return getFoldersCached(handle);
+  // React's cache() covers a rendering tree; the read scope covers a route
+  // handler, which is where the reading surfaces live and where this was
+  // being asked four to eight times for one answer.
+  return onceInRead(`folders:${handle}`, () => getFoldersCached(handle));
 }
 
 // Posts scoped to one folder of the workspace, identified by its path. Posts

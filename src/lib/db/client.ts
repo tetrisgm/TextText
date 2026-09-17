@@ -29,27 +29,42 @@ let localPool: Pool | null = null;
 // TEXTTEXT_DB_TRACE=1 stamps every query's issue time to stderr, which is how
 // serial round-trip waves in a render are found. Never on in production.
 const traceQueries = process.env.TEXTTEXT_DB_TRACE === "1";
-const traceLogger = traceQueries
-  ? {
-      logQuery(query: string): void {
-        process.stderr.write(
-          `[db ${performance.now().toFixed(1)}] ${query.replace(/\s+/g, " ").slice(0, 120)}\n`,
-        );
-      },
+
+// Against local Postgres a round trip is a fraction of a millisecond and a
+// page can make fifty without anyone noticing. Against the production
+// database each one is a fresh HTTPS request, so the count, not the query
+// plan, is what a page's speed is made of. This counter is what lets a test
+// hold a page to a budget instead of waiting for someone to say it feels
+// slow. Always on: it is one increment.
+let issued = 0;
+
+/** Queries issued since the process started. Compare two readings. */
+export function queriesIssued(): number {
+  return issued;
+}
+
+const countingLogger = {
+  logQuery(query: string): void {
+    issued += 1;
+    if (traceQueries) {
+      process.stderr.write(
+        `[db ${performance.now().toFixed(1)}] ${query.replace(/\s+/g, " ").slice(0, 120)}\n`,
+      );
     }
-  : undefined;
+  },
+};
 
 function makeDb(): Database | null {
   if (!url) return null;
   if (/neon\.tech/i.test(url)) {
-    return drizzleNeon(neon(url), { schema, logger: traceLogger });
+    return drizzleNeon(neon(url), { schema, logger: countingLogger });
   }
   // Local Postgres exposes the same Drizzle query API for everything store.ts
   // uses, so treat it as the same Db type.
   localPool = new Pool({ connectionString: url });
   return drizzlePg(localPool, {
     schema,
-    logger: traceLogger,
+    logger: countingLogger,
   }) as unknown as Database;
 }
 

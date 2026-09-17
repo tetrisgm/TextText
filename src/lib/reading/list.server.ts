@@ -33,6 +33,13 @@ export type ReadingScope = {
   direction?: "newest" | "oldest";
   /** Only these items, when a caller needs the list's shape for a few ids. */
   ids?: string[];
+  /**
+   * Only these folders, when the caller already knows them. A channel knows
+   * its sources' folder ids from the connections it just listed, so this
+   * saves resolving each one separately: eighteen statements became one.
+   * Always intersected with what the person may see, never widening it.
+   */
+  onlyFolderIds?: string[];
 };
 
 export type ReadingListItem = {
@@ -134,12 +141,15 @@ export async function listReadingItems(input: {
 }): Promise<ReadingListPage> {
   const database = requireDb();
   const limit = Math.max(1, Math.min(MAX_PAGE, Math.trunc(input.limit ?? 40)));
-  const { blogId, folderIds } = await resolveReadingFolderIds({
+  const resolved = await resolveReadingFolderIds({
     handle: input.handle,
     user: input.user,
     folderPath: input.scope.folderPath,
     includeDescendants: input.scope.includeDescendants,
   });
+  const { blogId } = resolved;
+  const wanted = input.scope.onlyFolderIds;
+  const folderIds = wanted ? resolved.folderIds.filter((id) => wanted.includes(id)) : resolved.folderIds;
   const userId = input.user?.userId ?? null;
   const fingerprint = sha(`${blogId}|${userId ?? "anon"}|${[...folderIds].sort().join(",")}|${input.scope.state}|${input.scope.dateBasis}|${input.scope.direction ?? "newest"}`);
   if (folderIds.length === 0) {

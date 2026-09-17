@@ -3,6 +3,7 @@ import { db } from "@/lib/db/client";
 import { posts, readingEmbeddings, readingSummaries, readingTopics, retentionHolds } from "@/lib/db/schema";
 import type { AccessUser } from "@/lib/permissions";
 import { countHiddenSummaries, listReadingPreferences, listSummaryState, workspaceIdForHandle } from "@/lib/store";
+import { readScope } from "@/lib/request-scope";
 import { CHANNEL_PREFIX, channelTopicId, sortChannels } from "./channels";
 import { tidyPublisherName } from "./publisher-name";
 import { listFeedConnections, type FeedConnectionView } from "./connections.server";
@@ -29,8 +30,6 @@ import { withSummaryTexts } from "./summary-text.server";
 export const HOME_CONSIDERED = 300;
 const PAGE = 20;
 const MAX_TOPICS = 12;
-/** Sources read for one channel page. Past this the channel is a folder, not a tab. */
-const MAX_CHANNEL_SOURCES = 24;
 /** Cards in the Headlines strip. Fewer than this and it is not a strip. */
 const MAX_HEADLINES = 6;
 const MIN_HEADLINES = 2;
@@ -192,7 +191,7 @@ export function channelTopicsFrom(connections: FeedConnectionView[]): HomeTopic[
  * click away under Sources. The one exception is a workspace whose sources
  * are all unplaced, where a strip of publishers beats no strip at all.
  */
-async function homeTopics(handle: string, user: AccessUser | null, blogId: string): Promise<{ topics: HomeTopic[]; rows: TopicRow[] }> {
+async function homeTopics(handle: string, user: AccessUser | null, blogId: string): Promise<{ topics: HomeTopic[]; rows: TopicRow[]; connections: FeedConnectionView[] }> {
   const [rows, connections] = await Promise.all([
     requireDb().select().from(readingTopics).where(eq(readingTopics.blogId, blogId)).orderBy(readingTopics.position),
     listFeedConnections(handle),
@@ -207,7 +206,7 @@ async function homeTopics(handle: string, user: AccessUser | null, blogId: strin
       rest.push({ id: topicIdOf(row), label: row.label, kind: row.kind === "derived" ? "derived" : "search", detail: row.kind === "derived" ? `${row.memberCount} articles` : row.ref ? (queries.get(row.ref) ?? null) : null });
     }
     const topics = [...channels, ...rest];
-    if (topics.length > 0) return { rows, topics: topics.slice(0, MAX_TOPICS) };
+    if (topics.length > 0) return { rows, topics: topics.slice(0, MAX_TOPICS), connections };
   }
   // Nothing to show as a subject: the live list, so a workspace that just
   // added feeds is never left with a strip of one tab.
@@ -223,17 +222,17 @@ async function homeTopics(handle: string, user: AccessUser | null, blogId: strin
         .map((connection) => ({ id: `source:${connection.folderPath}`, label: connection.publisherTitle ?? connection.folderName, kind: "source" as const, detail: connection.folderPath })),
     );
   }
-  return { rows, topics: topics.slice(0, MAX_TOPICS) };
+  return { rows, topics: topics.slice(0, MAX_TOPICS), connections };
 }
 
-async function recentItems(input: { handle: string; user: AccessUser | null; folderPath: string; considered: number }): Promise<ReadingListItem[]> {
+async function recentItems(input: { handle: string; user: AccessUser | null; folderPath: string; folderIds?: string[]; considered: number }): Promise<ReadingListItem[]> {
   const items: ReadingListItem[] = [];
   let cursor: string | null = null;
   while (items.length < input.considered) {
     const page = await listReadingItems({
       handle: input.handle,
       user: input.user,
-      scope: { folderPath: input.folderPath, includeDescendants: true, state: "all", dateBasis: "published" },
+      scope: { folderPath: input.folderPath, includeDescendants: true, state: "all", dateBasis: "published", onlyFolderIds: input.folderIds },
       cursor,
       limit: 100,
     });
@@ -242,30 +241,6 @@ async function recentItems(input: { handle: string; user: AccessUser | null; fol
     if (!cursor) break;
   }
   return items.slice(0, input.considered);
-}
-
-/**
- * A channel's window: every source in it, newest first, merged. One bounded
- * pass per source rather than one over everything, so a channel of two
- * publishers is as deep as a channel of eight instead of being crowded out
- * by whichever source posts most.
- */
-async function channelItems(input: { handle: string; user: AccessUser | null; folderPaths: string[]; considered: number }): Promise<ReadingListItem[]> {
-  if (input.folderPaths.length === 0) return [];
-  const share = Math.max(20, Math.ceil(input.considered / input.folderPaths.length));
-  const pages = await Promise.all(
-    input.folderPaths.slice(0, MAX_CHANNEL_SOURCES).map((folderPath) =>
-      recentItems({ handle: input.handle, user: input.user, folderPath, considered: share }),
-    ),
-  );
-  const seen = new Set<string>();
-  const merged: ReadingListItem[] = [];
-  for (const item of pages.flat()) {
-    if (seen.has(item.id)) continue;
-    seen.add(item.id);
-    merged.push(item);
-  }
-  return merged.sort((left, right) => timeOf(right) - timeOf(left)).slice(0, input.considered);
 }
 
 /** The items of a derived topic, by nearest centroid; without vectors an item is not in any derived topic. */
@@ -426,7 +401,22 @@ async function forYouUnits(input: { handle: string; user: AccessUser | null; blo
   return { units, snapshot: snapshotId(units.map((unit) => unit.id)), hiddenCount, preferences: preferences.count };
 }
 
-export async function readingHome(input: {
+export function readingHome(input: {
+  handle: string;
+  user: AccessUser | null;
+  mode?: "forYou" | "latest";
+  topic?: string | null;
+  offset?: number;
+  limit?: number;
+  now?: Date;
+}): Promise<HomeNews> {
+  // Every layer under here needs the workspace id and the folder list, and
+  // none of them holds it. One scope, one answer each, for a page that asked
+  // ten and eight times.
+  return readScope(() => homeNews(input));
+}
+
+async function homeNews(input: {
   handle: string;
   user: AccessUser | null;
   mode?: "forYou" | "latest";
@@ -440,7 +430,7 @@ export async function readingHome(input: {
   const offset = Math.max(0, Math.trunc(input.offset ?? 0));
   const now = input.now ?? new Date();
   const blogId = await workspaceIdForHandle(input.handle);
-  const { topics, rows: topicRows } = await homeTopics(input.handle, input.user, blogId);
+  const { topics, rows: topicRows, connections } = await homeTopics(input.handle, input.user, blogId);
   const topic = parseTopic(input.topic);
   const activeTopic = topic ? topics.find((entry) => entry.id === input.topic) ?? null : null;
   let items: ReadingListItem[];
@@ -451,12 +441,15 @@ export async function readingHome(input: {
     items = found.items.filter((item) => item.origin === "feed").sort((left, right) => timeOf(right) - timeOf(left));
     topicNote = found.semantic ? null : "Matched by the search's exact words.";
   } else if (topic?.kind === "channel") {
-    const connections = await listFeedConnections(input.handle);
-    const folderPaths = connections
+    // The connections the strip was built from already carry their folder
+    // ids, so a channel is the same one pass the whole feed makes, narrowed.
+    const folderIds = connections
       .filter((connection) => connection.state !== "detached" && connection.channel === topic.name)
-      .map((connection) => connection.folderPath);
-    items = await channelItems({ handle: input.handle, user: input.user, folderPaths, considered: HOME_CONSIDERED });
-    if (folderPaths.length === 0) topicNote = "No sources are in this channel yet.";
+      .map((connection) => connection.folderId);
+    items = folderIds.length
+      ? await recentItems({ handle: input.handle, user: input.user, folderPath: "", folderIds, considered: HOME_CONSIDERED })
+      : [];
+    if (folderIds.length === 0) topicNote = "No sources are in this channel yet.";
   } else {
     items = await recentItems({ handle: input.handle, user: input.user, folderPath: topic?.kind === "source" ? topic.folderPath : "", considered: HOME_CONSIDERED });
   }

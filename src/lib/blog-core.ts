@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { onceInRead } from "@/lib/request-scope";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "./db/client";
 import { blogs, users } from "./db/schema";
@@ -67,5 +68,9 @@ async function getBlogCoreByUsernameUncached(
   return row;
 }
 
-export const getBlogCore = cache(getBlogCoreUncached);
+const getBlogCoreRendered = cache(getBlogCoreUncached);
+
+/** Ten identical lookups on one Home load, each a round trip. Now one. */
+export const getBlogCore = (handle: string) =>
+  onceInRead(`blog:${handle}`, () => getBlogCoreRendered(handle));
 export const getBlogCoreByUsername = cache(getBlogCoreByUsernameUncached);
