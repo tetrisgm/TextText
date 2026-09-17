@@ -103,7 +103,7 @@ embed_appex() { # returns nonzero on failure
   while IFS= read -r s; do srcs+=("$s"); done < <(find "$MAC/Extensions/$srcdir" -name '*.swift')
   swiftc -parse-as-library -O \
     -module-name "$name" -target "$TARGET_TRIPLE" -sdk "$SDK" \
-    -I "$BIN/Modules" \
+    -I "$BIN/Modules" -I "$BIN" \
     "${srcs[@]}" "${LINK_OBJS[@]}" \
     "${extra_frameworks[@]}" \
     -Xlinker -e -Xlinker _NSExtensionMain \
