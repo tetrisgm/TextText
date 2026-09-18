@@ -307,16 +307,23 @@ the report names it, so no check can quietly be one that always passes.
 Two things the checker deliberately does not compare, because the document
 cannot hold what the column does:
 
-- **Links.** The snapshot keeps one, in `content.fields.sourceUrl`, while the
-  column keeps a list with the labels a person wrote. Existing items have
-  columns richer than their documents. The sync write path now refuses a file
-  carrying more than one link rather than dropping the rest silently, but the
-  schema still cannot represent them.
 - **A bookmark's excerpt.** It comes from the capture; the document's
   subtitle is its own field and is often empty.
 
-Both are gaps in the schema rather than drift, and reporting them on every
+That is a gap in the schema rather than drift, and reporting it on every
 workspace would make the checker noise.
+
+Links were the other one, and they are fixed rather than recorded. The
+snapshot kept one, in `content.fields.sourceUrl`, so a media post citing two
+essays lost the second on the first save that went through the document: the
+column kept them, the document could not, and the document is what a save
+writes from. A field value may be an array of records, which the schema has
+always allowed, so `content.fields.links` holds the whole list with no
+migration. `sourceUrl` and `sourceLabel` still carry the first, because
+everything that reads a source expects them there, and a document written
+before the field existed still projects its single link. The sync path used
+to refuse a file with more than one link; it accepts them now, because there
+is nothing left to lose.
 
 ## Residual risks, recorded
 

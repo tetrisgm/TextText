@@ -6070,8 +6070,15 @@ function canonicalDocumentForSave(
   if (legacyChanged("venue")) setField("venue", post.venue);
   if (legacyChanged("duration")) setField("duration", post.duration);
   if (legacyChanged("links")) {
+    // The first link stays where everything that reads a source expects it,
+    // and the whole list goes in beside it so a save through the document
+    // does not drop every link after the first.
     setField("sourceUrl", post.links?.[0]?.href);
     setField("sourceLabel", post.links?.[0]?.label);
+    const rows = (post.links ?? [])
+      .filter((link) => typeof link?.href === "string" && link.href.trim().length > 0)
+      .map((link) => ({ href: link.href, label: link.label || link.href }));
+    setField("links", rows.length > 0 ? rows : undefined);
   }
 
   let template = base.presentation.template;

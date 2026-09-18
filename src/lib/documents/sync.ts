@@ -201,18 +201,28 @@ function setSourceFields(
 ): void {
   setDocumentField(fields, "sourceUrl", links?.[0]?.href);
   setDocumentField(fields, "sourceLabel", links?.[0]?.label);
+  // The whole list, not only the first. A file carrying three links used to
+  // arrive with one and be re-rendered with one, so the person's own copy
+  // stopped holding the rest too.
+  const rows = (links ?? [])
+    .filter((link) => typeof link?.href === "string" && link.href.trim().length > 0)
+    .map((link) => ({ href: link.href, label: link.label || link.href }));
+  if (rows.length > 0) fields.links = rows;
+  else delete fields.links;
 }
 
 /**
  * What a file says that a save would quietly not keep.
  *
- * The document holds one link and a fixed set of frontmatter keys. A file
- * carrying more used to be accepted with a 200, and the next render of that
- * file left the extra lines out, so the person's own copy stopped holding
- * them either: the write reported success and the words were gone from both
- * sides. Refusing names what to do about it, which is the one thing silence
- * cannot. The MCP front door has always refused unknown keys; this is the
- * other front door agreeing with it.
+ * A file carrying a key the document has no place for used to be accepted
+ * with a 200, and the next render of that file left the line out, so the
+ * person's own copy stopped holding it either: the write reported success and
+ * the words were gone from both sides. Refusing names what to do about it,
+ * which is the one thing silence cannot. The MCP front door has always
+ * refused unknown keys; this is the other front door agreeing with it.
+ *
+ * Links used to be refused here too, because the snapshot kept only the
+ * first. It keeps them all now, so there is nothing left to refuse.
  */
 export function refuseUnsupportedMarkdown(parsed: ParsedPostMarkdownFile): void {
   const unknown = parsed.unknownKeys ?? [];
@@ -221,12 +231,7 @@ export function refuseUnsupportedMarkdown(parsed: ParsedPostMarkdownFile): void 
       `text.md does not keep these keys, so saving would delete them: ${unknown.join(", ")}. Move what they say into the body.`,
     );
   }
-  const links = parsed.fields.links ?? [];
-  if (links.length > 1) {
-    throw new Error(
-      `text.md keeps one link and this file has ${links.length}. Keep the one you want and move the rest into the body.`,
-    );
-  }
+
 }
 
 /**

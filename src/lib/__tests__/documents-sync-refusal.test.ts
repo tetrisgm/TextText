@@ -17,9 +17,9 @@ describe("what text.md cannot keep", () => {
     expect(() => refuseUnsupportedMarkdown(file("author: Ramine"))).toThrow(/body/);
   });
 
-  it("refuses a second link rather than keeping the first and dropping the rest", () => {
+  it("no longer refuses a second link, because the document keeps them now", () => {
     const two = file('links: [{"href":"https://a.example"},{"href":"https://b.example"}]');
-    expect(() => refuseUnsupportedMarkdown(two)).toThrow(/one link/);
+    expect(() => refuseUnsupportedMarkdown(two)).not.toThrow();
   });
 
   it("accepts a file that says only what a save keeps", () => {
