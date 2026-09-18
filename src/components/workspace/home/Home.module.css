@@ -471,12 +471,17 @@
   object-fit: cover;
   background: var(--news-tile);
 }
-/* 17% of the column, which is what a 68pt square was against a 393pt phone.
-   Square, never 16:9: the rectangle is the lead item's alone. */
+/* A fixed size was right on a desktop column and half again too large on a
+   phone, where the column shrinks to the reference's own 358pt and the
+   thumbnail did not: measured at 0.31 of the column against the original's
+   0.19. Tied to the container instead, it lands on 68pt at phone width, which
+   is the number the original was measured at, and stops growing at 7rem so a
+   wide window does not turn it into a picture. Square, never 16:9: the
+   rectangle is the lead item's alone. */
 .thumb {
   align-self: center;
-  width: 7rem;
-  height: 7rem;
+  width: clamp(4.25rem, 19cqi, 7rem);
+  height: clamp(4.25rem, 19cqi, 7rem);
   border-radius: 11px;
   object-fit: cover;
   background: var(--news-tile);

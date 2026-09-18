@@ -67,6 +67,23 @@ describe("the proportions the design is made of", () => {
     expect(ratio).toBeLessThanOrEqual(1.1);
   });
 
+  it("keeps the thumbnail a share of the column, not a fixed square", () => {
+    // Measured against the reference: a 68pt square on a 358pt column, which
+    // is 0.19 of it. A fixed rem was right on a desktop column and half again
+    // too large at phone width, where the column shrinks and the thumbnail
+    // did not. npm run home:design-compare is what caught it and what reads
+    // 0.19 against 0.19 now.
+    const thumb = /\n\.thumb\s*\{([^}]*)\}/.exec(css);
+    expect(thumb).not.toBeNull();
+    expect(thumb![1], "the thumbnail has to follow the column").toContain("cqi");
+    const share = /([\d.]+)cqi/.exec(thumb![1]);
+    expect(share).not.toBeNull();
+    expect(Number(share![1])).toBeGreaterThanOrEqual(17);
+    expect(Number(share![1])).toBeLessThanOrEqual(21);
+    // Square, and the same rule on both axes.
+    expect(thumb![1].match(/cqi/g)?.length).toBe(2);
+  });
+
   it("rules the list with hairlines and gives the rows no other chrome", () => {
     expect(css).toContain("border-bottom: 1px solid var(--news-line)");
     // No card: a row is separated by a line, never boxed.

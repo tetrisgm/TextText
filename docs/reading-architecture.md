@@ -227,6 +227,25 @@ by `ReadingScope.onlyFolderIds`.
 For You is fifteen, a channel fourteen, Latest ten, the overview seven.
 `src/lib/reading/__tests__/home-query-budget.db.test.ts` fails if one grows.
 
+## Checking the Home against what it is a port of (added 2026-09-18)
+
+`npm run home:design-compare` captures the Home at the reference captures'
+own device metrics, 393pt at 3x, and compares it with them. The reference is
+scanned pixel by pixel because there is no DOM behind it; ours is read from
+the DOM, because scanning a line that carries a descender over-reads its cap
+height by about a quarter and that bias would sit on one side only. Everything
+is reported as a multiple of the article headline, because the reference
+column is 358pt and a desktop column is not.
+
+It found what a reading of the stylesheet could not: the thumbnail was a fixed
+7rem, which is 0.17 of a desktop column and 0.31 of the column at phone width,
+against the original's 0.19. It follows the container now and lands on 68pt at
+phone width, the number the original was measured at.
+
+Current drift, in multiples of the headline: tab +0.03, headline 0.00,
+publisher -0.10 (deliberate, recorded in DESIGN.md), metadata -0.05, section
+title +0.07, thumbnail 0.00.
+
 ## Residual risks, recorded
 
 - DNS rebinding between the gate's lookup and the socket connect is a known
