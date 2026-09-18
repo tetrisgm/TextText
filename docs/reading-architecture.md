@@ -391,6 +391,39 @@ moving; and the two windows agree about 320ms after both stop typing, with
 both edits present. The budget is 2000ms and the benchmark exits non-zero
 when any of the three fails.
 
+## What stops sync losing work (added 2026-09-18)
+
+Five systems, doing different jobs, and none of them believing another.
+
+1. **The write paths, run against each other.**
+   `src/lib/__tests__/concurrent-writes.db.test.ts`, above.
+2. **The workspace, asked whether it agrees with itself.**
+   `npm run sync:check`, above.
+3. **The CRDT, on a network that does not cooperate.**
+   `src/lib/collab/__tests__/convergence.test.ts` runs several peers on one
+   document with updates reordered, duplicated and delayed, and checks three
+   things after every run: every peer ends with the same text, tags and
+   stored form; every character typed is present exactly once and the text is
+   exactly as long as everything typed into it; and what they agree on still
+   validates against the schema the database will accept. Each insertion is a
+   single character on purpose, because two peers typing in the same place
+   interleave, and a word-length marker split down the middle would make a
+   correct merge look like a loss. It also covers the two cases people
+   actually hit: a peer that was away for a whole session, and a peer that
+   was away and edited anyway. Randomized;
+   TEXTTEXT_CONVERGENCE_ROUNDS turns it up.
+4. **Two real browsers, timed.** `npm run bench:sync`, above, which asserts
+   convergence as well as speed.
+5. **The database refusing what cannot be a document.**
+   `posts_document_schema_v1_valid` means an unreadable document is not a
+   state that can exist, and the single-statement compare-and-set plus epoch
+   fencing means a write is accepted or refused and never silent.
+
+The first two and the fixtures that break them on purpose need a database, so
+a plain unit run skips them, which is how a durability test quietly stops
+running. `web.sync_durability` in `scripts/verify-release.ts` runs
+`npm run test:db` as a release gate, so nothing ships without them.
+
 ## Residual risks, recorded
 
 - DNS rebinding between the gate's lookup and the socket connect is a known

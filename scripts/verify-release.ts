@@ -115,6 +115,17 @@ async function verifyRelease() {
       command: ["npx", "vitest", "run"],
     },
     {
+      // The durability tests are the ones that answer "can this lose my
+      // work": the randomized concurrent-writer simulation, the workspace
+      // consistency checker and its own broken-on-purpose fixtures, and the
+      // history rules. They are skipped by a plain unit run because they need
+      // a database, which is exactly why they have to be named here. A
+      // durability test that does not run at release is not a system.
+      id: "web.sync_durability",
+      timeoutSeconds: 900,
+      command: ["npm", "run", "test:db"],
+    },
+    {
       id: "native.unit",
       timeoutSeconds: 2_400,
       command: ["swift", "test", "--package-path", "mac"],
