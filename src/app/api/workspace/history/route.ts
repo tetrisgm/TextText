@@ -75,6 +75,11 @@ function restoreMutation(version: DocumentSnapshot, current: DocumentSnapshot): 
     assets: version.content.assets ?? [],
     fields: { ...cleared, ...(version.content.fields ?? {}) },
     template: version.presentation.template,
+    // The look the version was wearing. Without this, "put this back" left
+    // the document in the accent and density it happens to have now, and the
+    // field-clearing above, which exists so nothing is left behind, did not
+    // cover it.
+    theme: version.presentation.theme ?? {},
   };
 }
 

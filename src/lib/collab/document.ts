@@ -49,6 +49,9 @@ export type DocumentMutation = {
   fields?: Record<string, DocumentFieldValue | null>;
   /** The look, as an exact pinned reference. */
   template?: { id: string; version: number };
+  /** The document's own look settings, replaced whole. A restore has to be
+   * able to put back the accent and density the version was wearing. */
+  theme?: Record<string, unknown>;
   assets?: DocumentAsset[];
   operationId?: string;
 };
@@ -431,6 +434,11 @@ export function applyDocumentMutation(
         id: mutation.template.id,
         version: mutation.template.version,
       });
+    }
+    if (mutation.theme !== undefined) {
+      // Replaced whole, for the same reason the template is: a half restored
+      // look is not a look anyone chose.
+      map(rootMap, "presentation").set("theme", { ...mutation.theme });
     }
     if (mutation.operationId) {
       operations.set(mutation.operationId, Date.now());
