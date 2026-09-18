@@ -393,7 +393,7 @@ when any of the three fails.
 
 ## What stops sync losing work (added 2026-09-18)
 
-Five systems, doing different jobs, and none of them believing another.
+Six systems, doing different jobs, and none of them believing another.
 
 1. **The write paths, run against each other.**
    `src/lib/__tests__/concurrent-writes.db.test.ts`, above.
@@ -414,7 +414,21 @@ Five systems, doing different jobs, and none of them believing another.
    TEXTTEXT_CONVERGENCE_ROUNDS turns it up.
 4. **Two real browsers, timed.** `npm run bench:sync`, above, which asserts
    convergence as well as speed.
-5. **The database refusing what cannot be a document.**
+5. **The owner's accident, run on purpose.** `npm run verify:recovery` is the
+   only check that goes through the whole chain rather than a piece of it: a
+   real browser types into the collaborative editor, the relay carries it,
+   materialization writes the row, the same statement records the version it
+   replaced, a select-all-and-type-over destroys the paragraph, and the
+   restore puts it back into the open document. It then checks the part people
+   forget, that the version the restore replaced is itself on file, because a
+   recovery that destroys what it replaced has only moved the loss. Point it
+   at the wrong version and it says so and exits non-zero. Like bench:sync it
+   makes and destroys a note of its own.
+
+   The versions it finds are written by `collab.materialize`, which matters:
+   that is the path the owner's lost note went through, and it is now the path
+   that records history.
+6. **The database refusing what cannot be a document.**
    `posts_document_schema_v1_valid` means an unreadable document is not a
    state that can exist, and the single-statement compare-and-set plus epoch
    fencing means a write is accepted or refused and never silent.
