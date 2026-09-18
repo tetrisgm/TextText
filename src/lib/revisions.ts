@@ -201,10 +201,22 @@ export async function getPostRevision(postId: string, revisionId: string): Promi
 }
 
 /**
+ * What happened to a version offered to the history.
+ *
+ * "stored" means a row now holds it. "already" means an identical version is
+ * already on file from inside the coalescing window, which is equally safe:
+ * two cold opens racing the same rotation leave one row rather than two
+ * copies of one lost session. "coalesced" means the window folded it into a
+ * recent version by the same writer, which is right for ordinary typing and
+ * wrong for anything whose only copy this was. A caller that must know the
+ * text is safe before deleting its source needs to tell these apart, which is
+ * why this is not a boolean.
+ */
+export type VersionRecorded = "stored" | "already" | "coalesced";
+
+/**
  * Records a version that no post write supersedes, such as a retired
- * collaborative session. Same window and same retention as the folded CTE, and
- * an exact repeat inside the window is dropped, so two cold opens racing the
- * same rotation leave one row rather than two copies of one lost session.
+ * collaborative session. Same window and same retention as the folded CTE.
  */
 export async function recordSupersededVersion(input: {
   postId: string;
@@ -212,8 +224,8 @@ export async function recordSupersededVersion(input: {
   nextBody: string;
   writer: RevisionWriter;
   force?: boolean;
-}): Promise<boolean> {
-  if (!db) return false;
+}): Promise<VersionRecorded> {
+  if (!db) return "coalesced";
   const { previous, writer } = input;
   const bodyLength = previous.body.length;
   const forced = isForced(previous, input.nextBody, input.force);
@@ -238,6 +250,15 @@ export async function recordSupersededVersion(input: {
       )
       AND (${forced} OR NOT ${sameWriterRecently(writer, postId)})
       RETURNING id
+    ), duplicate AS (
+      SELECT 1 FROM ${postRevisions} duplicate
+      WHERE duplicate.post_id = ${postId}
+        AND duplicate.superseded_by_action = ${writer.action}
+        AND duplicate.superseded_by_actor_type = ${writer.actorType}
+        AND duplicate.superseded_by_actor_user_id IS NOT DISTINCT FROM ${writer.actorUserId ?? null}::uuid
+        AND duplicate.revision IS NOT DISTINCT FROM ${previous.revision}
+        AND duplicate.body_length = ${bodyLength}
+        AND duplicate.created_at > now() - interval '${sql.raw(String(COALESCE_MINUTES))} minutes'
     ), pruned AS (
       DELETE FROM ${postRevisions}
       WHERE post_id = ${postId}
@@ -255,7 +276,10 @@ export async function recordSupersededVersion(input: {
           ) kept
         )
     )
-    SELECT id FROM recorded
+    SELECT (SELECT count(*) FROM recorded)::int AS stored,
+           (SELECT count(*) FROM duplicate)::int AS already
   `);
-  return result.rows.length > 0;
+  const row = result.rows[0] as { stored?: number; already?: number } | undefined;
+  if (Number(row?.stored ?? 0) > 0) return "stored";
+  return Number(row?.already ?? 0) > 0 ? "already" : "coalesced";
 }

@@ -375,22 +375,25 @@ async function saveLiveContentMutation({
         : mutation.title !== undefined
           ? "title"
           : "subtitle";
+  // The agent's own presence, written below, must not count as a co-editor
+  // when the baseline needs reseeding: it would veto its own reseed.
+  const requestingClientId = agentPresence(extra)?.clientId;
   const presence = agentPresence(extra, {
-    selection: await agentSelectionAtEnd(post.id, selectionField),
+    selection: await agentSelectionAtEnd(post.id, selectionField, requestingClientId),
   });
   if (presence) await upsertPresence(post.id, presence);
   // The Yjs delta becomes visible before canonical materialization. Write its
   // audit row in the same database statement so a later CAS failure can never
   // leave a durable, unaudited edit in the collaboration log.
   const applied = revert
-    ? await applyLiveDocumentMutation(post.id, mutation, audit, revert)
-    : await applyLiveDocumentMutation(post.id, mutation, audit);
+    ? await applyLiveDocumentMutation(post.id, mutation, audit, revert, requestingClientId)
+    : await applyLiveDocumentMutation(post.id, mutation, audit, undefined, requestingClientId);
   if (!applied) throw new Error("The live document could not be updated");
   if (presence) {
     await upsertPresence(
       post.id,
       agentPresence(extra, {
-        selection: await agentSelectionAtEnd(post.id, selectionField),
+        selection: await agentSelectionAtEnd(post.id, selectionField, requestingClientId),
       }) ?? presence,
     );
   }
@@ -401,7 +404,7 @@ async function saveLiveContentMutation({
       throw new Error("The item no longer exists");
     }
     const snapshot =
-      (await materializeCollabDocument(post.id)) ?? applied.snapshot;
+      (await materializeCollabDocument(post.id, undefined, undefined, requestingClientId)) ?? applied.snapshot;
     const current = context.post;
     const revision = current.revision;
     if (typeof revision !== "number") {
@@ -443,7 +446,9 @@ async function saveLiveContentMutation({
               auditAlreadyRecorded: applied.auditRecorded,
             },
           );
-      await markCollabMaterialized(post.id, saved.revision ?? revision);
+      // The epoch the snapshot was built from, so a rotation that happened
+      // in between does not have its fresh baseline stamped as materialized.
+      await markCollabMaterialized(post.id, saved.revision ?? revision, applied.epoch);
       return saved;
     } catch (error) {
       if (!(error instanceof PostConflictError) || attempt === 2) throw error;

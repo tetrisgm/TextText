@@ -5496,9 +5496,13 @@ export async function emptyTrash(handle: string): Promise<number> {
     .where(and(eq(posts.blogId, blogId), isNotNull(posts.deletedAt)));
   const ids = trashed.map((row) => row.id);
   await deleteCollabDataForPostIds(ids);
-  await db
-    .delete(posts)
-    .where(and(eq(posts.blogId, blogId), isNotNull(posts.deletedAt)));
+  // By id, not by "everything trashed right now". Between the read above and
+  // this delete another client can trash something, and re-scanning would
+  // destroy it permanently a second after it arrived, outside what the
+  // confirmation described and without counting it.
+  if (ids.length > 0) {
+    await db.delete(posts).where(and(eq(posts.blogId, blogId), inArray(posts.id, ids)));
+  }
   await db
     .delete(folders)
     .where(and(eq(folders.blogId, blogId), isNotNull(folders.deletedAt)));
@@ -5731,16 +5735,16 @@ export async function permanentlyDeleteFolder(
       "The folder contains a restored item and cannot be deleted",
     );
   }
-  await deleteCollabDataForPostIds(folderPosts.map((post) => post.id));
-  await db
-    .delete(posts)
-    .where(
-      and(
-        eq(posts.blogId, blogId),
-        inArray(posts.folderId, ids),
-        isNotNull(posts.deletedAt),
-      ),
-    );
+  const purge = folderPosts.map((post) => post.id);
+  await deleteCollabDataForPostIds(purge);
+  // The ids just enumerated and checked for live items, not whatever is in
+  // these folders by the time the delete runs: an item trashed in between
+  // was never checked and was never part of what the caller asked to purge.
+  if (purge.length > 0) {
+    await db
+      .delete(posts)
+      .where(and(eq(posts.blogId, blogId), inArray(posts.id, purge), isNotNull(posts.deletedAt)));
+  }
   await db
     .delete(folders)
     .where(and(eq(folders.blogId, blogId), inArray(folders.id, ids)));
@@ -6292,16 +6296,22 @@ export async function savePost(
             source: "changed", postId: sql`changed.id`, revision: sql`changed.revision`,
             changes: agentTextChanges(existingRow ? requireDocumentSnapshot(existingRow.document, "Agent change baseline") : null, document),
           })})
-          SELECT id FROM changed
+          SELECT id, revision FROM changed
         `);
-        const updatedId = (result.rows[0] as { id?: string } | undefined)?.id;
-        if (updatedId) {
+        const written = result.rows[0] as { id?: string; revision?: number | string } | undefined;
+        if (written?.id) {
           const [fresh] = await db
             .select()
             .from(posts)
-            .where(and(eq(posts.id, updatedId), eq(posts.blogId, blogId)))
+            .where(and(eq(posts.id, written.id), eq(posts.blogId, blogId)))
             .limit(1);
           if (!fresh) throw new Error("The saved item is unavailable");
+          // The same rule the branch above states: never report a row this
+          // statement did not write. The re-read is a second snapshot, so
+          // another writer can land between the two, and returning their row
+          // hands the caller a revision to build its next compare-and-set on
+          // and a body nothing here saved.
+          if (Number(fresh.revision) !== Number(written.revision)) throw new PostConflictError();
           return mapPost(fresh);
         }
       }

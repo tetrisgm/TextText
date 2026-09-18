@@ -199,8 +199,11 @@ describe.skipIf(!enabled)("document history against Postgres", () => {
     };
     const first = await revisions.recordSupersededVersion({ postId: rotated, previous, nextBody: "canonical", writer: { action: "collab.rotate", actorType: "system", actorUserId: null } });
     const second = await revisions.recordSupersededVersion({ postId: rotated, previous, nextBody: "canonical", writer: { action: "collab.rotate", actorType: "system", actorUserId: null } });
-    expect(first).toBe(true);
-    expect(second).toBe(false);
+    expect(first).toBe("stored");
+    // "already", not "coalesced": the second call found the identical version
+    // on file, which is what a caller deciding whether to delete its source
+    // needs to be able to tell apart.
+    expect(second).toBe("already");
     const rows = await db!.select().from(schema.postRevisions).where(eq(schema.postRevisions.postId, rotated));
     expect(rows).toHaveLength(1);
   });

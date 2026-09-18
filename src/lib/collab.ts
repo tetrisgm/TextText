@@ -185,15 +185,15 @@ async function archiveRetiredSession(input: {
   postId: string;
   state: { epoch: number; baselineUpdate: string | null; baselineRevision: number | null };
   canonical: { snapshot: DocumentSnapshot; revision: number; blogId: string | null; title: string | null };
-}): Promise<void> {
-  if (!db || !input.state.baselineUpdate || !input.canonical.blogId) return;
+}): Promise<ArchiveOutcome> {
+  if (!db || !input.state.baselineUpdate || !input.canonical.blogId) return "nothing";
   try {
     const rows = await db
       .select({ update: collabUpdates.update })
       .from(collabUpdates)
       .where(and(eq(collabUpdates.postId, input.postId), eq(collabUpdates.epoch, input.state.epoch)))
       .orderBy(asc(collabUpdates.seq));
-    if (rows.length === 0) return;
+    if (rows.length === 0) return "nothing";
     const retired = new Y.Doc();
     try {
       Y.applyUpdate(retired, base64ToUpdate(input.state.baselineUpdate));
@@ -210,7 +210,7 @@ async function archiveRetiredSession(input: {
         retiredBody.trim().length === 0 ||
         retiredBody === canonicalBody ||
         canonicalBody.includes(retiredBody);
-      if (bodyContained && sameBesidesBody(snapshot, input.canonical.snapshot)) return;
+      if (bodyContained && sameBesidesBody(snapshot, input.canonical.snapshot)) return "nothing";
       const recorded = await recordSupersededVersion({
         postId: input.postId,
         previous: {
@@ -222,11 +222,16 @@ async function archiveRetiredSession(input: {
         },
         nextBody: canonicalBody,
         writer: ROTATION_WRITER,
+        // Reaching this line already proves the retired session differs from
+        // the canonical document, so there is nothing left for the coalescing
+        // window to protect against and everything to lose by letting it fold
+        // this version into a recent one moments before the log is swept.
+        force: true,
       });
       // The rotation is a mutation like any other, so it leaves an audit row.
       // Nobody asked for it, which is why the actor is the system and not the
       // person whose catch-up happened to trigger it.
-      if (recorded) {
+      if (recorded === "stored") {
         await recordAction({
           actorUserId: null,
           actorType: ROTATION_WRITER.actorType,
@@ -237,11 +242,17 @@ async function archiveRetiredSession(input: {
           outputSummary: String(retiredBody.length),
         });
       }
+      // "already" is as safe as "stored": an identical version is on file
+      // from inside the window, which is what two cold opens racing one
+      // rotation produce.
+      return recorded === "coalesced" ? "unknown" : "recorded";
     } finally {
       retired.destroy();
     }
   } catch {
-    // A log that cannot be decoded is not a reason to refuse the reseed.
+    // A log that cannot be decoded is not a reason to refuse the reseed, but
+    // it is every reason not to delete it.
+    return "unknown";
   }
 }
 
@@ -346,18 +357,20 @@ export async function prepareCollabBaseline(
         //
         // After the CAS, so a late append cannot slip between the read and the
         // sweep, and so a rotation that lost the CAS records nothing.
-        await archiveRetiredSession({ postId, state, canonical: { snapshot, revision, blogId: context.blogId, title: context.post.title ?? null } });
-        // The retired log is swept, but only after archiveRetiredSession has
-        // put its text in the document's history: the sweep may no longer be
-        // the last copy of anything.
-        await db.execute(sql`
-          DELETE FROM ${collabUpdates}
-          WHERE post_id = ${postId}::uuid
-            AND epoch < (
-              SELECT epoch FROM ${collabState}
-              WHERE post_id = ${postId}::uuid
-            )
-        `);
+        const archived = await archiveRetiredSession({ postId, state, canonical: { snapshot, revision, blogId: context.blogId, title: context.post.title ?? null } });
+        // The retired log is swept only when the archive says its text is
+        // safe, or that there was nothing to keep. "unknown" means the insert
+        // threw or was suppressed, and the log is then the only remaining
+        // copy of those edits: it stays, and the next rotation tries again.
+        // A log that is never swept grows; a session that is deleted unread
+        // is gone.
+        if (archived !== "unknown") {
+          await db.execute(sql`
+            DELETE FROM ${collabUpdates}
+            WHERE post_id = ${postId}::uuid
+              AND epoch <= ${state.epoch}
+          `);
+        }
       }
     }
   }
@@ -484,8 +497,19 @@ export async function latestCollabSeq(
 export async function markCollabMaterialized(
   postId: string,
   revision: number,
+  /**
+   * The epoch the materialized snapshot was built from. A rotation between
+   * that read and this stamp reseeded the baseline from the canonical
+   * document, and stamping the new epoch as materialized would tell the next
+   * reader that a baseline nothing materialized is current, disarming the
+   * rotation that would have repaired it. Without this the stamp always
+   * applies, which is the behaviour every caller had before.
+   */
+  expectedEpoch?: number,
 ): Promise<void> {
   if (!db) return;
+  const sameEpoch =
+    expectedEpoch === undefined ? sql`true` : sql`collab_state.epoch = ${expectedEpoch}`;
   await db.execute(sql`
     INSERT INTO ${collabState} (post_id, epoch, materialized_revision, updated_at)
     VALUES (${postId}::uuid, 0, ${revision}, now())
@@ -493,6 +517,7 @@ export async function markCollabMaterialized(
       SET materialized_revision =
             GREATEST(COALESCE(collab_state.materialized_revision, 0), ${revision}),
           updated_at = now()
+      WHERE ${sameEpoch}
   `);
 }
 
@@ -507,8 +532,11 @@ function base64ToUpdate(b64: string): Uint8Array {
 
 async function loadCurrentCollabDocument(
   postId: string,
+  /** Whoever is asking, so their own presence row does not count as a
+   * co-editor and veto the reseed they came here for. */
+  requestingClientId?: string,
 ): Promise<{ document: Y.Doc; epoch: number; mutationVersion: number } | null> {
-  const baseline = await prepareCollabBaseline(postId);
+  const baseline = await prepareCollabBaseline(postId, requestingClientId);
   if (!baseline) return null;
   const [state] = await db!.select({ mutationVersion: collabState.mutationVersion })
     .from(collabState).where(and(eq(collabState.postId, postId), eq(collabState.epoch, baseline.epoch))).limit(1);
@@ -544,6 +572,11 @@ export async function applyLiveDocumentMutation(
   mutation: DocumentMutation,
   audit?: AuditEntry,
   revert?: { id: string; userId: string },
+  /** The caller's own presence id, so its own row does not count as a
+   * co-editor when a stale baseline needs reseeding. An agent writes its
+   * presence before it writes the document, and without this it vetoes the
+   * reseed it came here for. */
+  requestingClientId?: string,
 ): Promise<{
   snapshot: DocumentSnapshot;
   epoch: number;
@@ -553,7 +586,7 @@ export async function applyLiveDocumentMutation(
 } | null> {
   if (!db) return null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const loaded = await loadCurrentCollabDocument(postId);
+    const loaded = await loadCurrentCollabDocument(postId, requestingClientId);
     if (!loaded) return null;
     try {
       const selection = mutation.textRange?.selectionEnvelope;
@@ -656,6 +689,8 @@ export async function materializeCollabDocument(
   postId: string,
   currentStateBase64?: string,
   expectedEpoch?: number,
+  /** See applyLiveDocumentMutation. */
+  requestingClientId?: string,
 ): Promise<DocumentSnapshot | null> {
   // Server-only reconstruction has no supplied state. Every client state,
   // including an empty/invalid encoding, must carry a learned generation.
@@ -664,7 +699,7 @@ export async function materializeCollabDocument(
     throw new CollabEpochConflictError();
   }
   if (!db) return null;
-  const loaded = await loadCurrentCollabDocument(postId);
+  const loaded = await loadCurrentCollabDocument(postId, requestingClientId);
   if (!loaded) return null;
   try {
     if (currentStateBase64 !== undefined && loaded.epoch !== expectedEpoch) {
@@ -823,9 +858,11 @@ export function createAgentAwareness(input: {
 export async function agentSelectionAtEnd(
   postId: string,
   field: AgentSelectionState["field"],
+  /** See applyLiveDocumentMutation. */
+  requestingClientId?: string,
 ): Promise<AgentSelectionState | null> {
   if (!db) return null;
-  const loaded = await loadCurrentCollabDocument(postId);
+  const loaded = await loadCurrentCollabDocument(postId, requestingClientId);
   if (!loaded) return null;
   try {
     const target = documentText(loaded.document, field);
@@ -1019,6 +1056,14 @@ export async function upsertPresence(
  * heartbeat within the stale window). Callers use this to route content
  * mutations through applyLiveDocumentMutation instead of writing around Yjs.
  */
+/**
+ * What a rotation learned about the session it retired. "recorded" means the
+ * text is in the document's history, "nothing" that there was none worth
+ * keeping, and "unknown" that we could not establish either, which is the one
+ * case where the update log must not be deleted.
+ */
+type ArchiveOutcome = "recorded" | "nothing" | "unknown";
+
 export async function hasActiveCoEditors(
   postId: string,
   exceptClientId?: string,

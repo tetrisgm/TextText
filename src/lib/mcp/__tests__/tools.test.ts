@@ -1070,6 +1070,8 @@ describe("MCP workspace tool adapter", () => {
         actionName: "mcp.update_item",
         actorType: "external_agent",
       }),
+      undefined,
+      expect.any(String),
     );
     expect(mocks.savePost).toHaveBeenCalledWith(
       "local",
@@ -1146,6 +1148,8 @@ describe("MCP workspace tool adapter", () => {
         actionName: "mcp.update_item",
         inputSummary: expect.stringContaining("Agent: Codex"),
       }),
+      undefined,
+      expect.any(String),
     );
     expect(mocks.savePost).toHaveBeenCalledWith(
       "local",
@@ -1228,7 +1232,7 @@ describe("MCP workspace tool adapter", () => {
     mocks.savePost.mockResolvedValue({ ...source, body: "After", document: snapshot, revision: 43 });
     const result = await registrations().find((entry) => entry.name === "update_item")!.callback({ id, text_edit: { field: "body", start: 0, end: 6, expected_text: "Before", replacement_text: "After", selection_envelope } }, auth(["sync"]));
     expect(result.isError).not.toBe(true);
-    expect(mocks.applyLiveDocumentMutation).toHaveBeenCalledWith(id, expect.objectContaining({ textRange: expect.objectContaining({ selectionEnvelope: selection_envelope }) }), expect.objectContaining({ actionName: "mcp.update_item" }));
+    expect(mocks.applyLiveDocumentMutation).toHaveBeenCalledWith(id, expect.objectContaining({ textRange: expect.objectContaining({ selectionEnvelope: selection_envelope }) }), expect.objectContaining({ actionName: "mcp.update_item" }), undefined, expect.any(String));
     expect(mocks.savePost).toHaveBeenCalledWith("local", expect.any(Object), expect.objectContaining({ auditAlreadyRecorded: true }));
   });
 
@@ -1248,7 +1252,10 @@ describe("MCP workspace tool adapter", () => {
     expect((await update.callback(input, auth(["sync"]))).isError).not.toBe(true);
     expect(mocks.applyLiveDocumentMutation).toHaveBeenCalledWith(id, expect.objectContaining({ textRange: {
       field: "subtitle", start: 0, end: 3, expectedText: "Old", replacementText: "Generated", sourcePrecondition: source_precondition,
-    } }), expect.objectContaining({ actionName: "mcp.update_item" }));
+    } }), expect.objectContaining({ actionName: "mcp.update_item" }),
+      undefined,
+      expect.any(String),
+    );
     expect(mocks.savePost).toHaveBeenCalledWith("local", expect.any(Object), expect.objectContaining({ auditAlreadyRecorded: true }));
 
     mocks.savePost.mockClear();
@@ -1382,6 +1389,8 @@ describe("MCP workspace tool adapter", () => {
       id,
       expect.objectContaining({ title: "Renamed" }),
       expect.objectContaining({ actionName: "mcp.update_item" }),
+      undefined,
+      expect.any(String),
     );
     expect(mocks.savePost).toHaveBeenCalledTimes(1);
   });
@@ -1453,6 +1462,8 @@ describe("MCP workspace tool adapter", () => {
       id,
       { appendBody: "More text", operationId: undefined },
       expect.objectContaining({ actionName: "mcp.append_to_item" }),
+      undefined,
+      expect.any(String),
     );
     expect(mocks.savePost).toHaveBeenCalledTimes(1);
   });
@@ -3010,7 +3021,9 @@ describe("MCP workspace tool adapter", () => {
     expect(mocks.applyLiveDocumentMutation).toHaveBeenCalledWith(id,
       { revertChanges: changes, operationId: `revert:${changeId}` },
       expect.objectContaining({ actionName: "revert_agent_change", targetId: id }),
-      { id: changeId, userId: "user-1" });
+      { id: changeId, userId: "user-1" },
+      expect.any(String),
+    );
     expect(mocks.savePost).toHaveBeenCalledWith("local", expect.objectContaining({ status: "draft" }),
       expect.objectContaining({ expectedRevision: 7, auditAlreadyRecorded: true }));
     mocks.savePost.mockClear();
