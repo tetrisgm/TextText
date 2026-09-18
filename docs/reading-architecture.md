@@ -211,6 +211,31 @@ can make fifty and still feel instant in development while taking seconds in
 the Mac app, where each one is an HTTPS request to Neon. The count is what
 the speed is made of.
 
+### What it says today, and the one thing that is wrong
+
+Opening an article 63ms median, going back 84, switching channel 24. Opening
+a folder is 318ms, every time, and it is the defect.
+
+It is a one-time initialisation, not the folder: the first folder opened
+after a page load takes about 470ms and every one after it takes 25, whichever
+folder each is. Opening the first article pays the same kind of cost once.
+The content region goes blank at 40ms and the folder arrives at 460ms, so the
+person watches an empty pane for four hundred milliseconds.
+
+Ruled out by measurement, so nobody repeats it: JavaScript execution (the CPU
+profile is idle through the gap), the navigation animation (identical with
+reduced motion), the view transition (identical with startViewTransition
+removed before any module loads), page warm-up (identical after six seconds
+of settling), how much content there is (identical with the news list at
+display:none, and identical for a folder of three items and one of forty),
+text shaping caches, IndexedDB, fetch, requestIdleCallback and
+scheduler.postTask. What remains is the first mount of that view.
+
+The codebase already has the shape of the answer for the editor:
+`scheduleAfterLoadIdle` preloads its chunk after the cold path, because "an
+item opened and edited before that mounts the editor cold". That warms the
+chunk, not the mount, and the mount is what costs 470ms here.
+
 `npm run bench` is the other half, and the one that decides whether the app
 is fast: it drives the real surfaces against a production build and reports
 click to rendered, median and 95th percentile, against a 200ms budget. Two

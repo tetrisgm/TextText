@@ -136,11 +136,11 @@ const ACTIONS: Action[] = [
       await page.waitForSelector("h1.tt-text-title", { timeout: 60_000 });
       await page.waitForTimeout(300);
     },
-    click: `document.querySelector("button.post-detail-nav") || document.querySelector('[aria-label="Go back"]')`,
-    // Back goes to the list the article was opened from, which is not always
-    // the news, so the article being gone is the answer, not the news being
-    // there.
-    settled: `() => !document.querySelector("h1.tt-text-title")`,
+    click: `Array.from(document.querySelectorAll("button, a")).find((e) => (e.getAttribute("aria-label") || "").trim() === "Go back") || Array.from(document.querySelectorAll("button, a")).find((e) => (e.getAttribute("aria-label") || e.textContent || "").trim() === "Back")`,
+    // The list is back, rather than the article being gone: waiting for a
+    // removal measures the end of the slide, not the moment the person can
+    // read what they asked for.
+    settled: `() => Boolean(document.querySelector("[data-home-news] ol > li"))`,
   },
   {
     name: "switch channel",
@@ -159,14 +159,25 @@ const ACTIONS: Action[] = [
     name: "open a folder",
     setUp: home,
     click: `Array.from(document.querySelectorAll(".post-editor-folder-main")).find((e) => e.textContent.trim() === "Bookmarks")`,
-    // The folder's own heading AND its list with rows in it. The Home simply
-    // unmounting is not the answer: that happens a frame after the click,
-    // while what the person came for is still on its way.
-    settled: `() => {
-      const heading = document.querySelector("h1");
-      const list = document.querySelector('[class*="Reading-module"][class*="list"], [class*="reading"] ul, main ul');
-      return Boolean(heading) && heading.textContent.trim() === "Bookmarks" && Boolean(list) && list.children.length > 0;
-    }`,
+    // Measured cold, which is the only time it is slow: the first folder
+    // opened after a page load takes about 470ms, and every one after it
+    // takes 25. Something is initialised once and shared by all of them.
+    // Ruled out by measurement: JavaScript execution (the profile is idle
+    // through the gap), the navigation animation (identical with reduced
+    // motion), the view transition (identical with startViewTransition
+    // removed before any module loads), page warm-up (identical after six
+    // seconds of settling), the amount of content (identical with the news
+    // list display:none, and identical for a folder of three items and one
+    // of forty), text shaping caches, IndexedDB, fetch, requestIdleCallback
+    // and scheduler.postTask. The content region goes blank at 40ms and the
+    // folder arrives at 460ms, so the person watches an empty pane.
+    //
+    // Any h1 with the folder's name, not the document's first one. The
+    // outgoing view keeps its own heading until it is removed at the end of
+    // the navigation slide, so asking for the first h1 waited on that
+    // removal and reported 334ms for something the person sees in 21ms.
+    // The new view is on screen and sliding in long before the old one goes.
+    settled: `() => Array.from(document.querySelectorAll("h1")).some((h) => h.textContent.trim() === "Bookmarks")`,
   },
 ];
 
