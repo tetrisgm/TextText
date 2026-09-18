@@ -2958,7 +2958,12 @@ async function executeWorkspaceCommand(
       const resolved = await requireWorkspace(extra, true);
       if (isToolResult(resolved)) return resolved;
       if (!resolved.access.isOwner) return errorResult("Only the workspace owner can empty Trash.");
-      const removed = await emptyTrash(resolved.blog.handle);
+      // Permanent destruction, so it leaves a trace the way every other
+      // destructive case in this file does.
+      const removed = await emptyTrash(resolved.blog.handle, {
+        audit: // The workspace id is filled in by emptyTrash, which already has it.
+        mcpAuditEntry(extra, "empty_trash", "workspace", undefined),
+      });
       return jsonResult({ removed, note: `Permanently deleted ${removed} trashed items.` });
     }
 

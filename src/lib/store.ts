@@ -75,6 +75,7 @@ import {
   documentCapabilityLinks,
   documentResponses,
   documentTemplates,
+  feedReceipts,
   folders,
   idempotencyKeys,
   itemComments,
@@ -5474,6 +5475,29 @@ async function deleteCollabDataForPostIds(ids: string[]): Promise<void> {
   }
 }
 
+/**
+ * Mark the feed receipts of items about to be destroyed.
+ *
+ * feed_receipts.post_id is ON DELETE SET NULL, so a hard delete leaves a
+ * receipt that looks exactly like one claimed but never materialized, and the
+ * next poll of that feed imports the entry again: the person deletes an
+ * article for good and it comes back. The receipt already has a tombstone,
+ * used by the retention sweep; deleting by hand simply never wrote one.
+ *
+ * Called before the delete, because afterwards there is nothing left to
+ * match on.
+ */
+async function tombstoneFeedReceipts(postIds: string[]): Promise<void> {
+  if (!db || postIds.length === 0) return;
+  for (let index = 0; index < postIds.length; index += 500) {
+    const chunk = postIds.slice(index, index + 500);
+    await db
+      .update(feedReceipts)
+      .set({ status: "expired", expiredAt: new Date() })
+      .where(and(inArray(feedReceipts.postId, chunk), eq(feedReceipts.status, "active")));
+  }
+}
+
 export async function permanentlyDeletePost(
   handle: string,
   id: string,
@@ -5495,6 +5519,7 @@ export async function permanentlyDeletePost(
   // Scope the post before touching its dependent rows. Deleting collab rows by
   // the caller-provided id first would let a valid owner disrupt another
   // tenant's active document by submitting its opaque id.
+  await tombstoneFeedReceipts([id]);
   await deleteCollabDataForPostIds([id]);
   await db
     .delete(posts)
@@ -5507,7 +5532,18 @@ export async function permanentlyDeletePost(
     );
 }
 
-export async function emptyTrash(handle: string): Promise<number> {
+/**
+ * Destroy everything in the Trash, permanently.
+ *
+ * Two things this has to get right. It deletes the rows it enumerated rather
+ * than re-scanning, because another client can trash something in between and
+ * that item was never part of what the person confirmed. And it leaves alone
+ * a trashed folder that still holds a live item: restoring one item without
+ * its parent is reachable from the Trash and from MCP, and deleting the
+ * folder under it used to raise a foreign key error half way through, after
+ * the items were already gone and before anything was written down.
+ */
+export async function emptyTrash(handle: string, options: { audit?: AuditEntry } = {}): Promise<number> {
   if (!db) throw new Error("emptyTrash requires DATABASE_URL");
   const blogId = await blogIdFor(handle);
   const trashed = await db
@@ -5515,17 +5551,36 @@ export async function emptyTrash(handle: string): Promise<number> {
     .from(posts)
     .where(and(eq(posts.blogId, blogId), isNotNull(posts.deletedAt)));
   const ids = trashed.map((row) => row.id);
+  await tombstoneFeedReceipts(ids);
   await deleteCollabDataForPostIds(ids);
-  // By id, not by "everything trashed right now". Between the read above and
-  // this delete another client can trash something, and re-scanning would
-  // destroy it permanently a second after it arrived, outside what the
-  // confirmation described and without counting it.
   if (ids.length > 0) {
     await db.delete(posts).where(and(eq(posts.blogId, blogId), inArray(posts.id, ids)));
   }
-  await db
-    .delete(folders)
+  // Folders whose subtree still holds something live stay, with their item.
+  const live = await db
+    .select({ folderId: posts.folderId })
+    .from(posts)
+    .where(and(eq(posts.blogId, blogId), isNull(posts.deletedAt)));
+  const occupied = new Set(live.map((row) => row.folderId).filter((id): id is string => Boolean(id)));
+  const trashedFolders = await db
+    .select({ id: folders.id })
+    .from(folders)
     .where(and(eq(folders.blogId, blogId), isNotNull(folders.deletedAt)));
+  const removable = trashedFolders.map((row) => row.id).filter((id) => !occupied.has(id));
+  if (removable.length > 0) {
+    await db.delete(folders).where(and(eq(folders.blogId, blogId), inArray(folders.id, removable)));
+  }
+  // Permanent destruction leaves a trace wherever it is triggered from. The
+  // MCP lane wrote none at all, so emptying a workspace's Trash through an
+  // approved proposal left nothing in the ledger.
+  if (options.audit) {
+    await recordAction({
+      ...options.audit,
+      targetType: options.audit.targetType ?? "workspace",
+      targetId: options.audit.targetId ?? blogId,
+      outputSummary: options.audit.outputSummary ?? `${ids.length} items, ${removable.length} folders`,
+    });
+  }
   return ids.length;
 }
 
@@ -5756,6 +5811,7 @@ export async function permanentlyDeleteFolder(
     );
   }
   const purge = folderPosts.map((post) => post.id);
+  await tombstoneFeedReceipts(purge);
   await deleteCollabDataForPostIds(purge);
   // The ids just enumerated and checked for live items, not whatever is in
   // these folders by the time the delete runs: an item trashed in between

@@ -239,11 +239,21 @@ export async function previewCleanup(input: {
       continue;
     }
     const source = latestByPost.get(row.postId);
+    // No source revision on file means we cannot say what the publisher sent,
+    // so we cannot say the person did not rewrite it. Retention's whole
+    // licence to delete is that the article is still the publisher's words
+    // and can be fetched again; without the evidence there is no licence.
+    // The four writes that materialize an item are not one transaction, so an
+    // interrupted import leaves exactly this state and the next poll calls it
+    // unchanged and never backfills.
+    if (!source) {
+      protectedItems.push({ ...candidate, reason: "manual_save" });
+      continue;
+    }
     const untouched =
-      !source ||
-      ((row.title === source.title) &&
-        (row.body === source.bodyMarkdown ||
-          row.body === itemBody({ bodyMarkdown: source.bodyMarkdown, permalink: row.permalink, externalUrl: row.externalUrl })));
+      (row.title === source.title) &&
+      (row.body === source.bodyMarkdown ||
+        row.body === itemBody({ bodyMarkdown: source.bodyMarkdown, permalink: row.permalink, externalUrl: row.externalUrl }));
     if (!untouched) {
       protectedItems.push({ ...candidate, reason: "manual_save" });
       continue;
