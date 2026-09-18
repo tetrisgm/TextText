@@ -310,15 +310,28 @@ function captureArtifactUrls(capture: BookmarkCapture | undefined): string[] {
   ].filter((url): url is string => Boolean(url?.trim()));
 }
 
+/**
+ * Delete what the new capture replaced, and nothing the document still shows.
+ *
+ * A recapture that brings a screenshot but no readable text leaves the body
+ * exactly as it was, still embedding the previous generation's image URLs,
+ * while the capture column is replaced by the new generation. Deleting by the
+ * capture alone then removed the pictures out of a body that goes on
+ * referencing them, permanently and with no way back: the addresses they were
+ * fetched from were overwritten by the same write.
+ */
 async function deleteSupersededCaptureArtifacts(
   previous: BookmarkCapture | undefined,
   next: BookmarkCapture | undefined,
   token: string | undefined,
+  /** The saved document's own text, which has the last word on what is in use. */
+  stillShown?: string,
 ): Promise<void> {
   if (!token) return;
   const retained = new Set(captureArtifactUrls(next));
+  const body = stillShown ?? "";
   const obsolete = [...new Set(captureArtifactUrls(previous))].filter(
-    (url) => !retained.has(url),
+    (url) => !retained.has(url) && !body.includes(url),
   );
   if (obsolete.length === 0) return;
   try {
@@ -626,6 +639,7 @@ export async function PUT(
       existingPost.capture,
       saved.post.capture,
       blobToken,
+      saved.post.body,
     );
   }
 

@@ -119,14 +119,20 @@ export async function POST(request: Request) {
       const revision = context.post.revision;
       if (typeof revision !== "number") return jsonError("Could not restore that version", 500);
       try {
+        // The base and the token that guards it come from the same read. The
+        // first attempt read the row before the mutation; a retry happens
+        // because somebody else wrote, and spreading the pre-conflict row
+        // would put their rename, star or visibility change back the way it
+        // was under a token that now matches.
+        const base = context.post;
         const saved = resolved.access.isOwner === false
-          ? await savePostContentPatch(handle, resolved.post, { document: snapshot }, {
+          ? await savePostContentPatch(handle, base, { document: snapshot }, {
               expectedRevision: revision, audit, auditAlreadyRecorded: applied.auditRecorded,
             })
           : await savePost(
               handle,
               {
-                ...resolved.post,
+                ...base,
                 document: snapshot,
                 title: snapshot.content.title,
                 excerpt: snapshot.content.subtitle,
@@ -142,7 +148,7 @@ export async function POST(request: Request) {
                 auditAlreadyRecorded: applied.auditRecorded,
               },
             );
-        await markCollabMaterialized(postId, saved.revision ?? revision);
+        await markCollabMaterialized(postId, saved.revision ?? revision, applied.epoch);
         const blog = await getBlog(handle);
         if (blog) revalidateBlogPaths(blog, [saved.slug]);
         return json({ restored: { id: saved.id, revision: saved.revision, title: saved.title } });

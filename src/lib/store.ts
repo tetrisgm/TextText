@@ -1966,9 +1966,15 @@ export async function saveBookmarkCapture(
       updatedAt: new Date(),
     })
     .where(
+      // Always a compare, never an optional one. The body, title, excerpt and
+      // whole document below are derived from the row read at the top of this
+      // function, so a write that lands in between must be refused. Callers
+      // that pass a revision get theirs; the rest get the one this function
+      // read, which is the row it actually built its values from. The server's
+      // own light capture passes none, and used to overwrite whatever the
+      // person had typed into a new bookmark while it was fetching.
       and(eq(posts.id, row.id), isNull(posts.deletedAt),
-        opts.expectedRevision === undefined ? undefined : eq(posts.revision, opts.expectedRevision),
-        agent ? eq(posts.revision, row.revision) : undefined),
+        eq(posts.revision, opts.expectedRevision ?? row.revision)),
     )
     ;
   // A recapture can replace the body wholesale, and the body it replaces may
@@ -2360,65 +2366,79 @@ export async function markCapturePending(
 ): Promise<Post | null> {
   if (!db) return null;
   const blogId = await blogIdFor(handle);
-  const existing = await db
-    .select()
-    .from(posts)
-    .where(
-      and(
-        eq(posts.id, postId),
-        eq(posts.blogId, blogId),
-        eq(posts.type, "bookmark"),
-        isNull(posts.deletedAt),
-      ),
-    )
-    .limit(1);
-  const row = existing[0];
-  if (!row) return null;
+  // Read, derive, write: the capture column is rebuilt from the row that was
+  // read, so the write has to refuse a row that moved in between. Without the
+  // compare, a recapture request that read a moment before the capture
+  // agent's final upload landed would erase that generation's assets and
+  // screenshot from the row while the body still pointed at them. Its sibling
+  // prepareBookmarkCaptureGeneration has done exactly this for the same
+  // column all along.
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const existing = await db
+      .select()
+      .from(posts)
+      .where(
+        and(
+          eq(posts.id, postId),
+          eq(posts.blogId, blogId),
+          eq(posts.type, "bookmark"),
+          isNull(posts.deletedAt),
+        ),
+      )
+      .limit(1);
+    const row = existing[0];
+    if (!row) return null;
 
-  const capture = startCaptureGeneration(row.capture, {
-    id: randomUUID(),
-    url,
-    startedAt: new Date().toISOString(),
-  });
-  delete capture.error;
+    const capture = startCaptureGeneration(row.capture, {
+      id: randomUUID(),
+      url,
+      startedAt: new Date().toISOString(),
+    });
+    delete capture.error;
 
-  const updateQuery = db
-    .update(posts)
-    .set({ captureStatus: "pending", capture, updatedAt: new Date() })
-    .where(
-      and(
-        eq(posts.id, postId),
-        eq(posts.blogId, blogId),
-        eq(posts.type, "bookmark"),
-        isNull(posts.deletedAt),
-      ),
-    )
-    .returning({ id: posts.id, revision: posts.revision });
-  let updatedId: string | undefined;
-  if (options.audit) {
-    const auditCte = auditCteFrom(
-      options.audit,
-      "changed",
-      sql`changed.id::text`,
-    );
-    const result = await db.execute(sql`
-      WITH changed AS ${updateQuery}, audit AS (${auditCte}), agent_change AS (${agentChangeCte({
-        source: "changed", postId: sql`changed.id`, revision: sql`changed.revision`, changes: [],
-        captureGeneration: captureGeneration(capture)?.id,
-      })})
-      SELECT id FROM changed
-    `);
-    updatedId = (result.rows[0] as { id?: string } | undefined)?.id;
-  } else {
-    updatedId = (await updateQuery)[0]?.id;
+    const updateQuery = db
+      .update(posts)
+      .set({ captureStatus: "pending", capture, updatedAt: new Date() })
+      .where(
+        and(
+          eq(posts.id, postId),
+          eq(posts.blogId, blogId),
+          eq(posts.type, "bookmark"),
+          isNull(posts.deletedAt),
+          eq(posts.revision, row.revision),
+        ),
+      )
+      .returning({ id: posts.id, revision: posts.revision });
+    let updatedId: string | undefined;
+    if (options.audit) {
+      const auditCte = auditCteFrom(
+        options.audit,
+        "changed",
+        sql`changed.id::text`,
+      );
+      const result = await db.execute(sql`
+        WITH changed AS ${updateQuery}, audit AS (${auditCte}), agent_change AS (${agentChangeCte({
+          source: "changed", postId: sql`changed.id`, revision: sql`changed.revision`, changes: [],
+          captureGeneration: captureGeneration(capture)?.id,
+        })})
+        SELECT id FROM changed
+      `);
+      updatedId = (result.rows[0] as { id?: string } | undefined)?.id;
+    } else {
+      updatedId = (await updateQuery)[0]?.id;
+    }
+    // No row matched: somebody wrote between the read and the write. Read
+    // again and rebuild the capture on what is there now.
+    if (!updatedId) continue;
+    const [fresh] = await db
+      .select()
+      .from(posts)
+      .where(and(eq(posts.id, updatedId), eq(posts.blogId, blogId)))
+      .limit(1);
+    return fresh ? mapPost(fresh) : null;
   }
-  if (!updatedId) return null;
-  const [fresh] = await db
-    .select()
-    .from(posts)
-    .where(and(eq(posts.id, updatedId), eq(posts.blogId, blogId)))
-    .limit(1);
-  return fresh ? mapPost(fresh) : null;
+  // Every caller reads null as "there is nothing to capture here".
+  return null;
 }
 
 /**
