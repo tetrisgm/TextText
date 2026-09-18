@@ -282,6 +282,42 @@ Current drift, in multiples of the headline: tab +0.03, headline 0.00,
 publisher -0.10 (deliberate, recorded in DESIGN.md), metadata -0.05, section
 title +0.07, thumbnail 0.00.
 
+## Proving sync is safe rather than believing it (added 2026-09-18)
+
+Two systems, doing opposite jobs.
+
+`src/lib/__tests__/concurrent-writes.db.test.ts` runs the real write paths
+against each other on one document, in randomized interleavings, and checks
+two promises after every round: a write is accepted or refused and never
+silent, and there is always a way back. It catches a write path that can lose
+text before it ships. TEXTTEXT_CONCURRENCY_SEED reproduces a failure and
+TEXTTEXT_CONCURRENCY_ROUNDS turns it up. It found the coalescing window
+comparing each write only with the one before it, so a burst of small edits
+could carry a document a thousand characters with nothing on file but where
+it started.
+
+`npm run sync:check` asks every workspace whether it still agrees with
+itself: the columns against the document, the collaborative markers against
+their item's revision, retired logs against the current epoch, feed receipts
+against the items they claim. It reports and repairs nothing, because the
+first thing to know about drift is that it happened.
+`sync-consistency.db.test.ts` breaks each of those deliberately and asserts
+the report names it, so no check can quietly be one that always passes.
+
+Two things the checker deliberately does not compare, because the document
+cannot hold what the column does:
+
+- **Links.** The snapshot keeps one, in `content.fields.sourceUrl`, while the
+  column keeps a list with the labels a person wrote. Existing items have
+  columns richer than their documents. The sync write path now refuses a file
+  carrying more than one link rather than dropping the rest silently, but the
+  schema still cannot represent them.
+- **A bookmark's excerpt.** It comes from the capture; the document's
+  subtitle is its own field and is often empty.
+
+Both are gaps in the schema rather than drift, and reporting them on every
+workspace would make the checker noise.
+
 ## Residual risks, recorded
 
 - DNS rebinding between the gate's lookup and the socket connect is a known
