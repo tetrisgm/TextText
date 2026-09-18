@@ -37,6 +37,13 @@ const KEEP_LARGEST = 20;
 /** A document this short has nothing worth protecting from a replacement. */
 const REPLACED_FLOOR = 1;
 /**
+ * How far a coalesced burst may carry the document before it records anyway.
+ *
+ * A paragraph. Small enough that no real edit disappears into a window, large
+ * enough that typing a sentence is still one row rather than twenty.
+ */
+const DRIFT_FLOOR = 240;
+/**
  * Days over which at least one version a day is kept, whatever else happens.
  *
  * Without a floor in time, retention is purely by count: an afternoon of
@@ -142,6 +149,30 @@ function isForced(
   return replacedLength(previous.body, nextBody) > REPLACED_FLOOR;
 }
 
+/**
+ * How far the document has drifted from the newest version on file.
+ *
+ * The window compares a write with the one immediately before it, so a burst
+ * of edits that each replace a character or two never trips the floor however
+ * far the document travels: a thousand of them and the only state on file is
+ * from before the burst, a thousand characters ago. Measuring against the last
+ * version RECORDED, rather than the last write, makes a burst record once it
+ * has actually changed the document, which is what the floor was for.
+ *
+ * Length is the part of that comparison SQL can do without reading a document
+ * back, and it catches the case that loses text. A same-length rewrite is
+ * still caught by the per-write replacement measure above.
+ */
+function driftedSinceRecorded(postId: SQL, nextLength: number): SQL {
+  return sql`(
+    SELECT abs(newest.body_length - ${nextLength}) > ${DRIFT_FLOOR}
+    FROM ${postRevisions} newest
+    WHERE newest.post_id = ${postId}
+    ORDER BY newest.created_at DESC
+    LIMIT 1
+  )`;
+}
+
 /** One writer is one action, by one kind of actor, by one person. */
 function sameWriterRecently(writer: RevisionWriter, postId: SQL): SQL {
   return sql`EXISTS (
@@ -183,7 +214,9 @@ export function revisionCteFrom(input: {
            ${previous.title}, ${bodyLength}, ${shrankBy},
            ${source}.revision, ${writer.action}, ${writer.actorType}, ${writer.actorUserId ?? null}::uuid
     FROM ${source}
-    WHERE ${forced} OR NOT ${sameWriterRecently(writer, sql`${source}.id`)}`;
+    WHERE ${forced}
+       OR NOT ${sameWriterRecently(writer, sql`${source}.id`)}
+       OR COALESCE(${driftedSinceRecorded(sql`${source}.id`, nextBody.length)}, true)`;
 }
 
 /**
@@ -325,7 +358,9 @@ export async function recordSupersededVersion(input: {
           AND duplicate.body_length = ${bodyLength}
           AND duplicate.created_at > now() - interval '${sql.raw(String(COALESCE_MINUTES))} minutes'
       )
-      AND (${forced} OR NOT ${sameWriterRecently(writer, postId)})
+      AND (${forced}
+           OR NOT ${sameWriterRecently(writer, postId)}
+           OR COALESCE(${driftedSinceRecorded(postId, input.nextBody.length)}, true))
       RETURNING id
     ), duplicate AS (
       SELECT 1 FROM ${postRevisions} duplicate
