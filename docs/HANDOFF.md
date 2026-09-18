@@ -16,6 +16,41 @@
 
 For other topics, search `HANDOFF-history-2026-09-13.md` by term, then read that section. Implementation and checks are in their source files and git history; this entry point does not duplicate them.
 
+## Sync is fast now, and five systems say it is safe (2026-09-18, 0.198)
+
+A word typed in one window took 507ms to reach another. Two waits, neither of
+them work:
+
+- The relay's long poll re-read the append log on a timer starting at 700ms,
+  so half a poll interval sat between a write and the reader being told to
+  look. `src/lib/collab/wakeup.ts` lets the writer wake same-process readers;
+  they still read the log, the timer is untouched, and Neon over HTTP has no
+  connection to hold so LISTEN/NOTIFY cannot do this across instances.
+- The first keystroke of a burst waited out the 250ms push throttle. It leads
+  at 30ms now; sustained typing batches as before.
+
+A keystroke crosses in 55ms median and 60ms at the 95th, a sentence's last
+character in 26ms, and two windows typing at once agree about 320ms later
+with both edits present. `npm run bench:sync` measures all three.
+
+Opening a folder was 318ms on every run with the main thread idle throughout.
+A lazy component suspends on its FIRST render however warm its chunk is, the
+navigation commits synchronously so React had to commit the fallback, and
+React holds a fallback it just committed for about 300ms.
+`src/components/workspace/warm-chunk.tsx` renders the component itself once
+the warm import resolves. 318ms to 24ms, and every action is inside the 200ms
+budget: article 60, back 66, channel 34, folder 24.
+
+Five sync systems now, and `web.sync_durability` runs `npm run test:db` as a
+release gate so the ones that need a database stop being skipped. The full
+account, including what was ruled out, is in
+[reading-architecture.md](reading-architecture.md).
+
+Open, unchanged: changelog entries for 0.191 through 0.198 need the
+`texttext` connector authorized from claude.ai connector settings, which is
+not reachable from a session. Four lint errors predate all of this
+(`MarkdownSurface.tsx`, `attachments.ts`, `tabs.test.ts`, `local-view.ts`).
+
 ## A note lost its text, and documents now keep a history (2026-09-17)
 
 The owner wrote a note, closed the tab, reopened it, and found two words.
