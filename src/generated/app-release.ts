@@ -1,8 +1,8 @@
 export const generatedAppRelease = {
-  version: "0.196",
-  buildNumber: 1086,
+  version: "0.197",
+  buildNumber: 1087,
   appcastUrl:
-    "https://fkxlzavaphs5epsz.public.blob.vercel-storage.com/downloads/appcast-0.196.xml",
+    "https://fkxlzavaphs5epsz.public.blob.vercel-storage.com/downloads/appcast-0.197.xml",
   zipUrl:
-    "https://fkxlzavaphs5epsz.public.blob.vercel-storage.com/downloads/TextText-0.196.zip",
+    "https://fkxlzavaphs5epsz.public.blob.vercel-storage.com/downloads/TextText-0.197.zip",
 } as const;
