@@ -48,7 +48,7 @@ describe("links through the document", () => {
   });
 
   it("carries a file's whole list into the document", () => {
-    const base = documentFromLegacyPost(post(null));
+    const base = documentFromLegacyPost(post(undefined));
     const parsed = parsePostMarkdownFile(
       ['---', 'links: [{"href":"https://a.invalid","label":"A"},{"href":"https://b.invalid","label":"B"}]', "---", "body"].join("\n"),
     );
