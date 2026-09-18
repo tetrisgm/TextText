@@ -25,6 +25,7 @@ import {
   prepareCollabBaseline,
 } from "@/lib/collab";
 import { getCollabRequestAccess } from "@/lib/collab/access.server";
+import { announceCollabUpdate, waitForCollabUpdate } from "@/lib/collab/wakeup";
 import { verifyPresenceSession } from "@/lib/collab/presence-session.server";
 import { readBoundedJson } from "@/lib/http/bounded-json";
 
@@ -58,8 +59,6 @@ function isValidYjsUpdate(base64: string): boolean {
     return false;
   }
 }
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function editorDenied(access: Awaited<ReturnType<typeof getCollabRequestAccess>>) {
   return access.trashed
@@ -142,6 +141,10 @@ export async function POST(
     }
     seq = result.seq;
   }
+  // The readers holding this item open are almost always on this instance,
+  // and they are waiting on a timer that does not know anything has happened.
+  // Tell them now; they still read the log themselves.
+  announceCollabUpdate(postId);
   // Keep the append log from growing without bound: once it is large, collapse
   // it to a single equivalent snapshot. Safe to run inline and best-effort.
   await maybeCompactCollab(postId).catch(() => {});
@@ -202,7 +205,13 @@ export async function GET(
     let interval = POLL_INTERVAL_MS;
     while (updates.length === 0 && Date.now() < deadline) {
       if (request.signal?.aborted) break;
-      await sleep(Math.min(interval, Math.max(deadline - Date.now(), 0)));
+      // Wake on the write itself when it happened on this instance, and on the
+      // timer otherwise. The timer is unchanged, so this can only be faster.
+      await waitForCollabUpdate(
+        postId,
+        Math.min(interval, Math.max(deadline - Date.now(), 0)),
+        request.signal ?? undefined,
+      );
       updates = await collabUpdatesSince(postId, since, epoch);
       interval = Math.min(Math.round(interval * 1.6), POLL_MAX_INTERVAL_MS);
     }

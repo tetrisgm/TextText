@@ -159,18 +159,13 @@ const ACTIONS: Action[] = [
     name: "open a folder",
     setUp: home,
     click: `Array.from(document.querySelectorAll(".post-editor-folder-main")).find((e) => e.textContent.trim() === "Bookmarks")`,
-    // Measured cold, which is the only time it is slow: the first folder
-    // opened after a page load takes about 470ms, and every one after it
-    // takes 25. Something is initialised once and shared by all of them.
-    // Ruled out by measurement: JavaScript execution (the profile is idle
-    // through the gap), the navigation animation (identical with reduced
-    // motion), the view transition (identical with startViewTransition
-    // removed before any module loads), page warm-up (identical after six
-    // seconds of settling), the amount of content (identical with the news
-    // list display:none, and identical for a folder of three items and one
-    // of forty), text shaping caches, IndexedDB, fetch, requestIdleCallback
-    // and scheduler.postTask. The content region goes blank at 40ms and the
-    // folder arrives at 460ms, so the person watches an empty pane.
+    // Every run reloads the Home first, so every run is the first folder
+    // opened after a page load. That was the slow one: 470ms, against 25 for
+    // the second, because a lazy component suspends on its first render
+    // however warm its chunk is and React holds the fallback it had to
+    // commit. src/components/workspace/warm-chunk.tsx renders the component
+    // itself once the chunk is in, so nothing suspends. Keep measuring it
+    // this way: the second folder was never the one anybody waited for.
     //
     // Any h1 with the folder's name, not the document's first one. The
     // outgoing view keeps its own heading until it is removed at the end of

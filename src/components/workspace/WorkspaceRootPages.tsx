@@ -4,6 +4,7 @@ import { scheduleAfterLoadIdle } from "@/lib/after-load-idle";
 import { HomeMasthead } from "@/components/workspace/home/HomeMasthead";
 import { HomeNews } from "@/components/workspace/home/HomeNews";
 import { HomeRecent } from "@/components/workspace/home/HomeRecent";
+import { warmChunk } from "@/components/workspace/warm-chunk";
 import homeStyles from "@/components/workspace/home/Home.module.css";
 import { BackupHeartbeat } from "@/components/workspace/BackupHeartbeat";
 
@@ -21,25 +22,23 @@ import { WorkspacePostReader } from "@/components/workspace/WorkspaceItemViews";
  * Loaded on demand in the workspace. The published folder route keeps its
  * static FolderPage import so public folders still render on the server.
  */
-const FolderPage = dynamic(
-  () =>
-    import("@/components/FolderPage").then((module) => module.FolderPage),
-  { ssr: false },
+const { Component: FolderPage, warm: warmFolderPage } = warmChunk(() =>
+  import("@/components/FolderPage").then((module) => module.FolderPage),
 );
 
-/** Fetch the folder chunk while the workspace is idle, before navigation. */
+/**
+ * Fetch the folder chunk while the workspace is idle, before navigation.
+ *
+ * Fetching it is only half of it: a lazy component suspends on its first
+ * render however warm the chunk is, and the navigation commits that fallback
+ * synchronously, so React holds it for its throttle and the first folder
+ * anyone opens costs about 300ms of empty pane. `warmChunk` renders the
+ * component itself once this has resolved, so nothing suspends.
+ */
 function useWarmFolderPageChunk(enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;
-    const preload = (
-      FolderPage as unknown as {
-        preload?: () => void;
-      }
-    ).preload;
-    const warm = () => {
-      if (preload) preload();
-      else void import("@/components/FolderPage");
-    };
+    const warm = warmFolderPage;
     const idle = (
       window as unknown as {
         requestIdleCallback?: (fn: () => void, o?: { timeout: number }) => number;

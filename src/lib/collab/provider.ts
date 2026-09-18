@@ -18,7 +18,21 @@ import {
 const REMOTE_ORIGIN = "collab-remote";
 const REMOTE_AWARENESS_ORIGIN = "collab-awareness-remote";
 const CLIENT_ID_STORAGE_PREFIX = "texttext:collab:client:";
+/** How long a run of keystrokes is allowed to batch before it is sent. */
 const PUSH_DEBOUNCE_MS = 250;
+/**
+ * How long the FIRST keystroke after a pause waits.
+ *
+ * Batching is what keeps continuous typing down to a few requests a second,
+ * and it should stay. But it also means the moment a person starts typing is
+ * the one moment it is applied to nothing: the other window learns a quarter
+ * of a second late that anybody is writing at all, which is exactly the lag
+ * people describe when they say collaboration feels dead.
+ *
+ * So the first push of a burst goes almost at once and the rest of the burst
+ * batches as before. A burst costs one extra request, however long it runs.
+ */
+const PUSH_LEAD_MS = 30;
 const PUSH_RETRY_MS = 1500;
 const PUSH_MAX_RETRY_MS = 30_000;
 const POLL_RETRY_MS = 2000;
@@ -135,6 +149,8 @@ type Outbox = {
   timer: ReturnType<typeof setTimeout> | null;
   /** Consecutive transient failures, for backoff. Reset on any success. */
   retries: number;
+  /** When this queue last sent, so a keystroke after a pause can lead. */
+  lastFlushAt: number;
   /** The log generation this client caught up under; sent on every push and
    * FENCED server-side. A push against a stale epoch is retired. */
   epoch: number;
@@ -384,6 +400,7 @@ function outboxFor(postId: string, base: string): Outbox {
     subscribers: new Map(),
     timer: null,
     retries: 0,
+    lastFlushAt: 0,
     epoch: 0,
     epochKnown: false,
     baselineRevision: null,
@@ -522,6 +539,7 @@ async function flushOutbox(postId: string, outbox: Outbox) {
   };
 
   outbox.flushing = true;
+  outbox.lastFlushAt = Date.now();
   const batch = outbox.pending.slice(0, MAX_PUSH_BATCH);
   const batchEpoch = outbox.epoch;
   let nextDelay = PUSH_DEBOUNCE_MS;
@@ -1018,7 +1036,10 @@ export class CollabProvider implements CollaborationTransport {
     else outbox.recoveryUpdates.push(update.slice());
     outbox.pending.push(update.slice());
     void outbox.hydrated.then(() => persistOutbox(this.opts.postId, outbox));
-    scheduleOutbox(this.opts.postId, outbox, PUSH_DEBOUNCE_MS);
+    // A burst that has already sent once keeps batching; one that has been
+    // quiet leads, so the other window sees this person start typing.
+    const quiet = Date.now() - outbox.lastFlushAt >= PUSH_DEBOUNCE_MS;
+    scheduleOutbox(this.opts.postId, outbox, quiet ? PUSH_LEAD_MS : PUSH_DEBOUNCE_MS);
   }
 
   private onAwarenessUpdate(

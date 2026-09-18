@@ -211,30 +211,46 @@ can make fifty and still feel instant in development while taking seconds in
 the Mac app, where each one is an HTTPS request to Neon. The count is what
 the speed is made of.
 
-### What it says today, and the one thing that is wrong
+### What it says today
 
-Opening an article 63ms median, going back 84, switching channel 24. Opening
-a folder is 318ms, every time, and it is the defect.
+Opening an article 60ms median, going back 66, switching channel 34, opening
+a folder 24. Every action is inside the 200ms budget.
 
-It is a one-time initialisation, not the folder: the first folder opened
-after a page load takes about 470ms and every one after it takes 25, whichever
-folder each is. Opening the first article pays the same kind of cost once.
-The content region goes blank at 40ms and the folder arrives at 460ms, so the
-person watches an empty pane for four hundred milliseconds.
+Opening a folder was 318ms on every run, and finding out why took longer than
+fixing it. The whole gap was React waiting on purpose.
 
-Ruled out by measurement, so nobody repeats it: JavaScript execution (the CPU
-profile is idle through the gap), the navigation animation (identical with
-reduced motion), the view transition (identical with startViewTransition
-removed before any module loads), page warm-up (identical after six seconds
-of settling), how much content there is (identical with the news list at
-display:none, and identical for a folder of three items and one of forty),
-text shaping caches, IndexedDB, fetch, requestIdleCallback and
-scheduler.postTask. What remains is the first mount of that view.
+The content region went blank at 19ms and the folder arrived at about 330ms.
+Through those three hundred milliseconds the main thread was idle: animation
+frames ticked at a steady 17ms with no long task anywhere, no request was
+made, and no timer was scheduled. Something resumed at 330ms and committed in
+one 88ms frame.
 
-The codebase already has the shape of the answer for the editor:
-`scheduleAfterLoadIdle` preloads its chunk after the cold path, because "an
-item opened and edited before that mounts the editor cold". That warms the
-chunk, not the mount, and the mount is what costs 470ms here.
+What resumed was a Suspense retry. `next/dynamic` is built on `React.lazy`,
+and a lazy component suspends on its FIRST render no matter how warm its
+chunk is: preloading resolves the import in a microtask, and the render that
+asked for it suspended before that microtask ran. The navigation commits
+synchronously so the slide runs on the new view, which leaves React no choice
+but to commit the fallback, and React then holds a fallback it has just
+committed for about 300ms rather than flashing it away. So the person watched
+an empty pane for a third of a second waiting for a chunk that was already in
+memory. It happened exactly once per page load per chunk, which is why the
+second folder anyone opened took 25ms and the first took 470.
+
+`src/components/workspace/warm-chunk.tsx` renders the component itself once
+the warm import has resolved, and the ordinary lazy component until then.
+Nothing suspends, so no fallback is committed and there is nothing for the
+throttle to hold. The first folder now opens in 24ms like the second.
+
+Ruled out along the way, so nobody repeats it: JavaScript execution, the
+navigation animation, the view transition, page warm-up, how much content
+there is, text shaping caches, IndexedDB, fetch, requestIdleCallback and
+scheduler.postTask. None of them was ever going to be it, because the thread
+was not doing anything.
+
+The editor does not have this problem and it is worth knowing why: it is
+mounted for real on the first idle after an item opens, so its lazy is
+already resolved by the time anyone presses E. Warming a chunk is not the
+same as resolving its component, and only the second one helps.
 
 `npm run bench` is the other half, and the one that decides whether the app
 is fast: it drives the real surfaces against a production build and reports
@@ -324,6 +340,56 @@ everything that reads a source expects them there, and a document written
 before the field existed still projects its single link. The sync path used
 to refuse a file with more than one link; it accepts them now, because there
 is nothing left to lose.
+
+## How fast a word crosses (added 2026-09-18)
+
+Everything else here measures one client. `npm run bench:sync` opens two,
+signs both in, puts them in one note it made for itself, and measures the two
+things that decide whether collaboration works: how long a keystroke takes to
+appear in the other window, and whether the two windows agree after both of
+them type at once with no coordination. It destroys its note afterwards. It
+works on a note of its own because the version that typed into the
+workspace's real notes overwrote one of their titles, which is exactly the
+kind of damage a benchmark must not be able to do.
+
+Three numbers, and each measures a different thing:
+
+- **A keystroke after a pause.** One character, with both queues empty first.
+  This is the moment the other window learns that anybody is writing at all.
+- **A sentence, as it is typed.** The whole sentence, typed at speaking pace,
+  timed from the last character. This is what batching costs.
+- **Convergence.** Both windows type at once, and the benchmark waits for them
+  to stop changing and hold the same text, rather than comparing after a fixed
+  delay, which would report a merge still in flight as a merge that failed.
+
+It was 507ms median, 893ms at the 95th, on a local server. Two causes, both
+now fixed, and both of them waiting rather than working.
+
+**The relay's long poll was a poll.** `GET /api/collab/{postId}?wait=` held
+the request open and re-read the append log on a timer starting at 700ms, so
+half a poll interval of pure waiting sat between a write and the reader being
+told to look. `src/lib/collab/wakeup.ts` lets the writer say so: a POST that
+appends wakes every reader holding that item open in the same server process,
+and the reader still reads the log itself. Nothing is delivered through it, a
+spurious wake costs one query, and the timer is untouched, so a reader on
+another instance is exactly as fast as it was before and never wrong. Neon
+over HTTP has no connection to hold, so Postgres LISTEN/NOTIFY cannot do this
+across instances; a deployment that grows to several instances gets slower,
+not incorrect. `wakeup.test.ts` holds it to waking the right readers, all of
+them, never past their timer, and leaving nothing behind.
+
+**The first keystroke of a burst waited for the batch.** Pushes are throttled
+at 250ms, which is right for continuous typing and wrong for the moment
+somebody starts: the other window learned a quarter of a second late that
+anyone was there. The first push after a pause now goes at 30ms and the rest
+of the burst batches as before, so a burst costs one extra request however
+long it runs.
+
+Now: a keystroke crosses in 55ms median, 60ms at the 95th; a sentence's last
+character in 26ms, because during sustained typing the queue is already
+moving; and the two windows agree about 320ms after both stop typing, with
+both edits present. The budget is 2000ms and the benchmark exits non-zero
+when any of the three fails.
 
 ## Residual risks, recorded
 
