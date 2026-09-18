@@ -36,6 +36,18 @@ const KEEP_RECENT = 180;
 const KEEP_LARGEST = 20;
 /** A document this short has nothing worth protecting from a replacement. */
 const REPLACED_FLOOR = 1;
+/**
+ * Days over which at least one version a day is kept, whatever else happens.
+ *
+ * Without a floor in time, retention is purely by count: an afternoon of
+ * editing writes a version every few seconds, and after KEEP_RECENT of them
+ * every version older than that afternoon is gone, including yesterday's
+ * finished document, unless it happens to be among the KEEP_LARGEST. The
+ * earliest version of each day is the one that says what the document looked
+ * like when that day began, which is what a person asking for "last Tuesday"
+ * means.
+ */
+const KEEP_DAILY_DAYS = 120;
 
 export type RevisionWriter = {
   /** The action that superseded the version, e.g. "save_document" or "collab.rotate". */
@@ -59,6 +71,44 @@ export function bodyOf(document: DocumentSnapshot | null | undefined): string {
 }
 
 /**
+ * Everything a version can lose, as one string to measure a replacement
+ * against.
+ *
+ * Measuring the body alone meant a write that emptied a template field,
+ * retitled the item, or dropped its tags and pictures replaced nothing as far
+ * as this file was concerned, and the coalescing window folded it into a
+ * recent version by the same writer. A person who rewrites three thousand
+ * characters of a richtext field and touches nothing else has replaced as
+ * much as one who rewrites the body.
+ *
+ * Key order is fixed rather than JSON.stringify's insertion order, so an
+ * unchanged document measures as unchanged whatever built it.
+ */
+export function contentOf(document: DocumentSnapshot | null | undefined): string {
+  const content = (document as { content?: Record<string, unknown> } | null | undefined)?.content;
+  if (!content) return "";
+  const stable = (value: unknown): string => {
+    if (value === null || value === undefined) return "";
+    if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
+    if (typeof value === "object") {
+      return `{${Object.keys(value as Record<string, unknown>)
+        .sort()
+        .map((key) => `${key}:${stable((value as Record<string, unknown>)[key])}`)
+        .join(",")}}`;
+    }
+    return String(value);
+  };
+  return [
+    String(content.title ?? ""),
+    String(content.subtitle ?? ""),
+    String(content.body ?? ""),
+    stable(content.fields),
+    stable(content.tags),
+    stable(content.assets),
+  ].join("\u0000");
+}
+
+/**
  * How much of the old text this write replaces: the span left once the shared
  * opening and ending are removed. Ordinary typing replaces nothing, however
  * long the insertion; a truncation, a select-all-paste, and a same length
@@ -76,9 +126,19 @@ export function replacedLength(previous: string, next: string): number {
   return Math.max(0, previous.length - prefix - suffix);
 }
 
-function isForced(previous: SupersededVersion, nextBody: string, force?: boolean): boolean {
+function isForced(
+  previous: SupersededVersion,
+  nextBody: string,
+  force?: boolean,
+  /** The whole document being written, when the caller has it. */
+  nextDocument?: DocumentSnapshot | null,
+): boolean {
   if (force) return true;
   if (previous.revision === null) return true;
+  if (nextDocument) {
+    return replacedLength(contentOf(previous.document), contentOf(nextDocument)) > REPLACED_FLOOR;
+  }
+
   return replacedLength(previous.body, nextBody) > REPLACED_FLOOR;
 }
 
@@ -107,11 +167,14 @@ export function revisionCteFrom(input: {
   fromCte: string;
   /** Records regardless of the window, for a change the body does not show. */
   force?: boolean;
+  /** The document being written. Supplied, the replacement is measured over
+   * everything a version carries rather than over the body alone. */
+  nextDocument?: DocumentSnapshot | null;
 }): SQL {
   const { previous, nextBody, writer } = input;
   const bodyLength = previous.body.length;
   const shrankBy = Math.max(0, bodyLength - nextBody.length);
-  const forced = isForced(previous, nextBody, input.force);
+  const forced = isForced(previous, nextBody, input.force, input.nextDocument);
   const source = sql.identifier(input.fromCte);
   return sql`INSERT INTO ${postRevisions}
       (post_id, blog_id, revision, document, title, body_length, shrank_by,
@@ -124,27 +187,41 @@ export function revisionCteFrom(input: {
 }
 
 /**
- * Keeps the newest versions and the largest ones, in the same statement.
+ * Keeps the newest versions, the largest ones, and the first of every day, in
+ * the same statement.
+ *
  * Without the size half, a session of deletions records a version every few
- * seconds and evicts the full document it exists to protect.
+ * seconds and evicts the full document it exists to protect. Without the daily
+ * half, an afternoon of ordinary editing evicts every version older than that
+ * afternoon, because retention was entirely by count.
  */
 export function revisionPruneCteFrom(fromCte: string): SQL {
   const source = sql.identifier(fromCte);
   return sql`DELETE FROM ${postRevisions}
     WHERE post_id IN (SELECT id FROM ${source})
-      AND id NOT IN (
+      AND id NOT IN (${keptRevisionIds(sql`SELECT id FROM ${source}`)})`;
+}
+
+/** The three reasons a version is kept, as one id list. */
+function keptRevisionIds(postIds: SQL): SQL {
+  return sql`
         SELECT id FROM (
           (SELECT recent.id FROM ${postRevisions} recent
-            WHERE recent.post_id IN (SELECT id FROM ${source})
+            WHERE recent.post_id IN (${postIds})
             ORDER BY recent.created_at DESC
             LIMIT ${KEEP_RECENT})
           UNION
           (SELECT largest.id FROM ${postRevisions} largest
-            WHERE largest.post_id IN (SELECT id FROM ${source})
+            WHERE largest.post_id IN (${postIds})
             ORDER BY largest.body_length DESC, largest.created_at DESC
             LIMIT ${KEEP_LARGEST})
-        ) kept
-      )`;
+          UNION
+          (SELECT DISTINCT ON (daily.post_id, date_trunc('day', daily.created_at)) daily.id
+            FROM ${postRevisions} daily
+            WHERE daily.post_id IN (${postIds})
+              AND daily.created_at > now() - interval '${sql.raw(String(KEEP_DAILY_DAYS))} days'
+            ORDER BY daily.post_id, date_trunc('day', daily.created_at), daily.created_at ASC)
+        ) kept`;
 }
 
 export type PostRevisionSummary = {
@@ -262,19 +339,7 @@ export async function recordSupersededVersion(input: {
     ), pruned AS (
       DELETE FROM ${postRevisions}
       WHERE post_id = ${postId}
-        AND id NOT IN (
-          SELECT id FROM (
-            (SELECT recent.id FROM ${postRevisions} recent
-              WHERE recent.post_id = ${postId}
-              ORDER BY recent.created_at DESC
-              LIMIT ${KEEP_RECENT})
-            UNION
-            (SELECT largest.id FROM ${postRevisions} largest
-              WHERE largest.post_id = ${postId}
-              ORDER BY largest.body_length DESC, largest.created_at DESC
-              LIMIT ${KEEP_LARGEST})
-          ) kept
-        )
+        AND id NOT IN (${keptRevisionIds(sql`SELECT ${postId}`)})
     )
     SELECT (SELECT count(*) FROM recorded)::int AS stored,
            (SELECT count(*) FROM duplicate)::int AS already

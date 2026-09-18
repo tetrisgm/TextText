@@ -6253,7 +6253,7 @@ export async function savePost(
         const auditCte = auditCteFrom(epochAudit, "changed", sql`changed.id::text`);
         const epochPrevious = supersededVersion(blogId, existingRow);
         const historyCte = epochPrevious
-          ? revisionCteFrom({ previous: epochPrevious, nextBody: document.content.body, writer: supersededBy(epochAudit), fromCte: "changed" })
+          ? revisionCteFrom({ previous: epochPrevious, nextBody: document.content.body, nextDocument: document, writer: supersededBy(epochAudit), fromCte: "changed" })
           : sql`SELECT 1 WHERE false`;
         const result = await db.execute(sql`
           WITH locked_epoch AS MATERIALIZED (
@@ -6283,7 +6283,7 @@ export async function savePost(
           const writer = supersededBy(postSaveAudit({ ...post, slug }, options.audit));
           const result = await db.execute(sql`
             WITH changed AS ${changed},
-            history AS (${revisionCteFrom({ previous, nextBody: document.content.body, writer, fromCte: "changed" })}),
+            history AS (${revisionCteFrom({ previous, nextBody: document.content.body, nextDocument: document, writer, fromCte: "changed" })}),
             pruned AS (${revisionPruneCteFrom("changed")})
             SELECT id, revision FROM changed
           `);
@@ -6308,7 +6308,7 @@ export async function savePost(
         const auditCte = auditCteFrom(updateAudit, "changed", sql`changed.id::text`);
         const updatePrevious = supersededVersion(blogId, existingRow);
         const historyCte = updatePrevious
-          ? revisionCteFrom({ previous: updatePrevious, nextBody: document.content.body, writer: supersededBy(updateAudit), fromCte: "changed" })
+          ? revisionCteFrom({ previous: updatePrevious, nextBody: document.content.body, nextDocument: document, writer: supersededBy(updateAudit), fromCte: "changed" })
           : sql`SELECT 1 WHERE false`;
         const result = await db.execute(sql`
           WITH changed AS ${changed}, audit AS (${auditCte}), history AS (${historyCte}),

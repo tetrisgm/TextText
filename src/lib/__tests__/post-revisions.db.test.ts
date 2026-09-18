@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 
 // Against local Postgres only (npm run test:reading:db). Proves the one rule
 // the history exists for: nothing replaces a document's text without writing
@@ -206,6 +206,102 @@ describe.skipIf(!enabled)("document history against Postgres", () => {
     expect(second).toBe("already");
     const rows = await db!.select().from(schema.postRevisions).where(eq(schema.postRevisions.postId, rotated));
     expect(rows).toHaveLength(1);
+  });
+
+  it("HIS-10: rewriting a field and nothing else is a version, not a coalesced keystroke", async () => {
+    // Measuring only content.body meant a write that emptied a template
+    // field, retitled the item or dropped its tags replaced nothing as far as
+    // the history was concerned, and the window folded it away.
+    const created = await store.createDraftInFolder(handle, folderId, {
+      initial: { type: "note", title: "fields", body: "the body never changes" },
+    });
+    const id = created.id!;
+    const withField = {
+      ...created.document!,
+      content: { ...created.document!.content, fields: { notes: "a paragraph the person wrote into a template field" } },
+    };
+    const first = (await store.getPostById(handle, id))!;
+    await store.savePost(handle, { ...first, document: withField }, { expectedRevision: first.revision });
+    const second = (await store.getPostById(handle, id))!;
+    // Same writer, seconds later, body untouched: only the field is replaced.
+    await store.savePost(
+      handle,
+      { ...second, document: { ...withField, content: { ...withField.content, fields: { notes: "" } } } },
+      { expectedRevision: second.revision },
+    );
+    const rows = await db!
+      .select()
+      .from(schema.postRevisions)
+      .where(eq(schema.postRevisions.postId, id))
+      .orderBy(desc(schema.postRevisions.createdAt));
+    const kept = rows.find((row) => {
+      const fields = (row.document as { content?: { fields?: Record<string, unknown> } }).content?.fields;
+      return typeof fields?.notes === "string" && fields.notes.length > 0;
+    });
+    expect(kept, "the version holding the field text must be on file").toBeTruthy();
+  });
+
+  it("HIS-11: a day's first version survives a long session on a later day", async () => {
+    const created = await store.createDraftInFolder(handle, folderId, {
+      initial: { type: "note", title: "daily", body: "yesterday's finished document" },
+    });
+    const id = created.id!;
+    // A version from an earlier day, the size of an ordinary note so it is not
+    // kept by the largest-versions rule either.
+    const [old] = await db!
+      .insert(schema.postRevisions)
+      .values({
+        postId: id,
+        blogId,
+        revision: 1,
+        document: created.document!,
+        title: "daily",
+        // One character, so it can never be kept by the largest-versions
+        // rule and only the daily floor can save it.
+        bodyLength: 1,
+        shrankBy: 0,
+        supersededByAction: "save_document",
+        supersededByActorType: "human",
+        supersededByActorUserId: userId,
+      })
+      .returning({ id: schema.postRevisions.id });
+    await db!.execute(
+      sql`UPDATE ${schema.postRevisions} SET created_at = now() - interval '3 days' WHERE id = ${old.id}`,
+    );
+    // Today: more forced versions than KEEP_RECENT, each replacing the last.
+    for (let index = 0; index < 190; index += 1) {
+      const current = (await store.getPostById(handle, id))!;
+      await store.savePost(
+        handle,
+        {
+          ...current,
+          document: {
+            ...current.document!,
+            content: {
+              ...current.document!.content,
+              // Each rewrite replaces the whole body rather than appending to
+              // it, which is what makes every one of them a version rather
+              // than a coalesced keystroke.
+              body: `${String(index).padStart(3, "0")} ${"abcdefghij"[index % 10].repeat(80)}`,
+            },
+          },
+        },
+        { expectedRevision: current.revision },
+      );
+    }
+    const today = await db!
+      .select({ id: schema.postRevisions.id })
+      .from(schema.postRevisions)
+      .where(eq(schema.postRevisions.postId, id));
+    // The scenario only exists if today really did record more versions than
+    // the newest-versions rule keeps. Without this the test can pass by
+    // never having reproduced anything.
+    expect(today.length, "today must have filled the newest-versions window").toBeGreaterThan(150);
+    const survivors = await db!
+      .select({ id: schema.postRevisions.id })
+      .from(schema.postRevisions)
+      .where(eq(schema.postRevisions.id, old.id));
+    expect(survivors, "the earlier day's version must not be evicted by one session").toHaveLength(1);
   });
 
   it("HIS-04: a guarded save that loses its race records nothing", async () => {
