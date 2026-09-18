@@ -11,6 +11,9 @@ export const documentAssetSchema = z
     alt: z.string().max(1000).optional(),
     caption: z.string().max(4000).optional(),
     contentType: z.string().trim().max(200).optional(),
+    /** A video's still frame. Both the editor and text.md accept one, and
+     * without a home here every save dropped it. */
+    poster: z.string().trim().max(4096).optional(),
     width: z.number().int().positive().max(100_000).optional(),
     height: z.number().int().positive().max(100_000).optional(),
   })

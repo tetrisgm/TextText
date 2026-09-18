@@ -358,18 +358,30 @@ describe("wrong types throw, naming the key", () => {
 });
 
 describe("gallery and links entry handling", () => {
-  it("drops gallery entries without src and links without href", () => {
-    const parsed = parsePostMarkdownFile(
+  it("refuses gallery entries without src and links without href", () => {
+    // Refusing names the line. Dropping it answered 200 and then re-rendered
+    // the file without it, so the person's own copy stopped holding it too.
+    expect(() =>
+      parsePostMarkdownFile(
+        ["---", 'gallery: [{"caption":"no src"},{"src":"/keep.jpg"}]', "---", "x"].join("\n"),
+      ),
+    ).toThrow(/gallery item 1 must have a src/);
+    expect(() =>
+      parsePostMarkdownFile(
+        ["---", 'links: [{"label":"no href"},{"href":"https://example.com"}]', "---", "x"].join("\n"),
+      ),
+    ).toThrow(/link 1 must have an href/);
+    const good = parsePostMarkdownFile(
       [
         "---",
-        'gallery: [{"caption":"no src"},{"src":"/keep.jpg"}]',
-        'links: [{"label":"no href"},{"href":"https://example.com"}]',
+        'gallery: [{"src":"/keep.jpg"}]',
+        'links: [{"href":"https://example.com"}]',
         "---",
         "x",
       ].join("\n"),
     );
-    expect(parsed.fields.gallery).toEqual([{ src: "/keep.jpg" }]);
-    expect(parsed.fields.links).toEqual([
+    expect(good.fields.gallery).toEqual([{ src: "/keep.jpg" }]);
+    expect(good.fields.links).toEqual([
       { label: "https://example.com", href: "https://example.com" },
     ]);
   });

@@ -6056,6 +6056,7 @@ function canonicalDocumentForSave(
               : ("image" as const),
             src: asset.src,
             caption: asset.caption,
+            poster: asset.poster,
           }))
         : base.content.assets,
     },

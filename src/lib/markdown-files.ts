@@ -475,8 +475,12 @@ function fieldGallery(value: unknown): GalleryItem[] {
       throw new Error(`gallery item ${index + 1} must be an object`);
     }
     const values = entry as Record<string, unknown>;
+    // Refused, not skipped. Every other unreadable value in this file throws;
+    // dropping one silently meant a mistyped key (url instead of src) took
+    // the picture out of the document, and the same mistake applied to every
+    // entry emptied the gallery and answered 200.
     const src = fieldOptionalText(values.src, `gallery item ${index + 1} src`);
-    if (!src) continue;
+    if (!src) throw new Error(`gallery item ${index + 1} must have a src`);
     const caption = fieldOptionalText(
       values.caption,
       `gallery item ${index + 1} caption`,
@@ -502,7 +506,7 @@ function fieldLinks(value: unknown): LinkRef[] {
     }
     const values = entry as Record<string, unknown>;
     const href = fieldOptionalText(values.href, `link ${index + 1} href`);
-    if (!href) continue;
+    if (!href) throw new Error(`link ${index + 1} must have an href`);
     if (!isSafeLinkHref(href)) {
       throw new Error(`link ${index + 1} href must be a web, mail, or in-site URL`);
     }

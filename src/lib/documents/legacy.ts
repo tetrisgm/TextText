@@ -26,6 +26,7 @@ function galleryAssets(post: Post): DocumentAsset[] {
       : "image",
     src: item.src,
     caption: item.caption,
+    poster: item.poster,
   }));
 }
 
@@ -104,6 +105,7 @@ export function legacyProjectionFromDocument(document: DocumentSnapshot) {
     gallery: document.content.assets.map((asset) => ({
       src: asset.src,
       caption: asset.caption,
+      poster: asset.poster,
     })),
   };
 }

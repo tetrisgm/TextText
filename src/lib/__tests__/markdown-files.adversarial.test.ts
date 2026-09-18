@@ -174,13 +174,16 @@ describe("hostile hand-typed frontmatter", () => {
     expect(parsed.fields.cover).toBe("http://cdn.example.com/img.jpg?x=1:2");
   });
 
-  it("drops a poster-only gallery entry (no src, nothing to show)", () => {
-    const parsed = parsePostMarkdownFile(
-      '---\ngallery: [{"poster":"/p.jpg"},{"src":"/real.jpg","poster":"/q.jpg"}]\n---\nx',
-    );
-    expect(parsed.fields.gallery).toEqual([
-      { src: "/real.jpg", poster: "/q.jpg" },
-    ]);
+  it("refuses a poster-only gallery entry rather than eating the line", () => {
+    // This used to be dropped as "nothing to show". It is something the
+    // person typed, and the same leniency meant one mistyped key (url instead
+    // of src) applied to every entry emptied the gallery, answered 200, and
+    // re-rendered the file without the URLs, so nothing held them any more.
+    expect(() =>
+      parsePostMarkdownFile(
+        '---\ngallery: [{"poster":"/p.jpg"},{"src":"/real.jpg","poster":"/q.jpg"}]\n---\nx',
+      ),
+    ).toThrow(/gallery item 1 must have a src/);
   });
 
   it("rounds float coverHeights and rejects quoted ones", () => {

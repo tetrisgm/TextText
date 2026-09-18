@@ -5,6 +5,7 @@ import {
 } from "@/lib/documents/legacy";
 import {
   mergeMarkdownIntoDocument,
+  refuseUnsupportedMarkdown,
   parseSyncDocumentEnvelope,
   requestUsesSyncDocument,
 } from "@/lib/documents/sync";
@@ -75,6 +76,9 @@ export async function POST(request: Request) {
     } else {
       parsed = parsePostMarkdownFile(raw);
     }
+    // Refuse what a save would not keep, rather than answering 200 and
+    // rendering it away.
+    refuseUnsupportedMarkdown(parsed);
   } catch (error) {
     return syncError(400, errorMessage(error, "Could not parse the file"));
   }

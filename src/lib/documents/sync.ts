@@ -166,15 +166,33 @@ function setDocumentField(
   }
 }
 
-function assetsFromGallery(gallery: GalleryItem[]): DocumentAsset[] {
-  return gallery.map((item, index) => ({
-    id: `gallery-${index + 1}`,
-    kind: /\.(?:mp4|webm|mov|m4v|ogv|ogg)(?:[?#].*)?$/i.test(item.src)
-      ? "video"
-      : "image",
-    src: item.src,
-    caption: item.caption,
-  }));
+/**
+ * The gallery the file carries, merged onto the assets the document already
+ * holds rather than replacing them.
+ *
+ * Markdown can say a picture's address and its caption. It cannot say its alt
+ * text, its dimensions or its content type, and text.md renders a `gallery:`
+ * key for every item that has assets at all, so rebuilding the list from the
+ * file stripped those off every save that went through the file. Markdown
+ * winning over a field it cannot express is not markdown winning.
+ */
+function assetsFromGallery(gallery: GalleryItem[], existing: readonly DocumentAsset[] = []): DocumentAsset[] {
+  const bySrc = new Map(existing.map((asset) => [asset.src, asset]));
+  return gallery.map((item, index) => {
+    // Matched by address first, then by position, which is how an unchanged
+    // list keeps everything through a caption edit.
+    const kept = bySrc.get(item.src) ?? (existing[index]?.src === item.src ? existing[index] : undefined);
+    return {
+      ...kept,
+      id: kept?.id ?? `gallery-${index + 1}`,
+      kind:
+        kept?.kind ??
+        (/\.(?:mp4|webm|mov|m4v|ogv|ogg)(?:[?#].*)?$/i.test(item.src) ? "video" : "image"),
+      src: item.src,
+      caption: item.caption,
+      poster: item.poster ?? kept?.poster,
+    };
+  });
 }
 
 function setSourceFields(
@@ -183,6 +201,32 @@ function setSourceFields(
 ): void {
   setDocumentField(fields, "sourceUrl", links?.[0]?.href);
   setDocumentField(fields, "sourceLabel", links?.[0]?.label);
+}
+
+/**
+ * What a file says that a save would quietly not keep.
+ *
+ * The document holds one link and a fixed set of frontmatter keys. A file
+ * carrying more used to be accepted with a 200, and the next render of that
+ * file left the extra lines out, so the person's own copy stopped holding
+ * them either: the write reported success and the words were gone from both
+ * sides. Refusing names what to do about it, which is the one thing silence
+ * cannot. The MCP front door has always refused unknown keys; this is the
+ * other front door agreeing with it.
+ */
+export function refuseUnsupportedMarkdown(parsed: ParsedPostMarkdownFile): void {
+  const unknown = parsed.unknownKeys ?? [];
+  if (unknown.length > 0) {
+    throw new Error(
+      `text.md does not keep these keys, so saving would delete them: ${unknown.join(", ")}. Move what they say into the body.`,
+    );
+  }
+  const links = parsed.fields.links ?? [];
+  if (links.length > 1) {
+    throw new Error(
+      `text.md keeps one link and this file has ${links.length}. Keep the one you want and move the rest into the body.`,
+    );
+  }
 }
 
 /**
@@ -241,7 +285,7 @@ export function mergeMarkdownIntoDocument(
         ? parsed.fields.tags ?? []
         : document.content.tags,
       assets: hasOwn(parsed, "gallery")
-        ? assetsFromGallery(parsed.fields.gallery ?? [])
+        ? assetsFromGallery(parsed.fields.gallery ?? [], document.content.assets ?? [])
         : document.content.assets,
     },
     presentation: {

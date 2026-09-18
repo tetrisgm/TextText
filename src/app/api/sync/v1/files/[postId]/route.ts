@@ -3,6 +3,7 @@ import { legacyProjectionFromDocument } from "@/lib/documents/legacy";
 import { requireDocumentSnapshot } from "@/lib/documents/model";
 import {
   mergeMarkdownIntoDocument,
+  refuseUnsupportedMarkdown,
   parseSyncDocumentEnvelope,
   requestAcceptsSyncDocument,
   requestUsesSyncDocument,
@@ -195,6 +196,9 @@ export async function PUT(request: Request, { params }: Props) {
     } else {
       parsed = parsePostMarkdownFile(raw);
     }
+    // Refuse what a save would not keep, rather than answering 200 and
+    // rendering it away.
+    refuseUnsupportedMarkdown(parsed);
   } catch (error) {
     return syncError(400, errorMessage(error, "Could not parse the file"));
   }
