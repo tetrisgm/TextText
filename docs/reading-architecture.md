@@ -211,6 +211,17 @@ can make fifty and still feel instant in development while taking seconds in
 the Mac app, where each one is an HTTPS request to Neon. The count is what
 the speed is made of.
 
+`npm run bench` is the other half, and the one that decides whether the app
+is fast: it drives the real surfaces against a production build and reports
+click to rendered, median and 95th percentile, against a 200ms budget. Two
+traps it is built to avoid. A presence check for a predicate ("is there an
+h1") is often already true on the page the action starts from, so the clock
+stops on the same frame and reports seven milliseconds for a page load; every
+predicate here waits for something that was not true before. And the first run
+of an action in a fresh server pays for that route being initialised, which
+happens once per process, so it is reported in its own column rather than
+folded into a tail that would describe something nobody experiences twice.
+
 `npm run perf:queries` prints it for every read a person waits on. The Home
 was twenty-seven round trips for For You and fifty for a channel, most of
 them the same two questions: which workspace this handle is, and what folders
