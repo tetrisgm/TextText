@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { unzipSync } from "fflate";
+import { execFileSync } from "node:child_process";
 import { buildTextpack, gitBlobSha, parseTextpack, textpackFileName } from "../textpack";
 
 describe("textpack", () => {
@@ -23,6 +24,14 @@ describe("textpack", () => {
 
   it("computes the same sha git would", () => {
     expect(gitBlobSha(new TextEncoder().encode("hello\n"))).toBe("ce013625030ba8dba906f756967f9e9ca394464a");
+  });
+
+  it("writes identical valid archives east and west of UTC", () => {
+    const script = `const { buildTextpack, gitBlobSha } = require('./src/lib/github/textpack.ts'); console.log(gitBlobSha(buildTextpack('hi', ${JSON.stringify(parts)})));`;
+    const hashes = ["UTC", "America/Los_Angeles", "Asia/Tokyo"].map((TZ) =>
+      execFileSync(process.execPath, ["--import", "tsx", "-e", script], { env: { ...process.env, TZ }, encoding: "utf8" }).trim(),
+    );
+    expect(new Set(hashes).size).toBe(1);
   });
 
   it("refuses a zip that is not a textpack and names files safely", () => {

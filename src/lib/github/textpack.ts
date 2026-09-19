@@ -11,7 +11,9 @@ import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 
 export type TextpackParts = { markdown: string; document: unknown; template?: unknown; sourceUrl?: string | null };
 
-const EPOCH = new Date(Date.UTC(1980, 0, 1));
+// ZIP records local calendar fields. UTC midnight becomes 1979 west of UTC,
+// which is outside ZIP's range; local midnight also gives every zone the same bytes.
+const EPOCH = new Date(1980, 0, 1);
 
 export function buildTextpack(name: string, parts: TextpackParts): Uint8Array {
   const folder = `${name}.textbundle`;
