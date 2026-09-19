@@ -3274,12 +3274,12 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   letter-spacing: 0;
   text-transform: uppercase;
 }
-.workspace-root-inner h1,
-.workspace-root-inner p,
+:where(.workspace-root-inner) h1,
+:where(.workspace-root-inner) p,
 .workspace-post-body-status {
   margin: 0;
 }
-.workspace-root-inner h1 {
+:where(.workspace-root-inner) h1 {
   color: var(--ink);
   font-size: 32px;
   font-weight: 800;
@@ -3299,7 +3299,7 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   color: var(--ink);
   font: 600 12px/1 var(--font-body);
 }
-.workspace-root-inner p,
+:where(.workspace-root-inner) p,
 .workspace-post-body-status {
   max-width: 520px;
   color: var(--muted);
@@ -5845,7 +5845,7 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   .workspace-root-page {
     padding: 68px 24px 56px;
   }
-  .workspace-root-inner h1 {
+  :where(.workspace-root-inner) h1 {
     font-size: 30px;
   }
   .workspace-search-field input {

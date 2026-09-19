@@ -48,6 +48,7 @@ import {
 } from "@/lib/workspace/selection-modifiers";
 import { WorkspaceKeyHints } from "@/components/workspace/WorkspaceKeyHints";
 import { WorkspaceTabBar } from "@/components/workspace/WorkspaceTabBar";
+import { ArtifactNavigation, artifactPaneFromSearch, type ArtifactPane } from "@/components/workspace/home/ArtifactNavigation";
 import {
   closeTab,
   currentPreviewTab,
@@ -564,11 +565,11 @@ function LocalWorkspaceShell({
   className,
   homePath,
   initialPool,
-  initialSidebarCollapsed,
   initialAssistantState,
   initialSidebarWidth,
   initialAssistantWidth,
   initialSearchQuery,
+  initialHomePane = "home",
   initialView,
 }: {
   blog: Blog;
@@ -584,12 +585,19 @@ function LocalWorkspaceShell({
   initialSidebarWidth?: number;
   initialAssistantWidth?: number;
   initialSearchQuery?: string;
+  initialHomePane?: ArtifactPane;
   initialView: LocalWorkspaceView;
 }) {
   const router = useRouter();
   const { pool } = useWorkspacePool(initialPool);
   const itemIdentity = useLocalWorkspaceItemIdentity();
   const [view, setView] = useState<LocalWorkspaceView>(initialView);
+  const [homePane, setHomePane] = useState<ArtifactPane>(initialHomePane);
+  useEffect(() => {
+    const sync = () => setHomePane(artifactPaneFromSearch(window.location.search));
+    window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
+  }, []);
   const poolHydrated = useClientHydrated();
   const sourcePool =
     poolHydrated && pool?.blogId === initialPool.blogId ? pool : initialPool;
@@ -1016,8 +1024,9 @@ function LocalWorkspaceShell({
     () => createAssistantConfirmationController(setAssistantConfirmation),
     [],
   );
-  const { sidebarCollapsed, setSidebarCollapsed, toggleSidebarCollapsed } =
-    useWorkspaceSidebarCollapsed(initialSidebarCollapsed);
+  // Folders are a panel opened from Profile, never the default app frame.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const toggleSidebarCollapsed = useCallback(() => setSidebarCollapsed((value) => !value), []);
 
   useEffect(() => {
     // Peeking only exists for a collapsed sidebar; the cleanup below clears
@@ -5068,6 +5077,8 @@ function LocalWorkspaceShell({
   const content = (
     <LocalWorkspaceContent
       blog={displayPool.blog}
+      homePane={homePane}
+      onBrowseFolders={() => setSidebarCollapsed(false)}
       canCommentPost={canCommentPost}
       canCreateItems={canManageFolders}
       canEditItems={canManageFolders}
@@ -5140,16 +5151,18 @@ function LocalWorkspaceShell({
   );
 
   const effectiveSidebarCollapsed = sidebarCollapsed;
+  const showDocumentTabs = (view.level === "post" || view.level === "edit") && tabPosts.length > 1;
   return (
     <div
-      className={`post-editor-shell applecms has-sidebar ${className}${
+      data-artifact-view={view.level}
+      className={`post-editor-shell applecms artifact-workspace has-sidebar ${className}${
         effectiveSidebarCollapsed ? " is-sidebar-collapsed" : ""
       } is-active-region-${activeRegion}${
         marqueeDragging ? " is-marquee-dragging" : ""
       } assistant-is-${assistantState}${
         assistantState === "pinned" ? " has-assistant-pinned" : ""
       }${assistantState !== "hidden" ? " has-assistant-open" : ""}${
-        tabPosts.length > 0 ? " has-tab-bar" : ""
+        showDocumentTabs ? " has-tab-bar" : ""
       }`}
       style={
         {
@@ -5173,7 +5186,7 @@ function LocalWorkspaceShell({
         folders={displayPool.folders}
         homeActive={view.level === "root" || view.level === "search"}
         homePath={homePath}
-        onSelectFolder={navigateSection}
+        onSelectFolder={(path) => { setSidebarCollapsed(true); navigateSection(path); }}
         onSearchDate={navigateDateSearch}
         onReturnToBody={focusWorkspaceBody}
         onSidebarFocus={(path) => {
@@ -5245,6 +5258,14 @@ function LocalWorkspaceShell({
           (displayPool.trashedFolders?.length ?? 0)
         }
       />
+      <ArtifactNavigation pane={view.level === "settings" || view.level === "section" ? "profile" : homePane} onSelect={(pane) => {
+        setHomePane(pane);
+        setSidebarCollapsed(true);
+        setSearchQuery("");
+        const href = workspaceRootHref(homePath);
+        navigateToView({ level: "root" }, pane === "home" ? href : `${href}?pane=${pane}`, { selectedPostId: null, selectedSectionPath: null });
+        contentRef.current?.scrollTo({ top: 0 });
+      }} />
       <div className="workspace-document-layout">
         <NativeAssistantRuntime options={assistantOptions} />
         {/* The tab strip is the topmost band, above the action bar, as in
@@ -5252,7 +5273,7 @@ function LocalWorkspaceShell({
             drawn ABOVE the tabs reads as acting on the wrong thing (owner,
             2026-09-04). Outside the scroller as well, so the tabs do not
             scroll away with the document. */}
-        <WorkspaceTabBar
+        {showDocumentTabs && <WorkspaceTabBar
           activePostId={openedPostId}
           posts={tabPosts}
           previewPostId={tabState.preview}
@@ -5265,7 +5286,7 @@ function LocalWorkspaceShell({
             if (next) openTabPostRef.current(next);
             else navigateUpRef.current();
           }}
-        />
+        />}
         <div
           ref={contentRef}
           id="workspace-item-panel"
@@ -5559,6 +5580,7 @@ export function BlogHomeWorkspaceShell({
   initialAssistantWidth,
   initialSidebarWidth,
   initialSearchQuery = "",
+  initialHomePane = "home",
   initialSearchSource = "query",
   initialSettingsOpen = false,
   initialPool,
@@ -5577,6 +5599,7 @@ export function BlogHomeWorkspaceShell({
   initialAssistantWidth?: number;
   initialSidebarWidth?: number;
   initialSearchQuery?: string;
+  initialHomePane?: ArtifactPane;
   initialSearchSource?: WorkspaceSearchLocation["source"];
   initialSettingsOpen?: boolean;
   initialPool?: WorkspacePoolPayload | null;
@@ -5608,6 +5631,7 @@ export function BlogHomeWorkspaceShell({
           initialAssistantWidth={initialAssistantWidth}
           initialSidebarWidth={initialSidebarWidth}
           initialSearchQuery={initialSearchQuery}
+          initialHomePane={initialHomePane}
           initialView={
             initialSettingsOpen
               ? { level: "settings" }

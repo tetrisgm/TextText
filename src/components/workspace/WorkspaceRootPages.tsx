@@ -1,9 +1,9 @@
 "use client";
 
 import { scheduleAfterLoadIdle } from "@/lib/after-load-idle";
-import { HomeMasthead } from "@/components/workspace/home/HomeMasthead";
 import { HomeNews } from "@/components/workspace/home/HomeNews";
-import { HomeRecent } from "@/components/workspace/home/HomeRecent";
+import { ArtifactHeadlines, ArtifactProfile } from "@/components/workspace/home/ArtifactPages";
+import { ArtifactIcon, type ArtifactPane } from "@/components/workspace/home/ArtifactNavigation";
 import { warmChunk } from "@/components/workspace/warm-chunk";
 import homeStyles from "@/components/workspace/home/Home.module.css";
 import { BackupHeartbeat } from "@/components/workspace/BackupHeartbeat";
@@ -130,7 +130,6 @@ import {
   type FolderCreateItem,
   type FolderDeleteItem,
 } from "@/components/workspace/UniversalItemComposer";
-import { WorkspaceActionSearch } from "@/components/workspace/WorkspaceActionSearch";
 import { WorkspaceSearchButton } from "@/components/workspace/WorkspaceSearchButton";
 import {
   WorkspacePostOption,
@@ -234,6 +233,9 @@ export function WorkspaceRootSearchActionBar({ children }: { children: ReactNode
 
 export function WorkspaceRootLanding({
   canManageItems,
+  homePane = "home",
+  onOpenAssistant,
+  onBrowseFolders = () => undefined,
   focusRequestKey,
   onOpenPost,
   onOpenSection,
@@ -253,6 +255,8 @@ export function WorkspaceRootLanding({
   settingsHref,
 }: {
   canManageItems: boolean;
+  homePane?: ArtifactPane;
+  onBrowseFolders?: () => void;
   focusRequestKey: number;
   onOpenPost: (postId: string) => void;
   onOpenSection: (folderPath: string) => void;
@@ -275,6 +279,9 @@ export function WorkspaceRootLanding({
   settingsHref: string;
 }) {
   const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (focusRequestKey > 0) searchRef.current?.focus();
+  }, [focusRequestKey]);
   const [deepSearch, setDeepSearch] = useState<{
     query: string;
     matches: WorkspaceDeepSearchMatch[];
@@ -600,35 +607,24 @@ export function WorkspaceRootLanding({
   return (
     <main
       className="workspace-root-page"
-      aria-labelledby="workspace-root-title"
+      data-home-pane={homePane}
+      aria-labelledby="workspace-root-label"
     >
-      <WorkspaceRootSearchActionBar>
-        <WorkspaceActionSearch
-          ariaLabel="Search workspace"
-          focusRequestKey={focusRequestKey}
-          inputRef={searchRef}
-          placeholder="Search workspace"
-          value={query}
-          onChange={changeQuery}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowDown") {
-              event.preventDefault();
-              handSearchInputToBody("down");
-            } else if (event.key === "ArrowUp") {
-              event.preventDefault();
-              handSearchInputToBody("up");
-            } else if (event.key === "Enter") {
-              event.preventDefault();
-              openResult(selectedSearchResult);
-            } else if (event.key === "Escape") {
-              event.preventDefault();
-              event.stopPropagation();
-              if (query) changeQuery("");
-              else searchRef.current?.blur();
-            }
-          }}
-        />
-      </WorkspaceRootSearchActionBar>
+      <h1 id="workspace-root-label" className="visually-hidden">TextText</h1>
+      <div className="artifact-search-header">
+        <label className="artifact-search">
+          <ArtifactIcon name="search" />
+          <input ref={searchRef} aria-label="Search workspace" placeholder="Search" value={query}
+            onChange={(event) => changeQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault(); handSearchInputToBody(event.key === "ArrowDown" ? "down" : "up");
+              } else if (event.key === "Enter") { event.preventDefault(); openResult(selectedSearchResult); }
+              else if (event.key === "Escape") { event.preventDefault(); if (query) changeQuery(""); else searchRef.current?.blur(); }
+            }} />
+        </label>
+        <a className="artifact-notifications" href={`${settingsHref}#settings-notifications`} aria-label="Notifications"><ArtifactIcon name="bell" /></a>
+      </div>
       <div className="workspace-root-inner">
         {bodyMode === "tag" ? (
           <section className="workspace-search-page workspace-tag-page">
@@ -784,7 +780,7 @@ export function WorkspaceRootLanding({
           </section>
         ) : (
           <>
-            {canManageItems && showStartHere && !hasPersonalItems && pool.posts.length > 0 ? (
+            {libraryOpen && homePane === "profile" && canManageItems && showStartHere && !hasPersonalItems && pool.posts.length > 0 ? (
               <section className="workspace-start-here" aria-label="Start here">
                 <div>
                   <strong>Make TextText yours</strong>
@@ -819,14 +815,9 @@ export function WorkspaceRootLanding({
             {/* Home and the whole library are two destinations, never one page
                 stacked on the other. Home is what the workspace root shows;
                 All items switches to the library in place and says so. */}
-            {!libraryOpen && (
+            {(!libraryOpen || homePane !== "profile") && (
               <div className={homeStyles.frame}>
-              <HomeMasthead handle={pool.blog.handle} />
-              {/* With nothing followed there is no news column to sit beside,
-                  so Recent follows the setup block instead of leaving a
-                  feed-shaped hole next to it. */}
-              <div className={homeStyles.home} data-no-sources={(pool.readingSources?.length ?? 0) === 0 ? "true" : undefined}>
-                <HomeNews
+                {homePane === "home" ? <HomeNews
                   handle={pool.blog.handle}
                   blogId={pool.blogId}
                   canManage={canManageItems}
@@ -837,29 +828,17 @@ export function WorkspaceRootLanding({
                   onOpenPost={onOpenPost}
                   onOpenSection={onOpenSection}
                   onUseAssistantPrompt={onUseAssistantPrompt}
-                />
-                {recent.length === 0 ? (
-                  <div className="workspace-recent-empty">{firstLoop}</div>
-                ) : (
-                <HomeRecent
-                  pool={pool}
-                  recent={recent}
-                  onOpenPost={onOpenPost}
-                  onShowAll={() => {
-                    setLibraryOpen(true);
-                    setTimeout(() => window.scrollTo({ top: 0 }), 0);
-                  }}
-                />
-                )}
-              </div>
+                /> : homePane === "headlines" ? <ArtifactHeadlines handle={pool.blog.handle} blogId={pool.blogId} onOpenPost={onOpenPost} /> :
+                <ArtifactProfile pool={pool} history={openHistory} onOpenPost={onOpenPost} onOpenSection={onOpenSection}
+                  onShowLibrary={() => setLibraryOpen(true)} onBrowseFolders={onBrowseFolders} onOpenAssistant={onOpenAssistant} settingsHref={settingsHref} canManage={canManageItems} />}
               </div>
             )}
-            {libraryOpen && (
+            {libraryOpen && homePane === "profile" && (
             <section className={`workspace-recent is-view-${recentViewMode}`}>
               <header className="workspace-library-heading">
                 <h1>All items</h1>
                 <button type="button" onClick={() => setLibraryOpen(false)}>
-                  Back to Home
+                  Back to Profile
                 </button>
               </header>
               <header className="workspace-library-toolbar">
@@ -960,6 +939,8 @@ export function WorkspaceRootLanding({
 
 export function LocalWorkspaceContent({
   blog,
+  homePane,
+  onBrowseFolders,
   canCommentPost,
   canCreateItems,
   canEditItems,
@@ -1004,6 +985,8 @@ export function LocalWorkspaceContent({
   onUseAssistantPrompt,
 }: {
   blog: Blog;
+  homePane?: ArtifactPane;
+  onBrowseFolders?: () => void;
   canCommentPost: boolean;
   canCreateItems: boolean;
   canEditItems: boolean;
@@ -1068,7 +1051,10 @@ export function LocalWorkspaceContent({
   let activePost: WorkspacePoolPost | null = null;
   const rootPage = (
     <WorkspaceRootLanding
+      key={`${pool.blogId}:${homePane}`}
       canManageItems={canManagePost}
+      homePane={homePane}
+      onBrowseFolders={onBrowseFolders}
       focusRequestKey={searchFocusRequestKey}
       onOpenPost={onOpenPostId}
       onOpenSection={onOpenSection}

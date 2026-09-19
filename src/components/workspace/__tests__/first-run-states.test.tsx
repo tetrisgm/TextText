@@ -38,6 +38,7 @@ vi.mock("@/app/editor/connect-provider-actions", () => new Proxy({}, { get: (_, 
 vi.mock("@/app/editor/mcp-connection-actions", () => new Proxy({}, { get: (_, key) => key === "then" ? undefined : key === "getMcpConnectionsAction" ? driver.getTools : vi.fn() }));
 vi.mock("@/app/editor/agent-instructions-actions", () => new Proxy({}, { get: (_, key) => key === "then" ? undefined : vi.fn() }));
 import { WorkspaceRootLanding } from "../WorkspaceRootPages";
+import { ArtifactProfile } from "../home/ArtifactPages";
 import { SharedPage, StarredPage, TrashPage } from "../WorkspaceSpecialPages";
 import { FolderPage } from "@/components/FolderPage";
 import { ErrorBody, WorkspacePostReader } from "../WorkspaceItemViews";
@@ -73,7 +74,7 @@ function reader(document: DocumentSnapshot, canManagePost = true) {
 }
 function findButton(node: ReactNode, label: string): React.ReactElement<{ onClick: () => void }> | undefined {
   if (!React.isValidElement<{ children?: ReactNode; onClick?: () => void }>(node)) return;
-  if (node.type === "button" && node.props.children === label) return node as React.ReactElement<{ onClick: () => void }>;
+  if (node.type === "button" && (node.props.children === label || React.Children.toArray(node.props.children).some(child => React.isValidElement<{ children?: ReactNode }>(child) && child.props.children === label))) return node as React.ReactElement<{ onClick: () => void }>;
   for (const child of React.Children.toArray(node.props.children)) {
     const found = findButton(child, label);
     if (found) return found;
@@ -82,37 +83,37 @@ function findButton(node: ReactNode, label: string): React.ReactElement<{ onClic
 beforeEach(() => { vi.clearAllMocks(); driver.poolError = null; });
 
 describe("first run without a Home composer", () => {
-  it.each([false, true])("keeps Home list-only with existing items %s", returning => {
+  it.each([false, true])("opens on news with existing items %s", returning => {
     const html = render(landing({ ...pool, folders: [folder], posts: returning ? [{ ...emptyPost, blogId: pool.blogId, folderId: folder.id, title: "Existing note" }] : [] }));
+    expect(html).toContain("For You");
+    expect(html).toContain('aria-label="Search workspace"');
     expect(html).not.toContain('aria-label="Save to TextText"');
-    if (!returning) {
-      expect(html).toContain("Write your first note");
-      expect(html).toContain("Open a folder to write and save a note.");
-      expect(html).not.toContain("box above");
-    }
+    expect(html).not.toContain("Write your first note");
+    expect(html).not.toContain("Recent</");
   });
-  it("the first-note action routes to the notes folder without creating an item on Home", () => {
+  it("opens the notes folder from Profile without creating an item", () => {
+    const openSection = vi.fn();
     let tree: ReactNode;
-    function InspectLanding() {
-      tree = WorkspaceRootLanding(landing({ ...pool, folders: [folder] }).props);
+    function InspectProfile() {
+      tree = ArtifactProfile({ pool: { ...pool, folders: [folder] }, history: {}, onOpenPost: vi.fn(), onOpenSection: openSection, onShowLibrary: vi.fn(), onBrowseFolders: vi.fn(), onOpenAssistant: vi.fn(), settingsHref: "/t/writer/settings", canManage: true });
       return tree;
     }
-    render(<InspectLanding />);
-    findButton(tree, "Write your first note")!.props.onClick();
-    expect(focusCapture).toHaveBeenCalledWith("notes");
+    render(<InspectProfile />);
+    findButton(tree, "Notes")!.props.onClick();
+    expect(openSection).toHaveBeenCalledWith("notes");
     expect(driver.createItem).not.toHaveBeenCalled();
     expect(driver.createFolder).not.toHaveBeenCalled();
   });
-  it("does not promise a note composer in an article-only folder", () => {
+  it("keeps an article-only workspace on the same news Home", () => {
     const html = render(landing({ ...pool, folders: [{ ...folder, id: "blog", path: "blog", mode: "blog" }] }));
-    expect(html).toContain("Create a notes folder");
+    expect(html).toContain("For You");
     expect(html).not.toContain("Write your first note");
   });
-  it("offers folder creation before capture when no folders exist", () => {
-    const html = render(landing());
-    expect(html).toContain("Create a notes folder");
-    expect(html).not.toContain("Write your first note");
-    expect(html).not.toContain('aria-label="Save to TextText"');
+  it("provides library access from Profile even without folders", () => {
+    const html = render(<ArtifactProfile pool={pool} history={{}} onOpenPost={vi.fn()} onOpenSection={vi.fn()} onShowLibrary={vi.fn()} onBrowseFolders={vi.fn()} onOpenAssistant={vi.fn()} settingsHref="/t/writer/settings" canManage={false} />);
+    expect(html).toContain("All items");
+    expect(html).toContain("Browse folders");
+    expect(html).not.toContain("Publisher Subscriptions");
   });
   it("does not offer mutation controls to a viewer", () => {
     const html = render(landing(pool, "", "query", false));

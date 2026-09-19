@@ -1,133 +1,20 @@
-/* Home: a news dashboard.
- *
- * The presentation is Artifact's, ported from a 393pt phone to a window: a
- * continuous hairline-separated list, no card chrome, publisher identity
- * before the headline, headlines set large and heavy, and photographs given
- * real size when we have them. Everything here is scoped to this surface;
- * the rest of the workspace keeps the Apple chrome.
- *
- * What makes it read as Artifact rather than a generic news page: the
- * headline is the largest thing on screen, the publisher row is small and
- * quiet above it, there are no borders or shadows around items, and colour
- * appears only in section labels and the dashboard panels.
- */
+/* Artifact news, headlines and profile share one continuous column. */
 .frame {
   container-type: inline-size;
   container-name: home;
 
-  /* Ink. Artifact is near-black on white and white on true black; the Apple
-     chrome's own label colours are deliberately softer, so the news surface
-     carries its own. */
-  --news-ink: #2c2c2d;
-  --news-ink-2: #55565c;
-  --news-ink-3: #6a6a71;
-  /* The separator IS the container system here: at 9% the list drifts
-     instead of being ruled. Measured off the original: #d9d9d9 on white and
-     #404040 on black, which are black at 15% and white at 25%. */
-  --news-line: rgba(0, 0, 0, 0.15);
-  --news-line-strong: rgba(0, 0, 0, 0.22);
-  --news-tile: #f2f2f7;
-  --news-hover: rgba(0, 0, 0, 0.032);
-
-  /* The one saturated colour, kept for a label that means something. */
-  --news-accent: #c42d13;
-  --news-read: #1a63d6;
-}
-:global(.ac-dark) .frame,
-:global([data-theme="dark"]) .frame {
-  --news-ink: #f2f2f7;
-  --news-ink-2: #a9a9b0;
-  /* The original's secondary ink is #8E8E93. This surface does not sit on
-     pure black the way its did, and at #8E8E93 the metadata falls to 4.2:1
-     against this ground. Two steps lighter is the same colour and passes. */
-  --news-ink-3: #93939a;
-  --news-line: rgba(255, 255, 255, 0.25);
-  --news-line-strong: rgba(255, 255, 255, 0.32);
-  --news-tile: #1c1c1d;
-  --news-hover: rgba(255, 255, 255, 0.05);
-  --news-accent: #ff6a4d;
-  --news-read: #5aa0ff;
-}
-@media (prefers-color-scheme: dark) {
-  :global(:root:not([data-theme="light"])) .frame {
-    --news-ink: #f2f2f7;
-    --news-ink-2: #a9a9b0;
-    --news-ink-3: #93939a;
-    --news-line: rgba(255, 255, 255, 0.25);
-    --news-line-strong: rgba(255, 255, 255, 0.32);
-    --news-tile: #1c1c1d;
-    --news-hover: rgba(255, 255, 255, 0.05);
-    --news-accent: #ff6a4d;
-    --news-read: #5aa0ff;
-  }
+  --news-ink: var(--artifact-ink, #111);
+  --news-ink-2: var(--artifact-muted, #6b6b6b);
+  --news-ink-3: var(--artifact-muted, #6b6b6b);
+  --news-line: var(--artifact-line, #e5e5e5);
+  --news-line-strong: var(--artifact-line, #e5e5e5);
+  --news-tile: var(--artifact-surface, #f2f2f3);
+  --news-hover: color-mix(in srgb, var(--news-ink) 3%, transparent);
+  --news-accent: var(--artifact-accent, #c72a4f);
+  --news-read: var(--artifact-accent, #c72a4f);
 }
 
-.home {
-  display: grid;
-  grid-template-columns: minmax(0, 42rem) minmax(0, 21rem);
-  gap: 0 2.25rem;
-  align-items: start;
-  /* Composed rather than stretched. On a phone the news column IS the
-     window; on a desktop the same design has to be given a measure, or the
-     headlines run to one long line each and the block of bold type that
-     carries the whole surface never forms. */
-  max-width: 66rem;
-  margin: 0 0 3rem;
-}
-.news {
-  min-width: 0;
-  /* Roughly 45 characters to the line at the headline size, which is what
-     the phone column gave and what makes a headline wrap to two or three
-     lines instead of one. */
-  max-width: 42rem;
-}
-.recent {
-  min-width: 0;
-  /* Under the action bar, like the strip beside it: at 0 it docked behind
-     the bar and simply scrolled out of sight. */
-  position: sticky;
-  top: calc(var(--workspace-action-bar-height, var(--ac-h-toolbar, 52px)) + 0.5rem);
-}
-.home[data-no-sources="true"] {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0;
-}
-.home[data-no-sources="true"] .recent {
-  position: static;
-  max-width: 42rem;
-}
-@container home (max-width: 62rem) {
-  .home {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 2rem 0;
-  }
-  /* Still a measure, not the window: a headline that runs the full width of
-     an 800px window is one long line, and the block of bold type that
-     carries the surface never forms. */
-  .news {
-    max-width: 42rem;
-  }
-  /* Narrow: Recent comes first as a short strip, then the news. Long enough
-     to resume work, short enough that a headline is still on the first
-     screen. */
-  .recent {
-    position: static;
-    order: -1;
-  }
-  .recent .recentRow:nth-of-type(n + 4) {
-    display: none;
-  }
-}
-/* A phone is not a narrow desktop. At this width the three Recent rows fill
-   the first screen on their own and the news starts below the fold, which is
-   the one thing a news Home may not do. Recent goes under it. */
-@container home (max-width: 34rem) {
-  .recent {
-    order: 1;
-  }
-}
-
-/* ---------------------------------------------------------------- masthead */
+.home, .news { min-width: 0; width: 100%; }
 
 .masthead {
   display: flex;
@@ -153,9 +40,6 @@
   font-weight: 500;
 }
 
-/* The no-source state: a short block that says what Home is for and offers
-   the one action that makes it so. Its height comes from its own content, so
-   Recent follows immediately instead of sitting below a feed-shaped hole. */
 .setup {
   margin: 0 0 1.5rem;
   padding: 0 0 1.25rem;
@@ -190,20 +74,8 @@
   text-decoration: underline;
 }
 
-/* Header: the mode switch and the utilities, kept quiet under the masthead. */
-/* ------------------------------------------------------------------ strip */
-
-/* One strip, and it is the loudest thing on the page after a headline.
-   Measured from the original: the tab text is the same size as a headline
-   (52px against 53px at 3x on a 393pt screen), the tabs are about one em
-   apart, the active one is simply the dark one, nothing is underlined and
-   nothing is a pill. The rule under it runs the full width of the column
-   while a row separator is inset, which is how the strip reads as chrome and
-   the rows read as content. */
 .strip {
-  /* It stays. The strip is the navigation, and a person four screens into
-     Technology should be one click from World without scrolling back. It
-     docks under the workspace action bar, which is sticky above it. */
+
   position: sticky;
   top: var(--workspace-action-bar-height, var(--ac-h-toolbar, 52px));
   z-index: 3;
@@ -213,12 +85,12 @@
   margin: 0.25rem 0 0;
   padding-top: 0.5rem;
   border-bottom: 1px solid var(--news-line);
-  background: var(--ac-bg);
+  background: var(--artifact-bg, #fff);
 }
 .tabs {
   display: flex;
   flex: 1;
-  gap: 0 1.25rem;
+  gap: 0 1rem;
   min-width: 0;
   margin: 0;
   padding: 0 0 0.6875rem;
@@ -227,8 +99,7 @@
   overscroll-behavior-x: contain;
   scrollbar-width: none;
   scroll-behavior: smooth;
-  /* The last tab fades rather than being cut, so a strip that continues
-     says so without a scrollbar or an arrow. */
+
   mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent);
 }
 .tabs::-webkit-scrollbar {
@@ -239,7 +110,7 @@
   padding: 0;
   background: transparent;
   color: var(--news-ink-3);
-  font: 600 1.4375rem / 1.2 var(--ac-font-text);
+  font: 600 1.0625rem / 1.2 var(--ac-font-text);
   letter-spacing: -0.011em;
   white-space: nowrap;
   cursor: pointer;
@@ -248,20 +119,17 @@
 .tab:hover {
   color: var(--news-ink-2);
 }
-/* Colour, and nothing else. Measured on the original: the chosen tab and its
-   neighbours have the same cap height and the same stem width. No pill, no
-   underline, no dot, and no heavier weight, which would shift every tab to
-   its right as you move along the strip. */
+
 .tab[aria-current="true"] {
   color: var(--news-ink);
+  font-weight: 700;
 }
 .tab:focus-visible {
   outline: 2px solid var(--news-read);
   outline-offset: 3px;
   border-radius: 3px;
 }
-/* Centred on the tab text, the way the original's ellipsis sits on the
-   strip's optical centre rather than its baseline. */
+
 .stripMore {
   position: relative;
   flex: none;
@@ -333,8 +201,6 @@
   position: relative;
 }
 
-/* ------------------------------------------------------- section furniture */
-
 .sectionHead {
   display: flex;
   align-items: baseline;
@@ -342,16 +208,14 @@
   gap: 1rem;
   margin: 1.75rem 0 0.875rem;
 }
-/* Measured at 27pt against an 18pt headline: the section title is the
-   largest thing on the surface, and it is what tells you the strip under it
-   is a different kind of thing from the list. */
+
 .sectionTitle {
   margin: 0;
   color: var(--news-ink);
-  font: 700 2.375rem / 1.1 var(--ac-font-text);
+  font: 700 1.625rem / 1.1 var(--ac-font-text);
   letter-spacing: -0.022em;
 }
-/* A coloured label above an item, the way Artifact marks a strand. */
+
 .kicker {
   display: inline-flex;
   align-items: center;
@@ -362,14 +226,10 @@
   letter-spacing: -0.005em;
 }
 
-/* --------------------------------------------------- the headlines strip */
-
 .carousel {
   display: grid;
   grid-auto-flow: column;
-  /* Fixed, not minmax(0, ...): a shrinkable track lets the browser fit every
-     card into the column instead of letting them run off it, and a strip
-     that does not overflow is not a strip, it is three squeezed boxes. */
+
   grid-auto-columns: 19rem;
   gap: 1rem;
   margin: 0 0 0.25rem;
@@ -387,7 +247,7 @@
   display: grid;
   grid-template-rows: auto 1fr;
   min-width: 0;
-  border-radius: 12px;
+  border-radius: 8px;
   overflow: hidden;
   background: var(--news-tile);
   cursor: pointer;
@@ -429,21 +289,18 @@
   font: 400 1.0625rem / 1.3 var(--ac-font-text);
 }
 
-/* ------------------------------------------------------------- the feed */
-
 .list {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 .unit {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0 1.25rem;
-  /* Measured, in the original's own units: 16.3pt from the rule above to the
-     publisher mark, and 17pt from the metadata baseline to the rule below,
-     against a 17pt headline. One em, near enough, on both sides. */
-  padding: 1.4375rem 0.25rem 1.4375rem 0;
+  gap: 0 1rem;
+
+  padding: 0.875rem 0;
   border-bottom: 1px solid var(--news-line);
   cursor: pointer;
 }
@@ -458,7 +315,7 @@
   outline: 2px solid var(--news-read);
   outline-offset: -2px;
 }
-/* The lead item gives its photograph the full width, above the publisher. */
+
 .unit[data-lead="true"] {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -467,22 +324,16 @@
   width: 100%;
   aspect-ratio: 16 / 9;
   margin: 0 0 0.875rem;
-  border-radius: 12px;
+  border-radius: 8px;
   object-fit: cover;
   background: var(--news-tile);
 }
-/* A fixed size was right on a desktop column and half again too large on a
-   phone, where the column shrinks to the reference's own 358pt and the
-   thumbnail did not: measured at 0.31 of the column against the original's
-   0.19. Tied to the container instead, it lands on 68pt at phone width, which
-   is the number the original was measured at, and stops growing at 7rem so a
-   wide window does not turn it into a picture. Square, never 16:9: the
-   rectangle is the lead item's alone. */
+
 .thumb {
   align-self: center;
-  width: clamp(4.25rem, 19cqi, 7rem);
-  height: clamp(4.25rem, 19cqi, 7rem);
-  border-radius: 11px;
+  width: clamp(4.25rem, 19cqi, 4.5rem);
+  height: clamp(4.25rem, 19cqi, 4.5rem);
+  border-radius: 8px;
   object-fit: cover;
   background: var(--news-tile);
 }
@@ -493,22 +344,18 @@
   min-width: 0;
 }
 
-/* The publisher row: identity before the headline, always. */
 .eyebrow {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin: 0 0 0.5rem;
+  margin: 0 0 0.375rem;
   color: var(--news-ink-3);
-  /* The original sets the publisher at 0.83 of the headline. Ported a little
-     quieter, at 0.78: a desktop column shows twice as many rows at once, and
-     at the original ratio the page reads as a list of publishers. */
-  font: 400 1.125rem / 1.2 var(--ac-font-text);
+
+  font: 400 0.8125rem / 1.2 var(--ac-font-text);
 }
 .eyebrow strong {
-  color: var(--news-ink);
-  /* Not bolder than the time beside it: the original separates the two by
-     colour alone, and a semibold name competes with the headline under it. */
+  color: var(--news-ink-3);
+
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -518,23 +365,20 @@
   color: var(--news-ink-3);
   white-space: nowrap;
 }
-/* The publisher mark. A favicon when we have one, and a monogram tile in the
-   publisher's own derived colour when we do not, so the row never has a hole
-   in it. */
+
 .mark {
   position: relative;
   display: grid;
   place-items: center;
   flex: none;
-  /* A round-cornered tile reads as inset against straight text above and
-     below it. The original outdents it by a point for exactly this. */
+
   margin-left: -2px;
-  width: 1.5rem;
-  height: 1.5rem;
-  border-radius: 7px;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 3px;
   background: var(--mark-bg, var(--news-tile));
   color: #fff;
-  font: 700 0.6875rem / 1 var(--ac-font-text);
+  font: 700 0.5rem / 1 var(--ac-font-text);
   letter-spacing: 0.01em;
   text-transform: uppercase;
   overflow: hidden;
@@ -558,28 +402,23 @@
   font-weight: 600;
   white-space: nowrap;
 }
-/* The one loud thing. Measured at 18pt bold with 1.28 leading against a
-   17pt tab strip, so the strip above matches it exactly. */
+
 .headline {
   margin: 0;
   color: var(--news-ink);
-  font: 600 1.4375rem / 1.31 var(--ac-font-text);
+  font: 600 1.0625rem / 1.31 var(--ac-font-text);
   letter-spacing: -0.011em;
   text-wrap: pretty;
 }
-/* The lead item is the same headline. The original never changes the type
-   for it: the photograph is the emphasis, and a second headline size would
-   be a third size on a surface that uses two. */
+
 .unit[data-lead="true"] .headline {
-  font-size: 1.4375rem;
+  font-size: 1.0625rem;
 }
-/* Read items step back rather than disappear. */
+
 .unit[data-read="true"] .headline {
   color: var(--news-ink-2);
 }
-/* Asked for less of: four tenths, where it is. The original fades a hidden
-   publisher's card in place rather than pulling it out of the scroll, so the
-   list never moves under someone who is still reading. */
+
 .unit[data-dimmed="true"] {
   opacity: 0.4;
   transition: opacity 160ms ease-out;
@@ -611,8 +450,7 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-/* The count line under a headline, which is where Artifact puts reads and
-   comments. Ours counts sources and unread. */
+
 .sources {
   display: flex;
   flex-wrap: wrap;
@@ -620,9 +458,8 @@
   gap: 0.25rem 0.5rem;
   margin: 0.5rem 0 0;
   color: var(--news-ink-3);
-  /* The same size as the publisher row. The measured rule is that a screen
-     uses two sizes and tells roles apart by colour, not by scale. */
-  font: 400 1.125rem / 1.3 var(--ac-font-text);
+
+  font: 400 0.75rem / 1.3 var(--ac-font-text);
 }
 .sources button,
 .sources a {
@@ -741,8 +578,6 @@
   font: 400 0.875rem / 1.35 var(--ac-font-text);
 }
 
-/* Recent: the same row anatomy as the feed, at a quieter size, so the page
-   reads as one thing rather than two systems side by side. */
 .recentHeader {
   display: flex;
   align-items: baseline;
@@ -830,7 +665,6 @@
   font: 400 0.875rem / 1.4 var(--ac-font-text);
 }
 
-/* A unit's own small menu, anchored under its actions. */
 .unitMenu {
   display: flex;
   flex-wrap: wrap;
@@ -864,16 +698,41 @@
   cursor: default;
 }
 
-/* A horizontal strip of two cards is weak at a narrow content width, and it
-   costs the first headline its place on the first screen. The clusters it
-   holds are in the list below it either way. Last in the file, because it has
-   to outrank the strip's own display rule. */
-/* Narrow windows keep the Headlines strip. It was hidden here once, which
-   was backwards: the strip is the one module that says what several sources
-   are all covering, and a narrow window is exactly where a list of single
-   headlines needs it most. It scrolls, so it costs one row either way. */
 @container home (max-width: 62rem) {
   .carousel {
     grid-auto-columns: 16rem;
   }
 }
+
+.rowButton { width: 100%; border: 0; border-bottom: 1px solid var(--news-line); background: transparent; text-align: left; color: inherit; }
+.rowButton .headline, .rowButton .sources { display: block; }
+.pageTitle { margin: 12px 0 20px; color: var(--news-ink); font: 700 26px/1.2 var(--ac-font-text); letter-spacing: -0.025em; }
+.back { padding: 12px 0; border: 0; background: transparent; color: var(--news-ink); font: 500 15px/1.3 var(--ac-font-text); cursor: pointer; }
+.storyTitle { margin: 16px 0 10px; text-align: center; font: 650 24px/1.25 var(--ac-font-text); letter-spacing: -0.02em; color: var(--news-ink); }
+.storyMeta { margin: 0 0 20px; font: 400 13px/1.4 var(--ac-font-text); color: var(--news-ink-3); }
+.storyTitle + .storyMeta { text-align: center; }
+.storySummary { font: 400 17px/1.5 var(--ac-font-text); color: var(--news-ink); }
+.profileHeader { position: relative; }
+.profileHeader > .pageTitle { text-align: center; font-size: 20px; margin: 16px 0 28px; }
+.profileHeader .iconButton { position: absolute; right: 0; top: -8px; }
+.iconButton { width: 40px; height: 40px; display: grid; place-items: center; color: var(--news-ink); }
+.iconButton svg { width: 25px; height: 25px; }
+.profileIdentity { display: flex; align-items: center; gap: 16px; padding: 24px 0; }
+.profileIdentity strong { font: 600 19px/1.3 var(--ac-font-text); }
+.profileIdentity p { margin: 4px 0 0; color: var(--news-ink-3); font: 400 14px/1.4 var(--ac-font-text); }
+.avatar { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; color: var(--news-ink); background: var(--news-tile); font: 500 25px/1 var(--ac-font-text); }
+.profileList { margin: 0 0 28px; padding: 0; list-style: none; border-top: 1px solid var(--news-line); }
+.profileList button, .profileList a { display: flex; align-items: center; gap: 16px; width: 100%; padding: 20px 0; border: 0; border-bottom: 1px solid var(--news-line); background: transparent; color: var(--news-ink); text-decoration: none; font: 400 17px/1.3 var(--ac-font-text); text-align: left; cursor: pointer; }
+.profileList svg { width: 25px; height: 25px; flex-shrink: 0; }
+.profileList span:last-child { margin-left: auto; color: var(--news-ink-3); }
+.profileList button:hover, .profileList a:hover { background: var(--news-hover); }
+.profileList button:focus-visible, .profileList a:focus-visible, .back:focus-visible { outline: 2px solid var(--news-accent); outline-offset: 2px; }
+.profileSection { margin: 24px 0 12px; font: 600 14px/1.3 var(--ac-font-text); color: var(--news-ink-3); }
+
+.rowMore { position: absolute; right: 0; bottom: 5px; padding: 4px 6px; border: 0; background: transparent; color: var(--news-ink-3); font: 600 12px/1 var(--ac-font-text); cursor: pointer; }
+.rowMore:focus-visible { outline: 2px solid var(--news-accent); }
+.unitMenu { z-index: 8; position: absolute; right: 0; top: 100%; min-width: 200px; padding: 8px; border: 1px solid var(--news-line); border-radius: 12px; background: var(--artifact-bg, #fff); box-shadow: 0 8px 24px #0002; }
+.unitMenu button { min-height: 36px; }
+
+.newArticles { position: sticky; top: 110px; display: flex; justify-content: center; height: 0; z-index: 4; }
+.newArticles button { align-self: start; padding: 10px 18px; border: 1px solid var(--news-line); border-radius: 24px; background: var(--news-ink); color: var(--artifact-bg, #fff); font: 600 13px/1.2 var(--ac-font-text); box-shadow: 0 2px 12px #0002; cursor: pointer; }

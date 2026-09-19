@@ -6,6 +6,7 @@ import "../styles/tokens.css";
 import "../styles/broadsheet.css";
 import "../styles/talk.css";
 import "../styles/apple.css";
+import "../styles/artifact.css";
 import "@/lib/motion/motion.css";
 
 const fraunces = localFont({

@@ -46,7 +46,7 @@ function luminance(c: Color) {
     .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
 }
 function ratio(a: Color, b: Color) { const x = luminance(a), y = luminance(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
-const paths = { base: "src/styles/tokens.css", apple: "src/styles/apple.css", rail: "src/components/workspace/assistant/AssistantSidebar.module.css", home: "src/components/workspace/home/Home.module.css" };
+const paths = { artifact: "src/styles/artifact.css", base: "src/styles/tokens.css", apple: "src/styles/apple.css", rail: "src/components/workspace/assistant/AssistantSidebar.module.css", home: "src/components/workspace/home/Home.module.css" };
 for (const theme of ["light", "dark"]) describe(`${theme} real token contrast`, () => {
   const base = { ...tokens(paths.base, ":root"), ...(theme === "dark" ? tokens(paths.base, '[data-theme="dark"]') : {}) };
   const apple = { ...base, ...tokens(paths.apple, ".applecms"), ...(theme === "dark" ? tokens(paths.apple, '[data-theme="dark"] .applecms') : {}) };
@@ -54,8 +54,10 @@ for (const theme of ["light", "dark"]) describe(`${theme} real token contrast`, 
   // The news surface carries its own ink, so it needs its own measurement.
   const home = {
     ...apple,
+    ...tokens(paths.artifact, ":root"),
+    ...(theme === "dark" ? tokens(paths.artifact, ':root[data-theme="dark"]') : {}),
+    ...tokens(paths.artifact, ".post-editor-shell.artifact-workspace.applecms,\n.post-editor-shell.artifact-workspace .applecms"),
     ...tokens(paths.home, ".frame"),
-    ...(theme === "dark" ? tokens(paths.home, ':global(.ac-dark) .frame,\n:global([data-theme="dark"]) .frame') : {}),
   };
   const c = (map: Scope, name: string): Color => token(map, name, theme);
   for (const fg of ["--ink", "--ink-2", "--muted", "--accent", "--accent-pressed", "--destructive", "--positive", "--warning"]) {

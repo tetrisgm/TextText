@@ -157,6 +157,7 @@ type BlogHomeQuery = {
   layout?: string | string[];
   /** The news ordering and the chosen channel, which the Home reads back. */
   news?: string | string[];
+  pane?: string | string[];
   q?: string | string[];
   tag?: string | string[];
   topic?: string | string[];
@@ -565,6 +566,7 @@ export async function BlogHomeForHandle({
       // For You is a broken link, and this redirect is on the path every
       // shared workspace URL takes.
       "news",
+      "pane",
       "q",
       "tag",
       "topic",
@@ -794,6 +796,7 @@ export async function BlogHomeForHandle({
       initialAssistantState={initialAssistantState}
       initialAssistantWidth={initialAssistantWidth}
       initialSidebarWidth={initialSidebarWidth}
+      initialHomePane={queryValue(query.pane) === "headlines" ? "headlines" : queryValue(query.pane) === "profile" ? "profile" : "home"}
       initialSearchQuery={
         queryValue(query.date) ??
         queryValue(query.tag) ??

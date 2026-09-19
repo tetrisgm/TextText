@@ -57,13 +57,13 @@ function relativeTime(iso: string, now: number): string {
   if (!now) return "";
   const minutes = Math.round((now - new Date(iso).getTime()) / 60_000);
   if (minutes < 1) return "now";
-  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 60) return `${minutes}m`;
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} h`;
-  return `${Math.round(hours / 24)} d`;
+  if (hours < 24) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
 }
 
-function poolPostFor(item: ReadingListItem, blogId: string): WorkspacePoolPost {
+export function poolPostFor(item: ReadingListItem, blogId: string): WorkspacePoolPost {
   return {
     id: item.id,
     blogId,
@@ -107,10 +107,10 @@ function sourcesLabel(sources: string[]): string {
  * so the eye can find a publisher without reading, which is the whole reason
  * a news surface has one.
  */
-function PublisherRow({ item, at, now }: { item: ReadingListItem; at: string; now: number }) {
+export function PublisherRow({ item, at, now }: { item: ReadingListItem; at: string; now: number }) {
   const publisher = publisherFor(item);
   return (
-    <p className={styles.eyebrow}>
+    <span className={styles.eyebrow}>
       <span className={styles.mark} style={{ ["--mark-bg" as string]: publisher.color }} aria-hidden="true">
         {publisher.initials}
         {publisher.domain && (
@@ -123,14 +123,16 @@ function PublisherRow({ item, at, now }: { item: ReadingListItem; at: string; no
             loading="lazy"
             decoding="async"
             referrerPolicy="no-referrer"
-            onError={(event) => event.currentTarget.remove()}
+            style={{ opacity: 0 }}
+            onLoad={(event) => { event.currentTarget.style.opacity = "1"; }}
+            onError={(event) => { event.currentTarget.style.display = "none"; }}
           />
         )}
       </span>
       <strong>{publisher.name}</strong>
       <time dateTime={at}>{relativeTime(at, now)}</time>
       {publisher.via && <span className={styles.via}>via {publisher.via}</span>}
-    </p>
+    </span>
   );
 }
 
@@ -166,6 +168,8 @@ export function HomeNews({
   const [data, setData] = useState<HomeNewsData | null>(null);
   const [overview, setOverview] = useState<ReadingOverview | null>(null);
   const [loading, setLoading] = useState(true);
+  const [newArticles, setNewArticles] = useState(false);
+  const hasVisibleArticles = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [focusIndex, setFocusIndex] = useState(-1);
@@ -199,6 +203,8 @@ export function HomeNews({
       try {
         const page = await fetchReadingHome({ handle, mode: next.mode, topic: next.topic, offset });
         setNow(Date.now());
+        hasVisibleArticles.current = page.units.length > 0;
+        if (offset === 0) setNewArticles(false);
         setData((current) => (offset > 0 && current ? { ...page, units: [...current.units, ...page.units] } : page));
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : "Could not load the news");
@@ -238,7 +244,10 @@ export function HomeNews({
         const refreshed = await fetchReadingOverview(handle);
         if (cancelled) return;
         setOverview(refreshed);
-        if (ran > 0) await load(initial);
+        if (ran > 0) {
+          if (hasVisibleArticles.current) setNewArticles(true);
+          else await load(initial);
+        }
       } catch {
         // A failed check is not something the front page needs to show.
       }
@@ -503,6 +512,7 @@ export function HomeNews({
     const onKey = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) return;
       if (document.querySelector('[role="dialog"]')) return;
+      if (event.key !== "Escape" && event.target instanceof Element && event.target.closest("button, a, [role=menu]")) return;
       const current = focusIndexRef.current;
       const unit = current >= 0 ? units[current] : undefined;
       const item = targetOf(unit);
@@ -700,7 +710,7 @@ export function HomeNews({
       {noSources && starter === "own" && (
         <div className={styles.setup}>
           <h2>News from the sources you follow</h2>
-          <p>Add a feed and its articles arrive here, beside your own work.</p>
+          <p>Choose publishers to start your personal news feed.</p>
           <div className={styles.setupActions}>
             <button type="button" className="ac-btn ac-btn-filled" onClick={() => setAddingFeeds(true)}>
               Add feeds
@@ -833,6 +843,10 @@ export function HomeNews({
           }}
         />
       )}
+      {newArticles && <div className={styles.newArticles}><button type="button" onClick={() => {
+        void load({ mode, topic });
+        document.querySelector(".post-editor-content")?.scrollTo({ top: 0 });
+      }}>↑ New articles</button></div>}
       {undo && (
         <p className={styles.status} role="status">
           {undo.label}{" "}
@@ -873,6 +887,7 @@ export function HomeNews({
                 role="link"
                 onClick={() => open(unit.representative)}
                 onKeyDown={(event) => {
+                  if (event.target !== event.currentTarget) return;
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
                     open(unit.representative);
@@ -915,7 +930,9 @@ export function HomeNews({
                 tabIndex={focused || (focusIndex < 0 && index === 0) ? 0 : -1}
                 onFocus={() => setFocusIndex(index)}
                 onClick={() => open(item)}
+                onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setUnitMenu({ id: unit.id, kind: "menu" }); }}
                 onKeyDown={(event) => {
+                  if (event.target !== event.currentTarget) return;
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
                     open(item);
@@ -936,25 +953,9 @@ export function HomeNews({
                     {readingTime(item.wordCount) && <span>{readingTime(item.wordCount)}</span>}
                     {item.keptReasons.includes("keep") && <span>Kept</span>}
                   </p>
-                  <div className={styles.actions} onClick={(event) => event.stopPropagation()}>
-                    <button type="button" className={styles.action} aria-pressed={item.keptReasons.includes("keep")} onClick={() => toggleKeep(item)}>
-                      {item.keptReasons.includes("keep") ? "Kept" : "Keep"}
-                    </button>
-                    <button type="button" className={styles.action} onClick={() => setRead(item, !item.read)}>
-                      {item.read ? "Unread" : "Read"}
-                    </button>
-                    <button type="button" className={styles.action} onClick={() => openOriginal(item)}>
-                      Original
-                    </button>
-                    <button type="button" className={styles.action} aria-haspopup="menu" aria-expanded={unitMenu?.id === unit.id} onClick={() => setUnitMenu(unitMenu?.id === unit.id ? null : { id: unit.id, kind: "less" })}>
-                      Less like this
-                    </button>
-                    {mode === "forYou" && (
-                      <button type="button" className={styles.action} onClick={() => setUnitMenu(unitMenu?.id === unit.id && unitMenu.kind === "why" ? null : { id: unit.id, kind: "why" })}>
-                        Why
-                      </button>
-                    )}
-                  </div>
+                  <button type="button" className={styles.rowMore} aria-label={`More options for ${item.title}`} aria-haspopup="menu" aria-expanded={unitMenu?.id === unit.id} onClick={(event) => {
+                    event.stopPropagation(); setUnitMenu(unitMenu?.id === unit.id ? null : { id: unit.id, kind: "menu" });
+                  }}>•••</button>
                   {unitMenu?.id === unit.id && (
                     <span className={styles.unitMenu} role="menu" onClick={(event) => event.stopPropagation()}>
                       {unitMenu.kind === "why" ? (
@@ -965,6 +966,19 @@ export function HomeNews({
                               {reason.name} {reason.value > 0 ? `+${reason.value}` : reason.value}
                             </button>
                           ))}
+                        </>
+                      ) : unitMenu.kind === "menu" ? (
+                        <>
+                          <button type="button" role="menuitem" onClick={() => { toggleKeep(item); setUnitMenu(null); }}>{item.keptReasons.includes("keep") ? "Remove from Read Later" : "Read Later"}</button>
+                          <button type="button" role="menuitem" onClick={() => { setRead(item, !item.read); setUnitMenu(null); }}>{item.read ? "Mark unread" : "Mark read"}</button>
+                          <button type="button" role="menuitem" onClick={() => { openOriginal(item); setUnitMenu(null); }}>Open original</button>
+                          <button type="button" role="menuitem" onClick={() => {
+                            const link = item.permalink ?? item.externalUrl;
+                            if (link) void navigator.clipboard.writeText(link).then(() => setNotice("Link copied")).catch(() => setNotice("Could not copy the link"));
+                            setUnitMenu(null);
+                          }}>Copy link</button>
+                          <button type="button" role="menuitem" onClick={() => setUnitMenu({ id: unit.id, kind: "less" })}>Show fewer</button>
+                          <button type="button" role="menuitem" onClick={() => setUnitMenu({ id: unit.id, kind: "why" })}>Why this article</button>
                         </>
                       ) : (
                         <>
@@ -1048,7 +1062,7 @@ export function HomeNews({
                   {readingTime(representative.wordCount) && <span>{readingTime(representative.wordCount)}</span>}
                   <span className={styles.actions}>
                     <button type="button" className={styles.action} aria-pressed={representative.keptReasons.includes("keep")} onClick={() => toggleKeep(representative)} title="Keeps the article the headline opens, not every source">
-                      {representative.keptReasons.includes("keep") ? "Kept" : "Keep"}
+                      {representative.keptReasons.includes("keep") ? "Saved" : "Read Later"}
                     </button>
                     <button type="button" className={styles.action} onClick={() => openOriginal(representative)}>
                       Original
@@ -1108,7 +1122,7 @@ export function HomeNews({
                         {member.title}
                       </button>
                       <button type="button" className={styles.action} onClick={() => toggleKeep(member)} aria-pressed={member.keptReasons.includes("keep")}>
-                        {member.keptReasons.includes("keep") ? "Kept" : "Keep"}
+                        {member.keptReasons.includes("keep") ? "Saved" : "Read Later"}
                       </button>
                       <button type="button" className={styles.action} onClick={() => onOpenSection(member.folderPath)}>
                         Folder

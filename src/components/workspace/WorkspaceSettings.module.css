@@ -3,14 +3,14 @@
   width: 100%;
   min-width: 0;
   min-height: 100dvh;
-  padding: 64px 40px 80px;
+  padding: 24px 20px 80px;
   background: var(--bg);
   color: var(--ink);
   font-family: var(--ac-font-text);
 }
 
 .inner {
-  width: min(100%, 760px);
+  width: min(100%, 600px);
   min-width: 0;
   display: grid;
   gap: 0;
@@ -30,7 +30,7 @@
 }
 
 .pageHeader h1 {
-  font: 700 32px/1.08 var(--ac-font-text);
+  font: 650 22px/1.2 var(--ac-font-text);
   letter-spacing: 0;
 }
 

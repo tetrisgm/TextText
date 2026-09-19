@@ -345,10 +345,7 @@ export function useWorkspaceSidebarWidth(initialWidth?: number) {
 /// forced value.
 function readAssistantState(): AssistantSidebarState {
   if (typeof window === "undefined") return "hidden";
-  const roomToPin =
-    typeof window.innerWidth !== "number" ||
-    window.innerWidth >= ASSISTANT_PINNED_MIN_WIDTH;
-  const preferred: AssistantSidebarState = roomToPin ? "pinned" : "hidden";
+  const preferred: AssistantSidebarState = "hidden";
   let saved: string | null = null;
   try {
     if (!window.localStorage.getItem(WORKSPACE_ASSISTANT_STATE_MIGRATION_KEY)) {

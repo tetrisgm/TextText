@@ -106,8 +106,8 @@ describe("batch 4 workspace UI contract", () => {
     expect(rendererSource).toContain("href && isSafeLinkHref(href)");
   });
 
-  it("uses the shared action-bar search for roots, folders, and items", () => {
-    expect(shellSource).toContain("<WorkspaceActionSearch");
+  it("keeps search available in the news header, folders, and items", () => {
+    expect(shellSource).toContain('className="artifact-search"');
     expect(folderSource).toContain("<WorkspaceActionSearch");
     expect(actionBarSource).toContain("<WorkspaceActionSearch");
     expect(shellSource).toContain("<ReaderFindHighlights query={findQuery}");
