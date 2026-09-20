@@ -345,7 +345,10 @@ export function useWorkspaceSidebarWidth(initialWidth?: number) {
 /// forced value.
 function readAssistantState(): AssistantSidebarState {
   if (typeof window === "undefined") return "hidden";
-  const preferred: AssistantSidebarState = "hidden";
+  // Desktop is the workspace composition: folder navigation, content, and
+  // the assistant are visible together. Phones keep the assistant opt-in so
+  // it does not cover the writing surface.
+  const preferred: AssistantSidebarState = window.matchMedia("(min-width: 901px)").matches ? "pinned" : "hidden";
   let saved: string | null = null;
   try {
     if (!window.localStorage.getItem(WORKSPACE_ASSISTANT_STATE_MIGRATION_KEY)) {
