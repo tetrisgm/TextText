@@ -1,6 +1,6 @@
 # TextText handoff
 
-## Current: Artifact released in 0.199 (2026-09-20)
+## Current: Artifact desktop shell released in 0.202 (2026-09-20)
 
 [DESIGN.md](../DESIGN.md) specifies one Artifact reference. Home, Headlines,
 Notes and Profile now share that design, including the reader, editor, saved
@@ -12,8 +12,10 @@ checks, navigation and 1 MB typing comparisons, concurrent editing, tests and
 limits. The pass also fixes blank-note creation, early-typing/URL handoffs,
 spurious retirement after concurrent autosaves, and editor remounts after warming.
 
-Released and installed as **0.199 (1089)**. The public web build is
-`texttext-0_199-1089`; native Home has one feed with no Recent column. The
+Released and installed as **0.202 (1092)**. The public web build is
+`texttext-0_202-1092`; native Home has one feed with no Recent column. Desktop
+now keeps note-folder navigation on the left and the AI chat rail on the right;
+the assistant is pinned by default at desktop widths. The
 [release verification](artifact-verification-2026-09-19.md#release-acceptance-september-20-2026)
 records gates, native note save/reopen, and local/uploaded health checks.
 
