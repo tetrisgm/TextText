@@ -69,7 +69,7 @@ echo ">> currently live: $PREVIOUS"
 COMMIT="$(git rev-parse --short HEAD)"
 export NEXT_DEPLOYMENT_ID="texttext-$COMMIT-$(date +%s)"
 echo ">> build $NEXT_DEPLOYMENT_ID"
-npx vercel build --prod --yes > /dev/null
+node "$ROOT/scripts/with-local-database.mjs" npx vercel build --prod --yes > /dev/null
 
 if [ "$DRY_RUN" = "1" ]; then
   echo ">> dry run: built, nothing deployed"

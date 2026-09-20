@@ -236,7 +236,7 @@ if [ "$SKIP_WEB_DEPLOY" != "1" ]; then
   # Build locally after that marker exists, then deploy those exact outputs.
   npx tsx "$ROOT/scripts/work-unit.ts" run \
     --name web.production_build --timeout 2400 -- \
-    npx vercel build --prod --yes
+    node "$ROOT/scripts/with-local-database.mjs" npx vercel build --prod --yes
   npx tsx "$ROOT/scripts/work-unit.ts" run \
     --name web.production_deploy --timeout 1800 --no-reuse -- \
     npx vercel deploy --prebuilt --prod --yes
