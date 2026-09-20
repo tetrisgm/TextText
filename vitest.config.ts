@@ -13,6 +13,9 @@ export default defineConfig({
     // 2026-08-19 with three tests in it had never once run. A test that cannot
     // fail is worse than no test: it reads as coverage.
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    // Keep the full suite from starving the large-document and durability
+    // checks when this Mac is also building another project.
+    maxWorkers: 4,
     // A few tests spawn subprocesses or do heavy setup. The outer work-unit
     // runner owns the process-group wall-clock cap, while these limits identify
     // a stuck individual test without retrying the full paid release pipeline.
