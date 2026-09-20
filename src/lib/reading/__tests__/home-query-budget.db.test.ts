@@ -136,4 +136,15 @@ describe.skipIf(!enabled)("the Home's round trips", () => {
     const all = await home.readingHome({ handle, user });
     expect(channel.considered).toBe(all.considered);
   });
+
+  it("QB-05: a source uses the existing folder snapshot", async () => {
+    const source = (await store.getFolders(handle)).find((folder) => folder.path.startsWith("bookmarks/"))!;
+    const input = { handle, user, mode: "latest" as const, topic: `source:${source.path}` };
+    const page = await home.readingHome(input);
+    expect(page.units).toHaveLength(5);
+    expect(page.units.every((unit) => unit.kind === "article" && unit.item.folderId === source.id)).toBe(true);
+    const count = await spent(() => home.readingHome(input));
+    const latest = await spent(() => home.readingHome({ handle, user, mode: "latest" }));
+    expect(count, `the source spent ${count} round trips`).toBeLessThanOrEqual(latest);
+  });
 });

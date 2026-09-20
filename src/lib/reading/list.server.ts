@@ -12,7 +12,6 @@ import {
 } from "@/lib/db/schema";
 import { accessibleFolderIdsForUser, type AccessUser } from "@/lib/permissions";
 import { getFolders, workspaceIdForHandle } from "@/lib/store";
-import { subtreeFolderIds } from "./connections.server";
 
 /**
  * The reading list: bounded pages of imported articles for a folder scope.
@@ -127,7 +126,11 @@ export async function resolveReadingFolderIds(input: {
   }
   const target = allFolders.find((folder) => folder.path === input.folderPath);
   if (!target) return { blogId, folderIds: [] };
-  const subtree = input.includeDescendants ? await subtreeFolderIds(blogId, target.path) : [target.id];
+  // The live folder snapshot already contains the subtree. Re-querying it on
+  // every page adds a round trip for each hundred articles on Home.
+  const subtree = input.includeDescendants
+    ? allFolders.filter((folder) => folder.path === target.path || folder.path.startsWith(`${target.path}/`)).map((folder) => folder.id)
+    : [target.id];
   const folderIds = accessible === "all" ? subtree : subtree.filter((id) => accessible.has(id));
   return { blogId, folderIds };
 }
