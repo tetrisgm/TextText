@@ -14,6 +14,8 @@ const KIND_COPY: Record<ReadingPreferenceView["kind"], (label: string) => string
   topic_more: (label) => `More about ${label}`,
   topic_less: (label) => `Less about ${label}`,
   source_less: (label) => `Less from ${label}`,
+  source_hidden: (label) => `Hidden publisher: ${label}`,
+  article_hidden: (label) => `Hidden article: ${label}`,
 };
 
 export function ReadingPreferencesSettings({ handle }: { handle: string }) {
@@ -69,7 +71,7 @@ export function ReadingPreferencesSettings({ handle }: { handle: string }) {
       <div className={styles.sectionHeader}>
         <div>
           <h2 id="settings-reading-title">Reading preferences</h2>
-          <p>What shapes For you on the home page: your rules, and the Summaries you hid. These change the ranking only. Latest, folders, search, digests, and your feed apps see everything.</p>
+          <p>What shapes For you on the home page: your rules, and the Summaries you hid. These shape For You and Headlines. Latest, folders, search, digests, and your feed apps see everything.</p>
         </div>
         <button type="button" className="ac-btn ac-btn-plain ac-danger" onClick={() => void clear()} disabled={busy !== null}>
           Reset

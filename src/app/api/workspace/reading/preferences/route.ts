@@ -3,7 +3,7 @@ import { handleFrom, json, jsonError, readJson, requireReader } from "../_shared
 
 export const dynamic = "force-dynamic";
 
-const KINDS: ReadingPreferenceKind[] = ["topic_more", "topic_less", "source_less"];
+const KINDS: ReadingPreferenceKind[] = ["topic_more", "topic_less", "source_less", "source_hidden", "article_hidden"];
 
 /** GET ?handle= -> this person's rules and hidden count. */
 export async function GET(request: Request) {

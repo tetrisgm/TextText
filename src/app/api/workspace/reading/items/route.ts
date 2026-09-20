@@ -24,9 +24,9 @@ export async function GET(request: Request) {
 
   const stateParam = url.searchParams.get("state");
   const state: ReadingScope["state"] =
-    stateParam === "unread" || stateParam === "kept" ? stateParam : "all";
+    stateParam === "unread" || stateParam === "kept" || stateParam === "read" || stateParam === "saved" || stateParam === "starred" ? stateParam : "all";
   const dateBasis: ReadingScope["dateBasis"] =
-    url.searchParams.get("dateBasis") === "received" ? "received" : "published";
+    url.searchParams.get("dateBasis") === "received" ? "received" : url.searchParams.get("dateBasis") === "read" ? "read" : "published";
   const scope: ReadingScope = {
     folderPath,
     includeDescendants: url.searchParams.get("descendants") !== "0",

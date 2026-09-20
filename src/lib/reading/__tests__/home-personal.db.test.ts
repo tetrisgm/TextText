@@ -158,4 +158,31 @@ describe.skipIf(!enabled)("home personalization against Postgres", () => {
     const audits = await db!.select({ name: schema.actionAudit.actionName }).from(schema.actionAudit).where(eq(schema.actionAudit.actorUserId, userId));
     expect(audits.map((row) => row.name)).toEqual(expect.arrayContaining(["reading.set_preference", "reading.remove_preference", "reading.clear_preferences", "reading.hide_summary", "reading.unhide_summary"]));
   });
+  it("HP-05: hiding a publisher filters every member and headline, stays personal, and can be undone", async () => {
+    const before = await home.readingHome({ handle, user });
+    const summary = before.units.find((unit) => unit.kind === "summary");
+    if (!summary || summary.kind !== "summary") throw new Error("no summary");
+    const path = summary.members.find((member) => member.publisherName === "Wire")!.folderPath;
+    const rule = await store.setReadingPreference({ userId, blogId, kind: "source_hidden", target: path, label: "Wire", actor: { actorType: "human" } });
+    const hidden = await home.readingHome({ handle, user });
+    const members = (news: typeof hidden) => [...news.units, ...news.headlines].flatMap((unit) => unit.kind === "article" ? [unit.item] : unit.members);
+    expect(members(hidden).some((item) => item.folderPath === path)).toBe(false);
+    expect(members(hidden).length).toBeGreaterThan(0);
+    expect(members(await home.readingHome({ handle, user, mode: "latest" })).some((item) => item.folderPath === path)).toBe(false);
+    expect(members(await home.readingHome({ handle, user: null }))).toEqual([]);
+    expect(await store.listReadingPreferences("00000000-0000-4000-8000-000000000001", blogId)).toEqual([]);
+    await store.removeReadingPreference({ userId, blogId, id: rule.id, actor: { actorType: "human" } });
+    expect(members(await home.readingHome({ handle, user })).some((item) => item.folderPath === path)).toBe(true);
+  });
+
+  it("HP-06: hiding an article does not hide the publisher's other reporting", async () => {
+    const latest = await home.readingHome({ handle, user, mode: "latest" });
+    const garden = latest.units.find((unit) => unit.kind === "article" && unit.item.title.includes("Garden"))!;
+    const rule = await store.setReadingPreference({ userId, blogId, kind: "article_hidden", target: garden.id, label: "Garden", actor: { actorType: "human" } });
+    const hidden = await home.readingHome({ handle, user });
+    expect(hidden.units.some((unit) => unit.id === garden.id)).toBe(false);
+    expect(hidden.units.some((unit) => unit.kind === "summary" && unit.sources.includes("Wire"))).toBe(true);
+    await store.removeReadingPreference({ userId, blogId, id: rule.id, actor: { actorType: "human" } });
+  });
+
 });

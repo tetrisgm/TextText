@@ -5,7 +5,7 @@ import type { AccessUser } from "@/lib/permissions";
 import { countHiddenSummaries, listReadingPreferences, listSummaryState, workspaceIdForHandle } from "@/lib/store";
 import { readScope } from "@/lib/request-scope";
 import { CHANNEL_PREFIX, channelTopicId, sortChannels } from "./channels";
-import { tidyPublisherName } from "./publisher-name";
+import { tidyPublisherName, publisherPreferenceTarget } from "./publisher-name";
 import { listFeedConnections, type FeedConnectionView } from "./connections.server";
 import { listReadingItems, type ReadingListItem } from "./list.server";
 import { cosine, meanVector, rankCandidates, snapshotId, type RankCandidate, type RankPreferences, type RankTerm } from "./rank";
@@ -273,16 +273,20 @@ async function affinityCentroid(blogId: string, userId: string | null): Promise<
   return meanVector(rows.map((row) => row.vector));
 }
 
-async function preferencesFor(userId: string | null, blogId: string): Promise<{ rank: RankPreferences; count: number }> {
+async function preferencesFor(userId: string | null, blogId: string): Promise<{ rank: RankPreferences; count: number; hiddenSources: Set<string>; hiddenArticles: Set<string> }> {
   const empty = { topicMore: new Set<string>(), topicLess: new Set<string>(), sourceLess: new Set<string>() };
-  if (!userId) return { rank: empty, count: 0 };
+  const hiddenSources = new Set<string>();
+  const hiddenArticles = new Set<string>();
+  if (!userId) return { rank: empty, count: 0, hiddenSources, hiddenArticles };
   const rules = await listReadingPreferences(userId, blogId);
   for (const rule of rules) {
     if (rule.kind === "topic_more") empty.topicMore.add(rule.target);
     else if (rule.kind === "topic_less") empty.topicLess.add(rule.target);
-    else empty.sourceLess.add(rule.target);
+    else if (rule.kind === "source_less") empty.sourceLess.add(rule.target);
+    else if (rule.kind === "source_hidden") hiddenSources.add(rule.target);
+    else if (rule.kind === "article_hidden") hiddenArticles.add(rule.target);
   }
-  return { rank: empty, count: rules.length };
+  return { rank: empty, count: rules.length, hiddenSources, hiddenArticles };
 }
 
 /**
@@ -290,7 +294,7 @@ async function preferencesFor(userId: string | null, blogId: string): Promise<{ 
  * seven days of Summaries plus the recent articles no Summary absorbed,
  * scored, varied, and named by a snapshot id.
  */
-async function forYouUnits(input: { handle: string; user: AccessUser | null; blogId: string; items: ReadingListItem[]; topicRows: TopicRow[]; scopeTopic: string | null; now: Date }): Promise<{ units: HomeUnit[]; snapshot: string | null; hiddenCount: number; preferences: number }> {
+async function forYouUnits(input: { handle: string; user: AccessUser | null; blogId: string; items: ReadingListItem[]; topicRows: TopicRow[]; scopeTopic: string | null; now: Date; preferences: Awaited<ReturnType<typeof preferencesFor>>; connections: FeedConnectionView[] }): Promise<{ units: HomeUnit[]; snapshot: string | null; hiddenCount: number; preferences: number }> {
   const database = requireDb();
   const since = new Date(input.now.getTime() - CANDIDATE_DAYS * 24 * 60 * 60 * 1000);
   const rows = await database
@@ -300,13 +304,14 @@ async function forYouUnits(input: { handle: string; user: AccessUser | null; blo
     .orderBy(sql`${readingSummaries.latestAt} desc`)
     .limit(400);
   const userId = input.user?.userId ?? null;
-  const [state, preferences, centroid, hiddenCount] = await Promise.all([
+  const preferences = input.preferences;
+  const [state, centroid, hiddenCount] = await Promise.all([
     userId ? listSummaryState(userId, rows.map((row) => row.id)) : new Map<string, { seenRevision: number; hidden: boolean }>(),
-    preferencesFor(userId, input.blogId),
     affinityCentroid(input.blogId, userId),
     userId ? countHiddenSummaries(userId, input.blogId) : 0,
   ]);
-  const itemById = new Map(input.items.map((item) => [item.id, item]));
+  const visibleItems = input.items.filter((item) => !preferences.hiddenSources.has(item.folderPath) && !preferences.hiddenSources.has(publisherPreferenceTarget(item)) && !preferences.hiddenArticles.has(item.id));
+  const itemById = new Map(visibleItems.map((item) => [item.id, item]));
   const topicById = new Map(input.topicRows.map((row) => [row.id, row]));
   const idsByTopicRow = (ids: string[]) => ids.map((id) => topicById.get(id)).filter((row): row is TopicRow => Boolean(row)).map(topicIdOf);
   // Vectors for affinity, one query, bounded to what is on the page's window.
@@ -329,7 +334,7 @@ async function forYouUnits(input: { handle: string; user: AccessUser | null; blo
     const members = row.memberIds.map((id) => itemById.get(id)).filter((item): item is ReadingListItem => Boolean(item));
     if (members.length < 2) continue;
     for (const member of members) grouped.add(member.id);
-    const topicIds = idsByTopicRow(row.topicIds);
+    const topicIds = [...new Set([...idsByTopicRow(row.topicIds), ...members.flatMap((item) => { const channel = input.connections.find((source) => source.folderId === item.folderId)?.channel; return channel ? [channelTopicId(channel)] : []; })])];
     if (input.scopeTopic && !topicIds.includes(input.scopeTopic)) continue;
     const sorted = members.slice().sort((left, right) => timeOf(right) - timeOf(left));
     // A person who can see only some of the members (folder-scoped access,
@@ -365,7 +370,8 @@ async function forYouUnits(input: { handle: string; user: AccessUser | null; blo
     });
   }
   const topicOfItem = (item: ReadingListItem): string[] => {
-    const ids: string[] = [];
+    const channel = input.connections.find((source) => source.folderId === item.folderId)?.channel;
+    const ids: string[] = channel ? [channelTopicId(channel)] : [];
     for (const row of input.topicRows) {
       if (row.kind === "source" && row.ref === item.folderPath) ids.push(topicIdOf(row));
       if (row.kind === "derived" && row.centroid) {
@@ -375,7 +381,7 @@ async function forYouUnits(input: { handle: string; user: AccessUser | null; blo
     }
     return ids;
   };
-  for (const item of input.items) {
+  for (const item of visibleItems) {
     if (grouped.has(item.id) || timeOf(item) < since.getTime()) continue;
     const topicIds = topicOfItem(item);
     if (input.scopeTopic && !topicIds.includes(input.scopeTopic)) continue;
@@ -430,7 +436,10 @@ async function homeNews(input: {
   const offset = Math.max(0, Math.trunc(input.offset ?? 0));
   const now = input.now ?? new Date();
   const blogId = await workspaceIdForHandle(input.handle);
-  const { topics, rows: topicRows, connections } = await homeTopics(input.handle, input.user, blogId);
+  const [{ topics, rows: topicRows, connections }, taste] = await Promise.all([
+    homeTopics(input.handle, input.user, blogId),
+    preferencesFor(input.user?.userId ?? null, blogId),
+  ]);
   const topic = parseTopic(input.topic);
   const activeTopic = topic ? topics.find((entry) => entry.id === input.topic) ?? null : null;
   let items: ReadingListItem[];
@@ -457,6 +466,7 @@ async function homeNews(input: {
     const row = topicRows.find((entry) => topicIdOf(entry) === activeTopic.id);
     items = row ? await filterByDerivedTopic(blogId, items, row) : [];
   }
+  if (taste) items = items.filter((item) => !taste.hiddenSources.has(item.folderPath) && !taste.hiddenSources.has(publisherPreferenceTarget(item)) && !taste.hiddenArticles.has(item.id));
   let units: HomeUnit[];
   let snapshot: string | null = null;
   let hiddenCount = 0;
@@ -465,7 +475,7 @@ async function homeNews(input: {
   if (mode === "latest") {
     units = items.map((item) => ({ kind: "article" as const, id: item.id, item, latestAt: new Date(timeOf(item)).toISOString(), topicIds: [], reasons: [] }));
   } else if (topicRows.length > 0 || (await requireDb().select({ id: readingSummaries.id }).from(readingSummaries).where(eq(readingSummaries.blogId, blogId)).limit(1)).length > 0) {
-    const ranked = await forYouUnits({ handle: input.handle, user: input.user, blogId, items, topicRows, scopeTopic: activeTopic && activeTopic.kind === "derived" ? activeTopic.id : null, now });
+    const ranked = await forYouUnits({ handle: input.handle, user: input.user, blogId, items, topicRows, scopeTopic: activeTopic && activeTopic.kind === "derived" ? activeTopic.id : null, now, preferences: taste!, connections });
     units = ranked.units;
     snapshot = ranked.snapshot;
     hiddenCount = ranked.hiddenCount;
@@ -475,7 +485,19 @@ async function homeNews(input: {
     // Nothing materialized yet: group on read, newest first, and say so.
     const summaries = await withSummaryTexts(blogId, clusterReadingItems(items), { write: false });
     units = unitsFrom(items, summaries);
-    modeLabel = "Newest first";
+    if (taste && taste.count > 0) {
+      const candidates = units.map((unit) => {
+        const members = unit.kind === "article" ? [unit.item] : unit.members;
+        const topicIds = [...new Set(members.flatMap((item) => {
+          const channel = connections.find((source) => source.folderId === item.folderId)?.channel;
+          return [`source:${item.folderPath}`, ...(channel ? [channelTopicId(channel)] : [])];
+        }))];
+        return { id: unit.id, latestAt: unit.latestAt, sources: members.map((item) => item.publisherName ?? item.sourceFolderName), sourcePaths: members.map((item) => item.folderPath), topicIds, coverageRevision: 1, seenRevision: 0, affinity: null, unit };
+      });
+      units = rankCandidates(candidates, taste.rank, now.getTime()).map(({ candidate, terms }) => ({ ...candidate.unit, topicIds: candidate.topicIds, reasons: terms }));
+      preferences = taste.count;
+    }
+    modeLabel = preferences ? "Ranked with your preferences" : "Newest first";
   }
   // Headlines: the clusters with more than one source behind them, lifted
   // out of the list so they are not shown twice. A single card is not a

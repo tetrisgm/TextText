@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { tidyPublisherName } from "../publisher-name";
+import { tidyPublisherName, publisherPreferenceTarget } from "../publisher-name";
 import { STARTER_FEEDS } from "../starter-feeds";
 
 /**
@@ -45,5 +45,17 @@ describe("the name a person would say", () => {
       // The tidier may shorten a name, never invent one.
       expect(feed.name.toLowerCase(), feed.name).toContain(tidied.toLowerCase());
     }
+  });
+});
+
+
+describe("hiding a publisher", () => {
+  it("follows the linked publisher across feeds and normalizes www", () => {
+    expect(publisherPreferenceTarget({ folderPath: "bookmarks/hacker-news", externalUrl: "https://www.theverge.com/story" })).toBe("publisher:theverge.com");
+    expect(publisherPreferenceTarget({ folderPath: "bookmarks/verge", permalink: "https://theverge.com/another" })).toBe("publisher:theverge.com");
+    expect(publisherPreferenceTarget({ folderPath: "bookmarks/hacker-news", externalUrl: "https://arstechnica.com/story" })).toBe("publisher:arstechnica.com");
+  });
+  it("uses the feed only when there is no valid web publisher", () => {
+    expect(publisherPreferenceTarget({ folderPath: "bookmarks/wire", permalink: "javascript:alert(1)" })).toBe("bookmarks/wire");
   });
 });

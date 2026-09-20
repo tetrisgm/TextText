@@ -28,3 +28,15 @@ export function tidyPublisherName(raw: string): string {
   if (bareDomain) name = bareDomain[1];
   return name || raw.trim();
 }
+
+/** Publisher identity follows the article, including links from aggregators. */
+export function publisherPreferenceTarget(item: { permalink?: string | null; externalUrl?: string | null; folderPath: string }): string {
+  for (const link of [item.permalink, item.externalUrl]) {
+    if (!link) continue;
+    try {
+      const url = new URL(link);
+      if (url.protocol === "https:" || url.protocol === "http:") return `publisher:${url.hostname.toLowerCase().replace(/^www\./, "")}`;
+    } catch { /* A missing publisher falls back to its feed. */ }
+  }
+  return item.folderPath;
+}

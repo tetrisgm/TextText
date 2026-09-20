@@ -1669,7 +1669,7 @@ export const readingPreferences = pgTable(
     blogId: uuid("blog_id")
       .notNull()
       .references(() => blogs.id, { onDelete: "cascade" }),
-    /** "topic_more" | "topic_less" | "source_less" */
+    /** "topic_more" | "topic_less" | "source_less" | "source_hidden" | "article_hidden" */
     kind: text("kind").notNull(),
     /** A topic id or a source folder path. */
     target: text("target").notNull(),

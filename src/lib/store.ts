@@ -7741,10 +7741,10 @@ export async function getBlogOwnerSub(handle: string): Promise<string | null> {
 // ---------------------------------------------------------------------------
 // Reading: what one person has seen, hidden, and asked for more or less of
 
-export type ReadingPreferenceKind = "topic_more" | "topic_less" | "source_less";
+export type ReadingPreferenceKind = "topic_more" | "topic_less" | "source_less" | "source_hidden" | "article_hidden";
 export type ReadingPreferenceRecord = { id: string; kind: ReadingPreferenceKind; target: string; label: string; createdAt: Date };
 
-const PREFERENCE_KINDS: ReadingPreferenceKind[] = ["topic_more", "topic_less", "source_less"];
+const PREFERENCE_KINDS: ReadingPreferenceKind[] = ["topic_more", "topic_less", "source_less", "source_hidden", "article_hidden"];
 const MAX_PREFERENCES = 60;
 
 export async function listReadingPreferences(userId: string, blogId: string): Promise<ReadingPreferenceRecord[]> {

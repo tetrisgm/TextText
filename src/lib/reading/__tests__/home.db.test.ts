@@ -85,4 +85,39 @@ describe.skipIf(!enabled)("home news against Postgres", () => {
     expect(paged.units).toHaveLength(2);
     expect(paged.nextOffset).toBe(2);
   });
+  it("HM-03: publisher hiding also works before summaries have been materialized", async () => {
+    const before = await home.readingHome({ handle, user, mode: "latest" });
+    const wire = before.topics.find((topic) => topic.label === "Wire")!;
+    const rule = await store.setReadingPreference({ userId, blogId, kind: "source_hidden", target: wire.detail!, label: "Wire", actor: { actorType: "human" } });
+    const hidden = await home.readingHome({ handle, user });
+    expect(hidden.units).toHaveLength(1);
+    expect(hidden.units[0]).toMatchObject({ kind: "article", item: { publisherName: "Daily" } });
+    const latestHidden = await home.readingHome({ handle, user, mode: "latest" });
+    expect(latestHidden.units).toHaveLength(1);
+    expect(latestHidden.units[0]).toMatchObject({ kind: "article", item: { publisherName: "Daily" } });
+    await store.removeReadingPreference({ userId, blogId, id: rule.id, actor: { actorType: "human" } });
+  });
+
+  it("HM-04: Reading History is private, ordered by reading time, and paginates without repeats; Read Later includes only explicit saves", async () => {
+    const { listReadingItems } = await import("@/lib/reading/list.server");
+    const { setReadState, setKeep } = await import("@/lib/reading/retention.server");
+    const scope = { folderPath: "", includeDescendants: true, state: "read" as const, dateBasis: "read" as const };
+    const news = await home.readingHome({ handle, user, mode: "latest" });
+    const [first, second] = news.units.map((unit) => unit.id);
+    await setReadState({ handle, user, postIds: [first], read: true });
+    await setReadState({ handle, user, postIds: [second], read: true });
+    const recent = await listReadingItems({ handle, user, scope, limit: 1 });
+    expect(recent.items.map((item) => item.id)).toEqual([second]);
+    const older = await listReadingItems({ handle, user, scope, limit: 1, cursor: recent.nextCursor });
+    expect(older.items.map((item) => item.id)).toEqual([first]);
+    expect(older.nextCursor).toBeNull();
+    expect((await listReadingItems({ handle, user: null, scope })).items).toEqual([]);
+    await setKeep({ handle, postIds: [first], keep: true, actor: { userId, actorType: "human" } });
+    await store.setPostStarred(handle, second, true);
+    const saved = await listReadingItems({ handle, user, scope: { ...scope, state: "saved", dateBasis: "received" } });
+    expect(saved.items.map((item) => item.id)).toEqual([first]);
+    await setKeep({ handle, postIds: [first], keep: false, actor: { userId, actorType: "human" } });
+    expect((await listReadingItems({ handle, user, scope: { ...scope, state: "saved" } })).items).toEqual([]);
+  });
+
 });

@@ -105,18 +105,33 @@ export function tickReading(handle: string, limit = 3): Promise<{
   });
 }
 
-export function setReadingItemsRead(handle: string, ids: string[], read: boolean): Promise<{ ok: true; count: number }> {
-  return request(`/api/workspace/reading/items?handle=${encodeURIComponent(handle)}`, {
+export const READING_PREFERENCES_CHANGED = "texttext:reading-preferences-changed";
+function changedPreferences(handle: string) {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(READING_PREFERENCES_CHANGED, { detail: { handle } }));
+}
+
+export const READING_ITEMS_CHANGED = "texttext:reading-items-changed";
+export type ReadingItemsChange = { handle: string; ids: string[]; read?: boolean; keep?: boolean };
+function changedItems(change: ReadingItemsChange) {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(READING_ITEMS_CHANGED, { detail: change }));
+}
+
+export async function setReadingItemsRead(handle: string, ids: string[], read: boolean): Promise<{ ok: true; count: number }> {
+  const result = await request<{ ok: true; count: number }>(`/api/workspace/reading/items?handle=${encodeURIComponent(handle)}`, {
     method: "POST",
     body: JSON.stringify({ handle, action: read ? "read" : "unread", ids }),
   });
+  changedItems({ handle, ids, read });
+  return result;
 }
 
-export function setReadingItemsKept(handle: string, ids: string[], keep: boolean): Promise<{ ok: true; count: number }> {
-  return request(`/api/workspace/reading/items?handle=${encodeURIComponent(handle)}`, {
+export async function setReadingItemsKept(handle: string, ids: string[], keep: boolean): Promise<{ ok: true; count: number }> {
+  const result = await request<{ ok: true; count: number }>(`/api/workspace/reading/items?handle=${encodeURIComponent(handle)}`, {
     method: "POST",
     body: JSON.stringify({ handle, action: keep ? "keep" : "unkeep", ids }),
   });
+  changedItems({ handle, ids, keep });
+  return result;
 }
 
 export function cleanupReading(
@@ -162,22 +177,28 @@ export function setSummaryHiddenRequest(handle: string, id: string, hidden: bool
   return request(`/api/workspace/reading/home?handle=${encodeURIComponent(handle)}`, { method: "POST", body: JSON.stringify({ handle, action: "hide", id, hidden }) });
 }
 
-export type ReadingPreferenceView = { id: string; kind: "topic_more" | "topic_less" | "source_less"; target: string; label: string; createdAt: string };
+export type ReadingPreferenceView = { id: string; kind: "topic_more" | "topic_less" | "source_less" | "source_hidden" | "article_hidden"; target: string; label: string; createdAt: string };
 
 export function fetchReadingPreferences(handle: string): Promise<{ rules: ReadingPreferenceView[]; hidden: number }> {
   return request(`/api/workspace/reading/preferences?handle=${encodeURIComponent(handle)}`);
 }
 
-export function setReadingPreferenceRequest(handle: string, input: { kind: ReadingPreferenceView["kind"]; target: string; label: string }): Promise<{ rule: ReadingPreferenceView }> {
-  return request(`/api/workspace/reading/preferences?handle=${encodeURIComponent(handle)}`, { method: "POST", body: JSON.stringify({ handle, action: "set", ...input }) });
+export async function setReadingPreferenceRequest(handle: string, input: { kind: ReadingPreferenceView["kind"]; target: string; label: string }): Promise<{ rule: ReadingPreferenceView }> {
+  const result = await request<Awaited<ReturnType<typeof setReadingPreferenceRequest>>>(`/api/workspace/reading/preferences?handle=${encodeURIComponent(handle)}`, { method: "POST", body: JSON.stringify({ handle, action: "set", ...input }) });
+  changedPreferences(handle);
+  return result;
 }
 
-export function removeReadingPreferenceRequest(handle: string, id: string): Promise<{ removed: boolean }> {
-  return request(`/api/workspace/reading/preferences?handle=${encodeURIComponent(handle)}`, { method: "POST", body: JSON.stringify({ handle, action: "remove", id }) });
+export async function removeReadingPreferenceRequest(handle: string, id: string): Promise<{ removed: boolean }> {
+  const result = await request<Awaited<ReturnType<typeof removeReadingPreferenceRequest>>>(`/api/workspace/reading/preferences?handle=${encodeURIComponent(handle)}`, { method: "POST", body: JSON.stringify({ handle, action: "remove", id }) });
+  changedPreferences(handle);
+  return result;
 }
 
-export function clearReadingPreferencesRequest(handle: string): Promise<{ rules: number; hidden: number }> {
-  return request(`/api/workspace/reading/preferences?handle=${encodeURIComponent(handle)}`, { method: "POST", body: JSON.stringify({ handle, action: "clear" }) });
+export async function clearReadingPreferencesRequest(handle: string): Promise<{ rules: number; hidden: number }> {
+  const result = await request<Awaited<ReturnType<typeof clearReadingPreferencesRequest>>>(`/api/workspace/reading/preferences?handle=${encodeURIComponent(handle)}`, { method: "POST", body: JSON.stringify({ handle, action: "clear" }) });
+  changedPreferences(handle);
+  return result;
 }
 
 /**
