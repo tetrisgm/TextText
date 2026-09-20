@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   CollabEpochConflictError: class CollabEpochConflictError extends Error {},
   materializeCollabDocument: vi.fn(),
   getPostById: vi.fn(),
+  getPostStoreContext: vi.fn(),
   getUserIdBySub: vi.fn(async () => "user-uuid"),
   savePost: vi.fn(),
   getBlog: vi.fn(async () => null),
@@ -23,6 +24,7 @@ vi.mock("@/lib/collab", () => ({
 }));
 vi.mock("@/lib/store", () => ({
   getPostById: mocks.getPostById,
+  getPostStoreContext: mocks.getPostStoreContext,
   getUserIdBySub: mocks.getUserIdBySub,
   savePost: mocks.savePost,
   getBlog: mocks.getBlog,
@@ -93,6 +95,7 @@ describe("POST /api/collab/[postId]/materialize", () => {
       revision: 12,
       document: BASE_DOCUMENT,
     });
+    mocks.getPostStoreContext.mockImplementation(async () => ({ handle: "demo-blog", post: await mocks.getPostById() }));
     mocks.savePost.mockImplementation(async (_handle, post) => ({
       ...post,
       revision: 13,
@@ -131,15 +134,36 @@ describe("POST /api/collab/[postId]/materialize", () => {
     expect(mocks.materializeCollabDocument).toHaveBeenCalledWith(POST_ID, "encoded", 7);
   });
 
-  it("rejects a save superseded between epoch validation and persistence", async () => {
-    // A boundary-timed external write or a co-editor autosave bumped the revision
-    // between our read and our texttext: the guarded UPDATE matches nothing.
+  it("bounds repeated revision collisions without retiring a live collaborative history", async () => {
     mocks.savePost.mockRejectedValue(new mocks.PostConflictError());
     const res = await POST(req({ handle: "demo-blog", state: "encoded", epoch: 7 }), ctx);
     const json = await res.json();
-    expect(res.status).toBe(409);
-    expect(json.retired).toBe(true);
+    expect(res.status).toBe(503);
+    expect(json.reason).toBe("revision_conflict");
+    expect(json.retired).toBeUndefined();
+    expect(mocks.savePost).toHaveBeenCalledTimes(4);
     expect(mocks.revalidateBlogPaths).not.toHaveBeenCalled();
+  });
+
+  it("re-reads and merges peer edits after a co-editor wins the revision CAS", async () => {
+    mocks.savePost.mockRejectedValueOnce(new mocks.PostConflictError());
+    mocks.getPostStoreContext.mockResolvedValue({ handle: "demo-blog", post: { id: POST_ID, slug: "draft", revision: 13, document: BASE_DOCUMENT } });
+    const merged = { ...BASE_DOCUMENT, content: { ...BASE_DOCUMENT.content, body: "Peer text and my text" } };
+    // Force the first attempt to write, then include the peer's newer state.
+    mocks.materializeCollabDocument.mockResolvedValueOnce({ ...merged, content: { ...merged.content, body: "My text" } }).mockResolvedValue(merged);
+    const response = await POST(req({ handle: "demo-blog", state: "encoded", epoch: 7 }), ctx);
+    expect(response.status).toBe(200);
+    expect(mocks.materializeCollabDocument).toHaveBeenCalledTimes(2);
+    expect(mocks.savePost).toHaveBeenLastCalledWith("demo-blog", expect.objectContaining({ document: merged }), expect.objectContaining({ expectedRevision: 13, expectedCollabEpoch: 7 }));
+  });
+
+  it("still retires a document whose epoch changes while retrying a collision", async () => {
+    mocks.savePost.mockRejectedValueOnce(new mocks.PostConflictError());
+    mocks.materializeCollabDocument.mockResolvedValueOnce({ ...BASE_DOCUMENT, content: { ...BASE_DOCUMENT.content, body: "My text" } }).mockRejectedValueOnce(new mocks.CollabEpochConflictError());
+    const response = await POST(req({ handle: "demo-blog", state: "encoded", epoch: 7 }), ctx);
+    expect(response.status).toBe(409);
+    expect((await response.json()).retired).toBe(true);
+    expect(mocks.savePost).toHaveBeenCalledOnce();
   });
 
   it("materializes the complete collaborative document", async () => {

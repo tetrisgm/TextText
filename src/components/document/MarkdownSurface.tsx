@@ -356,6 +356,7 @@ export function MarkdownSurface({
   onChange,
   onSelection,
   surfaceRef,
+  resolveSelection,
 }: {
   value: string;
   placeholder: string;
@@ -364,6 +365,7 @@ export function MarkdownSurface({
   onChange: (value: string) => void;
   onSelection: (anchor: number, head: number) => void;
   surfaceRef?: React.RefObject<HTMLDivElement | null>;
+  resolveSelection?: () => { anchor: number; head: number } | null;
 }) {
   const localRef = useRef<HTMLDivElement>(null);
   const ref = surfaceRef ?? localRef;
@@ -398,7 +400,7 @@ export function MarkdownSurface({
   const allSelectedRef = useRef(false);
   const skipSelectionClearRef = useRef(false);
   const valueRef = useRef(value);
-  valueRef.current = value;
+  useLayoutEffect(() => { valueRef.current = value; }, [value]);
   /**
    * The lines of the value publish() just produced, derived incrementally:
    * splitting a multi-megabyte string on every keystroke was the largest
@@ -562,6 +564,7 @@ export function MarkdownSurface({
     }
     domDirtyRef.current = true;
     onChange(text);
+    reportSelection();
     // A native edit that changed DOM structure without changing the text (an
     // engine merging rows on its own initiative) produces no re-render, so
     // nothing would ever repair the rows. Renormalize on the spot.
@@ -922,73 +925,7 @@ export function MarkdownSurface({
     return rect.top >= view.top + covered && rect.bottom <= view.bottom;
   };
 
-  const jumpToLine = (line: number) => {
-    const root = ref.current;
-    if (!root) return;
-    const lines = linesRef.current;
-    const target = Math.max(0, Math.min(line, Math.max(0, lines.length - 1)));
-    const scroller = scrollerOf(root);
-    const settle = (attempt: number) => {
-      const win = winRef.current;
-      const materialized =
-        !windowedRef.current ||
-        (target >= win.start && target < win.end);
-      const el = materialized
-        ? wrappersRef.current[windowedRef.current ? target - win.start : target]
-        : null;
-      if (el && scroller) {
-        // The action bar sits inside the scroller (scroll-padding-top); a
-        // line placed at the very top would land under it.
-        const covered = parseFloat(getComputedStyle(scroller).scrollPaddingTop) || 0;
-        const top =
-          scroller.scrollTop +
-          el.getBoundingClientRect().top -
-          scroller.getBoundingClientRect().top -
-          covered -
-          JUMP_MARGIN_PX;
-        scroller.scrollTo({ top: Math.max(0, top), behavior: "auto" });
-      } else if (el) {
-        el.scrollIntoView({ block: "start" });
-      } else if (scroller) {
-        const rootTop =
-          scroller.scrollTop +
-          root.getBoundingClientRect().top -
-          scroller.getBoundingClientRect().top;
-        scroller.scrollTo({
-          top: Math.max(0, rootTop + target * rowPxRef.current - JUMP_MARGIN_PX),
-          behavior: "auto",
-        });
-      }
-      if (attempt < 3) {
-        window.requestAnimationFrame(() => {
-          rewindowForViewport();
-          window.requestAnimationFrame(() => settle(attempt + 1));
-        });
-      }
-    };
-    settle(0);
-  };
-
-
-  // Same idiom as the beforeinput binding: a ref so the window listener is
-  // attached once while still calling the current closure.
-  const jumpRef = useRef(jumpToLine);
-  jumpRef.current = jumpToLine;
-  useEffect(() => {
-    const handler = (event: Event) => {
-      const line = (event as CustomEvent<{ line?: number }>).detail?.line;
-      if (typeof line === "number") jumpRef.current(line);
-    };
-    window.addEventListener(DOCUMENT_JUMP_EVENT, handler);
-    return () => window.removeEventListener(DOCUMENT_JUMP_EVENT, handler);
-  }, []);
-
-  /**
-   * Windowed scrolling: when the viewport leaves the materialized band,
-   * re-materialize around it and pin the anchor row so the content under the
-   * reader's eyes does not jump when the spacer estimates are corrected.
-   */
-  const rewindowForViewport = () => {
+  function rewindowForViewport() {
     const root = ref.current;
     if (!root || !windowedRef.current || composingRef.current) return;
     if (!structureMatchesWrappers()) return;
@@ -1067,7 +1004,75 @@ export function MarkdownSurface({
       }
       revealLine(line);
     }
+  }
+
+  const jumpToLine = (line: number) => {
+    const root = ref.current;
+    if (!root) return;
+    const lines = linesRef.current;
+    const target = Math.max(0, Math.min(line, Math.max(0, lines.length - 1)));
+    const scroller = scrollerOf(root);
+    const settle = (attempt: number) => {
+      const win = winRef.current;
+      const materialized =
+        !windowedRef.current ||
+        (target >= win.start && target < win.end);
+      const el = materialized
+        ? wrappersRef.current[windowedRef.current ? target - win.start : target]
+        : null;
+      if (el && scroller) {
+        // The action bar sits inside the scroller (scroll-padding-top); a
+        // line placed at the very top would land under it.
+        const covered = parseFloat(getComputedStyle(scroller).scrollPaddingTop) || 0;
+        const top =
+          scroller.scrollTop +
+          el.getBoundingClientRect().top -
+          scroller.getBoundingClientRect().top -
+          covered -
+          JUMP_MARGIN_PX;
+        scroller.scrollTo({ top: Math.max(0, top), behavior: "auto" });
+      } else if (el) {
+        el.scrollIntoView({ block: "start" });
+      } else if (scroller) {
+        const rootTop =
+          scroller.scrollTop +
+          root.getBoundingClientRect().top -
+          scroller.getBoundingClientRect().top;
+        scroller.scrollTo({
+          top: Math.max(0, rootTop + target * rowPxRef.current - JUMP_MARGIN_PX),
+          behavior: "auto",
+        });
+      }
+      if (attempt < 3) {
+        window.requestAnimationFrame(() => {
+          rewindowForViewport();
+          window.requestAnimationFrame(() => settle(attempt + 1));
+        });
+      }
+    };
+    settle(0);
   };
+
+
+  // Same idiom as the beforeinput binding: a ref so the window listener is
+  // attached once while still calling the current closure.
+  const jumpRef = useRef(jumpToLine);
+  useLayoutEffect(() => { jumpRef.current = jumpToLine; });
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const line = (event as CustomEvent<{ line?: number }>).detail?.line;
+      if (typeof line === "number") jumpRef.current(line);
+    };
+    window.addEventListener(DOCUMENT_JUMP_EVENT, handler);
+    return () => window.removeEventListener(DOCUMENT_JUMP_EVENT, handler);
+  }, []);
+
+  /**
+   * Windowed scrolling: when the viewport leaves the materialized band,
+   * re-materialize around it and pin the anchor row so the content under the
+   * reader's eyes does not jump when the spacer estimates are corrected.
+   */
+
 
   useEffect(() => {
     let raf = 0;
@@ -1105,6 +1110,12 @@ export function MarkdownSurface({
 
     const focused = document.activeElement === root;
     let keep = focused ? (selectionOffsets() ?? rangeRef.current) : null;
+    // Remote inserts can move the local caret even when its line stays put.
+    // Absolute DOM offsets describe the old text; the CRDT anchor follows
+    // the character this person actually typed, including simultaneous edits.
+    const remoteSelection = focused && !domDirtyRef.current && builtValueRef.current !== value
+      ? resolveSelection?.() ?? null : null;
+    if (remoteSelection) keep = remoteSelection;
     // A controlled structural edit already knows exactly where the caret
     // belongs; the DOM position it was captured from predates the edit.
     const pendingCaret = pendingCaretRef.current;
@@ -1244,7 +1255,7 @@ export function MarkdownSurface({
         : value.length;
     const keepNeedsRestore =
       keep !== null &&
-      (pendingCaret !== null ||
+      (pendingCaret !== null || remoteSelection !== null ||
         (Math.max(keep.anchor, keep.head) >= spliceStartOffset &&
           Math.min(keep.anchor, keep.head) <= spliceEndOffset));
 

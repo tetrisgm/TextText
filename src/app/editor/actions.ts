@@ -585,14 +585,15 @@ export async function createWorkspacePostAction(
   titleInput?: unknown,
   templateInput?: unknown,
   bodyInput?: unknown,
+  options?: { revalidate?: boolean },
 ): Promise<Post> {
   const { handle, access } = await editableHandleFor(handleInput);
   await enforcePostLimit(handle);
   const type = cleanWorkspaceCreateType(typeInput);
   const template = await cleanTemplateReference(templateInput, access.blogId);
-  const created = await createDraft(handle, type, { template });
   const title = cleanOptionalLine(titleInput, "Title");
-  const body = cleanBody(bodyInput);
+  const body = bodyInput === undefined ? "" : cleanBody(bodyInput);
+  const created = await createDraft(handle, type, { template });
   const titled =
     title || body
       ? await savePost(handle, {
@@ -619,7 +620,7 @@ export async function createWorkspacePostAction(
     saved.id,
     type,
   );
-  await revalidateBlog(handle, [saved.slug]);
+  if (options?.revalidate !== false) await revalidateBlog(handle, [saved.slug]);
   return saved;
 }
 
@@ -668,17 +669,18 @@ export async function createFolderItemAction(
     template?: TemplateReference;
     url?: string;
   },
+  options?: { revalidate?: boolean },
 ): Promise<Post> {
   const folder = cleanItemFolder(folderInput);
   const { handle, access } = await editableHandleFor(handleInput);
   await enforcePostLimit(handle);
 
   if (folder === "notes") {
+    const title = cleanOptionalLine(input?.title, "Title");
+    const body = input?.body === undefined ? "" : cleanBody(input.body);
     const created = await createDraft(handle, "note", {
       template: await cleanTemplateReference(input?.template, access.blogId),
     });
-    const title = cleanOptionalLine(input?.title, "Title");
-    const body = cleanBody(input?.body);
     const titled =
       title || body
         ? await savePost(handle, {
@@ -693,7 +695,7 @@ export async function createFolderItemAction(
         ? (await setPostFolder(handle, titled.id, folderPath)) ?? titled
         : titled;
     await auditEdit(access, "create_note", "item", post.id, post.title);
-    await revalidateBlog(handle, [post.slug]);
+    if (options?.revalidate !== false) await revalidateBlog(handle, [post.slug]);
     return post;
   }
 

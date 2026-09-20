@@ -697,12 +697,20 @@ export class CollabProvider implements CollaborationTransport {
     const epoch = this.learnedEpoch;
     if (!this.opts.canPush || this.materializationBlocked ||
         !this.baselineApplied || epoch === null) return null;
-    const response = await fetch(`${this.base}/materialize`, {
+    const save = () => fetch(`${this.base}/materialize`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ handle, state: u8ToBase64(Y.encodeStateAsUpdate(this.doc)), epoch }),
       keepalive,
     });
+    let response = await save();
+    for (let attempt = 0; attempt < 2 && response.status === 503 && !this.materializationBlocked; attempt += 1) {
+      const problem = await response.clone().json().catch(() => null);
+      if (problem?.reason !== "revision_conflict") break;
+      await new Promise<void>((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
+      if (this.materializationBlocked) return response;
+      response = await save();
+    }
     if (isAccessLoss(response.status)) this.loseAccess(response.status);
     if (response.status === 409 && !this.materializationBlocked && this.outbox) {
       // Stop relay pushes as well. The subscriber preserves the live Y.Doc,

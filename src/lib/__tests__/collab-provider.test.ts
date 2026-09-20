@@ -782,6 +782,40 @@ describe("CollabProvider startup and outbox", () => {
 
 
 describe("epoch-fenced materialization", () => {
+  it("retries a concurrent autosave without retiring the writer or dropping newer typing", async () => {
+    vi.useFakeTimers();
+    const requests: RequestInit[] = [];
+    const never = new Promise<Response>(() => {});
+    vi.stubGlobal("fetch", vi.fn(async (input, init) => {
+      if (String(input).endsWith("/materialize")) {
+        requests.push(init);
+        return requests.length === 1
+          ? Response.json({ reason: "revision_conflict" }, { status: 503 })
+          : jsonResponse({ ok: true });
+      }
+      if (String(input).endsWith("/presence")) return jsonResponse({ presence: [] });
+      if (String(input).includes("wait=25")) return never;
+      if (init?.method === "POST") return jsonResponse({ seq: 1, epoch: 7 });
+      return catchUpResponse({ epoch: 7 });
+    }));
+    const doc = new Y.Doc();
+    const provider = providerFor(doc, "materialize-concurrent-retry");
+    await provider.start();
+    doc.getText("local").insert(0, "First edit");
+    const pending = provider.materialize("demo");
+    doc.getText("local").insert(10, " plus newer typing");
+    await vi.advanceTimersByTimeAsync(200);
+    expect((await pending)?.ok).toBe(true);
+    expect(provider.materializationBlocked).toBe(false);
+    expect(requests).toHaveLength(2);
+    const state = new Y.Doc();
+    const retried = JSON.parse(String(requests[1].body));
+    expect(retried.epoch).toBe(7);
+    Y.applyUpdate(state, Buffer.from(retried.state, "base64"));
+    expect(state.getText("local").toString()).toBe("First edit plus newer typing");
+    provider.destroy(); doc.destroy(); state.destroy();
+  });
+
   it("waits for a learned epoch and includes it on autosave and keepalive", async () => {
     vi.useFakeTimers();
     const initial = deferred<Response>();

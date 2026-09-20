@@ -517,13 +517,11 @@ export function UnifiedDocumentEditor({
     () => preReadyLocalRef.current ?? documentRef.current,
     [],
   );
-  const [doc] = useState(() => {
-    const next = new Y.Doc();
-    if (!networkEnabled) {
-      applyDocumentSnapshot(next, initialDocument, "initial-document");
-    }
-    return next;
-  });
+  // An optimistic item has no authoritative Yjs identities yet. Keep its
+  // typing in the pre-ready ledger until creation gives it a server ID and
+  // the provider catches up. Seeding a second root here makes the server's
+  // blank root compete with (and sometimes replace) the person's first edit.
+  const [doc] = useState(() => new Y.Doc());
   /** Body-text mirror for replaceYText; see YTextMirror. */
   const bodyMirrorRef = useRef<YTextMirror>({ applying: false });
   // Undo, from the CRDT rather than the browser. The editable surface is
@@ -652,8 +650,8 @@ export function UnifiedDocumentEditor({
   const [awareness] = useState(() => new Awareness(doc));
   const [peers, setPeers] = useState<PresencePeer[]>([]);
   const [remoteRevision, setRemoteRevision] = useState(0);
-  const [ready, setReady] = useState(!networkEnabled);
-  const readyRef = useRef(!networkEnabled);
+  const [ready, setReady] = useState(false);
+  const readyRef = useRef(false);
 
   const [saveState, setSaveState] = useState<SaveState>("local");
   const [error, setError] = useState<string | null>(null);
@@ -752,7 +750,7 @@ export function UnifiedDocumentEditor({
     (next: DocumentSnapshot) => {
       if (recoveryBlockedRef.current) return;
       publishDocument(next);
-      if (!ready && networkEnabled) {
+      if (!ready) {
         preReadyLocalRef.current = next;
         setSaveState("local");
         return;
@@ -1151,7 +1149,7 @@ export function UnifiedDocumentEditor({
         },
       };
       publishDocument(next);
-      if (!ready && networkEnabled) {
+      if (!ready) {
         preReadyLocalRef.current = next;
         setSaveState("local");
         return;
@@ -1250,12 +1248,12 @@ export function UnifiedDocumentEditor({
         field,
         anchor: bytesToBase64(
           Y.encodeRelativePosition(
-            Y.createRelativePositionFromTypeIndex(target, anchor),
+            Y.createRelativePositionFromTypeIndex(target, anchor, -1),
           ),
         ),
         head: bytesToBase64(
           Y.encodeRelativePosition(
-            Y.createRelativePositionFromTypeIndex(target, head),
+            Y.createRelativePositionFromTypeIndex(target, head, -1),
           ),
         ),
       };
@@ -1263,6 +1261,18 @@ export function UnifiedDocumentEditor({
     },
     [awareness, collab.postId, currentLocalDocument, doc, ready],
   );
+
+  const resolveBodySelection = useCallback(() => {
+    const selection = awareness.getLocalState()?.selection as RelativeSelectionState | null | undefined;
+    if (!selection || selection.field !== "body") return null;
+    try {
+      const anchor = Y.createAbsolutePositionFromRelativePosition(Y.decodeRelativePosition(base64ToBytes(selection.anchor)), doc);
+      const head = Y.createAbsolutePositionFromRelativePosition(Y.decodeRelativePosition(base64ToBytes(selection.head)), doc);
+      const body = documentText(doc, "body");
+      return anchor?.type === body && head?.type === body ? { anchor: anchor.index, head: head.index } : null;
+    } catch { return null; }
+  }, [awareness, doc]);
+
 
   const remoteSelections = useMemo(
     () => {
@@ -1374,12 +1384,13 @@ export function UnifiedDocumentEditor({
                 updateSelection("body", anchor, head)
               }
               surfaceRef={bodySurfaceRef}
+              resolveSelection={resolveBodySelection}
             />
           </div>
         ),
       },
     }),
-    [activeTemplate.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, referenceChoices, remoteSelections, showSubtitle, updateField, updateSelection, updateText],
+    [activeTemplate.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
   );
 
   /** Declared fields the template does not bind anywhere in its item spec.

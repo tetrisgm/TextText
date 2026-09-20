@@ -179,6 +179,13 @@ async function main() {
       const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
       contexts.push(context);
       const page = await context.newPage();
+      page.on("response", async (response) => {
+        if (response.status() < 400 || !response.url().includes("/api/collab/")) return;
+        try {
+          const data = await response.json();
+          console.log(JSON.stringify({ client: contexts.length, path: new URL(response.url()).pathname, status: response.status(), error: data.error, reason: data.reason, epoch: data.epoch, code: data.code }));
+        } catch { /* A navigation can cancel the response body. */ }
+      });
       await signIn(page);
       await openNote(page, scratch.path);
       return page;
@@ -228,12 +235,31 @@ async function main() {
 
     // Both at once, with no coordination. This is the part that decides
     // whether the merge is a merge or a race.
-    const bothLeft = ` SIMUL-L-${Math.random().toString(36).slice(2, 7)} `;
-    const bothRight = ` SIMUL-R-${Math.random().toString(36).slice(2, 7)} `;
-    await Promise.all([type(left, bothLeft), type(right, bothRight)]);
-    const agreedAfter = await waitUntilAgreed(left, right);
-    const settled = await bodyOf(left);
-    const keptBoth = settled.includes(bothLeft.trim()) && settled.includes(bothRight.trim());
+    const simultaneousRuns = Number(argOf("--simultaneous-runs") ?? 1);
+    let agreedAfter: number | null = 0;
+    let keptBoth = true;
+    const convergence: number[] = [];
+    for (let round = 0; round < simultaneousRuns; round += 1) {
+      const bothLeft = ` SIMUL-L-${Math.random().toString(36).slice(2, 7)} `;
+      const bothRight = ` SIMUL-R-${Math.random().toString(36).slice(2, 7)} `;
+      await Promise.all([type(left, bothLeft), type(right, bothRight)]);
+      const agreed = await waitUntilAgreed(left, right);
+      if (agreed !== null) convergence.push(agreed);
+      const settled = await bodyOf(left);
+      const other = await bodyOf(right);
+      const retained = [settled, other].every((text) => text.includes(bothLeft.trim()) && text.includes(bothRight.trim()));
+      if (!retained || agreed === null) {
+        let at = 0; while (at < settled.length && settled[at] === other[at]) at += 1;
+        console.log(JSON.stringify({ round, expected: [bothLeft.trim(), bothRight.trim()], tail: settled.slice(-500), otherTail: other.slice(-500), firstDifference: at, here: settled.slice(Math.max(0, at - 30), at + 60), there: other.slice(Math.max(0, at - 30), at + 60) }));
+        for (const [label, page] of [["left", left], ["right", right]] as const) {
+          console.log(JSON.stringify({ label, url: page.url(), body: (await page.locator("body").innerText()).slice(-2500) }));
+        }
+      }
+      keptBoth &&= retained;
+      agreedAfter = agreed === null || agreedAfter === null ? null : Math.max(agreedAfter, agreed);
+      if (!retained || agreed === null) break;
+    }
+    console.log(`  simultaneous typing: ${simultaneousRuns} requested rounds`);
 
     const row = (label: string, samples: number[]) =>
       samples.length === 0
@@ -246,6 +272,7 @@ async function main() {
     console.log(row("first key, left to right", leftToRight));
     console.log(row("first key, right to left", rightToLeft));
     console.log(row("a sentence, as typed", sustained));
+    console.log(row("simultaneous convergence", convergence));
 
     console.log(
       `\n  typing at once: ${agreedAfter === null ? `THE WINDOWS NEVER AGREED within ${SETTLE_MS / 1000}s` : `both windows agree, after ${agreedAfter}ms`}`,

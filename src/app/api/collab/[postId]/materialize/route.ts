@@ -8,6 +8,7 @@ import {
 import { getCollabRequestAccess } from "@/lib/collab/access.server";
 import {
   getPostById,
+  getPostStoreContext,
   getUserIdBySub,
   PostConflictError,
   savePost,
@@ -82,80 +83,94 @@ export async function POST(
 
   // getPostById is scoped to the handle, so a mismatched handle simply misses;
   // collabAccess already proved the caller may edit THIS post.
-  const post = await getPostById(handle, postId);
+  let post = await getPostById(handle, postId);
   if (!post) {
     return Response.json({ error: "Post not found" }, { status: 404 });
   }
-  const currentDocument = requireDocumentSnapshot(
-    post.document,
-    `Persisted item ${post.id ?? post.slug}`,
-  );
-  let nextDocument;
-  try {
-    nextDocument = await materializeCollabDocument(postId, state, epoch);
-  } catch (error) {
-    if (error instanceof CollabEpochConflictError) return epochConflict();
-    throw error;
-  }
-  if (!nextDocument) {
-    return Response.json({ error: "Invalid collaborative document state" }, { status: 400 });
-  }
-  const actorUserId = access.user
-    ? access.user.userId ?? (await getUserIdBySub(access.user.sub))
-    : null;
-  // Materialization and identity lookup also await storage. Check again before
-  // disclosing an unchanged document or entering the audited CAS save.
-  access = await getCollabRequestAccess(request, postId);
-  if (access.role !== "editor") {
-    if (access.trashed) {
-      return Response.json(
-        { error: "This item was moved to Trash", reason: "trashed" },
-        { status: 410 },
-      );
+  // Two editors can materialize the same revision concurrently. Re-read and
+  // reconstruct the merged CRDT after a CAS collision; only an actual epoch
+  // change retires their history. Every retry retains the epoch/write fence.
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (attempt > 0) {
+      const current = await getPostStoreContext(postId);
+      if (!current || current.handle !== handle) return Response.json({ error: "Post not found" }, { status: 404 });
+      post = current.post;
     }
-    return Response.json({ error: "Not an editor of this post" }, { status: 403 });
-  }
-  if (JSON.stringify(currentDocument) === JSON.stringify(nextDocument)) {
+    const currentDocument = requireDocumentSnapshot(
+      post.document,
+      `Persisted item ${post.id ?? post.slug}`,
+    );
+    let nextDocument;
+    try {
+      nextDocument = await materializeCollabDocument(postId, state, epoch);
+    } catch (error) {
+      if (error instanceof CollabEpochConflictError) return epochConflict();
+      throw error;
+    }
+    if (!nextDocument) {
+      return Response.json({ error: "Invalid collaborative document state" }, { status: 400 });
+    }
+    const actorUserId = access.user
+      ? access.user.userId ?? (await getUserIdBySub(access.user.sub))
+      : null;
+    // Materialization and identity lookup also await storage. Check again before
+    // disclosing an unchanged document or entering the audited CAS save.
+    access = await getCollabRequestAccess(request, postId);
+    if (access.role !== "editor") {
+      if (access.trashed) {
+        return Response.json(
+          { error: "This item was moved to Trash", reason: "trashed" },
+          { status: 410 },
+        );
+      }
+      return Response.json({ error: "Not an editor of this post" }, { status: 403 });
+    }
+    if (JSON.stringify(currentDocument) === JSON.stringify(nextDocument)) {
+      return Response.json({
+        ok: true,
+        unchanged: true,
+        document: currentDocument,
+        revision: post.revision,
+      });
+    }
+
+    // Presence is deliberately not a write gate. A tab can become backgrounded,
+    // lose its heartbeat, and still own durable local Yjs operations. Revision CAS
+    // is the actual safety boundary: this materialization either advances the
+    // canonical document from the revision it read or yields to a newer writer.
+    let saved;
+    try {
+      saved = await savePost(handle, { ...post, document: nextDocument }, {
+        preservePublishedAt: true,
+        expectedRevision: post.revision,
+        expectedCollabEpoch: epoch,
+        audit: {
+          actorUserId,
+          actorType: "human",
+          actionName: "collab.materialize",
+          targetType: "item",
+          targetId: post.id,
+          inputSummary: post.title,
+        },
+      });
+    } catch (error) {
+      if (error instanceof PostConflictError) {
+        continue;
+      }
+      throw error;
+    }
+    const blog = await getBlog(handle).catch(() => null);
+    revalidateBlogPaths(blog ?? { handle }, [post.slug]);
     return Response.json({
       ok: true,
-      unchanged: true,
-      document: currentDocument,
-      revision: post.revision,
+      document: saved.document ?? nextDocument,
+      revision: saved.revision,
     });
   }
-
-  // Presence is deliberately not a write gate. A tab can become backgrounded,
-  // lose its heartbeat, and still own durable local Yjs operations. Revision CAS
-  // is the actual safety boundary: this materialization either advances the
-  // canonical document from the revision it read or yields to a newer writer.
-  let saved;
-  try {
-    saved = await savePost(handle, { ...post, document: nextDocument }, {
-      preservePublishedAt: true,
-      expectedRevision: post.revision,
-      expectedCollabEpoch: epoch,
-      audit: {
-        actorUserId,
-        actorType: "human",
-        actionName: "collab.materialize",
-        targetType: "item",
-        targetId: post.id,
-        inputSummary: post.title,
-      },
-    });
-  } catch (error) {
-    if (error instanceof PostConflictError) {
-      return epochConflict();
-    }
-    throw error;
-  }
-  const blog = await getBlog(handle).catch(() => null);
-  revalidateBlogPaths(blog ?? { handle }, [post.slug]);
-  return Response.json({
-    ok: true,
-    document: saved.document ?? nextDocument,
-    revision: saved.revision,
-  });
+  return Response.json(
+    { error: "Another editor is saving. Retry this save.", reason: "revision_conflict" },
+    { status: 503, headers: { "Cache-Control": "private, no-store", "Retry-After": "1" } },
+  );
 }
 
 function epochConflict() {

@@ -125,10 +125,10 @@ it("leaves all metadata untouched when only local text changed",()=>{
  expect(reconcile(initial,local,remote).content).toMatchObject({body:"alpha omega REMOTE",tags:["remote"]});
 });
 
-it("ledgers typing and metadata even after a partial catch-up installed the baseline",()=>{
+it.each([true, false])("ledgers typing and metadata before readiness (server ID assigned: %s)",(networkEnabled)=>{
  const initial=snapshot("alpha DELETE omega"),doc=new Y.Doc();applyDocumentSnapshot(doc,initial);
  const ledger={current:null as ReturnType<typeof snapshot>|null};
- const bindings={doc,networkEnabled:true,ready:false,preReadyLocalRef:ledger,recoveryBlockedRef:{current:false},
+ const bindings={doc,networkEnabled,ready:false,preReadyLocalRef:ledger,recoveryBlockedRef:{current:false},
   publishDocument:vi.fn(),setSaveState:vi.fn(),hasDocumentSnapshot,applyDocumentSnapshot,
   userEditOrigin:{current:{}},localOrigin:{current:{}},bodyMirrorRef:{current:{}},
   currentLocalDocument:()=>ledger.current??initial,promoteOnEdit:vi.fn(),replaceYText,
