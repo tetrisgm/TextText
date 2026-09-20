@@ -136,7 +136,7 @@ const ACTIONS: Action[] = [
       await page.waitForSelector("h1.tt-text-title", { timeout: 60_000 });
       await page.waitForTimeout(300);
     },
-    click: `Array.from(document.querySelectorAll("button, a")).find((e) => (e.getAttribute("aria-label") || "").trim() === "Go back") || Array.from(document.querySelectorAll("button, a")).find((e) => (e.getAttribute("aria-label") || e.textContent || "").trim() === "Back")`,
+    click: `document.querySelector('[aria-label="Back to feed"]') || Array.from(document.querySelectorAll("button, a")).find((e) => (e.getAttribute("aria-label") || "").trim() === "Go back") || Array.from(document.querySelectorAll("button, a")).find((e) => (e.getAttribute("aria-label") || e.textContent || "").trim() === "Back")`,
     // The list is back, rather than the article being gone: waiting for a
     // removal measures the end of the slide, not the moment the person can
     // read what they asked for.
@@ -157,8 +157,12 @@ const ACTIONS: Action[] = [
   },
   {
     name: "open a folder",
-    setUp: home,
-    click: `Array.from(document.querySelectorAll(".post-editor-folder-main")).find((e) => e.textContent.trim() === "Bookmarks")`,
+    setUp: async (page) => {
+      await home(page);
+      await page.getByRole("button", { name: "Profile", exact: true }).click();
+      await page.getByRole("heading", { name: "Profile", exact: true }).waitFor();
+    },
+    click: `Array.from(document.querySelectorAll('[aria-labelledby="artifact-profile-title"] button')).find((e) => e.textContent.replace("›", "").trim() === "Bookmarks")`,
     // Every run reloads the Home first, so every run is the first folder
     // opened after a page load. That was the slow one: 470ms, against 25 for
     // the second, because a lazy component suspends on its first render
@@ -174,10 +178,29 @@ const ACTIONS: Action[] = [
     // The new view is on screen and sliding in long before the old one goes.
     settled: `() => Array.from(document.querySelectorAll("h1")).some((h) => h.textContent.trim() === "Bookmarks")`,
   },
+  {
+    name: "open Notes",
+    setUp: home,
+    click: `document.querySelector('button[aria-label="Notes"]')`,
+    settled: `() => Boolean(document.querySelector('[data-artifact-notes]'))`,
+  },
+  {
+    name: "open a note",
+    setUp: async (page) => {
+      await home(page);
+      await page.getByRole("button", { name: "Notes", exact: true }).click();
+      await page.waitForSelector("[data-artifact-notes] li button");
+    },
+    click: `document.querySelector('[data-artifact-notes] li button')`,
+    before: `() => location.pathname`,
+    settled: `() => Boolean(document.querySelector('[aria-label="Document body"][contenteditable]')) && location.pathname !== before`,
+  },
+
 ];
 
 async function main() {
   const browser = await chromium.launch();
+  let anyOver = false;
   try {
     const context = await browser.newContext({ viewport: { width: 1440, height: 950 } });
     const page = await context.newPage();
@@ -185,7 +208,6 @@ async function main() {
     console.log(`\n  ${ORIGIN}, @${HANDLE}, ${RUNS} runs each, budget ${BUDGET_MS}ms\n`);
     console.log("  action                 median     p95    worst    cold   over");
     console.log("  --------------------  -------  ------  -------  ------  -----");
-    let anyOver = false;
     for (const action of ACTIONS) {
       // The first run of an action in a fresh server pays for that route
       // being initialised, which happens once per process and not once per
@@ -204,13 +226,14 @@ async function main() {
       void first;
       if (samples.length === 0) {
         console.log(`  ${action.name.padEnd(20)}  ${"not measured".padStart(7)}   (no element matched, or it never settled)`);
+        anyOver = true;
         continue;
       }
       const median = percentile(samples, 50);
       const p95 = percentile(samples, 95);
       const worst = Math.max(...samples);
       const over = p95 > BUDGET_MS;
-      if (over) anyOver = true;
+      if (over || missing || first === null) anyOver = true;
       console.log(
         `  ${action.name.padEnd(20)}  ${median.toFixed(0).padStart(7)}  ${p95.toFixed(0).padStart(6)}  ${worst.toFixed(0).padStart(7)}  ${
           (first === null ? "-" : first.toFixed(0)).padStart(6)
@@ -226,7 +249,7 @@ async function main() {
   } finally {
     await browser.close();
   }
-  process.exit(0);
+  process.exitCode = anyOver ? 1 : 0;
 }
 
 void main();

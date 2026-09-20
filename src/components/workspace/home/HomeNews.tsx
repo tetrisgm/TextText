@@ -23,10 +23,14 @@ import {
 } from "@/lib/reading/client";
 import { AddFeedsDialog } from "@/components/workspace/reading/AddFeedsDialog";
 import { ManageSourcesDialog } from "@/components/workspace/reading/ManageSourcesDialog";
-import { STARTER_FEEDS } from "@/lib/reading/starter-feeds";
+import { STARTER_FEEDS, starterTopics } from "@/lib/reading/starter-feeds";
 import { tidyPublisherName } from "@/lib/reading/publisher-name";
 import { publisherFor } from "./publisher";
+import { publisherPreferenceTarget } from "@/lib/reading/publisher-name";
 import styles from "./Home.module.css";
+import { ReadingPreferences } from "./ReadingPreferences";
+import { StoryActions, StoryActionIcon } from "./StoryActions";
+import { HomeSession } from "./session";
 
 /**
  * The news column of the home page: what the person should know, as
@@ -137,6 +141,7 @@ export function PublisherRow({ item, at, now }: { item: ReadingListItem; at: str
 }
 
 export function HomeNews({
+  session,
   handle,
   blogId,
   canManage,
@@ -149,6 +154,7 @@ export function HomeNews({
   onOpenSection,
   onUseAssistantPrompt,
 }: {
+  session?: HomeSession;
   handle: string;
   blogId: string;
   canManage: boolean;
@@ -164,10 +170,15 @@ export function HomeNews({
   // adopted right after hydration (a deferred update, so the first render
   // agrees with itself) and written back with replaceState from then on,
   // so the local view machine is never asked to navigate.
-  const [{ mode, topic }, setView] = useState<{ mode: Mode; topic: string | null }>({ mode: "forYou", topic: null });
-  const [data, setData] = useState<HomeNewsData | null>(null);
-  const [overview, setOverview] = useState<ReadingOverview | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [initial] = useState(() => {
+    const view = typeof window === "undefined" ? { mode: "forYou" as const, topic: null } : stateFrom(new URLSearchParams(window.location.search));
+    return { view, page: session?.get(view) ?? null };
+  });
+  const [{ mode, topic }, setView] = useState<{ mode: Mode; topic: string | null }>(initial.page ? initial.view : { mode: "forYou", topic: null });
+  const [data, setData] = useState<HomeNewsData | null>(initial.page);
+  const [overview, setOverview] = useState<ReadingOverview | null>(session?.overview ?? null);
+  const [loading, setLoading] = useState(!initial.page);
+  const requestSequence = useRef(0);
   const [newArticles, setNewArticles] = useState(false);
   const hasVisibleArticles = useRef(false);
   const [error, setError] = useState<string | null>(null);
@@ -180,40 +191,58 @@ export function HomeNews({
   const [dimmed, setDimmed] = useState<Set<string>>(() => new Set());
   const [menuOpen, setMenuOpen] = useState(false);
   const [managing, setManaging] = useState(false);
+  const [interestsOpen, setInterestsOpen] = useState(false);
   const [addingFeeds, setAddingFeeds] = useState(false);
   // "starting" while the workspace is being given its first sources, "own"
   // once it is following something it chose, or chose to be empty.
   const [starter, setStarter] = useState<"unknown" | "starting" | "own">("unknown");
   const starterRan = useRef(false);
+  const [interests, setInterests] = useState<Set<string>>(new Set());
+  const [choosingInterests, setChoosingInterests] = useState(false);
   const tabsRef = useRef<HTMLUListElement | null>(null);
   const [saving, setSaving] = useState(false);
   // Set when data arrives, never during render, so server and client agree.
   const [now, setNow] = useState(0);
   const pendingOpen = useRef<string | null>(null);
   const [openTick, setOpenTick] = useState(0);
-  const [unitMenu, setUnitMenu] = useState<{ id: string; kind: "menu" | "less" | "why" } | null>(null);
+  const [unitMenu, setUnitMenu] = useState<{ id: string; kind: "menu" | "less" | "why" | "more" } | null>(null);
   const [undo, setUndo] = useState<{ label: string; run: () => Promise<void> } | null>(null);
+  const press = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null);
+  const pressed = useRef(false);
+  const cancelPress = () => { if (press.current) clearTimeout(press.current.timer); press.current = null; };
+  useEffect(() => () => { if (press.current) clearTimeout(press.current.timer); }, []);
   const seenQueue = useRef(new Map<string, number>());
   const seenTimer = useRef<number | null>(null);
 
   const load = useCallback(
-    async (next: { mode: Mode; topic: string | null }, offset = 0) => {
+    async (next: { mode: Mode; topic: string | null }, offset = 0, refresh = false) => {
+      const sequence = ++requestSequence.current;
+      const cached = offset === 0 && !refresh ? session?.get(next) : null;
+      if (cached) {
+        setData(cached); setNow(Date.now()); setLoading(false); setError(null);
+        hasVisibleArticles.current = cached.units.length > 0;
+        return;
+      }
       setLoading(true);
       setError(null);
       try {
         const page = await fetchReadingHome({ handle, mode: next.mode, topic: next.topic, offset });
+        if (sequence !== requestSequence.current) return;
         setNow(Date.now());
         hasVisibleArticles.current = page.units.length > 0;
         if (offset === 0) setNewArticles(false);
         setData((current) => (offset > 0 && current ? { ...page, units: [...current.units, ...page.units] } : page));
       } catch (caught) {
-        setError(caught instanceof Error ? caught.message : "Could not load the news");
+        if (sequence === requestSequence.current) setError(caught instanceof Error ? caught.message : "Could not load the news");
       } finally {
-        setLoading(false);
+        if (sequence === requestSequence.current) setLoading(false);
       }
     },
-    [handle],
+    [handle, session],
   );
+
+  useEffect(() => { if (data) session?.save(data); }, [data, session]);
+  useEffect(() => () => { requestSequence.current += 1; }, []);
 
   // Serve what is cached at once. The app is its own scheduler: after the
   // first paint, stale sources are checked in a few bounded passes and the
@@ -229,9 +258,12 @@ export function HomeNews({
     });
     void (async () => {
       try {
+        if (session && session.overview && Date.now() - session.checkedAt < STALE_MS) return;
+        session?.markChecked(Date.now());
         const first = await fetchReadingOverview(handle);
         if (cancelled) return;
         setOverview(first);
+        session?.saveOverview(first);
         const newest = Math.max(0, ...first.sources.map((source) => (source.lastSuccessAt ? new Date(source.lastSuccessAt).getTime() : 0)));
         if (!canManage || first.sources.length === 0 || Date.now() - newest <= STALE_MS) return;
         let ran = 0;
@@ -244,9 +276,10 @@ export function HomeNews({
         const refreshed = await fetchReadingOverview(handle);
         if (cancelled) return;
         setOverview(refreshed);
+        session?.saveOverview(refreshed);
         if (ran > 0) {
           if (hasVisibleArticles.current) setNewArticles(true);
-          else await load(initial);
+          else await load(initial, 0, true);
         }
       } catch {
         // A failed check is not something the front page needs to show.
@@ -255,7 +288,7 @@ export function HomeNews({
     return () => {
       cancelled = true;
     };
-  }, [canManage, handle, load]);
+  }, [canManage, handle, load, session]);
 
   const setMode = (next: Mode) => {
     setView({ mode: next, topic });
@@ -472,6 +505,23 @@ export function HomeNews({
     },
     [dim, handle],
   );
+  const hideArticle = (unit: HomeUnit, publisher: boolean) => {
+    const item = unit.kind === "article" ? unit.item : unit.representative;
+    const label = publisher ? publisherFor(item).name : item.title;
+    const affected = publisher ? units.filter((entry) => publisherPreferenceTarget(entry.kind === "article" ? entry.item : entry.representative) === publisherPreferenceTarget(item)).map((entry) => entry.id) : [unit.id];
+    affected.forEach((id) => dim(id, true));
+    setUnitMenu(null);
+    void setReadingPreferenceRequest(handle, { kind: publisher ? "source_hidden" : "article_hidden", target: publisher ? publisherPreferenceTarget(item) : item.id, label }).then(({ rule }) => {
+      session?.clear();
+      setUndo({ label: publisher ? `${label} hidden. You can change this in your profile.` : "Article hidden.", run: async () => {
+        const { removeReadingPreferenceRequest } = await import("@/lib/reading/client");
+        await removeReadingPreferenceRequest(handle, rule.id);
+        affected.forEach((id) => dim(id, false));
+        session?.clear();
+      } });
+    }).catch(() => { affected.forEach((id) => dim(id, false)); setNotice("Could not save that preference. Try again."); });
+  };
+
   /** What "less like this" can name for a unit: its topics by label, its sources by folder. */
   const lessTargets = useCallback(
     (unit: HomeUnit): Array<{ kind: "topic_less" | "source_less"; target: string; label: string }> => {
@@ -626,13 +676,19 @@ export function HomeNews({
     }
   };
 
-  // A news surface that opens empty is a broken news surface. A workspace
-  // following nothing is given the starter set once, a few publishers per
-  // pass so the page fills rather than hangs. The server decides whether it
-  // is owed: a workspace that was given them and then emptied says no, and
-  // this stops at the first refusal.
+  const personalize = async () => {
+    setChoosingInterests(true);
+    try {
+      for (const label of interests) await setReadingPreferenceRequest(handle, { kind: "topic_more", target: `channel:${label}`, label });
+      setStarter("starting");
+    } catch { setNotice("Could not save your interests. Try again."); }
+    finally { setChoosingInterests(false); }
+  };
+
+  // The first feed starts after choosing interests. The existing audited,
+  // idempotent import can resume without duplicating sources.
   useEffect(() => {
-    if (!canManage || overview === null || overview.sources.length > 0 || starterRan.current) return;
+    if (!canManage || starter !== "starting" || overview === null || overview.sources.length > 0 || starterRan.current) return;
     starterRan.current = true;
     let cancelled = false;
     void (async () => {
@@ -652,7 +708,7 @@ export function HomeNews({
       const fresh = await fetchReadingOverview(handle).catch(() => null);
       if (cancelled || !fresh) return;
       setOverview(fresh);
-      void load({ mode, topic });
+      void load({ mode, topic }, 0, true);
     })();
     return () => {
       cancelled = true;
@@ -660,7 +716,7 @@ export function HomeNews({
     // The workspace is asked once per mount; mode and topic are read at the
     // moment the sources land, never as reasons to ask again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [blogId, canManage, handle, overview]);
+  }, [blogId, canManage, handle, overview, starter]);
 
   const unhealthy = overview?.sources.filter((source) => !["healthy", "checking"].includes(source.health)) ?? [];
   // A photograph gets the full width every few items and the rest stay
@@ -698,6 +754,13 @@ export function HomeNews({
 
   return (
     <section className={`applecms ${styles.news}`} aria-label="News" data-home-news>
+      {noSources && starter === "unknown" && canManage && <div className={styles.personalize}>
+        <h2>Personalize your feed</h2>
+        <p>Choose the topics you want to read about.</p>
+        <div className={styles.interestChips}>{starterTopics().map((label) => <button key={label} aria-pressed={interests.has(label)} disabled={choosingInterests} onClick={() => setInterests((current) => { const next = new Set(current); if (next.has(label)) next.delete(label); else next.add(label); return next; })}>{label}</button>)}</div>
+        <button className={styles.primaryButton} disabled={!interests.size || choosingInterests} onClick={() => void personalize()}>{choosingInterests ? "Saving…" : "Continue"}</button>
+        <button className={styles.back} onClick={() => { setStarter("own"); setAddingFeeds(true); }}>Choose publishers myself</button>
+      </div>}
       {noSources && starter === "starting" && (
         <div className={styles.setup}>
           <h2>Setting up your news</h2>
@@ -774,6 +837,7 @@ export function HomeNews({
             </button>
             {menuOpen && (
               <div className={styles.menu} role="menu" onMouseLeave={() => setMenuOpen(false)}>
+                <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); setInterestsOpen(true); }}>Manage interests</button>
                 {overview && (
                   <small>
                     {overview.totals.newSince24h} new today
@@ -814,6 +878,7 @@ export function HomeNews({
           </div>
         </nav>
       )}
+      {interestsOpen && <StoryActions label="Manage interests" onClose={() => setInterestsOpen(false)}><h2>Manage interests</h2><ReadingPreferences handle={handle} mode="interests" onDone={() => { setInterestsOpen(false); void load({ mode, topic }, 0, true); }} /></StoryActions>}
       {addingFeeds && (
         <AddFeedsDialog
           handle={handle}
@@ -825,7 +890,7 @@ export function HomeNews({
             setAddingFeeds(false);
             await refreshWorkspacePool(handle, blogId).catch(() => undefined);
             void fetchReadingOverview(handle).then(setOverview).catch(() => undefined);
-            void load({ mode, topic });
+            void load({ mode, topic }, 0, true);
             onOpenSection(result.folderPath);
           }}
         />
@@ -839,12 +904,12 @@ export function HomeNews({
           onClose={() => setManaging(false)}
           onChanged={() => {
             void fetchReadingOverview(handle).then(setOverview).catch(() => undefined);
-            void load({ mode, topic });
+            void load({ mode, topic }, 0, true);
           }}
         />
       )}
       {newArticles && <div className={styles.newArticles}><button type="button" onClick={() => {
-        void load({ mode, topic });
+        void load({ mode, topic }, 0, true);
         document.querySelector(".post-editor-content")?.scrollTo({ top: 0 });
       }}>↑ New articles</button></div>}
       {undo && (
@@ -914,8 +979,54 @@ export function HomeNews({
         {units.map((unit, index) => {
           const focused = index === focusIndex;
           const lead = heroes.has(index);
+          const item = unit.kind === "article" ? unit.item : unit.representative;
+          const actions = unitMenu?.id === unit.id && (
+            <StoryActions onClose={() => setUnitMenu(null)}><span className={styles.unitMenu} role="menu" onClick={(event) => event.stopPropagation()}>
+              {unitMenu.kind === "why" ? (
+                <>
+                  <small>Why this is here</small>
+                  {unit.reasons.length === 0 ? <button type="button" role="menuitem" disabled>Newest first</button> : unit.reasons.map((reason) => (
+                    <button key={reason.name} type="button" role="menuitem" disabled>
+                      {reason.name} {reason.value > 0 ? `+${reason.value}` : reason.value}
+                    </button>
+                  ))}
+                </>
+              ) : unitMenu.kind === "menu" ? (
+                <>
+                  <button type="button" role="menuitem" onClick={() => setUnitMenu({ id: unit.id, kind: "less" })}><StoryActionIcon name="less" />Show fewer</button>
+                  <button type="button" role="menuitem" onClick={() => { toggleKeep(item); setUnitMenu(null); }}><StoryActionIcon name="save" />{item.keptReasons.includes("keep") ? "Remove from Read Later" : "Read Later"}</button>
+                  <button type="button" role="menuitem" onClick={() => {
+                    const link = item.permalink ?? item.externalUrl;
+                    if (link) {
+                      if (navigator.share) void navigator.share({ title: item.title, url: link }).catch((error) => { if (error?.name !== "AbortError") setNotice("Could not share the article"); });
+                      else void navigator.clipboard.writeText(link).then(() => setNotice("Link copied")).catch(() => setNotice("Could not copy the link"));
+                    }
+                    setUnitMenu(null);
+                  }}><StoryActionIcon name="share" />Share</button>
+                  <button type="button" role="menuitem" onClick={() => hideArticle(unit, true)}><StoryActionIcon name="hide" />Hide publisher</button>
+                  <button type="button" role="menuitem" onClick={() => setUnitMenu({ id: unit.id, kind: "more" })}><StoryActionIcon name="more" />More options</button>
+                </>
+              ) : unitMenu.kind === "more" ? (
+                <>
+                  <button type="button" role="menuitem" onClick={() => { setRead(item, !item.read); setUnitMenu(null); }}>{item.read ? "Mark unread" : "Mark read"}</button>
+                  <button type="button" role="menuitem" onClick={() => { openOriginal(item); setUnitMenu(null); }}>Open original</button>
+                  <button type="button" role="menuitem" onClick={() => hideArticle(unit, false)}>Hide article</button>
+                  {unit.kind === "summary" && unit.summaryId && <button type="button" role="menuitem" onClick={() => hideSummary(unit)}>Hide story</button>}
+                  <button type="button" role="menuitem" onClick={() => setUnitMenu({ id: unit.id, kind: "why" })}>Why this article</button>
+                </>
+              ) : (
+                <>
+                  <small>Less like this</small>
+                  {lessTargets(unit).map((target) => (
+                    <button key={`${target.kind}:${target.target}`} type="button" role="menuitem" onClick={() => lessLikeThis(unit, target)}>
+                      {target.kind === "source_less" ? `Less from ${target.label}` : `Less about ${target.label}`}
+                    </button>
+                  ))}
+                </>
+              )}
+            </span></StoryActions>
+          );
           if (unit.kind === "article") {
-            const item = unit.item;
             return (
               <li
                 key={unit.id}
@@ -929,7 +1040,15 @@ export function HomeNews({
                 data-lead={lead ? "true" : "false"}
                 tabIndex={focused || (focusIndex < 0 && index === 0) ? 0 : -1}
                 onFocus={() => setFocusIndex(index)}
-                onClick={() => open(item)}
+                onClick={() => { if (pressed.current) { pressed.current = false; return; } open(item); }}
+                onPointerDown={(event) => {
+                  if (event.pointerType === "mouse" || (event.target as Element).closest("button, a")) return;
+                  cancelPress(); pressed.current = false;
+                  press.current = { x: event.clientX, y: event.clientY, timer: setTimeout(() => { pressed.current = true; setUnitMenu({ id: unit.id, kind: "menu" }); }, 450) };
+                }}
+                onPointerMove={(event) => { if (press.current && Math.hypot(event.clientX - press.current.x, event.clientY - press.current.y) > 10) cancelPress(); }}
+                onPointerUp={cancelPress}
+                onPointerCancel={cancelPress}
                 onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setUnitMenu({ id: unit.id, kind: "menu" }); }}
                 onKeyDown={(event) => {
                   if (event.target !== event.currentTarget) return;
@@ -956,42 +1075,7 @@ export function HomeNews({
                   <button type="button" className={styles.rowMore} aria-label={`More options for ${item.title}`} aria-haspopup="menu" aria-expanded={unitMenu?.id === unit.id} onClick={(event) => {
                     event.stopPropagation(); setUnitMenu(unitMenu?.id === unit.id ? null : { id: unit.id, kind: "menu" });
                   }}>•••</button>
-                  {unitMenu?.id === unit.id && (
-                    <span className={styles.unitMenu} role="menu" onClick={(event) => event.stopPropagation()}>
-                      {unitMenu.kind === "why" ? (
-                        <>
-                          <small>Why this is here</small>
-                          {unit.reasons.length === 0 ? <button type="button" role="menuitem" disabled>Newest first</button> : unit.reasons.map((reason) => (
-                            <button key={reason.name} type="button" role="menuitem" disabled>
-                              {reason.name} {reason.value > 0 ? `+${reason.value}` : reason.value}
-                            </button>
-                          ))}
-                        </>
-                      ) : unitMenu.kind === "menu" ? (
-                        <>
-                          <button type="button" role="menuitem" onClick={() => { toggleKeep(item); setUnitMenu(null); }}>{item.keptReasons.includes("keep") ? "Remove from Read Later" : "Read Later"}</button>
-                          <button type="button" role="menuitem" onClick={() => { setRead(item, !item.read); setUnitMenu(null); }}>{item.read ? "Mark unread" : "Mark read"}</button>
-                          <button type="button" role="menuitem" onClick={() => { openOriginal(item); setUnitMenu(null); }}>Open original</button>
-                          <button type="button" role="menuitem" onClick={() => {
-                            const link = item.permalink ?? item.externalUrl;
-                            if (link) void navigator.clipboard.writeText(link).then(() => setNotice("Link copied")).catch(() => setNotice("Could not copy the link"));
-                            setUnitMenu(null);
-                          }}>Copy link</button>
-                          <button type="button" role="menuitem" onClick={() => setUnitMenu({ id: unit.id, kind: "less" })}>Show fewer</button>
-                          <button type="button" role="menuitem" onClick={() => setUnitMenu({ id: unit.id, kind: "why" })}>Why this article</button>
-                        </>
-                      ) : (
-                        <>
-                          <small>Less like this</small>
-                          {lessTargets(unit).map((target) => (
-                            <button key={`${target.kind}:${target.target}`} type="button" role="menuitem" onClick={() => lessLikeThis(unit, target)}>
-                              {target.kind === "source_less" ? `Less from ${target.label}` : `Less about ${target.label}`}
-                            </button>
-                          ))}
-                        </>
-                      )}
-                    </span>
-                  )}
+                  {actions}
                 </div>
                 {!lead && item.imageUrl && <img className={styles.thumb} src={item.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.dataset.hidden = "true"; }} />}
               </li>
@@ -1014,8 +1098,18 @@ export function HomeNews({
               data-coverage-revision={unit.summaryId ? unit.coverageRevision : undefined}
               tabIndex={focused || (focusIndex < 0 && index === 0) ? 0 : -1}
               onFocus={() => setFocusIndex(index)}
-              onClick={() => open(representative)}
+              onClick={() => { if (pressed.current) { pressed.current = false; return; } open(representative); }}
+              onPointerDown={(event) => {
+                if (event.pointerType === "mouse" || (event.target as Element).closest("button, a")) return;
+                cancelPress(); pressed.current = false;
+                press.current = { x: event.clientX, y: event.clientY, timer: setTimeout(() => { pressed.current = true; setUnitMenu({ id: unit.id, kind: "menu" }); }, 450) };
+              }}
+              onPointerMove={(event) => { if (press.current && Math.hypot(event.clientX - press.current.x, event.clientY - press.current.y) > 10) cancelPress(); }}
+              onPointerUp={cancelPress}
+              onPointerCancel={cancelPress}
+              onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setUnitMenu({ id: unit.id, kind: "menu" }); }}
               onKeyDown={(event) => {
+                if (event.target !== event.currentTarget) return;
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
                   open(targetOf(unit) ?? representative);
@@ -1071,45 +1165,7 @@ export function HomeNews({
                       More
                     </button>
                   </span>
-                  {unitMenu?.id === unit.id && (
-                    <span className={styles.unitMenu} role="menu">
-                      {unitMenu.kind === "less" ? (
-                        <>
-                          <small>Less like this</small>
-                          {lessTargets(unit).map((target) => (
-                            <button key={`${target.kind}:${target.target}`} type="button" role="menuitem" onClick={() => lessLikeThis(unit, target)}>
-                              {target.kind === "source_less" ? `Less from ${target.label}` : `Less about ${target.label}`}
-                            </button>
-                          ))}
-                        </>
-                      ) : unitMenu.kind === "why" ? (
-                        <>
-                          <small>Why this is here</small>
-                          {unit.reasons.length === 0 ? <button type="button" role="menuitem" disabled>Newest first</button> : unit.reasons.map((reason) => (
-                            <button key={reason.name} type="button" role="menuitem" disabled>
-                              {reason.name} {reason.value > 0 ? `+${reason.value}` : reason.value}
-                            </button>
-                          ))}
-                        </>
-                      ) : (
-                        <>
-                          {unit.summaryId && (
-                            <button type="button" role="menuitem" onClick={() => hideSummary(unit)}>
-                              Hide this Summary
-                            </button>
-                          )}
-                          <button type="button" role="menuitem" onClick={() => setUnitMenu({ id: unit.id, kind: "less" })}>
-                            Less like this
-                          </button>
-                          {mode === "forYou" && (
-                            <button type="button" role="menuitem" onClick={() => setUnitMenu({ id: unit.id, kind: "why" })}>
-                              Why this is here
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </span>
-                  )}
+                  {actions}
                 </p>
               </div>
               {!lead && unit.imageUrl && <img className={styles.thumb} src={unit.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.dataset.hidden = "true"; }} />}

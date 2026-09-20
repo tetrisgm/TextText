@@ -1,7 +1,7 @@
 "use client";
 
 import nextDynamic from "next/dynamic";
-import type { ComponentType } from "react";
+import { useState, type ComponentType } from "react";
 
 /**
  * A code-split component that stops suspending once its chunk is in memory.
@@ -23,7 +23,7 @@ import type { ComponentType } from "react";
  * component, so a chunk that has not been warmed still behaves as it always
  * did.
  */
-export function warmChunk<P extends object>(load: () => Promise<ComponentType<P>>): {
+export function warmChunk<P extends object>(load: () => Promise<ComponentType<P>>, options: { ssr?: boolean } = {}): {
   /** Render this. It is the real component as soon as the chunk is in. */
   Component: ComponentType<P>;
   /** Fetch the chunk. Call it whenever there is nothing better to do. */
@@ -31,7 +31,7 @@ export function warmChunk<P extends object>(load: () => Promise<ComponentType<P>
 } {
   let ready: ComponentType<P> | null = null;
   let warming: Promise<unknown> | null = null;
-  const Lazy = nextDynamic(load, { ssr: false }) as unknown as ComponentType<P>;
+  const Lazy = nextDynamic(load, { ssr: options.ssr ?? false }) as unknown as ComponentType<P>;
 
   const warm = () => {
     if (ready || warming) return;
@@ -46,8 +46,11 @@ export function warmChunk<P extends object>(load: () => Promise<ComponentType<P>
   };
 
   function Warmed(props: P) {
-    const Ready = ready;
-    return Ready ? <Ready {...props} /> : <Lazy {...props} />;
+    // Choose once per mount. Switching a mounted lazy wrapper to its resolved
+    // component remounts the editor on the next parent render, discarding its
+    // focus and live document. Future mounts still take the warmed fast path.
+    const [Component] = useState(() => ready ?? Lazy);
+    return <Component {...props} />;
   }
   Warmed.displayName = "Warmed";
 

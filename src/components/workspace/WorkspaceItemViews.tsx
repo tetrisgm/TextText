@@ -16,7 +16,7 @@ import {
 import type {
 } from "react";
 import { BacklinksPanel } from "@/components/BacklinksPanel";
-import dynamic from "next/dynamic";
+import { warmChunk } from "@/components/workspace/warm-chunk";
 import Link from "next/link";
 
 // The reader pulls DocumentRenderer, and with it react-markdown's package
@@ -27,11 +27,11 @@ import Link from "next/link";
 // ssr stays ON: a deep link straight to an open item server-renders the
 // document, and ssr:false would paint it blank and then fill it in. The split
 // is what matters - the list never requests the chunk.
-const UnifiedDocumentReader = dynamic(() =>
-  import("@/components/document/UnifiedDocumentReader").then(
-    (module) => module.UnifiedDocumentReader,
-  ),
+const { Component: UnifiedDocumentReader, warm: warmDocumentReader } = warmChunk(() =>
+  import("@/components/document/UnifiedDocumentReader").then((module) => module.UnifiedDocumentReader),
+  { ssr: true },
 );
+export { warmDocumentReader };
 import {
   type FolderCaptureResolved,
   type FolderDeleteItem,

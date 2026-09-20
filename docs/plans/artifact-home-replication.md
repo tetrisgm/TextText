@@ -4,9 +4,11 @@ Current direction, 2026-09-19: the owner requires Artifact throughout the app.
 [DESIGN.md](../../DESIGN.md) now supersedes the Apple sidebar, Recent rail,
 segmented desktop navigation and separate reader/editor aesthetics in this
 historical plan. The implementation uses a single column with bottom Home,
-Headlines and Profile navigation, a Profile library, and an Article reading
-bar. This is local product work, not a release. The feature backlog below
-(interests, ranking v2, generated summaries and inbox) is not a completion claim.
+Headlines, Notes and Profile navigation, a Profile library, and an article reading
+bar. Interests and reversible hiding are implemented; see the
+[verification receipt](../artifact-verification-2026-09-19.md). This is local
+product work, not a release. The remaining feature backlog below (ranking v2,
+generated summaries, social features and inbox) is not a completion claim.
 
 Revision: 2026-09-17. Written for the agent that continues this work.
 Supersedes the restraint clauses of `home-artifact-news.md` (section 2 of

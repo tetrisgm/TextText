@@ -1,8 +1,9 @@
 "use client";
 
-import { scheduleAfterLoadIdle } from "@/lib/after-load-idle";
+import { HomeSession } from "@/components/workspace/home/session";
+import { READING_ITEMS_CHANGED, READING_PREFERENCES_CHANGED, type ReadingItemsChange } from "@/lib/reading/client";
 import { HomeNews } from "@/components/workspace/home/HomeNews";
-import { ArtifactHeadlines, ArtifactProfile } from "@/components/workspace/home/ArtifactPages";
+import { ArtifactHeadlines, ArtifactProfile, ArtifactNotes } from "@/components/workspace/home/ArtifactPages";
 import { ArtifactIcon, type ArtifactPane } from "@/components/workspace/home/ArtifactNavigation";
 import { warmChunk } from "@/components/workspace/warm-chunk";
 import homeStyles from "@/components/workspace/home/Home.module.css";
@@ -16,7 +17,7 @@ import {
   SharedPage,
   StarredPage,
 } from "@/components/workspace/WorkspaceSpecialPages";
-import { WorkspacePostReader } from "@/components/workspace/WorkspaceItemViews";
+import { WorkspacePostReader, warmDocumentReader } from "@/components/workspace/WorkspaceItemViews";
 
 /**
  * Loaded on demand in the workspace. The published folder route keeps its
@@ -63,12 +64,12 @@ function useWarmFolderPageChunk(enabled: boolean) {
  * warmEditorReady), so by the time anyone presses E the chunk is long since
  * fetched.
  */
-const LocalUnifiedWorkspacePostEditor = dynamic(
+const { Component: LocalUnifiedWorkspacePostEditor, warm: warmEditor } = warmChunk(
   () =>
     import("@/components/workspace/WorkspaceItemEditor").then(
       (module) => module.LocalUnifiedWorkspacePostEditor,
     ),
-  { ssr: false },
+  { ssr: true },
 );
 
 /**
@@ -84,11 +85,6 @@ const LocalUnifiedWorkspacePostEditor = dynamic(
 function useWarmEditorChunk(enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;
-    const preload = (
-      LocalUnifiedWorkspacePostEditor as unknown as {
-        preload?: () => void;
-      }
-    ).preload;
     // After the cold path, never during it: an idle slot used to arrive while
     // the pool fetch was pending, and the editor's 228KB downloaded before the
     // list was visible. But soon after: the warm editor mounts only once this
@@ -96,10 +92,8 @@ function useWarmEditorChunk(enabled: boolean) {
     // editor cold, where the collab baseline can land after the first
     // keystrokes (owner, 2026-09-05: a deletion came back). A short quiet
     // period after load is enough to stay off the first paint.
-    return scheduleAfterLoadIdle(() => {
-      if (preload) preload();
-      else void import("@/components/workspace/WorkspaceItemEditor");
-    }, 300);
+    const timer = window.setTimeout(warmEditor, 300);
+    return () => window.clearTimeout(timer);
   }, [enabled]);
 }
 
@@ -234,6 +228,7 @@ export function WorkspaceRootSearchActionBar({ children }: { children: ReactNode
 export function WorkspaceRootLanding({
   canManageItems,
   homePane = "home",
+  homeSession,
   onOpenAssistant,
   onBrowseFolders = () => undefined,
   focusRequestKey,
@@ -251,11 +246,13 @@ export function WorkspaceRootLanding({
   assistantCloudProvider,
   onBuildItemType,
   onFocusCapture,
+  onCreateItem,
   onUseAssistantPrompt,
   settingsHref,
 }: {
   canManageItems: boolean;
   homePane?: ArtifactPane;
+  homeSession?: HomeSession;
   onBrowseFolders?: () => void;
   focusRequestKey: number;
   onOpenPost: (postId: string) => void;
@@ -275,6 +272,7 @@ export function WorkspaceRootLanding({
   onOpenAssistant: () => void;
   onBuildItemType: () => void;
   onFocusCapture: (folderPath: string) => void;
+  onCreateItem?: FolderCreateItem;
   onUseAssistantPrompt: (prompt: string) => void;
   settingsHref: string;
 }) {
@@ -335,7 +333,9 @@ export function WorkspaceRootLanding({
     try {
       const folder = await createRootFolderAction(pool.blog.handle, "Notes");
       setFirstFolder(folder);
-      void refreshWorkspacePool(pool.blog.handle, pool.blogId);
+      await refreshWorkspacePool(pool.blog.handle, pool.blogId);
+      if (onCreateItem) window.setTimeout(() => onCreateItem({ type: "note", folderPath: folder.path }), 0);
+      else onFocusCapture(folder.path);
     } catch {
       setFirstFolderError("The notes folder could not be confirmed. No note has been saved. Check your connection and try again.");
     } finally {
@@ -343,7 +343,10 @@ export function WorkspaceRootLanding({
     }
   };
   const openFirstNote = () => {
-    if (creationFolder) onFocusCapture(creationFolder.path);
+    if (creationFolder) {
+      if (onCreateItem) onCreateItem({ type: "note", folderPath: creationFolder.path });
+      else onFocusCapture(creationFolder.path);
+    }
     else if (firstFolder) void refreshWorkspacePool(pool.blog.handle, pool.blogId);
     else void createFirstFolder();
   };
@@ -611,7 +614,7 @@ export function WorkspaceRootLanding({
       aria-labelledby="workspace-root-label"
     >
       <h1 id="workspace-root-label" className="visually-hidden">TextText</h1>
-      <div className="artifact-search-header">
+      {(homePane === "home" || homePane === "notes" || query || focusRequestKey > 0) && <div className="artifact-search-header">
         <label className="artifact-search">
           <ArtifactIcon name="search" />
           <input ref={searchRef} aria-label="Search workspace" placeholder="Search" value={query}
@@ -624,7 +627,7 @@ export function WorkspaceRootLanding({
             }} />
         </label>
         <a className="artifact-notifications" href={`${settingsHref}#settings-notifications`} aria-label="Notifications"><ArtifactIcon name="bell" /></a>
-      </div>
+      </div>}
       <div className="workspace-root-inner">
         {bodyMode === "tag" ? (
           <section className="workspace-search-page workspace-tag-page">
@@ -818,6 +821,7 @@ export function WorkspaceRootLanding({
             {(!libraryOpen || homePane !== "profile") && (
               <div className={homeStyles.frame}>
                 {homePane === "home" ? <HomeNews
+                  session={homeSession}
                   handle={pool.blog.handle}
                   blogId={pool.blogId}
                   canManage={canManageItems}
@@ -828,7 +832,7 @@ export function WorkspaceRootLanding({
                   onOpenPost={onOpenPost}
                   onOpenSection={onOpenSection}
                   onUseAssistantPrompt={onUseAssistantPrompt}
-                /> : homePane === "headlines" ? <ArtifactHeadlines handle={pool.blog.handle} blogId={pool.blogId} onOpenPost={onOpenPost} /> :
+                /> : homePane === "notes" ? <ArtifactNotes pool={pool} onOpenPost={onOpenPost} onOpenSection={onOpenSection} onCreateNote={openFirstNote} notice={firstFolderError} creating={creatingFirstFolder} onBrowseFolders={onBrowseFolders} canManage={canManageItems} /> : homePane === "headlines" ? <ArtifactHeadlines handle={pool.blog.handle} blogId={pool.blogId} onOpenPost={onOpenPost} /> :
                 <ArtifactProfile pool={pool} history={openHistory} onOpenPost={onOpenPost} onOpenSection={onOpenSection}
                   onShowLibrary={() => setLibraryOpen(true)} onBrowseFolders={onBrowseFolders} onOpenAssistant={onOpenAssistant} settingsHref={settingsHref} canManage={canManageItems} />}
               </div>
@@ -1047,6 +1051,23 @@ export function LocalWorkspaceContent({
     );
   }, [pool, view]);
 
+  const [homeSession] = useState(() => new HomeSession());
+  useEffect(() => {
+    const changed = (event: Event) => {
+      const change = (event as CustomEvent<ReadingItemsChange>).detail;
+      if (change.handle !== handle) return;
+      homeSession.patch(change.ids, (item) => {
+        if (change.read !== undefined) return { ...item, read: change.read };
+        const reasons = change.keep ? [...new Set([...item.keptReasons, "keep"])] : item.keptReasons.filter((reason) => reason !== "keep");
+        return { ...item, keptReasons: reasons, kept: item.origin !== "feed" || item.starred || reasons.length > 0 };
+      });
+    };
+    const preferencesChanged = (event: Event) => { if ((event as CustomEvent<{ handle: string }>).detail.handle === handle) homeSession.clear(); };
+    window.addEventListener(READING_ITEMS_CHANGED, changed);
+    window.addEventListener(READING_PREFERENCES_CHANGED, preferencesChanged);
+    return () => { window.removeEventListener(READING_ITEMS_CHANGED, changed); window.removeEventListener(READING_PREFERENCES_CHANGED, preferencesChanged); };
+  }, [handle, homeSession]);
+
   let page: ReactNode;
   let activePost: WorkspacePoolPost | null = null;
   const rootPage = (
@@ -1054,6 +1075,7 @@ export function LocalWorkspaceContent({
       key={`${pool.blogId}:${homePane}`}
       canManageItems={canManagePost}
       homePane={homePane}
+      homeSession={homeSession}
       onBrowseFolders={onBrowseFolders}
       focusRequestKey={searchFocusRequestKey}
       onOpenPost={onOpenPostId}
@@ -1073,6 +1095,7 @@ export function LocalWorkspaceContent({
       onOpenAssistant={onOpenAssistant}
       onBuildItemType={() => onBuildItemType()}
       onFocusCapture={onFocusCapture}
+      onCreateItem={onCreateItem}
       onUseAssistantPrompt={onUseAssistantPrompt}
       settingsHref={workspaceSettingsHref(homePath)}
     />
@@ -1181,6 +1204,10 @@ export function LocalWorkspaceContent({
       );
   }
 
+  useEffect(() => {
+    const timer = window.setTimeout(warmDocumentReader, 300);
+    return () => window.clearTimeout(timer);
+  }, []);
   useWarmFolderPageChunk(pool.folders.length > 0);
   useWarmEditorChunk(canEditItems);
   const [warmEditorPostId, setWarmEditorPostId] = useState<string | null>(null);

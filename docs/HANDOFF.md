@@ -2,21 +2,20 @@
 
 ## Current: Artifact throughout the app (2026-09-19)
 
-The owner rejected the mixed dashboard and app design. [DESIGN.md](../DESIGN.md)
-now specifies one Artifact reference. Work replaces the default folder/sidebar
-frame with Home, Headlines and Profile; moves library access under Profile;
-uses one column; and applies the same canvas and sans serif type to the reader
-and editor. Article controls are back, share, Read Later and Aa.
+[DESIGN.md](../DESIGN.md) specifies one Artifact reference. Home, Headlines,
+Notes and Profile now share that design, including the reader, editor, saved
+items and settings. Notes retains the existing document and collaboration model.
+Interests, reversible hiding, history and Read Later use real personal state.
 
-Verified on the Mac: typecheck, 308 focused UI/contrast/navigation tests,
-and Chromium/WebKit browser checks. Saving, opening Read Later, search,
-direct pane links and phone overflow pass. The broader suite exposed a ZIP
-timezone bug, fixed in `332a586` (11 backup/textpack tests pass); its remaining
-5MB paste timeout passes in isolation. Targeted lint has warnings, no errors.
+The [verification receipt](artifact-verification-2026-09-19.md) records visual
+checks, navigation and 1 MB typing comparisons, concurrent editing, tests and
+limits. The pass also fixes blank-note creation, early-typing/URL handoffs,
+spurious retirement after concurrent autosaves, and editor remounts after warming.
 
 Not released. Existing September 17 edits in `attachments.ts`, `tabs.test.ts`
-and `scripts/.probe-editor.ts` are preserved outside this change. The larger
-[feature backlog](plans/artifact-home-replication.md) remains separate.
+and `scripts/.probe-editor.ts` remain outside this work. The larger historical
+[feature backlog](plans/artifact-home-replication.md) is not a claim of implemented
+Artifact social features, generated summaries or a notification inbox.
 
 2026-09-13: Instruction-only cleanup; application behavior unchanged. Earlier notes are preserved verbatim in [HANDOFF-history-2026-09-13.md](HANDOFF-history-2026-09-13.md). Read the relevant section when resuming its topic; historical release/status claims need revalidation.
 

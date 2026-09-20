@@ -18,9 +18,11 @@
 }
 
 .pageHeader {
+  position: relative;
   display: grid;
   gap: 10px;
   padding-bottom: 28px;
+  text-align: center;
 }
 
 .pageHeader h1,
@@ -35,6 +37,9 @@
 }
 
 .back {
+  position: absolute;
+  left: 0;
+  top: 0;
   width: fit-content;
   display: inline-flex;
   align-items: center;
@@ -42,8 +47,8 @@
   border: 0;
   padding: 0;
   background: transparent;
-  color: color-mix(in srgb, var(--ac-accent) 60%, var(--ink));
-  font: 600 14px/1 var(--ac-font-text);
+  color: var(--ink);
+  font: 600 0/1 var(--ac-font-text);
   cursor: pointer;
 }
 

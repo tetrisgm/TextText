@@ -1,4 +1,4 @@
-/* The workspace uses Artifact's continuous canvas, type and three destinations. */
+/* The workspace uses Artifact's continuous canvas, type and destinations, with Notes alongside the news. */
 :root {
   --artifact-bg: #ffffff;
   --artifact-surface: #f2f2f3;
@@ -8,7 +8,7 @@
   --artifact-accent: #c72a4f;
 }
 :root[data-theme="dark"] {
-  --artifact-bg: #0b0b0c;
+  --artifact-bg: #000000;
   --artifact-surface: #1c1c1e;
   --artifact-ink: #f2f2f2;
   --artifact-muted: #9a9a9a;
@@ -17,7 +17,7 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --artifact-bg: #0b0b0c;
+    --artifact-bg: #000000;
     --artifact-surface: #1c1c1e;
     --artifact-ink: #f2f2f2;
     --artifact-muted: #9a9a9a;
@@ -78,6 +78,7 @@
   padding: 0 20px 32px;
 }
 .artifact-workspace .workspace-root-page { padding: 0; }
+.post-editor-shell.artifact-workspace button[aria-pressed="true"] { text-decoration: none; }
 .artifact-workspace[data-artifact-view="root"] .workspace-action-bar-host,
 .artifact-workspace[data-artifact-view="search"] .workspace-action-bar-host,
 .artifact-workspace[data-artifact-view="settings"] .workspace-action-bar-host,
@@ -113,7 +114,7 @@
 .artifact-navigation button {
   display: grid;
   place-items: center;
-  width: min(33.333%, 213px);
+  width: min(25%, 160px);
   height: 52px;
   padding: 0;
   border: 0;
@@ -123,8 +124,8 @@
 }
 .artifact-navigation svg { width: 26px; height: 26px; }
 .artifact-navigation [aria-current="page"] { color: var(--artifact-ink); }
-.artifact-navigation [aria-current="page"]:first-child svg,
-.artifact-navigation [aria-current="page"]:last-child svg { fill: currentColor; }
+.artifact-navigation button:first-child svg,
+.artifact-navigation button:last-child svg { fill: currentColor; }
 .artifact-navigation button:focus-visible,
 .artifact-notifications:focus-visible { outline: 2px solid var(--artifact-accent); outline-offset: -4px; border-radius: 8px; }
 .artifact-search-header {
@@ -281,3 +282,8 @@
   .artifact-search-header { padding-inline: 16px; }
   .artifact-workspace .workspace-document-layout { margin: 0; }
 }
+
+.artifact-search:has(input:placeholder-shown):not(:focus-within) { justify-content: center; }
+.artifact-search input:placeholder-shown:not(:focus) { flex: 0 1 58px; }
+.artifact-workspace .workspace-root-page[data-home-pane="profile"] .workspace-root-inner { padding-top: 8px; }
+.artifact-workspace .workspace-root-page[data-home-pane="headlines"] .workspace-root-inner { padding-top: 8px; }

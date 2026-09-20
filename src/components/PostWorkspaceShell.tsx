@@ -1905,6 +1905,17 @@ function LocalWorkspaceShell({
     [replaceWithView],
   );
 
+  // A fast create can finish before the view transition commits its local
+  // draft. Finish the URL handoff once that view arrives, so a reload opens
+  // the saved note rather than the folder used by the temporary draft.
+  useEffect(() => {
+    if (view.level !== "post" && view.level !== "edit") return;
+    const id = itemIdentity.currentId(view.postId);
+    if (id === view.postId) return;
+    const saved = findPoolPostById(displayPool, id);
+    if (saved) reconcileCreatedPost(view.postId, saved);
+  }, [view, displayPool, itemIdentity, reconcileCreatedPost]);
+
   const createWorkspaceItem = useCallback<FolderCreateItem>(
     (request, options) => {
       if (!canManageFolders) return;
@@ -2035,7 +2046,7 @@ function LocalWorkspaceShell({
                       template: request.template,
                       title: request.title,
                       body: request.body,
-                    })
+                    }, { revalidate: false })
                   : await createWorkspacePostAction(
                       pool.blog.handle,
                       "article",
@@ -2043,6 +2054,7 @@ function LocalWorkspaceShell({
                       request.title,
                       request.template,
                       request.body,
+                      { revalidate: false },
                     );
             const poolPost = narrowPostFromPost(saved, pool.blogId);
             if (!poolPost) {
@@ -5076,6 +5088,7 @@ function LocalWorkspaceShell({
 
   const content = (
     <LocalWorkspaceContent
+      key={displayPool.blogId}
       blog={displayPool.blog}
       homePane={homePane}
       onBrowseFolders={() => setSidebarCollapsed(false)}
@@ -5258,7 +5271,7 @@ function LocalWorkspaceShell({
           (displayPool.trashedFolders?.length ?? 0)
         }
       />
-      <ArtifactNavigation pane={view.level === "settings" || view.level === "section" ? "profile" : homePane} onSelect={(pane) => {
+      <ArtifactNavigation pane={view.level === "settings" ? "profile" : (view.level === "edit" || view.level === "post") && itemIdentity.resolvePost(displayPool, view.postId)?.type === "note" ? "notes" : view.level === "section" ? (displayPool.folders.find((folder) => folder.path === view.folderPath)?.mode === "notes" ? "notes" : "profile") : homePane} onSelect={(pane) => {
         setHomePane(pane);
         setSidebarCollapsed(true);
         setSearchQuery("");
