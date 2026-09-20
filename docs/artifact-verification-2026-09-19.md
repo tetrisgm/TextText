@@ -88,3 +88,41 @@ These are browser-engine and local production-build results. Physical Safari
 gestures, the shipped native application and deployed production were not
 verified or released. Headlines displays actual source clusters; no coverage,
 reading streaks or social activity were invented to fill the screenshots.
+
+## Release acceptance, September 20, 2026
+
+The owner-requested `release/ship.sh --allow-dirty` published and installed
+**0.199 (1089)** from `7ddfa3cf`. The exact-source gate fingerprint was
+`5fa5d623eacf98d3a795b74815626c7abdab693848004cf8bbd59b82aac597e4`.
+The preexisting tracked edits were included in that verified fingerprint;
+their ownership and uncommitted state were preserved.
+
+- All release gates passed: 3,503 unit tests (118 skipped), 83 database
+  durability tests and the separate three-test, 5,000-item scale suite.
+  The scale suite retains its original two-second query limits.
+  Native tests, installation fixtures, capabilities and Apple checks passed.
+- Apple notarization was accepted. The app and its three extensions passed
+  signing and Apple silicon verification. Public appcast, download, version
+  and sign-in checks passed, followed by 23 live production workflow checks.
+- Public `/api/app/build` returns `texttext-0_199-1089`.
+  `/Applications/TextText.app` reports 0.199, build 1089. Native launch wrote
+  a passing health report; production health review found one passing report
+  for that exact version and build, with no warning or failure.
+- Native UI inspection verified Home's single feed, absence of the Recent
+  column, and Home / Headlines / Notes / Profile navigation. A temporary note
+  was created and typed in the app, read back through the installed CLI with
+  its complete title and body, left and reopened successfully, then moved to
+  Trash. The app was left open on Home with the assistant panel collapsed.
+
+Release validation also corrected a feed claim timestamp comparison to use
+the column's UTC encoder and removed repeated source-folder queries. Local
+production builds now explicitly use local Postgres. Heavy system load exposed
+test contention: the unit suite now uses four workers, and scale runs after
+the database stress suites. Initial timing failures were retained in the local
+logs; no performance threshold or test timeout was increased.
+
+Local detailed logs: `/tmp/texttext-release-20260920/ship.log` and
+`/tmp/texttext-release-20260920/installed-health.log`. Earlier browser and typing
+measurements above remain local benchmarks, not newly measured production
+latency. The existing changelog's separate-workspace credential blocker remains
+recorded in [HANDOFF.md](HANDOFF.md).

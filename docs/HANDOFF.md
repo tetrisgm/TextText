@@ -1,6 +1,6 @@
 # TextText handoff
 
-## Current: Artifact throughout the app (2026-09-19)
+## Current: Artifact released in 0.199 (2026-09-20)
 
 [DESIGN.md](../DESIGN.md) specifies one Artifact reference. Home, Headlines,
 Notes and Profile now share that design, including the reader, editor, saved
@@ -12,8 +12,16 @@ checks, navigation and 1 MB typing comparisons, concurrent editing, tests and
 limits. The pass also fixes blank-note creation, early-typing/URL handoffs,
 spurious retirement after concurrent autosaves, and editor remounts after warming.
 
-Not released. Existing September 17 edits in `attachments.ts`, `tabs.test.ts`
-and `scripts/.probe-editor.ts` remain outside this work. The larger historical
+Released and installed as **0.199 (1089)**. The public web build is
+`texttext-0_199-1089`; native Home has one feed with no Recent column. The
+[release verification](artifact-verification-2026-09-19.md#release-acceptance-september-20-2026)
+records gates, native note save/reopen, and local/uploaded health checks.
+
+The existing Shoku's Space changelog remains inaccessible from this Mac's
+workspace credential; see the [connector blocker](#the-two-tasks-that-need-the-owner-narrowed-2026-09-15).
+The 0.199 entry is drafted at `/tmp/texttext-release-20260920/changelog-0.199-draft.md`.
+Existing September 17 edits in `attachments.ts`, `tabs.test.ts`
+and `scripts/.probe-editor.ts` remain uncommitted and outside this work. The larger historical
 [feature backlog](plans/artifact-home-replication.md) is not a claim of implemented
 Artifact social features, generated summaries or a notification inbox.
 
