@@ -283,6 +283,47 @@
   .artifact-workspace .workspace-document-layout { margin: 0; }
 }
 
+/* Desktop is a three-pane workspace: the note folders remain the primary
+   navigation on the left, the Artifact feed or note editor owns the center,
+   and the assistant stays docked on the right when pinned. The mobile
+   destination bar and deliberate folder overlay remain unchanged below this
+   breakpoint. */
+@media (min-width: 901px) {
+  .artifact-workspace .artifact-navigation {
+    display: none;
+  }
+
+  .artifact-workspace .post-workspace-sidebar-region {
+    width: var(--workspace-sidebar-width, 252px);
+    pointer-events: auto;
+  }
+
+  .artifact-workspace .post-workspace-sidebar-region.is-collapsed {
+    width: var(--workspace-sidebar-width, 252px);
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  .artifact-workspace .workspace-document-layout {
+    margin-left: var(--workspace-sidebar-width, 252px);
+    width: calc(100% - var(--workspace-sidebar-width, 252px));
+  }
+
+  .artifact-workspace .post-sidebar-resize-handle {
+    left: var(--workspace-sidebar-width, 252px);
+  }
+
+  .artifact-workspace .workspace-root-inner,
+  .artifact-workspace .artifact-search-header {
+    max-width: 680px;
+  }
+
+  .artifact-workspace.has-assistant-pinned .workspace-document-layout {
+    margin-right: var(--workspace-assistant-width, 360px);
+    width: calc(100% - var(--workspace-sidebar-width, 252px) - var(--workspace-assistant-width, 360px));
+  }
+}
+
 .artifact-search:has(input:placeholder-shown):not(:focus-within) { justify-content: center; }
 .artifact-search input:placeholder-shown:not(:focus) { flex: 0 1 58px; }
 .artifact-workspace .workspace-root-page[data-home-pane="profile"] .workspace-root-inner { padding-top: 8px; }

@@ -568,6 +568,7 @@ function LocalWorkspaceShell({
   initialAssistantState,
   initialSidebarWidth,
   initialAssistantWidth,
+  initialSidebarCollapsed,
   initialSearchQuery,
   initialHomePane = "home",
   initialView,
@@ -1024,8 +1025,9 @@ function LocalWorkspaceShell({
     () => createAssistantConfirmationController(setAssistantConfirmation),
     [],
   );
-  // Folders are a panel opened from Profile, never the default app frame.
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  // Desktop keeps the folder rail visible beside the Artifact content. Small
+  // screens still honor the persisted collapsed state and use the bottom bar.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(initialSidebarCollapsed);
   const toggleSidebarCollapsed = useCallback(() => setSidebarCollapsed((value) => !value), []);
 
   useEffect(() => {
@@ -5273,7 +5275,6 @@ function LocalWorkspaceShell({
       />
       <ArtifactNavigation pane={view.level === "settings" ? "profile" : (view.level === "edit" || view.level === "post") && itemIdentity.resolvePost(displayPool, view.postId)?.type === "note" ? "notes" : view.level === "section" ? (displayPool.folders.find((folder) => folder.path === view.folderPath)?.mode === "notes" ? "notes" : "profile") : homePane} onSelect={(pane) => {
         setHomePane(pane);
-        setSidebarCollapsed(true);
         setSearchQuery("");
         const href = workspaceRootHref(homePath);
         navigateToView({ level: "root" }, pane === "home" ? href : `${href}?pane=${pane}`, { selectedPostId: null, selectedSectionPath: null });
