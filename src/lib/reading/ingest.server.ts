@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   blogs,
@@ -483,7 +483,7 @@ export async function pollFeedConnection(
     .where(
       and(
         eq(feedConnections.id, connection.id),
-        or(isNull(feedConnections.lastCheckedAt), sql`${feedConnections.lastCheckedAt} < ${new Date(now.getTime() - 60_000)}`),
+        or(isNull(feedConnections.lastCheckedAt), lt(feedConnections.lastCheckedAt, new Date(now.getTime() - 60_000))),
       ),
     )
     .returning({ id: feedConnections.id });

@@ -5,6 +5,8 @@ import { and, eq } from "drizzle-orm";
 // (npm run test:reading:db). Seeds a scratch workspace with thousands of
 // imported items by direct insert and proves the bounds the plan requires:
 // the whole-workspace pool does not grow, and every reading query stays paged.
+// The database test command runs this file after the concurrent durability
+// suites, so their stress workloads do not become this suite's query latency.
 const enabled = process.env.TEXTTEXT_READING_DB_TEST === "1" && Boolean(process.env.DATABASE_URL);
 const ITEMS = Number(process.env.TEXTTEXT_READING_SCALE_ITEMS ?? 5000);
 

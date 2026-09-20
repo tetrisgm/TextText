@@ -174,7 +174,7 @@ describe.skipIf(!enabled)("retention holds and cleanup against Postgres", () => 
     expect(await activeHolds(byUrl.get("https://r.example/ref")!)).toEqual(["reference"]);
     expect(await activeHolds(byUrl.get("https://r.example/edit")!)).toEqual(["manual_save"]);
     // Everything else is untouched and the next poll does not bring the item back.
-    const poll = await ingest.pollFeedConnection(connectionId, { fetcher });
+    const poll = await ingest.pollFeedConnection(connectionId, { fetcher, now: later });
     expect(poll.suppressed).toBe(1);
     expect(poll.created).toBe(0);
     const live = await db!

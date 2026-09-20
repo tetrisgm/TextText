@@ -30,6 +30,11 @@ describe.skipIf(!enabled)("feed ingestion against Postgres (P1 vertical slice)",
   ]);
   let fetchCount = 0;
   let serve304 = false;
+  let pollTime = 0;
+  // Successive scheduled polls happen after the connection's one-minute claim.
+  // Advance only this fixture's clock so the tests exercise ingestion, not a
+  // real-time wait or the manual-refresh bypass.
+  const nextPollTime = () => new Date(pollTime = Math.max(Date.now(), pollTime) + 60_001);
   let serveError: null | { reason: "server_error" | "auth_required"; status: number } = null;
   const fetcher: typeof import("@/lib/reading/fetch.server").fetchFeedDocument = async (url) => {
     fetchCount += 1;
@@ -169,14 +174,25 @@ describe.skipIf(!enabled)("feed ingestion against Postgres (P1 vertical slice)",
     expect(counts[sourceFolderPath]).toBe(3);
   });
 
+  it("ING-02: another scheduled poll yields inside the one-minute claim", async () => {
+    const connection = await connections.feedConnectionById(handle, connectionId);
+    const before = fetchCount;
+    const report = await ingest.pollFeedConnection(connectionId, {
+      fetcher, now: new Date(connection!.lastCheckedAt!.getTime() + 30_000),
+    });
+    expect(report.outcome).toBe("skipped");
+    expect(report.detail).toBe("Another check is running");
+    expect(fetchCount).toBe(before);
+  });
+
   it("ING-03: polling again is idempotent, and a 304 is a successful check", async () => {
     const before = fetchCount;
-    const unchanged = await ingest.pollFeedConnection(connectionId, { fetcher });
+    const unchanged = await ingest.pollFeedConnection(connectionId, { fetcher, now: nextPollTime() });
     expect(unchanged.outcome).toBe("no_new_items");
     expect(unchanged.created).toBe(0);
     expect(unchanged.unchanged).toBe(3);
     serve304 = true;
-    const notModified = await ingest.pollFeedConnection(connectionId, { fetcher });
+    const notModified = await ingest.pollFeedConnection(connectionId, { fetcher, now: nextPollTime() });
     serve304 = false;
     expect(notModified.outcome).toBe("not_modified");
     expect(fetchCount).toBe(before + 2);
@@ -229,7 +245,7 @@ describe.skipIf(!enabled)("feed ingestion against Postgres (P1 vertical slice)",
       entry("a-2", "Rollback explained", "https://browser.example/a2", "<p>Second body about rollback.</p>", "Tue, 02 Sep 2026 10:00:00 GMT"),
       entry("a-3", "Third post", "https://browser.example/a3", "", "Wed, 03 Sep 2026 10:00:00 GMT"),
     ]);
-    const report = await ingest.pollFeedConnection(connectionId, { fetcher });
+    const report = await ingest.pollFeedConnection(connectionId, { fetcher, now: nextPollTime() });
     expect(report.updated).toBe(1);
     const posts = await db!.select().from(schema.posts).where(and(eq(schema.posts.blogId, blogId), eq(schema.posts.origin, "feed")));
     const first = posts.find((post) => post.document.content.fields.sourceUrl === "https://browser.example/a1")!;
@@ -249,7 +265,7 @@ describe.skipIf(!enabled)("feed ingestion against Postgres (P1 vertical slice)",
       entry("a-2", "Rollback explained, revised", "https://browser.example/a2", "<p>Publisher rewrote this.</p>", "Tue, 02 Sep 2026 10:00:00 GMT"),
       entry("a-3", "Third post", "https://browser.example/a3", "", "Wed, 03 Sep 2026 10:00:00 GMT"),
     ]);
-    const report = await ingest.pollFeedConnection(connectionId, { fetcher });
+    const report = await ingest.pollFeedConnection(connectionId, { fetcher, now: nextPollTime() });
     expect(report.updated).toBe(1);
     const after = await store.getPostById(handle, second.id);
     expect(after?.body).toBe("My own annotated copy.");
@@ -266,7 +282,7 @@ describe.skipIf(!enabled)("feed ingestion against Postgres (P1 vertical slice)",
       .update(schema.feedReceipts)
       .set({ status: "expired", expiredAt: new Date() })
       .where(eq(schema.feedReceipts.postId, third.id));
-    const report = await ingest.pollFeedConnection(connectionId, { fetcher });
+    const report = await ingest.pollFeedConnection(connectionId, { fetcher, now: nextPollTime() });
     expect(report.suppressed).toBe(1);
     expect(report.created).toBe(0);
     const live = await db!
@@ -279,7 +295,7 @@ describe.skipIf(!enabled)("feed ingestion against Postgres (P1 vertical slice)",
 
   it("SRC-05: fetch failures set health and back off without touching items", async () => {
     serveError = { reason: "server_error", status: 503 };
-    const report = await ingest.pollFeedConnection(connectionId, { fetcher });
+    const report = await ingest.pollFeedConnection(connectionId, { fetcher, now: nextPollTime() });
     serveError = null;
     expect(report.outcome).toBe("error");
     expect(report.health).toBe("failing");
@@ -287,7 +303,7 @@ describe.skipIf(!enabled)("feed ingestion against Postgres (P1 vertical slice)",
     expect(connection?.consecutiveFailures).toBe(1);
     expect(connection?.nextCheckAt!.getTime()).toBeGreaterThan(Date.now() + 4 * 60 * 1000);
     serveError = { reason: "auth_required", status: 401 };
-    const authed = await ingest.pollFeedConnection(connectionId, { fetcher });
+    const authed = await ingest.pollFeedConnection(connectionId, { fetcher, now: nextPollTime() });
     serveError = null;
     expect(authed.health).toBe("auth_required");
   });
@@ -295,7 +311,7 @@ describe.skipIf(!enabled)("feed ingestion against Postgres (P1 vertical slice)",
   it("SRC-06: pausing stops polling and detaching leaves items in an ordinary folder", async () => {
     const paused = await connections.setFeedConnectionState(handle, connectionId, "paused", { userId, actorType: "human" });
     expect(paused.state).toBe("paused");
-    const skipped = await ingest.pollFeedConnection(connectionId, { fetcher });
+    const skipped = await ingest.pollFeedConnection(connectionId, { fetcher, now: nextPollTime() });
     expect(skipped.outcome).toBe("skipped");
     const detached = await connections.detachFeedConnection(handle, connectionId, { userId, actorType: "human" });
     expect(detached.state).toBe("detached");
