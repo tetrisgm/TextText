@@ -194,6 +194,26 @@ describe.skipIf(!enabled)(`reading at scale (${ITEMS} imported items)`, () => {
     expect(timings.syncManifestPosts, `sync manifest took ${timings.syncManifestPosts} ms`).toBeLessThan(10_000);
   });
 
+  it("personal Home and Bookmarks stay bounded in a large feed workspace", async () => {
+    const empty = await store.listWorkspaceTimeline({ handle, user, filter: "saved", limit: 7 });
+    expect(empty.entries).toHaveLength(0);
+    const candidates = await list.listReadingItems({ handle, user, scope: { folderPath: "", includeDescendants: true, state: "all", dateBasis: "received" }, limit: 15 });
+    const retention = await import("@/lib/reading/retention.server");
+    await retention.setKeep({ handle, postIds: candidates.items.map((item) => item.id), keep: true, actor: { userId, actorType: "human" } });
+    const first = await timed("personalTimeline", () => store.listWorkspaceTimeline({ handle, user, filter: "saved", limit: 7 }));
+    expect(first.entries).toHaveLength(7);
+    expect(first.nextCursor).not.toBeNull();
+    const second = await store.listWorkspaceTimeline({ handle, user, filter: "saved", limit: 7, cursor: first.nextCursor });
+    expect(second.entries).toHaveLength(7);
+    expect(new Set([...first.entries, ...second.entries].map((item) => item.id)).size).toBe(14);
+    expect(first.entries.every((item) => !("body" in item.post))).toBe(true);
+    const saved = await timed("bookmarkedLibrary", () => list.listReadingItems({ handle, user, scope: { folderPath: "", includeDescendants: true, state: "bookmarked", dateBasis: "received" }, limit: 7 }));
+    expect(saved.items).toHaveLength(7);
+    expect(saved.nextCursor).not.toBeNull();
+    for (const name of ["personalTimeline", "bookmarkedLibrary"]) expect(timings[name], name).toBeLessThan(2000);
+    console.log(`[personal workspace scale] ${ITEMS} items: ${JSON.stringify({ timelineMs: timings.personalTimeline, bookmarksMs: timings.bookmarkedLibrary })}`);
+  });
+
   it("PERF-03: the home page's news is a bounded page whatever the corpus holds", async () => {
     const homeTimings: Record<string, number> = {};
     const clock = async <T,>(name: string, run: () => Promise<T>): Promise<T> => {

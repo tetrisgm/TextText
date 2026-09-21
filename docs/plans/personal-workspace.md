@@ -210,6 +210,17 @@ unverified existing features into completed acceptance claims.
   in the palette; keyboard-only Open Writing was verified in the local browser.
   The broad unit run found obsolete news-only Home contracts (now updated) and
   a large-paste timeout requiring isolated re-verification.
+- Local production build completed successfully using local Postgres and
+  `.texttext/personal-build` (desktop/navigation implementation at `c9e23e07`).
+  The large-paste provider regression passed in isolation: two tests, 40.23 s.
+  The broad run had 3,505 passes; its old Home contracts now pass in the targeted
+  run, and its only other failure was that large-paste timeout under load.
+  The 5,000-feed-item scale suite now checks timeline and Bookmarks membership,
+  seven-item pages, no cross-page repeats, no full bodies in timeline rows, and
+  query times under two seconds. All four scale tests pass. These are server
+  query bounds, not evidence of the separate 200 ms UI navigation requirement.
+  Document previews now show internal-link labels instead of raw wiki markup;
+  four focused content/boundary checks pass.
 
 - Saved library now provides nested-folder filtering, All saved/Read Later,
   excerpts and larger previews. Pagination drops responses from previous scopes.

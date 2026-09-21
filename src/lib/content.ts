@@ -1,6 +1,7 @@
 // Shared content types + pure helpers for the reader. Helpers are hand-rolled
 // (no Intl/Date) so they render identically on server and client with no
 // timezone drift on the day.
+import { splitWikiLinkText } from "@/lib/wikilink-syntax";
 
 import type {
   DocumentSnapshot,
@@ -43,7 +44,9 @@ export type BlogHomeView = "list" | "column" | "grid";
  * reaches every preview.
  */
 export function stripMarkdown(value: string): string {
-  return value
+  return splitWikiLinkText(value)
+    .map((part) => part.kind === "wikilink" ? part.label : part.value)
+    .join("")
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/!\[[^\]]*]\([^)]*\)/g, "")
     .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
