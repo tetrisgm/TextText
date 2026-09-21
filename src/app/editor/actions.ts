@@ -16,7 +16,7 @@ import {
   resolveDocumentCapability,
   getItemAccessSummary,
   revokeItemAccessLink,
-  countAllPosts,
+  countPersonalPosts,
   createItemComment,
   createDraft,
   createDraftInFolder,
@@ -465,7 +465,7 @@ async function auditEdit(
 async function enforcePostLimit(handle: string) {
   // Every workspace has a server-enforced item cap from its owner's plan.
   const tier: PlanTier = cleanPlanTier(await getOwnerPlan(handle));
-  if ((await countAllPosts(handle)) >= planLimits(tier).maxPosts) {
+  if ((await countPersonalPosts(handle)) >= planLimits(tier).maxPosts) {
     throw new Error("This workspace reached its item limit.");
   }
 }

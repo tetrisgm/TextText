@@ -610,3 +610,36 @@ its saved event, the mixed folder has all three Items, and News has ten RSS
 articles. The older port-3100 development process omitted the new timeline
 entry despite the current store query returning it; use 3125 for acceptance.
 Native installation and public release remain unchanged.
+
+## Personal quota and current regression checks
+
+The integrated default suite at `b28a6876` passed 386 files / 3,576 tests,
+with 17 files skipped. The separate local Postgres template lifecycle test
+also passed: immutable versions, retirement, pinned rendering definitions,
+and cross-workspace textpack import preserve the original document.
+
+Production UI authoring created `Reading review lifecycle` manually with
+Genre, Author and numeric Rating fields and a Cards collection view. Creating
+its first document exposed an unrelated quota bug: `visual-demo` had 473 total
+items but only 20 authored or deliberately saved items. Creation compared all
+473 against the personal limit of 200, despite RSS already having a separate
+`maxFeedItems` limit. The editor now uses a personal-content count that excludes
+unsaved RSS imports and includes kept/filed imports. Limit enforcement remains.
+
+The quota regression tests pass (17 tests, including local Postgres); TypeScript
+and lint pass (two existing unused-symbol warnings). The full default suite
+passes again: 386 files / 3,576 tests, 17 files and 127 tests skipped. Opt-in
+checks are recorded separately, not inferred from this default run.
+
+The production build `.texttext/personal-build-quota` passes and runs on 3126
+with deployment `personal-quota`. On that build, a custom review was created
+and saved with title “The Left Hand of Darkness”, author “Ursula K. Le Guin”,
+rating 5 and body “A review kept with its original type version.” The persisted
+item ID is `0375e130-6f69-4382-955b-e8cc3844a520`. The earlier failed local draft
+remains open on port 3125; it was not discarded. The type definition is saved,
+but complete UI version-edit and export/import checks remain open: the gallery
+exposes Export, but the browser download observation timed out, so export was
+not accepted as verified. Manual starter-content/default authoring also needs
+an explicit UI audit rather than relying on the underlying template schema.
+After a full reload on 3126, the review body, Author and Rating fields retained
+the exact values above; document status was Saved and assistant status Synced.

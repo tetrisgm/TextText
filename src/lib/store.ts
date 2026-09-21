@@ -896,6 +896,19 @@ export async function searchAccessibleWorkspacePostFiles(
   return rows.map((row) => mapPost(row.post));
 }
 
+/** Personal item quota excludes transient RSS imports, which have a separate feed cap. */
+export async function countPersonalPosts(handle: string): Promise<number> {
+  if (!db) throw new Error(NO_DATABASE);
+  const rows = await db.select({ count: sql<number>`count(*)::int` })
+    .from(posts).innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .where(and(eq(blogs.handle, handle), isNull(blogs.deletedAt), isNull(posts.deletedAt),
+      or(eq(posts.origin, "manual"), sql`exists (select 1 from ${retentionHolds}
+        where ${retentionHolds.postId} = ${posts.id}
+          and ${retentionHolds.reason} in ('keep', 'manual_save')
+          and ${retentionHolds.releasedAt} is null)`)));
+  return Number(rows[0]?.count ?? 0);
+}
+
 export async function countAllPosts(handle: string): Promise<number> {
   if (!db) throw new Error(NO_DATABASE);
   const rows = await db

@@ -485,3 +485,10 @@ unverified existing features into completed acceptance claims.
   That check also removed legacy type restrictions from command-palette moves
   and made mixed-folder News filter RSS origins on the server, including counts.
   Full remaining acceptance gates above are still open.
+- Corrected the personal-item quota to exclude transient RSS imports, which
+  already have a separate feed cap. Production custom-type creation uncovered
+  this at 473 total / 20 personal items. Current full default tests, targeted
+  quota/database tests and production build pass; see the
+  [quota and regression receipt](../personal-workspace-verification-2026-09-21.md#personal-quota-and-current-regression-checks).
+  Custom-type UI version editing, export/import and manual starter/default
+  authoring remain open acceptance items.

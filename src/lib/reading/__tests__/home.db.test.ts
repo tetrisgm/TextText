@@ -60,6 +60,16 @@ describe.skipIf(!enabled)("home news against Postgres", () => {
     await db.delete(schema.users).where(eq(schema.users.id, userId));
   });
 
+  it("does not spend the personal item allowance on unsaved RSS imports", async () => {
+    expect(await store.countAllPosts(handle)).toBeGreaterThan(0);
+    expect(await store.countPersonalPosts(handle)).toBe(0);
+    const [imported] = await db!.select().from(schema.posts).where(eq(schema.posts.blogId, blogId));
+    const { setKeep } = await import("@/lib/reading/retention.server");
+    await setKeep({ handle, postIds: [imported.id], keep: true, actor: { userId, actorType: "human" } });
+    expect(await store.countPersonalPosts(handle)).toBe(1);
+    await setKeep({ handle, postIds: [imported.id], keep: false, actor: { userId, actorType: "human" } });
+    expect(await store.countPersonalPosts(handle)).toBe(0);
+  });
   it("HM-01: For you groups the overlapping story, keeps the image, and lists the rest", async () => {
     const news = await home.readingHome({ handle, user });
     expect(news.mode).toBe("forYou");
