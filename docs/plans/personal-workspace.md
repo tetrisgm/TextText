@@ -202,6 +202,14 @@ unverified existing features into completed acceptance claims.
 
 ## Implementation checkpoints
 
+- Concurrent editing passed in the production preview on 3103: two browser
+  sessions opened local note c13e473f-01b3-4f25-b9ec-d4dad6264d83 and typed
+  different sentences concurrently. Both sessions converged with both complete
+  sentences and the original source reference, reported Saved and Synced, and
+  reload preserved the merged body. This covers a small document, not measured
+  collaboration latency or concurrent source capture. A browser-side navigation
+  timing attempt could not access the performance API through the read-only
+  evaluation scope; no timing result was obtained or accepted.
 - Saved-reading production loop passed on 3103: a kept RSS item appears once in
   All saved and Read Later, opens the original reader, and leaves both lists
   when Read Later is removed. Existing note backlinks remain. Implicit source
