@@ -13,6 +13,20 @@ function render(initialFolderPath = "") {
   return renderToStaticMarkup(<ItemTypeStudio blogId="blog-1" handle="shoku" editing={{ templateId: "tasks", baseVersion: 3, blueprint }} folders={[{ id: "a", path: "A", name: "A" }, { id: "b", path: "B", name: "B" }]} initialFolderPath={initialFolderPath} onClose={() => {}} />);
 }
 describe("studio edit save scope", () => {
+  it("exposes editable select choices and required properties without AI", () => {
+    const choices = itemTypeBlueprintSchema.parse({ name: "Reviews", collection: { layout: "list" }, fields: [
+      { id: "genre", label: "Genre", type: "enum", options: [
+        { value: "fiction", label: "Science fiction" }, { value: "history", label: "History" },
+      ] },
+    ] });
+    const html = renderToStaticMarkup(<ItemTypeStudio blogId="blog-1" handle="shoku"
+      editing={{ templateId: "reviews", baseVersion: 1, blueprint: choices }} folders={[]} onClose={() => {}} />);
+    expect(html).toContain('aria-label="Require Genre"');
+    expect(html).toContain('aria-label="Genre choice 1"');
+    expect(html).toContain('value="Science fiction"');
+    expect(html).toContain('aria-label="Remove Genre choice History"');
+    expect(html).toContain('Add choice to Genre');
+  });
   it("offers all three scopes and defaults to saving only a version without a folder", () => {
     const html = render();
     expect(html).toContain('value="version" selected=""');

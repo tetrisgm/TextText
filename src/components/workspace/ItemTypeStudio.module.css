@@ -1086,3 +1086,41 @@
 .calendarUndated { padding: 16px; border-top: 1px solid var(--ac-hairline); }
 .calendarUndated h3 { font-size: 12px; }
 .calendarUndated p { font-size: 12px; }
+
+.propertyDetails {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  color: var(--ac-label-2);
+  font-size: 12px;
+}
+
+.propertyDetails .requiredProperty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.propertyDetails input[type="checkbox"] {
+  width: 14px;
+  min-height: 14px;
+  accent-color: var(--ac-accent);
+}
+
+.choice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.propertyDetails button {
+  padding: 5px 8px;
+  border: 1px solid var(--ac-hairline);
+  border-radius: 6px;
+  background: var(--ac-fill-1);
+  color: var(--ac-label);
+}
+
+.propertyDetails button:disabled {
+  opacity: 0.45;
+}

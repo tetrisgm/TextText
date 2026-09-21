@@ -492,3 +492,11 @@ unverified existing features into completed acceptance claims.
   [quota and regression receipt](../personal-workspace-verification-2026-09-21.md#personal-quota-and-current-regression-checks).
   Custom-type UI version editing, export/import and manual starter/default
   authoring remain open acceptance items.
+- Manual type authoring now exposes required-property toggles and Select choice
+  labels/add/remove controls. Labels retain stored values; changing/removing a
+  referenced choice still goes through the existing blueprint/compiler
+  validation before entering history. Browser verification renamed a choice to
+  “Science fiction”, marked the property required, added/removed a choice, and
+  restored it with Undo. Shared light/dark color tokens are used. Three affected
+  test files pass (21 tests); TypeScript and lint pass. This does not complete
+  starter-content/default authoring or the remaining type lifecycle UI checks.

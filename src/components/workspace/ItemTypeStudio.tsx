@@ -982,7 +982,8 @@ export function ItemTypeStudio({
               </div>
               <div className={styles.properties}>
                 {design.blueprint.fields.map((field) => (
-                  <div className={styles.property} key={field.id}>
+                  <div key={field.id}>
+                  <div className={styles.property}>
                     <input
                       aria-label={`Property name for ${field.label}`}
                       value={field.label}
@@ -992,6 +993,56 @@ export function ItemTypeStudio({
                     <button type="button" aria-label={`Remove ${field.label}`} onClick={() => removeField(field.id)}>
                       <CloseIcon />
                     </button>
+                  </div>
+                  <div className={styles.propertyDetails}>
+                    {field.type !== "computed" ? <label className={styles.requiredProperty}>
+                      <input type="checkbox" checked={field.required}
+                        aria-label={`Require ${field.label}`}
+                        onChange={(event) => {
+                          const current = copyBlueprint(design.blueprint);
+                          const next = current.fields.find((entry) => entry.id === field.id)!;
+                          if (next.type === "computed") return;
+                          next.required = event.currentTarget.checked;
+                          setBlueprint(current, "Changed required property");
+                        }} />
+                      Required
+                    </label> : null}
+                    {field.type === "enum" ? <>
+                      {field.options?.map((option, index) => (
+                        <div className={styles.choice} key={option.value}>
+                          <input aria-label={`${field.label} choice ${index + 1}`}
+                            key={`${option.value}:${option.label}`} maxLength={160} defaultValue={option.label}
+                            onBlur={(event) => {
+                              const current = copyBlueprint(design.blueprint);
+                              const next = current.fields.find((entry) => entry.id === field.id)!;
+                              if (next.type !== "enum" || !next.options) return;
+                              next.options[index].label = event.currentTarget.value.trim() || "Choice";
+                              setBlueprint(current, "Renamed choice");
+                            }} />
+                          <button type="button" aria-label={`Remove ${field.label} choice ${option.label}`}
+                            disabled={(field.options?.length ?? 0) <= 1}
+                            onClick={() => {
+                              const current = copyBlueprint(design.blueprint);
+                              const next = current.fields.find((entry) => entry.id === field.id)!;
+                              if (next.type !== "enum" || !next.options) return;
+                              next.options = next.options.filter((entry) => entry.value !== option.value);
+                              setBlueprint(current, "Removed choice", "manual", { coalesce: false });
+                            }}>Remove</button>
+                        </div>
+                      ))}
+                      <button type="button" disabled={(field.options?.length ?? 0) >= 100}
+                        onClick={() => {
+                          const current = copyBlueprint(design.blueprint);
+                          const next = current.fields.find((entry) => entry.id === field.id)!;
+                          if (next.type !== "enum") return;
+                          const choices = next.options ?? [];
+                          let number = choices.length + 1;
+                          while (choices.some((entry) => entry.value === `choice-${number}`)) number += 1;
+                          next.options = [...choices, { value: `choice-${number}`, label: `Choice ${number}` }];
+                          setBlueprint(current, "Added choice", "manual", { coalesce: false });
+                        }}>Add choice to {field.label}</button>
+                    </> : null}
+                  </div>
                   </div>
                 ))}
               </div>
