@@ -313,3 +313,11 @@ unverified existing features into completed acceptance claims.
   0ed70aa4-2854-4455-aba7-d8fdf9685bec (custom type). These are local-only fixtures.
   Preview uses localhost:3100 and .texttext/personal-dev; log is
   /tmp/texttext-personal-dev.log. Revalidate the running process before reuse.
+- Writing now classifies authored notes/articles by canonical template, with a
+  legacy fallback. Custom types remain in Everything; feed and bookmark sources
+  stay outside authored writing. The existing capture fixture was changed to
+  Article through Look, reached Saved, and appeared under Articles in the local
+  browser with its original body and source link. This is a presentation change,
+  not a publish action. Three classification regression tests pass. Compact
+  desktop creation controls now wrap instead of clipping New type; verified at
+  the browser's normal 792 CSS pixel viewport with both sidebars visible.

@@ -15,6 +15,7 @@ import { poolPostFor } from "./HomeNews";
 import { publisherFor } from "./publisher";
 import styles from "./Home.module.css";
 import type { HomeSession } from "./session";
+import { writingKind } from "@/lib/workspace/writing";
 
 type Summary = Extract<HomeUnit, { kind: "summary" }>;
 type OpenProps = { handle: string; blogId: string; onOpenPost: (id: string) => void };
@@ -217,8 +218,8 @@ export function ArtifactNotes({ pool, onOpenPost, onOpenSection, onCreateNote, o
   const [limit, setLimit] = useState(session?.writing.limit ?? 60);
   const [kind, setKind] = useState<"all" | "note" | "article">(session?.writing.kind ?? "all");
   useEffect(() => { session?.saveWriting({ folderId, kind, limit }); }, [session, folderId, kind, limit]);
-  const folders = pool.folders.filter((folder) => pool.posts.some((post) => post.folderId === folder.id && post.type !== "bookmark"));
-  const notes = pool.posts.filter((post) => post.origin !== "feed" && post.type !== "bookmark" && (kind === "all" || post.type === kind) && (!folderId || post.folderId === folderId))
+  const folders = pool.folders.filter((folder) => pool.posts.some((post) => post.folderId === folder.id && writingKind(post) !== null));
+  const notes = pool.posts.filter((post) => writingKind(post) !== null && (kind === "all" || writingKind(post) === kind) && (!folderId || post.folderId === folderId))
     .sort((a, b) => Number(Boolean(b.starred)) - Number(Boolean(a.starred)) || (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
   return <section aria-labelledby="artifact-notes-title" data-artifact-notes>
     {canManage && creationControls ? creationControls : <header className={styles.profileHeader}>
