@@ -169,3 +169,25 @@ to Writing and clicked Add context once. The picker remained visible after
 initialization. Repeating with a full reload and one click also passed. Escape
 closed the picker and restored focus to Message assistant. No AI request was
 sent. This supersedes the failed first-click result immediately above.
+
+## Integration regression run at 05633e02
+
+All commands ran on the Mac with local Postgres. The pre-existing unrelated
+attachments.ts and tabs.test.ts changes remained present, so this records the
+working-tree environment rather than claiming a pristine-checkout run.
+
+| Check | Result | Local log |
+| --- | --- | --- |
+| Full `npm test` through `scripts/with-local-database.mjs` | 385 files passed, 17 skipped; 3,568 tests passed, 123 skipped; 58.15 s | `/tmp/texttext-personal-full-tests.log` |
+| `.db.test.ts`, scale excluded, `TEXTTEXT_READING_DB_TEST=1` | 14 files, 87 tests passed | `/tmp/texttext-personal-db-tests.log` |
+| Reading scale, default 5,000 imported items | 4 tests passed | `/tmp/texttext-personal-scale-tests.log` |
+| Agent history, `TEXTTEXT_AGENT_HISTORY_DB_TEST=1` | 4 tests passed | `/tmp/texttext-personal-agent-history-tests.log` |
+| `swift test --package-path mac --filter QuickCaptureTests` | 21 tests passed | `/tmp/texttext-personal-native-capture-tests.log` |
+
+The native tests exercise offline outbox storage, retry identity, failed-item
+recovery, receipt bounds, workspace isolation and IME key handling. They do not
+prove global shortcut delivery from another application, actual input-method
+composition, or native reopen latency. The separately gated browser-accessibility
+suite was not run by the shell; browser verification uses CUA. Broad responsive,
+keyboard-only and native end-to-end acceptance remains open. No app installation
+or release occurred.
