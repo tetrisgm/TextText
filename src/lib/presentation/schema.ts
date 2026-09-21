@@ -842,6 +842,12 @@ export const collectionRenderSchema = z
 
 export type CollectionRenderSpec = z.infer<typeof collectionRenderSchema>;
 
+export const templateStarterSchema = z.object({
+  title: z.string().max(20_000).optional(),
+  body: z.string().max(100_000).optional(),
+  fields: z.record(fieldIdSchema, z.union([z.string().max(20_000), z.number().finite(), z.boolean()])).optional(),
+}).strict();
+
 export const templateDefinitionSchema = z
   .object({
     schemaVersion: z.literal(RENDER_SPEC_VERSION),
@@ -851,6 +857,7 @@ export const templateDefinitionSchema = z
     name: z.string().trim().min(1).max(160),
     description: z.string().trim().max(1000).optional(),
     fields: z.array(documentFieldDefinitionSchema).max(80).default([]),
+    starter: templateStarterSchema.optional(),
     item: renderNodeSchema,
     collection: collectionRenderSchema,
     theme: themeTokensSchema.default({}),
@@ -1172,6 +1179,15 @@ export function validateTemplateDefinition(value: unknown): TemplateDefinition {
     if (!fields.has(id)) {
       throw new Error(`template example references undeclared field ${id}`);
     }
+  }
+  for (const [id, value] of Object.entries(template.starter?.fields ?? {})) {
+    const field = fields.get(id);
+    if (!field) throw new Error(`Starter references undeclared field ${id}`);
+    const valid = field.type === "number" ? typeof value === "number"
+      : field.type === "boolean" ? typeof value === "boolean"
+      : field.type === "enum" ? !field.multiple && typeof value === "string" && field.options.some((option) => option.value === value)
+      : ["text", "richtext", "url", "date", "image"].includes(field.type) && typeof value === "string";
+    if (!valid) throw new Error(`Starter value does not match field ${id}`);
   }
   validateTreeBindings(template.item, fields, new Set<string>());
   validateTreeBindings(template.collection.item, fields, new Set<string>());

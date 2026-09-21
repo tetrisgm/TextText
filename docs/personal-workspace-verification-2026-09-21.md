@@ -643,3 +643,31 @@ not accepted as verified. Manual starter-content/default authoring also needs
 an explicit UI audit rather than relying on the underlying template schema.
 After a full reload on 3126, the review body, Author and Rating fields retained
 the exact values above; document status was Saved and assistant status Synced.
+
+## Custom starter content and defaults
+
+Custom definitions now carry optional validated `starter` data: title, Markdown
+body and scalar field defaults. The manual designer exposes these values and
+previews them. Both server creation paths and instant local drafts use the same
+initializer. Explicit initial text wins; imported canonical documents bypass
+initialization. Reopening/version updates never reseed existing documents.
+
+Four affected test files pass (40 tests), including local Postgres creation,
+explicit-text precedence, cross-workspace textpack preservation, optimistic
+creation/early edits and invalid-default rejection. TypeScript and lint pass
+(two existing unused-symbol warnings). The full default run finished with
+385 files / 3,579 tests passing and one failure: the new `starter` schema key
+needed documentation. Added it to `docs/render-spec.md`; all 105 tests in that
+failed file then passed. No runtime changes followed that run. Seventeen
+opt-in files remained skipped.
+
+Production build `.texttext/personal-build-starter` passes and runs on port
+3127, deployment `personal-starter`. Manually saved “Review with starter” with
+starting title “Book review”, Topic “Ideas”, and Markdown body containing
+“## Summary” and “## What stayed with me”. Creating from the Home menu on 3127
+produced item `d0690ff9-20e7-442b-a858-7187d685d22d`. After full reload, its title,
+both headings and Topic value `ideas` remained, with Saved and Synced status.
+
+This closes creation with manual starter content/basic defaults. Full UI
+version-edit/export/import, responsive/theme coverage and the other plan gates
+remain open. The installed native app and public release are unchanged.

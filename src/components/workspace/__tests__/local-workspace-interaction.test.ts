@@ -1,3 +1,4 @@
+import { compileItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
 import { describe, expect, it } from "vitest";
 import {
   createOptimisticWorkspacePost,
@@ -66,6 +67,18 @@ function post(
 }
 
 describe("local workspace optimistic creation", () => {
+  it("seeds instant custom drafts while respecting supplied text and early edits", () => {
+    const pool = workspacePool();
+    const definition = compileItemTypeBlueprint({ name: "Review", fields: [{ id: "rating", label: "Rating", type: "number" }],
+      collection: { layout: "list" }, starter: { title: "Review", body: "## Notes", fields: { rating: 5 } } }, { id: "custom.review" });
+    pool.templates = [definition];
+    const template = { id: definition.id, version: 1 };
+    const draft = createOptimisticWorkspacePost(pool, { type: "note", folderPath: "notes", template });
+    expect(draft.document?.content).toMatchObject({ title: "Review", body: "## Notes", fields: { rating: 5 } });
+    const typed = createOptimisticWorkspacePost(pool, { type: "note", folderPath: "notes", template, body: "Already typed" });
+    expect(typed.document?.content.body).toBe("Already typed");
+    expect(mergeCreatedWorkspacePost(draft, typed).document?.content.body).toBe("Already typed");
+  });
   it("returns distinct visible placeholders for creations in the same tick", () => {
     const pool = workspacePool();
     const now = Date.parse("2026-07-14T12:00:00.000Z");

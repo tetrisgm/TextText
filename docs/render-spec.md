@@ -30,6 +30,7 @@ A template is data, not code. It is one validated `TemplateDefinition`:
 | `collection` | How a folder of them renders, plus its saved views. |
 | `theme` | Ten presentational axes. Tokens, never CSS. |
 | `example` | Sample content, so a look previews before any real item uses it. |
+| `starter` | Optional `title`, Markdown `body`, and scalar `fields` used only for new documents. Explicit initial text takes precedence. Stored/imported documents are never reseeded. Field defaults must reference declared fields and match their types; single-select defaults use option values. |
 
 Both halves matter and travel together. A reading list and a blog are different
 kinds of thing, not one page at two font sizes.

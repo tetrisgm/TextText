@@ -8,7 +8,7 @@ import type {
   WorkspacePoolPayload,
   WorkspacePoolPost,
 } from "@/lib/pool/types";
-import { emptyDocumentSnapshot } from "@/lib/documents/model";
+import { documentFromStarter } from "@/lib/documents/starter";
 import { legacyTemplateId } from "@/lib/documents/legacy";
 
 let optimisticItemSequence = 0;
@@ -66,7 +66,8 @@ export function createOptimisticWorkspacePost(
       id: legacyTemplateId(request.type),
       version: 1,
     };
-  const document = emptyDocumentSnapshot(template);
+  const definition = pool.templates.find((entry) => entry.id === template.id && entry.version === template.version);
+  const document = documentFromStarter(template, definition);
 
   if (request.type === "bookmark" && !request.blank) {
     const { href, host } = bookmarkUrlParts(request.url);
@@ -114,22 +115,20 @@ export function createOptimisticWorkspacePost(
       ...document,
       content: {
         ...document.content,
-        title: request.title?.trim() ?? "",
-        body: request.body?.trim() ?? "",
+        title: request.title?.trim() ?? document.content.title,
+        body: request.body?.trim() ?? document.content.body,
       },
     },
     visibility: "private",
     template,
     type: request.type,
     slug,
-    title: request.title?.trim() ?? "",
+    title: request.title?.trim() ?? document.content.title,
     excerpt: "",
     status: "draft",
     pinned: false,
     starred: false,
-    wordCount: request.body?.trim()
-      ? request.body.trim().split(/\s+/).length
-      : 0,
+    wordCount: (request.body ?? document.content.body).trim().split(/\s+/).filter(Boolean).length,
     createdAt,
     updatedAt: createdAt,
   };

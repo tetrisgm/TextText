@@ -1,3 +1,4 @@
+import { documentFromStarter } from "./documents/starter";
 import { agentTextChanges } from "@/lib/agent-changes";
 import type { TimelineFilter, TimelinePage } from "@/lib/workspace/timeline";
 import { retentionHolds } from "./db/schema";
@@ -2983,16 +2984,18 @@ export async function createDraftInFolder(
       "post",
     ),
   );
+  const starter = options.document ? undefined : await getDocumentTemplate(blogId, template);
+  const initialDocument = documentFromStarter(template, starter);
   const seed: Post = {
     type,
     slug,
-    title: options.initial?.title ?? "",
+    title: options.initial?.title ?? initialDocument.content.title,
     excerpt: options.initial?.excerpt,
     accent: options.initial?.accent,
     cover: options.initial?.cover,
     coverCaption: options.initial?.coverCaption,
     coverHeight: options.initial?.coverHeight,
-    body: options.initial?.body ?? "",
+    body: options.initial?.body ?? initialDocument.content.body,
     starred: options.initial?.starred ?? false,
     gallery: options.initial?.gallery,
     links: options.initial?.links,
@@ -3006,7 +3009,10 @@ export async function createDraftInFolder(
     template,
     visibility: "private",
   };
-  const sourceDocument = options.document ?? documentFromLegacyPost(seed);
+  const legacy = documentFromLegacyPost(seed);
+  const sourceDocument = options.document ?? { ...legacy, content: { ...legacy.content,
+    fields: { ...initialDocument.content.fields, ...legacy.content.fields },
+  } };
   const document = validateDocumentSnapshot({
     ...sourceDocument,
     presentation: {
@@ -6625,7 +6631,8 @@ export async function createDraft(
   const folder = await folderForPostType(blogId, type);
   const template = options.template ??
     folder.defaultTemplate ?? { id: legacyTemplateId(type), version: 1 };
-  const document = emptyDocumentSnapshot(template);
+  const document = documentFromStarter(template, await getDocumentTemplate(blogId, template));
+  const projection = legacyProjectionFromDocument(document);
   const slug = `untitled-${Date.now().toString(36)}`;
   const inserted = await db
     .insert(posts)
@@ -6639,10 +6646,10 @@ export async function createDraft(
       templateVersion: template.version,
       type,
       slug,
-      title: "",
-      excerpt: "",
-      body: "",
-      wordCount: 0,
+      title: projection.title,
+      excerpt: projection.excerpt,
+      body: projection.body,
+      wordCount: document.content.body.trim().split(/\s+/).filter(Boolean).length,
       status: "draft",
     })
     .returning();

@@ -44,9 +44,17 @@ describe.skipIf(process.env.TEXTTEXT_READING_DB_TEST !== "1")("custom type lifec
   it("preserves pinned items through updates, retirement and a cross-workspace textpack import", async () => {
     const [source, destination] = workspaces;
     const actor = { actorUserId: userId, actorType: "human" as const, actionName: "test.template.lifecycle", targetType: "workspace" as const };
-    const definition = compileItemTypeBlueprint({ name: "Book review", description: "Reading notes", fields: [{ id: "author", label: "Author", type: "text" }, { id: "rating", label: "Rating", type: "number" }], item: { shape: "page" }, collection: { layout: "cards" }, theme: { typography: "editorial" } }, { id: "custom.book-review" });
+    const definition = compileItemTypeBlueprint({ starter: { title: "Review", body: "## Reading notes", fields: { rating: 3 } }, name: "Book review", description: "Reading notes", fields: [{ id: "author", label: "Author", type: "text" }, { id: "rating", label: "Rating", type: "number" }], item: { shape: "page" }, collection: { layout: "cards" }, theme: { typography: "editorial" } }, { id: "custom.book-review" });
     const v1 = await store.createDocumentTemplateVersion({ blogId: source.id, definition, actor });
     const folder = (await store.getFolders(source.handle)).find((entry) => entry.path === "notes")!;
+    const reference = { id: v1.id, version: v1.version };
+    const started = await store.createDraftInFolder(source.handle, folder.id, { template: reference });
+    expect(started.document?.content).toMatchObject({ title: "Review", body: "## Reading notes", fields: { rating: 3 } });
+    const direct = await store.createDraft(source.handle, "note", { template: reference });
+    expect(direct.body).toBe("## Reading notes");
+    expect(direct.document?.content.fields.rating).toBe(3);
+    const explicit = await store.createDraftInFolder(source.handle, folder.id, { template: reference, initial: { title: "My review", body: "Already typed" } });
+    expect(explicit).toMatchObject({ title: "My review", body: "Already typed" });
     const document = emptyDocumentSnapshot({ id: v1.id, version: v1.version });
     document.content = { ...document.content, title: "A book worth keeping", body: "A durable review.", fields: { author: "Ursula Le Guin", rating: 5 } };
     const original = await store.createDraftInFolder(source.handle, folder.id, { document, template: document.presentation.template, audit: { ...actor, targetType: "item" } });

@@ -6,6 +6,15 @@ import {
 } from "@/lib/presentation/item-type-blueprint";
 
 describe("compileItemTypeBlueprint", () => {
+  it("compiles starter content and rejects defaults with the wrong field type", () => {
+    const blueprint = { name: "Review", fields: [{ id: "rating", label: "Rating", type: "number" as const }],
+      collection: { layout: "list" as const }, starter: { body: "## Notes", fields: { rating: 5 } } };
+    const template = compileItemTypeBlueprint(blueprint, { id: "custom.review" });
+    expect(template.starter).toEqual(blueprint.starter);
+    expect(template.example?.fields.rating).toBe(5);
+    expect(() => compileItemTypeBlueprint({ ...blueprint, starter: { fields: { rating: "five" } } }, { id: "custom.review" })).toThrow("Starter value");
+    expect(() => compileItemTypeBlueprint({ ...blueprint, starter: { fields: { unknown: true } } }, { id: "custom.review" })).toThrow("undeclared field");
+  });
   it("builds a Medium-like publishable blog look for items and the folder", () => {
     const template = compileItemTypeBlueprint(
       {

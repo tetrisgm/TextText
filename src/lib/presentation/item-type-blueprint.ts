@@ -3,6 +3,7 @@ import { validateFilterOperand } from "./filter-operand";
 import { z } from "zod";
 import {
   themeTokensSchema,
+  templateStarterSchema,
   validateTemplateDefinition,
   type DocumentFieldDefinition,
   type RenderNode,
@@ -265,6 +266,7 @@ const collectionViewBlueprint = z
 export const itemTypeBlueprintSchema = z
   .object({
     name: z.string().trim().min(1).max(160),
+    starter: templateStarterSchema.optional(),
     description: z.string().trim().max(1000).optional(),
     styleReference: z
       .string()
@@ -1486,6 +1488,7 @@ export function compileItemTypeBlueprint(
         ? `${blueprint.name}, inspired by ${blueprint.styleReference}.`
         : blueprint.name),
     fields: fieldDefinitions(blueprint),
+    ...(blueprint.starter ? { starter: blueprint.starter } : {}),
     theme,
     item: itemTree(blueprint),
     collection: {
@@ -1513,12 +1516,12 @@ export function compileItemTypeBlueprint(
       item: collectionItemTree(blueprint),
     },
     example: {
-      title: exampleTitle(blueprint),
+      title: blueprint.starter?.title || exampleTitle(blueprint),
       subtitle: blueprint.description ?? `An example of ${blueprint.name.toLowerCase()}.`,
-      body: blueprint.item.showBody
+      body: blueprint.starter?.body ?? (blueprint.item.showBody
         ? "Start writing here. The page and its collection view share one reusable look."
-        : "",
-      fields: exampleFields,
+        : ""),
+      fields: { ...exampleFields, ...blueprint.starter?.fields },
       tags: blueprint.item.showTags ? ["Example"] : [],
     },
   });

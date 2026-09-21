@@ -500,3 +500,9 @@ unverified existing features into completed acceptance claims.
   restored it with Undo. Shared light/dark color tokens are used. Three affected
   test files pass (21 tests); TypeScript and lint pass. This does not complete
   starter-content/default authoring or the remaining type lifecycle UI checks.
+- Manual starter title/body and typed scalar defaults now participate in both
+  instant drafts and server creation, with explicit text taking precedence and
+  imported documents preserved. The current production preview on 3127 passes
+  creation/reload verification; see the [starter-content receipt](../personal-workspace-verification-2026-09-21.md#custom-starter-content-and-defaults).
+  Full UI version-edit/export/import and remaining integrated acceptance gates
+  are still open.

@@ -160,6 +160,7 @@
 .promptForm textarea:focus,
 .refine textarea:focus,
 .section input:focus,
+.section textarea:focus,
 .section select:focus,
 .addProperty input:focus,
 .addProperty select:focus {
@@ -353,6 +354,7 @@
 }
 
 .section input,
+.section textarea,
 .section select,
 .addProperty input,
 .addProperty select {
@@ -1124,3 +1126,5 @@
 .propertyDetails button:disabled {
   opacity: 0.45;
 }
+
+.section textarea { resize: vertical; min-height: 100px; }

@@ -603,6 +603,7 @@ export function ItemTypeStudio({
     if (!design) return;
     const current = copyBlueprint(design.blueprint);
     current.fields = current.fields.filter((field) => field.id !== id);
+    if (current.starter?.fields) delete current.starter.fields[id];
     current.collection.summaryFields = current.collection.summaryFields.filter(
       (field) => field !== id,
     );
@@ -625,6 +626,15 @@ export function ItemTypeStudio({
     if (!field) return;
     field.label = label.slice(0, 160);
     setBlueprint(current, "Edited properties");
+  };
+
+  const setStarterField = (id: string, value: string | number | boolean | undefined) => {
+    if (!design) return;
+    const current = copyBlueprint(design.blueprint);
+    current.starter = { ...current.starter, fields: { ...current.starter?.fields } };
+    if (value === undefined) delete current.starter.fields![id];
+    else current.starter.fields![id] = value;
+    setBlueprint(current, "Changed starting value");
   };
 
   const addField = () => {
@@ -1007,6 +1017,23 @@ export function ItemTypeStudio({
                         }} />
                       Required
                     </label> : null}
+                    {["text", "richtext", "url", "date", "number", "boolean", "enum"].includes(field.type) && !(field.type === "enum" && field.multiple) ? <label>
+                      <span>Starting value</span>
+                      {field.type === "boolean" ? <select aria-label={`Starting ${field.label}`}
+                        value={String(design.blueprint.starter?.fields?.[field.id] ?? "")}
+                        onChange={(event) => setStarterField(field.id, event.currentTarget.value === "" ? undefined : event.currentTarget.value === "true")}>
+                        <option value="">No default</option><option value="true">Checked</option><option value="false">Unchecked</option>
+                      </select> : field.type === "enum" ? <select aria-label={`Starting ${field.label}`}
+                        value={String(design.blueprint.starter?.fields?.[field.id] ?? "")}
+                        onChange={(event) => setStarterField(field.id, event.currentTarget.value || undefined)}>
+                        <option value="">No default</option>
+                        {field.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select> : <input aria-label={`Starting ${field.label}`}
+                        key={`${field.id}:${design.blueprint.starter?.fields?.[field.id] ?? ""}`}
+                        type={field.type === "number" ? "number" : field.type === "date" ? "date" : "text"}
+                        defaultValue={String(design.blueprint.starter?.fields?.[field.id] ?? "")}
+                        onBlur={(event) => setStarterField(field.id, event.currentTarget.value === "" ? undefined : field.type === "number" ? Number(event.currentTarget.value) : event.currentTarget.value)} />}
+                    </label> : null}
                     {field.type === "enum" ? <>
                       {field.options?.map((option, index) => (
                         <div className={styles.choice} key={option.value}>
@@ -1072,6 +1099,29 @@ export function ItemTypeStudio({
                 </select>
                 <button type="button" disabled={!newFieldLabel.trim()} onClick={addField}>Add</button>
               </div>
+            </div>
+
+            <div className={styles.section}>
+              <h2>Starting content</h2>
+              <p>Used only for new items. Existing documents keep their content.</p>
+              <label><span>Starting title</span>
+                <input key={`starter-title:${design.blueprint.starter?.title ?? ""}`}
+                  defaultValue={design.blueprint.starter?.title ?? ""}
+                  onBlur={(event) => {
+                    const current = copyBlueprint(design.blueprint);
+                    current.starter = { ...current.starter, title: event.currentTarget.value };
+                    setBlueprint(current, "Changed starting title");
+                  }} />
+              </label>
+              <label><span>Starting body</span>
+                <textarea rows={6} maxLength={100000} key={`starter-body:${design.blueprint.starter?.body ?? ""}`}
+                  defaultValue={design.blueprint.starter?.body ?? ""}
+                  onBlur={(event) => {
+                    const current = copyBlueprint(design.blueprint);
+                    current.starter = { ...current.starter, body: event.currentTarget.value };
+                    setBlueprint(current, "Changed starting body");
+                  }} />
+              </label>
             </div>
 
             <div className={`${styles.section} ${styles.twoColumns}`}>
