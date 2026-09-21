@@ -3,7 +3,9 @@
 import type { WorkspacePoolPayload } from "@/lib/pool/types";
 import type { FolderCreateItem } from "../UniversalItemComposer";
 
-export function HomeCreateMenu({ pool, onCreateItem, onBuildItemType }: {
+export function HomeCreateMenu({ pool, onCreateItem, onBuildItemType, heading = "Home", headingId }: {
+  heading?: string;
+  headingId?: string;
   pool: WorkspacePoolPayload;
   onCreateItem?: FolderCreateItem;
   onBuildItemType: () => void;
@@ -24,7 +26,7 @@ export function HomeCreateMenu({ pool, onCreateItem, onBuildItemType }: {
     else onCreateItem?.({ type, folderPath: folder.path, template });
   };
   return <div className="personal-home-create">
-    <h1>Home</h1>
+    <h1 id={headingId}>{heading}</h1>
     <select aria-label="Create a new item" value="" disabled={!onCreateItem || !pool.folders.length} onChange={(event) => create(event.currentTarget.value)}>
       <option value="" disabled>New…</option>
       <option value="texttext.note">Note</option>

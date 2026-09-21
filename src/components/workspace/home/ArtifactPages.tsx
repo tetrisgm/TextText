@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { addPost } from "@/lib/pool/store";
 import { plainTextExcerpt } from "@/lib/content";
 import type { WorkspacePoolPayload } from "@/lib/pool/types";
@@ -192,7 +192,8 @@ export function ArtifactProfile({ pool, history, onOpenPost, onOpenSection, onSh
 }
 
 
-export function ArtifactNotes({ pool, onOpenPost, onOpenSection, onCreateNote, onBrowseFolders, canManage, notice, creating }: {
+export function ArtifactNotes({ pool, onOpenPost, onOpenSection, onCreateNote, onBrowseFolders, canManage, notice, creating, creationControls }: {
+  creationControls?: ReactNode;
   notice?: string | null;
   creating?: boolean;
   pool: WorkspacePoolPayload;
@@ -209,15 +210,15 @@ export function ArtifactNotes({ pool, onOpenPost, onOpenSection, onCreateNote, o
   const notes = pool.posts.filter((post) => post.origin !== "feed" && post.type !== "bookmark" && (kind === "all" || post.type === kind) && (!folderId || post.folderId === folderId))
     .sort((a, b) => Number(Boolean(b.starred)) - Number(Boolean(a.starred)) || (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
   return <section aria-labelledby="artifact-notes-title" data-artifact-notes>
-    <header className={styles.profileHeader}>
+    {canManage && creationControls ? creationControls : <header className={styles.profileHeader}>
       <h1 className={styles.pageTitle} id="artifact-notes-title">Writing</h1>
       {canManage && <button className={styles.iconButton} onClick={onCreateNote} disabled={creating} aria-label="New note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M13 5H4v16h16v-9M10 14l1-4L20 1l3 3-9 9Z" /></svg></button>}
-    </header>
+    </header>}
     {notice && <p role="alert">{notice}</p>}
     <nav className={styles.noteFolders} aria-label="Writing types">
       {(["all", "note", "article"] as const).map((value) => <button key={value} aria-pressed={kind === value} onClick={() => { setKind(value); setLimit(60); }}>{value === "all" ? "Everything" : value === "note" ? "Notes" : "Articles"}</button>)}
     </nav>
-    <nav className={styles.noteFolders} aria-label="Note folders">
+    <nav className={styles.noteFolders} aria-label="Writing folders">
       <button aria-pressed={!folderId} onClick={() => { setFolderId(null); setLimit(60); }}>All folders</button>
       {folders.map((folder) => <button key={folder.id} aria-pressed={folderId === folder.id} onClick={() => { setFolderId(folder.id); setLimit(60); }}>{folder.name}</button>)}
       <button aria-label="Browse folders" onClick={onBrowseFolders}>•••</button>
@@ -228,8 +229,8 @@ export function ArtifactNotes({ pool, onOpenPost, onOpenSection, onCreateNote, o
         {(note.excerpt || note.bodyPreview) && <span className={styles.notePreview}>{plainTextExcerpt(note.excerpt) || plainTextExcerpt(note.bodyPreview)}</span>}
         <span className={styles.noteMeta}>{pool.folders.find((folder) => folder.id === note.folderId)?.name}{note.tags?.length ? ` · ${note.tags.map((tag) => `#${tag}`).join(" ")}` : ""}</span>
       </button>
-    </li>)}</ul> : <div className={styles.noteEmpty}><ArtifactIcon name="notes" /><h2>Your notes, close at hand</h2><p>Write, link ideas, and pick up where you left off.</p>{canManage && <button className={styles.primaryButton} disabled={creating} onClick={onCreateNote}>{creating ? "Creating…" : "Write a note"}</button>}</div>}
-    {notes.length > limit && <button className={styles.back} onClick={() => setLimit((value) => value + 60)}>More notes</button>}
+    </li>)}</ul> : <div className={styles.noteEmpty}><ArtifactIcon name="notes" /><h2>{kind === "article" ? "Your articles start here" : "Your writing, close at hand"}</h2><p>Write, link ideas, and pick up where you left off.</p>{canManage && kind !== "article" && <button className={styles.primaryButton} disabled={creating} onClick={onCreateNote}>{creating ? "Creating…" : "Write a note"}</button>}</div>}
+    {notes.length > limit && <button className={styles.back} onClick={() => setLimit((value) => value + 60)}>More writing</button>}
     {folderId && <button className={styles.back} onClick={() => { const folder = folders.find((entry) => entry.id === folderId); if (folder) onOpenSection(folder.path); }}>Open folder</button>}
   </section>;
 }

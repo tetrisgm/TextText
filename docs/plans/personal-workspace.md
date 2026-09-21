@@ -202,6 +202,13 @@ unverified existing features into completed acceptance claims.
 
 ## Implementation checkpoints
 
+- Writing now exposes the shared New menu and type builder directly, including
+  Article and custom types. Its labels and pagination cover all writing rather
+  than only notes. The live desktop menu was verified, and the linked-source
+  excerpt now renders readable text. Typecheck, targeted lint and 55 related
+  tests pass; article creation/save/reopen from this destination remains to be
+  exercised end to end.
+
 - Home refresh now reconciles title changes and removals within the refreshed
   page range, retaining older loaded pages and staging new arrivals. Save-state
   events refresh the timeline; overlapping responses are ordered. The news
