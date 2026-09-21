@@ -80,7 +80,7 @@ export function ArtifactHeadlines(props: OpenProps) {
   </section>;
 }
 
-function SavedArticles({ state, ...props }: OpenProps & { state: "saved" | "read" }) {
+export function SavedArticles({ state, ...props }: OpenProps & { state: "saved" | "read" | "bookmarked" }) {
   const [items, setItems] = useState<ReadingListItem[] | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -187,17 +187,21 @@ export function ArtifactNotes({ pool, onOpenPost, onOpenSection, onCreateNote, o
 }) {
   const [folderId, setFolderId] = useState<string | null>(null);
   const [limit, setLimit] = useState(60);
-  const folders = pool.folders.filter((folder) => folder.mode === "notes");
-  const notes = pool.posts.filter((post) => post.type === "note" && (!folderId || post.folderId === folderId))
+  const [kind, setKind] = useState<"all" | "note" | "article">("all");
+  const folders = pool.folders.filter((folder) => pool.posts.some((post) => post.folderId === folder.id && post.type !== "bookmark"));
+  const notes = pool.posts.filter((post) => post.origin !== "feed" && post.type !== "bookmark" && (kind === "all" || post.type === kind) && (!folderId || post.folderId === folderId))
     .sort((a, b) => Number(Boolean(b.starred)) - Number(Boolean(a.starred)) || (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
   return <section aria-labelledby="artifact-notes-title" data-artifact-notes>
     <header className={styles.profileHeader}>
-      <h1 className={styles.pageTitle} id="artifact-notes-title">Notes</h1>
+      <h1 className={styles.pageTitle} id="artifact-notes-title">Writing</h1>
       {canManage && <button className={styles.iconButton} onClick={onCreateNote} disabled={creating} aria-label="New note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M13 5H4v16h16v-9M10 14l1-4L20 1l3 3-9 9Z" /></svg></button>}
     </header>
     {notice && <p role="alert">{notice}</p>}
+    <nav className={styles.noteFolders} aria-label="Writing types">
+      {(["all", "note", "article"] as const).map((value) => <button key={value} aria-pressed={kind === value} onClick={() => { setKind(value); setLimit(60); }}>{value === "all" ? "Everything" : value === "note" ? "Notes" : "Articles"}</button>)}
+    </nav>
     <nav className={styles.noteFolders} aria-label="Note folders">
-      <button aria-pressed={!folderId} onClick={() => { setFolderId(null); setLimit(60); }}>All notes</button>
+      <button aria-pressed={!folderId} onClick={() => { setFolderId(null); setLimit(60); }}>All folders</button>
       {folders.map((folder) => <button key={folder.id} aria-pressed={folderId === folder.id} onClick={() => { setFolderId(folder.id); setLimit(60); }}>{folder.name}</button>)}
       <button aria-label="Browse folders" onClick={onBrowseFolders}>•••</button>
     </nav>

@@ -199,3 +199,18 @@ external integration suite or replacement collaboration system is required.
 
 Track phase completion here with evidence links as work lands. Do not convert
 unverified existing features into completed acceptance claims.
+
+## Implementation checkpoints
+
+- `8f443639`: desktop rail geometry and explicit visibility choices corrected;
+  sidebar tests pass. Native visual acceptance is still pending.
+- `de6bf1df`: dedicated bookmarked query includes manual bookmarks and explicit
+  feed saves, separately from Read Later. Five local database tests pass,
+  including anonymous visibility and releasing a feed save.
+- Initial Home composition now reuses the durable capture queue, displays three
+  recent opens, previews personal material and a bounded news group. News,
+  Bookmarks and Writing have independent navigation. This is an intermediate
+  implementation: timeline server paging, precise save-event dates, new-arrival
+  admission, state restoration, visual acceptance and benchmark evidence remain
+  required. Current Home uses a bounded reading fetch and the existing manual
+  pool; its initial list is not the final timeline read model.

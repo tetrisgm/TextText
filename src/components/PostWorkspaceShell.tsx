@@ -5093,6 +5093,12 @@ function LocalWorkspaceShell({
       key={displayPool.blogId}
       blog={displayPool.blog}
       homePane={homePane}
+      onSelectPane={(pane) => {
+        setHomePane(pane);
+        setSearchQuery("");
+        navigateToView({ level: "root" }, `${workspaceRootHref(homePath)}?pane=${pane}`, { selectedPostId: null, selectedSectionPath: null });
+        contentRef.current?.scrollTo({ top: 0 });
+      }}
       onBrowseFolders={() => setSidebarCollapsed(false)}
       canCommentPost={canCommentPost}
       canCreateItems={canManageFolders}
@@ -5199,7 +5205,13 @@ function LocalWorkspaceShell({
         unread={readingUnreadByFolder(displayPool.readingSources)}
         documents={displayPool.posts}
         folders={displayPool.folders}
-        homeActive={view.level === "root" || view.level === "search"}
+        homeActive={(view.level === "root" || view.level === "search") && homePane === "home"}
+        primaryNavigation={<div className="workspace-primary-destinations">{(["news", "bookmarks", "notes"] as const).map((pane) => <button key={pane} type="button" aria-current={view.level === "root" && homePane === pane ? "page" : undefined} onClick={() => {
+          setHomePane(pane);
+          setSearchQuery("");
+          navigateToView({ level: "root" }, `${workspaceRootHref(homePath)}?pane=${pane}`, { selectedPostId: null, selectedSectionPath: null });
+          contentRef.current?.scrollTo({ top: 0 });
+        }}>{pane === "news" ? "News" : pane === "bookmarks" ? "Bookmarks" : "Writing"}</button>)}</div>}
         homePath={homePath}
         onSelectFolder={(path) => {
           if (!window.matchMedia("(min-width: 901px)").matches) setSidebarCollapsed(true);
@@ -5261,7 +5273,7 @@ function LocalWorkspaceShell({
             setItemTypeStudioFolderPath(folder.path);
           })();
         }}
-        onSelectRoot={navigateRoot}
+        onSelectRoot={() => { setHomePane("home"); navigateRoot(); }}
         onToggleCollapsed={toggleSidebarCollapsed}
         peeking={leftEdgePeeking}
         onPeekEngage={() => {

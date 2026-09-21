@@ -2,11 +2,11 @@
 
 import type { ReactNode } from "react";
 
-export type ArtifactPane = "home" | "headlines" | "notes" | "profile";
+export type ArtifactPane = "home" | "news" | "bookmarks" | "headlines" | "notes" | "profile";
 
 export function artifactPaneFromSearch(search: string): ArtifactPane {
   const pane = new URLSearchParams(search).get("pane");
-  return pane === "headlines" || pane === "profile" || pane === "notes" ? pane : "home";
+  return pane === "news" || pane === "bookmarks" || pane === "headlines" || pane === "profile" || pane === "notes" ? pane : "home";
 }
 
 export function ArtifactIcon({ name }: { name: "home" | "headlines" | "notes" | "profile" | "search" | "bell" | "bookmark" | "history" | "settings" | "folder" }) {
@@ -27,12 +27,12 @@ export function ArtifactIcon({ name }: { name: "home" | "headlines" | "notes" | 
 
 export function ArtifactNavigation({ pane, onSelect }: { pane: ArtifactPane; onSelect: (pane: ArtifactPane) => void }) {
   return <nav className="artifact-navigation" aria-label="Main navigation">
-    {(["home", "headlines", "notes", "profile"] as const).map((target) => <button
+    {(["home", "news", "bookmarks", "notes", "profile"] as const).map((target) => <button
       key={target}
       type="button"
-      aria-label={target === "home" ? "Home" : target === "headlines" ? "Headlines" : target === "notes" ? "Notes" : "Profile"}
+      aria-label={target === "home" ? "Home" : target === "news" ? "News" : target === "bookmarks" ? "Bookmarks" : target === "notes" ? "Writing" : "Profile"}
       aria-current={pane === target ? "page" : undefined}
       onClick={() => onSelect(target)}
-    ><ArtifactIcon name={target} /></button>)}
+    ><ArtifactIcon name={target === "news" ? "headlines" : target === "bookmarks" ? "bookmark" : target} /></button>)}
   </nav>;
 }

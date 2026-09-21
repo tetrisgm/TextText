@@ -3,7 +3,8 @@
 import { HomeSession } from "@/components/workspace/home/session";
 import { READING_ITEMS_CHANGED, READING_PREFERENCES_CHANGED, type ReadingItemsChange } from "@/lib/reading/client";
 import { HomeNews } from "@/components/workspace/home/HomeNews";
-import { ArtifactHeadlines, ArtifactProfile, ArtifactNotes } from "@/components/workspace/home/ArtifactPages";
+import { ArtifactHeadlines, ArtifactProfile, ArtifactNotes, SavedArticles } from "@/components/workspace/home/ArtifactPages";
+import { PersonalHome } from "@/components/workspace/home/PersonalHome";
 import { ArtifactIcon, type ArtifactPane } from "@/components/workspace/home/ArtifactNavigation";
 import { warmChunk } from "@/components/workspace/warm-chunk";
 import homeStyles from "@/components/workspace/home/Home.module.css";
@@ -120,6 +121,7 @@ import {
   createRootFolderAction,
 } from "@/app/editor/actions";
 import {
+  UniversalItemComposer,
   type FolderCaptureResolved,
   type FolderCreateItem,
   type FolderDeleteItem,
@@ -228,6 +230,7 @@ export function WorkspaceRootSearchActionBar({ children }: { children: ReactNode
 export function WorkspaceRootLanding({
   canManageItems,
   homePane = "home",
+  onSelectPane,
   homeSession,
   onOpenAssistant,
   onBrowseFolders = () => undefined,
@@ -252,6 +255,7 @@ export function WorkspaceRootLanding({
 }: {
   canManageItems: boolean;
   homePane?: ArtifactPane;
+  onSelectPane?: (pane: ArtifactPane) => void;
   homeSession?: HomeSession;
   onBrowseFolders?: () => void;
   focusRequestKey: number;
@@ -820,7 +824,10 @@ export function WorkspaceRootLanding({
                 All items switches to the library in place and says so. */}
             {(!libraryOpen || homePane !== "profile") && (
               <div className={homeStyles.frame}>
-                {homePane === "home" ? <HomeNews
+                {homePane === "home" ? <PersonalHome pool={pool} history={openHistory} onOpenPost={onOpenPost}
+                  onNews={() => onSelectPane?.("news")}
+                  capture={canManageItems && (creationFolder ? <UniversalItemComposer blog={pool.blog} handle={pool.blog.handle} folder={creationFolder} destinations={creationFolders} onCreateItem={onCreateItem} onOpenCapturedItem={(post) => { if (post.id) onOpenPost(post.id); }} /> : firstLoop)}
+                /> : homePane === "bookmarks" ? <section aria-label="Bookmarks"><h1 className={homeStyles.pageTitle}>Bookmarks</h1><SavedArticles state="bookmarked" handle={pool.blog.handle} blogId={pool.blogId} onOpenPost={onOpenPost} /></section> : homePane === "news" ? <HomeNews
                   session={homeSession}
                   handle={pool.blog.handle}
                   blogId={pool.blogId}
@@ -944,6 +951,7 @@ export function WorkspaceRootLanding({
 export function LocalWorkspaceContent({
   blog,
   homePane,
+  onSelectPane,
   onBrowseFolders,
   canCommentPost,
   canCreateItems,
@@ -990,6 +998,7 @@ export function LocalWorkspaceContent({
 }: {
   blog: Blog;
   homePane?: ArtifactPane;
+  onSelectPane?: (pane: ArtifactPane) => void;
   onBrowseFolders?: () => void;
   canCommentPost: boolean;
   canCreateItems: boolean;
@@ -1075,6 +1084,7 @@ export function LocalWorkspaceContent({
       key={`${pool.blogId}:${homePane}`}
       canManageItems={canManagePost}
       homePane={homePane}
+      onSelectPane={onSelectPane}
       homeSession={homeSession}
       onBrowseFolders={onBrowseFolders}
       focusRequestKey={searchFocusRequestKey}

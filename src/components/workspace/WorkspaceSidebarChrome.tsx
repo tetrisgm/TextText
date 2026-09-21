@@ -1448,6 +1448,7 @@ export function PostFolderSidebar({
   homeActive = activeFolder === null,
   homePath,
   onSelectRoot,
+  primaryNavigation,
   onSelectFolder,
   onSearchDate,
   onReturnToBody,
@@ -1475,6 +1476,7 @@ export function PostFolderSidebar({
   homeActive?: boolean;
   homePath?: string;
   onSelectRoot?: () => void;
+  primaryNavigation?: ReactNode;
   onSelectFolder: (folder: SidebarFolderId) => void;
   onSearchDate?: (dateKey: string) => void;
   onReturnToBody?: () => void;
@@ -1560,6 +1562,7 @@ export function PostFolderSidebar({
             <span className="post-editor-folder-name">Home</span>
           </button>
         </div>
+        {primaryNavigation}
         <div className="post-editor-special-folders">
           {canManageFolders && (
             <div
@@ -1712,6 +1715,7 @@ export function WorkspaceSidebarChrome({
   onBuildItemType,
   onChangeItemType,
   onSelectRoot,
+  primaryNavigation,
   prefetchFolders = true,
   onToggleCollapsed,
   escapeToCollapse = true,
@@ -1744,6 +1748,7 @@ export function WorkspaceSidebarChrome({
   onBuildItemType?: (folder: Folder) => void;
   onChangeItemType?: (folder: Folder) => void;
   onSelectRoot?: () => void;
+  primaryNavigation?: ReactNode;
   prefetchFolders?: boolean;
   onToggleCollapsed: () => void;
   escapeToCollapse?: boolean;
@@ -1937,6 +1942,7 @@ export function WorkspaceSidebarChrome({
           onSidebarFocus={onSidebarFocus}
           onSidebarEmptyPointerDown={onSidebarEmptyPointerDown}
           onSelectRoot={selectRoot}
+          primaryNavigation={primaryNavigation}
           onSettings={onSettings}
           onBuildItemType={onBuildItemType}
           onChangeItemType={onChangeItemType}
