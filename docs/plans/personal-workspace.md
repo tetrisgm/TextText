@@ -468,3 +468,15 @@ unverified existing features into completed acceptance claims.
   not a publish action. Three classification regression tests pass. Compact
   desktop creation controls now wrap instead of clipping New type; verified at
   the browser's normal 792 CSS pixel viewport with both sidebars visible.
+
+- Deliberate RSS filing now writes a durable `manual_save` hold atomically with
+  both folder-move paths. Imported provenance remains intact through client pool
+  conversion; fresh pools, saved reading, the Home saved timeline and document
+  backup queries include deliberately retained imports. Folder Items includes
+  these imports without admitting every visited feed article. Public projections
+  omit the private filing flag. Local Postgres tests cover both move APIs,
+  audited and unaudited moves, no-op and stale-revision rejection, preservation
+  of canonical content, fresh pool/client conversion, saved/timeline/backup
+  membership, and actual cleanup with filing as the sole retention hold.
+  The affected four test files pass (37 tests); TypeScript passes. Browser
+  verification and a production build of these latest changes remain pending.

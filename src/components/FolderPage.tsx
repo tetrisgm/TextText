@@ -1701,7 +1701,7 @@ export function FolderPage({
     dispatchFolderUiEvent(EDIT_FOLDER_TITLE_EVENT, folder.id);
   }, [editRequestKey, folder.id]);
 
-  const personalItems = useMemo(() => items.filter((post) => post.origin !== "feed"), [items]);
+  const personalItems = useMemo(() => items.filter((post) => post.origin !== "feed" || post.filed), [items]);
   const filteredItems = useMemo(() => {
     const query = filterQuery.trim().toLocaleLowerCase();
     if (!query) return personalItems;

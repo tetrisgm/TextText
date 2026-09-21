@@ -203,6 +203,7 @@ type PostListRow = Pick<
   | "updatedAt"
   | "wordCount"
 > & {
+  filed?: boolean;
   bodyPreview: string | null;
   capture: BookmarkCapture | null;
   captureUrl: string | null;
@@ -445,6 +446,7 @@ function mapPostList(row: PostListRow): Post {
     pinned: row.pinned,
     starred: row.starred,
     origin: row.origin === "feed" ? "feed" : "manual",
+    filed: row.filed,
     folderId: row.folderId ?? undefined,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -452,8 +454,10 @@ function mapPostList(row: PostListRow): Post {
 }
 
 function withoutPersonalWorkspaceMetadata(post: Post): Post {
-  if (post.starred === undefined) return post;
-  const { starred: _starred, ...publicPost } = post;
+  if (post.starred === undefined && post.filed === undefined) return post;
+  const publicPost = { ...post };
+  delete publicPost.starred;
+  delete publicPost.filed;
   return publicPost;
 }
 
@@ -475,6 +479,13 @@ function wordCountSql(): SQL<number | null> {
       else cardinality(regexp_split_to_array(btrim(left(${posts.body}, 262144)), '[[:space:]]+'))
     end
   )`;
+}
+
+function filedPostSql() {
+  return sql<boolean>`exists (select 1 from ${retentionHolds}
+    where ${retentionHolds.postId} = ${posts.id}
+      and ${retentionHolds.reason} = 'manual_save'
+      and ${retentionHolds.releasedAt} is null)`;
 }
 
 function postListSelection() {
@@ -503,6 +514,7 @@ function postListSelection() {
     pinned: posts.pinned,
     starred: posts.starred,
     origin: posts.origin,
+    filed: filedPostSql(),
     publishedAt: posts.publishedAt,
     createdAt: posts.createdAt,
     updatedAt: posts.updatedAt,
@@ -599,7 +611,7 @@ async function selectPosts(
             eq(blogs.handle, handle),
             isNull(blogs.deletedAt),
             isNull(posts.deletedAt),
-            options.manualOnly ? or(eq(posts.origin, "manual"), options.includeIds?.length ? inArray(posts.id, options.includeIds) : undefined) : undefined,
+            options.manualOnly ? or(eq(posts.origin, "manual"), filedPostSql(), options.includeIds?.length ? inArray(posts.id, options.includeIds) : undefined) : undefined,
           ),
     )
     .orderBy(
@@ -732,7 +744,8 @@ const getWorkspacePoolPostsCached = cache(getWorkspacePoolPostsUncached);
 
 /**
  * Every live item a person authored or saved: what the client pool hydrates
- * on a workspace load. Feed-imported articles are not here on purpose. They
+ * on a workspace load. Deliberately filed imports are included; other feed
+ * articles stay paginated. They
  * are ordinary items reachable by id, by search, by folder page and in
  * Finder, but a workspace that follows two hundred feeds cannot ship fifty
  * thousand rows in every load; reading views page them from the server. Use
@@ -757,7 +770,7 @@ export async function getWorkspacePostsWithDocuments(handle: string, limit = 500
     .select({ post: posts })
     .from(posts)
     .innerJoin(blogs, eq(posts.blogId, blogs.id))
-    .where(and(eq(blogs.handle, handle), isNull(blogs.deletedAt), isNull(posts.deletedAt), eq(posts.origin, "manual")))
+    .where(and(eq(blogs.handle, handle), isNull(blogs.deletedAt), isNull(posts.deletedAt), or(eq(posts.origin, "manual"), filedPostSql())))
     .orderBy(posts.createdAt)
     .limit(limit);
   return rows.map((row) => mapPost(row.post));
@@ -2548,38 +2561,34 @@ export async function setPostFolder(
   if (row.visibility === "public" && row.folderId !== folder.id) {
     await assertPublicPathAvailable(blogId, folder.path, slug, row.id);
   }
-  let updated: PostRow[];
+  const changed = db.update(posts).set({
+    folderId: folder.id,
+    updatedAt: new Date(),
+    ...(reslugged ? {
+      slug,
+      slugHistory: Array.from(new Set([...(row.slugHistory ?? []), row.slug])),
+    } : {}),
+  }).where(and(eq(posts.id, row.id), eq(posts.blogId, blogId), isNull(posts.deletedAt)))
+    .returning({ id: posts.id });
+  const audit = auditCteFrom({
+    actorType: "human", actionName: "move_document", targetType: "item",
+    inputSummary: row.folderId ?? "root", outputSummary: folder.id,
+  }, "changed", sql`changed.id::text`);
+  const hold = row.origin === "feed" && row.folderId !== folder.id
+    ? holdInsertCte({ postId: row.id, blogId: sql`${blogId}::uuid`, reason: "manual_save",
+        sourceId: sql`${row.id}::text`, createdById: null, fromCte: "changed" })
+    : sql`SELECT 1 WHERE false`;
   try {
-    updated = await db
-      .update(posts)
-      .set({
-        folderId: folder.id,
-        updatedAt: new Date(),
-        ...(reslugged
-          ? {
-              slug,
-              slugHistory: Array.from(
-                new Set([...(row.slugHistory ?? []), row.slug]),
-              ),
-            }
-          : {}),
-      })
-      .where(eq(posts.id, row.id))
-      .returning();
+    const result = await db.execute(sql`WITH changed AS ${changed},
+      audit AS (${audit}), hold AS (${hold}) SELECT id FROM changed`);
+    if (!result.rows.length) return null;
+    const post = await getPostByIdUncached(handle, row.id);
+    return post && row.origin === "feed" && row.folderId !== folder.id
+      ? { ...post, filed: true } : post;
   } catch (error) {
     if (isPostsSlugConflict(error)) throw new Error("That URL is already used");
     throw error;
   }
-  if (!updated[0]) return null;
-  await recordAction({
-    actorType: "human",
-    actionName: "move_document",
-    targetType: "item",
-    targetId: row.id,
-    inputSummary: row.folderId ?? "root",
-    outputSummary: folder.id,
-  });
-  return mapPost(updated[0]);
 }
 
 /**
@@ -2735,6 +2744,10 @@ export async function movePostFile(
           force: set.title !== undefined,
         })
       : sql`SELECT 1 WHERE false`;
+    const filedHold = row.origin === "feed" && set.folderId !== undefined
+      ? holdInsertCte({ postId: row.id, blogId: sql`${blogId}::uuid`, reason: "manual_save",
+          sourceId: sql`${row.id}::text`, createdById: audit?.actorUserId ?? null, fromCte: "changed" })
+      : sql`SELECT 1 WHERE false`;
     if (audit) {
       // Atomic: the metadata move and its audit row commit in ONE neon-http
       // transaction. The drizzle UPDATE is embedded as the CTE body so its
@@ -2751,7 +2764,7 @@ export async function movePostFile(
         .returning({ id: posts.id, revision: posts.revision });
       const auditCte = auditCteFrom(audit, "changed", sql`changed.id::text`);
       const result = await db.execute(sql`
-        WITH changed AS ${updateQuery}, audit AS (${auditCte}),
+        WITH changed AS ${updateQuery}, audit AS (${auditCte}), filed_hold AS (${filedHold}),
         history AS (${moveHistory}), pruned AS (${revisionPruneCteFrom("changed")}),
         agent_change AS (${agentChangeCte({
           source: "changed", postId: sql`changed.id`, revision: sql`changed.revision`,
@@ -2767,7 +2780,7 @@ export async function movePostFile(
         .where(where)
         .returning({ id: posts.id, revision: posts.revision });
       const result = await db.execute(sql`
-        WITH changed AS ${changed}, history AS (${moveHistory}),
+        WITH changed AS ${changed}, filed_hold AS (${filedHold}), history AS (${moveHistory}),
         pruned AS (${revisionPruneCteFrom("changed")})
         SELECT id FROM changed
       `);
@@ -2782,7 +2795,7 @@ export async function movePostFile(
         .where(and(eq(posts.id, row.id), eq(posts.blogId, blogId)))
         .limit(1);
       return {
-        post: mapPost(fresh ?? row),
+        post: { ...mapPost(fresh ?? row), ...(row.origin === "feed" && set.folderId ? { filed: true } : {}) },
         changed: true,
         previousSlug: row.slug,
       };
@@ -7943,7 +7956,7 @@ export async function listWorkspaceTimeline(input: {
   if (accessible !== "all" && accessible.size === 0) return { entries: [], nextCursor: null, snapshot };
   const limit = Number.isFinite(input.limit) ? Math.max(1, Math.min(100, Math.trunc(input.limit!))) : 40;
   const savedAt = sql<Date | null>`(select max(${retentionHolds.createdAt}) from ${retentionHolds}
-    where ${retentionHolds.postId} = ${posts.id} and ${retentionHolds.reason} = 'keep'
+    where ${retentionHolds.postId} = ${posts.id} and ${retentionHolds.reason} in ('keep', 'manual_save')
     and ${retentionHolds.releasedAt} is null)`;
   const eventAt = sql<Date>`date_trunc('milliseconds', case when ${posts.origin} = 'feed' then ${savedAt}
     when ${posts.type} <> 'bookmark' and ${posts.status} = 'published' then coalesce(${posts.publishedAt}, ${posts.createdAt})

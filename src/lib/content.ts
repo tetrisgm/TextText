@@ -275,6 +275,8 @@ export interface Post {
    * the flag exists so the whole-workspace pool can leave them out.
    */
   origin?: "manual" | "feed";
+  /** Deliberately retained imported content, including filing in a folder. */
+  filed?: boolean;
   gallery?: GalleryItem[];
   links?: LinkRef[];
   /** normalized workspace tags, independent of folders */

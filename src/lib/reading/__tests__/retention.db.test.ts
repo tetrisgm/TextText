@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 import { sourceNoteMarkdown } from "@/lib/workspace/source-note";
 
 // Against local Postgres only, opted in with TEXTTEXT_READING_DB_TEST=1 and
@@ -312,6 +312,53 @@ describe.skipIf(!enabled)("retention holds and cleanup against Postgres", () => 
     });
     expect(again.items.map((item) => item.id)).toContain(id);
   });
+  it("filing imported items is durable, reloadable, and preserves provenance", async () => {
+    const { narrowPostFromPost, postFromPoolPost } = await import("@/lib/pool/selectors");
+    const notes = (await store.getFolderByPath(handle, "notes"))!;
+    for (const [index, url] of ["https://r.example/star", "https://r.example/comment", "https://r.example/ref"].entries()) {
+      const id = byUrl.get(url)!;
+      const before = (await store.getPostById(handle, id))!;
+      expect(await activeHolds(id)).not.toContain("manual_save");
+      await store.movePostFile(handle, id, { folderId: before.folderId });
+      expect(await activeHolds(id)).not.toContain("manual_save");
+      await expect(store.movePostFile(handle, id, { folderId: notes.id, expectedRevision: -1 }))
+        .rejects.toThrow();
+      expect(await activeHolds(id)).not.toContain("manual_save");
+      if (index === 0) await store.setPostFolder(handle, id, "notes");
+      else if (index === 1) await store.movePostFile(handle, id, { folderId: notes.id }, {
+        actorType: "human", actorUserId: userId, actionName: "test.file", targetType: "item",
+      });
+      else await store.movePostFile(handle, id, { folderId: notes.id });
+      expect(await activeHolds(id)).toContain("manual_save");
+      const after = (await store.getPostById(handle, id))!;
+      expect(after).toMatchObject({ id, folderId: notes.id, origin: "feed", body: before.body });
+      expect(after.document).toEqual(before.document);
+      const reloaded = (await store.getWorkspacePoolPosts(handle)).find((post) => post.id === id)!;
+      expect(reloaded).toMatchObject({ id, origin: "feed", filed: true });
+      const client = postFromPoolPost(narrowPostFromPost(reloaded, blogId)!);
+      expect(client).toMatchObject({ id, origin: "feed", filed: true });
+      const saved = await list.listReadingItems({ handle, user,
+        scope: { folderPath: "notes", state: "bookmarked", includeDescendants: true, dateBasis: "published" },
+      });
+      expect(saved.items.map((item) => item.id)).toContain(id);
+      const timeline = await store.listWorkspaceTimeline({ handle, user, filter: "saved" });
+      expect(timeline.entries.filter((item) => item.id === id)).toHaveLength(1);
+      const backup = await store.getWorkspacePostsWithDocuments(handle);
+      expect(backup.map((item) => item.id)).toContain(id);
+      // Isolate filing as the only protection before running real expiry.
+      await store.setPostStarred(handle, id, false);
+      await db!.update(schema.retentionHolds).set({ releasedAt: new Date() })
+        .where(and(eq(schema.retentionHolds.postId, id), ne(schema.retentionHolds.reason, "manual_save")));
+      expect(await activeHolds(id)).toEqual(["manual_save"]);
+    }
+    const preview = await retention.previewCleanup({ handle, now: new Date(Date.now() + 100 * 86400000) });
+    expect(preview.expiring).toEqual([]);
+    await retention.runCleanup({ handle, actor: { userId, actorType: "human" }, now: new Date(Date.now() + 100 * 86400000) });
+    for (const url of ["https://r.example/star", "https://r.example/comment"]) {
+      expect(await store.getPostById(handle, byUrl.get(url)!)).not.toBeNull();
+    }
+  });
+
 });
 
 function entry(id: string, title: string, link: string, html: string, pubDate: string): string {

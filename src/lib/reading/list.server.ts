@@ -225,13 +225,13 @@ export async function listReadingItems(input: {
         input.scope.ids && input.scope.ids.length > 0 ? inArray(posts.id, input.scope.ids) : undefined,
         input.scope.state === "unread" ? isNull(readingReadState.readAt) : undefined,
         input.scope.state === "read" ? sql`${readingReadState.readAt} is not null` : undefined,
-        input.scope.state === "saved" ? sql`exists (select 1 from ${retentionHolds} where ${retentionHolds.postId} = ${posts.id} and ${retentionHolds.releasedAt} is null and ${retentionHolds.reason} = 'keep')` : undefined,
+        input.scope.state === "saved" ? sql`exists (select 1 from ${retentionHolds} where ${retentionHolds.postId} = ${posts.id} and ${retentionHolds.releasedAt} is null and ${retentionHolds.reason} in ('keep', 'manual_save'))` : undefined,
         input.scope.state === "bookmarked"
           ? and(
               eq(posts.type, "bookmark"),
               or(
                 eq(posts.origin, "manual"),
-                sql`exists (select 1 from ${retentionHolds} where ${retentionHolds.postId} = ${posts.id} and ${retentionHolds.releasedAt} is null and ${retentionHolds.reason} = 'keep')`,
+                sql`exists (select 1 from ${retentionHolds} where ${retentionHolds.postId} = ${posts.id} and ${retentionHolds.releasedAt} is null and ${retentionHolds.reason} in ('keep', 'manual_save'))`,
               ),
             )
           : undefined,

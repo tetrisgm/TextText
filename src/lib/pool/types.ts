@@ -51,6 +51,8 @@ export type WorkspacePoolPost = {
   revision?: number;
   /** "feed" for an imported article merged into the pool from a reading list. */
   origin?: "manual" | "feed";
+  /** Deliberately retained imported content, including filing in a folder. */
+  filed?: boolean;
 };
 
 /** One feed connection, as the client needs it: which folder is a source,
