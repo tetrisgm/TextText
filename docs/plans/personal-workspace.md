@@ -236,3 +236,12 @@ unverified existing features into completed acceptance claims.
 - Added workspace-owned, memory-only timeline/news snapshots and filter retention
   for returning to Home. Session tests cover filter isolation and clearing.
   Exact scroll/focus return and production timing are still unverified.
+- Custom-type UI round trip passed in the local preview: manually added Author
+  and numeric Rating, saved Book review verification, created an item from New,
+  entered title/body/author/rating, waited for Saved and reloaded. All values
+  survived. Local fixture visual-demo exceeded its free item allowance; its plan
+  was temporarily changed to paid for this check and restored to free afterward.
+  Test document IDs: 79609afc-57f3-41ea-beee-06e19a1bf998 (capture) and
+  0ed70aa4-2854-4455-aba7-d8fdf9685bec (custom type). These are local-only fixtures.
+  Preview uses localhost:3100 and .texttext/personal-dev; log is
+  /tmp/texttext-personal-dev.log. Revalidate the running process before reuse.
