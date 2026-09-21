@@ -304,3 +304,14 @@ request. Back then Cancel exited without saving. The entry screen is still
 labelled Build with AI; manual editing is available but insufficiently clear at
 entry. Editing/retiring an existing type and export/import remain unverified in
 this current browser build.
+
+### Manual type creation entry clarified
+
+Item type studio now explicitly offers choosing a starter and defining fields
+and layout manually, alongside an optional AI draft. Its header says Item type;
+the AI description textarea has a visible-purpose accessible name. The dialog's
+label target remains mounted in both the initial and design screens (previously
+it referenced a heading removed when entering the designer).
+
+Eight existing studio UI/save tests pass, scoped ESLint passes, and whitespace
+checks pass. This copy/accessibility change is not yet in the 3118 preview.

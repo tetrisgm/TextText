@@ -820,7 +820,7 @@ export function ItemTypeStudio({
           {design ? "Back" : "Cancel"}
         </button>
         <div className={styles.topbarTitle}>
-          <span>Build with AI</span>
+          <span id="item-type-studio-title">Item type</span>
           {design ? <strong>{design.blueprint.name}</strong> : null}
         </div>
         {design ? (
@@ -848,11 +848,10 @@ export function ItemTypeStudio({
         <main className={styles.promptCanvas}>
           <section className={styles.promptCard}>
             <span className={styles.spark} aria-hidden="true">✦</span>
-            <h1 id="item-type-studio-title">What do you want to build?</h1>
+            <h1>What do you want to build?</h1>
             <p>
-              Describe the items, the fields you need, and how the folder should
-              look. You can name a visual reference such as Medium, Notion, or
-              Apple Notes.
+              Choose a starting point below to define your fields and layout
+              yourself, or describe what you need and let AI create a draft.
             </p>
             <form
               className={styles.promptForm}
@@ -863,6 +862,7 @@ export function ItemTypeStudio({
             >
               <textarea
                 ref={promptRef}
+                aria-label="Describe an item type for AI"
                 value={prompt}
                 maxLength={6000}
                 placeholder="A reading list with author, status, rating, and a card view..."
@@ -873,7 +873,7 @@ export function ItemTypeStudio({
               </button>
             </form>
             {error || compilation.error ? <p className={styles.error} role="alert">{error ?? compilation.error}</p> : null}
-            <div className={styles.starters} aria-label="Ready-made starting points">
+            <div className={styles.starters} aria-label="Edit a starting point yourself">
               {ITEM_TYPE_STARTERS.map((starter) => (
                 <button
                   key={starter.id}
