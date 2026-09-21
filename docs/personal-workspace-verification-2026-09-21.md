@@ -87,3 +87,30 @@ authorized bounded source lookup for the picker without loading every RSS item
 or automatically selecting sources. Seventeen context/picker tests passed, but
 they use supplied item arrays and therefore do not cover this integration gap.
 No AI request was sent during this check.
+
+### Source lookup fix
+
+The context picker now supplements local choices with an authorized reading
+metadata lookup, limited to eight search results or five selected IDs. Queries
+are debounced and cancelled on change; returned sources remain unselected until
+the person chooses one. Selected RSS names can be resolved after reload without
+retaining bodies in conversation metadata. The native assistant can fetch the
+canonical document for an explicitly chosen source absent from the navigation
+pool, rejecting failed authorization and mismatched workspace responses.
+
+Seventeen targeted tests pass for endpoint bounds/access denial, keyboard
+selection, stale-search cancellation, selected-name hydration, and canonical
+source reads. TypeScript and the local production build pass; lint has no errors
+(17 existing shell warnings).
+
+On the fresh `localhost:3111` production preview, CUA reopened the two-source
+article, searched NASA Discovery, and selected the actual RSS source. Its named
+context chip survived a full reload. The workspace index remained off and no AI
+request was sent. A long source name exposed an existing implicit-grid overflow
+in the composer; its column is now constrained to the rail width, with a
+shrinking title and a visible removal control. The final build
+`.texttext/personal-build-context-fit` passes. At `localhost:3112`, CUA verified
+the long NASA chip truncates within the 360px rail with its remove control
+visible, survives reload with its title, and can be removed. No AI request was
+sent. Native-agent consumption is covered by the canonical-read tests, not a
+live external-agent turn.

@@ -561,6 +561,7 @@ button.pendingLabel {
   min-width: 0;
   flex: 0 0 auto;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0;
   padding: 0.5rem 0.8125rem 1.125rem;
 }
@@ -1002,6 +1003,7 @@ button.pendingLabel {
 }
 .contextRow button {
   display: inline-flex;
+  min-width: 0;
   align-items: center;
   gap: 0.5rem;
   max-width: 100%;
@@ -1015,10 +1017,12 @@ button.pendingLabel {
   cursor: pointer;
 }
 .contextRow > button > span:first-child {
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+.contextRow > button > span:last-child { flex-shrink: 0; }
 .contextRow button[aria-pressed="true"],
 .contextRow button[aria-selected="true"] { background: var(--assistant-control-fill); }
 .contextRow button[aria-pressed="false"] { color: var(--assistant-rail-secondary); }

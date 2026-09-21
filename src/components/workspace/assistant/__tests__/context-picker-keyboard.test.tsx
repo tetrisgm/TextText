@@ -2,12 +2,12 @@ import React from "react";
 import { readFileSync } from "node:fs";
 import { afterEach, expect, it, vi } from "vitest";
 
-const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0 }));
+const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[], sources: vi.fn() }));
 vi.mock("react", async (original) => ({
   ...await original<typeof import("react")>(),
   useRef: (current: unknown) => ({ current }),
   useId: () => "context-search",
-  useEffect: () => {},
+  useEffect: (effect: () => void | (() => void)) => { hooks.effects.push(effect); },
   useState: (initial: unknown) => {
     const index = hooks.cursor++;
     if (!(index in hooks.values)) hooks.values[index] = initial;
@@ -20,6 +20,7 @@ vi.mock("@/lib/motion/react", () => ({
   useSurfaceMotion: () => {},
   useMotionPresence: (open: boolean) => ({ present: open, onRest: () => {} }),
 }));
+vi.mock("../context-source-client", () => ({ fetchContextSources: hooks.sources }));
 import { AssistantContextPicker, AssistantContextSearch } from "../AssistantContextPicker";
 import { DEFAULT_CONTEXT_CHOICE } from "@/lib/ai/context-choice";
 
@@ -45,7 +46,7 @@ const items = [
   { id: "00000000-0000-4000-8000-000000000001", name: "One", detail: "Notes" },
   { id: "00000000-0000-4000-8000-000000000002", name: "Two", detail: "Research" },
 ];
-afterEach(() => { hooks.values = []; hooks.cursor = 0; });
+afterEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.sources.mockReset(); vi.useRealTimers(); });
 it("opens Add, changes a chip, removes an item, and returns focus to the composer on Escape", () => {
   let choice = { ...DEFAULT_CONTEXT_CHOICE, itemIds: [items[0].id] };
   const focusComposer = vi.fn();
@@ -126,4 +127,52 @@ it("R9 preserves a usable active option when the live item list shrinks", () => 
   invoke(input, "onKeyDown", key("Enter"));
   expect(onAdd).toHaveBeenCalledExactlyOnceWith(items[1]);
   expect(onClose).toHaveBeenCalledOnce();
+});
+
+it("finds unloaded sources only after a search and selects them explicitly", async () => {
+  vi.useFakeTimers();
+  const source = { id: "00000000-0000-4000-8000-000000000003", name: "NASA water", detail: "News" };
+  hooks.sources.mockResolvedValue([source]);
+  const onAdd = vi.fn();
+  const render = () => { hooks.cursor = 0; hooks.effects = []; return AssistantContextSearch({ items: [], selected: [], workspaceHandle: "mira", onAdd, onClose: vi.fn() }); };
+  invoke(find(render(), (e) => e.props.role === "combobox"), "onChange", { target: { value: "NASA" } });
+  render();
+  const cleanup = hooks.effects[0]();
+  await vi.advanceTimersByTimeAsync(180);
+  expect(hooks.sources).toHaveBeenCalledWith("mira", { query: "NASA" }, expect.any(AbortSignal));
+  expect(onAdd).not.toHaveBeenCalled();
+  invoke(find(render(), (e) => e.props.role === "combobox"), "onKeyDown", key("Enter"));
+  expect(onAdd).toHaveBeenCalledWith(source);
+  cleanup?.();
+});
+
+it("cancels a superseded search and does not display its late results", async () => {
+  vi.useFakeTimers();
+  let resolve!: (items: unknown[]) => void;
+  hooks.sources.mockImplementation(() => new Promise((done) => { resolve = done; }));
+  const render = () => { hooks.cursor = 0; hooks.effects = []; return AssistantContextSearch({ items: [], selected: [], workspaceHandle: "mira", onAdd: vi.fn(), onClose: vi.fn() }); };
+  invoke(find(render(), (e) => e.props.role === "combobox"), "onChange", { target: { value: "NASA" } });
+  render();
+  const cleanup = hooks.effects[0]();
+  await vi.advanceTimersByTimeAsync(180);
+  invoke(find(render(), (e) => e.props.role === "combobox"), "onChange", { target: { value: "Mars" } });
+  cleanup?.();
+  resolve([{ id: "old", name: "Old result", detail: "News" }]);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(hooks.sources.mock.calls[0][2].aborted).toBe(true);
+  expect(() => find(render(), (e) => e.props.role === "option")).toThrow("Missing control");
+});
+
+it("resolves a previously selected RSS source name after a reload without changing the choice", async () => {
+  const source = { id: "00000000-0000-4000-8000-000000000003", name: "NASA water", detail: "News" };
+  hooks.sources.mockResolvedValue([source]);
+  const onChange = vi.fn();
+  const render = () => { hooks.cursor = 0; hooks.effects = []; return AssistantContextPicker({ items: [], choice: { ...DEFAULT_CONTEXT_CHOICE, itemIds: [source.id] }, workspaceHandle: "mira", hasItem: true, hasSelection: false, onChange, focusComposer: vi.fn() }); };
+  expect(find(render(), (e) => e.props["aria-label"] === "Remove context Unavailable item")).toBeDefined();
+  const cleanup = hooks.effects[0]();
+  await Promise.resolve();
+  expect(find(render(), (e) => e.props["aria-label"] === "Remove context NASA water")).toBeDefined();
+  expect(hooks.sources).toHaveBeenCalledWith("mira", { ids: [source.id] }, expect.any(AbortSignal));
+  expect(onChange).not.toHaveBeenCalled();
+  cleanup?.();
 });

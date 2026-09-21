@@ -476,7 +476,7 @@ export function AssistantRailShell({
                 itemIds: attachments.flatMap((a) => a.workspaceItemId ? [a.workspaceItemId] : []),
               }}
               onChange={(choice) => { props.onContextChoiceChange?.(choice); void activate(); }}
-              items={props.availableContextItems ?? []} hasItem={context?.kind === "item"}
+              workspaceHandle={props.workspaceHandle} items={props.availableContextItems ?? []} hasItem={context?.kind === "item"}
               hasSelection={props.hasSelection ?? false} disabled={disabled || submitting}
               focusComposer={() => composerRef.current?.focus()}
               onOpenChange={() => void activate()} />

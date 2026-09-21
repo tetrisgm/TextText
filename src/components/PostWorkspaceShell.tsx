@@ -161,6 +161,7 @@ import {
   postFromPoolPost,
   starredPoolPosts,
 } from "@/lib/pool/selectors";
+import { fetchContextSourceText } from "@/components/workspace/assistant/context-source-client";
 import {
   addPost,
   acknowledgePost,
@@ -2759,7 +2760,7 @@ function LocalWorkspaceShell({
 
       const currentPool = displayPoolRef.current;
       const poolPost = findPoolPostById(currentPool, postId);
-      if (!poolPost) throw new Error("This item is no longer available.");
+      if (!poolPost) return fetchContextSourceText(currentPool.blogId, postId);
 
       let document = getCachedWorkspacePostDocument(
         currentPool.blogId,

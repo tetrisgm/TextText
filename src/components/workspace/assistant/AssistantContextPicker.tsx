@@ -5,6 +5,7 @@ import { useMotionPresence, useSurfaceMotion } from "@/lib/motion/react";
 import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import { MAX_PERSON_CONTEXT_ITEMS, type AssistantContextChoice } from "@/lib/ai/context-choice";
 import type { AssistantWorkspaceContextItem } from "./AssistantSidebar";
+import { fetchContextSources } from "./context-source-client";
 import styles from "./AssistantSidebar.module.css";
 
 /** Same title and folder search used by the rail's original item picker. */
@@ -14,7 +15,8 @@ export function contextItemChoices(items: readonly AssistantWorkspaceContextItem
     (!term || `${item.name} ${item.detail}`.toLowerCase().includes(term))).slice(0, 8);
 }
 
-export function AssistantContextSearch({ items, selected, onAdd, onClose, motionOpen = true, motionOnRest, trigger }: {
+export function AssistantContextSearch({ items, selected, onAdd, onClose, motionOpen = true, motionOnRest, trigger, workspaceHandle }: {
+  workspaceHandle?: string;
   items: readonly AssistantWorkspaceContextItem[]; selected: readonly string[];
   onAdd: (item: AssistantWorkspaceContextItem) => void; onClose: () => void;
   motionOpen?: boolean; motionOnRest?: (shown: boolean) => void; trigger?: RefObject<HTMLElement | null>;
@@ -24,7 +26,22 @@ export function AssistantContextSearch({ items, selected, onAdd, onClose, motion
   const [query, setQuery] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
   const id = useId();
-  const choices = contextItemChoices(items, selected, query);
+  const [remote, setRemote] = useState<{ query: string; handle: string; items: AssistantWorkspaceContextItem[]; error?: boolean }>({ query: "", handle: "", items: [] });
+  useEffect(() => {
+    if (!workspaceHandle || query.trim().length < 2) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      void fetchContextSources(workspaceHandle, { query: query.trim().slice(0, 200) }, controller.signal)
+        .then((items) => { if (!controller.signal.aborted) { setRemote({ query, handle: workspaceHandle, items }); } })
+        .catch(() => { if (!controller.signal.aborted) setRemote({ query, handle: workspaceHandle, items: [], error: true }); });
+    }, 180);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [workspaceHandle, query]);
+  const local = contextItemChoices(items, selected, query);
+  const settled = remote.query === query && remote.handle === workspaceHandle;
+  const searchStatus = !workspaceHandle || query.trim().length < 2 ? "" : !settled ? "Searching sources…" : remote.error ? "Could not search sources. Try another search." : "";
+  const remoteItems = settled ? remote.items : [];
+  const choices = [...new Map([...local, ...remoteItems.filter((item) => !selected.includes(item.id))].map((item) => [item.id, item])).values()].slice(0, 8);
   const active = Math.max(0, choices.findIndex((item) => item.id === activeId));
   const activeChoiceId = choices[active]?.id;
   useEffect(() => { document.getElementById(`${id}-${active}`)?.scrollIntoView({ block: "nearest" }); }, [id, active, query, activeChoiceId]);
@@ -36,7 +53,7 @@ export function AssistantContextSearch({ items, selected, onAdd, onClose, motion
     <input autoFocus role="combobox" aria-label="Search TextText items by title or folder"
       aria-expanded="true" aria-autocomplete="list" aria-controls={id}
       aria-activedescendant={choices[active] ? `${id}-${active}` : undefined}
-      placeholder="Search titles or folders" value={query}
+      placeholder="Search titles or folders" maxLength={200} value={query}
       onChange={(event) => { setQuery(event.target.value); setActiveId(null); }}
       onKeyDown={(event) => {
         if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
@@ -54,16 +71,29 @@ export function AssistantContextSearch({ items, selected, onAdd, onClose, motion
         <span>{item.name}</span><small>{item.detail}</small>
       </button>)}
     </div>
-    {!choices.length && <span className={styles.contextPickerEmpty} role="status">No matching items</span>}
+    {workspaceHandle && query.trim().length >= 2 && searchStatus && <span role="status">{searchStatus}</span>}
+    {!choices.length && !searchStatus && <span className={styles.contextPickerEmpty} role="status">No matching items</span>}
   </div>;
 }
 
-export function AssistantContextPicker({ choice, onChange, items, hasItem, hasSelection, disabled, focusComposer, open = false, onOpenChange }: {
+export function AssistantContextPicker({ choice, onChange, items, hasItem, hasSelection, disabled, focusComposer, open = false, onOpenChange, workspaceHandle }: {
+  workspaceHandle?: string;
   choice: AssistantContextChoice; onChange: (choice: AssistantContextChoice) => void;
   items: readonly AssistantWorkspaceContextItem[]; hasItem: boolean; hasSelection: boolean;
   disabled?: boolean; focusComposer: () => void;
   open?: boolean; onOpenChange?: (open: boolean) => void;
 }) {
+  const [resolved, setResolved] = useState<{ handle: string; ids: string; items: AssistantWorkspaceContextItem[] }>({ handle: "", ids: "", items: [] });
+  const unresolved = choice.itemIds.filter((id) => !items.some((item) => item.id === id)).join(",");
+  useEffect(() => {
+    if (!workspaceHandle || !unresolved) return;
+    const controller = new AbortController();
+    void fetchContextSources(workspaceHandle, { ids: unresolved.split(",") }, controller.signal)
+      .then((items) => { if (!controller.signal.aborted) setResolved({ handle: workspaceHandle, ids: unresolved, items }); })
+      .catch(() => { /* Unavailable sources keep removable, explicitly named fallback chips. */ });
+    return () => controller.abort();
+  }, [workspaceHandle, unresolved]);
+  const namedItems = [...items, ...(resolved.handle === workspaceHandle && resolved.ids === unresolved ? resolved.items : [])];
   const trigger = useRef<HTMLButtonElement>(null);
   const motionOpen = open && !disabled && choice.itemIds.length < MAX_PERSON_CONTEXT_ITEMS;
   const presence = useMotionPresence(motionOpen);
@@ -79,7 +109,7 @@ export function AssistantContextPicker({ choice, onChange, items, hasItem, hasSe
     {hasSelection && <button type="button" disabled={disabled} aria-pressed={choice.includeSelection}
       onClick={() => onChange({ ...choice, includeSelection: !choice.includeSelection })}>Selection</button>}
     {choice.itemIds.map((id) => {
-      const name = items.find((item) => item.id === id)?.name ?? "Unavailable item";
+      const name = namedItems.find((item) => item.id === id)?.name ?? "Unavailable item";
       return <button key={id} type="button" disabled={disabled} aria-label={`Remove context ${name}`}
         title={name} onClick={() => {
           focusComposer();
@@ -97,7 +127,7 @@ export function AssistantContextPicker({ choice, onChange, items, hasItem, hasSe
         title={`Add up to ${MAX_PERSON_CONTEXT_ITEMS} items`} onClick={() => onOpenChange?.(!open)}>Add</button>
       {presence.present && <AssistantContextSearch
         motionOpen={motionOpen} motionOnRest={presence.onRest} trigger={trigger}
-        items={items} selected={choice.itemIds} onClose={close}
+        workspaceHandle={workspaceHandle} items={items} selected={choice.itemIds} onClose={close}
         onAdd={(item) => onChange({ ...choice, itemIds: [...choice.itemIds, item.id] })} />}
     </div>
   </div>;

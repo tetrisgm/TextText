@@ -684,7 +684,7 @@ export function AssistantSidebar({
               if (added) onAddContextItem?.(added);
               attachments.filter((a) => a.workspaceItemId && !choice.itemIds.includes(a.workspaceItemId)).forEach(onRemoveAttachment);
             })}
-            items={availableContextItems} hasItem={context?.kind === "item"}
+            workspaceHandle={workspaceHandle} items={availableContextItems} hasItem={context?.kind === "item"}
             hasSelection={hasSelection} disabled={disabled || submitting}
             focusComposer={() => composerRef.current?.focus()} />
           </div>
