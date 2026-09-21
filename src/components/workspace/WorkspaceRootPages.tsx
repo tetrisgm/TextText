@@ -1069,6 +1069,10 @@ export function LocalWorkspaceContent({
     );
   }, [pool, view]);
 
+  const renderingTemplates = useMemo(
+    () => [...pool.templates, ...(pool.pinnedTemplates ?? [])],
+    [pool.templates, pool.pinnedTemplates],
+  );
   const [homeSession] = useState(() => new HomeSession(pool.blogId));
   const viewsHydrated = useClientHydrated();
   useEffect(() => {
@@ -1194,7 +1198,7 @@ export function LocalWorkspaceContent({
           onSelectPost={onSelectPost}
           selectedPostId={selectedPostId}
           selectedPostIds={selectedPostIds}
-          availableTemplates={pool.templates}
+          availableTemplates={renderingTemplates}
           readingSources={pool.readingSources}
           blogId={pool.blogId}
           onOpenFolderPath={onOpenSection}

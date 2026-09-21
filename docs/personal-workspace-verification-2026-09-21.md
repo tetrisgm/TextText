@@ -368,3 +368,18 @@ Guin, Rating 5 and the unchanged body/source. Home New still lists only Note,
 Article and Bookmark. Palette reopening from Home also retains Author. The
 verification type remains retired in this local fixture. Temporary build configs
 were removed after startup. No public release or installed-app update occurred.
+
+### Full regression and folder rendering follow-up
+
+At 1f35dfd1, `node scripts/with-local-database.mjs npm test` passed: 386 files,
+3573 tests, with 17 files/123 tests skipped; 54.83 seconds. Log:
+`/tmp/texttext-personal-current-full-tests.log`. Existing unrelated worktree
+changes were present, as in earlier full runs. Database-gated tests are not
+claimed by this default run; the lifecycle database check is recorded above.
+
+Inspection found FolderPage still received only selectable definitions. Its
+render-only availableTemplates input now gets a memoized combination of active
+and pinned definitions. This preserves retired/historical folder layouts and
+card rendering without adding them to creation controls. Two focused
+folder/pinned-template tests, TypeScript, scoped lint and whitespace checks pass.
+This final folder wiring change is newer than the full suite and 3120 preview.
