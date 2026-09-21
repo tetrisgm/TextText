@@ -53,3 +53,17 @@ passes three tests, including denial on a later refresh page. Type checking
 passes. Targeted lint has no errors and three existing image warnings.
 The isolated local production build passes. Browser timing verification of this
 change remains pending; the measurements above describe the previous implementation.
+
+## Source-to-writing destinations
+
+The reader's Add to document action now uses the same authored-writing
+classification as Writing. Existing articles and custom documents are valid
+destinations; RSS and bookmark sources are excluded. New article creates an
+article through the shared create command with the quoted passage and internal
+source reference. Existing destinations still use append_to_item with a stable
+retry identity.
+
+Nine targeted tests pass, including component command dispatch for new articles,
+existing-article append, retry identity and picker membership. Lint passes.
+Live multi-source drafting, explicit AI context and concurrent capture remain
+unverified; these checks do not close the writing integration acceptance gate.
