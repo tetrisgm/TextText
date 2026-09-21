@@ -18,4 +18,10 @@ describe("timeline refresh", () => {
   it("clears an exhausted timeline after all items are removed", () => {
     expect(reconcileTimeline(page([entry("a", "3")], "cursor"), page([])).visible).toMatchObject({ entries: [], nextCursor: null });
   });
+  it("removes unverified older rows when the whole loaded window is revalidated", () => {
+    const result = reconcileTimeline(page([entry("a", "3"), entry("revoked", "1")], "old-cursor"), page([entry("a", "3"), entry("new", "2")], "fresh-cursor"), true);
+    expect(result.visible.entries.map((item) => item.id)).toEqual(["a"]);
+    expect(result.visible.nextCursor).toBe("fresh-cursor");
+    expect(result.pending?.entries.map((item) => item.id)).toEqual(["a", "new"]);
+  });
 });

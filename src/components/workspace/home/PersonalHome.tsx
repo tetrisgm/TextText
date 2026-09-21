@@ -8,7 +8,7 @@ import { plainTextExcerpt } from "@/lib/content";
 import { fetchReadingHome, READING_ITEMS_CHANGED, type ReadingItemsChange, type ReadingListItem } from "@/lib/reading/client";
 import { addPost } from "@/lib/pool/store";
 import { poolPostFor } from "./HomeNews";
-import { fetchWorkspaceTimeline, TimelineAccessError } from "@/lib/workspace/timeline-client";
+import { fetchWorkspaceTimeline, refreshWorkspaceTimeline, TimelineAccessError } from "@/lib/workspace/timeline-client";
 import { reconcileTimeline, type TimelinePage } from "@/lib/workspace/timeline";
 import type { HomeSession } from "./session";
 import styles from "./Home.module.css";
@@ -27,6 +27,7 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews, sessi
   const [loadingMore, setLoadingMore] = useState(false);
   const timelineRef = useRef<TimelinePage | null>(null);
   const generation = useRef(0);
+  const timelineRevision = useRef(0);
   const refreshTimeline = useRef<(() => Promise<void>) | null>(null);
   const [news, setNews] = useState<ReadingListItem[]>(session?.personalNews ?? []);
   const [error, setError] = useState(false);
@@ -75,19 +76,20 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews, sessi
     const refresh = async () => {
       const request = ++refreshRequest;
       try {
-        const page = await fetchWorkspaceTimeline(pool.blog.handle, selected);
+        const page = await refreshWorkspaceTimeline(pool.blog.handle, selected, timelineRef.current);
         if (current !== generation.current || request !== refreshRequest) return;
         denied.current = false;
         session?.setAccessDenied(false);
         setAccessDenied(false);
         setError(false);
+        timelineRevision.current += 1;
         const previous = timelineRef.current;
         if (!previous) {
           timelineRef.current = page;
           session?.saveTimeline(selected, page);
           setTimeline(page);
         } else {
-          const refreshed = reconcileTimeline(previous, page);
+          const refreshed = reconcileTimeline(previous, page, true);
           timelineRef.current = refreshed.visible;
           session?.saveTimeline(selected, refreshed.visible);
           setTimeline(refreshed.visible);
@@ -123,10 +125,11 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews, sessi
   const more = async () => {
     if (!timeline?.nextCursor || loadingMore) return;
     const current = generation.current;
+    const revision = timelineRevision.current;
     setLoadingMore(true);
     try {
       const page = await fetchWorkspaceTimeline(pool.blog.handle, filter === "news" ? "all" : filter, timeline.nextCursor);
-      if (current !== generation.current || denied.current) return;
+      if (current !== generation.current || revision !== timelineRevision.current || denied.current) return;
       const combined = { ...page, entries: [...new Map([...timeline.entries, ...page.entries].map((entry) => [entry.id, entry])).values()] };
       timelineRef.current = combined;
       session?.saveTimeline(filter === "news" ? "all" : filter, combined);

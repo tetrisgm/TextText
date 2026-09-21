@@ -202,6 +202,14 @@ unverified existing features into completed acceptance claims.
 
 ## Implementation checkpoints
 
+- Timeline refresh now follows the current server snapshot through the oldest
+  loaded row, capped at 500 rows. Reconciliation removes rows not returned by
+  that revalidation, including older deleted or inaccessible items, and uses
+  the refreshed pagination cursor. An in-flight More items response cannot
+  overwrite a completed refresh. Fourteen targeted tests, TypeScript and lint
+  pass, covering multi-page refresh, the bound and stale-row removal. Real
+  browser folder-access revocation and exact scroll restoration remain open;
+  the running production preview predates this change.
 - Home now distinguishes workspace access denial (401/403/404) from transient
   request failures. Denial hides its capture, Continue, news and timeline;
   clears session content snapshots; fences late requests; and remains hidden

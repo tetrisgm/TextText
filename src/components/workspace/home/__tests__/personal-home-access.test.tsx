@@ -18,7 +18,7 @@ vi.mock("react", async (original) => ({ ...await original<typeof import("react")
   useEffect: (effect: () => void | (() => void)) => { driver.effects.push(effect); },
 }));
 vi.mock("@/lib/reading/client", () => ({ fetchReadingHome: driver.news, READING_ITEMS_CHANGED: "reading-changed" }));
-vi.mock("@/lib/workspace/timeline-client", async (original) => ({ ...await original<typeof import("@/lib/workspace/timeline-client")>(), fetchWorkspaceTimeline: driver.timeline }));
+vi.mock("@/lib/workspace/timeline-client", async (original) => ({ ...await original<typeof import("@/lib/workspace/timeline-client")>(), fetchWorkspaceTimeline: driver.timeline, refreshWorkspaceTimeline: driver.timeline }));
 vi.mock("@/lib/pool/store", () => ({ addPost: vi.fn() }));
 vi.mock("../HomeNews", () => ({ poolPostFor: vi.fn() }));
 import { PersonalHome } from "../PersonalHome";
