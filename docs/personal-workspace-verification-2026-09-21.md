@@ -398,3 +398,14 @@ black while the folder body uses charcoal beneath a black toolbar, a remaining
 surface-consistency issue rather than full visual acceptance. These checks do
 not prove all destinations or phone layouts. Viewport override was reset and
 appearance restored to System. Temporary build config removed after startup.
+
+### Folder color mismatch corrected
+
+Computed DOM inspection on 3121 traced the dark folder's rgb(44,45,49) background
+to `.post-folder-page` and its legacy folderhead tokens; its parent canvas was
+already black. Artifact-scoped folder tokens now use the shared background,
+surface, ink, muted, separator and accent values for both themes. Published
+folder pages retain their own styling because the override is workspace-scoped.
+The existing Artifact and folder-view tests pass; whitespace checks pass.
+Visual verification requires a fresh build (3121 still has the old CSS).
+Appearance was restored to System after the inspection.

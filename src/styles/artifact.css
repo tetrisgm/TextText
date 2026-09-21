@@ -61,6 +61,20 @@
   --workspace-hints-height: 0px;
   font-family: var(--ac-font-text);
 }
+.post-editor-shell.artifact-workspace .post-folder-page:not(.is-mode-blog) {
+  --folderhead-ground: var(--artifact-bg);
+  --folderhead-title: var(--artifact-ink);
+  --folderhead-muted: var(--artifact-muted);
+  --folderhead-line: var(--artifact-line);
+  --folderhead-control: var(--artifact-surface);
+  --folderhead-control-hover: var(--artifact-surface);
+  --folderhead-control-line: var(--artifact-line);
+  --folderhead-control-line-hover: var(--artifact-muted);
+  --folderhead-focus: var(--artifact-accent);
+  --folderhead-icon-hover: var(--artifact-surface);
+  --folderhead-disabled: var(--artifact-surface);
+  --folderhead-disabled-ink: var(--artifact-muted);
+}
 .artifact-workspace .workspace-document-layout {
   padding-bottom: calc(64px + env(safe-area-inset-bottom));
   box-sizing: border-box;
