@@ -220,3 +220,17 @@ arrival behind New items. This proves the navigation/capture/reopen sequence,
 not IME composition or live native capture. Twenty-five tabs is too much for
 frequent capture; add a direct discoverable capture command using the existing
 capture-focus path before closing the keyboard-efficiency gate.
+
+### Direct capture command implemented
+
+The palette now includes `Capture a thought or link` for users who can create
+items. It navigates Home and passes a focus request to its existing capture
+composer; it does not create an empty document. The command surface and Home
+composer now share the same focus request used by folder capture.
+
+Validation: workspace command suite 12 tests passed, TypeScript passed, scoped
+ESLint has no errors (17 existing shell warnings), and diff whitespace checks
+passed. Browser focus after palette dismissal and repeated capture requests
+still require verification in a fresh production preview. Port 3115 predates
+this change. Desktop Writing on that preview was rechecked at 1280 CSS pixels:
+252px folder sidebar, contextual AI panel, and hidden mobile bottom navigation.

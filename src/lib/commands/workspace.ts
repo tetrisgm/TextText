@@ -682,6 +682,13 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
       ctx.workspace?.navigateUp();
     },
   },
+  {
+    id: "workspace.capture",
+    label: "Capture a thought or link",
+    group: "Create",
+    when: (ctx) => Boolean(ctx.workspace?.canCreate && ctx.workspace.focusCapture),
+    run: (ctx) => ctx.workspace?.focusCapture?.(),
+  },
   ...([ ["home", "Home"], ["news", "News"], ["bookmarks", "Bookmarks"], ["notes", "Writing"] ] as const).map(([destination, label]): AppCommand => ({
     id: `navigation.destination.${destination}`,
     label: `Open ${label}`,

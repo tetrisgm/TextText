@@ -1637,6 +1637,11 @@ function LocalWorkspaceShell({
     contentRef.current?.scrollTo({ top: 0 });
   }, [homePath, navigateToView]);
 
+  const focusCapture = useCallback(() => {
+    openDestination("home");
+    setCaptureFocusRequestKey((current) => current + 1);
+  }, [openDestination]);
+
   const navigateSettings = useCallback(() => {
     setSearchQuery("");
     navigateToView({ level: "settings" }, workspaceSettingsHref(homePath), {
@@ -4814,6 +4819,7 @@ function LocalWorkspaceShell({
       },
       escapeCurrent,
       focusSearch,
+      focusCapture,
       openSettings: navigateSettings,
       afterDelete: (postId: string) => {
         setSelectedPostIds((current) => {
@@ -4858,6 +4864,7 @@ function LocalWorkspaceShell({
       editCurrent,
       escapeCurrent,
       focusSearch,
+      focusCapture,
       homePath,
       navigateRoot,
       navigateSection,

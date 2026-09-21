@@ -237,6 +237,7 @@ export function WorkspaceRootLanding({
   onOpenAssistant,
   onBrowseFolders = () => undefined,
   focusRequestKey,
+  captureFocusRequestKey = 0,
   onOpenPost,
   onOpenSection,
   onQueryChange,
@@ -261,6 +262,7 @@ export function WorkspaceRootLanding({
   homeSession?: HomeSession;
   onBrowseFolders?: () => void;
   focusRequestKey: number;
+  captureFocusRequestKey?: number;
   onOpenPost: (postId: string) => void;
   onOpenSection: (folderPath: string) => void;
   onQueryChange: (query: string) => void;
@@ -830,7 +832,7 @@ export function WorkspaceRootLanding({
                   onNews={() => onSelectPane?.("news")}
                   capture={canManageItems && <>
                     <HomeCreateMenu pool={pool} onCreateItem={onCreateItem} onBuildItemType={onBuildItemType} />
-                    {creationFolder ? <UniversalItemComposer blog={pool.blog} handle={pool.blog.handle} folder={creationFolder} destinations={creationFolders} onCreateItem={onCreateItem} onOpenCapturedItem={(post) => { if (post.id) onOpenPost(post.id); }} /> : firstLoop}
+                    {creationFolder ? <UniversalItemComposer focusRequestKey={captureFocusRequestKey} blog={pool.blog} handle={pool.blog.handle} folder={creationFolder} destinations={creationFolders} onCreateItem={onCreateItem} onOpenCapturedItem={(post) => { if (post.id) onOpenPost(post.id); }} /> : firstLoop}
                   </>}
                 /> : homePane === "bookmarks" ? <section aria-label="Bookmarks"><h1 className={homeStyles.pageTitle}>Bookmarks</h1><SavedArticles session={homeSession} state="bookmarked" folders={pool.folders} handle={pool.blog.handle} blogId={pool.blogId} onOpenPost={onOpenPost} /></section> : homePane === "news" ? <HomeNews
                   session={homeSession}
@@ -1096,6 +1098,7 @@ export function LocalWorkspaceContent({
       homeSession={viewsHydrated ? homeSession : undefined}
       onBrowseFolders={onBrowseFolders}
       focusRequestKey={searchFocusRequestKey}
+      captureFocusRequestKey={captureFocusRequestKey}
       onOpenPost={onOpenPostId}
       onOpenSection={onOpenSection}
       onQueryChange={onQueryChange}

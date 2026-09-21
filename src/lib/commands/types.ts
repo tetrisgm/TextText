@@ -123,6 +123,7 @@ export type CommandWorkspaceSurface = {
   cycleTab?: (step: number) => void;
   escapeCurrent: () => boolean;
   focusSearch: () => void;
+  focusCapture?: () => void;
   openSettings: () => void;
   afterDelete: (postId: string) => void;
   startBookmarkCreate?: () => void;

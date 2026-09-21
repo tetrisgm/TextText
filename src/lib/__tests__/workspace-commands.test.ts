@@ -34,6 +34,18 @@ function context(
 }
 
 describe("workspace commands", () => {
+  it("focuses capture without creating an empty item and hides it for readers", () => {
+    const command = WORKSPACE_COMMANDS.find((entry) => entry.id === "workspace.capture")!;
+    const focusCapture = vi.fn();
+    const createItem = vi.fn();
+    const ctx = context({ canCreate: true, focusCapture, createItem });
+    expect(command.when(ctx)).toBe(true);
+    command.run(ctx);
+    expect(focusCapture).toHaveBeenCalledOnce();
+    expect(createItem).not.toHaveBeenCalled();
+    expect(command.when(context({ canCreate: false, focusCapture }))).toBe(false);
+    expect(command.when(context({ canCreate: true }))).toBe(false);
+  });
   it("opens each personal destination through the shared workspace navigation", () => {
     const openDestination = vi.fn();
     const ctx = context({ openDestination });
