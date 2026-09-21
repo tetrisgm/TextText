@@ -191,3 +191,14 @@ composition, or native reopen latency. The separately gated browser-accessibilit
 suite was not run by the shell; browser verification uses CUA. Broad responsive,
 keyboard-only and native end-to-end acceptance remains open. No app installation
 or release occurred.
+
+## Keyboard loop follow-up
+
+On preview 3114, both Cmd+K and Ctrl+K did nothing while Message assistant was
+focused. Inspection found that the assistant's Escape layer caused CommandLayer
+to defer every non-Escape key before consulting registered shortcuts. Routing
+now permits the existing command-palette binding when all active Escape layers
+belong to Assistant. Other modal layers and ordinary input remain protected.
+Seventeen keyboard/context tests, TypeScript and targeted lint pass. The live
+keyboard loop needs retesting in a fresh build containing this change; 3114
+still serves the previous implementation.

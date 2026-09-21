@@ -1,3 +1,12 @@
+export function allowsAssistantPaletteShortcut(
+  event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey">,
+  overlayLabels: readonly string[],
+): boolean {
+  return overlayLabels.length > 0 && overlayLabels.every((label) => label === "Assistant")
+    && event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)
+    && !event.altKey && !event.shiftKey;
+}
+
 export function shouldDeferKeyToActiveOverlay(
   activeOverlayCount: number,
   key: string,

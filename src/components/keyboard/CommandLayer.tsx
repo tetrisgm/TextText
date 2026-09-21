@@ -28,7 +28,7 @@ import {
   shortcutList,
   shortcutMatches,
 } from "@/lib/commands/workspace";
-import { shouldDeferKeyToActiveOverlay, shouldDeferNativeActivation } from "@/lib/commands/keyboard-routing";
+import { allowsAssistantPaletteShortcut, shouldDeferKeyToActiveOverlay, shouldDeferNativeActivation } from "@/lib/commands/keyboard-routing";
 import type {
   CommandContext,
   CommandShortcut,
@@ -344,6 +344,9 @@ export function CommandLayer({ children }: { children: ReactNode }) {
       // Dialogs and other overlays own their keyboard interactions. The window
       // capture listener runs before an overlay's target handler, so yielding
       // here prevents Enter from also opening the selected workspace item.
+      if (allowsAssistantPaletteShortcut(event, escapeStackRef.current.map((layer) => layer.label))) {
+        if (dispatchCommandShortcut(event, typingTarget)) return;
+      }
       if (
         shouldDeferKeyToActiveOverlay(
           escapeStackRef.current.length,
