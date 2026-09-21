@@ -563,25 +563,31 @@ export function HomeNews({
       if (event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) return;
       if (document.querySelector('[role="dialog"]')) return;
       if (event.key !== "Escape" && event.target instanceof Element && event.target.closest("button, a, [role=menu]")) return;
+      const focusUnit = (index: number) => {
+        setFocusIndex(index);
+        document.querySelector<HTMLElement>(`[data-home-news] [data-unit-index="${index}"]`)?.focus({ preventScroll: true });
+      };
       const current = focusIndexRef.current;
       const unit = current >= 0 ? units[current] : undefined;
       const item = targetOf(unit);
       switch (event.key) {
+        case "ArrowDown":
         case "j":
           event.preventDefault();
           if (unit?.kind === "summary" && expanded.has(unit.id) && memberIndex < unit.members.length - 1) {
             setMemberIndex(memberIndex + 1);
           } else {
-            setFocusIndex(Math.min(units.length - 1, current + 1));
+            focusUnit(Math.min(units.length - 1, current + 1));
             setMemberIndex(-1);
           }
           break;
+        case "ArrowUp":
         case "k":
           event.preventDefault();
           if (unit?.kind === "summary" && expanded.has(unit.id) && memberIndex >= 0) {
             setMemberIndex(memberIndex - 1);
           } else {
-            setFocusIndex(Math.max(0, current - 1));
+            focusUnit(Math.max(0, current - 1));
             setMemberIndex(-1);
           }
           break;

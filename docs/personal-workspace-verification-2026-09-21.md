@@ -259,3 +259,17 @@ so its numerical scroll offset is not used as proof of exact restoration.
 The prior draft cleanup claim was rechecked: empty `fill` had only selected the
 text in this browser surface. Cmd+A followed by Backspace cleared it, and a DOM
 read verified the capture value was empty. No product change was needed.
+
+### News keyboard mismatch found and corrected
+
+CUA on port 3116 reproduced a focus/selection split: with row 0 focused, J
+selected row 1 but document.activeElement remained row 0. The row's Enter
+handler opens its own article, so this could open a different item from the
+highlighted one. ArrowDown also left both indices unchanged.
+
+HomeNews now moves DOM focus with J/K selection and supports ArrowDown/ArrowUp
+through the same path. Focus movement is limited to keyboard navigation, so
+opening a row menu does not trigger a focus-stealing effect. Existing scroll
+handling remains in place. TypeScript and scoped ESLint passed; 24 related
+Artifact/keyboard-routing tests passed. Those tests do not prove browser focus:
+a fresh build and the actual J/Down/Enter/back loop remain to be verified.
