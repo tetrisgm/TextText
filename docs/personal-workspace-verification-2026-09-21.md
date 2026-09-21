@@ -345,3 +345,26 @@ Twelve folder-action/gallery tests pass, including owner/built-in/unavailable
 checks and the audited operation; TypeScript and scoped ESLint pass, as do
 whitespace checks. Browser retirement, removal from New and old-document
 reopening remain to be verified in a fresh build. Port 3118 predates this work.
+
+### Retirement integration failure found and fixed
+
+On 3119 (61a23f79), retiring local Book review verification removed it from the
+library (12 to 11 choices) and Home New. Reopening its existing document then
+failed with Unknown built-in template book-review-verification-36cea4@1.
+The pool only carried selectable types, so retiring one also removed the
+renderer definition. The store itself still resolved the exact version.
+
+Pools now carry pinnedTemplates separately from selectable templates. Server
+pool/route construction batches only missing exact versions referenced by loaded
+documents, Trash or folder defaults, scoped to the workspace. The rendering
+index and selector include them; creation choices do not. This also covers
+older immutable versions after type revisions. No query runs for an empty set.
+
+The selector regression test, local Postgres lifecycle test (including another
+workspace returning no definition), TypeScript, scoped lint and production build
+pass. Fresh `.texttext/personal-build-pinned-types` serves 3120. Directly reopening
+0ed70aa4-2854-4455-aba7-d8fdf9685bec now renders Book review with Author Ursula Le
+Guin, Rating 5 and the unchanged body/source. Home New still lists only Note,
+Article and Bookmark. Palette reopening from Home also retains Author. The
+verification type remains retired in this local fixture. Temporary build configs
+were removed after startup. No public release or installed-app update occurred.

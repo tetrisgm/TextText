@@ -54,7 +54,7 @@ import {
 import {
   workspacePoolFromParts,
 } from "@/lib/pool/selectors";
-import { workspaceWikiLinkMetadata } from "@/lib/pool/server";
+import { workspaceWikiLinkMetadata, withPinnedTemplates } from "@/lib/pool/server";
 import {
   extractWikiLinks,
   publicWikiLinkRenderTargets,
@@ -388,7 +388,7 @@ export async function PostPageForHandle({
       : undefined;
   const initialPool =
     canEdit && access.blogId
-      ? workspacePoolFromParts({
+      ? await withPinnedTemplates(workspacePoolFromParts({
           blog,
           blogId: access.blogId,
           counts,
@@ -399,7 +399,7 @@ export async function PostPageForHandle({
           sharedEntries,
           templates: workspaceTemplates,
           ...workspaceWikiLinkMetadata(wikiLinkSources, slugAliases),
-        })
+        }))
       : null;
   const templateReference =
     post.template ??

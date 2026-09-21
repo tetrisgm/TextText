@@ -56,7 +56,7 @@ import {
   getWorkspaceWikiLinkSources,
   listDocumentTemplates,
 } from "@/lib/store";
-import { workspaceWikiLinkMetadata } from "@/lib/pool/server";
+import { workspaceWikiLinkMetadata, withPinnedTemplates } from "@/lib/pool/server";
 import { listWorkspaceReadingSources } from "@/lib/reading/sources.server";
 import {
   formatArticleDate,
@@ -585,7 +585,7 @@ export async function BlogHomeForHandle({
     if (!canEdit || !access.blogId) return null;
     const parts = await (optimisticPoolParts ??
       loadWorkspacePoolParts(handle, access.blogId, viewer));
-    return workspacePoolFromParts({
+    return withPinnedTemplates(workspacePoolFromParts({
       blog,
       blogId: access.blogId,
       folders: parts.folders,
@@ -597,7 +597,7 @@ export async function BlogHomeForHandle({
       templates: parts.templates,
       readingSources: parts.readingSources,
       ...workspaceWikiLinkMetadata(parts.wikiLinkSources, parts.slugAliases),
-    });
+    }));
   })();
   const canManageSharing = access.isOwner || Boolean(workspaceAccess?.canManage);
   const hasBlogWorkspaceContent =

@@ -217,7 +217,7 @@ export function workspacePoolFromParts({
 }
 
 export function templateForPoolPost(
-  pool: Pick<WorkspacePoolPayload, "templates">,
+  pool: Pick<WorkspacePoolPayload, "templates" | "pinnedTemplates">,
   post: Pick<WorkspacePoolPost, "document" | "template" | "type">,
 ): TemplateDefinition {
   const reference =
@@ -234,7 +234,7 @@ export function templateForPoolPost(
     );
   }
   return (
-    pool.templates.find(
+    [...pool.templates, ...(pool.pinnedTemplates ?? [])].find(
       (template) =>
         templateKey(template.id, template.version) ===
         templateKey(reference.id, reference.version),

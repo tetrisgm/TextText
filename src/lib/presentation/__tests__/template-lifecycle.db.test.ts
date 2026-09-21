@@ -54,6 +54,8 @@ describe.skipIf(process.env.TEXTTEXT_READING_DB_TEST !== "1")("custom type lifec
     expect(v2.version).toBe(2);
     await store.retireDocumentTemplate(source.id, v1.id, { audit: actor });
     expect((await store.listDocumentTemplates(source.id)).some((entry) => entry.id === v1.id)).toBe(false);
+    expect(await store.getPinnedDocumentTemplates(source.id, [document.presentation.template])).toEqual([v1]);
+    expect(await store.getPinnedDocumentTemplates(destination.id, [document.presentation.template])).toEqual([]);
     const reopened = await store.getPostById(source.handle, original.id!);
     expect(reopened?.document).toEqual(document);
     expect(await store.getDocumentTemplate(source.id, document.presentation.template)).toEqual(v1);

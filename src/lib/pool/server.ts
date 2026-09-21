@@ -10,6 +10,7 @@ import {
   getPostSlugAliases,
   getWorkspaceWikiLinkSources,
   listDocumentTemplates,
+  getPinnedDocumentTemplates,
 } from "@/lib/store";
 import { workspacePoolFromParts } from "@/lib/pool/selectors";
 import type { WorkspacePoolPayload } from "@/lib/pool/types";
@@ -29,6 +30,16 @@ export function workspaceWikiLinkMetadata(
     ),
     slugAliases,
   };
+}
+
+export async function withPinnedTemplates(pool: WorkspacePoolPayload): Promise<WorkspacePoolPayload> {
+  const available = new Set(pool.templates.map((definition) => `${definition.id}@${definition.version}`));
+  const references = [
+    ...pool.posts.map((post) => post.template ?? post.document?.presentation.template),
+    ...(pool.trashedPosts ?? []).map((post) => post.template ?? post.document?.presentation.template),
+    ...pool.folders.map((folder) => folder.defaultTemplate),
+  ].filter((reference): reference is { id: string; version: number } => Boolean(reference && !available.has(`${reference.id}@${reference.version}`)));
+  return { ...pool, pinnedTemplates: await getPinnedDocumentTemplates(pool.blogId, references) };
 }
 
 export async function getWorkspacePoolForOwner(
@@ -67,7 +78,7 @@ export async function getWorkspacePoolForOwner(
   ]);
   const wikiLinks = workspaceWikiLinkMetadata(wikiLinkSources, slugAliases);
 
-  return workspacePoolFromParts({
+  return withPinnedTemplates(workspacePoolFromParts({
     blog,
     blogId: access.blogId,
     counts,
@@ -79,5 +90,5 @@ export async function getWorkspacePoolForOwner(
     templates,
     readingSources,
     ...wikiLinks,
-  });
+  }));
 }

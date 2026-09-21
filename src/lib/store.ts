@@ -3790,6 +3790,21 @@ export async function getDocumentTemplate(
   return rows[0] ? validateTemplateDefinition(rows[0].definition) : null;
 }
 
+/** Resolve exact custom versions for existing content, including retired types. */
+export async function getPinnedDocumentTemplates(
+  blogId: string,
+  references: TemplateReference[],
+): Promise<TemplateDefinition[]> {
+  if (!db || references.length === 0) return [];
+  const unique = [...new Map(references.map((ref) => [`${ref.id}@${ref.version}`, ref])).values()];
+  const rows = await db.select({ definition: documentTemplates.definition })
+    .from(documentTemplates)
+    .where(and(eq(documentTemplates.blogId, blogId), or(...unique.map((ref) =>
+      and(eq(documentTemplates.templateId, ref.id), eq(documentTemplates.version, ref.version)),
+    ))));
+  return rows.map((row) => validateTemplateDefinition(row.definition));
+}
+
 /**
  * The collection layout of the look governing a folder's index page.
  *

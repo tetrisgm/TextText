@@ -101,7 +101,7 @@ function buildIndexes(pool: WorkspacePoolPayload): WorkspaceIndexes {
   );
 
   const templateByKey = new Map<string, TemplateDefinition>();
-  for (const template of pool.templates ?? []) {
+  for (const template of [...(pool.templates ?? []), ...(pool.pinnedTemplates ?? [])]) {
     templateByKey.set(
       templateKernelKey(template.id, template.version),
       template,

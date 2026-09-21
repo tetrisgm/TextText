@@ -79,6 +79,8 @@ export type WorkspacePoolPayload = {
   readingSources?: WorkspaceReadingSource[];
   /** Immutable template versions available to this workspace. */
   templates: TemplateDefinition[];
+  /** Exact versions needed by existing content, excluded from creation choices. */
+  pinnedTemplates?: TemplateDefinition[];
   trashedPosts?: WorkspacePoolPost[];
   trashedFolders?: Folder[];
   sharedEntries?: SharedWithMeEntry[];
