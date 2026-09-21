@@ -1,4 +1,6 @@
 import { agentTextChanges } from "@/lib/agent-changes";
+import type { TimelineFilter, TimelinePage } from "@/lib/workspace/timeline";
+import { retentionHolds } from "./db/schema";
 import { agentChangeContext } from "@/lib/agent-change-context.server";
 import { agentChangeCte } from "@/lib/agent-change-sql.server";
 import { agentChanges } from "./db/schema";
@@ -7848,4 +7850,74 @@ export async function countHiddenSummaries(userId: string, blogId: string): Prom
     .from(readingSummaryState)
     .where(and(eq(readingSummaryState.userId, userId), sql`${readingSummaryState.hiddenAt} is not null`, sql`${readingSummaryState.summaryId} in (select id from reading_summaries where blog_id = ${blogId} and retired_into is null)`));
   return rows[0]?.count ?? 0;
+}
+
+/** Bounded personal activity projection. Reading opens and autosaves never
+ * change its order. Access is resolved again for every page, including cursors. */
+export async function listWorkspaceTimeline(input: {
+  handle: string;
+  user: AccessUser | null;
+  filter?: TimelineFilter;
+  cursor?: string | null;
+  limit?: number;
+}): Promise<TimelinePage> {
+  if (!db) throw new Error(NO_DATABASE);
+  const filter = input.filter ?? "all";
+  let snapshot = new Date().toISOString();
+  let before: { at: string; id: string } | null = null;
+  if (input.cursor) {
+    try {
+      if (input.cursor.length > 2048) throw new Error();
+      const value = JSON.parse(Buffer.from(input.cursor, "base64url").toString("utf8"));
+      if (value.handle !== input.handle || value.filter !== filter ||
+          typeof value.snapshot !== "string" || !Number.isFinite(Date.parse(value.snapshot)) ||
+          typeof value.at !== "string" || !Number.isFinite(Date.parse(value.at)) ||
+          typeof value.id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.id)) throw new Error();
+      snapshot = new Date(value.snapshot).toISOString();
+      before = { at: new Date(value.at).toISOString(), id: value.id };
+    } catch { throw new Error("Invalid timeline cursor"); }
+  }
+  const [blogId, accessible] = await Promise.all([
+    blogIdFor(input.handle), accessibleFolderIdsForUser(input.handle, input.user),
+  ]);
+  if (accessible !== "all" && accessible.size === 0) return { entries: [], nextCursor: null, snapshot };
+  const limit = Number.isFinite(input.limit) ? Math.max(1, Math.min(100, Math.trunc(input.limit!))) : 40;
+  const savedAt = sql<Date | null>`(select max(${retentionHolds.createdAt}) from ${retentionHolds}
+    where ${retentionHolds.postId} = ${posts.id} and ${retentionHolds.reason} = 'keep'
+    and ${retentionHolds.releasedAt} is null)`;
+  const eventAt = sql<Date>`date_trunc('milliseconds', case when ${posts.origin} = 'feed' then ${savedAt}
+    when ${posts.type} <> 'bookmark' and ${posts.status} = 'published' then coalesce(${posts.publishedAt}, ${posts.createdAt})
+    else ${posts.createdAt} end)`;
+  const rows = await db.select({
+    id: posts.id, folderId: posts.folderId, title: posts.title, slug: posts.slug,
+    type: posts.type, status: posts.status, visibility: posts.visibility,
+    templateId: posts.templateId, templateVersion: posts.templateVersion,
+    excerpt: sql<string>`left(coalesce(nullif(${posts.excerpt}, ''), ${posts.body}), 500)`,
+    cover: posts.cover, origin: posts.origin, createdAt: posts.createdAt,
+    updatedAt: posts.updatedAt, at: eventAt.mapWith(posts.createdAt),
+  }).from(posts).innerJoin(folders, eq(folders.id, posts.folderId)).where(and(
+    eq(posts.blogId, blogId), isNull(posts.deletedAt), isNull(folders.deletedAt),
+    accessible === "all" ? undefined : inArray(posts.folderId, [...accessible]),
+    or(eq(posts.origin, "manual"), and(eq(posts.type, "bookmark"), sql`${savedAt} is not null`)),
+    filter === "saved" ? eq(posts.type, "bookmark") : filter === "writing" ? ne(posts.type, "bookmark") : undefined,
+    sql`${eventAt} <= ${snapshot}::timestamp`,
+    before ? sql`(${eventAt}, ${posts.id}) < (${before.at}::timestamp, ${before.id}::uuid)` : undefined,
+  )).orderBy(desc(eventAt), desc(posts.id)).limit(limit + 1);
+  const visible = rows.slice(0, limit);
+  const entries: TimelinePage["entries"] = visible.map((row) => ({
+    id: row.id,
+    at: new Date(row.at).toISOString(),
+    kind: row.type === "bookmark" ? "saved" : row.status === "published" ? "published" : "created",
+    post: {
+      id: row.id, blogId, folderId: row.folderId ?? undefined, title: row.title,
+      slug: row.slug, type: row.type, status: row.status, visibility: row.visibility,
+      template: { id: row.templateId, version: row.templateVersion },
+      excerpt: row.excerpt, cover: row.cover ?? undefined,
+      origin: row.origin === "feed" ? "feed" : "manual",
+      createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(),
+    },
+  }));
+  const last = entries.at(-1);
+  return { entries, snapshot, nextCursor: rows.length > limit && last
+    ? Buffer.from(JSON.stringify({ handle: input.handle, filter, snapshot, at: last.at, id: last.id })).toString("base64url") : null };
 }

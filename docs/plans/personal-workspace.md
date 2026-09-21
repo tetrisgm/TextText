@@ -210,7 +210,12 @@ unverified existing features into completed acceptance claims.
 - Initial Home composition now reuses the durable capture queue, displays three
   recent opens, previews personal material and a bounded news group. News,
   Bookmarks and Writing have independent navigation. This is an intermediate
-  implementation: timeline server paging, precise save-event dates, new-arrival
-  admission, state restoration, visual acceptance and benchmark evidence remain
-  required. Current Home uses a bounded reading fetch and the existing manual
-  pool; its initial list is not the final timeline read model.
+  implementation: state restoration, visual acceptance and benchmark evidence
+  remain required.
+- Timeline now comes from a bounded store query and authenticated route, with
+  snapshot/keyset pagination, save-hold timestamps, creation/publication ordering,
+  and no autosave reordering. Home groups dates, loads further pages, and stages
+  new entries behind New items on focus or capture. Database checks cover
+  terminating pagination, no repeats/newer arrivals, stable autosave dates,
+  anonymous access, filter-bound cursors and exact feed-save timestamps.
+  Warm cache/return-position and large-fixture performance checks remain open.

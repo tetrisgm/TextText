@@ -135,9 +135,47 @@ describe.skipIf(!enabled)("home news against Postgres", () => {
     await setKeep({ handle, postIds: [feedId], keep: true, actor: { userId, actorType: "human" } });
     const saved = await listReadingItems({ handle, user, scope });
     expect(saved.items.map((item) => item.id).sort()).toEqual([manual.id, feedId].sort());
+    const savedTimeline = await store.listWorkspaceTimeline({ handle, user, filter: "saved" });
+    const savedEvent = savedTimeline.entries.find((entry) => entry.id === feedId)!;
+    const holds = await db!.select().from(schema.retentionHolds).where(eq(schema.retentionHolds.postId, feedId));
+    const keep = holds.find((hold) => hold.reason === "keep" && !hold.releasedAt)!;
+    expect(savedEvent.at).toBe(keep.createdAt.toISOString());
     expect(saved.items.some((item) => item.id === note.id)).toBe(false);
     expect((await listReadingItems({ handle, user: null, scope })).items).toEqual([]);
     await setKeep({ handle, postIds: [feedId], keep: false, actor: { userId, actorType: "human" } });
     expect((await listReadingItems({ handle, user, scope })).items.map((item) => item.id)).toEqual([manual.id]);
+  });
+  it("pages the personal timeline with stable dates, filters, and permission checks", async () => {
+    const folders = await store.getFolders(handle);
+    const noteFolder = folders.find((folder) => folder.mode === "notes")!;
+    const first = await store.createDraftInFolder(handle, noteFolder.id, { initial: { title: "Timeline first", type: "note" } });
+    const second = await store.createDraftInFolder(handle, noteFolder.id, { initial: { title: "Timeline second", type: "note" } });
+    const start = await store.listWorkspaceTimeline({ handle, user, filter: "writing", limit: 1 });
+    expect(start.entries).toHaveLength(1);
+    expect(start.nextCursor).not.toBeNull();
+    const newer = await store.createDraftInFolder(handle, noteFolder.id, { initial: { title: "After snapshot", type: "note" } });
+    const collected = [...start.entries];
+    let cursor = start.nextCursor;
+    let pages = 0;
+    while (cursor && pages++ < 20) {
+      const page = await store.listWorkspaceTimeline({ handle, user, filter: "writing", limit: 1, cursor });
+      expect(page.snapshot).toBe(start.snapshot);
+      collected.push(...page.entries);
+      cursor = page.nextCursor;
+    }
+    expect(cursor, "pagination must terminate").toBeNull();
+    expect(new Set(collected.map((entry) => entry.id)).size).toBe(collected.length);
+    expect(collected.map((entry) => entry.id)).toEqual(expect.arrayContaining([first.id, second.id]));
+    expect(collected.some((entry) => entry.id === newer.id)).toBe(false);
+    const original = collected.find((entry) => entry.id === first.id)!;
+    await db!.update(schema.posts).set({ updatedAt: new Date() }).where(eq(schema.posts.id, first.id!));
+    const refreshed = await store.listWorkspaceTimeline({ handle, user, filter: "writing" });
+    expect(refreshed.entries.find((entry) => entry.id === first.id)?.at).toBe(original.at);
+    expect((await store.listWorkspaceTimeline({ handle, user: null })).entries).toEqual([]);
+    const bookmarks = await store.listWorkspaceTimeline({ handle, user, filter: "saved" });
+    expect(bookmarks.entries.length).toBeGreaterThan(0);
+    expect(bookmarks.entries.every((entry) => entry.post.type === "bookmark" && entry.kind === "saved")).toBe(true);
+    await expect(store.listWorkspaceTimeline({ handle, user, cursor: "invalid" })).rejects.toThrow("Invalid timeline cursor");
+    await expect(store.listWorkspaceTimeline({ handle, user, filter: "saved", cursor: start.nextCursor })).rejects.toThrow("Invalid timeline cursor");
   });
 });

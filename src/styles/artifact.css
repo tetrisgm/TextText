@@ -334,6 +334,7 @@
 .workspace-primary-destinations button[aria-current="page"] { background: var(--artifact-line); font-weight: 600; }
 .personal-home { padding-top: 16px; }
 .personal-home h2 { font-size: 15px; font-weight: 600; margin: 0 0 12px; }
+.personal-home h2.personal-home-date { padding-top: 24px; color: var(--artifact-muted); }
 .personal-home-continue { padding: 20px 0; }
 .personal-home-continue > div { display: flex; gap: 8px; }
 .personal-home-continue button { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 1px solid var(--artifact-line); border-radius: 8px; padding: 12px; color: inherit; background: transparent; text-align: left; }
