@@ -202,3 +202,21 @@ belong to Assistant. Other modal layers and ordinary input remain protected.
 Seventeen keyboard/context tests, TypeScript and targeted lint pass. The live
 keyboard loop needs retesting in a fresh build containing this change; 3114
 still serves the previous implementation.
+
+### Keyboard loop verified on 079965b6
+
+Fresh production build `.texttext/personal-build-palette` passes and serves
+port 3115. From focused Message assistant, Cmd+K opens the palette. Using its
+search field and Enter, CUA opened Home, Bookmarks, News and Writing, opened
+Quiet tools in the editor, and returned with Cmd+[. No pointer click was used
+for these navigation actions.
+
+Home capture was reached by 25 Tab presses from the post-palette focus position.
+Typing `Keyboard capture September 21` and a second-line body, then Enter,
+saved a note and retained capture focus. Palette search reopened it at
+`3cec53cf-6154-4571-b513-4e8b849ebb8f`; full reload retained the body
+`Verified Home capture using keyboard navigation.` The timeline staged its
+arrival behind New items. This proves the navigation/capture/reopen sequence,
+not IME composition or live native capture. Twenty-five tabs is too much for
+frequent capture; add a direct discoverable capture command using the existing
+capture-focus path before closing the keyboard-efficiency gate.
