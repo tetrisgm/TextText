@@ -710,6 +710,21 @@
 .savedRow .headline { font-weight: 400; }
 .savedRow .sources { margin-top: 10px; font-size: 14px; }
 .savedRow .thumb { width: 64px; height: 64px; }
+.libraryRow { padding: 24px 0; align-items: flex-start; gap: 24px; }
+.libraryRow .headline { font-weight: 600; line-height: 1.35; }
+.libraryRow .thumb { width: 112px; height: 112px; object-fit: cover; border-radius: 8px; }
+.libraryExcerpt { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin-top: 8px; color: var(--news-ink-2); font-size: 14px; line-height: 1.5; }
+.libraryFolder { display: block; margin-top: 6px; color: var(--news-ink-2); font-size: 12px; overflow-wrap: anywhere; }
+.libraryFilters { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 16px; border-bottom: 1px solid var(--news-line); }
+.libraryFilters > div { display: flex; gap: 18px; }
+.libraryFilters button { border: 0; padding: 8px 0; background: transparent; color: var(--news-ink-2); font: inherit; cursor: pointer; }
+.libraryFilters button[aria-pressed="true"] { color: var(--news-ink); font-weight: 650; }
+.libraryFilters select { max-width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--news-line); border-radius: 6px; color: var(--news-ink); background: var(--artifact-canvas, Canvas); font: inherit; font-size: 13px; }
+.libraryFilters :focus-visible { outline: 2px solid var(--news-accent); outline-offset: 4px; }
+@container home (max-width: 420px) {
+  .libraryRow { gap: 14px; }
+  .libraryRow .thumb { width: 76px; height: 76px; }
+}
 .readState { color: #0066cc; }
 :global([data-theme="dark"]) .readState { color: #409cff; }
 @media (prefers-color-scheme: dark) { :global(:root:not([data-theme="light"])) .readState { color: #409cff; } }

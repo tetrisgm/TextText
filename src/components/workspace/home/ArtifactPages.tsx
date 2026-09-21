@@ -31,13 +31,15 @@ function useOpenArticle(props: OpenProps) {
   };
 }
 
-function ArticleRows({ items, ...props }: OpenProps & { items: ReadingListItem[] }) {
+function ArticleRows({ items, previews = false, ...props }: OpenProps & { items: ReadingListItem[]; previews?: boolean }) {
   const open = useOpenArticle(props);
   return <ul className={styles.list}>{items.map((item) => <li key={item.id}>
-    <button className={`${styles.unit} ${styles.rowButton} ${styles.savedRow}`} onClick={() => open(item)}>
+    <button className={`${styles.unit} ${styles.rowButton} ${styles.savedRow} ${previews ? styles.libraryRow : ""}`} onClick={() => open(item)}>
       <span className={styles.body}>
         <span className={styles.headline}>{item.title}</span>
+        {previews && item.excerpt && <span className={styles.libraryExcerpt}>{plainTextExcerpt(item.excerpt, 240)}</span>}
         <span className={styles.sources}>{publisherFor(item).name}{item.read ? <> · <span className={styles.readState}>✓ Read</span></> : item.wordCount > 100 ? ` · ${Math.max(1, Math.round(item.wordCount / 220))} min read` : ""}</span>
+        {previews && <span className={styles.libraryFolder}>{item.folderPath.split("/").join(" / ")}</span>}
       </span>
       {item.imageUrl && <img className={styles.thumb} src={item.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
     </button>
@@ -80,30 +82,45 @@ export function ArtifactHeadlines(props: OpenProps) {
   </section>;
 }
 
-export function SavedArticles({ state, ...props }: OpenProps & { state: "saved" | "read" | "bookmarked" }) {
+export function SavedArticles({ state, folders = [], ...props }: OpenProps & { state: "saved" | "read" | "bookmarked"; folders?: WorkspacePoolPayload["folders"] }) {
+  const [folderPath, setFolderPath] = useState("");
+  const [later, setLater] = useState(false);
+  const effectiveState = state === "bookmarked" && later ? "saved" : state;
+  const generation = useRef(0);
   const [items, setItems] = useState<ReadingListItem[] | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const resetPage = () => {
+    generation.current += 1;
+    setItems(null); setCursor(null); setError(null); setLoading(false);
+  };
   useEffect(() => {
+    generation.current += 1;
     let active = true;
-    void fetchReadingPage({ handle: props.handle, scope: { folderPath: "", includeDescendants: true, state, dateBasis: state === "read" ? "read" : "received" } }).then((page) => {
+    void fetchReadingPage({ handle: props.handle, scope: { folderPath, includeDescendants: true, state: effectiveState, dateBasis: state === "read" ? "read" : "received" } }).then((page) => {
       if (!active) return;
       setItems(page.items); setCursor(page.nextCursor); setError(null);
     }).catch(() => { if (active) setError("Could not load saved articles."); });
-    return () => { active = false; };
-  }, [props.handle, attempt, state]);
+    return () => { active = false; generation.current += 1; };
+  }, [props.handle, attempt, state, effectiveState, folderPath]);
   const more = async () => {
+    if (loading || !cursor) return;
+    const request = generation.current;
     setLoading(true);
     try {
-      const page = await fetchReadingPage({ handle: props.handle, cursor, scope: { folderPath: "", includeDescendants: true, state, dateBasis: state === "read" ? "read" : "received" } });
-      setItems((current) => [...(current ?? []), ...page.items]); setCursor(page.nextCursor); setError(null);
-    } catch { setError("Could not load more articles."); }
-    finally { setLoading(false); }
+      const page = await fetchReadingPage({ handle: props.handle, cursor, scope: { folderPath, includeDescendants: true, state: effectiveState, dateBasis: state === "read" ? "read" : "received" } });
+      if (request !== generation.current) return;
+      setItems((current) => [...new Map([...(current ?? []), ...page.items].map((item) => [item.id, item])).values()]); setCursor(page.nextCursor); setError(null);
+    } catch { if (request === generation.current) setError("Could not load more articles."); }
+    finally { if (request === generation.current) setLoading(false); }
   };
-  return <>{error && <p role="alert">{error} <button className={styles.action} onClick={() => setAttempt((value) => value + 1)}>Try again</button></p>}
-    {items ? items.length ? <ArticleRows items={items} {...props} /> : <p className={styles.empty}>{state === "read" ? "Articles you read appear here." : "Save an article to read it later. Your saved articles stay here."}</p> : !error && <p className={styles.empty} role="status">Loading saved articles…</p>}
+  return <>{state === "bookmarked" && <div className={styles.libraryFilters}>
+    <div role="group" aria-label="Saved articles"><button aria-pressed={!later} onClick={() => { if (later) { resetPage(); setLater(false); } }}>All saved</button><button aria-pressed={later} onClick={() => { if (!later) { resetPage(); setLater(true); } }}>Read Later</button></div>
+    <select aria-label="Bookmark folder" value={folderPath} onChange={(event) => { resetPage(); setFolderPath(event.target.value); }}><option value="">All folders</option>{[...folders].sort((a, b) => a.path.localeCompare(b.path)).map((folder) => <option key={folder.id} value={folder.path}>{folder.path.split("/").join(" / ")}</option>)}</select>
+  </div>}{error && <p role="alert">{error} <button className={styles.action} onClick={() => { resetPage(); setAttempt((value) => value + 1); }}>Try again</button></p>}
+    {items ? items.length ? <ArticleRows items={items} previews={state === "bookmarked"} {...props} /> : <p className={styles.empty}>{state === "read" ? "Articles you read appear here." : folderPath ? "No saved articles in this folder yet." : later ? "Articles you mark Read Later appear here." : "Save a link or keep an article from News to start your library."}</p> : !error && <p className={styles.empty} role="status">Loading saved articles…</p>}
     {cursor && <button className={styles.back} disabled={loading} onClick={() => void more()}>{loading ? "Loading…" : "More articles"}</button>}
   </>;
 }

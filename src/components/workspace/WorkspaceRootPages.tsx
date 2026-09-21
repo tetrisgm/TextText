@@ -831,7 +831,7 @@ export function WorkspaceRootLanding({
                     <HomeCreateMenu pool={pool} onCreateItem={onCreateItem} onBuildItemType={onBuildItemType} />
                     {creationFolder ? <UniversalItemComposer blog={pool.blog} handle={pool.blog.handle} folder={creationFolder} destinations={creationFolders} onCreateItem={onCreateItem} onOpenCapturedItem={(post) => { if (post.id) onOpenPost(post.id); }} /> : firstLoop}
                   </>}
-                /> : homePane === "bookmarks" ? <section aria-label="Bookmarks"><h1 className={homeStyles.pageTitle}>Bookmarks</h1><SavedArticles state="bookmarked" handle={pool.blog.handle} blogId={pool.blogId} onOpenPost={onOpenPost} /></section> : homePane === "news" ? <HomeNews
+                /> : homePane === "bookmarks" ? <section aria-label="Bookmarks"><h1 className={homeStyles.pageTitle}>Bookmarks</h1><SavedArticles state="bookmarked" folders={pool.folders} handle={pool.blog.handle} blogId={pool.blogId} onOpenPost={onOpenPost} /></section> : homePane === "news" ? <HomeNews
                   session={homeSession}
                   handle={pool.blog.handle}
                   blogId={pool.blogId}
