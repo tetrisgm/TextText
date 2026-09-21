@@ -509,3 +509,22 @@ Remaining: dark/narrow visual checks of the new control, persisted News/Items
 preference, feed-folder moves and imported-item movement semantics. The manual
 bookmark fixture displays a Saving date label despite surviving reopening;
 investigate that status separately. This is not a release or complete acceptance.
+
+## Folder content preference and truthful date metadata
+
+Items/News now uses a folder-ID-scoped browser preference with a same-session
+fallback when storage cannot be written. Storage events update other open tabs;
+unknown values fall back to the folder's content-based default. In the current
+localhost:3100 build, selecting Items and reloading preserved Items, and selecting
+News and reloading preserved News. These are browser preferences, not account
+settings synchronized across devices.
+
+The manual bookmark's Saving label came from captureStatus=pending, which refers
+to article extraction rather than whether the item was stored. Folder list rows
+now show date metadata independently of capture state. The mixed folder displayed
+SEP 21, 2026 for both stored fixtures, with no Saving label. Bookmark capture
+controls still expose extraction state. Typecheck and 16 existing folder/Artifact
+contract tests passed; lint passed with the existing WindowedRows warning.
+These changes are verified in development; the production preview on 3124 still
+contains the preceding build. Dark/narrow checks, feed-folder moves and imported
+item movement remain open.

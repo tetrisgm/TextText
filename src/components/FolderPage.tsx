@@ -209,6 +209,7 @@ import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
 import { TagChips } from "@/components/TagChips";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import { WorkspaceActionSearch } from "@/components/workspace/WorkspaceActionSearch";
+import { useFolderContentPane } from "@/components/workspace/useFolderContentPane";
 import {
   WorkspaceItemActions,
   WorkspaceItemStar,
@@ -1192,11 +1193,9 @@ function UniversalFolderContents({
                       {itemTitle(post)}
                     </span>
                     <span className="post-folder-row-meta">
-                      {post.captureStatus === "pending"
-                        ? "Saving"
-                        : formatArticleDate(post.updatedAt ?? post.date, {
-                            style: "short",
-                          })}
+                      {formatArticleDate(post.updatedAt ?? post.date, {
+                        style: "short",
+                      })}
                     </span>
                     {preview && (
                       <span className="post-folder-row-excerpt">{preview}</span>
@@ -1715,8 +1714,10 @@ export function FolderPage({
 
   const sourcesHere = readingSourcesUnder(readingSources, folder.path);
   const hasFeeds = sourcesHere.length > 0 && Boolean(blogId);
-  const [folderPanes, setFolderPanes] = useState<Record<string, "items" | "news">>({});
-  const folderPane = folderPanes[folder.id] ?? (personalItems.length ? "items" : "news");
+  const [folderPane, setFolderPane] = useFolderContentPane(
+    folder.id,
+    personalItems.length ? "items" : "news",
+  );
   const isReadingFolder = hasFeeds && folderPane === "news";
   const canAddFeeds = canEditItems && folder.mode === "bookmarks" && Boolean(blogId);
   const [addFeedsOpen, setAddFeedsOpen] = useState(false);
@@ -1742,7 +1743,7 @@ export function FolderPage({
         viewMode={viewMode}
         onChangeView={changeView}
         onCreate={() => {
-          setFolderPanes((current) => ({ ...current, [folder.id]: "items" }));
+          setFolderPane("items");
           setCreateFocusRequest((current) => current + 1);
         }}
         onRename={() =>
@@ -1771,7 +1772,7 @@ export function FolderPage({
         <div className="folder-content-switch" role="group" aria-label="Folder content">
           {(["items", "news"] as const).map((pane) => (
             <button key={pane} type="button" aria-pressed={folderPane === pane}
-              onClick={() => setFolderPanes((current) => ({ ...current, [folder.id]: pane }))}>
+              onClick={() => setFolderPane(pane)}>
               {pane === "items" ? "Items" : "News"}
             </button>
           ))}
