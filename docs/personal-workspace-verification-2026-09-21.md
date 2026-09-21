@@ -383,3 +383,18 @@ and pinned definitions. This preserves retired/historical folder layouts and
 card rendering without adding them to creation controls. Two focused
 folder/pinned-template tests, TypeScript, scoped lint and whitespace checks pass.
 This final folder wiring change is newer than the full suite and 3120 preview.
+
+### Laptop and wide desktop visual checks
+
+Fresh production build at 77907e83 passed and runs at 3121 from
+`.texttext/personal-build-layout-check`. Notes folder loads its seven items,
+including the retired-type Book review, after the pinned rendering wiring.
+
+CUA viewport checks: 1024x768 editor keeps left navigation, document and right
+AI visible; the narrow rail truncates the assistant title and some folder names.
+At 1600x1000, Notes shows its list with both rails, and Home centers the capture
+and timeline column. Light and dark were visually inspected. Dark Home uses
+black while the folder body uses charcoal beneath a black toolbar, a remaining
+surface-consistency issue rather than full visual acceptance. These checks do
+not prove all destinations or phone layouts. Viewport override was reset and
+appearance restored to System. Temporary build config removed after startup.
