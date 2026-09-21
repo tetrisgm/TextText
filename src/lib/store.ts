@@ -1534,6 +1534,59 @@ export async function createRootFolder(
   throw new Error("A folder with that name already exists.");
 }
 
+/** Move a subtree without changing folder IDs, item ownership or feed connections. */
+export async function moveFolder(
+  handle: string,
+  folderId: string,
+  parentId: string | null,
+  options: { audit: AuditEntry },
+): Promise<Folder> {
+  if (!db) throw new Error("Moving folders needs a database.");
+  const blogId = await blogIdFor(handle);
+  const audit = auditCteFrom(options.audit, "changed", sql`changed.id::text`);
+  const result = await db.execute(sql`
+    WITH locked AS MATERIALIZED (
+      SELECT id, path, parent_id, deleted_at FROM folders
+      WHERE blog_id = ${blogId} ORDER BY id FOR UPDATE
+    ), source AS (
+      SELECT * FROM locked WHERE id = ${folderId} AND deleted_at IS NULL
+        AND path NOT IN ('blog', 'notes', 'bookmarks')
+    ), destination AS (
+      SELECT id, path FROM locked WHERE id = ${parentId} AND deleted_at IS NULL
+      UNION ALL SELECT NULL::uuid, ''::text WHERE ${parentId}::uuid IS NULL
+    ), move AS (
+      SELECT source.id, source.path AS old_path, destination.id AS parent_id,
+        CASE WHEN destination.path = '' THEN '' ELSE destination.path || '/' END
+          || regexp_replace(source.path, '^.*/', '') AS new_path
+      FROM source CROSS JOIN destination
+      WHERE destination.id IS DISTINCT FROM source.id
+        AND NOT starts_with(destination.path, source.path || '/')
+        AND destination.id IS DISTINCT FROM source.parent_id
+    ), eligible AS (
+      SELECT move.* FROM move WHERE NOT EXISTS (
+        SELECT 1 FROM locked existing WHERE existing.path = move.new_path
+          AND existing.id <> move.id
+      )
+    ), changed AS (
+      UPDATE folders SET
+        path = eligible.new_path || substring(folders.path FROM length(eligible.old_path) + 1),
+        parent_id = CASE WHEN folders.id = eligible.id THEN eligible.parent_id ELSE folders.parent_id END,
+        updated_at = now()
+      FROM eligible WHERE folders.blog_id = ${blogId}
+        AND (folders.id = eligible.id OR starts_with(folders.path, eligible.old_path || '/'))
+      RETURNING folders.id
+    ), audit AS (${audit})
+    SELECT id FROM changed WHERE id = ${folderId}
+  `);
+  if (result.rows.length === 0) {
+    throw new Error("Cannot move this folder: choose an available parent outside its subtree without a matching folder name.");
+  }
+  const [fresh] = await db.select().from(folders)
+    .where(and(eq(folders.id, folderId), eq(folders.blogId, blogId))).limit(1);
+  if (!fresh) throw new Error("The moved folder is unavailable.");
+  return mapFolder(fresh);
+}
+
 export async function renameFolder(
   handle: string,
   folderId: string,

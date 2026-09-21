@@ -200,4 +200,44 @@ describe.skipIf(!enabled)("home news against Postgres", () => {
       expect(audit.length).toBeGreaterThan(0);
     }
   });
+  it("moves an RSS subtree across folder modes without losing subscriptions or items", async () => {
+    const all = await store.getFolders(handle);
+    const notes = all.find((folder) => folder.path === "notes")!;
+    const [connection] = await db!.select().from(schema.feedConnections)
+      .where(eq(schema.feedConnections.blogId, blogId));
+    const source = all.find((folder) => folder.id === connection.folderId)!;
+    const child = await store.createSubfolder(handle, source.path, "Research");
+    const item = await store.createDraftInFolder(handle, child.id, {
+      initial: { type: "note", title: "Source notes", body: "Preserve me." },
+    });
+    const articlesBefore = await db!.select({ id: schema.posts.id }).from(schema.posts)
+      .where(eq(schema.posts.folderId, source.id));
+    expect(articlesBefore.length).toBeGreaterThan(0);
+    const options = { audit: { actorUserId: userId, actorType: "human" as const,
+      actionName: "move_folder", targetType: "workspace" as const } };
+    await expect(store.moveFolder(handle, source.id, child.id, options)).rejects.toThrow("Cannot move");
+    const moved = await store.moveFolder(handle, source.id, notes.id, options);
+    expect(moved).toMatchObject({ id: source.id, parentId: notes.id, mode: source.mode });
+    expect(moved.path).toBe(`notes/${source.path.split("/").at(-1)}`);
+    const [childAfter] = await db!.select().from(schema.folders).where(eq(schema.folders.id, child.id));
+    expect(childAfter.path).toBe(`${moved.path}/research`);
+    expect(childAfter.parentId).toBe(source.id);
+    const [connectionAfter] = await db!.select().from(schema.feedConnections).where(eq(schema.feedConnections.id, connection.id));
+    expect(connectionAfter).toEqual(connection);
+    const articlesAfter = await db!.select({ id: schema.posts.id }).from(schema.posts)
+      .where(eq(schema.posts.folderId, source.id));
+    expect(articlesAfter).toEqual(articlesBefore);
+    const [itemAfter] = await db!.select().from(schema.posts).where(eq(schema.posts.id, item.id!));
+    expect(itemAfter.folderId).toBe(child.id);
+    const audit = await db!.select().from(schema.actionAudit).where(eq(schema.actionAudit.targetId, source.id));
+    expect(audit.some((entry) => entry.actionName === "move_folder")).toBe(true);
+    await expect(store.moveFolder(handle, source.id, "00000000-0000-4000-8000-000000000000", options)).rejects.toThrow("Cannot move");
+    const collision = await store.createSubfolder(handle, "bookmarks", source.path.split("/").at(-1)!);
+    expect(collision.path).toBe(source.path);
+    await expect(store.moveFolder(handle, source.id, all.find((folder) => folder.path === "bookmarks")!.id, options)).rejects.toThrow("Cannot move");
+    const root = await store.moveFolder(handle, source.id, null, options);
+    expect(root.parentId).toBeNull();
+    expect(root.path).toBe(source.path.split("/").at(-1));
+    await expect(store.moveFolder(handle, notes.id, source.id, options)).rejects.toThrow("Cannot move");
+  });
 });

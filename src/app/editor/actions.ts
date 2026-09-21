@@ -34,6 +34,7 @@ import {
   listItemComments,
   markCapturePending,
   renameFolder,
+  moveFolder,
   savePost,
   savePostContentPatch,
   setPostFolder,
@@ -1338,6 +1339,23 @@ export async function renameFolderAction(
   const name = typeof nameInput === "string" ? nameInput : "";
   const folder = await renameFolder(handle, folderId, name);
   await auditEdit(access, "rename_folder", "workspace", folder.id, folder.name);
+  await revalidateBlog(handle);
+  return folder;
+}
+
+export async function moveFolderAction(
+  handleInput: unknown,
+  folderIdInput: unknown,
+  parentIdInput: unknown,
+): Promise<Folder> {
+  const { handle, access } = await editableHandleFor(handleInput);
+  if (!access.isOwner) throw new Error("Only the workspace owner can move folders.");
+  const folderId = cleanPostId(folderIdInput);
+  const parentId = parentIdInput === null ? null : cleanPostId(parentIdInput);
+  const folder = await moveFolder(handle, folderId, parentId, { audit: {
+    actorUserId: access.ownerId, actorType: "human", actionName: "move_folder",
+    targetType: "workspace", inputSummary: parentId ?? "Workspace root",
+  } });
   await revalidateBlog(handle);
   return folder;
 }

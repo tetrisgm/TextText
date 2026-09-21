@@ -24,6 +24,7 @@ import {
   createRootFolderAction,
   createSubfolderAction,
   renameFolderAction,
+  moveFolderAction,
 } from "@/app/editor/actions";
 import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
 import {
@@ -52,6 +53,8 @@ import type {
 } from "@/lib/content";
 import {
   updateFolder,
+  refreshWorkspacePool,
+  useWorkspacePool,
 } from "@/lib/pool/store";
 import type {
   WorkspacePoolPost,
@@ -1007,6 +1010,7 @@ function FolderTreeNav({
   homePath?: string;
 }) {
   const router = useRouter();
+  const { pool } = useWorkspacePool();
   const tree = buildFolderTree(folders);
   const foldersById = useMemo(
     () => new Map(folders.map((folder) => [folder.id, folder])),
@@ -1147,6 +1151,23 @@ function FolderTreeNav({
     }
   };
 
+  const submitMoveFolder = async (folder: Folder, parentId: string | null) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const moved = await moveFolderAction(blog.handle, folder.id, parentId);
+      if (pool) await refreshWorkspacePool(blog.handle, pool.blogId);
+      setMoreOpenFor(null);
+      onSelectFolder(moved.path);
+      router.refresh();
+    } catch (moveError) {
+      setError(moveError instanceof Error ? moveError.message : "Could not move the folder");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const renderNode = (node: FolderTreeNode, depth: number): ReactNode => {
     const { folder, children } = node;
     const hasChildren = children.length > 0;
@@ -1246,6 +1267,23 @@ function FolderTreeNav({
                     >
                       New subfolder
                     </button>
+                  )}
+                  {canManageFolders && !["blog", "notes", "bookmarks"].includes(folder.path) && (
+                    <label className="folder-action-menu-item">
+                      Move to
+                      <select aria-label={`Move ${folder.name} to`} value="" disabled={busy}
+                        onChange={(event) => {
+                          if (event.target.value) void submitMoveFolder(folder, event.target.value === "root" ? null : event.target.value);
+                        }}>
+                        <option value="" disabled>Choose folder</option>
+                        {folder.parentId && <option value="root">Workspace root</option>}
+                        {folders.filter((target) => target.id !== folder.id && target.id !== folder.parentId
+                          && !target.path.startsWith(`${folder.path}/`)).map((target) => (
+                          <option key={target.id} value={target.id}>{target.path}</option>
+                        ))}
+                      </select>
+                      {error && <span role="alert">{error}</span>}
+                    </label>
                   )}
                   {canManageSharing && (
                     <button

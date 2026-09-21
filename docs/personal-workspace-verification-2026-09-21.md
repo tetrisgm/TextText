@@ -528,3 +528,25 @@ contract tests passed; lint passed with the existing WindowedRows warning.
 These changes are verified in development; the production preview on 3124 still
 contains the preceding build. Dark/narrow checks, feed-folder moves and imported
 item movement remain open.
+
+## Moving RSS folder subtrees
+
+Added an owner-only Move to control to sidebar folder menus. The store operation
+locks the workspace folder rows, validates the destination, and updates subtree
+paths and the moved root's parent in one audited statement. IDs, descendant
+parent IDs, templates, items and feed connections are preserved. The built-in
+blog/notes/bookmarks roots cannot move. Cycles, unavailable destinations and
+collisions are rejected; user folders can move to the workspace root.
+
+Eight local Postgres home tests passed, including a new RSS subtree scenario
+with a nested note, nonempty imported article set, unchanged subscription,
+audit verification, cycle/collision rejection and moving to root. Typecheck
+passed; targeted lint had no errors (three existing store warnings).
+
+Live development UI on localhost:3100 moved NASA from bookmarks/nasa to
+notes/mixed-workspace-check/nasa. The sidebar updated, the moved folder showed
+one source and ten articles, and its list survived reload. The notes-mode parent
+Mixed workspace check also exposed those articles through News. The source
+remains at this new path in the local visual-demo fixture. Production build,
+shared agent-command exposure, URL-alias behavior and broader permission cases
+remain to be verified before complete acceptance.
