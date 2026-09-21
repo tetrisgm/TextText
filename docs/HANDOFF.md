@@ -1,5 +1,14 @@
 # TextText handoff
 
+## Active work: personal workspace (2026-09-21, unreleased)
+
+The [personal workspace plan](plans/personal-workspace.md) supersedes the
+news-only Home direction below. Implementation and verification are in progress
+on main. It records current commits, local production previews, test evidence
+and remaining acceptance gates. Do not infer completion or release readiness
+from the historical release notes. Quantitative performance, full navigation
+restoration and remaining end-to-end workflows still need verification.
+
 ## Current: Artifact desktop shell released in 0.202 (2026-09-20)
 
 [DESIGN.md](../DESIGN.md) specifies one Artifact reference. Home, Headlines,

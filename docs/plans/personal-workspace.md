@@ -202,6 +202,17 @@ unverified existing features into completed acceptance claims.
 
 ## Implementation checkpoints
 
+- Saved-reading production loop passed on 3103: a kept RSS item appears once in
+  All saved and Read Later, opens the original reader, and leaves both lists
+  when Read Later is removed. Existing note backlinks remain. Implicit source
+  retention does not make an item a deliberate bookmark.
+- Added template-lifecycle.db.test.ts to exercise actual local storage: create a
+  typed document, update its definition, retire the type, export and parse a
+  textpack, install it into another workspace and persist the imported document.
+  The original version, fields and body survive; importing a later version into
+  the retired source workspace does not revive its picker entry. This proves
+  the storage/serialization path, not the complete UI import flow.
+
 - Source capture now offers Open note after a successful save. It refreshes the
   destination metadata before navigating, supports newly created destinations,
   and reports navigation failure separately without repeating the append/create.
