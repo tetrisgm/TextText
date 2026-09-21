@@ -439,3 +439,23 @@ background and rgb(242,242,242) text, with readable All folders in the screensho
 Reload removed the temporary edit, the viewport was reset, and System appearance
 restored. Fifteen Artifact tests and whitespace checks pass. The bookmark color
 correction is newer than the running build. Build configuration was removed.
+
+### Warm Home and News navigation measured
+
+Local production 3123 (91e51377 implementation), 1280px desktop, visual-demo.
+Twenty measured warm cycles after one excluded warm-up: Home p95 53.4ms
+(range 29.8–55.2), News p95 51.0ms (range 32.5–61.1). Both meet the <200ms
+warm-navigation target for this fixture. Start is capture-phase click; finish
+is the animation frame after a destination content marker exists (Home timeline
+row or first News row). This is DOM/frame readiness, not compositor or image
+decode. No build was running. Automation call duration is excluded.
+
+Home samples ms: 39.4,36.4,37,29.8,31.6,45.9,35.5,39,38.4,37,55.2,37.5,53.4,
+51.7,32.2,50.7,50.7,36.8,34.6,36.2.
+News samples ms: 34.8,39.6,34.5,33,39.1,34.1,36.2,34.2,36.4,32.5,37.5,51,
+61.1,38,39.4,49.4,45.1,50.9,35.5,38.9.
+
+An initial oversized automation batch timed out and was discarded. The measured
+run used smaller batches with bounded listener/frame cleanup; temporary browser
+measurement properties were deleted. Cold launch, large-workspace UI, article,
+back, channel and folder timing remain distinct unfinished acceptance checks.
