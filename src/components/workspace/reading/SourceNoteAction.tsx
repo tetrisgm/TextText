@@ -21,7 +21,7 @@ export function SourceNoteAction({ pool, sourceId, title, sourcePath }: {
     const request = operation.current ?? {
       key: `source-note:${crypto.randomUUID()}`,
       destination,
-      body: sourceNoteMarkdown(passage, title, new URL(sourcePath, window.location.origin).href),
+      body: sourceNoteMarkdown(passage, title, new URL(sourcePath, window.location.origin).href, pool.posts.find((post) => post.id === sourceId)?.slug),
     };
     operation.current = request;
     setBusy(true); setError(null);

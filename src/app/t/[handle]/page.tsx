@@ -796,7 +796,7 @@ export async function BlogHomeForHandle({
       initialAssistantState={initialAssistantState}
       initialAssistantWidth={initialAssistantWidth}
       initialSidebarWidth={initialSidebarWidth}
-      initialHomePane={queryValue(query.pane) === "headlines" ? "headlines" : queryValue(query.pane) === "profile" ? "profile" : queryValue(query.pane) === "notes" ? "notes" : "home"}
+      initialHomePane={queryValue(query.pane) === "news" ? "news" : queryValue(query.pane) === "bookmarks" ? "bookmarks" : queryValue(query.pane) === "headlines" ? "headlines" : queryValue(query.pane) === "profile" ? "profile" : queryValue(query.pane) === "notes" ? "notes" : "home"}
       initialSearchQuery={
         queryValue(query.date) ??
         queryValue(query.tag) ??

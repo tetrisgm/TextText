@@ -210,6 +210,14 @@ unverified existing features into completed acceptance claims.
   Append uses the idempotent live-content mutation path. Literal quote tests and
   57 shared-command tests pass, as do typecheck and targeted lint. Live reader,
   concurrent-editor and source-retention verification remain required.
+- Source notes now use internal document references recognized by retention
+  cleanup. Fifteen quote/retention tests pass against local Postgres, including
+  cleanup protecting the generated reference. In the local browser, Add to note
+  appended a source to `Workspace integration check September 21`; a store read
+  confirmed the original paragraph and source reference both persisted. This
+  does not yet verify selecting a passage or concurrent writers in the live UI.
+  Browser verification also found and fixed News/Bookmarks deep-link parsing;
+  reloading Bookmarks now displays its library and folder filter.
 
 - `8f443639`: desktop rail geometry and explicit visibility choices corrected;
   sidebar tests pass. Native visual acceptance is still pending.

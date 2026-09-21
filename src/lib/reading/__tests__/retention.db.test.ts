@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq, isNull } from "drizzle-orm";
+import { sourceNoteMarkdown } from "@/lib/workspace/source-note";
 
 // Against local Postgres only, opted in with TEXTTEXT_READING_DB_TEST=1 and
 // DATABASE_URL loaded (npm run test:reading:db). Scratch workspace, removed in
@@ -137,7 +138,7 @@ describe.skipIf(!enabled)("retention holds and cleanup against Postgres", () => 
     const refPost = await store.getPostById(handle, refId);
     const notesFolder = (await db!.select().from(schema.folders).where(and(eq(schema.folders.blogId, blogId), eq(schema.folders.path, "notes"))))[0];
     await store.createDraftInFolder(handle, notesFolder.id, {
-      initial: { type: "note", title: "Reading notes", body: `Follow up on [[${refPost!.slug}]] tomorrow.` },
+      initial: { type: "note", title: "Reading notes", body: sourceNoteMarkdown("Ref body.", refPost!.title, "https://r.example/ref", refPost!.slug) },
       audit: { actorUserId: userId, actorType: "human", actionName: "test.create_note", targetType: "item" },
     });
     const editPost = await store.getPostById(handle, editId);
