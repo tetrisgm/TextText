@@ -45,7 +45,7 @@ export function captureIntent(value: string): CaptureIntent {
   if (parsed.sourceUrl) {
     const title = bookmarkTitle(parsed.sourceUrl);
     return {
-      body: `[${title}](${parsed.sourceUrl})`,
+      body: `[${title}](${parsed.sourceUrl})${parsed.body ? `\n\n${parsed.body}` : ""}`,
       kind: "bookmark",
       preferredFolderMode: "bookmarks",
       sourceUrl: parsed.sourceUrl,
@@ -53,7 +53,7 @@ export function captureIntent(value: string): CaptureIntent {
     };
   }
   return {
-    body: capturedNoteBody(value, parsed.body),
+    body: value.trim().split(/\r?\n/)[0].length > 120 ? value.trim() : capturedNoteBody(value, parsed.body),
     kind: "note",
     preferredFolderMode: "notes",
     sourceUrl: null,

@@ -2843,12 +2843,6 @@ type CreateDraftOptions = {
   origin?: "manual" | "feed";
 };
 
-function postTypeBelongsInFolder(type: ItemKind, mode: FolderMode): boolean {
-  if (mode === "notes") return type === "note";
-  if (mode === "bookmarks") return type === "bookmark";
-  return type === "article" || type === "media_post" || type === "video_post";
-}
-
 /**
  * Create an empty draft directly inside a specific folder (a File Provider
  * create knows the target folder, unlike the compatibility createDraft). New
@@ -2893,16 +2887,12 @@ export async function createDraftInFolder(
   if (!db) throw new Error("createDraftInFolder requires DATABASE_URL");
   const folder = await getFolderById(handle, folderId);
   if (!folder) throw new Error("Folder not found");
-  const template = options.template ??
-    folder.defaultTemplate ?? {
-      id: legacyTemplateId(defaultPostTypeForFolderMode(folder.mode)),
-      version: 1,
-    };
   const type =
     options.initial?.type ?? defaultPostTypeForFolderMode(folder.mode);
-  if (!postTypeBelongsInFolder(type, folder.mode)) {
-    throw new Error("That item kind does not belong in this folder");
-  }
+  const template = options.template ??
+    (options.initial?.type && type !== defaultPostTypeForFolderMode(folder.mode)
+      ? { id: legacyTemplateId(type), version: 1 }
+      : folder.defaultTemplate ?? { id: legacyTemplateId(type), version: 1 });
   const blogId = await blogIdFor(handle);
   const id = crypto.randomUUID();
   const slug = await freeSlugInFolder(

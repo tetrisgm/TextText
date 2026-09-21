@@ -147,7 +147,6 @@ import {
   itemBacklinks,
   itemEntry,
   itemKindForPost,
-  kindsForFolderMode,
   normalizeItemHash,
   postSearchScore,
   renderItemFile,
@@ -1915,12 +1914,6 @@ async function executeWorkspaceCommand(
       }
 
       const type = parsed.fields.type ?? DEFAULT_TYPE_BY_MODE[folder.mode];
-      if (folderModeForType(type) !== folder.mode) {
-        return errorResult(
-          `Kind "${itemKindForPost({ type })}" does not belong in ` +
-            `"${folder.path}", which holds ${kindsForFolderMode(folder.mode)} items.`,
-        );
-      }
 
       const retryKey = input.idempotency_key
         ? automationKey("create", input.idempotency_key)
@@ -2728,22 +2721,6 @@ async function executeWorkspaceCommand(
           ...before.filter((tag) => !remove.has(tag)),
           ...add,
         ]);
-        // The tool description says the folder must accept their kind, and
-        // nothing checked it. A note filed into the blog folder is a category
-        // error the rest of the product refuses everywhere else.
-        if (
-          destination &&
-          destination.id !== resolved.post.folderId &&
-          folderModeForType(resolved.post.type) !== destination.mode
-        ) {
-          outcomes.push({
-            id: itemId,
-            changed: false,
-            title: resolved.post.title,
-            reason: `a ${itemKindForPost(resolved.post)} does not belong in ${destination.path}`,
-          });
-          continue;
-        }
         const movingTo =
           destination && destination.id !== resolved.post.folderId
             ? destination.id

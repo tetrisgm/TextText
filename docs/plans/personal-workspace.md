@@ -219,3 +219,12 @@ unverified existing features into completed acceptance claims.
   terminating pagination, no repeats/newer arrivals, stable autosave dates,
   anonymous access, filter-bound cursors and exact feed-save timestamps.
   Warm cache/return-position and large-fixture performance checks remain open.
+- Mixed-folder type gates removed from draft creation, direct/bulk UI moves and
+  assistant/MCP commands. Explicit kinds select their matching built-in template
+  unless a template is explicitly supplied. Local database tests verify notes,
+  articles and bookmarks in one folder, private drafts, preserved document/ID on
+  moves, and audit records. Folder rendering, nested-feed moves and native sync
+  acceptance remain to be verified in the integrated app.
+- Capture preserves commentary after a URL on its own first line and keeps the
+  full body of thoughts longer than the title limit. Existing queue and intent
+  tests pass; UI capture/reload verification remains open.

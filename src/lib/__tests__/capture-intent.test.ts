@@ -2,6 +2,20 @@ import { describe, expect, it } from "vitest";
 import { captureFolderPath, captureIntent } from "@/lib/capture-intent";
 
 describe("captureIntent", () => {
+  it("keeps commentary with a pasted URL", () => {
+    expect(captureIntent("https://example.com/article\n\nThis supports the introduction.\nKeep the second paragraph.")).toMatchObject({
+      kind: "bookmark",
+      sourceUrl: "https://example.com/article",
+      body: "[example.com](https://example.com/article)\n\nThis supports the introduction.\nKeep the second paragraph.",
+    });
+  });
+
+  it("preserves a thought longer than the title limit", () => {
+    const thought = "A thought worth keeping. ".repeat(20);
+    const captured = captureIntent(thought);
+    expect(captured.title.length).toBeLessThanOrEqual(120);
+    expect(captured.body).toBe(thought.trim());
+  });
   it("routes a thought to Notes and keeps a useful title", () => {
     expect(
       captureIntent("A launch thought\n\nKeep the first run tiny."),

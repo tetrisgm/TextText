@@ -872,7 +872,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
         folder_path: folderPath
           .optional()
           .describe(
-            "Move them all into this folder. It must accept their kind.",
+            "Move them all into this folder. Folders can contain different item kinds.",
           ),
       })
       .strict()

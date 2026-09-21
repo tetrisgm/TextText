@@ -298,7 +298,6 @@ import {
   selectionFromClick,
   type SelectionRectangle,
 } from "@/lib/workspace-selection";
-import { homeFolderModeForPostType } from "@/lib/workspace-item-presentation";
 import {
   recordWorkspaceDocumentOpened,
 } from "@/lib/workspace-activity";
@@ -2418,10 +2417,7 @@ function LocalWorkspaceShell({
       if (!folder) return;
       const posts = postIds
         .map((postId) => findPoolPostById(displayPoolRef.current, postId))
-        .filter((post): post is WorkspacePoolPost => Boolean(post))
-        // A note cannot live in a blog folder; silently skip rather than
-        // failing the whole drag.
-        .filter((post) => homeFolderModeForPostType(post.type) === folder.mode);
+        .filter((post): post is WorkspacePoolPost => Boolean(post));
       if (posts.length === 0) return;
       const moved = posts.map((post) => ({
         id: post.id,
@@ -2545,9 +2541,7 @@ function LocalWorkspaceShell({
         (candidate) => candidate.path === folderPath,
       );
       if (!folder) return;
-      const posts = selectedPoolPosts.filter(
-        (post) => homeFolderModeForPostType(post.type) === folder.mode,
-      );
+      const posts = selectedPoolPosts;
       await Promise.all(
         posts.map(async (post) => {
           const previousFolderId = post.folderId;

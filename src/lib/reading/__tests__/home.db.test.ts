@@ -178,4 +178,21 @@ describe.skipIf(!enabled)("home news against Postgres", () => {
     await expect(store.listWorkspaceTimeline({ handle, user, cursor: "invalid" })).rejects.toThrow("Invalid timeline cursor");
     await expect(store.listWorkspaceTimeline({ handle, user, filter: "saved", cursor: start.nextCursor })).rejects.toThrow("Invalid timeline cursor");
   });
+  it("keeps mixed-folder content private and preserves identity when moved", async () => {
+    const folders = await store.getFolders(handle);
+    const notes = folders.find((folder) => folder.mode === "notes")!;
+    const blog = folders.find((folder) => folder.path === "blog")!;
+    for (const type of ["note", "article", "bookmark"] as const) {
+      const item = await store.createDraftInFolder(handle, notes.id, {
+        initial: { type, title: `Mixed ${type}`, body: "Keep this content intact." },
+      });
+      expect(item).toMatchObject({ type, folderId: notes.id, status: "draft", visibility: "private" });
+      expect(item.document?.presentation.template.id).toBe(`texttext.${type}`);
+      const moved = await store.movePostFile(handle, item.id!, { folderId: blog.id });
+      expect(moved?.post).toMatchObject({ id: item.id, type, folderId: blog.id, visibility: "private", status: "draft", body: item.body });
+      expect(moved?.post.document).toEqual(item.document);
+      const audit = await db!.select().from(schema.actionAudit).where(eq(schema.actionAudit.targetId, item.id!));
+      expect(audit.length).toBeGreaterThan(0);
+    }
+  });
 });

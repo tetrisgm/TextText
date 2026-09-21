@@ -419,7 +419,9 @@ export function UniversalItemComposer({
       const destination = destinationFor(
         capturePreview?.sourceUrl ?? draft.sourceUrl,
       );
-      const template = defaultTemplateForFolder(destination);
+      const template = draft.sourceUrl
+        ? { id: "texttext.bookmark", version: 1 }
+        : defaultTemplateForFolder(destination);
       const type = compatibilityTypeForTemplate(template, draft.sourceUrl);
       const request: FolderCreateRequest =
         type === "bookmark"
@@ -429,6 +431,7 @@ export function UniversalItemComposer({
                 folderPath: destination.path,
                 template,
                 url: draft.sourceUrl,
+                description: draft.body || undefined,
               }
             : {
                 type,
@@ -488,6 +491,7 @@ export function UniversalItemComposer({
                   folderPath: request.folderPath,
                   template: request.template,
                   url: request.url,
+                  description: request.description,
                 })
             : request.type === "note"
               ? createFolderItemAction(handle, "notes", {

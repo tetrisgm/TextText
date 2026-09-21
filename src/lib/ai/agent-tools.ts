@@ -25,7 +25,6 @@ import { isPrivatePostType } from "@/lib/content";
 import type { ItemKind } from "@/lib/content";
 import { normalizeTags } from "@/lib/tags";
 import {
-  folderModeForPostType,
   parsePostMarkdownFile,
 } from "@/lib/markdown-files";
 import { parseItemInput } from "@/lib/item-creation";
@@ -960,11 +959,6 @@ export function createWorkspaceAgentTools(
           (candidate) => candidate.path === folderPath,
         );
         if (!folder) throw new Error(`No folder at path ${folderPath}`);
-        if (folder.mode !== folderModeForPostType(post.type)) {
-          throw new Error(
-            `A ${post.type} cannot move into the ${folder.mode} folder`,
-          );
-        }
         if (post.folderId === folder.id) {
           return {
             ok: true,
