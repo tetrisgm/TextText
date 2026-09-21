@@ -1,12 +1,40 @@
 import { describe, expect, it, vi } from "vitest";
 import { HomeSession } from "../session";
 import type { HomeNews, HomeUnit, ReadingListItem } from "@/lib/reading/client";
+import { savedLibraryScope, type SavedLibraryView } from "@/lib/reading/saved-library-client";
 
 const item = (id: string): ReadingListItem => ({ id, origin: "feed", title: id, publisherTitle: "Wire", publisherName: "Wire", folderId: "f", folderPath: "bookmarks/wire", sourceFolderName: "Wire", permalink: null, externalUrl: null, publishedAt: null, receivedAt: "2026-09-19", availability: "full", imageUrl: null, wordCount: 100, excerpt: null, authors: [], read: false, starred: false, kept: false, keptReasons: [], expiresAt: null, slug: id, cursor: id });
 const article = (id: string): HomeUnit => ({ kind: "article", id, item: item(id), latestAt: "2026-09-19", topicIds: [], reasons: [] });
 const page = (topic: string | null = null): HomeNews => ({ mode: "forYou", modeLabel: "Newest first", topic, topics: [], headlines: [], units: [article("one")], nextOffset: null, considered: 1, topicNote: null, snapshot: null, hiddenCount: 0, preferences: 0 });
 
 describe("returning to the feed", () => {
+  it("isolates saved filters, bounds cached views, and clears content after access denial", () => {
+    const session = new HomeSession();
+    const view: SavedLibraryView = { handle: "one", folderPath: "", query: "", state: "bookmarked" };
+    const snapshot = { items: [item("one")], nextCursor: "next", scope: { ...savedLibraryScope(view), folderIds: 1 }, scopeFingerprint: "scope" };
+    session.saveSavedLibrary(view, snapshot);
+    expect(session.getSavedLibrary(view)).toBe(snapshot);
+    for (const changed of [{ handle: "two" }, { query: "query" }, { folderPath: "nested" }, { state: "saved" as const }]) {
+      expect(session.getSavedLibrary({ ...view, ...changed })).toBeNull();
+    }
+    for (let index = 0; index < 4; index++) session.saveSavedLibrary({ ...view, query: String(index) }, snapshot);
+    expect(session.getSavedLibrary(view)).toBeNull();
+    session.saveSavedLibrary(view, { ...snapshot, items: Array.from({ length: 501 }, (_, index) => item(String(index))) });
+    expect(session.getSavedLibrary(view)).toBeNull();
+    session.setAccessDenied(true);
+    expect(session.getSavedLibrary({ ...view, query: "3" })).toBeNull();
+  });
+
+  it("removes unkept RSS from saved views while retaining manually saved bookmarks", () => {
+    const session = new HomeSession();
+    const view: SavedLibraryView = { handle: "one", folderPath: "", query: "", state: "bookmarked" };
+    const rows = [{ ...item("rss"), keptReasons: ["keep"] as ReadingListItem["keptReasons"] }, { ...item("manual"), origin: "manual" as const }];
+    const snapshot = { items: rows, nextCursor: null, scope: { ...savedLibraryScope(view), folderIds: 1 }, scopeFingerprint: "scope" };
+    session.saveSavedLibrary(view, snapshot);
+    session.patch(["rss"], (row) => ({ ...row, keptReasons: [] }));
+    expect(session.getSavedLibrary(view)?.items.map((row) => row.id)).toEqual(["manual"]);
+    expect(snapshot.items).toHaveLength(2);
+  });
   it("restores view preferences without sharing them across workspaces", () => {
     const values = new Map<string, string>();
     vi.stubGlobal("window", { sessionStorage: { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) } });

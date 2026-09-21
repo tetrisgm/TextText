@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { addPost } from "@/lib/pool/store";
 import { plainTextExcerpt } from "@/lib/content";
 import type { WorkspacePoolPayload } from "@/lib/pool/types";
 import type { WorkspaceDocumentOpenHistory } from "@/lib/workspace-activity";
-import { fetchReadingHome, fetchReadingOverview, fetchReadingPage, setReadingItemsRead, type HomeUnit, type ReadingOverview, type ReadingListItem } from "@/lib/reading/client";
+import { fetchReadingHome, fetchReadingOverview, fetchReadingPage, setReadingItemsRead, ReadingRequestError, READING_ITEMS_CHANGED, type ReadingItemsChange, type ReadingListPage, type HomeUnit, type ReadingOverview, type ReadingListItem } from "@/lib/reading/client";
+import { refreshSavedLibrary, savedLibraryScope, type SavedLibraryView } from "@/lib/reading/saved-library-client";
 import { ManageSourcesDialog } from "@/components/workspace/reading/ManageSourcesDialog";
 import { ReadingPreferences } from "./ReadingPreferences";
 import { StoryActions } from "./StoryActions";
@@ -91,44 +92,77 @@ export function SavedArticles({ state, folders = [], session, ...props }: OpenPr
   const [query, setQuery] = useState(session?.bookmarks.query ?? "");
   useEffect(() => { session?.saveBookmarks({ folderPath, later, search, query }); }, [session, folderPath, later, search, query]);
   const effectiveState = state === "bookmarked" && later ? "saved" : state;
+  const libraryView = useMemo(() => ({ handle: props.handle, folderPath, query, state: effectiveState }), [props.handle, folderPath, query, effectiveState]);
+  const cached = session?.getSavedLibrary(libraryView) ?? null;
+  const pageRef = useRef<ReadingListPage | null>(cached);
   const generation = useRef(0);
-  const [items, setItems] = useState<ReadingListItem[] | null>(null);
-  const [cursor, setCursor] = useState<string | null>(null);
+  const [items, setItems] = useState<ReadingListItem[] | null>(cached?.items ?? null);
+  const [cursor, setCursor] = useState<string | null>(cached?.nextCursor ?? null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const resetPage = () => {
+  const resetPage = (next: Partial<SavedLibraryView> = {}) => {
     generation.current += 1;
-    setItems(null); setCursor(null); setError(null); setLoading(false);
+    const page = session?.getSavedLibrary({ ...libraryView, ...next }) ?? null;
+    pageRef.current = page;
+    setItems(page?.items ?? null); setCursor(page?.nextCursor ?? null); setError(null); setLoading(false);
   };
   useEffect(() => {
-    generation.current += 1;
     let active = true;
-    void fetchReadingPage({ handle: props.handle, scope: { folderPath, query, includeDescendants: true, state: effectiveState, dateBasis: state === "read" ? "read" : "received" } }).then((page) => {
-      if (!active) return;
-      setItems(page.items); setCursor(page.nextCursor); setError(null);
-    }).catch(() => { if (active) setError("Could not load saved articles."); });
-    return () => { active = false; generation.current += 1; };
-  }, [props.handle, attempt, state, effectiveState, folderPath, query]);
+    const refresh = async () => {
+      const request = ++generation.current;
+      try {
+        const page = await refreshSavedLibrary(libraryView, pageRef.current?.items.length ?? 0);
+        if (!active || request !== generation.current) return;
+        pageRef.current = page;
+        session?.setAccessDenied(false);
+        session?.saveSavedLibrary(libraryView, page);
+        setItems(page.items); setCursor(page.nextCursor); setError(null);
+      } catch (failure) {
+        if (!active || request !== generation.current) return;
+        if (failure instanceof ReadingRequestError && [400, 401, 403, 404].includes(failure.status)) {
+          session?.clearSavedLibraries(); pageRef.current = null; setItems(null); setCursor(null);
+          if (failure.status !== 400) session?.setAccessDenied(true);
+        }
+        setError("Could not load saved articles.");
+      } finally { if (active && request === generation.current) setLoading(false); }
+    };
+    const changed = (event: Event) => {
+      if ((event as CustomEvent<ReadingItemsChange>).detail.handle === props.handle) void refresh();
+    };
+    void refresh();
+    window.addEventListener("focus", refresh);
+    window.addEventListener(READING_ITEMS_CHANGED, changed);
+    return () => { active = false; generation.current += 1; window.removeEventListener("focus", refresh); window.removeEventListener(READING_ITEMS_CHANGED, changed); };
+  }, [props.handle, attempt, libraryView, session]);
   const more = async () => {
     if (loading || !cursor) return;
-    const request = generation.current;
+    const request = ++generation.current;
     setLoading(true);
     try {
-      const page = await fetchReadingPage({ handle: props.handle, cursor, scope: { folderPath, query, includeDescendants: true, state: effectiveState, dateBasis: state === "read" ? "read" : "received" } });
+      const page = await fetchReadingPage({ handle: props.handle, cursor, scope: savedLibraryScope(libraryView) });
       if (request !== generation.current) return;
-      setItems((current) => [...new Map([...(current ?? []), ...page.items].map((item) => [item.id, item])).values()]); setCursor(page.nextCursor); setError(null);
-    } catch { if (request === generation.current) setError("Could not load more articles."); }
+      const combined = { ...page, items: [...new Map([...(pageRef.current?.items ?? []), ...page.items].map((item) => [item.id, item])).values()] };
+      pageRef.current = combined; session?.saveSavedLibrary(libraryView, combined);
+      setItems(combined.items); setCursor(page.nextCursor); setError(null);
+    } catch (failure) {
+      if (request !== generation.current) return;
+      if (failure instanceof ReadingRequestError && [400, 401, 403, 404].includes(failure.status)) {
+        session?.clearSavedLibraries(); pageRef.current = null; setItems(null); setCursor(null);
+        if (failure.status !== 400) session?.setAccessDenied(true);
+      }
+      setError("Could not load more articles.");
+    }
     finally { if (request === generation.current) setLoading(false); }
   };
   return <>{state === "bookmarked" && <div className={styles.libraryFilters}>
-    <form className={styles.librarySearch} role="search" onSubmit={(event) => { event.preventDefault(); if (query !== search.trim()) { resetPage(); setQuery(search.trim()); } }}>
+    <form className={styles.librarySearch} role="search" onSubmit={(event) => { event.preventDefault(); if (query !== search.trim()) { resetPage({ query: search.trim() }); setQuery(search.trim()); } }}>
       <input type="search" aria-label="Search saved articles" placeholder="Search saved articles" maxLength={200} value={search} onChange={(event) => setSearch(event.target.value)} />
       <button type="submit">Search</button>
-      {query && <button type="button" onClick={() => { resetPage(); setSearch(""); setQuery(""); }}>Clear</button>}
+      {query && <button type="button" onClick={() => { resetPage({ query: "" }); setSearch(""); setQuery(""); }}>Clear</button>}
     </form>
-    <div role="group" aria-label="Saved articles"><button aria-pressed={!later} onClick={() => { if (later) { resetPage(); setLater(false); } }}>All saved</button><button aria-pressed={later} onClick={() => { if (!later) { resetPage(); setLater(true); } }}>Read Later</button></div>
-    <select aria-label="Bookmark folder" value={folderPath} onChange={(event) => { resetPage(); setFolderPath(event.target.value); }}><option value="">All folders</option>{[...folders].sort((a, b) => a.path.localeCompare(b.path)).map((folder) => <option key={folder.id} value={folder.path}>{folder.path.split("/").join(" / ")}</option>)}</select>
+    <div role="group" aria-label="Saved articles"><button aria-pressed={!later} onClick={() => { if (later) { resetPage({ state: "bookmarked" }); setLater(false); } }}>All saved</button><button aria-pressed={later} onClick={() => { if (!later) { resetPage({ state: "saved" }); setLater(true); } }}>Read Later</button></div>
+    <select aria-label="Bookmark folder" value={folderPath} onChange={(event) => { resetPage({ folderPath: event.target.value }); setFolderPath(event.target.value); }}><option value="">All folders</option>{[...folders].sort((a, b) => a.path.localeCompare(b.path)).map((folder) => <option key={folder.id} value={folder.path}>{folder.path.split("/").join(" / ")}</option>)}</select>
   </div>}{error && <p role="alert">{error} <button className={styles.action} onClick={() => { resetPage(); setAttempt((value) => value + 1); }}>Try again</button></p>}
     {items ? items.length ? <ArticleRows items={items} previews={state === "bookmarked"} {...props} /> : <p className={styles.empty}>{query ? "No saved articles match this search and filters." : state === "read" ? "Articles you read appear here." : folderPath ? "No saved articles in this folder yet." : later ? "Articles you mark Read Later appear here." : "Save a link or keep an article from News to start your library."}</p> : !error && <p className={styles.empty} role="status">Loading saved articles…</p>}
     {cursor && <button className={styles.back} disabled={loading} onClick={() => void more()}>{loading ? "Loading…" : "More articles"}</button>}

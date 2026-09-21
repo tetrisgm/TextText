@@ -15,6 +15,10 @@ import type { SavedReadingSearch } from "./saved-searches.server";
 
 export type { FeedConnectionView, FeedCandidate, ReadingFolderSummary, ReadingListItem, ReadingListPage, ReadingScope, ReadingOverview, ReadingSummary, SavedReadingSearch };
 
+export class ReadingRequestError extends Error {
+  constructor(message: string, readonly status: number) { super(message); }
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...init,
@@ -24,7 +28,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   });
   const body = (await response.json().catch(() => ({}))) as T & { error?: string };
   if (!response.ok) {
-    throw new Error(typeof body.error === "string" ? body.error : `Request failed (${response.status})`);
+    throw new ReadingRequestError(typeof body.error === "string" ? body.error : `Request failed (${response.status})`, response.status);
   }
   return body;
 }

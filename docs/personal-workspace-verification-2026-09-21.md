@@ -38,3 +38,18 @@ access invalidation, preserve loaded-page return position, then repeat the full
 navigation benchmark. Cold loading and all other performance gates remain open.
 
 All temporary measurement listeners, timers and probe properties were removed.
+
+## Saved-library return cache
+
+Bookmarks now retains up to four in-memory views of at most 500 rows each,
+separated by workspace handle, folder, query and saved state. Returning renders
+the retained rows immediately and revalidates the entire loaded window. Focus
+and reading-state changes also refresh it. Access/scope failures clear retained
+rows; transient failures keep them available with a retry. Pagination and
+refresh responses are fenced when the view changes or unmounts.
+
+The Home test directory passes 32 tests; the new saved-library client suite
+passes three tests, including denial on a later refresh page. Type checking
+passes. Targeted lint has no errors and three existing image warnings.
+The isolated local production build passes. Browser timing verification of this
+change remains pending; the measurements above describe the previous implementation.

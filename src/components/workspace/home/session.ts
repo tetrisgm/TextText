@@ -1,4 +1,5 @@
-import type { HomeNews, ReadingOverview, ReadingListItem } from "@/lib/reading/client";
+import type { HomeNews, ReadingOverview, ReadingListItem, ReadingListPage } from "@/lib/reading/client";
+import { savedLibraryKey, type SavedLibraryView } from "@/lib/reading/saved-library-client";
 import type { TimelineFilter, TimelinePage } from "@/lib/workspace/timeline";
 
 type View = { mode: "forYou" | "latest"; topic: string | null };
@@ -30,6 +31,16 @@ export class HomeSession {
   saveWriting(value: HomeSession["writing"]) { this.writing = value; this.rememberViews(); }
   private pages = new Map<string, HomeNews>();
   private timelines = new Map<TimelineFilter, TimelinePage>();
+  private savedLibraries = new Map<string, ReadingListPage>();
+  getSavedLibrary(view: SavedLibraryView) { return this.savedLibraries.get(savedLibraryKey(view)) ?? null; }
+  saveSavedLibrary(view: SavedLibraryView, page: ReadingListPage) {
+    const key = savedLibraryKey(view);
+    this.savedLibraries.delete(key);
+    if (page.items.length > 500) return;
+    this.savedLibraries.set(key, page);
+    while (this.savedLibraries.size > 4) this.savedLibraries.delete(this.savedLibraries.keys().next().value!);
+  }
+  clearSavedLibraries() { this.savedLibraries.clear(); }
   personalFilter: TimelineFilter | "news" = "all";
   accessDenied = false;
   setAccessDenied(value: boolean) {
@@ -54,10 +65,16 @@ export class HomeSession {
     // Each server snapshot is capped at 300 candidates; retain eight views.
     while (this.pages.size > 8) this.pages.delete(this.pages.keys().next().value!);
   }
-  clear() { this.pages.clear(); this.timelines.clear(); this.personalNews = []; this.overview = null; this.checkedAt = 0; }
+  clear() { this.pages.clear(); this.timelines.clear(); this.savedLibraries.clear(); this.personalNews = []; this.overview = null; this.checkedAt = 0; }
   patch(ids: string[], update: (item: ReadingListItem) => ReadingListItem) {
     const wanted = new Set(ids);
     const apply = (item: ReadingListItem) => wanted.has(item.id) ? update(item) : item;
+    for (const [key, page] of this.savedLibraries) {
+      const items = page.items.map(apply).filter((item) => page.scope.state === "read" ? item.read
+        : page.scope.state === "saved" ? item.keptReasons.includes("keep")
+        : item.origin === "manual" || item.keptReasons.includes("keep"));
+      this.savedLibraries.set(key, { ...page, items });
+    }
     for (const [key, page] of this.pages) {
       const units = (values: HomeNews["units"]) => values.map((unit) => unit.kind === "article"
         ? { ...unit, item: apply(unit.item) }
