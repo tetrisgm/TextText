@@ -228,3 +228,11 @@ unverified existing features into completed acceptance claims.
 - Capture preserves commentary after a URL on its own first line and keeps the
   full body of thoughts longer than the title limit. Existing queue and intent
   tests pass; UI capture/reload verification remains open.
+- Local browser verification on September 21: Home capture of a multiline note
+  saved, opened in the editor, and retained its full body after reload. AI context
+  followed the opened item. Corrected routing so the primary Notes folder wins
+  over Documentation. Home now exposes New and New type; a manually defined
+  Book review verification type with Author and Rating saved and appeared in New.
+- Added workspace-owned, memory-only timeline/news snapshots and filter retention
+  for returning to Home. Session tests cover filter isolation and clearing.
+  Exact scroll/focus return and production timing are still unverified.

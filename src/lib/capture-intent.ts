@@ -69,6 +69,8 @@ export function captureFolderPath(
   const candidates = folders
     .filter((folder) => folder.mode === mode)
     .sort((left, right) => {
+      const primary = Number(right.path === mode) - Number(left.path === mode);
+      if (primary) return primary;
       const depth = left.path.split("/").length - right.path.split("/").length;
       return depth || left.path.localeCompare(right.path);
     });

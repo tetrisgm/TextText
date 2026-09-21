@@ -60,6 +60,7 @@ describe("captureFolderPath", () => {
       captureFolderPath(
         [
           { mode: "notes", path: "projects/notes" },
+          { mode: "notes", path: "documentation" },
           { mode: "bookmarks", path: "bookmarks" },
           { mode: "notes", path: "notes" },
         ],

@@ -7,6 +7,16 @@ const article = (id: string): HomeUnit => ({ kind: "article", id, item: item(id)
 const page = (topic: string | null = null): HomeNews => ({ mode: "forYou", modeLabel: "Newest first", topic, topics: [], headlines: [], units: [article("one")], nextOffset: null, considered: 1, topicNote: null, snapshot: null, hiddenCount: 0, preferences: 0 });
 
 describe("returning to the feed", () => {
+  it("keeps personal timeline filters separate and clears workspace snapshots", () => {
+    const session = new HomeSession();
+    const snapshot = { entries: [], nextCursor: "next", snapshot: "2026-09-21T12:00:00.000Z" };
+    session.saveTimeline("writing", snapshot);
+    expect(session.getTimeline("writing")).toBe(snapshot);
+    expect(session.getTimeline("saved")).toBeNull();
+    expect(new HomeSession().getTimeline("writing")).toBeNull();
+    session.clear();
+    expect(session.getTimeline("writing")).toBeNull();
+  });
   it("retains each channel and mode independently within this workspace only", () => {
     const session = new HomeSession();
     const otherWorkspace = new HomeSession();

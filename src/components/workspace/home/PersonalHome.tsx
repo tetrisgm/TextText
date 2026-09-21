@@ -10,23 +10,25 @@ import { addPost } from "@/lib/pool/store";
 import { poolPostFor } from "./HomeNews";
 import { fetchWorkspaceTimeline } from "@/lib/workspace/timeline-client";
 import type { TimelinePage } from "@/lib/workspace/timeline";
+import type { HomeSession } from "./session";
 import styles from "./Home.module.css";
 
-export function PersonalHome({ pool, history, capture, onOpenPost, onNews }: {
+export function PersonalHome({ pool, history, capture, onOpenPost, onNews, session }: {
+  session?: HomeSession;
   pool: WorkspacePoolPayload;
   history: WorkspaceDocumentOpenHistory;
   capture: ReactNode;
   onOpenPost: (id: string) => void;
   onNews: () => void;
 }) {
-  const [filter, setFilter] = useState<"all" | "writing" | "saved" | "news">("all");
-  const [timeline, setTimeline] = useState<TimelinePage | null>(null);
+  const [filter, setFilter] = useState<"all" | "writing" | "saved" | "news">(session?.personalFilter ?? "all");
+  const [timeline, setTimeline] = useState<TimelinePage | null>(() => session?.getTimeline(filter === "news" ? "all" : filter) ?? null);
   const [pending, setPending] = useState<TimelinePage | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const timelineRef = useRef<TimelinePage | null>(null);
   const generation = useRef(0);
   const refreshTimeline = useRef<(() => Promise<void>) | null>(null);
-  const [news, setNews] = useState<ReadingListItem[]>([]);
+  const [news, setNews] = useState<ReadingListItem[]>(session?.personalNews ?? []);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -36,15 +38,17 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews }: {
     const scope = { folderPath: "", includeDescendants: true, dateBasis: "received" as const };
     void fetchReadingPage({ handle: pool.blog.handle, scope: { ...scope, state: "all" }, limit: 30 }).then((articles) => {
       if (!active) return;
-      setNews(articles.items.filter((item) => item.origin === "feed").slice(0, 3));
+      const next = articles.items.filter((item) => item.origin === "feed").slice(0, 3);
+      if (session) session.personalNews = next;
+      setNews(next);
     }).catch(() => { if (active) setError(true); });
     return () => { active = false; };
-  }, [pool.blog.handle, attempt]);
+  }, [pool.blog.handle, attempt, session]);
 
   useEffect(() => {
     const current = ++generation.current;
     const selected = filter === "news" ? "all" : filter;
-    timelineRef.current = null;
+    timelineRef.current = session?.getTimeline(selected) ?? null;
     const refresh = async () => {
       try {
         const page = await fetchWorkspaceTimeline(pool.blog.handle, selected);
@@ -53,6 +57,7 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews }: {
         const previous = timelineRef.current;
         if (!previous) {
           timelineRef.current = page;
+          session?.saveTimeline(selected, page);
           setTimeline(page);
         } else if (page.entries.some((entry) => !previous.entries.some((old) => old.id === entry.id && old.at === entry.at))) {
           setPending(page);
@@ -63,7 +68,7 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews }: {
     void refresh();
     window.addEventListener("focus", refresh);
     return () => { generation.current = current + 1; refreshTimeline.current = null; window.removeEventListener("focus", refresh); };
-  }, [pool.blog.handle, filter, attempt]);
+  }, [pool.blog.handle, filter, attempt, session]);
 
   const previousCount = useRef(pool.posts.length);
   useEffect(() => {
@@ -82,6 +87,7 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews }: {
       if (current !== generation.current) return;
       const combined = { ...page, entries: [...new Map([...timeline.entries, ...page.entries].map((entry) => [entry.id, entry])).values()] };
       timelineRef.current = combined;
+      session?.saveTimeline(filter === "news" ? "all" : filter, combined);
       setTimeline(combined);
     } catch { if (current === generation.current) setError(true); }
     finally { if (current === generation.current) setLoadingMore(false); }
@@ -104,7 +110,8 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews }: {
     <nav className={styles.noteFolders} aria-label="Timeline filters">
       {(["all", "writing", "saved", "news"] as const).map((value) => <button key={value} aria-pressed={filter === value} onClick={() => {
         if (value === filter) return;
-        setTimeline(null); setPending(null); setLoadingMore(false); setFilter(value);
+        if (session) session.personalFilter = value;
+        setTimeline(session?.getTimeline(value === "news" ? "all" : value) ?? null); setPending(null); setLoadingMore(false); setFilter(value);
       }}>{value === "all" ? "Everything" : value === "writing" ? "Writing" : value === "saved" ? "Saved" : "News"}</button>)}
     </nav>
     {(filter === "all" || filter === "news") && <section className="personal-home-news" aria-label="From your feeds">
@@ -113,7 +120,7 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews }: {
       {!news.length && !error && <p>Your latest feed articles will appear here.</p>}
     </section>}
     {error && <p role="alert">Could not refresh reading. <button onClick={() => setAttempt((value) => value + 1)}>Try again</button></p>}
-    {pending && <button className={styles.back} onClick={() => { timelineRef.current = pending; setTimeline(pending); setPending(null); }}>New items</button>}
+    {pending && <button className={styles.back} onClick={() => { timelineRef.current = pending; session?.saveTimeline(filter === "news" ? "all" : filter, pending); setTimeline(pending); setPending(null); }}>New items</button>}
     <ul className={styles.noteList}>{entries.map((item, index) => <li key={item.id}>
       {(index === 0 || new Date(entries[index - 1].at).toLocaleDateString() !== new Date(item.at).toLocaleDateString()) && <h2 className="personal-home-date">{new Date(item.at).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</h2>}
       <button onClick={() => {

@@ -5,6 +5,7 @@ import { READING_ITEMS_CHANGED, READING_PREFERENCES_CHANGED, type ReadingItemsCh
 import { HomeNews } from "@/components/workspace/home/HomeNews";
 import { ArtifactHeadlines, ArtifactProfile, ArtifactNotes, SavedArticles } from "@/components/workspace/home/ArtifactPages";
 import { PersonalHome } from "@/components/workspace/home/PersonalHome";
+import { HomeCreateMenu } from "@/components/workspace/home/HomeCreateMenu";
 import { ArtifactIcon, type ArtifactPane } from "@/components/workspace/home/ArtifactNavigation";
 import { warmChunk } from "@/components/workspace/warm-chunk";
 import homeStyles from "@/components/workspace/home/Home.module.css";
@@ -329,7 +330,7 @@ export function WorkspaceRootLanding({
   const [creatingFirstFolder, setCreatingFirstFolder] = useState(false);
   const [firstFolderError, setFirstFolderError] = useState<string | null>(null);
   const creationFolders = useMemo(() => rootSectionFolders(pool), [pool]);
-  const creationFolder = creationFolders.find((folder) => folder.mode === "notes");
+  const creationFolder = creationFolders.find((folder) => folder.path === "notes") ?? creationFolders.find((folder) => folder.mode === "notes");
   const createFirstFolder = async () => {
     if (creatingFirstFolder || !canManageItems) return;
     setCreatingFirstFolder(true);
@@ -824,9 +825,12 @@ export function WorkspaceRootLanding({
                 All items switches to the library in place and says so. */}
             {(!libraryOpen || homePane !== "profile") && (
               <div className={homeStyles.frame}>
-                {homePane === "home" ? <PersonalHome pool={pool} history={openHistory} onOpenPost={onOpenPost}
+                {homePane === "home" ? <PersonalHome pool={pool} history={openHistory} onOpenPost={onOpenPost} session={homeSession}
                   onNews={() => onSelectPane?.("news")}
-                  capture={canManageItems && (creationFolder ? <UniversalItemComposer blog={pool.blog} handle={pool.blog.handle} folder={creationFolder} destinations={creationFolders} onCreateItem={onCreateItem} onOpenCapturedItem={(post) => { if (post.id) onOpenPost(post.id); }} /> : firstLoop)}
+                  capture={canManageItems && <>
+                    <HomeCreateMenu pool={pool} onCreateItem={onCreateItem} onBuildItemType={onBuildItemType} />
+                    {creationFolder ? <UniversalItemComposer blog={pool.blog} handle={pool.blog.handle} folder={creationFolder} destinations={creationFolders} onCreateItem={onCreateItem} onOpenCapturedItem={(post) => { if (post.id) onOpenPost(post.id); }} /> : firstLoop}
+                  </>}
                 /> : homePane === "bookmarks" ? <section aria-label="Bookmarks"><h1 className={homeStyles.pageTitle}>Bookmarks</h1><SavedArticles state="bookmarked" handle={pool.blog.handle} blogId={pool.blogId} onOpenPost={onOpenPost} /></section> : homePane === "news" ? <HomeNews
                   session={homeSession}
                   handle={pool.blog.handle}
