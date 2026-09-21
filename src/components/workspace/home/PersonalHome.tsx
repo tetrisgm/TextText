@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { WorkspacePoolPayload } from "@/lib/pool/types";
 import type { WorkspaceDocumentOpenHistory } from "@/lib/workspace-activity";
@@ -8,7 +8,7 @@ import { plainTextExcerpt } from "@/lib/content";
 import { fetchReadingHome, READING_ITEMS_CHANGED, type ReadingItemsChange, type ReadingListItem } from "@/lib/reading/client";
 import { addPost } from "@/lib/pool/store";
 import { poolPostFor } from "./HomeNews";
-import { fetchWorkspaceTimeline } from "@/lib/workspace/timeline-client";
+import { fetchWorkspaceTimeline, TimelineAccessError } from "@/lib/workspace/timeline-client";
 import { reconcileTimeline, type TimelinePage } from "@/lib/workspace/timeline";
 import type { HomeSession } from "./session";
 import styles from "./Home.module.css";
@@ -30,10 +30,24 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews, sessi
   const refreshTimeline = useRef<(() => Promise<void>) | null>(null);
   const [news, setNews] = useState<ReadingListItem[]>(session?.personalNews ?? []);
   const [error, setError] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(session?.accessDenied ?? false);
+  const denied = useRef(session?.accessDenied ?? false);
   const [newsError, setNewsError] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const pendingOpen = useRef<string | null>(null);
   const [openTick, setOpenTick] = useState(0);
+  const invalidateAccess = useCallback(() => {
+    denied.current = true;
+    generation.current += 1;
+    session?.setAccessDenied(true);
+    timelineRef.current = null;
+    setTimeline(null);
+    setPending(null);
+    setNews([]);
+    pendingOpen.current = null;
+    setLoadingMore(false);
+    setAccessDenied(true);
+  }, [session]);
   useEffect(() => {
     const id = pendingOpen.current;
     if (!id || !pool.posts.some((post) => post.id === id)) return;
@@ -41,16 +55,17 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews, sessi
     onOpenPost(id);
   }, [openTick, pool.posts, onOpenPost]);
   useEffect(() => {
+    if (accessDenied) return;
     let active = true;
     void fetchReadingHome({ handle: pool.blog.handle, mode: "latest", topic: null, limit: 3 }).then((articles) => {
-      if (!active) return;
+      if (!active || denied.current) return;
       const next = articles.units.flatMap((unit) => unit.kind === "article" ? [unit.item] : []).slice(0, 3);
       if (session) session.personalNews = next;
       setNews(next);
       setNewsError(false);
     }).catch(() => { if (active) setNewsError(true); });
     return () => { active = false; };
-  }, [pool.blog.handle, attempt, session]);
+  }, [pool.blog.handle, attempt, session, accessDenied]);
 
   useEffect(() => {
     const current = ++generation.current;
@@ -62,6 +77,9 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews, sessi
       try {
         const page = await fetchWorkspaceTimeline(pool.blog.handle, selected);
         if (current !== generation.current || request !== refreshRequest) return;
+        denied.current = false;
+        session?.setAccessDenied(false);
+        setAccessDenied(false);
         setError(false);
         const previous = timelineRef.current;
         if (!previous) {
@@ -75,7 +93,13 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews, sessi
           setTimeline(refreshed.visible);
           setPending(refreshed.pending);
         }
-      } catch { if (current === generation.current && request === refreshRequest) setError(true); }
+      } catch (failure) {
+        if (current !== generation.current || request !== refreshRequest) return;
+        if (failure instanceof TimelineAccessError) {
+          invalidateAccess();
+        }
+        setError(true);
+      }
     };
     refreshTimeline.current = refresh;
     void refresh();
@@ -86,7 +110,7 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews, sessi
     window.addEventListener("focus", refresh);
     window.addEventListener(READING_ITEMS_CHANGED, savedChanged);
     return () => { generation.current = current + 1; refreshTimeline.current = null; window.removeEventListener("focus", refresh); window.removeEventListener(READING_ITEMS_CHANGED, savedChanged); };
-  }, [pool.blog.handle, filter, attempt, session]);
+  }, [pool.blog.handle, filter, attempt, session, invalidateAccess]);
 
   const previousCount = useRef(pool.posts.length);
   useEffect(() => {
@@ -102,12 +126,16 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews, sessi
     setLoadingMore(true);
     try {
       const page = await fetchWorkspaceTimeline(pool.blog.handle, filter === "news" ? "all" : filter, timeline.nextCursor);
-      if (current !== generation.current) return;
+      if (current !== generation.current || denied.current) return;
       const combined = { ...page, entries: [...new Map([...timeline.entries, ...page.entries].map((entry) => [entry.id, entry])).values()] };
       timelineRef.current = combined;
       session?.saveTimeline(filter === "news" ? "all" : filter, combined);
       setTimeline(combined);
-    } catch { if (current === generation.current) setError(true); }
+    } catch (failure) {
+      if (current !== generation.current) return;
+      if (failure instanceof TimelineAccessError) invalidateAccess();
+      setError(true);
+    }
     finally { if (current === generation.current) setLoadingMore(false); }
   };
 
@@ -119,6 +147,9 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews, sessi
     pendingOpen.current = item.id;
     setOpenTick((value) => value + 1);
   };
+  if (accessDenied) return <section className="personal-home" aria-label="Home">
+    <p role="alert">Workspace access is unavailable. <button onClick={() => setAttempt((value) => value + 1)}>Try again</button></p>
+  </section>;
   return <section className="personal-home" aria-label="Home">
     {capture}
     {continued.length > 0 && <section className="personal-home-continue" aria-label="Continue">

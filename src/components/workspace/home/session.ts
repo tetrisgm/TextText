@@ -31,6 +31,11 @@ export class HomeSession {
   private pages = new Map<string, HomeNews>();
   private timelines = new Map<TimelineFilter, TimelinePage>();
   personalFilter: TimelineFilter | "news" = "all";
+  accessDenied = false;
+  setAccessDenied(value: boolean) {
+    if (value) this.clear();
+    this.accessDenied = value;
+  }
   personalNews: ReadingListItem[] = [];
   getTimeline(filter: TimelineFilter) { return this.timelines.get(filter) ?? null; }
   saveTimeline(filter: TimelineFilter, page: TimelinePage) {
@@ -49,7 +54,7 @@ export class HomeSession {
     // Each server snapshot is capped at 300 candidates; retain eight views.
     while (this.pages.size > 8) this.pages.delete(this.pages.keys().next().value!);
   }
-  clear() { this.pages.clear(); this.timelines.clear(); this.personalNews = []; }
+  clear() { this.pages.clear(); this.timelines.clear(); this.personalNews = []; this.overview = null; this.checkedAt = 0; }
   patch(ids: string[], update: (item: ReadingListItem) => ReadingListItem) {
     const wanted = new Set(ids);
     const apply = (item: ReadingListItem) => wanted.has(item.id) ? update(item) : item;

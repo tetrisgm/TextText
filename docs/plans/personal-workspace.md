@@ -202,6 +202,14 @@ unverified existing features into completed acceptance claims.
 
 ## Implementation checkpoints
 
+- Home now distinguishes workspace access denial (401/403/404) from transient
+  request failures. Denial hides its capture, Continue, news and timeline;
+  clears session content snapshots; fences late requests; and remains hidden
+  on remount until a successful timeline request restores access. Ordinary
+  connection failures retain cached content. Thirteen targeted tests, TypeScript
+  and targeted ESLint pass, including late feed completion and access recovery.
+  This does not yet verify item-level revocation in older loaded timeline pages
+  or the live browser denial flow. The running 3103 preview predates this change.
 - Concurrent editing passed in the production preview on 3103: two browser
   sessions opened local note c13e473f-01b3-4f25-b9ec-d4dad6264d83 and typed
   different sentences concurrently. Both sessions converged with both complete
