@@ -120,4 +120,24 @@ describe.skipIf(!enabled)("home news against Postgres", () => {
     expect((await listReadingItems({ handle, user, scope: { ...scope, state: "saved" } })).items).toEqual([]);
   });
 
+  it("includes manual bookmarks and explicit feed saves in the library, excluding notes and unsaved news", async () => {
+    const { listReadingItems } = await import("@/lib/reading/list.server");
+    const { setKeep } = await import("@/lib/reading/retention.server");
+    const folders = await store.getFolders(handle);
+    const bookmarkFolder = folders.find((folder) => folder.path === "bookmarks")!;
+    const noteFolder = folders.find((folder) => folder.mode === "notes")!;
+    const manual = await store.createDraftInFolder(handle, bookmarkFolder.id, { initial: { title: "Saved reference", type: "bookmark" } });
+    const note = await store.createDraftInFolder(handle, noteFolder.id, { initial: { title: "My thought", type: "note" } });
+    const news = await home.readingHome({ handle, user, mode: "latest" });
+    const feedId = news.units.find((unit) => unit.kind === "article" && unit.item.origin === "feed")!.id;
+    const scope = { folderPath: "", includeDescendants: true, state: "bookmarked" as const, dateBasis: "received" as const };
+    expect((await listReadingItems({ handle, user, scope })).items.map((item) => item.id)).toEqual([manual.id]);
+    await setKeep({ handle, postIds: [feedId], keep: true, actor: { userId, actorType: "human" } });
+    const saved = await listReadingItems({ handle, user, scope });
+    expect(saved.items.map((item) => item.id).sort()).toEqual([manual.id, feedId].sort());
+    expect(saved.items.some((item) => item.id === note.id)).toBe(false);
+    expect((await listReadingItems({ handle, user: null, scope })).items).toEqual([]);
+    await setKeep({ handle, postIds: [feedId], keep: false, actor: { userId, actorType: "human" } });
+    expect((await listReadingItems({ handle, user, scope })).items.map((item) => item.id)).toEqual([manual.id]);
+  });
 });

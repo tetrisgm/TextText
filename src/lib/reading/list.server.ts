@@ -26,7 +26,7 @@ import { getFolders, workspaceIdForHandle } from "@/lib/store";
 export type ReadingScope = {
   folderPath: string;
   includeDescendants: boolean;
-  state: "all" | "unread" | "read" | "saved" | "kept" | "starred";
+  state: "all" | "unread" | "read" | "saved" | "bookmarked" | "kept" | "starred";
   dateBasis: "published" | "received" | "read";
   /** Newest first unless asked; oldest first is how Reader people catch up. */
   direction?: "newest" | "oldest";
@@ -221,6 +221,15 @@ export async function listReadingItems(input: {
         input.scope.state === "unread" ? isNull(readingReadState.readAt) : undefined,
         input.scope.state === "read" ? sql`${readingReadState.readAt} is not null` : undefined,
         input.scope.state === "saved" ? sql`exists (select 1 from ${retentionHolds} where ${retentionHolds.postId} = ${posts.id} and ${retentionHolds.releasedAt} is null and ${retentionHolds.reason} = 'keep')` : undefined,
+        input.scope.state === "bookmarked"
+          ? and(
+              eq(posts.type, "bookmark"),
+              or(
+                eq(posts.origin, "manual"),
+                sql`exists (select 1 from ${retentionHolds} where ${retentionHolds.postId} = ${posts.id} and ${retentionHolds.releasedAt} is null and ${retentionHolds.reason} = 'keep')`,
+              ),
+            )
+          : undefined,
         input.scope.state === "starred" ? eq(posts.starred, true) : undefined,
         input.scope.state === "kept"
           ? or(
