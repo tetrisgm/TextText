@@ -51,6 +51,7 @@ export type AssistantRailShellProps = AssistantSidebarProps & {
   motionOnRest?: (shown: boolean) => void;
   shellOnQuickAction?: (action: NativeQuickActionId, language?: string) => unknown;
   shellOnSubmit?: (submission: AssistantComposerSubmission) => unknown;
+  onRequestContextPicker?: () => void;
   shellViewerName?: string | null;
 };
 
@@ -469,7 +470,7 @@ export function AssistantRailShell({
           aria-label={`${title} composer`}
           onSubmit={submit}
         >
-          <div onFocus={() => void activate()}>
+          <div>
             <AssistantContextPicker
               choice={props.onContextChoiceChange ? props.contextChoice ?? DEFAULT_CONTEXT_CHOICE : {
                 ...(props.contextChoice ?? DEFAULT_CONTEXT_CHOICE),
@@ -479,7 +480,7 @@ export function AssistantRailShell({
               workspaceHandle={props.workspaceHandle} items={props.availableContextItems ?? []} hasItem={context?.kind === "item"}
               hasSelection={props.hasSelection ?? false} disabled={disabled || submitting}
               focusComposer={() => composerRef.current?.focus()}
-              onOpenChange={() => void activate()} />
+              onOpenChange={(open) => { if (open) props.onRequestContextPicker?.(); void activate(); }} />
           </div>
           <AssistantAttachmentList attachments={attachments} disabled={disabled || submitting}
             onRemove={(attachment) => { props.onRemoveAttachment?.(attachment); void activate(); }} />

@@ -109,6 +109,7 @@ export type AssistantSidebarProps = {
   onFilesSelected: (files: readonly File[]) => void;
   onRemoveAttachment: (attachment: AssistantAttachment) => void;
   attachments?: readonly AssistantAttachment[];
+  initialContextPickerOpen?: boolean;
   availableContextItems?: readonly AssistantWorkspaceContextItem[];
   onAddContextItem?: (item: AssistantWorkspaceContextItem) => void;
   contextChoice?: AssistantContextChoice;
@@ -206,6 +207,7 @@ export function AssistantSidebar({
   onFilesSelected,
   onRemoveAttachment,
   attachments = EMPTY_ATTACHMENTS,
+  initialContextPickerOpen = false,
   availableContextItems = EMPTY_CONTEXT_ITEMS,
   onAddContextItem,
   contextChoice = DEFAULT_CONTEXT_CHOICE,
@@ -290,7 +292,7 @@ export function AssistantSidebar({
   const [viewportWidth, setViewportWidth] = useState<number | null>(null);
   const [pendingOpen, setPendingOpen] = useState(false);
   const pickerThread = activeConversationId ?? contextKey ?? "context";
-  const [openPickerThread, setOpenPickerThread] = useState<string | null>(null);
+  const [openPickerThread, setOpenPickerThread] = useState<string | null>(initialContextPickerOpen ? pickerThread : null);
   const contextPickerOpen = openPickerThread === pickerThread;
   const setContextPickerOpen = (open: boolean) => setOpenPickerThread(open ? pickerThread : null);
   const contextControlsRef = useRef<HTMLDivElement>(null);

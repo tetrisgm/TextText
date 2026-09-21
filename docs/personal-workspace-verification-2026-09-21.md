@@ -114,3 +114,15 @@ the long NASA chip truncates within the 360px rail with its remove control
 visible, survives reload with its title, and can be removed. No AI request was
 sent. Native-agent consumption is covered by the canonical-read tests, not a
 live external-agent turn.
+
+### First-click picker handoff
+
+The initial lightweight assistant rail previously activated the full assistant
+on Add context but discarded the request to open the picker. Its containing
+boundary now remembers that request for the current workspace/context and opens
+the loaded picker on mount. Focusing the lightweight context controls no longer
+unmounts them ahead of the click. Ordinary activation does not open a picker.
+
+Twenty-one targeted handoff, keyboard and assistant regression tests pass,
+along with TypeScript and targeted lint. A fresh production browser cold-load
+check remains pending; the running 3112 preview predates this change.
