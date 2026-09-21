@@ -202,6 +202,21 @@ unverified existing features into completed acceptance claims.
 
 ## Implementation checkpoints
 
+- Updated production verification at 809f17fa: build passed with local Postgres
+  (.texttext/personal-build-809f17fa, log /tmp/texttext-personal-build-809f17fa.log).
+  The current production preview is localhost:3102; 3101 is the prior build.
+  Home headline -> NASA reader passed. Selected the visible introductory passage
+  by dragging, used Add to note to append to local fixture 79609afc-57f3-41ea-beee-06e19a1bf998,
+  reopened it through Writing and reloaded. Original content, exact selected
+  passage (Markdown-escaped), both source links and Article presentation survived.
+  AI scope followed the reader and destination document. This does not yet prove
+  concurrent writing or a newly created destination in this flow.
+- Home visually checked in production at 1280x720 desktop and 390x844 phone,
+  light and dark. Desktop retains both rails; phone uses bottom destinations.
+  Returning to desktop restored both rails and document scrollWidth equaled
+  innerWidth (1280). Restored system appearance and cleared the viewport override.
+  Other destinations/themes and quantitative p95 timing remain outstanding.
+
 - Production build passed at 43d13816 using local Postgres, with output in
   .texttext/personal-build and log /tmp/texttext-personal-production-build-current.log.
   A local-only server runs at localhost:3101 for verification; development stays
