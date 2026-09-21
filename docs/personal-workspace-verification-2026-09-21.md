@@ -424,3 +424,18 @@ legible rows. System/light then computed rgb(255,255,255) for both. Reload
 removed the temporary CSS edit; appearance is System. Fifteen Artifact tests
 pass and whitespace checks pass. The selector correction is not yet included
 in the running 3122 build. Temporary TypeScript build configuration removed.
+
+### Responsive build and bookmark filter contrast
+
+Production build 91e51377 passed and runs at 3123. In the actual built app, dark
+Notes folder and its canvas both compute rgb(0,0,0), closing the folder palette
+cascade issue. At 390x844, Home capture and filters fit with mobile bottom
+navigation and hidden desktop rails.
+
+Dark Bookmarks exposed a white folder selector with nearly white text. Its CSS
+used nonexistent --artifact-canvas and fell back to native Canvas. Changed to
+--artifact-bg. A temporary edit of exactly that loaded rule verified black
+background and rgb(242,242,242) text, with readable All folders in the screenshot.
+Reload removed the temporary edit, the viewport was reset, and System appearance
+restored. Fifteen Artifact tests and whitespace checks pass. The bookmark color
+correction is newer than the running build. Build configuration was removed.

@@ -719,7 +719,7 @@
 .libraryFilters > div { display: flex; gap: 18px; }
 .libraryFilters button { border: 0; padding: 8px 0; background: transparent; color: var(--news-ink-2); font: inherit; cursor: pointer; }
 .libraryFilters button[aria-pressed="true"] { color: var(--news-ink); font-weight: 650; }
-.libraryFilters select { max-width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--news-line); border-radius: 6px; color: var(--news-ink); background: var(--artifact-canvas, Canvas); font: inherit; font-size: 13px; }
+.libraryFilters select { max-width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--news-line); border-radius: 6px; color: var(--news-ink); background: var(--artifact-bg); font: inherit; font-size: 13px; }
 .libraryFilters :focus-visible { outline: 2px solid var(--news-accent); outline-offset: 4px; }
 .librarySearch { display: flex; align-items: center; gap: 12px; width: 100%; }
 .librarySearch input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--news-line); border-radius: 6px; background: var(--artifact-bg); color: var(--news-ink); font: inherit; }
