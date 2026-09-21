@@ -202,6 +202,21 @@ unverified existing features into completed acceptance claims.
 
 ## Implementation checkpoints
 
+- RSS reader verification exposed a refresh bug: the intentionally manual-only
+  pool evicted the open feed item and rendered News at the article URL. Refresh
+  now asks the owner-only endpoint to revalidate up to 50 opened feed IDs with
+  bounded list projections. Workspace and deletion predicates still apply;
+  arbitrary or cross-workspace IDs cannot widen the result. The 5,000-item
+  database suite passes including explicit inclusion, duplicate/invalid IDs and
+  workspace isolation. RSS readers also expose Add to note. Reloaded reader and
+  its destination dialog were verified locally; fresh navigation still needs a
+  performance pass. TypeScript and targeted lint pass.
+- Integration test run: 3,518 passed, 122 skipped, one large-paste timeout under
+  full-suite load. Both large-paste tests passed in an isolated rerun (35.58s).
+  This is not a clean full-suite timing result. Logs:
+  /tmp/texttext-personal-full-suite.log, /tmp/texttext-personal-paste-isolated.log,
+  /tmp/texttext-rss-refresh-db.log. Final production build remains pending.
+
 - Bookmarks search/folder/Read Later and Writing type/folder preferences survive
   destination remounts and reloads in workspace-scoped browser session storage.
   Content snapshots are not persisted there. Hydration renders defaults before

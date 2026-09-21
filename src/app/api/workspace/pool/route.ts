@@ -19,7 +19,7 @@ export async function GET(request: Request) {
   if (!handle) return jsonError("Missing workspace handle", 400);
 
   const user = await getCurrentUser();
-  const pool = await getWorkspacePoolForOwner(handle, user);
+  const pool = await getWorkspacePoolForOwner(handle, user, url.searchParams.getAll("include").slice(0, 50));
   if (!pool) return jsonError("Workspace not found", 404);
 
   return Response.json(pool, {

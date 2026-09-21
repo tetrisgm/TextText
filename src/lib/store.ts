@@ -578,7 +578,7 @@ export async function getBlogByUsername(
 async function selectPosts(
   handle: string,
   publishedOnly: boolean,
-  options: { manualOnly?: boolean } = {},
+  options: { manualOnly?: boolean; includeIds?: string[] } = {},
 ): Promise<Post[]> {
   const rows = await db!
     .select(postListSelection())
@@ -599,7 +599,7 @@ async function selectPosts(
             eq(blogs.handle, handle),
             isNull(blogs.deletedAt),
             isNull(posts.deletedAt),
-            options.manualOnly ? eq(posts.origin, "manual") : undefined,
+            options.manualOnly ? or(eq(posts.origin, "manual"), options.includeIds?.length ? inArray(posts.id, options.includeIds) : undefined) : undefined,
           ),
     )
     .orderBy(
@@ -739,7 +739,9 @@ const getWorkspacePoolPostsCached = cache(getWorkspacePoolPostsUncached);
  * getAllPosts when the question is about everything, such as what deleting a
  * folder would remove.
  */
-export async function getWorkspacePoolPosts(handle: string): Promise<Post[]> {
+export async function getWorkspacePoolPosts(handle: string, includeIds: string[] = []): Promise<Post[]> {
+  const ids = [...new Set(includeIds)].filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)).slice(0, 50);
+  if (ids.length) return selectPosts(handle, false, { manualOnly: true, includeIds: ids });
   return getWorkspacePoolPostsCached(handle);
 }
 

@@ -34,6 +34,7 @@ export function workspaceWikiLinkMetadata(
 export async function getWorkspacePoolForOwner(
   handle: string,
   user: AccessUser | null,
+  includeIds: string[] = [],
 ): Promise<WorkspacePoolPayload | null> {
   const [blog, access] = await Promise.all([
     getBlog(handle),
@@ -55,7 +56,7 @@ export async function getWorkspacePoolForOwner(
   ] = await Promise.all([
     getFolders(handle),
     getFolderCounts(handle),
-    getWorkspacePoolPosts(handle),
+    getWorkspacePoolPosts(handle, includeIds),
     getWorkspaceWikiLinkSources(handle),
     getPostSlugAliases(handle),
     getTrashedFolders(handle),

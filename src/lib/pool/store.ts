@@ -337,6 +337,11 @@ async function performWorkspacePoolRefresh(handle: string, blogId: string) {
     while (true) {
       const requestGeneration = poolMutationGeneration;
       const params = new URLSearchParams({ handle });
+      // Opened RSS items are intentionally absent from the default workspace
+      // snapshot. Revalidate a bounded set so refresh does not evict the reader.
+      for (const post of (state.pool?.posts ?? []).filter((post) => post.origin === "feed").slice(0, 50)) {
+        params.append("include", post.id);
+      }
       const response = await fetch(`/api/workspace/pool?${params.toString()}`, {
         credentials: "same-origin",
         headers: { Accept: "application/json" },

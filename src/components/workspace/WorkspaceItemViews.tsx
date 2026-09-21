@@ -308,7 +308,7 @@ export function WorkspacePostReader({
         onSearchValueChange={setFindQuery}
         onBookmarkContentModeChange={setBookmarkContentMode}
       />
-      {post.type === "bookmark" && canManagePost && <div className="source-note-action"><SourceNoteAction key={poolPost.id} pool={pool} sourceId={poolPost.id} title={post.title} sourcePath={blogWorkspacePostPath(blog, folderPathForPoolPost(pool, poolPost), post)} /></div>}
+      {(post.type === "bookmark" || poolPost.origin === "feed") && canManagePost && <div className="source-note-action"><SourceNoteAction key={poolPost.id} pool={pool} sourceId={poolPost.id} title={post.title} sourcePath={blogWorkspacePostPath(blog, folderPathForPoolPost(pool, poolPost), post)} /></div>}
       {poolPost.origin === "feed" && (
         <ReadingReaderBar
           blog={blog}

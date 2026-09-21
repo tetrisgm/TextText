@@ -150,6 +150,11 @@ describe.skipIf(!enabled)(`reading at scale (${ITEMS} imported items)`, () => {
   it("PERF-01: the whole-workspace pool does not grow with imported items", async () => {
     const pool = await timed("pool", () => store.getWorkspacePoolPosts(handle));
     expect(pool.filter((post) => post.origin === "feed")).toHaveLength(0);
+    const page = await list.listReadingItems({ handle, user, scope: { folderPath, state: "all", includeDescendants: true, dateBasis: "published" }, limit: 3 });
+    const ids = page.items.map((item) => item.id);
+    const reopened = await store.getWorkspacePoolPosts(handle, [...ids, ids[0], "invalid"]);
+    expect(reopened.filter((post) => post.origin === "feed").map((post) => post.id).sort()).toEqual([...ids].sort());
+    expect(await store.getWorkspacePoolPosts("not-this-workspace", ids)).toEqual([]);
     const counts = await store.getFolderCounts(handle);
     expect(counts[folderPath]).toBeGreaterThanOrEqual(ITEMS);
   });
