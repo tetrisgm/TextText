@@ -32,8 +32,14 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews, sessi
   const [error, setError] = useState(false);
   const [newsError, setNewsError] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => { if (openTimer.current) clearTimeout(openTimer.current); }, []);
+  const pendingOpen = useRef<string | null>(null);
+  const [openTick, setOpenTick] = useState(0);
+  useEffect(() => {
+    const id = pendingOpen.current;
+    if (!id || !pool.posts.some((post) => post.id === id)) return;
+    pendingOpen.current = null;
+    onOpenPost(id);
+  }, [openTick, pool.posts, onOpenPost]);
   useEffect(() => {
     let active = true;
     void fetchReadingHome({ handle: pool.blog.handle, mode: "latest", topic: null, limit: 3 }).then((articles) => {
@@ -110,8 +116,8 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews, sessi
   const entries = filter === "news" ? [] : timeline?.entries ?? [];
   const openReading = (item: ReadingListItem) => {
     addPost(poolPostFor(item, pool.blogId));
-    if (openTimer.current) clearTimeout(openTimer.current);
-    openTimer.current = setTimeout(() => onOpenPost(item.id), 0);
+    pendingOpen.current = item.id;
+    setOpenTick((value) => value + 1);
   };
   return <section className="personal-home" aria-label="Home">
     {capture}
@@ -138,8 +144,8 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews, sessi
       {(index === 0 || new Date(entries[index - 1].at).toLocaleDateString() !== new Date(item.at).toLocaleDateString()) && <h2 className="personal-home-date">{new Date(item.at).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</h2>}
       <button onClick={() => {
         addPost(item.post);
-        if (openTimer.current) clearTimeout(openTimer.current);
-        openTimer.current = setTimeout(() => onOpenPost(item.post.id), 0);
+        pendingOpen.current = item.post.id;
+        setOpenTick((value) => value + 1);
       }}>
         <span className={styles.noteMeta}>{item.kind === "saved" ? "Saved" : item.kind === "published" ? "Published" : "Created"} · {new Date(item.at).toLocaleDateString()}</span>
         <strong>{item.post.title || "Untitled"}</strong>

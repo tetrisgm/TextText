@@ -202,6 +202,15 @@ unverified existing features into completed acceptance claims.
 
 ## Implementation checkpoints
 
+- Production build passed at 43d13816 using local Postgres, with output in
+  .texttext/personal-build and log /tmp/texttext-personal-production-build-current.log.
+  A local-only server runs at localhost:3101 for verification; development stays
+  on 3100. Its first interaction check exposed Home opening with a stale pool
+  callback. Home now waits for the selected item to enter the rendered pool
+  before opening headlines or timeline entries. The headline-to-reader handoff
+  was verified in development with the matching AI context. Rebuild production
+  after this correction before measuring navigation. Neither build is released.
+
 - RSS reader verification exposed a refresh bug: the intentionally manual-only
   pool evicted the open feed item and rendered News at the article URL. Refresh
   now asks the owner-only endpoint to revalidate up to 50 opened feed IDs with
