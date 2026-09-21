@@ -24,6 +24,8 @@ import { getFolders, workspaceIdForHandle } from "@/lib/store";
  */
 
 export type ReadingScope = {
+  /** Literal text within the authorized, filtered reading collection. */
+  query?: string;
   folderPath: string;
   includeDescendants: boolean;
   state: "all" | "unread" | "read" | "saved" | "bookmarked" | "kept" | "starred";
@@ -154,7 +156,9 @@ export async function listReadingItems(input: {
   const wanted = input.scope.onlyFolderIds;
   const folderIds = wanted ? resolved.folderIds.filter((id) => wanted.includes(id)) : resolved.folderIds;
   const userId = input.user?.userId ?? null;
-  const fingerprint = sha(`${blogId}|${userId ?? "anon"}|${[...folderIds].sort().join(",")}|${input.scope.state}|${input.scope.dateBasis}|${input.scope.direction ?? "newest"}`);
+  const query = input.scope.query?.trim().slice(0, 200) ?? "";
+  const pattern = `%${query.replace(/[\\%_]/g, "\\$&")}%`;
+  const fingerprint = sha(`${blogId}|${userId ?? "anon"}|${[...folderIds].sort().join(",")}|${input.scope.state}|${input.scope.dateBasis}|${input.scope.direction ?? "newest"}|${query}`);
   if (folderIds.length === 0) {
     return { items: [], nextCursor: null, scope: { ...input.scope, folderIds: 0 }, scopeFingerprint: fingerprint };
   }
@@ -217,6 +221,7 @@ export async function listReadingItems(input: {
         isNull(posts.deletedAt),
         inArray(posts.folderId, folderIds),
         notDuplicateSql(),
+        query ? sql`concat_ws(' ', ${posts.title}, ${posts.excerpt}, ${posts.body}, ${readingProvenance.publisherName}, ${readingProvenance.externalUrl}) ilike ${pattern}` : undefined,
         input.scope.ids && input.scope.ids.length > 0 ? inArray(posts.id, input.scope.ids) : undefined,
         input.scope.state === "unread" ? isNull(readingReadState.readAt) : undefined,
         input.scope.state === "read" ? sql`${readingReadState.readAt} is not null` : undefined,

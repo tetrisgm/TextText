@@ -135,6 +135,11 @@ describe.skipIf(!enabled)("home news against Postgres", () => {
     await setKeep({ handle, postIds: [feedId], keep: true, actor: { userId, actorType: "human" } });
     const saved = await listReadingItems({ handle, user, scope });
     expect(saved.items.map((item) => item.id).sort()).toEqual([manual.id, feedId].sort());
+    expect((await listReadingItems({ handle, user, scope: { ...scope, query: "saved reference" } })).items.map((item) => item.id)).toEqual([manual.id]);
+    expect((await listReadingItems({ handle, user, scope: { ...scope, query: "saved reference", state: "saved" } })).items).toEqual([]);
+    expect((await listReadingItems({ handle, user, scope: { ...scope, query: "saved reference", folderPath: noteFolder.path } })).items).toEqual([]);
+    expect((await listReadingItems({ handle, user, scope: { ...scope, query: "%" } })).items).toEqual([]);
+    expect((await listReadingItems({ handle, user: null, scope: { ...scope, query: "saved reference" } })).items).toEqual([]);
     const savedTimeline = await store.listWorkspaceTimeline({ handle, user, filter: "saved" });
     const savedEvent = savedTimeline.entries.find((entry) => entry.id === feedId)!;
     const holds = await db!.select().from(schema.retentionHolds).where(eq(schema.retentionHolds.postId, feedId));

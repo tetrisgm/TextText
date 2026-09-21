@@ -202,6 +202,12 @@ unverified existing features into completed acceptance claims.
 
 ## Implementation checkpoints
 
+- Bookmarks has server-side text search scoped to folder, saved membership and
+  Read Later. Searches remain paginated; literal wildcard characters do not
+  widen matches. Local database checks cover scope intersections and anonymous
+  access. The desktop UI was verified with a matching query and an empty result.
+  Search and Bookmarks first pages skip unused folder-summary count queries.
+
 - Writing now exposes the shared New menu and type builder directly, including
   Article and custom types. Its labels and pagination cover all writing rather
   than only notes. The live desktop menu was verified, and the linked-source

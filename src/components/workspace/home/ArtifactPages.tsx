@@ -85,6 +85,8 @@ export function ArtifactHeadlines(props: OpenProps) {
 export function SavedArticles({ state, folders = [], ...props }: OpenProps & { state: "saved" | "read" | "bookmarked"; folders?: WorkspacePoolPayload["folders"] }) {
   const [folderPath, setFolderPath] = useState("");
   const [later, setLater] = useState(false);
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
   const effectiveState = state === "bookmarked" && later ? "saved" : state;
   const generation = useRef(0);
   const [items, setItems] = useState<ReadingListItem[] | null>(null);
@@ -99,28 +101,33 @@ export function SavedArticles({ state, folders = [], ...props }: OpenProps & { s
   useEffect(() => {
     generation.current += 1;
     let active = true;
-    void fetchReadingPage({ handle: props.handle, scope: { folderPath, includeDescendants: true, state: effectiveState, dateBasis: state === "read" ? "read" : "received" } }).then((page) => {
+    void fetchReadingPage({ handle: props.handle, scope: { folderPath, query, includeDescendants: true, state: effectiveState, dateBasis: state === "read" ? "read" : "received" } }).then((page) => {
       if (!active) return;
       setItems(page.items); setCursor(page.nextCursor); setError(null);
     }).catch(() => { if (active) setError("Could not load saved articles."); });
     return () => { active = false; generation.current += 1; };
-  }, [props.handle, attempt, state, effectiveState, folderPath]);
+  }, [props.handle, attempt, state, effectiveState, folderPath, query]);
   const more = async () => {
     if (loading || !cursor) return;
     const request = generation.current;
     setLoading(true);
     try {
-      const page = await fetchReadingPage({ handle: props.handle, cursor, scope: { folderPath, includeDescendants: true, state: effectiveState, dateBasis: state === "read" ? "read" : "received" } });
+      const page = await fetchReadingPage({ handle: props.handle, cursor, scope: { folderPath, query, includeDescendants: true, state: effectiveState, dateBasis: state === "read" ? "read" : "received" } });
       if (request !== generation.current) return;
       setItems((current) => [...new Map([...(current ?? []), ...page.items].map((item) => [item.id, item])).values()]); setCursor(page.nextCursor); setError(null);
     } catch { if (request === generation.current) setError("Could not load more articles."); }
     finally { if (request === generation.current) setLoading(false); }
   };
   return <>{state === "bookmarked" && <div className={styles.libraryFilters}>
+    <form className={styles.librarySearch} role="search" onSubmit={(event) => { event.preventDefault(); if (query !== search.trim()) { resetPage(); setQuery(search.trim()); } }}>
+      <input type="search" aria-label="Search saved articles" placeholder="Search saved articles" maxLength={200} value={search} onChange={(event) => setSearch(event.target.value)} />
+      <button type="submit">Search</button>
+      {query && <button type="button" onClick={() => { resetPage(); setSearch(""); setQuery(""); }}>Clear</button>}
+    </form>
     <div role="group" aria-label="Saved articles"><button aria-pressed={!later} onClick={() => { if (later) { resetPage(); setLater(false); } }}>All saved</button><button aria-pressed={later} onClick={() => { if (!later) { resetPage(); setLater(true); } }}>Read Later</button></div>
     <select aria-label="Bookmark folder" value={folderPath} onChange={(event) => { resetPage(); setFolderPath(event.target.value); }}><option value="">All folders</option>{[...folders].sort((a, b) => a.path.localeCompare(b.path)).map((folder) => <option key={folder.id} value={folder.path}>{folder.path.split("/").join(" / ")}</option>)}</select>
   </div>}{error && <p role="alert">{error} <button className={styles.action} onClick={() => { resetPage(); setAttempt((value) => value + 1); }}>Try again</button></p>}
-    {items ? items.length ? <ArticleRows items={items} previews={state === "bookmarked"} {...props} /> : <p className={styles.empty}>{state === "read" ? "Articles you read appear here." : folderPath ? "No saved articles in this folder yet." : later ? "Articles you mark Read Later appear here." : "Save a link or keep an article from News to start your library."}</p> : !error && <p className={styles.empty} role="status">Loading saved articles…</p>}
+    {items ? items.length ? <ArticleRows items={items} previews={state === "bookmarked"} {...props} /> : <p className={styles.empty}>{query ? "No saved articles match this search and filters." : state === "read" ? "Articles you read appear here." : folderPath ? "No saved articles in this folder yet." : later ? "Articles you mark Read Later appear here." : "Save a link or keep an article from News to start your library."}</p> : !error && <p className={styles.empty} role="status">Loading saved articles…</p>}
     {cursor && <button className={styles.back} disabled={loading} onClick={() => void more()}>{loading ? "Loading…" : "More articles"}</button>}
   </>;
 }

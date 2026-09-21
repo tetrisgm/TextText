@@ -44,6 +44,7 @@ export function fetchReadingPage(input: {
     direction: input.scope.direction ?? "newest",
   });
   if (input.cursor) params.set("cursor", input.cursor);
+  if (input.scope.query) params.set("q", input.scope.query);
   if (input.limit) params.set("limit", String(input.limit));
   return request(`/api/workspace/reading/items?${params.toString()}`);
 }

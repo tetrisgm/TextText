@@ -210,6 +210,14 @@ describe.skipIf(!enabled)(`reading at scale (${ITEMS} imported items)`, () => {
     const saved = await timed("bookmarkedLibrary", () => list.listReadingItems({ handle, user, scope: { folderPath: "", includeDescendants: true, state: "bookmarked", dateBasis: "received" }, limit: 7 }));
     expect(saved.items).toHaveLength(7);
     expect(saved.nextCursor).not.toBeNull();
+    const searchScope = { folderPath: "", includeDescendants: true, state: "bookmarked" as const, dateBasis: "received" as const, query: "Scale article" };
+    const found = await timed("bookmarkSearch", () => list.listReadingItems({ handle, user, scope: searchScope, limit: 7 }));
+    expect(found.items).toHaveLength(7);
+    const foundNext = await list.listReadingItems({ handle, user, scope: searchScope, cursor: found.nextCursor, limit: 7 });
+    expect(foundNext.items).toHaveLength(7);
+    expect(new Set([...found.items, ...foundNext.items].map((item) => item.id)).size).toBe(14);
+    expect([...found.items, ...foundNext.items].every((item) => candidates.items.some((savedItem) => savedItem.id === item.id))).toBe(true);
+    expect(timings.bookmarkSearch).toBeLessThan(2000);
     for (const name of ["personalTimeline", "bookmarkedLibrary"]) expect(timings[name], name).toBeLessThan(2000);
     console.log(`[personal workspace scale] ${ITEMS} items: ${JSON.stringify({ timelineMs: timings.personalTimeline, bookmarksMs: timings.bookmarkedLibrary })}`);
   });
