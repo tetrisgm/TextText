@@ -692,3 +692,21 @@ Two affected test files pass (13 tests); TypeScript passes; lint has no errors
 and 17 existing shell warnings. Logs: `/tmp/texttext-edit-type-tests.log`,
 `/tmp/texttext-edit-type-tsc.log`, `/tmp/texttext-edit-type-lint.log`.
 A new production build and export/import UI acceptance remain outstanding.
+
+## Custom type export and import through the UI
+
+On development preview 3100, exported Review with starter version 2 from the
+item look gallery. The browser download-event observer timed out, but the
+actual file `/Users/shokunin/Downloads/review-with-starter.texttext-look.json`
+was present and contained the version-2 starter title, body and field defaults.
+The previous observer timeout is not evidence of a failed export.
+
+Opened Notes > Change look > Import, selected that exact downloaded file, and
+verified the schema-validated import preview showed Reading reflection, Topic
+Ideas, Summary and What stayed with me. Save as new returned an independent
+My look with zero item and folder usages and the same preview. Did not apply
+it to the eight existing folder items. This verifies the UI export/import
+round trip of render definition and starter data on the development build.
+Authoring blueprints are not part of the look export, so imported definitions
+currently cannot be reopened in the manual designer; this remains a functional
+limitation to resolve. Production acceptance remains outstanding.
