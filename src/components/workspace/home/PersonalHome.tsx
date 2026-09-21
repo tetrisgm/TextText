@@ -30,6 +30,7 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews, sessi
   const timelineRevision = useRef(0);
   const refreshTimeline = useRef<(() => Promise<void>) | null>(null);
   const [news, setNews] = useState<ReadingListItem[]>(session?.personalNews ?? []);
+  const [newsSettled, setNewsSettled] = useState(Boolean(session?.personalNews.length));
   const [error, setError] = useState(false);
   const [accessDenied, setAccessDenied] = useState(session?.accessDenied ?? false);
   const denied = useRef(session?.accessDenied ?? false);
@@ -63,8 +64,9 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews, sessi
       const next = articles.units.flatMap((unit) => unit.kind === "article" ? [unit.item] : []).slice(0, 3);
       if (session) session.personalNews = next;
       setNews(next);
+      setNewsSettled(true);
       setNewsError(false);
-    }).catch(() => { if (active) setNewsError(true); });
+    }).catch(() => { if (active) { setNewsError(true); setNewsSettled(true); } });
     return () => { active = false; };
   }, [pool.blog.handle, attempt, session, accessDenied]);
 
@@ -153,7 +155,10 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews, sessi
   if (accessDenied) return <section className="personal-home" aria-label="Home">
     <p role="alert">Workspace access is unavailable. <button onClick={() => setAttempt((value) => value + 1)}>Try again</button></p>
   </section>;
-  return <section className="personal-home" aria-label="Home">
+  return <section className="personal-home" aria-label="Home" data-scroll-restore-pending={
+    ((filter === "all" || filter === "news") && !newsSettled) ||
+    (filter !== "news" && !timeline && !error)
+  }>
     {capture}
     {continued.length > 0 && <section className="personal-home-continue" aria-label="Continue">
       <h2>Continue</h2>

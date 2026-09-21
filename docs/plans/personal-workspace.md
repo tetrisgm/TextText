@@ -202,6 +202,19 @@ unverified existing features into completed acceptance claims.
 
 ## Implementation checkpoints
 
+- Reload restoration now starts its 250ms list settling window after the saved
+  position is reachable and Home's initial timeline/headlines have settled,
+  with a 2.5s overall deadline. Reader/editor retain their existing 900ms window;
+  wheel, pointer and keyboard input still cancel restoration immediately.
+  Seventeen targeted tests, TypeScript, lint (existing warnings only), and a
+  production build pass. In the new production
+  preview, three consecutive reloads all retained scrollTop 1440 and the same
+  timeline row f5b7bfad-8958-4cfb-890b-539baba23e72 at offset 25.546875px.
+  This resolves the initial-page reload failure recorded below, not restoration
+  across additional loaded pages or every slow-network case.
+  Preview localhost:3108 uses .texttext/personal-build-restore and deployment
+  personal-restore; logs /tmp/texttext-personal-restore-{build,server}.log and
+  /tmp/texttext-scroll-restore-tests.log.
 - Destination scroll memory now distinguishes Home, News, Bookmarks, Writing,
   Headlines and Profile; reader/editor retain their shared item position. The
   recording listener switches before restoration can emit a scroll event, and

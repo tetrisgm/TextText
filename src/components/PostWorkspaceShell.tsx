@@ -3,6 +3,7 @@
 import { readingUnreadByFolder } from "@/components/workspace/reading/unread";
 import { useListReturnFocus } from "@/components/workspace/useListReturnFocus";
 import { viewScrollMemoryKey } from "@/lib/workspace/view-memory";
+import { scrollRestoreWindow } from "@/lib/workspace/scroll-restore";
 import { requestDocumentCaret } from "@/lib/document-history-events";
 import type { Appearance } from "@/lib/workspace/appearance";
 import {
@@ -1339,8 +1340,8 @@ function LocalWorkspaceShell({
     };
   }, [homePath, homePane]);
 
-  // Put a returning view back where it was. List views settle in a couple of
-  // frames; an item's scroller (windowed editor / long reader) grows its
+  // Put a returning view back where it was. Lists may load asynchronously;
+  // an item's scroller (windowed editor / long reader) grows its
   // height over many frames after mount and resets to 0 as it does, so the
   // restore holds the target - recording suppressed - until it sticks or a
   // short deadline passes.
@@ -1383,9 +1384,8 @@ function LocalWorkspaceShell({
     // immediately undone. So keep re-applying for a window, and yield the
     // instant the person actually scrolls, so we never fight a live gesture.
     const isItem = view.level === "post" || view.level === "edit";
-    const holdMs = isItem ? 900 : 250;
     scrollRestorePendingRef.current = true;
-    const started = performance.now();
+    const finished = scrollRestoreWindow(isItem, performance.now());
     let frame = 0;
     let released = false;
     const release = () => {
@@ -1401,9 +1401,12 @@ function LocalWorkspaceShell({
     };
     const hold = () => {
       if (released) return;
-      if (Math.abs(content.scrollTop - saved) > 1) content.scrollTop = saved;
-      else scrollSettledRef.current = true;
-      if (performance.now() - started > holdMs) {
+      const target = Math.min(saved, Math.max(0, content.scrollHeight - content.clientHeight));
+      if (Math.abs(content.scrollTop - target) > 1) content.scrollTop = target;
+      const reached = Math.abs(content.scrollTop - saved) <= 1 &&
+        (isItem || !content.querySelector('[data-scroll-restore-pending="true"]'));
+      if (reached) scrollSettledRef.current = true;
+      if (finished(performance.now(), reached)) {
         release();
         return;
       }

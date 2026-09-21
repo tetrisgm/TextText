@@ -38,6 +38,22 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+it("keeps scroll restoration pending until initial headlines settle, including an empty feed", async () => {
+  const session = new HomeSession();
+  driver.timeline.mockResolvedValue(snapshot);
+  let resolveNews!: (value: unknown) => void;
+  driver.news.mockImplementation(() => new Promise((resolve) => { resolveNews = resolve; }));
+  expect(render(session)).toContain('data-scroll-restore-pending="true"');
+  const cleanups = driver.effects.map((effect) => effect());
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(render(session)).toContain("Private draft");
+  expect(render(session)).toContain('data-scroll-restore-pending="true"');
+  resolveNews({ units: [] });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(render(session)).toContain('data-scroll-restore-pending="false"');
+  cleanups.forEach((cleanup) => cleanup?.());
+});
+
 it.each([new TimelineAccessError(), new Error("Network unavailable")])("hides cached personal content only when access is denied: %s", async (failure) => {
   const session = new HomeSession();
   session.saveTimeline("all", snapshot);
