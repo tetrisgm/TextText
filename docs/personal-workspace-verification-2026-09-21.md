@@ -244,3 +244,18 @@ an unsaved test draft and invoking the command again kept both the exact draft
 and capture focus. The test-only draft was cleared afterward. No empty item was
 created by either command. This replaces the prior 25-Tab capture approach.
 The temporary build TypeScript configuration was removed after server startup.
+
+### Desktop Home return and reload on port 3116
+
+Visual inspection confirms left folders, central capture/timeline, and right AI
+in the current desktop Home. Opening the keyboard-capture note and Cmd+[ adds
+it to Continue and restores focus to its timeline row. After scrolling down,
+opening the 100kB fixture and returning focuses its row. With Continue populated,
+a repeat open/back preserves both scrollTop 1721.5 and row viewport top 320.625
+exactly. Full reload also restores scrollTop 1721.5 and row top 320.625; document
+focus is not restored on reload. The first opening changed Continue's height,
+so its numerical scroll offset is not used as proof of exact restoration.
+
+The prior draft cleanup claim was rechecked: empty `fill` had only selected the
+text in this browser surface. Cmd+A followed by Backspace cleared it, and a DOM
+read verified the capture value was empty. No product change was needed.
