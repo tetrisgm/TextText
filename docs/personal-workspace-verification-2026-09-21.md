@@ -126,3 +126,32 @@ unmounts them ahead of the click. Ordinary activation does not open a picker.
 Twenty-one targeted handoff, keyboard and assistant regression tests pass,
 along with TypeScript and targeted lint. A fresh production browser cold-load
 check remains pending; the running 3112 preview predates this change.
+
+### Warm-return measurements and startup retest
+
+On production preview 3112 (84fec113 implementation), CUA alternated Writing
+and Bookmarks for 21 cycles. The first cycle is excluded from warm statistics.
+Click capture starts the timer; the animation frame after a destination row is
+present ends it. This is DOM readiness, not image decode/compositor completion.
+Nearest-rank p95 over 20 warm samples:
+
+| Destination | First measured visit | Warm p95 | Warm range |
+| --- | ---: | ---: | ---: |
+| Writing | 64.4 ms | 88.8 ms | 30.5–112.3 ms |
+| Bookmarks | 639.6 ms | 59.8 ms | 21.3–94.5 ms |
+
+Bookmarks samples in ms: 33, 25.8, 21.3, 29, 22.2, 24.2, 59.8, 31, 30.9,
+27.1, 41.4, 33.4, 37.2, 23.2, 37.4, 94.5, 27.3, 35.9, 27.3, 33.2.
+Writing samples: 49.4, 39.9, 34.6, 38.5, 33.9, 30.5, 34.3, 85.7, 34.3,
+42.3, 88.8, 112.3, 40.7, 32.6, 47.4, 35.7, 38.8, 36, 48, 57.4.
+Fixture remains one deliberate bookmark and the existing small writing pool.
+The first Home visit measured 407.6 ms. Initial loads, other navigation paths
+and large-workspace performance remain open. Temporary timing probes were removed.
+
+The fresh a55127f6 build passes (`.texttext/personal-build-handoff`, port 3113).
+Immediately navigating there and clicking Add context once still did not open
+the picker after hydration. Therefore the cold-start acceptance is **not passed**.
+The first-click request currently lives inside LazyAssistantSidebar, while its
+parent LazyAssistantConversationState replaces its subtree when modules load.
+That remount is a likely request-loss boundary not covered by the isolated test;
+the fix must retain intent across the parent replacement and thread initialization.
