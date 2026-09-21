@@ -1,0 +1,62 @@
+"use client";
+
+import { useRef, useState } from "react";
+import type { WorkspacePoolPayload } from "@/lib/pool/types";
+import { executeWorkspaceToolRequest } from "@/lib/ai/workspace-tool-client";
+import { sourceNoteMarkdown } from "@/lib/workspace/source-note";
+import { StoryActions } from "@/components/workspace/home/StoryActions";
+
+export function SourceNoteAction({ pool, sourceId, title, sourcePath }: {
+  pool: WorkspacePoolPayload; sourceId: string; title: string; sourcePath: string;
+}) {
+  const [passage, setPassage] = useState<string | null>(null);
+  const [destination, setDestination] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const operation = useRef<{ key: string; destination: string; body: string } | null>(null);
+  const notes = pool.posts.filter((post) => post.type === "note" && post.id !== sourceId);
+  const save = async () => {
+    if (busy || passage === null) return;
+    const request = operation.current ?? {
+      key: `source-note:${crypto.randomUUID()}`,
+      destination,
+      body: sourceNoteMarkdown(passage, title, new URL(sourcePath, window.location.origin).href),
+    };
+    operation.current = request;
+    setBusy(true); setError(null);
+    try {
+      const result = request.destination
+        ? await executeWorkspaceToolRequest(pool.blog.handle, "append_to_item", { id: request.destination, markdown: request.body, idempotency_key: request.key })
+        : await executeWorkspaceToolRequest(pool.blog.handle, "create_item", { kind: "note", title: `Notes on ${title || "this article"}`.slice(0, 300), body: request.body, template_id: "texttext.note", template_version: 1, idempotency_key: request.key });
+      if (!result.item) throw new Error(typeof result.error === "string" ? result.error : "The note could not be saved. Try again.");
+      setSaved(true);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The note could not be saved. Try again.");
+    } finally { setBusy(false); }
+  };
+  return <>
+    <button type="button" className="ac-btn ac-btn-gray" onMouseDown={(event) => event.preventDefault()} onClick={() => {
+      const selection = window.getSelection();
+      const element = selection?.anchorNode?.parentElement;
+      const inReader = element?.closest(".tt-document");
+      const endReader = selection?.focusNode?.parentElement?.closest(".tt-document");
+      setPassage(inReader && inReader === endReader ? selection?.toString() ?? "" : "");
+      setDestination(""); setSaved(false); setError(null); operation.current = null;
+    }}>Add to note</button>
+    {passage !== null && <StoryActions label="Add to note" onClose={() => { if (!busy) setPassage(null); }}>
+      <div className="source-note-form">
+        <h2>{saved ? "Added to your note" : "Add to note"}</h2>
+        {saved ? <><p>The source link and passage are saved.</p><button className="ac-btn ac-btn-gray" onClick={() => setPassage(null)}>Done</button></> : <>
+          <p>Select a passage before opening this panel, or add the source link on its own.</p>
+          {passage && <blockquote>{passage}</blockquote>}
+          <label>Destination<select value={destination} disabled={busy || Boolean(error)} onChange={(event) => setDestination(event.target.value)}>
+            <option value="">New note</option>{notes.map((note) => <option key={note.id} value={note.id}>{note.title || "Untitled"}</option>)}
+          </select></label>
+          {error && <p role="alert">{error}</p>}
+          <button className="ac-btn ac-btn-gray" disabled={busy} onClick={() => void save()}>{busy ? "Saving…" : error ? "Retry" : "Add to note"}</button>
+        </>}
+      </div>
+    </StoryActions>}
+  </>;
+}

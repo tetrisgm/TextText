@@ -202,6 +202,15 @@ unverified existing features into completed acceptance claims.
 
 ## Implementation checkpoints
 
+- Saved library now provides nested-folder filtering, All saved/Read Later,
+  excerpts and larger previews. Pagination drops responses from previous scopes.
+  Typecheck and targeted lint pass; visual acceptance remains pending.
+- Bookmark readers now offer Add to note for a selected passage or source link,
+  targeting an existing note or creating a private note through shared commands.
+  Append uses the idempotent live-content mutation path. Literal quote tests and
+  57 shared-command tests pass, as do typecheck and targeted lint. Live reader,
+  concurrent-editor and source-retention verification remain required.
+
 - `8f443639`: desktop rail geometry and explicit visibility choices corrected;
   sidebar tests pass. Native visual acceptance is still pending.
 - `de6bf1df`: dedicated bookmarked query includes manual bookmarks and explicit

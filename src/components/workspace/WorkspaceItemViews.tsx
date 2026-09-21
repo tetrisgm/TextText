@@ -6,6 +6,7 @@
 
 
 import { ReadingReaderBar } from "@/components/workspace/reading/ReadingReaderBar";
+import { SourceNoteAction } from "@/components/workspace/reading/SourceNoteAction";
 import { isDocumentBlank } from "@/components/document/TemplateGallery";
 import {
   useCallback,
@@ -307,6 +308,7 @@ export function WorkspacePostReader({
         onSearchValueChange={setFindQuery}
         onBookmarkContentModeChange={setBookmarkContentMode}
       />
+      {post.type === "bookmark" && canManagePost && <div className="source-note-action"><SourceNoteAction key={poolPost.id} pool={pool} sourceId={poolPost.id} title={post.title} sourcePath={blogWorkspacePostPath(blog, folderPathForPoolPost(pool, poolPost), post)} /></div>}
       {poolPost.origin === "feed" && (
         <ReadingReaderBar
           blog={blog}

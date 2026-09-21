@@ -1,4 +1,11 @@
 /* The workspace uses Artifact's continuous canvas, type and destinations, with Notes alongside the news. */
+.source-note-action { display: flex; justify-content: flex-end; padding: 8px 0; }
+.source-note-form { padding: 20px; color: var(--artifact-ink); }
+.source-note-form h2 { font-size: 20px; margin: 0 0 12px; }
+.source-note-form p { font-size: 14px; line-height: 1.5; color: var(--artifact-muted); }
+.source-note-form blockquote { max-height: 220px; overflow: auto; white-space: pre-wrap; margin: 16px 0; padding-left: 16px; border-left: 2px solid var(--artifact-line); }
+.source-note-form label { display: grid; gap: 8px; margin: 20px 0; }
+.source-note-form select { padding: 10px; width: 100%; color: var(--artifact-ink); background: var(--artifact-bg); border: 1px solid var(--artifact-line); border-radius: 6px; }
 :root {
   --artifact-bg: #ffffff;
   --artifact-surface: #f2f2f3;
