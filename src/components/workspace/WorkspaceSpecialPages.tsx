@@ -46,7 +46,6 @@ import {
   workspaceActionErrorMessage,
 } from "@/lib/workspace/local-view";
 import { projectTrashView } from "@/lib/trash-view";
-import { homeFolderModeForPostType } from "@/lib/workspace-item-presentation";
 
 
 
@@ -388,16 +387,7 @@ export function WorkspaceSelectionToolbar({
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   if (posts.length < 2) return null;
-  const commonMode = posts.every(
-    (post) =>
-      homeFolderModeForPostType(post.type) ===
-      homeFolderModeForPostType(posts[0]!.type),
-  )
-    ? homeFolderModeForPostType(posts[0]!.type)
-    : null;
-  const moveFolders = commonMode
-    ? folders.filter((folder) => folder.mode === commonMode)
-    : [];
+  const moveFolders = folders;
   const allStarred = posts.every((post) => Boolean(post.starred));
 
   const share = () => {
@@ -494,5 +484,4 @@ export function WorkspaceSelectionToolbar({
     </div>
   );
 }
-
 

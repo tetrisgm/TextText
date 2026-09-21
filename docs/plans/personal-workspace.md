@@ -202,6 +202,17 @@ unverified existing features into completed acceptance claims.
 
 ## Implementation checkpoints
 
+- Home refresh now reconciles title changes and removals within the refreshed
+  page range, retaining older loaded pages and staging new arrivals. Save-state
+  events refresh the timeline; overlapping responses are ordered. The news
+  digest uses the RSS Home query instead of sampling mixed saved-reading rows,
+  and news errors no longer disappear when the timeline succeeds. Seven focused
+  timeline/session tests pass. Full loaded-range access invalidation and live
+  refresh/focus verification remain pending.
+- Removed the remaining type-based restriction in the bulk-move toolbar so
+  mixed selections expose folder destinations. Existing mutation permission
+  checks still apply; no folder grants were widened.
+
 - Desktop regression corrected at a 792 CSS-pixel mouse-driven window: both
   rails stay docked and the mobile destination bar stays hidden. Aligned the
   sidebar/assistant compact rules and removed duplicate mobile padding from

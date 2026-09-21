@@ -5,11 +5,11 @@ import type { ReactNode } from "react";
 import type { WorkspacePoolPayload } from "@/lib/pool/types";
 import type { WorkspaceDocumentOpenHistory } from "@/lib/workspace-activity";
 import { plainTextExcerpt } from "@/lib/content";
-import { fetchReadingPage, type ReadingListItem } from "@/lib/reading/client";
+import { fetchReadingHome, READING_ITEMS_CHANGED, type ReadingItemsChange, type ReadingListItem } from "@/lib/reading/client";
 import { addPost } from "@/lib/pool/store";
 import { poolPostFor } from "./HomeNews";
 import { fetchWorkspaceTimeline } from "@/lib/workspace/timeline-client";
-import type { TimelinePage } from "@/lib/workspace/timeline";
+import { reconcileTimeline, type TimelinePage } from "@/lib/workspace/timeline";
 import type { HomeSession } from "./session";
 import styles from "./Home.module.css";
 
@@ -30,18 +30,19 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews, sessi
   const refreshTimeline = useRef<(() => Promise<void>) | null>(null);
   const [news, setNews] = useState<ReadingListItem[]>(session?.personalNews ?? []);
   const [error, setError] = useState(false);
+  const [newsError, setNewsError] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (openTimer.current) clearTimeout(openTimer.current); }, []);
   useEffect(() => {
     let active = true;
-    const scope = { folderPath: "", includeDescendants: true, dateBasis: "received" as const };
-    void fetchReadingPage({ handle: pool.blog.handle, scope: { ...scope, state: "all" }, limit: 30 }).then((articles) => {
+    void fetchReadingHome({ handle: pool.blog.handle, mode: "latest", topic: null, limit: 3 }).then((articles) => {
       if (!active) return;
-      const next = articles.items.filter((item) => item.origin === "feed").slice(0, 3);
+      const next = articles.units.flatMap((unit) => unit.kind === "article" ? [unit.item] : []).slice(0, 3);
       if (session) session.personalNews = next;
       setNews(next);
-    }).catch(() => { if (active) setError(true); });
+      setNewsError(false);
+    }).catch(() => { if (active) setNewsError(true); });
     return () => { active = false; };
   }, [pool.blog.handle, attempt, session]);
 
@@ -49,25 +50,36 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews, sessi
     const current = ++generation.current;
     const selected = filter === "news" ? "all" : filter;
     timelineRef.current = session?.getTimeline(selected) ?? null;
+    let refreshRequest = 0;
     const refresh = async () => {
+      const request = ++refreshRequest;
       try {
         const page = await fetchWorkspaceTimeline(pool.blog.handle, selected);
-        if (current !== generation.current) return;
+        if (current !== generation.current || request !== refreshRequest) return;
         setError(false);
         const previous = timelineRef.current;
         if (!previous) {
           timelineRef.current = page;
           session?.saveTimeline(selected, page);
           setTimeline(page);
-        } else if (page.entries.some((entry) => !previous.entries.some((old) => old.id === entry.id && old.at === entry.at))) {
-          setPending(page);
+        } else {
+          const refreshed = reconcileTimeline(previous, page);
+          timelineRef.current = refreshed.visible;
+          session?.saveTimeline(selected, refreshed.visible);
+          setTimeline(refreshed.visible);
+          setPending(refreshed.pending);
         }
-      } catch { if (current === generation.current) setError(true); }
+      } catch { if (current === generation.current && request === refreshRequest) setError(true); }
     };
     refreshTimeline.current = refresh;
     void refresh();
+    const savedChanged = (event: Event) => {
+      const change = (event as CustomEvent<ReadingItemsChange>).detail;
+      if (change.handle === pool.blog.handle && change.keep !== undefined) void refresh();
+    };
     window.addEventListener("focus", refresh);
-    return () => { generation.current = current + 1; refreshTimeline.current = null; window.removeEventListener("focus", refresh); };
+    window.addEventListener(READING_ITEMS_CHANGED, savedChanged);
+    return () => { generation.current = current + 1; refreshTimeline.current = null; window.removeEventListener("focus", refresh); window.removeEventListener(READING_ITEMS_CHANGED, savedChanged); };
   }, [pool.blog.handle, filter, attempt, session]);
 
   const previousCount = useRef(pool.posts.length);
@@ -117,7 +129,8 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews, sessi
     {(filter === "all" || filter === "news") && <section className="personal-home-news" aria-label="From your feeds">
       <header><h2>From your feeds</h2><button onClick={onNews}>Open News</button></header>
       {news.map((item) => <button className="personal-home-headline" key={item.id} onClick={() => openReading(item)}>{item.title}</button>)}
-      {!news.length && !error && <p>Your latest feed articles will appear here.</p>}
+      {!news.length && !newsError && <p>Your latest feed articles will appear here.</p>}
+      {newsError && <p role="alert">Could not refresh your feeds. <button onClick={() => setAttempt((value) => value + 1)}>Try again</button></p>}
     </section>}
     {error && <p role="alert">Could not refresh reading. <button onClick={() => setAttempt((value) => value + 1)}>Try again</button></p>}
     {pending && <button className={styles.back} onClick={() => { timelineRef.current = pending; session?.saveTimeline(filter === "news" ? "all" : filter, pending); setTimeline(pending); setPending(null); }}>New items</button>}
