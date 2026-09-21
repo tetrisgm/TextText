@@ -273,3 +273,18 @@ opening a row menu does not trigger a focus-stealing effect. Existing scroll
 handling remains in place. TypeScript and scoped ESLint passed; 24 related
 Artifact/keyboard-routing tests passed. Those tests do not prove browser focus:
 a fresh build and the actual J/Down/Enter/back loop remain to be verified.
+
+### News focus movement verified, return hookup added
+
+Fresh production build `.texttext/personal-build-news-focus` passed on a32e817b
+and runs at port 3117. CUA verified J changes both active and selected indices
+from 0 to 1; Down changes both to 2. Enter opened row 2's Kairos Power article
+(`81b9b712-2e08-4269-b96f-7490f29e1f08`), matching the selected headline.
+
+Cmd+[ returned to News at scrollTop 371.5 but focus landed on the content
+container, with no selected row. News rows were missing the shared return-focus
+attribute. Article and summary rows now expose stable `feed:${unit.id}` keys,
+using the existing bounded restoration hook that waits for loaded rows. The
+return-focus and Artifact suites pass (see test output for count), scoped ESLint
+and whitespace checks pass. The new return hookup requires a rebuilt browser
+check; port 3117 proves movement/opening only. Temporary build config removed.

@@ -1040,6 +1040,7 @@ export function HomeNews({
                 role="option"
                 aria-selected={focused}
                 data-unit-index={index}
+                data-return-focus-key={`feed:${unit.id}`}
                 data-focused={focused ? "true" : "false"}
                 data-read={item.read ? "true" : "false"}
                 data-dimmed={dimmed.has(unit.id) ? "true" : "false"}
@@ -1096,6 +1097,7 @@ export function HomeNews({
               role="option"
               aria-selected={focused}
               data-unit-index={index}
+                data-return-focus-key={`feed:${unit.id}`}
               data-focused={focused ? "true" : "false"}
               data-read={unit.unread === 0 ? "true" : "false"}
               data-dimmed={dimmed.has(unit.id) ? "true" : "false"}
