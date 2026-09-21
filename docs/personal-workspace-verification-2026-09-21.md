@@ -315,3 +315,19 @@ it referenced a heading removed when entering the designer).
 
 Eight existing studio UI/save tests pass, scoped ESLint passes, and whitespace
 checks pass. This copy/accessibility change is not yet in the 3118 preview.
+
+### Existing custom document and picker impact
+
+On 3118, palette search reopened Book review persistence check. The editor and
+look preview retained Author Ursula Le Guin, Rating 5 and the existing body and
+source reference. No type was applied or document changed during this inspection.
+The document picker exposes export but not import/revision/retirement. Folder
+picker source wires import, duplicate and restore-version actions; retirement
+currently exists in the store/MCP but no corresponding UI was found.
+
+The document picker displayed zero items/folders using the current type because
+it infers gallery entries without usage data. It now says Not available when
+library usage data is absent, while the single-document apply impact receives
+an explicit count of one. Four gallery lifecycle tests pass; scoped lint has
+zero errors and two pre-existing editor warnings; whitespace checks pass. This
+small display correction is not yet in the running preview.

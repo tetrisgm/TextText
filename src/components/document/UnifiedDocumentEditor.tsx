@@ -1468,6 +1468,7 @@ export function UnifiedDocumentEditor({
         <TemplateGallery
           document={document}
           templates={availableTemplates}
+          targetItemCount={1}
           onClose={() => setChoosingTemplate(false)}
           onApply={(selected) => {
             updateDocumentSnapshot({

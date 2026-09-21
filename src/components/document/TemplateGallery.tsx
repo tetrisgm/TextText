@@ -427,11 +427,11 @@ export function TemplateGallery({
               <dl className={styles.impact}>
                 <div>
                   <dt>Items using it</dt>
-                  <dd>{previewEntry?.impact.itemCount ?? 0}</dd>
+                  <dd>{library ? (previewEntry?.impact.itemCount ?? 0) : "Not available"}</dd>
                 </div>
                 <div>
                   <dt>Folders using it</dt>
-                  <dd>{previewEntry?.impact.folderCount ?? 0}</dd>
+                  <dd>{library ? (previewEntry?.impact.folderCount ?? 0) : "Not available"}</dd>
                 </div>
                 <div>
                   <dt>This change</dt>
