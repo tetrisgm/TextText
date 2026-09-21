@@ -682,6 +682,13 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
       ctx.workspace?.navigateUp();
     },
   },
+  ...([ ["home", "Home"], ["news", "News"], ["bookmarks", "Bookmarks"], ["notes", "Writing"] ] as const).map(([destination, label]): AppCommand => ({
+    id: `navigation.destination.${destination}`,
+    label: `Open ${label}`,
+    group: "Navigate",
+    when: (ctx) => Boolean(ctx.workspace?.openDestination),
+    run: (ctx) => ctx.workspace?.openDestination?.(destination),
+  })),
   ...Array.from({ length: 9 }, (_, index): AppCommand => ({
     id: `navigation.target.${index + 1}`,
     label: `Open navigation target ${index + 1}`,

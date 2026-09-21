@@ -891,7 +891,7 @@ button.pendingLabel {
    the hidden launcher inside the document grid put it at the bottom of a long
    Library page; opening it scrolled the page there, while the panel's centered
    connection UI remained far above the viewport. */
-@media (max-width: 900px) {
+@media (max-width: 759px), (max-width: 900px) and (pointer: coarse) {
   .root[data-layout="auto"][data-state] {
     position: fixed;
     inset: 0 0 0 auto;
@@ -911,7 +911,7 @@ button.pendingLabel {
    it does not have room for the user-resized desktop rail. Keep the overlay
    compact and deterministic so the workspace can reserve a matching safe
    area without coupling its grid to the assistant again. */
-@media (min-width: 561px) and (max-width: 900px) {
+@media (min-width: 561px) and (max-width: 900px) and (pointer: coarse) {
   .root[data-layout="auto"][data-state] {
     width: min(20rem, 50vw);
   }

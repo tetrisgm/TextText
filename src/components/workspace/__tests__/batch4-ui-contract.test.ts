@@ -151,13 +151,13 @@ describe("batch 4 workspace UI contract", () => {
     );
   });
 
-  it("keeps one universal item composer, and it lives inside folders", () => {
+  it("reuses the universal item composer in folders and personal Home", () => {
     // Home no longer carries a capture row: the Library page is the list and
     // nothing else (owner, 2026-09-04). Creating from anywhere still goes
     // through this one composer, in the folder that will hold the item.
     expect(composerSource).toContain("export function UniversalItemComposer");
     expect(folderSource).toContain("<UniversalItemComposer");
-    expect(shellSource).not.toContain("<UniversalItemComposer");
+    expect(shellSource).toContain("<UniversalItemComposer");
     expect(shellSource).not.toContain('className="workspace-root-create"');
   });
 

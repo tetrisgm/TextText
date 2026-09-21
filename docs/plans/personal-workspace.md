@@ -202,6 +202,15 @@ unverified existing features into completed acceptance claims.
 
 ## Implementation checkpoints
 
+- Desktop regression corrected at a 792 CSS-pixel mouse-driven window: both
+  rails stay docked and the mobile destination bar stays hidden. Aligned the
+  sidebar/assistant compact rules and removed duplicate mobile padding from
+  the center column. Visually checked at 792 and 984 CSS pixels. Typecheck,
+  targeted lint and 119 relevant tests pass. Destination commands are available
+  in the palette; keyboard-only Open Writing was verified in the local browser.
+  The broad unit run found obsolete news-only Home contracts (now updated) and
+  a large-paste timeout requiring isolated re-verification.
+
 - Saved library now provides nested-folder filtering, All saved/Read Later,
   excerpts and larger previews. Pagination drops responses from previous scopes.
   Typecheck and targeted lint pass; visual acceptance remains pending.

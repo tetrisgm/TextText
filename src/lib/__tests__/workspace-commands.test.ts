@@ -34,6 +34,17 @@ function context(
 }
 
 describe("workspace commands", () => {
+  it("opens each personal destination through the shared workspace navigation", () => {
+    const openDestination = vi.fn();
+    const ctx = context({ openDestination });
+    for (const destination of ["home", "news", "bookmarks", "notes"]) {
+      const command = WORKSPACE_COMMANDS.find((entry) => entry.id === `navigation.destination.${destination}`)!;
+      expect(command.when(ctx)).toBe(true);
+      command.run(ctx);
+      expect(openDestination).toHaveBeenLastCalledWith(destination);
+      expect(command.when(context({}))).toBe(false);
+    }
+  });
   it("opens Add agent only on the manageable active item", () => {
     const command = WORKSPACE_COMMANDS.find((entry) => entry.id === "item.add-agent")!;
     const ctx = { ...context({ canManagePost: true, activePostId: "active", selectedPostId: "different", viewLevel: "post" }), openAddAgent: vi.fn() };

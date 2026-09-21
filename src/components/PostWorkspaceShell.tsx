@@ -1622,11 +1622,20 @@ function LocalWorkspaceShell({
   );
 
   const navigateRoot = useCallback(() => {
+    setHomePane("home");
     setSearchQuery("");
     navigateToView({ level: "root" }, workspaceRootHref(homePath), {
       selectedPostId: null,
       selectedSectionPath: null,
     });
+  }, [homePath, navigateToView]);
+
+  const openDestination = useCallback((pane: ArtifactPane) => {
+    setHomePane(pane);
+    setSearchQuery("");
+    const root = workspaceRootHref(homePath);
+    navigateToView({ level: "root" }, pane === "home" ? root : `${root}?pane=${pane}`, { selectedPostId: null, selectedSectionPath: null });
+    contentRef.current?.scrollTo({ top: 0 });
   }, [homePath, navigateToView]);
 
   const navigateSettings = useCallback(() => {
@@ -4768,6 +4777,7 @@ function LocalWorkspaceShell({
       reconcileCreatedPost,
       openFolder: navigateSection,
       navigateRoot,
+      openDestination,
       // Backspace goes BACK, the same way a swipe does. navigateUp stays for
       // internal callers (after a delete, where returning to the deleted
       // item would be wrong).
@@ -4853,6 +4863,7 @@ function LocalWorkspaceShell({
       navigateSection,
       navigateSettings,
       navigateToNavTargetByIndex,
+      openDestination,
       navigateBack,
       navigateForward,
       navigateUp,
@@ -5087,12 +5098,7 @@ function LocalWorkspaceShell({
       key={displayPool.blogId}
       blog={displayPool.blog}
       homePane={homePane}
-      onSelectPane={(pane) => {
-        setHomePane(pane);
-        setSearchQuery("");
-        navigateToView({ level: "root" }, `${workspaceRootHref(homePath)}?pane=${pane}`, { selectedPostId: null, selectedSectionPath: null });
-        contentRef.current?.scrollTo({ top: 0 });
-      }}
+      onSelectPane={openDestination}
       onBrowseFolders={() => setSidebarCollapsed(false)}
       canCommentPost={canCommentPost}
       canCreateItems={canManageFolders}
@@ -5200,15 +5206,10 @@ function LocalWorkspaceShell({
         documents={displayPool.posts}
         folders={displayPool.folders}
         homeActive={(view.level === "root" || view.level === "search") && homePane === "home"}
-        primaryNavigation={<div className="workspace-primary-destinations">{(["news", "bookmarks", "notes"] as const).map((pane) => <button key={pane} type="button" aria-current={view.level === "root" && homePane === pane ? "page" : undefined} onClick={() => {
-          setHomePane(pane);
-          setSearchQuery("");
-          navigateToView({ level: "root" }, `${workspaceRootHref(homePath)}?pane=${pane}`, { selectedPostId: null, selectedSectionPath: null });
-          contentRef.current?.scrollTo({ top: 0 });
-        }}>{pane === "news" ? "News" : pane === "bookmarks" ? "Bookmarks" : "Writing"}</button>)}</div>}
+        primaryNavigation={<div className="workspace-primary-destinations">{(["news", "bookmarks", "notes"] as const).map((pane) => <button key={pane} type="button" aria-current={view.level === "root" && homePane === pane ? "page" : undefined} onClick={() => openDestination(pane)}>{pane === "news" ? "News" : pane === "bookmarks" ? "Bookmarks" : "Writing"}</button>)}</div>}
         homePath={homePath}
         onSelectFolder={(path) => {
-          if (!window.matchMedia("(min-width: 901px)").matches) setSidebarCollapsed(true);
+          if (window.matchMedia(WORKSPACE_COMPACT_MEDIA_QUERY).matches) setSidebarCollapsed(true);
           navigateSection(path);
         }}
         onSearchDate={navigateDateSearch}
@@ -5282,13 +5283,7 @@ function LocalWorkspaceShell({
           (displayPool.trashedFolders?.length ?? 0)
         }
       />
-      <ArtifactNavigation pane={view.level === "settings" ? "profile" : (view.level === "edit" || view.level === "post") && itemIdentity.resolvePost(displayPool, view.postId)?.type === "note" ? "notes" : view.level === "section" ? (displayPool.folders.find((folder) => folder.path === view.folderPath)?.mode === "notes" ? "notes" : "profile") : homePane} onSelect={(pane) => {
-        setHomePane(pane);
-        setSearchQuery("");
-        const href = workspaceRootHref(homePath);
-        navigateToView({ level: "root" }, pane === "home" ? href : `${href}?pane=${pane}`, { selectedPostId: null, selectedSectionPath: null });
-        contentRef.current?.scrollTo({ top: 0 });
-      }} />
+      <ArtifactNavigation pane={view.level === "settings" ? "profile" : (view.level === "edit" || view.level === "post") && itemIdentity.resolvePost(displayPool, view.postId)?.type === "note" ? "notes" : view.level === "section" ? (displayPool.folders.find((folder) => folder.path === view.folderPath)?.mode === "notes" ? "notes" : "profile") : homePane} onSelect={openDestination} />
       <div className="workspace-document-layout">
         <NativeAssistantRuntime options={assistantOptions} />
         {/* The tab strip is the topmost band, above the action bar, as in

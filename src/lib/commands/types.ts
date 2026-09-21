@@ -110,6 +110,7 @@ export type CommandWorkspaceSurface = {
   ) => void;
   openFolder: (folderPath: string) => void;
   navigateRoot: () => void;
+  openDestination?: (destination: "home" | "news" | "bookmarks" | "notes") => void;
   navigateUp: () => boolean;
   navigateForward: () => boolean;
   /** Close the open document's tab and land on its neighbour. */

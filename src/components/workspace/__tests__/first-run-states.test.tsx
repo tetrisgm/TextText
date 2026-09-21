@@ -82,12 +82,13 @@ function findButton(node: ReactNode, label: string): React.ReactElement<{ onClic
 }
 beforeEach(() => { vi.clearAllMocks(); driver.poolError = null; });
 
-describe("first run without a Home composer", () => {
-  it.each([false, true])("opens on news with existing items %s", returning => {
+describe("personal Home and first run", () => {
+  it.each([false, true])("offers capture and a personal timeline with existing items %s", returning => {
     const html = render(landing({ ...pool, folders: [folder], posts: returning ? [{ ...emptyPost, blogId: pool.blogId, folderId: folder.id, title: "Existing note" }] : [] }));
-    expect(html).toContain("For You");
+    expect(html).toContain('aria-label="Timeline filters"');
+    expect(html).toContain("From your feeds");
     expect(html).toContain('aria-label="Search workspace"');
-    expect(html).not.toContain('aria-label="Save to TextText"');
+    expect(html).toContain('aria-label="Save to TextText"');
     expect(html).not.toContain("Write your first note");
     expect(html).not.toContain("Recent</");
   });
@@ -104,9 +105,10 @@ describe("first run without a Home composer", () => {
     expect(driver.createItem).not.toHaveBeenCalled();
     expect(driver.createFolder).not.toHaveBeenCalled();
   });
-  it("keeps an article-only workspace on the same news Home", () => {
+  it("offers the personal Home in an article-only workspace", () => {
     const html = render(landing({ ...pool, folders: [{ ...folder, id: "blog", path: "blog", mode: "blog" }] }));
-    expect(html).toContain("For You");
+    expect(html).toContain('aria-label="Timeline filters"');
+    expect(html).toContain("Create a notes folder");
     expect(html).not.toContain("Write your first note");
   });
   it("provides library access from Profile even without folders", () => {

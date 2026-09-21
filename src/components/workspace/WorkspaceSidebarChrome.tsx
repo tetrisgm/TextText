@@ -97,7 +97,8 @@ const WORKSPACE_SIDEBAR_WIDTH_STORAGE_KEY = "texttext:workspace-sidebar-width";
 export const WORKSPACE_SIDEBAR_DEFAULT_WIDTH = 252;
 export const WORKSPACE_SIDEBAR_MIN_WIDTH = 220;
 export const WORKSPACE_SIDEBAR_MAX_WIDTH = 420;
-export const WORKSPACE_COMPACT_MEDIA_QUERY = "(max-width: 1024px)";
+export const WORKSPACE_COMPACT_MEDIA_QUERY = "(max-width: 759px), (max-width: 900px) and (pointer: coarse)";
+export const WORKSPACE_DESKTOP_MEDIA_QUERY = "(min-width: 901px), (min-width: 760px) and (pointer: fine)";
 
 const WORKSPACE_ASSISTANT_STATE_KEY = "texttext:workspace-assistant-state";
 const WORKSPACE_ASSISTANT_STATE_MIGRATION_KEY =
@@ -348,7 +349,7 @@ function readAssistantState(): AssistantSidebarState {
   // Desktop is the workspace composition: folder navigation, content, and
   // the assistant are visible together. Phones keep the assistant opt-in so
   // it does not cover the writing surface.
-  const preferred: AssistantSidebarState = window.matchMedia("(min-width: 901px)").matches ? "pinned" : "hidden";
+  const preferred: AssistantSidebarState = window.matchMedia(WORKSPACE_DESKTOP_MEDIA_QUERY).matches ? "pinned" : "hidden";
   let saved: string | null = null;
   try {
     if (!window.localStorage.getItem(WORKSPACE_ASSISTANT_STATE_MIGRATION_KEY)) {
@@ -407,7 +408,7 @@ function subscribeAssistantPreferences(listener: () => void): () => void {
     for (const current of assistantPreferenceListeners) current();
   };
   window.addEventListener("storage", onStorage);
-  const desktop = window.matchMedia("(min-width: 901px)");
+  const desktop = window.matchMedia(WORKSPACE_DESKTOP_MEDIA_QUERY);
   desktop.addEventListener("change", listener);
   return () => {
     assistantPreferenceListeners.delete(listener);

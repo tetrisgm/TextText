@@ -295,7 +295,7 @@
    and the assistant stays docked on the right when pinned. The mobile
    destination bar and deliberate folder overlay remain unchanged below this
    breakpoint. */
-@media (min-width: 901px) {
+@media (min-width: 901px), (min-width: 760px) and (pointer: fine) {
   .artifact-workspace .artifact-navigation {
     display: none;
   }
@@ -304,6 +304,12 @@
     width: var(--workspace-sidebar-width, 252px);
     pointer-events: auto;
   }
+  .artifact-workspace .post-workspace-sidebar-region:not(.is-collapsed) .post-editor-sidebar {
+    transform: translateX(0);
+    pointer-events: auto;
+  }
+  .artifact-workspace .workspace-document-layout { padding-bottom: 0; }
+  .post-editor-shell.artifact-workspace.has-assistant-open .workspace-root-page { padding: 0; }
 
   .artifact-workspace .post-workspace-sidebar-region.is-collapsed {
     width: 0;
@@ -333,6 +339,17 @@
   .artifact-workspace.is-sidebar-collapsed .workspace-sidebar-reveal-chrome {
     display: block;
   }
+}
+
+@media (min-width: 760px) and (max-width: 1100px) and (pointer: fine) {
+  .artifact-workspace .post-workspace-sidebar-region:not(.is-collapsed),
+  .artifact-workspace .post-editor-sidebar { width: 180px; }
+  .artifact-workspace .workspace-document-layout { margin-left: 180px; width: calc(100% - 180px); }
+  .artifact-workspace .post-sidebar-resize-handle { display: none; }
+  .post-editor-shell.artifact-workspace.has-assistant-pinned .workspace-document-layout { grid-template-columns: minmax(0, 1fr) 240px; }
+  .artifact-workspace .workspace-root-inner { padding-inline: 16px; }
+  .artifact-workspace .workspace-primary-destinations button { padding: 8px 22px; }
+  .artifact-workspace.is-sidebar-collapsed .workspace-document-layout { margin-left: 0; width: 100%; }
 }
 
 .artifact-search:has(input:placeholder-shown):not(:focus-within) { justify-content: center; }
