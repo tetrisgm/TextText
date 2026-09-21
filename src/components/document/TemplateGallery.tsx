@@ -97,6 +97,7 @@ export function TemplateGallery({
   onDuplicate,
   onImport,
   onRestoreVersion,
+  onRetire,
 }: {
   document: DocumentSnapshot;
   templates: readonly TemplateDefinition[];
@@ -114,6 +115,7 @@ export function TemplateGallery({
     text: string,
     mode: "new" | "update",
   ) => Promise<TemplateDefinition>;
+  onRetire?: (template: TemplateDefinition) => Promise<void>;
   onRestoreVersion?: (
     template: TemplateDefinition,
   ) => Promise<TemplateDefinition>;
@@ -471,6 +473,24 @@ export function TemplateGallery({
                   </button>
                 )}
               </div>
+              {onRetire && !preview.id.startsWith("texttext.") && (
+                <div>
+                  <p>Retiring removes this type from new-item choices. Existing documents keep their content and appearance.</p>
+                  <button type="button" disabled={busy} onClick={async () => {
+                    if (busy) return;
+                    setBusy(true);
+                    setError(null);
+                    try {
+                      await onRetire(preview);
+                      setPreview(null);
+                    } catch (cause) {
+                      setError(cause instanceof Error ? cause.message : "Could not retire that type.");
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}>Retire type</button>
+                </div>
+              )}
               {showRemix && onDuplicate && (
                 <form
                   className={styles.remixForm}

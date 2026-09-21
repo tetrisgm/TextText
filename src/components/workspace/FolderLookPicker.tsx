@@ -16,6 +16,7 @@ import {
   getFolderLookAction,
   importFolderLookAction,
   restoreFolderLookVersionAction,
+  retireFolderLookAction,
   setFolderLookAction,
   type FolderLookState,
 } from "@/app/editor/folder-template-actions";
@@ -195,6 +196,12 @@ export function FolderLookPicker({
           if (!result.ok) throw new Error(result.error);
           await load();
           return result.definition;
+        }}
+        onRetire={async (selected) => {
+          const result = await retireFolderLookAction(handle, selected.id);
+          if (!result.ok) throw new Error(result.error);
+          await load();
+          onChanged?.();
         }}
         onRestoreVersion={async (selected) => {
           const result = await restoreFolderLookVersionAction(

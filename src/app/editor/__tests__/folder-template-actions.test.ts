@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   duplicateDocumentTemplate: vi.fn(),
   importDocumentTemplate: vi.fn(),
   restoreDocumentTemplateVersion: vi.fn(),
+  retireDocumentTemplate: vi.fn(),
   setFolderTemplate: vi.fn(),
   retemplateFolderItems: vi.fn(),
   recordAction: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock("@/lib/store", () => ({
   duplicateDocumentTemplate: mocks.duplicateDocumentTemplate,
   importDocumentTemplate: mocks.importDocumentTemplate,
   restoreDocumentTemplateVersion: mocks.restoreDocumentTemplateVersion,
+  retireDocumentTemplate: mocks.retireDocumentTemplate,
   setFolderTemplate: mocks.setFolderTemplate,
   retemplateFolderItems: mocks.retemplateFolderItems,
 }));
@@ -39,11 +41,32 @@ import {
   getFolderLookAction,
   importFolderLookAction,
   restoreFolderLookVersionAction,
+  retireFolderLookAction,
 } from "@/app/editor/folder-template-actions";
 
 const article = requireBuiltinTemplate("texttext.article", 1);
 
 describe("folder look lifecycle actions", () => {
+  it("retires only an owner's custom type with an audit and no document mutation", async () => {
+    mocks.retireDocumentTemplate.mockResolvedValue(true);
+    expect(await retireFolderLookAction("shoku", "book-review")).toEqual({ ok: true });
+    expect(mocks.retireDocumentTemplate).toHaveBeenCalledWith("blog-id", "book-review", {
+      audit: expect.objectContaining({ actorUserId: "owner-id", actionName: "retire_document_template", targetId: "book-review" }),
+    });
+    expect(mocks.retemplateFolderItems).not.toHaveBeenCalled();
+    expect(mocks.setFolderTemplate).not.toHaveBeenCalled();
+    expect(mocks.revalidateBlogPaths).toHaveBeenCalledWith({ handle: "shoku" });
+  });
+  it("rejects retirement for nonowners, built-ins and unavailable types", async () => {
+    expect((await retireFolderLookAction("shoku", "texttext.note")).ok).toBe(false);
+    expect(mocks.retireDocumentTemplate).not.toHaveBeenCalled();
+    mocks.getBlogEditAccess.mockResolvedValue({ isOwner: false });
+    expect((await retireFolderLookAction("shoku", "book-review")).ok).toBe(false);
+    expect(mocks.retireDocumentTemplate).not.toHaveBeenCalled();
+    mocks.getBlogEditAccess.mockResolvedValue({ isOwner: true, blogId: "blog-id", ownerId: "owner-id" });
+    mocks.retireDocumentTemplate.mockResolvedValue(false);
+    expect((await retireFolderLookAction("shoku", "missing")).ok).toBe(false);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getBlogEditAccess.mockResolvedValue({

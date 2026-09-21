@@ -331,3 +331,17 @@ library usage data is absent, while the single-document apply impact receives
 an explicit count of one. Four gallery lifecycle tests pass; scoped lint has
 zero errors and two pre-existing editor warnings; whitespace checks pass. This
 small display correction is not yet in the running preview.
+
+### Custom-type retirement UI implemented
+
+The folder look library now offers Retire type for custom types, with an
+explanation that existing documents retain their content and appearance. Its
+server action checks workspace ownership, rejects built-ins, scopes retirement
+to the authorized blog and writes the existing retirement audit. It does not
+rewrite documents or folder assignments. The picker reloads its library and
+refreshes the workspace after success; errors remain visible in the preview.
+
+Twelve folder-action/gallery tests pass, including owner/built-in/unavailable
+checks and the audited operation; TypeScript and scoped ESLint pass, as do
+whitespace checks. Browser retirement, removal from New and old-document
+reopening remain to be verified in a fresh build. Port 3118 predates this work.

@@ -17,6 +17,7 @@ import {
   listDocumentTemplateLibrary,
   retemplateFolderItems,
   restoreDocumentTemplateVersion,
+  retireDocumentTemplate,
   setFolderTemplate,
 } from "@/lib/store";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
@@ -199,6 +200,32 @@ export async function restoreFolderLookVersionAction(
     return { ok: true, definition };
   } catch (error) {
     return actionError(error, "Could not restore that version.");
+  }
+}
+
+export async function retireFolderLookAction(
+  handleInput: unknown,
+  templateIdInput: unknown,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const access = await ownerAccess(handleInput);
+    if (typeof templateIdInput !== "string" || !templateIdInput.trim() || templateIdInput.startsWith("texttext.")) {
+      throw new Error("Choose a custom type to retire.");
+    }
+    const changed = await retireDocumentTemplate(access.blogId, templateIdInput, {
+      audit: {
+        actorUserId: access.ownerId,
+        actorType: "human",
+        actionName: "retire_document_template",
+        targetType: "mode",
+        targetId: templateIdInput,
+      },
+    });
+    if (!changed) throw new Error("That type is unavailable or already retired.");
+    revalidateBlogPaths({ handle: access.handle });
+    return { ok: true };
+  } catch (error) {
+    return actionError(error, "Could not retire that type.");
   }
 }
 
