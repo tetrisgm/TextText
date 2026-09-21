@@ -4,8 +4,30 @@ import type { TimelineFilter, TimelinePage } from "@/lib/workspace/timeline";
 type View = { mode: "forYou" | "latest"; topic: string | null };
 const keyOf = (view: View) => `${view.mode}:${view.topic ?? ""}`;
 
-/** Owned by one mounted workspace, never shared across people or persisted. */
+/** Content snapshots stay in memory; view preferences survive in tab-session storage. */
 export class HomeSession {
+  bookmarks = { folderPath: "", later: false, search: "", query: "" };
+  writing: { folderId: string | null; kind: "all" | "note" | "article"; limit: number } = { folderId: null, kind: "all", limit: 60 };
+  constructor(private workspaceId?: string) {
+    if (!workspaceId || typeof window === "undefined") return;
+    try {
+      const saved = JSON.parse(window.sessionStorage.getItem(`texttext:views:${workspaceId}`) ?? "null");
+      const bookmarks = saved?.bookmarks;
+      if (bookmarks && typeof bookmarks.folderPath === "string" && typeof bookmarks.later === "boolean" && typeof bookmarks.search === "string" && typeof bookmarks.query === "string") {
+        this.bookmarks = { folderPath: bookmarks.folderPath, later: bookmarks.later, search: bookmarks.search.slice(0, 200), query: bookmarks.query.slice(0, 200) };
+      }
+      const writing = saved?.writing;
+      if (writing && (writing.folderId === null || typeof writing.folderId === "string") && ["all", "note", "article"].includes(writing.kind)) {
+        this.writing = { folderId: writing.folderId, kind: writing.kind, limit: 60 };
+      }
+    } catch { /* Storage is optional; navigation remains usable. */ }
+  }
+  rememberViews() {
+    if (!this.workspaceId || typeof window === "undefined") return;
+    try { window.sessionStorage.setItem(`texttext:views:${this.workspaceId}`, JSON.stringify({ bookmarks: this.bookmarks, writing: this.writing })); } catch { /* Best effort. */ }
+  }
+  saveBookmarks(value: HomeSession["bookmarks"]) { this.bookmarks = value; this.rememberViews(); }
+  saveWriting(value: HomeSession["writing"]) { this.writing = value; this.rememberViews(); }
   private pages = new Map<string, HomeNews>();
   private timelines = new Map<TimelineFilter, TimelinePage>();
   personalFilter: TimelineFilter | "news" = "all";

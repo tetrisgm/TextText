@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { HomeSession } from "../session";
 import type { HomeNews, HomeUnit, ReadingListItem } from "@/lib/reading/client";
 
@@ -7,6 +7,22 @@ const article = (id: string): HomeUnit => ({ kind: "article", id, item: item(id)
 const page = (topic: string | null = null): HomeNews => ({ mode: "forYou", modeLabel: "Newest first", topic, topics: [], headlines: [], units: [article("one")], nextOffset: null, considered: 1, topicNote: null, snapshot: null, hiddenCount: 0, preferences: 0 });
 
 describe("returning to the feed", () => {
+  it("restores view preferences without sharing them across workspaces", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("window", { sessionStorage: { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) } });
+    try {
+      const session = new HomeSession("one");
+      session.saveBookmarks({ folderPath: "bookmarks/research", later: true, query: "climate", search: "climate" });
+      session.saveWriting({ folderId: "research", kind: "article", limit: 120 });
+      const restored = new HomeSession("one");
+      expect(restored.bookmarks).toEqual(session.bookmarks);
+      expect(restored.writing).toEqual({ folderId: "research", kind: "article", limit: 60 });
+      expect(new HomeSession("two").bookmarks.query).toBe("");
+      expect(restored.getTimeline("all")).toBeNull();
+      values.set("texttext:views:broken", "invalid JSON");
+      expect(new HomeSession("broken").writing.kind).toBe("all");
+    } finally { vi.unstubAllGlobals(); }
+  });
   it("keeps personal timeline filters separate and clears workspace snapshots", () => {
     const session = new HomeSession();
     const snapshot = { entries: [], nextCursor: "next", snapshot: "2026-09-21T12:00:00.000Z" };

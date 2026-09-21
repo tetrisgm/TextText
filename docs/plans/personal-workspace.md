@@ -202,6 +202,13 @@ unverified existing features into completed acceptance claims.
 
 ## Implementation checkpoints
 
+- Bookmarks search/folder/Read Later and Writing type/folder preferences survive
+  destination remounts and reloads in workspace-scoped browser session storage.
+  Content snapshots are not persisted there. Hydration renders defaults before
+  applying restored preferences. In the desktop browser, search -> article ->
+  Back and full reload both restored the saved search. Exact scroll/row-focus
+  restoration and loaded-page caching still require completion.
+
 - Bookmarks has server-side text search scoped to folder, saved membership and
   Read Later. Searches remain paginated; literal wildcard characters do not
   widen matches. Local database checks cover scope intersections and anonymous

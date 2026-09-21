@@ -14,6 +14,7 @@ import { ArtifactIcon } from "./ArtifactNavigation";
 import { poolPostFor } from "./HomeNews";
 import { publisherFor } from "./publisher";
 import styles from "./Home.module.css";
+import type { HomeSession } from "./session";
 
 type Summary = Extract<HomeUnit, { kind: "summary" }>;
 type OpenProps = { handle: string; blogId: string; onOpenPost: (id: string) => void };
@@ -82,11 +83,12 @@ export function ArtifactHeadlines(props: OpenProps) {
   </section>;
 }
 
-export function SavedArticles({ state, folders = [], ...props }: OpenProps & { state: "saved" | "read" | "bookmarked"; folders?: WorkspacePoolPayload["folders"] }) {
-  const [folderPath, setFolderPath] = useState("");
-  const [later, setLater] = useState(false);
-  const [search, setSearch] = useState("");
-  const [query, setQuery] = useState("");
+export function SavedArticles({ state, folders = [], session, ...props }: OpenProps & { state: "saved" | "read" | "bookmarked"; folders?: WorkspacePoolPayload["folders"]; session?: HomeSession }) {
+  const [folderPath, setFolderPath] = useState(session?.bookmarks.folderPath ?? "");
+  const [later, setLater] = useState(session?.bookmarks.later ?? false);
+  const [search, setSearch] = useState(session?.bookmarks.search ?? "");
+  const [query, setQuery] = useState(session?.bookmarks.query ?? "");
+  useEffect(() => { session?.saveBookmarks({ folderPath, later, search, query }); }, [session, folderPath, later, search, query]);
   const effectiveState = state === "bookmarked" && later ? "saved" : state;
   const generation = useRef(0);
   const [items, setItems] = useState<ReadingListItem[] | null>(null);
@@ -199,7 +201,8 @@ export function ArtifactProfile({ pool, history, onOpenPost, onOpenSection, onSh
 }
 
 
-export function ArtifactNotes({ pool, onOpenPost, onOpenSection, onCreateNote, onBrowseFolders, canManage, notice, creating, creationControls }: {
+export function ArtifactNotes({ pool, onOpenPost, onOpenSection, onCreateNote, onBrowseFolders, canManage, notice, creating, creationControls, session }: {
+  session?: HomeSession;
   creationControls?: ReactNode;
   notice?: string | null;
   creating?: boolean;
@@ -210,9 +213,10 @@ export function ArtifactNotes({ pool, onOpenPost, onOpenSection, onCreateNote, o
   onBrowseFolders: () => void;
   canManage: boolean;
 }) {
-  const [folderId, setFolderId] = useState<string | null>(null);
-  const [limit, setLimit] = useState(60);
-  const [kind, setKind] = useState<"all" | "note" | "article">("all");
+  const [folderId, setFolderId] = useState<string | null>(session?.writing.folderId ?? null);
+  const [limit, setLimit] = useState(session?.writing.limit ?? 60);
+  const [kind, setKind] = useState<"all" | "note" | "article">(session?.writing.kind ?? "all");
+  useEffect(() => { session?.saveWriting({ folderId, kind, limit }); }, [session, folderId, kind, limit]);
   const folders = pool.folders.filter((folder) => pool.posts.some((post) => post.folderId === folder.id && post.type !== "bookmark"));
   const notes = pool.posts.filter((post) => post.origin !== "feed" && post.type !== "bookmark" && (kind === "all" || post.type === kind) && (!folderId || post.folderId === folderId))
     .sort((a, b) => Number(Boolean(b.starred)) - Number(Boolean(a.starred)) || (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));

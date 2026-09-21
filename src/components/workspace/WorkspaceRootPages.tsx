@@ -1,4 +1,5 @@
 "use client";
+import { useClientHydrated } from "@/lib/use-client-hydrated";
 
 import { HomeSession } from "@/components/workspace/home/session";
 import { READING_ITEMS_CHANGED, READING_PREFERENCES_CHANGED, type ReadingItemsChange } from "@/lib/reading/client";
@@ -831,7 +832,7 @@ export function WorkspaceRootLanding({
                     <HomeCreateMenu pool={pool} onCreateItem={onCreateItem} onBuildItemType={onBuildItemType} />
                     {creationFolder ? <UniversalItemComposer blog={pool.blog} handle={pool.blog.handle} folder={creationFolder} destinations={creationFolders} onCreateItem={onCreateItem} onOpenCapturedItem={(post) => { if (post.id) onOpenPost(post.id); }} /> : firstLoop}
                   </>}
-                /> : homePane === "bookmarks" ? <section aria-label="Bookmarks"><h1 className={homeStyles.pageTitle}>Bookmarks</h1><SavedArticles state="bookmarked" folders={pool.folders} handle={pool.blog.handle} blogId={pool.blogId} onOpenPost={onOpenPost} /></section> : homePane === "news" ? <HomeNews
+                /> : homePane === "bookmarks" ? <section aria-label="Bookmarks"><h1 className={homeStyles.pageTitle}>Bookmarks</h1><SavedArticles session={homeSession} state="bookmarked" folders={pool.folders} handle={pool.blog.handle} blogId={pool.blogId} onOpenPost={onOpenPost} /></section> : homePane === "news" ? <HomeNews
                   session={homeSession}
                   handle={pool.blog.handle}
                   blogId={pool.blogId}
@@ -843,7 +844,7 @@ export function WorkspaceRootLanding({
                   onOpenPost={onOpenPost}
                   onOpenSection={onOpenSection}
                   onUseAssistantPrompt={onUseAssistantPrompt}
-                /> : homePane === "notes" ? <ArtifactNotes pool={pool} onOpenPost={onOpenPost} onOpenSection={onOpenSection} onCreateNote={openFirstNote} notice={firstFolderError} creating={creatingFirstFolder} onBrowseFolders={onBrowseFolders} canManage={canManageItems}
+                /> : homePane === "notes" ? <ArtifactNotes session={homeSession} pool={pool} onOpenPost={onOpenPost} onOpenSection={onOpenSection} onCreateNote={openFirstNote} notice={firstFolderError} creating={creatingFirstFolder} onBrowseFolders={onBrowseFolders} canManage={canManageItems}
                   creationControls={<HomeCreateMenu heading="Writing" headingId="artifact-notes-title" pool={pool} onCreateItem={onCreateItem} onBuildItemType={onBuildItemType} />}
                 /> : homePane === "headlines" ? <ArtifactHeadlines handle={pool.blog.handle} blogId={pool.blogId} onOpenPost={onOpenPost} /> :
                 <ArtifactProfile pool={pool} history={openHistory} onOpenPost={onOpenPost} onOpenSection={onOpenSection}
@@ -1066,7 +1067,8 @@ export function LocalWorkspaceContent({
     );
   }, [pool, view]);
 
-  const [homeSession] = useState(() => new HomeSession());
+  const [homeSession] = useState(() => new HomeSession(pool.blogId));
+  const viewsHydrated = useClientHydrated();
   useEffect(() => {
     const changed = (event: Event) => {
       const change = (event as CustomEvent<ReadingItemsChange>).detail;
@@ -1087,11 +1089,11 @@ export function LocalWorkspaceContent({
   let activePost: WorkspacePoolPost | null = null;
   const rootPage = (
     <WorkspaceRootLanding
-      key={`${pool.blogId}:${homePane}`}
+      key={`${pool.blogId}:${homePane}:${viewsHydrated}`}
       canManageItems={canManagePost}
       homePane={homePane}
       onSelectPane={onSelectPane}
-      homeSession={homeSession}
+      homeSession={viewsHydrated ? homeSession : undefined}
       onBrowseFolders={onBrowseFolders}
       focusRequestKey={searchFocusRequestKey}
       onOpenPost={onOpenPostId}
