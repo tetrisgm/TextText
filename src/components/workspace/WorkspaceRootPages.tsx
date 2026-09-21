@@ -1258,7 +1258,8 @@ export function LocalWorkspaceContent({
   const warmEditorReady = Boolean(activePostId) && warmEditorPostId === activePostId;
   const editorVisible =
     Boolean(activePost) &&
-    (view.level === "edit" || activePost?.type === "note");
+    (view.level === "edit" ||
+      (view.level === "post" && activePost?.type === "note"));
   // The warm editor is mounted on the FIRST IDLE after an item opens, not
   // during the open. Warming it inline meant every open - including a read
   // that never touches the editor - paid for building a Yjs document, an

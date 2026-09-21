@@ -459,3 +459,26 @@ An initial oversized automation batch timed out and was discarded. The measured
 run used smaller batches with bounded listener/frame cleanup; temporary browser
 measurement properties were deleted. Cold launch, large-workspace UI, article,
 back, channel and folder timing remain distinct unfinished acceptance checks.
+
+## Folder selection and mixed move destinations
+
+Local browser verification found that focusing a note's row action button
+selected the note and incorrectly replaced the folder with its editor. Returning
+from an editor to that folder likewise kept the editor visible because the row
+selection survived. Editor visibility now requires an edit view or an explicitly
+opened note view; selection alone no longer hides the folder.
+
+On localhost:3100, the corrected row menu remained open within Notes. The
+Keyboard capture September 21 fixture (3cec53cf-6154-4571-b513-4e8b849ebb8f)
+moved through the context menu to notes/mixed-workspace-check, survived a fresh
+navigation, and retained its original title and body. Enter opened its editor;
+activating the nested folder returned to the list with the note selected.
+
+The context menu also retained an obsolete same-type destination filter. It now
+offers all workspace folders for a nonempty selection, including mixed
+selections. Live verification showed Blog, Notes, Bookmarks, feed subfolders and
+Documentation as destinations for the selected note. Typecheck, targeted lint,
+and 20 local-first/selection tests passed. Production-build verification remains
+pending. The bookmarked fixture has not yet moved: the existing Bookmarks
+collection opens its RSS reading surface, which needs investigation for access
+to manual saved items before completing the mixed-folder round trip.

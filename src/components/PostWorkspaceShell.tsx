@@ -3121,14 +3121,7 @@ function LocalWorkspaceShell({
    * Move commands, so the two never offer different destinations. */
   const contextMenuMoveTargets = useMemo(() => {
     if (selectedPoolPosts.length === 0) return [];
-    const types = new Set(selectedPoolPosts.map((post) => post.type));
-    if (types.size !== 1) return [];
-    const [type] = Array.from(types);
-    const mode =
-      type === "note" ? "notes" : type === "bookmark" ? "bookmarks" : "blog";
-    return displayPool.folders
-      .filter((folder) => folder.mode === mode)
-      .map((folder) => folder.path);
+    return displayPool.folders.map((folder) => folder.path);
   }, [displayPool.folders, selectedPoolPosts]);
 
   const handleDragItems = useCallback(
