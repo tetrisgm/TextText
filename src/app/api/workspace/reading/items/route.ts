@@ -28,6 +28,7 @@ export async function GET(request: Request) {
   const dateBasis: ReadingScope["dateBasis"] =
     url.searchParams.get("dateBasis") === "received" ? "received" : url.searchParams.get("dateBasis") === "read" ? "read" : "published";
   const scope: ReadingScope = {
+    origin: url.searchParams.get("origin") === "feed" ? "feed" : undefined,
     query: url.searchParams.get("q")?.trim().slice(0, 200) || undefined,
     folderPath,
     includeDescendants: url.searchParams.get("descendants") !== "0",
@@ -46,7 +47,7 @@ export async function GET(request: Request) {
         cursor,
         limit: Number.isFinite(limitParam) && limitParam > 0 ? limitParam : undefined,
       }),
-      cursor || scope.query || state === "bookmarked" ? Promise.resolve(null) : readingFolderSummary({ handle, user: reader.user, folderPath }),
+      cursor || scope.query || state === "bookmarked" ? Promise.resolve(null) : readingFolderSummary({ handle, user: reader.user, folderPath, origin: scope.origin }),
     ]);
     return json({ ...page, summary });
   } catch (error) {

@@ -47,6 +47,7 @@ export function fetchReadingPage(input: {
     dateBasis: input.scope.dateBasis,
     direction: input.scope.direction ?? "newest",
   });
+  if (input.scope.origin) params.set("origin", input.scope.origin);
   if (input.cursor) params.set("cursor", input.cursor);
   if (input.scope.query) params.set("q", input.scope.query);
   if (input.limit) params.set("limit", String(input.limit));

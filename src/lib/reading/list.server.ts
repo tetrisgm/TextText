@@ -24,6 +24,8 @@ import { getFolders, workspaceIdForHandle } from "@/lib/store";
  */
 
 export type ReadingScope = {
+  /** News excludes authored notes and manually captured bookmarks. */
+  origin?: "feed";
   /** Literal text within the authorized, filtered reading collection. */
   query?: string;
   folderPath: string;
@@ -219,6 +221,7 @@ export async function listReadingItems(input: {
       and(
         eq(posts.blogId, blogId),
         isNull(posts.deletedAt),
+        input.scope.origin === "feed" ? eq(posts.origin, "feed") : undefined,
         inArray(posts.folderId, folderIds),
         notDuplicateSql(),
         query ? sql`concat_ws(' ', ${posts.title}, ${posts.excerpt}, ${posts.body}, ${readingProvenance.publisherName}, ${readingProvenance.externalUrl}) ilike ${pattern}` : undefined,
@@ -314,6 +317,7 @@ export async function readingFolderSummary(input: {
   handle: string;
   user: AccessUser | null;
   folderPath: string;
+  origin?: "feed";
 }): Promise<ReadingFolderSummary> {
   const database = requireDb();
   const { blogId, folderIds } = await resolveReadingFolderIds({
@@ -370,6 +374,7 @@ export async function readingFolderSummary(input: {
         and(
           eq(posts.blogId, blogId),
           isNull(posts.deletedAt),
+          input.origin === "feed" ? eq(posts.origin, "feed") : undefined,
           inArray(posts.folderId, folderIds),
           notDuplicateSql(),
         ),

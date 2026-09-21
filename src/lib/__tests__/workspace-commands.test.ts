@@ -6,6 +6,7 @@ import type {
 import type { WorkspacePoolPayload } from "@/lib/pool/types";
 import {
   WORKSPACE_COMMANDS,
+  dynamicWorkspaceCommands,
   shouldSuppressWorkspaceSingleKeyShortcut,
   shortcutList,
 } from "@/lib/commands/workspace";
@@ -34,6 +35,20 @@ function context(
 }
 
 describe("workspace commands", () => {
+  it("offers all folder modes when filing an RSS bookmark", () => {
+    const post = { id: "rss", type: "bookmark", origin: "feed" } as const;
+    const ctx = context({ canManagePost: true, activePostId: post.id,
+      getPost: () => post as never });
+    ctx.pool = { ...ctx.pool, folders: [
+      { id: "notes", name: "Mixed", mode: "notes" },
+      { id: "blog", name: "Blog", mode: "blog" },
+      { id: "bookmarks", name: "Saved", mode: "bookmarks" },
+    ] } as WorkspacePoolPayload;
+    expect(dynamicWorkspaceCommands(ctx).filter((command) => command.group === "Move")
+      .map((command) => command.label)).toEqual(["Move to Mixed", "Move to Blog", "Move to Saved"]);
+    ctx.workspace!.canManagePost = false;
+    expect(dynamicWorkspaceCommands(ctx).filter((command) => command.group === "Move")).toEqual([]);
+  });
   it("focuses capture without creating an empty item and hides it for readers", () => {
     const command = WORKSPACE_COMMANDS.find((entry) => entry.id === "workspace.capture")!;
     const focusCapture = vi.fn();

@@ -583,3 +583,30 @@ does not add a retention hold, the pool excludes feed-origin posts after reload,
 and FolderPage excludes them from Items. The solution must preserve source
 provenance while making deliberate filing durable and visible; changing only
 the folder renderer would leave both reload and expiry behavior incorrect.
+
+## Filed RSS desktop workflow and production build
+
+On September 21, verified the NASA Mars article
+“NASA Discovery Reveals Complex Water Systems on Early Mars”
+(`5caed3c9-3566-4c9a-9e8a-f7f45134cc7b`) through the desktop command palette.
+Moved it into `notes/mixed-workspace-check`. Items showed three entries: the
+NASA article, Texttext AI setup guide, and Keyboard capture September 21. A
+full reload retained all three. Bookmarks displayed the NASA preview and its
+new folder. The News tab excluded the personal note and manual bookmark and
+reported ten RSS articles; the filed NASA article retained NASA attribution
+and showed “Saved by you”. Both desktop rails remained visible.
+
+This exposed and fixed two integration problems: command-palette moves still
+filtered destinations by legacy folder mode, and News queried all content in
+a mixed subtree. Moves now offer all folder modes, refresh the saved item's
+filing metadata, and News requests a server-enforced feed-origin scope with
+matching counts. Related command and local Postgres tests pass (22 tests),
+TypeScript passes, and lint reports no issues in the changed files.
+
+Production build succeeds using `.texttext/personal-build-filed`, deployment
+`personal-filed`, with local Postgres. Preview is running on port 3125. In this
+fresh production preview, Home's Saved filter includes the NASA article and
+its saved event, the mixed folder has all three Items, and News has ten RSS
+articles. The older port-3100 development process omitted the new timeline
+entry despite the current store query returning it; use 3125 for acceptance.
+Native installation and public release remain unchanged.

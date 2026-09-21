@@ -277,7 +277,9 @@ function moveSelectedTo(ctx: CommandContext, folder: Folder) {
   if (!post?.id || !workspace?.canManagePost) return;
   const previousFolderId = post.folderId;
   movePost(post.id, folder.id);
-  void movePostToFolderAction(workspace.handle, post.id, folder.path).catch(
+  void movePostToFolderAction(workspace.handle, post.id, folder.path).then((saved) => {
+    updatePost(post.id, { folderId: saved.folderId, slug: saved.slug, origin: saved.origin, filed: saved.filed });
+  }).catch(
     (error) => {
       movePost(post.id, previousFolderId);
       ctx.toast(error instanceof Error ? error.message : "Could not move");
@@ -1045,20 +1047,10 @@ export function dynamicWorkspaceCommands(ctx: CommandContext): AppCommand[] {
     : [];
   if (!pool) return appearance.concat(outlineCommands);
   const target = commandTargetPost(ctx);
-  const blogPost = target && !isPrivatePostType(target.type);
 
   const moveCommands =
     target && workspace.canManagePost
       ? pool.folders
-          .filter((folder) =>
-            blogPost
-              ? folder.mode === "blog"
-              : target.type === "note"
-                ? folder.mode === "notes"
-                : target.type === "bookmark"
-                  ? folder.mode === "bookmarks"
-                  : false,
-          )
           .map((folder) => ({
             id: `post.move.${folder.id}`,
             label: `Move to ${folder.name}`,

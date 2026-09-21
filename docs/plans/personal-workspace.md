@@ -480,3 +480,8 @@ unverified existing features into completed acceptance claims.
   membership, and actual cleanup with filing as the sole retention hold.
   The affected four test files pass (37 tests); TypeScript passes. Browser
   verification and a production build of these latest changes remain pending.
+- Filed RSS browser verification and the current production build now pass;
+  see the [desktop workflow receipt](../personal-workspace-verification-2026-09-21.md#filed-rss-desktop-workflow-and-production-build).
+  That check also removed legacy type restrictions from command-palette moves
+  and made mixed-folder News filter RSS origins on the server, including counts.
+  Full remaining acceptance gates above are still open.

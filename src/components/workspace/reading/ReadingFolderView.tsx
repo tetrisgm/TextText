@@ -171,7 +171,7 @@ export function ReadingFolderView({
     savePrefs(folder.path, { view, state, dateBasis, direction });
   }, [dateBasis, direction, folder.path, state, view]);
   const scope = useMemo<ReadingScope>(
-    () => ({ folderPath: folder.path, includeDescendants: true, state, dateBasis, direction }),
+    () => ({ folderPath: folder.path, origin: "feed", includeDescendants: true, state, dateBasis, direction }),
     [dateBasis, direction, folder.path, state],
   );
   const [items, setItems] = useState<ReadingListItem[]>([]);

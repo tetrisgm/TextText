@@ -200,6 +200,17 @@ describe.skipIf(!enabled)("home news against Postgres", () => {
       expect(audit.length).toBeGreaterThan(0);
     }
   });
+  it("separates News from personal items in a mixed workspace", async () => {
+    const list = await import("@/lib/reading/list.server");
+    const page = await list.listReadingItems({ handle, user,
+      scope: { folderPath: "", includeDescendants: true, state: "all", dateBasis: "published", origin: "feed" },
+    });
+    expect(page.items.length).toBeGreaterThan(0);
+    expect(page.items.every((item) => item.origin === "feed")).toBe(true);
+    expect(page.items.some((item) => item.title.startsWith("Mixed"))).toBe(false);
+    const summary = await list.readingFolderSummary({ handle, user, folderPath: "", origin: "feed" });
+    expect(summary.itemCount).toBe(page.items.length);
+  });
   it("moves an RSS subtree across folder modes without losing subscriptions or items", async () => {
     const all = await store.getFolders(handle);
     const notes = all.find((folder) => folder.path === "notes")!;
