@@ -1,4 +1,24 @@
-# TextText: one Artifact design
+# TextText: personal workspace
+
+## Current direction: September 21
+
+The [personal workspace plan](docs/plans/personal-workspace.md) is the current
+implementation contract. It supersedes the news-only composition below, which
+describes the previous release. Artifact remains the editorial reference for
+browsing; Shiori informs saved reading, nested collections inform organization,
+and a clean article editor supports writing. Superhuman informs responsiveness
+and keyboard efficiency, not the Home layout.
+
+Home combines quick capture, a compact Continue section, and a dated personal
+timeline. News is the full RSS destination. Bookmarks contains deliberate saves.
+Writing contains notes and articles. Folders can mix these and custom types.
+Desktop keeps resizable navigation on the left and contextual AI on the right;
+explicit collapse choices are respected. Narrow layouts use accessible drawers.
+All views share typography, colors, focus behavior and document identity.
+
+The existing performance and visual verification requirements below still apply.
+
+## Previous release reference
 
 Artifact News is the visual and interaction reference for the app, including
 Home, navigation, reading, writing, saved items and settings. The owner's

@@ -5201,7 +5201,10 @@ function LocalWorkspaceShell({
         folders={displayPool.folders}
         homeActive={view.level === "root" || view.level === "search"}
         homePath={homePath}
-        onSelectFolder={(path) => { setSidebarCollapsed(true); navigateSection(path); }}
+        onSelectFolder={(path) => {
+          if (!window.matchMedia("(min-width: 901px)").matches) setSidebarCollapsed(true);
+          navigateSection(path);
+        }}
         onSearchDate={navigateDateSearch}
         onReturnToBody={focusWorkspaceBody}
         onSidebarFocus={(path) => {

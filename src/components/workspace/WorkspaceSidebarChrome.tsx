@@ -349,10 +349,6 @@ function readAssistantState(): AssistantSidebarState {
   // the assistant are visible together. Phones keep the assistant opt-in so
   // it does not cover the writing surface.
   const preferred: AssistantSidebarState = window.matchMedia("(min-width: 901px)").matches ? "pinned" : "hidden";
-  if (preferred === "pinned") {
-    assistantStateMemory = preferred;
-    return preferred;
-  }
   let saved: string | null = null;
   try {
     if (!window.localStorage.getItem(WORKSPACE_ASSISTANT_STATE_MIGRATION_KEY)) {
@@ -411,9 +407,12 @@ function subscribeAssistantPreferences(listener: () => void): () => void {
     for (const current of assistantPreferenceListeners) current();
   };
   window.addEventListener("storage", onStorage);
+  const desktop = window.matchMedia("(min-width: 901px)");
+  desktop.addEventListener("change", listener);
   return () => {
     assistantPreferenceListeners.delete(listener);
     window.removeEventListener("storage", onStorage);
+    desktop.removeEventListener("change", listener);
   };
 }
 

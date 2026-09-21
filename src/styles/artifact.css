@@ -299,9 +299,9 @@
   }
 
   .artifact-workspace .post-workspace-sidebar-region.is-collapsed {
-    width: var(--workspace-sidebar-width, 252px);
-    visibility: visible;
-    pointer-events: auto;
+    width: 0;
+    visibility: hidden;
+    pointer-events: none;
   }
 
   .artifact-workspace .workspace-document-layout {
@@ -318,9 +318,13 @@
     max-width: 680px;
   }
 
-  .artifact-workspace.has-assistant-pinned .workspace-document-layout {
-    margin-right: var(--workspace-assistant-width, 360px);
-    width: calc(100% - var(--workspace-sidebar-width, 252px) - var(--workspace-assistant-width, 360px));
+  .artifact-workspace.is-sidebar-collapsed .workspace-document-layout {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .artifact-workspace .workspace-sidebar-reveal-chrome {
+    display: block;
   }
 }
 
