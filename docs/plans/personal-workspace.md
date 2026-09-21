@@ -202,6 +202,19 @@ unverified existing features into completed acceptance claims.
 
 ## Implementation checkpoints
 
+- Fresh production build at c7d7b751 passed with local Postgres. Preview is
+  localhost:3104, build .texttext/personal-build-c7d7b751, deployment identity
+  personal-c7d7b751; logs /tmp/texttext-personal-c7d7b751-{build,server}.log.
+  Browser Home -> saved setup guide -> Go back restored scrollTop exactly from
+  2462.5 to 2462.5. Focus returned to the document body rather than the originating
+  item, so keyboard return restoration remains incomplete. The fixture has 17
+  timeline items; this does not verify restoration across loaded pages.
+  Temporary CDP instrumentation measured capture-phase click dispatch through
+  the animation frame after a visible destination heading/container appeared.
+  Six Writing samples: 69.4, 39.3, 56.1, 39.4, 50.7, 48.1 ms. Six Home samples:
+  46.2, 48.0, 44.6, 43.7, 49.5, 45.1 ms. Tool overhead is excluded; listeners,
+  timers and the temporary probe property were removed. This small navigation
+  sample is not the full p95, cold-launch, typing or large-workspace gate.
 - Timeline refresh now follows the current server snapshot through the oldest
   loaded row, capped at 500 rows. Reconciliation removes rows not returned by
   that revalidation, including older deleted or inaccessible items, and uses
