@@ -234,3 +234,13 @@ passed. Browser focus after palette dismissal and repeated capture requests
 still require verification in a fresh production preview. Port 3115 predates
 this change. Desktop Writing on that preview was rechecked at 1280 CSS pixels:
 252px folder sidebar, contextual AI panel, and hidden mobile bottom navigation.
+
+### Direct capture verified on 3242b346
+
+Fresh local production build `.texttext/personal-build-capture` passed and is
+running at port 3116. From Writing with Message assistant focused, Cmd+K,
+`Capture a thought`, Enter opened Home with `Save to TextText` focused. Typing
+an unsaved test draft and invoking the command again kept both the exact draft
+and capture focus. The test-only draft was cleared afterward. No empty item was
+created by either command. This replaces the prior 25-Tab capture approach.
+The temporary build TypeScript configuration was removed after server startup.
