@@ -2991,6 +2991,7 @@ function LocalWorkspaceShell({
     ],
   );
   const assistant = useNativeAssistant(assistantOptions);
+  const [assistantPickerRequest, setAssistantPickerRequest] = useState<string | null>(null);
   const assistantComposer = useAssistantComposerDraft(
     `${displayPool.blog.handle}:${assistantTarget.contextKey}`,
   );
@@ -5391,6 +5392,9 @@ function LocalWorkspaceShell({
           {(conversation) => (
         <AssistantSidebar
           contextKey={assistant.conversationContextKey}
+          initialContextPickerOpen={assistantPickerRequest === assistantTarget.contextKey}
+          onRequestContextPicker={() => setAssistantPickerRequest(assistantTarget.contextKey)}
+          onDismissContextPicker={() => setAssistantPickerRequest(null)}
           workspaceHandle={displayPool.blog.handle}
           agent={assistantAgentIdentity(
             assistant.cloudProvider,

@@ -173,10 +173,10 @@ export function LazyAssistantSidebar(props: AssistantRailShellProps) {
   const pickerScope = `${props.workspaceHandle ?? ""}:${props.contextKey ?? "context"}`;
   const motion = useMotionPresence(props.state !== "hidden");
   const motionSnapshot = useRef<MotionSnapshot | null>(null);
-  if (modules) return <modules.sidebar.AssistantSidebar {...props} initialContextPickerOpen={pickerRequest === pickerScope} motionSnapshot={motionSnapshot} />;
+  if (modules) return <modules.sidebar.AssistantSidebar {...props} initialContextPickerOpen={props.initialContextPickerOpen || pickerRequest === pickerScope} motionSnapshot={motionSnapshot} />;
   return <>
     {props.state === "hidden" && <AssistantLauncher {...props} />}
-    {motion.present && <AssistantRailShell {...props} onRequestContextPicker={() => setPickerRequest(pickerScope)} motionOnRest={motion.onRest} motionSnapshot={motionSnapshot} />}
+    {motion.present && <AssistantRailShell {...props} onRequestContextPicker={() => { setPickerRequest(pickerScope); props.onRequestContextPicker?.(); }} motionOnRest={motion.onRest} motionSnapshot={motionSnapshot} />}
   </>;
 }
 

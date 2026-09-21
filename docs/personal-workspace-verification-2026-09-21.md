@@ -155,3 +155,17 @@ The first-click request currently lives inside LazyAssistantSidebar, while its
 parent LazyAssistantConversationState replaces its subtree when modules load.
 That remount is a likely request-loss boundary not covered by the isolated test;
 the fix must retain intent across the parent replacement and thread initialization.
+
+### Startup picker correction verified
+
+The open request now also lives in LocalWorkspaceShell, above the replacing
+conversation subtree. The loaded picker adopts the hydrated conversation ID
+without discarding that request; closing clears the workspace request.
+Twenty-two targeted tests, TypeScript and the fresh production build pass.
+Targeted lint has no errors and 17 existing shell warnings.
+
+On `.texttext/personal-build-parent` at `localhost:3114`, CUA navigated directly
+to Writing and clicked Add context once. The picker remained visible after
+initialization. Repeating with a full reload and one click also passed. Escape
+closed the picker and restored focus to Message assistant. No AI request was
+sent. This supersedes the failed first-click result immediately above.

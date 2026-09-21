@@ -25,6 +25,16 @@ it("hands the first picker click to the loaded sidebar", () => {
   state.loaded = true;
   expect(LazyAssistantSidebar(props).props.initialContextPickerOpen).toBe(true);
 });
+it("preserves the workspace-owned request when the conversation boundary remounts the rail", () => {
+  let requested = false;
+  const tree = LazyAssistantSidebar({ ...props, onRequestContextPicker: () => { requested = true; } });
+  const shell = React.Children.toArray(tree.props.children).find((child) => React.isValidElement(child) && child.type === "rail-shell") as React.ReactElement<{ onRequestContextPicker: () => void }>;
+  shell.props.onRequestContextPicker();
+  expect(requested).toBe(true);
+  state.requested = null; // React state in the replaced subtree is gone.
+  state.loaded = true;
+  expect(LazyAssistantSidebar({ ...props, initialContextPickerOpen: requested }).props.initialContextPickerOpen).toBe(true);
+});
 it("does not open a picker on ordinary activation or after navigating to another scope", () => {
   state.loaded = true;
   expect(LazyAssistantSidebar(props).props.initialContextPickerOpen).toBe(false);

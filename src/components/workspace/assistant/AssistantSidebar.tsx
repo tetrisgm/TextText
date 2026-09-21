@@ -110,6 +110,7 @@ export type AssistantSidebarProps = {
   onRemoveAttachment: (attachment: AssistantAttachment) => void;
   attachments?: readonly AssistantAttachment[];
   initialContextPickerOpen?: boolean;
+  onDismissContextPicker?: () => void;
   availableContextItems?: readonly AssistantWorkspaceContextItem[];
   onAddContextItem?: (item: AssistantWorkspaceContextItem) => void;
   contextChoice?: AssistantContextChoice;
@@ -208,6 +209,7 @@ export function AssistantSidebar({
   onRemoveAttachment,
   attachments = EMPTY_ATTACHMENTS,
   initialContextPickerOpen = false,
+  onDismissContextPicker,
   availableContextItems = EMPTY_CONTEXT_ITEMS,
   onAddContextItem,
   contextChoice = DEFAULT_CONTEXT_CHOICE,
@@ -293,8 +295,10 @@ export function AssistantSidebar({
   const [pendingOpen, setPendingOpen] = useState(false);
   const pickerThread = activeConversationId ?? contextKey ?? "context";
   const [openPickerThread, setOpenPickerThread] = useState<string | null>(initialContextPickerOpen ? pickerThread : null);
+  // Adopt the newly hydrated conversation without dropping the initial open request.
+  if (initialContextPickerOpen && activeConversationId && openPickerThread === contextKey) setOpenPickerThread(activeConversationId);
   const contextPickerOpen = openPickerThread === pickerThread;
-  const setContextPickerOpen = (open: boolean) => setOpenPickerThread(open ? pickerThread : null);
+  const setContextPickerOpen = (open: boolean) => { setOpenPickerThread(open ? pickerThread : null); if (!open) onDismissContextPicker?.(); };
   const contextControlsRef = useRef<HTMLDivElement>(null);
 
   const { resolvedMaxWidth, resolvedMinWidth, resolvedWidth } =
