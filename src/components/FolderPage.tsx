@@ -1663,6 +1663,7 @@ export function FolderPage({
     defaultViewMode,
   );
   const [filterQuery, setFilterQuery] = useState("");
+  const [createFocusRequest, setCreateFocusRequest] = useState(0);
   const lastCreateRequestKey = useRef(createBookmarkRequestKey ?? 0);
   const lastEditRequestKey = useRef(editRequestKey);
 
@@ -1701,18 +1702,22 @@ export function FolderPage({
     dispatchFolderUiEvent(EDIT_FOLDER_TITLE_EVENT, folder.id);
   }, [editRequestKey, folder.id]);
 
+  const personalItems = useMemo(() => items.filter((post) => post.origin !== "feed"), [items]);
   const filteredItems = useMemo(() => {
     const query = filterQuery.trim().toLocaleLowerCase();
-    if (!query) return items;
-    return items.filter((post) =>
+    if (!query) return personalItems;
+    return personalItems.filter((post) =>
       [post.title, post.excerpt, postBodyPreview(post)]
         .filter(Boolean)
         .some((value) => value!.toLocaleLowerCase().includes(query)),
     );
-  }, [filterQuery, items]);
+  }, [filterQuery, personalItems]);
 
   const sourcesHere = readingSourcesUnder(readingSources, folder.path);
-  const isReadingFolder = folder.mode === "bookmarks" && sourcesHere.length > 0;
+  const hasFeeds = sourcesHere.length > 0 && Boolean(blogId);
+  const [folderPanes, setFolderPanes] = useState<Record<string, "items" | "news">>({});
+  const folderPane = folderPanes[folder.id] ?? (personalItems.length ? "items" : "news");
+  const isReadingFolder = hasFeeds && folderPane === "news";
   const canAddFeeds = canEditItems && folder.mode === "bookmarks" && Boolean(blogId);
   const [addFeedsOpen, setAddFeedsOpen] = useState(false);
   const [manageSourcesOpen, setManageSourcesOpen] = useState(false);
@@ -1736,9 +1741,10 @@ export function FolderPage({
         canShare={canShareFolders}
         viewMode={viewMode}
         onChangeView={changeView}
-        onCreate={() =>
-          dispatchFolderUiEvent(CREATE_FOLDER_ITEM_EVENT, folder.id)
-        }
+        onCreate={() => {
+          setFolderPanes((current) => ({ ...current, [folder.id]: "items" }));
+          setCreateFocusRequest((current) => current + 1);
+        }}
         onRename={() =>
           dispatchFolderUiEvent(EDIT_FOLDER_TITLE_EVENT, folder.id)
         }
@@ -1747,7 +1753,7 @@ export function FolderPage({
         onSearchValueChange={setFilterQuery}
         onDeleteFolder={onDeleteFolder}
         onAddFeeds={canAddFeeds ? () => setAddFeedsOpen(true) : undefined}
-        onManageSources={canAddFeeds && isReadingFolder ? () => setManageSourcesOpen(true) : undefined}
+        onManageSources={canEditItems && hasFeeds ? () => setManageSourcesOpen(true) : undefined}
       />
       <header className="post-folder-page-header">
         <FolderTitleEditor
@@ -1757,10 +1763,20 @@ export function FolderPage({
         />
         {!isReadingFolder && (
           <p className="post-folder-page-count">
-            {items.length} {items.length === 1 ? "item" : "items"}
+            {personalItems.length} {personalItems.length === 1 ? "item" : "items"}
           </p>
         )}
       </header>
+      {hasFeeds && (
+        <div className="folder-content-switch" role="group" aria-label="Folder content">
+          {(["items", "news"] as const).map((pane) => (
+            <button key={pane} type="button" aria-pressed={folderPane === pane}
+              onClick={() => setFolderPanes((current) => ({ ...current, [folder.id]: pane }))}>
+              {pane === "items" ? "Items" : "News"}
+            </button>
+          ))}
+        </div>
+      )}
       {filterQuery && (
         <div className="post-folder-filter-chip" role="status">
           <span>{filterQuery}</span>
@@ -1827,7 +1843,7 @@ export function FolderPage({
         folder={folder}
         handle={handle}
         items={filteredItems}
-        captureFocusRequestKey={captureFocusRequestKey}
+        captureFocusRequestKey={captureFocusRequestKey + createFocusRequest}
         hideEmpty={Boolean(filterQuery) && filteredItems.length === 0}
         canCreateItems={canCreateItems}
         canEditItems={canEditItems}

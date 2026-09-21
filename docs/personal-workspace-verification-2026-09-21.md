@@ -482,3 +482,30 @@ and 20 local-first/selection tests passed. Production-build verification remains
 pending. The bookmarked fixture has not yet moved: the existing Bookmarks
 collection opens its RSS reading surface, which needs investigation for access
 to manual saved items before completing the mixed-folder round trip.
+
+## Mixed folder and RSS content access
+
+The folder renderer previously replaced personal items with the RSS surface
+whenever feeds existed beneath a bookmark folder. Folders with feeds now expose
+Items and News controls. Personal content defaults to Items when present; an
+otherwise empty feed folder defaults to News. Feed detection no longer depends
+on the parent folder's legacy mode. Create from News selects Items and focuses
+the composer after it mounts.
+
+In localhost:3100, the manual Texttext AI setup guide bookmark became visible
+in Bookmarks and moved through its context menu into notes/mixed-workspace-check.
+A fresh navigation showed that bookmark and Keyboard capture September 21
+together. Cards selected by keyboard persisted across reload on that origin.
+News retained the RSS list, and Create returned focus to Create an item.
+
+Production build passed using local Postgres, with output in
+.texttext/personal-build-folder-content; preview is localhost:3124. That build
+also displayed both moved items after a fresh navigation and switched the
+Bookmarks folder between its RSS list and item composer. Sixteen existing
+folder-view/Artifact contract tests passed; targeted lint had no errors and one
+pre-existing WindowedRows dependency warning. Build/typecheck passed.
+
+Remaining: dark/narrow visual checks of the new control, persisted News/Items
+preference, feed-folder moves and imported-item movement semantics. The manual
+bookmark fixture displays a Saving date label despite surviving reopening;
+investigate that status separately. This is not a release or complete acceptance.

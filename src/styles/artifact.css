@@ -377,6 +377,9 @@
 .workspace-primary-destinations button[aria-current="page"] { background: var(--artifact-line); font-weight: 600; }
 .personal-home { padding-top: 16px; }
 .personal-home h2 { font-size: 15px; font-weight: 600; margin: 0 0 12px; }
+.folder-content-switch { display: flex; gap: 24px; padding: 0 0 16px; }
+.folder-content-switch button { border: 0; background: transparent; padding: 6px 0; color: var(--artifact-muted); font: inherit; cursor: pointer; }
+.folder-content-switch button[aria-pressed="true"] { color: var(--artifact-ink); font-weight: 600; }
 .personal-home h2.personal-home-date { padding-top: 24px; color: var(--artifact-muted); }
 .personal-home-continue { padding: 20px 0; }
 .personal-home-continue > div { display: flex; gap: 8px; }
