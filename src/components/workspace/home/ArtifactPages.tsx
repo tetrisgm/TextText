@@ -36,7 +36,7 @@ function useOpenArticle(props: OpenProps) {
 function ArticleRows({ items, previews = false, ...props }: OpenProps & { items: ReadingListItem[]; previews?: boolean }) {
   const open = useOpenArticle(props);
   return <ul className={styles.list}>{items.map((item) => <li key={item.id}>
-    <button className={`${styles.unit} ${styles.rowButton} ${styles.savedRow} ${previews ? styles.libraryRow : ""}`} onClick={() => open(item)}>
+    <button data-return-focus-key={`saved:${item.id}`} className={`${styles.unit} ${styles.rowButton} ${styles.savedRow} ${previews ? styles.libraryRow : ""}`} onClick={() => open(item)}>
       <span className={styles.body}>
         <span className={styles.headline}>{item.title}</span>
         {previews && item.excerpt && <span className={styles.libraryExcerpt}>{plainTextExcerpt(item.excerpt, 240)}</span>}
@@ -236,7 +236,7 @@ export function ArtifactNotes({ pool, onOpenPost, onOpenSection, onCreateNote, o
       <button aria-label="Browse folders" onClick={onBrowseFolders}>•••</button>
     </nav>
     {notes.length ? <ul className={styles.noteList}>{notes.slice(0, limit).map((note) => <li key={note.id}>
-      <button onClick={() => onOpenPost(note.id)}>
+      <button data-return-focus-key={`writing:${note.id}`} onClick={() => onOpenPost(note.id)}>
         <strong>{note.starred && <span aria-label="Starred">★ </span>}{note.title || "Untitled"}</strong>
         {(note.excerpt || note.bodyPreview) && <span className={styles.notePreview}>{plainTextExcerpt(note.excerpt) || plainTextExcerpt(note.bodyPreview)}</span>}
         <span className={styles.noteMeta}>{pool.folders.find((folder) => folder.id === note.folderId)?.name}{note.tags?.length ? ` · ${note.tags.map((tag) => `#${tag}`).join(" ")}` : ""}</span>

@@ -28,7 +28,7 @@ import {
   shortcutList,
   shortcutMatches,
 } from "@/lib/commands/workspace";
-import { shouldDeferKeyToActiveOverlay } from "@/lib/commands/keyboard-routing";
+import { shouldDeferKeyToActiveOverlay, shouldDeferNativeActivation } from "@/lib/commands/keyboard-routing";
 import type {
   CommandContext,
   CommandShortcut,
@@ -371,14 +371,12 @@ export function CommandLayer({ children }: { children: ReactNode }) {
 
       // Real buttons own activation, including when a list view is behind
       // the toolbar or a tab remains open above Library Home.
-      if (
-        (event.key === "Enter" || event.key === " ") &&
-        !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey &&
-        event.target instanceof Element &&
-        event.target.closest(
-          ".workspace-action-bar-tool, .workspace-tab-select, .workspace-tab-close",
-        )
-      ) return;
+      const activationControl = event.target instanceof Element
+        ? event.target.closest("button, a[href], .workspace-action-bar-tool, .workspace-tab-select, .workspace-tab-close")
+        : null;
+      if (shouldDeferNativeActivation(event, activationControl
+        ? activationControl.tagName === "A" ? "link" : "button"
+        : null)) return;
 
       if (dispatchCommandShortcut(event, typingTarget)) return;
       if (typingTarget) return;

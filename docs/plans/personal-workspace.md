@@ -202,6 +202,21 @@ unverified existing features into completed acceptance claims.
 
 ## Implementation checkpoints
 
+- Added exact-row focus restoration for Home, Writing and saved-reading lists,
+  keyed independently per destination. It waits briefly for asynchronous rows,
+  preserves scroll and yields to typing or a new pointer/keyboard gesture.
+  Live verification exposed the global Enter command intercepting ordinary
+  row buttons; native button/link activation now takes precedence, while
+  modified shortcuts remain available. Fourteen routing/focus tests, TypeScript,
+  lint (existing warnings only), and the final production build passed.
+  Preview localhost:3106 uses .texttext/personal-build-keyboard and deployment
+  personal-keyboard; logs /tmp/texttext-personal-keyboard-{build,server}.log.
+  Production UI: Enter on Quiet tools opens its editor; Enter on Go back restores
+  that Writing row; Tab proceeds to Welcome to TextText. The preceding focus
+  build also restored the exact Home timeline row at scrollTop 2462.5.
+  An initial immediate Back attempt during reader settling needed a second
+  activation; rapid history traversal remains to be isolated. Separate scroll
+  memory per Home/News/Bookmarks/Writing destination still needs auditing.
 - Fresh production build at c7d7b751 passed with local Postgres. Preview is
   localhost:3104, build .texttext/personal-build-c7d7b751, deployment identity
   personal-c7d7b751; logs /tmp/texttext-personal-c7d7b751-{build,server}.log.

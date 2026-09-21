@@ -157,7 +157,7 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews, sessi
     {capture}
     {continued.length > 0 && <section className="personal-home-continue" aria-label="Continue">
       <h2>Continue</h2>
-      <div>{continued.map((post) => <button key={post.id} onClick={() => onOpenPost(post.id)}>{post.title || "Untitled"}</button>)}</div>
+      <div>{continued.map((post) => <button key={post.id} data-return-focus-key={`continue:${post.id}`} onClick={() => onOpenPost(post.id)}>{post.title || "Untitled"}</button>)}</div>
     </section>}
     <nav className={styles.noteFolders} aria-label="Timeline filters">
       {(["all", "writing", "saved", "news"] as const).map((value) => <button key={value} aria-pressed={filter === value} onClick={() => {
@@ -168,7 +168,7 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews, sessi
     </nav>
     {(filter === "all" || filter === "news") && <section className="personal-home-news" aria-label="From your feeds">
       <header><h2>From your feeds</h2><button onClick={onNews}>Open News</button></header>
-      {news.map((item) => <button className="personal-home-headline" key={item.id} onClick={() => openReading(item)}>{item.title}</button>)}
+      {news.map((item) => <button className="personal-home-headline" key={item.id} data-return-focus-key={`news:${item.id}`} onClick={() => openReading(item)}>{item.title}</button>)}
       {!news.length && !newsError && <p>Your latest feed articles will appear here.</p>}
       {newsError && <p role="alert">Could not refresh your feeds. <button onClick={() => setAttempt((value) => value + 1)}>Try again</button></p>}
     </section>}
@@ -176,7 +176,7 @@ export function PersonalHome({ pool, history, capture, onOpenPost, onNews, sessi
     {pending && <button className={styles.back} onClick={() => { timelineRef.current = pending; session?.saveTimeline(filter === "news" ? "all" : filter, pending); setTimeline(pending); setPending(null); }}>New items</button>}
     <ul className={styles.noteList}>{entries.map((item, index) => <li key={item.id}>
       {(index === 0 || new Date(entries[index - 1].at).toLocaleDateString() !== new Date(item.at).toLocaleDateString()) && <h2 className="personal-home-date">{new Date(item.at).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</h2>}
-      <button onClick={() => {
+      <button data-return-focus-key={`timeline:${item.id}`} onClick={() => {
         addPost(item.post);
         pendingOpen.current = item.post.id;
         setOpenTick((value) => value + 1);

@@ -1,6 +1,7 @@
 "use client";
 
 import { readingUnreadByFolder } from "@/components/workspace/reading/unread";
+import { useListReturnFocus } from "@/components/workspace/useListReturnFocus";
 import { requestDocumentCaret } from "@/lib/document-history-events";
 import type { Appearance } from "@/lib/workspace/appearance";
 import {
@@ -649,6 +650,7 @@ function LocalWorkspaceShell({
     [],
   );
   const contentRef = useRef<HTMLDivElement | null>(null);
+  const rememberListFocus = useListReturnFocus(contentRef, view.level === "root" ? `root:${homePane}` : viewScrollMemoryKey(view) ?? view.level);
   const pendingScrollRestoreRef = useRef<{
     left: number;
     top: number;
@@ -5311,7 +5313,9 @@ function LocalWorkspaceShell({
           role={openedPostId ? "tabpanel" : undefined}
           aria-labelledby={openedPostId ? `workspace-tab-${openedPostId}` : undefined}
           tabIndex={-1}
+          onClickCapture={(event) => rememberListFocus(event.target)}
           onFocusCapture={(event) => {
+            rememberListFocus(event.target);
             activateRegion("body");
             if (
               event.target instanceof Element &&
