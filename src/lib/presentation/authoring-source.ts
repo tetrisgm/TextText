@@ -18,8 +18,8 @@ import {
  * `templateDefinitionSchema` is strict and rejects unknown keys, and definitions
  * travel inside sync envelopes and exported bundles that older builds still
  * read. Putting authoring provenance in there would change a format that has
- * already left this machine. This lives in its own column and nothing outside
- * the editor path ever sees it.
+ * already left this machine. This lives in its own column. Portable look files
+ * may carry it as a separately validated sibling of the render definition.
  *
  * The compiled definition stays the rendering authority. This is provenance for
  * reopening a look, never a second thing that renders.

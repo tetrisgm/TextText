@@ -68,8 +68,8 @@ function inferredLibrary(
   }));
 }
 
-function downloadLook(template: TemplateDefinition) {
-  const blob = new Blob([serializeTemplateLook(template)], {
+function downloadLook(template: TemplateDefinition, text = serializeTemplateLook(template)) {
+  const blob = new Blob([text], {
     type: "application/json",
   });
   const url = URL.createObjectURL(blob);
@@ -95,6 +95,7 @@ export function TemplateGallery({
   motionOpen = true,
   motionOrigin,
   onDuplicate,
+  onExport,
   onImport,
   onRestoreVersion,
   onRetire,
@@ -116,6 +117,7 @@ export function TemplateGallery({
     mode: "new" | "update",
   ) => Promise<TemplateDefinition>;
   onRetire?: (template: TemplateDefinition) => Promise<void>;
+  onExport?: (template: TemplateDefinition) => Promise<string>;
   onRestoreVersion?: (
     template: TemplateDefinition,
   ) => Promise<TemplateDefinition>;
@@ -461,7 +463,13 @@ export function TemplateGallery({
                 {isApplied(preview) ? "Keep this look" : "Use this look"}
               </button>
               <div className={styles.secondaryActions}>
-                <button type="button" onClick={() => downloadLook(preview)}>
+                <button type="button" disabled={busy} onClick={async () => {
+                  setBusy(true);
+                  setError(null);
+                  try { downloadLook(preview, onExport ? await onExport(preview) : serializeTemplateLook(preview)); }
+                  catch (cause) { setError(cause instanceof Error ? cause.message : "Could not export this look."); }
+                  finally { setBusy(false); }
+                }}>
                   Export
                 </button>
                 {onDuplicate && (

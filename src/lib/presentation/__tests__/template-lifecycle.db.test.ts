@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq, inArray } from "drizzle-orm";
-import { compileItemTypeBlueprint } from "../item-type-blueprint";
+import { authoringSourceFor } from "../authoring-source";
+import { parseTemplateLookBundle, serializeTemplateLook } from "../template-library";
+import { compileItemTypeBlueprint, itemTypeBlueprintSchema } from "../item-type-blueprint";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { parseSyncDocumentEnvelope, renderSyncDocumentEnvelope, serializeSyncDocumentEnvelope } from "@/lib/documents/sync";
 
@@ -39,6 +41,25 @@ describe.skipIf(process.env.TEXTTEXT_READING_DB_TEST !== "1")("custom type lifec
     await db.delete(schema.actionAudit).where(eq(schema.actionAudit.actorUserId, userId));
     await db.delete(schema.blogs).where(inArray(schema.blogs.id, ids));
     await db.delete(schema.users).where(inArray(schema.users.id, userIds));
+  });
+
+  it("keeps imported designs editable and exact-version sources independent", async () => {
+    const [source, destination] = workspaces;
+    const actor = { actorUserId: userId, actorType: "human" as const, actionName: "test.template.portable", targetType: "workspace" as const };
+    const blueprint = itemTypeBlueprintSchema.parse({ name: "Portable review", fields: [], collection: { layout: "list" }, starter: { title: "Review", fields: {} } });
+    const authored = authoringSourceFor(blueprint);
+    const definition = compileItemTypeBlueprint(blueprint, { id: "portable-review" });
+    const v1 = await store.createDocumentTemplateVersion({ blogId: source.id, definition, authoringSource: authored, actor });
+    const changed = { ...blueprint, name: "Revised review" };
+    await store.createDocumentTemplateVersion({ blogId: source.id, definition: compileItemTypeBlueprint(changed, v1), authoringSource: authoringSourceFor(changed), actor });
+    const original = await store.getDocumentTemplateAuthoringSource(source.id, v1.id, 1);
+    expect(original?.source).toEqual(authored);
+    expect((await store.getDocumentTemplateAuthoringSource(source.id, v1.id))?.source?.blueprint.name).toBe("Revised review");
+    const bundle = parseTemplateLookBundle(serializeTemplateLook(v1, original?.source));
+    const imported = await store.importDocumentTemplate({ blogId: destination.id, definition: bundle.template, authoringSource: bundle.authoringSource, mode: "new", actor, createdById: userIds[1] });
+    expect(imported.id).not.toBe(v1.id);
+    expect((await store.getDocumentTemplateAuthoringSource(destination.id, imported.id))?.source).toEqual(authored);
+    expect(compileItemTypeBlueprint(authored.blueprint, imported)).toEqual(imported);
   });
 
   it("preserves pinned items through updates, retirement and a cross-workspace textpack import", async () => {

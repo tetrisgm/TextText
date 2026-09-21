@@ -51,6 +51,31 @@ Public deployment and installation use release/ship.sh only when requested.
 - AI scope is visible: current item plus explicitly attached sources. Preserve
   conversation across navigation and existing review-before-apply behavior.
 
+## Simplification direction: September 21
+
+The owner explicitly requires consolidation rather than more isolated patches.
+Keep the full outcome and acceptance gates above. Simplification must remove
+competing paths, not hide missing behavior or replace the existing document model.
+
+- Keep DocumentSnapshot and the shared renderer as the document authority.
+- Present one type library/designer lifecycle. The compiled definition and its
+  editable source travel together; import must not create a dead-end type.
+- Separate folder organization/view settings from document type changes.
+  Folder defaults must not implicitly rewrite existing documents. Explicit bulk
+  migration remains a separate operation with impact and collaboration checks.
+- Consolidate the two current gallery entry paths (item and folder), studio
+  editing, and creation around that lifecycle before adding more type features.
+- Audit FolderPage's collection-definition dependency on the default item type;
+  keep existing custom collection behavior while making view choice independent.
+- Verify complete capture/read/save/write/reopen journeys on one identified
+  current production preview. Historical previews are evidence, not milestones.
+
+Current concrete coupling: FolderLookPicker used to pass unconditional true to
+setFolderLookAction, which migrated folder items and required repeated batches.
+The folder picker now sets only the default; existing documents keep their
+pinned type. Sidebar labels distinguish choosing and editing the default type.
+This is the first removal of coupling, not completion of the consolidation.
+
 ## Existing foundations and investigation targets
 
 | Concern | Existing foundation | Required audit/change |

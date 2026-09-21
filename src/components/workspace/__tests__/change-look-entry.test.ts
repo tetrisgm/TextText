@@ -26,7 +26,7 @@ const SHELL = [
 
 describe("changing a look from the workspace", () => {
   it("offers it on a folder, beside building one", () => {
-    expect(SHELL).toContain("Change this look");
+    expect(SHELL).toContain("Edit default type");
     expect(SHELL).toContain("onChangeItemType");
   });
 

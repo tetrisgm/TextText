@@ -4,6 +4,8 @@ import { serializeTemplateLook } from "@/lib/presentation/template-library";
 
 const mocks = vi.hoisted(() => ({
   getBlogEditAccess: vi.fn(),
+  getDocumentTemplate: vi.fn(),
+  getDocumentTemplateAuthoringSource: vi.fn(),
   getFolderByPath: vi.fn(),
   getFolderPosts: vi.fn(),
   listDocumentTemplateLibrary: vi.fn(),
@@ -22,6 +24,8 @@ vi.mock("@/lib/blog-edit-auth", () => ({
 }));
 vi.mock("@/lib/store", () => ({
   getFolderByPath: mocks.getFolderByPath,
+  getDocumentTemplate: mocks.getDocumentTemplate,
+  getDocumentTemplateAuthoringSource: mocks.getDocumentTemplateAuthoringSource,
   getFolderPosts: mocks.getFolderPosts,
   listDocumentTemplateLibrary: mocks.listDocumentTemplateLibrary,
   duplicateDocumentTemplate: mocks.duplicateDocumentTemplate,
@@ -38,6 +42,8 @@ vi.mock("@/lib/revalidate-blog", () => ({
 
 import {
   duplicateFolderLookAction,
+  exportTemplateLookAction,
+  setFolderLookAction,
   getFolderLookAction,
   importFolderLookAction,
   restoreFolderLookVersionAction,
@@ -47,6 +53,21 @@ import {
 const article = requireBuiltinTemplate("texttext.article", 1);
 
 describe("folder look lifecycle actions", () => {
+  it.each([undefined, null, false, "true"])("keeps existing documents when folder migration is not explicitly true (%s)", async (apply) => {
+    mocks.getFolderByPath.mockResolvedValue({ id: "folder-id", path: "notes" });
+    const result = await setFolderLookAction("shoku", "notes", article.id, 1, apply);
+    expect(result).toEqual({ ok: true, changed: 0, beingEdited: 0, itemsLeft: 0 });
+    expect(mocks.setFolderTemplate).toHaveBeenCalledWith("shoku", "folder-id", { id: article.id, version: 1 });
+    expect(mocks.retemplateFolderItems).not.toHaveBeenCalled();
+  });
+  it("exports only an authorized exact version", async () => {
+    mocks.getDocumentTemplate.mockResolvedValue(article);
+    mocks.getDocumentTemplateAuthoringSource.mockResolvedValue(null);
+    expect(await exportTemplateLookAction("shoku", article.id, 1)).toBe(serializeTemplateLook(article));
+    expect(mocks.getDocumentTemplateAuthoringSource).toHaveBeenCalledWith("blog-id", article.id, 1);
+    mocks.getBlogEditAccess.mockResolvedValue({ isOwner: false });
+    await expect(exportTemplateLookAction("shoku", article.id, 1)).rejects.toThrow("Only the workspace owner");
+  });
   it("retires only an owner's custom type with an audit and no document mutation", async () => {
     mocks.retireDocumentTemplate.mockResolvedValue(true);
     expect(await retireFolderLookAction("shoku", "book-review")).toEqual({ ok: true });

@@ -12,6 +12,8 @@ import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import {
   duplicateDocumentTemplate,
   getFolderByPath,
+  getDocumentTemplate,
+  getDocumentTemplateAuthoringSource,
   getFolderPosts,
   importDocumentTemplate,
   listDocumentTemplateLibrary,
@@ -23,7 +25,8 @@ import {
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import {
-  parseTemplateLook,
+  parseTemplateLookBundle,
+  serializeTemplateLook,
   type TemplateLibraryEntry,
 } from "@/lib/presentation/template-library";
 
@@ -147,9 +150,11 @@ export async function importFolderLookAction(
     if (modeInput !== "new" && modeInput !== "update") {
       throw new Error("Choose whether to save as new or update.");
     }
+    const bundle = parseTemplateLookBundle(textInput);
     const definition = await importDocumentTemplate({
       blogId: access.blogId,
-      definition: parseTemplateLook(textInput),
+      definition: bundle.template,
+      authoringSource: bundle.authoringSource,
       mode: modeInput,
       actor: {
         actorUserId: access.ownerId,
@@ -229,11 +234,7 @@ export async function retireFolderLookAction(
   }
 }
 
-/**
- * Apply a look to the folder, and by default to everything already in it.
- * Restyling only future items leaves the index looking new and every existing
- * item looking old, which reads as the change not having worked.
- */
+/** Set the folder default. Existing items change only on explicit opt-in. */
 export async function setFolderLookAction(
   handleInput: unknown,
   folderPathInput: unknown,
@@ -259,9 +260,9 @@ export async function setFolderLookAction(
 
     await setFolderTemplate(access.handle, folder.id, reference);
     const restyled =
-      applyToExistingInput === false
-        ? { changed: 0, contested: 0, remaining: 0 }
-        : await retemplateFolderItems(access.handle, folder.id, reference);
+      applyToExistingInput === true
+        ? await retemplateFolderItems(access.handle, folder.id, reference)
+        : { changed: 0, contested: 0, remaining: 0 };
 
     await recordAction({
       actorUserId: access.ownerId,
@@ -301,4 +302,14 @@ export async function setFolderLookAction(
           : "Could not change the folder's look.",
     };
   }
+}
+
+/** Export the exact version, including its validated editable source when present. */
+export async function exportTemplateLookAction(handle: string, id: string, version: number): Promise<string> {
+  const access = await ownerAccess(handle);
+  if (!id || !Number.isInteger(version) || version < 1) throw new Error("Choose a valid look version.");
+  const definition = await getDocumentTemplate(access.blogId, { id, version });
+  if (!definition) throw new Error("That look could not be found.");
+  const authored = await getDocumentTemplateAuthoringSource(access.blogId, id, version);
+  return serializeTemplateLook(definition, authored?.source);
 }

@@ -1,3 +1,4 @@
+import { validatedLookSource } from "./presentation/template-library";
 import { documentFromStarter } from "./documents/starter";
 import { agentTextChanges } from "@/lib/agent-changes";
 import type { TimelineFilter, TimelinePage } from "@/lib/workspace/timeline";
@@ -4118,11 +4119,13 @@ export async function duplicateDocumentTemplate(input: {
 export async function importDocumentTemplate(input: {
   blogId: string;
   definition: TemplateDefinition;
+  authoringSource?: AuthoringSource;
   mode: "new" | "update";
   actor: AuditEntry;
   createdById: string;
 }): Promise<TemplateDefinition> {
   const source = validateTemplateDefinition(input.definition);
+  const authoringSource = validatedLookSource(source, input.authoringSource);
   let id = source.id;
   if (input.mode === "new") {
     id = workspaceTemplateId(source.name);
@@ -4148,6 +4151,7 @@ export async function importDocumentTemplate(input: {
   return createDocumentTemplateVersion({
     blogId: input.blogId,
     definition: validateTemplateDefinition({ ...source, id, version: 1 }),
+    authoringSource,
     actor: input.actor,
     createdById: input.createdById,
   });
@@ -4242,6 +4246,7 @@ export async function installDocumentTemplate(input: {
 export async function getDocumentTemplateAuthoringSource(
   blogId: string,
   templateId: string,
+  version?: number,
 ): Promise<{
   version: number;
   retired: boolean;
@@ -4261,6 +4266,7 @@ export async function getDocumentTemplateAuthoringSource(
       and(
         eq(documentTemplates.blogId, blogId),
         eq(documentTemplates.templateId, templateId),
+        ...(version === undefined ? [] : [eq(documentTemplates.version, version)]),
       ),
     )
     .orderBy(desc(documentTemplates.version))

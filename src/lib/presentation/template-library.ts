@@ -1,3 +1,5 @@
+import { authoringSourceSchema, inspectAuthoringSource, type AuthoringSource } from "./authoring-source";
+import { compileItemTypeBlueprint } from "./item-type-blueprint";
 import {
   validateTemplateDefinition,
   type TemplateDefinition,
@@ -55,18 +57,42 @@ type LookExport = {
   format: "texttext-look";
   formatVersion: 1;
   template: TemplateDefinition;
+  authoringSource?: AuthoringSource;
 };
 
-export function serializeTemplateLook(template: TemplateDefinition): string {
+export function validatedLookSource(template: TemplateDefinition, value: unknown): AuthoringSource | undefined {
+  if (value == null) return undefined;
+  const source = authoringSourceSchema.parse(value);
+  if (inspectAuthoringSource(source).state !== "authored") {
+    throw new Error("This design needs a compatible TextText compiler before it can be imported.");
+  }
+  const compiled = compileItemTypeBlueprint(source.blueprint, template);
+  const canonical = (value: unknown): string => {
+    if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+    if (value && typeof value === "object") return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(",")}}`;
+    return JSON.stringify(value);
+  };
+  if (canonical(compiled) !== canonical(validateTemplateDefinition(template))) {
+    throw new Error("The editable design does not match this look.");
+  }
+  return source;
+}
+
+export function serializeTemplateLook(template: TemplateDefinition, source?: AuthoringSource | null): string {
   const payload: LookExport = {
     format: "texttext-look",
     formatVersion: 1,
     template: validateTemplateDefinition(template),
+    ...(source ? { authoringSource: validatedLookSource(template, source) } : {}),
   };
   return `${JSON.stringify(payload, null, 2)}\n`;
 }
 
 export function parseTemplateLook(text: string): TemplateDefinition {
+  return parseTemplateLookBundle(text).template;
+}
+
+export function parseTemplateLookBundle(text: string): LookExport {
   if (new TextEncoder().encode(text).byteLength > TEMPLATE_IMPORT_MAX_BYTES) {
     throw new Error("That look file is larger than 1 MB.");
   }
@@ -85,7 +111,9 @@ export function parseTemplateLook(text: string): TemplateDefinition {
       ? record.template
       : value;
   try {
-    return validateTemplateDefinition(candidate);
+    const template = validateTemplateDefinition(candidate);
+    const authoringSource = validatedLookSource(template, record.format === "texttext-look" ? record.authoringSource : undefined);
+    return { format: "texttext-look", formatVersion: 1, template, ...(authoringSource ? { authoringSource } : {}) };
   } catch {
     throw new Error("That file contains an invalid or unsupported look.");
   }

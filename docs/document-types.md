@@ -240,13 +240,18 @@ Imported gallery templates are always forked into a workspace-owned immutable
 version before use. An import can instead become the next immutable version of
 a matching workspace look. Import never inserts a database definition without
 strict validation. Export uses the versioned `texttext-look` JSON envelope.
+Designed looks include an optional `authoringSource` sibling, fetched for the
+exact exported version. Import validates both schemas and requires the source
+to compile to the same render definition before preserving it for editing.
+Definition-only files remain supported; their editable source cannot be
+recovered automatically. Source data never replaces the rendering authority.
 Remix creates an independent id. Restoring an older version copies it forward
 as a new version, so pinned documents and version history remain intact.
 
 The gallery computes impact from canonical item and folder references before a
 look is applied. It shows item and folder counts and names the first affected
-folders. Applying a folder look restyles the folder and its existing items so
-the index and the documents keep one coherent design.
+folders. Choosing a folder default affects the folder and future creation. Existing
+documents retain their pinned types. Bulk type migration requires explicit opt-in.
 
 ## Privacy and access
 

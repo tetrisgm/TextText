@@ -710,3 +710,32 @@ round trip of render definition and starter data on the development build.
 Authoring blueprints are not part of the look export, so imported definitions
 currently cannot be reopened in the manual designer; this remains a functional
 limitation to resolve. Production acceptance remains outstanding.
+
+## Portable editable type source
+
+Look exports now fetch the exact selected version and include its validated
+blueprint source as an optional sibling of the rendering definition. Both
+editor and folder galleries use the owner-authorized export action. Imports
+preserve that source only when its current compiler reproduces the definition
+exactly; mismatched or incompatible source is rejected. Older definition-only
+files still import, but cannot regain source that was never exported.
+
+Twenty-two tests across four files pass, including local Postgres verification
+of exact old-version source retrieval and a cross-workspace import under a new
+identity that remains editable. TypeScript passes and lint has four existing
+warnings, no errors. Logs: `/tmp/texttext-portable-source-{tests,db-tests,tsc,lint}.log`.
+The new source-bearing export/import path still needs browser and production
+verification; the preceding browser receipt exercised the older format.
+
+## Folder defaults no longer migrate existing documents
+
+Removed the folder picker's unconditional bulk migration and its partial-batch
+retry handling. Choosing a default leaves existing document types unchanged;
+server migration now requires literal true. Sidebar actions distinguish Choose
+default type from Edit default type. Folder collection presentation still uses
+the selected definition; separating that configuration remains in the plan.
+
+Twenty-two tests across the action, entry-point and gallery suites pass,
+including omitted/null/false/string migration inputs preserving existing items.
+The source-preserving import changes also passed 22 targeted/database tests.
+Browser acceptance of these latest changes remains outstanding.

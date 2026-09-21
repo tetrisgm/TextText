@@ -1321,7 +1321,7 @@ function FolderTreeNav({
                         onChangeItemType?.(folder);
                       }}
                     >
-                      Change this look
+                      Edit default type
                     </button>
                   )}
                   {canManageFolders && (
@@ -1349,7 +1349,7 @@ function FolderTreeNav({
                         onChangeFolderLook(folder);
                       }}
                     >
-                      Change look
+                      Choose default type
                     </button>
                   )}
                 </span>

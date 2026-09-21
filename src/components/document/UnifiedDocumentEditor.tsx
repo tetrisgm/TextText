@@ -1,5 +1,6 @@
 "use client";
 
+import { exportTemplateLookAction } from "@/app/editor/folder-template-actions";
 import { DocumentUndoManager, replaceSharedText } from "@/lib/collab/text-transactions";
 
 import { dismissOpenDetails } from "@/components/accessibility/keyboard";
@@ -1466,6 +1467,7 @@ export function UnifiedDocumentEditor({
     <section className="tt-unified-editor" role="main" aria-label="Edit item" data-ai-item-id={collab.postId} onKeyDown={handleKeyboard}>
       {choosingTemplate && availableTemplates && availableTemplates.length > 0 && (
         <TemplateGallery
+          onExport={(selected) => exportTemplateLookAction(blog.handle, selected.id, selected.version)}
           document={document}
           templates={availableTemplates}
           targetItemCount={1}
