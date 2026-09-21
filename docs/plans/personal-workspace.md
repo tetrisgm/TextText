@@ -202,6 +202,12 @@ unverified existing features into completed acceptance claims.
 
 ## Implementation checkpoints
 
+- [Destination timing baseline](../personal-workspace-verification-2026-09-21.md)
+  distinguishes ready content from a visible shell. The measured saved-library
+  visits took 306.9, 377.0 and 126.9ms; its rows and cursor are discarded on every
+  mount, unlike Home/News snapshots. Add bounded saved-library session retention
+  with revalidation/access invalidation, then collect a sufficient p95 sample.
+  These preliminary measurements do not pass the performance acceptance gate.
 - Reload restoration now starts its 250ms list settling window after the saved
   position is reachable and Home's initial timeline/headlines have settled,
   with a 2.5s overall deadline. Reader/editor retain their existing 900ms window;
