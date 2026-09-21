@@ -67,3 +67,23 @@ Nine targeted tests pass, including component command dispatch for new articles,
 existing-article append, retry identity and picker membership. Lint passes.
 Live multi-source drafting, explicit AI context and concurrent capture remain
 unverified; these checks do not close the writing integration acceptance gate.
+
+### Live source drafting check
+
+Built c8a9e3f4 locally in `.texttext/personal-build-sources` with local Postgres;
+production build passed, preview `localhost:3110`. CUA used Add to document on
+the saved Texttext AI setup guide, chose New article and opened the result:
+`587b7efa-2193-4ada-a502-a736e8c23e39`, Draft on Texttext AI setup guide.
+The editor showed Article presentation. From News, the NASA water-systems story
+was appended to that same article. A full editor reload retained both internal
+source references. This checks link-only capture; concurrent passage capture is
+still pending.
+
+The context picker could explicitly add and remove the manually saved guide,
+with a named chip and workspace index remaining off. It could not find the NASA
+source after reload. Inspection confirms the picker searches `displayPool.posts`,
+which deliberately excludes most RSS rows. The next fix must provide an
+authorized bounded source lookup for the picker without loading every RSS item
+or automatically selecting sources. Seventeen context/picker tests passed, but
+they use supplied item arrays and therefore do not cover this integration gap.
+No AI request was sent during this check.
