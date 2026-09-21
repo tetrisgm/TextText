@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { viewScrollMemoryKey } from "../view-memory";
 import {
   readNavTrail,
   readScrollMemory,
@@ -23,6 +24,23 @@ function memoryStorage(): Storage {
 describe("nav-history trail", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("persists independent positions for personal destinations within each workspace", () => {
+    vi.stubGlobal("window", { localStorage: memoryStorage() });
+    const panes = ["home", "news", "bookmarks", "notes", "headlines", "profile"];
+    const positions = Object.fromEntries(panes.map((pane, index) => [viewScrollMemoryKey({ level: "root" }, pane), (index + 1) * 300]));
+    writeScrollMemory("/@one", positions);
+    const restored = readScrollMemory("/@one");
+    panes.forEach((pane, index) => expect(restored[viewScrollMemoryKey({ level: "root" }, pane)]).toBe((index + 1) * 300));
+    expect(readScrollMemory("/@two")).toEqual({});
+  });
+
+  it("shares reading and editing positions regardless of the previous destination", () => {
+    const read = viewScrollMemoryKey({ level: "post", postId: "one", folderPath: "notes" }, "home");
+    const edit = viewScrollMemoryKey({ level: "edit", postId: "one", folderPath: "notes" }, "notes");
+    expect(read).toBe(edit);
+    expect(read).not.toBe(viewScrollMemoryKey({ level: "post", postId: "two", folderPath: "notes" }, "home"));
   });
 
   it("round-trips a trail per scope", () => {

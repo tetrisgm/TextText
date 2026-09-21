@@ -2,6 +2,7 @@
 
 import { readingUnreadByFolder } from "@/components/workspace/reading/unread";
 import { useListReturnFocus } from "@/components/workspace/useListReturnFocus";
+import { viewScrollMemoryKey } from "@/lib/workspace/view-memory";
 import { requestDocumentCaret } from "@/lib/document-history-events";
 import type { Appearance } from "@/lib/workspace/appearance";
 import {
@@ -546,17 +547,6 @@ function revealReadingAnchorWhenEditable(blogId: string, postId: string) {
   window.setTimeout(attempt, 30);
 }
 
-function viewScrollMemoryKey(view: LocalWorkspaceView): string | null {
-  // Read and edit share the item's one scroll surface, so a reopened item
-  // resumes at the reading position either way.
-  if (view.level === "post" || view.level === "edit")
-    return `item:${view.postId}`;
-  if (view.level === "root") return "root";
-  if (view.level === "search") return `search:${view.source}:${view.query}`;
-  if (view.level === "settings") return "settings";
-  return `${view.level}:${view.folderPath}`;
-}
-
 function LocalWorkspaceShell({
   blog,
   canCommentPost,
@@ -650,7 +640,7 @@ function LocalWorkspaceShell({
     [],
   );
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const rememberListFocus = useListReturnFocus(contentRef, view.level === "root" ? `root:${homePane}` : viewScrollMemoryKey(view) ?? view.level);
+  const rememberListFocus = useListReturnFocus(contentRef, viewScrollMemoryKey(view, homePane));
   const pendingScrollRestoreRef = useRef<{
     left: number;
     top: number;
@@ -1308,7 +1298,9 @@ function LocalWorkspaceShell({
   // collapses the scroller and clamps scrollTop to 0 before any
   // navigation-time read could see the real position. The clamp guard skips
   // exactly that state (nothing scrollable = nothing worth remembering).
-  useEffect(() => {
+  // Switch the recorder before the restoration layout effect can emit a
+  // scroll event for the newly selected destination.
+  useLayoutEffect(() => {
     const content = contentRef.current;
     if (!content) return;
     if (!scrollMemorySeededRef.current) {
@@ -1325,7 +1317,7 @@ function LocalWorkspaceShell({
       // 0 fires scroll events; recording them would clobber the position we
       // are trying to return to.
       if (scrollRestorePendingRef.current) return;
-      const key = viewScrollMemoryKey(viewRef.current);
+      const key = viewScrollMemoryKey(viewRef.current, homePane);
       if (!key) return;
       if (content.scrollHeight <= content.clientHeight + 4) return;
       contentScrollMemoryRef.current.set(key, content.scrollTop);
@@ -1343,8 +1335,9 @@ function LocalWorkspaceShell({
     return () => {
       content.removeEventListener("scroll", record);
       window.clearTimeout(flush);
+      if (flush) writeScrollMemory(homePath, Object.fromEntries(contentScrollMemoryRef.current));
     };
-  }, [homePath]);
+  }, [homePath, homePane]);
 
   // Put a returning view back where it was. List views settle in a couple of
   // frames; an item's scroller (windowed editor / long reader) grows its
@@ -1352,7 +1345,7 @@ function LocalWorkspaceShell({
   // restore holds the target - recording suppressed - until it sticks or a
   // short deadline passes.
   useLayoutEffect(() => {
-    const key = viewScrollMemoryKey(view);
+    const key = viewScrollMemoryKey(view, homePane);
     scrollSettledRef.current = true;
     if (!key) return;
     if (!scrollMemorySeededRef.current) {
@@ -1421,7 +1414,7 @@ function LocalWorkspaceShell({
     window.addEventListener("keydown", release);
     hold();
     return release;
-  }, [view]);
+  }, [view, homePane, homePath]);
 
   // Set while a view change is the result of a history traversal rather than
   // someone choosing to open something.

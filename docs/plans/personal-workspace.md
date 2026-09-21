@@ -202,6 +202,19 @@ unverified existing features into completed acceptance claims.
 
 ## Implementation checkpoints
 
+- Destination scroll memory now distinguishes Home, News, Bookmarks, Writing,
+  Headlines and Profile; reader/editor retain their shared item position. The
+  recording listener switches before restoration can emit a scroll event, and
+  pending memory writes flush when changing destination. Nine persistence/history
+  tests, TypeScript, lint (existing warnings only) and production build passed.
+  Preview localhost:3107 uses .texttext/personal-build-scroll and deployment
+  personal-scroll; logs /tmp/texttext-personal-scroll-{build,server}.log.
+  Live old-build check lost Writing's 1781px position after visiting Home. New
+  build kept Writing at 720px and Home at 1440px across alternating destinations.
+  Reload is NOT accepted: one reload shifted 1440 to 1533px; another returned
+  1533 to 0 and changed the visible anchor. The current fixed 250ms list restore
+  window can expire before asynchronous Home content arrives. Fix and reverify
+  that lifecycle before marking scroll restoration complete.
 - Added exact-row focus restoration for Home, Writing and saved-reading lists,
   keyed independently per destination. It waits briefly for asynchronous rows,
   preserves scroll and yields to typing or a new pointer/keyboard gesture.
