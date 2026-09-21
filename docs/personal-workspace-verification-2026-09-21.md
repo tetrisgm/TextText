@@ -565,3 +565,21 @@ store receives an external-agent audit and a non-owner cannot invoke the move.
 Fifty-four assistant/transport/CLI tests passed. Typecheck passed; targeted lint
 had no errors and one existing unused declaration warning. An actual AI-driven
 move and production build verification remain open.
+
+## Integrated suite after folder commands
+
+At 33e010a1, the full default suite completed in 120.26 seconds: 385 files
+passed, one failed, 17 skipped; 3,574 tests passed, one failed, 124 skipped.
+The sole failure was the existing batch4 source contract expecting the folder
+count to use all items. The Items/News split intentionally counts personalItems
+in the Items view. Updated that assertion and retained a check for the content
+switch; all nine tests in the affected file then passed. No runtime code changed
+for this test correction. Logs: /tmp/texttext-integrated-current-tests.log and
+/tmp/texttext-ui-contract-fixed.log. Skipped database/native tests are not
+covered by this run.
+
+The next organization gap is confirmed in source: moving an imported article
+does not add a retention hold, the pool excludes feed-origin posts after reload,
+and FolderPage excludes them from Items. The solution must preserve source
+provenance while making deliberate filing durable and visible; changing only
+the folder renderer would leave both reload and expiry behavior incorrect.

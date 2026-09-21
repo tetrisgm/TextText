@@ -190,7 +190,9 @@ describe("batch 4 workspace UI contract", () => {
     expect(folderSource).toContain("lookLayout");
     expect(folderSource).toContain("`folder:v3:${folder.id}`");
     expect(folderSource).toContain('className="post-folder-page-count"');
-    expect(folderSource).toMatch(/\{items\.length\} \{items\.length/);
+    // The Items count excludes imported articles shown in the separate News view.
+    expect(folderSource).toMatch(/\{personalItems\.length\} \{personalItems\.length/);
+    expect(folderSource).toContain('aria-label="Folder content"');
     expect(broadsheetStyles).toContain(
       "Home and folder cards use one collection shell.",
     );
