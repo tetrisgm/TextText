@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   createItemComment: vi.fn(),
   createDraftInFolder: vi.fn(),
   createSubfolder: vi.fn(),
+  moveFolder: vi.fn(),
   deletePost: vi.fn(),
   deletePostAtomic: vi.fn(),
   getAccessibleFolders: vi.fn(),
@@ -101,6 +102,7 @@ vi.mock("@/lib/store", () => ({
   createItemComment: mocks.createItemComment,
   createDraftInFolder: mocks.createDraftInFolder,
   createSubfolder: mocks.createSubfolder,
+  moveFolder: mocks.moveFolder,
   deletePost: mocks.deletePost,
   deletePostAtomic: mocks.deletePostAtomic,
   getAccessibleAllPosts: mocks.getAccessibleAllPosts,
@@ -2348,6 +2350,24 @@ describe("MCP workspace tool adapter", () => {
       }),
     );
     expect(mocks.recordAction).not.toHaveBeenCalled();
+  });
+
+  it("moves folders through the shared store with an agent audit and owner access", async () => {
+    const folder = { id: "folder-feed", name: "Feed", path: "notes/feed", mode: "bookmarks", position: 1, parentId: "folder-notes" };
+    mocks.moveFolder.mockResolvedValue(folder);
+    const result = await executeMcpTool("move_folder", {
+      folder_id: folder.id, parent_folder_id: folder.parentId,
+    }, auth(["sync"]));
+    expect(result.isError).not.toBe(true);
+    expect(mocks.moveFolder).toHaveBeenCalledWith("local", folder.id, folder.parentId,
+      { audit: expect.objectContaining({ actorType: "external_agent", actionName: "mcp.move_folder", targetType: "folder", targetId: folder.id }) });
+    mocks.moveFolder.mockClear();
+    mocks.resolveWorkspaceAccess.mockResolvedValue({ canView: true, canEditContent: true, isOwner: false });
+    const denied = await executeMcpTool("move_folder", {
+      folder_id: folder.id, parent_folder_id: null,
+    }, auth(["sync"]));
+    expect(denied.isError).toBe(true);
+    expect(mocks.moveFolder).not.toHaveBeenCalled();
   });
 
   it("moves a folder to Trash and restores it with adapter-owned audits", async () => {

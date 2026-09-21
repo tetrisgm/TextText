@@ -75,6 +75,7 @@ const LOCAL_WRITES: readonly WorkspaceToolName[] = [
   "organize_items",
   "create_folder",
   "rename_folder",
+  "move_folder",
   "add_comment",
   "set_comment_resolved",
   "create_item_type",

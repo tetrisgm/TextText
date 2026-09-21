@@ -586,6 +586,15 @@ export function createWorkspaceAgentTools(
         }
       }
 
+      case "move_folder": {
+        const input = args as WorkspaceToolInput<"move_folder">;
+        requireFolder(input.folder_id);
+        if (input.parent_folder_id) requireFolder(input.parent_folder_id);
+        const result = await runRemote("move_folder", input);
+        await refreshPoolAfterMutation();
+        return { ok: true, ...result };
+      }
+
       case "delete_folder": {
         const input = args as WorkspaceToolInput<"delete_folder">;
         requireFolder(input.folder_id);

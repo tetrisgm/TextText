@@ -1079,6 +1079,16 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     mutability: "write",
     destructive: true,
   }),
+  move_folder: defineTool("move_folder", {
+    title: "Move folder",
+    description: "Move a folder and its descendants under another folder, or to the workspace root. Preserves items and RSS subscriptions. Built-in root folders cannot move.",
+    inputSchema: z.object({
+      folder_id: folderId,
+      parent_folder_id: folderId.nullable().describe("Destination folder ID, or null for the workspace root."),
+    }).strict(),
+    mutability: "write",
+    destructive: true,
+  }),
   delete_folder: defineTool("delete_folder", {
     title: "Move folder to Trash",
     description:

@@ -121,6 +121,7 @@ import {
   movePostFile,
   PostConflictError,
   renameFolder,
+  moveFolder,
   releaseIdempotencyKey,
   resolveIdempotencyKey,
   restoreFolder,
@@ -1424,6 +1425,22 @@ async function executeWorkspaceCommand(
         return errorResult(
           error instanceof Error ? error.message : "Could not rename folder.",
         );
+      }
+    }
+
+    case "move_folder": {
+      const input = args as WorkspaceToolInput<"move_folder">;
+      const resolved = await requireWorkspace(extra, true);
+      if (isToolResult(resolved)) return resolved;
+      try {
+        const folder = await moveFolder(resolved.blog.handle, input.folder_id,
+          input.parent_folder_id, { audit: mcpAuditEntry(extra,
+            "mcp.move_folder", "folder", input.folder_id,
+            input.parent_folder_id ?? "Workspace root") });
+        revalidateBlogPaths(resolved.blog);
+        return jsonResult({ folder: folderSummary(folder) });
+      } catch (error) {
+        return errorResult(error instanceof Error ? error.message : "Could not move folder.");
       }
     }
 

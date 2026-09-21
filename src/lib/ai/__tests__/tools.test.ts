@@ -47,6 +47,7 @@ const EXPECTED_NAMES = [
   "set_comment_resolved",
   "create_folder",
   "rename_folder",
+  "move_folder",
   "delete_folder",
   "restore_folder",
   "set_access",
@@ -63,6 +64,7 @@ const EXPECTED_NAMES = [
 
 const DESTRUCTIVE_TOOLS = new Set([
   "rename_folder",
+  "move_folder",
   "delete_folder",
   "update_item",
   "move_item",

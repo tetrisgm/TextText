@@ -550,3 +550,18 @@ Mixed workspace check also exposed those articles through News. The source
 remains at this new path in the local visual-demo fixture. Production build,
 shared agent-command exposure, URL-alias behavior and broader permission cases
 remain to be verified before complete acceptance.
+
+## Shared folder move command
+
+The workspace tool catalog now includes move_folder with folder_id and a nullable
+parent_folder_id. The MCP adapter requires workspace ownership and calls the same
+audited store operation as the sidebar action. The assistant adapter refreshes
+the pool after success so descendant paths and feed source locations update
+together. The command is available through the existing authenticated command
+transport; no app-to-MCP loopback was introduced.
+
+Ninety-two tool schema/access/MCP tests passed, including a new test proving the
+store receives an external-agent audit and a non-owner cannot invoke the move.
+Fifty-four assistant/transport/CLI tests passed. Typecheck passed; targeted lint
+had no errors and one existing unused declaration warning. An actual AI-driven
+move and production build verification remain open.
