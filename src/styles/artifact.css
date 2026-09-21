@@ -61,7 +61,7 @@
   --workspace-hints-height: 0px;
   font-family: var(--ac-font-text);
 }
-.post-editor-shell.artifact-workspace .post-folder-page:not(.is-mode-blog) {
+.post-editor-shell.artifact-workspace .post-editor-content .post-folder-page:not(.is-mode-blog) {
   --folderhead-ground: var(--artifact-bg);
   --folderhead-title: var(--artifact-ink);
   --folderhead-muted: var(--artifact-muted);

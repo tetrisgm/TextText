@@ -409,3 +409,18 @@ folder pages retain their own styling because the override is workspace-scoped.
 The existing Artifact and folder-view tests pass; whitespace checks pass.
 Visual verification requires a fresh build (3121 still has the old CSS).
 Appearance was restored to System after the inspection.
+
+### Folder palette cascade verified
+
+Build f891e7c0 passed and runs at 3122, but actual dark-mode inspection showed
+folder rgb(44,45,49) versus canvas rgb(0,0,0): the legacy dark selector tied the
+new override and won by source order. Added the existing post-editor-content
+ancestor to the workspace selector so it wins in both explicit and system themes.
+
+For targeted browser verification, CDP temporarily changed that one loaded CSS
+rule's selector to exactly the source correction. Dark folder and canvas both
+computed rgb(0,0,0), and the screenshot showed a continuous black canvas with
+legible rows. System/light then computed rgb(255,255,255) for both. Reload
+removed the temporary CSS edit; appearance is System. Fifteen Artifact tests
+pass and whitespace checks pass. The selector correction is not yet included
+in the running 3122 build. Temporary TypeScript build configuration removed.
