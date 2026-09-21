@@ -288,3 +288,19 @@ using the existing bounded restoration hook that waits for loaded rows. The
 return-focus and Artifact suites pass (see test output for count), scoped ESLint
 and whitespace checks pass. The new return hookup requires a rebuilt browser
 check; port 3117 proves movement/opening only. Temporary build config removed.
+
+### News return verified on a4e05842
+
+Production build `.texttext/personal-build-news-return` passed and runs on 3118.
+CUA selected the WIRED tariffs article with J, opened it with Enter, and returned
+with Cmd+[. Both selected and active return keys were
+`feed:38820baa-1b68-4e3f-8642-3133490e1f5e`; scrollTop remained exactly 72.
+This verifies the previous News return-focus gap is fixed. Temporary build
+configuration removed after server startup.
+
+Custom-type inspection also confirms a starter opens manual Name, Properties,
+Folder view and Item page controls with a live preview, without sending an AI
+request. Back then Cancel exited without saving. The entry screen is still
+labelled Build with AI; manual editing is available but insufficiently clear at
+entry. Editing/retiring an existing type and export/import remain unverified in
+this current browser build.
