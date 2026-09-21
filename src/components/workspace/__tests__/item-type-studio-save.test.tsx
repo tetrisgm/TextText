@@ -2,7 +2,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { itemTypeBlueprintSchema } from "@/lib/presentation/item-type-blueprint";
+import { compileItemTypeBlueprint, itemTypeBlueprintSchema } from "@/lib/presentation/item-type-blueprint";
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/app/editor/item-type-actions", () => ({ createItemTypeAction: vi.fn(), updateItemTypeAction: vi.fn(), readItemTypeUsagesAction: vi.fn() }));
 vi.mock("@/lib/pool/store", () => ({ refreshWorkspacePool: vi.fn() }));
@@ -13,6 +13,17 @@ function render(initialFolderPath = "") {
   return renderToStaticMarkup(<ItemTypeStudio blogId="blog-1" handle="shoku" editing={{ templateId: "tasks", baseVersion: 3, blueprint }} folders={[{ id: "a", path: "A", name: "A" }, { id: "b", path: "B", name: "B" }]} initialFolderPath={initialFolderPath} onClose={() => {}} />);
 }
 describe("studio edit save scope", () => {
+  it("offers saved custom types independently of folder assignment", () => {
+    const definition = compileItemTypeBlueprint(blueprint, { id: "custom.tasks", version: 1 });
+    const html = renderToStaticMarkup(<ItemTypeStudio blogId="blog-1" handle="shoku"
+      availableTypes={[definition, { ...definition, version: 2, name: "Current tasks" },
+        { ...definition, id: "texttext.note", name: "Built in" }]}
+      folders={[]} onClose={() => {}} />);
+    expect(html).toContain('aria-label="Edit saved type"');
+    expect(html).toContain('Current tasks');
+    expect(html).not.toContain('>Tasks</option>');
+    expect(html).not.toContain('Built in');
+  });
   it("exposes editable select choices and required properties without AI", () => {
     const choices = itemTypeBlueprintSchema.parse({ name: "Reviews", collection: { layout: "list" }, fields: [
       { id: "genre", label: "Genre", type: "enum", options: [

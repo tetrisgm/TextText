@@ -671,3 +671,24 @@ both headings and Topic value `ideas` remained, with Saved and Synced status.
 This closes creation with manual starter content/basic defaults. Full UI
 version-edit/export/import, responsive/theme coverage and the other plan gates
 remain open. The installed native app and public release are unchanged.
+
+## Saved type editing entry point
+
+The designer now offers saved custom types even when no folder uses them.
+It loads the latest editable blueprint and defaults to This version only,
+with existing-item migration off. Duplicate pinned definitions appear once;
+built-in definitions are excluded. Missing authoring source is reported rather
+than reconstructed lossily.
+
+On development preview 3100, opened Review with starter from this picker,
+changed its starting title to Reading reflection, and saved. The UI reported
+Saved version 2 and No folders were changed. Reopened existing document
+`d0690ff9-20e7-442b-a858-7187d685d22d` through a full page navigation: its title
+remained Book review, Topic remained Ideas, both original body headings were
+present, and status was Saved/Synced. This verifies the existing-item content
+invariant for this version-only change, not every migration or imported type.
+
+Two affected test files pass (13 tests); TypeScript passes; lint has no errors
+and 17 existing shell warnings. Logs: `/tmp/texttext-edit-type-tests.log`,
+`/tmp/texttext-edit-type-tsc.log`, `/tmp/texttext-edit-type-lint.log`.
+A new production build and export/import UI acceptance remain outstanding.

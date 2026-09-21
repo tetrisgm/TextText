@@ -5535,6 +5535,7 @@ function LocalWorkspaceShell({
       <UpdatedBuildNotice />
       {itemTypeStudioFolderPath !== null ? (
         <ItemTypeStudio
+          availableTypes={displayPool.templates}
           blogId={displayPool.blogId}
           folders={displayPool.folders}
           generateWithConnectedAgent={

@@ -506,3 +506,9 @@ unverified existing features into completed acceptance claims.
   creation/reload verification; see the [starter-content receipt](../personal-workspace-verification-2026-09-21.md#custom-starter-content-and-defaults).
   Full UI version-edit/export/import and remaining integrated acceptance gates
   are still open.
+
+- Saved custom types can now be opened directly from the designer, independently
+  of folder assignment. UI verification saved version 2 while an existing item
+  retained its original title, body and field value; see the
+  [version-edit receipt](../personal-workspace-verification-2026-09-21.md#saved-type-editing-entry-point).
+  Export/import UI, production integration and remaining acceptance gates stay open.

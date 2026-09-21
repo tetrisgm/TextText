@@ -116,9 +116,8 @@ export async function createItemTypeAction(
  * look someone designed with a version of the designer this build has moved
  * past.
  *
- * No caller yet: the workspace UI has no entry point for editing a look, and
- * that is the remaining half of this. The assistant and MCP paths do not go
- * through here.
+ * Used by the folder menu and saved-type picker. Assistant and MCP paths
+ * use the same underlying workspace operations.
  */
 export async function readItemTypeForEditAction(
   handleInput: unknown,

@@ -1128,3 +1128,21 @@
 }
 
 .section textarea { resize: vertical; min-height: 100px; }
+
+.savedTypePicker {
+  display: grid;
+  gap: 8px;
+  margin: 20px 0;
+  text-align: left;
+  color: var(--ac-label-2);
+}
+
+.savedTypePicker select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--ac-hairline);
+  border-radius: 8px;
+  background: var(--ac-fill-1);
+  color: var(--ac-label);
+  font: inherit;
+}

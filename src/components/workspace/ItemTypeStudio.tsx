@@ -6,6 +6,7 @@ import {
   createItemTypeAction,
   updateItemTypeAction,
   readItemTypeUsagesAction,
+  readItemTypeForEditAction,
 } from "@/app/editor/item-type-actions";
 import {
   DocumentRenderer,
@@ -327,7 +328,8 @@ function PreviewSurface({
 
 export function ItemTypeStudio({
   blogId,
-  editing,
+  editing: initialEditing,
+  availableTypes = [],
   folders,
   generateWithConnectedAgent,
   handle,
@@ -352,6 +354,7 @@ export function ItemTypeStudio({
     baseVersion: number;
     blueprint: ItemTypeBlueprint;
   };
+  availableTypes?: readonly TemplateDefinition[];
   folders: readonly StudioFolder[];
   generateWithConnectedAgent?: (input: {
     current?: ItemTypeBlueprint;
@@ -368,6 +371,11 @@ export function ItemTypeStudio({
   previewDocuments?: readonly ItemTypeStudioPreviewDocument[];
 }) {
   const router = useRouter();
+  const [editing, setEditing] = useState(initialEditing);
+  const editableTypes = useMemo(() => [...new Map(availableTypes
+    .filter((type) => !type.id.startsWith("texttext."))
+    .slice().sort((a, b) => a.version - b.version)
+    .map((type) => [type.id, type])).values()], [availableTypes]);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const [prompt, setPrompt] = useState("");
   const [followUp, setFollowUp] = useState("");
@@ -398,7 +406,7 @@ export function ItemTypeStudio({
   const [compare, setCompare] = useState(false);
   const [newFieldLabel, setNewFieldLabel] = useState("");
   const [newFieldType, setNewFieldType] = useState<NewFieldType>("text");
-  const [busy, setBusy] = useState<"generate" | "save" | null>(null);
+  const [busy, setBusy] = useState<"generate" | "save" | "load" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [folderPreviewStatus, setFolderPreviewStatus] = useState<string | null>(null);
   const [loadedPreviewDocuments, setLoadedPreviewDocuments] = useState<
@@ -823,9 +831,12 @@ export function ItemTypeStudio({
         <button
           type="button"
           className={styles.quietButton}
-          onClick={() =>
-            design ? setTimeline(EMPTY_STUDIO_TIMELINE) : onClose()
-          }
+          onClick={() => {
+            if (!design) return onClose();
+            setTimeline(EMPTY_STUDIO_TIMELINE);
+            setEditing(undefined);
+            setSaved(null);
+          }}
         >
           {design ? "Back" : "Cancel"}
         </button>
@@ -863,6 +874,32 @@ export function ItemTypeStudio({
               Choose a starting point below to define your fields and layout
               yourself, or describe what you need and let AI create a draft.
             </p>
+            {editableTypes.length > 0 ? <label className={styles.savedTypePicker}>
+              <span>Edit saved type</span>
+              <select aria-label="Edit saved type" value="" disabled={Boolean(busy)}
+                onChange={async (event) => {
+                  const templateId = event.currentTarget.value;
+                  if (!templateId) return;
+                  setBusy("load");
+                  setError(null);
+                  try {
+                    const result = await readItemTypeForEditAction(handle, templateId);
+                    if (!result.ok) throw new Error(result.error);
+                    if (result.retired) throw new Error("This type has been retired.");
+                    if (!result.blueprint) throw new Error("This type has no editable design. You can create a new type from a starting point.");
+                    setEditing({ templateId, baseVersion: result.version, blueprint: result.blueprint });
+                    setTimeline(studioTimelineFrom(result.blueprint));
+                    setSaveMode("version");
+                    setApplyToExisting(false);
+                    setSaved(null);
+                  } catch (error) {
+                    setError(error instanceof Error ? error.message : "Could not open this type.");
+                  } finally { setBusy(null); }
+                }}>
+                <option value="" disabled>Choose a type…</option>
+                {editableTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
+              </select>
+            </label> : null}
             <form
               className={styles.promptForm}
               onSubmit={(event) => {
