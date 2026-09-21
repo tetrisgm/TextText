@@ -202,6 +202,19 @@ unverified existing features into completed acceptance claims.
 
 ## Implementation checkpoints
 
+- Source capture now offers Open note after a successful save. It refreshes the
+  destination metadata before navigating, supports newly created destinations,
+  and reports navigation failure separately without repeating the append/create.
+  Link-only saves no longer claim a passage was saved. TypeScript, targeted lint
+  and a fresh production build passed (.texttext/personal-build-source-handoff,
+  log /tmp/texttext-source-handoff-build.log, preview localhost:3103).
+  Production UI verified New note -> Save -> Open note -> reload; source link
+  and contextual AI target persisted for c13e473f-01b3-4f25-b9ec-d4dad6264d83.
+  The over-limit local fixture's plan was temporarily paid and restored to free.
+  Development preview 3100 returned an obsolete pool projection despite the
+  include query; direct current-code and fresh-production checks passed. Do not
+  use that long-lived development process as final runtime evidence.
+
 - Updated production verification at 809f17fa: build passed with local Postgres
   (.texttext/personal-build-809f17fa, log /tmp/texttext-personal-build-809f17fa.log).
   The current production preview is localhost:3102; 3101 is the prior build.

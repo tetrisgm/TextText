@@ -58,7 +58,7 @@ import {
   postFromPoolPost,
   templateForPoolPost,
 } from "@/lib/pool/selectors";
-import { useWorkspacePostDocument } from "@/lib/pool/store";
+import { getWorkspacePost, refreshWorkspacePool, useWorkspacePostDocument } from "@/lib/pool/store";
 import type {
   WorkspacePoolPayload,
   WorkspacePoolPost,
@@ -308,7 +308,12 @@ export function WorkspacePostReader({
         onSearchValueChange={setFindQuery}
         onBookmarkContentModeChange={setBookmarkContentMode}
       />
-      {(post.type === "bookmark" || poolPost.origin === "feed") && canManagePost && <div className="source-note-action"><SourceNoteAction key={poolPost.id} pool={pool} sourceId={poolPost.id} title={post.title} sourcePath={blogWorkspacePostPath(blog, folderPathForPoolPost(pool, poolPost), post)} /></div>}
+      {(post.type === "bookmark" || poolPost.origin === "feed") && canManagePost && <div className="source-note-action"><SourceNoteAction key={poolPost.id} pool={pool} sourceId={poolPost.id} title={post.title} sourcePath={blogWorkspacePostPath(blog, folderPathForPoolPost(pool, poolPost), post)} onOpenNote={async (id) => {
+        await refreshWorkspacePool(blog.handle, pool.blogId);
+        const note = getWorkspacePost(id);
+        if (!note || note.blogId !== pool.blogId) throw new Error("Note unavailable");
+        await onNavigate(blogWorkspacePostEditPath(blog, folderPathForPoolPost(pool, note), note));
+      }} /></div>}
       {poolPost.origin === "feed" && (
         <ReadingReaderBar
           blog={blog}
