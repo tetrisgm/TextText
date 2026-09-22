@@ -740,7 +740,7 @@ function UniversalFolderContents({
       updatedAt: post.updatedAt ?? post.date ?? null,
       publishedAt: post.status === "published" ? (post.date ?? null) : null,
       title: post.title,
-      fields: post.document?.content.fields ?? {},
+      fields: post.document?.content.fields ?? post.collectionFields ?? {},
     })),
     activeCollection, collectionDefinition?.id,
   ), [activeCollection, items, collectionDefinition?.id]);

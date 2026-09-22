@@ -206,6 +206,7 @@ type PostListRow = Pick<
   | "wordCount"
 > & {
   filed?: boolean;
+  collectionFields: Post["collectionFields"];
   bodyPreview: string | null;
   capture: BookmarkCapture | null;
   captureUrl: string | null;
@@ -424,6 +425,7 @@ function mapPostList(row: PostListRow): Post {
     representation: row.representation,
     visibility: row.visibility,
     template: { id: row.templateId, version: row.templateVersion },
+    collectionFields: row.collectionFields,
     type: row.type,
     slug: row.slug,
     title: row.title,
@@ -522,6 +524,7 @@ function postListSelection() {
     updatedAt: posts.updatedAt,
     wordCount: wordCountSql(),
     bodyPreview: bodyPreviewSql(),
+    collectionFields: sql<NonNullable<Post["collectionFields"]>>`${posts.document}->'content'->'fields'`,
     capture: posts.capture,
     captureUrl: sql<string | null>`${posts.capture}->>'url'`,
     captureTitle: sql<string | null>`${posts.capture}->>'title'`,

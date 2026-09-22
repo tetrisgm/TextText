@@ -191,6 +191,7 @@ export function LocalUnifiedWorkspacePostEditor({
       const projection = legacyProjectionFromDocument(nextDocument);
       updatePost(poolPost.id, {
         template: nextDocument.presentation.template,
+        collectionFields: nextDocument.content.fields,
         title: projection.title,
         excerpt: projection.excerpt || undefined,
         // See detachedSlice: a plain cut pins the whole body.

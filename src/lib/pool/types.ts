@@ -19,6 +19,7 @@ export type WorkspacePoolPost = {
   folderId?: string;
   /** Canonical content + presentation. Legacy fields below are list indexes. */
   document?: Post["document"];
+  collectionFields?: Post["collectionFields"];
   visibility?: Post["visibility"];
   template?: Post["template"];
   type: ItemKind;

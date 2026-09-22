@@ -945,3 +945,35 @@ all document bodies into the workspace pool. Large-fixture/cold performance,
 native capture, error states, remaining type lifecycle and live-agent workflows
 also remain open. This is a consolidation checkpoint, not full-plan completion
 or an installed-app update.
+
+
+## Custom fields survive cold folder reads
+
+List reads now select the canonical `content.fields` separately from document
+bodies. `collectionFields` is explicitly a list projection, never a writable
+DocumentSnapshot. The pool preserves exact field values and pinned template
+identity; folder filters/grouping and collection rendering use these values
+when a full document is not loaded. The editor updates the same projection
+alongside its existing canonical save/cache path.
+
+Production `.texttext/personal-build-fields`, deployment personal-fields,
+localhost:3134: a cold Notes-folder load and reload showed the Book review's
+Topic value Ideas. Changed Topic to Work in the editor, waited for Saved,
+returned to the folder and saw Work immediately. Reload preserved Work.
+Restored Ideas, waited for Saved and verified it in the folder. The document
+remains pinned to its original type version; its title and body were preserved.
+
+The local storage lifecycle suite passed five tests, including exact scalar,
+array, row and long-text field projection with a million-character document body
+excluded from list responses. Seven preview tests cover pool conversion and
+numeric filters; the combined final editor/preview run passed. The 5,000-feed-item
+database suite passed all four tests. Default suite: 389 files / 3,610 tests
+passed, 17 opt-in files / 131 tests skipped. Final production build/TypeScript
+passed; targeted lint has existing warnings only. Logs:
+`/tmp/texttext-collection-fields-{db,tests,final-focused,scale,full,tsc,lint,editor-lint,build,server}.log`.
+
+This fixes the cold-field correctness gap above. Exact fields are not truncated
+for filtering; unusually large custom-field payloads still need to be included
+in performance coverage. Full-plan integrated performance, native capture and
+remaining agent/error-state acceptance are still open. No release or installed
+app update was performed.

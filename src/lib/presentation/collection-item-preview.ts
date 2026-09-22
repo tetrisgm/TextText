@@ -10,6 +10,10 @@ export function collectionItemPreview(post: Post, template: TemplateDefinition) 
   const body = (raw?.content.body ?? postBodyPreview(post)).slice(0, 1200);
   const document: DocumentSnapshot = raw ? { ...raw, content: { ...raw.content, body } }
     : documentFromLegacyPost({ ...post, body });
+  if (!raw) {
+    document.presentation.template = post.template ?? { id: template.id, version: template.version };
+    document.content.fields = { ...document.content.fields, ...post.collectionFields };
+  }
   const excerpt = (post.excerpt || post.capture?.description || body).slice(0, 900)
     .replace(/\[\[([^|\]]+)\|([^\]]+)\]\]/g, "$2").replace(/\[\[([^\]]+)\]\]/g, "$1")
     .replace(/!\[[^\]]*\]\([^)]*\)/g, "")

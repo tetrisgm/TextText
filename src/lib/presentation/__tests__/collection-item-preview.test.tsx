@@ -5,6 +5,8 @@ import { validateTemplateDefinition } from "../schema";
 import { collectionItemPreview } from "../collection-item-preview";
 import { requireBuiltinTemplate } from "../templates";
 import { compileItemTypeBlueprint, itemTypeBlueprintSchema } from "../item-type-blueprint";
+import { narrowPostFromPost, postFromPoolPost } from "@/lib/pool/selectors";
+import { queryMixedCollectionItems } from "../collection-layout";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { DocumentCollectionRenderer } from "@/components/document/DocumentRenderer";
 import type { Post } from "@/lib/content";
@@ -48,6 +50,26 @@ describe("shared collection previews", () => {
     expect(preview.document.content.fields.rating).toBe(5);
     expect(preview.excerpt).toBe("");
     expect(post.document!.content.body.length).toBe(1000000);
+  });
+  it("preserves exact custom fields through a body-free pool and cold preview", () => {
+    const blueprint = itemTypeBlueprintSchema.parse({ name: "Review", fields: [{ id: "rating", label: "Rating", type: "number" }], collection: { layout: "cards" } });
+    const template = compileItemTypeBlueprint(blueprint, { id: "custom.review", version: 3 });
+    const original = item("note", template.id);
+    original.document!.presentation.template.version = 3;
+    const pool = narrowPostFromPost(original, "workspace")!;
+    expect(pool.document).toBeUndefined();
+    expect(pool.collectionFields).toEqual(original.document!.content.fields);
+    expect(pool.bodyPreview!.length).toBeLessThanOrEqual(2048);
+    const cold = postFromPoolPost(pool);
+    expect(cold.document).toBeUndefined();
+    const preview = collectionItemPreview(cold, template);
+    expect(preview.document.presentation.template).toEqual({ id: template.id, version: 3 });
+    expect(preview.document.content.fields.rating).toBe(5);
+    const rows = [{ title: cold.title, templateId: cold.template!.id, fields: cold.collectionFields! }];
+    expect(queryMixedCollectionItems(rows, { ...template.collection, filters: [{ field: "content.fields.rating", op: "gte", value: 4 }] }, template.id)).toHaveLength(1);
+    expect(queryMixedCollectionItems(rows, { ...template.collection, filters: [{ field: "content.fields.rating", op: "lt", value: 4 }] }, template.id)).toHaveLength(0);
+    const refreshed = narrowPostFromPost({ ...original, collectionFields: { rating: 1 } }, "workspace")!;
+    expect(refreshed.collectionFields!.rating).toBe(5);
   });
   it("uses preview media without embedding a player in the collection", () => {
     const base = requireBuiltinTemplate("texttext.talk", 1);

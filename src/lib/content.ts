@@ -236,6 +236,8 @@ export interface Post {
   representation?: FileRepresentation;
   /** Canonical content and presentation state. */
   document?: DocumentSnapshot;
+  /** Exact custom-field list projection; never a complete, writable document. */
+  collectionFields?: DocumentSnapshot["content"]["fields"];
   /** Explicit reader access; legacy status is only a publication projection. */
   visibility?: DocumentVisibility;
   /** Pinned immutable template version, repeated for list/query indexes. */

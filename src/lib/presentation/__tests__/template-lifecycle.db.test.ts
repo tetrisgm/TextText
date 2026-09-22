@@ -43,6 +43,23 @@ describe.skipIf(process.env.TEXTTEXT_READING_DB_TEST !== "1")("custom type lifec
     await db.delete(schema.users).where(inArray(schema.users.id, userIds));
   });
 
+  it("projects exact custom fields without loading document bodies into lists", async () => {
+    const source = workspaces[0];
+    const folder = (await store.getFolders(source.handle)).find(entry => entry.path === "notes")!;
+    const document = emptyDocumentSnapshot({ id: "texttext.note", version: 1 });
+    document.content.title = "Field projection";
+    document.content.body = "Preserve the full body. ".repeat(50000);
+    document.content.fields = { rating: 5, done: false, author: "Ursula Le Guin", tags: ["science fiction"], rows: [{ label: "Exact value", amount: 7 }], longText: "x".repeat(5000) + " suffix" };
+    const created = await store.createDraftInFolder(source.handle, folder.id, { document, template: document.presentation.template });
+    for (const list of [await store.getWorkspacePoolPosts(source.handle), await store.getFolderPosts(source.handle, "notes")]) {
+      const row = list.find(entry => entry.id === created.id)!;
+      expect(row.document).toBeUndefined();
+      expect(row.body.length).toBeLessThanOrEqual(2048);
+      expect(row.collectionFields).toEqual(document.content.fields);
+    }
+    expect((await store.getPostById(source.handle, created.id!))?.document).toEqual(document);
+  });
+
   it("keeps imported designs editable and exact-version sources independent", async () => {
     const [source, destination] = workspaces;
     const actor = { actorUserId: userId, actorType: "human" as const, actionName: "test.template.portable", targetType: "workspace" as const };
