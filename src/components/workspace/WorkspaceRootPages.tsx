@@ -1,4 +1,6 @@
 "use client";
+
+import { RetainedWorkspacePane } from "./RetainedWorkspacePane";
 import { useClientHydrated } from "@/lib/use-client-hydrated";
 
 import { HomeSession } from "@/components/workspace/home/session";
@@ -295,10 +297,8 @@ export function WorkspaceRootLanding({
   const [searchFailure, setSearchFailure] = useState<string | null>(null);
   const [searchAttempt, setSearchAttempt] = useState(0);
   const [sort, setSort] = useState<SidebarDocumentSort>("recent");
-  // Home's layout is the workspace's one stored layout choice, so it travels
-  // with the workspace instead of with the browser that set it. Every folder
-  // page, Blog included, takes its layout from the look on the folder; this
-  // control governs Home and nothing else.
+  // The legacy All items library keeps its own saved layout. Folder view
+  // choices and individual document types are independent of this setting.
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [recentViewMode, setRecentViewMode] = useState<BlogHomeView>(
     pool.blog.homeLayout,
@@ -826,15 +826,16 @@ export function WorkspaceRootLanding({
             {/* Home and the whole library are two destinations, never one page
                 stacked on the other. Home is what the workspace root shows;
                 All items switches to the library in place and says so. */}
-            {(!libraryOpen || homePane !== "profile") && (
               <div className={homeStyles.frame}>
-                {homePane === "home" ? <PersonalHome pool={pool} history={openHistory} onOpenPost={onOpenPost} session={homeSession}
+                <RetainedWorkspacePane active={homePane === "home"}><PersonalHome pool={pool} history={openHistory} onOpenPost={onOpenPost} session={homeSession}
                   onNews={() => onSelectPane?.("news")}
                   capture={canManageItems && <>
                     <HomeCreateMenu pool={pool} onCreateItem={onCreateItem} onBuildItemType={onBuildItemType} />
                     {creationFolder ? <UniversalItemComposer focusRequestKey={captureFocusRequestKey} blog={pool.blog} handle={pool.blog.handle} folder={creationFolder} destinations={creationFolders} onCreateItem={onCreateItem} onOpenCapturedItem={(post) => { if (post.id) onOpenPost(post.id); }} /> : firstLoop}
                   </>}
-                /> : homePane === "bookmarks" ? <section aria-label="Bookmarks"><h1 className={homeStyles.pageTitle}>Bookmarks</h1><SavedArticles session={homeSession} state="bookmarked" folders={pool.folders} handle={pool.blog.handle} blogId={pool.blogId} onOpenPost={onOpenPost} /></section> : homePane === "news" ? <HomeNews
+                /></RetainedWorkspacePane>
+                <RetainedWorkspacePane active={homePane === "bookmarks"}><section aria-label="Bookmarks"><h1 className={homeStyles.pageTitle}>Bookmarks</h1><SavedArticles session={homeSession} state="bookmarked" folders={pool.folders} handle={pool.blog.handle} blogId={pool.blogId} onOpenPost={onOpenPost} /></section></RetainedWorkspacePane>
+                <RetainedWorkspacePane active={homePane === "news"}><HomeNews
                   session={homeSession}
                   handle={pool.blog.handle}
                   blogId={pool.blogId}
@@ -846,13 +847,14 @@ export function WorkspaceRootLanding({
                   onOpenPost={onOpenPost}
                   onOpenSection={onOpenSection}
                   onUseAssistantPrompt={onUseAssistantPrompt}
-                /> : homePane === "notes" ? <ArtifactNotes session={homeSession} pool={pool} onOpenPost={onOpenPost} onOpenSection={onOpenSection} onCreateNote={openFirstNote} notice={firstFolderError} creating={creatingFirstFolder} onBrowseFolders={onBrowseFolders} canManage={canManageItems}
+                /></RetainedWorkspacePane>
+                <RetainedWorkspacePane active={homePane === "notes"}><ArtifactNotes session={homeSession} pool={pool} onOpenPost={onOpenPost} onOpenSection={onOpenSection} onCreateNote={openFirstNote} notice={firstFolderError} creating={creatingFirstFolder} onBrowseFolders={onBrowseFolders} canManage={canManageItems}
                   creationControls={<HomeCreateMenu heading="Writing" headingId="artifact-notes-title" pool={pool} onCreateItem={onCreateItem} onBuildItemType={onBuildItemType} />}
-                /> : homePane === "headlines" ? <ArtifactHeadlines handle={pool.blog.handle} blogId={pool.blogId} onOpenPost={onOpenPost} /> :
-                <ArtifactProfile pool={pool} history={openHistory} onOpenPost={onOpenPost} onOpenSection={onOpenSection}
-                  onShowLibrary={() => setLibraryOpen(true)} onBrowseFolders={onBrowseFolders} onOpenAssistant={onOpenAssistant} settingsHref={settingsHref} canManage={canManageItems} />}
+                /></RetainedWorkspacePane>
+                <RetainedWorkspacePane active={homePane === "headlines"}><ArtifactHeadlines handle={pool.blog.handle} blogId={pool.blogId} onOpenPost={onOpenPost} /></RetainedWorkspacePane>
+                <RetainedWorkspacePane active={homePane === "profile" && !libraryOpen}><ArtifactProfile pool={pool} history={openHistory} onOpenPost={onOpenPost} onOpenSection={onOpenSection}
+                  onShowLibrary={() => setLibraryOpen(true)} onBrowseFolders={onBrowseFolders} onOpenAssistant={onOpenAssistant} settingsHref={settingsHref} canManage={canManageItems} /></RetainedWorkspacePane>
               </div>
-            )}
             {libraryOpen && homePane === "profile" && (
             <section className={`workspace-recent is-view-${recentViewMode}`}>
               <header className="workspace-library-heading">
@@ -1095,7 +1097,7 @@ export function LocalWorkspaceContent({
   let activePost: WorkspacePoolPost | null = null;
   const rootPage = (
     <WorkspaceRootLanding
-      key={`${pool.blogId}:${homePane}:${viewsHydrated}`}
+      key={`${pool.blogId}:${viewsHydrated}`}
       canManageItems={canManagePost}
       homePane={homePane}
       onSelectPane={onSelectPane}
@@ -1272,8 +1274,11 @@ export function LocalWorkspaceContent({
 
   return (
     <>
-      <div className="local-workspace-surface" hidden={editorVisible}>
-        {page}
+      <RetainedWorkspacePane active={page === rootPage && !editorVisible}>
+        <div className="local-workspace-surface">{rootPage}</div>
+      </RetainedWorkspacePane>
+      <div className="local-workspace-surface" hidden={editorVisible || page === rootPage}>
+        {page === rootPage ? null : page}
       </div>
       {shouldWarmEditor && activePost && (
         <div className="local-workspace-surface" hidden={!editorVisible}>

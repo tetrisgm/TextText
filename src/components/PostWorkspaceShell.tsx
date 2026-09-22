@@ -1392,7 +1392,8 @@ function LocalWorkspaceShell({
       const target = Math.min(saved, Math.max(0, content.scrollHeight - content.clientHeight));
       if (Math.abs(content.scrollTop - target) > 1) content.scrollTop = target;
       const reached = Math.abs(content.scrollTop - saved) <= 1 &&
-        (isItem || !content.querySelector('[data-scroll-restore-pending="true"]'));
+        (isItem || !Array.from(content.querySelectorAll<HTMLElement>('[data-scroll-restore-pending="true"]'))
+          .some((element) => element.getClientRects().length > 0));
       if (reached) scrollSettledRef.current = true;
       if (finished(performance.now(), reached)) {
         release();

@@ -869,3 +869,38 @@ lint has two existing warnings and no errors. Logs:
 This server change is committed after the port 3129 production build. It will
 be included in the next consolidated build; that running preview is still the
 verified designer build above.
+
+## Retained destinations and production warm navigation
+
+Removed the destination from the landing component's identity. Visited Home,
+News, Bookmarks, Writing, and profile panes retain their UI state through React
+Activity boundaries; unvisited panes render nothing. The root also survives a
+folder or document visit. Hidden effects/subscriptions stop, and scroll settling
+ignores hidden panes. React Activity behavior was checked against the installed
+React types and https://react.dev/reference/react/Activity.
+
+Production `.texttext/personal-build-retained`, deployment `personal-retained`,
+port 3130 includes this change and bounded migration reads. Verified Home capture
+text across News and Notes-folder visits; cleared the verification draft after
+checking. Writing's Articles selection survived Bookmarks and return. Desktop
+dark screenshot at 1280x720 showed correct active navigation and both rails,
+with only the active destination visible.
+
+Used temporary CDP keyboard timing instrumentation in this production page:
+real Enter navigation, wait for the destination DOM attribute/visible root,
+then two animation frames. Ran 20 samples per destination, 80 total. Warm p95
+in milliseconds: Home 44.3, Writing 35.9, Bookmarks 32.6, News 35.8; maxima were
+45.1, 39.6, 41.7, 36.8. Removed the instrumentation afterward. These timings
+measure destination commit-to-paint on the existing visual-demo fixture after
+warming its data. They do not claim cold readiness or the 5,000-item UI gate.
+
+Default regression: 388 files / 3,603 tests passed; 17 opt-in files / 130 tests
+skipped. Production build and TypeScript passed; targeted lint has 17 existing
+warnings, no errors. The added render tests verify unvisited destinations do
+not render and active destinations render on first paint; state retention was
+checked in the running browser above. Logs:
+`/tmp/texttext-retained-{build,server,tests,tsc,lint}.log`.
+
+Open: folder rendering consolidation; large-fixture and cold performance;
+phone/laptop/wide appearance and failure-state acceptance; native capture and
+remaining live-agent/collaboration journeys. The full plan remains active.
