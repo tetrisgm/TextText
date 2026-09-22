@@ -758,3 +758,21 @@ Seven targeted suites passed 136 tests; the expanded tool-schema suite passed
 Logs: `/tmp/texttext-explicit-migration-{tests,tsc,lint}.log` and
 `/tmp/texttext-migration-schema-tests.log`. Browser and production acceptance
 remain open, as do independent folder views and unified library capabilities.
+
+## Shared item and folder type library
+
+Both entry points now mount WorkspaceTypeLibrary, which loads authoritative
+ownership, versions and usage once and owns import, duplicate, export, restore
+and retire operations. TemplateGallery requires the library instead of inventing
+ownership, version history and impact from bare definitions. FolderLookPicker
+now handles only applying the folder default and its status; its duplicate
+library-loading/lifecycle implementation has been removed.
+
+On development preview 3100, opened the existing Book review item's library:
+Import was visible, Mine showed 3, and the original Review with starter displayed
+one item, one folder (Notes), version 2 Current and version 1 Restore. Remix,
+Export and Retire were present. No template was applied or document changed.
+The independent imported copy correctly showed zero usage and no invented
+history. Three targeted suites pass (18 tests), TypeScript and lint pass
+(two existing editor warnings). Logs: `/tmp/texttext-shared-library-*`.
+Production acceptance and gallery-to-designer integration remain open.

@@ -28,7 +28,7 @@ it.each(["subtitle", "fields"])("R12: look preview keeps a document containing o
   if (field === "subtitle") document.content.subtitle = "My actual subtitle";
   else document.content.fields = { project: "My actual project", status: "In progress" };
   const source = readFileSync("src/components/document/TemplateGallery.tsx", "utf8");
-  const code = source.slice(source.indexOf("function isBlank("), source.indexOf("function inferredLibrary("));
+  const code = source.slice(source.indexOf("function isBlank("), source.indexOf("function downloadLook("));
   const js = ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   const isBlank = new Function(js + ";return isBlank;")();
   expect(isBlank(document), "meaningful content must not be replaced by the template example").toBe(false);

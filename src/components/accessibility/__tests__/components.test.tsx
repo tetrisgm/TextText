@@ -130,7 +130,7 @@ it("look search permits Escape but preserves Backspace text editing", () => {
   const listeners = new Map<string, (event: unknown) => void>();
   vi.stubGlobal("window", { document: { body: { style: {} }, documentElement: { style: {} } }, addEventListener: (name: string, fn: (event: unknown) => void) => listeners.set(name, fn), removeEventListener: vi.fn() });
   const close = vi.fn();
-  render(() => TemplateGallery({ document: emptyDocumentSnapshot(), templates: BUILTIN_TEMPLATES.slice(0, 2), onClose: close, onApply: vi.fn() }));
+  render(() => TemplateGallery({ document: emptyDocumentSnapshot(), library: BUILTIN_TEMPLATES.slice(0, 2).map(definition => ({ definition, scope: "texttext" as const, createdAt: null, versions: [{ definition, createdAt: null }], impact: { itemCount: 0, folderCount: 0, folderNames: [] } })), onClose: close, onApply: vi.fn() }));
   const cleanups = hooks.effects.map(effect => effect());
   const backspace = key("Backspace", { target: { matches: () => true } }); listeners.get("keydown")?.(backspace); expect(close).not.toHaveBeenCalled();
   const escape = key("Escape", { target: { matches: () => true } }); listeners.get("keydown")?.(escape); expect(close).toHaveBeenCalledOnce(); expect(escape.preventDefault).toHaveBeenCalledOnce();

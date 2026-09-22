@@ -26,7 +26,7 @@ window.a11yCalls = [];
 const comments: Array<Record<string, unknown>> = [];
 window.a11yAction = async (name, args) => {
   window.a11yCalls.push(name);
-  if (name === "getFolderLookAction") return { allowed: true, templates: BUILTIN_TEMPLATES.slice(0, 4), library: [], current: null, targetItemCount: 2 };
+  if (name === "getTypeLibraryAction") return { allowed: true, templates: BUILTIN_TEMPLATES.slice(0, 4), library: BUILTIN_TEMPLATES.slice(0, 4).map(definition => ({ definition, scope: "texttext", createdAt: null, versions: [{ definition, createdAt: null }], impact: { itemCount: 0, folderCount: 0, folderNames: [] } })), current: null };
   if (name === "listItemCommentsAction") return [...comments];
   if (name === "addItemCommentAction") {
     comments.push({ id: String(comments.length), body: args[2], authorName: "Reader", parentId: null, createdAt: "2026-09-06T12:00:00Z", updatedAt: "2026-09-06T12:00:00Z", resolved: false, anchor: null });

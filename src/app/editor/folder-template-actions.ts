@@ -32,7 +32,6 @@ import {
 export type FolderLookState = {
   allowed: boolean;
   current: { id: string; version: number } | null;
-  templates: TemplateDefinition[];
   library: TemplateLibraryEntry[];
 };
 
@@ -55,25 +54,23 @@ async function ownerAccess(handleInput: unknown) {
   return { handle, blogId: access.blogId, ownerId: access.ownerId };
 }
 
-export async function getFolderLookAction(
+export async function getTypeLibraryAction(
   handleInput: unknown,
-  folderPathInput: unknown,
+  folderPathInput?: unknown,
 ): Promise<FolderLookState> {
   try {
     const access = await ownerAccess(handleInput);
-    const folder = await getFolderByPath(access.handle, cleanPath(folderPathInput));
+    const folder = folderPathInput === undefined ? null : await getFolderByPath(access.handle, cleanPath(folderPathInput));
     const library = await listDocumentTemplateLibrary(access.blogId, access.ownerId);
     return {
       allowed: true,
       current: folder?.defaultTemplate ?? null,
-      templates: library.map((entry) => entry.definition),
       library,
     };
   } catch {
     return {
       allowed: false,
       current: null,
-      templates: [],
       library: [],
     };
   }

@@ -1,6 +1,5 @@
 "use client";
 
-import { exportTemplateLookAction } from "@/app/editor/folder-template-actions";
 import { DocumentUndoManager, replaceSharedText } from "@/lib/collab/text-transactions";
 
 import { dismissOpenDetails } from "@/components/accessibility/keyboard";
@@ -76,7 +75,7 @@ import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { DocumentRenderer } from "./DocumentRenderer";
 import { peerLabelInk } from "@/lib/collab/peer-color";
 import { MarkdownSurface } from "./MarkdownSurface";
-import { TemplateGallery } from "./TemplateGallery";
+import { WorkspaceTypeLibrary } from "./WorkspaceTypeLibrary";
 import {
   FieldInput,
   collectBoundFields,
@@ -1466,10 +1465,9 @@ export function UnifiedDocumentEditor({
   return (
     <section className="tt-unified-editor" role="main" aria-label="Edit item" data-ai-item-id={collab.postId} onKeyDown={handleKeyboard}>
       {choosingTemplate && availableTemplates && availableTemplates.length > 0 && (
-        <TemplateGallery
-          onExport={(selected) => exportTemplateLookAction(blog.handle, selected.id, selected.version)}
+        <WorkspaceTypeLibrary
+          handle={blog.handle}
           document={document}
-          templates={availableTemplates}
           targetItemCount={1}
           onClose={() => setChoosingTemplate(false)}
           onApply={(selected) => {

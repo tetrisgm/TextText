@@ -56,18 +56,6 @@ function isBlank(document: DocumentSnapshot): boolean {
   );
 }
 
-function inferredLibrary(
-  templates: readonly TemplateDefinition[],
-): TemplateLibraryEntry[] {
-  return templates.map((definition) => ({
-    definition,
-    scope: definition.id.startsWith("texttext.") ? "texttext" : "workspace",
-    createdAt: null,
-    versions: [{ definition, createdAt: null }],
-    impact: { itemCount: 0, folderCount: 0, folderNames: [] },
-  }));
-}
-
 function downloadLook(template: TemplateDefinition, text = serializeTemplateLook(template)) {
   const blob = new Blob([text], {
     type: "application/json",
@@ -87,7 +75,6 @@ type ImportDraft = {
 
 export function TemplateGallery({
   document,
-  templates,
   library,
   targetItemCount = 0,
   onApply,
@@ -101,8 +88,7 @@ export function TemplateGallery({
   onRetire,
 }: {
   document: DocumentSnapshot;
-  templates: readonly TemplateDefinition[];
-  library?: readonly TemplateLibraryEntry[];
+  library: readonly TemplateLibraryEntry[];
   targetItemCount?: number;
   onApply: (template: TemplateDefinition) => void;
   onClose: () => void;
@@ -123,8 +109,8 @@ export function TemplateGallery({
   ) => Promise<TemplateDefinition>;
 }) {
   const entries = useMemo(
-    () => (library?.length ? [...library] : inferredLibrary(templates)),
-    [library, templates],
+    () => [...library],
+    [library],
   );
   const applied = document.presentation.template;
   const isApplied = (template: TemplateDefinition) =>
@@ -431,11 +417,11 @@ export function TemplateGallery({
               <dl className={styles.impact}>
                 <div>
                   <dt>Items using it</dt>
-                  <dd>{library ? (previewEntry?.impact.itemCount ?? 0) : "Not available"}</dd>
+                  <dd>{previewEntry?.impact.itemCount ?? 0}</dd>
                 </div>
                 <div>
                   <dt>Folders using it</dt>
-                  <dd>{library ? (previewEntry?.impact.folderCount ?? 0) : "Not available"}</dd>
+                  <dd>{previewEntry?.impact.folderCount ?? 0}</dd>
                 </div>
                 <div>
                   <dt>This change</dt>

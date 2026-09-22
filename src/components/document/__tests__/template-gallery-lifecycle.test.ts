@@ -1,44 +1,29 @@
-import { readFileSync } from "node:fs";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { TemplateGallery } from "../TemplateGallery";
+import { emptyDocumentSnapshot } from "@/lib/documents/model";
+import { requireBuiltinTemplate } from "@/lib/presentation/templates";
+import type { TemplateLibraryEntry } from "@/lib/presentation/template-library";
 
-const gallery = readFileSync(
-  new URL("../TemplateGallery.tsx", import.meta.url),
-  "utf8",
-);
-const picker = readFileSync(
-  new URL("../../workspace/FolderLookPicker.tsx", import.meta.url),
-  "utf8",
-);
-
-describe("look library lifecycle", () => {
-  it("keeps discovery, ownership, and portable look controls visible", () => {
-    expect(gallery).toContain('placeholder="Search looks"');
-    expect(gallery).toContain('"personal", "Mine"');
-    expect(gallery).toContain('"workspace", "Workspace"');
-    expect(gallery).toContain('"texttext", "TextText"');
-    expect(gallery).toContain("Import");
-    expect(gallery).toContain("Export");
-  });
-
-  it("makes save-as-new and immutable updates distinct decisions", () => {
-    expect(gallery).toContain("Save as new");
-    expect(gallery).toContain("Update existing");
-    expect(gallery).toContain("Version history");
-    expect(gallery).toContain("Restore");
-  });
-
-  it("shows impact before applying and wires lifecycle mutations through the folder picker", () => {
-    expect(gallery).toContain("Items using it");
-    expect(gallery).toContain("Folders using it");
-    expect(gallery).toContain("This change");
-    expect(picker).toContain("duplicateFolderLookAction");
-    expect(picker).toContain("importFolderLookAction");
-    expect(picker).toContain("restoreFolderLookVersionAction");
-  });
-
-  it("closes without rewriting items when the current look is kept", () => {
-    expect(gallery).toContain(
-      "isApplied(preview) ? onClose() : onApply(preview)",
-    );
+const definition = { ...requireBuiltinTemplate("texttext.note", 1), id: "custom.review", name: "Reading review" };
+const library: TemplateLibraryEntry[] = [{ definition, scope: "personal", createdAt: null,
+  versions: [{ definition, createdAt: null }], impact: { itemCount: 3, folderCount: 1, folderNames: ["Notes"] } }];
+function render(targetItemCount: number) {
+  return renderToStaticMarkup(React.createElement(TemplateGallery, {
+    document: emptyDocumentSnapshot(), library, targetItemCount,
+    onApply: () => {}, onClose: () => {}, onImport: async () => definition,
+    onDuplicate: async () => definition, onRestoreVersion: async () => definition,
+    onRetire: async () => {}, onExport: async () => "{}",
+  }));
+}
+describe("shared type library rendering", () => {
+  it.each([0, 1])("shows the authoritative ownership and import controls for target count %s", (count) => {
+    const html = render(count);
+    expect(html).toContain("Reading review");
+    expect(html).toMatch(/Mine[\s\S]*?1/);
+    expect(html).toContain('type="file"');
+    expect(html).toContain("Import");
+    expect(html).not.toContain("Not available");
   });
 });

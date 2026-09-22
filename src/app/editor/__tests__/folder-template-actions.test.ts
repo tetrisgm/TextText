@@ -44,7 +44,7 @@ import {
   duplicateFolderLookAction,
   exportTemplateLookAction,
   setFolderLookAction,
-  getFolderLookAction,
+  getTypeLibraryAction,
   importFolderLookAction,
   restoreFolderLookVersionAction,
   retireFolderLookAction,
@@ -127,9 +127,9 @@ describe("folder look lifecycle actions", () => {
   });
 
   it("returns lifecycle metadata without fetching folder document bodies", async () => {
-    const result = await getFolderLookAction("Writer", "blog");
+    const result = await getTypeLibraryAction("Writer", "blog");
     expect(result.allowed).toBe(true);
-    expect(result.templates).toEqual([article]);
+    expect(result.library.map(entry => entry.definition)).toEqual([article]);
     expect(mocks.getFolderPosts).not.toHaveBeenCalled();
     expect(mocks.listDocumentTemplateLibrary).toHaveBeenCalledWith(
       "blog-id",
