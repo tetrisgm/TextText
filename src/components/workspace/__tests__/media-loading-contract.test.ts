@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const folderSource = readFileSync(
-  new URL("../../FolderPage.tsx", import.meta.url),
+  new URL("../../document/DocumentRenderer.tsx", import.meta.url),
   "utf8",
 );
 const shellSource = [
@@ -22,7 +22,7 @@ const shellSource = [
 
 describe("workspace media loading", () => {
   it("does not eagerly fetch offscreen folder-feed media", () => {
-    expect(folderSource).toContain('preload="none"');
+    expect(folderSource).toContain('loading={preview ? "lazy" : undefined}');
     expect(folderSource).toContain('loading="lazy"');
   });
 

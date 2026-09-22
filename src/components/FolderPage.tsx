@@ -197,39 +197,27 @@ import {
   useTransition,
 } from "react";
 import type { CSSProperties, MouseEvent, ReactNode } from "react";
-import { isNewTabClick } from "@/lib/workspace/selection-modifiers";
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { renameFolderAction } from "@/app/editor/actions";
-import { BookmarkCard } from "@/components/bookmarks/BookmarkCard";
+import { FolderCollectionItem } from "@/components/workspace/FolderCollectionItem";
+import collectionStyles from "@/components/workspace/FolderCollectionItem.module.css";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { DocumentEngineStyles } from "@/components/document/DocumentEngineStyles";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
-import { TagChips } from "@/components/TagChips";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import { WorkspaceActionSearch } from "@/components/workspace/WorkspaceActionSearch";
 import { useWorkspaceChoice } from "@/components/workspace/useWorkspaceChoice";
 import { legacyTemplateId } from "@/lib/documents/legacy";
 import { useFolderContentPane } from "@/components/workspace/useFolderContentPane";
 import {
-  WorkspaceItemActions,
-  WorkspaceItemStar,
-} from "@/components/workspace/WorkspaceItemActions";
-import {
   useWorkspaceViewMode,
   WorkspaceViewModeControl,
   type WorkspaceViewMode,
 } from "@/components/workspace/WorkspaceViewModeControl";
-import {
-  resetSpatialCardTilt,
-  updateSpatialCardTilt,
-} from "@/components/workspace/spatial-card";
-import { formatArticleDate, isVideoFile, postBodyPreview } from "@/lib/content";
+import { postBodyPreview } from "@/lib/content";
 import type { Blog, Folder, Post } from "@/lib/content";
-import { resolveCoverSource } from "@/lib/cover";
 import type { TemplateReference } from "@/lib/documents/model";
-import { documentFromLegacyPost } from "@/lib/documents/legacy";
 import {
   queryMixedCollectionItems, collectionDateGroups, collectionBoardGroups,
   collectionCalendarMonth, collectionDayKey, collectionHeatmapDays,
@@ -242,7 +230,6 @@ import {
 } from "@/lib/presentation/collection-views";
 import { blogHomePath, blogPostPath } from "@/lib/public-paths";
 import { updateFolder } from "@/lib/pool/store";
-import { shouldSuppressNativeItemSelection } from "@/lib/workspace-selection";
 import {
   CREATE_FOLDER_ITEM_EVENT,
   EDIT_FOLDER_TITLE_EVENT,
@@ -256,23 +243,10 @@ import {
 } from "@/components/workspace/UniversalItemComposer";
 
 
-// Loaded on demand: only a folder whose items render as a collection needs
-// the document renderer, and with it react-markdown. The list path itself
-// never parses Markdown.
-const DocumentCollectionRenderer = dynamic(() =>
-  import("@/components/document/DocumentRenderer").then(
-    (module) => module.DocumentCollectionRenderer,
-  ),
-);
-
 type FolderViewMode = WorkspaceViewMode;
 type FolderDeleteFolder = (folder: Folder) => Promise<void> | void;
 function itemKey(post: Post): string {
   return post.id ?? post.slug;
-}
-
-function itemTitle(post: Post): string {
-  return post.title.trim() || "Untitled";
 }
 
 function domSafeId(value: string): string {
@@ -283,10 +257,6 @@ function postOptionId(postId: string | null | undefined): string | undefined {
   return postId ? `workspace-post-${domSafeId(postId)}` : undefined;
 }
 
-/** The tooltip on a row: the gestures that do something to it. */
-const ROW_HOVER_HINT =
-  "Open  ·  \u2318 click: new tab  ·  \u2325 click: add to selection  ·  \u21e7 click: extend";
-
 function shouldOpenLocally(event: MouseEvent<HTMLAnchorElement>): boolean {
   return (
     event.button === 0 &&
@@ -295,42 +265,6 @@ function shouldOpenLocally(event: MouseEvent<HTMLAnchorElement>): boolean {
     !event.shiftKey &&
     !event.altKey
   );
-}
-
-function firstBodyLine(body: string): string {
-  return (
-    body
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .find(Boolean) ?? ""
-  );
-}
-
-function stripLeadingMarkdown(line: string): string {
-  return line.replace(/^[\s#*>`-]+/, "").trim();
-}
-
-function previewLine(body: string): string {
-  const line = stripLeadingMarkdown(firstBodyLine(body));
-  if (line.length <= 150) return line;
-  const sliced = line.slice(0, 147).trimEnd();
-  const wordBreak = sliced.lastIndexOf(" ");
-  return `${wordBreak > 60 ? sliced.slice(0, wordBreak) : sliced}...`;
-}
-
-function expandedPreview(body: string): string {
-  const text = body
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/!\[[^\]]*]\([^)]*\)/g, " ")
-    .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
-    .replace(/^[\s#*>`-]+/gm, "")
-    .replace(/[*_~]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (text.length <= 900) return text;
-  const sliced = text.slice(0, 897).trimEnd();
-  const wordBreak = sliced.lastIndexOf(" ");
-  return `${wordBreak > 600 ? sliced.slice(0, wordBreak) : sliced}...`;
 }
 
 /**
@@ -797,11 +731,10 @@ function UniversalFolderContents({
     ? selectCollectionView(collectionDefinition.collection, chosenView?.viewId ?? "")
     : undefined, [collectionDefinition, chosenView?.viewId]);
   // All-items uses the standard list. Explicit custom views use their renderer.
-  const usesBuiltInLook = !collectionDefinition;
   const collectionRows = useMemo(() => queryMixedCollectionItems(
     items.map((post) => ({
       post,
-      templateId: post.document?.presentation.template.id ?? legacyTemplateId(post.type),
+      templateId: post.document?.presentation.template.id ?? post.template?.id ?? legacyTemplateId(post.type),
       pinned: Boolean(post.pinned),
       createdAt: post.date ?? null,
       updatedAt: post.updatedAt ?? post.date ?? null,
@@ -878,440 +811,18 @@ function UniversalFolderContents({
           >
             {items.length ? "No items match this view. Show all folder items to remove its filters." : canCreateItems ? "This folder is empty. Keep related items together here. Create the first one to get started." : "This folder is empty. Items added by its owner will appear here."}
           </FolderEmptyCard>
-        )) : folder.mode === "bookmarks" && usesBuiltInLook ? (
-          <div
-            className={`bookmark-folder-collection is-${viewMode}`}
-            role="listbox"
-            aria-label="Bookmarks"
-            aria-activedescendant={postOptionId(selectedPostId)}
-          >
-            <GrowingGrid items={sorted} selectedIndex={selectedRowIndex}>
-              {(post) => {
-              const selected = Boolean(
-                post.id &&
-                (selectedPostIds?.has(post.id) ?? post.id === selectedPostId),
-              );
-              return (
-                <BookmarkCard
-                  key={itemKey(post)}
-                  post={post}
-                  editPath={blogPostPath(blog, post)}
-                  handle={handle}
-                  owner={canEditItems}
-                  selected={selected}
-                  viewMode={viewMode}
-                  optionId={postOptionId(post.id)}
-                  optionTabIndex={post.id === selectedPostId ? 0 : -1}
-                  onCaptureResolved={onCaptureResolved}
-                  onDeletePost={onDeleteItem}
-                  onOpenPost={onOpenPost}
-                  onOpenPostInNewTab={onOpenPostInNewTab}
-                  onDragItems={onDragItems}
-                  onOpenTag={onOpenTag}
-                  onSelect={() => post.id && onSelectPost?.(post.id)}
-                  onItemClick={(event) =>
-                    post.id ? (onItemClick?.(post.id, event) ?? true) : true
-                  }
-                />
-              );
-              }}
-            </GrowingGrid>
-          </div>
-        ) : folder.mode === "blog" && usesBuiltInLook ? (
-          // The stock blog feed is hardcoded markup that predates the document
-          // engine, so it renders the same whatever look the folder carries.
-          // It stays as the fast path for a folder still on the built-in
-          // Article look, which is what it was drawn for; give the folder any
-          // other look - including one an agent just authored - and the
-          // template drives the index instead. Expressing this feed as
-          // `article.collection` would remove the branch entirely.
-          <div
-            className="blog-folder-feed"
-            role="listbox"
-            aria-label="Blog posts"
-            aria-activedescendant={postOptionId(selectedPostId)}
-          >
-            <WindowedRows items={sorted} selectedIndex={selectedRowIndex}>
-              {(post) => {
-              const selected = Boolean(
-                post.id &&
-                (selectedPostIds?.has(post.id) ?? post.id === selectedPostId),
-              );
-              const preview = previewLine(
-                post.excerpt || postBodyPreview(post),
-              );
-              const cover = resolveCoverSource(post).src;
-              return (
-                <article
-                  key={itemKey(post)}
-                  id={postOptionId(post.id)}
-                  className={`blog-folder-feed-item${
-                    cover ? "" : " is-no-cover"
-                  }${selected ? " is-command-selected" : ""}`}
-                  role="option"
-                  aria-selected={selected}
-                  tabIndex={post.id === selectedPostId ? 0 : -1}
-                  data-workspace-post-id={post.id}
-                  onFocus={() => post.id && onSelectPost?.(post.id)}
-                  onMouseDown={(event) => {
-                    if (shouldSuppressNativeItemSelection(event)) {
-                      event.preventDefault();
-                    }
-                  }}
-                >
-                  <div className="blog-folder-feed-star">
-                    <WorkspaceItemStar
-                      handle={handle}
-                      owner={canEditItems}
-                      post={post}
-                    />
-                  </div>
-                  <Link
-                    className="blog-folder-feed-link"
-                    href={blogPostPath(blog, post)}
-                    prefetch={onOpenPost ? false : undefined}
-                    onClick={(event) => {
-                      // Cmd click opens a background tab, the way it opens a
-                      // link anywhere else. Option is what toggles selection,
-                      // so the two never collide. BEFORE the selection
-                      // handler: opening a tab should not also move what is
-                      // selected.
-                      if (post.id && onOpenPostInNewTab && isNewTabClick(event)) {
-                        event.preventDefault();
-                        onOpenPostInNewTab(post.id);
-                        return;
-                      }
-                      if (
-                        post.id &&
-                        onItemClick &&
-                        !onItemClick(post.id, event)
-                      ) {
-                        event.preventDefault();
-                        return;
-                      }
-                      if (!onOpenPost || !shouldOpenLocally(event)) return;
-                      event.preventDefault();
-                      onOpenPost(post);
-                    }}
-                    onAuxClick={(event) => {
-                      // Middle click, same as everywhere else.
-                      if (event.button !== 1 || !post.id) return;
-                      if (!onOpenPostInNewTab) return;
-                      event.preventDefault();
-                      onOpenPostInNewTab(post.id);
-                    }}
-                  >
-                    <span className="blog-folder-feed-copy">
-                      <span className="blog-folder-feed-meta">
-                        {formatArticleDate(post.updatedAt ?? post.date, {
-                          style: "short",
-                        })}
-                      </span>
-                      <span className="blog-folder-feed-title">
-                        {itemTitle(post)}
-                      </span>
-                      {preview && (
-                        <span className="blog-folder-feed-excerpt">
-                          {preview}
-                        </span>
-                      )}
-                    </span>
-                    {cover && (
-                      <span
-                        className="blog-folder-feed-cover"
-                        aria-hidden="true"
-                      >
-                        {isVideoFile(cover) ? (
-                          <video
-                            src={cover}
-                            muted
-                            playsInline
-                            preload="none"
-                          />
-                        ) : (
-                          // User media can be remote, so plain img avoids config.
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={cover}
-                            alt=""
-                            decoding="async"
-                            loading="lazy"
-                          />
-                        )}
-                      </span>
-                    )}
-                  </Link>
-                  <TagChips
-                    blog={blog}
-                    className="blog-folder-feed-tags"
-                    onOpenTag={onOpenTag}
-                    tags={post.tags}
-                  />
-                  {canEditItems && (
-                    <div className="blog-folder-feed-actions">
-                      <WorkspaceItemActions
-                        blog={blog}
-                        handle={handle}
-                        href={blogPostPath(blog, post)}
-                        owner
-                        post={post}
-                        onDeletePost={onDeleteItem}
-                      />
-                    </div>
-                  )}
-                </article>
-              );
-              }}
-            </WindowedRows>
-          </div>
-        ) : viewMode === "list" && usesBuiltInLook ? (
-          <div
-            className="post-folder-list workspace-folder-row-list"
-            role="listbox"
-            aria-label="Folder items"
-            aria-activedescendant={postOptionId(selectedPostId)}
-          >
-            <WindowedRows items={sorted} selectedIndex={selectedRowIndex}>
-              {(post) => {
-              const preview = previewLine(
-                post.excerpt || postBodyPreview(post),
-              );
-              const selected = Boolean(
-                post.id &&
-                (selectedPostIds?.has(post.id) ?? post.id === selectedPostId),
-              );
-              return (
-                <div
-                  key={itemKey(post)}
-                  id={postOptionId(post.id)}
-                  className={`post-folder-row-shell${
-                    selected ? " is-command-selected" : ""
-                  }`}
-                  role="option"
-                  aria-selected={selected}
-                  tabIndex={post.id === selectedPostId ? 0 : -1}
-                  data-workspace-post-id={post.id}
-                  onFocus={() => post.id && onSelectPost?.(post.id)}
-                >
-                  <WorkspaceItemStar
-                    handle={handle}
-                    owner={canEditItems}
-                    post={post}
-                  />
-                  <Link
-                    className="post-folder-row"
-                    href={blogPostPath(blog, post)}
-                    // Draggable only once selected: an unselected row keeps
-                    // the rubber-band, and a selected one moves. Both
-                    // gestures cannot start from the same pixel, because the
-                    // browser's own drag preempts the marquee.
-                    draggable={selected}
-                    onDragStart={(event) => {
-                      if (!post.id) return;
-                      onDragItems?.(event.dataTransfer, post.id);
-                    }}
-                    // What the keys do here, on hover, as the owner asked.
-                    title={ROW_HOVER_HINT}
-                    prefetch={onOpenPost ? false : undefined}
-                    onMouseDown={(event) => {
-                      if (shouldSuppressNativeItemSelection(event)) {
-                        event.preventDefault();
-                      }
-                    }}
-                    onClick={(event) => {
-                      // Cmd click opens a background tab, the way it opens a
-                      // link anywhere else. Option is what toggles selection,
-                      // so the two never collide. BEFORE the selection
-                      // handler: opening a tab should not also move what is
-                      // selected.
-                      if (post.id && onOpenPostInNewTab && isNewTabClick(event)) {
-                        event.preventDefault();
-                        onOpenPostInNewTab(post.id);
-                        return;
-                      }
-                      if (
-                        post.id &&
-                        onItemClick &&
-                        !onItemClick(post.id, event)
-                      ) {
-                        event.preventDefault();
-                        return;
-                      }
-                      if (!onOpenPost || !shouldOpenLocally(event)) return;
-                      event.preventDefault();
-                      onOpenPost(post);
-                    }}
-                    onAuxClick={(event) => {
-                      // Middle click, same as everywhere else.
-                      if (event.button !== 1 || !post.id) return;
-                      if (!onOpenPostInNewTab) return;
-                      event.preventDefault();
-                      onOpenPostInNewTab(post.id);
-                    }}
-                  >
-                    <span className="post-folder-row-title">
-                      {itemTitle(post)}
-                    </span>
-                    <span className="post-folder-row-meta">
-                      {formatArticleDate(post.updatedAt ?? post.date, {
-                        style: "short",
-                      })}
-                    </span>
-                    {preview && (
-                      <span className="post-folder-row-excerpt">{preview}</span>
-                    )}
-                  </Link>
-                  <TagChips
-                    blog={blog}
-                    className="post-folder-row-tags"
-                    onOpenTag={onOpenTag}
-                    tags={post.tags}
-                  />
-                  {canEditItems && (
-                    <WorkspaceItemActions
-                      blog={blog}
-                      handle={handle}
-                      href={blogPostPath(blog, post)}
-                      owner
-                      post={post}
-                      onDeletePost={onDeleteItem}
-                    />
-                  )}
-                </div>
-              );
-              }}
-            </WindowedRows>
-          </div>
-        ) : (
+        )) : (
           (() => {
             const renderUniversalCard = (post: (typeof sorted)[number]) => {
-              const selected = Boolean(
-                post.id &&
-                (selectedPostIds?.has(post.id) ?? post.id === selectedPostId),
-              );
-              // A note card is hand-made chrome for the built-in Note look.
-              // Once the folder carries an authored look, the template draws the row.
-              const isNote = folder.mode === "notes" && usesBuiltInLook;
-              const document = post.document ?? documentFromLegacyPost(post);
-              const reference = post.template ?? document.presentation.template;
-              const definition =
-                resolveTemplate(reference) ??
-                getBuiltinTemplate("texttext.article", 1)!;
-              const notePreview = expandedPreview(
-                postBodyPreview(post) || post.excerpt || "",
-              );
-              return (
-                <div
-                  key={itemKey(post)}
-                  id={postOptionId(post.id)}
-                  className={`universal-item-card${isNote ? " is-note-card" : ""}${
-                    selected ? " is-command-selected" : ""
-                  }`}
-                  role="option"
-                  aria-selected={selected}
-                  tabIndex={post.id === selectedPostId ? 0 : -1}
-                  data-workspace-post-id={post.id}
-                  onFocus={() => post.id && onSelectPost?.(post.id)}
-                  onPointerMove={updateSpatialCardTilt}
-                  onPointerLeave={resetSpatialCardTilt}
-                >
-                  <WorkspaceItemStar
-                    handle={handle}
-                    owner={canEditItems}
-                    post={post}
-                  />
-                  <Link
-                    className="universal-item-card-link"
-                    href={blogPostPath(blog, post)}
-                    // Draggable only once selected: an unselected row keeps
-                    // the rubber-band, and a selected one moves. Both
-                    // gestures cannot start from the same pixel, because the
-                    // browser's own drag preempts the marquee.
-                    draggable={selected}
-                    onDragStart={(event) => {
-                      if (!post.id) return;
-                      onDragItems?.(event.dataTransfer, post.id);
-                    }}
-                    // What the keys do here, on hover, as the owner asked.
-                    title={ROW_HOVER_HINT}
-                    prefetch={onOpenPost ? false : undefined}
-                    onMouseDown={(event) => {
-                      if (shouldSuppressNativeItemSelection(event)) {
-                        event.preventDefault();
-                      }
-                    }}
-                    onClick={(event) => {
-                      // Cmd click opens a background tab, the way it opens a
-                      // link anywhere else. Option is what toggles selection,
-                      // so the two never collide. BEFORE the selection
-                      // handler: opening a tab should not also move what is
-                      // selected.
-                      if (post.id && onOpenPostInNewTab && isNewTabClick(event)) {
-                        event.preventDefault();
-                        onOpenPostInNewTab(post.id);
-                        return;
-                      }
-                      if (
-                        post.id &&
-                        onItemClick &&
-                        !onItemClick(post.id, event)
-                      ) {
-                        event.preventDefault();
-                        return;
-                      }
-                      if (!onOpenPost || !shouldOpenLocally(event)) return;
-                      event.preventDefault();
-                      onOpenPost(post);
-                    }}
-                    onAuxClick={(event) => {
-                      // Middle click, same as everywhere else.
-                      if (event.button !== 1 || !post.id) return;
-                      if (!onOpenPostInNewTab) return;
-                      event.preventDefault();
-                      onOpenPostInNewTab(post.id);
-                    }}
-                  >
-                    {isNote ? (
-                      <span className="note-folder-card-content">
-                        <span className="note-folder-card-title">
-                          {itemTitle(post)}
-                        </span>
-                        {notePreview && (
-                          <span className="note-folder-card-preview">
-                            {notePreview}
-                          </span>
-                        )}
-                        <span className="note-folder-card-date">
-                          {formatArticleDate(post.updatedAt ?? post.date, {
-                            style: "short",
-                          })}
-                        </span>
-                      </span>
-                    ) : (
-                      <DocumentCollectionRenderer
-                        document={document}
-                        template={definition}
-                        documentId={`collection-${post.id ?? post.slug}`}
-                        metadata={{
-                          date: formatArticleDate(post.updatedAt ?? post.date, {
-                            style: "short",
-                          }),
-                        }}
-                      />
-                    )}
-                  </Link>
-                  {canEditItems && (
-                    <WorkspaceItemActions
-                      blog={blog}
-                      handle={handle}
-                      href={blogPostPath(blog, post)}
-                      owner
-                      post={post}
-                      onDeletePost={onDeleteItem}
-                    />
-                  )}
-                </div>
-              );
+              const selected = Boolean(post.id && (selectedPostIds?.has(post.id) ?? post.id === selectedPostId));
+              const reference = post.document?.presentation.template ?? post.template ?? { id: legacyTemplateId(post.type), version: 1 };
+              const definition = resolveTemplate(reference) ?? getBuiltinTemplate("texttext.article", 1)!;
+              return <FolderCollectionItem key={itemKey(post)} blog={blog} handle={handle} post={post} template={definition}
+                selected={selected} optionId={postOptionId(post.id)} tabIndex={post.id === selectedPostId ? 0 : -1}
+                owner={canEditItems} onSelect={() => post.id && onSelectPost?.(post.id)}
+                onOpenPost={onOpenPost} onOpenPostInNewTab={onOpenPostInNewTab} onDragItems={onDragItems}
+                onItemClick={(event) => post.id ? (onItemClick?.(post.id, event) ?? true) : true}
+                onOpenTag={onOpenTag} onDeleteItem={onDeleteItem} onCaptureResolved={onCaptureResolved} />;
             };
             if (heatmap) {
               const days = collectionHeatmapDays(heatmap.counts, new Date());
@@ -1523,9 +1034,9 @@ function UniversalFolderContents({
                 aria-activedescendant={postOptionId(selectedPostId)}
               >
                 <DocumentEngineStyles />
-                <GrowingGrid items={sorted} selectedIndex={selectedRowIndex}>
-                  {renderUniversalCard}
-                </GrowingGrid>
+                {collectionViewMode === "list" || collectionViewMode === "column" ? (
+                  <WindowedRows items={sorted} selectedIndex={selectedRowIndex}>{renderUniversalCard}</WindowedRows>
+                ) : <GrowingGrid items={sorted} selectedIndex={selectedRowIndex}>{renderUniversalCard}</GrowingGrid>}
               </div>
             );
           })()
@@ -1595,10 +1106,7 @@ export function FolderPage({
   blogId?: string;
   onOpenFolderPath?: (folderPath: string) => void;
 }) {
-  // A look says what shape its index is; the view control is the reader's
-  // override on top of that. Without this, a look declaring `list` still got
-  // a grid, because the container class came from the toggle alone - it read
-  // as the look not having applied at all.
+  // Folder layout is independent of its default type for new documents.
   const defaultViewMode: FolderViewMode = "list";
   const [viewMode, changeView] = useWorkspaceViewMode(
     `folder:v3:${folder.id}`,
@@ -1674,7 +1182,7 @@ export function FolderPage({
 
   return (
     <main
-      className={`post-folder-page is-mode-${folder.mode} is-view-${viewMode}`}
+      className={`post-folder-page ${collectionStyles.folder} is-mode-${folder.mode} is-view-${viewMode}`}
       aria-labelledby="post-folder-page-title"
     >
       <FolderActionBar

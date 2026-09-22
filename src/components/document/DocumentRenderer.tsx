@@ -436,7 +436,7 @@ function BoundMedia({
   return (
     <div className={className} style={style}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={src} alt={alt} decoding="async" />
+      <img src={src} alt={alt} loading={preview ? "lazy" : undefined} decoding="async" />
     </div>
   );
 }
@@ -448,10 +448,12 @@ function Gallery({
   assets,
   columns,
   attrs,
+  preview,
 }: {
   assets: DocumentAsset[];
   columns: number;
   attrs?: NodeAttrs;
+  preview?: boolean;
 }) {
   if (assets.length === 0) return null;
   return (
@@ -461,7 +463,9 @@ function Gallery({
         if (!src) return null;
         return (
           <figure key={asset.id}>
-            {asset.kind === "video" ? (
+            {asset.kind === "video" && preview ? (
+              <span className="tt-media-still" aria-label={asset.caption || "Video"} />
+            ) : asset.kind === "video" ? (
               <video src={src} controls playsInline preload="metadata" />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
@@ -1190,6 +1194,7 @@ function NodeRenderer({
               : []
           }
           attrs={attrs}
+          preview={preview}
           columns={node.columns ?? 3}
         />
       );
@@ -1360,6 +1365,7 @@ function DocumentCollectionRendererContent({
   metadata = {},
   slots,
   className,
+  preview = true,
 }: CollectionRendererProps) {
   const scopeId = `tt-${documentId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) || "collection-item"}`;
   const theme = { ...template.theme, ...document.presentation.theme };
@@ -1394,6 +1400,7 @@ function DocumentCollectionRendererContent({
         slots={slots}
         fields={templateFieldMap(template)}
         documentId={documentId}
+        preview={preview}
       />
     </article>
   );

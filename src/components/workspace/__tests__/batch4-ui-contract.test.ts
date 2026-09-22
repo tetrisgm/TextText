@@ -115,17 +115,13 @@ describe("batch 4 workspace UI contract", () => {
 
   it("names the image-led grid Cards and uses the shared document collection renderer", () => {
     expect(viewModeSource).toContain('grid: "Cards"');
-    expect(folderSource).toContain("<DocumentCollectionRenderer");
+    expect(folderSource).toContain("<FolderCollectionItem");
     expect(folderSource).toContain(
       "className={`universal-item-collection is-${viewMode}`}",
     );
-    expect(folderSource).toContain('folder.mode === "blog"');
-    expect(folderSource).toContain("blog-folder-feed");
-    expect(folderSource).toContain("blog-folder-feed-title");
     expect(folderSource).toContain('folder.mode !== "blog"');
     expect(broadsheetStyles).toContain(".blog-folder-feed-item");
     expect(broadsheetStyles).toContain(".blog-folder-feed-cover");
-    expect(folderSource).toContain("onPointerMove={updateSpatialCardTilt}");
     expect(rowSource).toContain("onPointerMove={updateSpatialCardTilt}");
     expect(broadsheetStyles).toContain(
       ".workspace-recent.is-view-grid .workspace-item-option",

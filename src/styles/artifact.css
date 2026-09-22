@@ -261,7 +261,7 @@
   color: var(--artifact-muted);
 }
 .post-editor-shell.artifact-workspace .post-editor-content .tt-document .tt-text-caption a { border: 0; }
-.post-editor-shell.artifact-workspace .post-editor-content .tt-document > .tt-stack > :is(.tt-text, .tt-group, .tt-prose) {
+.post-editor-shell.artifact-workspace .post-editor-content .tt-document:not(.tt-collection-item) > .tt-stack > :is(.tt-text, .tt-group, .tt-prose) {
   width: calc(100% - 40px);
   margin-inline: 20px;
 }

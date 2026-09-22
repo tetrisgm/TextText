@@ -4801,66 +4801,28 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   color: var(--ac-label, #f4f4f5);
 }
 
-/* Folder identity and capture follow the compact list-header rhythm in the
-   Superhuman references. This must stay workspace-scoped: FolderPage also
-   renders the published folder page. */
-.post-editor-shell .post-folder-page:not(.is-mode-blog) {
-  --folderhead-ground: #ffffff;
-  --folderhead-title: #3e3e3e;
-  --folderhead-muted: #9899a0;
-  --folderhead-line: #ececf0;
-  --folderhead-control: #ffffff;
-  --folderhead-control-hover: #ffffff;
-  --folderhead-control-line: #e8e8ec;
-  --folderhead-control-line-hover: #dedee4;
-  --folderhead-focus: #c8c8d6;
-  --folderhead-icon-hover: #f6f8fe;
-  --folderhead-disabled: #ececfa;
-  --folderhead-disabled-ink: #ffffff;
-  --folderhead-shadow: rgba(35, 35, 45, 0.22);
+/* Every folder shares the workspace palette and compact capture header. */
+.post-editor-shell .post-folder-page {
+  --folderhead-ground: var(--artifact-bg);
+  --folderhead-title: var(--artifact-ink);
+  --folderhead-muted: var(--artifact-muted);
+  --folderhead-line: var(--artifact-line);
+  --folderhead-control: var(--artifact-surface);
+  --folderhead-control-hover: var(--artifact-surface);
+  --folderhead-control-line: var(--artifact-line);
+  --folderhead-control-line-hover: var(--artifact-muted);
+  --folderhead-focus: var(--artifact-accent);
+  --folderhead-icon-hover: var(--artifact-surface);
+  --folderhead-disabled: var(--artifact-surface);
+  --folderhead-disabled-ink: var(--artifact-muted);
+  --folderhead-shadow: transparent;
   gap: 0.75rem;
-  padding: 4.5rem 0.5rem 5.5rem;
+  padding: 4.5rem 1.25rem 5.5rem;
   background: var(--folderhead-ground);
 }
 
-.post-editor-shell:is([data-theme="dark"] *)
-  .post-folder-page:not(.is-mode-blog) {
-  --folderhead-ground: #2c2d31;
-  --folderhead-title: #e5e7eb;
-  --folderhead-muted: #9d9ea2;
-  --folderhead-line: #3d3d41;
-  --folderhead-control: #343539;
-  --folderhead-control-hover: #38393d;
-  --folderhead-control-line: #494a4f;
-  --folderhead-control-line-hover: #58595e;
-  --folderhead-focus: #73758b;
-  --folderhead-icon-hover: rgba(255, 255, 255, 0.07);
-  --folderhead-disabled: rgba(97, 181, 225, 0.22);
-  --folderhead-disabled-ink: rgba(255, 255, 255, 0.52);
-  --folderhead-shadow: rgba(0, 0, 0, 0.46);
-}
-
-@media (prefers-color-scheme: dark) {
-  .post-editor-shell:is(:root:not([data-theme="light"]) *)
-    .post-folder-page:not(.is-mode-blog) {
-    --folderhead-ground: #2c2d31;
-    --folderhead-title: #e5e7eb;
-    --folderhead-muted: #9d9ea2;
-    --folderhead-line: #3d3d41;
-    --folderhead-control: #343539;
-    --folderhead-control-hover: #38393d;
-    --folderhead-control-line: #494a4f;
-    --folderhead-control-line-hover: #58595e;
-    --folderhead-focus: #73758b;
-    --folderhead-icon-hover: rgba(255, 255, 255, 0.07);
-    --folderhead-disabled: rgba(97, 181, 225, 0.22);
-    --folderhead-disabled-ink: rgba(255, 255, 255, 0.52);
-    --folderhead-shadow: rgba(0, 0, 0, 0.46);
-  }
-}
-
 .post-editor-shell
-  .post-folder-page:not(.is-mode-blog)
+  .post-folder-page
   .post-folder-page-header {
   width: 100%;
   min-height: 0;
@@ -4871,10 +4833,10 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .post-editor-shell
-  .post-folder-page:not(.is-mode-blog)
+  .post-folder-page
   .post-folder-title-row,
 .post-editor-shell
-  .post-folder-page:not(.is-mode-blog)
+  .post-folder-page
   .post-folder-title-form {
   align-items: center;
   flex-wrap: nowrap;
@@ -4882,7 +4844,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .post-editor-shell
-  .post-folder-page:not(.is-mode-blog)
+  .post-folder-page
   .post-folder-page-header
   h1 {
   min-width: 0;
@@ -4898,7 +4860,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .post-editor-shell
-  .post-folder-page:not(.is-mode-blog)
+  .post-folder-page
   .post-folder-page-count {
   margin: 0;
   color: var(--folderhead-muted);
@@ -4911,7 +4873,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .post-editor-shell
-  .post-folder-page:not(.is-mode-blog)
+  .post-folder-page
   .post-folder-title-edit {
   width: 1.5rem;
   height: 1.5rem;
@@ -4920,21 +4882,21 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .post-editor-shell
-  .post-folder-page:not(.is-mode-blog)
+  .post-folder-page
   .post-folder-title-edit:hover {
   background: var(--folderhead-icon-hover);
   color: var(--folderhead-title);
 }
 
 .post-editor-shell
-  .post-folder-page:not(.is-mode-blog)
+  .post-folder-page
   .post-folder-title-edit:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--folderhead-focus);
 }
 
 .post-editor-shell
-  .post-folder-page:not(.is-mode-blog)
+  .post-folder-page
   .post-folder-title-input {
   min-height: 2rem;
   border-bottom-color: var(--folderhead-control-line);
@@ -4948,13 +4910,13 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .post-editor-shell
-  .post-folder-page:not(.is-mode-blog)
+  .post-folder-page
   .post-folder-title-input:focus-visible {
   border-bottom-color: var(--folderhead-focus);
 }
 
 .post-editor-shell
-  .post-folder-page:not(.is-mode-blog)
+  .post-folder-page
   .post-folder-title-confirm {
   min-width: 3.5rem;
   min-height: 1.75rem;
@@ -4965,7 +4927,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .post-editor-shell
-  .post-folder-page:not(.is-mode-blog)
+  .post-folder-page
   .universal-item-composer {
   box-sizing: border-box;
   width: 100%;
@@ -4985,14 +4947,14 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .post-editor-shell
-  .post-folder-page:not(.is-mode-blog)
+  .post-folder-page
   .universal-item-composer:hover {
   border-color: var(--folderhead-control-line-hover);
   background: var(--folderhead-control-hover);
 }
 
 .post-editor-shell
-  .post-folder-page:not(.is-mode-blog)
+  .post-folder-page
   .universal-item-composer:focus-within {
   border-color: var(--folderhead-focus);
   background: var(--folderhead-control);
@@ -5002,7 +4964,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .post-editor-shell
-  .post-folder-page:not(.is-mode-blog)
+  .post-folder-page
   .universal-item-composer-input {
   min-height: 1.625rem;
   color: var(--folderhead-title);
@@ -5014,14 +4976,14 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .post-editor-shell
-  .post-folder-page:not(.is-mode-blog)
+  .post-folder-page
   .universal-item-composer-input::placeholder {
   color: var(--folderhead-muted);
   opacity: 1;
 }
 
 .post-editor-shell
-  .post-folder-page:not(.is-mode-blog)
+  .post-folder-page
   .universal-item-composer
   .universal-item-create {
   width: 1.25rem;
@@ -5034,7 +4996,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .post-editor-shell
-  .post-folder-page:not(.is-mode-blog)
+  .post-folder-page
   .universal-item-composer
   .universal-item-create:hover:not(:disabled) {
   background: #55a9d5;
@@ -5042,7 +5004,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .post-editor-shell
-  .post-folder-page:not(.is-mode-blog)
+  .post-folder-page
   .universal-item-composer
   .universal-item-create:focus-visible {
   outline: none;
@@ -5052,7 +5014,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .post-editor-shell
-  .post-folder-page:not(.is-mode-blog)
+  .post-folder-page
   .universal-item-composer
   .universal-item-create:disabled {
   background: var(--folderhead-disabled);

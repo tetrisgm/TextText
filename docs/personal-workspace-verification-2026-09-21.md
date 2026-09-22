@@ -904,3 +904,44 @@ checked in the running browser above. Logs:
 Open: folder rendering consolidation; large-fixture and cold performance;
 phone/laptop/wide appearance and failure-state acceptance; native capture and
 remaining live-agent/collaboration journeys. The full plan remains active.
+
+
+## Shared folder collection renderer
+
+Folder list, single-column and card views now share FolderCollectionItem and
+DocumentCollectionRenderer. Removed the separate folder-kind render branches,
+including their bespoke blog feed, note cards and bookmark wrapper. Each row
+uses its pinned template; folder defaults no longer choose every item's
+presentation. Lists remain windowed and cards grow in bounded batches.
+Collection body/prose previews are bounded, video previews avoid players, and
+images load lazily. Preview projection does not mutate the saved snapshot.
+
+The same folder palette now follows the workspace light/dark tokens. Removed
+conflicting folder header palettes and excluded collection rows from document
+page margins. Visual verification caught and corrected repeated article
+subtitles and the note collection's old dark surface overriding light mode.
+Rows and links now expose the item title as their accessible name.
+
+Current production preview: localhost:3133, deployment personal-folders-verified,
+`.texttext/personal-build-folders-verified`. The mixed folder containing a filed
+NASA article, saved bookmark and note was checked in light mode at 1280x720 and
+792x800, and light/dark at 390x844. Desktop keeps both rails; phone uses bottom
+destinations. Viewport override was reset. Keyboard opening of the bookmark and
+return to the selected folder row passed on the preceding 3132 build; the final
+build adds the verified title labels and note palette correction. This is browser
+layout/keyboard evidence, not native Safari pointer verification.
+
+Default regression: 389 files / 3,609 tests passed; 17 opt-in files / 130 tests
+skipped. The focused preview/contracts suite passed 17 tests. The final production
+build, including TypeScript, passed; targeted lint has one existing WindowedRows
+hook warning and no errors. Logs: `/tmp/texttext-folder-final-{tests,focused,lint}.log`
+and `/tmp/texttext-folder-verified-{build,server}.log`.
+
+Newly confirmed remaining data issue: cold list projections preserve template
+identity but omit canonical custom fields. Fixed the folder query's template-ID
+fallback; field-based views still need a bounded authoritative projection/query.
+Do not solve this by treating a truncated snapshot as canonical or by loading
+all document bodies into the workspace pool. Large-fixture/cold performance,
+native capture, error states, remaining type lifecycle and live-agent workflows
+also remain open. This is a consolidation checkpoint, not full-plan completion
+or an installed-app update.
