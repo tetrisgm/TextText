@@ -79,6 +79,29 @@ describe.skipIf(process.env.TEXTTEXT_READING_DB_TEST !== "1")("custom type lifec
     expect((await store.getDocumentTemplateAuthoringSource(source.id, v1.id, 2))?.source?.blueprint).toEqual(changed);
   });
 
+  it("migrates successive bounded pages without rewriting unrelated or already migrated documents", async () => {
+    const source = workspaces[0];
+    const actor = { actorUserId: userId, actorType: "human" as const, actionName: "test.template.migrate", targetType: "workspace" as const };
+    const blueprint = itemTypeBlueprintSchema.parse({ name: "Paged migration", fields: [], collection: { layout: "list" } });
+    const v1 = await store.createDocumentTemplateVersion({ blogId: source.id, definition: compileItemTypeBlueprint(blueprint, { id: "paged-migration" }), actor });
+    const v2 = await store.createDocumentTemplateVersion({ blogId: source.id, definition: { ...v1, name: "Updated migration" }, actor });
+    const folder = (await store.getFolders(source.handle)).find((entry) => entry.path === "notes")!;
+    const created = [];
+    for (let index = 0; index < 3; index++) created.push(await store.createDraftInFolder(source.handle, folder.id, { template: { id: v1.id, version: v1.version }, initial: { title: `Page ${index}`, body: `Keep these words ${index}` } }));
+    const unrelated = await store.createDraftInFolder(source.handle, folder.id, { template: { id: "texttext.note", version: 1 }, initial: { title: "Unrelated", body: "Leave this alone" } });
+    const options = { fromReference: { id: v1.id, version: v1.version }, limit: 2, audit: () => actor };
+    const target = { id: v2.id, version: v2.version };
+    expect(await store.retemplateFolderItems(source.handle, folder.id, target, options)).toEqual({ changed: 2, contested: 0, remaining: 1 });
+    expect(await store.retemplateFolderItems(source.handle, folder.id, target, options)).toEqual({ changed: 1, contested: 0, remaining: 0 });
+    expect(await store.retemplateFolderItems(source.handle, folder.id, target, options)).toEqual({ changed: 0, contested: 0, remaining: 0 });
+    for (const original of created) {
+      const fresh = await store.getPostById(source.handle, original.id!);
+      expect(fresh?.document?.content).toEqual(original.document?.content);
+      expect(fresh?.document?.presentation.template).toEqual(target);
+    }
+    expect((await store.getPostById(source.handle, unrelated.id!))?.document).toEqual(unrelated.document);
+  });
+
   it("preserves pinned items through updates, retirement and a cross-workspace textpack import", async () => {
     const [source, destination] = workspaces;
     const actor = { actorUserId: userId, actorType: "human" as const, actionName: "test.template.lifecycle", targetType: "workspace" as const };

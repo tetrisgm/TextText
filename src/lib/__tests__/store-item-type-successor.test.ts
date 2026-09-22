@@ -3,12 +3,13 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { validateDocumentSnapshot } from "@/lib/documents/model";
 
-const mocks = vi.hoisted(() => ({ rows: [] as unknown[], conditions: null as unknown }));
+const mocks = vi.hoisted(() => ({ rows: [] as unknown[], conditions: null as unknown, count: 0, limit: vi.fn() }));
 vi.mock("@/lib/blog-core", () => ({ getBlogCore: async () => ({ id: "blog-1" }) }));
 vi.mock("@/lib/db/client", () => ({ db: {
-  select: () => ({ from: () => ({ where: (condition: unknown) => {
+  select: (projection?: unknown) => ({ from: () => ({ where: (condition: unknown) => {
     mocks.conditions = condition;
-    return { orderBy: async () => mocks.rows };
+    if (projection) return Promise.resolve([{ count: mocks.count }]);
+    return { orderBy: () => ({ limit: mocks.limit }) };
   } }) }),
 } }));
 
@@ -25,27 +26,31 @@ function row(id: string, reference: typeof base, revision: number | undefined = 
 }
 
 describe("store successor item selection", () => {
-  beforeEach(() => { mocks.rows = []; });
-  it("counts only the exact base reference, preserving unrelated and pinned types", async () => {
-    mocks.rows = [row("base", base), row("older", { ...base, version: 1 }), row("other", { id: "other", version: 3 }), row("done", successor)];
-    const before = structuredClone(mocks.rows);
-    // Zero budget exercises the real store's pending selection without a DB write.
-    expect(await retemplateFolderItems("shoku", "a", successor, { fromReference: base, limit: 0 })).toEqual({ changed: 0, contested: 0, remaining: 1 });
-    expect(mocks.rows).toEqual(before);
+  beforeEach(() => { mocks.rows = []; mocks.count = 0; mocks.limit.mockReset().mockImplementation(async () => mocks.rows); });
+  it("pushes exact canonical references and scope into SQL before reading bodies", async () => {
+    mocks.count = 501;
+    expect(await retemplateFolderItems("shoku", "a", successor, { fromReference: base, limit: 0 })).toEqual({ changed: 0, contested: 0, remaining: 501 });
+    expect(mocks.limit).not.toHaveBeenCalled();
     const query = new PgDialect().sqlToQuery(mocks.conditions as SQL);
-    expect(query.params).toEqual(expect.arrayContaining(["blog-1", "a"]));
+    expect(query.params).toEqual(expect.arrayContaining(["blog-1", "a", "tasks", "3", "4"]));
     expect(query.sql).toContain('"posts"."deleted_at" is null');
+    expect(query.sql).toContain("{presentation,template,id}");
+    expect(query.sql).toContain("{presentation,template,version}");
   });
-  it("does nothing when the selected folder has only unrelated items", async () => {
-    mocks.rows = [row("other", { id: "other", version: 3 }), row("older", { ...base, version: 2 })];
+  it("does not load bodies when nothing remains", async () => {
     expect(await retemplateFolderItems("shoku", "a", successor, { fromReference: base })).toEqual({ changed: 0, contested: 0, remaining: 0 });
+    expect(mocks.limit).not.toHaveBeenCalled();
   });
-  it("keeps a matching item without a revision instead of making an unguarded write", async () => {
+  it("caps reads at 500 and keeps a row without a revision instead of writing unguarded", async () => {
+    mocks.count = 700;
     mocks.rows = [{ ...row("base", base), revision: undefined }];
-    expect(await retemplateFolderItems("shoku", "a", successor, { fromReference: base })).toEqual({ changed: 0, contested: 1, remaining: 1 });
+    expect(await retemplateFolderItems("shoku", "a", successor, { fromReference: base, limit: 5000 })).toEqual({ changed: 0, contested: 1, remaining: 700 });
+    expect(mocks.limit).toHaveBeenCalledWith(500);
   });
   it("preserves the separate explicit restyle-all operation", async () => {
-    mocks.rows = [row("base", base), row("other", { id: "other", version: 3 }), row("done", successor)];
+    mocks.count = 2;
     expect(await retemplateFolderItems("shoku", "a", successor, { limit: 0 })).toEqual({ changed: 0, contested: 0, remaining: 2 });
+    const query = new PgDialect().sqlToQuery(mocks.conditions as SQL);
+    expect(query.params).not.toContain("3");
   });
 });

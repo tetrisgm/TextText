@@ -849,3 +849,23 @@ Remaining acceptance includes one folder renderer, destination state
 consolidation, bounded migration reads, and the full production performance,
 native capture, responsive/error-state, and agent workflow gates. This is not
 a release, installed app update, or completion of the full plan.
+
+## Bounded migration reads
+
+Bulk type migration now filters canonical template references in SQL, counts
+pending work without bodies, and loads a stable page of at most 500 documents.
+The revision-guarded write path remains unchanged. Zero-budget/count-only calls
+load no documents. Repeated passes skip already migrated items.
+
+Eight focused tests passed, including a local Postgres sequence that migrates
+three matching documents in two passes, performs a no-op third pass, preserves
+all content, and leaves an unrelated note unchanged. Query tests verify exact
+source version, folder/workspace/deleted scope, zero reads for empty work, the
+500 read cap, and missing-revision protection. Default suite: 387 files / 3,601
+tests passed; 17 opt-in files / 130 tests skipped. TypeScript passes; targeted
+lint has two existing warnings and no errors. Logs:
+`/tmp/texttext-migration-{tests2,tsc,full-tests,lint}.log`.
+
+This server change is committed after the port 3129 production build. It will
+be included in the next consolidated build; that running preview is still the
+verified designer build above.

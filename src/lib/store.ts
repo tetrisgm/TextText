@@ -1773,41 +1773,33 @@ export async function retemplateFolderItems(
 ): Promise<{ changed: number; contested: number; remaining: number }> {
   if (!db) throw new Error("Retemplating needs a database.");
   const blogId = await blogIdFor(handle);
-  const limit = options.limit ?? 500;
-  const rows = await db
-    .select()
-    .from(posts)
-    .where(
-      and(
-        eq(posts.blogId, blogId),
-        eq(posts.folderId, folderId),
-        isNull(posts.deletedAt),
-      ),
-    )
-    .orderBy(asc(posts.createdAt));
-
-  // Select what still NEEDS restyling before taking a page of it. Slicing the
-  // raw rows meant every pass looked at the same first 500: once those were
-  // done they were skipped, the pass reported hundreds remaining, and running
-  // it again reached exactly the same 500 and changed nothing. The advice to
-  // run it again could never have worked.
-  const pending = rows.filter((row) => {
-    const current = mapPost(row).document;
-    if (!current) return false;
-    if (options.fromReference && (
-      current.presentation.template.id !== options.fromReference.id ||
-      current.presentation.template.version !== options.fromReference.version
-    )) return false;
-    return !(
-      current.presentation.template.id === reference.id &&
-      current.presentation.template.version === reference.version
-    );
-  });
+  const limit = Math.max(0, Math.min(500, Math.floor(options.limit ?? 500)));
+  if (!Number.isFinite(limit)) throw new Error("Invalid migration batch size.");
+  // Filter canonical references in SQL before loading any document bodies.
+  // Count separately so a bounded page still reports the full remaining work.
+  const currentId = sql<string>`${posts.document} #>> '{presentation,template,id}'`;
+  const currentVersion = sql<string>`${posts.document} #>> '{presentation,template,version}'`;
+  const pendingCondition = and(
+    eq(posts.blogId, blogId),
+    eq(posts.folderId, folderId),
+    isNull(posts.deletedAt),
+    sql`${currentId} is not null`,
+    sql`${currentVersion} is not null`,
+    sql`(${currentId} <> ${reference.id} or ${currentVersion} <> ${String(reference.version)})`,
+    ...(options.fromReference ? [
+      eq(currentId, options.fromReference.id),
+      eq(currentVersion, String(options.fromReference.version)),
+    ] : []),
+  );
+  const [countRow] = await db.select({ count: sql<number>`count(*)::int` }).from(posts).where(pendingCondition);
+  const pendingCount = countRow?.count ?? 0;
+  const pending = limit && pendingCount ? await db.select().from(posts)
+    .where(pendingCondition).orderBy(asc(posts.createdAt), asc(posts.id)).limit(limit) : [];
 
   let changed = 0;
   /** Items someone else was editing at the same moment, left as they are. */
   let contested = 0;
-  for (const row of pending.slice(0, limit)) {
+  for (const row of pending) {
     const post = mapPost(row);
     const current = post.document;
     if (!current) continue;
@@ -1848,7 +1840,7 @@ export async function retemplateFolderItems(
     // What is still waiting after this pass, not "everything past the first
     // page". A contested item is still pending: its turn comes when whoever
     // was typing into it stops.
-    remaining: Math.max(0, pending.length - changed),
+    remaining: Math.max(0, pendingCount - changed),
   };
 }
 
