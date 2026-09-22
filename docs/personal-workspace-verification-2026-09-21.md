@@ -739,3 +739,22 @@ Twenty-two tests across the action, entry-point and gallery suites pass,
 including omitted/null/false/string migration inputs preserving existing items.
 The source-preserving import changes also passed 22 targeted/database tests.
 Browser acceptance of these latest changes remains outstanding.
+
+## Adversarial review: explicit migration across all callers
+
+The shared create/update operations now require literal true before migrating
+existing documents. An update without a scope saves only a version unless apply
+is explicitly true. UI server actions, the designer, agent tool schemas and MCP
+folder mutation follow the same contract. The studio starts with migration off
+and version-only editing. Explicit migration still uses existing bounded,
+collaboration-aware operations and receipts.
+
+Removed the folder library's discarded full-document count query and its unused
+state field. Opening that picker no longer fetches every document body for a
+number it does not display.
+
+Seven targeted suites passed 136 tests; the expanded tool-schema suite passed
+29 tests. TypeScript passes; lint has one pre-existing unused-symbol warning.
+Logs: `/tmp/texttext-explicit-migration-{tests,tsc,lint}.log` and
+`/tmp/texttext-migration-schema-tests.log`. Browser and production acceptance
+remain open, as do independent folder views and unified library capabilities.

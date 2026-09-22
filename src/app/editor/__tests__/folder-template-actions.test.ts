@@ -126,11 +126,11 @@ describe("folder look lifecycle actions", () => {
     });
   });
 
-  it("returns lifecycle metadata and the target impact", async () => {
+  it("returns lifecycle metadata without fetching folder document bodies", async () => {
     const result = await getFolderLookAction("Writer", "blog");
     expect(result.allowed).toBe(true);
     expect(result.templates).toEqual([article]);
-    expect(result.targetItemCount).toBe(2);
+    expect(mocks.getFolderPosts).not.toHaveBeenCalled();
     expect(mocks.listDocumentTemplateLibrary).toHaveBeenCalledWith(
       "blog-id",
       "owner-id",

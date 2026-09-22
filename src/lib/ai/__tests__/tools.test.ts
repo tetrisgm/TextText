@@ -383,7 +383,7 @@ describe("workspace tool contract", () => {
     ).toMatchObject({
       blueprint: { name: "Tasks", styleReference: "Notion" },
       folder_path: "notes/tasks",
-      apply_to_existing: true,
+      apply_to_existing: false,
     });
   });
 });
@@ -463,5 +463,17 @@ describe("text edit source precondition schema", () => {
       expect(() => parseWorkspaceToolInput("update_item", { id: "item", text_edit: { ...edit, source_precondition } })).toThrow();
     }
     expect(() => parseWorkspaceToolInput("update_item", { id: "item", text_edit: { ...edit, end: 4, source_precondition: source } })).toThrow();
+  });
+});
+
+describe("type migration intent", () => {
+  const blueprint = { name: "Review", fields: [], collection: { layout: "list" } };
+  it("defaults create and update to preserving existing documents", () => {
+    expect(parseWorkspaceToolInput("create_item_type", { blueprint, folder_path: "notes" })).toMatchObject({ apply_to_existing: false });
+    expect(parseWorkspaceToolInput("update_item_type", { blueprint, template_id: "review", base_version: 1 })).toMatchObject({ apply: false, apply_to_existing: false });
+    expect(parseWorkspaceToolInput("set_folder_template", { folder_path: "notes", template_id: "review", template_version: 1 }).apply_to_existing).not.toBe(true);
+  });
+  it("preserves explicit migration intent", () => {
+    expect(parseWorkspaceToolInput("update_item_type", { blueprint, template_id: "review", base_version: 1, apply: true, apply_to_existing: true })).toMatchObject({ apply: true, apply_to_existing: true });
   });
 });

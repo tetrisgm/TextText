@@ -48,14 +48,11 @@ describe("studio edit save scope", () => {
     expect(html).not.toContain("Save for later");
     expect(html).not.toContain("Update matching items");
   });
-  it("names the selected folder and exact base version before Done", () => {
+  it("starts with version-only even when opened from a folder", () => {
     const html = render("A");
-    expect(html).toContain('value="folder" selected=""');
-    expect(html).toContain('aria-label="Target folders"');
-    expect(html).toContain("<li>A</li>");
-    expect(html).not.toContain("<li>B</li>");
-    expect(html).toContain("version 3 can be updated");
-    expect(html).toContain("Update matching items in the target folders");
+    expect(html).toContain('value="version" selected=""');
+    expect(html).toContain("Save a new version without changing any folder or item.");
+    expect(html).not.toContain("Update matching items in the target folders");
   });
   it("wires scope into the action and retains a full receipt before refreshing", () => {
     const source = readFileSync(new URL("../ItemTypeStudio.tsx", import.meta.url), "utf8");

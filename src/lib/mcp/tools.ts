@@ -1181,11 +1181,9 @@ async function executeWorkspaceCommand(
             ),
           },
         );
-        // Everything already in the folder moves too, unless the caller asked
-        // otherwise. A folder whose index changed while every item in it kept
-        // the old look reads as the request not having worked.
+        // Changing existing items requires explicit migration intent.
         const restyled =
-          input.apply_to_existing === false
+          input.apply_to_existing !== true
             ? { changed: 0, contested: 0, remaining: 0 }
             : await retemplateFolderItems(
                 resolved.blog.handle,

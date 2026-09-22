@@ -625,7 +625,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   create_item_type: defineTool("create_item_type", {
     title: "Create item type",
     description:
-      "Create one reusable item type from a complete blueprint. The blueprint defines the fields, the item page, the folder layout, example content, and safe theme tokens together. Use this when someone asks for a new kind of thing, such as a Medium-like blog, a Notion-like task board, or Apple Notes-like notes. If folder_path is supplied, the new type becomes that folder's look and existing items are restyled by default.\n\n" +
+      "Create one reusable item type from a complete blueprint. The blueprint defines the fields, the item page, the folder layout, example content, and safe theme tokens together. Use this when someone asks for a new kind of thing, such as a Medium-like blog, a Notion-like task board, or Apple Notes-like notes. If folder_path is supplied, the new type becomes that folder's default. Existing items change only when apply_to_existing is explicitly true.\n\n" +
       // Worked example rather than more rules. A type designed with no fields
       // at all was the most common failure, and a request for a year grid of
       // runs produced exactly that: the model reached for a layout and forgot
@@ -639,7 +639,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
         folder_path: folderPath.optional(),
         apply_to_existing: z
           .boolean()
-          .default(true)
+          .default(false)
           .describe(
             "When folder_path is supplied, restyle the items already in that folder. Content is never changed.",
           ),
@@ -652,8 +652,8 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     description:
       "Change an item type that already exists, by editing the blueprint it was built from. Use this when someone wants their existing kind of thing to be different: another field, a different folder view, a bigger title, a new accent. list_document_templates returns the blueprint and the version for every type that can be changed this way.\n\n" +
       "Send the WHOLE blueprint, not only the part you changed: it replaces the old one. Send base_version exactly as list_document_templates reported it, so an edit made against a stale copy is refused instead of quietly overwriting someone else's.\n\n" +
-      "The old version is kept and the items already using it keep rendering as they were. Use save_scope to name the selected folder or the exact listed usages, or to save only a version. Legacy calls without save_scope apply to folders on the base version. Only items pinned to that exact base reference are restyled. Existing field ids, storage kinds and enum values must stay compatible; change enum labels to rename options.\n\n" +
-      "Built-in types cannot be changed. Neither can a look that was saved from a document, imported, or duplicated: those were assembled rather than designed, so they have no blueprint to edit and list_document_templates will not list them as changeable.",
+      "The old version is kept and the items already using it keep rendering as they were. Use save_scope to name the selected folder or the exact listed usages, or to save only a version. Calls without save_scope save only a version unless apply is explicitly true. Only items pinned to that exact base reference are restyled. Existing field ids, storage kinds and enum values must stay compatible; change enum labels to rename options.\n\n" +
+      "Built-in types cannot be changed. Types without editable source cannot be changed this way; list_document_templates reports whether a blueprint is available.",
     inputSchema: z
       .object({
         template_id: z
@@ -677,13 +677,13 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
         ),
         apply: z
           .boolean()
-          .default(true)
+          .default(false)
           .describe(
-            "Apply the new version to the folders already using this type. False creates the version and changes nothing anyone can see.",
+            "Apply the new version to the folders already using this type. Defaults to false, saving a version without changing folders.",
           ),
         apply_to_existing: z
           .boolean()
-          .default(true)
+          .default(false)
           .describe(
             "Restyle the items already in those folders. Content is never changed.",
           ),
@@ -711,7 +711,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   set_folder_template: defineTool("set_folder_template", {
     title: "Set folder look",
     description:
-      "Give a folder a look, and by default restyle everything already in it. The template becomes what the folder's index page renders from, what new items are created with, and what the items already there use. This is how a request like 'make this folder a magazine' actually lands. Pass apply_to_existing false only if the person asked for the change to affect new items alone: leaving old items behind means the index changes and not one article does, which reads as nothing having happened.",
+      "Choose a folder default type. Existing items retain their pinned types. Set apply_to_existing true only when the user explicitly asks to migrate existing items.",
     inputSchema: z
       .object({
         folder_path: z
@@ -728,7 +728,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
           .boolean()
           .optional()
           .describe(
-            "Restyle the items already in the folder. Defaults to true, which is what someone asking to change how a folder looks almost always means. Content is never touched.",
+            "Restyle the items already in the folder. Defaults to false; enable only for an explicit migration request. Content is never touched.",
           ),
       })
       .strict(),

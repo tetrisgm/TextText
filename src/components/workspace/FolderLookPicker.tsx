@@ -95,7 +95,6 @@ export function FolderLookPicker({
             current: null,
             templates: [],
             library: [],
-            targetItemCount: 0,
           });
         }
       }

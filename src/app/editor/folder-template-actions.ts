@@ -14,7 +14,6 @@ import {
   getFolderByPath,
   getDocumentTemplate,
   getDocumentTemplateAuthoringSource,
-  getFolderPosts,
   importDocumentTemplate,
   listDocumentTemplateLibrary,
   retemplateFolderItems,
@@ -35,7 +34,6 @@ export type FolderLookState = {
   current: { id: string; version: number } | null;
   templates: TemplateDefinition[];
   library: TemplateLibraryEntry[];
-  targetItemCount: number;
 };
 
 function cleanHandle(value: unknown): string {
@@ -64,18 +62,12 @@ export async function getFolderLookAction(
   try {
     const access = await ownerAccess(handleInput);
     const folder = await getFolderByPath(access.handle, cleanPath(folderPathInput));
-    const [library, targetItemCount] = await Promise.all([
-      listDocumentTemplateLibrary(access.blogId, access.ownerId),
-      folder
-        ? getFolderPosts(access.handle, folder.path).then((items) => items.length)
-        : Promise.resolve(0),
-    ]);
+    const library = await listDocumentTemplateLibrary(access.blogId, access.ownerId);
     return {
       allowed: true,
       current: folder?.defaultTemplate ?? null,
       templates: library.map((entry) => entry.definition),
       library,
-      targetItemCount,
     };
   } catch {
     return {
@@ -83,7 +75,6 @@ export async function getFolderLookAction(
       current: null,
       templates: [],
       library: [],
-      targetItemCount: 0,
     };
   }
 }

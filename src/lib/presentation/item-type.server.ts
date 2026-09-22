@@ -82,7 +82,7 @@ export async function createWorkspaceItemType(input: {
   const reference = { id: created.id, version: created.version };
   await setFolderTemplate(input.handle, folder.id, reference);
   const restyled =
-    input.applyToExisting === false
+    input.applyToExisting !== true
       ? { changed: 0, contested: 0, remaining: 0 }
       : await retemplateFolderItems(input.handle, folder.id, reference);
   await recordAction({
@@ -137,7 +137,7 @@ export type ItemTypeUpdateResult = {
  * keep rendering exactly as they did.
  *
  * The explicit save scope names the target folders, or saves only a version.
- * Legacy callers can still use `apply: false`. Item application moves only
+ * Without a scope, only explicit `apply: true` changes folders. Item application moves only
  * documents pinned to the exact base reference, preserving independent looks.
  *
  * It does not accept a blind write. `baseVersion` is the version the editor was
@@ -209,11 +209,11 @@ export async function updateWorkspaceItemType(input: {
   assertCompatibleItemTypeFields(base.fields, definition.fields);
 
   // Resolve and validate the whole scope before inserting an immutable version.
-  // Legacy callers retain apply:false; explicit scope takes precedence.
+  // Explicit scope takes precedence; omitted intent saves only a version.
   const scope = input.saveScope === undefined
     ? null
     : itemTypeSaveScopeSchema.parse(input.saveScope);
-  const saveOnly = scope ? scope.mode === "version" : input.apply === false;
+  const saveOnly = scope ? scope.mode === "version" : input.apply !== true;
   const targets = saveOnly || scope?.mode === "folder"
     ? []
     : await listFoldersUsingTemplate(input.blogId, input.templateId);
@@ -281,7 +281,7 @@ export async function updateWorkspaceItemType(input: {
         throw error;
       }
       const restyled =
-        input.applyToExisting === false
+        input.applyToExisting !== true
           ? { changed: 0, contested: 0, remaining: 0 }
           : await retemplateFolderItems(input.handle, folder.id, reference, {
               fromReference: { id: input.templateId, version: input.baseVersion },

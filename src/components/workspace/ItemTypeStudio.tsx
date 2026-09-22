@@ -385,8 +385,8 @@ export function ItemTypeStudio({
     editing ? studioTimelineFrom(editing.blueprint) : EMPTY_STUDIO_TIMELINE,
   );
   const [folderPath, setFolderPath] = useState(initialFolderPath);
-  const [applyToExisting, setApplyToExisting] = useState(true);
-  const [saveMode, setSaveMode] = useState<ItemTypeSaveScope["mode"]>(initialFolderPath ? "folder" : "version");
+  const [applyToExisting, setApplyToExisting] = useState(false);
+  const [saveMode, setSaveMode] = useState<ItemTypeSaveScope["mode"]>("version");
   const [usages, setUsages] = useState<Array<{ path: string; version: number }> | null>(null);
   const [saved, setSaved] = useState<Extract<Awaited<ReturnType<typeof updateItemTypeAction>>, { ok: true }> | null>(null);
   const saveScope: ItemTypeSaveScope = saveMode === "folder"

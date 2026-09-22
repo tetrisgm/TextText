@@ -28,7 +28,7 @@ vi.mock("@/lib/revalidate-blog", () => ({
 
 import { compileItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
-import { updateWorkspaceItemType } from "@/lib/presentation/item-type.server";
+import { createWorkspaceItemType, updateWorkspaceItemType } from "@/lib/presentation/item-type.server";
 
 const BLUEPRINT = {
   name: "Recipes",
@@ -41,6 +41,8 @@ const actor = { userId: "u-1", sub: "sub-1", actorLabel: "test" } as never;
 function call(overrides: Record<string, unknown> = {}) {
   return updateWorkspaceItemType({
     actor,
+    apply: true,
+    applyToExisting: true,
     baseVersion: 3,
     blogId: "blog-1",
     blueprint: BLUEPRINT,
@@ -71,6 +73,24 @@ describe("changing an item type that already exists", () => {
     mocks.retemplateFolderItems.mockResolvedValue({ changed: 7, contested: 0, remaining: 0 });
   });
 
+  it("creating a type for a folder does not migrate its documents implicitly", async () => {
+    mocks.getFolderByPath.mockResolvedValue({ id: "f-1", path: "recipes" });
+    const result = await createWorkspaceItemType({ actor, blogId: "blog-1", blueprint: BLUEPRINT, handle: "shoku", folderPath: "recipes" } as never);
+    expect(result.folder?.restyledItems).toBe(0);
+    expect(mocks.setFolderTemplate).toHaveBeenCalled();
+    expect(mocks.retemplateFolderItems).not.toHaveBeenCalled();
+  });
+  it("defaults to saving only a version and never migrating items", async () => {
+    const result = await call({ apply: undefined, applyToExisting: undefined });
+    expect(result.applied).toEqual([]);
+    expect(mocks.setFolderTemplate).not.toHaveBeenCalled();
+    expect(mocks.retemplateFolderItems).not.toHaveBeenCalled();
+  });
+  it("an explicit folder scope still does not imply item migration", async () => {
+    await call({ saveScope: { mode: "usages", folderPaths: ["recipes"] }, applyToExisting: undefined });
+    expect(mocks.setFolderTemplate).toHaveBeenCalled();
+    expect(mocks.retemplateFolderItems).not.toHaveBeenCalled();
+  });
   it("adds a version rather than changing the one documents are pinned to", async () => {
     const result = await call();
     expect(result.definition.version).toBe(4);

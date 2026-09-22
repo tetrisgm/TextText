@@ -42,6 +42,10 @@ describe("createItemTypeAction", () => {
     });
   });
 
+  it.each([undefined, null, false, "true"])("requires literal migration opt-in (%s)", async (apply) => {
+    await createItemTypeAction("Writer", blueprint, "notes", apply);
+    expect(mocks.createWorkspaceItemType).toHaveBeenCalledWith(expect.objectContaining({ applyToExisting: false }));
+  });
   it("saves through the shared mutation path and applies the destination folder", async () => {
     const result = await createItemTypeAction("Writer", blueprint, "notes", true);
     expect(result).toEqual({
