@@ -209,6 +209,8 @@ import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
 import { TagChips } from "@/components/TagChips";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import { WorkspaceActionSearch } from "@/components/workspace/WorkspaceActionSearch";
+import { useWorkspaceChoice } from "@/components/workspace/useWorkspaceChoice";
+import { legacyTemplateId } from "@/lib/documents/legacy";
 import { useFolderContentPane } from "@/components/workspace/useFolderContentPane";
 import {
   WorkspaceItemActions,
@@ -229,7 +231,7 @@ import { resolveCoverSource } from "@/lib/cover";
 import type { TemplateReference } from "@/lib/documents/model";
 import { documentFromLegacyPost } from "@/lib/documents/legacy";
 import {
-  queryCollectionItems, collectionDateGroups, collectionBoardGroups,
+  queryMixedCollectionItems, collectionDateGroups, collectionBoardGroups,
   collectionCalendarMonth, collectionDayKey, collectionHeatmapDays,
 } from "@/lib/presentation/collection-layout";
 import { getBuiltinTemplate } from "@/lib/presentation/templates";
@@ -246,7 +248,6 @@ import {
   EDIT_FOLDER_TITLE_EVENT,
   UniversalItemComposer,
   actionErrorMessage,
-  defaultTemplateForFolder,
   dispatchFolderUiEvent,
   isFolderUiEvent,
   type FolderCaptureResolved,
@@ -778,59 +779,29 @@ function UniversalFolderContents({
       ) ?? getBuiltinTemplate(reference.id, reference.version),
     [availableTemplates],
   );
-  const collectionDefinition = useMemo(
-    () => resolveTemplate(defaultTemplateForFolder(folder)),
-    [folder, resolveTemplate],
-  );
-  const savedViews = useMemo(
-    () => collectionDefinition?.collection.views ?? [],
-    [collectionDefinition],
-  );
-  const initialSavedView = collectionDefinition?.collection.defaultView ?? "";
-  const [savedViewId, setSavedViewId] = useState(initialSavedView);
-  const [unfilteredFolderId, setUnfilteredFolderId] = useState<string | null>(null);
-  const showAllItems = unfilteredFolderId === folder.id;
-  const savedViewFolder = useRef(folder.id);
-  const savedViewKey = savedViews.map((view) => view.id).join("\u0000");
-  useEffect(() => {
-    const next = collectionDefinition?.collection.defaultView ?? "";
-    const folderChanged = savedViewFolder.current !== folder.id;
-    savedViewFolder.current = folder.id;
-    setSavedViewId((current) => {
-      if (folderChanged) return next;
-      return current && savedViews.some((view) => view.id === current)
-        ? current
-        : next;
-    });
-  }, [
-    collectionDefinition?.collection.defaultView,
-    folder.id,
-    savedViewKey,
-    savedViews,
-  ]);
-  const selectedSavedView = savedViews.find((view) => view.id === savedViewId);
-  const activeCollection = useMemo(() => {
-    const base = collectionDefinition?.collection;
-    return base
-      ? selectCollectionView(base, selectedSavedView?.id ?? "")
-      : base;
-  }, [collectionDefinition, selectedSavedView?.id]);
-  /**
-   * Does this folder still wear a look that ships with the app?
-   *
-   * The hand-made row renderers below - the blog feed and the list rows - were
-   * drawn for the built-ins and ignore a template entirely. They stay the fast
-   * path for a folder that has not been restyled. The moment a folder carries
-   * a look someone authored, the template renders the index, or the look
-   * reaches the item pages and stops at its own folder.
-   */
-  const usesBuiltInLook = useMemo(
-    () => defaultTemplateForFolder(folder).id.startsWith("texttext."),
-    [folder],
-  );
-  const collectionRows = useMemo(() => queryCollectionItems(
+  const viewChoices = useMemo(() => (availableTemplates ?? []).flatMap(definition => {
+    if (definition.id.startsWith("texttext.")) return [];
+    return [
+      { key: `${definition.id}@${definition.version}`, label: definition.name, definition, viewId: "" },
+      ...(definition.collection.views ?? []).map(view => ({
+        key: `${definition.id}@${definition.version}:${view.id}`,
+        label: `${definition.name}: ${view.name}`, definition, viewId: view.id,
+      })),
+    ];
+  }), [availableTemplates]);
+  const choiceKeys = useMemo(() => ["", ...viewChoices.map(view => view.key)], [viewChoices]);
+  const [savedViewId, setSavedViewId] = useWorkspaceChoice(`texttext:folder-collection:${folder.id}`, choiceKeys, "");
+  const chosenView = useMemo(() => viewChoices.find(view => view.key === savedViewId), [viewChoices, savedViewId]);
+  const collectionDefinition = chosenView?.definition;
+  const activeCollection = useMemo(() => collectionDefinition
+    ? selectCollectionView(collectionDefinition.collection, chosenView?.viewId ?? "")
+    : undefined, [collectionDefinition, chosenView?.viewId]);
+  // All-items uses the standard list. Explicit custom views use their renderer.
+  const usesBuiltInLook = !collectionDefinition;
+  const collectionRows = useMemo(() => queryMixedCollectionItems(
     items.map((post) => ({
       post,
+      templateId: post.document?.presentation.template.id ?? legacyTemplateId(post.type),
       pinned: Boolean(post.pinned),
       createdAt: post.date ?? null,
       updatedAt: post.updatedAt ?? post.date ?? null,
@@ -838,8 +809,8 @@ function UniversalFolderContents({
       title: post.title,
       fields: post.document?.content.fields ?? {},
     })),
-    showAllItems && activeCollection ? { ...activeCollection, filters: [] } : activeCollection,
-  ), [activeCollection, items, showAllItems]);
+    activeCollection, collectionDefinition?.id,
+  ), [activeCollection, items, collectionDefinition?.id]);
   const sorted = useMemo(() => collectionRows.map((entry) => entry.post), [collectionRows]);
 
   // A calendar folder places items on a month grid by the template's dateBy
@@ -869,7 +840,7 @@ function UniversalFolderContents({
     } : null;
   }, [collectionRows, activeCollection, collectionDefinition]);
   const collectionViewMode: FolderViewMode = displayModeForCollectionView(
-    selectedSavedView,
+    activeCollection,
     viewMode,
   );
 
@@ -884,33 +855,22 @@ function UniversalFolderContents({
           focusRequestKey={captureFocusRequestKey}
         />
       )}
-      {savedViews.length > 0 ? (
+      {viewChoices.length > 0 ? (
         <label className="post-folder-saved-view">
           <span>View</span>
-          <select
-            aria-label="Folder view"
-            value={savedViewId}
-            onChange={(event) => { setSavedViewId(event.currentTarget.value); setUnfilteredFolderId(null); }}
-          >
-            {!collectionDefinition?.collection.defaultView ? (
-              <option value="">Main</option>
-            ) : null}
-            {savedViews.map((view) => (
-              <option key={view.id} value={view.id}>
-                {view.name}
-              </option>
-            ))}
+          <select aria-label="Folder view" value={savedViewId} onChange={event => setSavedViewId(event.currentTarget.value)}>
+            <option value="">All items</option>
+            {viewChoices.map(view => <option key={view.key} value={view.key}>{view.label}</option>)}
           </select>
         </label>
       ) : null}
-      {showAllItems && <p>Showing all folder items. <button type="button" className="ac-btn ac-btn-gray" onClick={() => setUnfilteredFolderId(null)}>Restore view filters</button></p>}
       <section className="post-folder-page-items" aria-label="Folder items">
         {sorted.length === 0 ? (hideEmpty ? null : (
           <FolderEmptyCard
             homeHref={blogHomePath(blog)}
             actionLabel={items.length ? "Show all folder items" : canCreateItems ? (folder.mode === "bookmarks" ? "Save a bookmark" : folder.mode === "notes" ? "Write a note" : "Write an article") : undefined}
             onAction={
-              items.length ? () => setUnfilteredFolderId(folder.id) : canCreateItems
+              items.length ? () => setSavedViewId("") : canCreateItems
                 ? () =>
                     dispatchFolderUiEvent(CREATE_FOLDER_ITEM_EVENT, folder.id)
                 : undefined
@@ -1639,24 +1599,7 @@ export function FolderPage({
   // override on top of that. Without this, a look declaring `list` still got
   // a grid, because the container class came from the toggle alone - it read
   // as the look not having applied at all.
-  const lookLayout = (
-    availableTemplates?.find((entry) => {
-      const reference = defaultTemplateForFolder(folder);
-      return entry.id === reference.id && entry.version === reference.version;
-    }) ??
-    getBuiltinTemplate(
-      defaultTemplateForFolder(folder).id,
-      defaultTemplateForFolder(folder).version,
-    )
-  )?.collection.layout;
-  const defaultViewMode: FolderViewMode =
-    lookLayout === "list" || lookLayout === "index" || lookLayout === "timeline"
-      ? "list"
-      : lookLayout === "cards"
-        ? "grid"
-        : folder.mode === "notes" || folder.mode === "bookmarks"
-          ? "list"
-          : "grid";
+  const defaultViewMode: FolderViewMode = "list";
   const [viewMode, changeView] = useWorkspaceViewMode(
     `folder:v3:${folder.id}`,
     defaultViewMode,

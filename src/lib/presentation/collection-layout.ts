@@ -13,6 +13,16 @@ export function queryCollectionItems<T extends CollectionQueryable & { pinned?: 
   return queried.sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)));
 }
 
+/** A type-specific view must not hide unrelated documents in a mixed folder. */
+export function queryMixedCollectionItems<T extends CollectionQueryable & { pinned?: boolean; templateId: string }>(
+  items: T[], collection: CollectionRenderSpec | null | undefined, templateId?: string,
+): T[] {
+  if (!collection || !templateId) return queryCollectionItems(items, null);
+  const matching = queryCollectionItems(items.filter(item => item.templateId === templateId), collection);
+  const visible = new Set(matching);
+  return queryCollectionItems(items.filter(item => item.templateId !== templateId || visible.has(item)), { ...collection, filters: [] });
+}
+
 export function collectionDateGroups<T extends CollectionQueryable>(
   items: readonly T[],
   collection: CollectionRenderSpec | null | undefined,

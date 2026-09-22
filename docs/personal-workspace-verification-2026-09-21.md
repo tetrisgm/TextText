@@ -776,3 +776,41 @@ The independent imported copy correctly showed zero usage and no invented
 history. Three targeted suites pass (18 tests), TypeScript and lint pass
 (two existing editor warnings). Logs: `/tmp/texttext-shared-library-*`.
 Production acceptance and gallery-to-designer integration remain open.
+
+## Independent folder views and content-aware navigation
+
+Folder collection selection no longer reads its definition or filters from the
+folder's default item type. All items is the initial view; explicit custom
+views reference an immutable definition independently. The selected view is
+persisted per folder in this browser/device, with a session fallback when local
+storage is unavailable. It is not a synchronized cross-device preference.
+Type-specific filters apply only to that type; unrelated mixed content remains
+visible. Removed the transient show-all override and default-type-driven layout
+selection. Existing documents and creation defaults are unchanged.
+
+Item navigation now reuses Writing's content classification: authored articles,
+notes and custom types select Writing; feed arrivals select News; deliberately
+filed feed items and manual bookmarks select Bookmarks.
+
+Thirteen focused query/navigation tests pass. TypeScript passes; lint has
+existing warnings only. The production build passed in
+`.texttext/personal-build-consolidated` and runs on port 3128, deployment
+`personal-consolidated`. In both development and production, selected Reading
+review lifecycle independently for Notes. After a full reload it remained
+selected and all eight folder items remained present. Desktop screenshot
+inspection confirmed the left navigation, center content, and right assistant
+fit at 1280 by 720 in dark appearance.
+
+The first full run found obsolete source-string layout assertions and a pure
+editor test importing the server dependency of the new shared library. Updated
+the assertions and mocked the library boundary in that unit test. No application
+code changed after the production build. Logs are
+`/tmp/texttext-consolidated-{build,server,full-tests-final}.log` and
+`/tmp/texttext-folder-{views,navigation}-*`.
+
+Open: one folder rendering path, gallery-to-designer integration, bounded
+preview reads, navigation state consolidation, and full performance/native/
+error-state acceptance. This build is not a release or installed app update.
+
+Final default regression run: 387 files / 3,600 tests passed; 17 opt-in files /
+128 tests skipped. Production build passed before test-only corrections.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { compileItemTypeBlueprint } from "../item-type-blueprint";
 import { selectCollectionView } from "../collection-views";
-import { queryCollectionItems, collectionDateGroups, collectionBoardGroups, collectionCalendarMonth, collectionHeatmapDays } from "../collection-layout";
+import { queryMixedCollectionItems, queryCollectionItems, collectionDateGroups, collectionBoardGroups, collectionCalendarMonth, collectionHeatmapDays } from "../collection-layout";
 
 const template = compileItemTypeBlueprint({
   name: "Due dates", fields: [
@@ -68,5 +68,22 @@ describe("shared production collection model", () => {
     const days = collectionHeatmapDays(new Map([...groups.byDay].map(([key, items]) => [key, items.length])), new Date(2026, 7, 31));
     expect(days.find((day) => day.key === "2026-08-29")?.count).toBe(2);
     expect(days.at(-1)).toEqual({ key: "2026-08-31", count: 1 });
+  });
+});
+
+describe("mixed folder views", () => {
+  const collection = selectCollectionView(template.collection, "due");
+  const input: Array<import("@/lib/documents/collection-query").CollectionQueryable & { templateId: string; pinned?: boolean }> = [
+    { templateId: "dates", title: "Done", fields: { done: true } },
+    { templateId: "dates", title: "Pending", fields: { done: false } },
+    { templateId: "texttext.note", title: "My note", fields: {} },
+    { templateId: "texttext.bookmark", title: "Saved source", fields: {}, pinned: true },
+  ];
+  it("filters only the chosen type while retaining unrelated mixed content", () => {
+    expect(queryMixedCollectionItems(input, collection, "dates").map(row => row.title)).toEqual(["Saved source", "My note", "Done"]);
+    expect(input).toHaveLength(4);
+  });
+  it("all-items view ignores a type's filters", () => {
+    expect(queryMixedCollectionItems(input, undefined).map(row => row.title)).toEqual(["Saved source", "Done", "Pending", "My note"]);
   });
 });

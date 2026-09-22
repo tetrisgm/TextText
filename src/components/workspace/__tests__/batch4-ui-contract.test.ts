@@ -181,13 +181,6 @@ describe("batch 4 workspace UI contract", () => {
     expect(shellSource).not.toContain("workspace-root-create-destination");
     expect(shellSource).not.toContain('aria-label="Choose a folder"');
     expect(folderSource).not.toContain('aria-label="Choose a look"');
-    // Notes and bookmarks still fall back to a list. The folder's look now
-    // gets first say, so a look declaring `list` is not overridden into a
-    // grid by the mode default.
-    expect(folderSource).toContain(
-      'folder.mode === "notes" || folder.mode === "bookmarks"',
-    );
-    expect(folderSource).toContain("lookLayout");
     expect(folderSource).toContain("`folder:v3:${folder.id}`");
     expect(folderSource).toContain('className="post-folder-page-count"');
     // The Items count excludes imported articles shown in the separate News view.

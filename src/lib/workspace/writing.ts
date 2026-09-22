@@ -8,3 +8,9 @@ export function writingKind(post: Pick<WorkspacePoolPost, "origin" | "type" | "t
   if (post.template) return "custom";
   return post.type === "article" ? "article" : post.type === "note" ? "note" : "custom";
 }
+
+/** Navigation follows content membership, not the legacy item shape alone. */
+export function itemDestination(post: Pick<WorkspacePoolPost, "origin" | "type" | "template" | "filed">): "notes" | "news" | "bookmarks" {
+  if (writingKind(post)) return "notes";
+  return post.origin === "feed" && !post.filed ? "news" : "bookmarks";
+}

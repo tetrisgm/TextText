@@ -1,3 +1,4 @@
+vi.mock("../WorkspaceTypeLibrary", () => ({ WorkspaceTypeLibrary: vi.fn() }));
 vi.mock("@/components/keyboard/CommandLayer", () => ({ useEscapeLayer: vi.fn() }));
 vi.mock("@/app/editor/agent-connect-actions", () => ({ listItemAgentsAction: vi.fn(), createItemAgentAction: vi.fn(), prepareLocalItemAgentAction: vi.fn(), removeItemAgentAction: vi.fn() }));
 // Regression: edits made before the collab provider is ready must survive a

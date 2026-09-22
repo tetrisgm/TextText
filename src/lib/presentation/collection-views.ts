@@ -28,7 +28,7 @@ export function selectCollectionView(
 }
 
 export function displayModeForCollectionView(
-  view: CollectionViewSpec | undefined,
+  view: Pick<CollectionViewSpec, "layout"> | undefined,
   fallback: CollectionDisplayMode,
 ): CollectionDisplayMode {
   if (!view) return fallback;

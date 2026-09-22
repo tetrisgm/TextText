@@ -1,5 +1,6 @@
 "use client";
 
+import { itemDestination } from "@/lib/workspace/writing";
 import { readingUnreadByFolder } from "@/components/workspace/reading/unread";
 import { useListReturnFocus } from "@/components/workspace/useListReturnFocus";
 import { viewScrollMemoryKey } from "@/lib/workspace/view-memory";
@@ -5283,7 +5284,7 @@ function LocalWorkspaceShell({
           (displayPool.trashedFolders?.length ?? 0)
         }
       />
-      <ArtifactNavigation pane={view.level === "settings" ? "profile" : (view.level === "edit" || view.level === "post") && itemIdentity.resolvePost(displayPool, view.postId)?.type === "note" ? "notes" : view.level === "section" ? (displayPool.folders.find((folder) => folder.path === view.folderPath)?.mode === "notes" ? "notes" : "profile") : homePane} onSelect={openDestination} />
+      <ArtifactNavigation pane={view.level === "settings" ? "profile" : (view.level === "edit" || view.level === "post") ? (() => { const post = itemIdentity.resolvePost(displayPool, view.postId); return post ? itemDestination(post) : homePane; })() : view.level === "section" ? (displayPool.folders.find((folder) => folder.path === view.folderPath)?.mode === "notes" ? "notes" : "profile") : homePane} onSelect={openDestination} />
       <div className="workspace-document-layout">
         <NativeAssistantRuntime options={assistantOptions} />
         {/* The tab strip is the topmost band, above the action bar, as in
