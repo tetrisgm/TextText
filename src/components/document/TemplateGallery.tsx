@@ -76,6 +76,7 @@ type ImportDraft = {
 export function TemplateGallery({
   document,
   library,
+  initialTypeId,
   targetItemCount = 0,
   onApply,
   onClose: finishClose,
@@ -83,12 +84,14 @@ export function TemplateGallery({
   motionOrigin,
   onDuplicate,
   onExport,
+  onEdit,
   onImport,
   onRestoreVersion,
   onRetire,
 }: {
   document: DocumentSnapshot;
   library: readonly TemplateLibraryEntry[];
+  initialTypeId?: string;
   targetItemCount?: number;
   onApply: (template: TemplateDefinition) => void;
   onClose: () => void;
@@ -103,6 +106,7 @@ export function TemplateGallery({
     mode: "new" | "update",
   ) => Promise<TemplateDefinition>;
   onRetire?: (template: TemplateDefinition) => Promise<void>;
+  onEdit?: (template: TemplateDefinition) => Promise<void>;
   onExport?: (template: TemplateDefinition) => Promise<string>;
   onRestoreVersion?: (
     template: TemplateDefinition,
@@ -118,7 +122,7 @@ export function TemplateGallery({
   const motionRef = useRef<HTMLDivElement>(null);
   const originRef = useRef(motionOrigin ?? null);
   const onClose = useExitMotion(motionRef, finishClose, { visible: motionOpen, ...(motionOrigin ? { origin: originRef } : {}) });
-  const [preview, setPreview] = useState<TemplateDefinition | null>(null);
+  const [preview, setPreview] = useState<TemplateDefinition | null>(() => library.find((entry) => entry.definition.id === initialTypeId)?.definition ?? null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<TemplateLibraryFilter>("all");
   const [focusIndex, setFocusIndex] = useState(0);
@@ -449,6 +453,14 @@ export function TemplateGallery({
                 {isApplied(preview) ? "Keep this look" : "Use this look"}
               </button>
               <div className={styles.secondaryActions}>
+                {onEdit && !preview.id.startsWith("texttext.") && <button type="button" disabled={busy} onClick={async () => {
+                  setBusy(true);
+                  setError(null);
+                  try { await onEdit(preview); }
+                  catch (cause) { setError(cause instanceof Error ? cause.message : "Could not open this type."); }
+                  finally { setBusy(false); }
+                }}>Edit type</button>}
+
                 <button type="button" disabled={busy} onClick={async () => {
                   setBusy(true);
                   setError(null);

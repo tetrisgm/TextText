@@ -164,7 +164,7 @@ import {
   type AuthoringSource,
   type AuthoringSourceState,
 } from "./presentation/authoring-source";
-import type { ItemTypeBlueprint } from "./presentation/item-type-blueprint";
+import { compileItemTypeBlueprint, type ItemTypeBlueprint } from "./presentation/item-type-blueprint";
 import type {
   TemplateLibraryEntry,
   TemplateLibraryImpact,
@@ -4099,14 +4099,21 @@ export async function duplicateDocumentTemplate(input: {
   const name = input.name.trim().replace(/\s+/g, " ");
   if (!name) throw new Error("Give the new look a name.");
   if (name.length > 160) throw new Error("That name is too long.");
+  const authored = await getDocumentTemplateAuthoringSource(input.blogId, source.id, source.version);
+  const authoringSource = authored?.source ? {
+    ...authored.source,
+    blueprint: { ...authored.source.blueprint, name },
+  } : undefined;
+  const id = workspaceTemplateId(name);
   return createDocumentTemplateVersion({
     blogId: input.blogId,
-    definition: validateTemplateDefinition({
+    definition: authoringSource ? compileItemTypeBlueprint(authoringSource.blueprint, { id, version: 1 }) : validateTemplateDefinition({
       ...source,
-      id: workspaceTemplateId(name),
+      id,
       version: 1,
       name,
     }),
+    authoringSource,
     actor: input.actor,
     createdById: input.createdById,
   });
@@ -4169,9 +4176,11 @@ export async function restoreDocumentTemplateVersion(input: {
   }
   const source = await getDocumentTemplate(input.blogId, input.reference);
   if (!source) throw new Error("That version could not be found.");
+  const authored = await getDocumentTemplateAuthoringSource(input.blogId, source.id, source.version);
   return createDocumentTemplateVersion({
     blogId: input.blogId,
     definition: source,
+    authoringSource: authored?.source,
     actor: input.actor,
     createdById: input.createdById,
   });

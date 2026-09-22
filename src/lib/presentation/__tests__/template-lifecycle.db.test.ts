@@ -62,6 +62,23 @@ describe.skipIf(process.env.TEXTTEXT_READING_DB_TEST !== "1")("custom type lifec
     expect(compileItemTypeBlueprint(authored.blueprint, imported)).toEqual(imported);
   });
 
+  it("retains exact-version editable designs through remix and restore", async () => {
+    const source = workspaces[0];
+    const actor = { actorUserId: userId, actorType: "human" as const, actionName: "test.template.copy", targetType: "workspace" as const };
+    const blueprint = itemTypeBlueprintSchema.parse({ name: "Original design", fields: [], collection: { layout: "cards" }, starter: { title: "Original starter", fields: {} } });
+    const v1 = await store.createDocumentTemplateVersion({ blogId: source.id, definition: compileItemTypeBlueprint(blueprint, { id: "copy-design" }), authoringSource: authoringSourceFor(blueprint), actor });
+    const changed = { ...blueprint, name: "Later design" };
+    await store.createDocumentTemplateVersion({ blogId: source.id, definition: compileItemTypeBlueprint(changed, v1), authoringSource: authoringSourceFor(changed), actor });
+    const copied = await store.duplicateDocumentTemplate({ blogId: source.id, reference: v1, name: "Independent design", actor, createdById: userId });
+    const copySource = await store.getDocumentTemplateAuthoringSource(source.id, copied.id);
+    expect(copySource?.source?.blueprint).toEqual({ ...blueprint, name: "Independent design" });
+    expect(compileItemTypeBlueprint(copySource!.source!.blueprint, copied)).toEqual(copied);
+    const restored = await store.restoreDocumentTemplateVersion({ blogId: source.id, reference: v1, actor, createdById: userId });
+    expect(restored.version).toBe(3);
+    expect((await store.getDocumentTemplateAuthoringSource(source.id, v1.id))?.source?.blueprint).toEqual(blueprint);
+    expect((await store.getDocumentTemplateAuthoringSource(source.id, v1.id, 2))?.source?.blueprint).toEqual(changed);
+  });
+
   it("preserves pinned items through updates, retirement and a cross-workspace textpack import", async () => {
     const [source, destination] = workspaces;
     const actor = { actorUserId: userId, actorType: "human" as const, actionName: "test.template.lifecycle", targetType: "workspace" as const };

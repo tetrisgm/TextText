@@ -68,8 +68,8 @@ export function authoringSourceFor(
  */
 export type AuthoringSourceState =
   | { state: "authored"; source: AuthoringSource }
-  /** Never designed from a blueprint: a built-in, duplicate, import, restore,
-   *  a look saved from a document, or a row older than this column. */
+  /** No editable source: built-ins, document-derived looks, legacy imports,
+   *  or rows saved before authoring provenance was stored. */
   | { state: "assembled" }
   /** Designed, but by a compiler whose output this build would not reproduce.
    *  Reopening it would compile the same blueprint into a different look. */

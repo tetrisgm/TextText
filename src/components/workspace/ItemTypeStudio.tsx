@@ -6,7 +6,6 @@ import {
   createItemTypeAction,
   updateItemTypeAction,
   readItemTypeUsagesAction,
-  readItemTypeForEditAction,
 } from "@/app/editor/item-type-actions";
 import {
   DocumentRenderer,
@@ -27,6 +26,7 @@ import { assessItemTypeQuality } from "@/lib/presentation/item-type-quality";
 import type { ItemTypeSaveScope } from "@/lib/presentation/item-type-update";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import {
+  STUDIO_FOLDER_SAMPLE_LIMIT,
   EMPTY_STUDIO_TIMELINE,
   studioTimelineFrom,
   addStudioRevision,
@@ -35,6 +35,7 @@ import {
   type StudioRevisionSource,
 } from "./item-type-studio-state";
 import styles from "./ItemTypeStudio.module.css";
+import { readEditableType } from "./TypeDesignerContext";
 import { ItemTypeCollectionPreview, collectionPreviewItem, type CollectionPreviewItem, type CollectionPreviewMetadata } from "./ItemTypeCollectionPreview";
 import { collectionDayKey } from "@/lib/presentation/collection-layout";
 
@@ -883,11 +884,8 @@ export function ItemTypeStudio({
                   setBusy("load");
                   setError(null);
                   try {
-                    const result = await readItemTypeForEditAction(handle, templateId);
-                    if (!result.ok) throw new Error(result.error);
-                    if (result.retired) throw new Error("This type has been retired.");
-                    if (!result.blueprint) throw new Error("This type has no editable design. You can create a new type from a starting point.");
-                    setEditing({ templateId, baseVersion: result.version, blueprint: result.blueprint });
+                    const result = await readEditableType(handle, templateId);
+                    setEditing(result);
                     setTimeline(studioTimelineFrom(result.blueprint));
                     setSaveMode("version");
                     setApplyToExisting(false);
@@ -1340,12 +1338,13 @@ export function ItemTypeStudio({
                     value="folder"
                     disabled={!folderPath}
                   >
-                    Folder content ({selectedFolderDocuments.length})
+                    Folder sample ({selectedFolderDocuments.length})
                   </option>
                   <option value="sample">Sample content</option>
                   <option value="empty">Empty state</option>
                   <option value="stress">Stress test</option>
                 </select>
+                {previewContentMode === "folder" ? <p>Previewing up to {STUDIO_FOLDER_SAMPLE_LIMIT} folder items. Filters apply to this sample.</p> : null}
                 {previewContentMode === "folder" && folderPreviewStatus ? (
                   <p role="status">{folderPreviewStatus}</p>
                 ) : null}

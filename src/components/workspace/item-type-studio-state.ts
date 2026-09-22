@@ -1,5 +1,17 @@
 import type { ItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
 
+export const STUDIO_FOLDER_SAMPLE_LIMIT = 40;
+
+/** Bound both total document reads and concurrent work for a design sample. */
+export async function loadStudioFolderSample<T, R>(items: readonly T[], read: (item: T) => Promise<R>): Promise<R[]> {
+  const sample = items.slice(0, STUDIO_FOLDER_SAMPLE_LIMIT);
+  const results: R[] = [];
+  for (let start = 0; start < sample.length; start += 8) {
+    results.push(...await Promise.all(sample.slice(start, start + 8).map(read)));
+  }
+  return results;
+}
+
 export type StudioRevisionSource = "ai" | "manual" | "starter";
 
 type StudioRevision = {

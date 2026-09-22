@@ -1,93 +1,88 @@
 # TextText: personal workspace
 
-## Current direction: September 21
+The [personal workspace plan](docs/plans/personal-workspace.md) is the implementation
+contract. This document describes the current direction, replacing the previous
+news-only composition. Artifact informs editorial browsing, Shiori informs saved
+reading, and nested collections organize the workspace. Superhuman informs speed
+and keyboard efficiency. Writing should feel like a clean article editor.
 
-The [personal workspace plan](docs/plans/personal-workspace.md) is the current
-implementation contract. It supersedes the news-only composition below, which
-describes the previous release. Artifact remains the editorial reference for
-browsing; Shiori informs saved reading, nested collections inform organization,
-and a clean article editor supports writing. Superhuman informs responsiveness
-and keyboard efficiency, not the Home layout.
+## Desktop and narrow screens
 
-Home combines quick capture, a compact Continue section, and a dated personal
-timeline. News is the full RSS destination. Bookmarks contains deliberate saves.
-Writing contains notes and articles. Folders can mix these and custom types.
-Desktop keeps resizable navigation on the left and contextual AI on the right;
-explicit collapse choices are respected. Narrow layouts use accessible drawers.
-All views share typography, colors, focus behavior and document identity.
+Desktop has three regions: persistent folder navigation on the left, the active
+workspace in the center, and contextual AI on the right. Rails are resizable and
+collapsible; respect explicit choices and remember them. Reserve each rail's width
+once. The center takes available space, with readable line lengths inside it.
+Do not stretch a phone screen across a desktop or force desktop navigation into a
+bottom bar. Narrow screens use accessible drawers and compact destinations.
 
-The existing performance and visual verification requirements below still apply.
+## Destinations
 
-## Previous release reference
+Home opens with quick capture, up to three Continue entries, and a dated personal
+timeline. Continue reflects deliberate opens, not autosaves. It belongs in the
+center, never in a separate fixed column. The timeline combines writing, deliberate
+saves, and bounded news groups, with Everything, Writing, Saved, and News filters.
+New arrivals must not shift the viewport or keyboard selection.
 
-Artifact News is the visual and interaction reference for the app, including
-Home, navigation, reading, writing, saved items and settings. The owner's
-September 19 direction replaces the former broadsheet, Apple Notes and
-Superhuman mixture. TextText's capabilities fit within this design.
+News is the complete RSS experience. Use editorial rows with source, time, title,
+and restrained imagery. Bookmarks contains deliberate saves, including retained
+RSS items. Give saved sources readable previews and useful metadata. Read later
+is a state on an item, not a duplicate item or another type.
 
-## Reference
+Writing combines notes and articles. Capture stays lightweight; longer writing
+uses the same document identity and a quiet editor. New items remain nonpublic.
+Folders and subfolders can contain any mixture, including user-defined types.
+Keep Starred, Shared, Trash, settings, and search reachable from the workspace.
 
-Original captures live in `~/Downloads/artifact-reference/`. The captioned
-local gallery is `~/Downloads/ARTIFACT_VISUAL_REFERENCES_RECOVERED/artifact_screens_local.html`.
-Use the actual light and dark screens when judging a change. The historical
-feature mapping is in [the Artifact plan](docs/plans/artifact-home-replication.md).
-Its clauses retaining the Apple shell and a segmented desktop bar are superseded.
+A folder's view and its default type for new items are independent. Choosing a
+default does not restyle old documents. The type library and designer form one
+lifecycle: inspect, create, edit, copy, export/import, restore, and retire. Preserve
+editable source alongside validated presentation. Existing documents keep their
+pinned versions unless an explicit migration is requested.
 
-## Composition
+## Typography and surfaces
 
-Home, Headlines and Profile retain Artifact's house, globe and person in
-the bottom bar. Notes adds a fourth destination in the same bar, with its
-own folder strip, note list and New Note action. A single news column is
-centered at up to 640px on desktop and fills the phone. Search and the bell
-sit above the horizontally scrolling topic strip. For You comes first.
+Use shared tokens in `src/styles/artifact.css`, the system sans serif stack, and
+neutral surfaces. Check light and dark contrast on both the canvas and secondary
+surfaces. Editorial headlines are approximately 17.5px semibold at 1.3 line height;
+publisher labels 15px and metadata 14px. Selection uses clear ink and weight.
 
-The Home feed begins immediately. It has no greeting, Recent column, library
-controls, folder tree or assistant panel around it. Profile contains Read
-Later, Reading History, interests, hidden publishers, Publisher Subscriptions,
-the library and settings. First-time news setup asks for interests.
-Folders and the assistant are opened deliberately. Keyboard commands remain
-available. The source catalogue makes an empty workspace a news setup state.
+Editorial lists use inset hairline separators, about 14px vertical padding, small
+publisher marks, and 68 to 72px thumbnails. Occasional photographs can occupy a
+row at 16:9 with 8px corners. Avoid shadows and colored containers around every
+story. Saved-reading cards and custom collection layouts must still share the
+workspace's typography, spacing, focus treatment, and colors.
 
-Opening a news article replaces the destination bar with back, share, Read
-Later and Aa. The title belongs to the article. Aa holds text size and article
-options. Writing uses the same column, sans serif type and neutral surface.
-Documents keep their content and collaboration behavior across these changes.
+Reader and editor use comfortable measures without oversized desktop controls.
+Contextual actions stay near the active item, with accessible touch sheets where
+appropriate. Preserve position when opening an item and returning to its list.
 
-## Type and surfaces
+## Interaction and speed
 
-Use the system sans serif stack throughout the app. Compact headlines are
-17.5px semibold with approximately 1.3 line height. Publisher labels are 15px;
-metadata is 14px. Topic tabs use the headline size. Selection is ink and
-weight, with no pill or underline.
+Opening the app repeatedly must be cheap. Restore the current location; make Home,
+search, new capture, navigation, and creation available from the keyboard. Save
+input before extraction or AI work. Preserve IME composition, multiline input,
+offline drafts, history, and full-document collaboration.
 
-Light uses white with near-black text. Dark uses `#000000` with `#f2f2f2`
-text. Secondary text is `#6b6b6b` in light and `#9a9a9a` in dark. Shared
-workspace colors live in `src/styles/artifact.css`; Home uses those same
-tokens. Check text contrast against both the canvas and secondary surfaces.
-
-Rows form one continuous list with inset hairline separators. Use about 14px
-vertical padding, a 16px publisher mark, and a 68 to 72px square thumbnail.
-Every few rows, a photograph occupies the column at 16:9. Photos have 8px
-corners. Story rows have no card boundary, shadow or colored background.
-
-Contextual actions open a bottom sheet, with large circular icons for
-Show fewer, Read Later, Share and Hide publisher. Long press opens the same
-sheet on touch screens. Feedback leaves a dimmed row
-in place with Undo so the content below does not jump. Headlines groups
-coverage from actual sources; displayed counts and reading times must be real.
+AI stays contextual and shows its scope: current item plus explicitly attached
+sources. Keep conversations across navigation and retain review-before-apply.
+Library and designer dialogs must have one active focus trap and return to the
+place that opened them. Preview samples must be bounded and labeled honestly.
 
 ## Verification
 
-Inspect the running app beside the originals at phone and desktop widths,
-in both themes. Check Home, Headlines, Profile, a saved article, the reader,
-an editor and settings, including navigation back to the feed. A stylesheet
-assertion alone does not establish visual fidelity. Keep accessible names,
-visible keyboard focus and reduced-motion support.
+Inspect the running production build at phone, laptop, and wide desktop sizes,
+in both themes. Check Home, News, Bookmarks, Writing, mixed nested folders, reader,
+editor, settings, and back navigation. DOM or stylesheet assertions alone do not
+establish visual fidelity. Keep visible keyboard focus, accessible names, and
+reduced-motion behavior. Reference captures remain in
+`~/Downloads/artifact-reference/`; the captioned gallery is
+`~/Downloads/ARTIFACT_VISUAL_REFERENCES_RECOVERED/artifact_screens_local.html`.
 
-Production benchmarks must keep article, feed, channel, folder and note
-navigation below 200ms at the 95th percentile. Check New Note through saving,
-reload and reopening. Check two editors typing at once, including intact
-words and convergence; fast navigation cannot compensate for lost writing.
+Production article, feed, channel, folder, and note navigation must remain below
+200ms at the 95th percentile. Check realistic large folders, cold and warm opens,
+capture through save/reload/reopen, long documents, and concurrent editors with
+intact words and convergence. Fast navigation cannot compensate for lost writing.
+Record receipts against the actual running build, not an older preview.
 
-No em dashes in product copy. Use sentence case, direct labels and no
-exclamation marks. Decorative marks must not carry information alone.
+No em dashes in product copy. Use sentence case and direct labels. Decorative
+marks must never be the only way information is conveyed.

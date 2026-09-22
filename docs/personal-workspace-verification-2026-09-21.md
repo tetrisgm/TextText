@@ -814,3 +814,38 @@ error-state acceptance. This build is not a release or installed app update.
 
 Final default regression run: 387 files / 3,600 tests passed; 17 opt-in files /
 128 tests skipped. Production build passed before test-only corrections.
+
+## Shared designer lifecycle and bounded preview
+
+Both library entry points now hand editing to the shell's single designer and
+return to the selected type with refreshed history. Sidebar and saved-type
+picker use the same source/retirement/concurrency validation. Copy and restore
+preserve exact-version authoring source; renamed copies compile their renamed
+source so exported source and render definition remain consistent.
+
+Folder design previews read at most 40 documents with eight concurrent reads,
+explicitly labeled as a sample whose filters apply within that sample. A
+5,000-candidate behavioral test verifies the read and concurrency bounds. This
+is a design preview bound, not a claim that large-workspace UI timing passed.
+DESIGN.md now contains only the current workspace direction.
+
+Production build `.texttext/personal-build-designer`, deployment
+`personal-designer`, runs on port 3129. In that build, opened Review with starter
+from the document's library, entered its existing design, canceled back to the
+same selected library detail, copied it to Editable review copy, and reopened
+the copy's editable fields and starter. Its usage remained zero; the source
+retained one item and one folder. Existing Book review kept its title/body and
+pinned version. Development verification created a no-content-change v3 of the
+original type; it did not migrate documents.
+
+Default regression: 387 files / 3,601 tests passed; 17 opt-in files / 129 tests
+skipped. The local database lifecycle suite separately passed all three tests,
+including copy/restore source preservation and immutable history. TypeScript
+and production build passed. Target lint reports warnings only. Replaced the
+old entry-point source-string tests with behavior tests of shared validation.
+Logs: `/tmp/texttext-designer-{build,server,db2,full-tests-final,tsc-final,lint}.log`.
+
+Remaining acceptance includes one folder renderer, destination state
+consolidation, bounded migration reads, and the full production performance,
+native capture, responsive/error-state, and agent workflow gates. This is not
+a release, installed app update, or completion of the full plan.

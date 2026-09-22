@@ -1,3 +1,4 @@
+import { loadStudioFolderSample, STUDIO_FOLDER_SAMPLE_LIMIT } from "../item-type-studio-state";
 import { describe, expect, it } from "vitest";
 import { ITEM_TYPE_STARTERS } from "@/lib/presentation/item-type-blueprint";
 import {
@@ -82,4 +83,20 @@ describe("item type studio timeline", () => {
     ]);
     expect(currentStudioRevision(branched)?.blueprint.name).toBe("Third design");
   });
+});
+
+it("bounds a 5000-item folder preview to 40 reads with at most 8 in flight", async () => {
+  let active = 0;
+  let peak = 0;
+  let reads = 0;
+  const result = await loadStudioFolderSample(Array.from({ length: 5000 }, (_, index) => index), async (item) => {
+    reads++;
+    peak = Math.max(peak, ++active);
+    await Promise.resolve();
+    active--;
+    return item;
+  });
+  expect(reads).toBe(STUDIO_FOLDER_SAMPLE_LIMIT);
+  expect(peak).toBeLessThanOrEqual(8);
+  expect(result).toEqual(Array.from({ length: 40 }, (_, index) => index));
 });

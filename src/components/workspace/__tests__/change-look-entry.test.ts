@@ -1,59 +1,29 @@
-import { readFileSync } from "node:fs";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readEditableType } from "../TypeDesignerContext";
+import { itemTypeBlueprintSchema } from "@/lib/presentation/item-type-blueprint";
 
-import { describe, expect, it } from "vitest";
+const read = vi.hoisted(() => vi.fn());
+vi.mock("@/app/editor/item-type-actions", () => ({ readItemTypeForEditAction: read }));
+beforeEach(() => read.mockReset());
 
-/**
- * Goal one's second half needed an entry point, and had none: the server
- * action, the studio prop and the timeline all took a look to reopen, and
- * nothing in the workspace offered it to a person. Everything below is
- * reachable only through the shell, which no test can mount here, so this
- * checks the wiring exists rather than leaving it to be discovered missing.
- */
-const SHELL = [
-  "../../PostWorkspaceShell.tsx",
-  "../WorkspaceSidebarChrome.tsx",
-  "../WorkspaceRootPages.tsx",
-  "../WorkspaceSpecialPages.tsx",
-  "../WorkspaceItemViews.tsx",
-  // The editor moved into its own module so it can be loaded on demand;
-  // these contracts follow it.
-  "../WorkspaceItemEditor.tsx",
-  "../../../lib/workspace/local-view.ts",
-  "../../../lib/workspace/draft-sessions.ts",
-]
-  .map((p) => readFileSync(new URL(p, import.meta.url), "utf8"))
-  .join("\n");
-
-describe("changing a look from the workspace", () => {
-  it("offers it on a folder, beside building one", () => {
-    expect(SHELL).toContain("Edit default type");
-    expect(SHELL).toContain("onChangeItemType");
+describe("shared type designer entry", () => {
+  it("preserves the exact version used for optimistic concurrency", async () => {
+    const blueprint = itemTypeBlueprintSchema.parse({ name: "Review", fields: [], collection: { layout: "list" } });
+    read.mockResolvedValue({ ok: true, version: 7, blueprint, state: "authored", retired: false });
+    await expect(readEditableType("mira", "review")).resolves.toEqual({ templateId: "review", baseVersion: 7, blueprint });
+    expect(read).toHaveBeenCalledWith("mira", "review");
   });
-
-  it("reads the design before opening the studio on it", () => {
-    // Opening blind would show the person an empty designer and call it their
-    // look. The read can also answer "this one was not designed here".
-    expect(SHELL).toContain("readItemTypeForEditAction");
-    expect(SHELL).toContain("setItemTypeStudioEditing");
+  it.each([
+    ["needs-migration", "older designer version"],
+    ["unreadable", "could not be read"],
+    ["assembled", "no editable design"],
+  ])("explains %s without opening an empty design", async (state, message) => {
+    read.mockResolvedValue({ ok: true, version: 1, blueprint: null, state, retired: false });
+    await expect(readEditableType("mira", "review")).rejects.toThrow(message);
   });
-
-  it("hands the studio the look and the version it was read at", () => {
-    // Without baseVersion the save is a blind write, and the compare-and-swap
-    // in updateWorkspaceItemType has nothing to compare.
-    expect(SHELL).toMatch(/editing=\{itemTypeStudioEditing/);
-    expect(SHELL).toContain("baseVersion: read.version");
-  });
-
-  it("says why, for each way a look can fail to reopen", () => {
-    expect(SHELL).toContain("built-in look");
-    expect(SHELL).toContain("older version of the designer");
-    expect(SHELL).toContain("could not be read");
-    expect(SHELL).toContain("saved from a document, imported, or duplicated");
-  });
-
-  it("clears the look being edited when the studio closes", () => {
-    // Otherwise the next "Build with AI" opens on the last look edited and
-    // saves a new version of it instead of creating anything.
-    expect(SHELL).toMatch(/setItemTypeStudioEditing\(null\)/);
+  it("rejects retired types and propagates access failures", async () => {
+    read.mockResolvedValueOnce({ ok: true, retired: true }).mockResolvedValueOnce({ ok: false, error: "Not allowed" });
+    await expect(readEditableType("mira", "review")).rejects.toThrow("retired");
+    await expect(readEditableType("mira", "review")).rejects.toThrow("Not allowed");
   });
 });

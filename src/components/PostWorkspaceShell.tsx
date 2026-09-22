@@ -1,5 +1,8 @@
 "use client";
 
+import { loadStudioFolderSample } from "./workspace/item-type-studio-state";
+import { TypeDesignerContext, readEditableType } from "./workspace/TypeDesignerContext";
+
 import { itemDestination } from "@/lib/workspace/writing";
 import { readingUnreadByFolder } from "@/components/workspace/reading/unread";
 import { useListReturnFocus } from "@/components/workspace/useListReturnFocus";
@@ -81,7 +84,7 @@ import {
   trashFolderAction,
 } from "@/app/editor/actions";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
-import { readItemTypeForEditAction } from "@/app/editor/item-type-actions";
+
 import type { ItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
 import {
   useCommandContextReader,
@@ -617,28 +620,18 @@ function LocalWorkspaceShell({
       const candidates = currentPool.posts.filter(
         (post) => folderPathForPoolPost(currentPool, post) === folderPath,
       );
-      // Read all candidates before the preview query. Bound concurrent reads,
-      // not the results, or a filter can hide matches beyond the first page.
-      for (let start = 0; start < candidates.length; start += 12) {
-        await Promise.all(candidates.slice(start, start + 12).map((post) =>
-          ensurePostDocument(currentPool.blogId, post.id),
-        ));
-      }
-      return candidates.flatMap((post) => {
-        const cached = getCachedWorkspacePostDocument(
-          currentPool.blogId,
-          post.id,
-        );
-        return cached
-          ? [{
-              folderPath, document: cached.document,
-              pinned: Boolean(post.pinned),
-              createdAt: post.date ?? null,
-              updatedAt: post.updatedAt ?? post.date ?? null,
-              publishedAt: post.status === "published" ? (post.date ?? null) : null,
-            }]
-          : [];
+      const sample = await loadStudioFolderSample(candidates, async (post) => {
+        await ensurePostDocument(currentPool.blogId, post.id);
+        const cached = getCachedWorkspacePostDocument(currentPool.blogId, post.id);
+        return cached ? {
+          folderPath, document: cached.document,
+          pinned: Boolean(post.pinned),
+          createdAt: post.date ?? null,
+          updatedAt: post.updatedAt ?? post.date ?? null,
+          publishedAt: post.status === "published" ? (post.date ?? null) : null,
+        } : null;
       });
+      return sample.filter((entry) => entry !== null);
     },
     [],
   );
@@ -980,20 +973,6 @@ function LocalWorkspaceShell({
   const [pendingDeletePostIds, setPendingDeletePostIds] = useState<string[]>(
     [],
   );
-  /**
-   * A look opened to be changed, rather than a new one being made.
-   *
-   * Reading it is a round trip, and it can answer "this one was not designed
-   * here", so the studio opens on what came back rather than on an assumption.
-   */
-  /**
-   * Why a look could not be reopened, when it could not.
-   *
-   * Said out loud rather than by opening an editor on nothing: a built-in, an
-   * import, a duplicate and a look designed by an older version of the
-   * designer each fail for a different reason, and each is a different thing
-   * to tell someone.
-   */
   const [lookNotice, setLookNotice] = useState<string | null>(null);
   const [itemTypeStudioEditing, setItemTypeStudioEditing] = useState<{
     templateId: string;
@@ -1003,6 +982,13 @@ function LocalWorkspaceShell({
   const [itemTypeStudioFolderPath, setItemTypeStudioFolderPath] = useState<
     string | null
   >(null);
+  const designerReturnRef = useRef<(() => void) | null>(null);
+  const openTypeDesigner = useCallback(async (templateId: string, folderPath = "") => {
+    const editing = await readEditableType(displayPool.blog.handle, templateId);
+    setItemTypeStudioEditing(editing);
+    setItemTypeStudioFolderPath(folderPath);
+    await new Promise<void>((resolve) => { designerReturnRef.current = resolve; });
+  }, [displayPool.blog.handle]);
   const { state: assistantState, width: assistantWidth } =
     useWorkspaceAssistantPreferences(initialAssistantState, initialAssistantWidth);
   const { width: workspaceSidebarWidth } =
@@ -5175,6 +5161,7 @@ function LocalWorkspaceShell({
   const effectiveSidebarCollapsed = sidebarCollapsed;
   const showDocumentTabs = (view.level === "post" || view.level === "edit") && tabPosts.length > 1;
   return (
+    <TypeDesignerContext.Provider value={openTypeDesigner}>
     <div
       data-artifact-view={view.level}
       className={`post-editor-shell applecms artifact-workspace has-sidebar ${className}${
@@ -5232,42 +5219,8 @@ function LocalWorkspaceShell({
           setItemTypeStudioFolderPath(folder.path);
         }}
         onChangeItemType={(folder) => {
-          void (async () => {
-            const templateId = folder.defaultTemplate?.id ?? "";
-            if (!templateId || templateId.startsWith("texttext.")) {
-              // Built-ins are compiled in code and have no design to reopen.
-              // Offering an editor here would open one on nothing.
-              setLookNotice(
-                "This folder uses a built-in look. Build one with AI to make a version you can change.",
-              );
-              return;
-            }
-            const read = await readItemTypeForEditAction(
-              displayPool.blog.handle,
-              templateId,
-            );
-            if (!read.ok) {
-              setLookNotice(read.error);
-              return;
-            }
-            if (!read.blueprint) {
-              // Four different reasons, and each is a different thing to say.
-              setLookNotice(
-                read.state === "needs-migration"
-                  ? "This look was designed with an older version of the designer, so changing it here would alter how it renders. Build a new one from it instead."
-                  : read.state === "unreadable"
-                    ? "This look's saved design could not be read, so it cannot be reopened."
-                    : "This look was saved from a document, imported, or duplicated rather than designed, so there is no design to reopen. Build one with AI instead.",
-              );
-              return;
-            }
-            setItemTypeStudioEditing({
-              templateId,
-              baseVersion: read.version,
-              blueprint: read.blueprint,
-            });
-            setItemTypeStudioFolderPath(folder.path);
-          })();
+          void openTypeDesigner(folder.defaultTemplate?.id ?? "", folder.path)
+            .catch((error: unknown) => setLookNotice(error instanceof Error ? error.message : "Could not open this type."));
         }}
         onSelectRoot={() => { setHomePane("home"); navigateRoot(); }}
         onToggleCollapsed={toggleSidebarCollapsed}
@@ -5550,6 +5503,8 @@ function LocalWorkspaceShell({
           onClose={() => {
             setItemTypeStudioFolderPath(null);
             setItemTypeStudioEditing(null);
+            designerReturnRef.current?.();
+            designerReturnRef.current = null;
           }}
           loadPreviewDocuments={loadItemTypeStudioPreviewDocuments}
         />
@@ -5587,6 +5542,7 @@ function LocalWorkspaceShell({
         onConfirm={confirmDeleteTarget}
       />
     </div>
+    </TypeDesignerContext.Provider>
   );
 }
 

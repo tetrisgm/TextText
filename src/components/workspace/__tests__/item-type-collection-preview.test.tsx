@@ -77,7 +77,7 @@ describe("studio collection preview", () => {
     const content = previewContentForDesign({ blueprint, template }, "folder", []);
     expect(content.collection).toEqual([]);
     const html = renderToStaticMarkup(<ItemTypeStudio blogId="b" handle="shoku" editing={{ templateId: "deadlines", baseVersion: 1, blueprint }} folders={[{ id: "tasks", name: "Tasks", path: "Tasks" }]} initialFolderPath="Tasks" loadPreviewDocuments={async () => []} onClose={() => {}} />);
-    expect(html).toContain('<option value="folder">Folder content (0)</option>');
+    expect(html).toContain('<option value="folder">Folder sample (0)</option>');
   });
   it("keeps sample and stress dates in the current month", () => {
     vi.useFakeTimers();

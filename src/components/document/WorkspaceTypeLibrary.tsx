@@ -9,6 +9,7 @@ import {
   type FolderLookState,
 } from "@/app/editor/folder-template-actions";
 import { useDialogFocus } from "@/components/accessibility/useDialogFocus";
+import { useTypeDesigner } from "@/components/workspace/TypeDesignerContext";
 import styles from "./TemplateGallery.module.css";
 import { TemplateGallery } from "./TemplateGallery";
 
@@ -21,6 +22,9 @@ type Props = Pick<ComponentProps<typeof TemplateGallery>, "onApply" | "onClose" 
 
 /** Both item and folder entry points use the same authoritative library. */
 export function WorkspaceTypeLibrary({ handle, folderPath, document, onChanged, ...gallery }: Props) {
+  const openDesigner = useTypeDesigner();
+  const [selectedTypeId, setSelectedTypeId] = useState<string | undefined>();
+  const [designing, setDesigning] = useState(false);
   const [state, setState] = useState<FolderLookState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(async () => {
@@ -38,10 +42,21 @@ export function WorkspaceTypeLibrary({ handle, folderPath, document, onChanged, 
     }).catch(() => { if (current) setError("Could not load the type library."); });
     return () => { current = false; };
   }, [handle, folderPath]);
+  if (designing) return null;
+  if (error && state) return <LibraryStatus error={error} onClose={() => setError(null)} />;
   if (!state) return <LibraryStatus error={error} onClose={gallery.onClose} />;
   const changed = async () => { await load(); onChanged?.(); };
-  return <TemplateGallery {...gallery} library={state.library}
+  return <TemplateGallery {...gallery} library={state.library} initialTypeId={selectedTypeId}
     document={document ?? emptyDocumentSnapshot(state.current ?? { id: "texttext.note", version: 1 })}
+    onEdit={openDesigner ? async (selected) => {
+      setSelectedTypeId(selected.id);
+      const finished = openDesigner(selected.id, folderPath);
+      // Suspend the gallery focus trap while the shared designer is open.
+      setDesigning(true);
+      try { await finished; await load(); }
+      catch (cause) { setError(cause instanceof Error ? cause.message : "Could not open this type."); }
+      finally { setDesigning(false); }
+    } : undefined}
     onExport={(selected) => exportTemplateLookAction(handle, selected.id, selected.version)}
     onDuplicate={async (selected, name) => {
       const result = await duplicateFolderLookAction(handle, selected.id, selected.version, name);
