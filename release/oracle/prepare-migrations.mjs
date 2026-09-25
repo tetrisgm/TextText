@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { generateDrizzleJson, generateMigration } from "drizzle-kit/api";
+import { isEntrypoint } from "./entrypoint.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const hash = (data) => createHash("sha256").update(data).digest("hex");
@@ -84,7 +85,7 @@ export async function prepareMigrations({ projectRoot = root, output }) {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isEntrypoint(import.meta.url)) {
   try {
     if (process.argv.length !== 4 || process.argv[2] !== "--out") throw new Error("Usage: prepare-migrations.mjs --out <new directory>");
     console.log(await prepareMigrations({ output: process.argv[3] }));

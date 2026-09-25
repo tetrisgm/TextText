@@ -4,9 +4,10 @@ import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { localDatabase, protectedEnvironment } from "./start.mjs";
+import { isEntrypoint } from "./entrypoint.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -84,7 +85,7 @@ export async function bootstrapDatabase({ directory = join(here, "migrations"), 
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isEntrypoint(import.meta.url)) {
   try {
     let directory = join(here, "migrations");
     let environment = process.env;

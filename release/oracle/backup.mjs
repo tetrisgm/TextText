@@ -5,9 +5,9 @@ import { join, resolve } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { pathToFileURL } from "node:url";
 import { localDatabase, protectedEnvironment } from "./start.mjs";
 import { decryptBackup, uploadEncryptedBackup } from "./backup-remote.mjs";
+import { isEntrypoint } from "./entrypoint.mjs";
 
 const archivePattern = /^texttext-\d{8}T\d{6}Z-[a-f0-9]{8}\.dump$/;
 
@@ -122,7 +122,7 @@ async function backupCLI(environment) {
   if (result.error || result.status !== 0) throw new Error("Backup did not complete, or another backup already holds the lock.");
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isEntrypoint(import.meta.url)) {
   try {
     const args = process.argv.slice(2);
     let environment = process.env;

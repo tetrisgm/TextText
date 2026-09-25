@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { isEntrypoint } from "./entrypoint.mjs";
 import pg from "pg";
 import { localDatabase, protectedEnvironment } from "./start.mjs";
 
@@ -166,7 +165,7 @@ export async function smoke({ scratch = false, environment = process.env, origin
   return { ok: true, checks };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isEntrypoint(import.meta.url)) {
   try {
     const options = {};
     const args = process.argv.slice(2);

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { spawnSync } from "node:child_process";
 import { copyWithoutSecrets, relativeBuildDirectory } from "./package.mjs";
@@ -11,12 +11,30 @@ import { localDatabase, protectedEnvironment, runtimeEnvironment } from "./start
 import { backupConnection, createBackup, retainedArchives } from "./backup.mjs";
 import { decryptBackup, encryptBackup, remoteRetention, uploadEncryptedBackup } from "./backup-remote.mjs";
 import { verifyPackage } from "./verify-package.mjs";
+import { isEntrypoint } from "./entrypoint.mjs";
 
 function temporary(t) {
   const directory = mkdtempSync(join(tmpdir(), "texttext-oracle-test-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   return directory;
 }
+
+test("all Oracle CLIs execute through the current release symlink", (t) => {
+  const directory = temporary(t);
+  const current = join(directory, "current");
+  symlinkSync(resolve("."), current, "dir");
+  for (const name of ["start", "backup", "bootstrap-database", "smoke", "package", "prepare-migrations", "verify-package"]) {
+    const result = spawnSync(process.execPath, [join(current, "release/oracle", `${name}.mjs`), "--invalid-option"], { encoding: "utf8", env: { ...process.env, DATABASE_URL: "" } });
+    assert.equal(result.status, 1, `${name} must execute its CLI rather than silently exit`);
+    assert.match(result.stderr, name === "start" ? /Linux ARM64|Usage:/ : /Usage:|ENOENT/, `${name} must report its argument guard`);
+  }
+  const file = join(directory, "unsafe.env");
+  writeFileSync(file, "EXAMPLE=not-a-secret\n", { mode: 0o644 });
+  const backup = spawnSync(process.execPath, [join(current, "release/oracle/backup.mjs"), "--env-file", file], { encoding: "utf8" });
+  assert.equal(backup.status, 1);
+  assert.match(backup.stderr, /private regular file/);
+  assert.equal(isEntrypoint(import.meta.url, "-"), false);
+});
 
 test("runtime enforces loopback without exposing database credentials", () => {
   const database = "postgres://test:secret-password@127.0.0.1:5433/texttext";

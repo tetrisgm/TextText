@@ -4,8 +4,9 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, 
 import { createHash } from "node:crypto";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { preparedRelease } from "./bootstrap-database.mjs";
+import { isEntrypoint } from "./entrypoint.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -84,7 +85,7 @@ export function packageBuild({ projectRoot = root, distDirectory = ".next", migr
     run("npm", ["ci", "--omit=dev", "--include=optional", "--ignore-scripts", "--os=linux", "--cpu=arm64", "--libc=glibc", "--no-audit", "--no-fund"], { cwd: app });
     assertLinuxArmRuntime(app);
     mkdirSync(join(app, "release/oracle"), { recursive: true });
-    for (const name of ["start.mjs", "backup.mjs", "backup-remote.mjs", "bootstrap-database.mjs", "smoke.mjs"]) cpSync(join(projectRoot, "release/oracle", name), join(app, "release/oracle", name));
+    for (const name of ["entrypoint.mjs", "start.mjs", "backup.mjs", "backup-remote.mjs", "bootstrap-database.mjs", "smoke.mjs"]) cpSync(join(projectRoot, "release/oracle", name), join(app, "release/oracle", name));
     copyWithoutSecrets(resolve(migrationsDirectory), join(app, "release/oracle/migrations"));
     mkdirSync(join(app, "scripts/lib"), { recursive: true });
     cpSync(join(projectRoot, "scripts/verify-production-database.mjs"), join(app, "scripts/verify-production-database.mjs"));
@@ -109,7 +110,7 @@ export function packageBuild({ projectRoot = root, distDirectory = ".next", migr
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isEntrypoint(import.meta.url)) {
   try {
     let distDirectory = ".next";
     let migrationsDirectory;

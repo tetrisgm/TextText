@@ -3,7 +3,7 @@ import { createReadStream, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { basename, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { pathToFileURL } from "node:url";
+import { isEntrypoint } from "./entrypoint.mjs";
 
 export async function verifyPackage(archive) {
   const checksum = readFileSync(`${archive}.sha256`, "utf8").trim();
@@ -34,7 +34,7 @@ export async function verifyPackage(archive) {
   return manifest;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isEntrypoint(import.meta.url)) {
   try {
     if (process.argv.length !== 3) throw new Error("Usage: verify-package.mjs <archive.tar.gz>");
     console.log(JSON.stringify(await verifyPackage(resolve(process.argv[2]))));

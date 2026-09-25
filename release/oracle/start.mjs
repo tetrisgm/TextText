@@ -3,6 +3,7 @@ import { lstatSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseEnv } from "node:util";
+import { isEntrypoint } from "./entrypoint.mjs";
 
 export function protectedEnvironment(path) {
   const stat = lstatSync(path);
@@ -34,7 +35,7 @@ export function runtimeEnvironment(environment) {
   return { ...environment, NODE_ENV: "production", HOSTNAME: "127.0.0.1", PORT: String(port), NEXT_TELEMETRY_DISABLED: "1" };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isEntrypoint(import.meta.url)) {
   try {
     if (process.platform !== "linux" || process.arch !== "arm64") throw new Error("This release targets Linux ARM64.");
     const args = process.argv.slice(2);
