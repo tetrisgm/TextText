@@ -133,8 +133,10 @@ under `~/Library/CloudStorage`, Spotlight indexing, a Share extension, Quick
 Look previews, App Intents, quick capture, a global hotkey, and a local Codex
 adapter. Template and look surfaces are web UI, hosted in that window.
 
-Distribution is Developer ID plus Sparkle for daily use and TestFlight for
-sharing builds. There is no Mac App Store storefront, by owner ruling.
+Distribution targets the Mac App Store for general use and TestFlight for
+pre-release builds. The Developer ID edition is a legacy channel during the
+transition. Native Sign in with Apple in the Store edition gives people the
+standard macOS sign-in sheet without the website consent prompt.
 
 ## Repo layout and commands
 

@@ -117,12 +117,13 @@ Nothing else is.
 The Mac app and the web are equals. The Mac app is how the product feels
 native: documents as real files in Finder, Spotlight, share sheet,
 Quick Look. The web is how it collaborates and interops. Features land on
-both unless physically platform-bound. Distribution: Developer ID + Sparkle
-for daily use, TestFlight for sharing builds; no Mac App Store storefront.
+both unless physically platform-bound. Distribution: Mac App Store for general
+use and TestFlight for pre-release builds. The older Developer ID edition remains
+installed for existing users during the transition, but is no longer the target
+for new releases.
 
 ## Explicitly out of scope (owner rulings, 2026-08-14)
 
-- App Store storefront machinery (listing, screenshots, ratings config).
 - Guest/anonymous trial workspaces and the claim-on-signup flow.
 - One-off migration tooling that has served its purpose (e.g. account-merge
   scripts) - superseded by provider linking above.

@@ -84,6 +84,7 @@ sandbox="$(plist_value com.apple.security.app-sandbox "$entitlements")"
 application_identifier="$(plist_value com.apple.application-identifier "$entitlements")"
 team="$(plist_value com.apple.developer.team-identifier "$entitlements")"
 app_group="$(plist_value 'com.apple.security.application-groups:0' "$entitlements")"
+apple_sign_in="$(plist_value 'com.apple.developer.applesignin:0' "$entitlements")"
 if [ "$sandbox" != "true" ]; then
   echo "Refusing: the TestFlight app is not sandboxed." >&2
   exit 1
@@ -94,6 +95,10 @@ if [ -z "$team" ] || [ "$application_identifier" != "$team.$BUNDLE_ID" ]; then
 fi
 if [ "$app_group" != "$team.group.app.texttext" ]; then
   echo "Refusing: the signed app group is '$app_group', expected '$team.group.app.texttext'." >&2
+  exit 1
+fi
+if [ "$apple_sign_in" != "Default" ]; then
+  echo "Refusing: the signed app lacks native Sign in with Apple." >&2
   exit 1
 fi
 

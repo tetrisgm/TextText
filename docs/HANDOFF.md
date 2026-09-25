@@ -47,15 +47,21 @@ under ignored `mac/profiles/`. The App Store profile includes
 `com.apple.developer.applesignin`; the Developer ID profile does not. Apple DTS
 confirms native Sign in with Apple is unsupported for Developer ID apps. The
 owner wants the normal native flow for the Mac App Store edition, so the
-temporary standalone device-link change was removed. The working tree now has
+temporary standalone device-link change was removed. Commit `0daf1f58` adds
 the Store entitlement, native authorization controller, and a server endpoint
 that exchanges Apple's one-use code and verifies its signed identity token.
 The Store and standalone Swift builds, TypeScript check, focused Apple token
-tests, and shell syntax check pass. Verify a signed Store build's real Apple
-login and account mapping before publishing; it has not been installed or
+tests, and shell syntax check pass. A development-signed Store build 1.0 (1094)
+passes codesign and arm64 checks with all three extensions after the missing
+local development profiles were downloaded. Verify real Apple login and
+account mapping before publishing; the Store build has not been installed or
 released. The installed 0.203 Developer ID app still uses the old sheet. The
-owner is choosing whether to keep the direct-download edition alongside the
-Store edition.
+owner chose Mac App Store distribution for general users and TestFlight for
+pre-release builds. The Developer ID edition is a legacy channel during the
+transition. The Mac development profile was regenerated with Sign in with
+Apple after the capability change invalidated it. The Store package check now
+requires that entitlement in the final signature. Do not point the public
+download page at the App Store until the listing is live.
 
 The public `/@ramine` request now redirects instead of returning 500, but its
 unauthenticated destination `ramine.texttext.app` does not resolve. Public tenant

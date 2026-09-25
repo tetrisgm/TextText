@@ -16,18 +16,24 @@ PB=/usr/libexec/PlistBuddy
 
 APP="$1"; SIGN_ID="$2"; APP_GROUP="$3"; BUNDLE_ID="$4"; VERSION="$5"; BUILD="$6"
 
-# The File Provider extension shares a keychain access group with the app to read
-# the sync token (<TeamID>.app.texttext.fp). Resolve the team from the
-# signing identity so the Info.plist carries the same string the app does.
-TEAM="$(printf '%s' "$SIGN_ID" | sed -n 's/.*(\([A-Z0-9]\{8,\}\))$/\1/p')"
-KEYCHAIN_GROUP="${TEAM:+$TEAM.app.texttext.fp}"
-
 # Developer ID by default; a Store build passes AppStore (upload) or Dev (the
 # same sandboxed shape signed to run on this Mac) via the suffix.
 PROFILE_SUFFIX="${TEXTTEXT_STORE_PROFILE_SUFFIX:-Developer_ID}"
+APP_PROFILE="$MAC/profiles/TextText_App_${PROFILE_SUFFIX}.provisionprofile"
 SHARE_PROFILE="$MAC/profiles/TextText_Share_${PROFILE_SUFFIX}.provisionprofile"
 QL_PROFILE="$MAC/profiles/TextText_QuickLook_${PROFILE_SUFFIX}.provisionprofile"
 FP_PROFILE="$MAC/profiles/TextText_FileProvider_${PROFILE_SUFFIX}.provisionprofile"
+# Development certificate names can end in an API key ID rather than the team
+# ID. The app profile is authoritative for the team and matches build-app.sh.
+TEAM=""
+if [ -f "$APP_PROFILE" ]; then
+  TEAM="$(security cms -D -i "$APP_PROFILE" 2>/dev/null \
+    | plutil -extract Entitlements.com\\.apple\\.developer\\.team-identifier raw -o - - 2>/dev/null || true)"
+fi
+if [ -z "$TEAM" ]; then
+  TEAM="$(printf '%s' "$SIGN_ID" | sed -n 's/.*(\([A-Z0-9]\{8,\}\))$/\1/p')"
+fi
+KEYCHAIN_GROUP="${TEAM:+$TEAM.app.texttext.fp}"
 if [ ! -f "$SHARE_PROFILE" ] || [ ! -f "$QL_PROFILE" ] || [ ! -f "$FP_PROFILE" ]; then
   echo ">> extensions: no provisioning profiles in mac/profiles; skipping embed"
   exit 0
