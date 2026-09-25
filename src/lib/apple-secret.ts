@@ -2,8 +2,8 @@
 // secret: the durable credential is the .p8 private key, and the secret is a
 // short-lived ES256 JWT signed with it (Apple caps each at 6 months). Normal
 // production apps sign these automatically from the stored key so nothing
-// ever expires by surprise; this module does that. Every server cold start
-// mints a fresh secret, so a deployment can never outlive one.
+// ever expires by surprise; this module does that. Auth.js calls the resolver
+// for each authentication request, including on long-running servers.
 //
 // Env (all four required to enable this path):
 //   AUTH_APPLE_ID           the Services ID (the OAuth client_id)
@@ -65,9 +65,9 @@ export function mintAppleClientSecret({
 }
 
 /**
- * The Apple client secret for this process: an explicit AUTH_APPLE_SECRET
+ * The Apple client secret for this request: an explicit AUTH_APPLE_SECRET
  * wins; otherwise, when the key material is present, a fresh secret is
- * signed once per cold start. Returns undefined when Apple is not
+ * signed with the current time. Returns undefined when Apple is not
  * configured (the provider then stays off).
  */
 export function resolveAppleClientSecret(): string | undefined {

@@ -18,10 +18,6 @@ import { githubSignInConfig } from "@/lib/github/app.server";
 import { oauthSubjectFor } from "@/lib/oauth-subject";
 
 const appleClientId = process.env.AUTH_APPLE_ID;
-// Static AUTH_APPLE_SECRET wins; otherwise signed at boot from the .p8 key
-// material (AUTH_APPLE_TEAM_ID / AUTH_APPLE_KEY_ID / AUTH_APPLE_PRIVATE_KEY),
-// so the six-month Apple cap can never strand a running deployment.
-const appleClientSecret = resolveAppleClientSecret();
 const googleClientId = process.env.AUTH_GOOGLE_ID;
 const googleClientSecret = process.env.AUTH_GOOGLE_SECRET;
 // GitHub is the app's own GitHub App used as an OAuth provider: name, avatar
@@ -39,7 +35,7 @@ export const SIGNIN_EMAIL_COOKIE = "wr_signin_email";
 export const SIGNIN_CALLBACK_COOKIE = "wr_signin_callback";
 const PROVIDER_HINT_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 
-export const hasAppleProvider = Boolean(appleClientId && appleClientSecret);
+export const hasAppleProvider = Boolean(appleClientId && resolveAppleClientSecret());
 export const hasGoogleProvider = Boolean(googleClientId && googleClientSecret);
 export const hasGithubProvider = Boolean(github);
 
@@ -114,9 +110,6 @@ const devProvider = Credentials({
 });
 
 const providers = [
-  ...(appleClientId && appleClientSecret
-    ? [Apple({ clientId: appleClientId, clientSecret: appleClientSecret })]
-    : []),
   ...(googleClientId && googleClientSecret
     ? [Google({ clientId: googleClientId, clientSecret: googleClientSecret })]
     : []),
@@ -359,7 +352,21 @@ const authConfig = {
   },
 } satisfies NextAuthConfig;
 
-const nextAuth = NextAuth(authConfig);
+const nextAuth = NextAuth(() => {
+  // Auth.js resolves this configuration for each request, including server
+  // actions. A persistent server must not keep Apple's six-month JWT forever.
+  // Explicit AUTH_APPLE_SECRET overrides retain their existing behavior.
+  const appleClientSecret = hasAppleProvider ? resolveAppleClientSecret() : undefined;
+  return {
+    ...authConfig,
+    providers: [
+      ...(appleClientId && appleClientSecret
+        ? [Apple({ clientId: appleClientId, clientSecret: appleClientSecret })]
+        : []),
+      ...providers,
+    ],
+  };
+});
 
 function unconfiguredAuthResponse() {
   return Response.json({ error: "Sign-in is not configured." }, { status: 503 });
