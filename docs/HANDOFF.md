@@ -56,14 +56,18 @@ passes codesign and arm64 checks with all three extensions after the missing
 local development profiles were downloaded. On September 25, the running
 `mac/build/TextText-Dev.app` opened Apple's native Sign in with Apple sheet
 without the website consent dialog and signed into the existing
-`ramine@ramine.net` workspace; Home rendered its three documents. A
+`ramine@ramine.net` workspace; Home rendered its three documents. At the
+owner's request, that working bundle was moved to `/Applications/TextText.app`
+on September 25. Its signature verified after the move; it reopened from
+`/Applications` and rendered the same signed-in workspace. No development
+copy remains in `mac/build`. A
 distribution-signed Store package 1.0 (1095) passed the package checks and App
 Store Connect marked build `48032ae0-d2e2-46ce-bd30-5dd8ebda9b60` VALID and
 attached to the prepared 1.0 listing. It was submitted on September 25 and is
 `WAITING_FOR_REVIEW` (submission `67ed89d1-dc0d-4ba3-bf11-ff6559ac96d7`).
-The first upload (1094) was rejected because a downloaded profile carried a quarantine
-attribute; the build scripts
-now clear it in staged profiles and the package gate refuses quarantine. The
+The first upload (1094) was rejected because a downloaded profile carried a
+quarantine attribute; the build scripts now clear it in staged profiles and
+the package gate refuses quarantine. The
 0.203 Developer ID app used the old sheet; at the owner's request, its
 `/Applications/TextText.app` bundle was moved to Trash on September 25. The
 owner chose Mac App Store distribution for general users and TestFlight for
@@ -96,7 +100,9 @@ migration does not declare that larger plan complete. Quantitative performance,
 full navigation restoration and remaining end-to-end workflows still need
 verification.
 
-Previously installed native version: **0.203 (1093)**, built from `ce8c3d17` and
+Installed native version: **1.0 (1094)**, development-signed for the Store
+capability and opened successfully from `/Applications/TextText.app` on
+September 25. The previous **0.203 (1093)** was built from `ce8c3d17` and
 installed through `release/ship.sh --local-install` on September 24. Exact-source release
 gates passed in 4m 54s, the production web/native builds passed, all 18 app health
 checks and installed health passed. Nothing was published to the update channel.
@@ -104,8 +110,8 @@ checks and installed health passed. Nothing was published to the update channel.
 Native fix `a3bccb49` removes hidden startup authentication, presents the real
 workspace for explicit sign-in, fences stale retries/callbacks and surfaces
 failures. It includes the earlier `d2d7112b` recovery fix. The Apple button,
-completed callback and workspace Home are now verified in the installed app;
-the consent dialog and cancel/retry experience remain open. The owner
+completed callback and workspace Home were verified in the former Developer ID
+app; the Store-capable installed build uses native Apple sign-in. The owner
 requested a fresh-chat handoff because of a reported session memory leak; that
 memory issue has not been diagnosed.
 
