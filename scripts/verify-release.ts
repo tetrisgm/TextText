@@ -84,6 +84,16 @@ async function verifyRelease() {
       command: ["scripts/run-release-migrations.sh", "--check"],
     },
     {
+      id: "db.oracle_bootstrap",
+      timeoutSeconds: 300,
+      command: ["node", "--env-file=.env.local", "release/oracle/test-bootstrap.mjs"],
+    },
+    {
+      id: "runtime.oracle_guards",
+      timeoutSeconds: 120,
+      command: ["node", "--test", "release/oracle/test.mjs", "release/oracle/test-smoke.mjs", "release/oracle/test-restore-drill.mjs"],
+    },
+    {
       // Every built-in template must render to real HTML with representative
       // content, and every composed node must leave markup. Schema validation
       // alone let 23 templates ship with one ever seen on a screen.

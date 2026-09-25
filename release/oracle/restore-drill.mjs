@@ -122,7 +122,9 @@ export async function restoreDrill({ scratch = false, compareLive = false,
     for (const trigger of requiredTriggers) assert.ok(triggers.includes(trigger), "Restored database is missing an enabled protection trigger.");
     const canonical = await restored.query("SELECT convalidated FROM pg_constraint WHERE conrelid = 'public.posts'::regclass AND conname = 'posts_document_schema_v1_valid'");
     assert.equal(canonical.rows[0]?.convalidated, true, "Canonical document constraint is not validated.");
-    const audit = spawnSync(process.execPath, [join(release, "release/oracle/migrations/scripts/audit-canonical-documents.cjs")],
+    // prepare-migrations compiles this source into the portable release bundle.
+    const auditSource = "scripts/audit-canonical-documents.ts";
+    const audit = spawnSync(process.execPath, [join(release, "release/oracle/migrations", auditSource.replace(/\.ts$/, ".cjs"))],
       { cwd: release, env: { ...process.env, DATABASE_URL: scratchUrl.href }, encoding: "utf8", timeout: 60_000, maxBuffer: 1024 ** 2 });
     if (audit.error || audit.status !== 0 || !audit.stdout.includes("Canonical document audit passed.")) throw new Error("Restored canonical document audit did not pass.");
     if (compareLive) {

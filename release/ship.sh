@@ -123,7 +123,8 @@ if [ "$WEB_ONLY" = "1" ]; then
   npm test -- --maxWorkers=4
   npm run test:db
   npx tsc --noEmit
-  node --test "$ROOT/release/oracle/test.mjs" "$ROOT/release/oracle/test-smoke.mjs"
+  node --test "$ROOT/release/oracle/test.mjs" "$ROOT/release/oracle/test-smoke.mjs" "$ROOT/release/oracle/test-restore-drill.mjs"
+  node --env-file=.env.local "$ROOT/release/oracle/test-bootstrap.mjs"
   if [ "$NO_PUBLISH" = "1" ]; then
     "$ROOT/release/oracle/deploy.sh" --dry-run
   else

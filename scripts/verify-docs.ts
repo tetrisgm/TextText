@@ -21,6 +21,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { repositoryRoot } from "./work-unit";
+import { repositoryPathsInText } from "./lib/repository-paths";
 
 const tracked = execFileSync("git", ["ls-files"], {
   cwd: repositoryRoot,
@@ -53,15 +54,12 @@ const textFiles = tracked.filter((f) =>
 //
 // docs/archive/ is exempt: a historical record describes files as they were,
 // and most of them are deleted now. That is what makes it history.
-const PATH_RE =
-  /(?<![\w./-])((?:src|mac|scripts|release|plugins|docs)\/[A-Za-z0-9._/[\]-]*\.[A-Za-z0-9]{1,5})\b/g;
 for (const file of textFiles) {
   if (file.startsWith("docs/archive/")) continue;
   // A lockfile describes other packages: a dependency's own `bin` path
   // (a parser package ships its own cli under its own src) is not a path here.
   if (/(^|\/)package-lock\.json$/.test(file)) continue;
-  for (const [, path] of read(file).matchAll(PATH_RE)) {
-    const candidate = path.replace(/\.$/, "");
+  for (const candidate of repositoryPathsInText(read(file))) {
     if (!exists(candidate)) {
       note(`${file}: names a path that does not exist: ${candidate}`);
     }

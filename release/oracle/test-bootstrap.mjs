@@ -2,27 +2,37 @@
 // End-to-end verification uses and removes only a newly created local database.
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { resolve } from "node:path";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { bootstrapDatabase } from "./bootstrap-database.mjs";
 import { localDatabase } from "./start.mjs";
+import { prepareMigrations } from "./prepare-migrations.mjs";
 
 if (process.platform !== "darwin") throw new Error("Run bootstrap verification on the Mac, never on the production host.");
-if (process.argv.length !== 4 || process.argv[2] !== "--migrations-dir") {
-  throw new Error("Usage: node --env-file=.env.local release/oracle/test-bootstrap.mjs --migrations-dir <prepared directory>");
+if (process.argv.length !== 2 && (process.argv.length !== 4 || process.argv[2] !== "--migrations-dir")) {
+  throw new Error("Usage: node --env-file=.env.local release/oracle/test-bootstrap.mjs [--migrations-dir <prepared directory>]");
 }
 const source = localDatabase(process.env.DATABASE_URL);
 const name = `texttext_bootstrap_test_${randomBytes(8).toString("hex")}`;
 const scratchUrl = new URL(source);
 scratchUrl.pathname = `/${name}`;
 const environment = { ...process.env, DATABASE_URL: scratchUrl.href };
-const directory = resolve(process.argv[3]);
+const projectRoot = fileURLToPath(new URL("../../", import.meta.url));
+const scratchParent = join(projectRoot, ".texttext");
+mkdirSync(scratchParent, { recursive: true });
+const preparedScratch = process.argv[3] ? null : mkdtempSync(join(scratchParent, "oracle-bootstrap-check-"));
+const directory = preparedScratch ? join(preparedScratch, "migrations") : resolve(process.argv[3]);
 const admin = new pg.Client({ connectionString: source.href });
 const scratch = new pg.Client({ connectionString: scratchUrl.href });
 let created = false;
 let connected = false;
-await admin.connect();
+let adminConnected = false;
 try {
+  if (preparedScratch) await prepareMigrations({ projectRoot, output: directory });
+  await admin.connect();
+  adminConnected = true;
   await admin.query(`CREATE DATABASE "${name}" TEMPLATE template0`);
   created = true;
   await bootstrapDatabase({ directory, environment });
@@ -65,5 +75,6 @@ try {
 } finally {
   if (connected) await scratch.end();
   if (created) await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`);
-  await admin.end();
+  if (adminConnected) await admin.end();
+  if (preparedScratch) rmSync(preparedScratch, { recursive: true, force: true });
 }
