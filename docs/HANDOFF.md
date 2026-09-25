@@ -70,16 +70,18 @@ Apple after the capability change invalidated it. The Store package check now
 requires that entitlement in the final signature. Do not point the public
 download page at the App Store until the listing is live.
 
-The native code exchange endpoint is not yet deployed. `release/ship.sh
---web-only` passed the full 3,646-test suite and 98 database behavior tests,
-but the 5,000-item performance gate failed once under heavy Mac load; it passed
-when rerun alone. A second full run timed out in the 5 MB collaboration paste
-test, which also passed alone. TypeScript, Oracle unit tests, and the complete
-local migration bootstrap passed. A long-running Time Machine backup is adding
-load. The human-invoked web-only ship entry point can now reuse the separately
-passed Vitest gates with `--skip-tests` while it reruns the remaining checks and
-production smoke. Leave the backup running. Complete Touch ID/account mapping
-before review submission.
+The native code exchange endpoint is live in Oracle release
+`texttext-oracle-20260925T093930Z-95f0ba86`. The human-invoked web-only ship
+reused separately passed web/database Vitest gates because the long-running
+Time Machine backup made timing gates intermittent; it reran TypeScript, Oracle
+tests, all 46 migration steps in scratch databases, a production build, and
+authenticated production smoke. The backup was left running. The public
+`/api/app/apple-native` route now answers a malformed POST with 400 (it was
+404 before deployment). Complete Touch ID in the development-signed Store app
+and verify that the existing workspace opens before submitting build 1095 for
+App Store review. The private changelog item is not in the newly linked
+workspace (`texttext search "TextText Changelog"` returns no results); do not
+create a duplicate of the prior record.
 
 The public `/@ramine` request now redirects instead of returning 500, but its
 unauthenticated destination `ramine.texttext.app` does not resolve. Public tenant
