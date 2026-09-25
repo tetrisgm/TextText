@@ -60,15 +60,12 @@ function folderForCreateKind(
   kind: CreatePostKind,
 ): Folder | null {
   const activeFolder = folderForPath(ctx, ctx.workspace?.activeFolderPath ?? null);
+  if (activeFolder) return activeFolder;
   if (kind === "article") {
-    return activeFolder?.mode === "blog"
-      ? activeFolder
-      : folderForPath(ctx, BLOG_FOLDER_PATH);
+    return folderForPath(ctx, BLOG_FOLDER_PATH);
   }
   const mode = kind === "note" ? "notes" : "bookmarks";
-  return activeFolder?.mode === mode
-    ? activeFolder
-    : (ctx.pool?.folders.find((folder) => folder.mode === mode) ?? null);
+  return ctx.pool?.folders.find((folder) => folder.mode === mode) ?? null;
 }
 
 function optimisticPost(
@@ -98,7 +95,6 @@ function optimisticPost(
 }
 
 function createFolderPath(ctx: CommandContext, kind: CreatePostKind): string {
-  if (kind !== "article") return kind === "note" ? "notes" : "bookmarks";
   return folderForCreateKind(ctx, kind)?.path ?? BLOG_FOLDER_PATH;
 }
 
@@ -691,7 +687,24 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     when: (ctx) => Boolean(ctx.workspace?.canCreate && ctx.workspace.focusCapture),
     run: (ctx) => ctx.workspace?.focusCapture?.(),
   },
-  ...([ ["home", "Home"], ["news", "News"], ["bookmarks", "Bookmarks"], ["notes", "Writing"] ] as const).map(([destination, label]): AppCommand => ({
+  {
+    id: "document.customize",
+    label: "Customize this document",
+    group: "Act",
+    when: (ctx) => Boolean(ctx.workspace?.canEdit &&
+      (ctx.workspace.viewLevel === "post" || ctx.workspace.viewLevel === "edit") &&
+      ctx.workspace.customizeCurrent),
+    run: (ctx) => ctx.workspace?.customizeCurrent?.(),
+  },
+  {
+    id: "folder.customize",
+    label: "Change this folder's view",
+    group: "Act",
+    when: (ctx) => Boolean(ctx.workspace?.canEdit &&
+      ctx.workspace.viewLevel === "section" && ctx.workspace.customizeFolder),
+    run: (ctx) => ctx.workspace?.customizeFolder?.(),
+  },
+  ...([ ["home", "Home"], ["news", "News"] ] as const).map(([destination, label]): AppCommand => ({
     id: `navigation.destination.${destination}`,
     label: `Open ${label}`,
     group: "Navigate",

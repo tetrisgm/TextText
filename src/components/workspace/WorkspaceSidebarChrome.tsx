@@ -1305,23 +1305,14 @@ function FolderTreeNav({
                       role="menuitem"
                       onClick={() => {
                         setMoreOpenFor(null);
-                        onBuildItemType?.(folder);
+                        if (folder.defaultTemplate && !folder.defaultTemplate.id.startsWith("texttext.")) {
+                          onChangeItemType?.(folder);
+                        } else {
+                          onBuildItemType?.(folder);
+                        }
                       }}
                     >
-                      Build with AI
-                    </button>
-                  )}
-                  {canManageFolders && (
-                    <button
-                      type="button"
-                      className="folder-action-menu-item"
-                      role="menuitem"
-                      onClick={() => {
-                        setMoreOpenFor(null);
-                        onChangeItemType?.(folder);
-                      }}
-                    >
-                      Edit default type
+                      Change this folder&apos;s view
                     </button>
                   )}
                   {canManageFolders && (
@@ -1684,7 +1675,7 @@ export function PostFolderSidebar({
             )}
           </div>
         </div>
-        <p className="post-editor-nav-heading is-collections">Collections</p>
+        <p className="post-editor-nav-heading is-collections">Folders</p>
         <FolderTreeNav
           blog={blog}
           folders={navFolders}

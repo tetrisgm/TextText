@@ -1,5 +1,22 @@
 # TextText handoff
 
+## Current product work, September 25, 2026
+
+The Home, folder navigation, quick capture, and TextPack look work is in progress
+on `main`. The user request is in the September 25 Codex attachment for this
+task. Local verification has covered one note containing a URL, one standalone
+link, a mixed Notes folder, the Research reader editor, and a saved Reference
+folder view. The note's commentary and cited excerpt persisted through a look
+switch. The focused tests, TypeScript, and local production build pass. The connected AI provider returned
+an error during a real refinement attempt, so agent-authored output remains
+unverified. The local web dev session has no Mac capture agent, leaving its
+test link pending. The query budget on the 511-item local fixture recorded
+12–16 round trips for Home and 4 for a reading-list page. The action latency
+benchmark could not start because its showcase fixture had no visible news
+item; there is no comparable click-to-render baseline yet. No product release
+or app reinstall has been requested. Preserve the
+unrelated dirty edits listed below.
+
 ## Current: Oracle migration, September 24, 2026
 
 The owner authorized reusing the existing Oracle VM, keeping Chiptunes on

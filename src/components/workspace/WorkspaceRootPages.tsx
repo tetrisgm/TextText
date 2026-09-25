@@ -827,10 +827,8 @@ export function WorkspaceRootLanding({
                 stacked on the other. Home is what the workspace root shows;
                 All items switches to the library in place and says so. */}
               <div className={homeStyles.frame}>
-                <RetainedWorkspacePane active={homePane === "home"}><PersonalHome pool={pool} history={openHistory} onOpenPost={onOpenPost} session={homeSession}
-                  onNews={() => onSelectPane?.("news")}
+                <RetainedWorkspacePane active={homePane === "home"}><PersonalHome pool={pool} onOpenPost={onOpenPost} session={homeSession}
                   capture={canManageItems && <>
-                    <HomeCreateMenu pool={pool} onCreateItem={onCreateItem} onBuildItemType={onBuildItemType} />
                     {creationFolder ? <UniversalItemComposer focusRequestKey={captureFocusRequestKey} blog={pool.blog} handle={pool.blog.handle} folder={creationFolder} destinations={creationFolders} onCreateItem={onCreateItem} onOpenCapturedItem={(post) => { if (post.id) onOpenPost(post.id); }} /> : firstLoop}
                   </>}
                 /></RetainedWorkspacePane>

@@ -186,6 +186,8 @@ describe("compileItemTypeBlueprint", () => {
 
   it("keeps every ready-made starting point valid and complete", () => {
     expect(ITEM_TYPE_STARTERS.map((starter) => starter.id)).toEqual([
+      "research-reader",
+      "reference-folder",
       "editorial-publication",
       "project-board",
       "quick-notes",
@@ -227,6 +229,17 @@ describe("compileItemTypeBlueprint", () => {
         );
       }
     }
+  });
+  it("keeps source, commentary, and cited excerpts in one research document", () => {
+    const starter = ITEM_TYPE_STARTERS.find((entry) => entry.id === "research-reader")!;
+    const template = compileItemTypeBlueprint(starter.blueprint, { id: "research-reader" });
+    expect(template.fields.map((field) => field.id)).toEqual(["sourceUrl", "commentary", "excerpts"]);
+    expect(template.item).toMatchObject({ type: "stack" });
+    const serialized = JSON.stringify(template.item);
+    expect(serialized).toContain('"id":"reader-columns"');
+    expect(serialized).toContain('"bind":"content.body"');
+    expect(serialized).toContain('"bind":"content.fields.commentary"');
+    expect(serialized).toContain('"bind":"content.fields.excerpts"');
   });
 
   it("compiles people, relations, recurrence, workflows, constraints, and conditions safely", () => {

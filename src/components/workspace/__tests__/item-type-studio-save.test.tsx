@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { compileItemTypeBlueprint, itemTypeBlueprintSchema } from "@/lib/presentation/item-type-blueprint";
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/app/editor/item-type-actions", () => ({ createItemTypeAction: vi.fn(), updateItemTypeAction: vi.fn(), readItemTypeUsagesAction: vi.fn() }));
+vi.mock("@/app/editor/item-template-actions", () => ({ applyItemTemplateAction: vi.fn() }));
 vi.mock("@/lib/pool/store", () => ({ refreshWorkspacePool: vi.fn() }));
 vi.mock("@/components/document/DocumentRenderer", () => ({ DocumentCollectionRenderer: () => null, DocumentEngineStyles: () => null, DocumentRenderer: () => null }));
 import { ItemTypeStudio } from "../ItemTypeStudio";
@@ -56,8 +57,8 @@ describe("studio edit save scope", () => {
   });
   it("wires scope into the action and retains a full receipt before refreshing", () => {
     const source = readFileSync(new URL("../ItemTypeStudio.tsx", import.meta.url), "utf8");
-    expect(source).toMatch(/updateItemTypeAction\([\s\S]*?applyToExisting,\s*saveScope,/);
-    expect(source.indexOf('setSaved(result)')).toBeLessThan(source.indexOf('await refreshWorkspacePool'));
+    expect(source).toMatch(/updateItemTypeAction\([\s\S]*?updateExisting,\s*effectiveScope,/);
+    expect(source.indexOf('setSaved(result)')).toBeLessThan(source.lastIndexOf('await refreshWorkspacePool'));
     expect(source).toContain('if (!("applied" in result)) onClose()');
     expect(source).toContain("busy || saved");
     for (const field of ["itemsLeft", "itemsBeingEdited", "skipped", "conflicted"]) expect(source).toContain(field);

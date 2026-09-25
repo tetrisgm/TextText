@@ -196,6 +196,8 @@ export type BookmarkCapture = {
   capturedAt?: string;
   /** "server" (light fetch) | "mac" (full capture agent) */
   capturedBy?: string;
+  /** Hash of the last readable body written by capture. Manual edits break the match. */
+  readableBodyHash?: string;
   /** why captureStatus is "failed", when it is */
   error?: string;
 };

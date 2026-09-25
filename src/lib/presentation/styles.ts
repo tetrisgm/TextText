@@ -13,6 +13,10 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document[data-measure="narrow"]{--tt-measure:36rem}.tt-document[data-measure="wide"]{--tt-measure:64rem}.tt-document[data-measure="full"]{--tt-measure:none}
 .tt-document[data-density="compact"]{--tt-gap-sm:.5rem;--tt-gap-md:.85rem;--tt-gap-lg:1.35rem;--tt-gap-xl:2rem}.tt-document[data-density="spacious"]{--tt-gap-sm:1rem;--tt-gap-md:1.75rem;--tt-gap-lg:3rem;--tt-gap-xl:5rem}
 .tt-stack,.tt-group,.tt-masthead{display:flex;box-sizing:border-box}.tt-stack[data-direction="vertical"],.tt-group,.tt-masthead{flex-direction:column}.tt-stack[data-direction="horizontal"]{flex-direction:row}.tt-stack,.tt-group{align-items:stretch}.tt-masthead{width:min(var(--tt-measure),calc(100% - 2rem));margin-inline:auto;text-align:center;align-items:center}
+.tt-document:not(.tt-collection-item) [data-tt-node="reader-columns"]{width:min(82rem,calc(100% - 2rem));margin-inline:auto;align-items:flex-start}
+.tt-document:not(.tt-collection-item) [data-tt-node="reader-source"]{flex:3 1 0;min-width:0;max-width:56rem}
+.tt-document:not(.tt-collection-item) [data-tt-node="reader-notes"]{flex:2 1 0;min-width:0;position:sticky;top:1rem}
+@media(max-width:720px){.tt-document:not(.tt-collection-item) [data-tt-node="reader-columns"]{flex-direction:column}.tt-document:not(.tt-collection-item) [data-tt-node="reader-source"],.tt-document:not(.tt-collection-item) [data-tt-node="reader-notes"]{width:100%;max-width:none;position:static}}
 .tt-gap-none{gap:var(--tt-gap-none)}.tt-gap-xs{gap:var(--tt-gap-xs)}.tt-gap-sm{gap:var(--tt-gap-sm)}.tt-gap-md{gap:var(--tt-gap-md)}.tt-gap-lg{gap:var(--tt-gap-lg)}.tt-gap-xl{gap:var(--tt-gap-xl)}
 .tt-align-start{align-items:flex-start}.tt-align-center{align-items:center}.tt-align-end{align-items:flex-end}.tt-align-stretch{align-items:stretch}
 .tt-text{margin:0;overflow-wrap:anywhere}.tt-text-eyebrow,.tt-text-meta{font-size:.75rem;font-weight:600;color:color-mix(in srgb,var(--tt-accent) 60%,var(--ink,#1d1d1f));text-transform:uppercase}

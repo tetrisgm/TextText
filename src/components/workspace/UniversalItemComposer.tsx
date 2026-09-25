@@ -122,22 +122,12 @@ export function defaultTemplateForFolder(folder: Folder): TemplateReference {
   };
 }
 
-function compatibilityTypeForTemplate(
-  template: TemplateReference,
-  sourceUrl: string | null,
-): "article" | "note" | "bookmark" {
-  if (sourceUrl || template.id === "texttext.bookmark") return "bookmark";
-  if (template.id === "texttext.note") return "note";
-  return "article";
-}
-
 // One empty state shape: a plain sentence and, when the reader may write
 
 // Creating is one action, not a form. There is nothing to decide before you
-// type: the destination and the look follow from where you are and from what
-// you typed, and both stay changeable afterwards. `destinations` is the set of
-// root collections the workspace home may route into; a folder page passes
-// none, because a folder page already knows where the item goes.
+// type: the current folder is the destination. `destinations` marks the Home
+// inbox, which keeps a recoverable local capture queue; it does not reroute
+// items by type. A folder page creates and opens the item directly.
 export function UniversalItemComposer({
   blog,
   destinations,
@@ -162,6 +152,8 @@ export function UniversalItemComposer({
   const lastFocusRequestKey = useRef(0);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const saveStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [captures, setCaptures] = useState<InboxCapture[]>([]);
   const failedCaptures = useMemo(
     () => captures.filter((capture) => capture.status === "failed"),
@@ -177,6 +169,16 @@ export function UniversalItemComposer({
   const capturesInPlace = Boolean(destinations?.length);
   const captureQueueReady =
     !capturesInPlace || hydratedCaptureQueueHandle === handle;
+
+  useEffect(() => () => {
+    if (saveStatusTimer.current) clearTimeout(saveStatusTimer.current);
+  }, []);
+
+  const showSaveStatus = useCallback((message: string) => {
+    if (saveStatusTimer.current) clearTimeout(saveStatusTimer.current);
+    setSaveStatus(message);
+    saveStatusTimer.current = setTimeout(() => setSaveStatus(null), 5000);
+  }, []);
 
   useEffect(() => {
     if (focusRequestKey <= lastFocusRequestKey.current) return;
@@ -229,22 +231,15 @@ export function UniversalItemComposer({
     return () => window.clearTimeout(hydrate);
   }, [capturesInPlace, handle, replaceCaptures]);
 
-  // A pasted link belongs with the other saved links, wherever you typed it.
   const destinationFor = useCallback(
-    (sourceUrl: string | null): Folder => {
-      if (!destinations?.length) return folder;
-      return (
-        destinations.find(
-          (candidate) => candidate.mode === (sourceUrl ? "bookmarks" : "notes"),
-        ) ?? folder
-      );
-    },
-    [destinations, folder],
+    (): Folder => folder,
+    [folder],
   );
 
   const runInPlaceCapture = useCallback(
     (capture: InboxCapture) => {
       if (!onCreateItem) return;
+      showSaveStatus(capture.request.type === "bookmark" ? "Saving link…" : "Saving note…");
       patchCapture(capture.id, {
         error: undefined,
         post: undefined,
@@ -272,8 +267,10 @@ export function UniversalItemComposer({
               status: "saved",
               title: receipt.title,
             });
+            showSaveStatus(capture.request.type === "bookmark" ? "Link saved. Capturing readable content…" : "Note saved.");
           },
           onFailed: (captureError) => {
+            setSaveStatus(null);
             patchCapture(capture.id, {
               error: actionErrorMessage(
                 captureError,
@@ -285,6 +282,7 @@ export function UniversalItemComposer({
           },
         });
         if (!created) {
+          setSaveStatus(null);
           patchCapture(capture.id, {
             error: "This item could not be saved. Your unsaved text is available below.",
             post: undefined,
@@ -294,6 +292,7 @@ export function UniversalItemComposer({
         }
         patchCapture(capture.id, { post: created });
       } catch (captureError) {
+        setSaveStatus(null);
         patchCapture(capture.id, {
           error: actionErrorMessage(
             captureError,
@@ -305,7 +304,7 @@ export function UniversalItemComposer({
       }
       window.requestAnimationFrame(() => inputRef.current?.focus());
     },
-    [onCreateItem, patchCapture],
+    [onCreateItem, patchCapture, showSaveStatus],
   );
 
   const queueInPlaceCapture = useCallback(
@@ -416,13 +415,14 @@ export function UniversalItemComposer({
 
       const draft = parseItemInput(value);
       const capturePreview = capturesInPlace ? captureIntent(value) : null;
-      const destination = destinationFor(
-        capturePreview?.sourceUrl ?? draft.sourceUrl,
-      );
+      const destination = destinationFor();
       const template = draft.sourceUrl
         ? { id: "texttext.bookmark", version: 1 }
-        : defaultTemplateForFolder(destination);
-      const type = compatibilityTypeForTemplate(template, draft.sourceUrl);
+        : destination.defaultTemplate?.id === "texttext.bookmark" ||
+            destination.defaultTemplate?.id === "texttext.article"
+          ? { id: "texttext.note", version: 1 }
+          : defaultTemplateForFolder(destination);
+      const type = draft.sourceUrl ? "bookmark" : "note";
       const request: FolderCreateRequest =
         type === "bookmark"
           ? draft.sourceUrl
@@ -493,21 +493,12 @@ export function UniversalItemComposer({
                   url: request.url,
                   description: request.description,
                 })
-            : request.type === "note"
-              ? createFolderItemAction(handle, "notes", {
-                  folderPath: request.folderPath,
-                  template: request.template,
-                  title: request.title,
-                  body: request.body,
-                })
-              : createWorkspacePostAction(
-                  handle,
-                  "article",
-                  request.folderPath,
-                  request.title,
-                  request.template,
-                  request.body,
-                );
+            : createFolderItemAction(handle, "notes", {
+                folderPath: request.folderPath,
+                template: request.template,
+                title: request.title,
+                body: request.body,
+              });
         void creation
           .then((post) => {
             if (draft.sourceUrl) router.refresh();
@@ -542,8 +533,8 @@ export function UniversalItemComposer({
           className="universal-item-composer-input"
           placeholder={
             capturesInPlace
-              ? "Save a thought, note, link, or AI answer"
-              : "Create something in this folder"
+              ? "Write a note or paste a link…"
+              : "Write a note or paste a link…"
           }
           aria-label={capturesInPlace ? "Save to TextText" : "Create an item"}
           autoCapitalize="sentences"
@@ -574,10 +565,8 @@ export function UniversalItemComposer({
           <span aria-hidden="true">↑</span>
         </button>
       </form>
-      {/* Only failures are worth a line on screen. A save that worked has
-          already put the item in the list right below, and the receipt for it
-          was just clutter (owner, 2026-09-04). A save that FAILED leaves no
-          other trace, so that one stays. */}
+      {saveStatus ? <p className="universal-item-save-status" role="status">{saveStatus}</p> : null}
+      {/* Failed saves retain their full retry receipt. */}
       {failedCaptures.length > 0 && (
         <div className="universal-item-receipts" aria-label="Unsaved items">
           {failedCaptures.map((capture) => (

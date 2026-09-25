@@ -26,8 +26,8 @@ const poolStore = readFileSync(
 
 describe("rapid capture contract", () => {
   it("turns the Library composer into an in-place TextText inbox", () => {
-    expect(folderPage).toContain("Save a thought, note, link, or AI answer");
-    expect(folderPage).toContain('candidate.mode === (sourceUrl ? "bookmarks" : "notes")');
+    expect(folderPage).toContain("Write a note or paste a link…");
+    expect(folderPage).toContain("(): Folder => folder");
     expect(folderPage).toContain("onPersisted: (savedPost, receipt)");
     expect(folderPage).toContain("onFailed: (captureError)");
     expect(folderPage).toContain("Saving to ${capture.destination}");
@@ -54,7 +54,7 @@ describe("rapid capture contract", () => {
   });
 
   it("keeps intentional folder creation as create-and-open", () => {
-    expect(folderPage).toContain("Create something in this folder");
+    expect(folderPage).toContain("Write a note or paste a link…");
     expect(folderPage).toContain("A folder already supplies intent");
   });
 

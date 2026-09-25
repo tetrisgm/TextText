@@ -28,6 +28,15 @@ describe("parseItemInput", () => {
     });
   });
 
+  it("keeps a note containing a URL as writing", () => {
+    const writing = "https://example.com/story\n\nMy reading notes";
+    expect(parseItemInput(writing)).toEqual({
+      body: writing,
+      sourceUrl: null,
+      title: "https://example.com/story",
+    });
+  });
+
   it("uses the first user prompt as the title of an imported conversation", () => {
     const transcript = [
       "ChatGPT conversation",

@@ -6,6 +6,7 @@ import { TypeDesignerContext, readEditableType } from "./workspace/TypeDesignerC
 import { itemDestination } from "@/lib/workspace/writing";
 import { readingUnreadByFolder } from "@/components/workspace/reading/unread";
 import { useListReturnFocus } from "@/components/workspace/useListReturnFocus";
+import { setWorkspaceChoice } from "@/components/workspace/useWorkspaceChoice";
 import { viewScrollMemoryKey } from "@/lib/workspace/view-memory";
 import { scrollRestoreWindow } from "@/lib/workspace/scroll-restore";
 import { requestDocumentCaret } from "@/lib/document-history-events";
@@ -614,12 +615,13 @@ function LocalWorkspaceShell({
     [sourcePool],
   );
   const displayPoolRef = useRef(displayPool);
+  const studioTargetPostIdRef = useRef<string | null>(null);
   const loadItemTypeStudioPreviewDocuments = useCallback(
     async (folderPath: string) => {
       const currentPool = displayPoolRef.current;
       const candidates = currentPool.posts.filter(
         (post) => folderPathForPoolPost(currentPool, post) === folderPath,
-      );
+      ).sort((left, right) => Number(right.id === studioTargetPostIdRef.current) - Number(left.id === studioTargetPostIdRef.current));
       const sample = await loadStudioFolderSample(candidates, async (post) => {
         await ensurePostDocument(currentPool.blogId, post.id);
         const cached = getCachedWorkspacePostDocument(currentPool.blogId, post.id);
@@ -982,9 +984,16 @@ function LocalWorkspaceShell({
   const [itemTypeStudioFolderPath, setItemTypeStudioFolderPath] = useState<
     string | null
   >(null);
+  const [itemTypeStudioTargetPostId, setItemTypeStudioTargetPostId] = useState<string | null>(null);
   const designerReturnRef = useRef<(() => void) | null>(null);
   const openTypeDesigner = useCallback(async (templateId: string, folderPath = "") => {
-    const editing = await readEditableType(displayPool.blog.handle, templateId);
+    const current = viewRef.current;
+    const targetPostId = current.level === "post" || current.level === "edit" ? current.postId : null;
+    studioTargetPostIdRef.current = targetPostId;
+    setItemTypeStudioTargetPostId(targetPostId);
+    const editing = templateId && !templateId.startsWith("texttext.")
+      ? await readEditableType(displayPool.blog.handle, templateId).catch(() => null)
+      : null;
     setItemTypeStudioEditing(editing);
     setItemTypeStudioFolderPath(folderPath);
     await new Promise<void>((resolve) => { designerReturnRef.current = resolve; });
@@ -1950,6 +1959,7 @@ function LocalWorkspaceShell({
                 "create_item",
                 {
                   capture: options.capture,
+                  folder_path: request.folderPath,
                   idempotency_key:
                     options.idempotencyKey ?? crypto.randomUUID(),
                 },
@@ -4565,7 +4575,7 @@ function LocalWorkspaceShell({
             folder.path === ("folderPath" in current ? current.folderPath : ""),
         ) ?? null;
       const targetFolder =
-        (currentFolder?.mode === desiredMode ? currentFolder : null) ??
+        currentFolder ??
         displayPoolRef.current.folders.find(
           (folder) => folder.mode === desiredMode,
         );
@@ -4759,6 +4769,21 @@ function LocalWorkspaceShell({
       readerTapG,
       openAdjacentPost: (direction: 1 | -1) => selectRelativePost(direction),
       createItem: createItemFromCommand,
+      customizeCurrent: () => {
+        const current = viewRef.current;
+        if (current.level !== "post" && current.level !== "edit") return;
+        const pool = displayPoolRef.current;
+        const post = findPoolPostById(pool, current.postId);
+        if (!post) return;
+        void openTypeDesigner(post.template?.id ?? "", folderPathForPoolPost(pool, post));
+      },
+      customizeFolder: () => {
+        const current = viewRef.current;
+        if (current.level !== "section") return;
+        const folder = displayPoolRef.current.folders.find((entry) => entry.path === current.folderPath);
+        if (!folder) return;
+        void openTypeDesigner(folder.defaultTemplate?.id ?? "", folder.path);
+      },
       openCreatedPost,
       reconcileCreatedPost,
       openFolder: navigateSection,
@@ -4860,6 +4885,7 @@ function LocalWorkspaceShell({
       openCreatedPost,
       openSelected,
       openItemByIndex,
+      openTypeDesigner,
       getNavigationTargetPaths,
       openSectionByIndex,
       openPostId,
@@ -5195,7 +5221,7 @@ function LocalWorkspaceShell({
         documents={displayPool.posts}
         folders={displayPool.folders}
         homeActive={(view.level === "root" || view.level === "search") && homePane === "home"}
-        primaryNavigation={<div className="workspace-primary-destinations">{(["news", "bookmarks", "notes"] as const).map((pane) => <button key={pane} type="button" aria-current={view.level === "root" && homePane === pane ? "page" : undefined} onClick={() => openDestination(pane)}>{pane === "news" ? "News" : pane === "bookmarks" ? "Bookmarks" : "Writing"}</button>)}</div>}
+        primaryNavigation={<div className="workspace-primary-destinations"><button type="button" aria-current={view.level === "root" && homePane === "news" ? "page" : undefined} onClick={() => openDestination("news")}>News</button></div>}
         homePath={homePath}
         onSelectFolder={(path) => {
           if (window.matchMedia(WORKSPACE_COMPACT_MEDIA_QUERY).matches) setSidebarCollapsed(true);
@@ -5216,6 +5242,8 @@ function LocalWorkspaceShell({
         onNewItem={runCreateCurrent}
         onSettings={navigateSettings}
         onBuildItemType={(folder) => {
+          studioTargetPostIdRef.current = null;
+          setItemTypeStudioTargetPostId(null);
           setItemTypeStudioEditing(null);
           setItemTypeStudioFolderPath(folder.path);
         }}
@@ -5501,9 +5529,22 @@ function LocalWorkspaceShell({
           handle={displayPool.blog.handle}
           editing={itemTypeStudioEditing ?? undefined}
           initialFolderPath={itemTypeStudioFolderPath}
+          initialTargetPostId={itemTypeStudioTargetPostId ?? undefined}
+          initialTargetTitle={displayPool.posts.find((post) => post.id === itemTypeStudioTargetPostId)?.title}
+          initialTemplate={displayPool.templates.find((template) => {
+            const current = displayPool.posts.find((post) => post.id === itemTypeStudioTargetPostId)?.template;
+            return template.id === current?.id && template.version === current.version;
+          })}
+          onCreated={(folderPath, look) => {
+            if (!folderPath || !look) return;
+            const folder = displayPoolRef.current.folders.find((entry) => entry.path === folderPath);
+            if (folder) setWorkspaceChoice(`texttext:folder-collection:${folder.id}`, `${look.id}@${look.version}`);
+          }}
           onClose={() => {
             setItemTypeStudioFolderPath(null);
             setItemTypeStudioEditing(null);
+            setItemTypeStudioTargetPostId(null);
+            studioTargetPostIdRef.current = null;
             designerReturnRef.current?.();
             designerReturnRef.current = null;
           }}

@@ -50,6 +50,7 @@ export const ITEM_TYPE_BLUEPRINT_FORMAT = `Return JSON only, with this shape:
   ],
   "item": {
     "shape": "article" | "page" | "note" | "task" | "reference",
+    "layout": "stack" | "reader",
     "showBody": boolean,
     "showMetadata": boolean,
     "showTags": boolean

@@ -2071,6 +2071,15 @@ async function executeWorkspaceCommand(
             body: parsed.body,
           },
         });
+        if (captured?.sourceUrl && created.id) {
+          // The durable link exists before extraction starts. The Mac capture
+          // agent can now enrich this same item without holding up creation.
+          created = (await markCapturePending(
+            blog.handle,
+            created.id,
+            captured.sourceUrl,
+          )) ?? created;
+        }
       } catch (error) {
         if (retryKey) {
           await releaseIdempotencyKey(blog.handle, retryKey).catch(() => {});

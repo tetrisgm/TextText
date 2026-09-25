@@ -52,8 +52,8 @@ export function parseItemInput(value: string): ParsedItemInput {
   if (sourceUrl) return { body: "", sourceUrl, title: "" };
 
   const lines = cleanValue.split(/\r?\n/);
-  const leadingUrl = normalizedHttpUrl(lines[0]);
-  if (leadingUrl) return { body: lines.slice(1).join("\n").trim(), sourceUrl: leadingUrl, title: "" };
+  // A URL embedded in writing, including on the first line, is still a note.
+  // Only a standalone URL unambiguously requests link capture.
   const contentLines = lines.filter((line) => line.trim());
   if (contentLines.length === 0) {
     return { body: "", sourceUrl: null, title: "" };

@@ -1895,10 +1895,9 @@ export async function listPendingCaptures(handle: string): Promise<
 /**
  * Record a capture result. Owned by the capture pipeline, NEVER by the
  * markdown round-trip: a synced file can not wipe or forge capture state.
- * The readable extraction lands in the body only when the body is empty, so
- * a bookmark the owner annotated keeps their words. The one exception is a
- * finalized recapture, which replaces the body: that path records the version
- * it replaces in the document's history, in the same statement.
+ * The readable extraction lands in an empty body or replaces the exact prior
+ * capture body. A manual edit breaks that hash match, including when a later
+ * extraction has more images. Replaced captures retain document history.
  */
 export async function saveBookmarkCapture(
   handle: string,
@@ -1952,18 +1951,19 @@ export async function saveBookmarkCapture(
   const readable = opts.readableMarkdown
     ? bookmarkReadableMarkdown(opts.readableMarkdown, merged.assets)
     : "";
-  const body = (
-    opts.replaceCapture
-      ? shouldReplaceBookmarkReadableAfterRecapture(
-          row.body,
-          readable,
-          previousCapture,
-          merged.assets,
-        )
-      : shouldRefreshBookmarkReadable(row.body, readable, merged.assets)
-  )
+  const replaceReadable = shouldReplaceBookmarkReadableAfterRecapture(
+    row.body,
+    readable,
+    previousCapture,
+  );
+  const body = replaceReadable
     ? readable
     : row.body;
+  if (replaceReadable) {
+    merged.readableBodyHash = createHash("sha256").update(readable).digest("hex");
+  } else {
+    merged.readableBodyHash = previousCapture?.readableBodyHash;
+  }
   const clean = (value: string | undefined) =>
     (value ?? "").replace(/\s+/g, " ").trim();
   // The bookmark's host derived from its URL: both the placeholder title and the
@@ -2058,11 +2058,8 @@ export async function saveBookmarkCapture(
         eq(posts.revision, opts.expectedRevision ?? row.revision)),
     )
     ;
-  // A recapture can replace the body wholesale, and the body it replaces may
-  // be the owner's own commentary written around an earlier capture. That is a
-  // content write like any other, so the version it supersedes is recorded by
-  // the same statement, forced whenever the body actually changes: a longer
-  // new extraction replaces just as much as a shorter one.
+  // Replacing an unedited capture is a content write, so the prior version is
+  // recorded by the same statement that writes the new body.
   const capturePrevious = supersededVersion(blogId, row);
   const captureWriter: RevisionWriter = {
     action: "capture_replaced_body",
@@ -2388,54 +2385,15 @@ function bookmarkReadableMarkdown(
   return localizeRemoteMarkdownImages(readableMarkdown, replacements).trim();
 }
 
-export function shouldRefreshBookmarkReadable(
-  currentBody: string,
-  nextBody: string,
-  assets: BookmarkCaptureAsset[] | undefined,
-): boolean {
-  if (!nextBody) return false;
-  if (!currentBody.trim()) return true;
-  const currentImageCount = markdownImageCount(currentBody);
-  const nextImageCount = markdownImageCount(nextBody);
-  if (nextImageCount > currentImageCount) return true;
-  const assetUrls = (assets ?? [])
-    .map((asset) => asset.url?.trim())
-    .filter((url): url is string => Boolean(url));
-  if (assetUrls.length === 0) return false;
-  const nextSavedImageCount = assetUrls.filter((url) =>
-    nextBody.includes(url),
-  ).length;
-  const currentSavedImageCount = assetUrls.filter((url) =>
-    currentBody.includes(url),
-  ).length;
-  return nextSavedImageCount > currentSavedImageCount;
-}
-
-function shouldReplaceBookmarkReadableAfterRecapture(
+export function shouldReplaceBookmarkReadableAfterRecapture(
   currentBody: string,
   nextBody: string,
   previousCapture: BookmarkCapture | null | undefined,
-  nextAssets: BookmarkCaptureAsset[] | undefined,
 ): boolean {
   if (!nextBody) return false;
   if (!currentBody.trim()) return true;
-  const previousAssetUrls = (previousCapture?.assets ?? [])
-    .map((asset) => asset.url?.trim())
-    .filter((url): url is string => Boolean(url));
-  if (previousAssetUrls.some((url) => currentBody.includes(url))) return true;
-  const previousUrl = previousCapture?.url?.trim();
-  if (previousUrl && currentBody.slice(0, 1024).includes(`](${previousUrl})`)) {
-    return true;
-  }
-  return shouldRefreshBookmarkReadable(currentBody, nextBody, nextAssets);
-}
-
-function markdownImageCount(markdown: string): number {
-  return (
-    markdown.match(
-      /!\[[^\]]*]\(\s*<?(?:https?:\/\/|\/|\.\/|\.\.\/)[^\s<>)]+>?/gi,
-    )?.length ?? 0
-  );
+  const expected = previousCapture?.readableBodyHash;
+  return Boolean(expected && createHash("sha256").update(currentBody).digest("hex") === expected);
 }
 
 /** Enter a fresh bookmark into the capture pipeline. */

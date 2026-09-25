@@ -278,13 +278,14 @@ export const itemTypeBlueprintSchema = z
     item: z
       .object({
         shape: z.enum(["article", "page", "note", "task", "reference"]).default("page"),
+        layout: z.enum(["stack", "reader"]).default("stack"),
         icon: z.string().trim().min(1).max(8).optional(),
         showBody: z.boolean().default(true),
         showMetadata: z.boolean().default(false),
         showTags: z.boolean().default(false),
       })
       .strict()
-      .default({ shape: "page", showBody: true, showMetadata: false, showTags: false }),
+      .default({ shape: "page", layout: "stack", showBody: true, showMetadata: false, showTags: false }),
     collection: z
       .object({
         layout: z.enum([
@@ -329,6 +330,42 @@ export const ITEM_TYPE_STARTERS: ReadonlyArray<{
   detail: string;
   blueprint: ItemTypeBlueprint;
 }> = [
+  {
+    id: "research-reader",
+    label: "Research reader",
+    detail: "Read captured text beside your notes and cited excerpts",
+    blueprint: itemTypeBlueprintSchema.parse({
+      name: "Research reader",
+      description: "A readable source alongside commentary and cited excerpts.",
+      fields: [
+        { id: "sourceUrl", label: "Original source", type: "url" },
+        { id: "commentary", label: "Your commentary", type: "richtext", display: "section" },
+        { id: "excerpts", label: "Selected excerpts", type: "rows", display: "table", fields: [
+          { id: "excerpt", label: "Excerpt", type: "text" },
+          { id: "source", label: "Source reference", type: "url" },
+          { id: "note", label: "Your note", type: "text" },
+        ] },
+      ],
+      item: { shape: "article", layout: "reader", showBody: true, showMetadata: true, showTags: false },
+      collection: { layout: "list", columns: 1, summaryFields: ["sourceUrl"], sortBy: "updatedAt", sortDirection: "desc" },
+    }),
+  },
+  {
+    id: "reference-folder",
+    label: "Reference folder",
+    detail: "Scan notes and links with source, verdict, and limitations",
+    blueprint: itemTypeBlueprintSchema.parse({
+      name: "Reference folder",
+      description: "A shared view of mixed notes and links with optional evaluation fields.",
+      fields: [
+        { id: "sourceUrl", label: "Source", type: "url" },
+        { id: "verdict", label: "Your verdict", type: "text" },
+        { id: "limitations", label: "Recorded limitations", type: "text", display: "section" },
+      ],
+      item: { shape: "reference", showBody: true, showMetadata: true, showTags: true },
+      collection: { layout: "cards", columns: 2, summaryFields: ["sourceUrl", "verdict", "limitations"], sortBy: "updatedAt", sortDirection: "desc" },
+    }),
+  },
   {
     id: "editorial-publication",
     label: "Editorial publication",
@@ -934,9 +971,26 @@ function itemTree(blueprint: ItemTypeBlueprint): RenderNode {
       fit: "cover",
     });
   }
-  children.push(...fieldNodes(blueprint));
-  if (blueprint.item.showBody) {
-    children.push({ type: "prose", bind: "content.body" });
+  if (blueprint.item.layout === "reader") {
+    const source: RenderNode[] = blueprint.item.showBody
+      ? [{ type: "prose", bind: "content.body" }]
+      : [{ type: "text", bind: "content.subtitle", role: "body", fallback: "No captured text yet." }];
+    children.push({
+      type: "stack",
+      id: "reader-columns",
+      direction: "horizontal",
+      gap: "xl",
+      align: "start",
+      children: [
+        { type: "stack", id: "reader-source", gap: "md", children: source },
+        { type: "stack", id: "reader-notes", gap: "md", children: fieldNodes(blueprint).length
+          ? fieldNodes(blueprint)
+          : [{ type: "text", bind: "content.subtitle", role: "body", fallback: "Add fields to work with this source." }] },
+      ],
+    });
+  } else {
+    children.push(...fieldNodes(blueprint));
+    if (blueprint.item.showBody) children.push({ type: "prose", bind: "content.body" });
   }
   return { type: "stack", gap: "lg", children };
 }

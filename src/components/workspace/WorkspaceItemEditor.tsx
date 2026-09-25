@@ -26,6 +26,7 @@ import type {
 import { usePresence } from "@/lib/collab/usePresence";
 import { BacklinksPanel } from "@/components/BacklinksPanel";
 import { saveItemAsLookAction } from "@/app/editor/look-actions";
+import { useTypeDesigner } from "./TypeDesignerContext";
 import { UnifiedDocumentEditor } from "@/components/document/UnifiedDocumentEditor";
 import { UnifiedDocumentReader } from "@/components/document/UnifiedDocumentReader";
 import {
@@ -120,6 +121,7 @@ export function LocalUnifiedWorkspacePostEditor({
     collaboratorColor,
   );
   const template = templateForPoolPost(pool, poolPost);
+  const openDesigner = useTypeDesigner();
   // The authoritative body may not be local yet. The pool list omits document
   // bodies, and the cache only knows what THIS browser typed or fetched, so an
   // item written by an agent (or another device) arrived here as an empty
@@ -242,6 +244,7 @@ export function LocalUnifiedWorkspacePostEditor({
       post={post}
       template={template}
       availableTemplates={pool.templates}
+      onCustomizeDocument={openDesigner ? () => { void openDesigner(template.id, containingFolderPath); } : undefined}
       referenceChoices={referenceChoices}
       onSaveAsLook={async (name) => {
         if (!post.id) return { ok: false, message: "Save the item first." };

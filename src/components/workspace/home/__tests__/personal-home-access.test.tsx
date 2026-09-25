@@ -30,7 +30,7 @@ const snapshot: TimelinePage = { entries: [{ id: post.id, at: post.createdAt, ki
 const pool = { blog: { handle: "workspace" }, blogId: "workspace", posts: [post] } as WorkspacePoolPayload;
 function render(session: HomeSession) {
   driver.cursor = 0; driver.refCursor = 0; driver.effects = [];
-  return renderToStaticMarkup(<PersonalHome pool={pool} history={{ private: 1 }} capture={<button>Capture thought</button>} onOpenPost={vi.fn()} onNews={vi.fn()} session={session} />);
+  return renderToStaticMarkup(<PersonalHome pool={pool} capture={<button>Capture thought</button>} onOpenPost={vi.fn()} session={session} />);
 }
 beforeEach(() => {
   driver.states = []; driver.refs = []; driver.news.mockReset(); driver.timeline.mockReset();
@@ -38,18 +38,13 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-it("keeps scroll restoration pending until initial headlines settle, including an empty feed", async () => {
+it("restores the single item list as soon as its timeline settles", async () => {
   const session = new HomeSession();
   driver.timeline.mockResolvedValue(snapshot);
-  let resolveNews!: (value: unknown) => void;
-  driver.news.mockImplementation(() => new Promise((resolve) => { resolveNews = resolve; }));
   expect(render(session)).toContain('data-scroll-restore-pending="true"');
   const cleanups = driver.effects.map((effect) => effect());
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect(render(session)).toContain("Private draft");
-  expect(render(session)).toContain('data-scroll-restore-pending="true"');
-  resolveNews({ units: [] });
-  await new Promise((resolve) => setTimeout(resolve, 0));
   expect(render(session)).toContain('data-scroll-restore-pending="false"');
   cleanups.forEach((cleanup) => cleanup?.());
 });
@@ -58,23 +53,16 @@ it.each([new TimelineAccessError(), new Error("Network unavailable")])("hides ca
   const session = new HomeSession();
   session.saveTimeline("all", snapshot);
   session.saveTimeline("writing", snapshot);
-  let resolveNews!: (value: unknown) => void;
-  driver.news.mockImplementation(() => new Promise((resolve) => { resolveNews = resolve; }));
   driver.timeline.mockRejectedValue(failure);
   expect(render(session)).toContain("Private draft");
   const cleanups = driver.effects.map((effect) => effect());
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  // A request started before revocation must not repopulate the cleared cache.
-  resolveNews({ units: [{ kind: "article", item: { id: "late", title: "Late feed content" } }] });
   await new Promise((resolve) => setTimeout(resolve, 0));
   const html = render(session);
   if (failure instanceof TimelineAccessError) {
     expect(html).toContain("Workspace access is unavailable");
     expect(html).not.toContain("Private draft");
     expect(html).not.toContain("Capture thought");
-    expect(html).not.toContain("Late feed content");
     expect(session.getTimeline("writing")).toBeNull();
-    expect(session.personalNews).toEqual([]);
     driver.states = []; driver.refs = [];
     expect(render(session)).not.toContain("Private draft");
     driver.timeline.mockResolvedValue(snapshot);

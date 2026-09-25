@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
 import {
   isWorkspacePostBodyStale,
   isWorkspacePostDocumentStale,
 } from "@/lib/pool/store";
 import { normalizeStoredPostDocument } from "@/lib/pool/storage";
-import { shouldRefreshBookmarkReadable } from "@/lib/store";
+import { shouldReplaceBookmarkReadableAfterRecapture } from "@/lib/store";
 
 describe("workspace body freshness", () => {
   it("invalidates a cached body when capture metadata is newer", () => {
@@ -92,22 +93,28 @@ describe("workspace body freshness", () => {
 });
 
 describe("bookmark recapture replacement", () => {
-  const assets = Array.from({ length: 3 }, (_, index) => ({
-    originalUrl: `https://example.com/image-${index}.jpg`,
-    url: `https://assets.example.com/image-${index}.jpg`,
-  }));
-
-  it("replaces a poorer extraction with a richer image capture", () => {
-    const current = `Words\n\n![one](${assets[0].url})`;
-    const next = assets
-      .map((asset, index) => `![image ${index}](${asset.url})`)
-      .join("\n\n");
-    expect(shouldRefreshBookmarkReadable(current, next, assets)).toBe(true);
+  it("fills an empty body", () => {
+    expect(shouldReplaceBookmarkReadableAfterRecapture("", "Captured words", undefined)).toBe(true);
   });
 
-  it("preserves an annotated body when the recapture is not richer", () => {
-    const current = `My annotation\n\n![one](${assets[0].url})`;
-    const next = `Captured words\n\n![one](${assets[0].url})`;
-    expect(shouldRefreshBookmarkReadable(current, next, assets)).toBe(false);
+  it("preserves an annotated body even when the new capture has more images", () => {
+    const current = "Captured words\n\nMy annotation";
+    const next = "Captured words\n\n![image](https://example.com/image.jpg)";
+    expect(shouldReplaceBookmarkReadableAfterRecapture(current, next, {
+      url: "https://example.com",
+      readableBodyHash: "hash-of-earlier-capture",
+    })).toBe(false);
+  });
+
+  it("refreshes an unchanged captured body", () => {
+    const current = "Captured words";
+    expect(shouldReplaceBookmarkReadableAfterRecapture(current, "Better extraction", {
+      url: "https://example.com",
+      readableBodyHash: createHash("sha256").update(current).digest("hex"),
+    })).toBe(true);
+  });
+
+  it("keeps legacy populated bodies rather than guessing whether they were edited", () => {
+    expect(shouldReplaceBookmarkReadableAfterRecapture("Words", "New words", { url: "https://example.com" })).toBe(false);
   });
 });

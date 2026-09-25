@@ -816,7 +816,7 @@ function UniversalFolderContents({
             const renderUniversalCard = (post: (typeof sorted)[number]) => {
               const selected = Boolean(post.id && (selectedPostIds?.has(post.id) ?? post.id === selectedPostId));
               const reference = post.document?.presentation.template ?? post.template ?? { id: legacyTemplateId(post.type), version: 1 };
-              const definition = resolveTemplate(reference) ?? getBuiltinTemplate("texttext.article", 1)!;
+              const definition = collectionDefinition ?? resolveTemplate(reference) ?? getBuiltinTemplate("texttext.article", 1)!;
               return <FolderCollectionItem key={itemKey(post)} blog={blog} handle={handle} post={post} template={definition}
                 selected={selected} optionId={postOptionId(post.id)} tabIndex={post.id === selectedPostId ? 0 : -1}
                 owner={canEditItems} onSelect={() => post.id && onSelectPost?.(post.id)}

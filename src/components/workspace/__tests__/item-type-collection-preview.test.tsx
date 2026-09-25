@@ -6,6 +6,7 @@ import { validateDocumentSnapshot } from "@/lib/documents/model";
 import { ItemTypeCollectionPreview, collectionPreviewItem } from "../ItemTypeCollectionPreview";
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/app/editor/item-type-actions", () => ({ createItemTypeAction: vi.fn(), updateItemTypeAction: vi.fn(), readItemTypeUsagesAction: vi.fn() }));
+vi.mock("@/app/editor/item-template-actions", () => ({ applyItemTemplateAction: vi.fn() }));
 vi.mock("@/lib/pool/store", () => ({ refreshWorkspacePool: vi.fn() }));
 import { ItemTypeStudio, previewContentForDesign } from "../ItemTypeStudio";
 
@@ -77,7 +78,7 @@ describe("studio collection preview", () => {
     const content = previewContentForDesign({ blueprint, template }, "folder", []);
     expect(content.collection).toEqual([]);
     const html = renderToStaticMarkup(<ItemTypeStudio blogId="b" handle="shoku" editing={{ templateId: "deadlines", baseVersion: 1, blueprint }} folders={[{ id: "tasks", name: "Tasks", path: "Tasks" }]} initialFolderPath="Tasks" loadPreviewDocuments={async () => []} onClose={() => {}} />);
-    expect(html).toContain('<option value="folder">Folder sample (0)</option>');
+    expect(html).toMatch(/<option value="folder"[^>]*>Folder sample \(0\)<\/option>/);
   });
   it("keeps sample and stress dates in the current month", () => {
     vi.useFakeTimers();

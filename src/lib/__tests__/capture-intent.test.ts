@@ -2,11 +2,12 @@ import { describe, expect, it } from "vitest";
 import { captureFolderPath, captureIntent } from "@/lib/capture-intent";
 
 describe("captureIntent", () => {
-  it("keeps commentary with a pasted URL", () => {
-    expect(captureIntent("https://example.com/article\n\nThis supports the introduction.\nKeep the second paragraph.")).toMatchObject({
-      kind: "bookmark",
-      sourceUrl: "https://example.com/article",
-      body: "[example.com](https://example.com/article)\n\nThis supports the introduction.\nKeep the second paragraph.",
+  it("keeps writing that starts with a URL as a note", () => {
+    const writing = "https://example.com/article\n\nThis supports the introduction.\nKeep the second paragraph.";
+    expect(captureIntent(writing)).toMatchObject({
+      kind: "note",
+      sourceUrl: null,
+      body: writing,
     });
   });
 

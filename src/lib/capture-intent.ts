@@ -31,6 +31,7 @@ function capturedNoteBody(value: string, fallback: string): string {
     ),
   );
   if (looksLikeTranscript) return fallback;
+  if (parseItemInput(lines[0] ?? "").sourceUrl) return fallback;
   if (lines.length <= 1) return "";
   return lines.slice(1).join("\n").trim();
 }

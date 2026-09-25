@@ -5,6 +5,12 @@ import { useCallback, useSyncExternalStore } from "react";
 const changed = "texttext:workspace-choice";
 const session = new Map<string, string>();
 
+export function setWorkspaceChoice(key: string, value: string) {
+  session.set(key, value);
+  try { window.localStorage.setItem(key, value); } catch { /* Keep the session choice. */ }
+  window.dispatchEvent(new Event(changed));
+}
+
 /** A local view preference, independent of document data and folder defaults. */
 export function useWorkspaceChoice(key: string, choices: readonly string[], defaultValue: string) {
   const subscribe = useCallback((notify: () => void) => {
@@ -29,9 +35,7 @@ export function useWorkspaceChoice(key: string, choices: readonly string[], defa
   const value = useSyncExternalStore(subscribe, snapshot, () => defaultValue);
   const select = useCallback((next: string) => {
     if (!choices.includes(next)) return;
-    session.set(key, next);
-    try { window.localStorage.setItem(key, next); } catch { /* Keep the session choice. */ }
-    window.dispatchEvent(new Event(changed));
+    setWorkspaceChoice(key, next);
   }, [key, choices]);
   return [value, select] as const;
 }

@@ -124,6 +124,7 @@ type UnifiedDocumentEditorProps = {
   onDone: () => Promise<void> | void;
   onDelete?: () => Promise<void> | void;
   onChooseTemplate?: () => void;
+  onCustomizeDocument?: () => void;
   /**
    * Save this document's look under a name. Passed in rather than imported:
    * this component is a leaf, and importing a server action here drags the
@@ -473,6 +474,7 @@ export function UnifiedDocumentEditor({
   onDone,
   onDelete,
   onChooseTemplate,
+  onCustomizeDocument,
   onSaveAsLook,
   leadingControls,
   canReviewAgentChanges = false,
@@ -1512,6 +1514,11 @@ export function UnifiedDocumentEditor({
               <span aria-hidden="true">•••</span>
             </summary>
             <div className="tt-editor-more-menu">
+              {onCustomizeDocument && (
+                <button type="button" onClick={onCustomizeDocument}>
+                  Customize this document
+                </button>
+              )}
               {/* Naming happens in the menu, not in a window.prompt. The
                   browser dialog was a grey system box with the page frozen
                   behind it, which is the exact jank the look work was meant to
@@ -1796,6 +1803,7 @@ export function UnifiedDocumentEditor({
         .tt-field-row.is-embedded>.tt-field-label{position:static;width:auto;height:auto;padding:0;margin:0;overflow:visible;clip:auto;white-space:normal;border:0}
         .tt-field-row.is-embedded>.tt-field-input,.tt-field-row.is-embedded>.tt-field-multienum,.tt-field-row.is-embedded>.tt-rows-editor,.tt-field-row.is-embedded>.tt-people-picker,.tt-field-row.is-embedded>.tt-status-workflow-control{width:100%}
         .tt-field-row.is-embedded>.tt-field-input.is-checkbox{width:1rem;justify-self:start}
+        .tt-document-editor [data-tt-node="reader-notes"] .tt-field-row.is-embedded{grid-template-columns:minmax(0,1fr);gap:0.3125rem}
         .tt-field-row.is-image.is-embedded{justify-content:center;margin:1.2rem 0}
         .tt-field-row.is-image.is-embedded .tt-image-field-control.is-canvas{position:relative;display:block;width:100%;overflow:visible}
         .tt-field-row.is-image.is-embedded .tt-image-field-preview{display:block;width:100%;height:auto;max-height:min(62vh,42.5rem);border:0;border-radius:0;background:transparent;object-fit:cover}
