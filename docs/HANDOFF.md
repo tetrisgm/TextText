@@ -53,13 +53,15 @@ that exchanges Apple's one-use code and verifies its signed identity token.
 The Store and standalone Swift builds, TypeScript check, focused Apple token
 tests, and shell syntax check pass. A development-signed Store build 1.0 (1094)
 passes codesign and arm64 checks with all three extensions after the missing
-local development profiles were downloaded. The app opened Apple's native Sign
-in with Apple sheet without the website consent dialog. Completing Touch ID
-and verifying the existing workspace remain pending. A distribution-signed
-Store package 1.0 (1095) passed the package checks and App Store Connect marked
-build `48032ae0-d2e2-46ce-bd30-5dd8ebda9b60` VALID and attached to the
-prepared 1.0 listing. It has not been submitted for review. The first upload
-(1094) was rejected because a downloaded profile carried a quarantine
+local development profiles were downloaded. On September 25, the running
+`mac/build/TextText-Dev.app` opened Apple's native Sign in with Apple sheet
+without the website consent dialog and signed into the existing
+`ramine@ramine.net` workspace; Home rendered its three documents. A
+distribution-signed Store package 1.0 (1095) passed the package checks and App
+Store Connect marked build `48032ae0-d2e2-46ce-bd30-5dd8ebda9b60` VALID and
+attached to the prepared 1.0 listing. It was submitted on September 25 and is
+`WAITING_FOR_REVIEW` (submission `67ed89d1-dc0d-4ba3-bf11-ff6559ac96d7`).
+The first upload (1094) was rejected because a downloaded profile carried a quarantine
 attribute; the build scripts
 now clear it in staged profiles and the package gate refuses quarantine. The
 installed 0.203 Developer ID app still uses the old sheet. The
@@ -77,9 +79,7 @@ Time Machine backup made timing gates intermittent; it reran TypeScript, Oracle
 tests, all 46 migration steps in scratch databases, a production build, and
 authenticated production smoke. The backup was left running. The public
 `/api/app/apple-native` route now answers a malformed POST with 400 (it was
-404 before deployment). Complete Touch ID in the development-signed Store app
-and verify that the existing workspace opens before submitting build 1095 for
-App Store review. The private changelog item is not in the newly linked
+404 before deployment). The private changelog item is not in the newly linked
 workspace (`texttext search "TextText Changelog"` returns no results); do not
 create a duplicate of the prior record.
 
