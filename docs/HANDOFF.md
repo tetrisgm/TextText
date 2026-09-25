@@ -10,12 +10,17 @@ The obsolete TextText Neon resource is deleted; Chiptunes' separate database
 and the shared media Blob store remain intact. The old Vercel `write` project
 is paused; backup Blob access was reverified afterward.
 
-Public cutover is pending the explicitly requested approval for one PartyParty
-relay restart. Its existing HTTPS listener must move behind the prepared
-hostname router. DNS still points to the paused Vercel project, so public TextText remains
-unavailable until that switch. Radio and existing services have
-not been restarted. See the [migration receipt](oracle-migration-2026-09-24.md)
-for the exact completed work, remaining cutover gates, and verification.
+Public HTTPS cutover is complete. The owner authorized the PartyParty relay
+restart; its TLS listener now sits behind the hostname router. TextText's
+three public hosts reach Oracle, while PartyParty and radio health checks and
+Chiptunes' static site remained healthy. See the
+[migration receipt](oracle-migration-2026-09-24.md).
+
+The live app includes `2242c614`, which fixes self-hosted redirects that sent
+the Mac app to `https://localhost:3400`. Both the raw app and public `/start`
+redirect now target `https://texttext.app/signin`, without a proxy rewrite.
+The Apple Services ID is restored to the registered `net.writeapp.write.web`;
+Apple now recognizes TextText and presents its normal sign-in page.
 
 The [Oracle guide](../release/oracle/README.md) is the deployment and recovery
 reference. Releases still use the human-invoked `release/ship.sh`; no automatic
@@ -23,8 +28,8 @@ build or release jobs were installed. The only new scheduled job is the daily
 encrypted database backup.
 
 Google sign-in needs a replacement client secret; Google and Vercel will not
-reveal the old one. Apple, GitHub and MXroute email are configured. Actual public
-OAuth callbacks and installed-app sign-in remain to verify after cutover.
+reveal the old one. Apple, GitHub and MXroute email are configured. A completed user OAuth
+callback and installed-app sign-in remain to verify.
 
 ## Active product work
 

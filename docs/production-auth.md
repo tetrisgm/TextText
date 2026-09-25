@@ -17,7 +17,8 @@ domain.
 
 ## Apple
 
-The Services ID is `app.texttext.web`. Its Web Authentication
+The registered Services ID is `net.writeapp.write.web`. Keep this external
+identifier when renaming the product. Its Web Authentication
 configuration contains only:
 
 - Domain: `TextText.app`
@@ -26,7 +27,7 @@ configuration contains only:
 Production stores the Sign in with Apple `.p8` key as
 `AUTH_APPLE_PRIVATE_KEY`, together with `AUTH_APPLE_TEAM_ID`,
 `AUTH_APPLE_KEY_ID`, and `AUTH_APPLE_ID`. The server signs a fresh ES256 client
-secret on every cold start. `AUTH_APPLE_SECRET` is an optional static fallback
+secret for each authentication request. `AUTH_APPLE_SECRET` is an optional static fallback
 and should normally remain unset.
 
 The macOS app and File Provider extension use Apple application identifiers and
@@ -48,7 +49,7 @@ URLs all use `TextText.app`.
 
 Magic links are sent through the `noreply@TextText.app` mailbox. Production
 stores the SMTP URL in `AUTH_EMAIL_SERVER` and the visible sender in
-`AUTH_EMAIL_FROM`. Rotate mailbox credentials in the provider and Vercel
+`AUTH_EMAIL_FROM`. Rotate mailbox credentials in MXroute and Oracle runtime configuration
 together, then verify SMTP before shipping.
 
 ## Release verification

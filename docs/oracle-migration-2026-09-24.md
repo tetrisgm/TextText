@@ -21,8 +21,8 @@ Blob access remains independent of the paused compute project.
 The app and PostgreSQL use the existing `ubuntu` account and fleet SSH key.
 No accounts, SSH identities, tunnels, firewall changes, or machine reboot were
 introduced. PostgreSQL 16 and the standalone Linux ARM64 app run under separate
-systemd resource limits. Both listen only on loopback. Existing radio and
-PartyParty services are still unchanged at this checkpoint.
+systemd resource limits. Both listen only on loopback. The radio service is unchanged. PartyParty moved to a private TLS listener
+during the explicitly approved HTTPS cutover.
 
 The human-invoked [release entry point](../release/ship.sh) now deploys to
 Oracle. `--web-only` runs the local unit/database/type checks, builds on the Mac,
@@ -60,33 +60,46 @@ Manual recovery instructions and the executable drill are in
 [the Oracle runtime guide](../release/oracle/README.md#backups-and-recovery).
 No secret is in the repository or this receipt.
 
-## Remaining cutover gates
+## Public cutover and sign-in repair
 
-- The new app is verified privately as
-  `texttext-oracle-20260925T021106Z-5b5c5907`; DNS still points to the paused
-  Vercel project. Public TextText is therefore unavailable until cutover.
-- Sharing public HTTPS requires moving the existing PartyParty listener to
-  loopback 8443 and restarting that service once. A narrow approval request is
-  pending, as required by the owner's infrastructure contract. HAProxy and
-  Caddy configurations are installed and validated but not running.
-- After that approval: switch DNS, obtain and verify HTTPS certificates,
-  verify public assets and installed-app sign-in. Keep the old Vercel
-  `write` project paused and preserve the Blob store.
-- Apple, GitHub, and MXroute email are configured. GitHub credentials and SMTP
-  authentication were verified without signing in a user or sending mail.
-  Apple key material matches the existing documented key; its real callback
-  remains untested. `1784f776` renews Apple credentials per auth request for
-  persistent servers.
+The owner approved the PartyParty restart. Its TLS listener moved to loopback
+8443; HAProxy now routes the three TextText hostnames to Caddy and passes all
+other TLS traffic to PartyParty. Caddy obtained trusted certificates using
+TLS-ALPN. The apex and `write.ramine.net` now resolve to Oracle; `www` aliases
+the apex. Existing mail records and Chiptunes hosting were preserved.
+
+PartyParty health returned HTTP 200 before and after with the identical TLS
+certificate. Radio health remained HTTP 200. Chiptunes' static page remained
+byte-identical. No radio restart, tunnel, firewall change, or reboot occurred.
+
+Public native startup exposed an internal-origin redirect: Next's standalone
+request URL used `localhost:3400`. Commit `2242c614` resolves the trusted public
+origin for redirects, secure session cookies, and generated app links.
+`66ba49b5` adds the public-origin redirect to the deployment gate. The deployed
+release is `texttext-oracle-20260925T023227Z-2242c614`. Raw loopback and public
+`/start?to=home` both redirect to `https://texttext.app/signin`. The temporary
+proxy redirect workaround was removed after that verification.
+
+Apple initially rejected the migration's `app.texttext.web` identifier. The
+previous production authorization request proved the actual registered ID is
+`net.writeapp.write.web`. Oracle now uses that unchanged registration and
+Apple presents “Use your Apple Account to sign in to TextText.” No Apple
+account or key was replaced. `1784f776` renews signed Apple client credentials
+per authentication request for persistent servers.
+
+## Remaining verification
+
+- Complete the user's Apple sign-in and verify the installed Mac app's launch
+  and native sign-in button. Its current 0.202 (1092) installation predates the
+  WebKit authentication-recovery fix already in source.
 - Google console confirms the existing callback for `texttext.app`, but neither
   Google nor Vercel will reveal the old client secret. Google remains disabled
-  until a replacement secret is created and stored securely. Other providers
-  are available.
-- The installed Mac application remains 0.202 (1092); its native updates and
-  the larger personal-workspace plan are not declared complete by this migration.
+  until a replacement secret is stored securely.
+- The larger personal-workspace plan remains separate from this migration.
 
 ## Verification references
 
-The final release check passed 3,617 unit tests, 98 database tests, four
+The final release check passed 3,637 unit tests, 98 database tests, four
 scale/database tests, TypeScript, and 13 Oracle runtime tests (one optional
 local DB test skipped; the real six-step authenticated smoke passed on Oracle).
 The restore drill adds four passing guard tests and the full local/remote

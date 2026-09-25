@@ -5,9 +5,9 @@ dev login). Apple has no static client secret: the durable credential is a
 `.p8` private key that never expires, and the "client secret" is a short-lived
 JWT signed with it (Apple caps each at 6 months).
 
-**The server signs those JWTs itself** (src/lib/apple-secret.ts): every cold
-start mints a fresh one from the key material, so nothing ever expires in
-production. Set these four env vars and you are done forever:
+**The server signs those JWTs itself** (src/lib/apple-secret.ts): each authentication
+request mints a fresh one from the key material, including on persistent
+servers. Configure these four environment variables:
 
 - `AUTH_APPLE_ID` = the **Services ID** identifier (the OAuth `client_id`).
 - `AUTH_APPLE_TEAM_ID` = the 10-char Team ID (Membership details).
@@ -36,9 +36,9 @@ the Account Holder or Admin role).
 The production registration is:
 
 - Team ID: `52WM463HR2`
-- Primary Sign in with Apple App ID: `52WM463HR2.app.texttext`
+- Primary Sign in with Apple App ID: `52WM463HR2.net.writeapp.write`
 - macOS App ID: `app.texttext.mac`
-- Services ID: `app.texttext.web`
+- Services ID: `net.writeapp.write.web`
 - Domain: `TextText.app`
 - Return URL: `https://TextText.app/api/auth/callback/apple`
 - Sign in key ID: `J6958HV8HB`
@@ -96,7 +96,7 @@ Account -> **Membership details** -> the 10-character Team ID.
 ## 5. Optional static `AUTH_APPLE_SECRET`
 
 Production should store the `.p8` content and let the server mint a fresh client
-secret at startup. A manually generated `AUTH_APPLE_SECRET` is supported only as
+secret for each authentication request. A manually generated `AUTH_APPLE_SECRET` is supported only as
 a fallback. To create one, run:
 
 ```sh
@@ -112,7 +112,7 @@ testing the static-secret fallback because `AUTH_APPLE_SECRET` takes precedence.
 
 ## 6. Set env and deploy
 
-Set on the Vercel project (Production), never committed:
+Set in the private Oracle `/etc/texttext/runtime.env`, never committed:
 - `AUTH_APPLE_ID` = the Services ID.
 - `AUTH_APPLE_TEAM_ID` = the Team ID.
 - `AUTH_APPLE_KEY_ID` = the Sign in with Apple key ID.
@@ -126,7 +126,7 @@ button, and the same per-user blog provisioning runs on the Apple `sub`.
 ## Rotation and notes
 
 - The stored `.p8` key does not expire. The server mints a fresh client-secret
-  JWT on every cold start. Rotate the key only if it is revoked or exposed.
+  JWT for each authentication request. Rotate the key only if it is revoked or exposed.
 - If the optional static `AUTH_APPLE_SECRET` is set, it expires within six
   months and overrides automatic minting. Remove it or regenerate it when Apple
   returns `invalid_client`.
