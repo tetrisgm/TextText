@@ -140,7 +140,8 @@ embed_appex() { # returns nonzero on failure
   fi
 
   # Embedded provisioning profile authorizes the app-group entitlement.
-  cp "$profile" "$appex/Contents/embedded.provisionprofile"
+  cp -X "$profile" "$appex/Contents/embedded.provisionprofile"
+  /usr/bin/xattr -c "$appex/Contents/embedded.provisionprofile"
 
   # Entitlements from the template, with the real group substituted. This file
   # must live OUTSIDE the bundle, or codesign signs it as a nested component.

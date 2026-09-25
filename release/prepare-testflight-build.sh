@@ -50,6 +50,12 @@ if [ ! -f "$APP/Contents/embedded.provisionprofile" ]; then
   echo "Refusing: the TestFlight app has no embedded App Store profile." >&2
   exit 1
 fi
+while IFS= read -r -d '' bundled_file; do
+  if /usr/bin/xattr -p com.apple.quarantine "$bundled_file" >/dev/null 2>&1; then
+    echo "Refusing: quarantined file in TestFlight app: $bundled_file" >&2
+    exit 1
+  fi
+done < <(find "$APP" -type f -print0)
 
 "$CODESIGN" --verify --strict --verbose=2 "$APP"
 "$VERIFY_APP" "$APP" --require-extensions

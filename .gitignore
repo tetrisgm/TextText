@@ -41,6 +41,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 mac/profiles/
+/release/artifacts/
 
 
 # per-work-unit timings, receipts, and local cache history

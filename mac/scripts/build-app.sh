@@ -342,7 +342,10 @@ if [ "$STORE" = "1" ] && [ "$SIGN_ID" != "-" ]; then
 fi
 MAIN_ENT="$(mktemp -t texttext-main-ent)"
 if [ -f "$APP_PROFILE" ] && [ "$SIGN_ID" != "-" ] && [ -n "${TEXTTEXT_APP_GROUP:-}" ]; then
-  cp "$APP_PROFILE" "$APP/Contents/embedded.provisionprofile"
+  # Downloaded profiles can carry quarantine. App Store Connect rejects that
+  # attribute anywhere in the uploaded bundle.
+  cp -X "$APP_PROFILE" "$APP/Contents/embedded.provisionprofile"
+  /usr/bin/xattr -c "$APP/Contents/embedded.provisionprofile"
   # codesign does NOT expand $(AppIdentifierPrefix); substitute the resolved
   # team-prefixed keychain group (computed above) just like the app group.
   /usr/bin/sed \
