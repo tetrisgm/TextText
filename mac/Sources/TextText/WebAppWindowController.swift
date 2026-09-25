@@ -243,8 +243,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     private weak var launchPlaceholder: LaunchPlaceholderView?
     /// Called with (token, origin) when the web view links this Mac.
     private let onLinked: (String, URL) -> Void
-    /// Starts the system-browser account and device approval flow.
-    private let onSystemSignInRequested: () -> Void
+    /// Starts native Apple authorization or the system browser for other providers.
+    private let onSystemSignInRequested: (URL) -> Void
     /// Clears the native credential when the web workspace signs out.
     private let onSignOutRequested: () -> Void
     var onClose: (() -> Void)?
@@ -323,7 +323,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         startPath: String,
         appToken: String?,
         workspaceHomePath: String? = nil,
-        onSystemSignInRequested: @escaping () -> Void,
+        onSystemSignInRequested: @escaping (URL) -> Void,
         onSignOutRequested: @escaping () -> Void,
         onLinked: @escaping (String, URL) -> Void
     ) {
@@ -1853,7 +1853,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             decisionHandler(.cancel)
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                self.onSystemSignInRequested()
+                self.onSystemSignInRequested(url)
                 // Cancelling leaves the page exactly as it was, which means the
                 // button the person just pressed stays in its pending state -
                 // "Continuing with Apple" forever. Nothing tells the page the
@@ -2150,7 +2150,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     ) -> WKWebView? {
         if let url = navigationAction.request.url {
             if isAuthenticationHost(url) {
-                onSystemSignInRequested()
+                onSystemSignInRequested(url)
             } else {
                 openExternally(url)
             }

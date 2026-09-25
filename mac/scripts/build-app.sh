@@ -322,6 +322,24 @@ if [ "$STORE" = "1" ]; then
 else
   APP_PROFILE="$MAC/profiles/TextText_App_Developer_ID.provisionprofile"
 fi
+if [ "$STORE" = "1" ] && [ "$SIGN_ID" != "-" ]; then
+  if [ ! -f "$APP_PROFILE" ]; then
+    echo "Refusing: the Mac App Store provisioning profile is missing." >&2
+    exit 1
+  fi
+  APPLE_SIGN_IN_ENTITLEMENT="$(security cms -D -i "$APP_PROFILE" 2>/dev/null \
+    | plutil -extract 'Entitlements.com\.apple\.developer\.applesignin' json -o - - 2>/dev/null || true)"
+  if [ "$APPLE_SIGN_IN_ENTITLEMENT" != '["Default"]' ]; then
+    echo "Refusing: the Mac App Store profile lacks Sign in with Apple." >&2
+    exit 1
+  fi
+  PROFILE_APP_ID="$(security cms -D -i "$APP_PROFILE" 2>/dev/null \
+    | plutil -extract 'Entitlements.com\.apple\.application-identifier' raw -o - - 2>/dev/null || true)"
+  if [ "$PROFILE_APP_ID" != "$TEAM.$TEXTTEXT_BUNDLE_ID" ]; then
+    echo "Refusing: the Mac App Store profile is for a different App ID." >&2
+    exit 1
+  fi
+fi
 MAIN_ENT="$(mktemp -t texttext-main-ent)"
 if [ -f "$APP_PROFILE" ] && [ "$SIGN_ID" != "-" ] && [ -n "${TEXTTEXT_APP_GROUP:-}" ]; then
   cp "$APP_PROFILE" "$APP/Contents/embedded.provisionprofile"

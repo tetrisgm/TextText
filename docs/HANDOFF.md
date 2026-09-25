@@ -37,14 +37,25 @@ loopback rewrites; the web-only Oracle deployment
 `texttext-oracle-20260925T034709Z-3cbfe686` passed its gates and authenticated
 smoke. A real app reload then rendered Home.
 
-Apple sign-in still shows macOS's “TextText wants to use texttext.app to sign in”
-dialog. This is required by the current `ASWebAuthenticationSession` web flow;
-investigate native Sign in with Apple, including the Mac App ID entitlement,
-grouping with the web Services ID, and a verified server token exchange. The
-Apple Developer portal is signed out in this agent session. The owner has been
-asked to sign in there and to confirm whether macOS uses the same Apple Account.
-Do not weaken callback binding to suppress the dialog. Cancel/retry and a fresh
-launch after authentication still need real UI verification.
+The owner wants the macOS “TextText wants to use texttext.app to sign in”
+dialog gone. `ASWebAuthenticationSession` requires it. On September 25, the
+Apple Developer portal was accessible; `app.texttext.mac` was enabled for Sign
+in with Apple and grouped with primary `net.writeapp.write`. Its invalid Mac App
+Store profile was regenerated and downloaded, and a Developer ID profile for
+the correct TextText bundle ID was created. Both local profiles were replaced
+under ignored `mac/profiles/`. The App Store profile includes
+`com.apple.developer.applesignin`; the Developer ID profile does not. Apple DTS
+confirms native Sign in with Apple is unsupported for Developer ID apps. The
+owner wants the normal native flow for the Mac App Store edition, so the
+temporary standalone device-link change was removed. The working tree now has
+the Store entitlement, native authorization controller, and a server endpoint
+that exchanges Apple's one-use code and verifies its signed identity token.
+The Store and standalone Swift builds, TypeScript check, focused Apple token
+tests, and shell syntax check pass. Verify a signed Store build's real Apple
+login and account mapping before publishing; it has not been installed or
+released. The installed 0.203 Developer ID app still uses the old sheet. The
+owner is choosing whether to keep the direct-download edition alongside the
+Store edition.
 
 The public `/@ramine` request now redirects instead of returning 500, but its
 unauthenticated destination `ramine.texttext.app` does not resolve. Public tenant

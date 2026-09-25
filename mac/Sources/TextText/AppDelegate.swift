@@ -36,6 +36,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private var captureAgent: CaptureAgent!
     private var linkController: LinkController!
     private var authSession: AuthSessionController!
+    #if TEXTTEXT_STORE
+    private var nativeAppleSignIn: NativeAppleSignInController!
+    #endif
     private var updater: Updater?          // created AFTER the move check; Sparkle must
                                            // never download into a translocated/Downloads copy
     private var statusItem: NSStatusItem!
@@ -240,6 +243,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         authSession.onLinked = { [weak self] credentials in
             self?.handleSignedIn(credentials)
         }
+        #if TEXTTEXT_STORE
+        nativeAppleSignIn = NativeAppleSignInController(store: store)
+        nativeAppleSignIn.onChange = { [weak self] in
+            guard let self else { return }
+            if case .failed = self.nativeAppleSignIn.state { self.showStatusWindow() }
+            else { self.refreshUI() }
+        }
+        nativeAppleSignIn.onActivity = { [weak self] message in self?.appendActivity(message) }
+        nativeAppleSignIn.onLinked = { [weak self] credentials in self?.handleSignedIn(credentials) }
+        #endif
 
         applyLoginItemDefaultIfNeeded()
         if NSApp.isActive {
@@ -1701,7 +1714,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         showMainWindow()
     }
 
-    private func signIn() {
+    private func signIn(providerHost: String? = nil) {
         // A device link already in flight belongs to whoever started it (the
         // CLI): reopen THAT approval page rather than minting a second code the
         // first tab could wrongly approve.
@@ -1711,6 +1724,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         }
         guard !linkController.isLinking else { return }
         showMainWindow()
+        #if TEXTTEXT_STORE
+        if providerHost == nil || providerHost?.lowercased() == "appleid.apple.com" {
+            authSession.cancel()
+            nativeAppleSignIn.begin(serverOrigin: resolveServerOrigin(credentials: nil), presentationWindow: webWindow?.window)
+            return
+        }
+        nativeAppleSignIn.cancel()
+        #endif
         authSession.begin(serverOrigin: resolveServerOrigin(credentials: nil), restartActive: true, presentationWindow: webWindow?.window)
     }
 
@@ -1718,6 +1739,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         // Local-only by design: the server-side revoke route may not exist
         // yet; degrade gracefully. The folder and its files stay put.
         authSession.cancel()
+        #if TEXTTEXT_STORE
+        nativeAppleSignIn.cancel()
+        #endif
         store.deleteCredentials()
         spotlightQueue.async { [weak self] in self?.clearSpotlightIndex() }
         removeFileProviderDomain()
@@ -2926,7 +2950,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         let controller = WebAppWindowController(
             origin: origin, startPath: "/start?to=home",
             appToken: credentials?.token, workspaceHomePath: home,
-            onSystemSignInRequested: { [weak self] in self?.signIn() },
+            onSystemSignInRequested: { [weak self] url in self?.signIn(providerHost: url.host) },
             onSignOutRequested: { [weak self] in self?.signOut() },
             onLinked: { [weak self] token, origin in self?.handleAppLinked(token: token, origin: origin) })
         // Secondary windows keep independent page state; only the primary frame is restored.
@@ -3017,8 +3041,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                 workspaceHomePath: cachedHandle.flatMap {
                     $0.isEmpty ? nil : "/@\($0)"
                 },
-                onSystemSignInRequested: { [weak self] in
-                    self?.signIn()
+                onSystemSignInRequested: { [weak self] url in
+                    self?.signIn(providerHost: url.host)
                 },
                 onSignOutRequested: { [weak self] in
                     self?.signOut()
@@ -3069,6 +3093,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                 signOut: { [weak self] in self?.signOut() },
                 cancelLink: { [weak self] in
                     guard let self else { return }
+                    #if TEXTTEXT_STORE
+                    if self.nativeAppleSignIn.isPresenting {
+                        self.nativeAppleSignIn.cancel()
+                        return
+                    }
+                    #endif
                     if self.authSession.isPresenting { self.authSession.cancel() }
                     else { self.linkController.cancel() }
                 },
@@ -3140,14 +3170,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             linkFailed = presentation.failed
             waitingApproval = false
         }
+        #if TEXTTEXT_STORE
+        switch nativeAppleSignIn.state {
+        case .presenting:
+            accountLine = "Finish signing in with Apple"
+            accountDetail = nil
+            linkCode = nil
+            linkHint = "Complete sign-in in the Apple sheet."
+            linkFailed = false
+            waitingApproval = false
+        case .failed(let message):
+            accountLine = message
+            accountDetail = nil
+            linkCode = nil
+            linkHint = "Try signing in again."
+            linkFailed = true
+            waitingApproval = false
+        case .idle:
+            break
+        }
+        #endif
 
+        var signingIn = linkController.isLinking || authSession.isPresenting
+        #if TEXTTEXT_STORE
+        signingIn = signingIn || nativeAppleSignIn.isPresenting
+        #endif
         statusWindow.refresh(StatusModel(
             accountLine: accountLine,
             accountDetail: accountDetail,
             linkCode: linkCode,
             linkHint: linkHint,
             linked: linked,
-            linking: linkController.isLinking || authSession.isPresenting,
+            linking: signingIn,
             linkFailed: linkFailed,
             waitingApproval: waitingApproval,
             folderPath: fileProviderUserVisibleURL?.path ?? "TextText in Finder",

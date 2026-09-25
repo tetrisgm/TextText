@@ -17,6 +17,11 @@
 	<key>com.apple.security.network.client</key>
 	<true/>
 
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
+
 	<!-- Opening and saving documents the person picks themselves. -->
 	<key>com.apple.security.files.user-selected.read-write</key>
 	<true/>
