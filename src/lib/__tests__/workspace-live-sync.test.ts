@@ -56,6 +56,28 @@ afterEach(() => {
 });
 
 describe("workspace live sync", () => {
+  it("stops database polling while visible but unattended and resumes on interaction", async () => {
+    const browser = new EventTarget();
+    vi.stubGlobal("window", browser);
+    vi.stubGlobal("document", { hidden: false });
+    const fetch = vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20_000));
+      return jsonResponse({ cursor: "1", changed: false });
+    });
+    vi.stubGlobal("fetch", fetch);
+    const liveSync = await loadLiveSync(vi.fn());
+    liveSync.useWorkspaceLiveSync("writer", "blog-1");
+    await vi.advanceTimersByTimeAsync(140_000);
+    const reads = fetch.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(fetch).toHaveBeenCalledTimes(reads);
+    browser.dispatchEvent(new Event("pointerdown"));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fetch).toHaveBeenCalledTimes(reads + 1);
+    liveSync.cleanup();
+    await vi.advanceTimersByTimeAsync(20_000);
+  });
+
   it("stops polling when the workspace has no owner change feed", async () => {
     const refreshWorkspacePool = vi.fn();
     const fetch = vi.fn().mockResolvedValue(errorResponse(404));

@@ -1,5 +1,24 @@
 # TextText handoff
 
+## Current: database compute audit (2026-09-24, unreleased)
+
+Production still fails on a Neon quota error through Vercel. No paid plan or
+resource deletion was applied. Quota type, actual CU-hours, and scale-to-zero
+settings remain unverified; Neon SSO requires the owner’s email verification.
+
+First mitigation: assistant history and workspace-list polling stop after two
+minutes without interaction; local chat edits still flush and interaction
+resumes discovery. Workspace long-poll cursor reads back off to five seconds
+and stop after client cancellation. This is not proof the database can sleep:
+editor collaboration/presence and native sync remain to audit. Active remote
+collaboration must retain convergence and durable outbox guarantees.
+
+Chiptunes production serves `app.a41aa43f43dc.js`, matching its restored static
+Cloudflare deployment documented in `/Users/shokunin/dev/chiptunes/docs/HANDOFF.md` (sibling
+checkout). Its residual untracked gateway is not its current production source.
+Do not equate local audio timers with hosted database work or delete the shared
+Neon integration, which also contains a gateway database.
+
 ## Active work: personal workspace (2026-09-21, unreleased)
 
 The [personal workspace plan](plans/personal-workspace.md) supersedes the

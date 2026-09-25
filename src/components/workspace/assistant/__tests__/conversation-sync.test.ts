@@ -63,6 +63,22 @@ afterEach(() => {
 });
 
 describe("owner-scoped conversation sync schedule", () => {
+  it("stops remote reads in an unattended visible window and catches up on interaction", async () => {
+    const loop = start();
+    await vi.advanceTimersByTimeAsync(120_000);
+    const reads = loop.sync.mock.calls.length;
+    expect(reads).toBeGreaterThan(0);
+    await vi.advanceTimersByTimeAsync(60 * 60_000);
+    expect(loop.sync).toHaveBeenCalledTimes(reads);
+    browser.dispatchEvent(new Event("pointerdown"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(loop.sync).toHaveBeenCalledTimes(reads + 1);
+    loop.dispose();
+    browser.dispatchEvent(new Event("keydown"));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(loop.sync).toHaveBeenCalledTimes(reads + 1);
+  });
+
   it("debounces local writes and acknowledges only the server's bounded replica", async () => {
     const id = activeAssistantConversationId(key, "root")!;
     const loop = start();

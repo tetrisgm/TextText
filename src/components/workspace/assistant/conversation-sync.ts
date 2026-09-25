@@ -11,6 +11,7 @@ export type AssistantHistorySyncStatus = "local" | "syncing" | "synced" | "offli
 export const ASSISTANT_HISTORY_RETRY_MS = [1000, 2000, 4000, 8000, 16000] as const;
 const DEBOUNCE_MS = 900;
 const REFRESH_MS = 30_000;
+const ACTIVE_WINDOW_MS = 2 * 60_000;
 
 type Options = {
   storeKey: string;
@@ -30,6 +31,7 @@ export function startAssistantConversationSync({ storeKey, sync, onStatus, isCur
   let disposed = false;
   let inFlight = false;
   let failures = 0;
+  let lastInteractionAt = Date.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let revision = assistantConversationLocalRevision(storeKey);
   const current = () => !disposed && isCurrent();
@@ -80,6 +82,7 @@ export function startAssistantConversationSync({ storeKey, sync, onStatus, isCur
   }
 
   function refresh() {
+    lastInteractionAt = Date.now();
     if (!current()) return;
     if (!online()) { clear(); status("offline"); return; }
     if (!foreground() || inFlight) return;
@@ -90,24 +93,35 @@ export function startAssistantConversationSync({ storeKey, sync, onStatus, isCur
     if (foreground()) refresh();
     else clear();
   }
+  function interacted() {
+    const wasIdle = Date.now() - lastInteractionAt >= ACTIVE_WINDOW_MS;
+    lastInteractionAt = Date.now();
+    if (wasIdle && !timer && !inFlight && !failures) refresh();
+  }
   function offline() { clear(); status("offline"); }
   const unsubscribe = subscribeAssistantConversations(() => {
     if (!current()) return;
     const next = assistantConversationLocalRevision(storeKey);
     if (next === revision) return;
     revision = next;
+    lastInteractionAt = Date.now();
     if (inFlight) return; // Completion checks the merged replica for newer edits.
     failures = 0;
     status(!online() ? "offline" : dirty() ? "local" : "synced");
     if (dirty()) schedule(DEBOUNCE_MS);
   });
+  window.addEventListener("pointerdown", interacted);
+  window.addEventListener("keydown", interacted);
   window.addEventListener("focus", refresh);
   window.addEventListener("online", refresh);
   window.addEventListener("offline", offline);
   document.addEventListener("visibilitychange", visibilityChanged);
   const interval = setInterval(() => {
-    // Do not let polling bypass backoff or restart an exhausted dirty revision.
-    if (current() && foreground() && online() && !inFlight && !timer && !(dirty() && failures)) {
+    // An unattended visible window must stop waking the database. Local edits
+    // still flush independently; interaction resumes remote-history discovery.
+    // Polling must not bypass backoff or restart an exhausted dirty revision.
+    if (current() && foreground() && online() && !inFlight && !timer &&
+      Date.now() - lastInteractionAt < ACTIVE_WINDOW_MS && !(dirty() && failures)) {
       void run();
     }
   }, REFRESH_MS);
@@ -120,6 +134,8 @@ export function startAssistantConversationSync({ storeKey, sync, onStatus, isCur
       clear();
       clearInterval(interval);
       unsubscribe();
+      window.removeEventListener("pointerdown", interacted);
+      window.removeEventListener("keydown", interacted);
       window.removeEventListener("focus", refresh);
       window.removeEventListener("online", refresh);
       window.removeEventListener("offline", offline);

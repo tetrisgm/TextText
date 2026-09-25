@@ -7,6 +7,8 @@ import {
 } from "@/lib/collab/agent-focus";
 import { refreshWorkspacePool } from "@/lib/pool/store";
 
+const IDLE_AFTER_MS = 2 * 60_000;
+
 const AGENT_FOCUS_SESSION_KEY = "texttext:agent-focus:last-event";
 const AGENT_FOCUS_MAX_AGE_MS = 30_000;
 const AGENT_FOCUS_FUTURE_SKEW_MS = 5_000;
@@ -46,7 +48,7 @@ function isFreshFocusEvent(focus: AgentFocusEvent): boolean {
  * (a file the engine pushed, a shared item, another device, an MCP edit) with
  * no user action here. This long-polls the same change cursor the native
  * engine uses (via the session-authed /api/workspace/changes) and refreshes
- * the pool only when that cursor advances. Hidden windows pause polling; the
+ * the pool only when that cursor advances. Hidden and unattended windows pause polling; the
  * next cursor-aware request catches up after visibility returns without a
  * speculative refresh or document reload.
  */
@@ -66,6 +68,13 @@ export function useWorkspaceLiveSync(
     let cancelled = false;
     let controller: AbortController | null = null;
     let cursor: string | null = null;
+    let lastInteractionAt = Date.now();
+    const interacted = () => { lastInteractionAt = Date.now(); };
+    if (typeof window !== "undefined") {
+      window.addEventListener?.("pointerdown", interacted);
+      window.addEventListener?.("keydown", interacted);
+      window.addEventListener?.("focus", interacted);
+    }
 
     const sleep = (ms: number) =>
       new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -165,7 +174,8 @@ export function useWorkspaceLiveSync(
       }
 
       while (!cancelled) {
-        if (typeof document !== "undefined" && document.hidden) {
+        if ((typeof document !== "undefined" && document.hidden) ||
+          Date.now() - lastInteractionAt >= IDLE_AFTER_MS) {
           await sleep(1000);
           continue;
         }
@@ -190,6 +200,11 @@ export function useWorkspaceLiveSync(
     return () => {
       cancelled = true;
       controller?.abort();
+      if (typeof window !== "undefined") {
+        window.removeEventListener?.("pointerdown", interacted);
+        window.removeEventListener?.("keydown", interacted);
+        window.removeEventListener?.("focus", interacted);
+      }
     };
   }, [handle, blogId]);
 }

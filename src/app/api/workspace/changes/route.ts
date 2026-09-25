@@ -20,6 +20,7 @@ export const maxDuration = 30;
 
 const MAX_WAIT_SECONDS = 25;
 const POLL_INTERVAL_MS = 750;
+const POLL_MAX_INTERVAL_MS = 5000;
 
 // A value that changes on every deployment, so a long-running client can
 // notice it is on stale code and reload itself (no more manual Cmd-R).
@@ -67,9 +68,12 @@ export async function GET(request: Request) {
   }
 
   const deadline = Date.now() + wait * 1000;
+  let interval = POLL_INTERVAL_MS;
   while (cursor === since && Date.now() < deadline) {
     if (request.signal?.aborted) break;
-    await sleep(Math.min(POLL_INTERVAL_MS, Math.max(deadline - Date.now(), 0)));
+    await sleep(Math.min(interval, Math.max(deadline - Date.now(), 0)));
+    if (request.signal?.aborted) break;
+    interval = Math.min(Math.round(interval * 1.6), POLL_MAX_INTERVAL_MS);
     cursor = await workspaceChangeCursor(handle);
   }
   const focus = user?.userId ? await activeAgentFocus(user.userId) : null;
