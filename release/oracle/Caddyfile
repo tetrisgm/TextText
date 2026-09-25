@@ -3,6 +3,9 @@
 	https_port 8444
 	http_port 8084
 	auto_https disable_redirects
+	cert_issuer acme {
+		disable_http_challenge
+	}
 	servers {
 		protocols h1 h2
 		listener_wrappers {
