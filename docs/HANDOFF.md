@@ -57,9 +57,10 @@ local development profiles were downloaded. The app opened Apple's native Sign
 in with Apple sheet without the website consent dialog. Completing Touch ID
 and verifying the existing workspace remain pending. A distribution-signed
 Store package 1.0 (1095) passed the package checks and App Store Connect marked
-build `48032ae0-d2e2-46ce-bd30-5dd8ebda9b60` VALID. It is not attached to the
-public version or submitted for review. The first upload (1094) was rejected
-because a downloaded profile carried a quarantine attribute; the build scripts
+build `48032ae0-d2e2-46ce-bd30-5dd8ebda9b60` VALID and attached to the
+prepared 1.0 listing. It has not been submitted for review. The first upload
+(1094) was rejected because a downloaded profile carried a quarantine
+attribute; the build scripts
 now clear it in staged profiles and the package gate refuses quarantine. The
 installed 0.203 Developer ID app still uses the old sheet. The
 owner chose Mac App Store distribution for general users and TestFlight for
@@ -73,10 +74,12 @@ The native code exchange endpoint is not yet deployed. `release/ship.sh
 --web-only` passed the full 3,646-test suite and 98 database behavior tests,
 but the 5,000-item performance gate failed once under heavy Mac load; it passed
 when rerun alone. A second full run timed out in the 5 MB collaboration paste
-test, which also passed alone. A long-running Time Machine backup is adding
-load. Do not bypass release gates; finish a complete pass before deploying,
-then complete Touch ID/account mapping before review submission. The owner has
-been asked whether to stop the current backup to unblock the timing gates.
+test, which also passed alone. TypeScript, Oracle unit tests, and the complete
+local migration bootstrap passed. A long-running Time Machine backup is adding
+load. The human-invoked web-only ship entry point can now reuse the separately
+passed Vitest gates with `--skip-tests` while it reruns the remaining checks and
+production smoke. Leave the backup running. Complete Touch ID/account mapping
+before review submission.
 
 The public `/@ramine` request now redirects instead of returning 500, but its
 unauthenticated destination `ramine.texttext.app` does not resolve. Public tenant
