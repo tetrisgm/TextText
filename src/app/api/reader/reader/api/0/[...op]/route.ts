@@ -9,6 +9,7 @@ import {
   tagList,
   unreadCount,
 } from "@/lib/reading/reader-api.server";
+import { requestPublicOrigin } from "@/lib/request-origin";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -41,7 +42,7 @@ async function handle(request: Request, context: { params: Promise<{ op: string[
   const params = await readParams(request);
   const identity = await readerIdentity(request, params.get("Auth"));
   if (!identity) return new Response("Unauthorized", { status: 401, headers: { "www-authenticate": "GoogleLogin" } });
-  const origin = new URL(request.url).origin;
+  const origin = requestPublicOrigin(request);
   switch (path) {
     case "token":
       // A CSRF token for the client to echo back; any value works here.

@@ -3,6 +3,7 @@ import {
   WORKSPACE_TOOL_NAMES,
 } from "@/lib/ai/tools";
 import { workspacePublicBaseUrl } from "@/lib/public-paths";
+import { requestPublicOrigin } from "@/lib/request-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ const READ_TOOL_COUNT = WORKSPACE_TOOL_NAMES.filter(
 const WORKSPACE_TOOL_COUNT = WORKSPACE_TOOL_NAMES.length;
 
 export async function GET(request: Request) {
-  const origin = new URL(request.url).origin;
+  const origin = requestPublicOrigin(request);
 
   return Response.json(openApiDocument(origin), {
     headers: {

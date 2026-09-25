@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { load as loadYaml } from "js-yaml";
+import { requestPublicOrigin } from "@/lib/request-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ export async function GET(request: Request) {
 function withRequestServer(document: unknown, request: Request): unknown {
   if (!isRecord(document)) return document;
 
-  const origin = new URL(request.url).origin;
+  const origin = requestPublicOrigin(request);
   return {
     ...document,
     servers: [{ url: `${origin}/api/sync/v1` }],

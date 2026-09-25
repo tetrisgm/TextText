@@ -5,6 +5,7 @@ import {
   resolveWorkspaceHomePath,
 } from "@/app/editor/actions";
 import { getCurrentUser } from "@/lib/session";
+import { requestPublicOrigin } from "@/lib/request-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export const dynamic = "force-dynamic";
 // answers a router request (a 200 with redirect headers) and the person saw
 // a blank page. NextResponse.redirect is a 307 whatever the URL says.
 function go(location: string, request: NextRequest): NextResponse {
-  return NextResponse.redirect(new URL(location, request.nextUrl.origin), 307);
+  return NextResponse.redirect(new URL(location, requestPublicOrigin(request)), 307);
 }
 
 export async function GET(request: NextRequest) {

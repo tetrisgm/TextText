@@ -7,6 +7,7 @@ import {
   safeAppSessionNextPath,
 } from "@/lib/app-session";
 import { resolveApiToken } from "@/lib/api-tokens";
+import { requestPublicOrigin } from "@/lib/request-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -36,14 +37,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const secure = request.nextUrl.protocol === "https:";
+  const origin = requestPublicOrigin(request);
+  const secure = new URL(origin).protocol === "https:";
   const sessionCookie = await createAppSessionCookie(identity, {
     secure,
     secret: authSecret()!,
   });
   const destination = new URL(
     safeAppSessionNextPath(request.nextUrl.searchParams.get("next")),
-    request.url,
+    origin,
   );
   const response = new NextResponse(null, {
     status: 303,

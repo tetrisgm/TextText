@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requestPublicOrigin } from "@/lib/request-origin";
 
 /**
  * `/favicon.ico`, which nothing on our own pages asks for.
@@ -11,5 +12,5 @@ import { NextResponse } from "next/server";
  * icon we already generate.
  */
 export function GET(request: Request): NextResponse {
-  return NextResponse.redirect(new URL("/icon", request.url), 308);
+  return NextResponse.redirect(new URL("/icon", requestPublicOrigin(request)), 308);
 }

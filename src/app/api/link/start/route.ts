@@ -4,6 +4,7 @@
 // approval happens in a signed-in browser session bound the risk.
 
 import { isAuthConfigured } from "@/auth";
+import { requestPublicOrigin } from "@/lib/request-origin";
 import {
   cleanAppName,
   startDeviceLink,
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
   }
 
   const link = await startDeviceLink(name);
-  const origin = new URL(request.url).origin;
+  const origin = requestPublicOrigin(request);
   return Response.json({
     code: link.code,
     pollToken: link.pollToken,

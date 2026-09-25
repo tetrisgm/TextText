@@ -13,6 +13,7 @@ import {
   unreadEntryIds,
   unsubscribe,
 } from "@/lib/reading/feedbin-api.server";
+import { requestPublicOrigin } from "@/lib/request-origin";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -51,7 +52,7 @@ async function handle(request: Request, context: { params: Promise<{ op: string[
     if (!feedUrl) return json({ error: "feed_url is required" }, 400);
     const result = await subscribe(identity, feedUrl);
     if (result.status === 404) return json({ error: result.error ?? "Could not subscribe" }, 404);
-    return json(result.subscription ?? {}, result.status, result.subscription ? { location: `${url.origin}/api/feedbin/v2/subscriptions/${result.subscription.id}.json` } : {});
+    return json(result.subscription ?? {}, result.status, result.subscription ? { location: `${requestPublicOrigin(request)}/api/feedbin/v2/subscriptions/${result.subscription.id}.json` } : {});
   }
   if (subscriptionOne && method === "DELETE") return new Response(null, { status: (await unsubscribe(identity, subscriptionOne[1])) ? 204 : 404 });
   if (subscriptionOne && (method === "PATCH" || method === "POST")) {
@@ -77,7 +78,7 @@ async function handle(request: Request, context: { params: Promise<{ op: string[
     const result = await entries(identity, url.searchParams, feedEntries?.[1]);
     const headers: Record<string, string> = {};
     if (result.nextPage) {
-      const next = new URL(url);
+      const next = new URL(`${url.pathname}${url.search}`, requestPublicOrigin(request));
       next.searchParams.set("page", String(result.nextPage));
       headers.link = `<${next.toString()}>; rel="next"`;
     }

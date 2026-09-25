@@ -3,8 +3,7 @@ import { getCurrentUser } from "@/lib/session";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import { githubAppConfig, type GithubAppConfig } from "@/lib/github/app.server";
 import { INSTALL_STATE_COOKIE, INSTALL_STATE_MAX_AGE_SECONDS } from "@/lib/github/install-state";
-import { isLoopbackHost } from "@/lib/loopback-host";
-import { rootDomainUrl } from "@/lib/site-url";
+import { requestPublicOrigin } from "@/lib/request-origin";
 
 const PRIVATE = { "Cache-Control": "private, no-store" } as const;
 
@@ -51,16 +50,11 @@ export async function clearInstallStateCookie(): Promise<void> {
 }
 
 /**
- * The origin to send the browser back to. On the developer's own machine it
- * is the loopback origin the request arrived on; anywhere else it is the
- * configured root domain, so a forged Host header can never turn the
- * settings redirect or the OAuth redirect_uri toward another site.
+ * Use the same validated public origin as sign-in and app-session redirects.
+ * A forged Host header cannot point the OAuth callback at an unrelated site.
  */
 export function requestOrigin(request: Request): string {
-  const url = new URL(request.url);
-  const host = request.headers.get("host") ?? url.host;
-  if (isLoopbackHost(host)) return `http://${host}`;
-  return rootDomainUrl().toString().replace(/\/$/, "");
+  return requestPublicOrigin(request);
 }
 
 /** Where the OAuth half of setup returns; registered on the GitHub App as a callback URL. */

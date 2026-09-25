@@ -6,6 +6,7 @@ import {
   resolveDocumentCapability,
 } from "@/lib/store";
 import { blogPostPath } from "@/lib/public-paths";
+import { requestPublicOrigin } from "@/lib/request-origin";
 
 export async function GET(
   request: NextRequest,
@@ -28,7 +29,7 @@ export async function GET(
     });
   }
   const response = NextResponse.redirect(
-    new URL(blogPostPath(blog, context.post), request.url),
+    new URL(blogPostPath(blog, context.post), requestPublicOrigin(request)),
     303,
   );
   response.cookies.set(

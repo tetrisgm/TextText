@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   resolveApiToken: vi.fn(),
@@ -23,6 +23,7 @@ function request(
     next?: string;
     token?: string;
     appHeader?: string;
+    host?: string;
   } = {},
 ) {
   const origin = options.origin ?? "https://TextText.app";
@@ -33,12 +34,14 @@ function request(
     headers: {
       authorization: `Bearer ${options.token ?? appToken}`,
       "x-texttext-app": options.appHeader ?? "1",
+      ...(options.host ? { host: options.host } : {}),
     },
   });
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("AUTH_URL", "https://texttext.app");
   process.env.AUTH_SECRET =
     "test-secret-that-is-long-enough-for-session-encryption";
   mocks.resolveApiToken.mockResolvedValue({
@@ -48,8 +51,21 @@ beforeEach(() => {
     expiresAt: null,
   });
 });
+afterEach(() => vi.unstubAllEnvs());
 
 describe("app session route", () => {
+  it.each(["http", "https"])("uses a public redirect and secure cookie behind a %s loopback listener", async (protocol) => {
+    const response = await POST(request({
+      origin: `${protocol}://localhost:3400`,
+      host: "texttext.app",
+      next: "/start?to=home",
+    }));
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("https://texttext.app/start?to=home");
+    expect(response.headers.get("set-cookie")).toContain("__Secure-authjs.session-token=");
+    expect(response.headers.get("set-cookie")).toContain("; Secure");
+  });
+
   it("exchanges a scoped app token for an HttpOnly session and redirect", async () => {
     const response = await POST(
       request({ next: "/t/workspace/post?edit=1" }),

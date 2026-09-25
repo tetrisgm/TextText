@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const session = vi.hoisted(() => ({ user: null as null | { sub: string } }));
@@ -14,6 +14,16 @@ const { GET } = await import("../route");
 describe("/start", () => {
   beforeEach(() => {
     session.user = null;
+    vi.stubEnv("AUTH_URL", "https://texttext.app");
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each(["http", "https"])("redirects the %s loopback listener to the public sign-in host", async (protocol) => {
+    const response = await GET(new NextRequest(`${protocol}://localhost:3400/start?to=home`, {
+      headers: { host: "texttext.app", "x-forwarded-proto": "https" },
+    }));
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe("https://texttext.app/signin?callbackUrl=%2Fstart%3Fto%3Dhome");
   });
 
   it("sends a signed-out visitor to sign in with the intent, and drops the router's own parameter", async () => {
