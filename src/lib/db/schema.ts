@@ -1,4 +1,4 @@
-// Drizzle schema for the hosted platform (Neon Postgres). All content access
+// Drizzle schema for PostgreSQL. All content access
 // goes through src/lib/store.ts, which reads and writes these tables.
 
 import { sql } from "drizzle-orm";
@@ -35,8 +35,8 @@ import type { AuthoringSource } from "../presentation/authoring-source";
 // which is the database refusing to be broken. Leave it here.
 export const textTextChangeSequence = pgSequence("texttext_change_seq");
 
-const postStatus = pgEnum("post_status", ["draft", "published"]);
-const fileRepresentation = pgEnum("file_representation", [
+export const postStatus = pgEnum("post_status", ["draft", "published"]);
+export const fileRepresentation = pgEnum("file_representation", [
   "textbundle",
   "markdown",
   "text",
@@ -51,7 +51,7 @@ export const postType = pgEnum("post_type", [
   "note",
   "bookmark",
 ]);
-const itemCommentAnchorField = pgEnum("item_comment_anchor_field", [
+export const itemCommentAnchorField = pgEnum("item_comment_anchor_field", [
   "title",
   "excerpt",
   "body",
