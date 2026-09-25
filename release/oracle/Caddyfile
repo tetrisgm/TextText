@@ -35,7 +35,7 @@ texttext.app {
 	}
 }
 
-www.texttext.app {
+www.texttext.app, write.ramine.net {
 	bind 127.0.0.1
 	redir https://texttext.app{uri} permanent
 }
