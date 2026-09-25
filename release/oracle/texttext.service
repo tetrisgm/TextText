@@ -1,0 +1,36 @@
+[Unit]
+Description=TextText web application
+After=network-online.target texttext-postgres.service
+Wants=network-online.target
+Requires=texttext-postgres.service
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/texttext/current
+EnvironmentFile=/etc/texttext/runtime.env
+ExecStart=/usr/bin/node /home/ubuntu/texttext/current/release/oracle/start.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/home/ubuntu/texttext/current/.texttext/oracle-build/cache /home/ubuntu/texttext/state
+MemoryMax=2G
+CPUQuota=150%
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target

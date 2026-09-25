@@ -1,0 +1,30 @@
+[Unit]
+Description=TextText encrypted database backup
+After=network-online.target texttext-postgres.service
+Wants=network-online.target
+Requires=texttext-postgres.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/texttext/current
+EnvironmentFile=/etc/texttext/backup.env
+ExecStart=/usr/bin/node /home/ubuntu/texttext/current/release/oracle/backup.mjs --require-upload
+TimeoutStartSec=15min
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/home/ubuntu/texttext/backups
+MemoryMax=512M
+CPUQuota=50%
