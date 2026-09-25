@@ -19,9 +19,6 @@ async function main() {
   }
   const client = new pg.Client({
     connectionString: databaseUrl,
-    ssl: databaseUrl.includes(".neon.tech")
-      ? { rejectUnauthorized: true }
-      : undefined,
   });
   await client.connect();
   console.log("Adding api_tokens.kind...");

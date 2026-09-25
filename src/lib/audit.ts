@@ -1,15 +1,13 @@
 // The action audit: every mutation, whoever drove it, leaves one row saying
 // who did what to what.
 //
-// ATOMICITY. The neon-http driver has no interactive transactions, but it does
-// expose the Neon HTTP transaction two ways, and this file provides both so the
-// high-consequence mutations write their audit row in the SAME transaction as
-// the mutation (never a mutated row without provenance, never a phantom audit):
+// ATOMICITY. These helpers keep high-consequence mutations and their audit
+// row in the same transaction: no mutation without provenance or phantom audit.
 //
 //   - auditCteFrom(): a data-modifying CTE for GUARDED (revision-CAS) mutations,
 //     where the audit lands iff the guard matched a row. Used by deletePostAtomic
 //     and movePostFile (a deleted or moved/renamed post is atomically audited).
-//   - auditInsertQuery(): an unexecuted INSERT to fold into db.batch([...]) for
+//   - auditInsertQuery(): an unexecuted INSERT in executeAtomicBatch(...) for
 //     UNCONDITIONAL (addressed-by-id) mutations. Used by the share grant / role /
 //     revoke path (a permission change is atomically audited).
 //
@@ -76,9 +74,7 @@ export function auditValues(entry: AuditEntry) {
  * (e.g. sql`changed.id::text`), because a guarded mutation's affected id is only
  * known post-execution.
  *
- * This is the primitive that makes a mutation and its audit GENUINELY ATOMIC on
- * the neon-http driver (which has no interactive transactions): fold both into
- * one statement,
+ * Keep the guard and its audit atomic by folding both into one statement,
  *
  *   WITH changed AS (UPDATE ... WHERE <revision guard> RETURNING id),
  *        audit   AS ( <auditCteFrom(entry, "changed", sql`changed.id::text`)> )
@@ -87,7 +83,7 @@ export function auditValues(entry: AuditEntry) {
  * Postgres runs a data-modifying WITH clause to completion even when the primary
  * query does not reference it, so the audit lands precisely when `changed` is
  * non-empty and never when a revision conflict matched zero rows (which a naive
- * db.batch of an unconditional INSERT would get wrong, recording phantom rows).
+ * batch of an unconditional INSERT would get wrong, recording phantom rows).
  */
 export function auditCteFrom(
   entry: AuditEntry,
@@ -103,9 +99,9 @@ export function auditCteFrom(
 }
 
 /**
- * An UNEXECUTED audit INSERT, for folding into a db.batch([...]) alongside an
+ * An UNEXECUTED audit INSERT for executeAtomicBatch(...) alongside an
  * UNCONDITIONAL mutation (one that always affects its row, addressed by id) so
- * both commit in one neon-http transaction. Do NOT batch this with a guarded
+ * both commit in one PostgreSQL transaction. Do NOT batch this with a guarded
  * (revision-CAS) mutation: the insert would still run when the guard matched
  * zero rows, recording a phantom action; use auditCteFrom for guarded writes.
  */

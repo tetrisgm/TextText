@@ -5,7 +5,7 @@
 //   node scripts/migrate-add-starred.mjs
 
 import pkg from "@next/env";
-import { neon } from "@neondatabase/serverless";
+import { connectMigrationDatabase } from "./lib/postgres-migration.mjs";
 
 pkg.loadEnvConfig(process.cwd(), true, { info() {}, error() {} });
 const databaseUrl = process.env.DATABASE_URL;
@@ -14,25 +14,28 @@ if (!databaseUrl) {
   process.exit(0);
 }
 
-const sql = neon(databaseUrl);
+const sql = await connectMigrationDatabase(databaseUrl);
+try {
+  await sql`
+    ALTER TABLE posts
+      ADD COLUMN IF NOT EXISTS starred boolean NOT NULL DEFAULT false
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS posts_blog_starred_order_idx
+      ON posts (blog_id, starred DESC, updated_at DESC, created_at DESC)
+      WHERE deleted_at IS NULL
+  `;
 
-await sql`
-  ALTER TABLE posts
-    ADD COLUMN IF NOT EXISTS starred boolean NOT NULL DEFAULT false
-`;
-await sql`
-  CREATE INDEX IF NOT EXISTS posts_blog_starred_order_idx
-    ON posts (blog_id, starred DESC, updated_at DESC, created_at DESC)
+  const [summary] = await sql`
+    SELECT
+      count(*)::int AS posts,
+      count(*) FILTER (WHERE starred)::int AS starred
+    FROM posts
     WHERE deleted_at IS NULL
-`;
-
-const [summary] = await sql`
-  SELECT
-    count(*)::int AS posts,
-    count(*) FILTER (WHERE starred)::int AS starred
-  FROM posts
-  WHERE deleted_at IS NULL
-`;
-console.log(
-  `Personal stars ready. posts=${summary.posts} starred=${summary.starred}`,
-);
+  `;
+  console.log(
+    `Personal stars ready. posts=${summary.posts} starred=${summary.starred}`,
+  );
+} finally {
+  await sql.close();
+}

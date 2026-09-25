@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { drizzle } from "drizzle-orm/neon-http";
+import { drizzle } from "drizzle-orm/node-postgres";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { folders, idempotencyKeys, itemComments, posts } from "@/lib/db/schema";
@@ -12,9 +12,8 @@ import { auditCteFrom } from "@/lib/audit";
 // the one property that would only fail at runtime: the SQL renders to valid
 // single-paren Postgres. drizzle only builds SQL here; no connection is used.
 const dialect = new PgDialect();
-// A function client is used verbatim (no neon() connection attempt); it is
-// never called because we render SQL rather than execute it.
-const qb = drizzle((() => {}) as never); // query builder only, never executed
+// Query builder only; these checks never connect to a database.
+const qb = drizzle.mock();
 
 const audit = auditCteFrom(
   {

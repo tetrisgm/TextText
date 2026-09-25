@@ -17,7 +17,7 @@
 // the accepted reset of any pre-existing co-editing log (owner-approved).
 
 import { readFileSync } from "node:fs";
-import { neon } from "@neondatabase/serverless";
+import { connectMigrationDatabase } from "./lib/postgres-migration.mjs";
 
 function loadDatabaseUrl() {
   if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
@@ -34,25 +34,28 @@ function loadDatabaseUrl() {
 }
 
 async function main() {
-  const sql = neon(loadDatabaseUrl());
+  const sql = await connectMigrationDatabase(loadDatabaseUrl());
+  try {
+    console.log("Adding collab_updates.epoch (default 0)...");
+    await sql`
+      ALTER TABLE collab_updates
+        ADD COLUMN IF NOT EXISTS epoch integer NOT NULL DEFAULT 0
+    `;
 
-  console.log("Adding collab_updates.epoch (default 0)...");
-  await sql`
-    ALTER TABLE collab_updates
-      ADD COLUMN IF NOT EXISTS epoch integer NOT NULL DEFAULT 0
-  `;
+    console.log("Creating collab_state (if missing)...");
+    await sql`
+      CREATE TABLE IF NOT EXISTS collab_state (
+        post_id uuid PRIMARY KEY REFERENCES posts(id),
+        epoch integer NOT NULL DEFAULT 0,
+        materialized_revision bigint,
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `;
 
-  console.log("Creating collab_state (if missing)...");
-  await sql`
-    CREATE TABLE IF NOT EXISTS collab_state (
-      post_id uuid PRIMARY KEY REFERENCES posts(id),
-      epoch integer NOT NULL DEFAULT 0,
-      materialized_revision bigint,
-      updated_at timestamptz NOT NULL DEFAULT now()
-    )
-  `;
-
-  console.log("Done.");
+    console.log("Done.");
+  } finally {
+    await sql.close();
+  }
 }
 
 main().catch((error) => {

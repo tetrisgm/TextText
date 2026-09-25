@@ -10,7 +10,7 @@
 // or from .env.local.
 
 import { readFileSync } from "node:fs";
-import { neon } from "@neondatabase/serverless";
+import { connectMigrationDatabase } from "./lib/postgres-migration.mjs";
 
 function loadDatabaseUrl() {
   if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
@@ -27,23 +27,26 @@ function loadDatabaseUrl() {
 }
 
 async function main() {
-  const sql = neon(loadDatabaseUrl());
+  const sql = await connectMigrationDatabase(loadDatabaseUrl());
+  try {
+    const [{ n }] = await sql`
+      SELECT count(*)::int AS n FROM blogs
+      WHERE owner_id IS NULL AND deleted_at IS NULL
+    `;
+    if (n > 0) {
+      console.log(
+        `Note: ${n} unclaimed blog(s) remain. They are unreachable (the claim ` +
+          `flow is gone) and keep serving as public pages if published.`,
+      );
+    }
 
-  const [{ n }] = await sql`
-    SELECT count(*)::int AS n FROM blogs
-    WHERE owner_id IS NULL AND deleted_at IS NULL
-  `;
-  if (n > 0) {
-    console.log(
-      `Note: ${n} unclaimed blog(s) remain. They are unreachable (the claim ` +
-        `flow is gone) and keep serving as public pages if published.`,
-    );
+    console.log("Dropping blogs.edit_token_hash...");
+    await sql`ALTER TABLE blogs DROP COLUMN IF EXISTS edit_token_hash`;
+
+    console.log("Done.");
+  } finally {
+    await sql.close();
   }
-
-  console.log("Dropping blogs.edit_token_hash...");
-  await sql`ALTER TABLE blogs DROP COLUMN IF EXISTS edit_token_hash`;
-
-  console.log("Done.");
 }
 
 main().catch((error) => {

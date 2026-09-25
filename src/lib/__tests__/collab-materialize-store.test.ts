@@ -6,8 +6,8 @@ import type { Post } from "@/lib/content";
 
 const mocks = vi.hoisted(() => ({ select: vi.fn(), execute: vi.fn() }));
 vi.mock("@/lib/db/client", async () => {
-  const { drizzle } = await import("drizzle-orm/neon-http");
-  const qb = drizzle((() => {}) as never);
+  const { drizzle } = await import("drizzle-orm/node-postgres");
+  const qb = drizzle.mock();
   return { db: { select: mocks.select, execute: mocks.execute, update: qb.update.bind(qb) } };
 });
 vi.mock("@/lib/blog-core", () => ({ getBlogCore: async () => ({ id: "blog" }) }));

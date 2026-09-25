@@ -27,9 +27,6 @@ type PostAuditRow = {
 
 const client = new pg.Client({
   connectionString: databaseUrl,
-  ssl: databaseUrl.includes(".neon.tech")
-    ? { rejectUnauthorized: true }
-    : undefined,
 });
 
 function equalJson(left: unknown, right: unknown): boolean {

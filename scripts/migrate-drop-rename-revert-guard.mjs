@@ -14,7 +14,7 @@
 // `.textbundle` (no rows WHERE file_representation = 'textbundle').
 
 import { readFileSync } from "node:fs";
-import { neon } from "@neondatabase/serverless";
+import { connectMigrationDatabase } from "./lib/postgres-migration.mjs";
 
 function loadDatabaseUrl() {
   if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
@@ -31,34 +31,37 @@ function loadDatabaseUrl() {
 }
 
 async function main() {
-  const sql = neon(loadDatabaseUrl());
+  const sql = await connectMigrationDatabase(loadDatabaseUrl());
+  try {
+    // Safety: refuse to drop the guard while any post still syncs as a package,
+    // because an un-converged client could still produce the phantom.
+    const [{ n }] = await sql`
+      SELECT count(*)::int AS n FROM posts WHERE file_representation = 'textbundle'
+    `;
+    if (n > 0) {
+      throw new Error(
+        `Refusing to drop the rename-revert guard: ${n} post(s) still on textbundle. ` +
+          `Run migrate-flip-representation-to-markdown.mjs and let clients converge first.`,
+      );
+    }
 
-  // Safety: refuse to drop the guard while any post still syncs as a package,
-  // because an un-converged client could still produce the phantom.
-  const [{ n }] = await sql`
-    SELECT count(*)::int AS n FROM posts WHERE file_representation = 'textbundle'
-  `;
-  if (n > 0) {
-    throw new Error(
-      `Refusing to drop the rename-revert guard: ${n} post(s) still on textbundle. ` +
-        `Run migrate-flip-representation-to-markdown.mjs and let clients converge first.`,
-    );
+    console.log("Dropping post_title_history table + trigger + function...");
+    await sql`DROP TRIGGER IF EXISTS posts_record_title_supersede ON posts`;
+    await sql`DROP FUNCTION IF EXISTS record_title_supersede()`;
+    await sql`DROP TABLE IF EXISTS post_title_history`;
+
+    console.log("Dropping the guard's audit index...");
+    await sql`DROP INDEX IF EXISTS action_audit_target_created_idx`;
+
+    console.log("Dropping the earlier previous_title iteration (if present)...");
+    await sql`DROP TRIGGER IF EXISTS posts_capture_previous_title ON posts`;
+    await sql`DROP FUNCTION IF EXISTS capture_previous_title()`;
+    await sql`ALTER TABLE posts DROP COLUMN IF EXISTS previous_title`;
+
+    console.log("Done.");
+  } finally {
+    await sql.close();
   }
-
-  console.log("Dropping post_title_history table + trigger + function...");
-  await sql`DROP TRIGGER IF EXISTS posts_record_title_supersede ON posts`;
-  await sql`DROP FUNCTION IF EXISTS record_title_supersede()`;
-  await sql`DROP TABLE IF EXISTS post_title_history`;
-
-  console.log("Dropping the guard's audit index...");
-  await sql`DROP INDEX IF EXISTS action_audit_target_created_idx`;
-
-  console.log("Dropping the earlier previous_title iteration (if present)...");
-  await sql`DROP TRIGGER IF EXISTS posts_capture_previous_title ON posts`;
-  await sql`DROP FUNCTION IF EXISTS capture_previous_title()`;
-  await sql`ALTER TABLE posts DROP COLUMN IF EXISTS previous_title`;
-
-  console.log("Done.");
 }
 
 main().catch((error) => {

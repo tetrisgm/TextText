@@ -25,14 +25,9 @@ function loadDatabaseUrl() {
 
 async function main() {
   const databaseUrl = loadDatabaseUrl();
-  // This migration runs in both `db:push` (local Postgres) and the release
-  // lane (Neon). Use the wire-protocol driver shared by the other dual-lane
-  // migrations instead of Neon's HTTP-only tagged client.
+  // Use the same PostgreSQL connection settings in development and release.
   const client = new pg.Client({
     connectionString: databaseUrl,
-    ssl: databaseUrl.includes(".neon.tech")
-      ? { rejectUnauthorized: true }
-      : undefined,
   });
   await client.connect();
   const table = await client.query(

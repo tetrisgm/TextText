@@ -20,7 +20,7 @@
 // RE-RUN this on any new / restored database, alongside the other migrations.
 
 import { readFileSync } from "node:fs";
-import { neon } from "@neondatabase/serverless";
+import { connectMigrationDatabase } from "./lib/postgres-migration.mjs";
 
 function loadDatabaseUrl() {
   if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
@@ -37,48 +37,51 @@ function loadDatabaseUrl() {
 }
 
 async function main() {
-  const sql = neon(loadDatabaseUrl());
+  const sql = await connectMigrationDatabase(loadDatabaseUrl());
+  try {
+    console.log("Dropping the file_representation immutability guard...");
+    await sql`DROP TRIGGER IF EXISTS posts_file_representation_immutable ON posts`;
 
-  console.log("Dropping the file_representation immutability guard...");
-  await sql`DROP TRIGGER IF EXISTS posts_file_representation_immutable ON posts`;
+    console.log("Moving posts.file_representation default to markdown...");
+    await sql`ALTER TABLE posts ALTER COLUMN file_representation SET DEFAULT 'markdown'`;
 
-  console.log("Moving posts.file_representation default to markdown...");
-  await sql`ALTER TABLE posts ALTER COLUMN file_representation SET DEFAULT 'markdown'`;
+    console.log("Flipping existing textbundle posts to markdown (incl. trashed)...");
+    const flipped = await sql`
+      UPDATE posts SET file_representation = 'markdown'
+      WHERE file_representation = 'textbundle'
+      RETURNING id
+    `;
+    console.log(`  flipped ${flipped.length} post(s)`);
 
-  console.log("Flipping existing textbundle posts to markdown (incl. trashed)...");
-  const flipped = await sql`
-    UPDATE posts SET file_representation = 'markdown'
-    WHERE file_representation = 'textbundle'
-    RETURNING id
-  `;
-  console.log(`  flipped ${flipped.length} post(s)`);
+    console.log("Re-installing the immutability guard (now locked at markdown)...");
+    await sql`
+      CREATE OR REPLACE FUNCTION reject_post_file_representation_change()
+      RETURNS trigger AS $$
+      BEGIN
+        IF NEW.file_representation IS DISTINCT FROM OLD.file_representation THEN
+          RAISE EXCEPTION 'posts.file_representation is immutable'
+            USING ERRCODE = 'check_violation';
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql
+    `;
+    await sql`
+      CREATE OR REPLACE TRIGGER posts_file_representation_immutable
+        BEFORE UPDATE OF file_representation ON posts
+        FOR EACH ROW EXECUTE FUNCTION reject_post_file_representation_change()
+    `;
 
-  console.log("Re-installing the immutability guard (now locked at markdown)...");
-  await sql`
-    CREATE OR REPLACE FUNCTION reject_post_file_representation_change()
-    RETURNS trigger AS $$
-    BEGIN
-      IF NEW.file_representation IS DISTINCT FROM OLD.file_representation THEN
-        RAISE EXCEPTION 'posts.file_representation is immutable'
-          USING ERRCODE = 'check_violation';
-      END IF;
-      RETURN NEW;
-    END;
-    $$ LANGUAGE plpgsql
-  `;
-  await sql`
-    CREATE OR REPLACE TRIGGER posts_file_representation_immutable
-      BEFORE UPDATE OF file_representation ON posts
-      FOR EACH ROW EXECUTE FUNCTION reject_post_file_representation_change()
-  `;
-
-  const [summary] = await sql`
-    SELECT
-      count(*) FILTER (WHERE file_representation = 'textbundle')::int AS textbundle,
-      count(*) FILTER (WHERE file_representation = 'markdown')::int AS markdown
-    FROM posts
-  `;
-  console.log(`Done. textbundle=${summary.textbundle} markdown=${summary.markdown}`);
+    const [summary] = await sql`
+      SELECT
+        count(*) FILTER (WHERE file_representation = 'textbundle')::int AS textbundle,
+        count(*) FILTER (WHERE file_representation = 'markdown')::int AS markdown
+      FROM posts
+    `;
+    console.log(`Done. textbundle=${summary.textbundle} markdown=${summary.markdown}`);
+  } finally {
+    await sql.close();
+  }
 }
 
 main().catch((error) => {

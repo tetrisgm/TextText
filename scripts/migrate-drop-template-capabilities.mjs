@@ -31,7 +31,6 @@ if (!databaseUrl) {
 
 const client = new pg.Client({
   connectionString: databaseUrl,
-  ssl: databaseUrl.includes(".neon.tech") ? { rejectUnauthorized: true } : undefined,
 });
 await client.connect();
 

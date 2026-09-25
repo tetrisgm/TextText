@@ -39,11 +39,9 @@ if (!databaseUrl) {
   process.exit(0);
 }
 
-// node-postgres, not the Neon HTTP driver: this must run against local
-// Postgres in development and Neon in release, same as migrate-unified-documents.
+// Use the same PostgreSQL connection settings in development and release.
 const client = new pg.Client({
   connectionString: databaseUrl,
-  ssl: databaseUrl.includes(".neon.tech") ? { rejectUnauthorized: true } : undefined,
 });
 await client.connect();
 

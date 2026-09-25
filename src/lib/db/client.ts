@@ -3,20 +3,14 @@
 // answered every read without a database was removed 2026-08-14. Everything
 // server side goes through store.ts, not this module directly.
 //
-// Two drivers by URL so local dev/test never touches the paid database:
-//   - Production (Neon): the HTTP driver, unchanged.
-//   - A local Postgres (dev/test/CI): the standard node-postgres pool.
-// Prod always resolves to the Neon branch; the pg branch only runs for a local
-// (non-neon.tech) URL.
+// Production and local development use the same PostgreSQL driver. DATABASE_URL
+// chooses the database; local development and tests must use local Postgres.
 
-import { drizzle as drizzleNeon } from "drizzle-orm/neon-http";
-import type { NeonHttpDatabase } from "drizzle-orm/neon-http";
-import { neon } from "@neondatabase/serverless";
-import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
+import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "./schema";
 
-export type Database = NeonHttpDatabase<typeof schema>;
+export type Database = NodePgDatabase<typeof schema>;
 
 type AwaitableQuery = PromiseLike<unknown>;
 type BatchResults<T extends readonly AwaitableQuery[]> = {
@@ -24,18 +18,14 @@ type BatchResults<T extends readonly AwaitableQuery[]> = {
 };
 
 const url = process.env.DATABASE_URL;
-let localPool: Pool | null = null;
+let pool: Pool | null = null;
 
 // TEXTTEXT_DB_TRACE=1 stamps every query's issue time to stderr, which is how
 // serial round-trip waves in a render are found. Never on in production.
 const traceQueries = process.env.TEXTTEXT_DB_TRACE === "1";
 
-// Against local Postgres a round trip is a fraction of a millisecond and a
-// page can make fifty without anyone noticing. Against the production
-// database each one is a fresh HTTPS request, so the count, not the query
-// plan, is what a page's speed is made of. This counter is what lets a test
-// hold a page to a budget instead of waiting for someone to say it feels
-// slow. Always on: it is one increment.
+// Keep a query counter so page and sync tests can hold work to a budget. It
+// stays enabled in production without recording SQL or parameters.
 let issued = 0;
 
 /** Queries issued since the process started. Compare two readings. */
@@ -56,26 +46,24 @@ const countingLogger = {
 
 function makeDb(): Database | null {
   if (!url) return null;
-  if (/neon\.tech/i.test(url)) {
-    return drizzleNeon(neon(url), { schema, logger: countingLogger });
-  }
-  // Local Postgres exposes the same Drizzle query API for everything store.ts
-  // uses, so treat it as the same Db type.
-  localPool = new Pool({ connectionString: url });
-  return drizzlePg(localPool, {
-    schema,
-    logger: countingLogger,
-  }) as unknown as Database;
+  pool = new Pool({
+    connectionString: url,
+    max: 10,
+    connectionTimeoutMillis: 10_000,
+  });
+  // A dropped idle connection must not crash the long-lived app process.
+  pool.on("error", (error) => {
+    console.error("Idle database connection failed", error.name);
+  });
+  return drizzle(pool, { schema, logger: countingLogger });
 }
 
 export const db = makeDb();
 
 /**
- * Execute related Drizzle queries atomically on either supported driver.
- *
- * Neon HTTP exposes atomic batches while node-postgres exposes interactive
- * transactions. The callback must build every query from the supplied
- * executor so local queries are bound to the active transaction.
+ * Execute related Drizzle queries in one PostgreSQL transaction. Build every
+ * query from the supplied executor so a failure rolls back the entire batch,
+ * including its audit row.
  */
 export async function executeAtomicBatch<
   const T extends readonly AwaitableQuery[],
@@ -84,22 +72,9 @@ export async function executeAtomicBatch<
 ): Promise<BatchResults<T>> {
   if (!db) throw new Error("Atomic database work needs DATABASE_URL");
 
-  if (!localPool) {
-    const neonDb = db as Database & {
-      batch(queries: T): Promise<BatchResults<T>>;
-    };
-    return neonDb.batch(build(db));
-  }
-
-  const localDb = db as Database & {
-    transaction<R>(
-      callback: (transaction: Database) => Promise<R>,
-    ): Promise<R>;
-  };
-  return localDb.transaction(async (transaction) => {
+  return db.transaction(async (transaction) => {
     const results: unknown[] = [];
-    const executor = transaction as unknown as Database;
-    for (const query of build(executor)) {
+    for (const query of build(transaction)) {
       results.push(await query);
     }
     return results as BatchResults<T>;
@@ -107,6 +82,6 @@ export async function executeAtomicBatch<
 }
 
 export async function closeDatabaseConnections(): Promise<void> {
-  await localPool?.end();
-  localPool = null;
+  await pool?.end();
+  pool = null;
 }

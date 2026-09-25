@@ -1,16 +1,13 @@
 import pg from "pg";
 
 /**
- * Open the same migration surface against local Postgres or production Neon.
+ * Open the migration surface against the configured PostgreSQL database.
  * The returned function supports both tagged SQL and the legacy `.query(text)`
  * calls used by older migration scripts.
  */
 export async function connectMigrationDatabase(databaseUrl) {
   const client = new pg.Client({
     connectionString: databaseUrl,
-    ssl: databaseUrl.includes(".neon.tech")
-      ? { rejectUnauthorized: true }
-      : undefined,
   });
   await client.connect();
 

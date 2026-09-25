@@ -7,7 +7,7 @@
 // environment or from .env.local.
 
 import { readFileSync } from "node:fs";
-import { neon } from "@neondatabase/serverless";
+import { connectMigrationDatabase } from "./lib/postgres-migration.mjs";
 
 function loadDatabaseUrl() {
   if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
@@ -24,35 +24,38 @@ function loadDatabaseUrl() {
 }
 
 async function main() {
-  const sql = neon(loadDatabaseUrl());
+  const sql = await connectMigrationDatabase(loadDatabaseUrl());
+  try {
+    console.log("Creating mcp_connections...");
+    await sql`
+      CREATE TABLE IF NOT EXISTS mcp_connections (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        blog_id uuid NOT NULL REFERENCES blogs(id) ON DELETE CASCADE,
+        name text NOT NULL,
+        url text NOT NULL,
+        token_ciphertext text,
+        enabled boolean NOT NULL DEFAULT false,
+        tool_names jsonb,
+        last_checked_at timestamp,
+        last_error text,
+        created_at timestamp NOT NULL DEFAULT now(),
+        updated_at timestamp NOT NULL DEFAULT now()
+      )
+    `;
 
-  console.log("Creating mcp_connections...");
-  await sql`
-    CREATE TABLE IF NOT EXISTS mcp_connections (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      blog_id uuid NOT NULL REFERENCES blogs(id) ON DELETE CASCADE,
-      name text NOT NULL,
-      url text NOT NULL,
-      token_ciphertext text,
-      enabled boolean NOT NULL DEFAULT false,
-      tool_names jsonb,
-      last_checked_at timestamp,
-      last_error text,
-      created_at timestamp NOT NULL DEFAULT now(),
-      updated_at timestamp NOT NULL DEFAULT now()
-    )
-  `;
+    console.log("Creating indexes...");
+    await sql`
+      CREATE INDEX IF NOT EXISTS mcp_connections_blog_idx ON mcp_connections (blog_id)
+    `;
+    await sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS mcp_connections_blog_name_idx
+        ON mcp_connections (blog_id, name)
+    `;
 
-  console.log("Creating indexes...");
-  await sql`
-    CREATE INDEX IF NOT EXISTS mcp_connections_blog_idx ON mcp_connections (blog_id)
-  `;
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS mcp_connections_blog_name_idx
-      ON mcp_connections (blog_id, name)
-  `;
-
-  console.log("Done.");
+    console.log("Done.");
+  } finally {
+    await sql.close();
+  }
 }
 
 main().catch((error) => {

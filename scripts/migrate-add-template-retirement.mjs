@@ -6,7 +6,7 @@
 // Idempotent. Reads DATABASE_URL from the environment or from .env.local.
 
 import { readFileSync } from "node:fs";
-import { neon } from "@neondatabase/serverless";
+import { connectMigrationDatabase } from "./lib/postgres-migration.mjs";
 
 function loadDatabaseUrl() {
   if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
@@ -23,10 +23,14 @@ function loadDatabaseUrl() {
 }
 
 async function main() {
-  const sql = neon(loadDatabaseUrl());
-  console.log("Adding document_templates.retired_at...");
-  await sql`ALTER TABLE document_templates ADD COLUMN IF NOT EXISTS retired_at timestamp`;
-  console.log("Done.");
+  const sql = await connectMigrationDatabase(loadDatabaseUrl());
+  try {
+    console.log("Adding document_templates.retired_at...");
+    await sql`ALTER TABLE document_templates ADD COLUMN IF NOT EXISTS retired_at timestamp`;
+    console.log("Done.");
+  } finally {
+    await sql.close();
+  }
 }
 
 main().catch((error) => {
