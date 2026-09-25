@@ -143,10 +143,41 @@ documents, users, media references, and row counts, then plan promotion. The
 decrypt command never touches a database. Regularly perform a full off-server
 download/decrypt/restore drill; listing an archive is not a restore test.
 
+For the full manual drill, retrieve `BACKUP_ENCRYPTION_KEY` from login Keychain
+service `texttext-oracle`, account `BACKUP_ENCRYPTION_KEY`, into a separate mode
+0600 environment file. Transfer it securely to Oracle without printing the key
+or passing its value in command arguments. Do not use the server's `backup.env`
+as the recovery key: the drill verifies that the independent recovery copy works.
+Take a fresh backup and run during a quiet period to compare all table counts:
+
+```sh
+sudo node /private/staged/restore-drill.mjs --scratch --compare-live \
+  --recovery-key-file /private/staged/recovered-key.env
+```
+
+Stage `release/oracle/restore-drill.mjs` and its `entrypoint.mjs` helper together
+if the running release does not contain them. Defaults read the deployed code
+from `/home/ubuntu/texttext/current`, Blob credentials from
+`/etc/texttext/backup.env`, and the local database administrator connection from
+`/etc/texttext/database-admin.env`. These can be overridden with `--release`,
+`--backup-env`, and `--admin-env` path arguments.
+
+The drill downloads the newest encrypted backup within its byte limit,
+authenticates and decrypts it with the recovered key, then restores into a new
+randomly named database. It checks the archive's table inventory, enabled
+protection triggers, the canonical document audit, and every public table's row
+count. `--compare-live` also requires live row counts to remain unchanged during
+the drill and match the backup; a changed workspace needs a fresh quiet-period
+run. The receipt contains counts and a ciphertext digest, never content or
+credentials. Success requires removing the scratch database and temporary dump.
+The live database and remote backup objects remain unchanged. Remove the staged
+recovery key file after the drill. This tool has no timer or automatic job.
+
 ## Local checks
 
 ```sh
-node --test release/oracle/test.mjs
+node --test release/oracle/test.mjs release/oracle/test-smoke.mjs \
+  release/oracle/test-restore-drill.mjs
 ```
 
 Linux startup, native image processing, service sandboxing, proxy streaming, and
