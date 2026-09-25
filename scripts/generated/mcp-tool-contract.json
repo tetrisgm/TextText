@@ -39,6 +39,7 @@
     "set_comment_resolved",
     "create_folder",
     "rename_folder",
+    "move_folder",
     "delete_folder",
     "restore_folder",
     "set_access",
