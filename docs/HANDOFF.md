@@ -64,7 +64,8 @@ attached to the prepared 1.0 listing. It was submitted on September 25 and is
 The first upload (1094) was rejected because a downloaded profile carried a quarantine
 attribute; the build scripts
 now clear it in staged profiles and the package gate refuses quarantine. The
-installed 0.203 Developer ID app still uses the old sheet. The
+0.203 Developer ID app used the old sheet; at the owner's request, its
+`/Applications/TextText.app` bundle was moved to Trash on September 25. The
 owner chose Mac App Store distribution for general users and TestFlight for
 pre-release builds. The Developer ID edition is a legacy channel during the
 transition. The Mac development profile was regenerated with Sign in with
@@ -95,8 +96,8 @@ migration does not declare that larger plan complete. Quantitative performance,
 full navigation restoration and remaining end-to-end workflows still need
 verification.
 
-Installed native version: **0.203 (1093)**, built from `ce8c3d17` and installed
-through `release/ship.sh --local-install` on September 24. Exact-source release
+Previously installed native version: **0.203 (1093)**, built from `ce8c3d17` and
+installed through `release/ship.sh --local-install` on September 24. Exact-source release
 gates passed in 4m 54s, the production web/native builds passed, all 18 app health
 checks and installed health passed. Nothing was published to the update channel.
 
