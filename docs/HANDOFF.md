@@ -28,8 +28,27 @@ build or release jobs were installed. The only new scheduled job is the daily
 encrypted database backup.
 
 Google sign-in needs a replacement client secret; Google and Vercel will not
-reveal the old one. Apple, GitHub and MXroute email are configured. A completed user OAuth
-callback and installed-app sign-in remain to verify.
+reveal the old one. Apple, GitHub and MXroute email are configured. On September
+24, the owner's Apple OAuth callback linked installed TextText 0.203 to the new
+workspace. `texttext ls` sees its documents, and a real app reload renders Home.
+The initial workspace load showed HTTP 500 because the `/@` rewrite targeted
+`https://localhost:3400` while Next listens on plain HTTP. `3cbfe686` fixes
+loopback rewrites; the web-only Oracle deployment
+`texttext-oracle-20260925T034709Z-3cbfe686` passed its gates and authenticated
+smoke. A real app reload then rendered Home.
+
+Apple sign-in still shows macOS's “TextText wants to use texttext.app to sign in”
+dialog. This is required by the current `ASWebAuthenticationSession` web flow;
+investigate native Sign in with Apple, including the Mac App ID entitlement,
+grouping with the web Services ID, and a verified server token exchange. The
+Apple Developer portal is signed out in this agent session. The owner has been
+asked to sign in there and to confirm whether macOS uses the same Apple Account.
+Do not weaken callback binding to suppress the dialog. Cancel/retry and a fresh
+launch after authentication still need real UI verification.
+
+The public `/@ramine` request now redirects instead of returning 500, but its
+unauthenticated destination `ramine.texttext.app` does not resolve. Public tenant
+DNS/TLS routing remains a separate open cutover issue.
 
 ## Active product work
 
@@ -46,9 +65,9 @@ checks and installed health passed. Nothing was published to the update channel.
 
 Native fix `a3bccb49` removes hidden startup authentication, presents the real
 workspace for explicit sign-in, fences stale retries/callbacks and surfaces
-failures. It includes the earlier `d2d7112b` recovery fix. **Next: verify fresh
-launch and the Apple button, cancel/retry and completed authentication in the
-installed app.** Automated health does not prove those interactions. The owner
+failures. It includes the earlier `d2d7112b` recovery fix. The Apple button,
+completed callback and workspace Home are now verified in the installed app;
+the consent dialog and cancel/retry experience remain open. The owner
 requested a fresh-chat handoff because of a reported session memory leak; that
 memory issue has not been diagnosed.
 
@@ -58,8 +77,10 @@ The verified [Claude Fable 5.1 review](claude-fable-5-1-adversarial-review-2026-
 predates the landed folder/type/destination consolidation; do not reopen those
 historical findings without checking the current receipt and code.
 
-The private project changelog remains unwritten: the local CLI reports no linked
-workspace until sign-in succeeds. Existing unrelated edits in `attachments.ts`,
+The private project changelog still needs an entry for the verified web fix.
+The CLI now sees the linked fresh workspace, but a search for `TextText Changelog`
+returned no results; do not create a duplicate of the former
+`Shoku's Space/My Notes/TextText Changelog.textpack`. Existing unrelated edits in `attachments.ts`,
 `tabs.test.ts`, and `scripts/.probe-editor.ts` remain preserved.
 
 ## Historical references

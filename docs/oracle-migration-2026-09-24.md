@@ -80,6 +80,15 @@ release is `texttext-oracle-20260925T023227Z-2242c614`. Raw loopback and public
 `/start?to=home` both redirect to `https://texttext.app/signin`. The temporary
 proxy redirect workaround was removed after that verification.
 
+The first real Apple callback linked the installed 0.203 app, but its workspace
+page initially returned 500. Next's `/@` rewrite used `https://localhost:3400`
+for the plain HTTP standalone listener. `3cbfe686` corrects loopback rewrite
+transport; the web-only Oracle release
+`texttext-oracle-20260925T034709Z-3cbfe686` passed full unit/database/scale,
+type, bootstrap, and authenticated document smoke checks. A real reload of the
+installed app rendered the Home workspace. `texttext ls` also found the linked
+workspace's documents.
+
 Apple initially rejected the migration's `app.texttext.web` identifier. The
 previous production authorization request proved the actual registered ID is
 `net.writeapp.write.web`. Oracle now uses that unchanged registration and
@@ -89,10 +98,13 @@ per authentication request for persistent servers.
 
 ## Remaining verification
 
-- Complete the user's Apple sign-in and verify the installed Mac app's launch
-  and native sign-in button. Local version 0.203 (1093) is now installed with
-  `a3bccb49` and the earlier WebKit recovery fix. Exact-source gates, web/native
-  builds and installed health passed; real sign-in remains to verify.
+- Native Apple sign-in now completes, but `ASWebAuthenticationSession` displays
+  macOS's web-authentication consent dialog. A native Sign in with Apple flow
+  needs the Mac App ID entitlement, grouping with the existing web registration,
+  and a verified server token exchange. Cancel/retry and fresh-launch behavior
+  remain to verify. The agent's Apple Developer portal is signed out.
+- Unauthenticated `/@ramine` redirects to `ramine.texttext.app`, which has no
+  DNS answer. Public tenant DNS and TLS are not yet cut over.
 - Google console confirms the existing callback for `texttext.app`, but neither
   Google nor Vercel will reveal the old client secret. Google remains disabled
   until a replacement secret is stored securely.
