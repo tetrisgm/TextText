@@ -2,6 +2,27 @@ import XCTest
 @testable import TextTextApp
 
 final class WebAppSessionRequestTests: XCTestCase {
+    func testRecoveryPolicyCancellationDoesNotReplaceTheRecoveryPage() {
+        let url = "https://texttext.app/api/app/session?next=/start"
+        var expected: Set<String> = [url]
+        XCTAssertFalse(WebAppWindowController.consumesSessionPolicyCancellation(
+            domain: NSURLErrorDomain, code: -1009, failingURL: url, expected: &expected))
+        XCTAssertFalse(WebAppWindowController.consumesSessionPolicyCancellation(
+            domain: "WebKitErrorDomain", code: 102, failingURL: "https://texttext.app/other", expected: &expected))
+        XCTAssertTrue(WebAppWindowController.consumesSessionPolicyCancellation(
+            domain: "WebKitErrorDomain", code: 102, failingURL: url, expected: &expected))
+        XCTAssertFalse(WebAppWindowController.consumesSessionPolicyCancellation(
+            domain: "WebKitErrorDomain", code: 102, failingURL: url, expected: &expected))
+    }
+
+    func testProductionRecoveryNeverAsksPeopleToRunADevelopmentServer() {
+        let hint = WebAppWindowController.connectionRecoveryHint(isLocal: false)
+        XCTAssertFalse(hint.contains("npm"))
+        XCTAssertFalse(hint.contains("development"))
+        XCTAssertTrue(hint.contains("try again"))
+        XCTAssertTrue(WebAppWindowController.connectionRecoveryHint(isLocal: true).contains("local development"))
+    }
+
     func testSessionRequestKeepsTokenInAuthorizationHeader() throws {
         let request = WebAppWindowController.sessionRequest(
             origin: URL(string: "https://TextText.app")!,

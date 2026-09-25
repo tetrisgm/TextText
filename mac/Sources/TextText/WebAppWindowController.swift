@@ -257,6 +257,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     var onNativeMenuState: (([[String: Any]]) -> Void)?
     private var startupNavigation: WebAppStartupNavigation
     private var appToken: String?
+    private var cancelledSessionRecoveryURLs = Set<String>()
     /// Set while the launch is betting that the last run's web session cookie
     /// still works, so landing on a signed-out page can fall back to the
     /// app-token exchange this launch skipped.
@@ -1905,6 +1906,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             return
         }
 
+        cancelledSessionRecoveryURLs.insert(url.absoluteString)
         decisionHandler(.cancel)
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -2064,6 +2066,20 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         showUnreachable(error)
     }
 
+    static func consumesSessionPolicyCancellation(
+        domain: String, code: Int, failingURL: String,
+        expected: inout Set<String>
+    ) -> Bool {
+        guard domain == "WebKitErrorDomain", code == 102 else { return false }
+        return expected.remove(failingURL) != nil
+    }
+
+    static func connectionRecoveryHint(isLocal: Bool) -> String {
+        isLocal
+            ? "Start the local development server, then press Retry."
+            : "TextText could not finish connecting. Check your internet connection and try again. If this continues, the service may be unavailable."
+    }
+
     private func showUnreachable(_ error: Error) {
         let failure = error as NSError
         // -999 is "a newer navigation replaced this one", which is normal.
@@ -2076,16 +2092,16 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             ?? (failure.userInfo[NSURLErrorFailingURLErrorKey] as? URL)?.absoluteString
             ?? webView.url?.absoluteString
             ?? origin.absoluteString
+        if Self.consumesSessionPolicyCancellation(
+            domain: failure.domain, code: failure.code, failingURL: failingURL,
+            expected: &cancelledSessionRecoveryURLs
+        ) { return }
         Self.webLog.error(
             "navigation failed: \(failure.domain, privacy: .public) \(failure.code, privacy: .public) at \(failingURL, privacy: .public)")
         window?.title = "TextText"
         let isLocal = ["localhost", "127.0.0.1", "::1"].contains(origin.host ?? "")
-        let hint = isLocal
-            ? "Start the web app in a terminal, then press Retry:"
-            : "Check that the server is reachable, then press Retry:"
-        let command = isLocal
-            ? "npm run dev        # in your TextText checkout"
-            : "TEXTTEXT_SERVER=&lt;origin&gt; npm run mac:dev"
+        let hint = Self.connectionRecoveryHint(isLocal: isLocal)
+        let command = isLocal ? "<code>npm run dev</code>" : ""
         let reason = (error as NSError).localizedDescription
         let html = """
         <!doctype html><meta charset="utf-8">
@@ -2112,7 +2128,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
           <p>\(reason) (\(failure.domain) \(failure.code))</p>
           <p>\(failingURL)</p>
           <p>\(hint)</p>
-          <code>\(command)</code>
+          \(command)
           <button onclick="window.webkit.messageHandlers.textTextApp.postMessage({action:'retry'})">
             Retry
           </button>
