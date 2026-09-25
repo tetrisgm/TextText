@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { AT_ALIAS_HEADER } from "@/lib/at-alias";
+import { isLoopbackHost } from "@/lib/loopback-host";
 import { usernameFromAtPath } from "@/lib/public-paths";
 import { tenantFromHost } from "@/lib/tenants";
 import {
@@ -14,6 +15,17 @@ import { getBlog, resolvePublicPostPath } from "@/lib/store";
 // so the app router stays plain. The platform site (root domain) passes
 // through untouched.
 
+function localRewriteURL(request: NextRequest): URL {
+  const url = request.nextUrl.clone();
+  // Behind the Oracle HTTPS proxy, Next reports its loopback listener as
+  // https://localhost:3400. A rewrite to that URL makes Next proxy over TLS
+  // to the plain HTTP listener and every /@ or tenant page returns 500.
+  if (url.protocol === "https:" && isLoopbackHost(url.host)) {
+    url.protocol = "http:";
+  }
+  return url;
+}
+
 export async function proxy(request: NextRequest) {
   const usernamePath = usernameFromAtPath(request.nextUrl.pathname);
   if (usernamePath) {
@@ -25,7 +37,7 @@ export async function proxy(request: NextRequest) {
     ) {
       return genericPublicNotFound();
     }
-    const url = request.nextUrl.clone();
+    const url = localRewriteURL(request);
     url.pathname = `/u/${usernamePath.username}${usernamePath.rest}`;
     // Mark the rewritten request so /u pages can tell a canonical /@ visit
     // from a direct /u hit (which they redirect back to the /@ URL).
@@ -50,7 +62,7 @@ export async function proxy(request: NextRequest) {
   const handle = tenantFromHost(request.headers.get("host"));
   if (!handle) return NextResponse.next();
 
-  const url = request.nextUrl.clone();
+  const url = localRewriteURL(request);
   // A tenant host asking for /t/... is not a real route; never double-rewrite.
   // Answer 404 directly from the proxy instead of rewriting to a phantom path.
   if (url.pathname.startsWith("/t/")) {
