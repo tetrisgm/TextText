@@ -142,6 +142,14 @@ try {
   if (data.buildId !== process.argv[2] && data.deploymentId !== process.argv[2]) process.exit(1);
   const signin = await fetch(`${origin}/signin`, { signal: AbortSignal.timeout(5000), redirect: "manual" });
   if (signin.status !== 200) process.exit(1);
+  // Standalone Next can expose its internal listener in request.url. The
+  // native app enters through /start, so verify its public redirect too.
+  const start = await fetch(`${origin}/start?to=home`, {
+    signal: AbortSignal.timeout(5000), redirect: "manual",
+    headers: { host: "texttext.app", "x-forwarded-proto": "https" },
+  });
+  const destination = new URL(start.headers.get("location") || "/", "https://texttext.app");
+  if (start.status !== 307 || destination.origin !== "https://texttext.app" || destination.pathname !== "/signin") process.exit(1);
 } catch { process.exit(1); }
 CHECK
   then healthy=1; break; fi
