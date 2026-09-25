@@ -231,7 +231,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         // The sheet is how a person signs in; LinkController stays for the CLI
         // and anything headless, where a device code is the right answer.
         authSession = AuthSessionController(store: store)
-        authSession.onChange = { [weak self] in self?.refreshUI() }
+        authSession.onChange = { [weak self] in
+            guard let self else { return }
+            if case .failed = self.authSession.state { self.showStatusWindow() }
+            else { self.refreshUI() }
+        }
         authSession.onActivity = { [weak self] message in self?.appendActivity(message) }
         authSession.onLinked = { [weak self] credentials in
             self?.handleSignedIn(credentials)
@@ -1705,13 +1709,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             linkController.reopenApproval()
             return
         }
-        guard !linkController.isLinking, !authSession.isPresenting else { return }
-        authSession.begin(serverOrigin: resolveServerOrigin(credentials: nil))
+        guard !linkController.isLinking else { return }
+        showMainWindow()
+        authSession.begin(serverOrigin: resolveServerOrigin(credentials: nil), restartActive: true, presentationWindow: webWindow?.window)
     }
 
     private func signOut() {
         // Local-only by design: the server-side revoke route may not exist
         // yet; degrade gracefully. The folder and its files stay put.
+        authSession.cancel()
         store.deleteCredentials()
         spotlightQueue.async { [weak self] in self?.clearSpotlightIndex() }
         removeFileProviderDomain()
@@ -3061,7 +3067,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             statusWindow = StatusWindowController(actions: .init(
                 signIn: { [weak self] in self?.signIn() },
                 signOut: { [weak self] in self?.signOut() },
-                cancelLink: { [weak self] in self?.linkController.cancel() },
+                cancelLink: { [weak self] in
+                    guard let self else { return }
+                    if self.authSession.isPresenting { self.authSession.cancel() }
+                    else { self.linkController.cancel() }
+                },
                 reopenApproval: { [weak self] in self?.linkController.reopenApproval() },
                 openFolder: { [weak self] in self?.openFolderAction() },
                 syncNow: { [weak self] in self?.requestSyncNow() },
@@ -3122,13 +3132,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             break
         }
 
+        if let presentation = AuthSessionController.presentation(for: authSession.state) {
+            accountLine = presentation.headline
+            accountDetail = nil
+            linkCode = nil
+            linkHint = presentation.hint
+            linkFailed = presentation.failed
+            waitingApproval = false
+        }
+
         statusWindow.refresh(StatusModel(
             accountLine: accountLine,
             accountDetail: accountDetail,
             linkCode: linkCode,
             linkHint: linkHint,
             linked: linked,
-            linking: linkController.isLinking,
+            linking: linkController.isLinking || authSession.isPresenting,
             linkFailed: linkFailed,
             waitingApproval: waitingApproval,
             folderPath: fileProviderUserVisibleURL?.path ?? "TextText in Finder",

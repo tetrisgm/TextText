@@ -69,4 +69,37 @@ final class AuthSessionCallbackTests: XCTestCase {
         XCTAssertEqual(components.queryItems?.first { $0.name == "device" }?.value,
                        "TextText on Ramine's Mac")
     }
+
+    func testExplicitRetryRejectsLateCompletionFromHiddenSession() throws {
+        var attempts = AuthSessionAttempts()
+        let hidden = try XCTUnwrap(attempts.begin(restartActive: false))
+        XCTAssertNil(attempts.begin(restartActive: false))
+        let retry = try XCTUnwrap(attempts.begin(restartActive: true))
+        XCTAssertNotEqual(hidden, retry)
+        XCTAssertFalse(attempts.finish(hidden), "Old cancellation or token reply must not clear the new session")
+        XCTAssertTrue(attempts.isCurrent(retry))
+        XCTAssertTrue(attempts.finish(retry))
+        XCTAssertFalse(attempts.finish(retry), "A completed callback must not commit credentials twice")
+    }
+
+    func testCancelOrSignOutRejectsQueuedTokenReply() throws {
+        var attempts = AuthSessionAttempts()
+        let cancelled = try XCTUnwrap(attempts.begin(restartActive: false))
+        attempts.cancel()
+        XCTAssertFalse(attempts.finish(cancelled), "Sign-out must not be reversed by a late token reply")
+        let next = try XCTUnwrap(attempts.begin(restartActive: false))
+        XCTAssertFalse(attempts.finish(cancelled))
+        XCTAssertTrue(attempts.isCurrent(next))
+    }
+
+    func testNativeSessionStatusAndFailureAreVisible() throws {
+        XCTAssertNil(AuthSessionController.presentation(for: .idle))
+        let pending = try XCTUnwrap(AuthSessionController.presentation(for: .presenting))
+        XCTAssertFalse(pending.failed)
+        XCTAssertTrue(pending.hint.contains("cancel"))
+        let failed = try XCTUnwrap(AuthSessionController.presentation(for: .failed("Could not open the sign-in sheet")))
+        XCTAssertTrue(failed.failed)
+        XCTAssertEqual(failed.headline, "Could not open the sign-in sheet")
+        XCTAssertTrue(failed.hint.contains("Try again"))
+    }
 }

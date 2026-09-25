@@ -2,6 +2,31 @@ import AppKit
 import AuthenticationServices
 import Foundation
 
+/// Cancelling a browser session does not cancel its queued completion or token
+/// exchange. Only the current attempt may update the account or its UI.
+struct AuthSessionAttempts {
+    private(set) var current: Int?
+    private var sequence = 0
+
+    mutating func begin(restartActive: Bool) -> Int? {
+        guard current == nil || restartActive else { return nil }
+        sequence += 1
+        current = sequence
+        return sequence
+    }
+
+    func isCurrent(_ attempt: Int) -> Bool { current == attempt }
+
+    @discardableResult
+    mutating func finish(_ attempt: Int) -> Bool {
+        guard isCurrent(attempt) else { return false }
+        current = nil
+        return true
+    }
+
+    mutating func cancel() { current = nil }
+}
+
 /// Sign in the way an app on this platform is supposed to.
 ///
 /// ASWebAuthenticationSession is a system browser sheet, not an embedded web
@@ -21,6 +46,22 @@ final class AuthSessionController: NSObject {
         case failed(String)
     }
 
+    struct Presentation: Equatable {
+        let headline: String
+        let hint: String
+        let failed: Bool
+    }
+
+    static func presentation(for state: State) -> Presentation? {
+        switch state {
+        case .idle: return nil
+        case .presenting:
+            return Presentation(headline: "Finish signing in", hint: "Complete sign-in in the browser, or cancel and try again.", failed: false)
+        case .failed(let message):
+            return Presentation(headline: message, hint: "Try again to open a fresh sign-in.", failed: true)
+        }
+    }
+
     private(set) var state: State = .idle
     var onChange: (() -> Void)?              // main thread
     var onLinked: ((Credentials) -> Void)?   // main thread
@@ -34,9 +75,8 @@ final class AuthSessionController: NSObject {
     private let store: StateStore
     private let queue = DispatchQueue(label: "app.texttext.mac.authsession", qos: .userInitiated)
     private var session: ASWebAuthenticationSession?
-    /// The state this app issued for the sheet now open. A callback carrying
-    /// anything else was started by someone else and is dropped.
-    private var pendingState: String?
+    private var attempts = AuthSessionAttempts()
+    private weak var anchorWindow: NSWindow?
 
     init(store: StateStore) {
         self.store = store
@@ -90,8 +130,7 @@ final class AuthSessionController: NSObject {
     }
 
     /// Open the sheet. Call on the main thread.
-    func begin(serverOrigin: URL) {
-        guard !isPresenting else { return }
+    func begin(serverOrigin: URL, restartActive: Bool = false, presentationWindow: NSWindow? = nil) {
         let state = Self.makeState()
         let device = "TextText on \(Host.current().localizedName ?? "this Mac")"
         guard let url = Self.authorizeURL(serverOrigin: serverOrigin, state: state, device: device) else {
@@ -99,29 +138,39 @@ final class AuthSessionController: NSObject {
             return
         }
 
-        pendingState = state
+        guard let attempt = attempts.begin(restartActive: restartActive) else { return }
+        // Fence the old callback before cancelling it. An explicit retry must
+        // recover a hidden browser session instead of silently doing nothing.
+        session?.cancel()
+        session = nil
+        anchorWindow = presentationWindow ?? NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible })
+        if restartActive {
+            NSApp.activate(ignoringOtherApps: true)
+            anchorWindow?.makeKeyAndOrderFront(nil)
+        }
         setState(.presenting)
 
         let session = ASWebAuthenticationSession(
             url: url, callbackURLScheme: Self.callbackScheme
         ) { [weak self] callbackURL, error in
-            guard let self else { return }
-            if let error = error as? ASWebAuthenticationSessionError,
-               error.code == .canceledLogin {
-                // Closing the sheet is a decision, not a failure.
-                self.finishIdle()
-                return
+            DispatchQueue.main.async {
+                guard let self, self.attempts.isCurrent(attempt) else { return }
+                if let error = error as? ASWebAuthenticationSessionError,
+                   error.code == .canceledLogin {
+                    self.finishIdle(attempt: attempt)
+                    return
+                }
+                if let error {
+                    self.finishFailed("Sign-in did not complete: \(error.localizedDescription)", attempt: attempt)
+                    return
+                }
+                guard let callbackURL,
+                      let code = Self.codeFromCallback(callbackURL, expectedState: state) else {
+                    self.finishFailed("The sign-in reply did not match this request", attempt: attempt)
+                    return
+                }
+                self.claim(code: code, serverOrigin: serverOrigin, attempt: attempt)
             }
-            if let error {
-                self.finishFailed("Sign-in did not complete: \(error.localizedDescription)")
-                return
-            }
-            guard let callbackURL,
-                  let code = Self.codeFromCallback(callbackURL, expectedState: self.pendingState) else {
-                self.finishFailed("The sign-in reply did not match this request")
-                return
-            }
-            self.claim(code: code, serverOrigin: serverOrigin)
         }
         session.presentationContextProvider = self
         // Deliberately NOT ephemeral: reusing the Safari session is why this is
@@ -130,31 +179,31 @@ final class AuthSessionController: NSObject {
         self.session = session
 
         if !session.start() {
-            pendingState = nil
-            setState(.failed("Could not open the sign-in sheet"))
+            finishFailed("Could not open the sign-in sheet", attempt: attempt)
         }
     }
 
     func cancel() {
+        attempts.cancel()
         session?.cancel()
         session = nil
-        pendingState = nil
+        anchorWindow = nil
         setState(.idle)
     }
 
     /// Exchange the one-time secret for the API token. This is the existing
     /// device-link claim, which already mints exactly once: a second attempt
     /// gets "expired" rather than a second token.
-    private func claim(code: String, serverOrigin: URL) {
+    private func claim(code: String, serverOrigin: URL, attempt: Int) {
         queue.async { [weak self] in
             guard let self else { return }
             let client = ServerClient(origin: serverOrigin, token: nil)
             switch client.pollLink(pollToken: code) {
             case .failure(let error):
-                self.finishFailed("Could not finish signing in: \(error)")
+                self.finishFailed("Could not finish signing in: \(error)", attempt: attempt)
             case .success(let reply):
                 guard reply.status == "approved", let token = reply.token, !token.isEmpty else {
-                    self.finishFailed("The server did not return a sign-in token")
+                    self.finishFailed("The server did not return a sign-in token", attempt: attempt)
                     return
                 }
                 let credentials = Credentials(
@@ -163,16 +212,19 @@ final class AuthSessionController: NSObject {
                     tokenName: reply.tokenName ?? "TextText",
                     linkedAt: Date()
                 )
-                self.store.saveCredentials(credentials)
                 // Warm the offline cache so the UI can name the workspace at
                 // once, matching what the device-link path has always done.
                 let authed = ServerClient(origin: serverOrigin, token: token)
+                var workspaceData: Data?
                 if case .success(let (_, data)) = authed.workspace() {
-                    self.store.cacheWorkspace(data)
+                    workspaceData = data
                 }
                 DispatchQueue.main.async {
+                    guard self.attempts.finish(attempt) else { return }
+                    self.store.saveCredentials(credentials)
+                    if let workspaceData { self.store.cacheWorkspace(workspaceData) }
                     self.session = nil
-                    self.pendingState = nil
+                    self.anchorWindow = nil
                     self.state = .idle
                     self.onChange?()
                     self.onActivity?("Signed in")
@@ -182,18 +234,20 @@ final class AuthSessionController: NSObject {
         }
     }
 
-    private func finishIdle() {
+    private func finishIdle(attempt: Int) {
         DispatchQueue.main.async {
+            guard self.attempts.finish(attempt) else { return }
             self.session = nil
-            self.pendingState = nil
+            self.anchorWindow = nil
             self.setState(.idle)
         }
     }
 
-    private func finishFailed(_ message: String) {
+    private func finishFailed(_ message: String, attempt: Int) {
         DispatchQueue.main.async {
+            guard self.attempts.finish(attempt) else { return }
             self.session = nil
-            self.pendingState = nil
+            self.anchorWindow = nil
             self.setState(.failed(message))
             self.onActivity?(message)
         }
@@ -207,6 +261,6 @@ final class AuthSessionController: NSObject {
 
 extension AuthSessionController: ASWebAuthenticationPresentationContextProviding {
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        NSApp.keyWindow ?? NSApp.windows.first ?? ASPresentationAnchor()
+        anchorWindow ?? NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible }) ?? ASPresentationAnchor()
     }
 }

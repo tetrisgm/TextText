@@ -5,13 +5,24 @@ final class WebAppSessionRequestTests: XCTestCase {
     func testRecoveryPolicyCancellationDoesNotReplaceTheRecoveryPage() {
         let url = "https://texttext.app/api/app/session?next=/start"
         var expected: Set<String> = [url]
-        XCTAssertFalse(WebAppWindowController.consumesSessionPolicyCancellation(
+        XCTAssertFalse(WebAppWindowController.consumesPolicyCancellation(
             domain: NSURLErrorDomain, code: -1009, failingURL: url, expected: &expected))
-        XCTAssertFalse(WebAppWindowController.consumesSessionPolicyCancellation(
+        XCTAssertFalse(WebAppWindowController.consumesPolicyCancellation(
             domain: "WebKitErrorDomain", code: 102, failingURL: "https://texttext.app/other", expected: &expected))
-        XCTAssertTrue(WebAppWindowController.consumesSessionPolicyCancellation(
+        XCTAssertTrue(WebAppWindowController.consumesPolicyCancellation(
             domain: "WebKitErrorDomain", code: 102, failingURL: url, expected: &expected))
-        XCTAssertFalse(WebAppWindowController.consumesSessionPolicyCancellation(
+        XCTAssertFalse(WebAppWindowController.consumesPolicyCancellation(
+            domain: "WebKitErrorDomain", code: 102, failingURL: url, expected: &expected))
+    }
+
+    func testAppleHandoffCancellationPreservesSignInButRealNetworkErrorsRemainVisible() {
+        let url = "https://appleid.apple.com/auth/authorize?client_id=example.web"
+        var expected: Set<String> = [url]
+        XCTAssertFalse(WebAppWindowController.consumesPolicyCancellation(
+            domain: NSURLErrorDomain, code: NSURLErrorTimedOut, failingURL: url, expected: &expected))
+        XCTAssertTrue(WebAppWindowController.consumesPolicyCancellation(
+            domain: "WebKitErrorDomain", code: 102, failingURL: url, expected: &expected))
+        XCTAssertFalse(WebAppWindowController.consumesPolicyCancellation(
             domain: "WebKitErrorDomain", code: 102, failingURL: url, expected: &expected))
     }
 

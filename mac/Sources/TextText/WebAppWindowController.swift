@@ -257,7 +257,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     var onNativeMenuState: (([[String: Any]]) -> Void)?
     private var startupNavigation: WebAppStartupNavigation
     private var appToken: String?
-    private var cancelledSessionRecoveryURLs = Set<String>()
+    private var cancelledPolicyNavigationURLs = Set<String>()
     /// Set while the launch is betting that the last run's web session cookie
     /// still works, so landing on a signed-out page can fall back to the
     /// app-token exchange this launch skipped.
@@ -1836,6 +1836,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
            url.path == "/signin" || url.path == "/",
            let appToken {
             directSessionLoadPending = false
+            cancelledPolicyNavigationURLs.insert(url.absoluteString)
             decisionHandler(.cancel)
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
@@ -1848,6 +1849,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         if let url = navigationAction.request.url,
            navigationAction.targetFrame?.isMainFrame != false,
            isAuthenticationHost(url) {
+            cancelledPolicyNavigationURLs.insert(url.absoluteString)
             decisionHandler(.cancel)
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
@@ -1869,6 +1871,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
            navigationAction.targetFrame?.isMainFrame != false,
            navigationAction.navigationType == .linkActivated,
            Self.isPublicWorkspaceHome(url, on: origin) {
+            cancelledPolicyNavigationURLs.insert(url.absoluteString)
             decisionHandler(.cancel)
             DispatchQueue.main.async { [weak self] in
                 self?.loadWorkspaceHome()
@@ -1879,6 +1882,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
            navigationAction.navigationType == .linkActivated,
            !isInApp(url) {
             openExternally(url)
+            cancelledPolicyNavigationURLs.insert(url.absoluteString)
             decisionHandler(.cancel)
             return
         }
@@ -1906,18 +1910,17 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             return
         }
 
-        cancelledSessionRecoveryURLs.insert(url.absoluteString)
+        cancelledPolicyNavigationURLs.insert(url.absoluteString)
         decisionHandler(.cancel)
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             if response.statusCode == 401 || response.statusCode == 403 {
                 // A token from a retired or reset database must never leave
                 // the native window as a blank WebKit surface. Keep a useful
-                // sign-in state visible while the system-browser device flow
-                // replaces the stale credential.
+                // sign-in state visible. A hidden launch must not open a
+                // system browser session before a person chooses Sign in.
                 self.appToken = nil
                 self.webView.load(self.request(for: recoveryPath))
-                self.onSystemSignInRequested()
             } else {
                 self.webView.load(self.request(for: recoveryPath))
             }
@@ -2066,7 +2069,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         showUnreachable(error)
     }
 
-    static func consumesSessionPolicyCancellation(
+    static func consumesPolicyCancellation(
         domain: String, code: Int, failingURL: String,
         expected: inout Set<String>
     ) -> Bool {
@@ -2092,9 +2095,9 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             ?? (failure.userInfo[NSURLErrorFailingURLErrorKey] as? URL)?.absoluteString
             ?? webView.url?.absoluteString
             ?? origin.absoluteString
-        if Self.consumesSessionPolicyCancellation(
+        if Self.consumesPolicyCancellation(
             domain: failure.domain, code: failure.code, failingURL: failingURL,
-            expected: &cancelledSessionRecoveryURLs
+            expected: &cancelledPolicyNavigationURLs
         ) { return }
         Self.webLog.error(
             "navigation failed: \(failure.domain, privacy: .public) \(failure.code, privacy: .public) at \(failingURL, privacy: .public)")
