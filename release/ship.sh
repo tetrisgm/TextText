@@ -13,6 +13,7 @@
 #   release/ship.sh 0.13 --local-install
 #   release/ship.sh 0.13 --skip-tests
 #   release/ship.sh 0.13 --skip-web-deploy
+#   release/ship.sh --web-only      # deploy the web app to Oracle
 set -euo pipefail
 exec </dev/null
 cd "$(dirname "$0")/.."
@@ -73,6 +74,7 @@ SKIP_TESTS=0
 SKIP_WEB_DEPLOY=0
 NO_PUBLISH=0
 LOCAL_INSTALL=0
+WEB_ONLY=0
 
 usage() {
   sed -n '1,15p' "$0" >&2
@@ -85,6 +87,7 @@ while [ "$#" -gt 0 ]; do
     --local-install) NO_PUBLISH=1; LOCAL_INSTALL=1 ;;
     --skip-tests) SKIP_TESTS=1 ;;
     --skip-web-deploy) SKIP_WEB_DEPLOY=1 ;;
+    --web-only) WEB_ONLY=1 ;;
     -h|--help) usage; exit 0 ;;
     -*)
       echo "Unknown option: $1" >&2
@@ -111,6 +114,24 @@ if [ "$ALLOW_DIRTY" != "1" ] && git rev-parse --is-inside-work-tree >/dev/null 2
   fi
 fi
 
+if [ "$WEB_ONLY" = "1" ]; then
+  [ -z "$VERSION" ] && [ "$LOCAL_INSTALL" = "0" ] && [ "$SKIP_WEB_DEPLOY" = "0" ] || {
+    echo "--web-only cannot be combined with a Mac version or installation options." >&2
+    exit 1
+  }
+  echo ">> verify web application and PostgreSQL behavior"
+  npm test -- --maxWorkers=4
+  npm run test:db
+  npx tsc --noEmit
+  node --test "$ROOT/release/oracle/test.mjs" "$ROOT/release/oracle/test-smoke.mjs"
+  if [ "$NO_PUBLISH" = "1" ]; then
+    "$ROOT/release/oracle/deploy.sh" --dry-run
+  else
+    "$ROOT/release/oracle/deploy.sh"
+  fi
+  exit 0
+fi
+
 if [ -z "$VERSION" ]; then
   VERSION="$(node "$ROOT/scripts/release-version.mjs" next)"
 fi
@@ -124,19 +145,9 @@ fi
 if [ "$NO_PUBLISH" != "1" ]; then
   node "$ROOT/scripts/release-version.mjs" assert-free "$VERSION"
 
-  # Fail before expensive release gates when production cannot accept the
-  # migration or serve the deployed app. This query is read-only.
+  # The live database is private to Oracle; release secrets never leave it.
   echo ">> preflight production database"
-  (
-    require_release_secret DATABASE_URL || exit 1
-    case "${DATABASE_URL:-}" in
-      *neon.tech*) ;;
-      *) echo "Refusing: release DATABASE_URL is not the prod Neon DB." >&2; exit 1 ;;
-    esac
-    DATABASE_URL="$DATABASE_URL" npx tsx "$ROOT/scripts/work-unit.ts" run \
-      --name database.preflight --timeout 60 --no-reuse -- \
-      node "$ROOT/scripts/verify-production-database.mjs"
-  )
+  "$ROOT/release/oracle/database.sh" --check
 fi
 
 echo ">> ship TextText $VERSION"
@@ -187,20 +198,8 @@ if [ "$NO_PUBLISH" = "1" ]; then
 fi
 
 if [ "$LOCAL_INSTALL" != "1" ]; then
-echo ">> migrate database (production only)"
-# The dev DB (.env.local) is a LOCAL Postgres, so migrations must load the
-# production Neon creds from the login Keychain (release/secrets.sh). Guard
-# hard: never migrate anything that is not the prod Neon endpoint, so a
-# misconfigured machine can never point a release at a local or throwaway
-# database.
-require_release_secret DATABASE_URL
-case "${DATABASE_URL:-}" in
-  *neon.tech*) ;;
-  *) echo "Refusing: migration DATABASE_URL is not the prod Neon DB." >&2; exit 1 ;;
-esac
-DATABASE_URL="$DATABASE_URL" npx tsx "$ROOT/scripts/work-unit.ts" run \
-  --name database.migrations --timeout 900 --no-reuse -- \
-  "$ROOT/scripts/run-release-migrations.sh"
+echo ">> back up and migrate the Oracle database"
+"$ROOT/release/oracle/database.sh" --migrate
 
 if [ -z "${BLOB_READ_WRITE_TOKEN:-}" ]; then
   require_release_secret BLOB_READ_WRITE_TOKEN
@@ -219,43 +218,8 @@ export NEXT_DEPLOYMENT_ID="${NEXT_DEPLOYMENT_ID:-texttext-${DEPLOYMENT_VERSION}-
 echo "   web deployment identity: $NEXT_DEPLOYMENT_ID"
 
 if [ "$SKIP_WEB_DEPLOY" != "1" ]; then
-  echo ">> align Vercel runtime database"
-  # Production migrations and the deployed app must use the same database.
-  # Feed the secret over stdin so it never appears in process arguments or logs.
-  [ -n "${DATABASE_URL:-}" ] || {
-    echo "Release DATABASE_URL is missing before the Vercel deployment." >&2
-    exit 1
-  }
-  npx tsx "$ROOT/scripts/work-unit.ts" run \
-    --name web.production_database --timeout 300 --no-reuse -- \
-    node "$ROOT/scripts/sync-vercel-runtime-env.mjs"
-
-  echo ">> deploy public web app"
-  # A linked Vercel project can turn `vercel --prod` into a Git deployment,
-  # which clones HEAD and silently omits the release marker generated above.
-  # Build locally after that marker exists, then deploy those exact outputs.
-  npx tsx "$ROOT/scripts/work-unit.ts" run \
-    --name web.production_build --timeout 2400 -- \
-    node "$ROOT/scripts/with-local-database.mjs" npx vercel build --prod --yes
-  npx tsx "$ROOT/scripts/work-unit.ts" run \
-    --name web.production_deploy --timeout 1800 --no-reuse -- \
-    npx vercel deploy --prebuilt --prod --yes
-
-  # texttext.app is an alias that a CLI deploy does not move on its own
-  # (0.183 deployed as "ready" while the domain kept serving 0.182 and the
-  # old build's appcast proxy answered 502). Promote the newest production
-  # deployment explicitly; "already the current production deployment" is
-  # success.
-  echo ">> promote to texttext.app"
-  NEWEST="$(npx vercel ls --prod 2>/dev/null | grep -Eo 'https://write-[a-z0-9-]+\.vercel\.app' | head -1)"
-  [ -n "$NEWEST" ] || { echo "Could not read the newest production deployment." >&2; exit 1; }
-  PROMOTE_OUTPUT="$(npx vercel promote "$NEWEST" --yes 2>&1)" || {
-    case "$PROMOTE_OUTPUT" in
-      *"already the current production deployment"*) echo "   (the deploy had already taken the domain)" ;;
-      *) echo "$PROMOTE_OUTPUT" >&2; echo "!! could not promote $NEWEST" >&2; exit 1 ;;
-    esac
-  }
-  echo "   promoted $NEWEST"
+  echo ">> deploy public web app to Oracle"
+  "$ROOT/release/oracle/deploy.sh"
 fi
 
 ORIGIN="${TEXTTEXT_PRODUCT_ORIGIN:-}"

@@ -1,0 +1,41 @@
+{
+	admin 127.0.0.1:20191
+	https_port 8444
+	http_port 8084
+	auto_https disable_redirects
+	servers {
+		protocols h1 h2
+		listener_wrappers {
+			proxy_protocol {
+				allow 127.0.0.1/32
+				timeout 2s
+			}
+			tls
+		}
+		timeouts {
+			read_header 10s
+			read_body 5m
+			idle 2m
+		}
+	}
+}
+
+texttext.app {
+	bind 127.0.0.1
+	request_body {
+		max_size 55MB
+	}
+	header -Server
+	reverse_proxy 127.0.0.1:3400 {
+		flush_interval -1
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 60s
+		}
+	}
+}
+
+www.texttext.app {
+	bind 127.0.0.1
+	redir https://texttext.app{uri} permanent
+}

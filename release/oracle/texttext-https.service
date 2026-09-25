@@ -1,0 +1,28 @@
+[Unit]
+Description=TextText HTTPS and certificate renewal
+After=network-online.target texttext.service
+Wants=network-online.target
+
+[Service]
+Type=notify
+User=ubuntu
+Group=ubuntu
+Environment=XDG_DATA_HOME=/home/ubuntu/texttext/state/caddy-data
+Environment=XDG_CONFIG_HOME=/home/ubuntu/texttext/state/caddy-config
+ExecStart=/home/ubuntu/texttext/ingress/caddy run --config /etc/texttext/Caddyfile --adapter caddyfile
+ExecReload=/home/ubuntu/texttext/ingress/caddy reload --config /etc/texttext/Caddyfile --adapter caddyfile
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/texttext/state/caddy-data /home/ubuntu/texttext/state/caddy-config
+MemoryMax=512M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target

@@ -12,9 +12,6 @@ ROOT="$(pwd)"
 PB="/usr/libexec/PlistBuddy"
 ORIGIN="https://texttext.app"
 BUNDLE_ID="app.texttext.mac"
-PRODUCTION_CHANGED=0
-PROMOTION_COMPLETE=0
-PREVIOUS_DEPLOYMENT_URL=""
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   sed -n '1,9p' "$0"
@@ -61,19 +58,6 @@ acquire_lock() {
 finish_promotion() {
   local status=$?
   trap - EXIT INT TERM HUP
-  if [[ "$PRODUCTION_CHANGED" == "1" && "$PROMOTION_COMPLETE" != "1" && -n "$PREVIOUS_DEPLOYMENT_URL" ]]; then
-    echo "Promotion did not complete. Restoring the previous production deployment." >&2
-    if ! npx vercel rollback "$PREVIOUS_DEPLOYMENT_URL" --yes >/dev/null 2>&1; then
-      # `vercel rollback` can refuse an older deployment after a failed alias
-      # promotion. Repointing the canonical alias restores the same immutable
-      # target and is the reliable recovery path.
-      npx vercel alias set "$PREVIOUS_DEPLOYMENT_URL" texttext.app >/dev/null 2>&1 || \
-        echo "Automatic Vercel rollback failed; restore $PREVIOUS_DEPLOYMENT_URL manually." >&2
-    fi
-    [[ "$status" != "0" ]] || status=1
-  fi
-  if [[ -n "${DEPLOY_LOG:-}" ]]; then rm -f "$DEPLOY_LOG"; fi
-  if [[ -n "${INSPECT_LOG:-}" ]]; then rm -f "$INSPECT_LOG"; fi
   if [[ "$(cat "$LOCK/pid" 2>/dev/null || true)" == "$$" ]]; then
     rm -rf "$LOCK"
   fi
@@ -128,14 +112,9 @@ for candidate in "${installed_candidates[@]}"; do
   (( candidate_build > MAX_BUILD )) && MAX_BUILD="$candidate_build"
 done
 BUILD=$((MAX_BUILD + 1))
-# Hex epoch instead of decimal epoch + pid: the old suffix overran Vercel's
-# 32-char identity limit whenever the pid had five digits. The delivery lock
-# serializes promotions, so one identity per second is unique enough.
+# The delivery lock serializes promotions; the timestamp distinguishes retries
+# of the same committed source without changing the source version.
 PROMOTION_ID="tt-${BUILD}-${SOURCE_COMMIT:0:8}-$(printf '%x' "$(date -u +%s)")"
-if (( ${#PROMOTION_ID} > 32 )); then
-  echo "Refusing: promotion identity exceeds Vercel's 32-character limit." >&2
-  exit 1
-fi
 
 export TEXTTEXT_BUNDLE_ID="$BUNDLE_ID"
 export TEXTTEXT_APP_GROUP="group.app.texttext"
@@ -176,109 +155,63 @@ if ! grep -q '^Authority=Developer ID Application:' <<<"$SIGNATURE_DETAILS"; the
 fi
 "$ROOT/mac/scripts/verify-app-health.sh" "$BUILT_APP" "$VERSION" "$BUILD"
 
-echo ">> load and guard the production database"
-. "$ROOT/release/secrets.sh"
-require_release_secret DATABASE_URL
-DATABASE_URL="$DATABASE_URL" node "$ROOT/scripts/verify-production-database.mjs"
+echo ">> guard the private Oracle database"
+npx tsx "$ROOT/scripts/work-unit.ts" run \
+  --name database.promotion_preflight --timeout 120 --no-reuse -- \
+  "$ROOT/release/oracle/database.sh" --check
 
-echo ">> run every production migration and backfill"
-DATABASE_URL="$DATABASE_URL" npx tsx "$ROOT/scripts/work-unit.ts" run \
+echo ">> back up and run every production migration and backfill"
+npx tsx "$ROOT/scripts/work-unit.ts" run \
   --name database.promotion_migrations --timeout 1800 --no-reuse -- \
-  "$ROOT/scripts/run-release-migrations.sh"
+  "$ROOT/release/oracle/database.sh" --migrate
 
-echo ">> align the Vercel runtime database"
-DATABASE_URL="$DATABASE_URL" npx tsx "$ROOT/scripts/work-unit.ts" run \
-  --name web.promotion_database --timeout 300 --no-reuse -- \
-  node "$ROOT/scripts/sync-vercel-runtime-env.mjs"
-
-echo ">> record the current production rollback target"
-INSPECT_LOG="$(mktemp -t texttext-promote-inspect)"
-export TEXTTEXT_PROMOTION_INSPECT_LOG="$INSPECT_LOG"
-npx tsx "$ROOT/scripts/work-unit.ts" run \
-  --name web.promotion_rollback_target --timeout 120 --no-reuse -- \
-  bash -c 'npx vercel inspect texttext.app --format=json > "$TEXTTEXT_PROMOTION_INSPECT_LOG"'
-PREVIOUS_DEPLOYMENT_URL="$(python3 -c 'import json,sys
-url=json.load(open(sys.argv[1], encoding="utf-8")).get("url", "")
-print(url if url.startswith("https://") else ("https://" + url if url else ""))' "$INSPECT_LOG" 2>/dev/null || true)"
-rm -f "$INSPECT_LOG"
-INSPECT_LOG=""
-unset TEXTTEXT_PROMOTION_INSPECT_LOG
-[[ "$PREVIOUS_DEPLOYMENT_URL" =~ ^https://[A-Za-z0-9.-]+\.vercel\.app$ ]] || {
-  echo "Could not identify the current production deployment for rollback." >&2
-  exit 1
-}
-echo "   rollback target: $PREVIOUS_DEPLOYMENT_URL"
-
-echo ">> build production outputs with a unique identity"
-npx tsx "$ROOT/scripts/work-unit.ts" run \
-  --name web.promotion_build --timeout 2400 --no-reuse -- \
-  npx vercel build --prod --yes
-
-echo ">> deploy the exact prebuilt outputs"
-DEPLOY_LOG="$(mktemp -t texttext-promote-deploy)"
-export TEXTTEXT_PROMOTION_DEPLOY_LOG="$DEPLOY_LOG"
-PRODUCTION_CHANGED=1
-npx tsx "$ROOT/scripts/work-unit.ts" run \
-  --name web.promotion_deploy --timeout 1800 --no-reuse -- \
-  bash -c 'set -o pipefail; npx vercel deploy --prebuilt --prod --yes --no-color 2>&1 | tee "$TEXTTEXT_PROMOTION_DEPLOY_LOG"'
-DEPLOYMENT_URL="$(grep -Eo 'https://[^[:space:]]+\.vercel\.app' "$DEPLOY_LOG" | head -1 | sed $'s/\033\[[0-9;]*m//g' || true)"
-rm -f "$DEPLOY_LOG"
-unset TEXTTEXT_PROMOTION_DEPLOY_LOG
-[[ "$DEPLOYMENT_URL" =~ ^https://[A-Za-z0-9.-]+\.vercel\.app$ ]] || {
-  echo "Could not read the immutable deployment URL from Vercel output." >&2
-  exit 1
-}
-echo "   deployment: $DEPLOYMENT_URL"
-
-# Make the alias step explicit, then prove both the immutable deployment and
-# the product origin. A cache-busting query prevents an old static response
-# from impersonating the new deployment.
-npx tsx "$ROOT/scripts/work-unit.ts" run \
-  --name web.promotion_alias --timeout 300 --no-reuse -- \
-  npx vercel alias set "$DEPLOYMENT_URL" texttext.app
+echo ">> build and deploy the exact source to Oracle"
+# Build this committed source rather than accepting an unrelated caller-supplied
+# archive. The Oracle helper verifies the archive and restores the prior app if
+# its health or authenticated workflow smoke fails. Database credentials stay
+# on the server; that mandatory smoke completes before the local install.
+TEXTTEXT_ORACLE_ARTIFACT= npx tsx "$ROOT/scripts/work-unit.ts" run \
+  --name web.promotion_deploy --timeout 3600 --no-reuse -- \
+  "$ROOT/release/oracle/deploy.sh"
 
 smoke_page() {
   local url="$1" expected="$2" body="" attempt
   for attempt in {1..30}; do
-    body="$(curl -fsSL -H 'Cache-Control: no-cache' "$url?promotion=$PROMOTION_ID-$attempt" || true)"
+    body="$(curl -fsSL --max-time 10 -H 'Cache-Control: no-cache' "$url?promotion=$PROMOTION_ID-$attempt" || true)"
     if [[ "$body" == *"$expected"* ]]; then return 0; fi
     [[ "$attempt" == "30" ]] || sleep 2
   done
   return 1
 }
 
-smoke_deployment_page() {
-  local deployment="$1" path="$2" expected="$3" body="" attempt
-  for attempt in {1..30}; do
-    # Vercel protects immutable deployment URLs even when the production alias
-    # is public. `vercel curl` authenticates with the existing CLI session and
-    # bypasses that protection without putting a bypass secret in this script.
-    body="$(npx vercel curl "$path?promotion=$PROMOTION_ID-$attempt" \
-      --deployment "$deployment" --yes -- \
-      --silent --show-error --fail --location 2>/dev/null || true)"
-    if [[ "$body" == *"$expected"* ]]; then return 0; fi
-    [[ "$attempt" == "30" ]] || sleep 2
-  done
-  return 1
+echo ">> verify the exact build at the public product origin"
+node --input-type=module - "$ORIGIN" "$PROMOTION_ID" <<'JS'
+const [origin, expected] = process.argv.slice(2);
+let found = false;
+for (let attempt = 1; attempt <= 30; attempt += 1) {
+  try {
+    const response = await fetch(`${origin}/api/app/build?promotion=${expected}-${attempt}`, {
+      headers: { "cache-control": "no-cache" },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (response.ok && (await response.json()).buildId === expected) {
+      found = true;
+      break;
+    }
+  } catch {}
+  if (attempt < 30) await new Promise((resolve) => setTimeout(resolve, 2000));
 }
+if (!found) throw new Error("The product origin is not serving the promoted build.");
+JS
 
-echo ">> smoke the deployed product"
-smoke_deployment_page "$DEPLOYMENT_URL" "/docs/item-types" "Build item types with AI" || {
-  echo "The immutable deployment did not render the item-type guide." >&2
-  exit 1
-}
 smoke_page "$ORIGIN/docs/item-types" "Build item types with AI" || {
-  echo "The product origin did not resolve to the promoted app." >&2
+  echo "The product origin did not render the item-type guide." >&2
   exit 1
 }
 smoke_page "$ORIGIN/signin" "Sign in" || {
   echo "The production sign-in route did not render." >&2
   exit 1
 }
-
-echo ">> run authenticated production workflow smoke"
-TEXTTEXT_ORIGIN="$ORIGIN" DATABASE_URL="$DATABASE_URL" \
-  npx tsx "$ROOT/scripts/verify-workflow-live.ts"
 
 echo ">> atomically replace and health-gate the canonical Mac app"
 TEXTTEXT_SOURCE_APP="$BUILT_APP" \
@@ -291,7 +224,6 @@ INSTALLED="/Applications/TextText.app"
 [[ "$($PB -c 'Print :CFBundleShortVersionString' "$INSTALLED/Contents/Info.plist")" == "$VERSION" ]]
 [[ "$($PB -c 'Print :CFBundleVersion' "$INSTALLED/Contents/Info.plist")" == "$BUILD" ]]
 codesign --verify --strict --verbose=2 "$INSTALLED"
-PROMOTION_COMPLETE=1
 
 echo
 echo "Promoted and installed TextText $VERSION build $BUILD"

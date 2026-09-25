@@ -48,7 +48,7 @@ BOOTSTRAP="${TEXTTEXT_ORACLE_BOOTSTRAP:-0}"
 [[ "$ORACLE_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9._@-]*$ ]] || { echo "Set TEXTTEXT_ORACLE_HOST to the existing SSH destination." >&2; exit 1; }
 [[ "$REMOTE_ROOT" =~ ^/home/ubuntu/[a-zA-Z0-9/_-]+$ ]] || { echo "Oracle root must be an isolated path under /home/ubuntu." >&2; exit 1; }
 RELEASE_NAME="$(date -u +%Y%m%dT%H%M%SZ)-$DEPLOYMENT_ID-$(node -e 'console.log(require("node:crypto").randomBytes(3).toString("hex"))')"
-SSH_OPTIONS=(-i "$HOME/.ssh/id_ed25519" -o IdentitiesOnly=yes -o BatchMode=yes)
+SSH_OPTIONS=(-i "$HOME/.ssh/id_ed25519" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=10)
 echo ">> check the existing Oracle runtime"
 ssh "${SSH_OPTIONS[@]}" "$ORACLE_HOST" bash -s -- "$REMOTE_ROOT" "$RELEASE_NAME" "$BOOTSTRAP" <<'REMOTE'
 set -euo pipefail

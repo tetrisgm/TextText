@@ -20,16 +20,12 @@ required = {
     "signed build attestation": 'texttext-build-attestation.sh',
     "Developer ID identity check": 'SIGNATURE_DETAILS="$(codesign -dv',
     "staged app health": 'verify-app-health.sh',
-    "production database guard": 'verify-production-database.mjs',
-    "all migrations and backfills": 'run-release-migrations.sh',
-    "runtime database alignment": 'sync-vercel-runtime-env.mjs',
-    "prebuilt production build": 'vercel build --prod --yes',
-    "prebuilt production deploy": 'vercel deploy --prebuilt --prod --yes --no-color',
-    "explicit product alias": 'vercel alias set "$DEPLOYMENT_URL" texttext.app',
-    "protected immutable deployment smoke": 'npx vercel curl "$path?promotion=$PROMOTION_ID-$attempt"',
-    "production rollback": 'vercel rollback "$PREVIOUS_DEPLOYMENT_URL" --yes',
-    "production alias rollback fallback": 'vercel alias set "$PREVIOUS_DEPLOYMENT_URL" texttext.app',
-    "authenticated workflow smoke": 'verify-workflow-live.ts',
+    "private production database guard": '"$ROOT/release/oracle/database.sh" --check',
+    "all migrations and backfills": '"$ROOT/release/oracle/database.sh" --migrate',
+    "build committed source": 'TEXTTEXT_ORACLE_ARTIFACT= npx tsx',
+    "Oracle deployment": '"$ROOT/release/oracle/deploy.sh"',
+    "public deployment identity": '${origin}/api/app/build?promotion=${expected}-${attempt}',
+    "exact public deployment identity": '(await response.json()).buildId === expected',
     "atomic canonical installer": 'mac/scripts/install-local.sh',
     "exact runtime health": 'TEXTTEXT_REQUIRE_RUNTIME_HEALTH=1',
 }
@@ -44,10 +40,10 @@ ordered = [
     'scripts/verify-release.ts',
     'texttext-build-attestation.sh',
     'verify-app-health.sh',
-    'run-release-migrations.sh',
-    'vercel build --prod --yes',
-    'vercel deploy --prebuilt --prod --yes --no-color',
-    'verify-workflow-live.ts',
+    '"$ROOT/release/oracle/database.sh" --check',
+    '"$ROOT/release/oracle/database.sh" --migrate',
+    '"$ROOT/release/oracle/deploy.sh"',
+    '${origin}/api/app/build?promotion=${expected}-${attempt}',
     'mac/scripts/install-local.sh',
 ]
 positions = [source.index(needle) for needle in ordered]
@@ -60,18 +56,29 @@ for forbidden in (
     'notarize.sh',
     'prepare-testflight-build.sh',
     'altool',
+    'npx vercel',
+    'sync-vercel-runtime-env.mjs',
+    'require_release_secret DATABASE_URL',
 ):
     if forbidden in source:
         raise SystemExit(f"non-publishing promotion invokes forbidden lane: {forbidden}")
 
 if 'PROMOTION_ID="tt-${BUILD}-${SOURCE_COMMIT:0:8}-$(printf \'%x\' "$(date -u +%s)")"' not in source:
     raise SystemExit("deployment identity is not unique per promotion attempt")
-if '${#PROMOTION_ID} > 32' not in source:
-    raise SystemExit("deployment identity no longer enforces Vercel's length limit")
 if 'BUILD=$((MAX_BUILD + 1))' not in source:
     raise SystemExit("local build identity no longer advances past installed builds")
 if 'codesign -dv --verbose=4 "$BUILT_APP" 2>&1 | grep -q' in source:
     raise SystemExit("codesign identity check can fail under pipefail when grep exits early")
+
+# The shared Oracle helper owns application rollback and authenticated smoke.
+# Keeping the smoke inside its trap means a failed workflow cannot leave the
+# unverified server release active or proceed to the local application swap.
+deploy = (path.parent / "oracle" / "deploy.sh").read_text(encoding="utf-8")
+for needle in ('trap rollback EXIT', 'release/oracle/smoke.mjs', '--scratch', '--env-file /etc/texttext/runtime.env'):
+    if needle not in deploy:
+        raise SystemExit(f"Oracle promotion contract lost {needle}")
+if not deploy.index('trap rollback EXIT') < deploy.index('release/oracle/smoke.mjs') < deploy.index('trap - EXIT'):
+    raise SystemExit("authenticated workflow smoke is outside Oracle rollback protection")
 
 print("promote-local contract: ok")
 PY

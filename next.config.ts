@@ -22,6 +22,8 @@ const buildId =
   "development";
 
 const nextConfig: NextConfig = {
+  // The manual Oracle deployment packages this output with Linux ARM64 deps.
+  ...(process.env.TEXTTEXT_STANDALONE === "1" ? { output: "standalone" as const } : {}),
   // Live client evaluations use an isolated build directory so a stopped
   // evaluator cannot leave stale development route manifests for normal work.
   distDir: process.env.TEXTTEXT_NEXT_DIST_DIR ?? ".next",

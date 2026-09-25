@@ -70,10 +70,26 @@ forces `HOSTNAME=127.0.0.1`, validates a loopback database, and rejects developm
 sign-in. Reserve/check port 3400 before installing the unit; do not stop another
 application to claim it.
 
-Put the existing reverse proxy in front of port 3400, with request/body/rate
-limits, streaming support, and private responses excluded from shared caching.
-Database port 5433 must remain loopback-only. Service examples never install
-themselves, create users, modify the proxy, or open firewall ports.
+The database uses separately unpacked, signed Ubuntu PostgreSQL 16 packages
+under `postgres/`. It does not change the shared machine's package setup or
+create a login account. Data is under `state/postgres`, checksums enabled,
+40 connections maximum, 256 MiB shared buffers, and 512 MiB maximum WAL.
+Use `dynamic_shared_memory_type=mmap`: logind can remove POSIX shared memory
+owned by the existing `ubuntu` identity after its last interactive session ends.
+
+The supplied HTTPS configuration reserves loopback 8444 for Caddy, which
+terminates TextText TLS, renews certificates, limits request bodies, and streams
+responses to port 3400. HAProxy routes public 443 by TLS hostname; TextText's
+client address is passed with PROXY v2. Other TLS traffic passes unchanged to
+PartyParty on loopback 8443, preserving its certificates and renewal behavior.
+This requires an explicitly approved PartyParty listener change, recorded in a
+systemd override so its normal deployment cannot reclaim public 443. Radio and
+its Cloudflare tunnel keep their existing configuration.
+
+Keep database 5433, app 3400, and private HTTPS ports on loopback only. No shared
+response cache is added. Service examples never install themselves, create
+users, modify routing, or open firewall ports. `/etc/texttext` permits traversal
+for public routing files; secret environment files remain root-owned 0600.
 
 ## Backups and recovery
 

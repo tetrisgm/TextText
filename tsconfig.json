@@ -48,7 +48,9 @@
     ".texttext/native-bridge-eval/types/**/*.ts",
     ".texttext/native-bridge-eval/dev/types/**/*.ts",
     ".texttext/probe/next-maps/types/**/*.ts",
-    ".texttext/probe/next-maps/dev/types/**/*.ts"
+    ".texttext/probe/next-maps/dev/types/**/*.ts",
+    ".texttext/oracle-build/types/**/*.ts",
+    ".texttext/oracle-build/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

@@ -2,7 +2,7 @@
 # Release credentials live in the macOS login Keychain, not in a plaintext file.
 #
 #   service: texttext-release
-#   accounts: DATABASE_URL (production Neon), BLOB_READ_WRITE_TOKEN
+#   accounts: BLOB_READ_WRITE_TOKEN (media and signed Mac release artifacts)
 #
 # Read one with `release_secret NAME`. Values are never passed as command
 # arguments (so they cannot appear in `ps`), never echoed, and never written to
