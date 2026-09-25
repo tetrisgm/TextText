@@ -39,11 +39,28 @@ migration does not declare that larger plan complete. Quantitative performance,
 full navigation restoration and remaining end-to-end workflows still need
 verification.
 
-Installed native version: **0.202 (1092)**. See [DESIGN.md](../DESIGN.md) and
-[the prior visual receipt](artifact-verification-2026-09-19.md). Earlier native
-WebKit recovery changes are in source but have not been installed by this
-migration. Existing unrelated September edits in `attachments.ts`,
-`tabs.test.ts`, and `scripts/.probe-editor.ts` were preserved.
+Installed native version: **0.203 (1093)**, built from `ce8c3d17` and installed
+through `release/ship.sh --local-install` on September 24. Exact-source release
+gates passed in 4m 54s, the production web/native builds passed, all 18 app health
+checks and installed health passed. Nothing was published to the update channel.
+
+Native fix `a3bccb49` removes hidden startup authentication, presents the real
+workspace for explicit sign-in, fences stale retries/callbacks and surfaces
+failures. It includes the earlier `d2d7112b` recovery fix. **Next: verify fresh
+launch and the Apple button, cancel/retry and completed authentication in the
+installed app.** Automated health does not prove those interactions. The owner
+requested a fresh-chat handoff because of a reported session memory leak; that
+memory issue has not been diagnosed.
+
+Resume the full plan afterward using the final sections of
+[the workspace verification receipt](personal-workspace-verification-2026-09-21.md).
+The verified [Claude Fable 5.1 review](claude-fable-5-1-adversarial-review-2026-09-21.md)
+predates the landed folder/type/destination consolidation; do not reopen those
+historical findings without checking the current receipt and code.
+
+The private project changelog remains unwritten: the local CLI reports no linked
+workspace until sign-in succeeds. Existing unrelated edits in `attachments.ts`,
+`tabs.test.ts`, and `scripts/.probe-editor.ts` remain preserved.
 
 ## Historical references
 

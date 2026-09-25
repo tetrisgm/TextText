@@ -90,8 +90,9 @@ per authentication request for persistent servers.
 ## Remaining verification
 
 - Complete the user's Apple sign-in and verify the installed Mac app's launch
-  and native sign-in button. Its current 0.202 (1092) installation predates the
-  WebKit authentication-recovery fix already in source.
+  and native sign-in button. Local version 0.203 (1093) is now installed with
+  `a3bccb49` and the earlier WebKit recovery fix. Exact-source gates, web/native
+  builds and installed health passed; real sign-in remains to verify.
 - Google console confirms the existing callback for `texttext.app`, but neither
   Google nor Vercel will reveal the old client secret. Google remains disabled
   until a replacement secret is stored securely.
