@@ -120,7 +120,12 @@ if [ "$WEB_ONLY" = "1" ]; then
     exit 1
   }
   echo ">> verify web application and PostgreSQL behavior"
-  npm test -- --maxWorkers=4
+  web_test_workers="${TEXTTEXT_WEB_TEST_WORKERS:-4}"
+  [[ "$web_test_workers" =~ ^[1-9][0-9]*$ ]] || {
+    echo "TEXTTEXT_WEB_TEST_WORKERS must be a positive integer." >&2
+    exit 1
+  }
+  npm test -- --maxWorkers="$web_test_workers"
   npm run test:db
   npx tsc --noEmit
   node --test "$ROOT/release/oracle/test.mjs" "$ROOT/release/oracle/test-smoke.mjs" "$ROOT/release/oracle/test-restore-drill.mjs"
