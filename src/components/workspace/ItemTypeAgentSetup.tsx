@@ -50,10 +50,10 @@ export function ItemTypeAgentSetup({ handle, nativeAvailable, nativeConnection, 
     </div> : <p>Account connection is unavailable in this edition. A provider API key is the supported advanced option here.</p>}
     {native ? <>
       <p role="status">{status?.message ?? (status?.phase === "checking" ? "Checking the connection…" : pending ? "Finish signing in to continue." : "Use your supported ChatGPT account with TextText.")}</p>
-      {authorization ? <p>Enter <strong>{authorization.code}</strong> at <a href={authorization.url} target="_blank" rel="noreferrer">ChatGPT authorization</a>.</p> : null}
-      <button type="button" className={styles.doneButton} disabled={pending} onClick={onConnectNative}>
+      {authorization ? <div><p>1. Open ChatGPT using the button below.</p><p>2. Enter this code: <strong>{authorization.code}</strong></p><p>3. Finish signing in, then return here. Your request will continue automatically.</p><a className={styles.doneButton} href={authorization.url} target="_blank" rel="noreferrer">Open ChatGPT to sign in</a></div> : null}
+      {!authorization && <button type="button" className={styles.doneButton} disabled={pending} onClick={onConnectNative}>
         {pending ? "Connecting…" : status?.accountEmail ? "Check connection" : "Continue with ChatGPT"}
-      </button>
+      </button>}
       {status?.diagnosticId ? <details><summary>Connection details</summary><p>Reference: {status.diagnosticId}</p></details> : null}
     </> : <>
       {settings?.configured && settings.connectionState !== "needs-attention" ? <button type="button" className={styles.doneButton} onClick={() => onReady(settings)}>

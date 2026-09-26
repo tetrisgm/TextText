@@ -622,7 +622,11 @@ export function AssistantConversation({
           </div>
           {!connected && (
             <div className={styles.connect} aria-label="Connect an AI">
-              {embeddedConnectionAvailable ? (
+              {embeddedConnectionAvailable && authorization ? (
+                <a className={styles.connectPrimary} href={authorization.url} target="_blank" rel="noreferrer">
+                  Open ChatGPT to sign in
+                </a>
+              ) : embeddedConnectionAvailable ? (
                 <button
                   type="button"
                   className={styles.connectPrimary}
@@ -642,7 +646,7 @@ export function AssistantConversation({
               )}
               {embeddedConnectionAvailable && nativeConnection?.message ? <p role="status">{nativeConnection.message}</p> : null}
               {embeddedConnectionAvailable && authorization ? (
-                <p>Enter <strong>{authorization.code}</strong> at <a href={authorization.url} target="_blank" rel="noreferrer">ChatGPT authorization</a>.</p>
+                <div><p>1. Open ChatGPT using the button above.</p><p>2. Enter this code: <strong>{authorization.code}</strong></p><p>3. Finish signing in, then return to TextText. We will continue automatically.</p></div>
               ) : null}
               {embeddedConnectionAvailable && nativeConnection?.diagnosticId ? <details><summary>Connection details</summary><p>Reference: {nativeConnection.diagnosticId}</p></details> : null}
               <a className={styles.connectSecondary} href="/connect">

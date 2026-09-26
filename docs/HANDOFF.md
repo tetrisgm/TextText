@@ -42,6 +42,11 @@ output bounded. This is task progress, not a change to the agent contract.
   setup. It has now reached device authorization, awaiting the user's sign-in.
   Authenticated native generation and native UI save remain unverified.
 
+The live native app reached device authorization. The owner found the waiting
+state unclear; the sidebar and compact setup now offer an explicit **Open
+ChatGPT to sign in** link with numbered code/return instructions. Account
+authorization and the native editing loop remain pending.
+
 ### Resume next
 
 1. Complete fresh ChatGPT device authorization in the isolated sandbox app,
