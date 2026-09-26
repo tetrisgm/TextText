@@ -161,6 +161,9 @@ function inertResult(
     decideWriteProposal: queuedMethod(entry, "decideWriteProposal", true),
     cancel: queuedMethod(entry, "cancel", false),
     nativeConnection: null,
+    connectionPreference: "api-key",
+    selectConnection: queuedMethod(entry, "selectConnection", false),
+    cancelNativeSetup: queuedMethod(entry, "cancelNativeSetup", false),
     connectNativeAssistant: queuedMethod(
       entry,
       "connectNativeAssistant",

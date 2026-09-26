@@ -14,6 +14,7 @@ import {
 } from "@/app/editor/ai-config-actions";
 import type { Blog } from "@/lib/content";
 import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
+import { WORKSPACE_AI_CONNECTION_CHANGED_EVENT } from "@/lib/ai/provider-failure";
 import type { ApiTokenSummary } from "@/lib/api-tokens";
 import {
   groupApiTokenClients,
@@ -171,16 +172,19 @@ export function WorkspaceSettings({
 
   useEffect(() => {
     let cancelled = false;
-    void getWorkspaceAiSettingsAction(blog.handle).then((next) => {
+    const refresh = () => { void getWorkspaceAiSettingsAction(blog.handle).then((next) => {
       if (cancelled) return;
       setAiSettings(next);
       if (next.provider) setAiProvider(next.provider);
       if (next.model) setAiModel(next.model);
     }).catch(() => {
       if (!cancelled) setAiError("AI settings could not be loaded. Your documents are unchanged. Return to items and reopen settings to retry.");
-    });
+    }); };
+    refresh();
+    window.addEventListener(WORKSPACE_AI_CONNECTION_CHANGED_EVENT, refresh);
     return () => {
       cancelled = true;
+      window.removeEventListener(WORKSPACE_AI_CONNECTION_CHANGED_EVENT, refresh);
     };
   }, [blog.handle]);
 
@@ -238,9 +242,14 @@ export function WorkspaceSettings({
         aiModel,
         aiKey,
       );
+      if (next.failure) {
+        setAiError(`${next.failure.message} Reference: ${next.failure.requestId}`);
+        return;
+      }
       setAiSettings(next);
       setAiKey("");
       setAiEditing(false);
+      window.dispatchEvent(new Event(WORKSPACE_AI_CONNECTION_CHANGED_EVENT));
     } catch (error) {
       setAiError(
         error instanceof Error ? error.message : "Could not save cloud AI",
@@ -258,6 +267,7 @@ export function WorkspaceSettings({
       setAiSettings(await removeWorkspaceAiSettingsAction(blog.handle));
       setAiKey("");
       setAiEditing(false);
+      window.dispatchEvent(new Event(WORKSPACE_AI_CONNECTION_CHANGED_EVENT));
     } catch (error) {
       setAiError(
         error instanceof Error ? error.message : "Could not remove cloud AI",
@@ -287,8 +297,10 @@ export function WorkspaceSettings({
           ? "Codex is rate-limited"
           : aiSettings === null
             ? "Checking"
+            : aiSettings.connectionState === "needs-attention"
+              ? "Needs attention"
             : aiSettings.configured
-              ? `${aiSettings.provider === "anthropic" ? "Anthropic" : "OpenAI"}${aiSettings.model ? ` · ${aiSettings.model}` : ""}`
+              ? `${aiSettings.provider === "anthropic" ? "Anthropic" : "OpenAI"}${aiSettings.model ? ` · ${aiSettings.model}` : ""}${aiSettings.connectionState === "ready" ? "" : " · Not checked"}`
               : "Not configured";
 
   const revokeClient = async (client: ApiTokenClient) => {
@@ -379,7 +391,7 @@ export function WorkspaceSettings({
             stacked instead of replacing each other. The gallery carries the
             status detail the overview held. */}
         <ConnectionGallery
-          cloudConfigured={Boolean(aiSettings?.configured)}
+          cloudConfigured={aiSettings?.connectionState === "ready"}
           cloudStatusLabel={aiOverviewLabel}
           nativeAvailable={Boolean(
             nativeConnection && nativeConnection.state !== "unavailable",
@@ -405,6 +417,8 @@ export function WorkspaceSettings({
             </div>
             <AiConnectionSettings
               cloudConfigured={Boolean(aiSettings.configured)}
+              cloudState={aiSettings.connectionState}
+              cloudFailureMessage={aiSettings.failure?.message}
               onTryInTextText={tryAiInTextText}
               onConnectionChange={setNativeConnection}
             />
@@ -419,14 +433,16 @@ export function WorkspaceSettings({
             {aiSettings.configured && !aiEditing ? (
               <div className={styles.aiStatus}>
                 <span>
-                  <strong>Configured</strong>
+                  <strong>{aiSettings.connectionState === "ready" ? "Ready" : aiSettings.connectionState === "needs-attention" ? "Needs attention" : "Not checked"}</strong>
                   <small>
                     {aiSettings.provider === "anthropic"
                       ? "Anthropic"
                       : "OpenAI"}
                     {aiSettings.model ? ` · ${aiSettings.model}` : ""}. The
-                    saved key is write-only and cannot be viewed here. This
-                    provider and model were verified when the key was saved.
+                    saved key is write-only and cannot be viewed here.{" "}
+                    {aiSettings.connectionState === "ready"
+                      ? "This provider and model answered a generation request."
+                      : aiSettings.failure?.message ?? "This connection has not completed a generation check. Try your request to check it."}
                   </small>
                 </span>
                 <div className={styles.aiActions}>
@@ -533,7 +549,7 @@ export function WorkspaceSettings({
                     disabled={!aiKey.trim() || aiSaving}
                   >
                     {aiSaving
-                      ? "Saving"
+                      ? "Checking connection"
                       : aiSettings.configured
                         ? "Replace key"
                         : "Add key"}

@@ -8,6 +8,12 @@ import {
   readItemTypeUsagesAction,
 } from "@/app/editor/item-type-actions";
 import { applyItemTemplateAction } from "@/app/editor/item-template-actions";
+import { getWorkspaceAiSettingsAction, type WorkspaceAiSettingsState } from "@/app/editor/ai-config-actions";
+import { nativeEmbeddedAssistantAvailable } from "@/lib/ai/native-client";
+import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
+import { AiConnectionError, aiFailure, aiRequestId, classifyAiFailure, type AiFailure } from "@/lib/ai/provider-failure";
+import { readAssistantComposerDraft, saveAssistantCustomizationDraft, type AssistantCustomizationDraft, type AssistantCustomizationSaveIntent } from "./assistant/composer-store";
+import { ItemTypeAgentSetup } from "./ItemTypeAgentSetup";
 import {
   DocumentRenderer,
 } from "@/components/document/DocumentRenderer";
@@ -16,6 +22,7 @@ import {
   type DocumentSnapshot,
 } from "@/lib/documents/model";
 import { refreshWorkspacePool } from "@/lib/pool/store";
+import { stableJson } from "@/lib/documents/sync";
 import {
   compileItemTypeBlueprint,
   ITEM_TYPE_STARTERS,
@@ -33,6 +40,7 @@ import {
   addStudioRevision,
   currentStudioRevision,
   moveStudioTimeline,
+  studioTargetPreviewDocuments,
   type StudioRevisionSource,
 } from "./item-type-studio-state";
 import styles from "./ItemTypeStudio.module.css";
@@ -43,6 +51,8 @@ import { collectionDayKey } from "@/lib/presentation/collection-layout";
 type StudioFolder = { id: string; name: string; path: string };
 
 type ItemTypeStudioPreviewDocument = CollectionPreviewMetadata & {
+  postId?: string;
+  revision?: number;
   folderPath: string;
   document: DocumentSnapshot;
 };
@@ -334,6 +344,13 @@ export function ItemTypeStudio({
   availableTypes = [],
   folders,
   generateWithConnectedAgent,
+  nativeConnection,
+  ownerScopeKey,
+  onConnectNative,
+  onCancelNativeSetup,
+  connectionPreference,
+  onChooseConnection,
+  selectedModel,
   handle,
   initialFolderPath = "",
   initialTargetPostId,
@@ -365,7 +382,17 @@ export function ItemTypeStudio({
     current?: ItemTypeBlueprint;
     folderName?: string;
     request: string;
+    requestId: string;
+    signal?: AbortSignal;
+    model?: string | null;
   }) => Promise<ItemTypeBlueprint>;
+  ownerScopeKey?: string | null;
+  nativeConnection?: AiConnectionSnapshot | null;
+  onConnectNative?: () => void;
+  onCancelNativeSetup?: () => void;
+  connectionPreference?: "native" | "api-key" | null;
+  onChooseConnection?: (connection: "native" | "api-key") => void;
+  selectedModel?: string | null;
   handle: string;
   initialFolderPath?: string;
   initialTargetPostId?: string;
@@ -373,30 +400,56 @@ export function ItemTypeStudio({
   initialTemplate?: TemplateDefinition;
   loadPreviewDocuments?: (
     folderPath: string,
+    targetPostId?: string,
+    refresh?: boolean,
   ) => Promise<readonly ItemTypeStudioPreviewDocument[]>;
   onClose: () => void;
   onCreated?: (folderPath: string | null, look?: { id: string; version: number }) => void;
   previewDocuments?: readonly ItemTypeStudioPreviewDocument[];
 }) {
   const router = useRouter();
-  const [editing, setEditing] = useState(initialEditing);
+  const draftKey = ownerScopeKey ? `${ownerScopeKey}:customize:${blogId}:${initialTargetPostId ?? `folder:${initialFolderPath}`}` : null;
+  const [restored] = useState(() => {
+    const draft = draftKey ? readAssistantComposerDraft(draftKey).customization : undefined;
+    if (!draft || draft.workspaceId !== blogId || draft.targetPostId !== initialTargetPostId) return;
+    try {
+      return { ...draft,
+        editing: draft.editing ? { ...draft.editing, blueprint: itemTypeBlueprintSchema.parse(draft.editing.blueprint) } : undefined,
+        timeline: { ...draft.timeline, revisions: draft.timeline.revisions.map((entry) => ({ ...entry, blueprint: itemTypeBlueprintSchema.parse(entry.blueprint) })) },
+      };
+    } catch { return { ...draft, editing: undefined, timeline: EMPTY_STUDIO_TIMELINE }; }
+  });
+  const [editing, setEditing] = useState(restored?.editing ?? initialEditing);
   const editableTypes = useMemo(() => [...new Map(availableTypes
     .filter((type) => !type.id.startsWith("texttext."))
     .slice().sort((a, b) => a.version - b.version)
     .map((type) => [type.id, type])).values()], [availableTypes]);
   const promptRef = useRef<HTMLTextAreaElement>(null);
-  const [prompt, setPrompt] = useState("");
-  const [followUp, setFollowUp] = useState("");
+  const [prompt, setPrompt] = useState(restored?.prompt ?? "");
+  const [followUp, setFollowUp] = useState(restored?.followUp ?? "");
   // Editing starts from the look as it is, so undo has somewhere to go and the
   // person is not made to rebuild what they came here to change.
   const [timeline, setTimeline] = useState(() =>
-    editing ? studioTimelineFrom(editing.blueprint) : EMPTY_STUDIO_TIMELINE,
+    restored?.timeline ?? (editing ? studioTimelineFrom(editing.blueprint) : EMPTY_STUDIO_TIMELINE),
   );
-  const [folderPath, setFolderPath] = useState(initialFolderPath);
-  const [targetScope, setTargetScope] = useState<"item" | "folder" | "existing">("item");
-  const [pendingItemLook, setPendingItemLook] = useState<{ id: string; version: number } | null>(null);
-  const [applyToExisting, setApplyToExisting] = useState(false);
-  const [saveMode, setSaveMode] = useState<ItemTypeSaveScope["mode"]>("version");
+  const [folderPath, setFolderPath] = useState(restored?.folderPath ?? initialFolderPath);
+  const [targetScope, setTargetScope] = useState<"item" | "folder" | "existing">(restored?.targetScope ?? "item");
+  const [pendingItemLook, setPendingItemLook] = useState<{ id: string; version: number } | null>(restored?.pendingItemLook ?? null);
+  const [applyToExisting, setApplyToExisting] = useState(restored?.applyToExisting ?? false);
+  const [saveMode, setSaveMode] = useState<ItemTypeSaveScope["mode"]>(restored?.saveMode ?? "version");
+  const [saveRequestId, setSaveRequestId] = useState(restored?.saveRequestId);
+  const [saveIntent, setSaveIntent] = useState<AssistantCustomizationSaveIntent | undefined>(restored?.saveIntent);
+  const [expectedRevision, setExpectedRevision] = useState(restored?.expectedRevision);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [settings, setSettings] = useState<WorkspaceAiSettingsState | null>(null);
+  const [failure, setFailure] = useState<AiFailure | null>(null);
+  const [saveConflict, setSaveConflict] = useState(false);
+  const nativeAvailable = nativeEmbeddedAssistantAvailable();
+  const preferredConnection = connectionPreference ?? (nativeAvailable ? "native" : "api-key");
+  const generationRef = useRef<AbortController | null>(null);
+  const pendingRequestRef = useRef<{ request: string; current?: ItemTypeBlueprint } | null>(null);
+  const activeRef = useRef(true);
+  const completedRef = useRef(false);
   const [usages, setUsages] = useState<Array<{ path: string; version: number }> | null>(null);
   const [saved, setSaved] = useState<Extract<Awaited<ReturnType<typeof updateItemTypeAction>>, { ok: true }> | null>(null);
   const saveScope: ItemTypeSaveScope = saveMode === "folder"
@@ -410,7 +463,7 @@ export function ItemTypeStudio({
 
   const [previewMode, setPreviewMode] = useState<"item" | "folder">(initialFolderPath && !initialTargetPostId ? "folder" : "item");
   const [previewContentMode, setPreviewContentMode] =
-    useState<PreviewContentMode>(initialFolderPath ? "folder" : "sample");
+    useState<PreviewContentMode>(initialFolderPath || initialTargetPostId ? "folder" : "sample");
   const [previewDevice, setPreviewDevice] =
     useState<PreviewDevice>("desktop");
   const [compare, setCompare] = useState(false);
@@ -422,6 +475,48 @@ export function ItemTypeStudio({
   const [loadedPreviewDocuments, setLoadedPreviewDocuments] = useState<
     readonly ItemTypeStudioPreviewDocument[]
   >([]);
+
+  const draftRef = useRef<AssistantCustomizationDraft | undefined>(undefined);
+  draftRef.current = { version: 1, workspaceId: blogId, targetPostId: initialTargetPostId, expectedRevision,
+    initialTemplate: restored?.initialTemplate ?? (initialTemplate ? { id: initialTemplate.id, version: initialTemplate.version } : undefined),
+    editing, prompt, followUp, timeline, folderPath, targetScope, saveMode, applyToExisting, pendingItemLook, saveRequestId, saveIntent };
+  useEffect(() => {
+    if (!draftKey || completedRef.current) return;
+    const timer = setTimeout(() => {
+      if (!completedRef.current) saveAssistantCustomizationDraft(draftKey, draftRef.current);
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [draftKey, editing, prompt, followUp, timeline, folderPath, targetScope, saveMode, applyToExisting, pendingItemLook, saveRequestId, saveIntent, expectedRevision]);
+  useEffect(() => {
+    activeRef.current = true;
+    return () => {
+      activeRef.current = false;
+      generationRef.current?.abort();
+      if (pendingRequestRef.current) onCancelNativeSetup?.();
+      pendingRequestRef.current = null;
+      if (draftKey && !completedRef.current) saveAssistantCustomizationDraft(draftKey, draftRef.current);
+    };
+  }, []);
+  const clearCompletedDraft = () => {
+    completedRef.current = true;
+    if (draftKey) saveAssistantCustomizationDraft(draftKey, undefined);
+  };
+  const cancelGeneration = () => {
+    generationRef.current?.abort();
+    generationRef.current = null;
+    pendingRequestRef.current = null;
+    setBusy(null);
+    setSetupOpen(false);
+    onCancelNativeSetup?.();
+  };
+  useEffect(() => {
+    if (!setupOpen) return;
+    let active = true;
+    void getWorkspaceAiSettingsAction(handle).then((connection) => {
+      if (active) setSettings(connection);
+    }).catch(() => { /* The form can still check a replacement connection. */ });
+    return () => { active = false; };
+  }, [handle, setupOpen]);
 
   const editingTemplateId = editing?.templateId;
   useEffect(() => {
@@ -478,16 +573,18 @@ export function ItemTypeStudio({
   useEffect(() => {
     if (
       previewContentMode !== "folder" ||
-      !folderPath ||
+      (!folderPath && !initialTargetPostId) ||
       !loadPreviewDocuments
     ) {
       return;
     }
     let active = true;
-    void loadPreviewDocuments(folderPath).then(
+    void loadPreviewDocuments(folderPath, initialTargetPostId).then(
       (documents) => {
         if (active) {
           setLoadedPreviewDocuments(documents);
+          const target = documents.find((entry) => entry.postId === initialTargetPostId);
+          if (target?.revision !== undefined) setExpectedRevision((current) => current ?? target.revision);
           setFolderPreviewStatus(null);
         }
       },
@@ -501,13 +598,12 @@ export function ItemTypeStudio({
     return () => {
       active = false;
     };
-  }, [folderPath, loadPreviewDocuments, previewContentMode]);
+  }, [folderPath, initialTargetPostId, loadPreviewDocuments, previewContentMode]);
 
   const selectedFolderDocuments = useMemo(
     () =>
-      [...previewDocuments, ...loadedPreviewDocuments]
-        .filter((entry) => entry.folderPath === folderPath),
-    [folderPath, loadedPreviewDocuments, previewDocuments],
+      studioTargetPreviewDocuments([...loadedPreviewDocuments, ...previewDocuments], folderPath, initialTargetPostId),
+    [folderPath, initialTargetPostId, loadedPreviewDocuments, previewDocuments],
   );
   const effectivePreviewContentMode = previewContentMode;
   const isComparing = compare && Boolean(previousDesign);
@@ -560,16 +656,45 @@ export function ItemTypeStudio({
     }
   };
 
-  const generate = async (request: string, current?: ItemTypeBlueprint) => {
+  const generate = async (request: string, current?: ItemTypeBlueprint, connectedSettings?: WorkspaceAiSettingsState) => {
     const clean = request.trim();
-    if (!clean || busy) return;
+    if (!clean || busy || generationRef.current) return;
+    if (!ownerScopeKey) { setError("The workspace owner is still being checked. Your request is preserved."); return; }
+    if (draftKey) saveAssistantCustomizationDraft(draftKey, draftRef.current);
+    const controller = new AbortController();
+    const requestId = aiRequestId();
+    const connectionChoice = connectedSettings ? "api-key" : preferredConnection;
+    generationRef.current = controller;
+    const stillActive = () => activeRef.current && generationRef.current === controller && !controller.signal.aborted;
     setBusy("generate");
     setError(null);
+    setFailure(null);
+    let executionStarted = false;
+    let validatingOutput = false;
     try {
-      const selectedDocument = selectedFolderDocuments[0]?.document;
+      const selectedDocument = selectedFolderDocuments.find((entry) => entry.postId === initialTargetPostId)?.document;
       if (initialTargetPostId && !selectedDocument) {
         throw new Error("The selected document is still loading. Try again in a moment.");
       }
+      if (connectionChoice === "native") {
+        if (!nativeAvailable || nativeConnection?.state !== "ready" || !generateWithConnectedAgent) {
+          pendingRequestRef.current = { request, current };
+          setSetupOpen(true);
+          return;
+        }
+      } else {
+        const connection = connectedSettings ?? settings ?? await getWorkspaceAiSettingsAction(handle);
+        if (!stillActive()) return;
+        setSettings(connection);
+        if (!connection.allowed) throw new Error("Only the workspace owner can customize with this assistant.");
+        if (!connection.configured || connection.connectionState === "needs-attention") {
+          pendingRequestRef.current = { request, current };
+          setSetupOpen(true);
+          return;
+        }
+      }
+      pendingRequestRef.current = null;
+      setSetupOpen(false);
       const contextualRequest = initialTargetPostId && selectedDocument
         ? `${clean}\n\nSelected document: ${initialTargetTitle?.trim() || selectedDocument.content.title || "Untitled"}\n` +
           `Current template definition (validated data): ${JSON.stringify(initialTemplate ?? {}).slice(0, 1_500)}\n` +
@@ -578,55 +703,141 @@ export function ItemTypeStudio({
           "Keep the Markdown body and all existing fields. Use the supported item and collection blueprint, including persistent fields and rows for interactions."
         : clean;
       const folder = folders.find((candidate) => candidate.path === folderPath);
-      if (generateWithConnectedAgent) {
-        const blueprint = itemTypeBlueprintSchema.parse(
-          await generateWithConnectedAgent({
+      let output: unknown;
+      executionStarted = true;
+      if (connectionChoice === "native" && generateWithConnectedAgent) {
+        output = await generateWithConnectedAgent({
             current,
             folderName: folder?.name,
             request: contextualRequest,
-          }),
-        );
-        setBlueprint(blueprint, current ? "AI refinement" : "AI first draft", "ai", {
-          coalesce: false,
-          request: clean,
+            requestId,
+            signal: controller.signal,
+            model: selectedModel,
         });
-        if (!current && !initialFolderPath) setPreviewMode("item");
-        setFollowUp("");
-        return;
+      } else {
+        const response = await fetch("/api/ai/item-type", {
+          method: "POST",
+          credentials: "same-origin",
+          signal: controller.signal,
+          headers: { "Content-Type": "application/json", "x-texttext-request-id": requestId },
+          body: JSON.stringify({
+            workspaceHandle: handle,
+            targetPostId: initialTargetPostId,
+            expectedRevision,
+            prompt: clean,
+            current,
+            model: connectedSettings?.model ?? selectedModel,
+            folderName: folder?.name,
+          }),
+        });
+        const payload = (await response.json().catch(() => null)) as
+          | { blueprint?: unknown; failure?: AiFailure; error?: string; conflict?: boolean }
+          | null;
+        if (!stillActive()) return;
+        if (response.status === 409 && payload?.conflict) {
+          setSaveConflict(true);
+          throw new Error("This document changed after the preview was opened. Read its latest content and review the request before continuing.");
+        }
+        if (!response.ok) throw new AiConnectionError(payload?.failure ?? aiFailure("unknown", requestId));
+        output = payload?.blueprint;
       }
-      const response = await fetch("/api/ai/item-type", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: contextualRequest,
-          current,
-          folderName: folder?.name,
-        }),
-      });
-      const payload = (await response.json().catch(() => null)) as
-        | { blueprint?: unknown; template?: unknown; error?: string }
-        | null;
-      if (!response.ok) {
-        throw new Error(payload?.error || "The assistant could not build that.");
-      }
-      const blueprint = itemTypeBlueprintSchema.parse(payload?.blueprint);
+      if (!stillActive()) return;
+      validatingOutput = true;
+      const blueprint = itemTypeBlueprintSchema.parse(output);
+      compiled(blueprint);
       setBlueprint(blueprint, current ? "AI refinement" : "AI first draft", "ai", {
         coalesce: false,
-        request: clean,
+        request,
       });
       if (!current && !initialFolderPath) setPreviewMode("item");
       setFollowUp("");
     } catch (generationError) {
+      if (!stillActive()) return;
+      const detail = generationError instanceof AiConnectionError ? generationError.failure
+        : validatingOutput ? aiFailure("invalid-template", requestId)
+        : executionStarted && !saveConflict ? classifyAiFailure(generationError, requestId) : null;
+      if (detail) {
+        setFailure(detail);
+        if (["reconnect", "configure"].includes(detail.recovery)) {
+          setSettings(null);
+          pendingRequestRef.current = { request, current };
+        }
+        window.dispatchEvent(new Event("texttext:ai-connection-changed"));
+      }
       setError(
-        generationError instanceof Error
+        detail ? detail.message : generationError instanceof Error
           ? generationError.message
           : "The assistant could not build that.",
       );
     } finally {
-      setBusy(null);
+      if (generationRef.current === controller) {
+        generationRef.current = null;
+        if (activeRef.current) setBusy(null);
+      }
     }
   };
+
+  const restorePendingSave = () => {
+    if (!saveIntent) return;
+    setEditing(saveIntent.editing);
+    setFolderPath(saveIntent.folderPath);
+    setTargetScope(saveIntent.targetScope);
+    setSaveMode(saveIntent.saveMode);
+    setApplyToExisting(saveIntent.applyToExisting);
+    setBlueprint(saveIntent.blueprint, "Pending save", "manual", { coalesce: false });
+  };
+
+  const generateRef = useRef(generate);
+  generateRef.current = generate;
+  useEffect(() => {
+    if (!setupOpen || preferredConnection !== "native" || nativeConnection?.state !== "ready") return;
+    const pending = pendingRequestRef.current;
+    if (!pending) return;
+    pendingRequestRef.current = null;
+    setSetupOpen(false);
+    void generateRef.current(pending.request, pending.current);
+  }, [nativeConnection?.state, preferredConnection, setupOpen]);
+
+  const setupPanel = setupOpen ? <ItemTypeAgentSetup
+    handle={handle} nativeAvailable={nativeAvailable} nativeConnection={nativeConnection}
+    preferredConnection={preferredConnection} settings={settings} onConnectNative={onConnectNative}
+    onChooseConnection={(connection) => {
+      onCancelNativeSetup?.();
+      onChooseConnection?.(connection);
+    }}
+    onReady={(connection) => {
+      onChooseConnection?.("api-key");
+      setSettings(connection);
+      const pending = pendingRequestRef.current;
+      pendingRequestRef.current = null;
+      setSetupOpen(false);
+      if (pending) void generateRef.current(pending.request, pending.current, connection);
+    }}
+    onCancel={cancelGeneration}
+  /> : null;
+  const recovery = failure ? <div>
+    {["reconnect", "configure"].includes(failure.recovery) ? <button type="button" className={styles.quietButton} onClick={() => setSetupOpen(true)}>Check connection</button> : null}
+    <details><summary>Connection details</summary><p>Reference: {failure.requestId}</p>
+      {failure.upstreamCode ? <p>Provider: {failure.upstreamCode}</p> : null}
+      {failure.upstreamRequestId ? <p>Provider reference: {failure.upstreamRequestId}</p> : null}
+    </details>
+  </div> : null;
+  const conflictReview = saveConflict && loadPreviewDocuments ? <button type="button" className={styles.quietButton} onClick={async () => {
+    try {
+      const documents = await loadPreviewDocuments(folderPath, initialTargetPostId, true);
+      if (!activeRef.current) return;
+      const target = documents.find((entry) => entry.postId === initialTargetPostId);
+      if (!target || target.revision === undefined) throw new Error("unavailable");
+      setLoadedPreviewDocuments(documents);
+      setExpectedRevision(target.revision);
+      setSaveConflict(false);
+      setError(pendingItemLook
+        ? "The latest document is shown in the preview. Review it, then choose Done to apply the saved look."
+        : "The latest document has been loaded. Review your preserved request, then send it again.");
+    } catch {
+      if (activeRef.current) setError("The current document could not be read. Your preview and request are preserved.");
+    }
+  }}>Read latest document and review</button> : null;
 
   const removeField = (id: string) => {
     if (!design) return;
@@ -801,7 +1012,16 @@ export function ItemTypeStudio({
   };
 
   const save = async () => {
-    if (!design || busy || saved) return;
+    if (!design || busy || saved || setupOpen) return;
+    const intent: AssistantCustomizationSaveIntent = { blueprint: design.blueprint, editing, folderPath, targetScope, saveMode, applyToExisting };
+    if (saveIntent && stableJson(saveIntent) !== stableJson(intent)) {
+      setError("An earlier save still needs confirmation. Return to that preview before retrying, so the saved result matches what you see.");
+      return;
+    }
+    if (initialTargetPostId && expectedRevision === undefined) {
+      setError("Wait for the selected document to load before saving.");
+      return;
+    }
     const itemOnly = Boolean(initialTargetPostId && targetScope === "item");
     const folderTarget = Boolean(initialTargetPostId && targetScope !== "item");
     if ((folderTarget && !folderPath) ||
@@ -812,6 +1032,10 @@ export function ItemTypeStudio({
     setBusy("save");
     setError(null);
     try {
+      const requestId = saveRequestId ?? aiRequestId();
+      setSaveRequestId(requestId);
+      setSaveIntent(intent);
+      if (draftKey && draftRef.current) saveAssistantCustomizationDraft(draftKey, { ...draftRef.current, saveRequestId: requestId, saveIntent: intent });
       // Changing a look adds a version to it. Creating one makes a new look.
       // Doing the first through the second is how a workspace ends up with
       // "Recipes", "Recipes 2" and "Recipes final".
@@ -829,28 +1053,48 @@ export function ItemTypeStudio({
             design.blueprint,
             updateExisting,
             effectiveScope,
+            requestId,
           )
         : await createItemTypeAction(
             handle,
             design.blueprint,
             itemOnly ? null : folderPath,
             updateExisting,
+            requestId,
           );
       if (result && !result.ok) throw new Error(result.error);
       const look = pendingItemLook ?? (result?.ok ? result.itemType : null);
+      if (!activeRef.current) return;
       if (itemOnly && initialTargetPostId && look) {
         setPendingItemLook({ id: look.id, version: look.version });
-        const applied = await applyItemTemplateAction(handle, initialTargetPostId, look.id, look.version);
-        if (!applied.ok) throw new Error(`The look was saved, but could not be applied to this item: ${applied.error}`);
+        if (draftKey && draftRef.current) saveAssistantCustomizationDraft(draftKey, { ...draftRef.current, saveRequestId: requestId, saveIntent: intent, pendingItemLook: { id: look.id, version: look.version } });
+        const applied = await applyItemTemplateAction(handle, initialTargetPostId, look.id, look.version, expectedRevision);
+        if (!activeRef.current) return;
+        if (!applied.ok) {
+          setSaveConflict(applied.code === "conflict");
+          throw new Error(`The look was saved, but could not be applied to this item: ${applied.error}`);
+        }
+        clearCompletedDraft();
         await refreshWorkspacePool(handle, blogId);
+        if (!activeRef.current) return;
         router.refresh();
         onCreated?.(null);
         onClose();
         return;
       }
       if (!result?.ok) throw new Error("The look was not saved.");
+      if (result.recovered && !itemOnly && (folderPath || effectiveScope.mode !== "version")) {
+        if ("applied" in result) setSaved(result);
+        await refreshWorkspacePool(handle, blogId);
+        if (!activeRef.current) return;
+        router.refresh();
+        setError("The saved look was found. The earlier folder update could not be confirmed. Review the folder before applying it again.");
+        return;
+      }
+      clearCompletedDraft();
       if ("applied" in result) setSaved(result);
       await refreshWorkspacePool(handle, blogId);
+      if (!activeRef.current) return;
       router.refresh();
       onCreated?.(
         "folder" in result ? (result.folder?.path ?? null) : (result.applied[0]?.path ?? null),
@@ -858,13 +1102,14 @@ export function ItemTypeStudio({
       );
       if (!("applied" in result)) onClose();
     } catch (saveError) {
+      if (!activeRef.current) return;
       setError(
         saveError instanceof Error
           ? saveError.message
           : "Could not save that item type.",
       );
     } finally {
-      setBusy(null);
+      if (activeRef.current) setBusy(null);
     }
   };
 
@@ -874,6 +1119,7 @@ export function ItemTypeStudio({
         <button
           type="button"
           className={styles.quietButton}
+          disabled={Boolean(busy)}
           onClick={() => {
             if (!design) return onClose();
             setTimeline(EMPTY_STUDIO_TIMELINE);
@@ -891,7 +1137,7 @@ export function ItemTypeStudio({
           <button
             type="button"
             className={styles.doneButton}
-            disabled={!saved && (Boolean(busy) || importantQualityFindings.length > 0)}
+            disabled={!saved && (Boolean(busy) || setupOpen || importantQualityFindings.length > 0)}
             title={
               importantQualityFindings.length > 0
                 ? "Fix important preflight issues before saving"
@@ -962,6 +1208,11 @@ export function ItemTypeStudio({
               </button>
             </form>
             {error || compilation.error ? <p className={styles.error} role="alert">{error ?? compilation.error}</p> : null}
+            {recovery}
+            {conflictReview}
+            {setupPanel}
+            {saveIntent && !saved ? <button type="button" className={styles.quietButton} disabled={Boolean(busy)} onClick={restorePendingSave}>Return to pending save preview</button> : null}
+            {busy === "generate" ? <button type="button" className={styles.quietButton} onClick={cancelGeneration}>Cancel request, keep draft</button> : null}
             <div className={styles.starters} aria-label="Edit a starting point yourself">
               {ITEM_TYPE_STARTERS.map((starter) => (
                 <button
@@ -988,6 +1239,7 @@ export function ItemTypeStudio({
       ) : (
         <main className={styles.designCanvas}>
           <section className={styles.controls} aria-label="Item type settings">
+            <fieldset disabled={Boolean(busy) || setupOpen || Boolean(saved)} style={{ display: "contents" }}>
             <div className={styles.historyPanel} aria-label="Design history">
               <div className={styles.historyHeading}>
                 <div>
@@ -1230,6 +1482,17 @@ export function ItemTypeStudio({
                   <option value="reader">Source beside notes</option>
                 </select>
               </label>
+              {design.blueprint.item.layout === "reader" ? <label>
+                <span>Commentary width</span>
+                <select aria-label="Commentary width" value={design.blueprint.item.commentaryWidth ?? "balanced"} onChange={(event) => {
+                  const current = copyBlueprint(design.blueprint);
+                  current.item.commentaryWidth = event.currentTarget.value as "balanced" | "narrow";
+                  setBlueprint(current, "Changed commentary width", "manual", { coalesce: false });
+                }}>
+                  <option value="balanced">Balanced</option>
+                  <option value="narrow">Narrow</option>
+                </select>
+              </label> : null}
               <label>
                 <span>Item page</span>
                 <select
@@ -1295,6 +1558,7 @@ export function ItemTypeStudio({
               ) : null}
             </div>
 
+            </fieldset>
             {saved ? (
               <div className={styles.section} role="status" aria-label="Save result">
                 <p>Saved version {saved.itemType.version}.</p>
@@ -1306,6 +1570,8 @@ export function ItemTypeStudio({
               </div>
             ) : null}
 
+            {setupPanel}
+            {saveIntent && !saved ? <button type="button" className={styles.quietButton} disabled={Boolean(busy)} onClick={restorePendingSave}>Return to pending save preview</button> : null}
             <div className={styles.conversation} aria-label="Design conversation">
               {timeline.revisions
                 .slice(0, timeline.index + 1)
@@ -1340,6 +1606,9 @@ export function ItemTypeStudio({
               </form>
             </div>
             {error || compilation.error ? <p className={styles.error} role="alert">{error ?? compilation.error}</p> : null}
+            {recovery}
+            {conflictReview}
+            {busy === "generate" ? <button type="button" className={styles.quietButton} onClick={cancelGeneration}>Cancel request, keep draft</button> : null}
           </section>
 
           <section className={styles.preview} aria-label="Live preview">
@@ -1399,9 +1668,9 @@ export function ItemTypeStudio({
                 >
                   <option
                     value="folder"
-                    disabled={!folderPath}
+                    disabled={!folderPath && !initialTargetPostId}
                   >
-                    Folder sample ({selectedFolderDocuments.length})
+                    {initialTargetPostId ? "Selected document" : `Folder sample (${selectedFolderDocuments.length})`}
                   </option>
                   <option value="sample">Sample content</option>
                   <option value="empty">Empty state</option>

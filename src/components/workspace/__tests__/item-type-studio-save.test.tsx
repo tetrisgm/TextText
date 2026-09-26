@@ -6,6 +6,7 @@ import { compileItemTypeBlueprint, itemTypeBlueprintSchema } from "@/lib/present
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/app/editor/item-type-actions", () => ({ createItemTypeAction: vi.fn(), updateItemTypeAction: vi.fn(), readItemTypeUsagesAction: vi.fn() }));
 vi.mock("@/app/editor/item-template-actions", () => ({ applyItemTemplateAction: vi.fn() }));
+vi.mock("@/app/editor/ai-config-actions", () => ({ getWorkspaceAiSettingsAction: vi.fn(), saveWorkspaceAiSettingsAction: vi.fn() }));
 vi.mock("@/lib/pool/store", () => ({ refreshWorkspacePool: vi.fn() }));
 vi.mock("@/components/document/DocumentRenderer", () => ({ DocumentCollectionRenderer: () => null, DocumentEngineStyles: () => null, DocumentRenderer: () => null }));
 import { ItemTypeStudio } from "../ItemTypeStudio";

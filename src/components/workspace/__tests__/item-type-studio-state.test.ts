@@ -1,4 +1,4 @@
-import { loadStudioFolderSample, STUDIO_FOLDER_SAMPLE_LIMIT } from "../item-type-studio-state";
+import { loadStudioFolderSample, STUDIO_FOLDER_SAMPLE_LIMIT, studioTargetPreviewDocuments } from "../item-type-studio-state";
 import { describe, expect, it } from "vitest";
 import { ITEM_TYPE_STARTERS } from "@/lib/presentation/item-type-blueprint";
 import {
@@ -99,4 +99,12 @@ it("bounds a 5000-item folder preview to 40 reads with at most 8 in flight", asy
   expect(reads).toBe(STUDIO_FOLDER_SAMPLE_LIMIT);
   expect(peak).toBeLessThanOrEqual(8);
   expect(result).toEqual(Array.from({ length: 40 }, (_, index) => index));
+});
+
+it("binds a document preview to its exact identity, including root items", () => {
+  const neighbor = { postId: "neighbor", folderPath: "Notes", title: "Neighbor" };
+  const selected = { postId: "selected", folderPath: "", title: "Selected root item" };
+  expect(studioTargetPreviewDocuments([neighbor, selected], "", "selected")).toEqual([selected]);
+  expect(studioTargetPreviewDocuments([neighbor], "Notes", "selected")).toEqual([]);
+  expect(studioTargetPreviewDocuments([neighbor, selected], "Notes")).toEqual([neighbor]);
 });

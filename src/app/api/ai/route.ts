@@ -49,7 +49,10 @@ import {
   cloudProviderLabel,
   getWorkspaceAiConfigForOwner,
   getWorkspaceAiConfigStatusForOwner,
+  recordWorkspaceAiResult,
+  type WorkspaceAiConfig,
 } from "@/lib/ai/workspace-ai-config.server";
+import { aiFailure, aiFailureStatus, aiRequestId, classifyAiFailure, type AiFailure } from "@/lib/ai/provider-failure";
 import { workspaceLanguageModel } from "@/lib/ai/provider-model.server";
 import {
   AUTO_CLOUD_AI_MODEL,
@@ -313,6 +316,7 @@ type AssistantStreamEvent =
   | {
       type: "error";
       message: string;
+      failure?: AiFailure;
       partialText?: string;
       outboundCalls?: OutboundCallRecord[];
       unreachableServers?: string[];
@@ -349,6 +353,10 @@ function assistantStreamResponse(
     contextResolutions,
     selectionEnvelope,
     signal,
+    requestId,
+    onFailure,
+    onSuccess,
+    onCancel,
   }: {
     provider: string;
     model: string;
@@ -360,10 +368,19 @@ function assistantStreamResponse(
     contextResolutions: AssistantContextResolution[];
     selectionEnvelope?: SelectionEnvelope;
     signal: AbortSignal;
+    requestId: string;
+    onFailure: (failure: AiFailure) => Promise<void>;
+    onSuccess: () => Promise<void>;
+    onCancel: () => void;
   },
 ): Response {
   const encoder = new TextEncoder();
+  let cancelled = false;
   const stream = new ReadableStream<Uint8Array>({
+    cancel() {
+      cancelled = true;
+      onCancel();
+    },
     async start(controller) {
       let text = "";
       let completed = false;
@@ -374,6 +391,7 @@ function assistantStreamResponse(
       // the whole thing was done. Count the steps so the person is told.
       let steps = 0;
       const emit = (event: AssistantStreamEvent) => {
+        if (cancelled) return;
         controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
       };
       emit({ type: "start", provider, model, ...(contextResolutions.length ? { contextResolutions } : {}) });
@@ -412,9 +430,12 @@ function assistantStreamResponse(
             });
           } else if (type === "error") {
             failed = true;
+            const failure = classifyAiFailure(part.error, requestId);
+            await onFailure(failure);
             emit({
               type: "error",
-              message: "The assistant could not finish that.",
+              message: failure.message,
+              failure,
               partialText: text || undefined,
               outboundCalls: calls,
               unreachableServers: unreachable,
@@ -433,7 +454,9 @@ function assistantStreamResponse(
               ...(writeProposals.length > 0 ? { writeProposals } : {}),
             });
           } else if (type === "finish") {
+            if (failed) continue;
             completed = true;
+            await onSuccess();
             const cut = truncationNotice(steps);
             if (cut) {
               text += cut;
@@ -455,31 +478,33 @@ function assistantStreamResponse(
           }
         }
         if (!completed && !failed && !signal.aborted) {
-          const cut = truncationNotice(steps);
-          if (cut) {
-            text += cut;
-            emit({ type: "text", text: cut });
-          }
+          const failure = aiFailure("network", requestId);
+          await onFailure(failure);
           emit({
-            type: "complete",
-            text,
-            provider,
-            model,
+            type: "error",
+            message: failure.message,
+            failure,
+            partialText: text || undefined,
             outboundCalls: calls,
             unreachableServers: unreachable,
             workspaceCalls,
             ...(writeProposals.length > 0 ? { writeProposals } : {}),
-            ...(contextItems.length > 0 ? { contextItems } : {}),
-            ...(contextResolutions.length ? { contextResolutions } : {}),
-            ...(selectionEnvelope ? { selectionEnvelope } : {}),
           });
         }
-      } catch {
+        if (!completed && !failed && signal.aborted && signal.reason?.name === "TimeoutError") {
+          const failure = classifyAiFailure(signal.reason, requestId);
+          await onFailure(failure);
+          emit({ type: "error", message: failure.message, failure, partialText: text || undefined, outboundCalls: calls, unreachableServers: unreachable, workspaceCalls, ...(writeProposals.length > 0 ? { writeProposals } : {}) });
+        }
+      } catch (error) {
         failed = true;
-        if (!signal.aborted) {
+        if (!signal.aborted || signal.reason?.name === "TimeoutError") {
+          const failure = classifyAiFailure(signal.aborted ? signal.reason : error, requestId);
+          await onFailure(failure);
           emit({
             type: "error",
-            message: "The assistant could not finish that.",
+            message: failure.message,
+            failure,
             partialText: text || undefined,
             outboundCalls: calls,
             unreachableServers: unreachable,
@@ -488,11 +513,11 @@ function assistantStreamResponse(
           });
         }
       } finally {
-        controller.close();
+        if (!cancelled) controller.close();
       }
     },
   });
-  return new Response(stream, { status: 200, headers: STREAM_HEADERS });
+  return new Response(stream, { status: 200, headers: { ...STREAM_HEADERS, "x-texttext-request-id": requestId } });
 }
 
 // Which words, in the PERSON'S OWN message, open the write tools for a turn.
@@ -788,19 +813,25 @@ export async function GET(request: Request) {
     );
   }
   const status = await getWorkspaceAiConfigStatusForOwner(user.sub);
-  const enabled = status.configured;
+  const enabled = status.configured && status.connectionState !== "needs-attention";
   return Response.json(
     {
       enabled,
       provider:
         enabled && status.provider ? cloudProviderLabel(status.provider) : null,
       model: enabled ? status.model : null,
+      connectionState: status.connectionState,
+      checkedAt: status.checkedAt,
+      ...(status.failure ? { failure: status.failure } : {}),
     },
     { headers: NO_STORE_HEADERS },
   );
 }
 
 export async function POST(request: Request) {
+  const requestId = aiRequestId(request.headers.get("x-texttext-request-id"));
+  const responseHeaders = { ...NO_STORE_HEADERS, "x-texttext-request-id": requestId };
+  const failedResponse = (failure: AiFailure) => Response.json({ error: failure.message, failure }, { status: aiFailureStatus(failure), headers: responseHeaders });
   const user = await getCurrentUser();
   if (!user) {
     return Response.json(
@@ -876,7 +907,9 @@ export async function POST(request: Request) {
       { status: 400, headers: NO_STORE_HEADERS },
     );
   }
-  const config = await getWorkspaceAiConfigForOwner(user.sub);
+  let config: WorkspaceAiConfig | null;
+  try { config = await getWorkspaceAiConfigForOwner(user.sub, requestId); }
+  catch { return failedResponse(aiFailure("configuration", requestId)); }
   if (!config) {
     return Response.json(
       { error: "Connect an AI provider in Workspace Settings." },
@@ -884,10 +917,7 @@ export async function POST(request: Request) {
     );
   }
   if (rateLimited(user.sub)) {
-    return Response.json(
-      { error: "Too many assistant requests. Try again in a moment." },
-      { status: 429 },
-    );
+    return failedResponse({ ...aiFailure("rate-limit", requestId), retryAfterSeconds: 60 });
   }
   const messages = coerceMessages(body.messages);
   if (messages.length === 0) {
@@ -925,6 +955,9 @@ export async function POST(request: Request) {
   const selectedModel = isCloudAiModel(config.provider, requestedModel)
     ? requestedModel
     : config.model;
+  if ((body.model !== undefined && !isCloudAiModel(config.provider, requestedModel)) || !isCloudAiModel(config.provider, selectedModel)) {
+    return failedResponse(aiFailure("model-access", requestId));
+  }
 
   // Outbound MCP: enabling a connection does not authorize background contact.
   // Only the connection invoked by its exact @mcp shortcut in the latest
@@ -1017,8 +1050,12 @@ export async function POST(request: Request) {
     // turn: every external call becomes a durable owner review proposal.
     ...remoteTools,
   };
+  const streamCancellation = new AbortController();
+  const generationSignal = AbortSignal.any([request.signal, streamCancellation.signal, AbortSignal.timeout(55_000)]);
   const modelRequest = {
     model,
+    abortSignal: generationSignal,
+    maxRetries: 0,
     system:
       buildSystem(body.context, relatedContext.items, recentContext.note) +
       (contextResolutions.some((entry) => entry.status === "unavailable")
@@ -1043,7 +1080,7 @@ export async function POST(request: Request) {
   if (wantsStream) {
     const streamed = streamText({
       ...modelRequest,
-      abortSignal: request.signal,
+      abortSignal: generationSignal,
       // AI SDK's default handler logs the raw provider error object. Provider
       // errors can contain request metadata, so keep the public stream generic
       // and never write that object to server logs.
@@ -1059,7 +1096,14 @@ export async function POST(request: Request) {
       contextItems,
       contextResolutions,
       selectionEnvelope,
-      signal: request.signal,
+      signal: generationSignal,
+      requestId,
+      onFailure: async (failure) => {
+        console.error("cloud assistant turn failed", { provider, model: selectedModel, ...failure });
+        await recordWorkspaceAiResult(config, failure, selectedModel);
+      },
+      onSuccess: () => recordWorkspaceAiResult(config, null, selectedModel),
+      onCancel: () => streamCancellation.abort(),
     });
   }
 
@@ -1067,6 +1111,8 @@ export async function POST(request: Request) {
     const result = await generateText({
       ...modelRequest,
     });
+    generationSignal.throwIfAborted();
+    await recordWorkspaceAiResult(config, null, selectedModel);
     return Response.json({
       text: result.text,
       ...(contextResolutions.length ? { contextResolutions } : {}),
@@ -1087,11 +1133,13 @@ export async function POST(request: Request) {
       ...(contextItems.length > 0
         ? { contextItems }
         : {}),
-    });
-  } catch {
+    }, { headers: responseHeaders });
+  } catch (error) {
     // Provider errors can carry request metadata. Do not log the error object,
     // because a user-supplied API key must never reach logs.
-    console.error("cloud assistant turn failed");
+    const failure = classifyAiFailure(generationSignal.aborted ? generationSignal.reason : error, requestId);
+    console.error("cloud assistant turn failed", { provider, model: selectedModel, ...failure });
+    await recordWorkspaceAiResult(config, failure, selectedModel);
     if (
       workspaceCalls.length > 0 ||
       writeProposals.length > 0 ||
@@ -1115,11 +1163,9 @@ export async function POST(request: Request) {
           !calls.some((call) => call.status === "ok")
             ? "A proposed change is ready for review, but the assistant stopped before it could finish the reply."
             : "Some actions completed, but the assistant stopped before it could finish the reply.",
-      });
+        failure,
+      }, { headers: responseHeaders });
     }
-    return Response.json(
-      { error: "The assistant could not complete that." },
-      { status: 502 },
-    );
+    return failedResponse(failure);
   }
 }

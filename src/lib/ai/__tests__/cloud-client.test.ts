@@ -1,5 +1,6 @@
 import { createSelectionEnvelope } from "@/lib/ai/selection-envelope";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { aiFailure } from "../provider-failure";
 import {
   cloudAssistantStatus,
   cloudAssistantTurn,
@@ -39,6 +40,15 @@ describe("cloud assistant client", () => {
       "/api/ai?workspaceHandle=writer",
       expect.objectContaining({ method: "GET", cache: "no-store" }),
     );
+  });
+
+  it("preserves the safe provider failure and its correlation reference", async () => {
+    const failure = aiFailure("authentication", "27aa246c-5c98-4161-b50d-27a6fd66b072");
+    const fetchMock = vi.fn(async () => Response.json({ error: failure.message, failure }, { status: 502 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(cloudAssistantTurn("writer", "Keep this request")).rejects.toMatchObject({ name: "AiConnectionError", failure });
+    const init = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect((init[1].headers as Record<string, string>)["x-texttext-request-id"]).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   it("fails closed before a request when the displayed handle is invalid", async () => {

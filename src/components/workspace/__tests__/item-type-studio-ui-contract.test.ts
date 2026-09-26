@@ -48,7 +48,7 @@ describe("item type studio experience", () => {
     expect(studioSource).toContain('finding.severity === "important"');
     expect(studioSource).toContain('className={styles.preflight}');
     expect(studioSource).toContain(
-      "disabled={!saved && (Boolean(busy) || importantQualityFindings.length > 0)}",
+      "disabled={!saved && (Boolean(busy) || setupOpen || importantQualityFindings.length > 0)}",
     );
   });
 
@@ -60,7 +60,7 @@ describe("item type studio experience", () => {
       "loadPreviewDocuments={loadItemTypeStudioPreviewDocuments}",
     );
     expect(studioSource).toContain('previewContentMode !== "folder"');
-    expect(studioSource).toContain("loadPreviewDocuments(folderPath)");
+    expect(studioSource).toContain("loadPreviewDocuments(folderPath, initialTargetPostId)");
   });
 
   it("uses one scrolling surface at phone width", () => {

@@ -7,6 +7,7 @@ import {
   ITEM_TYPE_BLUEPRINT_FORMAT,
   honorNamedStyleReference,
 } from "@/lib/ai/item-type-generation";
+import { assertCompatibleItemTypeFields } from "@/lib/presentation/item-type-update";
 import { assessItemTypeQuality } from "@/lib/presentation/item-type-quality";
 
 export const NATIVE_ITEM_TYPE_PREVIEW_TOOL_NAME = "preview_item_type";
@@ -32,6 +33,7 @@ export const NATIVE_ITEM_TYPE_PREVIEW_TOOL = Object.freeze({
 function validateNativeBlueprint(
   value: unknown,
   request: string,
+  current?: ItemTypeBlueprint,
 ): ItemTypeBlueprint {
   const blueprint = honorNamedStyleReference(
     itemTypeBlueprintSchema.parse(value),
@@ -49,7 +51,8 @@ function validateNativeBlueprint(
     // Shape validation cannot prove cross-field relationships such as unique
     // ids, valid computed sources, or a date-backed calendar. Compile the
     // exact preview before accepting it from the native agent.
-    compileItemTypeBlueprint(blueprint, { id: "preview.item-type" });
+    const compiled = compileItemTypeBlueprint(blueprint, { id: "preview.item-type" });
+    if (current) assertCompatibleItemTypeFields(compileItemTypeBlueprint(current, { id: "preview.item-type" }).fields, compiled.fields);
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Invalid item type.";
     throw new Error(
@@ -62,6 +65,7 @@ function validateNativeBlueprint(
 export function parseNativeItemTypePreviewArguments(
   value: unknown,
   request = "",
+  current?: ItemTypeBlueprint,
 ): ItemTypeBlueprint {
   const input =
     typeof value === "string" ? (JSON.parse(value) as unknown) : value;
@@ -75,6 +79,7 @@ export function parseNativeItemTypePreviewArguments(
       return validateNativeBlueprint(
         JSON.parse((input as { blueprint_json: string }).blueprint_json),
         request,
+        current,
       );
     }
     throw new Error("The connected agent did not return an item-type blueprint.");
@@ -82,6 +87,7 @@ export function parseNativeItemTypePreviewArguments(
   return validateNativeBlueprint(
     (input as { blueprint: unknown }).blueprint,
     request,
+    current,
   );
 }
 

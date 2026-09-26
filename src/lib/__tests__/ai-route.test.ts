@@ -61,6 +61,7 @@ const mocks = vi.hoisted(() => ({
   }),
   getWorkspaceAiConfigForOwner: vi.fn(),
   getWorkspaceAiConfigStatusForOwner: vi.fn(),
+  recordWorkspaceAiResult: vi.fn(),
   workspaceAgentPromptForOwner: vi.fn(async () => ""),
   createAnthropic: vi.fn(() => vi.fn(() => "anthropic-model")),
   createOpenAI: vi.fn(() => vi.fn(() => "openai-model")),
@@ -111,6 +112,7 @@ vi.mock("@/lib/ai/workspace-ai-config.server", () => ({
     provider === "anthropic" ? "Anthropic" : "OpenAI",
   getWorkspaceAiConfigForOwner: mocks.getWorkspaceAiConfigForOwner,
   getWorkspaceAiConfigStatusForOwner: mocks.getWorkspaceAiConfigStatusForOwner,
+  recordWorkspaceAiResult: mocks.recordWorkspaceAiResult,
 }));
 vi.mock("@/lib/ai/workspace-agent-instructions.server", () => ({
   workspaceAgentPromptForOwner: mocks.workspaceAgentPromptForOwner,
@@ -385,14 +387,12 @@ describe("/api/ai cloud assistant route", () => {
     );
   });
 
-  it("falls back to the saved model when a turn requests an unknown model", async () => {
+  it("rejects an unavailable explicit model without silently switching it", async () => {
     const res = await POST(post({ ...turn, model: "arbitrary-provider-model" }));
 
-    expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ model: "claude-sonnet-5" });
-    expect(mocks.createAnthropic.mock.results[0]?.value).toHaveBeenCalledWith(
-      "claude-sonnet-5",
-    );
+    expect(res.status).toBe(502);
+    expect(await res.json()).toMatchObject({ failure: { code: "model-access" } });
+    expect(mocks.generateText).not.toHaveBeenCalled();
   });
 
   it("resolves Auto to a fast model for a simple turn", async () => {
@@ -612,11 +612,42 @@ describe("/api/ai cloud assistant route", () => {
 
     expect(events.at(-1)).toMatchObject({
       type: "error",
-      message: "The assistant could not finish that.",
+      failure: { code: "unknown", requestId: expect.any(String) },
     });
     expect(events).not.toContainEqual(
       expect.objectContaining({ type: "complete" }),
     );
+  });
+
+  it("keeps an interrupted partial stream out of successful connection evidence", async () => {
+    mocks.streamText.mockReturnValue({ fullStream: (async function* () {
+      yield { type: "text-delta", text: "Partial answer" };
+    })() });
+    const res = await POST(new Request("http://x/api/ai", {
+      method: "POST", body: JSON.stringify({ ...turn, workspaceHandle: "demo-blog", stream: true }),
+    }));
+    const events = (await res.text()).trim().split("\n").map((line) => JSON.parse(line));
+    expect(events.at(-1)).toMatchObject({ type: "error", partialText: "Partial answer", failure: { code: "network" } });
+    expect(events.some((event) => event.type === "complete")).toBe(false);
+    expect(mocks.recordWorkspaceAiResult).toHaveBeenLastCalledWith(expect.any(Object), expect.objectContaining({ code: "network" }), "claude-sonnet-5");
+  });
+
+  it("aborts generation when the response consumer cancels and does not mark it ready", async () => {
+    let release: () => void = () => {};
+    const hold = new Promise<void>((resolve) => { release = resolve; });
+    mocks.streamText.mockReturnValue({ fullStream: (async function* () {
+      await hold;
+      yield { type: "finish" };
+    })() });
+    const res = await POST(new Request("http://x/api/ai", {
+      method: "POST", body: JSON.stringify({ ...turn, workspaceHandle: "demo-blog", stream: true }),
+    }));
+    const signal = mocks.streamText.mock.calls.at(-1)![0].abortSignal as AbortSignal;
+    await res.body!.cancel();
+    expect(signal.aborted).toBe(true);
+    release();
+    await hold;
+    expect(mocks.recordWorkspaceAiResult).not.toHaveBeenCalled();
   });
 
   it("keeps every outbound MCP tool available only as a proposal", async () => {
@@ -1299,6 +1330,12 @@ describe("/api/ai cloud assistant route", () => {
       await (await GET(statusRequest("collaborator-space"))).json(),
     ).toEqual({ enabled: false, provider: null, model: null });
     expect(mocks.getWorkspaceAiConfigStatusForOwner).not.toHaveBeenCalled();
+  });
+
+  it("GET never continues advertising an authenticated connection after rejection", async () => {
+    mocks.getWorkspaceAiConfigStatusForOwner.mockResolvedValue({ configured: true, provider: "anthropic", model: "claude-sonnet-5", connectionState: "needs-attention", failure: { code: "authentication", requestId: "27aa246c-5c98-4161-b50d-27a6fd66b072" } });
+    expect(await (await GET(statusRequest("demo-blog"))).json()).toMatchObject({ enabled: false, connectionState: "needs-attention", failure: { code: "authentication" } });
+    expect(mocks.generateText).not.toHaveBeenCalled();
   });
   it("R7 does not silently omit a person-chosen item that became unavailable", async () => {
     const id = "00000000-0000-4000-8000-000000000001";

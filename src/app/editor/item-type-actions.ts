@@ -1,15 +1,19 @@
 "use server";
 
+import { stableJson } from "@/lib/documents/sync";
+
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import {
   itemTypeBlueprintSchema,
+  compileItemTypeBlueprint,
+  normalizeItemTypeBlueprint,
   type ItemTypeBlueprint,
 } from "@/lib/presentation/item-type-blueprint";
 import {
   createWorkspaceItemType,
   updateWorkspaceItemType,
 } from "@/lib/presentation/item-type.server";
-import { getDocumentTemplateAuthoringSource, listFoldersUsingTemplate } from "@/lib/store";
+import { getDocumentTemplate, getDocumentTemplateAuthoringSource, listFoldersUsingTemplate } from "@/lib/store";
 import { itemTypeSaveScopeSchema } from "@/lib/presentation/item-type-update";
 import type { ItemTypeUpdateResult } from "@/lib/presentation/item-type.server";
 
@@ -36,9 +40,11 @@ export async function createItemTypeAction(
   blueprintInput: unknown,
   folderPathInput: unknown,
   applyToExistingInput: unknown,
+  requestIdInput?: unknown,
 ): Promise<
   | {
       ok: true;
+      recovered?: boolean;
       itemType: { id: string; version: number; name: string };
       folder: {
         path: string;
@@ -60,7 +66,10 @@ export async function createItemTypeAction(
       typeof folderPathInput === "string" && folderPathInput.trim()
         ? folderPathInput.trim()
         : null;
+    const requestId = typeof requestIdInput === "string" && /^[a-f0-9-]{36}$/i.test(requestIdInput) ? requestIdInput : undefined;
+    if (requestIdInput !== undefined && !requestId) throw new Error("Invalid save request. Reopen the look before saving.");
     const created = await createWorkspaceItemType({
+      requestId,
       actor: {
         actorUserId: access.ownerId,
         actorType: "human",
@@ -77,6 +86,7 @@ export async function createItemTypeAction(
     });
     return {
       ok: true,
+      ...(created.recovered ? { recovered: true } : {}),
       itemType: {
         id: created.definition.id,
         version: created.definition.version,
@@ -172,9 +182,11 @@ export async function updateItemTypeAction(
   blueprintInput: unknown,
   applyToExistingInput: unknown,
   saveScopeInput: unknown = { mode: "version" },
+  requestIdInput?: unknown,
 ): Promise<
   | {
       ok: true;
+      recovered?: boolean;
       itemType: { id: string; version: number; name: string };
       applied: ItemTypeUpdateResult["applied"];
       skipped: ItemTypeUpdateResult["skipped"];
@@ -194,6 +206,20 @@ export async function updateItemTypeAction(
     const baseVersion = Number(baseVersionInput);
     if (!templateId || !Number.isInteger(baseVersion) || baseVersion < 1) {
       throw new Error("Which item type, and from which version?");
+    }
+    const requestId = typeof requestIdInput === "string" && /^[a-f0-9-]{36}$/i.test(requestIdInput) ? requestIdInput : undefined;
+    if (requestIdInput !== undefined && !requestId) throw new Error("Invalid save request. Reopen the look before saving.");
+    if (requestId) {
+      // A successor is immutable. Reconcile a lost response before considering
+      // another write, and never replay the possibly completed folder changes.
+      const saved = await getDocumentTemplate(access.blogId, { id: templateId, version: baseVersion + 1 });
+      if (saved) {
+        const expected = compileItemTypeBlueprint(normalizeItemTypeBlueprint(blueprint), { id: templateId });
+        if (stableJson(saved) !== stableJson({ ...expected, version: baseVersion + 1 })) {
+          throw new Error("Someone else changed this look. Reopen the latest version and review your changes.");
+        }
+        return { ok: true, recovered: true, itemType: { id: saved.id, version: saved.version, name: saved.name }, applied: [], skipped: [], conflicted: [] };
+      }
     }
     const updated = await updateWorkspaceItemType({
       actor: {

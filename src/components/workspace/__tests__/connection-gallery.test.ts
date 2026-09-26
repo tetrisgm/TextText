@@ -38,7 +38,7 @@ describe("connection gallery", () => {
     expect(html).not.toContain("Verify connection");
   });
 
-  it("shows the local Codex option only when the standalone app reports it", () => {
+  it("shows account setup only when the app reports a usable runtime", () => {
     const html = renderToStaticMarkup(
       React.createElement(ConnectionGallery, {
         cloudConfigured: false,
@@ -50,6 +50,7 @@ describe("connection gallery", () => {
     );
 
     expect(html).toContain("Codex with ChatGPT");
-    expect(html).toContain("standalone Mac agent");
+    expect(html).toContain("assistant inside TextText");
+    expect(html).not.toContain("standalone Mac agent");
   });
 });

@@ -1803,7 +1803,7 @@ export function UnifiedDocumentEditor({
         .tt-field-row.is-embedded>.tt-field-label{position:static;width:auto;height:auto;padding:0;margin:0;overflow:visible;clip:auto;white-space:normal;border:0}
         .tt-field-row.is-embedded>.tt-field-input,.tt-field-row.is-embedded>.tt-field-multienum,.tt-field-row.is-embedded>.tt-rows-editor,.tt-field-row.is-embedded>.tt-people-picker,.tt-field-row.is-embedded>.tt-status-workflow-control{width:100%}
         .tt-field-row.is-embedded>.tt-field-input.is-checkbox{width:1rem;justify-self:start}
-        .tt-document-editor [data-tt-node="reader-notes"] .tt-field-row.is-embedded{grid-template-columns:minmax(0,1fr);gap:0.3125rem}
+        .tt-document-editor :is([data-tt-node="reader-notes"],[data-tt-node="reader-notes-narrow"]) .tt-field-row.is-embedded{grid-template-columns:minmax(0,1fr);gap:0.3125rem}
         .tt-field-row.is-image.is-embedded{justify-content:center;margin:1.2rem 0}
         .tt-field-row.is-image.is-embedded .tt-image-field-control.is-canvas{position:relative;display:block;width:100%;overflow:visible}
         .tt-field-row.is-image.is-embedded .tt-image-field-preview{display:block;width:100%;height:auto;max-height:min(62vh,42.5rem);border:0;border-radius:0;background:transparent;object-fit:cover}

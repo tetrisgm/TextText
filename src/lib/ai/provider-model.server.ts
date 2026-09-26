@@ -12,13 +12,15 @@ import type { WorkspaceAiConfig } from "@/lib/ai/workspace-ai-config.server";
  */
 export function workspaceLanguageModel(
   config: WorkspaceAiConfig,
+  options: { useDevelopmentOverride?: boolean } = {},
 ): LanguageModel {
   const isDevelopment = process.env.NODE_ENV !== "production";
   const baseURL = isDevelopment
     ? process.env.TEXTTEXT_AI_BASE_URL || undefined
     : undefined;
   const apiKey =
-    isDevelopment && process.env.TEXTTEXT_DEV_AI_KEY
+    isDevelopment && options.useDevelopmentOverride !== false &&
+    process.env.TEXTTEXT_DEV_AI_PROVIDER === config.provider && process.env.TEXTTEXT_DEV_AI_KEY
       ? process.env.TEXTTEXT_DEV_AI_KEY
       : config.apiKey;
 

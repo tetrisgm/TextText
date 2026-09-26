@@ -9,7 +9,7 @@ import type { AssistantMessage } from "./useNativeAssistant";
 import type { AssistantJob } from "@/lib/ai/jobs";
 import type { NativeQuickActionId } from "@/lib/ai/quick-actions";
 import type { CloudAssistantProviderLabel } from "@/lib/ai/cloud-client";
-import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
+import { nativeDeviceAuthorization, type AiConnectionSnapshot } from "@/lib/ai/connection-state";
 import {
   greeting,
   startersFor,
@@ -590,6 +590,7 @@ export function AssistantConversation({
     const embeddedConnectionAvailable = Boolean(
       nativeConnection?.embeddedChatSupported && onConnectNative,
     );
+    const authorization = nativeDeviceAuthorization(nativeConnection);
     const primaryConnectionLabel = embeddedConnectionAvailable
       ? "Continue with ChatGPT"
       : "Set up the in-app assistant";
@@ -626,8 +627,9 @@ export function AssistantConversation({
                   type="button"
                   className={styles.connectPrimary}
                   onClick={onConnectNative}
+                  disabled={nativeConnection?.state === "connecting"}
                 >
-                  {primaryConnectionLabel}
+                  {nativeConnection?.phase === "checking" ? "Checking connection…" : nativeConnection?.phase === "authorizing" ? "Waiting for authorization…" : primaryConnectionLabel}
                 </button>
               ) : (
                 <a
@@ -638,6 +640,11 @@ export function AssistantConversation({
                   {primaryConnectionLabel}
                 </a>
               )}
+              {embeddedConnectionAvailable && nativeConnection?.message ? <p role="status">{nativeConnection.message}</p> : null}
+              {embeddedConnectionAvailable && authorization ? (
+                <p>Enter <strong>{authorization.code}</strong> at <a href={authorization.url} target="_blank" rel="noreferrer">ChatGPT authorization</a>.</p>
+              ) : null}
+              {embeddedConnectionAvailable && nativeConnection?.diagnosticId ? <details><summary>Connection details</summary><p>Reference: {nativeConnection.diagnosticId}</p></details> : null}
               <a className={styles.connectSecondary} href="/connect">
                 Connect your AI app instead
               </a>

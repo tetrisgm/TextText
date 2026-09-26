@@ -35,6 +35,12 @@ describe("native item-type design", () => {
     );
   });
 
+  it("rejects a refinement that drops existing fields before accepting a preview", () => {
+    const current = ITEM_TYPE_STARTERS.find((entry) => entry.id === "research-reader")!.blueprint;
+    const changed = { ...current, fields: current.fields.filter((field) => field.id !== "commentary") };
+    expect(() => parseNativeItemTypePreviewArguments({ blueprint: changed }, "Keep existing fields", current)).toThrow("cannot be removed");
+  });
+
   it("returns actionable quality feedback for an incomplete design", () => {
     expect(() =>
       parseNativeItemTypePreviewArguments({

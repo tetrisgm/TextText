@@ -6,7 +6,7 @@ type NativeAssistantEvent =
   | { type: "final-text"; text: string; conversationId?: string }
   | { type: "tool-call"; callId: string; tool: string; arguments: unknown; conversationId?: string }
   | { type: "turn-completed"; conversationId?: string }
-  | { type: "error"; message: string; conversationId?: string };
+  | { type: "error"; message: string; conversationId?: string; diagnosticId?: string };
 
 type NativeWindow = Window & {
   __TEXTTEXT_APP__?: boolean;
@@ -55,12 +55,14 @@ export function requestNativeAssistant(
   action:
     | "assistantStatus"
     | "assistantConnect"
+    | "assistantCancelSetup"
     | "assistantDisconnect"
     | "assistantCancel"
     | "assistantTurn",
   prompt?: string,
   conversationId?: string,
   history: readonly NativeAssistantHistoryMessage[] = [],
+  requestId?: string,
 ) {
   if (typeof window === "undefined") return false;
   const current = window as NativeWindow;
@@ -70,6 +72,7 @@ export function requestNativeAssistant(
     action,
     ...(prompt === undefined ? {} : { prompt }),
     ...(conversationId ? { conversationId } : {}),
+    ...(requestId ? { requestId } : {}),
     ...(action === "assistantTurn" && history.length > 0
       ? { history: boundedHistory(history) }
       : {}),
@@ -81,8 +84,9 @@ export function submitNativeAssistantTurn(
   prompt: string,
   conversationId: string,
   history: readonly NativeAssistantHistoryMessage[] = [],
+  requestId?: string,
 ): boolean {
-  return requestNativeAssistant("assistantTurn", prompt, conversationId, history);
+  return requestNativeAssistant("assistantTurn", prompt, conversationId, history, requestId);
 }
 
 export function registerNativeAssistantTools(

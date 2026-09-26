@@ -4,6 +4,7 @@ type AiConnectionState =
   | "unavailable"
   | "runtime-missing"
   | "signed-out"
+  | "unverified"
   | "connecting"
   | "ready"
   | "rate-limited"
@@ -14,6 +15,12 @@ type AiConnectionKind = "native-codex" | "api-key" | "external-mcp";
 
 export type AiConnectionSnapshot = {
   state: AiConnectionState;
+  phase?: "authorizing" | "checking" | null;
+  verificationUrl?: string | null;
+  userCode?: string | null;
+  message?: string | null;
+  diagnosticId?: string | null;
+  model?: string | null;
   kind: AiConnectionKind | null;
   providerLabel: string | null;
   accountEmail: string | null;
@@ -31,6 +38,13 @@ export type AiConnectionSnapshot = {
     | "open-settings"
     | null;
 };
+
+/** Device credentials are displayed only for the provider's fixed public page. */
+export function nativeDeviceAuthorization(connection: Pick<AiConnectionSnapshot, "phase" | "verificationUrl" | "userCode"> | null | undefined): { url: string; code: string } | null {
+  if (connection?.phase !== "authorizing" || connection.verificationUrl !== "https://auth.openai.com/codex/device" ||
+      !connection.userCode || !/^[A-Z0-9-]{4,32}$/.test(connection.userCode)) return null;
+  return { url: connection.verificationUrl, code: connection.userCode };
+}
 
 type NativeAiCapability = {
   surface: EmbeddedAiSurface;
@@ -93,5 +107,7 @@ export function resolveNativeAiConnection(
   if (!capability.account) {
     return { ...common, state: "signed-out", recoveryAction: "connect" };
   }
-  return { ...common, state: "ready", recoveryAction: null };
+  return capability.lastHealthCheckAt
+    ? { ...common, state: "ready", recoveryAction: null }
+    : { ...common, state: "unverified", recoveryAction: "connect" };
 }

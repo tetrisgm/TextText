@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AiConnectionError, aiFailure } from "@/lib/ai/provider-failure";
 
 const mocks = vi.hoisted(() => ({
   getBlogEditAccess: vi.fn(),
@@ -35,6 +36,8 @@ describe("workspace AI settings actions", () => {
       blogId: "blog-1",
       ownerId: "user-1",
     });
+    mocks.getStatus.mockResolvedValue({ configured: false, provider: null, model: null, connectionState: "not-set-up", checkedAt: null });
+    mocks.validateConnection.mockResolvedValue(undefined);
   });
 
   it("stores the key server-side and returns only write-only status", async () => {
@@ -62,6 +65,8 @@ describe("workspace AI settings actions", () => {
       configured: true,
       provider: "anthropic",
       model: "claude-sonnet-5",
+      connectionState: "ready",
+      checkedAt: expect.any(String),
     });
     expect(JSON.stringify(result)).not.toContain(apiKey);
     expect(mocks.recordAction).toHaveBeenCalledWith(
@@ -85,6 +90,24 @@ describe("workspace AI settings actions", () => {
       configured: false,
       provider: null,
       model: null,
+      connectionState: "not-set-up",
+      checkedAt: null,
     });
+  });
+
+  it("returns a safe rejected-generation result and never stores the rejected key", async () => {
+    mocks.validateConnection.mockRejectedValue(new AiConnectionError(aiFailure("authentication", "27aa246c-5c98-4161-b50d-27a6fd66b072")));
+    const result = await saveWorkspaceAiSettingsAction("local", "anthropic", "claude-sonnet-5", "sk-rejected-value-that-must-not-leak");
+    expect(result).toMatchObject({ configured: false, failure: { code: "authentication" } });
+    expect(mocks.saveConfig).not.toHaveBeenCalled();
+    expect(mocks.recordAction).not.toHaveBeenCalled();
+    expect(JSON.stringify(result)).not.toContain("sk-rejected");
+  });
+
+  it("does not replace an explicitly invalid model with a default", async () => {
+    const result = await saveWorkspaceAiSettingsAction("local", "openai", "missing-model", "sk-rejected-value-that-must-not-leak");
+    expect(result.failure?.code).toBe("model-access");
+    expect(mocks.validateConnection).not.toHaveBeenCalled();
+    expect(mocks.saveConfig).not.toHaveBeenCalled();
   });
 });

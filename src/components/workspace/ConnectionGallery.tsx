@@ -27,9 +27,7 @@ export function ConnectionGallery({
     {
       name: "TextText AI",
       description: "Use Anthropic or OpenAI with an encrypted workspace key.",
-      status: cloudConfigured
-        ? (cloudStatusLabel ?? "Connected")
-        : "Not connected",
+      status: cloudStatusLabel ?? (cloudConfigured ? "Connected" : "Not connected"),
       connected: cloudConfigured,
       href: "#settings-ai",
       action: cloudConfigured ? "Manage" : "Connect",
@@ -39,7 +37,7 @@ export function ConnectionGallery({
           {
             name: "Codex with ChatGPT",
             description:
-              "The standalone Mac agent, embedded in the right sidebar.",
+              "Use your ChatGPT account with the assistant inside TextText.",
             status: nativeReady ? "Connected" : "Available",
             connected: nativeReady,
             href: "#settings-ai",

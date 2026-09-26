@@ -279,6 +279,7 @@ export const itemTypeBlueprintSchema = z
       .object({
         shape: z.enum(["article", "page", "note", "task", "reference"]).default("page"),
         layout: z.enum(["stack", "reader"]).default("stack"),
+        commentaryWidth: z.enum(["balanced", "narrow"]).optional().describe("For reader layout, narrow gives commentary one quarter of the available width."),
         icon: z.string().trim().min(1).max(8).optional(),
         showBody: z.boolean().default(true),
         showMetadata: z.boolean().default(false),
@@ -983,7 +984,7 @@ function itemTree(blueprint: ItemTypeBlueprint): RenderNode {
       align: "start",
       children: [
         { type: "stack", id: "reader-source", gap: "md", children: source },
-        { type: "stack", id: "reader-notes", gap: "md", children: fieldNodes(blueprint).length
+        { type: "stack", id: blueprint.item.commentaryWidth === "narrow" ? "reader-notes-narrow" : "reader-notes", gap: "md", children: fieldNodes(blueprint).length
           ? fieldNodes(blueprint)
           : [{ type: "text", bind: "content.subtitle", role: "body", fallback: "Add fields to work with this source." }] },
       ],

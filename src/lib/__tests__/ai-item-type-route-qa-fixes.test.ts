@@ -4,15 +4,19 @@ const mocks = vi.hoisted(() => ({
   generateText: vi.fn(),
   getCurrentUser: vi.fn(),
   getOwnedBlog: vi.fn(),
+  getPostById: vi.fn(),
+  getDocumentTemplateForHandle: vi.fn(),
   getWorkspaceAiConfigForOwner: vi.fn(),
+  recordWorkspaceAiResult: vi.fn(),
   workspaceLanguageModel: vi.fn(() => "language-model"),
 }));
 
 vi.mock("ai", () => ({ generateText: mocks.generateText }));
 vi.mock("@/lib/session", () => ({ getCurrentUser: mocks.getCurrentUser }));
-vi.mock("@/lib/store", () => ({ getOwnedBlog: mocks.getOwnedBlog }));
+vi.mock("@/lib/store", () => ({ getOwnedBlog: mocks.getOwnedBlog, getPostById: mocks.getPostById, getDocumentTemplateForHandle: mocks.getDocumentTemplateForHandle }));
 vi.mock("@/lib/ai/workspace-ai-config.server", () => ({
   getWorkspaceAiConfigForOwner: mocks.getWorkspaceAiConfigForOwner,
+  recordWorkspaceAiResult: mocks.recordWorkspaceAiResult,
 }));
 vi.mock("@/lib/ai/provider-model.server", () => ({
   workspaceLanguageModel: mocks.workspaceLanguageModel,
@@ -26,10 +30,10 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.getCurrentUser.mockResolvedValue({ sub: `qa-fix-${subject++}` });
   mocks.getOwnedBlog.mockResolvedValue({ handle: "writer" });
-  mocks.getWorkspaceAiConfigForOwner.mockResolvedValue({ provider: "anthropic" });
+  mocks.getWorkspaceAiConfigForOwner.mockResolvedValue({ provider: "anthropic", model: "claude-sonnet-5" });
 });
 const request = (body: unknown) => new Request("http://local/api/ai/item-type", {
-  method: "POST", body: JSON.stringify(body),
+  method: "POST", body: JSON.stringify(body && typeof body === "object" && !Array.isArray(body) ? { workspaceHandle: "writer", ...body } : body),
 });
 const invalidFilter = { name: "Numbers", fields: [{ id: "rating", label: "Rating", type: "number" }], collection: { layout: "list", filters: [{ field: "rating", op: "gte", value: "4" }] } };
 

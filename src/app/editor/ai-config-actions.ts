@@ -2,24 +2,19 @@
 
 import { recordAction } from "@/lib/audit";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
-import {
-  defaultCloudAiModel,
-  isCloudAiModel,
-} from "@/lib/ai/provider-catalog";
+import { isCloudAiModel } from "@/lib/ai/provider-catalog";
+import { AiConnectionError, aiFailure, aiRequestId } from "@/lib/ai/provider-failure";
 import {
   getWorkspaceAiConfigStatus,
   isCloudAiProvider,
   removeWorkspaceAiConfig,
   saveWorkspaceAiConfig,
   validateWorkspaceAiConnection,
-  type CloudAiProvider,
+  type WorkspaceAiConfigStatus,
 } from "@/lib/ai/workspace-ai-config.server";
 
-export type WorkspaceAiSettingsState = {
+export type WorkspaceAiSettingsState = WorkspaceAiConfigStatus & {
   allowed: boolean;
-  configured: boolean;
-  provider: CloudAiProvider | null;
-  model: string | null;
 };
 
 function cleanHandle(value: unknown): string {
@@ -55,7 +50,7 @@ export async function getWorkspaceAiSettingsAction(
     const status = await getWorkspaceAiConfigStatus(access.blogId);
     return { allowed: true, ...status };
   } catch {
-    return { allowed: false, configured: false, provider: null, model: null };
+    return { allowed: false, configured: false, provider: null, model: null, connectionState: "not-set-up", checkedAt: null };
   }
 }
 
@@ -67,13 +62,21 @@ export async function saveWorkspaceAiSettingsAction(
 ): Promise<WorkspaceAiSettingsState> {
   const access = await ownerAccess(handleInput);
   if (!isCloudAiProvider(providerInput)) {
-    throw new Error("Choose Anthropic or OpenAI.");
+    return { allowed: true, ...await getWorkspaceAiConfigStatus(access.blogId), failure: { ...aiFailure("model-access", aiRequestId()), message: "Choose Anthropic or OpenAI." } };
   }
-  const model = isCloudAiModel(providerInput, modelInput)
-    ? modelInput
-    : defaultCloudAiModel(providerInput);
-  const apiKey = cleanApiKey(apiKeyInput);
-  await validateWorkspaceAiConnection(providerInput, model, apiKey);
+  if (!isCloudAiModel(providerInput, modelInput)) {
+    return { allowed: true, ...await getWorkspaceAiConfigStatus(access.blogId), failure: aiFailure("model-access", aiRequestId()) };
+  }
+  const model = modelInput;
+  let apiKey: string;
+  try { apiKey = cleanApiKey(apiKeyInput); }
+  catch { return { allowed: true, ...await getWorkspaceAiConfigStatus(access.blogId), failure: { ...aiFailure("authentication", aiRequestId()), message: "Enter a valid provider API key." } }; }
+  try {
+    await validateWorkspaceAiConnection(providerInput, model, apiKey);
+  } catch (error) {
+    if (!(error instanceof AiConnectionError)) throw error;
+    return { allowed: true, ...await getWorkspaceAiConfigStatus(access.blogId), failure: error.failure };
+  }
   await saveWorkspaceAiConfig(access.blogId, providerInput, model, apiKey);
   await recordAction({
     actorUserId: access.ownerId,
@@ -88,6 +91,8 @@ export async function saveWorkspaceAiSettingsAction(
     configured: true,
     provider: providerInput,
     model,
+    connectionState: "ready",
+    checkedAt: new Date().toISOString(),
   };
 }
 
@@ -105,5 +110,5 @@ export async function removeWorkspaceAiSettingsAction(
     targetId: access.blogId,
     inputSummary: previous.provider ?? undefined,
   });
-  return { allowed: true, configured: false, provider: null, model: null };
+  return { allowed: true, configured: false, provider: null, model: null, connectionState: "not-set-up", checkedAt: null };
 }

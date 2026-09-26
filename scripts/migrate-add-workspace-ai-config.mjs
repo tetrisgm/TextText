@@ -40,5 +40,11 @@ await sql.query(`
   ALTER TABLE workspace_ai_config
   ALTER COLUMN model SET NOT NULL
 `);
+await sql.query(`
+  ALTER TABLE workspace_ai_config
+  ADD COLUMN IF NOT EXISTS checked_at timestamp,
+  ADD COLUMN IF NOT EXISTS failure_code text,
+  ADD COLUMN IF NOT EXISTS failure_request_id text
+`);
 await sql.close();
 console.log("Workspace AI configuration table is ready.");

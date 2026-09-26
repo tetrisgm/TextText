@@ -10,6 +10,26 @@
   font-family: var(--ac-font-text);
 }
 
+.setupPanel {
+  display: grid;
+  gap: 12px;
+  margin-block: 16px;
+  padding: 20px;
+  border: 1px solid var(--ac-hairline);
+  border-radius: var(--ac-radius-control);
+  background: var(--ac-fill-2);
+  color: var(--ac-label);
+}
+
+.setupPanel h2, .setupPanel p { margin: 0; }
+.setupPanel p { color: var(--ac-label-2); font-size: var(--ac-fs-subheadline); line-height: 1.5; }
+.setupPanel form, .setupPanel label { display: grid; gap: 8px; }
+.setupPanel form { gap: 12px; }
+.setupPanel input, .setupPanel select { min-width: 0; width: 100%; padding: 8px; background: var(--ac-bg); color: var(--ac-label); border: 1px solid var(--ac-hairline); border-radius: var(--ac-radius-control); }
+.setupChoices { display: flex; flex-wrap: wrap; gap: 8px; }
+.setupChoices button { padding: 8px; background: var(--ac-bg); color: var(--ac-label); border: 1px solid var(--ac-hairline); border-radius: var(--ac-radius-control); }
+.setupChoices button[aria-pressed="true"] { border-color: var(--ac-accent); }
+
 .topbar {
   display: grid;
   grid-template-columns: 92px minmax(0, 1fr) 92px;

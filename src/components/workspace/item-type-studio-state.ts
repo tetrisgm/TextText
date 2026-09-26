@@ -2,6 +2,13 @@ import type { ItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
 
 export const STUDIO_FOLDER_SAMPLE_LIMIT = 40;
 
+/** An unavailable selected item must never be replaced with its neighbor. */
+export function studioTargetPreviewDocuments<T extends { postId?: string; folderPath: string }>(
+  documents: readonly T[], folderPath: string, targetPostId?: string,
+): T[] {
+  return documents.filter((entry) => targetPostId ? entry.postId === targetPostId : entry.folderPath === folderPath);
+}
+
 /** Bound both total document reads and concurrent work for a design sample. */
 export async function loadStudioFolderSample<T, R>(items: readonly T[], read: (item: T) => Promise<R>): Promise<R[]> {
   const sample = items.slice(0, STUDIO_FOLDER_SAMPLE_LIMIT);
@@ -22,7 +29,7 @@ type StudioRevision = {
   blueprint: ItemTypeBlueprint;
 };
 
-type StudioTimeline = {
+export type StudioTimeline = {
   revisions: StudioRevision[];
   index: number;
   nextId: number;
@@ -96,4 +103,3 @@ export function moveStudioTimeline(
     index: Math.max(0, Math.min(index, timeline.revisions.length - 1)),
   };
 }
-

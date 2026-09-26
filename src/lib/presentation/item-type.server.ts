@@ -1,4 +1,6 @@
-import { randomUUID } from "node:crypto";
+
+import { stableJson } from "@/lib/documents/sync";
+import { createHash, randomUUID } from "node:crypto";
 import { recordAction, type AuditEntry } from "@/lib/audit";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import {
@@ -21,6 +23,7 @@ import type { TemplateDefinition } from "@/lib/presentation/schema";
 
 type CreatedItemType = {
   definition: TemplateDefinition;
+  recovered?: boolean;
   folder: null | {
     id: string;
     path: string;
@@ -52,6 +55,7 @@ export async function createWorkspaceItemType(input: {
   createdById?: string | null;
   folderPath?: string | null;
   handle: string;
+  requestId?: string;
 }): Promise<CreatedItemType> {
   const folderPath = input.folderPath?.trim() || null;
   const folder = folderPath
@@ -67,15 +71,36 @@ export async function createWorkspaceItemType(input: {
   // type does not have.
   const blueprint = normalizeItemTypeBlueprint(input.blueprint);
   const definition = compileItemTypeBlueprint(blueprint, {
-    id: identifier(blueprint.name),
+    id: input.requestId
+      ? `look-${createHash("sha256").update(`${input.blogId}:${input.requestId}`).digest("hex").slice(0, 32)}`
+      : identifier(blueprint.name),
   });
-  const created = await createDocumentTemplateVersion({
+  const recover = async () => {
+    if (!input.requestId) return null;
+    const existing = await getDocumentTemplate(input.blogId, { id: definition.id, version: 1 });
+    if (!existing) return null;
+    if (stableJson(existing) !== stableJson({ ...definition, version: 1 })) {
+      throw new Error("This save request already belongs to a different look. Reopen the saved result before changing it.");
+    }
+    return { definition: existing, folder: null, recovered: true };
+  };
+  const recovered = await recover();
+  if (recovered) return recovered;
+  let created: TemplateDefinition;
+  try { created = await createDocumentTemplateVersion({
     blogId: input.blogId,
     definition,
     actor: input.actor,
     createdById: input.createdById ?? null,
     authoringSource: authoringSourceFor(blueprint),
-  });
+    ...(input.requestId ? { expectedNextVersion: 1 } : {}),
+  }); } catch (error) {
+    // The immutable primary key also fences simultaneous retries. A failed
+    // response is reconciled by readback; folder writes are never replayed here.
+    const recoveredAfterRace = await recover();
+    if (recoveredAfterRace) return recoveredAfterRace;
+    throw error;
+  }
 
   if (!folder) return { definition: created, folder: null };
 

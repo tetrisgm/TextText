@@ -4,6 +4,7 @@ import { cleanAssistantContextResolutions, type AssistantContextResolution } fro
 
 import { parseSelectionEnvelope, type SelectionEnvelope } from "@/lib/ai/selection-envelope";
 import { TENANT_HANDLE_RE } from "@/lib/tenants";
+import { AiConnectionError, aiRequestId, readAiFailure, WORKSPACE_AI_CONNECTION_CHANGED_EVENT, type AiFailure } from "./provider-failure";
 
 export type CloudAssistantProviderLabel = "Anthropic" | "OpenAI";
 
@@ -33,10 +34,13 @@ export type CloudAssistantAttachment = {
   dataUrl: string;
 };
 
-type CloudAssistantStatus = {
+export type CloudAssistantStatus = {
   enabled: boolean;
   provider: CloudAssistantProviderLabel | null;
   model: string | null;
+  connectionState?: "not-set-up" | "unchecked" | "ready" | "needs-attention";
+  checkedAt?: string | null;
+  failure?: AiFailure;
 };
 
 /**
@@ -114,6 +118,7 @@ type CloudAssistantOutcome =
       selectionEnvelope?: SelectionEnvelope;
       /** Some commands completed before the provider failed later in the turn. */
       terminalError?: string;
+      failure?: AiFailure;
       /** Connected servers that did not answer, so the turn was smaller. */
       unreachableServers: string[];
     }
@@ -139,6 +144,7 @@ export type CloudAssistantStreamEvent =
   | {
       type: "error";
       message: string;
+      failure?: AiFailure;
       partialText?: string;
       outboundCalls?: OutboundCall[];
       unreachableServers?: string[];
@@ -373,6 +379,9 @@ export async function cloudAssistantStatus(
     enabled?: unknown;
     provider?: unknown;
     model?: unknown;
+    connectionState?: unknown;
+    checkedAt?: unknown;
+    failure?: unknown;
   };
   const provider =
     data.provider === "Anthropic" || data.provider === "OpenAI"
@@ -382,6 +391,9 @@ export async function cloudAssistantStatus(
     enabled: data.enabled === true && Boolean(provider),
     provider,
     model: typeof data.model === "string" ? data.model : null,
+    ...(["not-set-up", "unchecked", "ready", "needs-attention"].includes(String(data.connectionState)) ? { connectionState: data.connectionState as CloudAssistantStatus["connectionState"] } : {}),
+    ...(typeof data.checkedAt === "string" || data.checkedAt === null ? { checkedAt: data.checkedAt } : {}),
+    ...(readAiFailure(data.failure) ? { failure: readAiFailure(data.failure)! } : {}),
   };
 }
 
@@ -398,6 +410,7 @@ export async function cloudAssistantTurn(
     );
   }
   const stream = options.stream === true;
+  const requestId = aiRequestId();
   const history = (options.history ?? [])
     .slice(-20)
     .reduceRight<Array<{ role: "user" | "assistant"; content: string }>>(
@@ -424,6 +437,7 @@ export async function cloudAssistantTurn(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      "x-texttext-request-id": requestId,
       ...(stream ? { Accept: "application/x-ndjson" } : {}),
     },
     body: JSON.stringify({
@@ -440,7 +454,13 @@ export async function cloudAssistantTurn(
   if (!response.ok) {
     const data = (await response.json().catch(() => null)) as {
       error?: string;
+      failure?: unknown;
     } | null;
+    const failure = readAiFailure(data?.failure);
+    if (failure) {
+      if (typeof window !== "undefined") window.dispatchEvent(new Event(WORKSPACE_AI_CONNECTION_CHANGED_EVENT));
+      throw new AiConnectionError(failure);
+    }
     if (response.status === 502) {
       throw new Error(
         "Your request was not applied because the AI provider did not answer.",
@@ -518,6 +538,8 @@ export async function cloudAssistantTurn(
       options.onEvent?.(cleanStreamEvent(record, provider, model));
       if (record.type === "error" && !latest && provider) {
         failed = true;
+        const failure = readAiFailure(record.failure);
+        if (failure && typeof window !== "undefined") window.dispatchEvent(new Event(WORKSPACE_AI_CONNECTION_CHANGED_EVENT));
         latest = {
           text:
             typeof record.partialText === "string"
@@ -535,9 +557,10 @@ export async function cloudAssistantTurn(
               )
             : [],
           terminalError:
-            typeof record.message === "string"
+            failure ? `${failure.message} Reference: ${failure.requestId}` : typeof record.message === "string"
               ? record.message
               : "The assistant could not finish that.",
+          ...(failure ? { failure } : {}),
         };
       }
     };
@@ -584,6 +607,7 @@ export async function cloudAssistantTurn(
     contextResolutions?: unknown;
     selectionEnvelope?: unknown;
     terminalError?: unknown;
+    failure?: unknown;
   };
   if (data.provider !== "Anthropic" && data.provider !== "OpenAI") {
     throw new Error("The cloud provider could not be identified.");
@@ -592,6 +616,7 @@ export async function cloudAssistantTurn(
     text: typeof data.text === "string" ? data.text : "",
     provider: data.provider,
     model: typeof data.model === "string" ? data.model : "",
+    ...(readAiFailure(data.failure) ? { failure: readAiFailure(data.failure)! } : {}),
     outboundCalls: cleanOutboundCalls(data.outboundCalls),
     workspaceCalls: cleanWorkspaceCalls(data.workspaceCalls),
     writeProposals: cleanWriteProposals(data.writeProposals),
@@ -656,6 +681,7 @@ function cleanStreamEvent(
   }
   return {
     type: "error",
+    ...(readAiFailure(record.failure) ? { failure: readAiFailure(record.failure)! } : {}),
     message:
       typeof record.message === "string"
         ? record.message

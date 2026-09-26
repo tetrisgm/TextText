@@ -91,6 +91,7 @@ import {
 import { type AssistantViewSnapshot } from "./context";
 import {
   nativeAssistantAvailable,
+  nativeEmbeddedAssistantAvailable,
   registerNativeAssistantTools,
   requestNativeAssistant,
   subscribeNativeAssistant,
@@ -137,6 +138,10 @@ import {
   assistantModelChoices,
   readAssistantModelPreference,
   saveAssistantModelPreference,
+  readAssistantConnectionPreference,
+  saveAssistantConnectionPreference,
+  ASSISTANT_CONNECTION_PREFERENCE_EVENT,
+  type AssistantConnectionPreference,
 } from "./model-preference";
 import { appendNativeOwnerPrompt } from "./native-owner-prompt";
 import {
@@ -683,10 +688,13 @@ export function useNativeAssistant({
   const nativeItemTypeDesignRef = useRef<{
     blueprint: ItemTypeBlueprint | null;
     lastError: string | null;
+    current?: ItemTypeBlueprint;
+    validationFailures: number;
     reject: (error: Error) => void;
     resolve: (blueprint: ItemTypeBlueprint) => void;
     request: string;
     timeout: ReturnType<typeof setTimeout>;
+    cleanup: () => void;
   } | null>(null);
   const getPoolRef = useRef(getPool);
   const getViewRef = useRef(getView);
@@ -710,6 +718,18 @@ export function useNativeAssistant({
     ownerScopeReady && conversationOwnerScope?.scope
     ? `${handle}:${conversationOwnerScope.scope}`
     : null;
+  const [storedConnectionPreference, setStoredConnectionPreference] = useState<AssistantConnectionPreference | null>(null);
+  const connectionPreference = storedConnectionPreference ?? (nativeEmbeddedAssistantAvailable() ? "native" : "api-key");
+  useEffect(() => {
+    const refresh = (event?: Event) => {
+      const detail = (event as CustomEvent<{ ownerScopeKey: string; choice: AssistantConnectionPreference }> | undefined)?.detail;
+      if (detail && detail.ownerScopeKey !== conversationStoreKey) return;
+      setStoredConnectionPreference(detail?.choice ?? (conversationStoreKey ? readAssistantConnectionPreference(conversationStoreKey) : null));
+    };
+    refresh();
+    window.addEventListener(ASSISTANT_CONNECTION_PREFERENCE_EVENT, refresh);
+    return () => window.removeEventListener(ASSISTANT_CONNECTION_PREFERENCE_EVENT, refresh);
+  }, [conversationStoreKey]);
   // Assigned during render, before effects run, so an async continuation from
   // the previous workspace cannot pass a stale owner check in the gap between
   // navigation and effect cleanup.
@@ -745,6 +765,7 @@ export function useNativeAssistant({
     const itemTypeDesign = nativeItemTypeDesignRef.current;
     if (itemTypeDesign) {
       clearTimeout(itemTypeDesign.timeout);
+      itemTypeDesign.cleanup();
       nativeItemTypeDesignRef.current = null;
       itemTypeDesign.reject(new Error(message));
     } else {
@@ -958,6 +979,12 @@ export function useNativeAssistant({
       if (event.type === "status") {
         setNativeConnection((current) => ({
           state: event.state ?? current?.state ?? "unavailable",
+          phase: event.phase ?? null,
+          verificationUrl: event.verificationUrl ?? null,
+          userCode: event.userCode ?? null,
+          message: event.message ?? null,
+          diagnosticId: event.diagnosticId ?? null,
+          model: event.model ?? current?.model ?? null,
           kind: event.kind ?? current?.kind ?? "native-codex",
           providerLabel:
             event.providerLabel ??
@@ -1104,6 +1131,7 @@ export function useNativeAssistant({
             pending.blueprint = parseNativeItemTypePreviewArguments(
               event.arguments,
               pending.request,
+              pending.current,
             );
             pending.lastError = null;
             submitNativeAssistantToolResult(event.callId, {
@@ -1113,6 +1141,20 @@ export function useNativeAssistant({
             });
           } catch (error) {
             pending.lastError = assistantAgentError(error);
+            pending.validationFailures += 1;
+            if (pending.validationFailures >= 3) {
+              submitNativeAssistantToolResult(event.callId, { error: pending.lastError, correctionLimitReached: true }, true);
+              requestNativeAssistant("assistantCancel", undefined, fence.conversationId);
+              clearTimeout(pending.timeout);
+              pending.cleanup();
+              nativeItemTypeDesignRef.current = null;
+              nativeTurnFenceRef.current = null;
+              nativeThreadRef.current = null;
+              nativeConversationRef.current = null;
+              setThreadBusy(eventThread, false);
+              pending.reject(new Error(pending.lastError));
+              return;
+            }
             submitNativeAssistantToolResult(
               event.callId,
               { error: pending.lastError },
@@ -1225,6 +1267,7 @@ export function useNativeAssistant({
         const itemTypeDesign = nativeItemTypeDesignRef.current;
         if (itemTypeDesign) {
           clearTimeout(itemTypeDesign.timeout);
+      itemTypeDesign.cleanup();
           nativeItemTypeDesignRef.current = null;
           nativeTurnFenceRef.current = null;
           nativeThreadRef.current = null;
@@ -1297,12 +1340,13 @@ export function useNativeAssistant({
         const itemTypeDesign = nativeItemTypeDesignRef.current;
         if (itemTypeDesign) {
           clearTimeout(itemTypeDesign.timeout);
+      itemTypeDesign.cleanup();
           nativeItemTypeDesignRef.current = null;
           nativeTurnFenceRef.current = null;
           nativeThreadRef.current = null;
           nativeConversationRef.current = null;
           setThreadBusy(eventThread, false);
-          itemTypeDesign.reject(new Error(assistantAgentError(event.message)));
+          itemTypeDesign.reject(new Error(`${assistantAgentError(event.message)}${event.diagnosticId ? ` Reference: ${event.diagnosticId}.` : ""}`));
           return;
         }
         if (nativeProofsRef.current.length > 0) {
@@ -1362,11 +1406,17 @@ export function useNativeAssistant({
       current,
       folderName,
       request,
+      signal,
+      requestId,
     }: {
       current?: ItemTypeBlueprint;
       folderName?: string;
       request: string;
+      signal?: AbortSignal;
+      requestId: string;
+      model?: string | null;
     }) => {
+      if (signal?.aborted) return Promise.reject(new DOMException("Customization cancelled.", "AbortError"));
       if (!ownerScopeReady || !conversationStoreKey) {
         return Promise.reject(
           new Error("Only the workspace owner can use this assistant."),
@@ -1392,7 +1442,20 @@ export function useNativeAssistant({
         const designThread = threadKey;
         // Item-type design is an invisible utility turn, so it must never run
         // in the visible chat's model thread or contaminate later replies.
-        const designConversationId = `item-type:${nextMessageId()}`;
+        const designConversationId = `item-type:${requestId}`;
+        const cleanup = () => signal?.removeEventListener("abort", abort);
+        const abort = () => {
+          if (nativeTurnFenceRef.current?.conversationId !== designConversationId) return;
+          clearTimeout(timeout);
+          cleanup();
+          requestNativeAssistant("assistantCancel", undefined, designConversationId);
+          nativeItemTypeDesignRef.current = null;
+          nativeTurnFenceRef.current = null;
+          nativeThreadRef.current = null;
+          nativeConversationRef.current = null;
+          setThreadBusy(designThread, false);
+          reject(new DOMException("Customization cancelled.", "AbortError"));
+        };
         const timeout = setTimeout(() => {
           if (
             !nativeItemTypeDesignRef.current ||
@@ -1405,6 +1468,7 @@ export function useNativeAssistant({
             undefined,
             designConversationId,
           );
+          cleanup();
           nativeItemTypeDesignRef.current = null;
           nativeTurnFenceRef.current = null;
           nativeThreadRef.current = null;
@@ -1419,11 +1483,15 @@ export function useNativeAssistant({
         nativeItemTypeDesignRef.current = {
           blueprint: null,
           lastError: null,
+          current,
+          validationFailures: 0,
           reject,
           resolve,
           request,
           timeout,
+          cleanup,
         };
+        signal?.addEventListener("abort", abort, { once: true });
         nativeTurnFenceRef.current = {
           conversationId: designConversationId,
           handle,
@@ -1436,9 +1504,12 @@ export function useNativeAssistant({
         const started = submitNativeAssistantTurn(
           nativeItemTypeDesignPrompt({ current, folderName, request }),
           designConversationId,
+          [],
+          requestId,
         );
         if (!started) {
           clearTimeout(timeout);
+          cleanup();
           nativeItemTypeDesignRef.current = null;
           nativeTurnFenceRef.current = null;
           nativeThreadRef.current = null;
@@ -1460,7 +1531,7 @@ export function useNativeAssistant({
   useEffect(() => {
     let cancelled = false;
     if (!ownerScopeReady) return;
-    void cloudAssistantStatus(handle)
+    const refresh = () => { void cloudAssistantStatus(handle)
       .then((status) => {
         if (!cancelled) {
           setCloudProvider(status.enabled ? status.provider : null);
@@ -1468,9 +1539,12 @@ export function useNativeAssistant({
       })
       .catch(() => {
         if (!cancelled) setCloudProvider(null);
-      });
+      }); };
+    refresh();
+    window.addEventListener("texttext:ai-connection-changed", refresh);
     return () => {
       cancelled = true;
+      window.removeEventListener("texttext:ai-connection-changed", refresh);
     };
   }, [handle, ownerScopeReady, setCloudProvider]);
 
@@ -1550,8 +1624,11 @@ export function useNativeAssistant({
         const localAttachments = attachments.filter(
           (attachment) => !attachment.workspaceItemId,
         );
+        if (connectionPreference === "native" && nativeConnection?.state !== "ready") {
+          throw new Error(nativeConnection?.message || "Connect and check your ChatGPT account before sending this request.");
+        }
         const nativeReady =
-          nativeConnection?.state === "ready" &&
+          connectionPreference === "native" && nativeConnection?.state === "ready" &&
           !nativeConversationRef.current;
         const cloudAttachments = nativeReady
           ? []
@@ -1871,6 +1948,7 @@ export function useNativeAssistant({
       conversationStoreKey,
       handle,
       nativeConnection,
+      connectionPreference,
       activeConversationId,
       ownerScopeReady,
       selectedCloudModel,
@@ -1882,6 +1960,10 @@ export function useNativeAssistant({
 
   const createSelectionPreview = useCallback(async (request: InlineRequest) => {
     if (!ownerScopeReady || !conversationStoreKey) return null;
+    if (connectionPreference !== "api-key") {
+      reportSelectionError(request.itemId, "Selection previews need the provider-key connection. You can ask your connected agent in the assistant instead.");
+      return null;
+    }
     const view = getViewRef.current();
     if (view.postId !== request.itemId || view.level !== "edit") return null;
     const scope = { ...currentOwnerScopeRef.current };
@@ -1920,7 +2002,7 @@ export function useNativeAssistant({
         }));
       },
     });
-  }, [conversationStoreKey, handle, ownerScopeReady, selectedCloudModel, threadKey, tools]);
+  }, [connectionPreference, conversationStoreKey, handle, ownerScopeReady, selectedCloudModel, threadKey, tools]);
 
   const runQuickAction = useCallback(
     async (action: NativeQuickActionId, selectionRequired: boolean | string = false) => {
@@ -1928,6 +2010,10 @@ export function useNativeAssistant({
       const thread = threadKey;
       if (busyThreads.has(thread)) return;
       const view = getViewRef.current();
+      if (connectionPreference !== "api-key") {
+        if (view.postId) reportSelectionError(view.postId, "Selection previews need the provider-key connection. Ask your connected agent in the assistant instead.");
+        return;
+      }
       if (!view.postId) return;
       const draft = readOpenWorkspaceItemDraft(view.postId);
       const frozen = draft?.selection ?? draft?.writingSelection;
@@ -2095,6 +2181,7 @@ export function useNativeAssistant({
       contextLabel,
       conversationStoreKey,
       createSelectionPreview,
+      connectionPreference,
       handle,
       ownerScopeReady,
       selectedCloudModel,
@@ -2564,17 +2651,17 @@ export function useNativeAssistant({
   }, [nativeConnection?.state, threadKey]);
 
   const quickActions =
-    ownerScopeReady && getView().postId && cloudProvider
+    ownerScopeReady && connectionPreference === "api-key" && getView().postId && cloudProvider
       ? NATIVE_QUICK_ACTIONS.map((action) => ({
           ...action,
           description: `${action.label} with ${cloudProvider}`,
         }))
       : [];
-  const nativeReady = ownerScopeReady && nativeConnection?.state === "ready";
-  const attachmentsAvailable = nativeReady || Boolean(cloudProvider);
+  const nativeReady = ownerScopeReady && connectionPreference === "native" && nativeConnection?.state === "ready";
+  const attachmentsAvailable = nativeReady || (connectionPreference === "api-key" && Boolean(cloudProvider));
   const attachmentAccept = nativeReady
     ? assistantAttachmentAccept({ ocr: true })
-    : cloudProvider
+    : connectionPreference === "api-key" && cloudProvider
       ? assistantAttachmentAccept({ vision: true })
       : "";
   const attachmentTitle = nativeReady
@@ -2613,8 +2700,8 @@ export function useNativeAssistant({
     [scopedJobs, threadKey],
   );
   const modelChoices = useMemo(
-    () => assistantModelChoices(cloudProvider),
-    [cloudProvider],
+    () => connectionPreference === "api-key" ? assistantModelChoices(cloudProvider) : [],
+    [cloudProvider, connectionPreference],
   );
   const ownerScopeStatus: "checking" | "denied" | "ready" = ownerScopeReady
     ? "ready"
@@ -2671,7 +2758,7 @@ export function useNativeAssistant({
     attachmentsAvailable,
     attachmentTitle,
     applyProposal,
-    cloudProvider,
+    cloudProvider: connectionPreference === "api-key" ? cloudProvider : null,
     modelChoices,
     selectedCloudModel,
     selectCloudModel: (model: string) => {
@@ -2680,6 +2767,14 @@ export function useNativeAssistant({
     },
     decideWriteProposal,
     cancel,
+    connectionPreference,
+    selectConnection: (choice: AssistantConnectionPreference) => {
+      if (conversationStoreKey) {
+        setStoredConnectionPreference(choice);
+        saveAssistantConnectionPreference(conversationStoreKey, choice);
+      }
+    },
+    cancelNativeSetup: () => { if (ownerScopeReady) requestNativeAssistant("assistantCancelSetup"); },
     nativeConnection: ownerScopeReady ? nativeConnection : null,
     connectNativeAssistant: () => {
       if (ownerScopeReady) requestNativeAssistant("assistantConnect");

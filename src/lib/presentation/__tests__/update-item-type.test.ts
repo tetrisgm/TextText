@@ -371,3 +371,26 @@ describe("correcting a legacy row declaration", () => {
     expect(corrected).toMatchObject({ fields: [{ id: "tags", multiple: false }] });
   });
 });
+
+
+describe("reconciling a customization save", () => {
+  it("returns the same immutable look after a lost create response without reapplying a folder", async () => {
+    vi.clearAllMocks();
+    let stored: unknown = null;
+    mocks.getDocumentTemplate.mockImplementation(async () => stored);
+    mocks.getFolderByPath.mockResolvedValue({ id: "folder-1", path: "notes" });
+    mocks.createDocumentTemplateVersion.mockImplementation(async ({ definition }) => { stored = { ...definition, version: 1 }; return stored; });
+    mocks.retemplateFolderItems.mockResolvedValue({ changed: 1, contested: 0, remaining: 0 });
+    const { itemTypeBlueprintSchema } = await import("@/lib/presentation/item-type-blueprint");
+    const input = { actor, blogId: "blog-1", handle: "shoku", blueprint: itemTypeBlueprintSchema.parse({ name: "Research", fields: [], item: { shape: "note" }, collection: { layout: "list" } }), folderPath: "notes", applyToExisting: true, requestId: "e7f15d0c-e7a4-4ae6-82c3-6e4c1b756780" };
+    const first = await createWorkspaceItemType(input);
+    const retry = await createWorkspaceItemType(input);
+    expect(retry.definition).toEqual(first.definition);
+    expect(retry.recovered).toBe(true);
+    expect(mocks.createDocumentTemplateVersion).toHaveBeenCalledTimes(1);
+    expect(mocks.setFolderTemplate).toHaveBeenCalledTimes(1);
+    expect(mocks.retemplateFolderItems).toHaveBeenCalledTimes(1);
+    await expect(createWorkspaceItemType({ ...input, blueprint: { ...input.blueprint, name: "Different" } })).rejects.toThrow("different look");
+    expect(mocks.createDocumentTemplateVersion).toHaveBeenCalledTimes(1);
+  });
+});

@@ -35,11 +35,15 @@ describe("applyItemTemplateAction", () => {
     mocks.getBlog.mockResolvedValue({ handle: "writer" });
     mocks.getDocumentTemplate.mockResolvedValue({ id: "research", version: 2 });
     mocks.getPostById.mockResolvedValue({ id: "post-1", revision: 7, slug: "saved-source", visibility: "private", status: "draft", document });
-    mocks.savePost.mockImplementation(async (_handle, post) => post);
+    mocks.savePost.mockImplementation(async (_handle, post) => {
+      const saved = { ...post, revision: 8 };
+      mocks.getPostById.mockResolvedValue(saved);
+      return saved;
+    });
   });
 
   it("changes only the selected look while retaining source and annotations", async () => {
-    expect(await applyItemTemplateAction("writer", "post-1", "research", 2)).toEqual({ ok: true });
+    expect(await applyItemTemplateAction("writer", "post-1", "research", 2, 7)).toMatchObject({ ok: true, revision: 8, document: { content: document.content, presentation: { template: { id: "research", version: 2 } } } });
     expect(mocks.savePost).toHaveBeenCalledWith("writer", expect.objectContaining({
       visibility: "private", status: "draft",
       document: {
@@ -50,15 +54,33 @@ describe("applyItemTemplateAction", () => {
     expect(mocks.revalidateBlogPaths).toHaveBeenCalled();
   });
 
+  it("refuses a preview based on an older revision", async () => {
+    const result = await applyItemTemplateAction("writer", "post-1", "research", 2, 6);
+    expect(result).toMatchObject({ ok: false, code: "conflict", revision: 7 });
+    expect(mocks.savePost).not.toHaveBeenCalled();
+  });
+
+  it("reconciles an ambiguous response without another mutation", async () => {
+    const first = await applyItemTemplateAction("writer", "post-1", "research", 2, 7);
+    const retry = await applyItemTemplateAction("writer", "post-1", "research", 2, 7);
+    expect(retry).toEqual(first);
+    expect(mocks.savePost).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not claim a save whose authoritative readback differs", async () => {
+    mocks.savePost.mockImplementationOnce(async (_handle, post) => post);
+    expect(await applyItemTemplateAction("writer", "post-1", "research", 2, 7)).toMatchObject({ ok: false, code: "conflict" });
+  });
+
   it("refuses read-only access and never saves", async () => {
     mocks.getBlogEditAccess.mockResolvedValue({ isOwner: false });
-    expect(await applyItemTemplateAction("writer", "post-1", "research", 2)).toMatchObject({ ok: false });
+    expect(await applyItemTemplateAction("writer", "post-1", "research", 2, 7)).toMatchObject({ ok: false });
     expect(mocks.savePost).not.toHaveBeenCalled();
   });
 
   it("keeps content unchanged when the saved look is missing", async () => {
     mocks.getDocumentTemplate.mockResolvedValue(null);
-    expect(await applyItemTemplateAction("writer", "post-1", "research", 2)).toMatchObject({ ok: false });
+    expect(await applyItemTemplateAction("writer", "post-1", "research", 2, 7)).toMatchObject({ ok: false });
     expect(mocks.savePost).not.toHaveBeenCalled();
   });
 });

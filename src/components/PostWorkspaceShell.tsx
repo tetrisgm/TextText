@@ -615,17 +615,18 @@ function LocalWorkspaceShell({
     [sourcePool],
   );
   const displayPoolRef = useRef(displayPool);
-  const studioTargetPostIdRef = useRef<string | null>(null);
   const loadItemTypeStudioPreviewDocuments = useCallback(
-    async (folderPath: string) => {
+    async (folderPath: string, targetPostId?: string, refresh = false) => {
       const currentPool = displayPoolRef.current;
       const candidates = currentPool.posts.filter(
-        (post) => folderPathForPoolPost(currentPool, post) === folderPath,
-      ).sort((left, right) => Number(right.id === studioTargetPostIdRef.current) - Number(left.id === studioTargetPostIdRef.current));
+        (post) => targetPostId ? post.id === targetPostId : folderPathForPoolPost(currentPool, post) === folderPath,
+      );
       const sample = await loadStudioFolderSample(candidates, async (post) => {
-        await ensurePostDocument(currentPool.blogId, post.id);
+        await ensurePostDocument(currentPool.blogId, post.id, { force: refresh });
+        if (displayPoolRef.current.blogId !== currentPool.blogId) return null;
         const cached = getCachedWorkspacePostDocument(currentPool.blogId, post.id);
         return cached ? {
+          postId: post.id, revision: cached.revision,
           folderPath, document: cached.document,
           pinned: Boolean(post.pinned),
           createdAt: post.date ?? null,
@@ -986,14 +987,19 @@ function LocalWorkspaceShell({
   >(null);
   const [itemTypeStudioTargetPostId, setItemTypeStudioTargetPostId] = useState<string | null>(null);
   const designerReturnRef = useRef<(() => void) | null>(null);
+  const designerOpenRequestRef = useRef(0);
   const openTypeDesigner = useCallback(async (templateId: string, folderPath = "") => {
+    const request = ++designerOpenRequestRef.current;
     const current = viewRef.current;
     const targetPostId = current.level === "post" || current.level === "edit" ? current.postId : null;
-    studioTargetPostIdRef.current = targetPostId;
-    setItemTypeStudioTargetPostId(targetPostId);
+    const targetWorkspaceId = displayPoolRef.current.blogId;
     const editing = templateId && !templateId.startsWith("texttext.")
       ? await readEditableType(displayPool.blog.handle, templateId).catch(() => null)
       : null;
+    const currentView = viewRef.current;
+    if (request !== designerOpenRequestRef.current || targetWorkspaceId !== displayPoolRef.current.blogId ||
+        (targetPostId && (!(currentView.level === "post" || currentView.level === "edit") || currentView.postId !== targetPostId))) return;
+    setItemTypeStudioTargetPostId(targetPostId);
     setItemTypeStudioEditing(editing);
     setItemTypeStudioFolderPath(folderPath);
     await new Promise<void>((resolve) => { designerReturnRef.current = resolve; });
@@ -5167,7 +5173,7 @@ function LocalWorkspaceShell({
       selectedPostId={effectiveSelectedPostId}
       selectedPostIds={effectiveSelectedPostIds}
       view={view}
-      assistantConnection={assistant.nativeConnection}
+      assistantConnection={assistant.connectionPreference === "native" ? assistant.nativeConnection : null}
       assistantCloudProvider={assistant.cloudProvider}
       onConnectAssistant={assistant.connectNativeAssistant}
       onOpenAssistant={() => changeAssistantState("pinned")}
@@ -5242,7 +5248,7 @@ function LocalWorkspaceShell({
         onNewItem={runCreateCurrent}
         onSettings={navigateSettings}
         onBuildItemType={(folder) => {
-          studioTargetPostIdRef.current = null;
+          designerOpenRequestRef.current += 1;
           setItemTypeStudioTargetPostId(null);
           setItemTypeStudioEditing(null);
           setItemTypeStudioFolderPath(folder.path);
@@ -5381,7 +5387,7 @@ function LocalWorkspaceShell({
           workspaceHandle={displayPool.blog.handle}
           agent={assistantAgentIdentity(
             assistant.cloudProvider,
-            assistant.nativeConnection,
+            assistant.connectionPreference === "native" ? assistant.nativeConnection : null,
             collaboratorColor,
             assistant.runningJobs > 0,
           )}
@@ -5457,8 +5463,9 @@ function LocalWorkspaceShell({
               ? "Checking assistant access"
               : assistant.ownerScopeStatus === "denied"
                 ? "Assistant is available to the workspace owner"
-                : assistant.cloudProvider ||
-                    assistant.nativeConnection?.state === "ready"
+                : (assistant.connectionPreference === "native"
+                    ? assistant.nativeConnection?.state === "ready"
+                    : Boolean(assistant.cloudProvider))
                   ? undefined
                   : "Connect an AI to start"
           }
@@ -5470,7 +5477,7 @@ function LocalWorkspaceShell({
             accessState={assistant.ownerScopeStatus}
             activeCloudProvider={assistant.activeCloudProvider}
             cloudProvider={assistant.cloudProvider}
-            nativeConnection={assistant.nativeConnection}
+            nativeConnection={assistant.connectionPreference === "native" ? assistant.nativeConnection : null}
             onConnectNative={assistant.connectNativeAssistant}
             aiSettingsHref={`${workspaceSettingsHref(homePath)}#api-key-connections`}
             onOpenAiSettings={() => changeAssistantState("hidden")}
@@ -5516,16 +5523,20 @@ function LocalWorkspaceShell({
         </AssistantConversationState>
       </div>
       <UpdatedBuildNotice />
-      {itemTypeStudioFolderPath !== null ? (
+      {itemTypeStudioFolderPath !== null && assistant.ownerScopeReady ? (
         <ItemTypeStudio
+          key={`${assistant.conversationStoreKey ?? "checking"}:${displayPool.blogId}:${itemTypeStudioTargetPostId ?? itemTypeStudioFolderPath}`}
           availableTypes={displayPool.templates}
           blogId={displayPool.blogId}
           folders={displayPool.folders}
-          generateWithConnectedAgent={
-            assistant.nativeConnection?.state === "ready"
-              ? assistant.generateItemTypeBlueprint
-              : undefined
-          }
+          generateWithConnectedAgent={assistant.generateItemTypeBlueprint}
+          ownerScopeKey={assistant.conversationStoreKey}
+          nativeConnection={assistant.nativeConnection}
+          selectedModel={assistant.selectedCloudModel}
+          connectionPreference={assistant.connectionPreference}
+          onChooseConnection={assistant.selectConnection}
+          onConnectNative={assistant.connectNativeAssistant}
+          onCancelNativeSetup={assistant.cancelNativeSetup}
           handle={displayPool.blog.handle}
           editing={itemTypeStudioEditing ?? undefined}
           initialFolderPath={itemTypeStudioFolderPath}
@@ -5544,7 +5555,7 @@ function LocalWorkspaceShell({
             setItemTypeStudioFolderPath(null);
             setItemTypeStudioEditing(null);
             setItemTypeStudioTargetPostId(null);
-            studioTargetPostIdRef.current = null;
+            designerOpenRequestRef.current += 1;
             designerReturnRef.current?.();
             designerReturnRef.current = null;
           }}

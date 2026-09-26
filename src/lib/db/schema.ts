@@ -266,6 +266,10 @@ export const workspaceAiConfigs = pgTable(
     provider: text("provider").notNull(),
     model: text("model").notNull(),
     apiKeyCiphertext: text("api_key_ciphertext").notNull(),
+    /** Generation proof and last safe failure, never provider response text. */
+    checkedAt: timestamp("checked_at"),
+    failureCode: text("failure_code"),
+    failureRequestId: text("failure_request_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

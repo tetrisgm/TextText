@@ -1,7 +1,10 @@
 // Server-only: this module reads node:crypto + the DB. It is never imported by
 // a client component (WorkspaceSettings imports only the CloudAiProvider type),
-// and the decrypted key is used solely in the /api/ai route.
-import { and, eq, isNull } from "drizzle-orm";
+// and the decrypted key is used solely for server-side provider requests.
+import { and, eq, isNull, lte } from "drizzle-orm";
+import { generateText } from "ai";
+import { workspaceLanguageModel } from "@/lib/ai/provider-model.server";
+import { AiConnectionError, aiFailure, aiRequestId, classifyAiFailure, isAiFailureCode, type AiFailure } from "@/lib/ai/provider-failure";
 import { decryptSecret, encryptSecret } from "@/lib/secret-box";
 import { db } from "@/lib/db/client";
 import { blogs, users, workspaceAiConfigs } from "@/lib/db/schema";
@@ -13,13 +16,6 @@ import {
   type CloudAiProvider,
 } from "@/lib/ai/provider-catalog";
 
-/** Dev only: point provider checks at the same local mock the assistant
- * route may use. Production always returns null. */
-function devAiBaseUrl(): string | null {
-  if (process.env.NODE_ENV === "production") return null;
-  return process.env.TEXTTEXT_AI_BASE_URL || null;
-}
-
 export type { CloudAiProvider } from "@/lib/ai/provider-catalog";
 type CloudProviderLabel = "Anthropic" | "OpenAI";
 
@@ -27,13 +23,35 @@ export type WorkspaceAiConfig = {
   provider: CloudAiProvider;
   model: string;
   apiKey: string;
+  /** Fences late health updates against replacement or a newer attempt. Server-only. */
+  source?: { blogId: string; ciphertext: string; model: string; attemptStartedAt: Date };
 };
 
-type WorkspaceAiConfigStatus = {
+export type WorkspaceAiConfigStatus = {
   configured: boolean;
   provider: CloudAiProvider | null;
   model: string | null;
+  connectionState: "not-set-up" | "unchecked" | "ready" | "needs-attention";
+  checkedAt: string | null;
+  failure?: AiFailure;
 };
+
+const NOT_CONFIGURED: WorkspaceAiConfigStatus = { configured: false, provider: null, model: null, connectionState: "not-set-up", checkedAt: null };
+
+function configStatus(row: { provider: unknown; model: string; checkedAt?: Date | null; failureCode?: string | null; failureRequestId?: string | null } | undefined): WorkspaceAiConfigStatus {
+  if (!row || !isCloudAiProvider(row.provider)) return { ...NOT_CONFIGURED };
+  const failure = isAiFailureCode(row.failureCode)
+    ? aiFailure(row.failureCode, aiRequestId(row.failureRequestId))
+    : !isCloudAiModel(row.provider, row.model) ? aiFailure("model-access", aiRequestId()) : undefined;
+  return {
+    configured: true,
+    provider: row.provider,
+    model: row.model,
+    checkedAt: row.checkedAt?.toISOString() ?? null,
+    connectionState: failure ? "needs-attention" : row.checkedAt ? "ready" : "unchecked",
+    ...(failure ? { failure } : {}),
+  };
+}
 
 export function developmentWorkspaceAiConfig(): WorkspaceAiConfig | null {
   if (
@@ -78,37 +96,24 @@ export async function validateWorkspaceAiConnection(
   model: string,
   apiKey: string,
 ): Promise<void> {
-  // Development with TEXTTEXT_DEV_AI_KEY set: the stored key is never the one
-  // that talks to the provider, because /api/ai substitutes the Keychain key at
-  // request time. Validating the placeholder would then be theatre that makes
-  // the assistant impossible to configure in dev without either putting a real
-  // credential through a form or running the mock. Production never takes this
-  // branch: the guard requires both a non-production build and the dev key.
-  if (process.env.NODE_ENV !== "production" && process.env.TEXTTEXT_DEV_AI_KEY) {
-    return;
-  }
-  const endpoint =
-    provider === "openai"
-      ? `${devAiBaseUrl() ?? "https://api.openai.com/v1"}/models/${encodeURIComponent(model)}`
-      : `${devAiBaseUrl() ?? "https://api.anthropic.com/v1"}/models/${encodeURIComponent(model)}`;
-  const response = await fetch(endpoint, {
-    method: "GET",
-    headers:
-      provider === "openai"
-        ? { Authorization: `Bearer ${apiKey}` }
-        : {
-            "x-api-key": apiKey,
-            "anthropic-version": "2023-06-01",
-          },
-    signal: AbortSignal.timeout(8_000),
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    throw new Error(
-      response.status === 401 || response.status === 403
-        ? `That ${cloudProviderLabel(provider)} API key was not accepted.`
-        : `The selected ${cloudProviderLabel(provider)} model is not available to this API account.`,
-    );
+  const requestId = aiRequestId();
+  const signal = AbortSignal.timeout(15_000);
+  try {
+    // Exercise the same SDK and generation endpoint as the requested preview.
+    // The explicit supplied key must not be replaced by a developer override.
+    const result = await generateText({
+      model: workspaceLanguageModel({ provider, model, apiKey }, { useDevelopmentOverride: false }),
+      prompt: "Reply with the single word OK.",
+      maxOutputTokens: 32,
+      maxRetries: 0,
+      abortSignal: signal,
+    });
+    signal.throwIfAborted();
+    if (!result.text.trim()) throw new Error("Empty generation response");
+  } catch (error) {
+    const failure = classifyAiFailure(signal.aborted ? signal.reason : error, requestId);
+    console.error("ai connection check failed", { provider, model, ...failure });
+    throw new AiConnectionError(failure);
   }
 }
 
@@ -117,31 +122,21 @@ export async function getWorkspaceAiConfigStatus(
 ): Promise<WorkspaceAiConfigStatus> {
   const development = developmentWorkspaceAiConfig();
   if (development) {
-    return {
-      configured: true,
-      provider: development.provider,
-      model: development.model,
-    };
+    return configStatus(development);
   }
-  if (!db) return { configured: false, provider: null, model: null };
+  if (!db) return { ...NOT_CONFIGURED };
   const [row] = await db
     .select({
       provider: workspaceAiConfigs.provider,
       model: workspaceAiConfigs.model,
+      checkedAt: workspaceAiConfigs.checkedAt,
+      failureCode: workspaceAiConfigs.failureCode,
+      failureRequestId: workspaceAiConfigs.failureRequestId,
     })
     .from(workspaceAiConfigs)
     .where(eq(workspaceAiConfigs.blogId, blogId))
     .limit(1);
-  const provider = row?.provider;
-  return isCloudAiProvider(provider)
-    ? {
-        configured: true,
-        provider,
-        model: isCloudAiModel(provider, row.model)
-          ? row.model
-          : defaultCloudAiModel(provider),
-      }
-    : { configured: false, provider: null, model: null };
+  return configStatus(row);
 }
 
 export async function getWorkspaceAiConfigStatusForOwner(
@@ -149,32 +144,23 @@ export async function getWorkspaceAiConfigStatusForOwner(
 ): Promise<WorkspaceAiConfigStatus> {
   const development = developmentWorkspaceAiConfig();
   if (development) {
-    return {
-      configured: true,
-      provider: development.provider,
-      model: development.model,
-    };
+    return configStatus(development);
   }
-  if (!db) return { configured: false, provider: null, model: null };
+  if (!db) return { ...NOT_CONFIGURED };
   const [row] = await db
     .select({
       provider: workspaceAiConfigs.provider,
       model: workspaceAiConfigs.model,
+      checkedAt: workspaceAiConfigs.checkedAt,
+      failureCode: workspaceAiConfigs.failureCode,
+      failureRequestId: workspaceAiConfigs.failureRequestId,
     })
     .from(workspaceAiConfigs)
     .innerJoin(blogs, eq(workspaceAiConfigs.blogId, blogs.id))
     .innerJoin(users, eq(blogs.ownerId, users.id))
     .where(and(eq(users.appleSub, sub), isNull(blogs.deletedAt)))
     .limit(1);
-  return isCloudAiProvider(row?.provider)
-    ? {
-        configured: true,
-        provider: row.provider,
-        model: isCloudAiModel(row.provider, row.model)
-          ? row.model
-          : defaultCloudAiModel(row.provider),
-      }
-    : { configured: false, provider: null, model: null };
+  return configStatus(row);
 }
 
 export async function saveWorkspaceAiConfig(
@@ -185,12 +171,13 @@ export async function saveWorkspaceAiConfig(
 ): Promise<void> {
   if (!db) throw new Error("Cloud AI settings need a configured database.");
   const apiKeyCiphertext = encryptWorkspaceAiKey(apiKey);
+  const checkedAt = new Date();
   await db
     .insert(workspaceAiConfigs)
-    .values({ blogId, provider, model, apiKeyCiphertext })
+    .values({ blogId, provider, model, apiKeyCiphertext, checkedAt })
     .onConflictDoUpdate({
       target: workspaceAiConfigs.blogId,
-      set: { provider, model, apiKeyCiphertext, updatedAt: new Date() },
+      set: { provider, model, apiKeyCiphertext, updatedAt: new Date(), checkedAt, failureCode: null, failureRequestId: null },
     });
 }
 
@@ -206,15 +193,18 @@ export async function removeWorkspaceAiConfig(blogId: string): Promise<void> {
 // a server boundary.
 export async function getWorkspaceAiConfigForOwner(
   sub: string,
+  requestId?: string,
 ): Promise<WorkspaceAiConfig | null> {
   const development = developmentWorkspaceAiConfig();
   if (development) return development;
   if (!db) return null;
+  const attemptStartedAt = new Date();
   const [row] = await db
     .select({
       provider: workspaceAiConfigs.provider,
       model: workspaceAiConfigs.model,
       apiKeyCiphertext: workspaceAiConfigs.apiKeyCiphertext,
+      blogId: workspaceAiConfigs.blogId,
     })
     .from(workspaceAiConfigs)
     .innerJoin(blogs, eq(workspaceAiConfigs.blogId, blogs.id))
@@ -222,11 +212,43 @@ export async function getWorkspaceAiConfigForOwner(
     .where(and(eq(users.appleSub, sub), isNull(blogs.deletedAt)))
     .limit(1);
   if (!row || !isCloudAiProvider(row.provider)) return null;
-  return {
+  const config: WorkspaceAiConfig = {
     provider: row.provider,
-    model: isCloudAiModel(row.provider, row.model)
-      ? row.model
-      : defaultCloudAiModel(row.provider),
-    apiKey: decryptWorkspaceAiKey(row.apiKeyCiphertext),
+    model: row.model,
+    apiKey: "",
+    source: { blogId: row.blogId, ciphertext: row.apiKeyCiphertext, model: row.model, attemptStartedAt },
   };
+  try { config.apiKey = decryptWorkspaceAiKey(row.apiKeyCiphertext); }
+  catch {
+    const failure = aiFailure("configuration", aiRequestId(requestId));
+    await recordWorkspaceAiResult(config, failure);
+    throw new AiConnectionError(failure);
+  }
+  return config;
+}
+
+/** Only a request using this exact saved configuration may update its proof.
+ * No model request is made while reading status or launching the app. */
+export async function recordWorkspaceAiResult(config: WorkspaceAiConfig, failure: AiFailure | null, selectedModel = config.model): Promise<void> {
+  if (!db || !config.source || failure?.code === "cancelled" || failure?.code === "invalid-template") return;
+  if (selectedModel !== config.source.model && failure?.code !== "authentication") return;
+  try {
+    await db.update(workspaceAiConfigs).set({
+      updatedAt: config.source.attemptStartedAt,
+      ...(failure
+        ? { failureCode: failure.code, failureRequestId: failure.requestId }
+        : { checkedAt: new Date(), failureCode: null, failureRequestId: null }),
+    })
+      .where(and(
+        eq(workspaceAiConfigs.blogId, config.source.blogId),
+        eq(workspaceAiConfigs.apiKeyCiphertext, config.source.ciphertext),
+        eq(workspaceAiConfigs.provider, config.provider),
+        eq(workspaceAiConfigs.model, config.source.model),
+        lte(workspaceAiConfigs.updatedAt, config.source.attemptStartedAt),
+      ));
+  } catch {
+    // The authoritative generation outcome remains valid if its status write
+    // fails. Do not turn it into a repeatable content mutation.
+    console.error("ai connection status could not be recorded");
+  }
 }

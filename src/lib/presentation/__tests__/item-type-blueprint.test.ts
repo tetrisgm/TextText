@@ -242,6 +242,16 @@ describe("compileItemTypeBlueprint", () => {
     expect(serialized).toContain('"bind":"content.fields.excerpts"');
   });
 
+  it("narrows commentary while keeping body, source reference and existing fields", () => {
+    const starter = ITEM_TYPE_STARTERS.find((entry) => entry.id === "research-reader")!;
+    const template = compileItemTypeBlueprint({ ...starter.blueprint, item: { ...starter.blueprint.item, commentaryWidth: "narrow" } }, { id: "research-reader" });
+    const serialized = JSON.stringify(template.item);
+    expect(serialized).toContain('"id":"reader-notes-narrow"');
+    expect(serialized).toContain('"bind":"content.body"');
+    expect(serialized).toContain('"bind":"content.fields.sourceUrl"');
+    expect(template.fields.map((field) => field.id)).toEqual(["sourceUrl", "commentary", "excerpts"]);
+  });
+
   it("compiles people, relations, recurrence, workflows, constraints, and conditions safely", () => {
     const template = compileItemTypeBlueprint(
       {

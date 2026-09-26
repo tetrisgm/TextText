@@ -102,3 +102,21 @@ export function saveAssistantModelPreference(
   persist(handle, provider, model);
   return model;
 }
+
+export type AssistantConnectionPreference = "native" | "api-key";
+export const ASSISTANT_CONNECTION_PREFERENCE_EVENT = "texttext:assistant-connection-preference";
+
+/** Choice is owner-scoped; authenticating one connection never selects another. */
+export function readAssistantConnectionPreference(ownerScopeKey: string): AssistantConnectionPreference | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const value = window.localStorage.getItem(`texttext:assistant-connection:v1:${ownerScopeKey}`);
+    return value === "native" || value === "api-key" ? value : null;
+  } catch { return null; }
+}
+
+export function saveAssistantConnectionPreference(ownerScopeKey: string, choice: AssistantConnectionPreference): void {
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(`texttext:assistant-connection:v1:${ownerScopeKey}`, choice); } catch { /* Session choice remains usable. */ }
+  window.dispatchEvent(new CustomEvent(ASSISTANT_CONNECTION_PREFERENCE_EVENT, { detail: { ownerScopeKey, choice } }));
+}
