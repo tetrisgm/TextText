@@ -1,7 +1,7 @@
 # Agentic assistant implementation runbook
 
 This is the implementation and maintenance reference for TextText's agentic
-assistant as of 2026-08-24. It exists so a future Codex, Claude, or human
+assistant as of 2026-09-25. It exists so a future Codex, Claude, or human
 engineer can distinguish the product surfaces, follow a turn end to end, and
 change one layer without accidentally weakening another.
 
@@ -43,7 +43,7 @@ the same trust boundary.
 | Name | What it means | Authentication | Where the model runs | Write behavior |
 | --- | --- | --- | --- | --- |
 | Cloud in-app assistant | The right rail using a workspace-owned Anthropic or OpenAI key | Signed-in workspace owner plus exact workspace handle | Provider HTTPS API | Reads execute immediately. Eligible writes become durable owner-review proposals. |
-| Native in-app assistant | The right rail using the standalone Mac app's Codex App Server | Signed-in workspace owner plus native owner/workspace/conversation fence | Local Codex runtime using the eligible connected account | Canonical tools execute through the app command surface. Confirmation-marked operations still require the app confirmation callback. |
+| Native in-app assistant | The right rail using an available TextText Codex App Server | Signed-in workspace owner plus native owner/workspace/conversation fence | Local Codex runtime using the eligible connected account | Canonical tools execute through the app command surface. Confirmation-marked operations still require the app confirmation callback. |
 | Local external agent | Claude Code or Codex using the bundled `texttext` CLI | Signed-in app device credential | The external client | Direct authenticated command route with audit, idempotency, and conflict checks. No localhost server. |
 | Inbound hosted MCP | An external AI client calling TextText's `/api/mcp` | Revocable workspace bearer token | The external client | The token scope and canonical command executor authorize each call. |
 | Outbound MCP | The cloud in-app assistant using a third-party MCP server | Signed-in owner, enabled connection, exact `@mcp:<slug>` request, then proposal approval | Cloud provider plus remote MCP server | Discovery occurs only for the exact requested connection. Every remote tool call is an inert proposal until approval. |
@@ -74,8 +74,10 @@ opposite directions and must not share authorization assumptions.
 9. An ambiguous post-side-effect failure is terminal. Never offer a blind retry.
 10. Native events require the initiating opaque owner scope, workspace handle,
     and conversation id. Missing or late events fail closed.
-11. Store builds compile local process launch and local MCP machinery out. Do
-    not replace compile-time exclusion with a hidden runtime toggle.
+11. Store builds exclude external executable discovery, local MCP and the
+    external CLI. A native runtime must be an explicitly declared, signed
+    bundled helper with inherited sandbox restrictions and app-owned state.
+    Do not make a runtime capability claim from a compile-time flag alone.
 12. Releases, TestFlight uploads, deployments, and release records are separate
     owner decisions. Passing this runbook's source gates is not authorization to
     perform them.
@@ -91,6 +93,12 @@ One row per workspace. It stores the allowlisted provider and model plus an
 encrypted API key. `src/lib/ai/workspace-ai-config.server.ts` is the only
 module that decrypts the key for a provider request. The browser receives only
 connection status, provider label, and model. The key is write-only in Settings.
+`checked_at`, `failure_code`, and `failure_request_id` distinguish an unchecked
+saved key from generation proof or a classified failure. Setup uses the same
+generation adapter with the explicit submitted key and model, no developer key
+substitution, one small request, a deadline and no retry. Status reads never
+call the provider. Result writes are fenced by key/provider/model identity and
+attempt start time so an old turn cannot overwrite a newer connection result.
 
 Migration: `scripts/migrate-add-workspace-ai-config.mjs`.
 
@@ -252,8 +260,8 @@ conversation id.
    model preference, and the stable current view.
 2. `useNativeAssistant.submit` captures the owner store key, conversation id,
    thread key, and view before any asynchronous work.
-3. If native is unavailable, `cloud-client.ts` sends bounded history and context
-   to `POST /api/ai` and consumes its NDJSON stream.
+3. When the API-key connection is selected, `cloud-client.ts` sends bounded
+   history and context to `POST /api/ai` and consumes its NDJSON stream.
 4. The route authenticates the owner and exact workspace before resolving the
    encrypted provider key.
 5. `provider-catalog.ts` validates the exact model. Auto deterministically picks
@@ -282,7 +290,34 @@ conversation id.
     output and context items, never parsed from answer prose.
 
 The cloud provider never receives an arbitrary model id from the browser. An
-invalid selection falls back to the saved allowlisted model.
+invalid explicit selection fails with model-access feedback; it does not
+silently select another model. Missing per-turn selection uses the saved model.
+
+Provider failures carry an allowlisted classification and a UUID diagnostic
+reference through HTTP/stream events and safe server logs. Provider bodies,
+credentials and document text are never logged. Generation has a deadline and
+no SDK retry. Stop or response cancellation aborts the provider signal; a stream
+without a finish event is interrupted, not successful. Existing call receipts
+remain attached when a turn fails after effects, so recovery cannot blindly
+repeat a mutation.
+
+### Customize and setup continuity
+
+`ItemTypeStudio` binds work to the exact document, revision, template and save
+scope. Its existing assistant composer draft stores the prompt and preview
+timeline while compact setup runs. Successful supported setup resumes that
+request; cancellation preserves the draft and fences late results. Both the
+studio and normal assistant use the same selected connection and cloud model.
+
+The API route resolves the selected item through `store.ts`, verifies its
+workspace and revision, and supplies bounded source data and the pinned template.
+This is schema-constrained generation, not proof of general tool execution.
+The native utility path is a private conversation accepting only
+`preview_item_type`. Validation may request one repair; optional quality polish
+retains the valid first result without erasing a confirmed connection failure.
+Save actions keep permission, revision and audit checks and read back the
+authoritative result. Interrupted saves retain their request identity rather
+than replaying completed writes.
 
 ## Cloud workspace proposal state machine
 
@@ -466,7 +501,7 @@ Workspace Settings is the source of truth for what TextText itself is connected
 to. It inventories:
 
 - the workspace Anthropic or OpenAI key, provider, and model
-- the standalone native Codex connection when that edition is present
+- native Codex connection when the actual app reports a usable runtime
 - hosted machine-client and MCP bearer tokens, with revoke controls
 - outbound MCP servers, enabled state, tools, exact `@mcp` shortcut, and remove
   control
@@ -486,16 +521,19 @@ destination can no longer be re-resolved.
 | Owner instructions, skills, history, proposals | Yes | Yes | Yes |
 | Hosted `/api/mcp` | Yes | Yes | Yes |
 | Outbound public HTTPS MCP | Yes | Yes | Yes |
-| Embedded native Codex runtime | No | Yes | No |
+| Embedded native Codex runtime | No | External or declared bundled runtime | Declared sandboxed helper only; not in installed 1094 |
 | Bundled signed-in `texttext` CLI | No | Yes | No |
 | Local MCP bridge | No | Disabled | Compiled out |
 | Sparkle updater | No | Yes | Compiled out |
 
-`TEXTTEXT_STORE=1` selects Store Swift settings. Store builds must continue to
-compile without the Codex runtime locator, bundled CLI, local MCP execution,
-Sparkle, updater/appcast code, or broad filesystem entitlement. Ordinary App
-Sandbox network, user-selected file, app-group, and Keychain capabilities are
-not workarounds; they are the supported platform path.
+`TEXTTEXT_STORE=1` selects Store Swift settings. External runtime discovery,
+the bundled external CLI, local MCP execution, Sparkle and updater/appcast code
+remain excluded. Store source can select only a declared helper in its bundle
+whose signature inherits the sandbox; it uses app-owned `CODEX_HOME` and the
+documented device flow. This does not ship a helper or establish App Review
+acceptance. The isolated probe passed launch, communication and device-login
+start. Authenticated work and session persistence require the separate live
+checks in the [sandbox receipt](agent-runtime-sandbox-verification-2026-09-25.md).
 
 ## File ownership map
 

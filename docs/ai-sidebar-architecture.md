@@ -1,7 +1,7 @@
 # Assistant and workspace command architecture
 
 This document describes the implemented AI architecture. TextText has one
-shared workspace tool contract, a standalone-Mac native Codex adapter, an
+shared workspace tool contract, a capability-gated native Codex adapter, an
 in-app API provider adapter, the `texttext` CLI in the standalone app, and a
 hosted MCP adapter for remote agents. The web product does not call its own MCP
 server.
@@ -140,17 +140,23 @@ ones the current token may call.
 
 ### In-app assistant
 
-The standalone Developer ID app can launch a local Codex App Server process and
-stream a native turn over its private JSON-RPC pipe. It uses an eligible account
-already available to that local runtime and registers TextText's workspace
-commands as dynamic tools. The sandboxed TestFlight app cannot launch a command
-from the person's home directory, so it cannot offer this path.
+The native adapter streams Codex App Server turns over a private JSON-RPC pipe
+and registers TextText workspace commands as dynamic tools. Standalone builds
+can discover an external runtime. Store source accepts only a declared signed
+bundled helper that inherits the sandbox, uses TextText-owned account state and
+the documented device authorization flow. Installed build 1094 contains no
+helper and cannot offer account setup. The isolated probe establishes runtime
+and login-start feasibility, not authenticated editing or distribution
+approval; see the [sandbox receipt](agent-runtime-sandbox-verification-2026-09-25.md).
 
 The in-app assistant can also call the workspace command surface through the
 workspace-configured Anthropic or OpenAI provider. The workspace owner chooses
-the provider and model in Settings and supplies the API key. The key is
+the provider and model in compact task setup or Settings and supplies the API key. The key is
 encrypted server-side, is write-only in the UI, and is never returned to the
-browser. This path works in the web product and both Mac channels.
+browser. This adapter is available in the web product and both Mac channels.
+Setup proves generation with the selected model; stored config or metadata
+access alone cannot mark it Ready. Failures carry safe classifications and
+diagnostic references. Reads of connection status make no model request.
 
 TextText does not send an in-app assistant request through `/api/mcp`. MCP is an
 external interoperability adapter, not an internal transport.
@@ -255,10 +261,12 @@ search.
 
 ## Provider connections
 
-1. **Native Codex in the standalone Mac app: shipped.** The Developer ID app
-   can use an eligible ChatGPT or Codex account already connected to the local
-   Codex runtime. It does not consume provider API credits. TestFlight cannot
-   launch this runtime because of the App Sandbox.
+1. **Native Codex: capability-gated.** Standalone builds can use their local
+   runtime. Current Store source requires a declared sandbox-inheriting bundled
+   helper and app-owned authorization. The installed Store-capability build
+   has no helper; ordinary release packaging has not been changed. Device
+   authorization start passed in isolation, while authenticated generation,
+   persistence and packaging remain separate verification gates.
 2. **Bring-your-own API key: shipped.** A workspace owner can add an Anthropic
    or OpenAI API key. Auto is the assistant default, and the owner can choose a
    supported exact model per workspace. The encrypted key stays server-side and
@@ -280,6 +288,14 @@ search.
    conversation capture, project changelogs, publishing, and collaboration;
    the installed skills invoke the bundled CLI. Hosted MCP and its bearer token
    are an explicit remote-client fallback, not a hidden plugin dependency.
+
+Customize preserves the exact target, prompt, revision and preview timeline in
+the existing assistant draft store during setup. It resumes using the same
+selected connection as ordinary assistant work. API generation returns a
+validated blueprint; the native utility turn exposes only `preview_item_type`.
+The renderer shows that blueprint, and a save is complete only after the
+existing permission/version-controlled action returns authoritative readback.
+An external MCP connection alone does not enable this in-app workflow.
 
 TextText never receives a user's Claude, ChatGPT, or Codex password.
 
@@ -349,8 +365,8 @@ token flow. A client must let the person provide a bearer credential. The app
 never asks for the person's Claude, ChatGPT, or Codex password.
 
 Workspace Settings keeps these boundaries visible in one Connections overview:
-the workspace provider key, native Codex session when the standalone app is
-present, active machine client tokens, outbound MCP servers, and sign-in
+the workspace provider key, native Codex session when the runtime is
+available, active machine client tokens, outbound MCP servers, and sign-in
 methods. Hosted tokens carry a `kind` such as `mcp` or `app`, so the UI can
 explain the transport instead of guessing from the freeform token name. Each
 capability has its matching control: remove the provider key, revoke a token,

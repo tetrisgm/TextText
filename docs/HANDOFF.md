@@ -1,152 +1,88 @@
 # TextText handoff
 
-## Current product work, September 25, 2026
+## Current work: integrated agent customization
 
-The Home, folder navigation, quick capture, and TextPack look work is in progress
-on `main`. The user request is in the September 25 Codex attachment for this
-task. Local verification has covered one note containing a URL, one standalone
-link, a mixed Notes folder, the Research reader editor, and a saved Reference
-folder view. The note's commentary and cited excerpt persisted through a look
-switch. The focused tests, TypeScript, and local production build pass. The connected AI provider returned
-an error during a real refinement attempt, so agent-authored output remains
-unverified. The local web dev session has no Mac capture agent, leaving its
-test link pending. The query budget on the 511-item local fixture recorded
-12–16 round trips for Home and 4 for a reading-list page. The action latency
-benchmark could not start because its showcase fixture had no visible news
-item; there is no comparable click-to-render baseline yet. No product release
-or app reinstall has been requested. Preserve the
-unrelated dirty edits listed below.
+Source on `main` in `~/dev/TextText`: Home/capture/folder baseline `d6137d75`,
+native runtime repair `3da87963`, web agent journey repair `35802110`.
+The work repairs the in-app connection → selected document preview → refinement
+→ save journey. It is not released or installed over the owner's application.
 
-## Current: Oracle migration, September 24, 2026
+User request: September 25 attachment
+`4a0448e5-8029-44e8-8e3c-21378eec0824/Pasted text.txt`. The user authorized
+terminal work and subagents, but asked to limit RAM after repeated ChatGPT app
+crashes. Run at most one compiler/build and one local web server. Keep tool
+output bounded. This is task progress, not a change to the agent contract.
 
-The owner authorized reusing the existing Oracle VM, keeping Chiptunes on
-Cloudflare Pages, and discarding TextText's quota-blocked Neon database instead
-of paying for recovery. The fresh Oracle app/database passed authenticated
-note create/edit/read checks and a real encrypted off-server restore drill.
-The obsolete TextText Neon resource is deleted; Chiptunes' separate database
-and the shared media Blob store remain intact. The old Vercel `write` project
-is paused; backup Blob access was reverified afterward.
+### Verified so far
 
-Public HTTPS cutover is complete. The owner authorized the PartyParty relay
-restart; its TLS listener now sits behind the hostname router. TextText's
-three public hosts reach Oracle, while PartyParty and radio health checks and
-Chiptunes' static site remained healthy. See the
-[migration receipt](oracle-migration-2026-09-24.md).
+- The baseline local refinement used saved Anthropic `claude-sonnet-5` and
+  failed generation with upstream HTTP 401 `authentication_error`. There was
+  no developer provider override. Template generation/save never started.
+- The real same-provider terminal journey passed all 20 checks: protected
+  setup, both exact prompts, actual renderer, ordinary create/apply actions,
+  authoritative save/readback, unchanged content and metadata, lost-response
+  reconciliation, stale revision conflict, and a fresh authenticated HTTP
+  session. The existing fixture is saved at revision `491827`, look
+  `look-fa4c0003fb6494beec338220c2e202a8@1`. Its rejected configuration was
+  backed up as ciphertext and replaced through the normal setup action with
+  the existing TextText-owned Anthropic key. No override or provider change.
+  See the workflow receipt for correlation IDs and exact provenance.
+- Source now checks real generation, classifies safe errors with request IDs,
+  retains target-scoped customization drafts, uses shared connection choice,
+  supports cancellation, checks document revision, and reads back saves.
+- Native source can select a declared signed bundled Codex helper in the Store
+  sandbox, with app-owned auth and documented device-code sign-in. Store builds
+  without that bundle still advertise it unavailable. No release packaging
+  change silently includes a runtime.
+- Store compilation, 26 focused Codex tests, provider tests, studio tests,
+  save/conflict tests and a full web production build passed. Combined focused web tests passed **262/262** across 25 files with one worker.
+  Do not equate these with the live workflow.
+- In the isolated Mac app, local TextText login and the actual selected document
+  opened; Customize preserved the exact prompt and offered in-place ChatGPT
+  setup. It has now reached device authorization, awaiting the user's sign-in.
+  Authenticated native generation and native UI save remain unverified.
 
-The live app includes `2242c614`, which fixes self-hosted redirects that sent
-the Mac app to `https://localhost:3400`. Both the raw app and public `/start`
-redirect now target `https://texttext.app/signin`, without a proxy rewrite.
-The Apple Services ID is restored to the registered `net.writeapp.write.web`;
-Apple now recognizes TextText and presents its normal sign-in page.
+### Resume next
 
-The [Oracle guide](../release/oracle/README.md) is the deployment and recovery
-reference. Releases still use the human-invoked `release/ship.sh`; no automatic
-build or release jobs were installed. The only new scheduled job is the daily
-encrypted database backup.
+1. Complete fresh ChatGPT device authorization in the isolated sandbox app,
+   then verify actual preview tool, save, reopen and account persistence.
+2. Finish bounded recovery tests and update the verification receipt; commit
+   coherent passing changes and push. Do not release, deploy, submit, replace
+   the installed app, or change billing.
 
-Google sign-in needs a replacement client secret; Google and Vercel will not
-reveal the old one. Apple, GitHub and MXroute email are configured. On September
-24, the owner's Apple OAuth callback linked installed TextText 0.203 to the new
-workspace. `texttext ls` sees its documents, and a real app reload renders Home.
-The initial workspace load showed HTTP 500 because the `/@` rewrite targeted
-`https://localhost:3400` while Next listens on plain HTTP. `3cbfe686` fixes
-loopback rewrites; the web-only Oracle deployment
-`texttext-oracle-20260925T034709Z-3cbfe686` passed its gates and authenticated
-smoke. A real app reload then rendered Home.
+One local server may run on port 3000, with log
+`/tmp/texttext-agent-repro-20260925.log`. The final web build log is
+`/tmp/texttext-agent-build.log`. Do not dump provider logs wholesale.
+The completed terminal journey's redacted receipt is
+`/tmp/texttext-live-agent-provider-receipt.json`; its harness is
+`scripts/verify-agent-provider-terminal.ts`. It is real HTTP/action/renderer
+verification, not proof of native gestures or account-backed Codex execution.
 
-The owner wants the macOS “TextText wants to use texttext.app to sign in”
-dialog gone. `ASWebAuthenticationSession` requires it. On September 25, the
-Apple Developer portal was accessible; `app.texttext.mac` was enabled for Sign
-in with Apple and grouped with primary `net.writeapp.write`. Its invalid Mac App
-Store profile was regenerated and downloaded, and a Developer ID profile for
-the correct TextText bundle ID was created. Both local profiles were replaced
-under ignored `mac/profiles/`. The App Store profile includes
-`com.apple.developer.applesignin`; the Developer ID profile does not. Apple DTS
-confirms native Sign in with Apple is unsupported for Developer ID apps. The
-owner wants the normal native flow for the Mac App Store edition, so the
-temporary standalone device-link change was removed. Commit `0daf1f58` adds
-the Store entitlement, native authorization controller, and a server endpoint
-that exchanges Apple's one-use code and verifies its signed identity token.
-The Store and standalone Swift builds, TypeScript check, focused Apple token
-tests, and shell syntax check pass. A development-signed Store build 1.0 (1094)
-passes codesign and arm64 checks with all three extensions after the missing
-local development profiles were downloaded. On September 25, the running
-`mac/build/TextText-Dev.app` opened Apple's native Sign in with Apple sheet
-without the website consent dialog and signed into the existing
-`ramine@ramine.net` workspace; Home rendered its three documents. At the
-owner's request, that working bundle was moved to `/Applications/TextText.app`
-on September 25. Its signature verified after the move; it reopened from
-`/Applications` and rendered the same signed-in workspace. No development
-copy remains in `mac/build`. A
-distribution-signed Store package 1.0 (1095) passed the package checks and App
-Store Connect marked build `48032ae0-d2e2-46ce-bd30-5dd8ebda9b60` VALID and
-attached to the prepared 1.0 listing. It was submitted on September 25 and is
-`WAITING_FOR_REVIEW` (submission `67ed89d1-dc0d-4ba3-bf11-ff6559ac96d7`).
-The first upload (1094) was rejected because a downloaded profile carried a
-quarantine attribute; the build scripts now clear it in staged profiles and
-the package gate refuses quarantine. The
-0.203 Developer ID app used the old sheet; at the owner's request, its
-`/Applications/TextText.app` bundle was moved to Trash on September 25. The
-owner chose Mac App Store distribution for general users and TestFlight for
-pre-release builds. The Developer ID edition is a legacy channel during the
-transition. The Mac development profile was regenerated with Sign in with
-Apple after the capability change invalidated it. The Store package check now
-requires that entitlement in the final signature. Do not point the public
-download page at the App Store until the listing is live.
+Isolated native test bundle:
+`/tmp/texttext-agent-test.Upt2ax/TextText Agent Test.app`. It has its own
+`app.texttext.agenttest` container, bundled Codex 0.153.4, signed local-origin
+environment, and File Provider effects disabled. Its native source digest is
+`ffa14357c48f72c60d5081c43854b52da84f77529b61067993c102d0cc41d173`.
+Old temporary bundles are obsolete; do not launch them. No helper credentials
+were copied from another application. See the
+[sandbox receipt](agent-runtime-sandbox-verification-2026-09-25.md) and
+[workflow receipt](agent-experience-verification-2026-09-25.md).
 
-The native code exchange endpoint is live in Oracle release
-`texttext-oracle-20260925T093930Z-95f0ba86`. The human-invoked web-only ship
-reused separately passed web/database Vitest gates because the long-running
-Time Machine backup made timing gates intermittent; it reran TypeScript, Oracle
-tests, all 46 migration steps in scratch databases, a production build, and
-authenticated production smoke. The backup was left running. The public
-`/api/app/apple-native` route now answers a malformed POST with 400 (it was
-404 before deployment). The private changelog item is not in the newly linked
-workspace (`texttext search "TextText Changelog"` returns no results); do not
-create a duplicate of the prior record.
+### Deployment and unrelated open work
 
-The public `/@ramine` request now redirects instead of returning 500, but its
-unauthenticated destination `ramine.texttext.app` does not resolve. Public tenant
-DNS/TLS routing remains a separate open cutover issue.
+Installed app remains `/Applications/TextText.app`, Store-capability development
+build 1.0 (1094). It uses `https://texttext.app` and contains no bundled Codex.
+Its exact source SHA is not attested. Last recorded public web deployment is
+`texttext-oracle-20260925T093930Z-95f0ba86`. Current source changes are local only.
 
-## Active product work
+Keep unrelated edits in `src/components/workspace/assistant/attachments.ts`,
+`src/lib/workspace/__tests__/tabs.test.ts`, and `scripts/.probe-editor.ts` intact
+and out of this commit. Public tenant DNS/TLS, missing Google replacement
+secret, and the missing original private project-changelog document remain
+separate issues. Do not create a duplicate changelog. No changelog entry is
+needed for this unreleased work yet.
 
-The [personal workspace plan](plans/personal-workspace.md) remains the source
-for the desktop Home, news, saved items and documents work. This infrastructure
-migration does not declare that larger plan complete. Quantitative performance,
-full navigation restoration and remaining end-to-end workflows still need
-verification.
-
-Installed native version: **1.0 (1094)**, development-signed for the Store
-capability and opened successfully from `/Applications/TextText.app` on
-September 25. The previous **0.203 (1093)** was built from `ce8c3d17` and
-installed through `release/ship.sh --local-install` on September 24. Exact-source release
-gates passed in 4m 54s, the production web/native builds passed, all 18 app health
-checks and installed health passed. Nothing was published to the update channel.
-
-Native fix `a3bccb49` removes hidden startup authentication, presents the real
-workspace for explicit sign-in, fences stale retries/callbacks and surfaces
-failures. It includes the earlier `d2d7112b` recovery fix. The Apple button,
-completed callback and workspace Home were verified in the former Developer ID
-app; the Store-capable installed build uses native Apple sign-in. The owner
-requested a fresh-chat handoff because of a reported session memory leak; that
-memory issue has not been diagnosed.
-
-Resume the full plan afterward using the final sections of
-[the workspace verification receipt](personal-workspace-verification-2026-09-21.md).
-The verified [Claude Fable 5.1 review](claude-fable-5-1-adversarial-review-2026-09-21.md)
-predates the landed folder/type/destination consolidation; do not reopen those
-historical findings without checking the current receipt and code.
-
-The private project changelog still needs an entry for the verified web fix.
-The CLI now sees the linked fresh workspace, but a search for `TextText Changelog`
-returned no results; do not create a duplicate of the former
-`Shoku's Space/My Notes/TextText Changelog.textpack`. Existing unrelated edits in `attachments.ts`,
-`tabs.test.ts`, and `scripts/.probe-editor.ts` remain preserved.
-
-## Historical references
-
-Earlier release notes and checkpoints are preserved in
-[September 24 history](HANDOFF-history-2026-09-24.md) and
-[September 13 history](HANDOFF-history-2026-09-13.md). Historical deployment,
-credential, provider and completion claims need current verification.
+Resolved migration/sign-in history and prior references are in
+[September 25 history](HANDOFF-history-2026-09-25.md). The broader product plan
+remains [personal workspace](plans/personal-workspace.md); its performance and
+unrelated capture work are outside this agent task.

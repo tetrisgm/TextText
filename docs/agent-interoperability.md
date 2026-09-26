@@ -227,14 +227,30 @@ confirm that TextText returns the same item instead of creating a duplicate.
 ## The assistant inside TextText
 
 The standalone Developer ID app can launch the local Codex runtime and use an
-eligible ChatGPT or Codex account already available to it. The sandboxed
-TestFlight app cannot launch that runtime.
+eligible account through its Codex App Server. The installed Store-capability
+build 1.0 (1094) has no runtime and cannot offer account connection. Current
+source can use a declared, signed, sandbox-inheriting bundled helper with
+TextText-owned account state; ordinary Store packaging does not yet include one.
+The isolated sandbox probe verified launch and device-authorization start, not
+an authenticated editing session or App Store approval. See the
+[dated sandbox receipt](agent-runtime-sandbox-verification-2026-09-25.md).
 
-The API-key assistant works in the web product and both Mac channels. Provider
-API billing is separate from ChatGPT and Claude consumer subscriptions. An
+The API-key adapter is available in the web product and both Mac channels.
+Setup tests the supplied key and selected model with a small real generation
+request. Saved older configurations remain unchecked until a generation
+succeeds; a confirmed provider failure changes the status to Needs attention.
+Status reads do not generate model traffic. Provider API billing is separate from ChatGPT and Claude consumer subscriptions. An
 external agent connected through hosted MCP uses the account and model in that
 external product; TextText receives its workspace token, not the person's
 provider password or subscription credential.
+
+Customize retains its prompt, exact document revision, template and scope in
+the existing assistant draft store while supported setup is open. It uses the
+ordinary assistant connection and model selection. The API path produces a
+schema-constrained preview; native utility turns may call only
+`preview_item_type`. Neither preview is a save. Saving uses the existing
+permission/version checks and authoritative readback before success. Connecting
+an external MCP client does not enable either in-app path.
 
 ## Automation contracts
 
