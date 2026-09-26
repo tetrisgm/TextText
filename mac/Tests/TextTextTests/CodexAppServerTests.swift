@@ -105,6 +105,15 @@ final class CodexAppServerTests: XCTestCase {
         XCTAssertTrue(instructions?.contains("Only when WORKSPACE_INDEX is absent") == true)
         XCTAssertTrue(instructions?.contains("Never call search or read_item") == true)
         XCTAssertTrue(instructions?.contains("make at most four dynamic tool calls") == true)
+        let config = params["config"] as? [String: Any]
+        let features = config?["features"] as? [String: Bool]
+        XCTAssertEqual(features?["shell_tool"], false)
+        XCTAssertEqual(features?["unified_exec"], false)
+        XCTAssertEqual(features?["multi_agent"], false)
+        XCTAssertEqual(features?["hooks"], false)
+        XCTAssertEqual(features?["apps"], false)
+        XCTAssertEqual((config?["tools"] as? [String: Bool])?["view_image"], false)
+        XCTAssertEqual(config?["web_search"] as? String, "disabled")
     }
 
     func testTurnInterruptUsesExactThreadAndTurn() {

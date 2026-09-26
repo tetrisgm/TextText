@@ -113,7 +113,8 @@ public struct CodexAccountSummary: Equatable {
     }
 
     public init?(result: [String: Any]?) {
-        guard let account = result?["account"] as? [String: Any] else { return nil }
+        guard let account = result?["account"] as? [String: Any],
+              account["type"] as? String == "chatgpt" else { return nil }
         email = account["email"] as? String
         planType = account["planType"] as? String
     }
@@ -221,7 +222,23 @@ public enum CodexAppServerRequests {
             "dynamicTools": dynamicTools,
             "developerInstructions": embeddedDeveloperInstructions,
         ]
-        params["config"] = ["mcp_servers": disabledServers]
+        params["config"] = [
+            "mcp_servers": disabledServers,
+            // The embedded agent acts through TextText's permission-checked
+            // dynamic commands. Disable unrelated runtime tools explicitly;
+            // prompt instructions alone are not an execution boundary.
+            "features": [
+                "shell_tool": false, "unified_exec": false, "shell_snapshot": false,
+                "apps": false, "hooks": false, "plugins": false, "remote_plugin": false,
+                "multi_agent": false, "browser_use": false, "browser_use_external": false,
+                "computer_use": false, "in_app_browser": false, "code_mode": false,
+                "skill_search": false,
+            ],
+            "agents": ["enabled": false],
+            "tools": ["view_image": false],
+            "web_search": "disabled",
+            "project_doc_max_bytes": 0,
+        ]
         if let workingDirectory { params["cwd"] = workingDirectory }
         return params
     }

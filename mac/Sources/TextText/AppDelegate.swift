@@ -524,6 +524,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { false }
 
     func applicationWillTerminate(_ notification: Notification) {
+        primaryWebWindow?.stopAgentForApplicationExit()
+        for window in additionalWebWindows { window.stopAgentForApplicationExit() }
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         changeListener?.stop()
         materializationRetry?.cancel()

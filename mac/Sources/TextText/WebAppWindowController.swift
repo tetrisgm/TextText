@@ -233,6 +233,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         case accountRead
         case configRead
         case loginStart
+        case loginCancel
+        case logout
         case threadStart(String?)
         case turnStart
         case turnInterrupt
@@ -283,8 +285,23 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     private var codexPendingToolCalls: [String: AnyHashable] = [:]
     private var codexToolDeadlines: [String: DispatchWorkItem] = [:]
     private var codexPendingRequests: [String: CodexRequestKind] = [:]
+    private var codexSetupRequestDeadlines: [String: DispatchWorkItem] = [:]
     private var codexAccount: CodexAccountSummary?
     private var codexLoginInFlight = false
+    private var codexLoginID: String?
+    private var codexAuthorization: (url: String, code: String)?
+    private var codexOwnsProfile = false
+    private var codexSetupCancelRequested = false
+    private var codexSetupStopDeadline: DispatchWorkItem?
+    private var codexCheckRequested = false
+    private var codexCheckingConnection = false
+    private var codexHealthAnswer = ""
+    private var codexModel: String?
+    private var codexConnectionDiagnosticID = UUID().uuidString
+    private var codexConversationDiagnostics: [String: String] = [:]
+    private var codexLastFailure: CodexConnectionFailure?
+    private var codexPreserveFailureAfterStop = false
+    private var codexLogoutAfterCancel = false
     private var codexShouldStartLogin = false
     private var codexAccountKnownSignedOut = false
     private var codexActiveTurnID: String?
@@ -345,7 +362,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         let escapedDevice = device.replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
         #if TEXTTEXT_STORE
-        let embeddedAgentAvailable = "false"
+        let embeddedAgentAvailable = CodexEmbeddedRuntime.bundledExecutable(sandboxed: true) == nil ? "false" : "true"
         #else
         let embeddedAgentAvailable = "true"
         #endif
@@ -720,6 +737,16 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     func windowDidBecomeKey(_ notification: Notification) { requestNativeMenuState() }
     func windowWillClose(_ notification: Notification) { onClose?() }
 
+    func stopAgentForApplicationExit() {
+        // Keep the managed account on disk; only this app's child stops.
+        codexSetupStopDeadline?.cancel()
+        for deadline in codexSetupRequestDeadlines.values { deadline.cancel() }
+        codexSetupRequestDeadlines.removeAll()
+        let server = codexServer
+        codexServer = nil
+        server?.stop()
+    }
+
     func requestNativeMenuState() {
         webView.evaluateJavaScript("window.dispatchEvent(new Event('texttext:native-menu-request'))", completionHandler: nil)
     }
@@ -834,6 +861,22 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         codexPendingRequests[requestID] = kind
         do {
             try server.send(id: requestID, method: method, params: params)
+            switch kind {
+            case .initialize, .accountRead, .configRead, .loginStart, .threadStart:
+                let deadline = DispatchWorkItem { [weak self] in
+                    guard let self, self.codexPendingRequests[requestID] != nil else { return }
+                    if case .threadStart(let conversationID) = kind {
+                        self.codexFailure("network timeout starting a private thread", conversationID: conversationID)
+                    } else {
+                        self.codexFailure("network timeout during connection setup")
+                    }
+                    self.codexPreserveFailureAfterStop = true
+                    self.cancelCodexSetup()
+                }
+                codexSetupRequestDeadlines[requestID] = deadline
+                DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: deadline)
+            default: break
+            }
             return requestID
         } catch {
             codexPendingRequests.removeValue(forKey: requestID)
@@ -842,20 +885,37 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     }
 
     private func prepareCodexServer() -> CodexAppServerController? {
-        #if TEXTTEXT_STORE
-        return nil
-        #else
         if let codexServer { return codexServer }
-        let locator = CodexRuntimeLocator(bundleURL: Bundle.main.bundleURL)
-        guard let executableURL = locator.executableURL else { return nil }
-        let server = CodexAppServerController(executableURL: executableURL)
-        server.onEvent = { [weak self] message in
-            DispatchQueue.main.async { self?.handleCodexMessage(message) }
+        #if TEXTTEXT_STORE
+        let bundledURL = CodexEmbeddedRuntime.bundledExecutable(sandboxed: true)
+        let executableURL = bundledURL
+        #else
+        let bundledURL = CodexEmbeddedRuntime.bundledExecutable(sandboxed: false)
+        let executableURL = bundledURL ?? CodexRuntimeLocator(bundleURL: Bundle.main.bundleURL).executableURL
+        #endif
+        guard let executableURL else { return nil }
+        codexOwnsProfile = bundledURL != nil
+        var environment: [String: String] = [:]
+        if codexOwnsProfile {
+            guard let profile = try? CodexEmbeddedRuntime.profileDirectory() else { return nil }
+            environment["CODEX_HOME"] = profile.path
+        }
+        let server = CodexAppServerController(executableURL: executableURL, environment: environment)
+        server.onEvent = { [weak self, weak server] message in
+            DispatchQueue.main.async {
+                guard let self, self.codexServer === server else { return }
+                self.handleCodexMessage(message)
+            }
         }
         server.onExit = { [weak self, weak server] status in
             DispatchQueue.main.async {
                 guard let self, self.codexServer === server else { return }
                 let interruptedConversationID = self.codexActiveConversationID
+                if let key = self.codexVerificationKey { UserDefaults.standard.removeObject(forKey: key) }
+                self.codexCheckingConnection = false
+                self.codexCheckRequested = false
+                self.codexAuthorization = nil
+                self.codexLoginID = nil
                 self.codexServer = nil
                 self.codexThreadID = nil
                 self.codexConversationThreads.reset()
@@ -867,6 +927,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                 self.codexShouldStartLogin = false
                 self.codexAccountKnownSignedOut = false
                 self.codexPendingRequests.removeAll()
+                for deadline in self.codexSetupRequestDeadlines.values { deadline.cancel() }
+                self.codexSetupRequestDeadlines.removeAll()
                 self.codexPendingToolCalls.removeAll()
                 for deadline in self.codexToolDeadlines.values { deadline.cancel() }
                 self.codexToolDeadlines.removeAll()
@@ -889,17 +951,11 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                         ],
                         conversationID: interruptedConversationID)
                 }
-                self.emitCodexEvent([
-                    "type": "status",
-                    "state": status == 0 ? "signed-out" : "failed",
-                    "embeddedChatSupported": true,
-                    "recoveryAction": status == 0 ? "connect" : "retry",
-                ])
+                self.codexFailure(self.codexLastFailure ?? server?.lastFailure ?? CodexConnectionFailure("runtime process exited"))
             }
         }
         codexServer = server
         return server
-        #endif
     }
 
     private func emitCodexEvent(_ payload: [String: Any]) {
@@ -917,120 +973,167 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         _ payload: [String: Any],
         conversationID: String? = nil
     ) {
+        let resolvedConversationID = conversationID ?? codexActiveConversationID
+        // Connection validation is a private, non-mutating turn. It must not
+        // appear in a document conversation or resolve a template request.
+        if resolvedConversationID == "connection-check" { return }
         var tagged = payload
-        if let conversationID = conversationID ?? codexActiveConversationID {
-            tagged["conversationId"] = conversationID
+        if let resolvedConversationID {
+            tagged["conversationId"] = resolvedConversationID
+            tagged["diagnosticId"] = codexConversationDiagnostics[resolvedConversationID] ?? resolvedConversationID
         }
         emitCodexEvent(tagged)
     }
 
+    private var codexVerificationKey: String? {
+        guard let account = codexAccount, let accountEmail = account.email,
+              let model = codexModel else { return nil }
+        return CodexEmbeddedRuntime.verificationKey(
+            origin: origin.absoluteString, workspace: workspaceHomePath ?? "",
+            account: accountEmail,
+            runtime: Bundle.main.object(forInfoDictionaryKey: "TextTextEmbeddedAgentVersion") as? String ?? "external-runtime",
+            model: model)
+    }
+
+    private var codexDisconnectedKey: String {
+        CodexEmbeddedRuntime.verificationKey(origin: origin.absoluteString,
+            workspace: workspaceHomePath ?? "", account: "connection-disabled",
+            runtime: "", model: "")
+    }
+
+    private var codexIsVerified: Bool {
+        guard let key = codexVerificationKey else { return false }
+        return UserDefaults.standard.bool(forKey: key)
+    }
+
+    private func emitCodexConnectionStatus() {
+        let state: String
+        if codexLastFailure != nil { state = "failed" }
+        else if codexLoginInFlight || codexCheckingConnection || codexThreadID == nil && !codexAccountKnownSignedOut { state = "connecting" }
+        else if codexAccountKnownSignedOut { state = "signed-out" }
+        else { state = codexIsVerified ? "ready" : "unverified" }
+        let phase: String? = codexLoginInFlight ? "authorizing" : (codexCheckingConnection ? "checking" : nil)
+        let recovery: String? = codexLastFailure?.recoveryAction ?? (state == "ready" ? nil : "connect")
+        var status: [String: Any] = [
+            "type": "status", "state": state, "embeddedChatSupported": true,
+            "kind": "native-codex", "providerLabel": "Codex with ChatGPT",
+            "runtimeVersion": Bundle.main.object(forInfoDictionaryKey: "TextTextEmbeddedAgentVersion") ?? "available",
+            "accountEmail": codexAccount?.email ?? NSNull(),
+            "planLabel": codexAccount?.planType ?? NSNull(),
+            "model": codexModel ?? NSNull(),
+            "phase": phase ?? NSNull(),
+            "verificationUrl": codexAuthorization?.url ?? NSNull(),
+            "userCode": codexAuthorization?.code ?? NSNull(),
+            "diagnosticId": codexConnectionDiagnosticID,
+            "message": codexLastFailure?.message ?? NSNull(),
+            "failureCode": codexLastFailure?.code ?? NSNull(),
+            "recoveryAction": recovery ?? NSNull(),
+        ]
+        if let key = codexVerificationKey,
+           let timestamp = UserDefaults.standard.object(forKey: key + ".checkedAt") as? Double {
+            status["lastHealthCheckAt"] = timestamp
+        }
+        emitCodexEvent(status)
+    }
+
+    private func codexFailure(_ raw: String, conversationID: String? = nil) {
+        codexFailure(CodexConnectionFailure(raw), conversationID: conversationID)
+    }
+
+    private func codexFailure(_ failure: CodexConnectionFailure, conversationID: String? = nil) {
+        if let key = codexVerificationKey { UserDefaults.standard.removeObject(forKey: key) }
+        codexLastFailure = failure
+        codexCheckRequested = false
+        codexCheckingConnection = false
+        codexLoginInFlight = false
+        codexAuthorization = nil
+        let diagnosticID = conversationID.flatMap { codexConversationDiagnostics[$0] } ?? codexConnectionDiagnosticID
+        Self.codexLog.error("agent failure category=\(failure.code, privacy: .public) diagnostic=\(diagnosticID, privacy: .public)")
+        emitCodexConnectionStatus()
+        if let conversationID {
+            emitCodexTurnEvent(["type": "error", "message": failure.message,
+                "diagnosticId": diagnosticID, "failureCode": failure.code], conversationID: conversationID)
+        }
+    }
+
     private func codexStatus() {
-        #if TEXTTEXT_STORE
-        emitCodexEvent([
-            "type": "status",
-            "state": "unavailable",
-            "embeddedChatSupported": false,
-            "recoveryAction": "open-settings",
-        ])
-        #else
         guard let server = prepareCodexServer() else {
-            emitCodexEvent([
-                "type": "status",
-                "state": "runtime-missing",
-                "embeddedChatSupported": false,
-                "recoveryAction": "install-runtime",
-            ])
+            #if TEXTTEXT_STORE
+            emitCodexEvent(["type": "status", "state": "unavailable", "embeddedChatSupported": false,
+                "message": "Account connection is not included in this app build.", "recoveryAction": "open-settings"])
+            #else
+            emitCodexEvent(["type": "status", "state": "runtime-missing", "embeddedChatSupported": false,
+                "message": "This app cannot find its agent runtime.", "recoveryAction": "install-runtime"])
+            #endif
+            return
+        }
+        if UserDefaults.standard.bool(forKey: codexDisconnectedKey) {
+            codexAccountKnownSignedOut = true
+            emitCodexConnectionStatus()
             return
         }
         if !server.isRunning {
-            codexShouldStartLogin = false
+            codexSetupCancelRequested = false
             do {
                 try server.start()
-                try sendCodexRequest(
-                    .initialize,
-                    method: "initialize",
-                    params: [
-                        "clientInfo": [
-                            "name": "texttext",
-                            "title": "TextText",
-                            "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev",
-                        ],
-                        "capabilities": ["experimentalApi": true],
-                    ])
-            } catch {
-                emitCodexEvent([
-                    "type": "status",
-                    "state": "failed",
-                    "embeddedChatSupported": true,
-                    "recoveryAction": "retry",
+                try sendCodexRequest(.initialize, method: "initialize", params: [
+                    "clientInfo": ["name": "texttext", "title": "TextText", "version": "1"],
+                    "capabilities": ["experimentalApi": true],
                 ])
-                return
-            }
+            } catch { codexFailure(String(describing: error)); return }
         }
-        let state = codexThreadID != nil ? "ready" : (codexAccountKnownSignedOut ? "signed-out" : "connecting")
-        emitCodexEvent([
-            "type": "status",
-            "state": state,
-            "embeddedChatSupported": true,
-            "runtimeVersion": "available",
-            "providerLabel": "Codex with ChatGPT",
-            "accountEmail": codexAccount?.email ?? NSNull(),
-            "planLabel": codexAccount?.planType ?? NSNull(),
-            "recoveryAction": state == "ready" ? NSNull() : "connect",
-        ])
-        #endif
+        emitCodexConnectionStatus()
     }
 
     private func connectCodex() {
-        #if TEXTTEXT_STORE
-        codexStatus()
-        #else
-        guard let server = prepareCodexServer() else {
-            codexStatus()
-            return
-        }
+        guard !codexLoginInFlight && !codexCheckingConnection else { emitCodexConnectionStatus(); return }
+        UserDefaults.standard.removeObject(forKey: codexDisconnectedKey)
+        codexConnectionDiagnosticID = UUID().uuidString
+        codexLastFailure = nil
+        codexPreserveFailureAfterStop = false
         codexShouldStartLogin = true
+        codexCheckRequested = true
+        codexSetupCancelRequested = false
         codexAccountKnownSignedOut = false
-        do {
-            if server.isRunning {
-                if codexThreadID != nil {
-                    codexStatus()
-                    return
-                }
-                let starting = codexPendingRequests.values.contains(where: { $0 == .initialize })
-                let readingAccount = codexPendingRequests.values.contains(where: { $0 == .accountRead })
-                let readingConfig = codexPendingRequests.values.contains(where: { $0 == .configRead })
-                if !starting && !readingAccount && !readingConfig {
-                    try sendCodexRequest(.accountRead, method: "account/read", params: [:])
-                }
-            } else {
-                try server.start()
-                try sendCodexRequest(
-                    .initialize,
-                    method: "initialize",
-                    params: [
-                        "clientInfo": [
-                            "name": "texttext",
-                            "title": "TextText",
-                            "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev",
-                        ],
-                        "capabilities": ["experimentalApi": true],
-                    ])
-            }
-            emitCodexEvent(["type": "status", "state": "connecting", "embeddedChatSupported": true])
-        } catch {
-            emitCodexEvent(["type": "status", "state": "failed", "embeddedChatSupported": false, "recoveryAction": "retry"])
-        }
-        #endif
+        if codexServer?.isRunning == true {
+            do { try sendCodexRequest(.accountRead, method: "account/read", params: ["refreshToken": true]) }
+            catch { codexFailure(String(describing: error)) }
+        } else { codexStatus() }
+        emitCodexConnectionStatus()
     }
 
-    /// Ends TextText's embedded Codex session and stops the bundled runtime.
-    /// Codex owns its account credential, so this intentionally does not claim
-    /// to sign the person out of Codex in other applications.
+    /// Cancel setup without signing out a connected account. Late callbacks
+    /// are ignored and the owned process is stopped after bounded cleanup.
+    private func cancelCodexSetup(logout: Bool = false) {
+        codexLogoutAfterCancel = logout && codexOwnsProfile
+        codexSetupCancelRequested = true
+        codexCheckRequested = false
+        codexShouldStartLogin = false
+        codexAuthorization = nil
+        codexSetupStopDeadline?.cancel()
+        let deadline = DispatchWorkItem { [weak self] in self?.finishCodexDisconnect() }
+        codexSetupStopDeadline = deadline
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: deadline)
+        do {
+            if let loginID = codexLoginID {
+                try sendCodexRequest(.loginCancel, method: "account/login/cancel", params: ["loginId": loginID])
+            } else if logout && codexOwnsProfile && codexServer?.isRunning == true {
+                try sendCodexRequest(.logout, method: "account/logout", params: [:])
+            } else if codexLoginInFlight {
+                // A pending login/start response supplies the ID to cancel.
+            } else { finishCodexDisconnect() }
+        } catch { finishCodexDisconnect() }
+    }
+
     private func disconnectCodex() {
-        #if TEXTTEXT_STORE
-        codexStatus()
-        #else
+        UserDefaults.standard.set(true, forKey: codexDisconnectedKey)
+        if let key = codexVerificationKey { UserDefaults.standard.removeObject(forKey: key) }
+        cancelCodexSetup(logout: true)
+    }
+
+    private func finishCodexDisconnect() {
+        codexSetupStopDeadline?.cancel()
+        codexSetupStopDeadline = nil
         let server = codexServer
         codexServer = nil
         codexThreadID = nil
@@ -1039,33 +1142,30 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         codexAwaitingThreadPrompt = nil
         codexDisabledMCPServerNames = []
         codexAccount = nil
+        codexLoginID = nil
         codexLoginInFlight = false
+        codexAuthorization = nil
         codexShouldStartLogin = false
+        codexCheckingConnection = false
         codexAccountKnownSignedOut = true
+        if !codexPreserveFailureAfterStop { codexLastFailure = nil }
+        codexPreserveFailureAfterStop = false
         codexPendingRequests.removeAll()
-        codexPendingToolCalls.removeAll()
-        for deadline in codexToolDeadlines.values { deadline.cancel() }
-        codexToolDeadlines.removeAll()
-        codexTurnDeadline?.cancel()
-        codexTurnDeadline = nil
-        codexTimeoutRecoveryDeadline?.cancel()
-        codexTimeoutRecoveryDeadline = nil
-        codexActiveTurnID = nil
-        codexActiveConversationID = nil
-        codexActiveThreadID = nil
-        codexTurnTimedOut = false
-        codexTurnInterruptSent = false
-        codexTurnCancelRequested = false
-        codexAgentMessagePhases.removeAll()
+        for deadline in codexSetupRequestDeadlines.values { deadline.cancel() }
+        codexSetupRequestDeadlines.removeAll()
+        codexConversationDiagnostics.removeAll()
+        finishCodexTurn()
         server?.stop()
-        emitCodexEvent([
-            "type": "status",
-            "state": "signed-out",
-            "embeddedChatSupported": true,
-            "providerLabel": "Codex with ChatGPT",
-            "recoveryAction": "connect",
-        ])
-        #endif
+        emitCodexConnectionStatus()
+    }
+
+    private func startCodexConnectionCheck(threadID: String) {
+        codexCheckRequested = false
+        codexCheckingConnection = true
+        codexHealthAnswer = ""
+        emitCodexConnectionStatus()
+        startCodexTurn(prompt: "Reply with exactly TEXTTEXT_READY. Do not call any tools, read files, or change anything.",
+            conversationID: "connection-check", threadID: threadID)
     }
 
     private func sendCodexTurn(
@@ -1075,7 +1175,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     ) {
         guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !conversationID.isEmpty,
-              codexThreadID != nil else {
+              codexThreadID != nil, codexIsVerified, !codexCheckingConnection else {
             emitCodexTurnEvent(
                 ["type": "error", "message": "Connect the TextText Agent before sending a message."],
                 conversationID: conversationID)
@@ -1143,9 +1243,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             emitCodexTurnEvent(["type": "turn-started"])
         } catch {
             finishCodexTurn()
-            emitCodexTurnEvent(
-                ["type": "error", "message": "The TextText Agent could not start that turn."],
-                conversationID: conversationID)
+            codexFailure(String(describing: error),
+                conversationID: conversationID == "connection-check" ? nil : conversationID)
         }
     }
 
@@ -1188,10 +1287,9 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             Self.codexLog.error(
                 "turn went quiet for \(Self.codexTurnSilenceSeconds, privacy: .public)s with \(self.codexPendingToolCalls.count, privacy: .public) pending tool calls")
             self.codexTurnTimedOut = true
-            self.emitCodexTurnEvent([
-                "type": "error",
-                "message": "The TextText Agent stopped responding. Try the request again.",
-            ])
+            let conversationID = self.codexActiveConversationID
+            self.codexFailure("network timeout while waiting for the agent",
+                conversationID: conversationID == "connection-check" ? nil : conversationID)
             self.interruptTimedOutCodexTurnIfPossible(threadID: threadID)
             self.scheduleCodexTimeoutRecovery()
         }
@@ -1365,38 +1463,37 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         if let requestID = message.id,
            message.method == nil,
            let requestKind = codexPendingRequests.removeValue(forKey: requestID) {
+            codexSetupRequestDeadlines.removeValue(forKey: requestID)?.cancel()
+            if codexSetupCancelRequested {
+                if requestKind == .loginStart, let loginID = message.rawResult?["loginId"] as? String {
+                    codexLoginID = loginID
+                    _ = try? sendCodexRequest(.loginCancel, method: "account/login/cancel", params: ["loginId": loginID])
+                } else if requestKind == .loginCancel && codexLogoutAfterCancel {
+                    codexLogoutAfterCancel = false
+                    _ = try? sendCodexRequest(.logout, method: "account/logout", params: [:])
+                } else if requestKind == .loginCancel || requestKind == .logout { finishCodexDisconnect() }
+                return
+            }
             if let errorMessage = message.errorMessage {
                 if requestKind == .turnInterrupt { return }
+                let conversationID: String?
                 if requestKind == .turnStart {
-                    let conversationID = codexActiveConversationID
+                    conversationID = codexActiveConversationID
                     finishCodexTurn()
-                    emitCodexTurnEvent(
-                        ["type": "error", "message": errorMessage],
-                        conversationID: conversationID)
-                } else if case .threadStart(let conversationID) = requestKind,
-                          let conversationID {
+                } else if case .threadStart(let pendingID) = requestKind {
+                    conversationID = pendingID
                     codexAwaitingThreadConversationID = nil
                     codexAwaitingThreadPrompt = nil
-                    emitCodexTurnEvent(
-                        [
-                            "type": "error",
-                            "message": "The TextText Agent could not start a private chat thread.",
-                        ],
-                        conversationID: conversationID)
-                } else {
-                    emitCodexEvent([
-                        "type": "status",
-                        "state": "failed",
-                        "embeddedChatSupported": true,
-                        "recoveryAction": "retry",
-                    ])
-                }
+                } else { conversationID = nil }
+                codexFailure(errorMessage, conversationID: conversationID == "connection-check" ? nil : conversationID)
                 return
             }
             switch requestKind {
             case .initialize:
-                try? codexServer?.notify(method: "initialized")
-                _ = try? sendCodexRequest(.accountRead, method: "account/read", params: [:])
+                do {
+                    try codexServer?.notify(method: "initialized")
+                    try sendCodexRequest(.accountRead, method: "account/read", params: [:])
+                } catch { codexFailure(String(describing: error)) }
             case .accountRead:
                 guard let account = CodexAccountSummary(result: message.rawResult) else {
                     codexAccount = nil
@@ -1418,15 +1515,9 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                             try sendCodexRequest(
                                 .loginStart,
                                 method: "account/login/start",
-                                params: CodexAppServerRequests.chatGPTLoginStart)
+                                params: codexOwnsProfile ? ["type": "chatgptDeviceCode"] : CodexAppServerRequests.chatGPTLoginStart)
                         } catch {
-                            codexLoginInFlight = false
-                            emitCodexEvent([
-                                "type": "status",
-                                "state": "failed",
-                                "embeddedChatSupported": true,
-                                "recoveryAction": "retry",
-                            ])
+                            codexFailure(String(describing: error))
                         }
                     }
                     return
@@ -1434,6 +1525,9 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                 codexAccount = account
                 codexAccountKnownSignedOut = false
                 codexShouldStartLogin = false
+                codexLoginInFlight = false
+                codexLoginID = nil
+                codexAuthorization = nil
                 do {
                     try sendCodexRequest(
                         .configRead,
@@ -1446,22 +1540,12 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                         "providerLabel": "Codex with ChatGPT",
                     ])
                 } catch {
-                    emitCodexEvent([
-                        "type": "status",
-                        "state": "failed",
-                        "embeddedChatSupported": true,
-                        "recoveryAction": "retry",
-                    ])
+                    codexFailure(String(describing: error))
                 }
             case .configRead:
                 guard let serverNames = CodexAppServerRequests.effectiveMCPServerNames(
                     configReadResult: message.rawResult) else {
-                    emitCodexEvent([
-                        "type": "status",
-                        "state": "failed",
-                        "embeddedChatSupported": true,
-                        "recoveryAction": "retry",
-                    ])
+                    codexFailure("runtime returned invalid configuration")
                     return
                 }
                 codexDisabledMCPServerNames = serverNames
@@ -1474,35 +1558,34 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                             disabledMCPServers: serverNames,
                             workingDirectory: FileManager.default.temporaryDirectory.path))
                 } catch {
-                    emitCodexEvent([
-                        "type": "status",
-                        "state": "failed",
-                        "embeddedChatSupported": true,
-                        "recoveryAction": "retry",
-                    ])
+                    codexFailure(String(describing: error))
                 }
             case .loginStart:
-                guard let authURLString = message.rawResult?["authUrl"] as? String,
-                      let authURL = URL(string: authURLString) else {
-                    codexLoginInFlight = false
-                    emitCodexEvent([
-                        "type": "status",
-                        "state": "failed",
-                        "embeddedChatSupported": true,
-                        "recoveryAction": "retry",
-                    ])
-                    return
+                codexLoginID = message.rawResult?["loginId"] as? String
+                if codexOwnsProfile {
+                    guard let authorization = CodexEmbeddedRuntime.deviceAuthorization(message.rawResult) else {
+                        codexFailure("runtime returned invalid device authorization"); return
+                    }
+                    codexAuthorization = (authorization.url, authorization.code)
+                    emitCodexConnectionStatus()
+                } else {
+                    guard let rawURL = message.rawResult?["authUrl"] as? String,
+                          let url = URL(string: rawURL), url.scheme == "https",
+                          ["auth.openai.com", "chatgpt.com"].contains(url.host ?? "") else {
+                        codexFailure("runtime returned invalid authorization URL"); return
+                    }
+                    openExternally(url)
+                    emitCodexConnectionStatus()
                 }
-                openExternally(authURL)
-                emitCodexEvent([
-                    "type": "status",
-                    "state": "connecting",
-                    "embeddedChatSupported": true,
-                ])
+            case .loginCancel, .logout:
+                finishCodexDisconnect()
             case .threadStart:
-                // App Server emits thread/started after this response. Do not
-                // advertise readiness until that notification supplies the
-                // thread ID used by every subsequent turn.
+                codexModel = message.rawResult?["model"] as? String ?? codexModel
+                if codexThreadID != nil && !codexCheckingConnection && !codexCheckRequested {
+                    emitCodexConnectionStatus()
+                }
+                // thread/started confirms the allocated thread. Only a real
+                // successful turn can certify provider readiness.
                 break
             case .turnStart:
                 if let turn = message.rawResult?["turn"] as? [String: Any],
@@ -1522,19 +1605,22 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             return
         }
         if message.method == "account/login/completed" {
+            guard !codexSetupCancelRequested,
+                  let loginID = codexLoginID,
+                  message.rawParams?["loginId"] as? String == loginID else { return }
             codexLoginInFlight = false
+            codexLoginID = nil
+            codexAuthorization = nil
             if message.rawParams?["success"] as? Bool == true {
-                _ = try? sendCodexRequest(.accountRead, method: "account/read", params: [:])
+                codexCheckRequested = true
+                do { try sendCodexRequest(.accountRead, method: "account/read", params: [:]) }
+                catch { codexFailure(String(describing: error)) }
             } else {
-                emitCodexEvent([
-                    "type": "status",
-                    "state": "failed",
-                    "embeddedChatSupported": true,
-                    "recoveryAction": "retry",
-                ])
+                codexFailure(message.rawParams?["error"] as? String ?? "authentication failed")
             }
             return
         }
+        if codexSetupCancelRequested { return }
         if message.method == "thread/started",
            let thread = message.rawParams?["thread"] as? [String: Any],
            let threadID = thread["id"] as? String {
@@ -1553,16 +1639,12 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                 }
             } else {
                 codexThreadID = threadID
-                codexConversationThreads.setInitialThreadID(threadID)
-                emitCodexEvent([
-                    "type": "status",
-                    "state": "ready",
-                    "embeddedChatSupported": true,
-                    "providerLabel": "Codex with ChatGPT",
-                    "accountEmail": codexAccount?.email ?? NSNull(),
-                    "planLabel": codexAccount?.planType ?? NSNull(),
-                    "recoveryAction": NSNull(),
-                ])
+                if codexCheckRequested {
+                    startCodexConnectionCheck(threadID: threadID)
+                } else {
+                    codexConversationThreads.setInitialThreadID(threadID)
+                    emitCodexConnectionStatus()
+                }
             }
             return
         }
@@ -1598,6 +1680,37 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                     threadID: codexActiveThreadID ?? "")
             }
             return
+        }
+        if codexCheckingConnection {
+            if message.method == "item/completed", let agentMessage = CodexAgentMessage(params: message.rawParams),
+               agentMessage.phase == .finalAnswer { codexHealthAnswer = agentMessage.text }
+            if message.method == "item/tool/call", let requestID = message.jsonRPCID {
+                try? codexServer?.respond(id: requestID, result: CodexAppServerRequests.dynamicToolResult(
+                    text: "Connection checks cannot call tools.", success: false))
+                return
+            }
+            if message.method == "turn/completed" {
+                let outcome = CodexTurnOutcome(params: message.rawParams)
+                let accepted = codexHealthAnswer.trimmingCharacters(in: .whitespacesAndNewlines) == "TEXTTEXT_READY"
+                finishCodexTurn()
+                codexCheckingConnection = false
+                if outcome == .completed && accepted, let key = codexVerificationKey {
+                    UserDefaults.standard.set(true, forKey: key)
+                    UserDefaults.standard.set(Date().timeIntervalSince1970 * 1_000, forKey: key + ".checkedAt")
+                    codexLastFailure = nil
+                    // User work starts on a fresh thread, without check content.
+                    do {
+                        try sendCodexRequest(.threadStart(nil), method: "thread/start",
+                            params: CodexAppServerRequests.threadStart(dynamicTools: codexDynamicTools,
+                                disabledMCPServers: codexDisabledMCPServerNames,
+                                workingDirectory: FileManager.default.temporaryDirectory.path))
+                    } catch { codexFailure(String(describing: error)) }
+                } else if case .failed(let message) = outcome { codexFailure(message ?? "connection check failed") }
+                else { codexFailure("connection check did not return the expected response") }
+                return
+            }
+            // Other health text/progress events never cross the UI boundary.
+            if message.method == "item/started" || message.method == "item/completed" || message.method == "item/agentMessage/delta" { return }
         }
         if message.method == "item/started",
            let agentMessage = CodexAgentMessage(params: message.rawParams) {
@@ -1673,12 +1786,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                     ["type": "turn-completed"],
                     conversationID: conversationID)
             case .failed(let message):
-                emitCodexTurnEvent(
-                    [
-                        "type": "error",
-                        "message": message ?? "The TextText Agent could not finish that turn.",
-                    ],
-                    conversationID: conversationID)
+                codexFailure(message ?? "unknown turn failure", conversationID: conversationID)
             case .interrupted:
                 emitCodexTurnEvent(
                     [
@@ -1694,11 +1802,10 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                     ],
                     conversationID: conversationID)
             }
+            if let conversationID { codexConversationDiagnostics.removeValue(forKey: conversationID) }
             return
         }
-        if message.errorMessage != nil {
-            emitCodexEvent(["type": "status", "state": "failed", "embeddedChatSupported": false, "recoveryAction": "retry"])
-        }
+        if let error = message.errorMessage { codexFailure(error) }
     }
 
     // MARK: WKScriptMessageHandler (JS -> Swift)
@@ -1755,6 +1862,10 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             connectCodex()
             return
         }
+        if body["action"] as? String == "assistantCancelSetup" {
+            cancelCodexSetup()
+            return
+        }
         if body["action"] as? String == "assistantDisconnect" {
             disconnectCodex()
             return
@@ -1766,9 +1877,14 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         }
         if body["action"] as? String == "assistantTurn",
            let prompt = body["prompt"] as? String {
+            let conversationID = body["conversationId"] as? String ?? "legacy"
+            if let requestID = body["requestId"] as? String,
+               requestID.range(of: "^[A-Za-z0-9_-]{1,100}$", options: .regularExpression) != nil {
+                codexConversationDiagnostics[conversationID] = requestID
+            }
             sendCodexTurn(
                 prompt,
-                conversationID: body["conversationId"] as? String ?? "legacy",
+                conversationID: conversationID,
                 history: body["history"] as? [[String: Any]] ?? [])
             return
         }

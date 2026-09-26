@@ -10,6 +10,15 @@ final class CodexAppServerController {
     private let input: Pipe
     private let output: Pipe
     private var pending = Data()
+    private let errors = Pipe()
+    private let errorLock = NSLock()
+    private var errorTail = Data()
+    private var failure: CodexConnectionFailure?
+    var lastFailure: CodexConnectionFailure? {
+        errorLock.lock()
+        defer { errorLock.unlock() }
+        return failure
+    }
     private(set) var isRunning = false
     var onEvent: EventHandler?
     var onExit: ((Int32) -> Void)?
@@ -22,10 +31,18 @@ final class CodexAppServerController {
         process.arguments = ["app-server", "--stdio"]
         process.standardInput = input
         process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
+        process.standardError = errors
         process.terminationHandler = { [weak self] process in
             guard let self else { return }
             self.output.fileHandleForReading.readabilityHandler = nil
+            self.errors.fileHandleForReading.readabilityHandler = nil
+            self.errorLock.lock()
+            let detail = String(data: self.errorTail, encoding: .utf8) ?? ""
+            if self.failure == nil {
+                self.failure = CodexConnectionFailure(detail.isEmpty ? "runtime process exited" : detail)
+            }
+            self.errorTail.removeAll()
+            self.errorLock.unlock()
             self.isRunning = false
             self.onExit?(process.terminationStatus)
         }
@@ -40,10 +57,20 @@ final class CodexAppServerController {
         process.environment = safeEnvironment
     }
 
+    deinit { stop() }
+
     func start() throws {
         guard !isRunning else { return }
         try process.run()
         isRunning = true
+        errors.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            guard let self else { return }
+            let data = handle.availableData
+            self.errorLock.lock()
+            defer { self.errorLock.unlock() }
+            self.errorTail.append(data)
+            if self.errorTail.count > 8_192 { self.errorTail.removeFirst(self.errorTail.count - 8_192) }
+        }
         output.fileHandleForReading.readabilityHandler = { [weak self] handle in
             self?.consume(handle.availableData)
         }
@@ -51,6 +78,7 @@ final class CodexAppServerController {
 
     func stop() {
         output.fileHandleForReading.readabilityHandler = nil
+        errors.fileHandleForReading.readabilityHandler = nil
         guard process.isRunning else {
             isRunning = false
             return
@@ -86,6 +114,16 @@ final class CodexAppServerController {
     private func consume(_ data: Data) {
         guard !data.isEmpty else { return }
         pending.append(data)
+        // An unterminated or hostile runtime frame cannot grow for the life
+        // of the app. Normal streamed messages are far below this bound.
+        guard pending.count <= 2_097_152 else {
+            errorLock.lock()
+            failure = CodexConnectionFailure("runtime process exceeded message limit")
+            errorLock.unlock()
+            pending.removeAll()
+            stop()
+            return
+        }
         while let newline = pending.firstIndex(of: 0x0a) {
             let line = pending.prefix(upTo: newline)
             pending.removeSubrange(...newline)
