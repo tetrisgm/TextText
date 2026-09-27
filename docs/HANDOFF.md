@@ -33,32 +33,33 @@ app, submit to the App Store, or change billing without a new owner request.
 
 ### Native limitation and remaining work
 
-- The sandboxed Codex App Server starts authenticated `gpt-6-astra` turns but
-  exposes no callable dynamic tool to its model. A fresh private thread had
-  one valid preview tool, zero `item/tool/call` requests, and returned a
-  tool-host-unavailable message. The same runtime, account profile, model,
-  prompt, schema, and read-only configuration called that tool from a direct
-  terminal App Server session. This is specific to the Store-shaped sandbox;
-  do not claim general native workspace tools work or weaken the sandbox to
-  hide it. The document-look workflow now asks for blueprint data and uses
-  TextText's existing local schema, quality, compatibility, and renderer
-  checks before any ordinary save.
+- A read-only `list_folders` request in the Store-shaped app proved general
+  native workspace tools fail. The first test bundle omitted the runtime's
+  sibling `codex-code-mode-host`. The isolated builder now bundles and signs
+  it, and `CodexEmbeddedRuntime` requires both signed helpers. Retest in
+  `/tmp/texttext-agent-test.xXWqLc/TextText Agent Test.app` advanced to a
+  different failure: `code-mode host closed its stdout`. The macOS crash
+  report `~/Library/Logs/DiagnosticReports/codex-code-mode-host-2026-09-27-163735.ips`
+  shows V8 `FatalOOM` in `IsolateGroup::EnsureCodeRange` inside the sandbox.
+  The direct terminal App Server session had called the same read-only tool.
+  Do not claim general native tools work. Keep the sandbox permissions intact
+  until the runtime failure has a reviewed fix. The document-look workflow
+  currently uses locally validated blueprint data before the ordinary save.
 - An isolated Mac save briefly showed client error boundary `err-0wudla6`
   after a successful apply. Navigating Home and reopening the document worked,
   and authoritative readback confirmed the save. Diagnose whether this is a
   transient dev refresh or a reproducible post-save UI issue before release.
-- Latest source adds bounded automatic correction for invalid native blueprint
-  data and removes the preview tool from the active catalog. TypeScript passed;
-  the correction loop needs focused verification. Run final native tests,
-  focused web tests, and production web build with bounded RAM. Then commit
-  coherent passing changes and push. This work is not shipped.
+- Native blueprint correction, focused tests, and the production web build
+  passed in `b42be0e5`. The helper-packaging change passed an isolated app
+  build, signature verification, shell syntax check, and five focused native
+  tests; the live tool call still fails as described above. The full agent
+  specification remains open. Nothing here has been shipped.
 
 The local Next dev server was on port 3000 with
 `/tmp/texttext-agent-dev-20260927.log`. The latest isolated test app was
-`/tmp/texttext-agent-test.8ibIQl/TextText Agent Test.app`, bundle
-`app.texttext.agenttest`, with the signed bundled Codex CLI 0.153.4 and its
-own container. It predates the last cleanup/automatic-correction source edits;
-rebuild if testing those. Temporary bundles must never replace
+`/tmp/texttext-agent-test.xXWqLc/TextText Agent Test.app`, bundle
+`app.texttext.agenttest`, with the signed bundled Codex CLI 0.153.4 and signed
+code-mode host in its own container. Temporary bundles must never replace
 `/Applications/TextText.app`.
 
 Preserve unrelated edits in

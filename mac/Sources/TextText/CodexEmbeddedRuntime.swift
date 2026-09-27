@@ -7,21 +7,28 @@ import CryptoKit
 enum CodexEmbeddedRuntime {
     static func bundledExecutable(in bundle: Bundle = .main, sandboxed: Bool) -> URL? {
         guard bundle.object(forInfoDictionaryKey: "TextTextEmbeddedAgentRuntime") as? Bool == true else { return nil }
-        let candidate = bundle.bundleURL.resolvingSymlinksInPath().appendingPathComponent("Contents/Helpers/codex")
+        let helpers = bundle.bundleURL.resolvingSymlinksInPath().appendingPathComponent("Contents/Helpers")
+        let candidate = helpers.appendingPathComponent("codex")
+        guard validHelper(helpers.appendingPathComponent("codex-code-mode-host"), sandboxed: sandboxed),
+              validHelper(candidate, sandboxed: sandboxed) else { return nil }
+        return candidate
+    }
+
+    private static func validHelper(_ candidate: URL, sandboxed: Bool) -> Bool {
         guard FileManager.default.isExecutableFile(atPath: candidate.path),
-              candidate.resolvingSymlinksInPath().path == candidate.standardizedFileURL.path else { return nil }
+              candidate.resolvingSymlinksInPath().path == candidate.standardizedFileURL.path else { return false }
         var code: SecStaticCode?
         guard SecStaticCodeCreateWithPath(candidate as CFURL, [], &code) == errSecSuccess,
               let code,
-              SecStaticCodeCheckValidity(code, [], nil) == errSecSuccess else { return nil }
+              SecStaticCodeCheckValidity(code, [], nil) == errSecSuccess else { return false }
         if sandboxed {
             var information: CFDictionary?
             guard SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &information) == errSecSuccess,
                   let values = information as? [String: Any],
                   let entitlements = values[kSecCodeInfoEntitlementsDict as String] as? [String: Any],
-                  sandboxInheritanceIsValid(entitlements) else { return nil }
+                  sandboxInheritanceIsValid(entitlements) else { return false }
         }
-        return candidate
+        return true
     }
 
     static func sandboxInheritanceIsValid(_ entitlements: [String: Any]) -> Bool {
