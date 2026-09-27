@@ -755,7 +755,8 @@ export function ItemTypeStudio({
       if (!stillActive()) return;
       const detail = generationError instanceof AiConnectionError ? generationError.failure
         : validatingOutput ? aiFailure("invalid-template", requestId)
-        : executionStarted && !saveConflict ? classifyAiFailure(generationError, requestId) : null;
+        : executionStarted && connectionChoice === "api-key" && !saveConflict
+          ? classifyAiFailure(generationError, requestId) : null;
       if (detail) {
         setFailure(detail);
         if (["reconnect", "configure"].includes(detail.recovery)) {

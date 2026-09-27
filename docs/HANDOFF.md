@@ -2,92 +2,73 @@
 
 ## Current work: integrated agent customization
 
-Source on `main` in `~/dev/TextText`: Home/capture/folder baseline `d6137d75`,
-native runtime repair `3da87963`, web agent journey repair `35802110`.
-The work repairs the in-app connection → selected document preview → refinement
-→ save journey. It is not released or installed over the owner's application.
+Source: `main` in `~/dev/TextText`. The owner asked for the full in-app
+connection → selected-document preview → refinement → save → reopen journey in
+the September 25 attachment
+`4a0448e5-8029-44e8-8e3c-21378eec0824/Pasted text.txt`.
+Keep memory use bounded: one compiler/build at a time, one local web server,
+bounded tool output. Do not deploy, release, reinstall, replace the installed
+app, submit to the App Store, or change billing without a new owner request.
 
-User request: September 25 attachment
-`4a0448e5-8029-44e8-8e3c-21378eec0824/Pasted text.txt`. The user authorized
-terminal work and subagents, but asked to limit RAM after repeated ChatGPT app
-crashes. Run at most one compiler/build and one local web server. Keep tool
-output bounded. This is task progress, not a change to the agent contract.
+### Verified
 
-### Verified so far
+- The older screenshot's device code belongs at the linked ChatGPT
+  authorization page. Source commit `8f762c04` makes that next step explicit.
+  The isolated app's own profile now reports `Logged in using ChatGPT`; after
+  reopening, its sidebar says **Chat with Codex** without another setup.
+- The real API-key path passed both exact prompts, renderer, ordinary save,
+  authoritative readback, stale-revision conflict, and new-session checks.
+  See [workflow receipt](agent-experience-verification-2026-09-25.md).
+- In the isolated Store-shaped Mac app, the exact research-reader request and
+  narrower-commentary refinement both produced schema-validated, rendered
+  native previews. The saved look is
+  `look-fa4c0003fb6494beec338220c2e202a8@2`, applied to document
+  `44d13a24-03d4-4fbe-8b32-cd2df1cf2acd` at revision `492010` in local
+  Postgres. Reopening the app showed the look, Markdown, commentary, source
+  reference, and persisted ChatGPT connection.
+- The save initially encountered a stale document revision. The existing
+  **Read latest document and review** action loaded the latest revision, then
+  **Done** applied the already saved look. The authoritative store read
+  confirmed the final template reference.
 
-- The baseline local refinement used saved Anthropic `claude-sonnet-5` and
-  failed generation with upstream HTTP 401 `authentication_error`. There was
-  no developer provider override. Template generation/save never started.
-- The real same-provider terminal journey passed all 20 checks: protected
-  setup, both exact prompts, actual renderer, ordinary create/apply actions,
-  authoritative save/readback, unchanged content and metadata, lost-response
-  reconciliation, stale revision conflict, and a fresh authenticated HTTP
-  session. The existing fixture is saved at revision `491827`, look
-  `look-fa4c0003fb6494beec338220c2e202a8@1`. Its rejected configuration was
-  backed up as ciphertext and replaced through the normal setup action with
-  the existing TextText-owned Anthropic key. No override or provider change.
-  See the workflow receipt for correlation IDs and exact provenance.
-- Source now checks real generation, classifies safe errors with request IDs,
-  retains target-scoped customization drafts, uses shared connection choice,
-  supports cancellation, checks document revision, and reads back saves.
-- Native source can select a declared signed bundled Codex helper in the Store
-  sandbox, with app-owned auth and documented device-code sign-in. Store builds
-  without that bundle still advertise it unavailable. No release packaging
-  change silently includes a runtime.
-- Store compilation, 26 focused Codex tests, provider tests, studio tests,
-  save/conflict tests and a full web production build passed. Combined focused web tests passed **262/262** across 25 files with one worker.
-  Do not equate these with the live workflow.
-- In the isolated Mac app, local TextText login and the actual selected document
-  opened; Customize preserved the exact prompt and offered in-place ChatGPT
-  setup. It has now reached device authorization, awaiting the user's sign-in.
-  Authenticated native generation and native UI save remain unverified.
+### Native limitation and remaining work
 
-The live native app reached device authorization. The owner found the waiting
-state unclear; the sidebar and compact setup now offer an explicit **Open
-ChatGPT to sign in** link with numbered code/return instructions. Account
-authorization and the native editing loop remain pending.
+- The sandboxed Codex App Server starts authenticated `gpt-6-astra` turns but
+  exposes no callable dynamic tool to its model. A fresh private thread had
+  one valid preview tool, zero `item/tool/call` requests, and returned a
+  tool-host-unavailable message. The same runtime, account profile, model,
+  prompt, schema, and read-only configuration called that tool from a direct
+  terminal App Server session. This is specific to the Store-shaped sandbox;
+  do not claim general native workspace tools work or weaken the sandbox to
+  hide it. The document-look workflow now asks for blueprint data and uses
+  TextText's existing local schema, quality, compatibility, and renderer
+  checks before any ordinary save.
+- An isolated Mac save briefly showed client error boundary `err-0wudla6`
+  after a successful apply. Navigating Home and reopening the document worked,
+  and authoritative readback confirmed the save. Diagnose whether this is a
+  transient dev refresh or a reproducible post-save UI issue before release.
+- Latest source adds bounded automatic correction for invalid native blueprint
+  data and removes the preview tool from the active catalog. TypeScript passed;
+  the correction loop needs focused verification. Run final native tests,
+  focused web tests, and production web build with bounded RAM. Then commit
+  coherent passing changes and push. This work is not shipped.
 
-### Resume next
+The local Next dev server was on port 3000 with
+`/tmp/texttext-agent-dev-20260927.log`. The latest isolated test app was
+`/tmp/texttext-agent-test.8ibIQl/TextText Agent Test.app`, bundle
+`app.texttext.agenttest`, with the signed bundled Codex CLI 0.153.4 and its
+own container. It predates the last cleanup/automatic-correction source edits;
+rebuild if testing those. Temporary bundles must never replace
+`/Applications/TextText.app`.
 
-1. Complete fresh ChatGPT device authorization in the isolated sandbox app,
-   then verify actual preview tool, save, reopen and account persistence.
-2. Finish bounded recovery tests and update the verification receipt; commit
-   coherent passing changes and push. Do not release, deploy, submit, replace
-   the installed app, or change billing.
+Preserve unrelated edits in
+`src/components/workspace/assistant/attachments.ts`,
+`src/lib/workspace/__tests__/tabs.test.ts`, and `scripts/.probe-editor.ts`.
+No project changelog entry until a release is actually shipped.
 
-One local server may run on port 3000, with log
-`/tmp/texttext-agent-repro-20260925.log`. The final web build log is
-`/tmp/texttext-agent-build.log`. Do not dump provider logs wholesale.
-The completed terminal journey's redacted receipt is
-`/tmp/texttext-live-agent-provider-receipt.json`; its harness is
-`scripts/verify-agent-provider-terminal.ts`. It is real HTTP/action/renderer
-verification, not proof of native gestures or account-backed Codex execution.
+## References
 
-Isolated native test bundle:
-`/tmp/texttext-agent-test.Upt2ax/TextText Agent Test.app`. It has its own
-`app.texttext.agenttest` container, bundled Codex 0.153.4, signed local-origin
-environment, and File Provider effects disabled. Its native source digest is
-`ffa14357c48f72c60d5081c43854b52da84f77529b61067993c102d0cc41d173`.
-Old temporary bundles are obsolete; do not launch them. No helper credentials
-were copied from another application. See the
-[sandbox receipt](agent-runtime-sandbox-verification-2026-09-25.md) and
-[workflow receipt](agent-experience-verification-2026-09-25.md).
-
-### Deployment and unrelated open work
-
-Installed app remains `/Applications/TextText.app`, Store-capability development
-build 1.0 (1094). It uses `https://texttext.app` and contains no bundled Codex.
-Its exact source SHA is not attested. Last recorded public web deployment is
-`texttext-oracle-20260925T093930Z-95f0ba86`. Current source changes are local only.
-
-Keep unrelated edits in `src/components/workspace/assistant/attachments.ts`,
-`src/lib/workspace/__tests__/tabs.test.ts`, and `scripts/.probe-editor.ts` intact
-and out of this commit. Public tenant DNS/TLS, missing Google replacement
-secret, and the missing original private project-changelog document remain
-separate issues. Do not create a duplicate changelog. No changelog entry is
-needed for this unreleased work yet.
-
-Resolved migration/sign-in history and prior references are in
-[September 25 history](HANDOFF-history-2026-09-25.md). The broader product plan
-remains [personal workspace](plans/personal-workspace.md); its performance and
-unrelated capture work are outside this agent task.
+- [Native sandbox receipt](agent-runtime-sandbox-verification-2026-09-25.md)
+- [Agent workflow receipt](agent-experience-verification-2026-09-25.md)
+- [AI sidebar architecture](ai-sidebar-architecture.md)
+- [Resolved September 25 history](HANDOFF-history-2026-09-25.md)

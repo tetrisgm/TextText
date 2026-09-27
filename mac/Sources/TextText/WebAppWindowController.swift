@@ -1181,6 +1181,12 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                 conversationID: conversationID)
             return
         }
+        // A customization turn only produces blueprint data. TextText
+        // validates and renders it locally before an ordinary save action.
+        let isItemTypeTurn = conversationID.hasPrefix("item-type:")
+        let turnTools = isItemTypeTurn
+            ? []
+            : codexDynamicTools
         if codexTurnTimedOut || codexActiveConversationID != nil ||
             codexAwaitingThreadConversationID != nil {
             emitCodexTurnEvent([
@@ -1190,7 +1196,9 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             return
         }
         let alreadyMapped = codexConversationThreads.hasThread(for: conversationID)
-        if let threadID = codexConversationThreads.threadID(for: conversationID) {
+        if let threadID = codexConversationThreads.threadID(
+            for: conversationID,
+            claimInitialThread: !isItemTypeTurn) {
             startCodexTurn(
                 prompt: alreadyMapped
                     ? prompt
@@ -1211,9 +1219,12 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                 .threadStart(conversationID),
                 method: "thread/start",
                 params: CodexAppServerRequests.threadStart(
-                    dynamicTools: codexDynamicTools,
+                    dynamicTools: turnTools,
                     disabledMCPServers: codexDisabledMCPServerNames,
-                    workingDirectory: FileManager.default.temporaryDirectory.path))
+                    workingDirectory: FileManager.default.temporaryDirectory.path,
+                    developerInstructions: isItemTypeTurn
+                        ? CodexAppServerRequests.itemTypeDeveloperInstructions
+                        : CodexAppServerRequests.embeddedDeveloperInstructions))
         } catch {
             codexAwaitingThreadConversationID = nil
             codexAwaitingThreadPrompt = nil
@@ -1579,14 +1590,33 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                 }
             case .loginCancel, .logout:
                 finishCodexDisconnect()
-            case .threadStart:
-                codexModel = message.rawResult?["model"] as? String ?? codexModel
-                if codexThreadID != nil && !codexCheckingConnection && !codexCheckRequested {
-                    emitCodexConnectionStatus()
+            case .threadStart(let conversationID):
+                guard let thread = message.rawResult?["thread"] as? [String: Any],
+                      let threadID = thread["id"] as? String else {
+                    codexFailure("runtime returned invalid thread start response",
+                        conversationID: conversationID)
+                    return
                 }
-                // thread/started confirms the allocated thread. Only a real
-                // successful turn can certify provider readiness.
-                break
+                codexModel = message.rawResult?["model"] as? String ?? codexModel
+                if let conversationID {
+                    guard codexAwaitingThreadConversationID == conversationID else { return }
+                    let prompt = codexAwaitingThreadPrompt
+                    codexAwaitingThreadConversationID = nil
+                    codexAwaitingThreadPrompt = nil
+                    codexConversationThreads.register(threadID: threadID, for: conversationID)
+                    if let prompt {
+                        startCodexTurn(prompt: prompt, conversationID: conversationID,
+                            threadID: threadID)
+                    }
+                } else {
+                    codexThreadID = threadID
+                    if codexCheckRequested {
+                        startCodexConnectionCheck(threadID: threadID)
+                    } else {
+                        codexConversationThreads.setInitialThreadID(threadID)
+                        emitCodexConnectionStatus()
+                    }
+                }
             case .turnStart:
                 if let turn = message.rawResult?["turn"] as? [String: Any],
                    let turnID = turn["id"] as? String {
@@ -1621,31 +1651,9 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             return
         }
         if codexSetupCancelRequested { return }
-        if message.method == "thread/started",
-           let thread = message.rawParams?["thread"] as? [String: Any],
-           let threadID = thread["id"] as? String {
-            if let conversationID = codexAwaitingThreadConversationID {
-                let prompt = codexAwaitingThreadPrompt
-                codexAwaitingThreadConversationID = nil
-                codexAwaitingThreadPrompt = nil
-                codexConversationThreads.register(
-                    threadID: threadID,
-                    for: conversationID)
-                if let prompt {
-                    startCodexTurn(
-                        prompt: prompt,
-                        conversationID: conversationID,
-                        threadID: threadID)
-                }
-            } else {
-                codexThreadID = threadID
-                if codexCheckRequested {
-                    startCodexConnectionCheck(threadID: threadID)
-                } else {
-                    codexConversationThreads.setInitialThreadID(threadID)
-                    emitCodexConnectionStatus()
-                }
-            }
+        if message.method == "thread/started" {
+            // Notifications can race with other thread/start calls. The
+            // response ID above is the only reliable conversation pairing.
             return
         }
         let turnScopedMethods: Set<String> = [

@@ -75,12 +75,17 @@ public struct CodexConversationThreadRouter: Equatable {
         unclaimedThreadID = threadID
     }
 
-    /// Returns the stable thread for a conversation, claiming the initial
-    /// connection thread if this is the first conversation to send a turn.
-    public mutating func threadID(for conversationID: String) -> String? {
+    /// Returns the stable thread for a conversation. Private utility turns
+    /// start their own thread so they never claim the visible chat's initial
+    /// connection thread.
+    public mutating func threadID(
+        for conversationID: String,
+        claimInitialThread: Bool = true
+    ) -> String? {
         if let threadID = threadsByConversation[conversationID] {
             return threadID
         }
+        guard claimInitialThread else { return nil }
         guard let threadID = unclaimedThreadID else { return nil }
         unclaimedThreadID = nil
         threadsByConversation[conversationID] = threadID
@@ -195,6 +200,13 @@ public enum CodexAppServerRequests {
     Keep any progress update to one short sentence, then provide the useful answer.
     """
 
+    public static let itemTypeDeveloperInstructions = """
+    You are designing a read-only preview for the selected TextText item.
+    Use only the current look and writer request supplied in this turn. Do not use tools, files, skills, or other integrations.
+    Return only one JSON object with a blueprint_json string containing the complete proposed blueprint.
+    TextText validates and renders that data locally. Do not claim to have saved or changed workspace content.
+    """
+
     /// Extracts only server names from `config/read`. No server command, URL,
     /// environment value, or OAuth material crosses this boundary.
     public static func effectiveMCPServerNames(configReadResult: [String: Any]?) -> [String]? {
@@ -211,7 +223,8 @@ public enum CodexAppServerRequests {
     public static func threadStart(
         dynamicTools: [[String: Any]],
         disabledMCPServers: [String],
-        workingDirectory: String? = nil
+        workingDirectory: String? = nil,
+        developerInstructions: String = embeddedDeveloperInstructions
     ) -> [String: Any] {
         let disabledServers = Dictionary(uniqueKeysWithValues:
             Set(disabledMCPServers).sorted().map { ($0, ["enabled": false]) })
@@ -220,7 +233,7 @@ public enum CodexAppServerRequests {
             "sandbox": "read-only",
             "ephemeral": true,
             "dynamicTools": dynamicTools,
-            "developerInstructions": embeddedDeveloperInstructions,
+            "developerInstructions": developerInstructions,
         ]
         params["config"] = [
             "mcp_servers": disabledServers,

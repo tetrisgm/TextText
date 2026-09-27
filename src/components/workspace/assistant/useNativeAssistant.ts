@@ -99,8 +99,6 @@ import {
   submitNativeAssistantTurn,
 } from "@/lib/ai/native-client";
 import {
-  NATIVE_ITEM_TYPE_PREVIEW_TOOL,
-  NATIVE_ITEM_TYPE_PREVIEW_TOOL_NAME,
   nativeItemTypeDesignPrompt,
   parseNativeItemTypePreviewArguments,
 } from "@/lib/ai/native-item-type";
@@ -686,10 +684,10 @@ export function useNativeAssistant({
   const activeCloudAbortRef = useRef(new Map<string, AbortController>());
   const nativeProofsRef = useRef<AssistantArtifactProof[]>([]);
   const nativeItemTypeDesignRef = useRef<{
-    blueprint: ItemTypeBlueprint | null;
-    lastError: string | null;
+    finalText: string | null;
     current?: ItemTypeBlueprint;
-    validationFailures: number;
+    requestId: string;
+    retryCount: number;
     reject: (error: Error) => void;
     resolve: (blueprint: ItemTypeBlueprint) => void;
     request: string;
@@ -966,7 +964,6 @@ export function useNativeAssistant({
       // Only first-party workspace tools are registered. The legacy local MCP
       // loader returns an empty set because it cannot use durable owner review.
       registerNativeAssistantTools([
-        NATIVE_ITEM_TYPE_PREVIEW_TOOL,
         ...tools.toolDefinitions.map((tool) => ({
           name: tool.name,
           description: tool.description,
@@ -1078,7 +1075,10 @@ export function useNativeAssistant({
           );
         }
       } else if (event.type === "final-text") {
-        if (nativeItemTypeDesignRef.current) return;
+        if (nativeItemTypeDesignRef.current) {
+          nativeItemTypeDesignRef.current.finalText = event.text;
+          return;
+        }
         nativeTextBufferRef.current?.buffer.finish();
         nativeTextBufferRef.current = null;
         nativeFinalTextReceivedRef.current = true;
@@ -1103,64 +1103,12 @@ export function useNativeAssistant({
           );
         }
       } else if (event.type === "tool-call") {
-        if (
-          nativeItemTypeDesignRef.current &&
-          event.tool !== NATIVE_ITEM_TYPE_PREVIEW_TOOL_NAME
-        ) {
+        if (nativeItemTypeDesignRef.current) {
           submitNativeAssistantToolResult(
             event.callId,
-            {
-              error:
-                "This turn is preview-only. Return the design with preview_item_type.",
-            },
+            { error: "This design turn accepts blueprint JSON, not tool calls." },
             true,
           );
-          return;
-        }
-        if (event.tool === NATIVE_ITEM_TYPE_PREVIEW_TOOL_NAME) {
-          const pending = nativeItemTypeDesignRef.current;
-          if (!pending) {
-            submitNativeAssistantToolResult(
-              event.callId,
-              { error: "No item-type preview is waiting for a design." },
-              true,
-            );
-            return;
-          }
-          try {
-            pending.blueprint = parseNativeItemTypePreviewArguments(
-              event.arguments,
-              pending.request,
-              pending.current,
-            );
-            pending.lastError = null;
-            submitNativeAssistantToolResult(event.callId, {
-              accepted: true,
-              message:
-                "The preview is ready. Finish the turn without calling another tool.",
-            });
-          } catch (error) {
-            pending.lastError = assistantAgentError(error);
-            pending.validationFailures += 1;
-            if (pending.validationFailures >= 3) {
-              submitNativeAssistantToolResult(event.callId, { error: pending.lastError, correctionLimitReached: true }, true);
-              requestNativeAssistant("assistantCancel", undefined, fence.conversationId);
-              clearTimeout(pending.timeout);
-              pending.cleanup();
-              nativeItemTypeDesignRef.current = null;
-              nativeTurnFenceRef.current = null;
-              nativeThreadRef.current = null;
-              nativeConversationRef.current = null;
-              setThreadBusy(eventThread, false);
-              pending.reject(new Error(pending.lastError));
-              return;
-            }
-            submitNativeAssistantToolResult(
-              event.callId,
-              { error: pending.lastError },
-              true,
-            );
-          }
           return;
         }
         const eventFence = fence;
@@ -1266,22 +1214,56 @@ export function useNativeAssistant({
         }
         const itemTypeDesign = nativeItemTypeDesignRef.current;
         if (itemTypeDesign) {
+          let blueprint: ItemTypeBlueprint | null = null;
+          let parseError: unknown = null;
+          if (!blueprint && itemTypeDesign.finalText) {
+            try {
+              blueprint = parseNativeItemTypePreviewArguments(
+                itemTypeDesign.finalText.trim(),
+                itemTypeDesign.request,
+                itemTypeDesign.current,
+              );
+            } catch (error) { parseError = error; }
+          }
+          if (!blueprint && parseError && itemTypeDesign.retryCount < 2) {
+            let hasBlueprintData = false;
+            try {
+              const parsed = JSON.parse(itemTypeDesign.finalText ?? "") as Record<string, unknown>;
+              hasBlueprintData = "blueprint_json" in parsed || "blueprint" in parsed;
+            } catch { /* A plain-text failure cannot be corrected as blueprint data. */ }
+            if (hasBlueprintData) {
+              itemTypeDesign.retryCount += 1;
+              itemTypeDesign.finalText = null;
+              const correction = parseError instanceof Error ? parseError.message.slice(0, 800) : "The blueprint was invalid.";
+              if (submitNativeAssistantTurn(
+                `The proposed blueprint was rejected: ${correction}\nReturn only a corrected JSON object with a blueprint_json string. Preserve the writer's existing fields and request. Do not save anything.`,
+                fence.conversationId,
+                [],
+                itemTypeDesign.requestId,
+              )) return;
+            }
+          }
           clearTimeout(itemTypeDesign.timeout);
-      itemTypeDesign.cleanup();
+          itemTypeDesign.cleanup();
           nativeItemTypeDesignRef.current = null;
           nativeTurnFenceRef.current = null;
           nativeThreadRef.current = null;
           nativeConversationRef.current = null;
           setThreadBusy(eventThread, false);
-          if (itemTypeDesign.blueprint) {
-            itemTypeDesign.resolve(itemTypeDesign.blueprint);
-          } else {
-            itemTypeDesign.reject(
-              new Error(
-                itemTypeDesign.lastError ||
-                  "The connected agent finished without a usable item-type design.",
-              ),
-            );
+          if (blueprint) itemTypeDesign.resolve(blueprint);
+          else {
+            let explanation = itemTypeDesign.finalText?.trim() ?? "";
+            try {
+              const parsed = JSON.parse(explanation) as { error?: unknown };
+              if (typeof parsed.error === "string") explanation = parsed.error;
+              else if ("blueprint_json" in parsed || "blueprint" in parsed)
+                explanation = parseError instanceof Error ? parseError.message : "The blueprint was invalid.";
+            } catch { /* The response was plain text. */ }
+            itemTypeDesign.reject(new Error(
+              explanation
+                ? `The agent did not return a valid design preview. ${explanation.slice(0, 300)}`
+                : "The connected agent finished without a usable item-type design.",
+            ));
           }
           return;
         }
@@ -1481,10 +1463,10 @@ export function useNativeAssistant({
           );
         }, 120_000);
         nativeItemTypeDesignRef.current = {
-          blueprint: null,
-          lastError: null,
+          finalText: null,
           current,
-          validationFailures: 0,
+          requestId,
+          retryCount: 0,
           reject,
           resolve,
           request,

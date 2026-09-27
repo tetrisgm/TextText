@@ -143,6 +143,19 @@ final class CodexAppServerTests: XCTestCase {
             router.threadID(for: "chat-b"))
     }
 
+    func testPrivateConversationCannotClaimConnectionThread() {
+        var router = CodexConversationThreadRouter(initialThreadID: "connection-thread")
+
+        XCTAssertNil(router.threadID(for: "item-type:look", claimInitialThread: false))
+        XCTAssertFalse(router.hasThread(for: "item-type:look"))
+        XCTAssertEqual(router.threadID(for: "regular-chat"), "connection-thread")
+
+        router.register(threadID: "design-thread", for: "item-type:look")
+        XCTAssertEqual(
+            router.threadID(for: "item-type:look", claimInitialThread: false),
+            "design-thread")
+    }
+
     func testFreshNativeThreadRestoresBoundedDurableConversation() {
         let restored = CodexAppServerRequests.promptRestoringConversation(
             currentPrompt: "<USER_REQUEST>What phrase?</USER_REQUEST>",

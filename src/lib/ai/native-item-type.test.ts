@@ -12,9 +12,8 @@ describe("native item-type design", () => {
       folderName: "Essays",
     });
 
-    expect(prompt).toContain("preview_item_type with a complete blueprint");
-    expect(prompt).toContain("quality review rejects");
-    expect(prompt).toContain("Do not call any other tool");
+    expect(prompt).toContain("Return only a JSON object with a blueprint_json string");
+    expect(prompt).toContain("Do not call tools");
     expect(prompt).toContain("Target folder: Essays");
     expect(prompt).toContain("Medium-like publication");
     expect(prompt).toContain('"collection"');
@@ -23,7 +22,7 @@ describe("native item-type design", () => {
     expect(prompt).toContain("named folder views");
   });
 
-  it("validates the complete blueprint returned by the native tool", () => {
+  it("validates the complete blueprint returned by the native agent", () => {
     const blueprint = ITEM_TYPE_STARTERS[0]!.blueprint;
     expect(
       parseNativeItemTypePreviewArguments({

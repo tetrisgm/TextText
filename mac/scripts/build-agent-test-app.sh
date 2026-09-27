@@ -25,7 +25,7 @@ APP="$TEST_ROOT/TextText Agent Test.app"
 cp "$ROOT/mac/Package.resolved" "$TEST_ROOT/Package.resolved"
 restore_lockfile() { cp "$TEST_ROOT/Package.resolved" "$ROOT/mac/Package.resolved"; }
 trap restore_lockfile EXIT
-TEXTTEXT_STORE=1 swift build --package-path "$ROOT/mac" --product TextTextApp --jobs 4
+TEXTTEXT_STORE=1 swift build --package-path "$ROOT/mac" --product TextTextApp --jobs 2
 BIN="$(TEXTTEXT_STORE=1 swift build --package-path "$ROOT/mac" --show-bin-path)"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers" "$APP/Contents/Resources"
 cp "$BIN/TextTextApp" "$APP/Contents/MacOS/TextText"

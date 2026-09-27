@@ -10,26 +10,6 @@ import {
 import { assertCompatibleItemTypeFields } from "@/lib/presentation/item-type-update";
 import { assessItemTypeQuality } from "@/lib/presentation/item-type-quality";
 
-export const NATIVE_ITEM_TYPE_PREVIEW_TOOL_NAME = "preview_item_type";
-
-export const NATIVE_ITEM_TYPE_PREVIEW_TOOL = Object.freeze({
-  name: NATIVE_ITEM_TYPE_PREVIEW_TOOL_NAME,
-  description:
-    "Return one complete reusable TextText item-type blueprint for preview. This does not save or apply anything. Call it exactly once after interpreting the writer's requested fields, item page, folder layout, and visual reference.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      blueprint_json: {
-        type: "string",
-        description:
-          "The complete item-type blueprint encoded as one JSON object string.",
-      },
-    },
-    required: ["blueprint_json"],
-    additionalProperties: false,
-  },
-});
-
 function validateNativeBlueprint(
   value: unknown,
   request: string,
@@ -42,7 +22,7 @@ function validateNativeBlueprint(
   const review = assessItemTypeQuality(blueprint);
   if (!review.passes) {
     throw new Error(
-      `Improve the item type and call ${NATIVE_ITEM_TYPE_PREVIEW_TOOL_NAME} again: ${review.findings
+      `Improve the item type and return a corrected blueprint: ${review.findings
         .map((finding) => finding.message)
         .join(" ")}`,
     );
@@ -56,7 +36,7 @@ function validateNativeBlueprint(
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Invalid item type.";
     throw new Error(
-      `Improve the item type and call ${NATIVE_ITEM_TYPE_PREVIEW_TOOL_NAME} again: ${reason}`,
+      `Improve the item type and return a corrected blueprint: ${reason}`,
     );
   }
   return blueprint;
@@ -110,8 +90,8 @@ export function nativeItemTypeDesignPrompt({
     .join("\n\n");
   return [
     "Design a reusable TextText item type for the writer's request below.",
-    `Call ${NATIVE_ITEM_TYPE_PREVIEW_TOOL_NAME} with a complete blueprint. If its quality review rejects the design, fix every reported issue and call it again.`,
-    "Do not call any other tool. Do not save or change workspace content.",
+    "Return only a JSON object with a blueprint_json string containing the complete blueprint. TextText will validate it and show the preview.",
+    "Do not call tools. Do not save or change workspace content.",
     "Infer sensible fields and example content. Design both the individual item page and the folder listing. Honor named visual references through safe theme tokens, without copying a brand.",
     "When useful, include relations, people records, recurrence, a closed status workflow, read-only computed rollups, conditional details, validation constraints, and named folder views. Keep the result focused rather than adding every capability.",
     `${ITEM_TYPE_BLUEPRINT_FORMAT}\nEncode the finished object as the blueprint_json string argument.`,

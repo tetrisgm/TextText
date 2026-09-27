@@ -1,8 +1,10 @@
 # In-app agent customization verification
 
 Status: real API-key generation, refinement, save and readback passed through
-the local HTTP/action path and actual renderer. Native account authorization
-and the complete native UI workflow remain unproved. This receipt distinguishes
+the local HTTP/action path and actual renderer. The isolated Mac app also
+completed account-backed generation, refinement, save, and reopen for the
+selected document. General sandboxed workspace tool calls remain unproved.
+This receipt distinguishes
 source, sandbox probe, provider calls, UI actions, and saved results.
 
 ## Baseline and failure
@@ -29,7 +31,8 @@ bodies, or authentication URLs/codes are retained in this receipt.
 - `ItemTypeStudio` / `ItemTypeAgentSetup`: preserved prompt, target, template
   base, scope, draft history; compact setup; shared selected connection; cancel.
 - `useNativeAssistant` / native bridge: owner/workspace/conversation fences,
-  preview-only tool turn, correlation, cancellation, bounded schema correction.
+  private read-only design turn, correlation, cancellation, bounded schema
+  correction. Native design data is validated before preview and ordinary save.
 - `/api/ai` / `/api/ai/item-type`: same provider factory/configuration, scoped
   context, classified errors, signal propagation, generation-backed readiness.
 - `item-type-actions` / `item-template-actions` / store: immutable template
@@ -47,14 +50,34 @@ See [sandbox runtime verification](agent-runtime-sandbox-verification-2026-09-25
 Installed 1.0 (1094) has no bundled agent; it remains unchanged. The isolated
 Store-compiled test app can launch the official bundled runtime in the sandbox.
 Browser authorization fails on its local listener; documented device-code
-start/cancel works. Fresh interactive authorization, actual model/tool work,
-and persisted authenticated session still require live verification.
+start/cancel works. The account authorization completed and persisted across
+app reopen. The screenshot with only a code showed the older UI; commit
+`8f762c04` adds a visible ChatGPT button and numbered steps.
 
 The isolated full app opened the selected local test document through real
-Mac gestures, retained the requested research-reader prompt, and presented
-in-place ChatGPT setup. Repeated host ChatGPT crashes interrupted the remaining
-interaction. The app process sample did not show a blocked main thread or high
-memory footprint, so those interruptions are not attributed to TextText.
+Mac gestures and retained the requested research-reader prompt. Direct native
+dynamic-tool attempts failed inside the Store-shaped sandbox: a fresh thread
+had one valid preview tool and the correct `gpt-6-astra` model, but zero tool
+requests, while the model reported that its tool host was unavailable. The
+same runtime, app-owned ChatGPT profile, prompt and schema called that tool
+from an unsandboxed terminal App Server session. The exact sandbox cause is
+not yet established; general native workspace tools must not be declared
+working on the basis of account login.
+
+The design turn now returns blueprint data without requesting a tool. TextText
+parses, validates, quality checks, compiles, and renders that data locally
+before save. In the Mac UI, both exact prompts produced actual previews. The
+first native draft needed a second attempt to validate; source now includes a
+bounded automatic correction turn, pending final live verification.
+
+The ordinary UI save created look
+`look-fa4c0003fb6494beec338220c2e202a8@2`. Applying it first hit a
+document-revision conflict. The UI's **Read latest document and review**
+action loaded current content, and **Done** applied the saved look. Local
+store readback showed revision `492010` referencing that version. After an
+app restart, the document body, commentary, source reference, selected look,
+and ChatGPT account were present. A transient client error boundary appeared
+after apply; Home and reopening recovered, but that boundary needs diagnosis.
 
 ## Checks and live result
 
@@ -94,9 +117,8 @@ MCP, direct content write, or provider substitution was used.
 | Fresh session | New authenticated HTTP session reopened the saved result and retained the verified same-provider connection without another generation check |
 
 The local redacted machine receipt is
-`/tmp/texttext-live-agent-provider-receipt.json`. This proves an actual
-provider-produced saved result, while ordinary UI save, native app reopen,
-and account-session persistence still require the native verification below.
+`/tmp/texttext-live-agent-provider-receipt.json`. This proves the
+API-key provider path; the isolated native UI result is recorded above.
 No additional paid checks were run during harness review.
 The final read-only stored-renderer review confirmed the saved revision,
 narrow notes node, original excerpt and commentary text, and separate source
@@ -105,10 +127,11 @@ added (`/tmp/texttext-agent-harness-tsc.log`).
 
 ### Remaining native verification
 
-The isolated sandbox app has reached the documented device authorization step.
-Fresh user authorization is pending. After it completes, verify the actual
-preview tool, refinement, ordinary UI save, app reopen and continued account
-session. A terminal API-key success does not complete that account-based goal.
+The data-only look path is proved in the isolated UI, but native workspace
+dynamic tools are unavailable in that sandbox, so general agent read/edit
+operations remain a release blocker. Verify the final automatic correction
+source and diagnose the transient post-save client boundary. Do not attribute
+the dynamic-tool issue to account or model access; both were proved.
 
 No release, deployment, installation replacement, App Store submission, new
 billing service, credential copying, or provider substitution was performed.
