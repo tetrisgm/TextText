@@ -3,8 +3,9 @@
 Status: real API-key generation, refinement, save and readback passed through
 the local HTTP/action path and actual renderer. The isolated Mac app also
 completed account-backed generation, refinement, save, and reopen for the
-selected document. A September 27 isolated build also verified native
-workspace read and write tools through the same account connection.
+selected document, including a clean-profile first-use setup on the final
+source. A September 27 isolated build also verified native workspace read and
+write tools through the same account connection.
 This receipt distinguishes
 source, sandbox probe, provider calls, UI actions, and saved results.
 
@@ -67,7 +68,8 @@ The design turn now returns blueprint data without requesting a tool. TextText
 parses, validates, quality checks, compiles, and renders that data locally
 before save. In the Mac UI, both exact prompts produced actual previews. The
 first native draft needed a second attempt to validate; source now includes a
-bounded automatic correction turn, pending final live verification.
+bounded automatic correction turn. The final live requests validated on their
+first returned blueprint, so they did not exercise that branch.
 
 The ordinary UI save created look
 `look-fa4c0003fb6494beec338220c2e202a8@2`. Applying it first hit a
@@ -178,6 +180,49 @@ and private visibility. Home navigation and reopening showed the saved item.
 Three focused web test files passed 21 tests; TypeScript passed. The earlier
 native direct-tool patch passed 20 focused Swift tests and live read/write
 checks. The latest source has not been released or installed.
+
+### September 27 clean-profile first use on committed source
+
+The isolated Store-shaped app built from `6a7fd9b8` used official Codex CLI
+0.153.4 and local port 3000. For a separate empty app profile, the same signed
+bundle was copied, given test bundle ID `app.texttext.agenttest.firstuse`, and
+re-signed with the same sandbox entitlements. The installed app, prior test
+profile, and server data were left intact. The profile signed into the existing
+local Mira Chen fixture using development login, then selected the note at
+`44d13a24-03d4-4fbe-8b32-cd2df1cf2acd`.
+
+From **Customize this document**, the exact request was: “Make the commentary
+wider while keeping the article readable and the source reference visible.
+Preserve the Markdown and all existing fields.” With no agent connection,
+**Connect to continue this request** kept that text and the selected document
+in place. **Continue with ChatGPT** displayed an Open ChatGPT button and three
+numbered steps. The existing ChatGPT account completed the official device
+authorization in Safari; no credential, authorization URL, or code is retained
+here. TextText automatically resumed the pending request and rendered the
+selected content with Balanced commentary. A follow-up request to make the
+commentary narrower while retaining the source produced a second live preview
+with Narrow commentary and the original fields still visible.
+
+**Done** saved look
+`look-fa4c0003fb6494beec338220c2e202a8@7` with no client error. Local
+Postgres readback showed document revision `492016`, the saved look reference,
+the prior body append, original commentary, and private visibility. After
+quitting and reopening the app, Home and the selected document loaded without
+another account setup and the sidebar showed **Chat with Codex** ready. This
+proves the requested ask → connect → preview → refine → save → reopen path in
+the isolated Store-shaped edition. It is not a released or installed build.
+
+The final recovery suite passed 81 web tests across 13 files for provider
+classification, connection state, generation proof, request/draft state,
+native fences, and idempotent template versions. The Store-compiled Mac tests
+passed 25 cases for sandbox/runtime handling and App Server isolation. Real
+recovery evidence also includes the earlier rejected provider key (401), the
+stale document revision and reviewed retry, and the reproduced/fixed post-save
+error boundary. Temporary network, model access, rate/quota limits, expired
+native authorization, cancellation, and ambiguous responses were exercised
+through focused tests, not by intentionally disrupting the live account. The
+automatic invalid-blueprint correction is bounded in source; the final live
+requests returned valid blueprints on their first attempt.
 
 No release, deployment, installation replacement, App Store submission, new
 billing service, credential copying, or provider substitution was performed.

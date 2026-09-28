@@ -43,6 +43,13 @@ app, submit to the App Store, or change billing without a new owner request.
   directly to the editor with no error boundary. Local Postgres readback at
   revision `492015` confirmed look@6, body, commentary, and private visibility;
   navigating Home and reopening showed the saved item.
+- A second, clean-profile Store-shaped test app built from `6a7fd9b8` proved
+  disconnected first use. From the selected note, Customize preserved the
+  exact request, opened in-context ChatGPT setup, resumed automatically after
+  device authorization, rendered a Balanced preview, then rendered an AI
+  refinement back to Narrow. Done saved look@7 at revision `492016` without a
+  client error. Reopening the app showed the document and **Chat with Codex**
+  ready. See the workflow receipt; no device code or credential is recorded.
 
 ### Native limitation and remaining work
 
@@ -62,16 +69,25 @@ app, submit to the App Store, or change billing without a new owner request.
   passed in `b42be0e5`. The direct-tool patch passed 20 focused native tests,
   an isolated signed app build, and the live read/write/reopen path. Three
   focused web test files (21 tests) and TypeScript passed after conflict and
-  pool fixes. Recheck disconnected first-use on this final source, bounded
-  correction, and the remaining recovery matrix before declaring the full
-  spec complete. Nothing here has been shipped.
+  pool fixes. A final recovery suite passed 81 web tests across 13 files and
+  25 native tests. Invalid credential, model access, quota/rate limit, timeout,
+  cancellation, owner fences, and ambiguous-save behavior are covered by
+  focused tests; the earlier real provider attempt returned a classified 401.
+  The bounded automatic correction branch was tested in source, while both
+  final live requests validated on their first returned blueprint. No release,
+  installed-app replacement, or App Store review has happened.
 
 The local Next dev server was on port 3000 with
-`/tmp/texttext-agent-dev-20260927.log`. The latest isolated test app was
+`/tmp/texttext-agent-dev-20260927.log`. The initial direct-tool test app was
 `/tmp/texttext-agent-test.IhNlCN/TextText Agent Test.app`, bundle
 `app.texttext.agenttest`, with the signed bundled Codex CLI 0.153.4 and no
 code-mode host in its own container. Temporary bundles must never replace
 `/Applications/TextText.app`.
+The clean-profile proof used
+`/tmp/texttext-agent-firstuse.jqjbtpil/TextText First Use Test.app`, bundle
+`app.texttext.agenttest.firstuse`, copied from the isolated build at
+`/tmp/texttext-agent-test.8Z9ZLA` with only test identity metadata changed
+and the bundle re-signed. Both test bundles point only to local port 3000.
 
 Preserve unrelated edits in
 `src/components/workspace/assistant/attachments.ts`,
