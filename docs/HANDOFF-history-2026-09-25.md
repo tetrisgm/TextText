@@ -71,7 +71,7 @@ The Store and standalone Swift builds, TypeScript check, focused Apple token
 tests, and shell syntax check pass. A development-signed Store build 1.0 (1094)
 passes codesign and arm64 checks with all three extensions after the missing
 local development profiles were downloaded. On September 25, the running
-`mac/build/TextText-Dev.app` opened Apple's native Sign in with Apple sheet
+development-signed build opened Apple's native Sign in with Apple sheet
 without the website consent dialog and signed into the existing
 `ramine@ramine.net` workspace; Home rendered its three documents. At the
 owner's request, that working bundle was moved to `/Applications/TextText.app`
