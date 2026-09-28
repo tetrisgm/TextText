@@ -148,8 +148,9 @@ Store-shaped test calls those tools inside App Sandbox without Codex's V8
 code-mode host. Standalone builds
 can discover an external runtime. Store source accepts only a declared signed
 bundled helper that inherits the sandbox, uses TextText-owned account state and
-the documented device authorization flow. Installed build 1094 contains no
-helper and cannot offer account setup. An isolated Store-shaped build verified
+the documented device authorization flow. The September 28 local WIP build
+1095 includes that helper; the public release still does not. An isolated
+Store-shaped build verified
 clean-profile authorization, automatic return to a selected-document request,
 native workspace read/write, preview, refinement, save, and app reopen in the
 [workflow receipt](agent-experience-verification-2026-09-25.md).
@@ -270,8 +271,9 @@ search.
 
 1. **Native Codex: capability-gated.** Standalone builds can use their local
    runtime. Current Store source requires a declared sandbox-inheriting bundled
-   helper and app-owned authorization. The installed Store-capability build
-   has no helper; ordinary release packaging has not been changed. Device
+   helper and app-owned authorization. The September 28 local WIP build has
+   the helper through an explicit build option; ordinary release packaging
+   remains unchanged. Device
    authorization start passed in isolation, while authenticated generation,
    persistence and packaging remain separate verification gates.
 2. **Bring-your-own API key: shipped.** A workspace owner can add an Anthropic

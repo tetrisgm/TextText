@@ -9,6 +9,33 @@ the September 25 attachment
 Keep memory use bounded: one compiler/build at a time, one local web server,
 bounded tool output. Do not deploy, release, reinstall, replace the installed
 app, submit to the App Store, or change billing without a new owner request.
+The owner requested replacing the installed app on September 28; that one
+local replacement is recorded below. Public release remains unrequested.
+
+### Installed local WIP, September 28
+
+- `/Applications/TextText.app` is now the development-signed Store-shaped
+  **1.0 (1095)** build from current `main`, with the official Codex CLI 0.153.4
+  bundled as a signed sandbox-inheriting helper. `mac/scripts/build-app.sh`
+  supports this only with an explicit runtime path. The bundle points to
+  `http://localhost:3000` via its local WIP override; it needs the local Next
+  server and local Postgres to keep running. The normal public website was not
+  deployed. The previous **1.0 (1094)** bundle is recoverable in Trash, and
+  `/Applications` contains one TextText app.
+- The new app passed bundle signature and arm64/extension checks, launched from
+  `/Applications`, and signed into the existing local Mira Chen fixture through
+  development login. The live app showed Home, documents, and the assistant.
+  The workspace currently prefers its existing Claude API-key connection; the
+  bundled native runtime has not been exercised in this canonical profile.
+- The full release gate stopped at `web.unit`: 13 failures across six files
+  with stale command, copy, and extracted-hook expectations. The local app has
+  no release-gate attestation, so its content-blind health report marks those
+  attestation checks failed. This was a manual recoverable local swap, not a
+  release or a passing canonical installer run. Do not publish or claim release
+  readiness until those tests and the exact-source attestation pass. See
+  `/tmp/texttext-wip-release-gates.log` and local commits `9fbb77eb`,
+  `8af17056`. The Next dev server is in the current Codex terminal session
+  with log `/tmp/texttext-wip-app-server.log`.
 
 ### Verified
 
