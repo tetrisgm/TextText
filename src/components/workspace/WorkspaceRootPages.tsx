@@ -1,13 +1,13 @@
 "use client";
 
 import { RetainedWorkspacePane } from "./RetainedWorkspacePane";
+import { OPEN_COMMAND_PALETTE_EVENT } from "@/components/keyboard/CommandPalette";
 import { useClientHydrated } from "@/lib/use-client-hydrated";
 
 import { HomeSession } from "@/components/workspace/home/session";
 import { READING_ITEMS_CHANGED, READING_PREFERENCES_CHANGED, type ReadingItemsChange } from "@/lib/reading/client";
 import { HomeNews } from "@/components/workspace/home/HomeNews";
 import { ArtifactHeadlines, ArtifactProfile, ArtifactNotes, SavedArticles } from "@/components/workspace/home/ArtifactPages";
-import { PersonalHome } from "@/components/workspace/home/PersonalHome";
 import { HomeCreateMenu } from "@/components/workspace/home/HomeCreateMenu";
 import { ArtifactIcon, type ArtifactPane } from "@/components/workspace/home/ArtifactNavigation";
 import { warmChunk } from "@/components/workspace/warm-chunk";
@@ -120,10 +120,7 @@ import type {
 } from "react";
 import type {ReactNode } from "react";
 import dynamic from "next/dynamic";
-import {
-  updateBlogAction,
-  createRootFolderAction,
-} from "@/app/editor/actions";
+import { createRootFolderAction } from "@/app/editor/actions";
 import {
   UniversalItemComposer,
   type FolderCaptureResolved,
@@ -136,13 +133,12 @@ import {
   domSafeId,
 } from "@/components/workspace/WorkspacePostOption";
 import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
-import { WorkspaceViewModeControl } from "@/components/workspace/WorkspaceViewModeControl";
+import { WorkspaceViewModeControl, useWorkspaceViewMode } from "@/components/workspace/WorkspaceViewModeControl";
 import {
   type WorkspaceItemIdentityRegistry,
 } from "@/components/workspace/useLocalWorkspaceInteraction";
 import type {
   Blog,
-  BlogHomeView,
   Folder,
   Post,
 } from "@/lib/content";
@@ -174,7 +170,6 @@ import {
   type WorkspaceSearchResult,
 } from "@/lib/workspace-search";
 import { refreshWorkspacePool } from "@/lib/pool/store";
-import { chipCensus } from "@/lib/workspace/item-labels";
 import {
   WORKSPACE_DOCUMENT_OPENED_EVENT,
   documentsForActivityDate,
@@ -287,8 +282,12 @@ export function WorkspaceRootLanding({
   settingsHref: string;
 }) {
   const searchRef = useRef<HTMLInputElement>(null);
+  const [searchVisible, setSearchVisible] = useState(false);
   useEffect(() => {
-    if (focusRequestKey > 0) searchRef.current?.focus();
+    if (focusRequestKey <= 0) return;
+    setSearchVisible(true);
+    const frame = window.requestAnimationFrame(() => searchRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
   }, [focusRequestKey]);
   const [deepSearch, setDeepSearch] = useState<{
     query: string;
@@ -296,30 +295,16 @@ export function WorkspaceRootLanding({
   }>({ query: "", matches: [] });
   const [searchFailure, setSearchFailure] = useState<string | null>(null);
   const [searchAttempt, setSearchAttempt] = useState(0);
-  const [sort, setSort] = useState<SidebarDocumentSort>("recent");
-  // The legacy All items library keeps its own saved layout. Folder view
-  // choices and individual document types are independent of this setting.
+  const [sort, setSort] = useState<SidebarDocumentSort>("edited");
+  // Profile retains its explicit library subview; Home goes straight to it.
   const [libraryOpen, setLibraryOpen] = useState(false);
-  const [recentViewMode, setRecentViewMode] = useState<BlogHomeView>(
+  const [recentViewMode, commitHomeView] = useWorkspaceViewMode(
+    `library:${pool.blog.handle}`,
     pool.blog.homeLayout,
   );
-  const [homeViewError, setHomeViewError] = useState<string | null>(null);
   const [showStartHere, setShowStartHere] = useState(false);
-  const commitHomeView = useCallback(
-    (homeLayout: BlogHomeView) => {
-      const previous = recentViewMode;
-      setRecentViewMode(homeLayout);
-      setHomeViewError(null);
-      // A viewer who cannot manage the workspace still gets to switch views;
-      // theirs simply is not saved for everyone.
-      if (!canManageItems) return;
-      void updateBlogAction({ homeLayout }, pool.blog.handle).catch(() => {
-        setRecentViewMode(previous);
-        setHomeViewError("The layout could not be saved. Your items are unchanged. Choose the layout again to retry.");
-      });
-    },
-    [canManageItems, pool.blog.handle, recentViewMode],
-  );
+  const [visibleCount, setVisibleCount] = useState(60);
+  const showLibrary = homePane === "home" || (homePane === "profile" && libraryOpen);
   const [itemFilter, setItemFilter] = useState<
     "all" | "article" | "note" | "bookmark"
   >("all");
@@ -394,28 +379,13 @@ export function WorkspaceRootLanding({
         : { created: [], edited: [] },
     [dateKey, pool.posts],
   );
-  // The first-run guidance. It belongs to an empty workspace, not to the
-  // library view, which a new person has no reason to open.
+  // A workspace without a writable Notes folder has one clear first action.
   const firstLoop = (
     <div className="workspace-first-loop">
       <div>
         <strong>A place for your notes, articles, and bookmarks</strong>
-        <span>{creationFolder ? "Write a note or paste a link to start your first item." : "Create a notes folder to start your first item."}</span>
+        <span>Create a notes folder to start writing.</span>
       </div>
-      <ol>
-        <li>
-          <b>1</b>
-          <span><strong>Create</strong> {creationFolder ? "Open a folder to write and save a note." : "Create a notes folder to hold your writing."}</span>
-        </li>
-        <li>
-          <b>2</b>
-          <span><strong>Find</strong> Browse folders in the sidebar or search your words above.</span>
-        </li>
-        <li>
-          <b>3</b>
-          <span><strong>Edit</strong> Open an item to write. The assistant beside it can help when you connect an AI.</span>
-        </li>
-      </ol>
       {canManageItems ? (
         <button
           type="button"
@@ -443,11 +413,10 @@ export function WorkspaceRootLanding({
       itemFilter === "all"
         ? sorted
         : sorted.filter((post) => post.type === itemFilter);
-    return filtered.slice(0, 30);
-  }, [itemFilter, openHistory, pool.posts, sort]);
+    return filtered.slice(0, visibleCount);
+  }, [itemFilter, openHistory, pool.posts, sort, visibleCount]);
   // Decided once for the whole list rather than per row: a chip only earns
   // its place where the list actually mixes values.
-  const recentChips = useMemo(() => chipCensus(recent, pool), [pool, recent]);
   const itemCounts = useMemo(
     () => ({
       all: pool.posts.length,
@@ -617,23 +586,28 @@ export function WorkspaceRootLanding({
 
   return (
     <main
-      className="workspace-root-page"
+      className={`workspace-root-page${showLibrary && bodyMode === "home" ? " is-library" : ""}`}
       data-home-pane={homePane}
       aria-labelledby="workspace-root-label"
     >
       <h1 id="workspace-root-label" className="visually-hidden">TextText</h1>
-      {(homePane === "home" || homePane === "notes" || query || focusRequestKey > 0) && <div className="artifact-search-header">
-        <label className="artifact-search">
+      {(homePane === "home" || homePane === "notes" || query || searchVisible) && <div className="artifact-search-header">
+        {searchVisible || query ? <label className="artifact-search">
           <ArtifactIcon name="search" />
           <input ref={searchRef} aria-label="Search workspace" placeholder="Search" value={query}
             onChange={(event) => changeQuery(event.target.value)}
+            onBlur={() => { if (!query) setSearchVisible(false); }}
             onKeyDown={(event) => {
               if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                 event.preventDefault(); handSearchInputToBody(event.key === "ArrowDown" ? "down" : "up");
               } else if (event.key === "Enter") { event.preventDefault(); openResult(selectedSearchResult); }
-              else if (event.key === "Escape") { event.preventDefault(); if (query) changeQuery(""); else searchRef.current?.blur(); }
+              else if (event.key === "Escape") { event.preventDefault(); if (query) changeQuery(""); else { searchRef.current?.blur(); setSearchVisible(false); } }
             }} />
-        </label>
+        </label> : <button type="button" className="artifact-search-launcher" onClick={() => window.dispatchEvent(new Event(OPEN_COMMAND_PALETTE_EVENT))}>
+          <ArtifactIcon name="search" />
+          <span>Search or command</span>
+          <kbd>⌘K</kbd>
+        </button>}
         <a className="artifact-notifications" href={`${settingsHref}#settings-notifications`} aria-label="Notifications"><ArtifactIcon name="bell" /></a>
       </div>}
       <div className="workspace-root-inner">
@@ -823,15 +797,7 @@ export function WorkspaceRootLanding({
               </section>
             ) : null}
             <BackupHeartbeat handle={pool.blog.handle} enabled={canManageItems} />
-            {/* Home and the whole library are two destinations, never one page
-                stacked on the other. Home is what the workspace root shows;
-                All items switches to the library in place and says so. */}
               <div className={homeStyles.frame}>
-                <RetainedWorkspacePane active={homePane === "home"}><PersonalHome pool={pool} onOpenPost={onOpenPost} session={homeSession}
-                  capture={canManageItems && <>
-                    {creationFolder ? <UniversalItemComposer focusRequestKey={captureFocusRequestKey} blog={pool.blog} handle={pool.blog.handle} folder={creationFolder} destinations={creationFolders} onCreateItem={onCreateItem} onOpenCapturedItem={(post) => { if (post.id) onOpenPost(post.id); }} /> : firstLoop}
-                  </>}
-                /></RetainedWorkspacePane>
                 <RetainedWorkspacePane active={homePane === "bookmarks"}><section aria-label="Bookmarks"><h1 className={homeStyles.pageTitle}>Bookmarks</h1><SavedArticles session={homeSession} state="bookmarked" folders={pool.folders} handle={pool.blog.handle} blogId={pool.blogId} onOpenPost={onOpenPost} /></section></RetainedWorkspacePane>
                 <RetainedWorkspacePane active={homePane === "news"}><HomeNews
                   session={homeSession}
@@ -853,14 +819,17 @@ export function WorkspaceRootLanding({
                 <RetainedWorkspacePane active={homePane === "profile" && !libraryOpen}><ArtifactProfile pool={pool} history={openHistory} onOpenPost={onOpenPost} onOpenSection={onOpenSection}
                   onShowLibrary={() => setLibraryOpen(true)} onBrowseFolders={onBrowseFolders} onOpenAssistant={onOpenAssistant} settingsHref={settingsHref} canManage={canManageItems} /></RetainedWorkspacePane>
               </div>
-            {libraryOpen && homePane === "profile" && (
+            {showLibrary && (
             <section className={`workspace-recent is-view-${recentViewMode}`}>
               <header className="workspace-library-heading">
                 <h1>All items</h1>
-                <button type="button" onClick={() => setLibraryOpen(false)}>
-                  Back to Profile
-                </button>
+                {homePane === "profile" && <button type="button" onClick={() => setLibraryOpen(false)}>Back to Profile</button>}
               </header>
+              {homePane === "home" && canManageItems && (
+                creationFolder
+                  ? <UniversalItemComposer focusRequestKey={captureFocusRequestKey} blog={pool.blog} handle={pool.blog.handle} folder={creationFolder} destinations={creationFolders} onCreateItem={onCreateItem} onOpenCapturedItem={(post) => { if (post.id) onOpenPost(post.id); }} />
+                  : firstLoop
+              )}
               <header className="workspace-library-toolbar">
                 <div
                   className="workspace-library-filters"
@@ -885,6 +854,10 @@ export function WorkspaceRootLanding({
                       <small>{itemCounts[value]}</small>
                     </button>
                   ))}
+                  <label className="workspace-library-date-filter">
+                    <span>Date</span>
+                    <input type="date" aria-label="Filter items by date" onChange={(event) => { if (event.currentTarget.value) onQueryChange(event.currentTarget.value); }} />
+                  </label>
                 </div>
                 <div className="workspace-library-controls">
                   <select
@@ -907,17 +880,13 @@ export function WorkspaceRootLanding({
                     mode={recentViewMode}
                     onChange={commitHomeView}
                   />
-                  {homeViewError && (
-                    <span className="workspace-library-error" role="alert">
-                      {homeViewError}
-                    </span>
-                  )}
                 </div>
               </header>
               {recent.length === 0 ? (
                 <div className="workspace-recent-empty">
                   {itemFilter === "all" ? (
-                    firstLoop                  ) : (
+                    <p>{canManageItems ? "Your items will appear here." : "No items yet."}</p>
+                  ) : (
                     <>
                       <p>Nothing here with that filter.</p>
                       <button
@@ -936,7 +905,6 @@ export function WorkspaceRootLanding({
                     <WorkspacePostOption
                       key={post.id}
                       blog={pool.blog}
-                      chips={recentChips}
                       folderPath={folderPathForPoolPost(pool, post)}
                       handle={pool.blog.handle}
                       pool={pool}
@@ -946,6 +914,11 @@ export function WorkspaceRootLanding({
                     />
                   ))}
                 </div>
+              )}
+              {recent.length < itemCounts[itemFilter] && (
+                <button type="button" className="workspace-library-more" onClick={() => setVisibleCount((count) => count + 60)}>
+                  Show more items
+                </button>
               )}
             </section>
             )}

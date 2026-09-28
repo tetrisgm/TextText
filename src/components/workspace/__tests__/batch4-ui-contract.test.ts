@@ -161,11 +161,11 @@ describe("batch 4 workspace UI contract", () => {
     // The "Library" heading went with the capture row: the page announces
     // itself well enough through the sidebar and the filters.
     expect(shellSource).not.toContain('id="workspace-root-title">Library</h1>');
-    // Home's layout is the workspace's one stored layout choice: it is read
-    // from the workspace and written back to it, not kept in this browser.
-    expect(shellSource).toContain("useState<BlogHomeView>(\n    pool.blog.homeLayout,\n  )");
-    expect(shellSource).toContain("updateBlogAction({ homeLayout }, pool.blog.handle)");
-    expect(shellSource).toContain(">Collections</p>");
+    // A library view choice belongs to the viewer, not every collaborator.
+    expect(shellSource).toContain("useWorkspaceViewMode(");
+    expect(shellSource).toContain("`library:${pool.blog.handle}`");
+    expect(shellSource).not.toContain("updateBlogAction({ homeLayout }, pool.blog.handle)");
+    expect(shellSource).toContain(">Folders</p>");
     expect(shellSource).toContain('aria-label="Filter library items"');
     expect(shellSource).toContain('className="workspace-library-toolbar"');
     expect(shellSource).toContain("{itemCounts[value]}");

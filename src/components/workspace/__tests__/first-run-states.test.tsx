@@ -82,15 +82,16 @@ function findButton(node: ReactNode, label: string): React.ReactElement<{ onClic
 }
 beforeEach(() => { vi.clearAllMocks(); driver.poolError = null; });
 
-describe("personal Home and first run", () => {
-  it.each([false, true])("offers capture and a personal timeline with existing items %s", returning => {
+describe("content-first library and first run", () => {
+  it.each([false, true])("offers capture and one item library with existing items %s", returning => {
     const html = render(landing({ ...pool, folders: [folder], posts: returning ? [{ ...emptyPost, blogId: pool.blogId, folderId: folder.id, title: "Existing note" }] : [] }));
-    expect(html).toContain('aria-label="Timeline filters"');
-    expect(html).toContain("From your feeds");
-    expect(html).toContain('aria-label="Search workspace"');
+    expect(html).toContain("<h1>All items</h1>");
+    expect(html).toContain('aria-label="Filter library items"');
+    expect(html).toContain("Search or command");
+    expect(html).toContain("⌘K");
     expect(html).toContain('aria-label="Save to TextText"');
-    expect(html).not.toContain("Write your first note");
-    expect(html).not.toContain("Recent</");
+    expect(html).not.toContain('aria-label="Timeline filters"');
+    expect(html.includes("Existing note")).toBe(returning);
   });
   it("opens the notes folder from Profile without creating an item", () => {
     const openSection = vi.fn();
@@ -105,9 +106,9 @@ describe("personal Home and first run", () => {
     expect(driver.createItem).not.toHaveBeenCalled();
     expect(driver.createFolder).not.toHaveBeenCalled();
   });
-  it("offers the personal Home in an article-only workspace", () => {
+  it("offers one first action in an article-only workspace", () => {
     const html = render(landing({ ...pool, folders: [{ ...folder, id: "blog", path: "blog", mode: "blog" }] }));
-    expect(html).toContain('aria-label="Timeline filters"');
+    expect(html).toContain("<h1>All items</h1>");
     expect(html).toContain("Create a notes folder");
     expect(html).not.toContain("Write your first note");
   });
@@ -149,7 +150,7 @@ describe("personal Home and first run", () => {
   });
   it("unconfigured AI keeps writing optional", () => {
     expect(render(<AssistantConversation messages={[]} submitting={false} aiSettingsHref="/t/writer/settings" />)).toContain("You can keep writing without connecting.");
-    expect(render(<AiConnectionSettings cloudConfigured={false} />)).toContain("No provider key is saved.");
+    expect(render(<AiConnectionSettings cloudConfigured={false} />)).toContain("ChatGPT account connection is unavailable in this edition.");
   });
 });
 

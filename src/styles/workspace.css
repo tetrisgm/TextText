@@ -583,6 +583,27 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   font-weight: 550;
 }
 
+.workspace-library-date-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.workspace-library-date-filter input {
+  max-width: 8.5rem;
+  min-height: 2rem;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  color-scheme: inherit;
+}
+.workspace-library-date-filter input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .workspace-library-controls select,
 .workspace-view-segmented {
   min-height: var(--control-height);
@@ -1593,6 +1614,28 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 @media (max-width: 560px) {
+  .workspace-library-filters {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    row-gap: 0.125rem;
+  }
+  .workspace-library-date-filter {
+    flex-basis: 100%;
+  }
+  .workspace-recent.is-view-list .workspace-item-option-main {
+    padding-right: 0.75rem;
+  }
+  .workspace-recent.is-view-list .workspace-item-option-copy {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.125rem;
+  }
+  .workspace-recent.is-view-list .workspace-item-option-lede {
+    max-width: 100%;
+  }
+  .workspace-recent.is-view-list .workspace-item-option-main > time {
+    display: none;
+  }
   /* List stars sit just outside their rows on a wide canvas. Give that gutter
      real space on a phone so the control never falls beyond the viewport. */
   .workspace-recent.is-view-list .workspace-recent-list {
@@ -1601,7 +1644,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   }
 
   .workspace-library-filters button {
-    padding-inline: 0.4375rem;
+    padding-inline: 0;
   }
 }
 

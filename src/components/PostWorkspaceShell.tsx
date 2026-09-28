@@ -271,6 +271,7 @@ import { useWorkspaceSidebarWidth } from "@/components/workspace/WorkspaceSideba
 import {
   WORKSPACE_COMPACT_MEDIA_QUERY,
   WORKSPACE_SIDEBAR_DEFAULT_WIDTH,
+  OPEN_WORKSPACE_SIDEBAR_EVENT,
   WorkspaceSidebarChrome,
   focusSidebarRow,
   setWorkspaceAssistantState,
@@ -1689,13 +1690,6 @@ function LocalWorkspaceShell({
       );
     },
     [homePath, navigateToView],
-  );
-
-  const navigateDateSearch = useCallback(
-    (dateKey: string) => {
-      navigateSearch({ query: dateKey, source: "date" });
-    },
-    [navigateSearch],
   );
 
   const navigateTag = useCallback(
@@ -5145,7 +5139,7 @@ function LocalWorkspaceShell({
       blog={displayPool.blog}
       homePane={homePane}
       onSelectPane={openDestination}
-      onBrowseFolders={() => setSidebarCollapsed(false)}
+      onBrowseFolders={() => window.dispatchEvent(new Event(OPEN_WORKSPACE_SIDEBAR_EVENT))}
       canCommentPost={canCommentPost}
       canCreateItems={canManageFolders}
       canEditItems={canManageFolders}
@@ -5250,7 +5244,6 @@ function LocalWorkspaceShell({
         collapsed={effectiveSidebarCollapsed}
         counts={displayPool.counts}
         unread={readingUnreadByFolder(displayPool.readingSources)}
-        documents={displayPool.posts}
         folders={displayPool.folders}
         homeActive={(view.level === "root" || view.level === "search") && homePane === "home"}
         primaryNavigation={<div className="workspace-primary-destinations"><button type="button" aria-current={view.level === "root" && homePane === "news" ? "page" : undefined} onClick={() => openDestination("news")}>News</button></div>}
@@ -5259,7 +5252,6 @@ function LocalWorkspaceShell({
           if (window.matchMedia(WORKSPACE_COMPACT_MEDIA_QUERY).matches) setSidebarCollapsed(true);
           navigateSection(path);
         }}
-        onSearchDate={navigateDateSearch}
         onReturnToBody={focusWorkspaceBody}
         onSidebarFocus={(path) => {
           activateRegion("sidebar");
@@ -5298,7 +5290,7 @@ function LocalWorkspaceShell({
           (displayPool.trashedFolders?.length ?? 0)
         }
       />
-      <ArtifactNavigation pane={view.level === "settings" ? "profile" : (view.level === "edit" || view.level === "post") ? (() => { const post = itemIdentity.resolvePost(displayPool, view.postId); return post ? itemDestination(post) : homePane; })() : view.level === "section" ? (displayPool.folders.find((folder) => folder.path === view.folderPath)?.mode === "notes" ? "notes" : "profile") : homePane} onSelect={openDestination} />
+      <ArtifactNavigation pane={view.level === "settings" ? "profile" : (view.level === "edit" || view.level === "post") ? (() => { const post = itemIdentity.resolvePost(displayPool, view.postId); return post ? itemDestination(post) : homePane; })() : view.level === "section" ? (displayPool.folders.find((folder) => folder.path === view.folderPath)?.mode === "notes" ? "notes" : "profile") : homePane} onSelect={openDestination} onBrowseFolders={() => window.dispatchEvent(new Event(OPEN_WORKSPACE_SIDEBAR_EVENT))} />
       <div className="workspace-document-layout">
         <NativeAssistantRuntime options={assistantOptions} />
         {/* The tab strip is the topmost band, above the action bar, as in

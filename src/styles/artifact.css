@@ -112,6 +112,7 @@
 /* Folders can be opened from Profile. Their panel overlays the reading column. */
 .artifact-workspace .post-workspace-sidebar-region { background: var(--artifact-bg); }
 .artifact-workspace .post-workspace-sidebar-region.is-collapsed { visibility: hidden; }
+.artifact-workspace .post-workspace-sidebar-region.is-mobile-open { visibility: visible; }
 .artifact-workspace .post-sidebar-resize-handle { z-index: 220; }
 .artifact-workspace .post-editor-sidebar { box-shadow: none; border-right: 1px solid var(--artifact-line); }
 .artifact-workspace .post-back-action-bar.is-read,
@@ -189,6 +190,23 @@
 }
 .artifact-search:focus-within { outline: 2px solid var(--artifact-accent); }
 .artifact-search input::placeholder { color: var(--artifact-muted); }
+.artifact-search-launcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--artifact-muted);
+  font: 500 0.875rem/1.2 var(--ac-font-text);
+  cursor: pointer;
+}
+.artifact-search-launcher:hover { background: var(--artifact-surface); color: var(--artifact-ink); }
+.artifact-search-launcher:focus-visible { outline: 2px solid var(--artifact-accent); outline-offset: 2px; }
+.artifact-search-launcher svg { width: 1.125rem; height: 1.125rem; }
+.artifact-search-launcher kbd { margin-left: 0.5rem; font: inherit; color: var(--artifact-muted); }
 .artifact-notifications { display: grid; place-items: center; width: 32px; height: 40px; color: var(--artifact-ink); }
 .artifact-notifications svg { width: 25px; height: 25px; }
 
@@ -307,11 +325,8 @@
   .artifact-workspace .workspace-document-layout { margin: 0; }
 }
 
-/* Desktop is a three-pane workspace: the note folders remain the primary
-   navigation on the left, the Artifact feed or note editor owns the center,
-   and the assistant stays docked on the right when pinned. The mobile
-   destination bar and deliberate folder overlay remain unchanged below this
-   breakpoint. */
+/* Desktop keeps folders available and gives the content the remaining width.
+   An explicitly opened assistant may dock beside it. */
 @media (min-width: 901px), (min-width: 760px) and (pointer: fine) {
   .artifact-workspace .artifact-navigation {
     display: none;
@@ -346,6 +361,17 @@
   .artifact-workspace .workspace-root-inner,
   .artifact-workspace .artifact-search-header {
     max-width: 680px;
+  }
+
+  .artifact-workspace .workspace-root-page.is-library {
+    max-width: 80rem;
+  }
+  .artifact-workspace .workspace-root-page.is-library .workspace-root-inner,
+  .artifact-workspace .workspace-root-page.is-library .artifact-search-header {
+    max-width: none;
+  }
+  .artifact-workspace .workspace-root-page.is-library .artifact-search-header {
+    justify-content: space-between;
   }
 
   .artifact-workspace.is-sidebar-collapsed .workspace-document-layout {

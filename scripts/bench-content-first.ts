@@ -8,6 +8,7 @@ const origin = process.env.BENCH_ORIGIN ?? "http://localhost:3131";
 const handle = process.env.BENCH_HANDLE ?? "visual-demo";
 const email = process.env.BENCH_EMAIL ?? "visual-demo@texttext.local";
 const rounds = 20;
+const homeRows = ".workspace-recent-list .workspace-item-option-main, .personal-home li button";
 
 function report(name: string, values: number[]) {
   const sorted = [...values].sort((a, b) => a - b);
@@ -23,13 +24,17 @@ async function main() {
     await page.goto(`${origin}/editor`, { waitUntil: "domcontentloaded" });
     const form = page.locator("form.ac-devsignin");
     await form.waitFor({ timeout: 20_000 });
+    await page.waitForFunction(() => {
+      const form = document.querySelector("form.ac-devsignin");
+      return form && Object.keys(form).some((key) => key.startsWith("__reactProps$"));
+    }, undefined, { timeout: 20_000 });
     await form.locator("input[type=email]").fill(email);
     await form.locator("button[type=submit]").click();
     await page.waitForURL((url) => !url.pathname.startsWith("/editor"), { timeout: 30_000, waitUntil: "domcontentloaded" });
 
     const coldStart = Date.now();
     await page.goto(`${origin}/@${handle}`, { waitUntil: "domcontentloaded" });
-    await page.locator(".personal-home li button").first().waitFor({ timeout: 30_000 });
+    await page.locator(homeRows).first().waitFor({ timeout: 30_000 });
     const coldHome = Date.now() - coldStart;
     console.log(`cold navigation to first Home item: ${coldHome}ms (one new page navigation, includes browser driver and server work)`);
 
@@ -57,16 +62,16 @@ async function main() {
     }
     report("warm folder switch to Notes (driver included)", folder);
 
-    await page.getByRole("button", { name: "Home", exact: true }).click();
-    await page.locator(".personal-home li button").first().waitFor();
+    await page.getByRole("button", { name: "All items", exact: true }).click();
+    await page.locator(homeRows).first().waitFor();
     const item: number[] = [];
     for (let i = 0; i < 10; i += 1) {
       const start = Date.now();
-      await page.locator(".personal-home li button").filter({ hasText: "Codex capture verification" }).first().click();
+      await page.locator(homeRows).filter({ hasText: "Codex capture verification" }).first().click();
       await page.locator(".tt-prose, .tt-md-surface, .bookmark-reader-view").first().waitFor({ state: "visible", timeout: 20_000 });
       item.push(Date.now() - start);
       await page.goBack({ waitUntil: "domcontentloaded" });
-      await page.locator(".personal-home li button").first().waitFor({ timeout: 20_000 });
+      await page.locator(homeRows).first().waitFor({ timeout: 20_000 });
     }
     report("warm first-item open (driver included)", item);
     await context.close();

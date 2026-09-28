@@ -25,14 +25,11 @@ export function ArtifactIcon({ name }: { name: "home" | "headlines" | "notes" | 
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{shapes[name]}</svg>;
 }
 
-export function ArtifactNavigation({ pane, onSelect }: { pane: ArtifactPane; onSelect: (pane: ArtifactPane) => void }) {
+export function ArtifactNavigation({ pane, onSelect, onBrowseFolders }: { pane: ArtifactPane; onSelect: (pane: ArtifactPane) => void; onBrowseFolders: () => void }) {
   return <nav className="artifact-navigation" aria-label="Main navigation">
-    {(["home", "news", "bookmarks", "notes", "profile"] as const).map((target) => <button
-      key={target}
-      type="button"
-      aria-label={target === "home" ? "Home" : target === "news" ? "News" : target === "bookmarks" ? "Bookmarks" : target === "notes" ? "Writing" : "Profile"}
-      aria-current={pane === target ? "page" : undefined}
-      onClick={() => onSelect(target)}
-    ><ArtifactIcon name={target === "news" ? "headlines" : target === "bookmarks" ? "bookmark" : target} /></button>)}
+    <button type="button" aria-label="All items" aria-current={pane === "home" ? "page" : undefined} onClick={() => onSelect("home")}><ArtifactIcon name="home" /></button>
+    <button type="button" aria-label="Folders" onClick={onBrowseFolders}><ArtifactIcon name="folder" /></button>
+    <button type="button" aria-label="News" aria-current={pane === "news" ? "page" : undefined} onClick={() => onSelect("news")}><ArtifactIcon name="headlines" /></button>
+    <button type="button" aria-label="Profile" aria-current={pane === "profile" ? "page" : undefined} onClick={() => onSelect("profile")}><ArtifactIcon name="profile" /></button>
   </nav>;
 }

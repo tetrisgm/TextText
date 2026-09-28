@@ -56,9 +56,6 @@ import {
   refreshWorkspacePool,
   useWorkspacePool,
 } from "@/lib/pool/store";
-import type {
-  WorkspacePoolPost,
-} from "@/lib/pool/types";
 import {
   WORKSPACE_ASSISTANT_COOKIE_MAX_AGE,
   WORKSPACE_ASSISTANT_STATE_COOKIE,
@@ -83,12 +80,6 @@ import {
   folderWorkspaceHref,
   type SidebarFolderId,
 } from "@/lib/workspace/local-view";
-import {
-  calendarDaysForMonth,
-  calendarDocumentAction,
-  groupDocumentsByActivityDate,
-  localDateKey,
-} from "@/lib/workspace-activity";
 
 
 let sidebarCollapsedMemory: boolean | null = null;
@@ -349,10 +340,8 @@ export function useWorkspaceSidebarWidth(initialWidth?: number) {
 /// forced value.
 function readAssistantState(): AssistantSidebarState {
   if (typeof window === "undefined") return "hidden";
-  // Desktop is the workspace composition: folder navigation, content, and
-  // the assistant are visible together. Phones keep the assistant opt-in so
-  // it does not cover the writing surface.
-  const preferred: AssistantSidebarState = window.matchMedia(WORKSPACE_DESKTOP_MEDIA_QUERY).matches ? "pinned" : "hidden";
+  // New sessions start with the content. An explicit open choice is kept.
+  const preferred: AssistantSidebarState = "hidden";
   let saved: string | null = null;
   try {
     if (!window.localStorage.getItem(WORKSPACE_ASSISTANT_STATE_MIGRATION_KEY)) {
@@ -602,16 +591,10 @@ function StarredIcon() {
   );
 }
 
-function HomeIcon() {
+function LibraryIcon() {
   return (
     <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <path
-        d="m3.25 8.25 5.75-5 5.75 5v6.25h-4v-4h-3.5v4h-4V8.25Z"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.45"
-      />
+      <path d="M3 4.5h12M3 9h12M3 13.5h12" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" />
     </svg>
   );
 }
@@ -710,101 +693,6 @@ export function WorkspaceHistoryControls() {
   );
 }
 
-
-function SidebarActivity({
-  documents,
-  onSearchDate,
-}: {
-  documents: WorkspacePoolPost[];
-  onSearchDate?: (dateKey: string) => void;
-}) {
-  const now = new Date();
-  const [monthStart, setMonthStart] = useState(
-    () => new Date(now.getFullYear(), now.getMonth(), 1),
-  );
-  const datedDocuments = useMemo(
-    () => groupDocumentsByActivityDate(documents),
-    [documents],
-  );
-  const calendarDays = useMemo(() => {
-    return calendarDaysForMonth(monthStart);
-  }, [monthStart]);
-  const monthLabel = new Intl.DateTimeFormat(undefined, {
-    month: "long",
-    year: "numeric",
-  }).format(monthStart);
-  const todayKey = localDateKey(new Date());
-
-  return (
-    <details className="post-editor-sidebar-activity">
-      <summary>
-        <span>Activity</span>
-        <small>{monthLabel}</small>
-      </summary>
-      <section className="post-editor-calendar" aria-label={monthLabel}>
-        <header>
-          <strong>{monthLabel}</strong>
-          <span>
-            <button
-              type="button"
-              aria-label="Previous month"
-              onClick={() =>
-                setMonthStart(
-                  (current) =>
-                    new Date(current.getFullYear(), current.getMonth() - 1, 1),
-                )
-              }
-            >
-              ‹
-            </button>
-            <button
-              type="button"
-              aria-label="Next month"
-              onClick={() =>
-                setMonthStart(
-                  (current) =>
-                    new Date(current.getFullYear(), current.getMonth() + 1, 1),
-                )
-              }
-            >
-              ›
-            </button>
-          </span>
-        </header>
-        <div className="post-editor-calendar-weekdays" aria-hidden="true">
-          {["M", "T", "W", "T", "F", "S", "S"].map((day, index) => (
-            <span key={`${day}-${index}`}>{day}</span>
-          ))}
-        </div>
-        <div className="post-editor-calendar-grid">
-          {calendarDays.map((day) => {
-            const key = localDateKey(day) ?? "";
-            const posts = datedDocuments.get(key) ?? [];
-            const outside = day.getMonth() !== monthStart.getMonth();
-            return (
-              <button
-                key={key}
-                type="button"
-                className={`${outside ? "is-outside" : ""}${
-                  posts.length > 0 ? " has-documents" : ""
-                }${key === todayKey ? " is-today" : ""}`}
-                aria-label={`${day.toLocaleDateString()}${
-                  posts.length > 0 ? `, ${posts.length} documents` : ""
-                }`}
-                onClick={() => {
-                  const action = calendarDocumentAction(key, posts);
-                  onSearchDate?.(action.dateKey);
-                }}
-              >
-                {day.getDate()}
-              </button>
-            );
-          })}
-        </div>
-      </section>
-    </details>
-  );
-}
 
 export function focusSidebarRow(
   nav: HTMLElement,
@@ -956,6 +844,7 @@ function persistExpandedFolders(ids: Set<string>) {
 // auto-opens the branch containing the active folder.
 /** Raised by the bar; the folder tree opens its inline name field. */
 const NEW_FOLDER_EVENT = "texttext:new-folder";
+export const OPEN_WORKSPACE_SIDEBAR_EVENT = "texttext:open-workspace-sidebar";
 
 function NewItemGlyph() {
   return (
@@ -1470,7 +1359,6 @@ export function PostFolderSidebar({
   collapsed,
   counts,
   unread,
-  documents = [],
   prefetchFolders = true,
   canManageFolders = false,
   canManageSharing = false,
@@ -1480,7 +1368,6 @@ export function PostFolderSidebar({
   onSelectRoot,
   primaryNavigation,
   onSelectFolder,
-  onSearchDate,
   onReturnToBody,
   onSidebarFocus,
   onSidebarEmptyPointerDown,
@@ -1498,7 +1385,6 @@ export function PostFolderSidebar({
   counts: Record<string, number>;
   /** Unread reading items per folder path, for folders that follow feeds. */
   unread?: Record<string, number>;
-  documents?: WorkspacePoolPost[];
   prefetchFolders?: boolean;
   canManageFolders?: boolean;
   canManageSharing?: boolean;
@@ -1508,7 +1394,6 @@ export function PostFolderSidebar({
   onSelectRoot?: () => void;
   primaryNavigation?: ReactNode;
   onSelectFolder: (folder: SidebarFolderId) => void;
-  onSearchDate?: (dateKey: string) => void;
   onReturnToBody?: () => void;
   onSidebarFocus?: (path: string) => void;
   onSidebarEmptyPointerDown?: (nav: HTMLElement) => void;
@@ -1587,9 +1472,9 @@ export function PostFolderSidebar({
             onClick={onSelectRoot}
           >
             <span className="post-editor-folder-icon" aria-hidden="true">
-              <HomeIcon />
+              <LibraryIcon />
             </span>
-            <span className="post-editor-folder-name">Home</span>
+            <span className="post-editor-folder-name">All items</span>
           </button>
         </div>
         {primaryNavigation}
@@ -1695,10 +1580,6 @@ export function PostFolderSidebar({
         />
       </nav>
 
-      {!collapsed && (
-        <SidebarActivity documents={documents} onSearchDate={onSearchDate} />
-      )}
-
       {folderLook && (
         <FolderLookPicker
           handle={blog.handle}
@@ -1731,12 +1612,10 @@ export function WorkspaceSidebarChrome({
   canManageSharing = false,
   counts,
   unread,
-  documents = [],
   folders,
   homeActive = activeFolder === null,
   homePath,
   onSelectFolder,
-  onSearchDate,
   onReturnToBody,
   onSidebarFocus,
   onSidebarEmptyPointerDown,
@@ -1763,12 +1642,10 @@ export function WorkspaceSidebarChrome({
   counts: Record<string, number>;
   /** Unread reading items per folder path, for folders that follow feeds. */
   unread?: Record<string, number>;
-  documents?: WorkspacePoolPost[];
   folders: Folder[];
   homeActive?: boolean;
   homePath?: string;
   onSelectFolder: (folder: SidebarFolderId) => void;
-  onSearchDate?: (dateKey: string) => void;
   onReturnToBody?: () => void;
   onSidebarFocus?: (path: string) => void;
   onSidebarEmptyPointerDown?: (nav: HTMLElement) => void;
@@ -1841,6 +1718,10 @@ export function WorkspaceSidebarChrome({
     window.addEventListener(NEW_FOLDER_EVENT, openSidebar);
     return () => window.removeEventListener(NEW_FOLDER_EVENT, openSidebar);
   }, [canManageFolders, openSidebar]);
+  useEffect(() => {
+    window.addEventListener(OPEN_WORKSPACE_SIDEBAR_EVENT, openSidebar);
+    return () => window.removeEventListener(OPEN_WORKSPACE_SIDEBAR_EVENT, openSidebar);
+  }, [openSidebar]);
   const toggleSidebar = useCallback(() => {
     if (window.matchMedia(WORKSPACE_COMPACT_MEDIA_QUERY).matches) {
       setMobileOpen(false);
@@ -1962,12 +1843,10 @@ export function WorkspaceSidebarChrome({
           canManageSharing={canManageSharing}
           counts={counts}
           unread={unread}
-          documents={documents}
           folders={folders}
           homeActive={homeActive}
           homePath={homePath}
           onSelectFolder={selectFolder}
-          onSearchDate={onSearchDate}
           onReturnToBody={onReturnToBody}
           onSidebarFocus={onSidebarFocus}
           onSidebarEmptyPointerDown={onSidebarEmptyPointerDown}
