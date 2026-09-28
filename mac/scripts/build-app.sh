@@ -140,6 +140,17 @@ if [ "$STORE" != "1" ]; then
   mkdir -p "$APP/Contents/Helpers"
   cp "$BIN/texttext" "$APP/Contents/Helpers/texttext"
 fi
+# Local WIP builds may carry the official Codex runtime used by the in-app
+# assistant. Keep this opt-in: the ordinary release artifact must not silently
+# acquire a large, separately versioned executable.
+EMBEDDED_CODEX="${TEXTTEXT_EMBEDDED_CODEX_RUNTIME:-}"
+if [ -n "$EMBEDDED_CODEX" ]; then
+  case "$EMBEDDED_CODEX" in /*) ;; *) echo "TEXTTEXT_EMBEDDED_CODEX_RUNTIME must be an absolute path." >&2; exit 1 ;; esac
+  [ -x "$EMBEDDED_CODEX" ] || { echo "Codex runtime is not executable: $EMBEDDED_CODEX" >&2; exit 1; }
+  codesign --verify --strict "$EMBEDDED_CODEX"
+  mkdir -p "$APP/Contents/Helpers"
+  cp -L "$EMBEDDED_CODEX" "$APP/Contents/Helpers/codex"
+fi
 cp "$MAC/Info.plist" "$APP/Contents/Info.plist"
 cp "$MAC/PrivacyInfo.xcprivacy" "$APP/Contents/Resources/PrivacyInfo.xcprivacy"
 if [ -f "$MAC/AppIcon.icns" ]; then
@@ -201,6 +212,13 @@ rm -f "$CONSTVALS"
 
 STAGED="$APP/Contents/Info.plist"
 "$PB" -c "Set :CFBundleIdentifier $TEXTTEXT_BUNDLE_ID" "$STAGED"
+if [ -n "$EMBEDDED_CODEX" ]; then
+  EMBEDDED_CODEX_VERSION="$("$EMBEDDED_CODEX" --version)"
+  "$PB" -c 'Add :TextTextEmbeddedAgentRuntime bool true' "$STAGED" 2>/dev/null \
+    || "$PB" -c 'Set :TextTextEmbeddedAgentRuntime true' "$STAGED"
+  "$PB" -c "Add :TextTextEmbeddedAgentVersion string $EMBEDDED_CODEX_VERSION" "$STAGED" 2>/dev/null \
+    || "$PB" -c "Set :TextTextEmbeddedAgentVersion $EMBEDDED_CODEX_VERSION" "$STAGED"
+fi
 
 # Build provenance. Xcode stamps these into every bundle it produces; this app
 # is assembled by hand from a SwiftPM build, so nothing stamps them and the
@@ -236,6 +254,22 @@ stamp BuildMachineOSBuild string "$(sw_vers -buildVersion 2>/dev/null || true)"
 # pointing at localhost.
 "$PB" -c "Add :TextTextServerOrigin string ${TEXTTEXT_PRODUCT_ORIGIN%/}" "$STAGED" 2>/dev/null \
   || "$PB" -c "Set :TextTextServerOrigin ${TEXTTEXT_PRODUCT_ORIGIN%/}" "$STAGED"
+if [ "${TEXTTEXT_LOCAL_WIP_ORIGIN:-0}" = "1" ]; then
+  python3 - "$STAGED" "${TEXTTEXT_PRODUCT_ORIGIN%/}" <<'PY'
+import plistlib, sys, urllib.parse
+path, origin = sys.argv[1:]
+url = urllib.parse.urlsplit(origin)
+if (url.scheme != "http" or url.hostname not in ("localhost", "127.0.0.1")
+        or url.port is None or url.path not in ("", "/") or url.query or url.fragment
+        or url.username or url.password):
+    sys.exit("TEXTTEXT_LOCAL_WIP_ORIGIN requires a localhost HTTP origin with a port")
+with open(path, "rb") as handle:
+    values = plistlib.load(handle)
+values["LSEnvironment"] = {"TEXTTEXT_SERVER": origin, "TEXTTEXT_DEV_FILEPROVIDER": "0"}
+with open(path, "wb") as handle:
+    plistlib.dump(values, handle)
+PY
+fi
 if [ "$STORE" = "1" ]; then
   # No updater keys in a Store bundle: the store does the updating, and their
   # presence alone invites a rejection.
@@ -398,6 +432,23 @@ else
   codesign_one "$SPK"
 fi
 [ -f "$APP/Contents/Helpers/texttext" ] && codesign_one "$APP/Contents/Helpers/texttext"
+if [ -n "$EMBEDDED_CODEX" ]; then
+  if [ "$STORE" = "1" ]; then
+    CODEX_ENT="$(mktemp -t texttext-codex-ent)"
+    cat > "$CODEX_ENT" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>com.apple.security.app-sandbox</key><true/>
+<key>com.apple.security.inherit</key><true/>
+</dict></plist>
+EOF
+    codesign_one "$APP/Contents/Helpers/codex" "$CODEX_ENT"
+    rm -f "$CODEX_ENT"
+  else
+    codesign_one "$APP/Contents/Helpers/codex"
+  fi
+fi
 codesign_one "$APP/Contents/MacOS/TextText" "$MAIN_ENT"
 # Extensions are assembled and signed here, inside-out, so the main app's
 # signature (next line) seals them. No-op unless mac/profiles/ holds the
