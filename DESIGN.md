@@ -1,88 +1,28 @@
-# TextText: personal workspace
+# TextText design direction
 
-The [personal workspace plan](docs/plans/personal-workspace.md) is the implementation
-contract. This document describes the current direction, replacing the previous
-news-only composition. Artifact informs editorial browsing, Shiori informs saved
-reading, and nested collections organize the workspace. Superhuman informs speed
-and keyboard efficiency. Writing should feel like a clean article editor.
+The [content-first brief](docs/design/texttext-content-first-ux.md) governs this work. TextText is one place to write, save, read, collect visuals, and work with people and an agent. Items and folders stay in the existing TextPack model. This document summarizes presentation choices; storage, permission, collaboration, and recovery contracts still apply.
 
-## Desktop and narrow screens
+## Shell
 
-Desktop has three regions: persistent folder navigation on the left, the active
-workspace in the center, and contextual AI on the right. Rails are resizable and
-collapsible; respect explicit choices and remember them. Reserve each rail's width
-once. The center takes available space, with readable line lengths inside it.
-Do not stretch a phone screen across a desktop or force desktop navigation into a
-bottom bar. Narrow screens use accessible drawers and compact destinations.
+Open the last useful location. A new workspace starts with a simple library and one clear creation action. Keep one folder hierarchy and an All items entry. Search and actions meet in Command-K. Starred, unread, type, and date are contextual filters; Shared with me, Trash, settings, help, feeds, and recovery remain discoverable. Do not duplicate the folder tree with hardcoded Writing, Bookmarks, and News destinations or a Home timeline.
 
-## Destinations
+The sidebar collapses and remembers its state. The agent opens on demand. A current item or folder header has its relevant creation action, participants, Share, and secondary menu. It does not keep search, capture, and chat inputs permanently competing for attention. Use available desktop width for libraries and visual grids, and a readable line measure for documents. Narrow layouts retain the same actions without horizontal overflow.
 
-Home opens with quick capture, up to three Continue entries, and a dated personal
-timeline. Continue reflects deliberate opens, not autosaves. It belongs in the
-center, never in a separate fixed column. The timeline combines writing, deliberate
-saves, and bounded news groups, with Everything, Writing, Saved, and News filters.
-New arrivals must not shift the viewport or keyboard selection.
+## Content surfaces
 
-News is the complete RSS experience. Use editorial rows with source, time, title,
-and restrained imagery. Bookmarks contains deliberate saves, including retained
-RSS items. Give saved sources readable previews and useful metadata. Read later
-is a state on an item, not a duplicate item or another type.
+- **Writing:** title and editable body lead. A new note focuses writing immediately. Formatting and metadata appear when relevant. Preserve local typing, paste, IME, selection, undo, autosave, recovery, live collaboration, and explicit publishing.
+- **Visuals:** images define the grid. Preserve useful proportions, small gutters, stable previews, and original assets. The viewer has a large image with contextual zoom, caption, source, dimensions, and comments. Large collections use still GIF previews and bounded image loading.
+- **Saved links:** a standalone URL saves one link immediately; enrichment follows. The same item becomes a clean reader when capture succeeds. Title, source, article and Open original lead. Failed extraction leaves a usable link and retry. Personal notes, highlights, capture details, and summaries remain contextual.
+- **Mixed folders:** show meaningful previews for notes, links and visual items. A folder's presentation does not change the identity or type of its contents.
 
-Writing combines notes and articles. Capture stays lightweight; longer writing
-uses the same document identity and a quiet editor. New items remain nonpublic.
-Folders and subfolders can contain any mixture, including user-defined types.
-Keep Starred, Shared, Trash, settings, and search reachable from the workspace.
+Templates are safe, validated presentations and supported interactions over the same content. Provide a contextual Customize entry from the item, folder, or Command-K. Preview real content, refine, keep or cancel, save through ordinary permission and revision checks, and preserve the standard fallback. Personal view choices remain personal unless explicitly shared.
 
-A folder's view and its default type for new items are independent. Choosing a
-default does not restyle old documents. The type library and designer form one
-lifecycle: inspect, create, edit, copy, export/import, restore, and retire. Preserve
-editable source alongside validated presentation. Existing documents keep their
-pinned versions unless an explicit migration is requested.
+## Collaboration and agent
 
-## Typography and surfaces
+Keep participants and Share near the active material. Show actual human presence, comments, live edits, attribution, and short-lived agent activity without a permanent activity feed. A connected account is not an active collaborator. The in-app Add agent path starts from the person's current task, preserves it through supported authorization, returns to the same item, and shows real work or a reviewable preview. External MCP access remains separate. Do not imply a narrower grant or supported provider than the runtime enforces.
 
-Use shared tokens in `src/styles/artifact.css`, the system sans serif stack, and
-neutral surfaces. Check light and dark contrast on both the canvas and secondary
-surfaces. Editorial headlines are approximately 17.5px semibold at 1.3 line height;
-publisher labels 15px and metadata 14px. Selection uses clear ink and weight.
+## Visual rules
 
-Editorial lists use inset hairline separators, about 14px vertical padding, small
-publisher marks, and 68 to 72px thumbnails. Occasional photographs can occupy a
-row at 16:9 with 8px corners. Avoid shadows and colored containers around every
-story. Saved-reading cards and custom collection layouts must still share the
-workspace's typography, spacing, focus treatment, and colors.
+Use neutral surfaces, readable text, restrained separators, consistent controls, clear selection and focus, and a subtle accent. Let content and images supply color. Avoid card borders around every row, nested rounded containers, badge walls, decorative AI effects, oversized administrative headings, and empty rails. Essential actions must not depend on hover. Check light and dark contrast, touch access, keyboard focus, reduced motion, and IME. Use sentence case and direct labels; no em dashes in product copy.
 
-Reader and editor use comfortable measures without oversized desktop controls.
-Contextual actions stay near the active item, with accessible touch sheets where
-appropriate. Preserve position when opening an item and returning to its list.
-
-## Interaction and speed
-
-Opening the app repeatedly must be cheap. Restore the current location; make Home,
-search, new capture, navigation, and creation available from the keyboard. Save
-input before extraction or AI work. Preserve IME composition, multiline input,
-offline drafts, history, and full-document collaboration.
-
-AI stays contextual and shows its scope: current item plus explicitly attached
-sources. Keep conversations across navigation and retain review-before-apply.
-Library and designer dialogs must have one active focus trap and return to the
-place that opened them. Preview samples must be bounded and labeled honestly.
-
-## Verification
-
-Inspect the running production build at phone, laptop, and wide desktop sizes,
-in both themes. Check Home, News, Bookmarks, Writing, mixed nested folders, reader,
-editor, settings, and back navigation. DOM or stylesheet assertions alone do not
-establish visual fidelity. Keep visible keyboard focus, accessible names, and
-reduced-motion behavior. Reference captures remain in
-`~/Downloads/artifact-reference/`; the captioned gallery is
-`~/Downloads/ARTIFACT_VISUAL_REFERENCES_RECOVERED/artifact_screens_local.html`.
-
-Production article, feed, channel, folder, and note navigation must remain below
-200ms at the 95th percentile. Check realistic large folders, cold and warm opens,
-capture through save/reload/reopen, long documents, and concurrent editors with
-intact words and convergence. Fast navigation cannot compensate for lost writing.
-Record receipts against the actual running build, not an older preview.
-
-No em dashes in product copy. Use sentence case and direct labels. Decorative
-marks must never be the only way information is conveyed.
+The concrete public references and limits of the inspection are in [reference notes](docs/design/content-first-reference-notes.md). The [September 28 baseline](docs/content-first-baseline-2026-09-28.md) is the pre-redesign production preview, with misses and unmeasured workloads stated explicitly. Verify actual rendered screens and realistic workloads rather than treating stylesheet or DOM assertions as visual proof.
