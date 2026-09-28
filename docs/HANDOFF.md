@@ -30,35 +30,46 @@ app, submit to the App Store, or change billing without a new owner request.
   **Read latest document and review** action loaded the latest revision, then
   **Done** applied the already saved look. The authoritative store read
   confirmed the final template reference.
+- The isolated Store-shaped build now makes real first-party workspace calls
+  through the app-owned ChatGPT account. `texttext.list_folders` returned the
+  local folders; `texttext.append_to_item` changed the selected test note.
+  Authoritative local Postgres readback confirmed the exact append, original
+  commentary/source, private visibility, and saved look. Reopening kept the
+  edit and ChatGPT connection. See the workflow receipt.
+- On the final source, an in-app request changed commentary width from Narrow
+  to Balanced in the live selected-document preview. A concurrent-edit save
+  conflict reproduced, the recovery button fetched the authoritative revision,
+  and Done then applied the saved look. A subsequent ordinary UI save returned
+  directly to the editor with no error boundary. Local Postgres readback at
+  revision `492015` confirmed look@6, body, commentary, and private visibility;
+  navigating Home and reopening showed the saved item.
 
 ### Native limitation and remaining work
 
-- A read-only `list_folders` request in the Store-shaped app proved general
-  native workspace tools fail. The first test bundle omitted the runtime's
-  sibling `codex-code-mode-host`. The isolated builder now bundles and signs
-  it, and `CodexEmbeddedRuntime` requires both signed helpers. Retest in
-  `/tmp/texttext-agent-test.xXWqLc/TextText Agent Test.app` advanced to a
-  different failure: `code-mode host closed its stdout`. The macOS crash
-  report `~/Library/Logs/DiagnosticReports/codex-code-mode-host-2026-09-27-163735.ips`
-  shows V8 `FatalOOM` in `IsolateGroup::EnsureCodeRange` inside the sandbox.
-  The direct terminal App Server session had called the same read-only tool.
-  Do not claim general native tools work. Keep the sandbox permissions intact
-  until the runtime failure has a reviewed fix. The document-look workflow
-  currently uses locally validated blueprint data before the ordinary save.
-- An isolated Mac save briefly showed client error boundary `err-0wudla6`
-  after a successful apply. Navigating Home and reopening the document worked,
-  and authoritative readback confirmed the save. Diagnose whether this is a
-  transient dev refresh or a reproducible post-save UI issue before release.
+- Earlier native tool attempts failed through Codex's code-mode host. The
+  bundled host crashed in V8 inside App Sandbox. Current source places the
+  TextText tool namespace on Codex's direct tool surface, starts each visible
+  chat after tool registration, and omits the V8 host from the isolated bundle.
+  The sandbox permissions are unchanged. Exact root-cause probes and the live
+  read/write result are in the workflow receipt. The document-look path still
+  uses locally validated blueprint data before ordinary save.
+- The post-save client error was reproducible: a dirty open editor retained an
+  older custom look reference after the pool advanced to the new version.
+  The pool merge now keeps unsaved local text and accepts the server-confirmed
+  look, retaining referenced definitions across the transition. The isolated
+  UI save and reopen passed after this fix.
 - Native blueprint correction, focused tests, and the production web build
-  passed in `b42be0e5`. The helper-packaging change passed an isolated app
-  build, signature verification, shell syntax check, and five focused native
-  tests; the live tool call still fails as described above. The full agent
-  specification remains open. Nothing here has been shipped.
+  passed in `b42be0e5`. The direct-tool patch passed 20 focused native tests,
+  an isolated signed app build, and the live read/write/reopen path. Three
+  focused web test files (21 tests) and TypeScript passed after conflict and
+  pool fixes. Recheck disconnected first-use on this final source, bounded
+  correction, and the remaining recovery matrix before declaring the full
+  spec complete. Nothing here has been shipped.
 
 The local Next dev server was on port 3000 with
 `/tmp/texttext-agent-dev-20260927.log`. The latest isolated test app was
-`/tmp/texttext-agent-test.xXWqLc/TextText Agent Test.app`, bundle
-`app.texttext.agenttest`, with the signed bundled Codex CLI 0.153.4 and signed
+`/tmp/texttext-agent-test.IhNlCN/TextText Agent Test.app`, bundle
+`app.texttext.agenttest`, with the signed bundled Codex CLI 0.153.4 and no
 code-mode host in its own container. Temporary bundles must never replace
 `/Applications/TextText.app`.
 

@@ -2,6 +2,7 @@
 
 import { loadStudioFolderSample } from "./workspace/item-type-studio-state";
 import { TypeDesignerContext, readEditableType } from "./workspace/TypeDesignerContext";
+import { normalizeStoredPostDocument } from "@/lib/pool/storage";
 
 import { itemDestination } from "@/lib/workspace/writing";
 import { readingUnreadByFolder } from "@/components/workspace/reading/unread";
@@ -621,6 +622,31 @@ function LocalWorkspaceShell({
       const candidates = currentPool.posts.filter(
         (post) => targetPostId ? post.id === targetPostId : folderPathForPoolPost(currentPool, post) === folderPath,
       );
+      if (refresh && targetPostId && candidates.length) {
+        // A live editor can keep a local body dirty while the server has a newer
+        // revision. Conflict recovery must read the server directly instead of
+        // trusting the pool cache, or the same save conflict repeats forever.
+        const response = await fetch(`/api/post/${encodeURIComponent(targetPostId)}/body`, {
+          credentials: "same-origin",
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+        });
+        if (!response.ok) throw new Error("Could not load the current document");
+        const current = normalizeStoredPostDocument(await response.json(), {
+          blogId: currentPool.blogId,
+          postId: targetPostId,
+        });
+        if (!current?.revision) throw new Error("Current document revision unavailable");
+        const post = candidates[0];
+        return [{
+          postId: post.id, revision: current.revision,
+          folderPath, document: current.document,
+          pinned: Boolean(post.pinned),
+          createdAt: post.date ?? null,
+          updatedAt: current.updatedAt ?? post.updatedAt ?? post.date ?? null,
+          publishedAt: post.status === "published" ? (post.date ?? null) : null,
+        }];
+      }
       const sample = await loadStudioFolderSample(candidates, async (post) => {
         await ensurePostDocument(currentPool.blogId, post.id, { force: refresh });
         if (displayPoolRef.current.blogId !== currentPool.blogId) return null;

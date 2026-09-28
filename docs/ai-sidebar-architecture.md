@@ -141,13 +141,19 @@ ones the current token may call.
 ### In-app assistant
 
 The native adapter streams Codex App Server turns over a private JSON-RPC pipe
-and registers TextText workspace commands as dynamic tools. Standalone builds
+and registers TextText workspace commands as direct tools in a dedicated
+`texttext` namespace. Each visible chat starts a thread after registration;
+the connection-check thread is never reused for a document chat. The isolated
+Store-shaped test calls those tools inside App Sandbox without Codex's V8
+code-mode host. Standalone builds
 can discover an external runtime. Store source accepts only a declared signed
 bundled helper that inherits the sandbox, uses TextText-owned account state and
 the documented device authorization flow. Installed build 1094 contains no
 helper and cannot offer account setup. The isolated probe establishes runtime
-and login-start feasibility, not authenticated editing or distribution
-approval; see the [sandbox receipt](agent-runtime-sandbox-verification-2026-09-25.md).
+and login-start feasibility; a later isolated build verified an authenticated
+read and write in the [workflow receipt](agent-experience-verification-2026-09-25.md).
+Distribution approval remains untested; see the
+[sandbox receipt](agent-runtime-sandbox-verification-2026-09-25.md).
 
 The in-app assistant can also call the workspace command surface through the
 workspace-configured Anthropic or OpenAI provider. The workspace owner chooses

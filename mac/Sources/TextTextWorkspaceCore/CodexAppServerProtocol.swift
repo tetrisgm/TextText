@@ -51,45 +51,19 @@ public enum CodexAppServerError: Error, Equatable {
 
 /// Assigns one App Server thread to each durable TextText conversation.
 ///
-/// The first conversation may claim the thread created during connection.
-/// Every later conversation must receive a newly started thread. Keeping this
-/// state outside the window controller makes the isolation rule explicit and
-/// independently testable.
+/// Every visible conversation receives a thread started after its workspace
+/// tool catalog is registered. The connection-check thread is never reused.
 public struct CodexConversationThreadRouter: Equatable {
     private var threadsByConversation: [String: String] = [:]
-    private var unclaimedThreadID: String?
 
-    public init(initialThreadID: String? = nil) {
-        unclaimedThreadID = initialThreadID
-    }
-
-    public var isReady: Bool {
-        unclaimedThreadID != nil || !threadsByConversation.isEmpty
-    }
+    public init() {}
 
     public func hasThread(for conversationID: String) -> Bool {
         threadsByConversation[conversationID] != nil
     }
 
-    public mutating func setInitialThreadID(_ threadID: String) {
-        unclaimedThreadID = threadID
-    }
-
-    /// Returns the stable thread for a conversation. Private utility turns
-    /// start their own thread so they never claim the visible chat's initial
-    /// connection thread.
-    public mutating func threadID(
-        for conversationID: String,
-        claimInitialThread: Bool = true
-    ) -> String? {
-        if let threadID = threadsByConversation[conversationID] {
-            return threadID
-        }
-        guard claimInitialThread else { return nil }
-        guard let threadID = unclaimedThreadID else { return nil }
-        unclaimedThreadID = nil
-        threadsByConversation[conversationID] = threadID
-        return threadID
+    public func threadID(for conversationID: String) -> String? {
+        threadsByConversation[conversationID]
     }
 
     public mutating func register(
@@ -101,7 +75,6 @@ public struct CodexConversationThreadRouter: Equatable {
 
     public mutating func reset() {
         threadsByConversation.removeAll()
-        unclaimedThreadID = nil
     }
 }
 
@@ -215,6 +188,15 @@ public enum CodexAppServerRequests {
         return servers.keys.sorted()
     }
 
+    public static func textTextToolNamespace(_ functions: [[String: Any]]) -> [[String: Any]] {
+        guard !functions.isEmpty else { return [] }
+        return [[
+            "type": "namespace", "name": "texttext",
+            "description": "Tools for the current TextText workspace.",
+            "tools": functions,
+        ]]
+    }
+
     /// Starts an isolated embedded thread. App Server otherwise inherits every
     /// MCP configured in the owner's global Codex profile, including servers
     /// unrelated to TextText and servers that may currently require login.
@@ -244,7 +226,11 @@ public enum CodexAppServerRequests {
                 "shell_tool": false, "unified_exec": false, "shell_snapshot": false,
                 "apps": false, "hooks": false, "plugins": false, "remote_plugin": false,
                 "multi_agent": false, "browser_use": false, "browser_use_external": false,
-                "computer_use": false, "in_app_browser": false, "code_mode": false,
+                "computer_use": false, "in_app_browser": false,
+                // Per-thread config replaces the launch override. Keep the
+                // TextText namespace direct here so workspace tools do not
+                // depend on the V8 code-mode host in App Sandbox.
+                "code_mode": ["direct_only_tool_namespaces": ["texttext"]],
                 "skill_search": false,
             ],
             "agents": ["enabled": false],

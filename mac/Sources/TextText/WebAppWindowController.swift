@@ -900,7 +900,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             guard let profile = try? CodexEmbeddedRuntime.profileDirectory() else { return nil }
             environment["CODEX_HOME"] = profile.path
         }
-        let server = CodexAppServerController(executableURL: executableURL, environment: environment)
+        let server = CodexAppServerController(executableURL: executableURL,
+            environment: environment, directTextTextTools: true)
         server.onEvent = { [weak self, weak server] message in
             DispatchQueue.main.async {
                 guard let self, self.codexServer === server else { return }
@@ -1187,6 +1188,13 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         let turnTools = isItemTypeTurn
             ? []
             : codexDynamicTools
+        if !isItemTypeTurn && turnTools.isEmpty {
+            emitCodexTurnEvent([
+                "type": "error",
+                "message": "TextText's workspace tools are still loading. Try this request again in a moment.",
+            ], conversationID: conversationID)
+            return
+        }
         if codexTurnTimedOut || codexActiveConversationID != nil ||
             codexAwaitingThreadConversationID != nil {
             emitCodexTurnEvent([
@@ -1196,9 +1204,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             return
         }
         let alreadyMapped = codexConversationThreads.hasThread(for: conversationID)
-        if let threadID = codexConversationThreads.threadID(
-            for: conversationID,
-            claimInitialThread: !isItemTypeTurn) {
+        if let threadID = codexConversationThreads.threadID(for: conversationID) {
             startCodexTurn(
                 prompt: alreadyMapped
                     ? prompt
@@ -1613,7 +1619,6 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                     if codexCheckRequested {
                         startCodexConnectionCheck(threadID: threadID)
                     } else {
-                        codexConversationThreads.setInitialThreadID(threadID)
                         emitCodexConnectionStatus()
                     }
                 }
@@ -1750,6 +1755,14 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         if message.method == "item/tool/call" {
             let params = message.rawParams ?? [:]
             let callId = (params["callId"] as? String) ?? (params["id"] as? String) ?? UUID().uuidString
+            guard params["namespace"] as? String == "texttext" else {
+                if let requestID = message.jsonRPCID {
+                    try? codexServer?.respond(id: requestID,
+                        result: CodexAppServerRequests.dynamicToolResult(
+                            text: "This tool is outside the TextText workspace.", success: false))
+                }
+                return
+            }
             if (codexTurnTimedOut || codexTurnCancelRequested), let requestId = message.jsonRPCID {
                 try? codexServer?.respond(
                     id: requestId,
@@ -1898,11 +1911,12 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         }
         if body["action"] as? String == "assistantTools",
            let tools = body["tools"] as? [[String: Any]] {
-            codexDynamicTools = tools.map { tool in
+            let functions: [[String: Any]] = tools.map { tool in
                 ["type": "function", "name": tool["name"] ?? "", "description": tool["description"] ?? "", "inputSchema": tool["inputSchema"] ?? [:]]
             }
+            codexDynamicTools = CodexAppServerRequests.textTextToolNamespace(functions)
             Self.codexLog.info(
-                "registered \(self.codexDynamicTools.count, privacy: .public) in-app tools")
+                "registered \(functions.count, privacy: .public) in-app tools")
             return
         }
         // Local MCP cannot use the durable exact-argument owner review required

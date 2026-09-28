@@ -3,6 +3,38 @@ import XCTest
 @testable import TextTextWorkspaceCore
 
 final class CodexAppServerTests: XCTestCase {
+    func testEmbeddedRuntimeExposesOnlyTextTextNamespaceAsDirectTools() throws {
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent("texttext-codex-direct-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let argumentsURL = temporary.appendingPathComponent("arguments.txt")
+        let serverURL = temporary.appendingPathComponent("fake-app-server")
+        let script = "#!/bin/sh\nprintf '%s\\n' \"$@\" > '\(argumentsURL.path)'\n"
+        try Data(script.utf8).write(to: serverURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: serverURL.path)
+
+        let exited = expectation(description: "fake App Server captured the arguments")
+        let controller = CodexAppServerController(executableURL: serverURL, directTextTextTools: true)
+        controller.onExit = { status in
+            XCTAssertEqual(status, 0)
+            exited.fulfill()
+        }
+        try controller.start()
+        wait(for: [exited], timeout: 5)
+
+        let arguments = try String(contentsOf: argumentsURL, encoding: .utf8)
+            .split(separator: "\n").map(String.init)
+        XCTAssertEqual(arguments, ["-c", "features.code_mode.direct_only_tool_namespaces=[\"texttext\"]", "app-server", "--stdio"])
+
+        let tool: [String: Any] = ["type": "function", "name": "list_folders", "description": "List folders", "inputSchema": ["type": "object"]]
+        let wrapped = CodexAppServerRequests.textTextToolNamespace([tool])
+        XCTAssertEqual(wrapped.count, 1)
+        XCTAssertEqual(wrapped.first?["name"] as? String, "texttext")
+        XCTAssertEqual((wrapped.first?["tools"] as? [[String: Any]])?.first?["name"] as? String, "list_folders")
+        XCTAssertTrue(CodexAppServerRequests.textTextToolNamespace([]).isEmpty)
+    }
+
     func testControllerAnswersNumericToolRequestWithoutChangingItsType() throws {
         let temporary = FileManager.default.temporaryDirectory
             .appendingPathComponent("texttext-codex-pipe-\(UUID().uuidString)", isDirectory: true)
@@ -106,12 +138,14 @@ final class CodexAppServerTests: XCTestCase {
         XCTAssertTrue(instructions?.contains("Never call search or read_item") == true)
         XCTAssertTrue(instructions?.contains("make at most four dynamic tool calls") == true)
         let config = params["config"] as? [String: Any]
-        let features = config?["features"] as? [String: Bool]
-        XCTAssertEqual(features?["shell_tool"], false)
-        XCTAssertEqual(features?["unified_exec"], false)
-        XCTAssertEqual(features?["multi_agent"], false)
-        XCTAssertEqual(features?["hooks"], false)
-        XCTAssertEqual(features?["apps"], false)
+        let features = config?["features"] as? [String: Any]
+        XCTAssertEqual(features?["shell_tool"] as? Bool, false)
+        XCTAssertEqual(features?["unified_exec"] as? Bool, false)
+        XCTAssertEqual(features?["multi_agent"] as? Bool, false)
+        XCTAssertEqual(features?["hooks"] as? Bool, false)
+        XCTAssertEqual(features?["apps"] as? Bool, false)
+        let codeMode = features?["code_mode"] as? [String: Any]
+        XCTAssertEqual(codeMode?["direct_only_tool_namespaces"] as? [String], ["texttext"])
         XCTAssertEqual((config?["tools"] as? [String: Bool])?["view_image"], false)
         XCTAssertEqual(config?["web_search"] as? String, "disabled")
     }
@@ -125,11 +159,11 @@ final class CodexAppServerTests: XCTestCase {
     }
 
     func testConversationThreadRouterNeverSharesModelContextAcrossChats() {
-        var router = CodexConversationThreadRouter(initialThreadID: "thread-1")
+        var router = CodexConversationThreadRouter()
 
         XCTAssertFalse(router.hasThread(for: "chat-a"))
-        XCTAssertTrue(router.isReady)
-        XCTAssertEqual(router.threadID(for: "chat-a"), "thread-1")
+        XCTAssertNil(router.threadID(for: "chat-a"))
+        router.register(threadID: "thread-1", for: "chat-a")
         XCTAssertTrue(router.hasThread(for: "chat-a"))
         XCTAssertEqual(router.threadID(for: "chat-a"), "thread-1")
         XCTAssertNil(router.threadID(for: "chat-b"))
@@ -143,16 +177,16 @@ final class CodexAppServerTests: XCTestCase {
             router.threadID(for: "chat-b"))
     }
 
-    func testPrivateConversationCannotClaimConnectionThread() {
-        var router = CodexConversationThreadRouter(initialThreadID: "connection-thread")
+    func testConversationThreadsNeverClaimConnectionThread() {
+        var router = CodexConversationThreadRouter()
 
-        XCTAssertNil(router.threadID(for: "item-type:look", claimInitialThread: false))
+        XCTAssertNil(router.threadID(for: "item-type:look"))
         XCTAssertFalse(router.hasThread(for: "item-type:look"))
-        XCTAssertEqual(router.threadID(for: "regular-chat"), "connection-thread")
+        XCTAssertNil(router.threadID(for: "regular-chat"))
 
         router.register(threadID: "design-thread", for: "item-type:look")
         XCTAssertEqual(
-            router.threadID(for: "item-type:look", claimInitialThread: false),
+            router.threadID(for: "item-type:look"),
             "design-thread")
     }
 
@@ -186,13 +220,13 @@ final class CodexAppServerTests: XCTestCase {
     }
 
     func testConversationThreadRouterResetDropsEveryAccountContext() {
-        var router = CodexConversationThreadRouter(initialThreadID: "thread-1")
+        var router = CodexConversationThreadRouter()
+        router.register(threadID: "thread-1", for: "chat-a")
         XCTAssertEqual(router.threadID(for: "chat-a"), "thread-1")
         router.register(threadID: "thread-2", for: "chat-b")
 
         router.reset()
 
-        XCTAssertFalse(router.isReady)
         XCTAssertNil(router.threadID(for: "chat-a"))
         XCTAssertNil(router.threadID(for: "chat-b"))
     }

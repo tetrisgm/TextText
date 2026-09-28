@@ -244,7 +244,17 @@ function mergeIncomingPool(pool: WorkspacePoolPayload): WorkspacePoolPayload {
       optimisticPostPatches.delete(post.id);
     }
     if (local && locallyDirtyPosts.has(post.id)) {
-      return { ...post, ...local, id: post.id };
+      const merged = { ...post, ...local, id: post.id };
+      // A local text edit can remain dirty after the server applies a newer
+      // look. Preserve the unsaved text, but use the server's confirmed look
+      // reference so it resolves against the refreshed template catalog.
+      if (!patch?.template && post.template &&
+          (typeof local.revision !== "number" ||
+            (typeof post.revision === "number" && post.revision >= local.revision))) {
+        merged.template = post.template;
+        if (typeof post.revision === "number") merged.revision = post.revision;
+      }
+      return merged;
     }
     const pendingPatch = optimisticPostPatches.get(post.id);
     return pendingPatch ? { ...post, ...pendingPatch, id: post.id } : post;
@@ -268,15 +278,35 @@ function mergeIncomingPool(pool: WorkspacePoolPayload): WorkspacePoolPayload {
     return pool;
   }
 
+  const retainedPosts = [...pendingPosts, ...reconciledPosts];
+  const retainedTrashedPosts = [
+    ...pendingTrashedPosts,
+    ...(pool.trashedPosts ?? []).filter(
+      (post) => !pendingTrashedPosts.some((pending) => pending.id === post.id),
+    ),
+  ];
+  const referencedTemplates = new Set(
+    [...retainedPosts, ...retainedTrashedPosts]
+      .map((post) => post.template ?? post.document?.presentation.template)
+      .filter((reference): reference is { id: string; version: number } => Boolean(reference))
+      .map((reference) => `${reference.id}@${reference.version}`),
+  );
+  const availableTemplates = new Set(
+    [...pool.templates, ...(pool.pinnedTemplates ?? [])]
+      .map((template) => `${template.id}@${template.version}`),
+  );
+  const retainedTemplates = [...current.templates, ...(current.pinnedTemplates ?? [])]
+    .filter((template) => {
+      const key = `${template.id}@${template.version}`;
+      if (!referencedTemplates.has(key) || availableTemplates.has(key)) return false;
+      availableTemplates.add(key);
+      return true;
+    });
   return {
     ...pool,
-    posts: [...pendingPosts, ...reconciledPosts],
-    trashedPosts: [
-      ...pendingTrashedPosts,
-      ...(pool.trashedPosts ?? []).filter(
-        (post) => !pendingTrashedPosts.some((pending) => pending.id === post.id),
-      ),
-    ],
+    posts: retainedPosts,
+    trashedPosts: retainedTrashedPosts,
+    pinnedTemplates: [...(pool.pinnedTemplates ?? []), ...retainedTemplates],
   };
 }
 

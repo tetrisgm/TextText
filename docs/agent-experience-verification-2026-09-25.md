@@ -3,7 +3,8 @@
 Status: real API-key generation, refinement, save and readback passed through
 the local HTTP/action path and actual renderer. The isolated Mac app also
 completed account-backed generation, refinement, save, and reopen for the
-selected document. General sandboxed workspace tool calls remain unproved.
+selected document. A September 27 isolated build also verified native
+workspace read and write tools through the same account connection.
 This receipt distinguishes
 source, sandbox probe, provider calls, UI actions, and saved results.
 
@@ -55,14 +56,12 @@ app reopen. The screenshot with only a code showed the older UI; commit
 `8f762c04` adds a visible ChatGPT button and numbered steps.
 
 The isolated full app opened the selected local test document through real
-Mac gestures and retained the requested research-reader prompt. Direct native
-dynamic-tool attempts failed inside the Store-shaped sandbox: a fresh thread
-had one valid preview tool and the correct `gpt-6-astra` model, but zero tool
-requests, while the model reported that its tool host was unavailable. The
-same runtime, app-owned ChatGPT profile, prompt and schema called that tool
-from an unsandboxed terminal App Server session. The exact sandbox cause is
-not yet established; general native workspace tools must not be declared
-working on the basis of account login.
+Mac gestures and retained the requested research-reader prompt. Initial native
+dynamic-tool attempts failed because the runtime selected its V8 code-mode
+host. Bundling that host exposed a sandboxed V8 `FatalOOM` crash. A direct
+tool namespace, configured both at launch and on each private thread, avoids
+that host. Visible chats now start fresh threads after TextText registers its
+workspace tools, rather than reusing the earlier connection-check thread.
 
 The design turn now returns blueprint data without requesting a tool. TextText
 parses, validates, quality checks, compiles, and renders that data locally
@@ -76,8 +75,8 @@ document-revision conflict. The UI's **Read latest document and review**
 action loaded current content, and **Done** applied the saved look. Local
 store readback showed revision `492010` referencing that version. After an
 app restart, the document body, commentary, source reference, selected look,
-and ChatGPT account were present. A transient client error boundary appeared
-after apply; Home and reopening recovered, but that boundary needs diagnosis.
+and ChatGPT account were present. A client error boundary appeared after
+apply; the September 27 follow-up below identifies and fixes it.
 
 ## Checks and live result
 
@@ -127,11 +126,58 @@ added (`/tmp/texttext-agent-harness-tsc.log`).
 
 ### Remaining native verification
 
-The data-only look path is proved in the isolated UI, but native workspace
-dynamic tools are unavailable in that sandbox, so general agent read/edit
-operations remain a release blocker. Verify the final automatic correction
-source and diagnose the transient post-save client boundary. Do not attribute
-the dynamic-tool issue to account or model access; both were proved.
+The data-only look path is proved in the isolated UI. The subsequent direct
+tool test below proves native workspace read and one write. Verify final
+automatic correction and the remaining recovery matrix. Account and model
+access were proved separately from tool readiness.
+
+### September 27 native workspace tool proof
+
+The isolated Store-shaped build at
+`/tmp/texttext-agent-test.IhNlCN/TextText Agent Test.app` used bundled official
+Codex CLI 0.153.4, the app-owned ChatGPT profile, local origin
+`http://localhost:3000`, and local Postgres. It contained no code-mode host.
+From a fresh in-app chat, `texttext.list_folders` returned the actual folders.
+From the selected existing test note, `texttext.append_to_item` added the exact
+sentence “Native workspace tool verification: direct tool path works.” The
+assistant showed an append receipt, and local authoritative `posts` readback
+found revision `492011`, the sentence, original commentary and source, private
+visibility, and the same saved look at version 2. Closing and reopening the
+app showed the updated note and the continued **Chat with Codex** connection.
+No new document, external MCP, sandbox permission, or installed app changed.
+
+This proves a real native read and one ordinary local write. It does not yet
+prove every recovery case, or reproduce disconnected first use on this final
+source.
+
+### September 27 selected-document save and recovery
+
+On the same isolated Mac app and local document, **Customize this document**
+opened the saved Research reader look with the actual body, commentary and
+source reference. An account-backed design request made the commentary width
+Balanced in the rendered preview; no manual template substitution was used.
+Done saved look@3, but applying it met a real stale-revision conflict after the
+assistant's document append. **Read latest document and review** initially
+showed latest content while retaining the pool's old revision, causing a
+repeat conflict. The recovery loader now bypasses the locally dirty body cache
+and reads the owner-scoped `/api/post/[id]/body` response directly.
+
+With that fix, the same pending save retried at revision `492011` and applied
+look@3 at revision `492012`. The UI then exposed a reproducible client error:
+`Unknown built-in template look-fa4c0003fb6494beec338220c2e202a8@2`.
+Subsequent saves at look@4 and look@5 reproduced the same old-version issue.
+The open editor retained a dirty local post while the refreshed workspace
+catalog held the new look. The pool reconciliation now accepts a newer
+server-confirmed template reference without discarding unsaved local text and
+retains referenced prior definitions during the transition.
+
+A final ordinary UI save applied look@6 and returned straight to the editor,
+without an error boundary. Local Postgres readback found revision `492015`,
+look@6, unchanged Markdown including the native append, original commentary,
+and private visibility. Home navigation and reopening showed the saved item.
+Three focused web test files passed 21 tests; TypeScript passed. The earlier
+native direct-tool patch passed 20 focused Swift tests and live read/write
+checks. The latest source has not been released or installed.
 
 No release, deployment, installation replacement, App Store submission, new
 billing service, credential copying, or provider substitution was performed.

@@ -133,6 +133,27 @@ describe("workspace local authority", () => {
     );
   });
 
+  it("keeps dirty text while accepting a newer saved look reference", async () => {
+    const store = await import("@/lib/pool/store");
+    const original = { ...post(), revision: 7, template: { id: "look-test", version: 2 } };
+    store.seedWorkspacePool(pool("2026-07-10T10:00:00.000Z", [original]));
+    store.markPostDirty("post-1");
+    store.updatePost("post-1", { title: "Unsaved local title" });
+
+    store.seedWorkspacePool(pool(new Date(Date.now() + 1_000).toISOString(), [{
+      ...original,
+      revision: 8,
+      template: { id: "look-test", version: 3 },
+      title: "Saved server title",
+    }]));
+
+    expect(store.getWorkspacePost("post-1")).toMatchObject({
+      title: "Unsaved local title",
+      revision: 8,
+      template: { id: "look-test", version: 3 },
+    });
+  });
+
   it("keeps a locally trashed item out of active lists until the server confirms it", async () => {
     const store = await import("@/lib/pool/store");
     const original = post();

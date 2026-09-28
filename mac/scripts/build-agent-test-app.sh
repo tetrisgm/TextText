@@ -7,13 +7,6 @@ RUNTIME="${1:?Pass the existing official Codex executable}"
 ORIGIN="${2:-http://localhost:3000}"
 case "$RUNTIME" in /*) ;; *) echo "Runtime path must be absolute." >&2; exit 2 ;; esac
 [ -x "$RUNTIME" ] || { echo "Runtime is not executable." >&2; exit 2; }
-CODE_MODE_HOST="$(python3 - "$RUNTIME" <<'PY'
-from pathlib import Path
-import sys
-print(Path(sys.argv[1]).resolve().with_name("codex-code-mode-host"))
-PY
-)"
-[ -x "$CODE_MODE_HOST" ] || { echo "Codex code-mode host is missing beside the runtime." >&2; exit 2; }
 python3 - "$ORIGIN" <<'PY'
 import sys, urllib.parse
 try:
@@ -27,7 +20,6 @@ if not valid:
     sys.exit("This test build accepts only a local test origin with an explicit port.")
 PY
 codesign --verify --strict "$RUNTIME"
-codesign --verify --strict "$CODE_MODE_HOST"
 TEST_ROOT="$(mktemp -d /tmp/texttext-agent-test.XXXXXX)"
 APP="$TEST_ROOT/TextText Agent Test.app"
 cp "$ROOT/mac/Package.resolved" "$TEST_ROOT/Package.resolved"
@@ -38,7 +30,6 @@ BIN="$(TEXTTEXT_STORE=1 swift build --package-path "$ROOT/mac" --show-bin-path)"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers" "$APP/Contents/Resources"
 cp "$BIN/TextTextApp" "$APP/Contents/MacOS/TextText"
 cp -L "$RUNTIME" "$APP/Contents/Helpers/codex"
-cp "$CODE_MODE_HOST" "$APP/Contents/Helpers/codex-code-mode-host"
 cp "$ROOT/mac/Info.plist" "$APP/Contents/Info.plist"
 [ ! -f "$ROOT/mac/AppIcon.icns" ] || cp "$ROOT/mac/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 RUNTIME_VERSION="$("$RUNTIME" --version)"
@@ -66,7 +57,6 @@ for name, entitlements in {
     (root / name).write_bytes(plistlib.dumps(entitlements))
 PY
 codesign --force --sign - --options runtime --entitlements "$TEST_ROOT/helper.entitlements" "$APP/Contents/Helpers/codex"
-codesign --force --sign - --options runtime --entitlements "$TEST_ROOT/helper.entitlements" "$APP/Contents/Helpers/codex-code-mode-host"
 codesign --force --sign - --options runtime --entitlements "$TEST_ROOT/parent.entitlements" "$APP"
 codesign --verify --deep --strict "$APP"
 printf 'Isolated sandbox app: %s\nOrigin: %s\nRuntime: %s\nBase revision: %s\n' "$APP" "$ORIGIN" "$RUNTIME_VERSION" "$SOURCE_REVISION"

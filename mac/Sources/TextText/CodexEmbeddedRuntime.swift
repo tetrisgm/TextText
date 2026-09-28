@@ -9,8 +9,7 @@ enum CodexEmbeddedRuntime {
         guard bundle.object(forInfoDictionaryKey: "TextTextEmbeddedAgentRuntime") as? Bool == true else { return nil }
         let helpers = bundle.bundleURL.resolvingSymlinksInPath().appendingPathComponent("Contents/Helpers")
         let candidate = helpers.appendingPathComponent("codex")
-        guard validHelper(helpers.appendingPathComponent("codex-code-mode-host"), sandboxed: sandboxed),
-              validHelper(candidate, sandboxed: sandboxed) else { return nil }
+        guard validHelper(candidate, sandboxed: sandboxed) else { return nil }
         return candidate
     }
 

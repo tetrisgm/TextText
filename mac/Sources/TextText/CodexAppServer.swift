@@ -23,12 +23,16 @@ final class CodexAppServerController {
     var onEvent: EventHandler?
     var onExit: ((Int32) -> Void)?
 
-    init(executableURL: URL, environment: [String: String] = [:]) {
+    init(executableURL: URL, environment: [String: String] = [:], directTextTextTools: Bool = false) {
         process = Process()
         input = Pipe()
         output = Pipe()
         process.executableURL = executableURL
-        process.arguments = ["app-server", "--stdio"]
+        // The embedded workspace tools stay model-visible without starting
+        // Codex's V8 code-mode host inside the Mac App Sandbox.
+        process.arguments = (directTextTextTools
+            ? ["-c", "features.code_mode.direct_only_tool_namespaces=[\"texttext\"]"]
+            : []) + ["app-server", "--stdio"]
         process.standardInput = input
         process.standardOutput = output
         process.standardError = errors
