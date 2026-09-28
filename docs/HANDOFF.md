@@ -7,10 +7,11 @@ connection → selected-document preview → refinement → save → reopen jour
 the September 25 attachment
 `4a0448e5-8029-44e8-8e3c-21378eec0824/Pasted text.txt`.
 Keep memory use bounded: one compiler/build at a time, one local web server,
-bounded tool output. Do not deploy, release, reinstall, replace the installed
-app, submit to the App Store, or change billing without a new owner request.
-The owner requested replacing the installed app on September 28; that one
-local replacement is recorded below. Public release remains unrequested.
+bounded tool output. The owner authorizes replacing and installing the Mac app
+going forward; no repeat permission request is needed for local installs.
+Do not deploy, release publicly, submit to the App Store, or change billing
+without a separate owner request. The September 28 local replacement is
+recorded below.
 
 ### Installed local WIP, September 28
 
