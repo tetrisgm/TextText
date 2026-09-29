@@ -6,14 +6,9 @@ import {
   useMemo,
   useRef,
   useState,
-  useTransition,
 } from "react";
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import {
-  createFolderItemAction,
-  createWorkspacePostAction,
-} from "@/app/editor/actions";
 import { captureIntent } from "@/lib/capture-intent";
 import {
   enqueueCapture,
@@ -27,7 +22,11 @@ import type { CaptureQueueEntry } from "@/lib/capture-queue";
 import type { Blog, Folder, Post } from "@/lib/content";
 import type { TemplateReference } from "@/lib/documents/model";
 import { parseItemInput } from "@/lib/item-creation";
-import { blogPostEditPath } from "@/lib/public-paths";
+import {
+  blogPostEditPath,
+  blogWorkspacePostEditPath,
+  blogWorkspacePostPath,
+} from "@/lib/public-paths";
 
 export type FolderCreateRequest =
   | {
@@ -148,7 +147,6 @@ export function UniversalItemComposer({
   const router = useRouter();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastFocusRequestKey = useRef(0);
-  const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const saveStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -159,15 +157,10 @@ export function UniversalItemComposer({
   );
   const [hydratedCaptureQueueHandle, setHydratedCaptureQueueHandle] = useState<
     string | null
-  >(
-    onCreateItem ? null : handle,
-  );
+  >(null);
   const capturesRef = useRef<InboxCapture[]>([]);
-  const [, startTransition] = useTransition();
   const capturesInPlace = Boolean(destinations?.length);
-  const usesCaptureQueue = Boolean(onCreateItem);
-  const captureQueueReady =
-    !usesCaptureQueue || hydratedCaptureQueueHandle === handle;
+  const captureQueueReady = hydratedCaptureQueueHandle === handle;
 
   useEffect(() => () => {
     if (saveStatusTimer.current) clearTimeout(saveStatusTimer.current);
@@ -220,7 +213,6 @@ export function UniversalItemComposer({
   );
 
   useEffect(() => {
-    if (!usesCaptureQueue) return;
     const hydrate = window.setTimeout(() => {
       const recovered = recoverCaptureQueue(
         readCaptureQueue<FolderCreateRequest, Post>(window.localStorage, handle),
@@ -228,7 +220,7 @@ export function UniversalItemComposer({
       if (replaceCaptures(recovered)) setHydratedCaptureQueueHandle(handle);
     }, 0);
     return () => window.clearTimeout(hydrate);
-  }, [usesCaptureQueue, handle, replaceCaptures]);
+  }, [handle, replaceCaptures]);
 
   const destinationFor = useCallback(
     (): Folder => folder,
@@ -237,13 +229,62 @@ export function UniversalItemComposer({
 
   const runInPlaceCapture = useCallback(
     (capture: InboxCapture) => {
-      if (!onCreateItem) return;
       showSaveStatus(capture.request.type === "bookmark" ? "Saving link…" : "Saving note…");
       patchCapture(capture.id, {
         error: undefined,
         post: undefined,
         status: "saving",
       });
+      if (!onCreateItem) {
+        void fetch("/api/workspace/folder-capture", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+            "X-TextText-Capture": "1",
+          },
+          body: JSON.stringify({
+            handle,
+            folderPath: capture.request.folderPath,
+            capture: capture.raw,
+            idempotencyKey: capture.idempotencyKey,
+          }),
+        }).then(async (response) => {
+          const payload = await response.json().catch(() => null) as {
+            error?: string;
+            item?: { id: string; slug: string };
+            receipt?: { itemId: string; savedTo: string; title: string };
+          } | null;
+          if (!response.ok) throw new Error(payload?.error ?? "The capture could not be saved.");
+          const item = payload?.item;
+          const receipt = payload?.receipt;
+          if (!item?.id || !item.slug || receipt?.itemId !== item.id ||
+            receipt.savedTo !== capture.request.folderPath) {
+            throw new Error("The capture receipt did not match the saved item.");
+          }
+          return { item, receipt };
+        }).then(({ item, receipt }) => {
+          patchCapture(capture.id, {
+            destination: capture.destination,
+            error: undefined,
+            status: "saved",
+            title: receipt.title,
+          });
+          showSaveStatus(capture.request.type === "bookmark" ? "Link saved. Capturing readable content…" : "Note saved.");
+          const destination = capture.request.type === "bookmark"
+            ? blogWorkspacePostPath(blog, capture.request.folderPath, item)
+            : blogWorkspacePostEditPath(blog, capture.request.folderPath, item);
+          router.push(destination);
+        }).catch((captureError) => {
+          setSaveStatus(null);
+          patchCapture(capture.id, {
+            error: actionErrorMessage(captureError, "This item could not be saved. Your unsaved text is available below."),
+            status: "failed",
+          });
+        });
+        return;
+      }
       try {
         const created = onCreateItem(capture.request, {
           capture: capture.raw,
@@ -303,7 +344,7 @@ export function UniversalItemComposer({
       }
       window.requestAnimationFrame(() => inputRef.current?.focus());
     },
-    [capturesInPlace, onCreateItem, patchCapture, showSaveStatus],
+    [blog, capturesInPlace, handle, onCreateItem, patchCapture, router, showSaveStatus],
   );
 
   const queueInPlaceCapture = useCallback(
@@ -398,7 +439,6 @@ export function UniversalItemComposer({
   const createItem = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      if (creating) return;
       const form = event.currentTarget;
       const data = new FormData(form);
       const value = String(data.get("item") ?? "").trim();
@@ -406,14 +446,14 @@ export function UniversalItemComposer({
         inputRef.current?.focus();
         return;
       }
-      if (usesCaptureQueue && !captureQueueReady) {
+      if (!captureQueueReady) {
         setError("Restoring unsaved items. Your text is still here. Try saving again in a moment.");
         inputRef.current?.focus();
         return;
       }
 
       const draft = parseItemInput(value);
-      const capturePreview = usesCaptureQueue ? captureIntent(value) : null;
+      const capturePreview = captureIntent(value);
       const destination = destinationFor();
       const template = draft.sourceUrl
         ? { id: "texttext.bookmark", version: 1 }
@@ -449,65 +489,17 @@ export function UniversalItemComposer({
             };
 
       setError(null);
-      if (onCreateItem) {
-        if (queueInPlaceCapture(
-          request,
-          destination,
-          capturePreview?.title ?? draft.title ?? "Untitled",
-          value,
-        )) {
-          form.reset();
-        }
-        return;
-      }
-      form.reset();
-      setCreating(true);
-      startTransition(() => {
-        const creation =
-          request.type === "bookmark"
-            ? request.blank
-              ? createWorkspacePostAction(
-                  handle,
-                  "bookmark",
-                  request.folderPath,
-                  request.title,
-                  request.template,
-                  request.body,
-                )
-              : createFolderItemAction(handle, "bookmarks", {
-                  folderPath: request.folderPath,
-                  template: request.template,
-                  url: request.url,
-                  description: request.description,
-                })
-            : createFolderItemAction(handle, "notes", {
-                folderPath: request.folderPath,
-                template: request.template,
-                title: request.title,
-                body: request.body,
-              });
-        void creation
-          .then((post) => {
-            if (draft.sourceUrl) router.refresh();
-            else router.push(blogPostEditPath(blog, post));
-          })
-          .catch((createError) => {
-            setError(actionErrorMessage(createError, "Could not create item"));
-            inputRef.current?.focus();
-          })
-          .finally(() => setCreating(false));
-      });
+      if (queueInPlaceCapture(
+        request,
+        destination,
+        capturePreview.title || draft.title || "Untitled",
+        value,
+      )) form.reset();
     },
     [
-      blog,
       captureQueueReady,
-      creating,
       destinationFor,
-      handle,
-      onCreateItem,
-      router,
       queueInPlaceCapture,
-      usesCaptureQueue,
     ],
   );
 
@@ -541,7 +533,7 @@ export function UniversalItemComposer({
           type="submit"
           className="ac-icon-btn universal-item-create"
           aria-label={capturesInPlace ? "Save to TextText" : "Create item"}
-          disabled={creating || (usesCaptureQueue && !captureQueueReady)}
+          disabled={!captureQueueReady}
         >
           <span aria-hidden="true">↑</span>
         </button>

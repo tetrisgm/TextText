@@ -236,9 +236,13 @@ function conflictResult(post: Pick<Post, "slug" | "title">, action: string) {
 function accessUser(extra: ToolContext): AccessUser {
   const sub = extra.authInfo?.extra?.sub;
   const userId = extra.authInfo?.extra?.userId;
+  const email = extra.authInfo?.extra?.email;
+  const name = extra.authInfo?.extra?.name;
   return {
     sub: typeof sub === "string" ? sub : null,
     userId: typeof userId === "string" ? userId : null,
+    email: typeof email === "string" ? email : null,
+    name: typeof name === "string" ? name : null,
   };
 }
 
@@ -1775,7 +1779,13 @@ async function executeWorkspaceCommand(
 
     case "create_item": {
       const input = args as WorkspaceToolInput<"create_item">;
-      const blog = await requireBlog(extra);
+      // A folder editor may not have a workspace-wide grant. Resolve the
+      // named workspace here, then authorize the exact destination below.
+      const requestedHandle = extra.authInfo?.extra?.workspaceHandle;
+      const blog = typeof requestedHandle === "string" && requestedHandle
+        ? await getBlog(requestedHandle)
+        : await requireBlog(extra);
+      if (!blog) return errorResult("Workspace not found.");
       if (isToolResult(blog)) return blog;
       const captured = input.capture ? captureIntent(input.capture) : null;
       let destinationPath = input.folder_path;
@@ -1854,8 +1864,8 @@ async function executeWorkspaceCommand(
         folderId: folder.id,
         user: accessUser(extra),
       });
-      if (!folderAccess.isOwner) {
-        return errorResult("Only the owner can create items in this folder.");
+      if (!folderAccess.canEditContent) {
+        return errorResult("You cannot create items in this folder.");
       }
 
       let selectedTemplate: { id: string; version: number } | undefined;
@@ -3660,7 +3670,7 @@ async function executeWorkspaceCommand(
 export async function runWorkspaceToolForSession(
   name: WorkspaceToolName,
   args: Record<string, unknown>,
-  actor: { sub: string; userId: string | null; handle: string; connectionId?: string; runId?: string; actorType?: "human" | "ai" | "external_agent" },
+  actor: { sub: string; userId: string | null; handle: string; email?: string | null; name?: string | null; connectionId?: string; runId?: string; actorType?: "human" | "ai" | "external_agent" },
 ): Promise<CallToolResult> {
   const extra: ToolContext = {
     authInfo: {
@@ -3670,6 +3680,8 @@ export async function runWorkspaceToolForSession(
       extra: {
         sub: actor.sub,
         userId: actor.userId,
+        email: actor.email,
+        name: actor.name,
         actorType: actor.actorType ?? "ai",
         connectionId: actor.connectionId ?? `assistant:${actor.userId}`,
         runId: actor.runId,

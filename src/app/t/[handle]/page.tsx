@@ -533,7 +533,12 @@ export async function BlogHomeForHandle({
     viewer && !access.isOwner
       ? await resolveWorkspaceAccess({ handle, user: viewer })
       : null;
-  if (!access.canEdit && !workspaceAccess?.canView) {
+  const requestedFolderPath = queryValue(query.folder);
+  const requestedFolderAccess =
+    viewer && !access.isOwner && requestedFolderPath
+      ? await resolveFolderAccess({ handle, folderPath: requestedFolderPath, user: viewer })
+      : null;
+  if (!access.canEdit && !workspaceAccess?.canView && !requestedFolderAccess?.canView) {
     redirect(workspacePublicBaseUrl(handle));
   }
   // The desktop app tags its web view with this cookie (set natively before
@@ -601,7 +606,8 @@ export async function BlogHomeForHandle({
   })();
   const canManageSharing = access.isOwner || Boolean(workspaceAccess?.canManage);
   const hasBlogWorkspaceContent =
-    canEdit || Boolean(workspaceAccess?.canEditContent);
+    canEdit || Boolean(workspaceAccess?.canEditContent) ||
+    (requestedFolderPath === "blog" && Boolean(requestedFolderAccess?.canEditContent));
   // ?layout= previews a page layout without saving it, for everyone. What
   // persists is the look on the folder.
   const layout =
@@ -640,7 +646,7 @@ export async function BlogHomeForHandle({
   // A non-blog ?folder= opens that folder's workspace view. Guests only get
   // folders returned by getAccessibleFolders, so no other workspace content
   // leaks through this route.
-  const requestedFolder = queryValue(query.folder);
+  const requestedFolder = requestedFolderPath;
   const activeFolder = requestedFolder
     ? folders.find((folder) => folder.path === requestedFolder) ?? null
     : null;
@@ -662,7 +668,9 @@ export async function BlogHomeForHandle({
         : getAccessibleFolderPosts(handle, activeFolder.path, viewer)
     : Promise.resolve<Post[]>([]);
   const activeFolderAccessPromise =
-    activeFolder && !canEdit
+    activeFolder && requestedFolderAccess && activeFolder.path === requestedFolderPath
+      ? Promise.resolve(requestedFolderAccess)
+      : activeFolder && !canEdit
       ? resolveFolderAccess({
           handle,
           folderId: activeFolder.id,
@@ -786,7 +794,7 @@ export async function BlogHomeForHandle({
     <BlogHomeWorkspaceShell
       blog={blog}
       activeFolder={activeFolder?.path ?? activeSpecialFolder}
-      canCommentPost={Boolean(viewer && canEdit)}
+      canCommentPost={Boolean(viewer && (canEdit || activeFolderAccess?.canComment))}
       canManageFolders={canEdit}
       canManageSharing={canManageSharing}
       counts={counts}
@@ -819,7 +827,7 @@ export async function BlogHomeForHandle({
           folder={activeFolder}
           handle={handle}
           items={folderItems}
-          canCreateItems={canEdit}
+          canCreateItems={canEdit || Boolean(activeFolderAccess?.canEditContent)}
           canEditItems={
             !initialPool && (canEdit || Boolean(activeFolderAccess?.canEditContent))
           }
