@@ -3310,6 +3310,56 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   gap: 0.5rem !important;
 }
 
+/* The middle pane can be narrow even in a wide window when both sidebars are
+   open. Size the Library controls from that pane, not from the viewport. */
+.workspace-recent {
+  container-type: inline-size;
+}
+
+@container (max-width: 760px) {
+  .workspace-root-action-bar + .workspace-root-inner .workspace-library-toolbar,
+  .workspace-library-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding-right: 1rem;
+  }
+
+  .workspace-root-action-bar + .workspace-root-inner .workspace-library-filters,
+  .workspace-library-filters {
+    width: 100%;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    overflow-x: clip;
+  }
+
+  .workspace-library-date-filter {
+    flex-basis: 100%;
+  }
+
+  .workspace-root-action-bar + .workspace-root-inner .workspace-library-controls,
+  .workspace-library-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+/* Even above the compact-pane threshold, a docked assistant spends enough
+   width that the date picker needs its own line beside the folder sidebar. */
+@container (max-width: 1000px) {
+  .post-editor-shell.has-assistant-open.has-sidebar:not(.is-sidebar-collapsed)
+    .workspace-library-filters {
+    flex-wrap: wrap;
+    overflow-x: clip;
+  }
+
+  .post-editor-shell.has-assistant-open.has-sidebar:not(.is-sidebar-collapsed)
+    .workspace-library-date-filter {
+    flex-basis: 100%;
+  }
+}
+
 .workspace-root-action-bar
   + .workspace-root-inner
   .workspace-library-controls select {
@@ -4262,6 +4312,16 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   border-radius: 0;
   margin-inline: -2.5rem -3rem;
   box-shadow: none;
+}
+
+/* The wide list bleeds into a 3rem page gutter. A narrow middle pane has a
+   1rem gutter, so keep rows and their dates inside that pane. */
+@container (max-width: 760px) {
+  .workspace-recent.is-view-list .workspace-item-option,
+  .workspace-recent.is-view-list .workspace-item-option.is-selected,
+  .workspace-recent.is-view-list .workspace-item-option.is-command-selected {
+    margin-inline: -1rem;
+  }
 }
 
 /* Keep adjacent selected rows free of any inherited shadow or seam. */
