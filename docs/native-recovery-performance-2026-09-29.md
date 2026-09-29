@@ -123,3 +123,31 @@ about 159 MiB. macOS compressed-memory accounting and the brief observation
 make these point samples unsuitable for a leak or sustained-memory claim.
 The installed development server was not included. A longer repeated-use
 process-tree run remains necessary.
+
+## Two-minute agent and visual-folder memory profile
+
+The installed development-signed build 1112 remained open throughout this
+check. A 121-sample, one-second-interval trace followed its native process
+and the WebKit GPU, networking, and content processes launched with it;
+the raw PID/RSS/CPU samples are in
+`/tmp/texttext-ux-active-agent-memory-20260929.csv`. The app completed one
+more correct read-only Anthropic turn on the local test note, opened the
+96-image `Visual scale proof` folder, switched to the 25-item Blog folder,
+reopened the note, hid the assistant, and returned to All items. The note
+remained Saved. All four identified process IDs remained alive throughout.
+
+Combined RSS was 306 MiB at the first sample, 258 MiB at the last, and
+varied between 59 and 429 MiB. Mac memory compression and swapping make
+that series unsuitable for a leak conclusion. `vmmap -summary` showed a
+larger physical footprint after the agent/folder sequence: about 373 MiB
+native, 89 MiB GPU, 15 MiB networking, and 750 MiB WebKit content, roughly
+1.2 GiB combined. Hiding the assistant measured about 373+31+15+719 MiB;
+returning to All items measured about 373+47+15+760 MiB. WebKit malloc
+included roughly 346 MiB allocated in the content process at one later
+sample. This is significant retained memory in a long-lived app pointed at
+a development server; it is not yet evidence of monotonic growth or its
+cause. The 96-item fixture uses 1600×900 static covers for most cards and
+may raise the decoded-image/cache baseline. Compare a clean isolated
+production-mode app before and after that folder when memory pressure is
+lower. The development server was excluded from process totals, and no
+other app's memory was attributed to TextText.
