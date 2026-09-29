@@ -261,6 +261,60 @@ final class StateStoreLocationTests: XCTestCase {
         XCTAssertEqual(store.loadCredentials()?.token, "wsk_isolated")
         XCTAssertFalse(FileManager.default.fileExists(atPath: wouldBeHandshake.path))
     }
+
+    func testLocalBuildDoesNotReuseOrDeleteProductionSignIn() throws {
+        let container = try makeContainer()
+        let production = StateStore(
+            groupContainer: container,
+            cliCredentialsURL: nil,
+            stateOrigin: URL(string: "https://texttext.app")
+        )
+        production.saveCredentials(Credentials(
+            token: "wsk_production",
+            serverOrigin: "https://texttext.app",
+            tokenName: "Mac",
+            linkedAt: Date(timeIntervalSince1970: 1)
+        ))
+        production.cacheWorkspace(Data("production cache".utf8))
+
+        let local = StateStore(
+            groupContainer: container,
+            cliCredentialsURL: nil,
+            stateOrigin: URL(string: "http://localhost:3000")
+        )
+        XCTAssertNotEqual(local.credentialsURL, production.credentialsURL)
+        XCTAssertNotEqual(local.accountURL, production.accountURL)
+        XCTAssertNil(local.loadCredentials())
+        XCTAssertNil(local.cachedWorkspace())
+
+        local.saveCredentials(Credentials(
+            token: "wsk_local",
+            serverOrigin: "http://localhost:3000",
+            tokenName: "Local",
+            linkedAt: Date(timeIntervalSince1970: 2)
+        ))
+        XCTAssertEqual(local.loadCredentials()?.token, "wsk_local")
+        local.deleteCredentials()
+
+        XCTAssertEqual(production.loadCredentials()?.token, "wsk_production")
+        XCTAssertEqual(try Data(contentsOf: production.accountURL), Data("production cache".utf8))
+    }
+
+    func testLocalBuildRejectsCredentialForAnotherOrigin() throws {
+        let local = StateStore(
+            groupContainer: try makeContainer(),
+            cliCredentialsURL: nil,
+            stateOrigin: URL(string: "http://localhost:3000")
+        )
+        local.saveCredentials(Credentials(
+            token: "wsk_other",
+            serverOrigin: "https://texttext.app",
+            tokenName: "Other",
+            linkedAt: Date(timeIntervalSince1970: 1)
+        ))
+        XCTAssertNil(local.loadCredentials())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: local.credentialsURL.path))
+    }
 }
 
 /// The container choice is what actually decides whether the two editions share

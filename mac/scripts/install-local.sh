@@ -23,11 +23,24 @@ FAILED="$PARENT/.TextText.app.failed.$$"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 BUNDLE_ID="app.texttext.mac"
 
-if [[ "$APP" == "/Applications/TextText.app" ]] && \
-  { [[ "$SKIP_BINARY_VERIFICATION" == "1" ]] || [[ "$SKIP_LAUNCH" == "1" ]] || \
-    [[ "$REQUIRE_RUNTIME_HEALTH" != "1" ]]; }; then
-  echo "Refusing test-only installer overrides for /Applications/TextText.app." >&2
-  exit 1
+if [[ "$APP" == "/Applications/TextText.app" ]]; then
+  if [[ "$SKIP_BINARY_VERIFICATION" == "1" || "$SKIP_LAUNCH" == "1" ]]; then
+    echo "Refusing test-only installer overrides for /Applications/TextText.app." >&2
+    exit 1
+  fi
+  if [[ "$REQUIRE_RUNTIME_HEALTH" != "1" ]]; then
+    # The Store sandbox can write the app-group report while this unentitled
+    # installer cannot read it. Permit an explicit local-development install
+    # only; the signed bundle, single running process, and UI still need proof.
+    local_origin="$("$PB" -c 'Print :TextTextServerOrigin' "$SOURCE/Contents/Info.plist" 2>/dev/null || true)"
+    signing_authorities="$(codesign -dv --verbose=4 "$SOURCE" 2>&1 || true)"
+    if [[ ! "$local_origin" =~ ^http://(localhost|127\.0\.0\.1):[0-9]+$ ]] || \
+       [[ "$signing_authorities" != *"Authority=Apple Development:"* ]]; then
+      echo "Runtime health is required for non-local or non-development builds." >&2
+      exit 1
+    fi
+    echo "   local development build: runtime report is sandbox-private; verify the opened UI" >&2
+  fi
 fi
 if [[ "$REQUIRE_RUNTIME_HEALTH" != "0" && "$REQUIRE_RUNTIME_HEALTH" != "1" ]]; then
   echo "TEXTTEXT_REQUIRE_RUNTIME_HEALTH must be 0 or 1." >&2

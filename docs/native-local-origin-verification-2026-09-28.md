@@ -1,0 +1,9 @@
+# Local Mac origin and restoration check, 2026-09-28
+
+The first signed local build (1099) was stamped for `http://localhost:3000`, but the installed app reused a production device credential from the shared app group and opened the production workspace. No production item was edited. The installer could not read the sandbox-private runtime health report and restored build 1098.
+
+Build 1101 keeps local-origin credentials and cached workspace in origin-suffixed files. The existing production files remain in place. State-store tests prove that a local build neither reads nor deletes the production token/cache and rejects a token for another origin. The native path-restoration test accepts a folder route within the same workspace and rejects foreign workspaces, traversal, and extra query parameters. All 27 focused state-store and native-platform tests passed.
+
+The signed Store-shaped development build `0.202 (1101)` was installed as the sole `/Applications/TextText.app`. The installer verified its signature, Apple silicon executable and extensions, and one running canonical process. Its explicit local-development mode omitted the runtime report check because this terminal process receives `Operation not permitted` when reading the app group's report. The app wrote a fresh report, but its status could not be read; runtime health is **unverified**. The installed plist says `http://localhost:3000`, and the visible native window showed `localhost:3000/@visual-demo`; the isolated folder opened with its one saved note and Editorial Index view.
+
+The local session is cookie-based and has no linked native device credential, so the new native folder cold-restore path was tested in Swift but not in a live relaunch. A live cold launch showed an older item selected by web-tab restoration. Recheck folder cold restore with a native-linked local account before claiming the brief's last-location journey. No public deployment or release occurred.

@@ -2907,8 +2907,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     // MARK: Main window (the web app)
 
     /// The full TextText web experience in a native window. The app is
-    /// account-gated: it always opens on the workspace home (`/start?to=home`),
-    /// which exchanges stored app credentials for a web session. An unlinked or
+    /// account-gated: it restores the last safe item or folder when available,
+    /// or opens workspace home (`/start?to=home`). Stored app credentials are
+    /// exchanged for a web session. An unlinked or
     /// expired installation completes account sign-in and approval in the
     /// system browser before returning here.
     private func showMainWindow(path: String? = nil) {
@@ -2963,7 +2964,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         controller.present()
     }
 
-    static func restoredItemPath(origin: URL, handle: String?, signedIn: Bool) -> String? {
+    static func restoredWorkspacePath(origin: URL, handle: String?, signedIn: Bool) -> String? {
         guard signedIn, let handle else { return nil }
         let home = "/@" + handle
         let path = UserDefaults.standard.string(forKey: NativeWindowRestoration.key(origin: origin, homePath: home))
@@ -3036,7 +3037,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             let cachedHandle = store.cachedWorkspace()?.blog.handle
             webWindow = WebAppWindowController(
                 origin: origin,
-                startPath: path ?? Self.restoredItemPath(origin: origin, handle: cachedHandle, signedIn: credentials != nil) ?? "/start?to=home",
+                startPath: path ?? Self.restoredWorkspacePath(origin: origin, handle: cachedHandle, signedIn: credentials != nil) ?? "/start?to=home",
                 appToken: credentials?.token,
                 // Lets the cookie fast path land on the workspace directly
                 // instead of paying the /start redirect hop.

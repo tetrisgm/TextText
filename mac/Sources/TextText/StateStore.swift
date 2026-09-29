@@ -4,6 +4,9 @@ import Foundation
 ///   <app group container>/TextText/           (0700)
 ///     credentials.json  (0600)  the linked token
 ///     account.json               cached workspace (offline reuse)
+/// Local-origin builds use origin-suffixed credential and account filenames in
+/// the same container, so an installed development build cannot adopt a live
+/// device token or cached workspace.
 /// The group container is used because it is the one place both the Developer
 /// ID and the Mac App Store editions can read; see AppGroupContainer. Without
 /// one (a development build with the placeholder unsubstituted) this falls back
@@ -13,6 +16,8 @@ import Foundation
 final class StateStore {
     let baseDir: URL
     private let cliCredentialsURL: URL?
+    private let localOrigin: URL?
+    private let localStateSuffix: String
 
     private let encoder: JSONEncoder = {
         let e = JSONEncoder()
@@ -28,12 +33,22 @@ final class StateStore {
 
     init(fileManager: FileManager = .default,
          groupContainer: URL? = AppGroupContainer.resolve(),
-         cliCredentialsURL: URL? = StateStore.defaultCLICredentialsURL()) {
+         cliCredentialsURL: URL? = StateStore.defaultCLICredentialsURL(),
+         stateOrigin: URL? = StateStore.configuredLocalOrigin()) {
         let fm = fileManager
         let legacyDir = Self.legacyBaseDir(fileManager: fm)
         var migrateFromLegacy = false
 
         self.cliCredentialsURL = cliCredentialsURL
+        self.localOrigin = Self.loopbackOrigin(stateOrigin)
+        if let localOrigin {
+            let host = localOrigin.host!.lowercased().replacingOccurrences(of: ":", with: "-")
+                .replacingOccurrences(of: ".", with: "-")
+            let port = localOrigin.port ?? (localOrigin.scheme == "https" ? 443 : 80)
+            localStateSuffix = "-local-\(localOrigin.scheme!)-\(host)-\(port)"
+        } else {
+            localStateSuffix = ""
+        }
 
         if let override = ProcessInfo.processInfo.environment["TEXTTEXT_STATE_DIR"], !override.isEmpty {
             baseDir = URL(fileURLWithPath: (override as NSString).expandingTildeInPath, isDirectory: true)
@@ -78,6 +93,7 @@ final class StateStore {
         if let explicit = environment["TEXTTEXT_CREDENTIALS_PATH"], !explicit.isEmpty {
             return URL(fileURLWithPath: (explicit as NSString).expandingTildeInPath)
         }
+        if configuredLocalOrigin() != nil { return nil }
         // An isolated state directory is used by tests and headless tooling.
         // It must never leak a fixture credential into the signed-in user's
         // real Application Support directory.
@@ -86,6 +102,33 @@ final class StateStore {
         }
         return legacyBaseDir(fileManager: fm).appendingPathComponent("credentials.json")
         #endif
+    }
+
+    /// A local build must not adopt the production device token or cached
+    /// workspace from the shared app group. Only an explicit override or the
+    /// running bundle's stamped origin selects this isolated state.
+    static func configuredLocalOrigin() -> URL? {
+        let environment = ProcessInfo.processInfo.environment
+        if let raw = environment["TEXTTEXT_SERVER"], !raw.isEmpty {
+            return loopbackOrigin(URL(string: raw))
+        }
+        let stamped = Bundle.main.object(forInfoDictionaryKey: "TextTextServerOrigin") as? String
+        return loopbackOrigin(stamped.flatMap(URL.init(string:)))
+    }
+
+    private static func loopbackOrigin(_ origin: URL?) -> URL? {
+        guard let origin, let scheme = origin.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              let host = origin.host?.lowercased(),
+              ["localhost", "127.0.0.1", "::1"].contains(host),
+              origin.user == nil, origin.password == nil,
+              origin.path.isEmpty || origin.path == "/",
+              origin.query == nil, origin.fragment == nil else { return nil }
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = host
+        components.port = origin.port
+        return components.url
     }
 
     /// Carry state forward the first time this app runs against the group
@@ -126,8 +169,8 @@ final class StateStore {
         adoptLegacyState(from: legacy, into: destination, fileManager: fm)
     }
 
-    var credentialsURL: URL { baseDir.appendingPathComponent("credentials.json") }
-    var accountURL: URL { baseDir.appendingPathComponent("account.json") }
+    var credentialsURL: URL { baseDir.appendingPathComponent("credentials\(localStateSuffix).json") }
+    var accountURL: URL { baseDir.appendingPathComponent("account\(localStateSuffix).json") }
 
     // MARK: Credentials
 
@@ -136,6 +179,8 @@ final class StateStore {
               let credentials = try? decoder.decode(Credentials.self, from: data) else {
             return nil
         }
+        if let localOrigin,
+           Self.loopbackOrigin(URL(string: credentials.serverOrigin)) != localOrigin { return nil }
         // Upgrades must work without forcing a sign-out/relink. Existing users
         // may already have the current credential only in the app-group state
         // directory, so refresh the standalone CLI handoff whenever the app
@@ -145,6 +190,8 @@ final class StateStore {
     }
 
     func saveCredentials(_ credentials: Credentials) {
+        if let localOrigin,
+           Self.loopbackOrigin(URL(string: credentials.serverOrigin)) != localOrigin { return }
         guard let data = try? encoder.encode(credentials) else { return }
         try? data.write(to: credentialsURL, options: .atomic)
         try? FileManager.default.setAttributes([.posixPermissions: 0o600],
