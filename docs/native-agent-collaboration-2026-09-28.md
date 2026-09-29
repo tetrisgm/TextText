@@ -148,6 +148,25 @@ complete. This proves one local native Undo with a later edit after the target
 passage; it does not prove cancellation of an in-flight agent write or every
 two-person race.
 
+## Same-passage conflict after an agent preview
+
+On the installed Mac app, a real Anthropic rewrite of the first sentence
+reached **Ready**. Before accepting it, the human replaced that exact sentence
+with `Two people co-editing this local test note.`. The preview immediately
+changed to **The passage changed** and removed its Accept action. The note
+showed **Saved**, and a fresh local canonical-store read at revision `492629`
+contained the human sentence, not the agent suggestion. The later human line
+from the Undo test also remained. This proves one local same-passage conflict
+before approval; it does not cover a write already sent or a remote editor
+changing the same passage at the approval instant.
+
+Two fresh previews of the unchanged saved passage had reported stale just
+after the previous Undo. Reopening the exact saved route cleared that state;
+the later conflict preview then generated normally. A subsequent preview
+after the human edit also reached Ready without a reload. The intermittent
+post-Undo false stale result needs diagnosis; these observations do not show
+its cause or prove a general recovery path.
+
 - `TEXTTEXT_STORE=1 swift test --package-path mac --jobs 2 --filter Codex`:
   29 tests passed after updating an assertion for the revised instructions.
 - Three focused Vitest files: 37 tests passed, including native prompt and
