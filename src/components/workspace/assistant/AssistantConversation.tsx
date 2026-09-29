@@ -10,6 +10,7 @@ import type { AssistantJob } from "@/lib/ai/jobs";
 import type { NativeQuickActionId } from "@/lib/ai/quick-actions";
 import type { CloudAssistantProviderLabel } from "@/lib/ai/cloud-client";
 import { nativeDeviceAuthorization, type AiConnectionSnapshot } from "@/lib/ai/connection-state";
+import { DeviceAuthorizationCode } from "../DeviceAuthorizationCode";
 import {
   greeting,
   startersFor,
@@ -646,7 +647,7 @@ export function AssistantConversation({
               )}
               {embeddedConnectionAvailable && nativeConnection?.message ? <p role="status">{nativeConnection.message}</p> : null}
               {embeddedConnectionAvailable && authorization ? (
-                <div><p>1. Open ChatGPT using the button above.</p><p>2. Enter this code: <strong>{authorization.code}</strong></p><p>3. Finish signing in, then return to TextText. We will continue automatically.</p></div>
+                <div><p>1. Open ChatGPT using the button above.</p><p>2. Enter this code: <DeviceAuthorizationCode code={authorization.code} /></p><p>3. Finish signing in, then return to TextText. We will continue automatically.</p></div>
               ) : null}
               {embeddedConnectionAvailable && nativeConnection?.diagnosticId ? <details><summary>Connection details</summary><p>Reference: {nativeConnection.diagnosticId}</p></details> : null}
               <a className={styles.connectSecondary} href="/connect">

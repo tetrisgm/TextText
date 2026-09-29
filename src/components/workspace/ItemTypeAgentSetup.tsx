@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { saveWorkspaceAiSettingsAction, type WorkspaceAiSettingsState } from "@/app/editor/ai-config-actions";
 import { CLOUD_AI_CATALOG, defaultCloudAiModel, type CloudAiProvider } from "@/lib/ai/provider-catalog";
 import { nativeDeviceAuthorization, type AiConnectionSnapshot } from "@/lib/ai/connection-state";
+import { DeviceAuthorizationCode } from "./DeviceAuthorizationCode";
 import styles from "./ItemTypeStudio.module.css";
 
 /** Setup remains inside the original preview task. Credentials live only in
@@ -50,7 +51,7 @@ export function ItemTypeAgentSetup({ handle, nativeAvailable, nativeConnection, 
     </div> : <p>Account connection is unavailable in this edition. A provider API key is the supported advanced option here.</p>}
     {native ? <>
       <p role="status">{status?.message ?? (status?.phase === "checking" ? "Checking the connection…" : pending ? "Finish signing in to continue." : "Use your supported ChatGPT account with TextText.")}</p>
-      {authorization ? <div><p>1. Open ChatGPT using the button below.</p><p>2. Enter this code: <strong>{authorization.code}</strong></p><p>3. Finish signing in, then return here. Your request will continue automatically.</p><a className={styles.doneButton} href={authorization.url} target="_blank" rel="noreferrer">Open ChatGPT to sign in</a></div> : null}
+      {authorization ? <div><p>1. Open ChatGPT using the button below.</p><p>2. Enter this code: <DeviceAuthorizationCode code={authorization.code} /></p><p>3. Finish signing in, then return here. Your request will continue automatically.</p><a className={styles.doneButton} href={authorization.url} target="_blank" rel="noreferrer">Open ChatGPT to sign in</a></div> : null}
       {!authorization && <button type="button" className={styles.doneButton} disabled={pending} onClick={onConnectNative}>
         {pending ? "Connecting…" : status?.accountEmail ? "Check connection" : "Continue with ChatGPT"}
       </button>}

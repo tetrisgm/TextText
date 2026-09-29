@@ -8,6 +8,7 @@ import {
   subscribeNativeAssistant,
 } from "@/lib/ai/native-client";
 import { nativeDeviceAuthorization, type AiConnectionSnapshot } from "@/lib/ai/connection-state";
+import { DeviceAuthorizationCode } from "./DeviceAuthorizationCode";
 import { AGENT_CONNECTION_CHECK_PROMPT } from "@/lib/agent-integrations";
 import styles from "./AiConnectionSettings.module.css";
 
@@ -132,7 +133,7 @@ export function AiConnectionSettings({
                     ? "A provider key is saved. Try your request to check that it can generate an answer."
                     : "ChatGPT account connection is unavailable in this edition. You can use the advanced provider key option below."}
           </p>
-          {authorization ? <p role="status">Enter <strong>{authorization.code}</strong> at <a href={authorization.url} target="_blank" rel="noreferrer">ChatGPT authorization</a>.</p> : null}
+          {authorization ? <p role="status">Enter <DeviceAuthorizationCode code={authorization.code} /> at <a href={authorization.url} target="_blank" rel="noreferrer">ChatGPT authorization</a>.</p> : null}
           {connection?.diagnosticId && connection.state === "failed" ? <details><summary>Connection details</summary><p>Reference: {connection.diagnosticId}</p></details> : null}
           {ready && connection?.lastHealthCheckAt ? (
             <p className={styles.verification}>
