@@ -1386,7 +1386,7 @@ export function DocumentRenderer(props: RendererProps) {
 
 export function DocumentCollectionRenderer(props: CollectionRendererProps) {
   return (
-    <DocumentRenderBoundary document={props.document} template={props.template}>
+    <DocumentRenderBoundary document={props.document} template={props.template} collection>
       <DocumentCollectionRendererContent {...props} />
     </DocumentRenderBoundary>
   );

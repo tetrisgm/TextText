@@ -47,14 +47,34 @@ describe("bounded rating display and isolated rendering", () => {
   it.each([DocumentRenderer, DocumentCollectionRenderer])("contains a child render failure and preserves neighbouring items", (Renderer) => {
     const template = makeRating(5);
     function Broken(): React.ReactNode { throw new Error("private failure details"); }
+    const brokenDocument = validateDocumentSnapshot({
+      schemaVersion: 1,
+      content: {
+        title: "Bad item",
+        body: "Original words still readable.",
+        fields: { verdict: "Keep this reference" },
+        assets: [
+          { id: "reference", kind: "file", src: "/reference.pdf", caption: "Reference file" },
+          { id: "unsafe", kind: "file", src: "javascript:alert(1)", caption: "Untrusted file" },
+        ],
+      },
+      presentation: { template: { id: template.id, version: template.version } },
+    });
     const html = renderToStaticMarkup(<>
-      <Renderer template={template} document={snapshot(template, "Bad item")} slots={{ bindings: { "content.title": <Broken /> } }} />
+      <Renderer template={template} document={brokenDocument} slots={{ bindings: { "content.title": <Broken /> } }} />
       <Renderer template={template} document={snapshot(template)} />
     </>);
-    expect(html).toContain("This item could not be displayed.");
+    expect(html).toContain("Bad item");
     expect(html).toContain("Good neighbour");
     expect(html).not.toContain("private failure details");
-    expect(html).not.toContain("Bad item");
+    if (Renderer === DocumentRenderer) {
+      expect(html).toContain("Original words still readable.");
+      expect(html).toContain("Keep this reference");
+      expect(html).toContain("Reference file");
+      expect(html).not.toContain('href="javascript:');
+    } else {
+      expect(html).not.toContain("Original words still readable.");
+    }
   });
 });
 
