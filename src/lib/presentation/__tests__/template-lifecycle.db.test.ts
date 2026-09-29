@@ -154,4 +154,26 @@ describe.skipIf(process.env.TEXTTEXT_READING_DB_TEST !== "1")("custom type lifec
     expect(await store.installDocumentTemplate({ blogId: source.id, definition: { ...v1, version: 3 } })).toBe("installed");
     expect((await store.listDocumentTemplates(source.id)).some((entry) => entry.id === v1.id)).toBe(false);
   });
+
+  it("uses the last valid look when a saved version is unreadable", async () => {
+    const source = workspaces[0];
+    const actor = { actorUserId: userId, actorType: "human" as const, actionName: "test.template.unreadable", targetType: "workspace" as const };
+    const v1 = await store.createDocumentTemplateVersion({
+      blogId: source.id,
+      definition: compileItemTypeBlueprint({ name: "Readable look", fields: [], collection: { layout: "cards" } }, { id: "unreadable-successor" }),
+      actor,
+    });
+    await db.insert(schema.documentTemplates).values({
+      blogId: source.id,
+      templateId: v1.id,
+      version: 2,
+      name: v1.name,
+      definition: { ...v1, version: 2, item: { type: "unsupported-node" } } as unknown as typeof v1,
+    });
+    expect((await store.listDocumentTemplates(source.id)).find((entry) => entry.id === v1.id)).toEqual(v1);
+    expect(await store.getDocumentTemplate(source.id, { id: v1.id, version: 2 })).toBeNull();
+    expect(await store.getPinnedDocumentTemplates(source.id, [{ id: v1.id, version: 2 }, v1])).toEqual([v1]);
+    const library = await store.listDocumentTemplateLibrary(source.id, userId);
+    expect(library.find((entry) => entry.definition.id === v1.id)?.versions.map((entry) => entry.definition.version)).toEqual([1]);
+  });
 });

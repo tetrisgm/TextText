@@ -14,4 +14,12 @@ describe("pinned template resolution", () => {
     expect(templateForPoolPost({ templates: [], pinnedTemplates: [pinned] }, post)).toEqual(pinned);
     expect(pool.templates).toEqual([current]);
   });
+
+  it("keeps an item readable when its saved look version cannot be loaded", () => {
+    const post = { type: "note" as const, template: { id: "unreadable-look", version: 2 } };
+    const basic = requireBuiltinTemplate("texttext.note");
+    const indexedPool = workspacePoolFromParts({ blog: {} as Blog, blogId: "workspace", counts: {}, folders: [], posts: [], templates: [basic] });
+    expect(templateForPoolPost(indexedPool, post)).toEqual(basic);
+    expect(templateForPoolPost({ templates: [basic] }, post)).toEqual(basic);
+  });
 });

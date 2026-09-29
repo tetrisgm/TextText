@@ -235,7 +235,7 @@ export function templateForPoolPost(
     return (
       workspaceIndexes(pool).templateByKey.get(
         `${reference.id}@${reference.version}`,
-      ) ?? requireBuiltinTemplate(reference.id, reference.version)
+      ) ?? requireBuiltinTemplate(legacyTemplateId(post.type))
     );
   }
   return (
@@ -243,7 +243,7 @@ export function templateForPoolPost(
       (template) =>
         templateKey(template.id, template.version) ===
         templateKey(reference.id, reference.version),
-    ) ?? requireBuiltinTemplate(reference.id, reference.version)
+    ) ?? requireBuiltinTemplate(legacyTemplateId(post.type))
   );
 }
 

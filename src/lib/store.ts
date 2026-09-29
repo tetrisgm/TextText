@@ -3826,7 +3826,35 @@ export async function getDocumentTemplate(
       ),
     )
     .limit(1);
-  return rows[0] ? validateTemplateDefinition(rows[0].definition) : null;
+  return rows[0]
+    ? validStoredTemplate(rows[0].definition, blogId, reference.id, reference.version)
+    : null;
+}
+
+// A saved look is presentation data. An unreadable version must not prevent the
+// workspace or the underlying document from opening. Report its identity once
+// per process without logging the definition or any document content.
+const unreadableTemplateWarnings = new Set<string>();
+function validStoredTemplate(
+  definition: unknown,
+  blogId: string,
+  templateId: string,
+  version: number,
+): TemplateDefinition | null {
+  try {
+    const template = validateTemplateDefinition(definition);
+    if (template.id !== templateId || template.version !== version) {
+      throw new Error("Saved look identity differs from its row");
+    }
+    return template;
+  } catch {
+    const key = `${blogId}/${templateId}@${version}`;
+    if (!unreadableTemplateWarnings.has(key) && unreadableTemplateWarnings.size < 100) {
+      unreadableTemplateWarnings.add(key);
+      console.warn(`Saved look ${key} is unreadable; using a valid version or basic view.`);
+    }
+    return null;
+  }
 }
 
 /** Resolve exact custom versions for existing content, including retired types. */
@@ -3836,12 +3864,19 @@ export async function getPinnedDocumentTemplates(
 ): Promise<TemplateDefinition[]> {
   if (!db || references.length === 0) return [];
   const unique = [...new Map(references.map((ref) => [`${ref.id}@${ref.version}`, ref])).values()];
-  const rows = await db.select({ definition: documentTemplates.definition })
+  const rows = await db.select({
+    templateId: documentTemplates.templateId,
+    version: documentTemplates.version,
+    definition: documentTemplates.definition,
+  })
     .from(documentTemplates)
     .where(and(eq(documentTemplates.blogId, blogId), or(...unique.map((ref) =>
       and(eq(documentTemplates.templateId, ref.id), eq(documentTemplates.version, ref.version)),
     ))));
-  return rows.map((row) => validateTemplateDefinition(row.definition));
+  return rows.flatMap((row) => {
+    const definition = validStoredTemplate(row.definition, blogId, row.templateId, row.version);
+    return definition ? [definition] : [];
+  });
 }
 
 /**
@@ -3894,6 +3929,7 @@ export async function listDocumentTemplates(
   const rows = await db
     .select({
       templateId: documentTemplates.templateId,
+      version: documentTemplates.version,
       definition: documentTemplates.definition,
       retiredAt: documentTemplates.retiredAt,
     })
@@ -3910,8 +3946,10 @@ export async function listDocumentTemplates(
   const seen = new Set<string>();
   for (const row of rows) {
     if (seen.has(row.templateId) || retired.has(row.templateId)) continue;
+    const definition = validStoredTemplate(row.definition, blogId, row.templateId, row.version);
+    if (!definition) continue;
     seen.add(row.templateId);
-    latest.push(validateTemplateDefinition(row.definition));
+    latest.push(definition);
   }
   return [...BUILTIN_TEMPLATES, ...latest];
 }
@@ -3941,6 +3979,7 @@ export async function listDocumentTemplateLibrary(
     db
       .select({
         templateId: documentTemplates.templateId,
+        version: documentTemplates.version,
         definition: documentTemplates.definition,
         createdById: documentTemplates.createdById,
         createdAt: documentTemplates.createdAt,
@@ -3972,7 +4011,8 @@ export async function listDocumentTemplateLibrary(
   const creatorById = new Map<string, string | null>();
   const createdAtById = new Map<string, string | null>();
   for (const row of versionRows) {
-    const definition = validateTemplateDefinition(row.definition);
+    const definition = validStoredTemplate(row.definition, blogId, row.templateId, row.version);
+    if (!definition) continue;
     const history = versionsById.get(row.templateId) ?? [];
     history.push({
       definition,
