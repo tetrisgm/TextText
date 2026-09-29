@@ -246,3 +246,16 @@ the server commits still needs a deliberately timed live check.
 - The reviewed-write follow-up passed 83 focused tests across the proposal,
   client, and assistant UI suites. TypeScript and touched ESLint passed. The
   first live run failed as described, and the second passed after the fix.
+
+## Native Stop fence follow-up, 2026-09-29
+
+The native Stop button previously sent a cancellation request to the Mac
+helper while leaving the web turn fence active until the helper replied. A
+tool call arriving in that interval could still start a workspace command.
+Stop now invalidates the fence before requesting cancellation, so late tool
+calls fail the existing owner/workspace/conversation check. Commands already
+sent to the workspace may still finish; when one is in flight, the transcript
+explicitly asks the writer to verify the item. Scope-change cancellation uses
+the same immediate fence. Fifty focused agent tests, TypeScript, touched-file
+ESLint, and `git diff --check` passed. This is a source-path fix; a live native
+Stop during an in-flight write and its canonical-store result still need proof.

@@ -681,6 +681,7 @@ export function useNativeAssistant({
   const nativeThreadRef = useRef<string | null>(null);
   const nativeConversationRef = useRef<string | null>(null);
   const nativeTurnFenceRef = useRef<NativeTurnFence | null>(null);
+  const nativeInFlightToolCallsRef = useRef(new Map<symbol, NativeTurnFence>());
   const currentOwnerScopeRef = useRef<AssistantOwnerScope>({
     handle,
     ownerScopeKey: null,
@@ -762,10 +763,12 @@ export function useNativeAssistant({
   );
   const threadKey = `${conversationStoreKey ?? "server"}\u001f${activeConversationId ?? "server"}`;
 
-  const cancelNativeTurnForScopeChange = useCallback((message: string) => {
+  const cancelNativeTurn = useCallback((message: string) => {
     const fence = nativeTurnFenceRef.current;
     if (!fence) return;
     nativeTurnFenceRef.current = null;
+    const mayHaveFinishedCommand = [...nativeInFlightToolCallsRef.current.values()]
+      .some((pendingFence) => pendingFence === fence);
     requestNativeAssistant(
       "assistantCancel",
       undefined,
@@ -778,7 +781,13 @@ export function useNativeAssistant({
       nativeItemTypeDesignRef.current = null;
       itemTypeDesign.reject(new Error(message));
     } else {
-      appendToThread(fence.threadKey, "error", message);
+      appendToThread(
+        fence.threadKey,
+        "error",
+        mayHaveFinishedCommand
+          ? `${message} A workspace command was already underway and may have finished. Verify the item before trying again.`
+          : message,
+      );
     }
     if (nativeJobRef.current) {
       updateAssistantJob(nativeJobRef.current, {
@@ -807,7 +816,7 @@ export function useNativeAssistant({
         active.handle !== handle ||
         active.ownerScopeKey !== conversationStoreKey)
     ) {
-      cancelNativeTurnForScopeChange(
+      cancelNativeTurn(
         "The assistant was stopped because the workspace changed.",
       );
     }
@@ -816,7 +825,7 @@ export function useNativeAssistant({
       registerNativeAssistantTools([]);
     }
   }, [
-    cancelNativeTurnForScopeChange,
+    cancelNativeTurn,
     conversationStoreKey,
     handle,
     ownerScopeReady,
@@ -826,12 +835,12 @@ export function useNativeAssistant({
     return () => {
       const active = nativeTurnFenceRef.current;
       if (active?.ownerScopeKey === conversationStoreKey) {
-        cancelNativeTurnForScopeChange(
+        cancelNativeTurn(
           "The assistant was stopped because the workspace changed.",
         );
       }
     };
-  }, [cancelNativeTurnForScopeChange, conversationStoreKey]);
+  }, [cancelNativeTurn, conversationStoreKey]);
 
   // A provider request may still be streaming when the owner or workspace
   // changes. Abort the old request; the per-event scope check also closes the
@@ -1168,9 +1177,16 @@ export function useNativeAssistant({
               event.tool,
               (args ?? {}) as Record<string, unknown>,
             );
-            const output = local
-              ? await local
-              : await tools.executor(event.tool as never, args as never);
+            const pendingCall = Symbol("native-tool-call");
+            nativeInFlightToolCallsRef.current.set(pendingCall, eventFence);
+            let output: Awaited<ReturnType<typeof tools.executor>>;
+            try {
+              output = local
+                ? await local
+                : await tools.executor(event.tool as never, args as never);
+            } finally {
+              nativeInFlightToolCallsRef.current.delete(pendingCall);
+            }
             if (!turnIsStillActive()) {
               submitNativeAssistantToolResult(
                 event.callId,
@@ -2690,13 +2706,9 @@ export function useNativeAssistant({
     const cloudAbort = activeCloudAbortRef.current.get(threadKey);
     cloudAbort?.abort();
     if (!cloudAbort && nativeConnection?.state === "ready" && nativeJobRef.current && nativeThreadRef.current === threadKey) {
-      requestNativeAssistant(
-        "assistantCancel",
-        undefined,
-        nativeConversationRef.current ?? undefined,
-      );
+      cancelNativeTurn("The assistant was stopped.");
     }
-  }, [nativeConnection?.state, threadKey]);
+  }, [cancelNativeTurn, nativeConnection?.state, threadKey]);
 
   const quickActions =
     ownerScopeReady && connectionPreference === "api-key" && getView().postId && cloudProvider
