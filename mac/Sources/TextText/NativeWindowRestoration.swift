@@ -33,14 +33,17 @@ enum NativeWindowRestoration {
         }
         let handle = String(homePath.dropFirst(2))
         let parts = components.path.split(separator: "/", omittingEmptySubsequences: false)
-        guard parts.count >= 4, parts.count <= 19, parts[0].isEmpty,
-              parts[1] == "t", String(parts[2]) == handle,
-              !components.percentEncodedPath.lowercased().contains("%2f"),
-              parts.dropFirst(3).allSatisfy({ segment in
+        guard parts.count >= 3, parts.count <= 19, parts[0].isEmpty,
+              !components.percentEncodedPath.lowercased().contains("%2f") else { return false }
+        let tenantItem = parts.count >= 4 && parts[1] == "t" && String(parts[2]) == handle
+        let workspaceReader = parts[1] == "@" + handle
+        guard tenantItem || workspaceReader,
+              parts.dropFirst(tenantItem ? 3 : 2).allSatisfy({ segment in
                   !segment.isEmpty && segment != "." && segment != ".."
                       && !segment.contains("\\")
                       && segment.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) })
               }) else { return false }
+        if workspaceReader { return components.query == nil }
         return (components.queryItems ?? []).allSatisfy { item in
             (item.name == "edit" && item.value == "1") ||
             (item.name == "id" && item.value.map(TextTextItemLink.isValidItemId) == true)
@@ -54,7 +57,7 @@ enum NativeWindowRestoration {
               components.scheme == nil, components.host == nil else { return false }
         let parts = components.path.split(separator: "/", omittingEmptySubsequences: false)
         let handle: Substring
-        if parts.count == 2, parts[0].isEmpty, parts[1].hasPrefix("@") {
+        if parts.count >= 2, parts.count <= 19, parts[0].isEmpty, parts[1].hasPrefix("@") {
             handle = parts[1].dropFirst()
         } else if parts.count >= 4, parts.count <= 19, parts[0].isEmpty, parts[1] == "t" {
             handle = parts[2]
