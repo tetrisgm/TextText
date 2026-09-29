@@ -240,6 +240,7 @@ export function LocalUnifiedWorkspacePostEditor({
   return (
     <UnifiedDocumentEditor
       active={active}
+      focusNewNote={post.type === "note" && isOptimisticPostId(editorIdentity)}
       blog={blog}
       post={post}
       template={template}

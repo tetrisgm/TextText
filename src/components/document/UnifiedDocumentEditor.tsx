@@ -109,6 +109,8 @@ type RelativeSelectionState = {
 };
 
 type UnifiedDocumentEditorProps = {
+  /** Focus the body when opening a newly created note, including after its optimistic ID is saved. */
+  focusNewNote?: boolean;
   canReviewAgentChanges?: boolean;
   activeAgent?: AssistantAgentIdentity | null;
   onOpenAgent?: () => void;
@@ -463,6 +465,7 @@ function CollaborativeTextarea({
 
 export function UnifiedDocumentEditor({
   active = true,
+  focusNewNote = false,
   blog,
   post,
   template,
@@ -732,6 +735,25 @@ export function UnifiedDocumentEditor({
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const subtitleRef = useRef<HTMLTextAreaElement>(null);
   const bodySurfaceRef = useRef<HTMLDivElement>(null);
+  const newNoteFocusClaimedRef = useRef(false);
+  useEffect(() => {
+    if (!active || !focusNewNote || newNoteFocusClaimedRef.current) return;
+    const frame = window.requestAnimationFrame(() => {
+      const surface = bodySurfaceRef.current;
+      if (!surface || !activeRef.current) return;
+      const focused = window.document.activeElement;
+      const editor = surface.closest(".tt-unified-editor");
+      if (focused instanceof HTMLElement && editor?.contains(focused) && focused !== surface) {
+        newNoteFocusClaimedRef.current = true;
+        return;
+      }
+      surface.focus({ preventScroll: true });
+      const end = documentRef.current.content.body.length;
+      if (end > 0) requestDocumentCaret(end, end);
+      newNoteFocusClaimedRef.current = true;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [active, focusNewNote]);
   const publishDocument = useCallback(
     (next: DocumentSnapshot) => {
       documentRef.current = next;

@@ -119,10 +119,6 @@ const note = {
     type: "stack",
     gap: "sm",
     children: [
-      // The date sits above the title, centred, the way it does in the app
-      // this look is answering to. Below the title it reads as a byline on
-      // something published; above it, it is just when you wrote this.
-      { type: "metadata" },
       {
         type: "text",
         bind: "content.title",

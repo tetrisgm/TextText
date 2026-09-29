@@ -216,7 +216,6 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document[data-template="texttext.note"]{--tt-accent:#ffb900;--paper:#fff;--ink:#1c1c1e;--muted:#6b6b70;--tt-measure:50rem}
 .tt-document:not(.tt-collection-item)[data-template="texttext.note"]>.tt-stack{gap:.9rem;padding:clamp(1.5rem,4vw,2.75rem) 0 4rem}
 .tt-document[data-template="texttext.note"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;font-size:clamp(1.6rem,2.6vw,2.1rem);font-weight:700;line-height:1.16;letter-spacing:-.017em}
-.tt-document[data-template="texttext.note"] .tt-metadata{justify-content:center;font-size:.78rem;color:var(--muted)}
 .tt-document[data-template="texttext.note"] .tt-prose{font-size:1.15rem;line-height:1.5}
 .tt-document[data-template="texttext.note"] .tt-prose a{color:#c78800}
 .tt-document.tt-collection-item[data-template="texttext.note"]{background:#fff}

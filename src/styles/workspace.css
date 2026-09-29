@@ -6536,3 +6536,11 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 .post-editor-shell .post-editor-content .workspace-collection-page {
   min-height: calc(100% - var(--workspace-action-bar-height, 3.25rem));
 }
+
+/* Keep a new note's title clear of the fixed action bar. The workspace's
+   document reset removes the built-in template's top padding. */
+.post-editor-content
+  .tt-document:not(.tt-collection-item):not([data-preview])[data-template="texttext.note"]
+  > .tt-stack {
+  padding-top: clamp(1rem, 2vw, 1.5rem);
+}
