@@ -34,6 +34,18 @@ does not establish a numerical before/after speedup or a whole-app memory
 result. The source-level hot path and test coverage support the narrower
 conclusion that per-item date parsing and full item mapping are removed.
 
+Later on build 1112, Finder itself opened the TextText File Provider domain,
+the `visual-demo` workspace, and its 96-item `Visual scale proof` folder.
+Finder reported all 96 items and showed `Visual scale 001.textpack` as a
+2,430-byte TextPack document in Get Info. Direct Terminal listing of the same
+domain still returned `Operation not permitted`, so Finder was used for this
+check. Opening the domain started File Provider extension PID 86624; its
+process CPU increased from 0.07 to 0.11 seconds over roughly 83 seconds of
+root/folder navigation and one Get Info request. This observed workload did
+not reproduce the earlier large reconciliation burst and is not a numerical
+speed comparison for that burst. The Finder window and Get Info panel were
+closed after the check.
+
 ## Editor retry on an inconclusive connection
 
 On its first reopen, build 1112 showed **Connection not confirmed** on the
