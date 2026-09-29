@@ -5010,18 +5010,10 @@ function LocalWorkspaceShell({
       const baseIds = additive ? new Set(selectedPostIds) : new Set<string>();
       let dragging = false;
       bodySelectionActiveRef.current = false;
-      if (startedOnRow) {
-        // Starting on a row, the gesture cannot be taken outright - the
-        // row's own click still has to be able to open it. Capture the
-        // pointer instead: the move stream keeps arriving even once the
-        // browser would rather be selecting text, and the click still fires
-        // on the row afterwards for the suppression flag to judge.
-        try {
-          event.currentTarget.setPointerCapture(event.pointerId);
-        } catch {
-          /* older engines: the window listeners below still see most moves */
-        }
-      } else {
+      // Leave pointer ownership with a row. Capturing it on the content pane
+      // retargets pointerup and click to the pane, so a plain click never
+      // opens the item. Window listeners below still track a marquee drag.
+      if (!startedOnRow) {
         // Empty space: take the gesture immediately, as before.
         event.preventDefault();
         event.currentTarget.focus({ preventScroll: true });

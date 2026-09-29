@@ -200,6 +200,7 @@ import type { CSSProperties, MouseEvent, ReactNode } from "react";
 import Link from "next/link";
 import { renameFolderAction } from "@/app/editor/actions";
 import { FolderCollectionItem } from "@/components/workspace/FolderCollectionItem";
+import { VisualFolderCapture } from "@/components/workspace/VisualFolderCapture";
 import collectionStyles from "@/components/workspace/FolderCollectionItem.module.css";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { DocumentEngineStyles } from "@/components/document/DocumentEngineStyles";
@@ -1219,6 +1220,9 @@ export function FolderPage({
           </p>
         )}
       </header>
+      {canCreateItems && !isReadingFolder && (
+        <VisualFolderCapture key={`${handle}:${folder.path}`} handle={handle} folderPath={folder.path} blogId={blogId} />
+      )}
       {hasFeeds && (
         <div className="folder-content-switch" role="group" aria-label="Folder content">
           {(["items", "news"] as const).map((pane) => (

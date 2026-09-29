@@ -51,6 +51,9 @@ export function FolderCollectionItem({ blog, handle, post, template, selected, o
   const href = blogPostPath(blog, post);
   const date = formatArticleDate(post.updatedAt ?? post.date, { style: "short" });
   const [now, setNow] = useState(() => Date.now());
+  // Focusing an unselected row selects it before pointermove. Keep that
+  // gesture as a marquee instead of turning it into a native item drag.
+  const [dragEligible, setDragEligible] = useState(false);
   const captureStarted = new Date(post.updatedAt ?? post.date ?? "").getTime();
   const recentlyPending = captureStatus === "pending" && Number.isFinite(captureStarted) && now - captureStarted < 600_000;
   useEffect(() => {
@@ -72,7 +75,8 @@ export function FolderCollectionItem({ blog, handle, post, template, selected, o
     <WorkspaceItemStar handle={handle} owner={owner} post={post} />
     <Link className={styles.link} href={href} aria-label={post.title.trim() || "Untitled"}
       title="Open · Command click: new tab · Option click: add to selection · Shift click: extend"
-      prefetch={onOpenPost ? false : undefined} draggable={selected}
+      prefetch={onOpenPost ? false : undefined} draggable={dragEligible}
+      onPointerDown={() => setDragEligible(selected)}
       onDragStart={(event) => { if (post.id) onDragItems?.(event.dataTransfer, post.id); }}
       onMouseDown={(event) => { if (shouldSuppressNativeItemSelection(event)) event.preventDefault(); }}
       onClick={open} onAuxClick={(event) => {

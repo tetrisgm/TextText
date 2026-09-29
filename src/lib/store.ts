@@ -5362,6 +5362,7 @@ const IDEMPOTENCY_CLAIM_STALE_MS = 30_000;
 export async function claimIdempotencyKey(
   handle: string,
   key: string,
+  options: { staleAfterMs?: number } = {},
 ): Promise<IdempotencyClaim> {
   if (!db) return { status: "claimed" };
   const blogId = await blogIdFor(handle);
@@ -5395,7 +5396,7 @@ export async function claimIdempotencyKey(
   // Unresolved. If the claiming request died (stale), reclaim it so a retry is
   // not locked out forever; the guarded delete + re-insert lets exactly one
   // racer win. Otherwise the first attempt is genuinely still in flight.
-  const staleCutoff = new Date(Date.now() - IDEMPOTENCY_CLAIM_STALE_MS);
+  const staleCutoff = new Date(Date.now() - (options.staleAfterMs ?? IDEMPOTENCY_CLAIM_STALE_MS));
   const reclaimed = await db
     .delete(idempotencyKeys)
     .where(
