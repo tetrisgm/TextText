@@ -65,3 +65,25 @@ This is native usability evidence with the OS preference enabled. It does not
 measure animation frames, confirm every transition obeys the preference, or
 cover an active two-person edit under that preference. The exact 720-point
 native minimum also remains unverified.
+
+## Native minimum-width follow-up
+
+In installed build 0.202 (1113), I dragged the Mac window inward until a
+further resize left its captured width at 1,442 physical pixels, matching the
+720-point minimum plus window edges on this Retina display. In dark appearance,
+the assistant filled the narrow window with its conversation, context, and
+composer visible; closing it exposed the editable note and Saved status. The
+saved article retained its title, source, body, and Reader controls. The
+portrait image item fit without horizontal clipping; its viewer showed Zoom,
+Close, title, dimensions, and Open original, and Escape returned focus to the
+image control. The Add agent panel fit its visible actions, and the gallery
+showed two columns of varied image proportions.
+
+At the same minimum width in light appearance, the note editor, saved article
+reader, two-column gallery, portrait item and viewer, and expanded Add agent
+panel remained usable. The expanded panel showed its client and connection
+selectors and Prepare instruction. Escape closed the light image viewer. The
+app's original Dark preference and the Mac's original Auto appearance were
+restored afterward. This closes the exact-width visual check; it does not prove
+animation-specific reduced-motion behavior or an active two-person edit at
+this width.
