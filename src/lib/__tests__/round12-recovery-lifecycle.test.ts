@@ -8,6 +8,7 @@ import { applyDocumentSnapshot, documentSnapshotFromYDoc, hasDocumentSnapshot } 
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { keepMaterializationRecovery, readMaterializationRecoveries, acknowledgeMaterializationRecoveries, recoveryHeading, type MaterializationRecovery } from "@/lib/collab/materialization-recovery";
 import { outboxIndexedDB } from "./helpers/outbox-indexeddb";
+import { downloadJsonCopy } from "@/lib/native-download";
 
 const source = readFileSync("src/components/document/UnifiedDocumentEditor.tsx", "utf8");
 function execute(code: string, bindings: Record<string, unknown>) {
@@ -15,8 +16,8 @@ function execute(code: string, bindings: Record<string, unknown>) {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.React },
   }).outputText)(...Object.values(bindings));
 }
-function button(node: React.ReactNode, label: string): React.ReactElement<{ onClick: () => unknown; children: React.ReactNode }> | undefined {
-  if (!React.isValidElement<{ onClick: () => unknown; children: React.ReactNode }>(node)) return;
+function button(node: React.ReactNode, label: string): React.ReactElement<{ onClick: () => unknown; children: React.ReactNode; disabled?: boolean }> | undefined {
+  if (!React.isValidElement<{ onClick: () => unknown; children: React.ReactNode; disabled?: boolean }>(node)) return;
   if (node.type === "button" && node.props.children === label) return node;
   for (const child of React.Children.toArray(node.props.children)) {
     const found = button(child, label); if (found) return found;
@@ -81,15 +82,59 @@ it.each([true, false])("delayed discovery exports both copies, reports ledger du
       React, recoveryCopies: copies, recoveryDurable: durable, accessLoss: null, recoveryHeading, recoveryDownloaded: downloaded,
       collab: { postId }, recoveryError: null, setRecoveryError: vi.fn(), setRecoveryDownloaded: (value: boolean) => { downloaded = value; },
       acknowledgeRetiredOutboxes: providerModule.acknowledgeRetiredOutboxes, acknowledgeMaterializationRecoveries,
+      readDocumentRecoveries: providerModule.readDocumentRecoveries,
+      setRecoveryCopies, setRecoveryDurable, downloadJsonCopy,
     });
     const html = renderToStaticMarkup(render());
     expect(html).toContain(writable ? "Your local copy is kept on this device." : "Device storage is unavailable.");
     expect(html).not.toContain("none of your text is lost");
-    button(render(), "Download local copy")!.props.onClick();
+    await button(render(), "Download local copy")!.props.onClick();
     expect(JSON.parse(await download!.text())).toEqual(copies);
     expect(click).toHaveBeenCalledOnce();
     await button(render(), "Open current version")!.props.onClick();
     expect(reload).toHaveBeenCalledOnce();
     expect((await providerModule.readDocumentRecoveries(postId)).copies).toEqual([]);
   } finally { provider.destroy(); doc.destroy(); vi.restoreAllMocks(); }
+});
+
+it("keeps Open current version disabled until the native recovery file is saved", async () => {
+  vi.spyOn(Date, "now").mockReturnValue(123);
+  const window = new EventTarget() as EventTarget & {
+    __TEXTTEXT_APP__: boolean;
+    document: { createElement: () => { href: string; download: string; click: () => void } };
+    location: { reload: () => void };
+  };
+  window.__TEXTTEXT_APP__ = true;
+  window.document = { createElement: () => ({ href: "", download: "", click() {} }) };
+  window.location = { reload: vi.fn() };
+  vi.stubGlobal("window", window);
+  vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:recovery");
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  let downloaded = false;
+  const replacementCopy = { id: "next-copy", reason: "outbox-conflict" };
+  const setRecoveryCopies = vi.fn();
+  const setRecoveryError = vi.fn();
+  const recoveryStart = source.indexOf("  if (recoveryCopies.length)");
+  const render = () => execute(source.slice(recoveryStart, source.indexOf("  if (baselineFailure &&", recoveryStart)), {
+    React, recoveryCopies: [{ reason: "sync-rejected" }], recoveryDurable: true,
+    accessLoss: null, recoveryHeading: () => "Your local edits need recovery",
+    recoveryDownloaded: downloaded, collab: { postId: "native-recovery" }, recoveryError: null,
+    setRecoveryError, setRecoveryDownloaded: (value: boolean) => { downloaded = value; },
+    acknowledgeRetiredOutboxes: vi.fn().mockResolvedValue(true), acknowledgeMaterializationRecoveries: vi.fn(),
+    readDocumentRecoveries: vi.fn().mockResolvedValue({ copies: [replacementCopy], durable: true }),
+    setRecoveryCopies, setRecoveryDurable: vi.fn(), downloadJsonCopy,
+  });
+  expect(button(render(), "Open current version")!.props.disabled).toBe(true);
+  const pending = button(render(), "Download local copy")!.props.onClick();
+  expect(button(render(), "Open current version")!.props.disabled).toBe(true);
+  window.dispatchEvent(Object.assign(new Event("texttext:native-download-result"), {
+    detail: { filename: "texttext-recovery-native-recovery-123.json", saved: true },
+  }));
+  await pending;
+  expect(button(render(), "Open current version")!.props.disabled).toBe(false);
+  await button(render(), "Open current version")!.props.onClick();
+  expect(setRecoveryCopies).toHaveBeenCalledWith([replacementCopy]);
+  expect(downloaded).toBe(false);
+  expect(window.location.reload).not.toHaveBeenCalled();
+  expect(setRecoveryError).toHaveBeenCalledWith(expect.stringContaining("Another local copy"));
 });

@@ -22,6 +22,8 @@ export type MaterializationRecovery = {
   outboxKey?: string;
   updates?: string[];
   baselineRevision?: number | null;
+  /** Exact stored dependency covered by state; absent on older recovery copies. */
+  coveredBaseline?: string;
 };
 const PREFIX = "texttext:collab-recovery:v1:";
 

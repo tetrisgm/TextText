@@ -227,7 +227,7 @@ struct WebAppStartupNavigation {
 /// workspace. An unlinked Mac sends account authentication and device approval
 /// to the system browser, then returns to the workspace with both credentials.
 final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
-    WKUIDelegate, WKScriptMessageHandler, NSWindowDelegate {
+    WKUIDelegate, WKDownloadDelegate, WKScriptMessageHandler, NSWindowDelegate {
     private enum CodexRequestKind: Equatable {
         case initialize
         case accountRead
@@ -260,6 +260,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     private var startupNavigation: WebAppStartupNavigation
     private var appToken: String?
     private var cancelledPolicyNavigationURLs = Set<String>()
+    private var downloadNames: [ObjectIdentifier: String] = [:]
     /// Set while the launch is betting that the last run's web session cookie
     /// still works, so landing on a signed-out page can fall back to the
     /// app-token exchange this launch skipped.
@@ -2042,6 +2043,10 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
+        if navigationAction.shouldPerformDownload {
+            decisionHandler(.download)
+            return
+        }
         // The optimistic direct load bet that the last run's web session
         // cookie still worked. Being routed to the sign-in or signed-out
         // landing page means it did not: cancel and run the app-token
@@ -2105,6 +2110,58 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             return
         }
         decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction,
+                 didBecome download: WKDownload) {
+        download.delegate = self
+    }
+
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse,
+                 didBecome download: WKDownload) {
+        download.delegate = self
+    }
+
+    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse,
+                  suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
+        let name = (suggestedFilename as NSString).lastPathComponent
+        let safeName = name.isEmpty ? "TextText download" : name
+        let key = ObjectIdentifier(download)
+        downloadNames[key] = safeName
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = safeName
+        let finish: (NSApplication.ModalResponse) -> Void = { [weak self] answer in
+            guard let self else { completionHandler(nil); return }
+            guard answer == .OK, let destination = panel.url,
+                  !FileManager.default.fileExists(atPath: destination.path) else {
+                completionHandler(nil)
+                self.downloadNames.removeValue(forKey: key)
+                self.reportDownloadResult(name: safeName, saved: false)
+                return
+            }
+            completionHandler(destination)
+        }
+        if let window { panel.beginSheetModal(for: window, completionHandler: finish) }
+        else { panel.begin(completionHandler: finish) }
+    }
+
+    func downloadDidFinish(_ download: WKDownload) {
+        guard let name = downloadNames.removeValue(forKey: ObjectIdentifier(download)) else { return }
+        reportDownloadResult(name: name, saved: true)
+    }
+
+    func download(_ download: WKDownload, didFailWithError error: Error,
+                  resumeData: Data?) {
+        guard let name = downloadNames.removeValue(forKey: ObjectIdentifier(download)) else { return }
+        reportDownloadResult(name: name, saved: false)
+    }
+
+    private func reportDownloadResult(name: String, saved: Bool) {
+        guard let data = try? JSONSerialization.data(withJSONObject: ["filename": name, "saved": saved]),
+              let detail = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript(
+            "window.dispatchEvent(new CustomEvent('texttext:native-download-result', {detail: \(detail)}))",
+            completionHandler: nil)
     }
 
     func webView(

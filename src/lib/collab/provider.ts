@@ -253,11 +253,24 @@ function sameOutboxGeneration(live: StoredOutbox, outbox: Outbox): boolean {
 
 /** Remove only operations included in an acknowledgment/recovery copy. Keep
  * the baseline intact: other operations may depend on the removed identities. */
-function removeStoredOperations(store: IDBObjectStore, live: StoredOutbox, covered: Set<string>): void {
+function removeStoredOperations(store: IDBObjectStore, live: StoredOutbox, covered: Set<string>, coveredBaseline?: string): void {
   const updates = live.updates.filter((update) => !covered.has(update));
-  if (updates.length === live.updates.length) return;
-  if (updates.length) store.put({ ...live, updates });
-  else store.delete(live.postId);
+  const baselineCovered = !live.baseline || live.baseline === coveredBaseline;
+  if (!updates.length && baselineCovered) {
+    store.delete(live.postId);
+  } else if (updates.length !== live.updates.length) {
+    store.put({ ...live, updates });
+  }
+}
+
+function recoveryMatchesStoredGeneration(live: StoredOutbox, copy: MaterializationRecovery): boolean {
+  if (live.baselineRevision !== copy.baselineRevision) return false;
+  if (live.epoch === copy.epoch) return true;
+  // Pre-catch-up rows have no learned epoch. Their exact baseline and every
+  // operation must be present in the exported copy before retiring them.
+  return !live.epochKnown && Boolean(live.baseline) &&
+    live.baseline === copy.coveredBaseline &&
+    live.updates.every((update) => copy.updates?.includes(update));
 }
 
 function persistOutbox(postId: string, outbox: Outbox): Promise<void> {
@@ -362,8 +375,8 @@ export async function acknowledgeRetiredOutboxes(copies: MaterializationRecovery
       const request = store.get(copy.postId);
       request.onsuccess = () => {
         const live = request.result as StoredOutbox | undefined;
-        if (live && live.epoch === copy.epoch && live.baselineRevision === copy.baselineRevision) {
-          removeStoredOperations(store, live, new Set(copy.updates ?? []));
+        if (live && recoveryMatchesStoredGeneration(live, copy)) {
+          removeStoredOperations(store, live, new Set(copy.updates ?? []), copy.coveredBaseline);
         }
       };
     }
@@ -477,6 +490,10 @@ async function retireOutbox(outbox: Outbox, epoch: number, reason: RecoveryReaso
       } finally { doc.destroy(); }
     } catch { /* Preserve the raw updates even if reconstruction fails. */ }
   }
+  if (copy.state && outbox.recoveryUpdates.length) {
+    try { copy.coveredBaseline = u8ToBase64(Y.mergeUpdates(outbox.recoveryUpdates)); }
+    catch { /* The saved recovery state still contains the raw pending updates. */ }
+  }
   const record: RetiredOutbox = { postId: key, documentPostId: postId, copy };
   outbox.retirement = record;
   const hasRecovery = outbox.pending.length > 0 || outbox.recoveryUpdates.length > 0;
@@ -501,8 +518,8 @@ async function retireOutbox(outbox: Outbox, epoch: number, reason: RecoveryReaso
           const live = request.result as StoredOutbox | undefined;
           // Another tab may have persisted newer work at this post key. Only
           // delete operations explicitly covered by this quarantine record.
-          if (live && live.epoch === previousEpoch && live.baselineRevision === copy.baselineRevision) {
-            removeStoredOperations(store, live, new Set(copy.updates ?? []));
+          if (live && recoveryMatchesStoredGeneration(live, copy)) {
+            removeStoredOperations(store, live, new Set(copy.updates ?? []), copy.coveredBaseline);
           }
         };
         transaction.oncomplete = () => { database.close(); resolve(true); };

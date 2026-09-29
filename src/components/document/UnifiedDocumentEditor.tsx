@@ -43,7 +43,7 @@ import { Awareness } from "y-protocols/awareness";
 import { formatArticleDate } from "@/lib/content";
 import type { Blog, Post } from "@/lib/content";
 import { capturePreReadyDocumentBaseline, applyPreReadyMetadata, applyPreReadyTextOperations, preReadyTextOperations } from "@/lib/collab/pre-ready";
-import { acknowledgeRetiredOutboxes, CollabProvider, type PresencePeer } from "@/lib/collab/provider";
+import { acknowledgeRetiredOutboxes, readDocumentRecoveries, CollabProvider, type PresencePeer } from "@/lib/collab/provider";
 import {
   keepMaterializationRecovery,
   readMaterializationRecoveries,
@@ -74,6 +74,7 @@ import {
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { DocumentRenderer } from "./DocumentRenderer";
 import { peerLabelInk } from "@/lib/collab/peer-color";
+import { downloadJsonCopy } from "@/lib/native-download";
 import { MarkdownSurface } from "./MarkdownSurface";
 import { WorkspaceTypeLibrary } from "./WorkspaceTypeLibrary";
 import {
@@ -1476,14 +1477,11 @@ export function UnifiedDocumentEditor({
           <p>{recoveryDurable
             ? "Your local copy is kept on this device. Download it to recover your edits."
             : "Device storage is unavailable. Download your local copy before closing this page."}</p>
-          <button type="button" className="ac-btn ac-btn-gray" onClick={() => {
-            const url = URL.createObjectURL(new Blob([JSON.stringify(recoveryCopies, null, 2)], { type: "application/json" }));
-            const link = window.document.createElement("a");
-            link.href = url;
-            link.download = `texttext-recovery-${collab.postId}.json`;
-            link.click();
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
-            setRecoveryDownloaded(true);
+          <button type="button" className="ac-btn ac-btn-gray" onClick={async () => {
+            setRecoveryError(null);
+            const saved = await downloadJsonCopy(`texttext-recovery-${collab.postId}-${Date.now()}.json`, recoveryCopies);
+            setRecoveryDownloaded(saved);
+            if (!saved) setRecoveryError("The copy was not saved. Choose a location and try again before reopening.");
           }}>Download local copy</button>
           <button type="button" className="ac-btn ac-btn-gray" disabled={!recoveryDownloaded} onClick={async () => {
             if (!await acknowledgeRetiredOutboxes(recoveryCopies)) {
@@ -1491,6 +1489,20 @@ export function UnifiedDocumentEditor({
               return;
             }
             acknowledgeMaterializationRecoveries(recoveryCopies);
+            let remaining;
+            try {
+              remaining = await readDocumentRecoveries(collab.postId);
+            } catch {
+              setRecoveryError("The remaining local copies could not be checked. Please try again before reopening.");
+              return;
+            }
+            if (remaining.copies.length) {
+              setRecoveryCopies(remaining.copies);
+              setRecoveryDurable(remaining.durable);
+              setRecoveryDownloaded(false);
+              setRecoveryError("Another local copy needs saving before this document can reopen.");
+              return;
+            }
             window.location.reload();
           }}>Open current version</button>
           {recoveryError && <p>{recoveryError}</p>}

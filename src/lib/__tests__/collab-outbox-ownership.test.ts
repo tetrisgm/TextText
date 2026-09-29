@@ -97,6 +97,24 @@ it.each([false, true])("retirement and recovery acknowledgment preserve another 
   recovered.destroy();
 });
 
+it("retires an exact pre-catch-up row after its in-memory writer learns the epoch", async () => {
+  const postId = "ownership-unlearned-epoch", h = await setup(postId), a = await h.tab();
+  documentText(a.doc, "body").insert(5, " LOCAL"); await settle();
+  const row = h.storage.records.get(postId) as { epoch: number; epochKnown: boolean; updates: string[]; baseline: string };
+  row.epoch = 0;
+  row.epochKnown = false;
+  await vi.advanceTimersByTimeAsync(300);
+  expect(h.pushes).toHaveLength(1);
+  h.pushes[0].respond(Response.json({ retired: true, epoch: 6 })); await settle();
+  const recovery = await a.module.readRetiredOutboxes(postId);
+  expect(recovery.copies).toHaveLength(1);
+  expect(recovery.copies[0].coveredBaseline).toBe(row.baseline);
+  expect(recovery.copies[0].updates).toEqual(row.updates);
+  expect(h.storage.records.has(postId)).toBe(false);
+  expect(await a.module.acknowledgeRetiredOutboxes(recovery.copies)).toBe(true);
+  expect((await a.module.readRetiredOutboxes(postId)).copies).toEqual([]);
+});
+
 it.each(["epoch", "baseline"])("quarantines a writer instead of relabeling a conflicting durable %s", async (conflict) => {
   const postId = `ownership-conflict-${conflict}`, h = await setup(postId), a = await h.tab();
   const other = {
@@ -196,6 +214,39 @@ it.each(["stale revision", "missing revision", "unreadable pending"])(
     expect(h.pushes).toHaveLength(0);
   },
 );
+
+it("quarantines a baseline-only stale row once, then reopens the current document", async () => {
+  const postId = "ownership-baseline-only", h = await setup(postId), a = await h.tab();
+  documentText(a.doc, "body").insert(5, " LOCAL"); await settle();
+  a.provider.destroy();
+  const row = h.storage.records.get(postId) as { updates: string[]; baselineRevision: number | null; baseline: string; epoch: number; epochKnown: boolean };
+  row.updates = [];
+  row.baselineRevision = null;
+  row.epoch = 0;
+  row.epochKnown = false;
+  const replacement = new Y.Doc(), snapshot = emptyDocumentSnapshot();
+  snapshot.content.body = "CURRENT";
+  applyDocumentBaseline(replacement, snapshot, `${postId}:2`);
+  const encoded = encode(replacement); replacement.destroy();
+  h.fetcher.mockImplementation(async (input) => {
+    if (String(input).includes("wait=0")) return Response.json({
+      updates: [], seq: 0, epoch: 5, baseline: { update: encoded, revision: 2 },
+    });
+    return new Promise<Response>(() => {});
+  });
+  const conflicted = await h.tab(); await settle();
+  const recovery = await conflicted.module.readRetiredOutboxes(postId);
+  expect(recovery.copies).toHaveLength(1);
+  expect(recovery.copies[0].document?.content.body).toBe("alpha LOCAL");
+  expect(recovery.copies[0].coveredBaseline).toBe(row.baseline);
+  expect(h.storage.records.has(postId)).toBe(false);
+  expect(await conflicted.module.acknowledgeRetiredOutboxes(recovery.copies)).toBe(true);
+  conflicted.provider.destroy();
+  const reopened = await h.tab(); await settle();
+  expect(reopened.onRecovery).not.toHaveBeenCalled();
+  expect(reopened.onRetired).not.toHaveBeenCalled();
+  expect(documentText(reopened.doc, "body").toString()).toBe("CURRENT");
+});
 
 it("keeps legacy unknown-epoch edits writable while catch-up is still in flight", async () => {
   const postId = "ownership-legacy-before-catchup", h = await setup(postId), a = await h.tab();
