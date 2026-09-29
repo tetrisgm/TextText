@@ -1022,6 +1022,7 @@ function UniversalFolderContents({
               <div
                 className={`universal-item-collection is-${collectionViewMode}`}
                 data-collection-layout={activeCollection?.layout}
+                data-collection-columns={activeCollection?.columns}
                 style={
                   {
                     "--collection-columns": activeCollection?.columns,
