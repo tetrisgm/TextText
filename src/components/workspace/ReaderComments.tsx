@@ -23,6 +23,7 @@ import { locateWorkspaceItemTextSelection } from "@/lib/ai/workspace-item-draft"
 import styles from "./ReaderComments.module.css";
 import { startVisiblePoll } from "@/lib/visible-poll";
 import { OPEN_READER_COMMENTS } from "@/lib/reader-comments-events";
+import { READER_BODY_SELECTOR } from "@/components/workspace/reading/reader-body";
 
 type SelectionAnchor = {
   end: number;
@@ -46,7 +47,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function readerProse(marker: HTMLDivElement | null): HTMLElement | null {
-  return marker?.parentElement?.querySelector<HTMLElement>(".reader-prose") ?? null;
+  return marker?.parentElement?.querySelector<HTMLElement>(READER_BODY_SELECTOR) ?? null;
 }
 
 function textNodes(root: HTMLElement): Text[] {
@@ -278,14 +279,21 @@ export function ReaderComments({
     }
     const rootRect = root.getBoundingClientRect();
     const next: ThreadPosition[] = [];
+    const occupied = new Map<string, number>();
     for (const thread of anchored) {
       const rect = cache!.ranges.get(thread.root.id)?.getBoundingClientRect();
       if (!rect || (!rect.width && !rect.height)) continue;
+      const left = clamp(rootRect.right + 8, 8, window.innerWidth - 38);
+      const baseTop = rect.top + rect.height / 2;
+      const bucket = `${Math.round(left)}:${Math.round(baseTop / 8)}`;
+      const overlap = occupied.get(bucket) ?? 0;
+      occupied.set(bucket, overlap + 1);
+      const offset = overlap === 0 ? 0 : Math.ceil(overlap / 2) * 34 * (overlap % 2 ? 1 : -1);
       next.push({
         id: thread.root.id,
-        left: clamp(rootRect.right + 8, 8, window.innerWidth - 38),
+        left,
         top: clamp(
-          rect.top + rect.height / 2,
+          baseTop + offset,
           rootRect.top + 12,
           rootRect.bottom - 12,
         ),
@@ -468,7 +476,7 @@ export function ReaderComments({
   usePopoverFocus(popoverRef, Boolean((composing || activeThread) && popoverPosition));
 
   return (
-    <div ref={rootRef} className={`applecms ${styles.layer}`}>
+    <div ref={rootRef} className={`applecms ${styles.layer}`} data-reader-comments>
       <span className="ac-sr-only" role="status" aria-atomic="true">{notice}</span>
       {loadError && (
         <div className={styles.loadFailure} role="status">

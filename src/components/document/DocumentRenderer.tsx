@@ -1134,9 +1134,9 @@ function NodeRenderer({
     }
     case "prose": {
       const slot = slots?.prose?.[node.bind] ?? slots?.bindings?.[node.bind];
-      if (slot !== undefined) return <div className="tt-prose">{slot}</div>;
+      if (slot !== undefined) return <div className="tt-prose" data-tt-bind={node.bind}>{slot}</div>;
       const value = scalarText(resolveDocumentBinding(document, node.bind));
-      return value ? <div className="tt-prose"><Markdown value={value} wikiLinkTargets={wikiLinkTargets} assets={document.content.assets} /></div> : null;
+      return value ? <div className="tt-prose" data-tt-bind={node.bind}><Markdown value={value} wikiLinkTargets={wikiLinkTargets} assets={document.content.assets} /></div> : null;
     }
     // cover, image and video normalise to media before they reach here.
     case "media": {

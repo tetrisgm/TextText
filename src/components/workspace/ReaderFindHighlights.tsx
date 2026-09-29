@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { READER_BODY_SELECTOR } from "@/components/workspace/reading/reader-body";
 import styles from "./ReaderFindHighlights.module.css";
 
 type Match = { start: number; end: number };
@@ -87,7 +88,7 @@ export function ReaderFindHighlights({ query }: { query: string }) {
 
   useEffect(() => {
     const surface = markerRef.current?.parentElement;
-    const prose = surface?.querySelector<HTMLElement>(".reader-prose");
+    const prose = surface?.querySelector<HTMLElement>(READER_BODY_SELECTOR);
     if (!prose || !query.trim()) {
       setRects([]);
       lastScrolledQueryRef.current = "";
