@@ -167,6 +167,28 @@ after the human edit also reached Ready without a reload. The intermittent
 post-Undo false stale result needs diagnosis; these observations do not show
 its cause or prove a general recovery path.
 
+## Targeted Undo revision fence, September 29 follow-up
+
+A new real Anthropic rewrite in installed local build 1113 saved the exact
+generated sentence, yet immediate and delayed **Undo** both claimed the
+passage had changed. Local diagnostics confirmed the current editor slice
+equaled the generated slice. The rejection came after the write was sent:
+the selection envelope's old revision was still used as an atomic database
+fence even though the target range was unchanged. The same old-revision rule
+also ran during server selection validation.
+
+Bounded text edits now validate the exact selected range at the server and
+use the revision read with the live document for the atomic append. The live
+Yjs version fence and text-range compare still reject a changed target;
+caret and explicit whole-source guards retain strict revision checks. After
+this change, **Undo** on the still-open native preview reached **Undone**. A
+shorter rewrite had been applied and the later body text remained. The
+scratch note's first sentence was restored to its pre-check wording, showed
+**Saved**, and survived a route reload. Five focused suites passed 149 tests
+and TypeScript passed. This verifies the specific false Undo conflict; a
+fresh-preview stale result immediately after Undo and remote approval-time
+conflicts still need separate live checks.
+
 - `TEXTTEXT_STORE=1 swift test --package-path mac --jobs 2 --filter Codex`:
   29 tests passed after updating an assertion for the revised instructions.
 - Three focused Vitest files: 37 tests passed, including native prompt and

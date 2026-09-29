@@ -54,7 +54,8 @@ describe("AI selection envelope", () => {
     await expect(validateSelectionEditEnvelope(undefined, "item", item, selection)).rejects.toThrow();
     await expect(validateSelectionEditEnvelope(envelope, "item", item, selection)).resolves.toEqual(envelope);
     await expect(validateSelectionEditEnvelope(envelope, "item", item, { ...selection, start: 0, end: item.body.length, text: item.body })).rejects.toThrow();
-    await expect(validateSelectionEditEnvelope(envelope, "item", { ...item, revision: 8 }, selection)).rejects.toThrow(SELECTION_STALE_ERROR);
+    await expect(validateSelectionEditEnvelope(envelope, "item", { ...item, revision: 8, body: item.body + " Later writing." }, selection)).resolves.toEqual(envelope);
+    await expect(validateSelectionEditEnvelope(envelope, "item", { ...item, revision: 8, body: item.body.replace("this", "that") }, selection)).rejects.toThrow(SELECTION_STALE_ERROR);
   });
 
   it("refuses stale identity, revision, offsets and text, even if repeated text still exists", async () => {

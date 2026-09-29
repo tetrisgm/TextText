@@ -1208,7 +1208,6 @@ describe("MCP workspace tool adapter", () => {
     mocks.resolveItemAccess.mockResolvedValue({ canView: true, canEditContent: true, isOwner: true });
     const update = registrations().find((entry) => entry.name === "update_item")!;
     for (const [current, envelope, start, end] of [
-      [{ ...source, revision: 43 }, selection_envelope, 0, 6],
       [source, { ...selection_envelope, hash: "0".repeat(64) }, 0, 6],
       [source, selection_envelope, 1, 7],
       [{ ...source, body: "After!" }, selection_envelope, 0, 6],
@@ -1226,12 +1225,12 @@ describe("MCP workspace tool adapter", () => {
     const source = { id, folderId: "blog", type: "article", slug: "draft", title: "Draft", excerpt: "", body: "Before", status: "draft", pinned: false, revision: 42 };
     const selection_envelope = (await createSelectionEnvelope(id, source, { field: "body", start: 0, end: 6, text: "Before" }))!;
     mocks.resolveItemAccess.mockResolvedValue({ canView: true, canEditContent: true, isOwner: true });
-    mocks.getPostById.mockResolvedValue(source);
-    const snapshot = { schemaVersion: 1, content: { title: "Draft", subtitle: "", body: "After", fields: {}, tags: [], assets: [] }, presentation: { template: { id: "texttext.article", version: 1 }, theme: {} } };
+    mocks.getPostById.mockResolvedValue({ ...source, revision: 43, body: "Before. Later writing." });
+    const snapshot = { schemaVersion: 1, content: { title: "Draft", subtitle: "", body: "After. Later writing.", fields: {}, tags: [], assets: [] }, presentation: { template: { id: "texttext.article", version: 1 }, theme: {} } };
     mocks.applyLiveDocumentMutation.mockResolvedValue({ snapshot, epoch: 1, seq: 2, applied: true, auditRecorded: true });
-    mocks.getPostStoreContext.mockResolvedValue({ handle: "local", post: source });
+    mocks.getPostStoreContext.mockResolvedValue({ handle: "local", post: { ...source, revision: 43, body: "Before. Later writing." } });
     mocks.materializeCollabDocument.mockResolvedValue(snapshot);
-    mocks.savePost.mockResolvedValue({ ...source, body: "After", document: snapshot, revision: 43 });
+    mocks.savePost.mockResolvedValue({ ...source, body: "After. Later writing.", document: snapshot, revision: 44 });
     const result = await registrations().find((entry) => entry.name === "update_item")!.callback({ id, text_edit: { field: "body", start: 0, end: 6, expected_text: "Before", replacement_text: "After", selection_envelope } }, auth(["sync"]));
     expect(result.isError).not.toBe(true);
     expect(mocks.applyLiveDocumentMutation).toHaveBeenCalledWith(id, expect.objectContaining({ textRange: expect.objectContaining({ selectionEnvelope: selection_envelope }) }), expect.objectContaining({ actionName: "mcp.update_item" }), undefined, expect.any(String));

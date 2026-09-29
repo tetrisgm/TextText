@@ -592,11 +592,13 @@ export async function applyLiveDocumentMutation(
       const selection = mutation.textRange?.selectionEnvelope;
       const source = mutation.textRange?.sourcePrecondition;
       const guarded = selection !== undefined || source !== undefined;
+      let checkedRevision: number | undefined;
       const beforeSnapshot = documentSnapshotFromYDoc(loaded.document);
       if (guarded) {
         if (!audit) throw new Error("A guarded selection mutation requires an audit entry.");
         const context = await getPostStoreContext(postId);
         if (!context) throw new Error(SELECTION_STALE_ERROR);
+        checkedRevision = context.post.revision;
         const content = beforeSnapshot.content;
         const item = {
           revision: context.post.revision, title: content.title,
@@ -647,7 +649,7 @@ export async function applyLiveDocumentMutation(
         update.length <= MAX_UPDATE_CHARS ? update : chunks.map((chunk) => Buffer.from(chunk).toString("base64")),
         loaded.epoch,
         audit,
-        selection?.revision ?? source?.revision,
+        source?.revision ?? (selection?.sourceHash !== undefined ? selection.revision : checkedRevision),
         {
           expectedVersion: loaded.mutationVersion,
           changes: agentTextChanges(beforeSnapshot, documentSnapshotFromYDoc(loaded.document)),

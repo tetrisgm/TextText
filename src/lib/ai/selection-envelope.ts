@@ -109,10 +109,21 @@ export async function validateSelectionEditEnvelope(
   edit: { field: SelectionEnvelope["field"]; start: number; end: number; text: string },
 ): Promise<SelectionEnvelope> {
   const envelope = await validateSelectionEnvelope(value);
-  await validateSelectionSource(envelope, itemId, item);
   if (envelope.field !== edit.field || envelope.start !== edit.start ||
       envelope.end !== edit.end || envelope.text !== edit.text) {
     throw new Error(SELECTION_INVALID_ERROR);
+  }
+  // A bounded text replacement is committed with an exact range compare and
+  // swap. Unrelated saves may advance the revision while that range stays
+  // intact; rejecting them makes a reviewed edit or Undo fail spuriously.
+  // Empty caret selections and explicit source hashes still fence the whole
+  // source because an unchanged empty slice cannot locate its old position.
+  if (envelope.sourceHash !== undefined) {
+    await validateSelectionSource(envelope, itemId, item);
+  } else if (envelope.itemId !== itemId ||
+      envelope.end > (item[envelope.field] ?? "").length ||
+      (item[envelope.field] ?? "").slice(envelope.start, envelope.end) !== envelope.text) {
+    throw new Error(SELECTION_STALE_ERROR);
   }
   return envelope;
 }

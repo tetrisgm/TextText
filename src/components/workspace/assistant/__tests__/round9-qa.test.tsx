@@ -94,6 +94,40 @@ describe("round9 review regressions", () => {
     expect(controller.snapshot().status).toBe("stale");
   });
 
+  it("commits a bounded Undo after an unrelated save advances the revision", async () => {
+    const original = { revision: 7, title: "Draft", excerpt: "", body: "Generated. Later writing." };
+    const guard = (await envelopes.createSelectionEnvelope("item", original, {
+      field: "body", start: 0, end: 10, text: "Generated.",
+    }))!;
+    const doc = new Y.Doc();
+    const snapshot = emptyDocumentSnapshot(); snapshot.content.body = original.body;
+    applyDocumentBaseline(doc, snapshot, "round9-revision-drift");
+    const file = readFileSync("src/lib/collab.ts", "utf8");
+    const start = file.indexOf("export async function applyLiveDocumentMutation(");
+    const end = file.indexOf("\n/**", start);
+    const code = ts.transpileModule(file.slice(start, end).replace("export async", "async"), {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+    }).outputText;
+    const append = vi.fn(async () => ({ seq: 3 }));
+    const deps = { db: {}, Y, Buffer, MAX_UPDATE_CHARS, applyDocumentMutation, documentSnapshotFromYDoc,
+      loadCurrentCollabDocument: async () => ({ document: doc, epoch: 1, mutationVersion: 2 }),
+      getPostStoreContext: async () => ({ post: { revision: 8 } }),
+      validateSelectionEditEnvelope: envelopes.validateSelectionEditEnvelope,
+      validateSelectionEnvelope: envelopes.validateSelectionEnvelope,
+      validateSelectionSource: envelopes.validateSelectionSource,
+      SELECTION_STALE_ERROR: envelopes.SELECTION_STALE_ERROR,
+      appendCollabUpdate: append, agentTextChanges: () => [], latestCollabSeq: async () => 2,
+    };
+    const commit = new Function(...Object.keys(deps), code + ";return applyLiveDocumentMutation;")(...Object.values(deps));
+    const result = await commit("item", { textRange: { field: "body", start: 0, end: 10,
+      expectedText: "Generated.", replacementText: "Original.", selectionEnvelope: guard } },
+    { actionName: "mcp.update_item" });
+    expect(result.snapshot.content.body).toBe("Original. Later writing.");
+    expect(append).toHaveBeenCalledWith("item", expect.any(String), 1, expect.any(Object), 8,
+      expect.objectContaining({ expectedVersion: 2 }));
+    doc.destroy();
+  });
+
   it("R1 fences a peer edit between the Undo read and the live range mutation", async () => {
     let local = { revision: 7, title: "Draft", excerpt: "", body: "Hello" };
     let liveBody = local.body;
