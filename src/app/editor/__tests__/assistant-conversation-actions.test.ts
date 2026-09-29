@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   getBlogEditAccess: vi.fn(),
   syncHistory: vi.fn(),
+  signalWorkspaceChange: vi.fn(),
 }));
 
 vi.mock("@/lib/blog-edit-auth", () => ({
@@ -11,6 +12,7 @@ vi.mock("@/lib/blog-edit-auth", () => ({
 vi.mock("@/lib/ai/assistant-conversation-history.server", () => ({
   syncWorkspaceAssistantConversationHistory: mocks.syncHistory,
 }));
+vi.mock("@/lib/store", () => ({ signalWorkspaceChange: mocks.signalWorkspaceChange }));
 
 import {
   getAssistantConversationCacheScopeAction,
@@ -26,7 +28,7 @@ describe("assistant conversation sync action", () => {
       blogId: "blog-1",
       ownerId: "owner-1",
     });
-    mocks.syncHistory.mockResolvedValue([]);
+    mocks.syncHistory.mockResolvedValue({ conversations: [], changed: false });
     storeKey = `writer:${await getAssistantConversationCacheScopeAction("writer")}`;
   });
 
@@ -38,6 +40,14 @@ describe("assistant conversation sync action", () => {
     expect(mocks.syncHistory).toHaveBeenCalledWith("blog-1", [
       { id: "chat-1" },
     ], { userId: "owner-1" });
+    expect(mocks.signalWorkspaceChange).not.toHaveBeenCalled();
+  });
+
+  it("signals the shared feed only when history really changes", async () => {
+    mocks.syncHistory.mockResolvedValue({ conversations: [], changed: true });
+    await syncAssistantConversationsAction("writer", [], storeKey);
+    expect(mocks.signalWorkspaceChange).toHaveBeenCalledOnce();
+    expect(mocks.signalWorkspaceChange).toHaveBeenCalledWith("writer");
   });
 
   it("does not expose history to a collaborator", async () => {

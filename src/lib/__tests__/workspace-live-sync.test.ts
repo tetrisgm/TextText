@@ -56,6 +56,26 @@ afterEach(() => {
 });
 
 describe("workspace live sync", () => {
+  it("signals assistant history once per changed version, without transcript reads on quiet polls", async () => {
+    const browser = new EventTarget();
+    const changed = vi.fn();
+    browser.addEventListener("texttext:assistant-history-changed", changed);
+    vi.stubGlobal("window", browser);
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ cursor: "1", changed: false, assistantHistory: "v1" }))
+      .mockResolvedValueOnce(jsonResponse({ cursor: "2", changed: true, assistantHistory: "v1" }))
+      .mockResolvedValueOnce(jsonResponse({ cursor: "3", changed: true, assistantHistory: "v2" }))
+      .mockResolvedValueOnce(jsonResponse({ cursor: "3", changed: false }))
+      .mockImplementation(() => new Promise<Response>(() => {}));
+    vi.stubGlobal("fetch", fetch);
+    vi.stubGlobal("document", { hidden: false });
+    const liveSync = await loadLiveSync(vi.fn());
+    liveSync.useWorkspaceLiveSync("writer", "blog-1");
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(5));
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect((changed.mock.calls[0][0] as CustomEvent).detail).toEqual({ handle: "writer" });
+    liveSync.cleanup();
+  });
   it("stops database polling while visible but unattended and resumes on interaction", async () => {
     const browser = new EventTarget();
     vi.stubGlobal("window", browser);

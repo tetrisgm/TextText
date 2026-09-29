@@ -77,17 +77,18 @@ describe("owner-scoped conversation sync schedule", () => {
     expect(loop.sync).toHaveBeenCalledTimes(1);
     loop.setAssistantVisible(true);
     await vi.advanceTimersByTimeAsync(0);
-    expect(loop.sync).toHaveBeenCalledTimes(2);
+    expect(loop.sync).toHaveBeenCalledTimes(1);
     loop.setAssistantVisible(false);
     await vi.advanceTimersByTimeAsync(90_000);
-    expect(loop.sync).toHaveBeenCalledTimes(2);
+    expect(loop.sync).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps clean remote checks quiet in the status line", async () => {
+  it("makes one initial read and no idle history requests or status flicker", async () => {
     activeAssistantConversationId(key, "root");
     const loop = start();
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(loop.sync.mock.calls.length).toBeGreaterThan(1);
+    await vi.advanceTimersByTimeAsync(60 * 60_000);
+    expect(loop.sync).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
     expect(loop.statuses).not.toContain("syncing");
   });
 
@@ -136,14 +137,17 @@ describe("owner-scoped conversation sync schedule", () => {
     expect(sync.mock.calls.at(-1)?.[0]).toHaveLength(1);
   });
 
-  it("stops remote reads in an unattended visible window and catches up on interaction", async () => {
+  it("ignores clicks during idle and reads once when remote history changes", async () => {
     const loop = start();
     await vi.advanceTimersByTimeAsync(120_000);
     const reads = loop.sync.mock.calls.length;
-    expect(reads).toBeGreaterThan(0);
+    expect(reads).toBe(1);
     await vi.advanceTimersByTimeAsync(60 * 60_000);
     expect(loop.sync).toHaveBeenCalledTimes(reads);
     browser.dispatchEvent(new Event("pointerdown"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(loop.sync).toHaveBeenCalledTimes(reads);
+    loop.remoteChanged();
     await vi.advanceTimersByTimeAsync(0);
     expect(loop.sync).toHaveBeenCalledTimes(reads + 1);
     loop.dispose();
@@ -298,20 +302,21 @@ describe("owner-scoped conversation sync schedule", () => {
     expect(loop.sync).toHaveBeenCalledTimes(1);
   });
 
-  it("focus and visible events refresh clean history; hidden tabs never poll or retry", async () => {
+  it("focus uses a freshness gate; hidden tabs defer remote changes", async () => {
     activeAssistantConversationId(key, "root");
     const loop = start();
     await vi.advanceTimersByTimeAsync(900);
     browser.dispatchEvent(new Event("focus"));
     await vi.advanceTimersByTimeAsync(0);
-    expect(loop.sync).toHaveBeenCalledTimes(2);
+    expect(loop.sync).toHaveBeenCalledTimes(1);
     setVisible(false);
+    loop.remoteChanged();
     await vi.advanceTimersByTimeAsync(90_000);
     browser.dispatchEvent(new Event("focus"));
-    expect(loop.sync).toHaveBeenCalledTimes(2);
+    expect(loop.sync).toHaveBeenCalledTimes(1);
     setVisible(true);
     await vi.advanceTimersByTimeAsync(0);
-    expect(loop.sync).toHaveBeenCalledTimes(3);
+    expect(loop.sync).toHaveBeenCalledTimes(2);
   });
 
   it("pauses a scheduled retry when hidden and resumes on foreground", async () => {
@@ -347,6 +352,22 @@ describe("owner-scoped conversation sync schedule", () => {
     expect(sync).toHaveBeenCalledTimes(2);
     expect(loop.statuses.at(-1)).toBe("synced");
     expect(assistantConversationMessages(key, id)[0].text).toBe("during upload");
+  });
+
+  it("rechecks once when a remote signal arrives during an in-flight read", async () => {
+    activeAssistantConversationId(key, "root");
+    const pending = deferred<{ allowed: boolean; conversations: SyncedAssistantConversation[] }>();
+    const sync = vi.fn(async (local: SyncedAssistantConversation[]) => ({ allowed: true, conversations: local }))
+      .mockImplementationOnce(() => pending.promise);
+    const loop = start(key, sync);
+    await vi.advanceTimersByTimeAsync(900);
+    loop.remoteChanged();
+    expect(sync).toHaveBeenCalledTimes(1);
+    pending.resolve({ allowed: true, conversations: [] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sync).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(sync).toHaveBeenCalledTimes(2);
   });
 
   it.each(["dispose", "owner-commit"])("fences late responses on %s and cannot schedule more work", async (reason) => {
@@ -391,7 +412,7 @@ describe("owner-scoped conversation sync schedule", () => {
     expect(assistantConversationsNeedSync(key)).toBe(false);
   });
 
-  it("an idle second device receives messages and terminal decisions on foreground polling", async () => {
+  it("a second device receives messages and decisions only when the shared feed signals", async () => {
     const id = activeAssistantConversationId(key, "root")!;
     const second = "second-device:owner-a";
     let server: SyncedAssistantConversation[] = [];
@@ -400,7 +421,7 @@ describe("owner-scoped conversation sync schedule", () => {
       return { allowed: true, conversations: server };
     });
     start(key, transport);
-    start(second, transport);
+    const secondLoop = start(second, transport);
     await vi.advanceTimersByTimeAsync(900);
     appendAssistantConversationMessage(key, id, {
       id: "proposal", role: "assistant", text: "Publish?",
@@ -409,12 +430,17 @@ describe("owner-scoped conversation sync schedule", () => {
     await vi.advanceTimersByTimeAsync(900);
     expect(assistantConversationMessages(second, id)).toEqual([]);
     await vi.advanceTimersByTimeAsync(28_200);
+    expect(assistantConversationMessages(second, id)).toEqual([]);
+    secondLoop.remoteChanged();
+    await vi.advanceTimersByTimeAsync(0);
     expect(assistantConversationMessages(second, id)[0].text).toBe("Publish?");
     expect(pendingAssistantProposalCount(second)).toBe(1);
     updateAssistantConversationMessage(key, id, "proposal", (entry) => ({
       ...entry, writeProposals: entry.writeProposals?.map((proposal) => ({ ...proposal, status: "approved", terminal: true })),
     }));
-    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(900);
+    secondLoop.remoteChanged();
+    await vi.advanceTimersByTimeAsync(0);
     expect(pendingAssistantProposalCount(second)).toBe(0);
     expect(assistantConversationMessages(second, id)[0].writeProposals?.[0]).toMatchObject({ status: "approved", terminal: true });
     expect(assistantConversationsNeedSync(second)).toBe(false);

@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import { syncWorkspaceAssistantConversationHistory } from "@/lib/ai/assistant-conversation-history.server";
 import type { SyncedAssistantConversation } from "@/lib/ai/assistant-conversation-sync";
+import { signalWorkspaceChange } from "@/lib/store";
 
 type AssistantConversationSyncState = {
   allowed: boolean;
@@ -49,13 +50,15 @@ export async function syncAssistantConversationsAction(
     if (expectedStoreKey !== `${cleanHandle(handleInput)}:${scope}`) {
       return { allowed: false, conversations: [] };
     }
+    const result = await syncWorkspaceAssistantConversationHistory(
+      access.blogId,
+      conversationsInput,
+      { userId: access.ownerId },
+    );
+    if (result.changed) await signalWorkspaceChange(cleanHandle(handleInput));
     return {
       allowed: true,
-      conversations: await syncWorkspaceAssistantConversationHistory(
-        access.blogId,
-        conversationsInput,
-        { userId: access.ownerId },
-      ),
+      conversations: result.conversations,
     };
   } catch {
     // Sync is background-only. Local history remains authoritative offline.

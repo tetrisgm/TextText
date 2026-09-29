@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { syncAssistantConversationsAction } from "@/app/editor/assistant-conversation-actions";
+import { ASSISTANT_HISTORY_CHANGED } from "@/lib/ai/assistant-history-event";
 import {
   assistantConversationMessages,
   assistantConversationRevision,
@@ -110,7 +111,12 @@ export function AssistantConversationState({
         setSyncState({ scope, status, retry: () => loop.retry() }),
     });
     syncLoop.current = loop;
+    const historyChanged = (event: Event) => {
+      if ((event as CustomEvent<{ handle?: string }>).detail?.handle === handle) loop.remoteChanged();
+    };
+    window.addEventListener(ASSISTANT_HISTORY_CHANGED, historyChanged);
     return () => {
+      window.removeEventListener(ASSISTANT_HISTORY_CHANGED, historyChanged);
       if (syncLoop.current === loop) syncLoop.current = null;
       loop.dispose();
     };

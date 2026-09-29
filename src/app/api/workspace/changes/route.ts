@@ -14,6 +14,7 @@ import { getCurrentUser } from "@/lib/session";
 import { resolveWorkspaceAccess } from "@/lib/permissions";
 import { workspaceChangeCursor } from "@/lib/sync-cursor";
 import { activeAgentFocus } from "@/lib/collab";
+import { assistantHistoryVersion } from "@/lib/ai/assistant-conversation-history.server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -30,6 +31,16 @@ const BUILD =
   "dev";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function ownerHistoryVersion(isOwner: boolean, blogId: string | null | undefined) {
+  if (!isOwner || !blogId) return undefined;
+  try {
+    return await assistantHistoryVersion(blogId);
+  } catch {
+    // A secondary status token must not take the document change feed down.
+    return undefined;
+  }
+}
 
 function jsonError(message: string, status: number) {
   return Response.json(
@@ -56,12 +67,14 @@ export async function GET(request: Request) {
   let cursor = await workspaceChangeCursor(handle);
   if (!since || wait === 0) {
     const focus = user?.userId ? await activeAgentFocus(user.userId) : null;
+    const assistantHistory = await ownerHistoryVersion(access.isOwner, access.blogId);
     return Response.json(
       {
         cursor,
         changed: since ? cursor !== since : false,
         build: BUILD,
         focus,
+        assistantHistory,
       },
       { headers: { "Cache-Control": "private, no-store" } },
     );
@@ -77,8 +90,10 @@ export async function GET(request: Request) {
     cursor = await workspaceChangeCursor(handle);
   }
   const focus = user?.userId ? await activeAgentFocus(user.userId) : null;
+  const assistantHistory = cursor !== since
+    ? await ownerHistoryVersion(access.isOwner, access.blogId) : undefined;
   return Response.json(
-    { cursor, changed: cursor !== since, build: BUILD, focus },
+    { cursor, changed: cursor !== since, build: BUILD, focus, assistantHistory },
     { headers: { "Cache-Control": "private, no-store" } },
   );
 }

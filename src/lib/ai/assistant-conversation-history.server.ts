@@ -18,7 +18,7 @@ export async function syncWorkspaceAssistantConversationHistory(
   blogId: string,
   localInput: unknown,
   actor: { userId: string | null } = { userId: null },
-): Promise<SyncedAssistantConversation[]> {
+): Promise<{ conversations: SyncedAssistantConversation[]; changed: boolean }> {
   if (!db) throw new Error("Conversation sync needs a configured database.");
   const local = cleanAssistantConversationSyncPayload(localInput);
   // A plain read-merge-upsert loses one replica when two devices sync at the
@@ -45,8 +45,9 @@ export async function syncWorkspaceAssistantConversationHistory(
       assistantConversationSyncFingerprint(row.conversations ?? []) ===
         assistantConversationSyncFingerprint(merged)
     ) {
-      return merged;
+      return { conversations: merged, changed: false };
     }
+    if (!row && merged.length === 0) return { conversations: merged, changed: false };
     const nextUpdatedAt = new Date(
       Math.max(Date.now(), (row?.updatedAt.getTime() ?? 0) + 1),
     );
@@ -93,6 +94,17 @@ export async function syncWorkspaceAssistantConversationHistory(
       targetId: blogId,
       outputSummary: `${result.length} conversations retained`,
     });
-    return result;
+    return { conversations: result, changed: true };
   }
+}
+
+/** A compact change token; never sends transcript text through the workspace feed. */
+export async function assistantHistoryVersion(blogId: string): Promise<string | null> {
+  if (!db) throw new Error("Conversation sync needs a configured database.");
+  const [row] = await db
+    .select({ updatedAt: workspaceAssistantConversationHistories.updatedAt })
+    .from(workspaceAssistantConversationHistories)
+    .where(eq(workspaceAssistantConversationHistories.blogId, blogId))
+    .limit(1);
+  return row?.updatedAt.toISOString() ?? null;
 }

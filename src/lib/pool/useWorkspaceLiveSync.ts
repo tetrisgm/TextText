@@ -6,6 +6,7 @@ import {
   type AgentFocusEvent,
 } from "@/lib/collab/agent-focus";
 import { refreshWorkspacePool } from "@/lib/pool/store";
+import { publishAssistantHistoryChanged } from "@/lib/ai/assistant-history-event";
 
 const IDLE_AFTER_MS = 2 * 60_000;
 
@@ -68,6 +69,7 @@ export function useWorkspaceLiveSync(
     let cancelled = false;
     let controller: AbortController | null = null;
     let cursor: string | null = null;
+    let assistantHistory: string | null | undefined;
     let lastInteractionAt = Date.now();
     const interacted = () => { lastInteractionAt = Date.now(); };
     if (typeof window !== "undefined") {
@@ -86,6 +88,7 @@ export function useWorkspaceLiveSync(
           changed?: boolean;
           build?: string;
           focus?: unknown;
+          assistantHistory?: string | null;
         }
       | { kind: "retry"; retryAfterMs?: number }
       | { kind: "stop" };
@@ -138,6 +141,7 @@ export function useWorkspaceLiveSync(
           changed?: boolean;
           build?: string;
           focus?: unknown;
+          assistantHistory?: string | null;
         };
         return { kind: "changes", ...body };
       } catch {
@@ -159,6 +163,14 @@ export function useWorkspaceLiveSync(
       focusCallbackRef.current?.(value);
     }
 
+    function deliverAssistantHistory(value: string | null | undefined) {
+      if (value === undefined) return;
+      if (assistantHistory !== undefined && assistantHistory !== value) {
+        publishAssistantHistoryChanged(handle);
+      }
+      assistantHistory = value;
+    }
+
     async function run() {
       const initial = await poll(0);
       if (cancelled) return;
@@ -166,7 +178,10 @@ export function useWorkspaceLiveSync(
       if (initial.kind === "changes" && initial.cursor) {
         cursor = initial.cursor;
       }
-      if (initial.kind === "changes") deliverFocus(initial.focus);
+      if (initial.kind === "changes") {
+        deliverFocus(initial.focus);
+        deliverAssistantHistory(initial.assistantHistory);
+      }
       let failureDelayMs = 3000;
       if (initial.kind === "retry") {
         await sleep(Math.max(failureDelayMs, initial.retryAfterMs ?? 0));
@@ -189,6 +204,7 @@ export function useWorkspaceLiveSync(
         }
         failureDelayMs = 3000;
         deliverFocus(result.focus);
+        deliverAssistantHistory(result.assistantHistory);
         if (result.changed) {
           void refreshWorkspacePool(handle, blogId);
         }
