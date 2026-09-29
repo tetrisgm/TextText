@@ -48,6 +48,7 @@ export function FolderCollectionItem({ blog, handle, post, template, selected, o
     },
   });
   const preview = useMemo(() => collectionItemPreview(post, template), [post, template]);
+  const surface = preview.document.presentation.theme.surface ?? template.theme.surface ?? "system";
   const href = blogPostPath(blog, post);
   const date = formatArticleDate(post.updatedAt ?? post.date, { style: "short" });
   const [now, setNow] = useState(() => Date.now());
@@ -70,7 +71,7 @@ export function FolderCollectionItem({ blog, handle, post, template, selected, o
       event.preventDefault(); onOpenPost(post);
     }
   };
-  return <div id={optionId} className={styles.item}
+  return <div id={optionId} className={styles.item} data-surface={surface}
     role="option" aria-label={post.title.trim() || "Untitled"} aria-selected={selected} tabIndex={tabIndex} data-workspace-post-id={post.id} onFocus={onSelect}>
     <WorkspaceItemStar handle={handle} owner={owner} post={post} />
     <Link className={styles.link} href={href} aria-label={post.title.trim() || "Untitled"}
