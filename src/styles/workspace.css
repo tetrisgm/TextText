@@ -1749,6 +1749,11 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   gap: var(--collection-gap, 1.375rem);
 }
 
+.universal-item-collection.is-grid[data-visual-only][data-masonry-ready] {
+  grid-auto-rows: 8px;
+  gap: 12px;
+}
+
 /* Saved looks keep their requested column count when there is room. The
    folder, not the window, sets the narrow breakpoint because an open
    assistant can shrink the content area on a wide display. */

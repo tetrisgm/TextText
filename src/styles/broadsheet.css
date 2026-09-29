@@ -3128,7 +3128,8 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   position: fixed;
   top: 8px;
   right: calc(60px + var(--workspace-rail-inset, 0px));
-  z-index: 200;
+  /* Keep the folder controls clickable above the sticky workspace rail. */
+  z-index: 231;
   max-width: calc(100vw - 16px);
 }
 .folder-action-toolbar {

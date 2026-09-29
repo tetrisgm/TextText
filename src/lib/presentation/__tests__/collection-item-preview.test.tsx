@@ -86,6 +86,20 @@ describe("shared collection previews", () => {
     expect(html).toContain("/image-0.jpg");
     expect(html).not.toContain("/image-12.jpg");
   });
+  it("uses an image poster for a cold folder thumbnail without changing the original", () => {
+    const template = requireBuiltinTemplate("texttext.gallery", 1);
+    const original = item("media_post", template.id);
+    original.document!.content.fields.cover = "/original.gif";
+    original.document!.content.assets = [{
+      id: "original", kind: "image", src: "/original.gif",
+      poster: "/still.webp", contentType: "image/gif",
+    }];
+    const cold = postFromPoolPost(narrowPostFromPost(original, "workspace")!);
+    const preview = collectionItemPreview(cold, template);
+    expect(preview.document.content.fields.cover).toBe("/still.webp");
+    expect(preview.document.content.assets[0].src).toBe("/original.gif");
+    expect(original.document!.content.fields.cover).toBe("/original.gif");
+  });
   it("uses preview media without embedding a player in the collection", () => {
     const base = requireBuiltinTemplate("texttext.talk", 1);
     const template = validateTemplateDefinition({ ...base, collection: { ...base.collection, item: { type: "video", bind: "content.fields.videoUrl", height: "compact" } } });

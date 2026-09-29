@@ -184,6 +184,47 @@ function GrowingGrid<T>({
   );
 }
 
+/** Pack image-led cards without cropping portraits or shifting existing cards
+ * when the progressive grid appends another batch. One observer owns all
+ * mounted cards and is released when the folder/view changes. */
+function useVisualMasonry(enabled: boolean, itemCount: number) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const grid = ref.current;
+    if (!enabled || !grid || typeof ResizeObserver === "undefined") return;
+    const row = 8;
+    const gap = 12;
+    const seen = new Set<HTMLElement>();
+    const measure = (card: HTMLElement) => {
+      const span = Math.max(1, Math.ceil((card.getBoundingClientRect().height + gap) / (row + gap)));
+      const value = `span ${span}`;
+      if (card.style.gridRowEnd !== value) card.style.gridRowEnd = value;
+    };
+    const resize = new ResizeObserver((entries) => {
+      for (const entry of entries) measure(entry.target as HTMLElement);
+    });
+    const observeCards = () => {
+      for (const card of grid.querySelectorAll<HTMLElement>(":scope > [data-item-type='media_post']")) {
+        if (seen.has(card)) continue;
+        seen.add(card);
+        measure(card);
+        resize.observe(card);
+      }
+      grid.dataset.masonryReady = "";
+    };
+    observeCards();
+    const mutation = new MutationObserver(observeCards);
+    mutation.observe(grid, { childList: true });
+    return () => {
+      mutation.disconnect();
+      resize.disconnect();
+      delete grid.dataset.masonryReady;
+      for (const card of seen) card.style.gridRowEnd = "";
+    };
+  }, [enabled, itemCount]);
+  return ref;
+}
+
 // The workspace view of a folder: a quiet list rendered per folder mode inside
 // the home workspace shell. Notes and bookmarks stay unlisted; sharing only
 // grants named collaborators access.
@@ -777,6 +818,9 @@ function UniversalFolderContents({
     activeCollection,
     viewMode,
   );
+  const visualMasonry = !activeCollection && collectionViewMode === "grid" &&
+    sorted.length > 0 && sorted.every((post) => post.type === "media_post");
+  const visualGridRef = useVisualMasonry(visualMasonry, sorted.length);
 
   return (
     <>
@@ -1021,6 +1065,8 @@ function UniversalFolderContents({
             return (
               <div
                 className={`universal-item-collection is-${collectionViewMode}`}
+                ref={visualGridRef}
+                data-visual-only={visualMasonry || undefined}
                 data-collection-layout={activeCollection?.layout}
                 data-collection-columns={activeCollection?.columns}
                 style={

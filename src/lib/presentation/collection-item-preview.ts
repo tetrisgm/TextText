@@ -23,6 +23,10 @@ export function collectionItemPreview(post: Post, template: TemplateDefinition) 
   const cover = resolveCoverSource(post).src;
   if (cover && !document.content.fields.cover) document.content = { ...document.content,
     fields: { ...document.content.fields, cover } };
+  const poster = document.content.assets.find((asset) =>
+    asset.kind === "image" && asset.src === document.content.fields.cover && asset.poster)?.poster;
+  if (poster) document.content = { ...document.content,
+    fields: { ...document.content.fields, cover: poster } };
   let host = "";
   const url = document.content.fields.sourceUrl ?? post.capture?.url ?? post.links?.[0]?.href;
   if (typeof url === "string") { try { host = new URL(url).hostname.replace(/^www\./, ""); } catch { /* No source host. */ } }

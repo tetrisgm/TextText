@@ -71,7 +71,7 @@ export function FolderCollectionItem({ blog, handle, post, template, selected, o
       event.preventDefault(); onOpenPost(post);
     }
   };
-  return <div id={optionId} className={styles.item} data-surface={surface}
+  return <div id={optionId} className={styles.item} data-surface={surface} data-item-type={post.type}
     role="option" aria-label={post.title.trim() || "Untitled"} aria-selected={selected} tabIndex={tabIndex} data-workspace-post-id={post.id} onFocus={onSelect}>
     <WorkspaceItemStar handle={handle} owner={owner} post={post} />
     <Link className={styles.link} href={href} aria-label={post.title.trim() || "Untitled"}
