@@ -309,3 +309,18 @@ hydrated-content proxy. It does not measure a cold server, first sign-in,
 current-source release build, or the installed app's File Provider extension.
 The test app and port-3131 server were stopped after the run; installed build
 1112 and its port-3000 development server remained running.
+
+## Three more installed-app agent turns
+
+On September 29, installed build 1113 stayed open on the local test note while
+three real, read-only Anthropic turns completed. Each answer used the note and
+the editor remained **Saved**. Direct `vmmap -summary` physical footprints for
+the native app, WebKit GPU, networking, and content processes were about
+830 MiB combined before the turns, then 943, 933, and 943 MiB after successive
+turns. Most of the first increase was in WebKit content (701.5 to 810.0 MiB);
+the next two content samples were 803.0 and 810.9 MiB. The same four process
+IDs remained alive. These short observations show no repeated per-turn rise,
+but do not explain the high development-app baseline or establish hours-long
+stability. The separate retained production build and test app were briefly
+reopened, then stopped because that isolated profile had no AI connection;
+port 3131 was freed. The installed app and port-3000 server were left running.
