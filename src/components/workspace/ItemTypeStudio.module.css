@@ -162,6 +162,103 @@
   line-height: 1.55;
 }
 
+.folderPromptCanvas {
+  place-items: start center;
+  padding-top: clamp(28px, 6vh, 72px);
+}
+
+.folderPromptCard {
+  width: min(680px, 100%);
+  text-align: left;
+}
+
+.folderEyebrow {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--ac-label-2);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.folderPromptCard h1 {
+  font-size: clamp(28px, 4vw, 38px);
+}
+
+.folderPromptCard > p {
+  width: auto;
+  margin: 12px 0 22px;
+  font-size: 14px;
+}
+
+.folderSample {
+  margin-bottom: 24px;
+  border-top: 1px solid var(--ac-hairline);
+  border-bottom: 1px solid var(--ac-hairline);
+  padding: 14px 0;
+}
+
+.folderSampleHeader,
+.folderSample li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+}
+
+.folderSampleHeader {
+  font-size: 13px;
+}
+
+.folderSampleHeader span,
+.folderSample small,
+.folderSample p {
+  color: var(--ac-label-2);
+  font-size: 12px;
+}
+
+.folderSample p {
+  margin: 12px 0 0;
+}
+
+.folderSample ul {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.folderSample li {
+  min-width: 0;
+  border-top: 1px solid var(--ac-hairline);
+  padding: 8px 0;
+  font-size: 13px;
+}
+
+.folderSample li span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folderPromptCard .promptForm {
+  width: 100%;
+  margin: 0;
+}
+
+.startingPoints {
+  margin-top: 22px;
+}
+
+.startingPoints > summary {
+  width: fit-content;
+  color: var(--ac-label-2);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.promptCard:not(.folderPromptCard) .startingPoints > summary {
+  display: none;
+}
+
 .promptForm {
   position: relative;
   width: min(660px, 100%);
@@ -752,6 +849,12 @@
   box-shadow: 0 18px 50px color-mix(in srgb, #000 9%, transparent);
 }
 
+/* Reader-specific dark text rules in the surrounding workspace must not
+   recolor a light item preview. The preview follows its own chosen surface. */
+.previewSurface > :global(.tt-document[data-preview]) :global(.tt-prose) {
+  color: var(--ink, #1d1d1f) !important;
+}
+
 .compareGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(390px, 1fr));
@@ -812,6 +915,27 @@
   gap: 12px;
   width: min(880px, 100%);
   margin: 0 auto;
+  align-items: start;
+}
+
+.previewItemPicker {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--ac-label-2);
+  font-size: 11px;
+}
+
+.previewItemPicker select {
+  max-width: min(240px, 35vw);
+  min-width: 0;
+  border: 1px solid var(--ac-hairline);
+  border-radius: 6px;
+  padding: 5px 7px;
+  background: var(--ac-fill-1);
+  color: var(--ac-label);
+  font: inherit;
 }
 
 .collectionPreview[data-layout="list"],
@@ -1001,6 +1125,10 @@
 
   .promptCard h1 {
     font-size: 32px;
+  }
+
+  .folderPromptCard h1 {
+    font-size: 28px;
   }
 
   .starters {

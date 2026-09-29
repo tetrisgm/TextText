@@ -282,6 +282,8 @@ type RenderNodeInput =
       showWhen?: string;
       bind: string;
       columns?: 1 | 2 | 3 | 4;
+      limit?: 1;
+      showCaptions?: boolean;
     }
   | { type: "byline" | "metadata"; id?: string; showWhen?: string }
   | {
@@ -558,6 +560,8 @@ export const renderNodeSchema: z.ZodType<RenderNodeInput> = z.lazy(() =>
       type: z.literal("gallery"),
       bind: bindingSchema,
       columns: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).default(3),
+      limit: z.literal(1).optional(),
+      showCaptions: z.boolean().default(true),
     }).strict(),
     // byline and metadata are the same node with one difference. Both spellings
     // are still accepted on input and normalised to `meta` before anything

@@ -63,7 +63,8 @@ const SYSTEM = `You design reusable item types for a calm writing workspace.
 Return one complete item type blueprint. It controls both the item page and the folder page that lists those items.
 
 Rules:
-- Infer a small, useful property set. Prefer 3 to 7 fields. Do not add fields just because you can.
+- For a new item type, infer a small, useful property set. For an existing folder view, add properties only if the writer asks to record new information.
+- Existing images and captions are in content.assets. Use collection.assetPreview for folder cards; do not create empty image or caption properties to display them.
 - Use styleReference when the writer names a familiar product or publication, such as Medium, Notion, or Apple Notes. Capture the visual principles, never trademarks or copied assets.
 - A board must have a single-select enum groupBy field.
 - A calendar or heatmap must have a date dateBy field.

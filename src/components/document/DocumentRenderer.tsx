@@ -1164,6 +1164,8 @@ function NodeRenderer({
           nodeId={attrs["data-tt-node"]}
           preview={preview}
           columns={node.columns ?? 3}
+          limit={node.limit}
+          showCaptions={node.showCaptions}
         />
       );
     }

@@ -60,7 +60,8 @@ describe("item type studio experience", () => {
       "loadPreviewDocuments={loadItemTypeStudioPreviewDocuments}",
     );
     expect(studioSource).toContain('previewContentMode !== "folder"');
-    expect(studioSource).toContain("loadPreviewDocuments(folderPath, initialTargetPostId)");
+    expect(studioSource).toContain('const previewFolderPath = folderPath || initialFolderPath || ""');
+    expect(studioSource).toContain("loadPreviewDocuments(previewFolderPath, initialTargetPostId)");
   });
 
   it("uses one scrolling surface at phone width", () => {

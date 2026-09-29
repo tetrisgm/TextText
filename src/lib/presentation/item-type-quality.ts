@@ -85,7 +85,7 @@ export function assessItemTypeQuality(
     blueprint.item.shape !== "note" ||
     blueprint.collection.layout !== "list" ||
     blueprint.collection.summaryFields.length > 0;
-  if (blueprint.fields.length === 0 && promisesStructure) {
+  if (blueprint.fields.length === 0 && promisesStructure && blueprint.collection.assetPreview === "none") {
     findings.push(
       finding(
         "no-fields",
@@ -122,7 +122,8 @@ export function assessItemTypeQuality(
   if (
     (blueprint.item.shape === "article" ||
       blueprint.collection.layout === "cards") &&
-    !fields.some((field) => field.type === "image")
+    !fields.some((field) => field.type === "image") &&
+    blueprint.collection.assetPreview === "none"
   ) {
     findings.push(
       finding(

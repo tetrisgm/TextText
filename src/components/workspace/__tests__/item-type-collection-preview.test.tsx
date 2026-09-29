@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { compileItemTypeBlueprint, itemTypeBlueprintSchema } from "@/lib/presentation/item-type-blueprint";
 import { validateDocumentSnapshot } from "@/lib/documents/model";
+import { DocumentRenderer } from "@/components/document/DocumentRenderer";
 import { ItemTypeCollectionPreview, collectionPreviewItem } from "../ItemTypeCollectionPreview";
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/app/editor/item-type-actions", () => ({ createItemTypeAction: vi.fn(), updateItemTypeAction: vi.fn(), readItemTypeUsagesAction: vi.fn() }));
@@ -80,6 +81,45 @@ describe("studio collection preview", () => {
     expect(content.collection).toEqual([]);
     const html = renderToStaticMarkup(<ItemTypeStudio blogId="b" handle="shoku" editing={{ templateId: "deadlines", baseVersion: 1, blueprint }} folders={[{ id: "tasks", name: "Tasks", path: "Tasks" }]} initialFolderPath="Tasks" loadPreviewDocuments={async () => []} onClose={() => {}} />);
     expect(html).toMatch(/<option value="folder"[^>]*>Folder sample \(0\)<\/option>/);
+  });
+  it("starts folder customization from the selected folder's saved items", () => {
+    const image = document("Cover study", null);
+    const html = renderToStaticMarkup(<ItemTypeStudio blogId="b" handle="shoku"
+      folders={[{ id: "photos", name: "Visual references", path: "Visual references" }]}
+      initialFolderPath="Visual references"
+      previewDocuments={[{ folderPath: "Visual references", document: { ...image, content: { ...image.content, assets: [{ id: "cover", kind: "image", src: "/cover.png" }] } } }]}
+      onClose={() => {}} />);
+    expect(html).toContain("Customize Visual references");
+    expect(html).toContain('aria-label="Items in Visual references"');
+    expect(html).toContain("Cover study");
+    expect(html).toContain("1 image");
+    expect(html).toContain('aria-label="Describe the folder view"');
+    expect(html).toContain('aria-label="Preview folder view"');
+    expect(html).toContain('<summary>Other starting points</summary>');
+    expect(html).not.toContain("What do you want to build?");
+  });
+  it("previews existing image assets and keeps captions for the selected item", () => {
+    const visual = compileItemTypeBlueprint({
+      name: "Contact sheet", fields: [], item: { shape: "page", showBody: true },
+      collection: { layout: "cards", columns: 2, assetPreview: "first" },
+    }, { id: "contact-sheet" });
+    const image = validateDocumentSnapshot({
+      schemaVersion: 1,
+      content: { title: "Reference image", assets: [
+        { id: "one", kind: "image", src: "/one.png", caption: "First caption" },
+        { id: "two", kind: "image", src: "/two.png", caption: "Second caption" },
+      ] },
+      presentation: { template: { id: visual.id, version: visual.version } },
+    });
+    const folderHtml = renderToStaticMarkup(<ItemTypeCollectionPreview template={visual} items={[collectionPreviewItem(image)]} label="Contact sheet preview" />);
+    expect(folderHtml).toContain('/one.png');
+    expect(folderHtml).not.toContain('/two.png');
+    expect(folderHtml).not.toContain('<figcaption>');
+    expect(folderHtml).toContain('--tt-gallery-columns:1');
+    const itemHtml = renderToStaticMarkup(<DocumentRenderer template={visual} document={image} />);
+    expect(itemHtml).toContain('/two.png');
+    expect(itemHtml).toContain('<figcaption>First caption</figcaption>');
+    expect(itemHtml).toContain('<figcaption>Second caption</figcaption>');
   });
   it("keeps sample and stress dates in the current month", () => {
     vi.useFakeTimers();

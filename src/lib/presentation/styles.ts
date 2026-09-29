@@ -1,8 +1,11 @@
 export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document{--tt-accent:#0071e3;--tt-gap-none:0;--tt-gap-xs:.35rem;--tt-gap-sm:.75rem;--tt-gap-md:1.25rem;--tt-gap-lg:2rem;--tt-gap-xl:3.5rem;--tt-measure:46rem;color:var(--ink,#1d1d1f);background:var(--paper,#fff);min-height:100%;padding-bottom:5rem;font-family:var(--tt-font,-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif)}
+.tt-document[data-surface="system"]{--paper:#fff;--ink:#1d1d1f;--muted:#6e6e73}
+[data-theme="dark"] .tt-document[data-surface="system"]{--paper:#1d1d1f;--ink:#f5f5f7;--muted:#a1a1a6}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]) .tt-document[data-surface="system"]{--paper:#1d1d1f;--ink:#f5f5f7;--muted:#a1a1a6}}
 .tt-document[data-typography="editorial"]{--tt-font:Iowan Old Style,Palatino Linotype,Book Antiqua,Palatino,serif}
 .tt-document[data-typography="mono"]{--tt-font:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
-.tt-document[data-surface="paper"]{--paper:#fffdf8;--ink:#201f1c;--muted:#6d6a62}.tt-document[data-surface="soft"]{--paper:#f5f5f7}.tt-document[data-surface="ink"]{--paper:#1d1d1f;--ink:#f5f5f7;--muted:#a1a1a6}
+.tt-document[data-surface="paper"]{--paper:#fffdf8;--ink:#201f1c;--muted:#6d6a62}.tt-document[data-surface="soft"]{--paper:#f5f5f7;--ink:#1d1d1f;--muted:#6e6e73}.tt-document[data-surface="ink"]{--paper:#1d1d1f;--ink:#f5f5f7;--muted:#a1a1a6}
 /* Every look gets a page to sit on. Each built-in declares its own padding in
    the sections below, so this was never missed - but a look an agent authors
    has no such section, and started at y=0 with its title running under the
@@ -27,6 +30,8 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
    between 1.6x and 2.1x its reference, which is most of why they all read as
    one page in different fonts. Tracking tightens as the size grows. */
 .tt-text-title{font-size:clamp(1.75rem,2.8vw,2.25rem);line-height:1.12;font-weight:700;letter-spacing:-.019em}.tt-text-subtitle{font-size:clamp(1.1rem,2.2vw,1.55rem);line-height:1.35;color:var(--muted,#6e6e73)}.tt-text-heading{font-size:1.45rem;line-height:1.15;font-weight:700}.tt-text-body{font-size:1rem;line-height:1.6}.tt-text-caption,.tt-metadata{font-size:.85rem;line-height:1.45;color:var(--muted,#6e6e73)}
+.tt-collection-item .tt-text-heading{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;overflow-wrap:anywhere;font-size:1rem;line-height:1.3;font-weight:650}
+.tt-collection-item .tt-text-heading,.tt-collection-item .tt-text-caption{padding-inline:.7rem}
 /* A page icon. Large, and it sits half over the cover directly above it when
    a look pairs the two, which is the arrangement the reference uses. */
 .tt-text-icon{width:min(var(--tt-measure),calc(100% - 2rem));margin-inline:auto;font-size:4rem;line-height:1;letter-spacing:0}
@@ -184,7 +189,8 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-quote[data-variant="block"],.tt-quote[data-variant="attributed"]{border-left:3px solid color-mix(in srgb,var(--ink,#1d1d1f) 18%,transparent);padding-left:1rem;font-size:1.02rem;line-height:1.6;color:color-mix(in srgb,var(--ink,#1d1d1f) 78%,transparent)}
 .tt-quote[data-variant="pull"]{text-align:center;font-size:clamp(1.4rem,3vw,2rem);line-height:1.3;font-weight:600}
 .tt-quote-attribution{margin-top:.5rem;font-size:.85rem;font-weight:600;color:var(--muted,#6e6e73)}
-.tt-document.tt-collection-item{padding-bottom:0}
+.tt-document.tt-collection-item{min-height:0;padding-bottom:0}
+.tt-collection-item .tt-gallery[data-preview-media="true"] figure img,.tt-collection-item .tt-gallery[data-preview-media="true"] figure video{height:clamp(8rem,15vw,13rem);aspect-ratio:4/3;object-fit:cover}
 
 /* Article - the reading view an article gets when it is published, and the
    look whose editor should feel like a blank page and nothing else. The

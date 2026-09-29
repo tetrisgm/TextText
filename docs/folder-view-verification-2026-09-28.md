@@ -1,0 +1,11 @@
+# Folder view customization, local verification
+
+On the installed 1098 development app, opened the 21-item Blog fixture through **Folder options → Change this folder's view**. The entry now names Blog and shows a bounded sample of its real titles and image counts before asking for a view description. Saved types and manual starters remain under **Other starting points**.
+
+The connected native agent generated and refined an **Editorial Index**. The final validated blueprint has zero new properties, a three-column card view, and `collection.assetPreview="all"`. It previews all 21 Blog items and displays saved `content.assets` on folder cards. The selected image item also previews its full gallery and captions. The initial generation invented empty Image/Caption properties; refinement removed them after the unsaved-field compatibility rule and folder-specific guidance were corrected. Existing item content was never edited.
+
+The live preview exposed two renderer issues: dark workspace rules made text on a light item page nearly invisible, and one-image cards showed only a tiny image. After the fixes, the item title and body were readable, one-image cards filled their image area, and the multi-image item showed its contact sheet. The folder preview is a sample and explicitly notes that saved spacing may differ.
+
+Saved **Editorial Index** with **Save for later**. The app closed the studio, Blog remained at **All items**, and reopening **Edit saved type → Editorial Index** read back the same name, zero properties, Cards view, 21-item sample, and Ready 100 preview. This proves saved type readback in local development, not assignment of that type as Blog's active folder view or a public release.
+
+Checks: TypeScript passed; 66 focused tests passed across the item-type blueprint, generation, studio, and preview files; touched ESLint passed with existing warnings in the shell and studio. The production Next build, documentation verifier (67 docs, 183 scripts), and `git diff --check` passed. The last edit after the build was a guarded failure path for one optional folder sample fetch; focused checks were repeated before commit.

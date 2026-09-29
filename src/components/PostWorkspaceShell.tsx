@@ -651,7 +651,24 @@ function LocalWorkspaceShell({
       const sample = await loadStudioFolderSample(candidates, async (post) => {
         await ensurePostDocument(currentPool.blogId, post.id, { force: refresh });
         if (displayPoolRef.current.blogId !== currentPool.blogId) return null;
-        const cached = getCachedWorkspacePostDocument(currentPool.blogId, post.id);
+        let cached = getCachedWorkspacePostDocument(currentPool.blogId, post.id);
+        if (!cached) {
+          // An item may already be loading elsewhere. ensurePostDocument then
+          // returns before that fetch finishes; read this bounded sample
+          // directly so the preview does not silently omit those items.
+          try {
+            const response = await fetch(`/api/post/${encodeURIComponent(post.id)}/body`, {
+              credentials: "same-origin",
+              cache: "no-store",
+              headers: { Accept: "application/json" },
+            });
+            if (!response.ok) return null;
+            cached = normalizeStoredPostDocument(await response.json(), {
+              blogId: currentPool.blogId,
+              postId: post.id,
+            });
+          } catch { return null; }
+        }
         return cached ? {
           postId: post.id, revision: cached.revision,
           folderPath, document: cached.document,

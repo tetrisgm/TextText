@@ -3534,7 +3534,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .post-editor-shell
-  .tt-document
+  .tt-document:not([data-preview])
   .tt-masthead
   :is(.tt-title, .tt-text-title, h1) {
   order: -2;
@@ -3590,7 +3590,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .post-editor-shell
-  .tt-document
+  .tt-document:not([data-preview])
   :is(.tt-prose, .tt-field-body, .tt-field-body textarea, .tt-field-body .tt-md-surface) {
   /* The theme's ink, not a literal, so dark mode cannot fall through to a
      light value where the dark override misses a selector. */
@@ -3770,7 +3770,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
 [data-theme="dark"]
   .post-editor-shell
-  .tt-document
+  .tt-document:not([data-preview])
   .tt-masthead
   :is(.tt-title, .tt-text-title, h1) {
   color: #f5f5f7;
@@ -3778,7 +3778,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
 [data-theme="dark"]
   .post-editor-shell
-  .tt-document
+  .tt-document:not([data-preview])
   :is(.tt-prose, .tt-field-body, .tt-field-body textarea, .tt-field-body .tt-md-surface) {
   color: var(--workspace-reader-ink, #f1f1f3);
 }
@@ -3844,7 +3844,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
   :root:not([data-theme="light"])
     .post-editor-shell
-    .tt-document
+    .tt-document:not([data-preview])
     .tt-masthead
     :is(.tt-title, .tt-text-title, h1) {
     color: #f5f5f7;
@@ -3852,7 +3852,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
   :root:not([data-theme="light"])
     .post-editor-shell
-    .tt-document
+    .tt-document:not([data-preview])
     :is(.tt-prose, .tt-field-body, .tt-field-body textarea, .tt-field-body .tt-md-surface) {
     color: var(--workspace-reader-ink, #f1f1f3);
   }
@@ -6211,7 +6211,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 }
 
 .post-editor-shell
-  .tt-document
+  .tt-document:not([data-preview])
   .tt-masthead
   :is(.tt-title, .tt-text-title, h1) {
   margin-bottom: 0.125rem;
@@ -6244,7 +6244,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   font-weight: 600;
 }
 
-.post-editor-shell .tt-document .tt-prose {
+.post-editor-shell .tt-document:not([data-preview]) .tt-prose {
   color: #38383b;
   font-size: 1.125rem;
   font-weight: 400;
@@ -6257,7 +6257,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
 [data-theme="dark"]
   .post-editor-shell
-  .tt-document
+  .tt-document:not([data-preview])
   .tt-masthead
   :is(.tt-title, .tt-text-title, h1) {
   color: #f2f2f4;
@@ -6276,14 +6276,14 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   color: #a8a8ac;
 }
 
-[data-theme="dark"] .post-editor-shell .tt-document .tt-prose {
+[data-theme="dark"] .post-editor-shell .tt-document:not([data-preview]) .tt-prose {
   color: #e5e5e8;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"])
     .post-editor-shell
-    .tt-document
+    .tt-document:not([data-preview])
     .tt-masthead
     :is(.tt-title, .tt-text-title, h1) {
     color: #f2f2f4;
@@ -6308,7 +6308,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
 
   :root:not([data-theme="light"])
     .post-editor-shell
-    .tt-document
+    .tt-document:not([data-preview])
     .tt-prose {
     color: #e5e5e8;
   }

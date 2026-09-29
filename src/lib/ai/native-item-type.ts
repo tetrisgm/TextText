@@ -14,6 +14,7 @@ function validateNativeBlueprint(
   value: unknown,
   request: string,
   current?: ItemTypeBlueprint,
+  preserveFields = true,
 ): ItemTypeBlueprint {
   const blueprint = honorNamedStyleReference(
     itemTypeBlueprintSchema.parse(value),
@@ -32,7 +33,7 @@ function validateNativeBlueprint(
     // ids, valid computed sources, or a date-backed calendar. Compile the
     // exact preview before accepting it from the native agent.
     const compiled = compileItemTypeBlueprint(blueprint, { id: "preview.item-type" });
-    if (current) assertCompatibleItemTypeFields(compileItemTypeBlueprint(current, { id: "preview.item-type" }).fields, compiled.fields);
+    if (current && preserveFields) assertCompatibleItemTypeFields(compileItemTypeBlueprint(current, { id: "preview.item-type" }).fields, compiled.fields);
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Invalid item type.";
     throw new Error(
@@ -46,6 +47,7 @@ export function parseNativeItemTypePreviewArguments(
   value: unknown,
   request = "",
   current?: ItemTypeBlueprint,
+  preserveFields = true,
 ): ItemTypeBlueprint {
   const input =
     typeof value === "string" ? (JSON.parse(value) as unknown) : value;
@@ -60,6 +62,7 @@ export function parseNativeItemTypePreviewArguments(
         JSON.parse((input as { blueprint_json: string }).blueprint_json),
         request,
         current,
+        preserveFields,
       );
     }
     throw new Error("The connected agent did not return an item-type blueprint.");
@@ -68,6 +71,7 @@ export function parseNativeItemTypePreviewArguments(
     (input as { blueprint: unknown }).blueprint,
     request,
     current,
+    preserveFields,
   );
 }
 
@@ -92,7 +96,9 @@ export function nativeItemTypeDesignPrompt({
     "Design a reusable TextText item type for the writer's request below.",
     "Return only a JSON object with a blueprint_json string containing the complete blueprint. TextText will validate it and show the preview.",
     "Do not call tools. Do not save or change workspace content.",
-    "Infer sensible fields and example content. Design both the individual item page and the folder listing. Honor named visual references through safe theme tokens, without copying a brand.",
+    folderName
+      ? "Start from the folder's existing items. Add properties only when the writer asks to record new information. Existing images and captions live in content.assets: use collection.assetPreview to show them, never create empty image or caption properties for that purpose. Design both the item page and folder listing."
+      : "Infer sensible fields and example content. Design both the individual item page and the folder listing. Honor named visual references through safe theme tokens, without copying a brand.",
     "When useful, include relations, people records, recurrence, a closed status workflow, read-only computed rollups, conditional details, validation constraints, and named folder views. Keep the result focused rather than adding every capability.",
     `${ITEM_TYPE_BLUEPRINT_FORMAT}\nEncode the finished object as the blueprint_json string argument.`,
     context || null,

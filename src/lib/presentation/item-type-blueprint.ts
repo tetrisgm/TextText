@@ -299,6 +299,7 @@ export const itemTypeBlueprintSchema = z
           "heatmap",
         ]),
         columns: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).default(1),
+        assetPreview: z.enum(["none", "first", "all"]).default("none"),
         groupBy: fieldId.optional(),
         dateBy: fieldId.optional(),
         summaryFields: z.array(fieldId).max(6).default([]),
@@ -993,6 +994,9 @@ function itemTree(blueprint: ItemTypeBlueprint): RenderNode {
     children.push(...fieldNodes(blueprint));
     if (blueprint.item.showBody) children.push({ type: "prose", bind: "content.body" });
   }
+  if (blueprint.collection.assetPreview !== "none") {
+    children.push({ type: "gallery", bind: "content.assets", columns: 3, showWhen: "content.assets" });
+  }
   return { type: "stack", gap: "lg", children };
 }
 
@@ -1050,10 +1054,20 @@ function summaryNodes(blueprint: ItemTypeBlueprint): RenderNode[] {
 
 function collectionItemTree(blueprint: ItemTypeBlueprint): RenderNode {
   const children: RenderNode[] = [];
+  if (blueprint.collection.assetPreview !== "none") {
+    children.push({
+      type: "gallery",
+      bind: "content.assets",
+      columns: blueprint.collection.assetPreview === "all" ? blueprint.collection.columns : 1,
+      ...(blueprint.collection.assetPreview === "first" ? { limit: 1 as const } : {}),
+      showCaptions: false,
+      showWhen: "content.assets",
+    });
+  }
   const cover = blueprint.fields.find(
     (field) => field.type === "image" && field.display === "cover",
   );
-  if (cover) {
+  if (cover && blueprint.collection.assetPreview === "none") {
     children.push({
       type: "cover",
       bind: binding(cover.id),

@@ -686,6 +686,7 @@ export function useNativeAssistant({
   const nativeItemTypeDesignRef = useRef<{
     finalText: string | null;
     current?: ItemTypeBlueprint;
+    preserveFields: boolean;
     requestId: string;
     retryCount: number;
     reject: (error: Error) => void;
@@ -1222,6 +1223,7 @@ export function useNativeAssistant({
                 itemTypeDesign.finalText.trim(),
                 itemTypeDesign.request,
                 itemTypeDesign.current,
+                itemTypeDesign.preserveFields,
               );
             } catch (error) { parseError = error; }
           }
@@ -1236,7 +1238,7 @@ export function useNativeAssistant({
               itemTypeDesign.finalText = null;
               const correction = parseError instanceof Error ? parseError.message.slice(0, 800) : "The blueprint was invalid.";
               if (submitNativeAssistantTurn(
-                `The proposed blueprint was rejected: ${correction}\nReturn only a corrected JSON object with a blueprint_json string. Preserve the writer's existing fields and request. Do not save anything.`,
+                `The proposed blueprint was rejected: ${correction}\nReturn only a corrected JSON object with a blueprint_json string. ${itemTypeDesign.preserveFields ? "Preserve the writer's existing fields and request." : "Preserve the writer's content and request; unsaved draft properties may be changed or removed."} Do not save anything.`,
                 fence.conversationId,
                 [],
                 itemTypeDesign.requestId,
@@ -1387,12 +1389,14 @@ export function useNativeAssistant({
     ({
       current,
       folderName,
+      preserveFields = true,
       request,
       signal,
       requestId,
     }: {
       current?: ItemTypeBlueprint;
       folderName?: string;
+      preserveFields?: boolean;
       request: string;
       signal?: AbortSignal;
       requestId: string;
@@ -1465,6 +1469,7 @@ export function useNativeAssistant({
         nativeItemTypeDesignRef.current = {
           finalText: null,
           current,
+          preserveFields,
           requestId,
           retryCount: 0,
           reject,

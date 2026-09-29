@@ -20,17 +20,21 @@ export function DocumentGallery({
   columns,
   nodeId,
   preview = false,
+  limit,
+  showCaptions = true,
 }: {
   assets: DocumentAsset[];
   columns: number;
   nodeId?: string;
   preview?: boolean;
+  limit?: 1;
+  showCaptions?: boolean;
 }) {
   const visible = assets.flatMap((asset) => {
     const source = safeMediaSource(asset.src);
     if (!source || (asset.kind !== "image" && asset.kind !== "video")) return [];
     return [{ ...asset, source, still: safeMediaSource(asset.poster) || source }];
-  });
+  }).slice(0, limit);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [zoomed, setZoomed] = useState(false);
   const [naturalSize, setNaturalSize] = useState<{ id: string; width: number; height: number } | null>(null);
@@ -69,7 +73,7 @@ export function DocumentGallery({
   };
 
   return (
-    <div data-tt-node={nodeId} className="tt-gallery" style={{ "--tt-gallery-columns": columns } as CSSProperties}>
+    <div data-tt-node={nodeId} data-preview-media={preview && !showCaptions ? "true" : undefined} className="tt-gallery" style={{ "--tt-gallery-columns": Math.min(columns, visible.length) } as CSSProperties}>
       {visible.map((asset, index) => (
         <figure key={asset.id}>
           {asset.kind === "video" && !preview ? (
@@ -90,7 +94,7 @@ export function DocumentGallery({
               <img src={asset.still} alt={asset.alt ?? asset.caption ?? ""} loading="lazy" decoding="async" width={asset.width} height={asset.height} />
             </button>
           )}
-          {asset.caption && <figcaption>{asset.caption}</figcaption>}
+          {showCaptions && asset.caption && <figcaption>{asset.caption}</figcaption>}
         </figure>
       ))}
       {!preview && (

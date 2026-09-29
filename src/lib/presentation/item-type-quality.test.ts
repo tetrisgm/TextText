@@ -128,4 +128,13 @@ describe("a type with no properties at all", () => {
     );
     expect(report.findings.some((entry) => entry.code === "no-fields")).toBe(true);
   });
+
+  it("accepts a visual folder view over existing assets without inventing fields", () => {
+    const report = assessItemTypeQuality(itemTypeBlueprintSchema.parse({
+      ...base,
+      collection: { ...base.collection, layout: "cards", columns: 3, assetPreview: "all" },
+    }));
+    expect(report.findings.some((entry) => entry.code === "no-fields" || entry.code === "missing-card-media")).toBe(false);
+    expect(report.passes).toBe(true);
+  });
 });

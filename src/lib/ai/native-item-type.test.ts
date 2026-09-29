@@ -20,6 +20,7 @@ describe("native item-type design", () => {
     expect(prompt).toContain("blueprint_json");
     expect(prompt).toContain("read-only computed rollups");
     expect(prompt).toContain("named folder views");
+    expect(prompt).toContain("Existing images and captions live in content.assets");
   });
 
   it("validates the complete blueprint returned by the native agent", () => {
@@ -38,6 +39,8 @@ describe("native item-type design", () => {
     const current = ITEM_TYPE_STARTERS.find((entry) => entry.id === "research-reader")!.blueprint;
     const changed = { ...current, fields: current.fields.filter((field) => field.id !== "commentary") };
     expect(() => parseNativeItemTypePreviewArguments({ blueprint: changed }, "Keep existing fields", current)).toThrow("cannot be removed");
+    expect(parseNativeItemTypePreviewArguments({ blueprint: changed }, "Remove an unsaved property", current, false).fields)
+      .not.toContainEqual(expect.objectContaining({ id: "commentary" }));
   });
 
   it("returns actionable quality feedback for an incomplete design", () => {
