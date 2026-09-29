@@ -321,8 +321,7 @@ public struct WorkspaceEnumerator: Sendable {
 
         // Which folders claim it. Exactly one is the normal answer.
         let claiming = ws.folders.filter { folder in
-            item(postId: postId, inFolder: folder.id,
-                 entries: entriesByFolder[folder.id] ?? [], workspace: ws) != nil
+            entriesByFolder[folder.id]?.contains { $0.id == postId } == true
         }
         if claiming.isEmpty { return .failure(.notFound) }
         if claiming.count == 1, let only = claiming.first,
@@ -358,15 +357,29 @@ public struct WorkspaceEnumerator: Sendable {
         postId: String, inFolder folderId: String,
         entries: [TextTextManifestItem], workspace: TextTextWorkspace
     ) -> TextTextItem? {
-        let subfolders = workspace.folders
-            .filter { $0.parentId == folderId }
-            .map { TextTextItemMapper.item(for: $0, handle: handle, readOnly: readOnly) }
-        let files = entries.compactMap {
-            TextTextItemMapper.item(
-                for: $0, inFolder: folderId, handle: handle, readOnly: readOnly)
+        guard let targetIndex = entries.firstIndex(where: { $0.id == postId }) else {
+            return nil
         }
-        return TextTextFilename.disambiguate(subfolders + files)
-            .first { $0.identifier == .file(handle: handle, id: postId) }
+        guard let target = TextTextItemMapper.item(
+            for: entries[targetIndex], inFolder: folderId, handle: handle, readOnly: readOnly)
+        else { return nil }
+
+        // File Provider asks for many individual items while reconciling a
+        // workspace. Mapping every sibling here repeatedly parses every date
+        // and makes a large folder quadratic. Only the target needs metadata;
+        // sibling names are sufficient to determine its collision suffix.
+        let siblingNames = workspace.folders.lazy
+            .filter { $0.parentId == folderId }
+            .map { TextTextFilename.encodeComponent($0.name) }
+        let fileNames = entries.enumerated().lazy
+            .filter { $0.offset != targetIndex && $0.element.id != nil && $0.element.id != "" }
+            .map {
+                TextTextFilename.filename(
+                    title: $0.element.title, slug: $0.element.slug,
+                    representation: $0.element.representation)
+            }
+        return TextTextFilename.disambiguateOne(
+            target, amongFilenames: Array(siblingNames) + Array(fileNames))
     }
 
 }

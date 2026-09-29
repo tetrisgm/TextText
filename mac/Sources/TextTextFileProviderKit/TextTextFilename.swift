@@ -274,6 +274,22 @@ public enum TextTextFilename {
         }
     }
 
+    /// Resolve one mapped item without building and date-parsing every sibling.
+    /// All names supplied here belong to the same parent as `item`.
+    public static func disambiguateOne(
+        _ item: TextTextItem, amongFilenames siblingFilenames: [String]
+    ) -> TextTextItem {
+        let name = item.filename.precomposedStringWithCanonicalMapping
+            .folding(options: .caseInsensitive, locale: Locale(identifier: "en_US_POSIX"))
+        guard siblingFilenames.contains(where: {
+            $0.precomposedStringWithCanonicalMapping
+                .folding(options: .caseInsensitive, locale: Locale(identifier: "en_US_POSIX")) == name
+        }), let id = stableId(item), !id.isEmpty else { return item }
+        return item.withFilename(insert(
+            collisionSuffix(id), into: item.filename,
+            isFolder: item.isFolder, representation: item.representation))
+    }
+
     public static func collisionSuffix(_ stableId: String) -> String {
         let normalized = stableId.precomposedStringWithCanonicalMapping
         let encoded = encodedComponent(normalized)

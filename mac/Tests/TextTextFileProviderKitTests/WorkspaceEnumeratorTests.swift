@@ -209,6 +209,31 @@ final class WorkspaceEnumeratorTests: XCTestCase {
         XCTAssertEqual(direct.filename, listed?.filename)
     }
 
+    func testLargeFolderLookupMatchesEnumerationWithFileAndFolderCollisions() async {
+        let api = Fixtures.standardWorkspace()
+        api.workspaceValue = TextTextWorkspace(
+            blog: api.workspaceValue.blog,
+            folders: api.workspaceValue.folders + [
+                Fixtures.folder("target-folder", "Target.md", parent: "blog"),
+            ])
+        api.manifests["blog"] = (0..<800).map { index in
+            Fixtures.entry(
+                id: "bulk-\(index)", file: "bulk-\(index).md",
+                kind: "article", title: "Bulk \(index)")
+        } + [
+            Fixtures.entry(id: "target", file: "target.md", kind: "article", title: "Target"),
+            Fixtures.entry(id: "peer", file: "peer.md", kind: "article", title: "target"),
+        ]
+        let e = enumr(api)
+        guard case .success(let children) = await e.children(of: F("blog")),
+              case .success(let direct) = await e.item(for: FI("target")) else {
+            return XCTFail("large folder enumeration and lookup must both succeed")
+        }
+        XCTAssertEqual(children.count, 804)
+        XCTAssertEqual(direct, children.first(where: { $0.identifier == FI("target") }))
+        XCTAssertEqual(direct.filename, "Target [target].md")
+    }
+
     func testDuplicatedIdAcrossManifestsDedupesToCurrentParent() async {
         let api = Fixtures.standardWorkspace()
         api.manifests["notes"] = (api.manifests["notes"] ?? []) + [
