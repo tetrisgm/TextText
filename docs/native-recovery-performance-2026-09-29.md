@@ -1,5 +1,19 @@
 # Local native recovery and File Provider check, 2026-09-29
 
+## Failed saved-link retry without duplication
+
+Installed build 1112 opened the local Blog bookmark `example-invalid-3` with
+its original `https://example.invalid/texttext-recovery-1e08b463-fa43-45cd-bd68-dfc4d29a6f83`
+link, a readable-capture failure, and Retry capture. Pressing Retry showed
+"Waiting for a readable copy. Your link is saved" and disabled repeat capture.
+After the capture agent's failed attempt, the same page again showed Open
+original, the hostname error, and Retry capture. The canonical store still
+had item `381a981b-d2f2-40ba-9541-2d2456dec77a` at the same slug and URL
+with failed status. The four pre-existing `example.invalid` bookmark IDs were
+unchanged, and exactly one bookmark matched this source URL. The invalid
+source necessarily could not yield a readable article; the proof is that
+failure preserved a usable, singular saved link.
+
 ## File Provider reconciliation
 
 The installed development-signed Store-shaped build 1111, pointed to the
