@@ -75,3 +75,51 @@ too short to establish long-run memory stability. The local Next server is
 separate and was not included. TypeScript, 86 related web tests, and touched
 ESLint passed (two pre-existing Hook dependency warnings). No public
 service or release changed.
+
+## Isolated production-mode native cold open
+
+An isolated Next production build at source `cfa43626` passed on the Apple
+M4/16 GiB Mac (macOS 27.0), using local Postgres. An ad hoc signed, sandboxed
+Store-shaped `TextText Agent Test.app` loaded that build from a temporary
+local server on port 3131. The server used local `AUTH_URL` and
+`TEXTTEXT_PRODUCT_ORIGIN` settings so sign-in and redirects stayed local.
+The test bundle was separate from installed build 1112 and did not contain
+the installed app's File Provider or app-group configuration.
+
+The app process was fully quit before each launch. With an already signed-in
+test profile and a warm production server, the process start and first
+`WKWebView.didFinish` layout-log timestamps were:
+
+| Launch | Process start (UTC) | `didFinish` (UTC) | Approximate interval |
+| --- | --- | --- | --- |
+| 1 | 08:34:44 | 08:34:46 | 2 s |
+| 2 | 08:46:08 | 08:46:10 | 2 s |
+| 3 | 08:49:04 | 08:49:06 | 2 s |
+
+The native UI check also showed the signed-in local workspace after each
+launch. Timestamps have one-second resolution. This measures process start
+to navigation completion, not first interactive content, a cold server, a
+clean sign-in, or the installed app's full extension set. A formal follow-up
+target is p95 at or below 3 seconds over 20 comparable warm-server native
+launches; these three samples are preliminary, not a p95 result. The earlier
+6.4–6.7-second development-server UI observation includes automation gaps
+and is not a direct before/after comparison.
+
+The isolated app's assistant showed `Connect an AI to start`, so no active
+agent turn or process-tree memory trend was measured in this run. The test
+app and temporary production server were closed afterward; the installed
+build 1112 and its local development server remained running. Build and
+test-app logs: `/tmp/texttext-ux-native-cold-build.log` and
+`/tmp/texttext-ux-native-cold-test-app.log`. The temporary build and app
+artifacts were retained for inspection.
+
+The already connected installed build 1112 then completed two read-only
+Anthropic turns on the existing local typing test note: it returned the exact
+typing marker and counted seven human and six agent lines. The note stayed
+Saved with the same body. A spot sample during the second turn summed about
+288 MiB RSS across the TextText process and its identified WebKit GPU,
+networking, and content processes; an immediate post-turn sample summed
+about 159 MiB. macOS compressed-memory accounting and the brief observation
+make these point samples unsuitable for a leak or sustained-memory claim.
+The installed development server was not included. A longer repeated-use
+process-tree run remains necessary.
