@@ -279,4 +279,33 @@ produced a spurious 60,321 ms paint marker. These runs identify foreground
 activation as the measurement artifact and cannot establish cold-open latency.
 The debug markers are opt-in and excluded from release builds. The isolated
 test app and helper were quit; the installed app and development server stayed
-running. A 20-run first-usable-content result remains open.
+running. The following foreground run supersedes this open measurement.
+
+## Twenty foreground native launches
+
+On September 29, Finder opened an isolated, sandboxed debug test app in the
+foreground twenty times, fully quitting its process before each reopening.
+The native binary was built at `2bade379`; its copied test bundle used the
+retained local production web build at `cfa43626` on port 3131 and an already
+signed-in test profile. The local production server stayed warm. The opt-in
+launch marker required the **All items** heading, hydrated Save to TextText
+control, library filter, and two animation frames. Every run visibly reopened
+the signed-in workspace at the expected local origin.
+
+| Process start to first usable content | Result |
+| --- | ---: |
+| Samples | 20 |
+| Minimum | 1,180 ms |
+| Median | 1,418 ms |
+| p95, nearest rank | 1,881 ms |
+| Maximum | 1,907 ms |
+| Latest window presentation | 1,048 ms |
+
+All twenty runs were below the brief's 3-second p95 target under these
+conditions. The full native marker log is
+`/tmp/texttext-native-launch-20-20260929.log`. This measures a warm local
+server, retained older production web build, signed-in isolated app, and
+hydrated-content proxy. It does not measure a cold server, first sign-in,
+current-source release build, or the installed app's File Provider extension.
+The test app and port-3131 server were stopped after the run; installed build
+1112 and its port-3000 development server remained running.
