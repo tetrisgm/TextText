@@ -1836,11 +1836,26 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     ) {
         guard message.name == "textTextApp",
               message.frameInfo.isMainFrame,
+              let body = message.body as? [String: Any]
+        else { return }
+        // The recovery page is loaded with loadHTMLString. WebKit can give
+        // that document an opaque security origin even with our base URL, so
+        // allow only its fixed Retry action before the normal origin check.
+        if body["action"] as? String == "retry" {
+            let path = startupNavigation.path
+            if let appToken {
+                webView.load(Self.sessionRequest(
+                    origin: origin, token: appToken, nextPath: path))
+            } else {
+                webView.load(request(for: path))
+            }
+            return
+        }
+        guard
               message.frameInfo.securityOrigin.protocol.lowercased() == origin.scheme?.lowercased(),
               message.frameInfo.securityOrigin.port == (origin.port ?? 0),
               message.frameInfo.securityOrigin.host.lowercased() ==
-                (origin.host ?? "").lowercased(),
-              let body = message.body as? [String: Any]
+                (origin.host ?? "").lowercased()
         else { return }
         if body["action"] as? String == "nativeMenuState",
            let entries = body["entries"] as? [[String: Any]] {
@@ -1860,11 +1875,6 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         if body["action"] as? String == "nativeShare", let path = body["path"] as? String,
            NativeWindowRestoration.accepts(path, homePath: workspaceHomePath) {
             onSharePath?(path)
-            return
-        }
-        // The unreachable-origin page's Retry button.
-        if body["action"] as? String == "retry" {
-            webView.load(request(for: startupNavigation.path))
             return
         }
         if body["action"] as? String == "workspaceHome" {
