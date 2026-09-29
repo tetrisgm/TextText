@@ -80,6 +80,7 @@ import { useRouter } from "next/navigation";
 import {
   createFolderItemAction,
   createWorkspacePostAction,
+  getSavedCapturePostAction,
   deleteEditablePostAction,
   movePostToFolderAction,
   toggleEditablePostStarredAction,
@@ -2036,10 +2037,17 @@ function LocalWorkspaceShell({
               await refreshWorkspacePool(pool.blog.handle, pool.blogId);
               let savedPoolPost = getWorkspacePost(savedId);
               if (!savedPoolPost) {
-                // A refresh that was already in flight may have started before
-                // create_item committed. Its promise is still worth awaiting,
-                // then one fresh read resolves the durable item without
-                // misreporting a successful capture as failed.
+                // The exact create receipt is authoritative. A broad pool
+                // refresh may fail on unrelated saved presentation data, so
+                // read this item directly before reporting an unsaved capture.
+                const direct = await getSavedCapturePostAction(pool.blog.handle, savedId);
+                if (direct?.id === savedId) {
+                  addPost(direct);
+                  savedPoolPost = direct;
+                }
+              }
+              if (!savedPoolPost) {
+                // A prior refresh may have started before the create committed.
                 await refreshWorkspacePool(pool.blog.handle, pool.blogId);
                 savedPoolPost = getWorkspacePost(savedId);
               }

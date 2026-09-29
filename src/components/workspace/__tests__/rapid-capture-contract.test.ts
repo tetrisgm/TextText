@@ -66,7 +66,8 @@ describe("rapid capture contract", () => {
     expect(workspaceShell).toContain("capture: options.capture");
     expect(workspaceShell).toContain("options.idempotencyKey");
     expect(workspaceShell).toContain("await refreshWorkspacePool");
-    expect(workspaceShell).toContain("A refresh that was already in flight");
+    expect(workspaceShell).toContain("getSavedCapturePostAction(pool.blog.handle, savedId)");
+    expect(workspaceShell).toContain("addPost(direct)");
     expect(workspaceShell).toContain(
       "options.onPersisted?.(postFromPoolPost(savedPoolPost), {",
     );

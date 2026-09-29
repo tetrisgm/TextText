@@ -85,6 +85,8 @@ import { resolveOwnedWorkspace } from "@/lib/workspace";
 import { getBuiltinTemplate } from "@/lib/presentation/templates";
 import { exemplarFor } from "@/lib/presentation/exemplars";
 import type { TemplateReference } from "@/lib/documents/model";
+import { narrowPostFromPost } from "@/lib/pool/selectors";
+import type { WorkspacePoolPost } from "@/lib/pool/types";
 
 // The blog the editor writes to, resolved from the session on the SERVER so a
 // client can never target another user's blog. Writing always requires auth,
@@ -623,6 +625,24 @@ export async function createWorkspacePostAction(
   );
   if (options?.revalidate !== false) await revalidateBlog(handle, [saved.slug]);
   return saved;
+}
+
+/**
+ * Resolve a confirmed capture by its exact item id. A workspace-pool refresh
+ * can fail because another saved look is unreadable; that must not turn a
+ * successful, idempotent create into an apparently unsaved note.
+ */
+export async function getSavedCapturePostAction(
+  handleInput: unknown,
+  postIdInput: unknown,
+): Promise<WorkspacePoolPost | null> {
+  const handle = cleanHandle(handleInput);
+  const postId = cleanPostId(postIdInput);
+  const user = await editorUser();
+  const access = await resolveItemAccess({ handle, postId, user });
+  if (!access.canView || !access.blogId) return null;
+  const post = await getPostById(handle, postId);
+  return post ? narrowPostFromPost(post, access.blogId) : null;
 }
 
 function cleanItemFolder(value: unknown): "notes" | "bookmarks" {
