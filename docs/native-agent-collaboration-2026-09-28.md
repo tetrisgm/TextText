@@ -210,6 +210,26 @@ restored sentence reached **Ready**; it was discarded without editing. The
 scratch note showed **Saved**. This proves one local native sequence, not
 all concurrent network timings or a public release.
 
+## Same-passage change from a second live editor
+
+On 2026-09-29, the installed Mac app held a real Anthropic rewrite at
+**Ready** for the first sentence of the private local test note. A separate
+signed-in browser session then replaced that exact sentence and reached
+**Saved**. The Mac editor received the replacement without reloading. Its
+preview changed to **The passage changed**, with **Discard** available and
+no **Accept** action. A fresh canonical-store read at revision `492644`
+contained the browser sentence and the original Typing marker, not the
+previewed rewrite. The browser then restored the original sentence; both
+editors showed it saved, and a store read at revision `492645` confirmed the
+restoration and marker. The stale preview was discarded and the temporary
+browser tab closed.
+
+This proves a remote session changing the selected passage before approval is
+protected in the installed app. Both sessions used the existing local owner
+account; the separate-collaborator access boundary is covered elsewhere.
+An edit arriving in the narrow interval after **Accept** starts but before
+the server commits still needs a deliberately timed live check.
+
 - `TEXTTEXT_STORE=1 swift test --package-path mac --jobs 2 --filter Codex`:
   29 tests passed after updating an assertion for the revised instructions.
 - Three focused Vitest files: 37 tests passed, including native prompt and
