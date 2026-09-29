@@ -151,3 +151,33 @@ may raise the decoded-image/cache baseline. Compare a clean isolated
 production-mode app before and after that folder when memory pressure is
 lower. The development server was excluded from process totals, and no
 other app's memory was attributed to TextText.
+
+## Clean production-mode image-folder comparison
+
+The retained isolated production build at source `cfa43626` was run through
+the sandboxed `TextText Agent Test.app` on the same Mac, with a local
+production server on port 3131. Its native bundle, WebKit GPU, networking,
+content, and idle Codex helper processes were included. The assistant was
+hidden; no agent turn ran in this comparison. `vmmap -summary` footprints
+were sampled sequentially after visible UI transitions, so totals are
+approximate rather than simultaneous accounting.
+
+| State | Combined physical footprint |
+| --- | ---: |
+| Signed-in All items before image folder | ~349 MiB |
+| First Cards view, after scrolling through the folder | ~498 MiB |
+| Back to All items | ~455 MiB |
+| Second Cards view, after traversing again | ~543 MiB |
+| Back to All items again | ~465 MiB |
+
+The native UI showed decoded image cards and, after scrolling, later items
+from the 96-item folder. The first folder visit added about 149 MiB at its
+observed peak; about 106 MiB remained after leaving. The second post-folder
+reading was about 10 MiB above the first, within the substantial variation
+seen in macOS process accounting. This two-cycle production-mode check does
+not reproduce an immediate runaway leak or explain the long-lived installed
+development app's roughly 1.2 GiB footprint. It also does not establish
+long-run stability. The fixture reuses large static covers for most cards,
+so it is a stress case rather than a typical upload with generated previews.
+The isolated app and temporary server were stopped and port 3131 was free;
+the installed build 1112 and its development server remained running.
