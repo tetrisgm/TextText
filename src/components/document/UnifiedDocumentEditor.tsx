@@ -1659,7 +1659,8 @@ export function UnifiedDocumentEditor({
           </details>
           )}
           <button type="button" className="ac-btn ac-btn-gray" onClick={() => void stopEditing()}>
-            Stop editing
+            <span className="tt-stop-edit-label-full">Stop editing</span>
+            <span className="tt-stop-edit-label-compact">Done</span>
           </button>
             <div className={`tt-save-state is-${saveState}`}>
               {saveStateLabel}

@@ -5878,6 +5878,42 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   color: #9f2d20;
 }
 
+/* The assistant shares the document column in a half-width Mac window.
+   Keep the edit actions within that column so history and creation controls
+   remain separate and the save state stays visible. */
+.tt-stop-edit-label-compact {
+  display: none;
+}
+
+@media (max-width: 1024px) {
+  .post-editor-shell.has-assistant-open
+    .workspace-action-bar-slot.is-right
+    > .post-top-action-bar.is-edit
+    .post-action-toolbar {
+    gap: 0.375rem;
+  }
+
+  .post-editor-shell.has-assistant-open
+    .workspace-action-bar-slot.is-right
+    > .post-top-action-bar.is-edit
+    .tt-look-name,
+  .post-editor-shell.has-assistant-open .tt-stop-edit-label-full {
+    display: none;
+  }
+
+  .post-editor-shell.has-assistant-open .tt-stop-edit-label-compact {
+    display: inline;
+  }
+
+  .post-editor-shell.has-assistant-open
+    .workspace-action-bar-slot.is-right
+    > .post-top-action-bar.is-edit
+    .tt-save-state {
+    margin-left: 0;
+    padding-left: 0.375rem;
+  }
+}
+
 [data-theme="dark"]
   .workspace-action-bar-slot.is-right
   > .post-top-action-bar.is-edit

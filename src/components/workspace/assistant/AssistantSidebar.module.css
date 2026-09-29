@@ -266,6 +266,21 @@
   gap: 0.25rem 0.5rem;
 }
 
+@media (max-width: 1024px) {
+  .titleRow {
+    flex-wrap: wrap;
+  }
+
+  .titleAndSync {
+    order: 0;
+    flex: 0 0 calc(100% - 1.625rem);
+  }
+
+  .headerActions {
+    margin-left: auto;
+  }
+}
+
 .historySync {
   display: flex;
   flex-wrap: wrap;
