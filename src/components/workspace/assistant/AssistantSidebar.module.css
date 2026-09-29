@@ -400,7 +400,8 @@ button.pendingLabel {
   gap: 0.25rem;
 }
 
-.modelSelect {
+.modelSelect,
+.connectionSelect {
   width: 4.25rem;
   height: 1.5rem;
   padding: 0 1.0625rem 0 0.125rem;
@@ -414,7 +415,12 @@ button.pendingLabel {
   cursor: pointer;
 }
 
-.modelSelect:focus-visible {
+.connectionSelect {
+  width: 5.375rem;
+}
+
+.modelSelect:focus-visible,
+.connectionSelect:focus-visible {
   outline: none;
   box-shadow: var(--ac-focus, 0 0 0 3px rgba(0, 122, 255, 0.45));
 }

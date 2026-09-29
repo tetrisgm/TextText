@@ -585,13 +585,13 @@ export function AssistantConversation({
       </div>
     );
   }
+  const authorization = nativeDeviceAuthorization(nativeConnection);
   if (messages.length === 0) {
     const connected =
       Boolean(cloudProvider) || nativeConnection?.state === "ready";
     const embeddedConnectionAvailable = Boolean(
       nativeConnection?.embeddedChatSupported && onConnectNative,
     );
-    const authorization = nativeDeviceAuthorization(nativeConnection);
     const primaryConnectionLabel = embeddedConnectionAvailable
       ? "Continue with ChatGPT"
       : "Set up the in-app assistant";
@@ -953,6 +953,24 @@ export function AssistantConversation({
           </div>
         );
       })}
+      {nativeConnection && nativeConnection.state !== "ready" ? (
+        <section className={styles.connectionNotice} aria-label="Connect an AI">
+          <p>Connect ChatGPT to continue this conversation.</p>
+          {authorization ? (
+            <>
+              <a className={styles.connectPrimary} href={authorization.url} target="_blank" rel="noreferrer">Open ChatGPT to sign in</a>
+              <p>Enter this code: <DeviceAuthorizationCode code={authorization.code} /></p>
+            </>
+          ) : nativeConnection.embeddedChatSupported && onConnectNative ? (
+            <button type="button" className={styles.connectPrimary} onClick={onConnectNative} disabled={nativeConnection.state === "connecting"}>
+              {nativeConnection.phase === "checking" ? "Checking connection…" : nativeConnection.phase === "authorizing" ? "Waiting for authorization…" : "Continue with ChatGPT"}
+            </button>
+          ) : (
+            <a className={styles.connectPrimary} href={aiSettingsHref ?? "/docs/ai#embedded-agent"} onClick={onOpenAiSettings}>Set up the in-app assistant</a>
+          )}
+          {nativeConnection.message ? <p role="status">{nativeConnection.message}</p> : null}
+        </section>
+      ) : null}
       {/* The turn reports itself under the message that started it, with a
           dot that moves, because a still grey word is not evidence that
           anything is happening. */}

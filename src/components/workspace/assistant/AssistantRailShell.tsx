@@ -368,6 +368,22 @@ export function AssistantRailShell({
                 {props.pendingCount} {props.pendingCount === 1 ? "approval" : "approvals"}
               </span>)}
             <div className={styles.headerActions}>
+              {props.nativeConnectionAvailable && props.connectionPreference && props.onChooseConnection ? (
+                <select
+                  className={styles.connectionSelect}
+                  aria-label="Assistant connection"
+                  title="Assistant connection"
+                  value={props.connectionPreference}
+                  disabled={submitting}
+                  onChange={(event) => {
+                    props.onChooseConnection?.(event.currentTarget.value as "native" | "api-key");
+                    void activate();
+                  }}
+                >
+                  <option value="native">ChatGPT</option>
+                  <option value="api-key">Provider key</option>
+                </select>
+              ) : null}
               <select
                 className={styles.modelSelect}
                 aria-label="Assistant model"

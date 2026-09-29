@@ -27,8 +27,24 @@ import {
 } from "@/components/workspace/assistant/AssistantSidebar";
 import { AssistantConversation } from "@/components/workspace/assistant/AssistantConversation";
 import { AssistantMarkdown } from "../AssistantMarkdown";
+import { resolveNativeAiConnection } from "@/lib/ai/connection-state";
 
 describe("assistant sidebar UI", () => {
+  it("keeps ChatGPT connection reachable from an existing conversation", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        messages: [{ id: "earlier", role: "user", text: "Earlier request" }],
+        nativeConnection: resolveNativeAiConnection({ surface: "mac", runtimeAvailable: true }),
+        onConnectNative: () => {},
+        submitting: false,
+      }),
+    );
+
+    expect(html).toContain("Earlier request");
+    expect(html).toContain("Connect ChatGPT to continue this conversation.");
+    expect(html).toContain("Continue with ChatGPT");
+  });
+
   it("keeps waiting approvals visible while the assistant is closed", () => {
     const html = renderToStaticMarkup(
       React.createElement(AssistantSidebar, {

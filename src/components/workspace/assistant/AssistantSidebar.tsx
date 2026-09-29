@@ -29,6 +29,7 @@ import type {
 } from "./conversation-store";
 import type { AssistantHistorySyncStatus } from "./conversation-sync";
 import type { AssistantModelChoice } from "./model-preference";
+import type { AssistantConnectionPreference } from "./model-preference";
 import { WorkspaceAssistantSkillLauncher } from "./AssistantSkillLauncher";
 import {
   ASSISTANT_SIDEBAR_MAX_WIDTH,
@@ -100,6 +101,9 @@ export type AssistantSidebarProps = {
   modelChoices?: readonly AssistantModelChoice[];
   selectedModel?: string | null;
   onModelChange?: (model: string) => void;
+  connectionPreference?: AssistantConnectionPreference;
+  nativeConnectionAvailable?: boolean;
+  onChooseConnection?: (choice: AssistantConnectionPreference) => void;
   width: number;
   onWidthChange: (width: number) => void;
   composerValue: string;
@@ -198,6 +202,9 @@ export function AssistantSidebar({
   modelChoices = [],
   selectedModel = null,
   onModelChange,
+  connectionPreference,
+  nativeConnectionAvailable = false,
+  onChooseConnection,
   width,
   onWidthChange,
   motionSnapshot,
@@ -593,6 +600,19 @@ export function AssistantSidebar({
               <span className={styles.pendingLabel}>{pendingCount} {pendingCount === 1 ? "approval" : "approvals"}</span>
             ) : null}
             <div className={styles.headerActions}>
+              {nativeConnectionAvailable && connectionPreference && onChooseConnection ? (
+                <select
+                  className={styles.connectionSelect}
+                  aria-label="Assistant connection"
+                  title="Assistant connection"
+                  value={connectionPreference}
+                  disabled={submitting}
+                  onChange={(event) => onChooseConnection(event.currentTarget.value as AssistantConnectionPreference)}
+                >
+                  <option value="native">ChatGPT</option>
+                  <option value="api-key">Provider key</option>
+                </select>
+              ) : null}
               {onModelChange && modelChoices.length > 1 ? (
                 <select
                   className={styles.modelSelect}

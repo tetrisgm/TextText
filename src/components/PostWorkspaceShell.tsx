@@ -5449,6 +5449,9 @@ function LocalWorkspaceShell({
           modelChoices={assistant.modelChoices}
           selectedModel={assistant.selectedCloudModel}
           onModelChange={assistant.selectCloudModel}
+          connectionPreference={assistant.connectionPreference}
+          nativeConnectionAvailable={Boolean(assistant.nativeConnection?.embeddedChatSupported)}
+          onChooseConnection={assistant.selectConnection}
           className="workspace-assistant-shell"
           state={assistantState}
           onStateChange={changeAssistantState}
