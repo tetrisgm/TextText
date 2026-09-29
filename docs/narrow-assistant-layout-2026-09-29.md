@@ -47,3 +47,21 @@ underlying item remained light. Zoom changed to Fit, and Escape closed the
 viewer with focus returned to the image's View control. Dark appearance was
 restored afterward. The window capture measured 1,800 physical pixels wide;
 this is the half-screen layout, not proof of the exact 720-point minimum.
+
+## Native Reduce Motion follow-up
+
+The Mac's Accessibility > Motion > Reduce motion switch was initially off. I
+enabled it temporarily, inspected installed build 1112 at the same half-screen
+width, and restored the switch to off afterward. With the setting on, the
+portrait `Visual scale 024` remained proportioned in the gallery and its viewer
+kept Zoom, Close, 900 × 1600 dimensions, and Open original visible; Escape
+closed the viewer and returned focus to its image control. The Add agent panel
+fit over that item and Escape closed it. Command-K opened the saved
+`Texttext AI setup guide` in Reader with its title and source link. Command-K
+also opened the existing `Typing benchmark 7d924acf` note in edit mode; its
+body accepted keyboard focus and Saved remained visible without an edit.
+
+This is native usability evidence with the OS preference enabled. It does not
+measure animation frames, confirm every transition obeys the preference, or
+cover an active two-person edit under that preference. The exact 720-point
+native minimum also remains unverified.
