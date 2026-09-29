@@ -106,6 +106,13 @@ read found the note's body and revision unchanged. This proves the local HTTP
 owner boundary for this fixture; it does not test every native agent provider
 or a public deployment. The script, TypeScript, and touched-file ESLint passed.
 
+Reviewed Apply/Undo had a separate late-continuation gap: it could finish an
+asynchronous item read after an owner/workspace change and reach its write call.
+It now checks the captured owner scope after each preparation read and clears
+the scope when the component unmounts. Three focused suites passed 63 tests;
+TypeScript and touched-file ESLint passed. This is a guarded code path, not yet
+a reproduced live race or proof of cancellation during an already sent write.
+
 - `TEXTTEXT_STORE=1 swift test --package-path mac --jobs 2 --filter Codex`:
   29 tests passed after updating an assertion for the revised instructions.
 - Three focused Vitest files: 37 tests passed, including native prompt and

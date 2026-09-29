@@ -740,6 +740,12 @@ export function useNativeAssistant({
     handle,
     ownerScopeKey: conversationStoreKey,
   };
+  useEffect(() => {
+    currentOwnerScopeRef.current = { handle, ownerScopeKey: conversationStoreKey };
+    return () => {
+      currentOwnerScopeRef.current = { handle: "", ownerScopeKey: null };
+    };
+  }, [handle, conversationStoreKey]);
   const activeConversationId = useSyncExternalStore(
     subscribeAssistantConversations,
     () =>
@@ -2226,6 +2232,10 @@ export function useNativeAssistant({
 
   const applyProposalValue = useCallback(
     async (messageId: string, direction: "apply" | "undo") => {
+      const submittedOwnerScope: AssistantOwnerScope = { handle, ownerScopeKey: conversationStoreKey };
+      const ownerScopeIsStillCurrent = () =>
+        assistantOwnerScopeMatches(currentOwnerScopeRef.current, submittedOwnerScope);
+      if (!ownerScopeIsStillCurrent()) return;
       const message = threadFor(threadKey).find(
         (candidate) => candidate.id === messageId,
       );
@@ -2245,9 +2255,12 @@ export function useNativeAssistant({
           (proposal.kind === "tags" || proposal.scope !== "selection")) {
         try {
           const envelope = await validateSelectionEnvelope(proposal.selectionEnvelope);
+          if (!ownerScopeIsStillCurrent()) return;
           assertSelectionMatches(envelope, proposal.itemId,
             await readItemTextRef.current(proposal.itemId));
+          if (!ownerScopeIsStillCurrent()) return;
         } catch (error) {
+          if (!ownerScopeIsStillCurrent()) return;
           const text = error instanceof Error ? error.message : SELECTION_INVALID_ERROR;
           appendToThread(threadKey, "error", text);
           reportSelectionError(proposal.itemId, text);
@@ -2256,6 +2269,7 @@ export function useNativeAssistant({
       }
       if (proposal.kind === "tags") {
         const current = await readItemTextRef.current(proposal.itemId);
+        if (!ownerScopeIsStillCurrent()) return;
         const expected =
           direction === "apply" ? proposal.beforeTags : proposal.afterTags;
         const next =
@@ -2347,7 +2361,9 @@ export function useNativeAssistant({
             { field: edit.field, ...edit.range, text: edit.before },
           );
         }
+        if (!ownerScopeIsStillCurrent()) return;
       } catch (error) {
+        if (!ownerScopeIsStillCurrent()) return;
         const text = error instanceof Error ? error.message : SELECTION_INVALID_ERROR;
         appendToThread(threadKey, "error", text);
         reportSelectionError(proposal.itemId, text);
@@ -2431,7 +2447,7 @@ export function useNativeAssistant({
         );
       }
     },
-    [threadKey, tools],
+    [conversationStoreKey, handle, threadKey, tools],
   );
 
   const applyProposal = useCallback(
