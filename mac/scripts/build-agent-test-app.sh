@@ -35,7 +35,7 @@ cp "$ROOT/mac/Info.plist" "$APP/Contents/Info.plist"
 RUNTIME_VERSION="$("$RUNTIME" --version)"
 SOURCE_REVISION="$(git -C "$ROOT" rev-parse HEAD)"
 python3 - "$APP" "$ORIGIN" "$RUNTIME_VERSION" "$TEST_ROOT" "$ROOT/mac" "$SOURCE_REVISION" <<'PY'
-import hashlib, pathlib, plistlib, sys
+import hashlib, os, pathlib, plistlib, sys
 app, origin, version, root, source, revision = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3], pathlib.Path(sys.argv[4]), pathlib.Path(sys.argv[5]), sys.argv[6]
 digest = hashlib.sha256()
 for file in sorted((source / "Sources").rglob("*.swift")) + [source / "Package.swift", source / "Info.plist"]:
@@ -47,6 +47,8 @@ values.update(CFBundleIdentifier="app.texttext.agenttest", CFBundleName="TextTex
 # outranks any linked credential origin and activates the existing dev guard
 # that prevents writes to the real File Provider domain and handoff.
 values["LSEnvironment"] = {"TEXTTEXT_SERVER": origin, "TEXTTEXT_DEV_FILEPROVIDER": "0"}
+if os.environ.get("TEXTTEXT_LAUNCH_METRICS") == "1":
+    values["LSEnvironment"]["TEXTTEXT_LAUNCH_METRICS"] = "1"
 for key in ("TextTextAppGroupIdentifier", "TextTextKeychainAccessGroup", "CFBundleURLTypes", "CFBundleDocumentTypes", "SUFeedURL", "SUPublicEDKey"):
     values.pop(key, None)
 info.write_bytes(plistlib.dumps(values))

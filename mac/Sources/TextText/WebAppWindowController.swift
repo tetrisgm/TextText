@@ -435,6 +435,36 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         ucc.addUserScript(WKUserScript(
             source: Self.mintScript,
             injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        #if DEBUG
+        if DebugLaunchMetric.enabled {
+            // Count a workspace as usable only after its creation control has
+            // hydrated and WebKit has had two frame opportunities to paint it.
+            ucc.addUserScript(WKUserScript(
+                source: """
+                (function () {
+                  if (location.hostname !== "\(origin.host ?? "")") return;
+                  var attempts = 0, timer;
+                  function check() {
+                    var heading = Array.from(document.querySelectorAll("h1"))
+                      .some(function (node) { return node.textContent.trim() === "All items"; });
+                    var button = document.querySelector('button[aria-label="Save to TextText"]');
+                    var filter = document.querySelector('[aria-label="Filter library items"]');
+                    var hydrated = button && Object.keys(button)
+                      .some(function (key) { return key.indexOf("__reactProps$") === 0; });
+                    if (heading && filter && hydrated) {
+                      clearInterval(timer);
+                      requestAnimationFrame(function () { requestAnimationFrame(function () {
+                        window.webkit.messageHandlers.textTextApp.postMessage({action: "launchMetricUsable"});
+                      }); });
+                    } else if (++attempts >= 600) clearInterval(timer);
+                  }
+                  timer = setInterval(check, 25);
+                  check();
+                })();
+                """,
+                injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
+        #endif
         config.userContentController = ucc
 
         let webView = AppWebView(
@@ -1872,6 +1902,12 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
               message.frameInfo.securityOrigin.host.lowercased() ==
                 (origin.host ?? "").lowercased()
         else { return }
+        #if DEBUG
+        if body["action"] as? String == "launchMetricUsable" {
+            DebugLaunchMetric.usable()
+            return
+        }
+        #endif
         if body["action"] as? String == "nativeMenuState",
            let entries = body["entries"] as? [[String: Any]] {
             onNativeMenuState?(entries)
@@ -2110,6 +2146,9 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        #if DEBUG
+        DebugLaunchMetric.mark("web-commit")
+        #endif
         // The direct load reached a real signed-in page; the fallback bet is
         // settled and must not fire on later navigations to "/". A pending
         // workspace-home probe keeps the flag: its URL commits with 200 for
@@ -2129,6 +2168,9 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        #if DEBUG
+        DebugLaunchMetric.mark("web-finish")
+        #endif
         dismissLaunchPlaceholder() // backstop if didCommit was missed
         window?.title = webView.title?.isEmpty == false ? webView.title! : "TextText"
         if directHomeProbePending {

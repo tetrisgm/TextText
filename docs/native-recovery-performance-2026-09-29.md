@@ -235,3 +235,18 @@ This proves the visible canceled-setup path and cleanup in an isolated native
 session. It does not inject a deliberately delayed login completion or prove
 every response-order race. The installed app and its local server were not
 restarted or replaced.
+
+## Debug launch timing probe
+
+An isolated debug-only test build with `TEXTTEXT_LAUNCH_METRICS=1` recorded
+process start, WebKit commit/finish, window presentation, and hydrated workspace
+paint. In one local-development-server launch on September 29, WebKit committed
+at 1,323 ms and finished at 1,654 ms, but the window was not presented until
+15,115 ms and the paint marker fired at 15,571 ms. The computer-use launcher
+returned a timeout while opening the bundle in the background; subsequent UI
+inspection brought it forward. An earlier background launch similarly
+produced a spurious 60,321 ms paint marker. These runs identify foreground
+activation as the measurement artifact and cannot establish cold-open latency.
+The debug markers are opt-in and excluded from release builds. The isolated
+test app and helper were quit; the installed app and development server stayed
+running. A 20-run first-usable-content result remains open.

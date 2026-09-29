@@ -1,6 +1,10 @@
 import AppKit
 import TextTextAppIntents
 
+#if DEBUG
+DebugLaunchMetric.begin()
+#endif
+
 // App Intents run in THIS process; give them server-backed workspace access so
 // create/list/search/open/append/move go through the sync API (the source of
 // truth), never by scanning or writing the File Provider mount. Registered

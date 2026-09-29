@@ -2920,6 +2920,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         warmMainWindow(path: path)
         hasRevealedInitialWindow = true
         webWindow?.present()
+        #if DEBUG
+        DebugLaunchMetric.mark("window-present")
+        #endif
     }
 
     /// Builds the workspace window and starts loading its content without
