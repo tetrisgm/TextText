@@ -47,6 +47,7 @@ export function WorkspaceActionSearch({
   useLayoutEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+    const shell = host.closest<HTMLElement>(".post-editor-shell");
     const surface =
       host.closest<HTMLElement>(".post-editor-content") ??
       host.closest<HTMLElement>(".local-workspace-surface") ??
@@ -54,16 +55,32 @@ export function WorkspaceActionSearch({
     // The observer already carries the size; measuring inside its callback
     // forces layout and risks a resize loop.
     const apply = (width: number) => {
-      setCompact(width < INLINE_SEARCH_MIN_WIDTH);
+      const overlayWidth =
+        shell?.classList.contains("has-assistant-open") &&
+        window.matchMedia("(max-width: 900px)").matches
+          ? Number.parseFloat(
+              getComputedStyle(shell).getPropertyValue("--workspace-assistant-width"),
+            ) || 0
+          : 0;
+      setCompact(width - overlayWidth < INLINE_SEARCH_MIN_WIDTH);
     };
     apply(surface.getBoundingClientRect().width);
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver((entries) => {
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width;
       if (typeof width === "number") apply(width);
     });
-    observer.observe(surface);
-    return () => observer.disconnect();
+    observer?.observe(surface);
+    const shellObserver = shell ? new MutationObserver(() => {
+      apply(surface.getBoundingClientRect().width);
+    }) : null;
+    if (shell && shellObserver) shellObserver.observe(shell, { attributes: true, attributeFilter: ["class", "style"] });
+    const onResize = () => apply(surface.getBoundingClientRect().width);
+    window.addEventListener("resize", onResize);
+    return () => {
+      observer?.disconnect();
+      shellObserver?.disconnect();
+      window.removeEventListener("resize", onResize);
+    };
   }, []);
 
   useEffect(() => {

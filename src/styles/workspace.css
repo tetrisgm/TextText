@@ -5914,6 +5914,23 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   }
 }
 
+@media (min-width: 561px) and (max-width: 900px) {
+  .post-editor-shell.has-assistant-open .folder-top-action-bar {
+    right: calc(var(--workspace-assistant-width, 320px) - 0.25rem);
+    max-width: calc(
+      100vw - var(--workspace-sidebar-width, 280px) -
+        var(--workspace-assistant-width, 320px) + 0.25rem
+    );
+  }
+
+  /* Create item remains in the folder toolbar; New subfolder remains in the
+     selected folder's menu. Keep history separate from those controls. */
+  .post-editor-shell.has-assistant-open:has(.folder-top-action-bar)
+    .workspace-action-bar-tools {
+    display: none;
+  }
+}
+
 [data-theme="dark"]
   .workspace-action-bar-slot.is-right
   > .post-top-action-bar.is-edit
