@@ -215,7 +215,7 @@ it("preserves an unreconciled ledger when unmounted during catch-up",()=>{
    window:{removeEventListener:vi.fn()},handlePageHide:vi.fn(),awareness:{off:vi.fn()},handleAwareness:vi.fn(),
    doc,handleDocumentUpdate:vi.fn(),materializeTimerRef:{current:null},flushMaterialization:vi.fn(),
    readyRef:{current:false},preReadyLocalRef:{current:snapshot("LOCAL BEFORE READY")},preserveRecovery,
-   provider:{learnedEpoch:5,destroy},providerRef:{current:null},
+   provider:{learnedEpoch:5,destroy},providerRef:{current:null},startupRetryTimer:null,
  });
  cleanup();
  expect(preserveRecovery).toHaveBeenCalledExactlyOnceWith(5);

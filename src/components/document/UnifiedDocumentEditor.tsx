@@ -967,10 +967,16 @@ export function UnifiedDocumentEditor({
     void flushMaterialization();
   }, [flushMaterialization]);
 
+  const startupRetryCountRef = useRef(0);
+  useEffect(() => {
+    startupRetryCountRef.current = 0;
+  }, [collab.postId]);
+
   useEffect(() => {
     if (!networkEnabled || recoveryBlockedRef.current) return;
 
     let cancelled = false;
+    let startupRetryTimer: ReturnType<typeof setTimeout> | null = null;
     const provider = new CollabProvider(doc, {
       postId: collab.postId,
       userName: collab.userName,
@@ -1124,6 +1130,19 @@ export function UnifiedDocumentEditor({
       publishDocument(documentSnapshotFromYDoc(doc));
       readyRef.current = true;
       setReady(true);
+      // WebKit can start before its network process is ready. Give one
+      // inconclusive initial catch-up a fresh provider automatically, with
+      // the same Y.Doc and durable outbox, instead of asking the person to
+      // press Retry on every cold open. Retired or access-lost writers stop.
+      if (!result.authoritative && !provider.materializationBlocked &&
+          startupRetryCountRef.current === 0) {
+        startupRetryCountRef.current = 1;
+        setSaveState("local");
+        startupRetryTimer = setTimeout(() => {
+          if (!cancelled) setProviderAttempt((attempt) => attempt + 1);
+        }, 250);
+        return;
+      }
       setSaveState(!result.authoritative ? result.failure === "offline" ? "offline" : result.failure === "server" ? "error" : "unconfirmed" :
         localMaterializationVersionRef.current > savedMaterializationVersionRef.current ? "local" : "saved");
     });
@@ -1138,6 +1157,7 @@ export function UnifiedDocumentEditor({
 
     return () => {
       cancelled = true;
+      if (startupRetryTimer) clearTimeout(startupRetryTimer);
       window.removeEventListener("pagehide", handlePageHide);
       awareness.off("change", handleAwareness);
       doc.off("update", handleDocumentUpdate);

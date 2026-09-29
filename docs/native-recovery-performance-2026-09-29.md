@@ -44,9 +44,22 @@ The button now starts a fresh provider catch-up when the writer has not
 caught up or there is no pending materialization. If a caught-up writer has
 pending changes, it uses the existing guarded flush.
 
-After the development page refreshed, the installed editor showed **Saved**
-with the original title and prior human and agent lines intact. The
-fresh-provider branch was not forced again in a controlled live failure;
-that is still a recovery check to repeat. TypeScript, 86 related web tests,
-and touched ESLint passed (two pre-existing Hook dependency warnings).
-No public service or release changed.
+After a full app quit and relaunch, the warning recurred on the same note.
+Pressing **Retry saving** now moved it through **Waiting to save** to
+**Saved**, with the original title and prior human and agent lines intact.
+The connection became inconclusive despite the local server responding to
+the collaboration route, so the editor now automatically gives one
+non-authoritative startup a fresh provider unless the writer was retired or
+lost access. A third full app reopen showed the note at about 6.7 seconds,
+**Waiting to save** by 11.4 seconds, and **Saved** by 15.4 seconds without
+pressing Retry. These times include UI automation/tool gaps and a warm
+development server, so they are not production-mode launch benchmarks.
+
+Two post-reopen snapshots around 30 seconds showed about 190 MiB combined
+RSS for the app, its Finder extension, and WebKit processes launched with
+it. A third snapshot was lower; no monotonic increase was visible in these
+three cycles. WebKit affiliation was inferred from launch time, and this is
+too short to establish long-run memory stability. The local Next server is
+separate and was not included. TypeScript, 86 related web tests, and touched
+ESLint passed (two pre-existing Hook dependency warnings). No public
+service or release changed.

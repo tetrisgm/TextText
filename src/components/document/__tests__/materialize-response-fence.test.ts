@@ -25,7 +25,7 @@ function section(start: string, end: string) {
 }
 const source = [
   section("function replaceYText(", "\nfunction selectionForField("),
-  section("  const flushMaterialization = useCallback(", "\n  useEffect(() => {"),
+  section("  const flushMaterialization = useCallback(", "\n  const retrySaving = useCallback("),
   section("    const handleDocumentUpdate =", '    doc.on("update", handleDocumentUpdate);'),
 ].join("\n");
 const compiled = ts.transpileModule(source, {
