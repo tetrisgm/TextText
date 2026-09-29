@@ -174,9 +174,17 @@ describe("inline selection lifecycle", () => {
     s.controller.retry(); await s.controller.accept();
     expect(s.execute).toHaveBeenCalledOnce();
   });
-  it("refuses Undo if any later edit changed the result field", async () => {
+  it("preserves later writing outside the rewritten passage when undoing", async () => {
     const s = setup(); await ready(s); await s.controller.accept();
     s.change({ body: s.current().body + " New writing." });
+    await s.controller.undo();
+    expect(s.execute).toHaveBeenCalledTimes(2);
+    expect(s.current().body).toBe(initial().body + " New writing.");
+    expect(s.controller.snapshot().status).toBe("undone");
+  });
+  it("refuses Undo when newer writing changes the rewritten passage", async () => {
+    const s = setup(); await ready(s); await s.controller.accept();
+    s.change({ body: s.current().body.replace("Clear passage", "Later passage") });
     await s.controller.undo();
     expect(s.execute).toHaveBeenCalledOnce();
     expect(s.controller.snapshot()).toMatchObject({ status: "applied", error: expect.stringContaining("newer text") });
@@ -498,13 +506,15 @@ describe("inline caret lifecycle", () => {
     s.controller.discard(); await s.controller.accept();
     expect(s.controller.snapshot().status).toBe("discarded"); expect(s.execute).not.toHaveBeenCalled();
   });
-  it("refuses a changed revision and refuses Undo after a later body edit", async () => {
+  it("refuses a changed revision and preserves a later edit when undoing a caret insertion", async () => {
     const s = setup("continue", { caret: 7 }); await ready(s);
     s.change({ revision: 8 }); await s.controller.accept();
     expect(s.controller.snapshot().status).toBe("stale"); expect(s.execute).not.toHaveBeenCalled();
     s.controller.retry(); await vi.waitFor(() => expect(s.controller.snapshot().status).toBe("ready"));
     await s.controller.accept(); s.change({ body: s.current().body + " later" }); await s.controller.undo();
-    expect(s.execute).toHaveBeenCalledOnce(); expect(s.controller.snapshot().error).toContain("newer text");
+    expect(s.execute).toHaveBeenCalledTimes(2);
+    expect(s.controller.snapshot().status).toBe("undone");
+    expect(s.current().body).toBe(initial().body + " later");
   });
 });
 

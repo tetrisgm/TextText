@@ -230,8 +230,17 @@ export function createInlinePreview(request: InlineRequest, deps: Dependencies) 
       let sent = false;
       try {
         const current = await deps.read();
-        if (!active() || current[applied.edit.field] !== applied.result) throw new Error(SELECTION_STALE_ERROR);
         const edit = applied.edit;
+        const passageStillMatches = current[edit.field].slice(
+          edit.start, edit.start + edit.replacement_text.length,
+        ) === edit.replacement_text;
+        // A bounded Undo can preserve later edits outside its target range.
+        // The oversized path needs a whole-field precondition, so keep it
+        // conservative until it can use a similarly narrow commit-time guard.
+        if (!active() || !passageStillMatches ||
+            (edit.replacement_text.length > MAX_SELECTION_CHARS && current[edit.field] !== applied.result)) {
+          throw new Error(SELECTION_STALE_ERROR);
+        }
         // Large generated insertions still need Undo. A bounded source passage
         // plus its full-field hash guards those without expanding the selection budget.
         const longResult = edit.replacement_text.length > MAX_SELECTION_CHARS;

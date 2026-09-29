@@ -123,6 +123,31 @@ had the same revision (`492385`) and SHA-256 body hash
 This is a live API-provider read-only cancellation proof; it does not establish
 what happens to an in-flight write or to native account setup cancellation.
 
+## Reviewed rewrite Undo after later writing
+
+On 2026-09-29, a real Anthropic selection rewrite was accepted in the
+installed Mac app. After a separate human line was saved below it, **Undo**
+refused with “The passage changed. Undo would overwrite newer text.” The
+passage itself had not changed. The preview controller was comparing the
+entire body to its post-apply snapshot, which treated unrelated later writing
+as a conflict.
+
+Undo now checks the exact generated slice before issuing a guarded text edit;
+edits outside that slice remain in the body. Oversized generated passages
+retain the conservative whole-field check because their commit-time guard
+uses a whole-field precondition. The focused preview suite passed 55 tests,
+including preservation of later writing and refusal when the generated slice
+itself changes; TypeScript and touched ESLint passed.
+
+The installed app then accepted a shorter Anthropic rewrite of the same first
+sentence. A separate line, `Human after revised rewrite check c30be3a2.`,
+was saved afterward. **Undo** showed **Undone** and **Saved**; both the native
+editor and a fresh local canonical-store read had the original first sentence
+and the later line. The earlier `Human concurrent ffaec5c4.` line also remained
+complete. This proves one local native Undo with a later edit after the target
+passage; it does not prove cancellation of an in-flight agent write or every
+two-person race.
+
 - `TEXTTEXT_STORE=1 swift test --package-path mac --jobs 2 --filter Codex`:
   29 tests passed after updating an assertion for the revised instructions.
 - Three focused Vitest files: 37 tests passed, including native prompt and
