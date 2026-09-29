@@ -392,4 +392,8 @@ done
 
 "$LSREGISTER" -f "$APP" </dev/null >/dev/null 2>&1 || true
 SWAP_ACTIVE=0
-echo "Installed, launched, and verified one canonical copy: $APP ($SOURCE_VERSION build $SOURCE_BUILD)"
+if [[ "$REQUIRE_RUNTIME_HEALTH" == "1" ]]; then
+  echo "Installed, launched, and verified one canonical copy: $APP ($SOURCE_VERSION build $SOURCE_BUILD)"
+else
+  echo "Installed and launched one canonical copy: $APP ($SOURCE_VERSION build $SOURCE_BUILD); runtime health unverified"
+fi
