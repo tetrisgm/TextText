@@ -15,6 +15,7 @@ final class NativePlatformTests: XCTestCase {
         XCTAssertTrue(command.checked)
     }
     func testRestorationAcceptsSameWorkspaceItemsAndFolders() {
+        XCTAssertTrue(NativeWindowRestoration.accepts("/@me", homePath: "/@me"))
         XCTAssertTrue(NativeWindowRestoration.accepts("/t/me/hello?edit=1", homePath: "/@me"))
         XCTAssertTrue(NativeWindowRestoration.accepts("/@me?folder=Blog%2FResearch%20notes", homePath: "/@me"))
         for path in ["//evil.test/t/me/hello", "https://evil.test", "/t/other/hello", "/signin?token=secret", "/t/me/hello?token=secret", "/t/me/../secret", "/@other?folder=Blog", "/@me?folder=", "/@me?folder=Blog%2F..%2FPrivate", "/@me?folder=Blog%5CPrivate", "/@me?folder=Blog&token=secret", "/@me?view=settings"] {
@@ -25,7 +26,41 @@ final class NativePlatformTests: XCTestCase {
     func testRestorationSeparatesAccountsAndOrigins() {
         let origin = URL(string: "https://texttext.test")!
         XCTAssertNotEqual(NativeWindowRestoration.key(origin: origin, homePath: "/@one"), NativeWindowRestoration.key(origin: origin, homePath: "/@two"))
-        XCTAssertNil(AppDelegate.restoredWorkspacePath(origin: origin, handle: "one", signedIn: false))
+        XCTAssertNil(AppDelegate.restoredWorkspacePath(origin: origin, handle: "one", token: nil))
+        let first = HTTPCookie(properties: [.name: "authjs.session-token", .value: "first-secret", .domain: "texttext.test", .path: "/"])!
+        let second = HTTPCookie(properties: [.name: "authjs.session-token", .value: "second-secret", .domain: "texttext.test", .path: "/"])!
+        let firstKey = NativeWindowRestoration.webSessionKey(origin: origin, cookie: first)
+        XCTAssertNotEqual(firstKey, NativeWindowRestoration.webSessionKey(origin: origin, cookie: second))
+        XCTAssertNotEqual(firstKey, NativeWindowRestoration.webSessionKey(origin: URL(string: "https://other.test")!, cookie: first))
+        XCTAssertFalse(firstKey.contains("first-secret"))
+    }
+    func testNewlyLinkedSessionRestoresOnlyAValidatedWorkspacePath() {
+        let origin = URL(string: "http://localhost:39117")!
+        let token = "wsk_first"
+        let key = NativeWindowRestoration.linkedFallbackKey(origin: origin, token: token)
+        let workspaceKey = NativeWindowRestoration.key(origin: origin, homePath: "/@me")
+        XCTAssertNotEqual(key, NativeWindowRestoration.linkedFallbackKey(origin: origin, token: "wsk_second"))
+        XCTAssertFalse(key.contains(token))
+        defer {
+            UserDefaults.standard.removeObject(forKey: key)
+            UserDefaults.standard.removeObject(forKey: workspaceKey)
+        }
+        UserDefaults.standard.set("/@me", forKey: workspaceKey)
+        for path in ["/@me", "/@me?folder=Notes%2FResearch", "/t/me/hello?edit=1"] {
+            XCTAssertTrue(NativeWindowRestoration.acceptsCookieSessionPath(path), path)
+            UserDefaults.standard.set(path, forKey: key)
+            XCTAssertNil(AppDelegate.restoredWorkspacePath(origin: origin, handle: nil, token: nil))
+            XCTAssertNil(AppDelegate.restoredWorkspacePath(origin: origin, handle: nil, token: "wsk_second"))
+            XCTAssertEqual(AppDelegate.restoredWorkspacePath(origin: origin, handle: nil, token: token), path)
+            XCTAssertEqual(AppDelegate.restoredWorkspacePath(origin: origin, handle: "me", token: token), path)
+            XCTAssertNil(AppDelegate.restoredWorkspacePath(origin: origin, handle: "other", token: token))
+        }
+        UserDefaults.standard.removeObject(forKey: workspaceKey)
+        for path in ["https://evil.test/@me", "//evil.test/@me", "/signin", "/@me?token=secret", "/@me?folder=Notes%2F..%2FPrivate", "/t/me/hello?token=secret"] {
+            XCTAssertFalse(NativeWindowRestoration.acceptsCookieSessionPath(path), path)
+            UserDefaults.standard.set(path, forKey: key)
+            XCTAssertNil(AppDelegate.restoredWorkspacePath(origin: origin, handle: nil, token: token))
+        }
     }
     func testDropFiltersUnsupportedAndCredentialURLs() {
         for raw in ["https://example.test/page", "http://example.test"] { XCTAssertTrue(NativeItemDrop.accepts(URL(string: raw)!)) }

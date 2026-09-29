@@ -15,7 +15,7 @@ import {
 } from "react";
 import { nativeMenuEntries, runNativeMenuCommand } from "@/lib/commands/native-menu";
 import { OPEN_ADD_AGENT_EVENT } from "@/lib/agent-connect";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { isTypingTarget } from "@/components/keyboard/typing-target";
 import {
   CommandPalette,
@@ -88,6 +88,8 @@ function isKeyboardShortcutsKey(event: KeyboardEvent): boolean {
 export function CommandLayer({ children }: { children: ReactNode }) {
   useEffect(() => installPressFeedback(document), []);
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { pool } = useWorkspacePool();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -224,7 +226,7 @@ export function CommandLayer({ children }: { children: ReactNode }) {
       window.removeEventListener("texttext:native-menu-command", invoke);
       bridge.postMessage({ action: "nativeMenuState", entries: [] });
     };
-  }, [commandContext, workspaceSurface, pool, paletteOpen]);
+  }, [commandContext, workspaceSurface, pool, paletteOpen, pathname, searchParams]);
 
   const registerKey = useCallback((binding: KeyBinding) => {
     keyBindingsRef.current = [...keyBindingsRef.current, binding];

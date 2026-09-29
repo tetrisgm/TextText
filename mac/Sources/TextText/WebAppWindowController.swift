@@ -511,7 +511,30 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             [weak self] in
             guard let self else { return }
             guard let appToken else {
-                self.webView.load(self.request(for: self.startupNavigation.begin()))
+                let path = self.startupNavigation.begin()
+                self.webView.configuration.websiteDataStore.httpCookieStore
+                    .getAllCookies { [weak self] cookies in
+                        guard let self else { return }
+                        let sessionCookie = cookies.first { cookie in
+                            Self.isAuthSessionCookieName(cookie.name)
+                                && self.cookieMatchesOrigin(cookie)
+                                && (cookie.expiresDate.map { $0 > Date() } ?? true)
+                        }
+                        guard let sessionCookie else {
+                            self.webView.load(self.request(for: "/start?to=home"))
+                            return
+                        }
+                        let saved = UserDefaults.standard.string(forKey: NativeWindowRestoration.webSessionKey(
+                            origin: self.origin, cookie: sessionCookie))
+                        let destination: String
+                        if path == "/start?to=home", let saved,
+                           NativeWindowRestoration.acceptsCookieSessionPath(saved) {
+                            destination = saved
+                        } else {
+                            destination = path
+                        }
+                        self.webView.load(self.request(for: destination))
+                    }
                 return
             }
             // The session exchange is an uncacheable POST plus its redirects
@@ -1857,10 +1880,29 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                 exportItem = (id, title)
             } else { exportItem = nil }
             exportButton?.isEnabled = exportItem != nil
-            if let path = body["restorePath"] as? String,
-               NativeWindowRestoration.accepts(path, homePath: workspaceHomePath), appToken != nil {
-                restorablePath = path
-                UserDefaults.standard.set(path, forKey: NativeWindowRestoration.key(origin: origin, homePath: workspaceHomePath))
+            if let path = body["restorePath"] as? String {
+                if let appToken,
+                   NativeWindowRestoration.accepts(path, homePath: workspaceHomePath) {
+                    restorablePath = path
+                    UserDefaults.standard.set(path, forKey: NativeWindowRestoration.key(origin: origin, homePath: workspaceHomePath))
+                    UserDefaults.standard.set(path, forKey: NativeWindowRestoration.linkedFallbackKey(origin: origin, token: appToken))
+                } else if let appToken,
+                          NativeWindowRestoration.acceptsCookieSessionPath(path) {
+                    restorablePath = path
+                    UserDefaults.standard.set(path, forKey: NativeWindowRestoration.linkedFallbackKey(origin: origin, token: appToken))
+                }
+                if NativeWindowRestoration.acceptsCookieSessionPath(path) {
+                    webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
+                        guard let self, self.webView.url.map({ $0.path + ($0.query.map { "?" + $0 } ?? "") }) == path,
+                              let cookie = cookies.first(where: {
+                                  Self.isAuthSessionCookieName($0.name)
+                                      && self.cookieMatchesOrigin($0)
+                                      && ($0.expiresDate.map { $0 > Date() } ?? true)
+                              }) else { return }
+                        UserDefaults.standard.set(path, forKey: NativeWindowRestoration.webSessionKey(
+                            origin: self.origin, cookie: cookie))
+                    }
+                }
             }
             return
         }

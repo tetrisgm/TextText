@@ -1744,6 +1744,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         #if TEXTTEXT_STORE
         nativeAppleSignIn.cancel()
         #endif
+        if let credentials = store.loadCredentials() {
+            UserDefaults.standard.removeObject(forKey: NativeWindowRestoration.linkedFallbackKey(
+                origin: resolveServerOrigin(credentials: credentials), token: credentials.token))
+        }
         store.deleteCredentials()
         spotlightQueue.async { [weak self] in self?.clearSpotlightIndex() }
         removeFileProviderDomain()
@@ -2964,11 +2968,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         controller.present()
     }
 
-    static func restoredWorkspacePath(origin: URL, handle: String?, signedIn: Bool) -> String? {
-        guard signedIn, let handle else { return nil }
-        let home = "/@" + handle
-        let path = UserDefaults.standard.string(forKey: NativeWindowRestoration.key(origin: origin, homePath: home))
-        return path.flatMap { NativeWindowRestoration.accepts($0, homePath: home) ? $0 : nil }
+    static func restoredWorkspacePath(origin: URL, handle: String?, token: String?) -> String? {
+        guard let token else { return nil }
+        let linkedPath = UserDefaults.standard.string(forKey: NativeWindowRestoration.linkedFallbackKey(origin: origin, token: token))
+        if let linkedPath, NativeWindowRestoration.acceptsCookieSessionPath(linkedPath),
+           handle.map({ NativeWindowRestoration.accepts(linkedPath, homePath: "/@" + $0) }) ?? true {
+            return linkedPath
+        }
+        if let handle {
+            let home = "/@" + handle
+            let path = UserDefaults.standard.string(forKey: NativeWindowRestoration.key(origin: origin, homePath: home))
+            if let path, NativeWindowRestoration.accepts(path, homePath: home) { return path }
+        }
+        return nil
     }
 
     private func importDroppedURLs(_ urls: [URL]) {
@@ -3037,7 +3049,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             let cachedHandle = store.cachedWorkspace()?.blog.handle
             webWindow = WebAppWindowController(
                 origin: origin,
-                startPath: path ?? Self.restoredWorkspacePath(origin: origin, handle: cachedHandle, signedIn: credentials != nil) ?? "/start?to=home",
+                startPath: path ?? Self.restoredWorkspacePath(origin: origin, handle: cachedHandle, token: credentials?.token) ?? "/start?to=home",
                 appToken: credentials?.token,
                 // Lets the cookie fast path land on the workspace directly
                 // instead of paying the /start redirect hop.
