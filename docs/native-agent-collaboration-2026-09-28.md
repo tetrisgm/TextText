@@ -97,6 +97,15 @@ its selection and no red issue badge. The two focused selection suites passed
 
 ## Verification
 
+On 2026-09-29, `scripts/verify-second-person-agent-boundary.ts` used the
+existing second collaborator's own authenticated local session. That account
+opened the owner's shared test note, but the owner's AI configuration appeared
+disabled to it. Assistant-turn and `append_to_item` requests against the owner
+workspace both returned 403 before a provider call or write. A fresh store
+read found the note's body and revision unchanged. This proves the local HTTP
+owner boundary for this fixture; it does not test every native agent provider
+or a public deployment. The script, TypeScript, and touched-file ESLint passed.
+
 - `TEXTTEXT_STORE=1 swift test --package-path mac --jobs 2 --filter Codex`:
   29 tests passed after updating an assertion for the revised instructions.
 - Three focused Vitest files: 37 tests passed, including native prompt and
