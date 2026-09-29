@@ -4,6 +4,7 @@ import { aiFailure } from "../provider-failure";
 import {
   cloudAssistantStatus,
   cloudAssistantTurn,
+  decideCloudAssistantWriteProposal,
 } from "@/lib/ai/cloud-client";
 
 describe("cloud assistant client", () => {
@@ -49,6 +50,15 @@ describe("cloud assistant client", () => {
     await expect(cloudAssistantTurn("writer", "Keep this request")).rejects.toMatchObject({ name: "AiConnectionError", failure });
     const init = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect((init[1].headers as Record<string, string>)["x-texttext-request-id"]).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it.each([
+    { status: 422, terminal: true },
+    { status: 503, terminal: false },
+  ])("marks a proposal decision HTTP $status as terminal=$terminal", async ({ status, terminal }) => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: "Could not apply" }, { status })));
+    await expect(decideCloudAssistantWriteProposal("proposal-1", "approve"))
+      .rejects.toMatchObject({ name: "CloudProposalDecisionError", message: "Could not apply", terminal });
   });
 
   it("fails closed before a request when the displayed handle is invalid", async () => {

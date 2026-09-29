@@ -62,6 +62,32 @@ and 820/1,352 ms for peer/store respectively, with local input-to-DOM p95
 of 0.5 and 0.7 ms. These four runs show an improvement on this fixture, not
 a worst-case latency bound or a repeated installed-native result.
 
+## Reviewed append with a concurrent editor
+
+A follow-up on installed local build 1111 used the Anthropic assistant's
+reviewed-write path and the same two-editor test note. The first live run
+staged the append, the second editor saved its line, and **Apply change**
+returned a stale-hash conflict. The second editor kept its complete line;
+the agent line was absent. This was distinct from the earlier native Codex
+retry: the conflict occurred when the owner approved a proposal, after the
+assistant's turn had ended.
+
+The approval service now handles only an explicit no-write stale-hash result
+for `append_to_item`: it reads the latest item as the same authorized actor,
+checks the exact fragment is absent, and executes one retry with the new hash.
+It stops after another conflict, an unreadable item, or an uncertain error.
+An HTTP failure for a consumed or expired proposal now closes its review card
+and tells the person to ask for a fresh change, rather than offering a button
+that cannot work again.
+
+The repeated installed-app run staged `Agent concurrent a6583181.` before
+the second browser editor saved `Human concurrent a6583181.`. After approval,
+the native editor displayed both complete lines. The second browser editor
+received the agent line, and a fresh canonical store read retained both
+lines, the original Typing marker, and the original title. This proves the
+reviewed Anthropic route on the local server; it does not repeat the native
+Codex provider path or establish reliability under network loss.
+
 ## Verification
 
 - `TEXTTEXT_STORE=1 swift test --package-path mac --jobs 2 --filter Codex`:
@@ -77,3 +103,6 @@ a worst-case latency bound or a repeated installed-native result.
   45 tests; TypeScript, touched ESLint, and `git diff --check` passed. The
   local two-editor timing runs above preserved the complete final text in
   the peer and canonical document.
+- The reviewed-write follow-up passed 83 focused tests across the proposal,
+  client, and assistant UI suites. TypeScript and touched ESLint passed. The
+  first live run failed as described, and the second passed after the fix.

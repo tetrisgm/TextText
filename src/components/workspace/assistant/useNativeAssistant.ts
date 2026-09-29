@@ -33,6 +33,7 @@ import { presentSelectionPreview } from "./selection-preview-event";
 import { reportSelectionError } from "./selection-error";
 import { createWorkspaceAgentTools } from "@/lib/ai/agent-tools";
 import {
+  CloudProposalDecisionError,
   cloudAssistantTurn,
   decideCloudAssistantWriteProposal,
   submitAssistantFeedback,
@@ -2602,6 +2603,7 @@ export function useNativeAssistant({
           }
         }
       } catch (error) {
+        const terminalFailure = error instanceof CloudProposalDecisionError && error.terminal;
         updateThreadMessage(threadKey, messageId, (candidate) => ({
           ...candidate,
           writeProposals: candidate.writeProposals?.map((current) =>
@@ -2615,7 +2617,8 @@ export function useNativeAssistant({
                   ...current,
                   status: "error",
                   deciding: undefined,
-                  error: assistantAgentError(error),
+                  error: `${assistantAgentError(error)}${terminalFailure ? " Ask the assistant to prepare a fresh change." : ""}`,
+                  terminal: terminalFailure || undefined,
                 }
               : current,
           ),

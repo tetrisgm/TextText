@@ -758,14 +758,40 @@ export async function decideWorkspaceWriteProposal(
   }
 
   try {
-    const result = await dependencies.execute(
+    const executionActor = { ...input.actor, runId: claimed.id,
+      actorType: claimed.metadata?.agentActorType === "external_agent" ? "external_agent" as const : "ai" as const,
+      connectionId: typeof claimed.metadata?.agentConnectionId === "string"
+        ? claimed.metadata.agentConnectionId : `assistant:${claimed.actorUserId}` };
+    let result = await dependencies.execute(
       validated.name,
       approvedArguments,
-      { ...input.actor, runId: claimed.id,
-        actorType: claimed.metadata?.agentActorType === "external_agent" ? "external_agent" : "ai",
-        connectionId: typeof claimed.metadata?.agentConnectionId === "string"
-          ? claimed.metadata.agentConnectionId : `assistant:${claimed.actorUserId}` },
+      executionActor,
     );
+    // An append can become stale while its review card waits for the owner.
+    // The hash rejection made no write. Read with the same authorized actor,
+    // then retry once against that exact version if the fragment is absent.
+    if (validated.name === "append_to_item" && result.isError &&
+        /^Conflict: .* changed since it was read/.test(resultText(result))) {
+      const itemId = approvedArguments.id;
+      const fragment = approvedArguments.markdown ?? approvedArguments.markdown_fragment;
+      if (typeof itemId === "string" && typeof fragment === "string") {
+        const latest = await dependencies.execute("read_item", { id: itemId }, executionActor);
+        const entry = latest.structuredContent?.item;
+        const markdown = latest.structuredContent?.markdown;
+        const hash = entry && typeof entry === "object" && !Array.isArray(entry)
+          ? (entry as Record<string, unknown>).hash : undefined;
+        if (!latest.isError && typeof markdown === "string" && markdown.includes(fragment.trim())) {
+          result = { isError: true, content: [{ type: "text", text: "The requested text is already present. Nothing was appended again." }] };
+        } else if (!latest.isError && typeof hash === "string" && /^[a-f0-9]{64}$/.test(hash) &&
+                   typeof markdown === "string") {
+          const retryArguments = validateWorkspaceWriteProposal(validated.name, {
+            ...approvedArguments,
+            if_match_hash: hash,
+          }).arguments;
+          result = await dependencies.execute(validated.name, retryArguments, executionActor);
+        }
+      }
+    }
     const text = resultText(result);
     if (result.isError) {
       await dependencies.repository.fail(

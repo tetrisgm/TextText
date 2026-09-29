@@ -410,6 +410,35 @@ describe("assistant sidebar UI", () => {
     expect(html).not.toContain("Dismiss");
   });
 
+  it("does not offer Apply again for a consumed failed workspace proposal", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        messages: [{
+          id: "failed-append",
+          role: "assistant",
+          text: "The append was proposed.",
+          writeProposals: [{
+            id: "proposal-failed",
+            kind: "workspace",
+            status: "error",
+            terminal: true,
+            error: "The item changed again. Ask for a fresh proposal.",
+            tool: "append_to_item",
+            title: "Append to item",
+            summary: "Append to item",
+            arguments: { id: "item-1", markdown: "Agent line." },
+            createdAt: "2026-08-24T12:00:00.000Z",
+            expiresAt: "2026-08-24T12:15:00.000Z",
+          }],
+        }],
+        submitting: false,
+        onWriteProposalDecision: () => {},
+      }),
+    );
+    expect(html).toContain("Ask for a fresh proposal.");
+    expect(html).not.toContain("Apply change");
+  });
+
   it("previews exactly who will gain access to which target", () => {
     const html = renderToStaticMarkup(
       React.createElement(AssistantConversation, {

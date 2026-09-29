@@ -309,6 +309,13 @@ function cleanWriteProposals(value: unknown): CloudAssistantWriteProposal[] {
   });
 }
 
+export class CloudProposalDecisionError extends Error {
+  constructor(message: string, readonly terminal: boolean) {
+    super(message);
+    this.name = "CloudProposalDecisionError";
+  }
+}
+
 export async function decideCloudAssistantWriteProposal(
   id: string,
   decision: "approve" | "deny",
@@ -323,10 +330,11 @@ export async function decideCloudAssistantWriteProposal(
     | Record<string, unknown>
     | null;
   if (!response.ok) {
-    throw new Error(
+    throw new CloudProposalDecisionError(
       typeof data?.error === "string"
         ? data.error
         : "The proposed change could not be decided.",
+      [404, 409, 410, 422].includes(response.status),
     );
   }
   return data ?? {};

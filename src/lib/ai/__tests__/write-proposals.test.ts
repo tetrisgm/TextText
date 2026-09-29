@@ -102,7 +102,7 @@ const otherOwner = { sub: "other-sub", userId: "user-2", handle: "beta" };
 function harness() {
   const repository = new MemoryProposalRepository();
   let clock = new Date("2026-08-24T12:00:00.000Z");
-  const execute = vi.fn(async () => ({
+  const execute = vi.fn<WorkspaceWriteProposalDependencies["execute"]>(async () => ({
     content: [{ type: "text", text: '{"item":{"id":"item-1"}}' }],
     structuredContent: { item: { id: "item-1", hash: "sha256:abc" } },
   }));
@@ -178,6 +178,54 @@ describe("workspace write proposals", () => {
       { ...owner, connectionId: "assistant:user-1", runId: proposal.id, actorType: "ai" },
     );
     expect(repository.rows.get(proposal.id)?.status).toBe("completed");
+  });
+
+  it("rereads and retries an approved append once after a no-write hash conflict", async () => {
+    const { dependencies, execute, repository } = harness();
+    const oldHash = "a".repeat(64);
+    const newHash = "b".repeat(64);
+    const proposal = await createWorkspaceWriteProposal({
+      actor: owner,
+      tool: "append_to_item",
+      arguments: { id: "item-1", markdown: "Agent line.", if_match_hash: oldHash },
+    }, dependencies);
+    execute.mockImplementationOnce(async () => ({
+      isError: true,
+      content: [{ type: "text", text: 'Conflict: "Test" changed since it was read (its hash is now newer).' }],
+    }));
+    execute.mockImplementationOnce(async () => ({
+      structuredContent: { item: { id: "item-1", hash: newHash }, markdown: "Human line.\n" },
+    }));
+    const result = await decideWorkspaceWriteProposal(
+      { actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies,
+    );
+    expect(result.status).toBe("completed");
+    expect(repository.rows.get(proposal.id)?.status).toBe("completed");
+    expect(execute).toHaveBeenCalledTimes(3);
+    expect(execute.mock.calls[1][0]).toBe("read_item");
+    expect(execute.mock.calls[2][1]).toEqual({ id: "item-1", markdown: "Agent line.", if_match_hash: newHash });
+  });
+
+  it("never repeats an approved append whose fragment is already present", async () => {
+    const { dependencies, execute, repository } = harness();
+    const proposal = await createWorkspaceWriteProposal({
+      actor: owner,
+      tool: "append_to_item",
+      arguments: { id: "item-1", markdown: "Agent line.", if_match_hash: "a".repeat(64) },
+    }, dependencies);
+    execute.mockImplementationOnce(async () => ({
+      isError: true,
+      content: [{ type: "text", text: 'Conflict: "Test" changed since it was read (its hash is now newer).' }],
+    }));
+    execute.mockImplementationOnce(async () => ({
+      structuredContent: { item: { id: "item-1", hash: "b".repeat(64) }, markdown: "Human line.\nAgent line.\n" },
+    }));
+    const result = await decideWorkspaceWriteProposal(
+      { actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies,
+    );
+    expect(result).toMatchObject({ status: "failed", message: expect.stringContaining("already present") });
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(repository.rows.get(proposal.id)?.status).toBe("failed");
   });
 
   it("reports a successful mutation truthfully when receipt storage fails", async () => {
