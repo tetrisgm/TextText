@@ -88,6 +88,13 @@ lines, the original Typing marker, and the original title. This proves the
 reviewed Anthropic route on the local server; it does not repeat the native
 Codex provider path or establish reliability under network loss.
 
+The local app also surfaced React's render-time state update warning while
+opening this note. Workspace selection had notified subscribers inside a
+`useState` initializer. Initialization now runs in a layout effect on mount
+or workspace change. After the development reload, the note reopened with
+its selection and no red issue badge. The two focused selection suites passed
+12 tests, TypeScript passed, and touched ESLint had only existing warnings.
+
 ## Verification
 
 - `TEXTTEXT_STORE=1 swift test --package-path mac --jobs 2 --filter Codex`:

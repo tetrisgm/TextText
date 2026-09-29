@@ -929,16 +929,16 @@ function LocalWorkspaceShell({
   // Selection lives in the module store (see selection-store.ts) so writers
   // do not re-render this whole component. The shell still subscribes for
   // now; leaf components carry their own subscriptions.
-  const [] = useState(() => {
-    if (typeof window !== "undefined") {
-      setWorkspaceSelection({
-        activeId: initialSelectedPostId,
-        anchorId: initialSelectedPostId,
-        ids: new Set(initialSelectedPostId ? [initialSelectedPostId] : []),
-      });
-    }
-    return null;
-  });
+  useLayoutEffect(() => {
+    setWorkspaceSelection({
+      activeId: initialSelectedPostId,
+      anchorId: initialSelectedPostId,
+      ids: new Set(initialSelectedPostId ? [initialSelectedPostId] : []),
+    });
+    // Selection is initialized on mount or workspace change. Later view
+    // navigation updates the same store through the selection handlers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPool.blogId]);
   const serverSelection = useMemo<WorkspaceSelectionState>(
     () => ({
       activeId: initialSelectedPostId,
