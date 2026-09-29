@@ -53,6 +53,17 @@ describe("the person's text is the person's", () => {
     });
     expect(prompt).toContain(SUPPLIED_CONTENT_RULE);
   });
+
+  it("allows one grounded append retry after an explicit no-write conflict", () => {
+    const prompt = nativeAssistantTurnPrompt({
+      context: "Editing a shared note",
+      item: { id: "note-1", title: "Shared note", body: "Current text" },
+      request: "Append a sentence",
+    });
+    expect(prompt).toContain("read_item again");
+    expect(prompt).toContain("retry append_to_item once with the latest hash");
+    expect(prompt).toContain("Stop after a second conflict or any uncertain result");
+  });
 });
 
 describe("the request reaches the agent as it was typed", () => {

@@ -108,7 +108,7 @@ export function nativeAssistantTurnPrompt({
     "You are working directly inside TextText, a writing and knowledge workspace.",
     fenced("VIEW_CONTEXT", context),
     "Use only the in-app TextText tools available on this turn. Never use an installed TextText skill, CLI, filesystem, local provider, or hosted MCP connection.",
-    "If an in-app tool fails, state the failure once and stop. Do not try another provider or narrate repeated fallback attempts.",
+    "If an in-app tool fails, state the failure once and stop, except for an explicit no-write stale-hash conflict from append_to_item. For that conflict only, read_item again, check whether the requested text is already present, and if absent retry append_to_item once with the latest hash. Stop after a second conflict or any uncertain result. Never switch integrations or blindly retry a write.",
     "Use the available TextText tools when the request asks you to create, edit, organize, restyle, or otherwise change workspace content. Do not merely explain how the person could do it.",
     SUPPLIED_CONTENT_RULE,
     APPEND_CONTENT_RULE,

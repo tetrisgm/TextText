@@ -271,6 +271,21 @@ export function lineSplice(
   return { start, oldEnd, newEnd };
 }
 
+export function selectionAfterRemoteAppend(
+  previousValue: string | null,
+  value: string,
+  current: { anchor: number; head: number } | null,
+  relative: { anchor: number; head: number },
+): { anchor: number; head: number } {
+  // Keep a writer finishing the final line ahead of a peer's new block.
+  // The relative anchor can resolve after the inserted block at this edge.
+  if (previousValue !== null && value.startsWith(previousValue) &&
+      current?.anchor === previousValue.length && current.head === previousValue.length) {
+    return { anchor: previousValue.length, head: previousValue.length };
+  }
+  return relative;
+}
+
 /**
  * The materialized window [start, end) that keeps `line` comfortably inside
  * it, sized for the viewport plus overscan on both edges.
@@ -1115,7 +1130,7 @@ export function MarkdownSurface({
     // the character this person actually typed, including simultaneous edits.
     const remoteSelection = focused && !domDirtyRef.current && builtValueRef.current !== value
       ? resolveSelection?.() ?? null : null;
-    if (remoteSelection) keep = remoteSelection;
+    if (remoteSelection) keep = selectionAfterRemoteAppend(builtValueRef.current, value, keep, remoteSelection);
     // A controlled structural edit already knows exactly where the caret
     // belongs; the DOM position it was captured from predates the edit.
     const pendingCaret = pendingCaretRef.current;

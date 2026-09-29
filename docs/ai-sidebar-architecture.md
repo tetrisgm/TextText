@@ -147,15 +147,18 @@ the connection-check thread is never reused for a document chat. The isolated
 Store-shaped test calls those tools inside App Sandbox without Codex's V8
 code-mode host. Standalone builds
 can discover an external runtime. Store source accepts only a declared signed
-bundled helper that inherits the sandbox, uses TextText-owned account state and
-the documented device authorization flow. The September 28 local WIP build
-1095 includes that helper; the public release still does not. An isolated
+bundled helper that inherits the sandbox and uses TextText-owned account state.
+The September 28 local WIP build 1098 starts Codex's browser-based ChatGPT
+authorization using the parent app's sandboxed callback listener. The public
+release still does not include this helper. An isolated
 Store-shaped build verified
 clean-profile authorization, automatic return to a selected-document request,
 native workspace read/write, preview, refinement, save, and app reopen in the
 [workflow receipt](agent-experience-verification-2026-09-25.md).
 Distribution approval remains untested; see the
-[sandbox receipt](agent-runtime-sandbox-verification-2026-09-25.md).
+[sandbox receipt](agent-runtime-sandbox-verification-2026-09-25.md),
+[browser sign-in receipt](browser-auth-sandbox-2026-09-28.md), and
+[local concurrent edit check](native-agent-collaboration-2026-09-28.md).
 
 The in-app assistant can also call the workspace command surface through the
 workspace-configured Anthropic or OpenAI provider. The workspace owner chooses

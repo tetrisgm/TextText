@@ -3,6 +3,14 @@ import XCTest
 @testable import TextTextWorkspaceCore
 
 final class CodexAppServerTests: XCTestCase {
+    func testEmbeddedInstructionsAllowOnlyOneGroundedAppendConflictRetry() {
+        let instructions = CodexAppServerRequests.embeddedDeveloperInstructions
+        XCTAssertTrue(instructions.contains("read_item again"))
+        XCTAssertTrue(instructions.contains("retry append_to_item once with the latest hash"))
+        XCTAssertTrue(instructions.contains("Stop after a second conflict or any uncertain result"))
+        XCTAssertTrue(instructions.contains("Never switch integrations or blindly retry a write"))
+    }
+
     func testEmbeddedRuntimeExposesOnlyTextTextNamespaceAsDirectTools() throws {
         let temporary = FileManager.default.temporaryDirectory
             .appendingPathComponent("texttext-codex-direct-\(UUID().uuidString)", isDirectory: true)
@@ -131,7 +139,7 @@ final class CodexAppServerTests: XCTestCase {
         let instructions = params["developerInstructions"] as? String
         XCTAssertTrue(instructions?.contains("Use only the dynamic tools") == true)
         XCTAssertTrue(instructions?.contains("Never use installed skills") == true)
-        XCTAssertTrue(instructions?.contains("Do not retry through another integration") == true)
+        XCTAssertTrue(instructions?.contains("Never switch integrations or blindly retry a write") == true)
         XCTAssertTrue(instructions?.contains("When it is present, answer immediately") == true)
         XCTAssertTrue(instructions?.contains("make no tool calls") == true)
         XCTAssertTrue(instructions?.contains("Only when WORKSPACE_INDEX is absent") == true)

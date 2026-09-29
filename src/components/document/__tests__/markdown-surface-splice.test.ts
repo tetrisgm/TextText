@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   lineOverlaySignatures,
   lineSplice,
+  selectionAfterRemoteAppend,
 } from "@/components/document/MarkdownSurface";
 
 // The reconciler's promise: per-keystroke DOM work is proportional to the
@@ -59,6 +60,20 @@ describe("line splice", () => {
     const splice = lineSplice(previous, next);
     expect(splice.oldEnd - splice.start).toBe(1);
     expect(splice.newEnd - splice.start).toBe(0);
+  });
+});
+
+describe("remote append caret", () => {
+  it("keeps the writer before a block appended while they finish the last line", () => {
+    expect(selectionAfterRemoteAppend("Human par", "Human par\n\nAgent line", { anchor: 9, head: 9 }, { anchor: 21, head: 21 }))
+      .toEqual({ anchor: 9, head: 9 });
+  });
+
+  it("uses the CRDT position for remote changes away from the writing boundary", () => {
+    expect(selectionAfterRemoteAppend("Human par", "Peer Human par", { anchor: 9, head: 9 }, { anchor: 14, head: 14 }))
+      .toEqual({ anchor: 14, head: 14 });
+    expect(selectionAfterRemoteAppend("Human par", "Human par\n\nAgent line", { anchor: 3, head: 3 }, { anchor: 3, head: 3 }))
+      .toEqual({ anchor: 3, head: 3 });
   });
 });
 
