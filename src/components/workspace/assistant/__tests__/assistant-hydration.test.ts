@@ -54,6 +54,7 @@ function HydrationTranscriptSidebar() {
   // eslint-disable-next-line react/no-children-prop
   return React.createElement(AssistantConversationState, {
     activeConversationId: assistant.activeConversationId,
+    assistantVisible: true,
     contextKey: assistant.conversationContextKey,
     handle: "hydration-writer",
     ownerScopeReady: assistant.ownerScopeReady,

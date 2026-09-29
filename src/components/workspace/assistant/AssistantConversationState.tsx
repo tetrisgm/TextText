@@ -47,6 +47,7 @@ export type AssistantConversationView = {
 
 type AssistantConversationStateProps = {
   activeConversationId: string | null;
+  assistantVisible: boolean;
   children?: (view: AssistantConversationView) => ReactNode;
   contextKey: string;
   handle: string;
@@ -64,6 +65,7 @@ type AssistantConversationStateProps = {
  */
 export function AssistantConversationState({
   activeConversationId,
+  assistantVisible,
   children,
   contextKey,
   handle,
@@ -78,6 +80,10 @@ export function AssistantConversationState({
 
   const scope = ownerScopeReady && storeKey ? `${handle}\u001f${storeKey}` : null;
   const currentScope = useRef(scope);
+  const assistantVisibleRef = useRef(assistantVisible);
+  useLayoutEffect(() => {
+    assistantVisibleRef.current = assistantVisible;
+  }, [assistantVisible]);
   useLayoutEffect(() => {
     currentScope.current = scope;
     return () => {
@@ -89,6 +95,7 @@ export function AssistantConversationState({
     status: AssistantHistorySyncStatus;
     retry: () => void;
   } | null>(null);
+  const syncLoop = useRef<ReturnType<typeof startAssistantConversationSync> | null>(null);
   const retryHistorySync =
     syncState?.scope === scope ? syncState.retry : undefined;
 
@@ -96,18 +103,25 @@ export function AssistantConversationState({
     if (!scope || !storeKey) return;
     const loop = startAssistantConversationSync({
       storeKey,
+      assistantVisible: assistantVisibleRef.current,
       sync: (local) => syncAssistantConversationsAction(handle, local, storeKey),
       isCurrent: () => currentScope.current === scope,
       onStatus: (status) =>
         setSyncState({ scope, status, retry: () => loop.retry() }),
     });
+    syncLoop.current = loop;
     return () => {
+      if (syncLoop.current === loop) syncLoop.current = null;
       loop.dispose();
     };
   }, [handle, scope, storeKey]);
 
-  const historySyncStatus = scope
-    ? syncState?.scope === scope ? syncState.status : "local"
+  useEffect(() => {
+    syncLoop.current?.setAssistantVisible(assistantVisible);
+  }, [assistantVisible, scope]);
+
+  const historySyncStatus = scope && syncState?.scope === scope
+    ? syncState.status
     : null;
 
   const view = useMemo<AssistantConversationView>(() => {

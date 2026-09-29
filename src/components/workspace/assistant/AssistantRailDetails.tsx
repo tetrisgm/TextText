@@ -47,8 +47,8 @@ export function AssistantHistorySync({ status, onRetry }: {
   status: AssistantSidebarProps["historySyncStatus"]; onRetry?: () => void;
 }) {
   return <div className={styles.historySync}>
-    {status && <span role="status" aria-live="polite" aria-atomic="true">
-      {status === "syncing" ? "Syncing" : status === "synced" ? "Synced" : status === "offline" ? "Offline" : "Saved on this device"}
+    {status && status !== "synced" && <span role="status" aria-live="polite" aria-atomic="true">
+      {status === "syncing" ? "Syncing" : status === "offline" ? "Offline" : "Saved on this device"}
     </span>}
     {(status === "offline" || status === "error") && onRetry &&
       <button type="button" className={styles.retrySync} onClick={onRetry}>Retry sync</button>}

@@ -20,9 +20,9 @@ let network: { onLine: boolean };
 let stops: (() => void)[];
 const key = "writer:owner-a";
 function message(id: string) { return { id, role: "user" as const, text: id }; }
-function start(storeKey = key, sync = vi.fn(async (local: SyncedAssistantConversation[]) => ({ allowed: true, conversations: local })), isCurrent = () => true) {
+function start(storeKey = key, sync = vi.fn(async (local: SyncedAssistantConversation[]) => ({ allowed: true, conversations: local })), isCurrent = () => true, assistantVisible = true) {
   const statuses: AssistantHistorySyncStatus[] = [];
-  const controller = startAssistantConversationSync({ storeKey, sync, isCurrent, onStatus: (value) => statuses.push(value) });
+  const controller = startAssistantConversationSync({ storeKey, assistantVisible, sync, isCurrent, onStatus: (value) => statuses.push(value) });
   stops.push(controller.dispose);
   return { ...controller, sync, statuses };
 }
@@ -63,6 +63,79 @@ afterEach(() => {
 });
 
 describe("owner-scoped conversation sync schedule", () => {
+  it("does not poll remote history behind a closed assistant, but still uploads a local edit", async () => {
+    const id = activeAssistantConversationId(key, "root")!;
+    const loop = start(key, undefined, () => true, false);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(loop.sync).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    appendAssistantConversationMessage(key, id, message("written while closed"));
+    await vi.advanceTimersByTimeAsync(900);
+    expect(loop.sync).toHaveBeenCalledTimes(1);
+    expect(assistantConversationsNeedSync(key)).toBe(false);
+    await vi.advanceTimersByTimeAsync(90_000);
+    expect(loop.sync).toHaveBeenCalledTimes(1);
+    loop.setAssistantVisible(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(loop.sync).toHaveBeenCalledTimes(2);
+    loop.setAssistantVisible(false);
+    await vi.advanceTimersByTimeAsync(90_000);
+    expect(loop.sync).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps clean remote checks quiet in the status line", async () => {
+    activeAssistantConversationId(key, "root");
+    const loop = start();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(loop.sync.mock.calls.length).toBeGreaterThan(1);
+    expect(loop.statuses).not.toContain("syncing");
+  });
+
+  it("does not upload an empty chat beside previously synced history", async () => {
+    const id = activeAssistantConversationId(key, "root")!;
+    appendAssistantConversationMessage(key, id, message("saved history"));
+    const loop = start(key, undefined, () => true, false);
+    await vi.advanceTimersByTimeAsync(900);
+    expect(loop.sync).toHaveBeenCalledTimes(1);
+    expect(assistantConversationsNeedSync(key)).toBe(false);
+    const statuses = loop.statuses.length;
+    activeAssistantConversationId(key, "another item");
+    expect(assistantConversationsNeedSync(key)).toBe(false);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(loop.sync).toHaveBeenCalledTimes(1);
+    expect(loop.statuses.slice(statuses)).not.toContain("syncing");
+  });
+
+  it("keeps an unacknowledged local approval without reuploading it on each poll", async () => {
+    const id = activeAssistantConversationId(key, "root")!;
+    appendAssistantConversationMessage(key, id, {
+      id: "proposal", role: "assistant", text: "Review",
+      writeProposals: [{ id: "decision", kind: "workspace", createdAt: "2026-09-05T12:00:00Z", expiresAt: "2026-09-06T12:00:00Z", tool: "publish_item", title: "Publish", summary: "Publish item", arguments: {}, status: "pending" }],
+    });
+    const sync = vi.fn(async (local: SyncedAssistantConversation[]) => ({
+      allowed: true,
+      conversations: local.map((conversation) => ({
+        ...conversation,
+        messages: conversation.messages.map((entry) => {
+          const clean = { ...entry };
+          delete clean.writeProposals;
+          return clean;
+        }),
+      })),
+    }));
+    const loop = start(key, sync);
+    await vi.advanceTimersByTimeAsync(900);
+    expect(loop.statuses.at(-1)).toBe("local");
+    expect(sync.mock.calls[0]?.[0]).toHaveLength(1);
+    const statuses = loop.statuses.length;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(sync.mock.calls.slice(1).every(([payload]) => payload.length === 0)).toBe(true);
+    expect(loop.statuses.slice(statuses)).not.toContain("syncing");
+    appendAssistantConversationMessage(key, id, message("new edit"));
+    await vi.advanceTimersByTimeAsync(900);
+    expect(sync.mock.calls.at(-1)?.[0]).toHaveLength(1);
+  });
+
   it("stops remote reads in an unattended visible window and catches up on interaction", async () => {
     const loop = start();
     await vi.advanceTimersByTimeAsync(120_000);
@@ -82,7 +155,7 @@ describe("owner-scoped conversation sync schedule", () => {
   it("debounces local writes and acknowledges only the server's bounded replica", async () => {
     const id = activeAssistantConversationId(key, "root")!;
     const loop = start();
-    expect(loop.statuses.at(-1)).toBe("local");
+    expect(loop.statuses.at(-1)).toBe("synced");
     await vi.advanceTimersByTimeAsync(800);
     appendAssistantConversationMessage(key, id, message("later"));
     await vi.advanceTimersByTimeAsync(899);

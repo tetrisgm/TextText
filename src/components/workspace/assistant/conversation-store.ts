@@ -458,7 +458,9 @@ function ensureActiveConversation(
     ...state.activeByContext,
     [contextKey]: created.id,
   };
-  markChanged(state);
+  // A fresh empty chat is local UI state, not conversation history to upload.
+  // Migrated messages are history and must still be synced.
+  markChanged(state, isAssistantConversationHistory(created));
   saveWorkspace(handle, state);
   return created;
 }

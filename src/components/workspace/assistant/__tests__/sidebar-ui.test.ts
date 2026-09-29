@@ -1041,7 +1041,7 @@ describe("history sync status", () => {
     onFilesSelected: () => {}, onRemoveAttachment: () => {}, onRetryHistorySync: () => {},
   };
   it.each([
-    ["local", "Saved on this device"], ["syncing", "Syncing"], ["synced", "Synced"],
+    ["local", "Saved on this device"], ["syncing", "Syncing"],
     ["offline", "Offline"], ["error", "Saved on this device"],
   ] as const)("renders %s beside the title with an accessible recovery action when needed", (status, label) => {
     const html = renderToStaticMarkup(React.createElement(AssistantSidebar, { ...base, historySyncStatus: status }));
@@ -1051,6 +1051,12 @@ describe("history sync status", () => {
     if (status === "offline" || status === "error") {
       expect(html).toMatch(/<button type="button"[^>]*>Retry sync<\/button>/);
     } else expect(html).not.toContain("Retry sync");
+  });
+  it("keeps a clean synced history quiet", () => {
+    const html = renderToStaticMarkup(React.createElement(AssistantSidebar, { ...base, historySyncStatus: "synced" }));
+    expect(html).not.toContain("Syncing");
+    expect(html).not.toContain("Synced");
+    expect(html).not.toContain('role="status"');
   });
   it("does not claim sync state before the owner is resolved", () => {
     const html = renderToStaticMarkup(React.createElement(AssistantSidebar, { ...base, historySyncStatus: null }));

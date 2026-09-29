@@ -5420,6 +5420,7 @@ function LocalWorkspaceShell({
 
         <AssistantConversationState
           activeConversationId={assistant.activeConversationId}
+          assistantVisible={assistantState !== "hidden"}
           contextKey={assistant.conversationContextKey}
           handle={displayPool.blog.handle}
           ownerScopeReady={assistant.ownerScopeReady}
