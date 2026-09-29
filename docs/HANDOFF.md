@@ -4,7 +4,7 @@
 
 The owner asked for the full [content-first brief](design/texttext-content-first-ux.md), including the shared shell, writing, visual collecting, reading, multiplayer, in-app agent work, performance, and recovery. Continue from the canonical [checkpoint](TEXTTEXT_UX_CHECKPOINT.md), reconciling it with `git status` before editing. [DESIGN.md](../DESIGN.md) now summarizes the governing presentation direction; [reference notes](design/content-first-reference-notes.md) and the [pre-redesign production baseline](content-first-baseline-2026-09-28.md) give concrete evidence. Keep one coding session, one necessary dev server, and sequential heavy checks.
 
-Source is `main` in this checkout. The gallery, folder image capture, saved-link, article annotation, and shared-work slices are committed locally; the Add agent entry point passed focused verification and awaits its small commit. The checkpoint has their commit IDs and proof. Preserve the unrelated dirty files named there. The September 28 release gate stopped at `web.unit` with 13 failures in six files; `/tmp/texttext-wip-release-gates.log`. Do not push failed required checks. No new passing full release gate or attestation exists.
+Source is `main` in this checkout. The gallery, folder image capture, saved-link, article annotation, shared-work, and Add agent entry slices are committed locally. The checkpoint has their commit IDs and proof. Preserve the unrelated dirty files named there. The earlier release gate stopped at `web.unit` with 13 failures; current complete web unit passed 3,721 tests with 134 configured skips (`/tmp/texttext-ux-web-unit.log`). No new passing full release gate or attestation exists; finish required gates before push.
 
 ## Installed local WIP
 
@@ -14,4 +14,4 @@ The isolated Store-shaped app already proved clean-profile ChatGPT authorization
 
 ## Next action and references
 
-Commit the verified Add agent entry point, then continue with agent scope/reconnect and performance/recovery. Use the checkpoint for exact tests, process identities, and pending measurements. Historical detail from the previous handoff is in [September 28 history](HANDOFF-history-2026-09-28.md). The [AI architecture](ai-sidebar-architecture.md), [agent runbook](agentic-assistant-runbook.md), and [database operations](DATABASE-OPERATIONS.md) remain authoritative for their respective boundaries.
+Commit the web unit repair, then continue with agent scope/reconnect and performance/recovery. Use the checkpoint for exact tests, process identities, and pending measurements. Historical detail from the previous handoff is in [September 28 history](HANDOFF-history-2026-09-28.md). The [AI architecture](ai-sidebar-architecture.md), [agent runbook](agentic-assistant-runbook.md), and [database operations](DATABASE-OPERATIONS.md) remain authoritative for their respective boundaries.

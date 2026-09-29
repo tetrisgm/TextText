@@ -410,6 +410,7 @@ describe("inline refinement history integration", () => {
     });
     const dependencies = {
       useCallback: (fn: unknown) => fn, ownerScopeReady: true, conversationStoreKey: storeKey,
+      connectionPreference: "api-key",
       getViewRef: { current: () => ({ postId: "item", level: "edit" }) },
       currentOwnerScopeRef: { current: { owner: "owner" } }, threadKey: "thread",
       assistantOwnerScopeMatches: () => true, appendToThread: append, createInlinePreview,

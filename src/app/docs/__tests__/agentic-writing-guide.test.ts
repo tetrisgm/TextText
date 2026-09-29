@@ -131,8 +131,8 @@ describe("the agentic writing guide", () => {
       'if (!nativeAssistantAvailable()) return "remote-only"',
     );
     expect(connectPanelSource).toContain("Set up the in-app assistant");
-    expect(settingsSource).toContain('edition === "standalone"');
-    expect(settingsSource).toContain("Connect a remote agent");
+    expect(settingsSource).toContain('edition === "native-available"');
+    expect(settingsSource).toContain("Connect an external agent");
     expect(connectPageSource).not.toContain("CLAUDE_PLUGIN_INSTALL_COMMAND");
     expect(connectPageSource).not.toContain("CODEX_PLUGIN_INSTALL_COMMAND");
   });

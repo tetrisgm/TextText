@@ -64,13 +64,14 @@ describe("workspace commands", () => {
   it("opens each personal destination through the shared workspace navigation", () => {
     const openDestination = vi.fn();
     const ctx = context({ openDestination });
-    for (const destination of ["home", "news", "bookmarks", "notes"]) {
+    for (const destination of ["home", "news"]) {
       const command = WORKSPACE_COMMANDS.find((entry) => entry.id === `navigation.destination.${destination}`)!;
       expect(command.when(ctx)).toBe(true);
       command.run(ctx);
       expect(openDestination).toHaveBeenLastCalledWith(destination);
       expect(command.when(context({}))).toBe(false);
     }
+    expect(WORKSPACE_COMMANDS.some((entry) => entry.id === "navigation.destination.notes" || entry.id === "navigation.destination.bookmarks")).toBe(false);
   });
   it("opens Add agent only on the manageable active item", () => {
     const command = WORKSPACE_COMMANDS.find((entry) => entry.id === "item.add-agent")!;

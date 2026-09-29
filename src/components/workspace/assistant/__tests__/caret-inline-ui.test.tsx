@@ -222,6 +222,7 @@ describe("rail Continue routing", () => {
     const reportSelectionError = vi.fn();
     const dependencies = {
       useCallback: (fn: unknown) => fn, ownerScopeReady: true, conversationStoreKey: "owner",
+      connectionPreference: "api-key",
       threadKey: "thread", busyThreads: new Set(), getViewRef: { current: () => ({ level, postId: "item" }) },
       readOpenWorkspaceItemDraft: () => selection ? { ...initial, selection: null, writingSelection: selection } : null,
       INLINE_ACTIONS: inline.INLINE_ACTIONS, isBodyCaret: inline.isBodyCaret,
