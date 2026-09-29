@@ -19,12 +19,14 @@ function publishedDate(post: Post): string | undefined {
 
 export function UnifiedDocumentReader({
   blog,
+  className,
   post,
   template,
   wikiLinkTargets,
   comments,
 }: {
   blog: Blog;
+  className?: string;
   post: Post;
   template: TemplateDefinition;
   wikiLinkTargets?: WikiLinkRenderTargets;
@@ -38,6 +40,7 @@ export function UnifiedDocumentReader({
     <>
       <DocumentRenderer
         landmark="main"
+        className={className}
         document={document}
         documentId={post.id ?? post.slug}
         template={template}

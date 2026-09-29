@@ -38,6 +38,7 @@ import {
   type FolderDeleteItem,
 } from "@/components/workspace/UniversalItemComposer";
 import {
+  BookmarkRecaptureControl,
   PostActionBar,
   type BookmarkContentMode,
 } from "@/components/PostActionBar";
@@ -105,6 +106,7 @@ export function safeBookmarkViewUrl(value: string | undefined): string {
 
 export function BookmarkViewBody({ post }: { post: Post }) {
   const title = post.title.trim() || post.capture?.title?.trim() || "Bookmark";
+  const originalUrl = safeBookmarkViewUrl(post.capture?.url ?? post.links?.[0]?.href);
   const screenshotUrl = safeBookmarkViewUrl(post.capture?.screenshotUrl);
   const screenshotTiles = (post.capture?.screenshotTiles ?? [])
     .map((tile) => ({ ...tile, url: safeBookmarkViewUrl(tile.url) }))
@@ -113,6 +115,9 @@ export function BookmarkViewBody({ post }: { post: Post }) {
   if (screenshotTiles.length > 0 || screenshotUrl) {
     return (
       <section className="bookmark-reader-view is-capture">
+        {originalUrl && (
+          <a className="bookmark-capture-original" href={originalUrl} target="_blank" rel="noopener noreferrer">Open original ↗</a>
+        )}
         {(screenshotTiles.length > 0
           ? screenshotTiles
           : [{ index: 0, url: screenshotUrl }]
@@ -131,7 +136,25 @@ export function BookmarkViewBody({ post }: { post: Post }) {
     );
   }
 
-  return <div className="workspace-post-body-status"><p>This bookmark has no page capture yet. Your saved link is still available.</p>{safeBookmarkViewUrl(post.capture?.url) && <a href={safeBookmarkViewUrl(post.capture?.url)}>Open original page</a>}</div>;
+  return <div className="workspace-post-body-status"><p>This bookmark has no page capture yet. Your saved link is still available.</p>{originalUrl && <a href={originalUrl} target="_blank" rel="noopener noreferrer">Open original ↗</a>}</div>;
+}
+
+function BookmarkReaderState({ post, handle, canManage, onCaptureChange }: {
+  post: Post;
+  handle: string;
+  canManage: boolean;
+  onCaptureChange?: (post: Post) => void;
+}) {
+  if (post.captureStatus !== "pending" && post.captureStatus !== "failed" && post.body.trim()) return null;
+  const message = post.captureStatus === "pending"
+    ? "Waiting for a readable copy. Your link is saved."
+    : post.captureStatus === "failed"
+      ? "The readable copy could not be captured. Your link is still saved."
+      : "No readable copy is available yet. Your link is still saved.";
+  return <div className="bookmark-reader-state" role="status">
+    <div><strong>{message}</strong>{post.captureStatus === "failed" && post.capture?.error && <p>{post.capture.error}</p>}</div>
+    {canManage && post.id && <BookmarkRecaptureControl handle={handle} post={post} onCaptureChange={onCaptureChange} />}
+  </div>;
 }
 
 export function WorkspacePostReader({
@@ -225,16 +248,24 @@ export function WorkspacePostReader({
         )
       : body;
   const readablePost = useMemo(
-    () => ({
-      ...post,
-      body: bodyMarkdown,
-      document: post.document
-        ? {
-            ...post.document,
-            content: { ...post.document.content, body: bodyMarkdown },
-          }
-        : undefined,
-    }),
+    () => {
+      const emptyBookmark = post.type === "bookmark" && !bodyMarkdown.trim();
+      const sourceUrl = safeBookmarkViewUrl(post.capture?.url ?? post.links?.[0]?.href);
+      const host = sourceUrl ? new URL(sourceUrl).hostname.replace(/^www\./, "") : "";
+      const subtitle = post.document?.content.subtitle;
+      const hideAutoExcerpt = emptyBookmark && Boolean(host) && subtitle?.trim().toLowerCase() === host.toLowerCase();
+      return {
+        ...post,
+        body: bodyMarkdown,
+        readingTime: emptyBookmark ? undefined : post.readingTime,
+        document: post.document
+          ? {
+              ...post.document,
+              content: { ...post.document.content, body: bodyMarkdown, subtitle: hideAutoExcerpt ? undefined : subtitle },
+            }
+          : undefined,
+      };
+    },
     [bodyMarkdown, post],
   );
   const backlinks = useMemo(
@@ -324,7 +355,7 @@ export function WorkspacePostReader({
           onReload={() => load(true)}
         />
       )}
-      {document && isDocumentBlank(document) && (
+      {post.type !== "bookmark" && document && isDocumentBlank(document) && (
         <div className="workspace-post-body-status">
           <p>This document is empty. {canManagePost ? "Start writing to add its first words." : "Its author has not added any text yet."}</p>
           {canManagePost && <button type="button" className="ac-btn ac-btn-gray" onClick={() => void onNavigate(blogWorkspacePostEditPath(blog, folderPathForPoolPost(pool, poolPost), post))}>Start writing</button>}
@@ -338,17 +369,22 @@ export function WorkspacePostReader({
       {post.type === "bookmark" && bookmarkContentMode === "capture" ? (
         <BookmarkViewBody post={post} />
       ) : document ? (
-        <UnifiedDocumentReader
-          blog={blog}
-          post={readablePost}
-          template={template}
-        />
+        <>
+          <UnifiedDocumentReader
+            blog={blog}
+            className={post.type === "bookmark" && (post.captureStatus === "pending" || post.captureStatus === "failed" || !bodyMarkdown.trim()) ? "has-bookmark-status" : undefined}
+            post={readablePost}
+            template={template}
+          />
+          {post.type === "bookmark" && <BookmarkReaderState post={post} handle={blog.handle} canManage={canManagePost} onCaptureChange={onCaptureResolved} />}
+        </>
       ) : entry.status === "error" ? (
         <ErrorBody message={entry.error} onRetry={() => load(true)} homeHref={homePath} />
       ) : // Never a skeleton: the view only switches here once the document
       // is locally available (openPoolPost gates on it), so this branch is
       // a sub-frame transient at most and must paint nothing.
       null}
+      {post.type === "bookmark" && bookmarkContentMode === "capture" && <BookmarkReaderState post={post} handle={blog.handle} canManage={canManagePost} onCaptureChange={onCaptureResolved} />}
       <ReaderFindHighlights query={findQuery} />
       {canCommentPost && post.id && !optimistic && document && (
         <ReaderComments

@@ -103,7 +103,7 @@ describe("rapid capture contract", () => {
       "hydratedCaptureQueueHandle === handle",
     );
     expect(folderPage).toContain("setHydratedCaptureQueueHandle(handle)");
-    expect(folderPage).toContain("capturesInPlace && !captureQueueReady");
+    expect(folderPage).toContain("usesCaptureQueue && !captureQueueReady");
     expect(folderPage).toContain("Your text is still here");
   });
 

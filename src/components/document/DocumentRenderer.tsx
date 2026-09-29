@@ -1115,8 +1115,13 @@ function NodeRenderer({
       }
       const children =
         href && isSafeLinkHref(href) ? (
-          <a href={href} title={href === display ? undefined : href}>
+          <a href={href} title={href === display ? undefined : href}
+            target={!preview && node.bind === "content.fields.sourceUrl" ? "_blank" : undefined}
+            rel={!preview && node.bind === "content.fields.sourceUrl" ? "noopener noreferrer" : undefined}>
             {display}
+            {!preview && node.bind === "content.fields.sourceUrl" && (
+              <span className="tt-source-link-action">Open original ↗</span>
+            )}
           </a>
         ) : (
           display

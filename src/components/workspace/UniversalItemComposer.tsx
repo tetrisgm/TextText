@@ -122,12 +122,10 @@ export function defaultTemplateForFolder(folder: Folder): TemplateReference {
   };
 }
 
-// One empty state shape: a plain sentence and, when the reader may write
-
 // Creating is one action, not a form. There is nothing to decide before you
-// type: the current folder is the destination. `destinations` marks the Home
-// inbox, which keeps a recoverable local capture queue; it does not reroute
-// items by type. A folder page creates and opens the item directly.
+// type: the current folder is the destination. Every client capture keeps its
+// raw input and retry key locally until a server receipt. Home stays in place;
+// a folder opens the saved item.
 export function UniversalItemComposer({
   blog,
   destinations,
@@ -162,13 +160,14 @@ export function UniversalItemComposer({
   const [hydratedCaptureQueueHandle, setHydratedCaptureQueueHandle] = useState<
     string | null
   >(
-    destinations?.length ? null : handle,
+    onCreateItem ? null : handle,
   );
   const capturesRef = useRef<InboxCapture[]>([]);
   const [, startTransition] = useTransition();
   const capturesInPlace = Boolean(destinations?.length);
+  const usesCaptureQueue = Boolean(onCreateItem);
   const captureQueueReady =
-    !capturesInPlace || hydratedCaptureQueueHandle === handle;
+    !usesCaptureQueue || hydratedCaptureQueueHandle === handle;
 
   useEffect(() => () => {
     if (saveStatusTimer.current) clearTimeout(saveStatusTimer.current);
@@ -221,7 +220,7 @@ export function UniversalItemComposer({
   );
 
   useEffect(() => {
-    if (!capturesInPlace) return;
+    if (!usesCaptureQueue) return;
     const hydrate = window.setTimeout(() => {
       const recovered = recoverCaptureQueue(
         readCaptureQueue<FolderCreateRequest, Post>(window.localStorage, handle),
@@ -229,7 +228,7 @@ export function UniversalItemComposer({
       if (replaceCaptures(recovered)) setHydratedCaptureQueueHandle(handle);
     }, 0);
     return () => window.clearTimeout(hydrate);
-  }, [capturesInPlace, handle, replaceCaptures]);
+  }, [usesCaptureQueue, handle, replaceCaptures]);
 
   const destinationFor = useCallback(
     (): Folder => folder,
@@ -249,7 +248,7 @@ export function UniversalItemComposer({
         const created = onCreateItem(capture.request, {
           capture: capture.raw,
           idempotencyKey: capture.idempotencyKey,
-          open: false,
+          open: !capturesInPlace,
           onPersisted: (savedPost, receipt) => {
             if (!receipt || receipt.itemId !== savedPost.id) {
               patchCapture(capture.id, {
@@ -304,7 +303,7 @@ export function UniversalItemComposer({
       }
       window.requestAnimationFrame(() => inputRef.current?.focus());
     },
-    [onCreateItem, patchCapture, showSaveStatus],
+    [capturesInPlace, onCreateItem, patchCapture, showSaveStatus],
   );
 
   const queueInPlaceCapture = useCallback(
@@ -407,14 +406,14 @@ export function UniversalItemComposer({
         inputRef.current?.focus();
         return;
       }
-      if (capturesInPlace && !captureQueueReady) {
+      if (usesCaptureQueue && !captureQueueReady) {
         setError("Restoring unsaved items. Your text is still here. Try saving again in a moment.");
         inputRef.current?.focus();
         return;
       }
 
       const draft = parseItemInput(value);
-      const capturePreview = capturesInPlace ? captureIntent(value) : null;
+      const capturePreview = usesCaptureQueue ? captureIntent(value) : null;
       const destination = destinationFor();
       const template = draft.sourceUrl
         ? { id: "texttext.bookmark", version: 1 }
@@ -451,28 +450,16 @@ export function UniversalItemComposer({
 
       setError(null);
       if (onCreateItem) {
-        if (capturesInPlace) {
-          if (
-            queueInPlaceCapture(
-              request,
-              destination,
-              capturePreview?.title ?? draft.title ?? "Untitled",
-              value,
-            )
-          ) {
-            form.reset();
-          }
-          return;
+        if (queueInPlaceCapture(
+          request,
+          destination,
+          capturePreview?.title ?? draft.title ?? "Untitled",
+          value,
+        )) {
+          form.reset();
         }
-        form.reset();
-        onCreateItem(request, { open: true });
         return;
       }
-      if (capturesInPlace) {
-        setError("This item could not be saved. Your unsaved text is available below.");
-        return;
-      }
-
       form.reset();
       setCreating(true);
       startTransition(() => {
@@ -513,7 +500,6 @@ export function UniversalItemComposer({
     },
     [
       blog,
-      capturesInPlace,
       captureQueueReady,
       creating,
       destinationFor,
@@ -521,6 +507,7 @@ export function UniversalItemComposer({
       onCreateItem,
       router,
       queueInPlaceCapture,
+      usesCaptureQueue,
     ],
   );
 
@@ -531,11 +518,7 @@ export function UniversalItemComposer({
           ref={inputRef}
           name="item"
           className="universal-item-composer-input"
-          placeholder={
-            capturesInPlace
-              ? "Write a note or paste a link…"
-              : "Write a note or paste a link…"
-          }
+          placeholder="Write a note or paste a link…"
           aria-label={capturesInPlace ? "Save to TextText" : "Create an item"}
           autoCapitalize="sentences"
           autoCorrect="on"
@@ -558,9 +541,7 @@ export function UniversalItemComposer({
           type="submit"
           className="ac-icon-btn universal-item-create"
           aria-label={capturesInPlace ? "Save to TextText" : "Create item"}
-          disabled={
-            creating || (capturesInPlace && !captureQueueReady)
-          }
+          disabled={creating || (usesCaptureQueue && !captureQueueReady)}
         >
           <span aria-hidden="true">↑</span>
         </button>

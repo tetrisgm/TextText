@@ -276,7 +276,7 @@ function bookmarkWithCaptureSnapshot(
   };
 }
 
-function BookmarkRecaptureControl({
+export function BookmarkRecaptureControl({
   handle,
   menuItem = false,
   post,
@@ -287,6 +287,7 @@ function BookmarkRecaptureControl({
   post: Post;
   onCaptureChange?: (post: Post) => void;
 }) {
+  const router = useRouter();
   const [request, setRequest] = useState<{
     error: string | null;
     post: Post;
@@ -318,10 +319,14 @@ function BookmarkRecaptureControl({
           requested: false,
         });
         onCaptureChange?.(resolved);
+        if (!onCaptureChange) router.refresh();
       },
     },
   );
   const pending = captureStatus === "pending";
+  const actionLabel = captureStatus === "failed"
+    ? "Retry capture"
+    : !effectivePost.body.trim() ? "Capture page" : "Recapture";
   const requested = Boolean(effectiveRequest?.requested);
   const error = effectiveRequest?.error ?? null;
 
@@ -359,9 +364,9 @@ function BookmarkRecaptureControl({
         role={menuItem ? "menuitem" : undefined}
         disabled={pending || starting}
         aria-label={
-          pending ? "Bookmark capture in progress" : "Recapture bookmark"
+          pending ? "Bookmark capture in progress" : actionLabel
         }
-        title={error || (pending ? "Bookmark capture in progress" : "Recapture")}
+        title={error || (pending ? "Bookmark capture in progress" : actionLabel)}
         onClick={() => void recapture()}
       >
         {!menuItem && (
@@ -370,7 +375,7 @@ function BookmarkRecaptureControl({
           </span>
         )}
         <span className={menuItem ? undefined : "post-responsive-action-label"}>
-          {pending ? (requested ? "Recapturing" : "Capturing") : "Recapture"}
+          {pending ? (requested ? "Recapturing" : "Capturing") : actionLabel}
         </span>
       </button>
       {error && (

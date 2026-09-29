@@ -2048,6 +2048,13 @@ function LocalWorkspaceShell({
               }
               itemIdentity.reconcile(temp.id, savedPoolPost.id);
               removePost(temp.id);
+              if (options.open !== false) {
+                if (request.type === "bookmark" && !request.blank) {
+                  openPoolPost(savedPoolPost, request.folderPath, "read");
+                } else {
+                  reconcileCreatedPost(temp.id, savedPoolPost);
+                }
+              }
               options.onPersisted?.(postFromPoolPost(savedPoolPost), {
                 itemId: receiptItemId,
                 savedTo: receiptSavedTo,
@@ -2187,7 +2194,7 @@ function LocalWorkspaceShell({
               return;
             }
             attempt += 1;
-            if (options?.open === false && attempt >= 3) {
+            if ((options?.capture || options?.open === false) && attempt >= 3) {
               void deletePersistedWorkspaceDraft(pool.blogId, temp.id);
               localWorkspacePendingSaveIds.delete(temp.id);
               localWorkspaceDraftSessions.delete(temp.id);

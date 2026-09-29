@@ -204,12 +204,35 @@ body:has(.reader):not(:has(.post-editor-shell)) {
 .bookmark-reader-view.is-capture {
   overflow: hidden;
 }
+.bookmark-capture-original {
+  display: inline-block;
+  margin: 0.875rem 1rem;
+  color: var(--accent);
+  font-size: 0.8125rem;
+  font-weight: 650;
+}
 .bookmark-reader-view.is-capture img {
   display: block;
   width: 100%;
   height: auto;
   background: var(--bg-soft);
 }
+.bookmark-reader-state {
+  width: min(39rem, calc(100% - 2.5rem));
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.875rem;
+  margin: 0 auto 4rem;
+  padding: 1rem 0;
+  border-top: 1px solid var(--hairline);
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.bookmark-reader-state strong { font-weight: 500; }
+.bookmark-reader-state p { margin: 0.25rem 0 0; }
 .bookmark-reader-frame {
   display: block;
   width: 100%;
@@ -6767,3 +6790,10 @@ body:has(.reader):not(:has(.post-editor-shell)) {
     min-width: 90px;
   }
 }
+
+.bookmark-reader-state .post-bookmark-recapture {
+  width: auto;
+  min-width: 0;
+  padding-inline: 0.75rem;
+}
+.bookmark-reader-state .post-responsive-action-label { display: inline; }
