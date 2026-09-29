@@ -324,3 +324,45 @@ but do not explain the high development-app baseline or establish hours-long
 stability. The separate retained production build and test app were briefly
 reopened, then stopped because that isolated profile had no AI connection;
 port 3131 was freed. The installed app and port-3000 server were left running.
+
+## Isolated production-mode active-agent sample
+
+The retained `cfa43626` production web build was served locally on port 3131
+to the separate `TextText Agent Test.app`. Its existing ChatGPT account was
+reconnected through the native Settings flow and Safari; Settings showed
+**Connected**, verified September 29 at 8:03:32 AM, with bundled Codex CLI
+0.153.4. This was the signed-in, local `visual-demo` workspace, not a
+production database or public release.
+
+The app completed three real read-only Codex turns on the private local note
+`Typing benchmark 7d924acf`: it returned the exact typing marker, counted
+the human and agent lines, and reported the title and last line. A fourth
+turn appended `Production memory check 2026-09-29.` using the TextText item
+tool. The editor showed the new line; a local canonical-store read found the
+private note with that line and its original typing marker. The append ran
+directly; no approval screen appeared. This sample does not exercise template
+preview or human concurrency during the write.
+
+`vmmap -summary` sampled the native app, its WebKit GPU/network/content
+processes, and bundled Codex helper sequentially. Combined physical
+footprints are approximate:
+
+| State | Combined physical footprint |
+| --- | ---: |
+| Connected, before agent turns | 340 MiB |
+| After read 1 | 468 MiB |
+| After read 2 | 478 MiB |
+| After read 3 | 486 MiB |
+| During append | 524 MiB |
+| After append | 480 MiB |
+| One minute idle after append | 480 MiB |
+| Two minutes idle after append | 425 MiB |
+
+The first read established most of the additional footprint. The next reads
+added roughly 10 and 9 MiB; the append's transient peak receded afterward.
+The two-minute decline was mainly in WebKit content and may include macOS
+memory compression; it is not proof of garbage collection or a fixed leak.
+These four turns and the short idle interval do not demonstrate an active-agent
+runaway leak or prove hours-long stability. The retained web build predates
+some current source changes. The installed build 1113 and its port-3000
+development server were not part of this measurement.
