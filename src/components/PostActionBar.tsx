@@ -1058,11 +1058,17 @@ export function PostActionBar(props: Props) {
             {props.mode === "read" && props.post.id && (props.canCommentPost || props.canViewComments) && (
               <button
                 type="button"
-                className="post-action-share ac-btn ac-btn-gray"
+                className="post-reader-comments-button ac-btn ac-btn-gray"
+                aria-label="Comments"
                 onPointerDown={(event) => event.preventDefault()}
                 onClick={() => window.dispatchEvent(new CustomEvent(OPEN_READER_COMMENTS, { detail: { postId: props.post.id } }))}
               >
-                Comments
+                <span className="post-reader-comments-icon" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <path d="M3 3.25h10v7H7.4L4.2 13v-2.75H3v-7Z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.35" />
+                  </svg>
+                </span>
+                <span className="post-reader-comments-label">Comments</span>
               </button>
             )}
             <ParticipantsRow key={props.post.id} postId={props.post.id} handle={props.blog.handle} canReviewChanges={props.owner} />
