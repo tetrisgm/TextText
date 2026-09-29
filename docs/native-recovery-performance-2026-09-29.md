@@ -219,6 +219,36 @@ for that route in the long-lived app. It does not establish long-run memory
 stability, a production-mode footprint, or the cause of the already-high
 WebKit content baseline. The local development server was excluded.
 
+## Ten-minute isolated production-mode gallery run
+
+The retained source-`cfa43626` production build and sandboxed test bundle ran
+against local port 3131 on the Apple M4/16 GiB Mac. The already signed-in app
+opened the 96-image `Visual scale proof` folder, scrolled to the final cards,
+and returned to All items twenty times. The assistant stayed hidden; the
+bundled Codex helper was idle. `vmmap -summary` physical footprints included
+the native app, its WebKit GPU/network/content processes, and the helper.
+Samples were sequential, so totals are approximate.
+
+| State | Combined physical footprint |
+| --- | ---: |
+| After the first folder traversal and close | ~322 MiB |
+| After 5 closes | ~440 MiB |
+| After 10 closes | ~373 MiB |
+| After 15 closes | ~387 MiB |
+| After 20 closes | ~404 MiB |
+| At about ten minutes elapsed, idle on All items | ~388 MiB |
+
+The same five process IDs survived the run. At the final idle sample, each
+reported 0.0% CPU, the content process had accumulated 23.66 seconds of CPU
+over 9m53s, and system-wide reported free memory was 41% (35% before this
+test). The post-close samples fluctuated without a steady upward sequence;
+the final idle sample held near the preceding level. About 66 MiB remained
+above the first close, so this does not identify or rule out retained decoded
+image/cache memory. It does not cover an active agent turn, new unique image
+assets, a current-source production build, or hours of use. The test app and
+its temporary server were stopped; port 3131 was free, while installed build
+1112 and its local development server remained running.
+
 ## Isolated native authorization cancellation
 
 At source `5c64a742`, I built a separate Store-shaped `TextText Agent Test.app`
