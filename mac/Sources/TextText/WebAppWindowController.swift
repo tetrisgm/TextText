@@ -1991,12 +1991,12 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             return
         }
         guard body["action"] as? String == "linked",
-              let token = body["token"] as? String,
-              let originString = body["origin"] as? String,
-              let linkedOrigin = URL(string: originString)
+              let token = body["token"] as? String
         else { return }
+        // The token was minted by this web view's origin, already checked
+        // above. The server's advertised public root can differ on localhost.
         appToken = token
-        onLinked(token, linkedOrigin)
+        onLinked(token, origin)
     }
 
     // MARK: WKNavigationDelegate
