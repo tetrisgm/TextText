@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   appendAssistantSelectionContext,
+  assistantComposerSelection,
   assistantContextChipWithSelection,
   resolveWorkspaceAssistantContext,
 } from "@/components/workspace/assistant/context";
@@ -54,6 +55,28 @@ function pool(posts: WorkspacePoolPost[] = [post()]): WorkspacePoolPayload {
 }
 
 describe("workspace assistant context", () => {
+  it("omits title and excerpt carets from chat context while preserving a body caret", () => {
+    const item = { title: "Draft", excerpt: "Summary", body: "Body" };
+    const titleCaret = { field: "title" as const, start: 2, end: 2, text: "" };
+    const excerptCaret = { field: "excerpt" as const, start: 3, end: 3, text: "" };
+    const bodyCaret = { field: "body" as const, start: 4, end: 4, text: "" };
+    expect(assistantComposerSelection({ ...item, selection: titleCaret })).toBeNull();
+    expect(assistantComposerSelection({ ...item, selection: titleCaret, writingSelection: {
+      field: "body", start: 0, end: 4, text: "Body",
+    } })).toBeNull();
+    expect(assistantComposerSelection({ ...item, writingSelection: excerptCaret })).toBeNull();
+    expect(assistantComposerSelection({ ...item, selection: bodyCaret })).toEqual(bodyCaret);
+    expect(assistantComposerSelection({ ...item, selection: {
+      field: "title", start: 0, end: 5, text: "Draft",
+    } })).toEqual({ field: "title", start: 0, end: 5, text: "Draft" });
+    expect(assistantContextChipWithSelection({ label: "Draft", detail: "Editing" }, bodyCaret).detail)
+      .toBe("Caret in body");
+    expect(appendAssistantSelectionContext("Open", { ...item, selection: titleCaret }))
+      .toContain("No editor text is selected");
+    expect(appendAssistantSelectionContext("Open", { ...item, selection: bodyCaret }))
+      .toContain("writing caret is in the body at source offset 4");
+  });
+
   it("uses the selected folder at the workspace root", () => {
     expect(
       resolveWorkspaceAssistantContext({

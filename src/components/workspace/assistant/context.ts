@@ -40,6 +40,17 @@ const FIELD_LABELS = {
 
 const MAX_ASSISTANT_ITEM_BODY_CHARS = 6_000;
 
+/** A title or excerpt caret is not selected text. Only a body caret has a
+ * supported insertion envelope; keep it for requests such as "write here". */
+export function assistantComposerSelection(
+  item: WorkspaceItemTextSnapshot | null,
+): WorkspaceItemTextSelection | null {
+  if (!item) return null;
+  const selection = item.selection ?? item.writingSelection;
+  if (!selection || (!selection.text && selection.field !== "body")) return null;
+  return resolveWorkspaceItemTextSelection({ ...item, selection });
+}
+
 export function assistantContextChipWithSelection(
   chip: AssistantContext,
   selection: WorkspaceItemTextSelection | null,
@@ -47,7 +58,7 @@ export function assistantContextChipWithSelection(
   if (!selection) return chip;
   return {
     ...chip,
-    detail: `Selected ${FIELD_LABELS[selection.field]} text`,
+    detail: selection.text ? `Selected ${FIELD_LABELS[selection.field]} text` : "Caret in body",
   };
 }
 
@@ -65,9 +76,12 @@ export function appendAssistantSelectionContext(
       ? `The body was truncated after ${MAX_ASSISTANT_ITEM_BODY_CHARS} characters. Use read_item before replacing the whole body.`
       : "The full current item is included above.",
   ].join("\n");
-  const selection = resolveWorkspaceItemTextSelection(item);
+  const selection = assistantComposerSelection(item);
   if (!selection) {
     return `${itemContext}\nNo editor text is selected; use the whole current item when appropriate.`;
+  }
+  if (!selection.text) {
+    return `${itemContext}\nThe writing caret is in the body at source offset ${selection.start}. No text is selected.`;
   }
   return [
     itemContext,

@@ -131,6 +131,7 @@ import {
   type AssistantConfirmationRequest,
 } from "@/components/workspace/assistant/confirmation";
 import {
+  assistantComposerSelection,
   assistantContextChipWithSelection,
   resolveWorkspaceAssistantContext,
 } from "@/components/workspace/assistant/context";
@@ -2801,10 +2802,11 @@ function LocalWorkspaceShell({
       view,
     ],
   );
-  const assistantSelection =
+  const assistantDraft =
     assistantTarget.view.level === "edit" && assistantTarget.view.postId
-      ? (readOpenWorkspaceItemDraft(assistantTarget.view.postId)?.selection ?? readOpenWorkspaceItemDraft(assistantTarget.view.postId)?.writingSelection ?? null)
+      ? readOpenWorkspaceItemDraft(assistantTarget.view.postId)
       : null;
+  const assistantSelection = assistantComposerSelection(assistantDraft);
   const assistantContext = assistantContextChipWithSelection(
     assistantTarget.chip,
     assistantSelection,

@@ -89,7 +89,7 @@ import {
   buildNativeAssistantPrompt,
   formatAssistantSubmission,
 } from "./attachments";
-import { type AssistantViewSnapshot } from "./context";
+import { assistantComposerSelection, type AssistantViewSnapshot } from "./context";
 import {
   nativeAssistantAvailable,
   nativeEmbeddedAssistantAvailable,
@@ -1677,9 +1677,7 @@ export function useNativeAssistant({
                 .current(submittedView.postId)
                 .catch(() => null)
             : null;
-          const openSelection = open
-            ? resolveWorkspaceItemTextSelection({ ...open, selection: open.selection ?? open.writingSelection })
-            : null;
+          const openSelection = assistantComposerSelection(open);
           const ownerPrompt = await getWorkspaceAgentPromptAction(
             handle,
             modelPrompt,
@@ -1781,9 +1779,7 @@ export function useNativeAssistant({
               .current(submittedView.postId)
               .catch(() => null)
           : null;
-        const openSelection = open
-          ? resolveWorkspaceItemTextSelection({ ...open, selection: open.selection ?? open.writingSelection })
-          : null;
+        const openSelection = assistantComposerSelection(open);
         const cloudSelectionEnvelope = chosenContext.includeSelection && open && submittedView.postId
           ? await createSelectionEnvelope(submittedView.postId, open, openSelection)
           : undefined;
