@@ -5,6 +5,7 @@ import { usePopoverMotion } from "@/lib/motion/popover";
 import { useEffect, useId, useRef, useState } from "react";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { createItemAgentAction, prepareLocalItemAgentAction, removeItemAgentAction, type listItemAgentsAction } from "@/app/editor/agent-connect-actions";
+import { TRY_AI_IN_TEXTTEXT_EVENT } from "@/components/workspace/AiConnectionSettings";
 import { AGENT_CLIENTS, OPEN_ADD_AGENT_EVENT, agentClientConfiguration, localAgentSupported, remoteAgentInstruction, type AgentClient } from "@/lib/agent-connect";
 import type { ParticipantMark } from "./participants";
 import styles from "./ParticipantsRow.module.css";
@@ -41,8 +42,9 @@ export function AddAgentPopover({ handle, postId, marks, grants, loadError, relo
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const popover = useRef<HTMLDivElement>(null);
-  const { close: closePopover, open: openPopover, logicalOpen: open, present } = usePopoverMotion(popover, trigger);
+  const { close: closePopover, open: openPopover, logicalOpen: open } = usePopoverMotion(popover, trigger);
   const [position, setPosition] = useState({ top: 0, left: 0 });
+  const [externalOpen, setExternalOpen] = useState(false);
   useEscapeLayer(open, "Add agent", closePopover);
   useEffect(() => {
     const show = (event: Event) => {
@@ -74,11 +76,22 @@ export function AddAgentPopover({ handle, postId, marks, grants, loadError, relo
       onToggle={(event) => {
         const next = event.newState === "open";
         if (next && open) popover.current?.querySelector<HTMLButtonElement>("button")?.focus();
-        else if (document.activeElement === document.body || popover.current?.contains(document.activeElement)) trigger.current?.focus();
+        else {
+          setExternalOpen(false);
+          if (document.activeElement === document.body || popover.current?.contains(document.activeElement)) trigger.current?.focus();
+        }
       }}>
-      <div className={styles.header}><strong id={`${id}-title`}>Add agent</strong>
+      <div className={styles.header}><strong id={`${id}-title`}>Add your agent</strong>
         <button autoFocus type="button" className={styles.close} aria-label="Close add agent" onClick={closePopover}>×</button></div>
-      {present && <ConnectionForm handle={handle} postId={postId} marks={marks} reload={reload} />}
+      <>
+        <p>Work together on this item. Your agent uses your TextText account and the access it already has.</p>
+        <button type="button" className={styles.action} onClick={() => {
+          window.dispatchEvent(new CustomEvent(TRY_AI_IN_TEXTTEXT_EVENT, { detail: { postId } }));
+          closePopover();
+        }}>Work in TextText</button>
+        <button type="button" className={styles.action} aria-expanded={externalOpen} onClick={() => setExternalOpen((value) => !value)}>Other connection methods</button>
+        {externalOpen && <ConnectionForm handle={handle} postId={postId} marks={marks} reload={reload} />}
+      </>
       {loadError && <div><p role="alert">Item connections could not be loaded.</p><button type="button" className={styles.action} onClick={reload}>Refresh connections</button></div>}
       {grants.length > 0 && <div className={styles.history}><strong>Item connections</strong>
         {grants.map((grant) => <section key={grant.id}>

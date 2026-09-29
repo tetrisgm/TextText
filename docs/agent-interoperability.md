@@ -311,9 +311,14 @@ isolated local workspace and refuses a non-local database.
 
 The owner can choose Add agent at the end of an item's participant row, or
 search for Add agent in the command palette while the item is open. Settings
-links back to items and retains the workspace-token management flow.
+links back to items and retains the workspace-token management flow. The
+primary item action opens the in-app assistant on that exact item, using the
+owner's existing connection and account access. External clients are under
+Other connection methods; opening the in-app assistant does not create an
+item token or silently grant a new scope.
 
-For Claude Code, Codex, or Cursor on this Mac, Prepare instruction produces
+Under Other connection methods, Claude Code, Codex, or Cursor on this Mac can
+use Prepare instruction. It produces
 an exact-id `texttext do read_item` request with a unique self-declared `--as`
 label. It uses the standalone app's existing signed-in credential. No new
 credential, bridge, plugin installation, or disposable proof item is needed.

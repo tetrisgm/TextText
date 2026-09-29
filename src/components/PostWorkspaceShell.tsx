@@ -3034,14 +3034,16 @@ function LocalWorkspaceShell({
   const setAssistantComposerText = assistantComposer.setText;
   useEffect(() => {
     const onTryAi = (event: Event) => {
-      const prompt = (event as CustomEvent<{ prompt?: unknown }>).detail?.prompt;
-      if (typeof prompt !== "string" || !prompt.trim()) return;
-      setAssistantComposerText(prompt);
+      const detail = (event as CustomEvent<{ prompt?: unknown; postId?: unknown }>).detail;
+      if (detail?.postId !== undefined && detail.postId !== assistantTarget.view.postId) return;
+      const prompt = detail?.prompt;
+      if (typeof prompt === "string" && prompt.trim()) setAssistantComposerText(prompt);
+      else if (typeof detail?.postId !== "string") return;
       changeAssistantState("pinned");
     };
     window.addEventListener(TRY_AI_IN_TEXTTEXT_EVENT, onTryAi);
     return () => window.removeEventListener(TRY_AI_IN_TEXTTEXT_EVENT, onTryAi);
-  }, [changeAssistantState, setAssistantComposerText]);
+  }, [assistantTarget.view.postId, changeAssistantState, setAssistantComposerText]);
   const assistantContextItems = useMemo(
     () =>
       [...displayPool.posts]
