@@ -195,3 +195,26 @@ long-run stability. The fixture reuses large static covers for most cards,
 so it is a stress case rather than a typical upload with generated previews.
 The isolated app and temporary server were stopped and port 3131 was free;
 the installed build 1112 and its development server remained running.
+
+## Repeated long-lived native gallery visits
+
+On the same still-running installed development build 1112, the app and its
+identified WebKit GPU, networking, and content processes retained PIDs
+55440, 55447, 55452, and 55453. `vmmap -summary` reported physical footprints
+of 334.3, 88.7, 15.9, and 949.7 MiB (about 1.39 GiB combined) with the
+existing test note and assistant open. I hid the assistant, visited the
+96-image `Visual scale proof` folder six times, and traversed its cards from
+`Visual scale 096` to `Visual scale 001` and back during the visits. The
+native UI visibly rendered the first, middle, and last gallery cards. I
+returned to All items between visits, then reopened the original test note
+and assistant.
+
+Intermediate content-process readings varied from 996 MiB to the coarse
+`1.1G` display; after leaving the gallery it read 913.9 MiB. Once the note
+and assistant were restored, the four footprints were 334.5, 99.8, 15.8,
+and 940.9 MiB, about 1.39 GiB combined and within a few MiB of the starting
+sample. System-wide reported free memory was 37% before and 41% after.
+This several-minute repeated-use pass shows no monotonic footprint growth
+for that route in the long-lived app. It does not establish long-run memory
+stability, a production-mode footprint, or the cause of the already-high
+WebKit content baseline. The local development server was excluded.
