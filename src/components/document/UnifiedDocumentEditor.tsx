@@ -954,6 +954,19 @@ export function UnifiedDocumentEditor({
     }, 500);
   }, [collab.canEdit, flushMaterialization, networkEnabled]);
 
+  const retrySaving = useCallback(() => {
+    // A failed initial catch-up can leave no unsaved materialization version.
+    // Flushing then returns immediately, so the visible Retry button must
+    // establish a fresh authoritative provider before claiming the item saved.
+    if (!providerRef.current?.caughtUp ||
+        localMaterializationVersionRef.current <= savedMaterializationVersionRef.current) {
+      setSaveState("local");
+      setProviderAttempt((attempt) => attempt + 1);
+      return;
+    }
+    void flushMaterialization();
+  }, [flushMaterialization]);
+
   useEffect(() => {
     if (!networkEnabled || recoveryBlockedRef.current) return;
 
@@ -1701,7 +1714,7 @@ export function UnifiedDocumentEditor({
           </div>
         </div>
       )}
-      <EditorSaveNotice state={saveState} onRetry={() => void flushMaterialization()} />
+      <EditorSaveNotice state={saveState} onRetry={retrySaving} />
       {!document.content.title.trim() && !document.content.body.trim() && <p className="workspace-post-body-status">Start with a title or write below. Use Stop editing above to return to reading.</p>}
       {/* No byline while writing: an author and a reading time are reader
           chrome, and showing them here turns the page into a preview of
