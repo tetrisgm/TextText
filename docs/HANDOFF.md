@@ -14,4 +14,4 @@ The isolated Store-shaped app already proved clean-profile ChatGPT authorization
 
 ## Next action and references
 
-Commit the web unit repair, then continue with agent scope/reconnect and performance/recovery. Use the checkpoint for exact tests, process identities, and pending measurements. Historical detail from the previous handoff is in [September 28 history](HANDOFF-history-2026-09-28.md). The [AI architecture](ai-sidebar-architecture.md), [agent runbook](agentic-assistant-runbook.md), and [database operations](DATABASE-OPERATIONS.md) remain authoritative for their respective boundaries.
+Commit the corrected performance benchmark, then continue with agent scope/reconnect, cold open, typing/collaboration, and recovery. Use the checkpoint and [performance receipt](content-first-shell-2026-09-28.md) for exact tests and pending measurements. Historical detail from the previous handoff is in [September 28 history](HANDOFF-history-2026-09-28.md). The [AI architecture](ai-sidebar-architecture.md), [agent runbook](agentic-assistant-runbook.md), and [database operations](DATABASE-OPERATIONS.md) remain authoritative for their respective boundaries.
