@@ -681,8 +681,10 @@ export function ItemTypeStudio({
     setBusy("generate");
     setError(null);
     setFailure(null);
+    setSaveConflict(false);
     let executionStarted = false;
     let validatingOutput = false;
+    let requestError: string | null = null;
     try {
       const selectedDocument = selectedFolderDocuments.find((entry) => entry.postId === initialTargetPostId)?.document;
       if (initialTargetPostId && !selectedDocument) {
@@ -757,9 +759,10 @@ export function ItemTypeStudio({
           | { blueprint?: unknown; failure?: AiFailure; error?: string; conflict?: boolean }
           | null;
         if (!stillActive()) return;
-        if (response.status === 409 && payload?.conflict) {
-          setSaveConflict(true);
-          throw new Error("This document changed after the preview was opened. Read its latest content and review the request before continuing.");
+        if (!response.ok && !payload?.failure && response.status >= 400 && response.status < 500) {
+          requestError = payload?.error ?? "The design request could not be checked. Your request is preserved.";
+          if (response.status === 409) setSaveConflict(true);
+          throw new Error(requestError);
         }
         if (!response.ok) throw new AiConnectionError(payload?.failure ?? aiFailure("unknown", requestId));
         output = payload?.blueprint;
@@ -778,7 +781,7 @@ export function ItemTypeStudio({
       if (!stillActive()) return;
       const detail = generationError instanceof AiConnectionError ? generationError.failure
         : validatingOutput ? aiFailure("invalid-template", requestId)
-        : executionStarted && connectionChoice === "api-key" && !saveConflict
+        : executionStarted && connectionChoice === "api-key" && !requestError
           ? classifyAiFailure(generationError, requestId) : null;
       if (detail) {
         setFailure(detail);
