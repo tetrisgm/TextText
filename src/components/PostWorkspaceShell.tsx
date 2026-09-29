@@ -3125,16 +3125,17 @@ function LocalWorkspaceShell({
   ]);
 
   const openPostId = useCallback(
-    (postId: string, mode: "read" | "edit" = "read") => {
+    (postId: string, mode: "read" | "edit" = "read", folderPath?: string) => {
       const post = itemIdentity.resolvePost(displayPool, postId);
       if (!post) return;
       openPoolPost(
         post,
-        view.level === "section" ||
+        folderPath ??
+          (view.level === "section" ||
           view.level === "post" ||
           view.level === "edit"
-          ? view.folderPath
-          : undefined,
+            ? view.folderPath
+            : undefined),
         mode,
       );
     },

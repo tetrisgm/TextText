@@ -19,6 +19,7 @@ import {
 import { dedupePaletteEntries } from "@/lib/commands/palette";
 import { plainTextExcerpt } from "@/lib/content";
 import { itemFolderLabel, itemKindLabel } from "@/lib/workspace/item-labels";
+import { folderPathForPoolPost } from "@/lib/pool/selectors";
 import { workspaceMouseMoved } from "@/lib/workspace-hover";
 import type { AppCommand, CommandContext } from "@/lib/commands/types";
 import type {
@@ -144,7 +145,7 @@ function postResult(
     searchText: oneLine(post.bodyPreview),
     run: () => {
       if (ctx.workspace?.blog.handle === pool.blog.handle) {
-        ctx.workspace.openPost(post.id);
+        ctx.workspace.openPost(post.id, "read", folderPathForPoolPost(pool, post));
         return;
       }
       ctx.navigate(blogPostPath(pool.blog, post));
