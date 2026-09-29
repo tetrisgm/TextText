@@ -218,3 +218,20 @@ This several-minute repeated-use pass shows no monotonic footprint growth
 for that route in the long-lived app. It does not establish long-run memory
 stability, a production-mode footprint, or the cause of the already-high
 WebKit content baseline. The local development server was excluded.
+
+## Isolated native authorization cancellation
+
+At source `5c64a742`, I built a separate Store-shaped `TextText Agent Test.app`
+against the existing local development server on port 3000. Its bundle ID and
+Codex profile are separate from `/Applications/TextText.app`. In the test
+app's AI settings, Disconnect exposed Continue with ChatGPT. Clicking it
+showed **Authorizing** and **Cancel setup** and opened Safari to OpenAI's
+account chooser. Clicking Cancel setup returned the test UI to **Not checked**
+and **Continue with ChatGPT**. The test app's Codex helper process exited;
+the app did not change to a connected state on a later UI observation. I
+closed only the Safari tab created for this check and quit the test app.
+
+This proves the visible canceled-setup path and cleanup in an isolated native
+session. It does not inject a deliberately delayed login completion or prove
+every response-order race. The installed app and its local server were not
+restarted or replaced.
