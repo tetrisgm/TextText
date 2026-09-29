@@ -160,6 +160,9 @@ import {
 
 export type { AssistantViewSnapshot } from "./context";
 
+const CLOUD_SCOPE_CHANGE_REASON = "workspace-changed";
+const CLOUD_SCOPE_CHANGE_MESSAGE = "The workspace changed. The request may have run; check the item before retrying.";
+
 type AssistantMessageRole = "user" | "assistant" | "progress" | "error";
 
 type AssistantProposalBase = {
@@ -823,6 +826,18 @@ export function useNativeAssistant({
       }
     };
   }, [cancelNativeTurnForScopeChange, conversationStoreKey]);
+
+  // A provider request may still be streaming when the owner or workspace
+  // changes. Abort the old request; the per-event scope check also closes the
+  // interval between render and effect cleanup.
+  useEffect(() => {
+    const controllers = activeCloudAbortRef.current;
+    return () => {
+      for (const controller of controllers.values()) {
+        controller.abort(CLOUD_SCOPE_CHANGE_REASON);
+      }
+    };
+  }, [conversationStoreKey]);
 
   useEffect(() => {
     getPoolRef.current = getPool;
@@ -1599,6 +1614,7 @@ export function useNativeAssistant({
        * is settled by its own turn-completed and error handlers instead.
       */
       let handedToNativeAgent = false;
+      let cloudAbortController: AbortController | null = null;
       const cloudTextBuffer: { current: AssistantTextDeltaBuffer | null } = {
         current: null,
       };
@@ -1762,12 +1778,17 @@ export function useNativeAssistant({
         const openSelection = open
           ? resolveWorkspaceItemTextSelection({ ...open, selection: open.selection ?? open.writingSelection })
           : null;
-        const cloudAbortController = new AbortController();
+        const cloudSelectionEnvelope = chosenContext.includeSelection && open && submittedView.postId
+          ? await createSelectionEnvelope(submittedView.postId, open, openSelection)
+          : undefined;
+        if (!ownerScopeIsStillCurrent()) throw new Error(CLOUD_SCOPE_CHANGE_MESSAGE);
+        cloudAbortController = new AbortController();
         activeCloudAbortRef.current.set(thread, cloudAbortController);
         let cloudMessageId: string | null = null;
         let streamProvider: CloudAssistantProviderLabel | undefined;
         let streamModel: string | undefined;
         const onCloudEvent = (event: CloudAssistantStreamEvent) => {
+          if (!ownerScopeIsStillCurrent() || cloudAbortController?.signal.aborted) return;
           if (event.type === "start") {
             const warning = unavailableContextWarning(event.contextResolutions ?? []);
             if (warning) {
@@ -1803,6 +1824,7 @@ export function useNativeAssistant({
               const messageId = cloudMessageId;
               cloudTextBuffer.current ??= createAssistantTextDeltaBuffer(
                 (text) => {
+                  if (!ownerScopeIsStillCurrent() || cloudAbortController?.signal.aborted) return;
                   updateThreadMessage(
                     thread,
                     messageId,
@@ -1823,9 +1845,7 @@ export function useNativeAssistant({
           folderPath: submittedView.folderPath,
           postId: submittedView.postId,
           itemTitle: chosenContext.includeItem ? open?.title : undefined,
-          selectionEnvelope: chosenContext.includeSelection && open && submittedView.postId
-            ? await createSelectionEnvelope(submittedView.postId, open, openSelection)
-            : undefined,
+          selectionEnvelope: cloudSelectionEnvelope,
           itemPreview: chosenContext.includeItem ? open?.body?.slice(0, 4001) : undefined,
           includeItem: chosenContext.includeItem,
           workspaceIndex: chosenContext.workspaceIndex,
@@ -1840,6 +1860,11 @@ export function useNativeAssistant({
           signal: cloudAbortController.signal,
           onEvent: onCloudEvent,
         });
+        if (!ownerScopeIsStillCurrent() || cloudAbortController.signal.reason === CLOUD_SCOPE_CHANGE_REASON) {
+          updateAssistantJob(jobId, { status: "error", activity: CLOUD_SCOPE_CHANGE_MESSAGE });
+          return;
+        }
+        if (cloudAbortController.signal.aborted) throw new DOMException("The request was cancelled.", "AbortError");
         cloudTextBuffer.current?.finish();
         if ("disabled" in result) {
           const message = "Connect Anthropic or OpenAI in Workspace Settings.";
@@ -1918,13 +1943,18 @@ export function useNativeAssistant({
         }
         settleCloudTurn(thread, jobId, result);
       } catch (error) {
+        if (!ownerScopeIsStillCurrent() || cloudAbortController?.signal.reason === CLOUD_SCOPE_CHANGE_REASON) {
+          updateAssistantJob(jobId, { status: "error", activity: CLOUD_SCOPE_CHANGE_MESSAGE });
+          return;
+        }
         const message = assistantAgentError(error);
         if (submittedView.postId) reportSelectionError(submittedView.postId, message);
         appendToThread(thread, "error", message);
         updateAssistantJob(jobId, { status: "error", activity: message });
       } finally {
-        cloudTextBuffer.current?.finish();
-        activeCloudAbortRef.current.delete(thread);
+        if (!ownerScopeIsStillCurrent() || cloudAbortController?.signal.aborted) cloudTextBuffer.current?.cancel();
+        else cloudTextBuffer.current?.finish();
+        if (activeCloudAbortRef.current.get(thread) === cloudAbortController) activeCloudAbortRef.current.delete(thread);
         setThreadCloudProvider(thread, null);
         if (!handedToNativeAgent) setThreadBusy(thread, false);
       }
@@ -1997,6 +2027,9 @@ export function useNativeAssistant({
       if (!ownerScopeReady || !conversationStoreKey) return;
       const thread = threadKey;
       if (busyThreads.has(thread)) return;
+      const submittedOwnerScope: AssistantOwnerScope = { handle, ownerScopeKey: conversationStoreKey };
+      const ownerScopeIsStillCurrent = () =>
+        assistantOwnerScopeMatches(currentOwnerScopeRef.current, submittedOwnerScope);
       const view = getViewRef.current();
       if (connectionPreference !== "api-key") {
         if (view.postId) reportSelectionError(view.postId, "Selection previews need the provider-key connection. Ask your connected agent in the assistant instead.");
@@ -2032,8 +2065,10 @@ export function useNativeAssistant({
         contextLabel: contextLabel(),
         prompt: actionLabel,
       });
+      let cloudAbortController: AbortController | null = null;
       try {
         const item = await readItemTextRef.current(view.postId);
+        if (!ownerScopeIsStillCurrent()) throw new Error(CLOUD_SCOPE_CHANGE_MESSAGE);
         const writingAction = action === "translate" || action === "continue";
         const selection = resolveWorkspaceItemTextSelection(writingAction
           ? { ...item, selection: item.selection ?? item.writingSelection }
@@ -2062,7 +2097,8 @@ export function useNativeAssistant({
             ? `${actionLabel} selection`
             : actionLabel,
         );
-        const cloudAbortController = new AbortController();
+        if (!ownerScopeIsStillCurrent()) throw new Error(CLOUD_SCOPE_CHANGE_MESSAGE);
+        cloudAbortController = new AbortController();
         activeCloudAbortRef.current.set(thread, cloudAbortController);
         const result = await cloudAssistantTurn(handle, actionPrompt, {
           level: view.level,
@@ -2078,6 +2114,7 @@ export function useNativeAssistant({
           ...(selectedCloudModel ? { model: selectedCloudModel } : {}),
           signal: cloudAbortController.signal,
           onEvent: (event) => {
+            if (!ownerScopeIsStillCurrent() || cloudAbortController?.signal.aborted) return;
             if (event.type === "start") {
               setCloudProvider(event.provider);
               setThreadCloudProvider(thread, event.provider);
@@ -2090,6 +2127,11 @@ export function useNativeAssistant({
             }
           },
         });
+        if (!ownerScopeIsStillCurrent() || cloudAbortController.signal.reason === CLOUD_SCOPE_CHANGE_REASON) {
+          updateAssistantJob(jobId, { status: "error", activity: CLOUD_SCOPE_CHANGE_MESSAGE });
+          return;
+        }
+        if (cloudAbortController.signal.aborted) throw new DOMException("The request was cancelled.", "AbortError");
         if ("disabled" in result) {
           const message = "Connect Anthropic or OpenAI in Workspace Settings.";
           appendToThread(
@@ -2150,6 +2192,10 @@ export function useNativeAssistant({
         }));
         settleCloudTurn(thread, jobId, result);
       } catch (error) {
+        if (!ownerScopeIsStillCurrent() || cloudAbortController?.signal.reason === CLOUD_SCOPE_CHANGE_REASON) {
+          updateAssistantJob(jobId, { status: "error", activity: CLOUD_SCOPE_CHANGE_MESSAGE });
+          return;
+        }
         const message = assistantAgentError(error);
         reportSelectionError(view.postId, message);
         appendToThread(
@@ -2159,7 +2205,7 @@ export function useNativeAssistant({
         );
         updateAssistantJob(jobId, { status: "error", activity: message });
       } finally {
-        activeCloudAbortRef.current.delete(thread);
+        if (activeCloudAbortRef.current.get(thread) === cloudAbortController) activeCloudAbortRef.current.delete(thread);
         setThreadCloudProvider(thread, null);
         setThreadBusy(thread, false);
       }
