@@ -20,3 +20,18 @@ observed narrow three-pane state, not the app's exact 720-point minimum or
 reduced-motion behavior. The installed binary was not replaced for this CSS
 change; it used the existing local development server. Ten focused
 `simplification-contract` tests and `git diff --check` passed.
+
+## Reader, gallery, and Add agent in the installed app
+
+With the assistant open in dark appearance, the `Visual scale proof` gallery
+opened an image item without clipping the image. The viewer showed its caption,
+1600 × 900 dimensions, original link, Zoom, and Close. Zoom changed to Fit and
+made the full-size image scrollable. The saved `Texttext AI setup guide` reader
+showed its title, body, and source link beside the assistant in dark and light
+appearance. The Add agent panel fit on screen in both appearances; in light,
+its expanded connection controls remained visible, Close had a visible focus
+ring, and Escape closed the panel. Dark appearance was restored.
+
+The Command-K cross-folder route fix and reload proof are recorded separately
+in [the route receipt](command-palette-route-2026-09-29.md). These observations
+do not establish the exact native 720-point floor or reduced-motion behavior.
