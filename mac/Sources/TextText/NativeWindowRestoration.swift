@@ -32,9 +32,15 @@ enum NativeWindowRestoration {
             return segments.allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
         }
         let handle = String(homePath.dropFirst(2))
-        let parts = components.path.split(separator: "/")
-        guard parts.count == 3, parts[0] == "t", String(parts[1]) == handle,
-              !parts[2].isEmpty, !parts.contains("..") else { return false }
+        let parts = components.path.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count >= 4, parts.count <= 19, parts[0].isEmpty,
+              parts[1] == "t", String(parts[2]) == handle,
+              !components.percentEncodedPath.lowercased().contains("%2f"),
+              parts.dropFirst(3).allSatisfy({ segment in
+                  !segment.isEmpty && segment != "." && segment != ".."
+                      && !segment.contains("\\")
+                      && segment.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) })
+              }) else { return false }
         return (components.queryItems ?? []).allSatisfy { item in
             (item.name == "edit" && item.value == "1") ||
             (item.name == "id" && item.value.map(TextTextItemLink.isValidItemId) == true)
@@ -50,7 +56,7 @@ enum NativeWindowRestoration {
         let handle: Substring
         if parts.count == 2, parts[0].isEmpty, parts[1].hasPrefix("@") {
             handle = parts[1].dropFirst()
-        } else if parts.count == 4, parts[0].isEmpty, parts[1] == "t" {
+        } else if parts.count >= 4, parts.count <= 19, parts[0].isEmpty, parts[1] == "t" {
             handle = parts[2]
         } else { return false }
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_-"))

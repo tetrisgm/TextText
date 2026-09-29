@@ -17,8 +17,9 @@ final class NativePlatformTests: XCTestCase {
     func testRestorationAcceptsSameWorkspaceItemsAndFolders() {
         XCTAssertTrue(NativeWindowRestoration.accepts("/@me", homePath: "/@me"))
         XCTAssertTrue(NativeWindowRestoration.accepts("/t/me/hello?edit=1", homePath: "/@me"))
+        XCTAssertTrue(NativeWindowRestoration.accepts("/t/me/Notes/Research/hello?edit=1&id=abc-123", homePath: "/@me"))
         XCTAssertTrue(NativeWindowRestoration.accepts("/@me?folder=Blog%2FResearch%20notes", homePath: "/@me"))
-        for path in ["//evil.test/t/me/hello", "https://evil.test", "/t/other/hello", "/signin?token=secret", "/t/me/hello?token=secret", "/t/me/../secret", "/@other?folder=Blog", "/@me?folder=", "/@me?folder=Blog%2F..%2FPrivate", "/@me?folder=Blog%5CPrivate", "/@me?folder=Blog&token=secret", "/@me?view=settings"] {
+        for path in ["//evil.test/t/me/hello", "https://evil.test", "/t/other/hello", "/signin?token=secret", "/t/me/hello?token=secret", "/t/me/../secret", "/t/me/Notes/../secret", "/t/me/Notes//secret", "/t/me/Notes%2FPrivate/secret", "/@other?folder=Blog", "/@me?folder=", "/@me?folder=Blog%2F..%2FPrivate", "/@me?folder=Blog%5CPrivate", "/@me?folder=Blog&token=secret", "/@me?view=settings"] {
             XCTAssertFalse(NativeWindowRestoration.accepts(path, homePath: "/@me"), path)
         }
         XCTAssertFalse(NativeWindowRestoration.accepts("/t/me/hello", homePath: nil))
@@ -46,7 +47,7 @@ final class NativePlatformTests: XCTestCase {
             UserDefaults.standard.removeObject(forKey: workspaceKey)
         }
         UserDefaults.standard.set("/@me", forKey: workspaceKey)
-        for path in ["/@me", "/@me?folder=Notes%2FResearch", "/t/me/hello?edit=1"] {
+        for path in ["/@me", "/@me?folder=Notes%2FResearch", "/t/me/hello?edit=1", "/t/me/Notes/Research/hello?edit=1&id=abc-123"] {
             XCTAssertTrue(NativeWindowRestoration.acceptsCookieSessionPath(path), path)
             UserDefaults.standard.set(path, forKey: key)
             XCTAssertNil(AppDelegate.restoredWorkspacePath(origin: origin, handle: nil, token: nil))
