@@ -1,0 +1,11 @@
+# Browser sign-in in the sandbox, September 28, 2026
+
+The installed Store-shaped WIP build 1096 used Codex's device-code flow. It opened Safari on a nine-character code form without entering the code. The code in TextText had no copy button. This blocked a normal in-app agent connection.
+
+The earlier [sandbox receipt](agent-runtime-sandbox-verification-2026-09-25.md) recorded that Codex's browser flow failed to start its local callback listener when the app had only outgoing-network permission. A bounded ad-hoc probe on the same Mac launched the official Codex CLI 0.153.4 as a signed sandbox-inheriting helper with a fresh private profile. With only `network.client`, `account/login/start` returned an error. With the parent app also carrying `com.apple.security.network.server`, the same browser request returned a validated authorization URL and login ID; `account/login/cancel` succeeded. The probe did not submit an authorization or import credentials.
+
+The Store entitlement now includes `network.server` and the bundled runtime requests the documented `chatgpt` browser login. The embedded helper retains only sandbox inheritance, without an independent server entitlement. The isolated full test app was rebuilt with the same parent permission. Focused Store-compiled Codex tests passed 28/28 (`/tmp/texttext-browser-auth-native-test.log`). The local Store-shaped build 1097 passed strict nested-signature verification (`/tmp/texttext-browser-auth-1097-build.log`) and was installed at `/Applications/TextText.app`; 1096 is recoverable in Trash.
+
+In the installed 1097 UI, Continue with ChatGPT opened Safari directly on **Sign in to Codex with ChatGPT**, showing the signed-in personal account and a Continue consent action. No device-code page appeared. The account authorization and return to a ready TextText agent still require the owner to complete that consent; this receipt does not claim either outcome or App Store approval. No public deployment or release changed.
+
+References: [Codex App Server authentication](https://learn.chatgpt.com/docs/app-server), [Apple App Sandbox network server entitlement](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.security.network.server).

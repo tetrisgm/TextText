@@ -16,6 +16,9 @@
 	<!-- Talks to the workspace server. -->
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<!-- Codex's browser sign-in receives the OAuth callback on localhost. -->
+	<key>com.apple.security.network.server</key>
+	<true/>
 
 	<key>com.apple.developer.applesignin</key>
 	<array>

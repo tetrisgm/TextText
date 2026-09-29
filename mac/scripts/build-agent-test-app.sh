@@ -51,7 +51,7 @@ for key in ("TextTextAppGroupIdentifier", "TextTextKeychainAccessGroup", "CFBund
     values.pop(key, None)
 info.write_bytes(plistlib.dumps(values))
 for name, entitlements in {
-    "parent.entitlements": {"com.apple.security.app-sandbox": True, "com.apple.security.network.client": True, "com.apple.security.files.user-selected.read-write": True},
+    "parent.entitlements": {"com.apple.security.app-sandbox": True, "com.apple.security.network.client": True, "com.apple.security.network.server": True, "com.apple.security.files.user-selected.read-write": True},
     "helper.entitlements": {"com.apple.security.app-sandbox": True, "com.apple.security.inherit": True},
 }.items():
     (root / name).write_bytes(plistlib.dumps(entitlements))

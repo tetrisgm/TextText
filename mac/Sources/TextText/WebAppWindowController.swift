@@ -1532,7 +1532,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                             try sendCodexRequest(
                                 .loginStart,
                                 method: "account/login/start",
-                                params: codexOwnsProfile ? ["type": "chatgptDeviceCode"] : CodexAppServerRequests.chatGPTLoginStart)
+                                params: CodexAppServerRequests.chatGPTLoginStart)
                         } catch {
                             codexFailure(String(describing: error))
                         }
@@ -1579,21 +1579,13 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                 }
             case .loginStart:
                 codexLoginID = message.rawResult?["loginId"] as? String
-                if codexOwnsProfile {
-                    guard let authorization = CodexEmbeddedRuntime.deviceAuthorization(message.rawResult) else {
-                        codexFailure("runtime returned invalid device authorization"); return
-                    }
-                    codexAuthorization = (authorization.url, authorization.code)
-                    emitCodexConnectionStatus()
-                } else {
-                    guard let rawURL = message.rawResult?["authUrl"] as? String,
-                          let url = URL(string: rawURL), url.scheme == "https",
-                          ["auth.openai.com", "chatgpt.com"].contains(url.host ?? "") else {
-                        codexFailure("runtime returned invalid authorization URL"); return
-                    }
-                    openExternally(url)
-                    emitCodexConnectionStatus()
+                guard let rawURL = message.rawResult?["authUrl"] as? String,
+                      let url = URL(string: rawURL), url.scheme == "https",
+                      ["auth.openai.com", "chatgpt.com"].contains(url.host ?? "") else {
+                    codexFailure("runtime returned invalid authorization URL"); return
                 }
+                openExternally(url)
+                emitCodexConnectionStatus()
             case .loginCancel, .logout:
                 finishCodexDisconnect()
             case .threadStart(let conversationID):
