@@ -101,21 +101,29 @@ describe("inline selection lifecycle", () => {
     await vi.waitFor(() => expect(a.controller.snapshot().status).toBe("ready"));
     b.controller.dispose();
   });
-  it("marks changed text or revisions stale, and only regenerates valid selections", async () => {
+  it("keeps unchanged text across a save revision and regenerates changed selections", async () => {
     const s = setup(); await ready(s);
     s.change({ revision: 8 });
     s.controller.check(s.current());
-    expect(s.controller.snapshot().status).toBe("stale");
-    await s.controller.accept(); expect(s.execute).not.toHaveBeenCalled();
-    s.controller.retry();
-    await vi.waitFor(() => expect(s.controller.snapshot().status).toBe("ready"));
-    expect(s.controller.snapshot().envelope?.revision).toBe(8);
+    expect(s.controller.snapshot().status).toBe("ready");
     s.change({ body: "Before other passage. After." });
     s.controller.check(s.current());
+    expect(s.controller.snapshot().status).toBe("stale");
     s.controller.retry();
     await vi.waitFor(() => expect(s.controller.snapshot().status).toBe("stale"));
     s.controller.retry({ ...selection, text: "other passage" });
     await vi.waitFor(() => expect(s.controller.snapshot().status).toBe("ready"));
+  });
+  it("keeps an in-flight passage preview ready when an Undo save advances the revision and later text", async () => {
+    const s = setup("rewrite", { slow: true });
+    s.controller.start();
+    await vi.waitFor(() => expect(s.generate).toHaveBeenCalledOnce());
+    s.change({ revision: 8, body: initial().body + " Later writing." });
+    s.controller.check(s.current());
+    s.answer.resolve("Clear passage");
+    await vi.waitFor(() => expect(s.controller.snapshot().status).toBe("ready"));
+    await s.controller.accept();
+    expect(s.controller.snapshot().status).toBe("applied");
   });
   it("checks again at acceptance and never overwrites a changed passage", async () => {
     const s = setup(); await ready(s);
@@ -179,6 +187,7 @@ describe("inline selection lifecycle", () => {
     s.change({ body: s.current().body + " New writing." });
     await s.controller.undo();
     expect(s.execute).toHaveBeenCalledTimes(2);
+    expect(s.execute.mock.calls[1][0].selection_envelope?.sourceHash).toMatch(/^[a-f0-9]{64}$/);
     expect(s.current().body).toBe(initial().body + " New writing.");
     expect(s.controller.snapshot().status).toBe("undone");
   });
@@ -298,15 +307,15 @@ describe("inline refinement lifecycle", () => {
     expect(s.generate.mock.calls[2].slice(0, 2)).toEqual(s.generate.mock.calls[1].slice(0, 2));
     expect(s.controller.snapshot().refinements).toEqual(["Longer"]);
   });
-  it.each(["tryAgain", "refine"] as const)("%s never refreshes a stale revision into acceptance", async (operation) => {
+  it.each(["tryAgain", "refine"] as const)("%s tolerates a revision-only save without changing its validated passage", async (operation) => {
     const s = setup(); await ready(s);
     const envelope = s.controller.snapshot().envelope;
     s.change({ revision: 8 });
     s.controller[operation]("Shorter");
-    await vi.waitFor(() => expect(s.controller.snapshot().status).toBe("stale"));
+    await vi.waitFor(() => expect(s.controller.snapshot().status).toBe("ready"));
     expect(s.controller.snapshot().envelope).toBe(envelope);
-    expect(s.generate).toHaveBeenCalledOnce();
-    await s.controller.accept(); expect(s.execute).not.toHaveBeenCalled();
+    expect(s.generate).toHaveBeenCalledTimes(2);
+    await s.controller.accept(); expect(s.execute).toHaveBeenCalledOnce();
   });
   it("checks for passage changes during refinement and before accepting its result", async () => {
     const s = setup(); await ready(s);
@@ -320,8 +329,8 @@ describe("inline refinement lifecycle", () => {
     const other = setup(); await ready(other); other.controller.refine("Shorter");
     await vi.waitFor(() => expect(other.controller.snapshot().status).toBe("ready"));
     other.change({ revision: 8 }); await other.controller.accept();
-    expect(other.controller.snapshot().status).toBe("stale");
-    expect(other.execute).not.toHaveBeenCalled();
+    expect(other.controller.snapshot().status).toBe("applied");
+    expect(other.execute).toHaveBeenCalledOnce();
   });
   it("requires matching acknowledgment on refinement and retries the same refinement after failure", async () => {
     const s = setup(); await ready(s);

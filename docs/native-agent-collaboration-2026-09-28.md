@@ -180,7 +180,8 @@ also ran during server selection validation.
 Bounded text edits now validate the exact selected range at the server and
 use the revision read with the live document for the atomic append. The live
 Yjs version fence and text-range compare still reject a changed target;
-caret and explicit whole-source guards retain strict revision checks. After
+caret and Undo source hashes still reject a changed full body, while explicit
+source preconditions retain their revision check. After
 this change, **Undo** on the still-open native preview reached **Undone**. A
 shorter rewrite had been applied and the later body text remained. The
 scratch note's first sentence was restored to its pre-check wording, showed
@@ -188,6 +189,26 @@ scratch note's first sentence was restored to its pre-check wording, showed
 and TypeScript passed. This verifies the specific false Undo conflict; a
 fresh-preview stale result immediately after Undo and remote approval-time
 conflicts still need separate live checks.
+
+## Fresh preview immediately after Undo
+
+The installed app reproduced the second failure: after a successful
+rewrite and Undo, a new preview of the restored sentence immediately showed
+**The passage changed** even though the selected range still matched. The
+editor's published revision advanced while the preview was starting, and
+the cloud assistant route rejected the old selection revision before
+generation. The client also treated revision drift as a changed passage.
+
+The preview now keeps a non-caret selection when its exact range is intact;
+the cloud route validates that same range before sending it to the provider.
+Caret previews still require their original revision in the client and a
+matching full-body hash at the server. A changed selected range still goes
+stale, and the reviewed write retains its commit-time range and live-version
+guards. In the installed app, a real rewrite reached **Ready**, was accepted,
+and reached **Undone**. Without a route reload, a fresh preview of the
+restored sentence reached **Ready**; it was discarded without editing. The
+scratch note showed **Saved**. This proves one local native sequence, not
+all concurrent network timings or a public release.
 
 - `TEXTTEXT_STORE=1 swift test --package-path mac --jobs 2 --filter Codex`:
   29 tests passed after updating an assertion for the revised instructions.

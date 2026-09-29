@@ -104,7 +104,16 @@ export function createInlinePreview(request: InlineRequest, deps: Dependencies) 
     error: error instanceof Error ? error.message : "Could not generate this preview. Try again.",
   });
   const assertCurrent = (envelope: SelectionEnvelope, current: WorkspaceItemTextSnapshot) => {
-    assertSelectionMatches(envelope, request.itemId, current);
+    // A just-saved local edit can advance the revision while this selected
+    // passage stays intact. The reviewed edit and server both compare the
+    // exact range at commit time. Carets retain revision and full-body guards.
+    if (envelope.revision !== current.revision && !isBodyCaret(envelope)) {
+      if (!Number.isSafeInteger(current.revision) || current.revision === undefined ||
+          current.revision < 0) throw new Error(SELECTION_STALE_ERROR);
+      assertSelectionMatches({ ...envelope, revision: current.revision }, request.itemId, current);
+    } else {
+      assertSelectionMatches(envelope, request.itemId, current);
+    }
     // A collapsed slice is always empty. Also fence unsaved local changes,
     // whose published revision may not have advanced yet.
     if (isBodyCaret(envelope) && source && current.body !== source.body) throw new Error(SELECTION_STALE_ERROR);

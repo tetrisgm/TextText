@@ -76,7 +76,8 @@ describe("caret envelopes", () => {
     const envelope = (await createSelectionEnvelope("item", item, caret))!;
     expect(await validateSelectionEditEnvelope(envelope, "item", item, caret)).toEqual(envelope);
     await expect(validateSelectionEnvelope({ ...envelope, start: offset + 1, end: offset + 1 })).rejects.toThrow();
-    await expect(validateSelectionEditEnvelope(envelope, "item", { ...item, revision: 8 }, caret)).rejects.toThrow(SELECTION_STALE_ERROR);
+    await expect(validateSelectionEditEnvelope(envelope, "item", { ...item, revision: 8 }, caret)).resolves.toEqual(envelope);
+    await expect(validateSelectionEditEnvelope(envelope, "item", { ...item, revision: 8, body: "New " + item.body }, caret)).rejects.toThrow(SELECTION_STALE_ERROR);
     await expect(validateSelectionEditEnvelope(envelope, "other", item, caret)).rejects.toThrow(SELECTION_STALE_ERROR);
     await expect(validateSelectionEditEnvelope(envelope, "item", item, { ...caret, start: 1, end: 2, text: "x" })).rejects.toThrow();
   });

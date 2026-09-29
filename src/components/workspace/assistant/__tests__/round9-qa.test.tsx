@@ -98,7 +98,7 @@ describe("round9 review regressions", () => {
     const original = { revision: 7, title: "Draft", excerpt: "", body: "Generated. Later writing." };
     const guard = (await envelopes.createSelectionEnvelope("item", original, {
       field: "body", start: 0, end: 10, text: "Generated.",
-    }))!;
+    }, true))!;
     const doc = new Y.Doc();
     const snapshot = emptyDocumentSnapshot(); snapshot.content.body = original.body;
     applyDocumentBaseline(doc, snapshot, "round9-revision-drift");

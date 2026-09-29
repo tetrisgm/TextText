@@ -1219,7 +1219,6 @@ describe("/api/ai cloud assistant route", () => {
     const source = { id: "note-1", revision: 7, title: "Draft", body: "Selected words", excerpt: "" };
     const envelope = (await createSelectionEnvelope(source.id, source, { field: "body", start: 0, end: 14, text: source.body }))!;
     for (const [selectionEnvelope, postId, current] of [
-      [envelope, source.id, { ...source, revision: 8 }],
       [envelope, source.id, { ...source, body: "Changed words!" }],
       [{ ...envelope, hash: "0".repeat(64) }, source.id, source],
       [envelope, "another-item", source],
@@ -1231,6 +1230,17 @@ describe("/api/ai cloud assistant route", () => {
     }
     expect(mocks.generateText).not.toHaveBeenCalled();
     expect(mocks.streamText).not.toHaveBeenCalled();
+  });
+
+  it("accepts an unchanged selected passage after its save advances the revision", async () => {
+    const source = { id: "note-1", revision: 7, title: "Draft", body: "Selected words", excerpt: "" };
+    const selectionEnvelope = (await createSelectionEnvelope(source.id, source, {
+      field: "body", start: 0, end: source.body.length, text: source.body,
+    }))!;
+    mocks.getPostById.mockResolvedValue({ ...source, revision: 8 });
+    const response = await POST(post({ ...turn, context: { postId: source.id, selectionEnvelope, mode: "suggestion" } }));
+    expect(response.status).toBe(200);
+    expect(mocks.generateText).toHaveBeenCalledOnce();
   });
 
   it("server-limits suggestion quick actions to read-only tools", async () => {

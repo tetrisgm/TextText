@@ -7,7 +7,7 @@
 
 import type { AssistantContextResolution } from "@/lib/ai/context-choice";
 import {
-  validateSelectionSource,
+  validateSelectionEditEnvelope,
   validateSelectionEnvelope,
   SELECTION_INVALID_ERROR,
   SELECTION_STALE_ERROR,
@@ -895,7 +895,12 @@ export async function POST(request: Request) {
       // selection text is delivered to a provider when access cannot be proved.
       const post = await getPostById(workspace.handle, selectionEnvelope.itemId);
       if (!post?.id) throw new Error(SELECTION_INVALID_ERROR);
-      await validateSelectionSource(selectionEnvelope, post.id, post);
+      await validateSelectionEditEnvelope(selectionEnvelope, post.id, post, {
+        field: selectionEnvelope.field,
+        start: selectionEnvelope.start,
+        end: selectionEnvelope.end,
+        text: selectionEnvelope.text,
+      });
       body.context = { ...selectionView, selectionEnvelope };
     }
   } catch (error) {

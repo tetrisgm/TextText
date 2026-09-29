@@ -116,13 +116,13 @@ export async function validateSelectionEditEnvelope(
   // A bounded text replacement is committed with an exact range compare and
   // swap. Unrelated saves may advance the revision while that range stays
   // intact; rejecting them makes a reviewed edit or Undo fail spuriously.
-  // Empty caret selections and explicit source hashes still fence the whole
-  // source because an unchanged empty slice cannot locate its old position.
-  if (envelope.sourceHash !== undefined) {
-    await validateSelectionSource(envelope, itemId, item);
-  } else if (envelope.itemId !== itemId ||
-      envelope.end > (item[envelope.field] ?? "").length ||
-      (item[envelope.field] ?? "").slice(envelope.start, envelope.end) !== envelope.text) {
+  // A full source hash protects caret positions and Undo against a peer
+  // insertion that happens to begin with the same target bytes. Its content
+  // check remains strict even when an unrelated save advances the revision.
+  const current = item[envelope.field] ?? "";
+  if (envelope.itemId !== itemId || envelope.end > current.length ||
+      current.slice(envelope.start, envelope.end) !== envelope.text ||
+      (envelope.sourceHash !== undefined && await sourceHash(current) !== envelope.sourceHash)) {
     throw new Error(SELECTION_STALE_ERROR);
   }
   return envelope;
