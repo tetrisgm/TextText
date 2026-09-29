@@ -128,13 +128,13 @@
   }
 }
 
-@media (min-width: 561px) and (max-width: 900px) {
+@media (min-width: 850px) and (max-width: 900px) {
   .root {
     width: min(320px, 50vw);
   }
 }
 
-@media (max-width: 560px) {
+@media (max-width: 849px) {
   .root {
     inset: 0;
     width: auto;

@@ -1642,12 +1642,10 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   }
 }
 
-/* The tablet assistant is a viewport overlay, not a grid column. Give the
-   Library's primary capture loop a matching safe area while it is open so
-   the field, truthful receipt, and recovery actions never sit underneath the
-   inspector. Phones intentionally promote the assistant to a full-screen
-   surface instead. */
-@media (min-width: 561px) and (max-width: 900px) {
+/* At 850-900px the assistant leaves a narrow document column. Keep the
+   Library's capture field and recovery actions clear of that column. Narrower
+   windows use a full-screen assistant instead. */
+@media (min-width: 850px) and (max-width: 900px) {
   .post-editor-shell.has-assistant-open .workspace-root-page {
     max-width: none;
     margin-inline: 0;
@@ -5928,7 +5926,7 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   }
 }
 
-@media (min-width: 561px) and (max-width: 900px) {
+@media (min-width: 850px) and (max-width: 900px) {
   .post-editor-shell.has-assistant-open .folder-top-action-bar {
     right: calc(var(--workspace-assistant-width, 320px) - 0.25rem);
     max-width: calc(

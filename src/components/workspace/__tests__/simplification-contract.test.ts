@@ -135,7 +135,7 @@ describe("workspace simplification contract", () => {
 
   it("keeps tablet capture receipts clear of the assistant overlay", () => {
     expect(assistantSidebarStyles).toContain(
-      '@media (min-width: 561px) and (max-width: 900px)',
+      '@media (min-width: 850px) and (max-width: 900px)',
     );
     expect(assistantSidebarStyles).toContain("width: min(20rem, 50vw)");
     expect(workspaceStyles).toContain(
