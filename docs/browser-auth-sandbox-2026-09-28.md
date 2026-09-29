@@ -13,3 +13,28 @@ Next, the installed agent was asked to append exactly `Installed browser sign-in
 The installed app was then quit and relaunched once. It briefly showed “Checking assistant access” before returning to Chat with Codex without Safari, a device code, or another sign-in. The edited test note remained visible in the library. This proves one installed-profile reconnect, not a repeated cold-launch timing or agent-active collaboration check. App Store approval remains untested. No public deployment or release changed.
 
 References: [Codex App Server authentication](https://learn.chatgpt.com/docs/app-server), [Apple App Sandbox network server entitlement](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.security.network.server).
+
+## September 29 delayed completion after Cancel setup
+
+A copy of the retained source-`cfa43626` Store-shaped test app was given a
+separate sandbox bundle ID and empty profile. It used the local production
+web build on port 3131 and the existing local `visual-demo` test account.
+No installed app, prior agent profile, or production data was changed.
+
+In native Settings, **Continue with ChatGPT** opened the normal browser
+account chooser. **Cancel setup** was pressed before completing that browser
+flow, and the native control returned to **Continue with ChatGPT**. The
+already-open browser flow was then completed using the existing ChatGPT
+account. Its callback could no longer reach the canceled local listener,
+which is the expected browser-side outcome for this ordering. The native
+app still showed **Continue with ChatGPT**; no bundled Codex helper remained.
+After quitting and reopening the same isolated app, Settings again showed
+**Continue with ChatGPT**. Thus this late browser completion did not
+silently reconnect or reverse cancellation.
+
+This is one live cancel-before-browser-completion ordering. It does not
+inject every delayed App Server response, prove all restart races, or test
+the current installed build 1113. The isolated app was quit, its temporary
+server stopped, and port 3131 was free. The installed app and its local
+development server remained running. No authorization code or callback URL
+is stored in this receipt.
