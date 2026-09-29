@@ -39,9 +39,12 @@ type Asset = {
   kind: "image" | "video";
   alt?: string;
   caption?: string;
+  poster?: string;
+  width?: number;
+  height?: number;
 };
 
-function render(assets: Asset[]): string {
+function render(assets: Asset[], preview = false): string {
   const document = {
     schemaVersion: 1,
     content: {
@@ -58,7 +61,7 @@ function render(assets: Asset[]): string {
     },
   } as unknown as DocumentSnapshot;
   return renderToStaticMarkup(
-    React.createElement(DocumentRenderer, { document, template }),
+    React.createElement(DocumentRenderer, { document, template, preview }),
   );
 }
 
@@ -113,5 +116,36 @@ describe("gallery node", () => {
     // The engine inlines its stylesheet, which mentions .tt-gallery, so this
     // has to look for the element rather than the string.
     expect(render([])).not.toContain('class="tt-gallery"');
+  });
+
+  it("keeps the original out of a GIF preview and preserves its dimensions", () => {
+    const html = render([{
+      id: "animated",
+      kind: "image",
+      src: "https://cdn.example.com/animated.gif",
+      poster: "https://cdn.example.com/animated-still.jpg",
+      width: 480,
+      height: 204,
+    }], true);
+
+    expect(html).toContain('src="https://cdn.example.com/animated-still.jpg"');
+    expect(html).not.toContain("animated.gif");
+    expect(html).toContain('width="480"');
+    expect(html).toContain('height="204"');
+    expect(html).not.toContain('class="tt-gallery-open"');
+  });
+
+  it("opens a full gallery image without mounting its original in the grid", () => {
+    const html = render([{
+      id: "image",
+      kind: "image",
+      src: "https://cdn.example.com/full.jpg",
+      poster: "https://cdn.example.com/still.jpg",
+      alt: "Portrait reference",
+    }]);
+
+    expect(html).toContain('aria-label="View Portrait reference"');
+    expect(html).toContain('src="https://cdn.example.com/still.jpg"');
+    expect(html).not.toContain('src="https://cdn.example.com/full.jpg"');
   });
 });

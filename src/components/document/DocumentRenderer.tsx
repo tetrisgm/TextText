@@ -12,6 +12,7 @@ import type {
 import { isSafeLinkHref, isVideoFile, isYouTube, youtubeEmbedUrl } from "@/lib/content";
 import { pollClosed, pollOptionLabels } from "@/lib/documents/responses";
 import { PollWidget } from "./PollWidget";
+import { DocumentGallery } from "./DocumentGallery";
 import { normalizeRenderNode } from "@/lib/presentation/schema";
 import type {
   DocumentFieldDefinition,
@@ -437,44 +438,6 @@ function BoundMedia({
     <div className={className} style={style}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={src} alt={alt} loading={preview ? "lazy" : undefined} decoding="async" />
-    </div>
-  );
-}
-
-// The node's own attributes have to reach the element, or a template that
-// names a node cannot style it: three [data-tt-node="gallery-media"] rules
-// were dead because this wrapper dropped them.
-function Gallery({
-  assets,
-  columns,
-  attrs,
-  preview,
-}: {
-  assets: DocumentAsset[];
-  columns: number;
-  attrs?: NodeAttrs;
-  preview?: boolean;
-}) {
-  if (assets.length === 0) return null;
-  return (
-    <div {...attrs} className="tt-gallery" style={{ "--tt-gallery-columns": columns } as CSSProperties}>
-      {assets.map((asset) => {
-        const src = safeMediaSource(asset.src);
-        if (!src) return null;
-        return (
-          <figure key={asset.id}>
-            {asset.kind === "video" && preview ? (
-              <span className="tt-media-still" aria-label={asset.caption || "Video"} />
-            ) : asset.kind === "video" ? (
-              <video src={src} controls playsInline preload="metadata" />
-            ) : (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={src} alt={asset.alt ?? asset.caption ?? ""} loading="lazy" decoding="async" />
-            )}
-            {asset.caption && <figcaption>{asset.caption}</figcaption>}
-          </figure>
-        );
-      })}
     </div>
   );
 }
@@ -1184,7 +1147,7 @@ function NodeRenderer({
       if (slot !== undefined) return slot;
       const value = resolveDocumentBinding(document, node.bind);
       return (
-        <Gallery
+        <DocumentGallery
           assets={
             Array.isArray(value)
               ? value.filter(
@@ -1193,7 +1156,7 @@ function NodeRenderer({
                 )
               : []
           }
-          attrs={attrs}
+          nodeId={attrs["data-tt-node"]}
           preview={preview}
           columns={node.columns ?? 3}
         />

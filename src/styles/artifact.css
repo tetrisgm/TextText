@@ -250,6 +250,9 @@
 .post-editor-shell.artifact-workspace.has-sidebar .post-editor-content .tt-document:not(.tt-collection-item):not([data-preview]):has([data-tt-node="reader-columns"]) {
   max-width: 1100px;
 }
+.post-editor-shell.artifact-workspace.has-sidebar .post-editor-content .tt-document:not(.tt-collection-item):not([data-preview])[data-template="texttext.gallery"] {
+  max-width: 78rem;
+}
 .post-editor-shell.artifact-workspace.has-sidebar .post-editor-content .tt-unified-editor { background: var(--artifact-bg); }
 .post-editor-shell.artifact-workspace .post-editor-content .tt-document .tt-masthead {
   padding: 24px 20px 12px;

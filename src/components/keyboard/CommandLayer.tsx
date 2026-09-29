@@ -328,6 +328,9 @@ export function CommandLayer({ children }: { children: ReactNode }) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
+      // A native dialog owns its keys, including Escape. The window capture
+      // listener otherwise navigates away before the dialog can close.
+      if (event.target instanceof Element && event.target.closest("dialog[open]")) return;
       const typingTarget = isTypingTarget(event.target);
 
       if (event.key === "Escape") {
