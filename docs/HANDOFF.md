@@ -4,7 +4,7 @@
 
 The owner asked for the full [content-first brief](design/texttext-content-first-ux.md), including the shared shell, writing, visual collecting, reading, multiplayer, in-app agent work, performance, and recovery. Continue from the canonical [checkpoint](TEXTTEXT_UX_CHECKPOINT.md), reconciling it with `git status` before editing. [DESIGN.md](../DESIGN.md) now summarizes the governing presentation direction; [reference notes](design/content-first-reference-notes.md) and the [pre-redesign production baseline](content-first-baseline-2026-09-28.md) give concrete evidence. Keep one coding session, one necessary dev server, and sequential heavy checks.
 
-Source is `main` in this checkout, four local commits ahead of `origin/main` at the start of this brief. Preserve the unrelated dirty files named in the checkpoint. The September 28 release gate stopped at `web.unit` with 13 failures in six files; `/tmp/texttext-wip-release-gates.log`. Do not push failed required checks. The current isolated production build for baseline passed but no new full release gate or attestation exists.
+Source is `main` in this checkout. The gallery and folder image capture slices are committed locally; the checkpoint has their commit IDs and proof. Preserve the unrelated dirty files named there. The September 28 release gate stopped at `web.unit` with 13 failures in six files; `/tmp/texttext-wip-release-gates.log`. Do not push failed required checks. The visual capture production build passed but no new full release gate or attestation exists.
 
 ## Installed local WIP
 
@@ -14,4 +14,4 @@ The isolated Store-shaped app already proved clean-profile ChatGPT authorization
 
 ## Next action and references
 
-Implement the first content-first shell/content slice against the existing TextPack and shared-command paths. Use the checkpoint for exact process identities, tests, changed files, pending measurements, and next command. Historical detail from the previous handoff is in [September 28 history](HANDOFF-history-2026-09-28.md). The [AI architecture](ai-sidebar-architecture.md), [agent runbook](agentic-assistant-runbook.md), and [database operations](DATABASE-OPERATIONS.md) remain authoritative for their respective boundaries.
+Implement the saved-article and link-capture journey next. Use the checkpoint for exact process identities, tests, pending measurements, and next action. Historical detail from the previous handoff is in [September 28 history](HANDOFF-history-2026-09-28.md). The [AI architecture](ai-sidebar-architecture.md), [agent runbook](agentic-assistant-runbook.md), and [database operations](DATABASE-OPERATIONS.md) remain authoritative for their respective boundaries.
