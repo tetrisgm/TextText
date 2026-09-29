@@ -8,6 +8,7 @@ import { decodePresenceAwareness, encodePresenceAwareness } from "@/lib/collab/p
 import * as Y from "yjs";
 import { documentSnapshotFromYDoc, hasDocumentSnapshot } from "@/lib/collab/document";
 import { readMaterializationRecoveries, type MaterializationRecovery, type RecoveryReason } from "@/lib/collab/materialization-recovery";
+import { MAX_UPDATE_CHARS } from "@/lib/collab/limits";
 import {
   applyAwarenessUpdate,
   encodeAwarenessUpdate,
@@ -74,6 +75,18 @@ function u8ToBase64(bytes: Uint8Array): string {
   let binary = "";
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
   return btoa(binary);
+}
+
+/** One small Yjs update can represent a whole typing burst. Keep the durable
+ * originals until the relay acknowledges it; large pastes retain their bounded
+ * chunks instead of producing one update the relay would reject. */
+function transportBatch(batch: Uint8Array[]): string[] {
+  if (batch.length < 2) return batch.map(u8ToBase64);
+  try {
+    const merged = u8ToBase64(Y.mergeUpdates(batch));
+    if (merged.length <= MAX_UPDATE_CHARS) return [merged];
+  } catch { /* Let the relay reject an invalid original without losing it. */ }
+  return batch.map(u8ToBase64);
 }
 
 function base64ToU8(b64: string): Uint8Array {
@@ -547,7 +560,7 @@ async function flushOutbox(postId: string, outbox: Outbox) {
     const res = await fetch(outbox.base, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ updates: batch.map(u8ToBase64), epoch: batchEpoch }),
+      body: JSON.stringify({ updates: transportBatch(batch), epoch: batchEpoch }),
     });
     if (res.ok) {
       const data = (await res.json().catch(() => ({}))) as {
@@ -570,6 +583,9 @@ async function flushOutbox(postId: string, outbox: Outbox) {
         // objects in this request, preserving newer edits queued in flight.
         removePendingBatch(outbox, batch);
         outbox.retries = 0;
+        // A slow request already supplied the batching interval. Flush its
+        // backlog without adding another quarter-second to peer delivery.
+        nextDelay = Math.max(0, PUSH_DEBOUNCE_MS - (Date.now() - outbox.lastFlushAt));
         if (typeof data.epoch === "number") {
           outbox.epoch = data.epoch;
           outbox.epochKnown = true;

@@ -42,6 +42,26 @@ prefix. A later materialization caught up. This check does not establish a
 worst-case save delay or prove reliability under network loss or public
 distribution. The agent's success text alone is not persistence proof.
 
+## Typing-burst latency follow-up
+
+The repeatable `scripts/bench-shared-typing.ts` check uses two authenticated
+editors on a new private local note, records 30 input-to-DOM samples, and now
+times final input to peer delivery and canonical store readback. On the local
+development server, two pre-change runs took 11,878/12,048 ms and
+5,882/5,942 ms respectively for peer/store. The relay log showed a single
+POST taking 11.2 seconds in the first run and 5.0 seconds in the second:
+each Yjs update in that request required a separately audited database write.
+
+The provider now merges a bounded typing burst into one Yjs transport update
+while retaining the original durable outbox entries until acknowledgment.
+If the merged update exceeds the relay's size limit, it sends the original
+bounded chunks. It also flushes edits queued during a slow acknowledged
+request without another fixed debounce. The relay's per-update access check
+is unchanged. Two post-change local development runs took 1,121/2,097 ms
+and 820/1,352 ms for peer/store respectively, with local input-to-DOM p95
+of 0.5 and 0.7 ms. These four runs show an improvement on this fixture, not
+a worst-case latency bound or a repeated installed-native result.
+
 ## Verification
 
 - `TEXTTEXT_STORE=1 swift test --package-path mac --jobs 2 --filter Codex`:
@@ -53,3 +73,7 @@ distribution. The agent's success text alone is not persistence proof.
 - Build 1098 passed signature verification, includes the browser-auth callback
   entitlement, and replaced 1097 at the canonical Applications path. Prior
   1097 is recoverable in Trash. No push, deployment, or public release.
+- The typing-burst provider, large-paste fallback, and quarantine suites passed
+  45 tests; TypeScript, touched ESLint, and `git diff --check` passed. The
+  local two-editor timing runs above preserved the complete final text in
+  the peer and canonical document.

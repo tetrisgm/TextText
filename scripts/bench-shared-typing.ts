@@ -1,9 +1,9 @@
 /** Bounded local-input measurement with a second authorized editor present.
- * Run against a production-mode local server with local Postgres. Creates one
+ * Run against a local server with local Postgres. Creates one
  * private note in the existing shared Blog fixture and leaves it for review.
  */
 import { chromium, type BrowserContext, type Page } from "playwright";
-import { getBlog, getPostById } from "../src/lib/store";
+import { getBlog, getPostById, getPostStoreContext } from "../src/lib/store";
 import { blogPostEditPath } from "../src/lib/public-paths";
 
 const origin = process.env.BENCH_ORIGIN ?? "http://localhost:3131";
@@ -103,16 +103,29 @@ async function main() {
           return state.samples.length >= count;
         }, index + 1);
       }
+      const finalInputAt = Date.now();
       await second.waitForFunction(
         ({ selector, text }) => document.querySelector(selector)?.textContent?.includes(text),
         { selector: editorSelector, text: marker + sample }, { timeout: 30_000 },
       );
+      const peerDelay = Date.now() - finalInputAt;
+      let canonicalDelay = -1;
+      const saveDeadline = finalInputAt + 30_000;
+      while (Date.now() < saveDeadline) {
+        const stored = await getPostStoreContext(post.id!);
+        if (stored?.post.document?.content.body.includes(marker + sample)) {
+          canonicalDelay = Date.now() - finalInputAt;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      if (canonicalDelay < 0) throw new Error("Final text did not reach the canonical document within 30 seconds");
       const durations = await owner.evaluate(() =>
         (Reflect.get(window, "__ttTypingMark") as { samples: number[] }).samples,
       );
       const sorted = [...durations].sort((a, b) => a - b);
       const p95 = sorted[Math.ceil(sorted.length * 0.95) - 1];
-      console.log(`PASS: ${title}; local beforeinput-to-DOM n=${sorted.length} median=${sorted[Math.floor(sorted.length / 2)].toFixed(1)}ms p95=${p95.toFixed(1)}ms max=${sorted.at(-1)?.toFixed(1)}ms; second editor received final text`);
+      console.log(`PASS: ${title}; local beforeinput-to-DOM n=${sorted.length} median=${sorted[Math.floor(sorted.length / 2)].toFixed(1)}ms p95=${p95.toFixed(1)}ms max=${sorted.at(-1)?.toFixed(1)}ms; peer received final text in ${peerDelay}ms; canonical document in ${canonicalDelay}ms`);
     } finally {
       await ownerContext.close();
       await secondContext.close();

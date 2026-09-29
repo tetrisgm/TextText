@@ -46,6 +46,7 @@ it("flushes a paste across multiple durable outbox batches without quarantine or
   replaceSharedText(documentText(h.doc, "body"), 0, 0, body, "paste");
   await vi.advanceTimersByTimeAsync(2_000);
   expect(h.batches.length).toBeGreaterThan(1); // More than the relay's 64 updates/request.
+  expect(h.batches.some((batch) => batch.length > 1)).toBe(true); // Oversize merged updates retain bounded chunks.
   for (const batch of h.batches) {
     expect(batch.length).toBeLessThanOrEqual(64);
     for (const update of batch) expect(update.length).toBeLessThan(MAX_UPDATE_CHARS);

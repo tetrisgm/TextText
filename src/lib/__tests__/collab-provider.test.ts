@@ -61,6 +61,38 @@ afterEach(() => {
 });
 
 describe("CollabProvider startup and outbox", () => {
+  it("sends a typing burst as one acknowledged Yjs update", async () => {
+    vi.useFakeTimers();
+    const uploads: string[][] = [];
+    let caughtUp = false;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/presence")) return jsonResponse({ presence: [] });
+      if (init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as { updates: string[] };
+        uploads.push(body.updates);
+        return jsonResponse({ seq: 1, epoch: 0 });
+      }
+      if (!caughtUp) {
+        caughtUp = true;
+        return catchUpResponse();
+      }
+      return new Promise<Response>(() => {});
+    }));
+    const doc = new Y.Doc();
+    const provider = providerFor(doc, "typing-burst");
+    await provider.start();
+    const text = doc.getText("typing");
+    for (let index = 0; index < 30; index += 1) text.insert(text.length, "a");
+    await vi.advanceTimersByTimeAsync(300);
+    expect(uploads).toHaveLength(1);
+    expect(uploads[0]).toHaveLength(1);
+    const peer = new Y.Doc();
+    Y.applyUpdate(peer, Buffer.from(uploads[0][0], "base64"));
+    expect(peer.getText("typing").toString()).toBe("a".repeat(30));
+    provider.destroy();
+    peer.destroy();
+    doc.destroy();
+  });
   // The relay excludes the asking client from the co-editor check that gates a
   // stale-log reseed, so the catch-up has to say who is asking. Without it a
   // client's own presence vetoes its own reseed and a body written out of band
