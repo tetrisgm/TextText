@@ -48,3 +48,21 @@ stopped and the port confirmed free. This is web Chromium proof, not native
 performance, typing latency, a visual-heavy folder, or process-tree memory.
 The next cold-open target is under 300 ms on a measured repeated run with a
 substantial fixture; profile lazy code and body fetch before changing them.
+
+## Two-editor typing check
+
+`scripts/bench-shared-typing.ts` ran against the existing local production web
+build on September 28, with local Postgres and the roughly 800-item
+`visual-demo` workspace. The existing owner and a folder editor opened the
+same new private Blog note in separate Chromium contexts. After the second
+editor received an initial marker, the owner typed 30 characters. The
+`beforeinput` to editor-DOM update interval had median 0.3 ms, p95 0.5 ms,
+and maximum 0.6 ms; the second editor received the final text. The target is
+under 50 ms, but this measures DOM readiness on this machine, not screen
+paint or network propagation latency. It does not include a concurrent agent
+operation. The first attempt used the owner capture path, which did not issue
+the expected folder-capture request; the successful run used the authorized
+second editor's folder capture route. Task-created local notes may remain from
+both attempts. TypeScript and touched-file eslint passed. The temporary
+production server on port 3131 was stopped and the port confirmed free.
+Log: `/tmp/texttext-ux-shared-typing.log`.
