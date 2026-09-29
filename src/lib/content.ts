@@ -4,6 +4,7 @@
 import { splitWikiLinkText } from "@/lib/wikilink-syntax";
 
 import type {
+  DocumentAsset,
   DocumentSnapshot,
   DocumentVisibility,
   TemplateReference,
@@ -240,6 +241,8 @@ export interface Post {
   document?: DocumentSnapshot;
   /** Exact custom-field list projection; never a complete, writable document. */
   collectionFields?: DocumentSnapshot["content"]["fields"];
+  /** Bounded visual assets for folder cards; never a complete, writable document. */
+  collectionAssets?: DocumentAsset[];
   /** Explicit reader access; legacy status is only a publication projection. */
   visibility?: DocumentVisibility;
   /** Pinned immutable template version, repeated for list/query indexes. */

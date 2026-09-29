@@ -20,6 +20,7 @@ export type WorkspacePoolPost = {
   /** Canonical content + presentation. Legacy fields below are list indexes. */
   document?: Post["document"];
   collectionFields?: Post["collectionFields"];
+  collectionAssets?: Post["collectionAssets"];
   visibility?: Post["visibility"];
   template?: Post["template"];
   type: ItemKind;

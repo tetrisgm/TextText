@@ -71,6 +71,21 @@ describe("shared collection previews", () => {
     const refreshed = narrowPostFromPost({ ...original, collectionFields: { rating: 1 } }, "workspace")!;
     expect(refreshed.collectionFields!.rating).toBe(5);
   });
+  it("keeps bounded image previews through a body-free pool", () => {
+    const blueprint = itemTypeBlueprintSchema.parse({ name: "Editorial", fields: [], collection: { layout: "cards", assetPreview: "all" } });
+    const template = compileItemTypeBlueprint(blueprint, { id: "custom.editorial", version: 1 });
+    const original = item("media_post", template.id);
+    original.document!.content.assets = Array.from({ length: 20 }, (_, index) => ({ id: `image-${index}`, kind: "image" as const, src: `/image-${index}.jpg` }));
+    const pool = narrowPostFromPost(original, "workspace")!;
+    expect(pool.collectionAssets).toHaveLength(12);
+    const cold = postFromPoolPost(pool);
+    const preview = collectionItemPreview(cold, template);
+    expect(preview.document.content.assets).toHaveLength(12);
+    const html = renderToStaticMarkup(<DocumentCollectionRenderer document={preview.document} template={template} slots={preview.slots} preview />);
+    expect(html).toContain("tt-gallery");
+    expect(html).toContain("/image-0.jpg");
+    expect(html).not.toContain("/image-12.jpg");
+  });
   it("uses preview media without embedding a player in the collection", () => {
     const base = requireBuiltinTemplate("texttext.talk", 1);
     const template = validateTemplateDefinition({ ...base, collection: { ...base.collection, item: { type: "video", bind: "content.fields.videoUrl", height: "compact" } } });

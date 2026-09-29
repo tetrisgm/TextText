@@ -207,6 +207,7 @@ type PostListRow = Pick<
 > & {
   filed?: boolean;
   collectionFields: Post["collectionFields"];
+  collectionAssets: Post["collectionAssets"];
   bodyPreview: string | null;
   capture: BookmarkCapture | null;
   captureUrl: string | null;
@@ -426,6 +427,7 @@ function mapPostList(row: PostListRow): Post {
     visibility: row.visibility,
     template: { id: row.templateId, version: row.templateVersion },
     collectionFields: row.collectionFields,
+    collectionAssets: row.collectionAssets,
     type: row.type,
     slug: row.slug,
     title: row.title,
@@ -525,6 +527,8 @@ function postListSelection() {
     wordCount: wordCountSql(),
     bodyPreview: bodyPreviewSql(),
     collectionFields: sql<NonNullable<Post["collectionFields"]>>`${posts.document}->'content'->'fields'`,
+    // The full asset list stays on the item; folder cards take at most 12.
+    collectionAssets: sql<NonNullable<Post["collectionAssets"]>>`jsonb_path_query_array(${posts.document}, '$.content.assets[0 to 11]')`,
     capture: posts.capture,
     captureUrl: sql<string | null>`${posts.capture}->>'url'`,
     captureTitle: sql<string | null>`${posts.capture}->>'title'`,
