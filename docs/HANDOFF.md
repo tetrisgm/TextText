@@ -7,6 +7,7 @@ The owner asked for the full [content-first brief](design/texttext-content-first
 The installed local WIP is development-signed Store-shaped TextText **0.202 (1112)** at `/Applications/TextText.app`, using `http://localhost:3000` and local Postgres. The owner authorizes local app replacement, but the public website, App Store build, and release channels have not changed. The brief still requires a separate request for push, deploy, release, App Store submission, or billing changes. No project changelog entry is due until a release ships. Do not use the retired build lane or merge gate; the old local hook requires `OWNER_OVERRIDE=1` for direct commits to `main`.
 
 Device-code authorization now has a shared Copy code control (`597d82ab`). The owner is already signed in, so its native signed-out interaction still needs verification. The provider's documented device flow supplies a fixed URL and a separate code; no code-prefill URL is documented.
+Provider failure classification now prioritizes explicit HTTP status over ambiguous timeout/network message text and accepts numeric `status`. Focused tests, TypeScript, and touched ESLint passed; live provider error-state behavior remains unproved.
 
 ## What is proved
 

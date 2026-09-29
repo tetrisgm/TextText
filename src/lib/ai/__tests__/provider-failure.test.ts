@@ -27,6 +27,14 @@ describe("safe provider diagnostics", () => {
     expect(classifyAiFailure(new DOMException("private", "AbortError"), id).code).toBe("cancelled");
     expect(classifyAiFailure(new TypeError("fetch failed"), id).code).toBe("network");
   });
+  it("trusts an explicit provider status over ambiguous message wording", () => {
+    const rejected = classifyAiFailure({ status: 401, message: "The account timed out; private token" }, id);
+    expect(rejected).toMatchObject({ code: "authentication", upstreamStatus: 401, recovery: "reconnect" });
+    expect(JSON.stringify(rejected)).not.toContain("private token");
+    const denied = classifyAiFailure({ statusCode: 403, message: "Network access denied" }, id);
+    expect(denied).toMatchObject({ code: "model-access", upstreamStatus: 403 });
+    expect(classifyAiFailure({ status: 504, message: "Gateway error" }, id).code).toBe("timeout");
+  });
   it("accepts only UUIDs as caller correlation IDs", () => {
     expect(aiRequestId(id)).toBe(id);
     expect(aiRequestId("sk-private-token")).toMatch(/^[0-9a-f-]{36}$/);

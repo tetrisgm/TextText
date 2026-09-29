@@ -70,7 +70,7 @@ const UPSTREAM_CODES = new Set([
 
 export function classifyAiFailure(error: unknown, requestId: string): AiFailure {
   const outer = record(error);
-  const details = record(outer.lastError ?? (outer.statusCode || outer.responseBody ? error : outer.cause ?? error));
+  const details = record(outer.lastError ?? (outer.statusCode || outer.status || outer.responseBody ? error : outer.cause ?? error));
   let response: Record<string, unknown> = {};
   if (typeof details.responseBody === "string") {
     try { response = record(JSON.parse(details.responseBody.slice(0, 32_000))); } catch { /* No provider text is echoed. */ }
@@ -79,15 +79,16 @@ export function classifyAiFailure(error: unknown, requestId: string): AiFailure 
   const rawCode = providerError.code ?? providerError.type ?? details.code;
   const code = typeof rawCode === "string" ? rawCode : "";
   const message = [providerError.message, details.message, outer.message].filter((part) => typeof part === "string").join(" ").toLowerCase();
-  const status = typeof details.statusCode === "number" ? details.statusCode : undefined;
+  const status = typeof details.statusCode === "number" ? details.statusCode
+    : typeof details.status === "number" ? details.status : undefined;
   const name = String(outer.name ?? details.name ?? "");
   let kind: AiFailureCode = "unknown";
   if (name === "AbortError") kind = "cancelled";
-  else if (name === "TimeoutError" || /timeout|timed out|etimedout/.test(message)) kind = "timeout";
   else if (status === 401 || /^(authentication_error|invalid_api_key|invalid_authentication)$/.test(code)) kind = "authentication";
   else if (/quota|billing|credit_balance/.test(code) || /credit balance is too low|insufficient quota|billing hard limit/.test(message)) kind = "quota";
   else if (status === 429 || /rate_limit|overloaded/.test(code)) kind = "rate-limit";
   else if (status === 403 || status === 404 || /^(permission_error|permission_denied|model_not_found|not_found_error)$/.test(code)) kind = "model-access";
+  else if (status === 408 || status === 504 || name === "TimeoutError" || /timeout|timed out|etimedout/.test(message)) kind = "timeout";
   else if (/fetch failed|network|econnreset|enotfound|connection.*(closed|refused)/.test(message)) kind = "network";
   const failure = aiFailure(kind, requestId);
   if (status && status >= 400 && status <= 599) failure.upstreamStatus = status;
