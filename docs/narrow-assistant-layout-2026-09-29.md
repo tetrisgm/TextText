@@ -35,3 +35,15 @@ ring, and Escape closed the panel. Dark appearance was restored.
 The Command-K cross-folder route fix and reload proof are recorded separately
 in [the route receipt](command-palette-route-2026-09-29.md). These observations
 do not establish the exact native 720-point floor or reduced-motion behavior.
+
+## Light gallery and image viewer follow-up
+
+In installed build 0.202 (1112), the `Visual scale proof` gallery rendered its
+two-column image grid, labels, and toolbar in light appearance in the Mac's
+half-screen window. Opening `Visual scale 032` showed its full image in the
+item, and opening the focused viewer showed Zoom, Close, its title, 1600 × 900
+dimensions, and Open original. The media viewer kept a dark overlay while the
+underlying item remained light. Zoom changed to Fit, and Escape closed the
+viewer with focus returned to the image's View control. Dark appearance was
+restored afterward. The window capture measured 1,800 physical pixels wide;
+this is the half-screen layout, not proof of the exact 720-point minimum.
