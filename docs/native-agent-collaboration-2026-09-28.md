@@ -113,6 +113,16 @@ the scope when the component unmounts. Three focused suites passed 63 tests;
 TypeScript and touched-file ESLint passed. This is a guarded code path, not yet
 a reproduced live race or proof of cancellation during an already sent write.
 
+In installed build 1112, a bounded read-only Anthropic request on the existing
+`Typing benchmark 7d924acf` note reached **Thinking**. Clicking **Stop
+assistant** returned the assistant to ready, showed a stopped message with
+**Retry message**, and no late answer appeared after six seconds. A fresh
+local store read before, immediately after, and six seconds after cancellation
+had the same revision (`492385`) and SHA-256 body hash
+(`24afd85ab778b1049ccf701575f04063b1a3df4c65d49580f8704f5b8e322c21`).
+This is a live API-provider read-only cancellation proof; it does not establish
+what happens to an in-flight write or to native account setup cancellation.
+
 - `TEXTTEXT_STORE=1 swift test --package-path mac --jobs 2 --filter Codex`:
   29 tests passed after updating an assertion for the revised instructions.
 - Three focused Vitest files: 37 tests passed, including native prompt and
