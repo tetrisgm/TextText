@@ -54,3 +54,27 @@ The sandbox-private runtime health report was not used; installed UI and file
 operations were verified directly. Multi-device first-time starter setup can
 produce conflict copies if both devices independently seed before connecting;
 existing conflict preservation applies. Setup does not erase occupied paths.
+
+## Embedded asset correction, build 1127
+
+The earlier claim that all starter images were self-contained was incorrect.
+Case study, gallery, page and talk referenced public covers without image bytes.
+These four repository packs now include the original JPEGs and relative asset
+references. Browser examples retain their canonical public URLs through a
+validated generator mapping. All 11 presets pass validation; four focused tests
+cover embedded bytes, idempotence and browser reference conversion.
+
+Eight installed template/example files matched the old originals exactly except
+for individual identities. They were repaired under NSFileCoordinator with a
+SHA-256 compare before replacement, preserving identities and retaining old
+bytes in workspace history. All eight matched local-server copies afterward.
+Modified user content was not replaced. Native Gallery visibly showed its actual
+photo thumbnail after repair.
+
+Build 0.202 (1127) replaced the canonical installed app; its four repaired packs
+match repository bytes and contain embedded images. Build and install logs:
+`/tmp/texttext-build-1127.log`, `/tmp/texttext-install-1127.log`. Validation:
+`/tmp/texttext-portable-presets-check.log`, `/tmp/texttext-portable-preset-tests.log`.
+Repair receipt: `/tmp/texttext-starter-repair.log`. Runtime health remains
+unverified for this install; thumbnail UI proof was obtained on build 1126 using
+the repaired workspace. General TextPack export asset preservation remains open.
