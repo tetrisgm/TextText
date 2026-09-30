@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { vaultRequest } from "./bridge";
+import { TemplatePreview } from "./TemplatePreview";
+import type { TemplateProposal } from "./template-proposal";
 
 type AgentState = "disconnected" | "connecting" | "signed-out" | "ready" | "working" | "failed";
 type Status = { state: AgentState; message?: string; accountEmail?: string };
@@ -13,8 +15,8 @@ function bounded(messages: Message[]): Message[] {
   return kept;
 }
 
-export function NativeAssistant({ open, path, onClose, beforeSend }: {
-  open: boolean; path?: string; onClose: () => void; beforeSend: () => Promise<boolean>;
+export function NativeAssistant({ open, path, root, onClose, beforeSend }: {
+  root: string; open: boolean; path?: string; onClose: () => void; beforeSend: () => Promise<boolean>;
 }) {
   const [status, setStatus] = useState<Status>({ state: "disconnected" });
   const [messages, setMessages] = useState<Message[]>([]);
@@ -22,6 +24,28 @@ export function NativeAssistant({ open, path, onClose, beforeSend }: {
   const [notice, setNotice] = useState("");
   const [action, setAction] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const storageKey = `texttext:design-preview:${root}`;
+  const [proposal, setProposal] = useState<TemplateProposal | null>(() => {
+    try { const text = localStorage.getItem(storageKey); if (!text || text.length > 2_100_000) return null;
+      const value = JSON.parse(text); return typeof value.path === "string" && typeof value.hash === "string" && typeof value.templateJSON === "string" ? value : null;
+    } catch { return null; }
+  });
+  const [customizing, setCustomizing] = useState<string | null>(proposal?.path ?? null);
+  const requested = useRef(proposal?.request ?? "");
+  const target = useRef(customizing);
+  useEffect(() => { target.current = customizing; }, [customizing]);
+  const changeProposal = useCallback((value: TemplateProposal | null) => {
+    setProposal(value);
+    try { if (value) localStorage.setItem(storageKey, JSON.stringify(value)); else localStorage.removeItem(storageKey); }
+    catch { setNotice("This preview could not be saved for recovery. Keep or copy your request before closing."); }
+  }, [storageKey]);
+  useEffect(() => {
+    const customize = (event: Event) => { const path = (event as CustomEvent<{ path: string }>).detail?.path;
+      if (path) { setCustomizing(path); changeProposal(null); setNotice("Describe the change you want. You can preview and refine it before keeping it."); }
+    };
+    window.addEventListener("texttext:vault-customize", customize);
+    return () => window.removeEventListener("texttext:vault-customize", customize);
+  }, [changeProposal]);
   const sequence = useRef(0);
   const replyId = useRef<number | null>(null);
   const log = useRef<HTMLDivElement>(null);
@@ -29,7 +53,13 @@ export function NativeAssistant({ open, path, onClose, beforeSend }: {
     const receive = (event: Event) => {
       const detail = (event as CustomEvent<AgentEvent>).detail;
       if (!detail) return;
-      if (detail.type === "status" && detail.state) setStatus({ state: detail.state, message: detail.message, accountEmail: detail.accountEmail });
+      if (detail.type === "template-proposal") {
+        const proposed = detail as unknown as TemplateProposal;
+        if (typeof proposed.path === "string" && typeof proposed.hash === "string" && typeof proposed.templateJSON === "string" && (!target.current || target.current === proposed.path)) {
+          changeProposal({ ...proposed, request: requested.current }); setCustomizing(proposed.path);
+        } else setNotice("The assistant returned a preview for a different file. Your current file is unchanged.");
+      }
+      else if (detail.type === "status" && detail.state) setStatus({ state: detail.state, message: detail.message, accountEmail: detail.accountEmail });
       else if ((detail.type === "text-delta" || detail.type === "final-text") && detail.text !== undefined) {
         const id = replyId.current ?? ++sequence.current; replyId.current = id;
         setMessages((previous) => {
@@ -43,7 +73,7 @@ export function NativeAssistant({ open, path, onClose, beforeSend }: {
     };
     window.addEventListener("texttext:vault-agent", receive);
     return () => window.removeEventListener("texttext:vault-agent", receive);
-  }, []);
+  }, [changeProposal]);
   useEffect(() => {
     if (!open) return;
     let active = true;
@@ -65,13 +95,16 @@ export function NativeAssistant({ open, path, onClose, beforeSend }: {
       replyId.current = null;
       setMessages((previous) => bounded([...previous, { id: ++sequence.current, role: "user", text }]));
       setPrompt(""); setStatus((current) => ({ ...current, state: "working" }));
-      await vaultRequest("agentSend", { prompt: text, ...(path ? { path } : {}) });
-    } catch (error) { setNotice(error instanceof Error ? error.message : "The request could not start."); setStatus((current) => ({ ...current, state: "failed" })); }
+      requested.current = text;
+      const selectedPath = customizing ?? path;
+      const refinement = proposal ? `\n\nRefine this pending design for the same file. It has not been saved. Baseline hash: ${proposal.hash}\nPending templateJSON: ${proposal.templateJSON}\nPending templateAuthoringSourceJSON: ${proposal.templateAuthoringSourceJSON ?? "none"}` : "";
+      await vaultRequest("agentSend", { prompt: text + refinement, customizing: !!customizing, ...(selectedPath ? { path: selectedPath } : {}) });
+    } catch (error) { setPrompt(text); setNotice(error instanceof Error ? error.message : "The request could not start."); setStatus((current) => ({ ...current, state: "failed" })); }
     finally { setSubmitting(false); }
   };
   if (!open) return null;
   const working = submitting || status.state === "working";
-  return <aside className="vault-assistant" aria-label="Assistant">
+  return <><aside className="vault-assistant" aria-label="Assistant">
     <header><h2>Assistant</h2><button aria-label="Close assistant" onClick={onClose}>Close</button></header>
     {status.state !== "ready" && status.state !== "working" && <div className="vault-assistant-connect">
       <p>Work with Codex on the files in this folder.</p>
@@ -83,11 +116,15 @@ export function NativeAssistant({ open, path, onClose, beforeSend }: {
       {working && <p className="vault-assistant-action">{action || "Working…"}</p>}
     </div>
     <form onSubmit={(event) => { event.preventDefault(); void send(); }}>
-      <p className="vault-assistant-context">{path || "Workspace folder"}</p>
+      <p className="vault-assistant-context">{customizing ? `Customize ${customizing}` : path || "Workspace folder"}</p>
       <textarea aria-label="Message assistant" value={prompt} maxLength={12000} rows={4} placeholder="Ask or change these files"
         onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); void send(); } }} />
       {working ? <button type="button" onClick={() => void vaultRequest("agentCancel").catch((error: Error) => setNotice(error.message))}>Stop</button>
         : <button type="submit" disabled={status.state !== "ready" || !prompt.trim()}>Send</button>}
     </form>
-  </aside>;
+  </aside>
+    {proposal && <TemplatePreview key={proposal.templateJSON + proposal.hash} proposal={proposal} working={working} beforeKeep={beforeSend}
+      onKeep={() => { changeProposal(null); setCustomizing(null); setNotice("Design saved to the file. You can keep editing it normally."); }}
+      onCancel={() => { changeProposal(null); setCustomizing(null); setNotice("Preview cancelled. The file is unchanged."); }} />}
+  </>;
 }

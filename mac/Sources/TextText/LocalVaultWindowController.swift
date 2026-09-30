@@ -214,7 +214,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 switch method {
                 case "agentStatus": break
                 case "agentConnect": try agent?.connect()
-                case "agentSend": try agent?.send(prompt: Self.string(params, "prompt"), path: params["path"] as? String)
+                case "agentSend": try agent?.send(prompt: Self.string(params, "prompt"), path: params["path"] as? String, customizing: params["customizing"] as? Bool ?? false)
                 case "agentCancel": agent?.cancel()
                 default: throw VaultBridgeError("Unknown agent operation.")
                 }

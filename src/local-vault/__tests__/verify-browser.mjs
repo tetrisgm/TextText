@@ -59,6 +59,13 @@ try {
     else if (request.method === "agentStatus" || request.method === "agentConnect") result = { state: "ready" };
     else if (request.method === "agentSend") {
       result = {};
+      if (request.params.customizing) {
+        const current = files.get(request.params.path);
+        const proposed = JSON.parse(current.templateJSON);
+        proposed.name = request.params.prompt.startsWith("Refine") ? "Refined design" : "Proposed design";
+        await page.evaluate((detail) => window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail })),
+          { type: "template-proposal", path: current.path, hash: current.hash, templateJSON: JSON.stringify(proposed) });
+      }
       await page.evaluate(() => {
         window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail: { type: "final-text", text: "I can work with these local files." } }));
         window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail: { type: "turn-completed" } }));
@@ -151,6 +158,34 @@ try {
   await page.getByRole("textbox", { name: "Message assistant", exact: true }).fill("Read the selected file.");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await page.getByText("I can work with these local files.").waitFor();
+  // UI state-machine fixture only: genuine provider behavior is verified in the installed app.
+  const beforeDesign = JSON.stringify(files.get(initial.path));
+  await page.getByRole("button", { name: "Customize", exact: true }).click();
+  await page.getByRole("textbox", { name: "Message assistant", exact: true }).fill("Propose a design");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const designPreview = page.getByRole("region", { name: "Design preview", exact: true });
+  await designPreview.getByRole("button", { name: "Keep this design", exact: true }).waitFor();
+  assert.equal(JSON.stringify(files.get(initial.path)), beforeDesign);
+  await designPreview.getByRole("button", { name: "Compare original", exact: true }).click();
+  await designPreview.getByRole("button", { name: "Show proposed design", exact: true }).click();
+  await page.getByRole("textbox", { name: "Message assistant", exact: true }).fill("Refine this design");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem("texttext:design-preview:/test/Workspace") || "{}").templateJSON?.includes("Refined design"));
+  assert.equal(JSON.stringify(files.get(initial.path)), beforeDesign);
+  await page.waitForFunction(() => { const button = [...document.querySelectorAll(".vault-design-preview button")].find((el) => el.textContent === "Keep this design"); return button && !button.disabled; });
+  await page.screenshot({ path: "/tmp/texttext-template-preview-light.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.screenshot({ path: "/tmp/texttext-template-preview-dark.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await designPreview.getByRole("button", { name: "Keep this design", exact: true }).click();
+  await designPreview.waitFor({ state: "hidden" });
+  assert.equal(JSON.parse(files.get(initial.path).templateJSON).name, "Refined design");
+  assert.equal(files.get(initial.path).markdown, JSON.parse(beforeDesign).markdown);
+  await page.getByRole("button", { name: "Customize", exact: true }).click();
+  await page.getByRole("textbox", { name: "Message assistant", exact: true }).fill("Propose another design");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await designPreview.getByRole("button", { name: "Cancel design", exact: true }).click();
+  assert.equal(JSON.parse(files.get(initial.path).templateJSON).name, "Refined design");
   await page.evaluate(() => {
     window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail: { type: "status", state: "disconnected" } }));
     window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail: { type: "turn-completed" } }));

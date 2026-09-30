@@ -387,6 +387,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       {selected && <div className="vault-file-actions">
         <button disabled={busy} onClick={() => { setNewPath(selected.path); setFileAction("rename"); }}>Rename or move</button>
         <button disabled={busy} onClick={() => setFileAction("delete")}>Delete</button>
+        {allowFolderPicker && <button disabled={busy} onClick={() => { setAssistantOpen(true); window.dispatchEvent(new CustomEvent("texttext:vault-customize", { detail: { path: selected.path } })); }}>Customize</button>}
         {fileAction === "rename" && <form onSubmit={(event) => { event.preventDefault(); void operate(async () => {
           const observed = currentFileRef.current?.();
           if (!observed || observed.path !== selected.path) throw new Error("Wait for this file to finish opening.");
@@ -438,6 +439,6 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         <p>{listing?.root ? "Choose a TextPack or create a note." : "Choose a folder on your Mac. Your documents and templates live there as TextPack files."}</p>
       </div>}
     </main>
-    {allowFolderPicker && <NativeAssistant key={listing?.root || "no-workspace"} open={assistantOpen} path={selected?.path} onClose={() => setAssistantOpen(false)} beforeSend={() => flushRef.current()} />}
+    {allowFolderPicker && <NativeAssistant key={listing?.root || "no-workspace"} open={assistantOpen} root={listing?.root ?? ""} path={selected?.path} onClose={() => setAssistantOpen(false)} beforeSend={() => flushRef.current()} />}
   </div>;
 }

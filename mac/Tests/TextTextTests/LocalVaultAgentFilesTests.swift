@@ -49,4 +49,56 @@ final class LocalVaultAgentFilesTests: XCTestCase {
         XCTAssertEqual(try store.read(path: "Valid.textpack").hash, original.hash)
     }
 
+    func testTemplateProposalPreservesBytesAndAllowsNewTemplateIdentity() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try LocalVaultAgentFiles.perform("create_file", arguments: ["title": "Preview", "body": "Keep this content."], root: root)
+        let store = LocalVaultDocumentStore(root: root), path = "Preview.textpack"
+        let original = try store.read(path: path)
+        let bytes = try Data(contentsOf: store.url(for: path))
+        var template = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(XCTUnwrap(original.contents.templateJSON).utf8)) as? [String: Any])
+        template["id"] = "custom.preview"
+        template["version"] = 2
+        let json = String(decoding: try JSONSerialization.data(withJSONObject: template), as: UTF8.self)
+        let result = try LocalVaultAgentFiles.perform("propose_template", arguments: [
+            "path": path, "hash": original.hash, "templateJSON": json,
+            "templateAuthoringSourceJSON": "{\"schemaVersion\":1}"
+        ], root: root, customizationPath: path)
+        let proposal = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.utf8)) as? [String: Any])
+        XCTAssertEqual(proposal["path"] as? String, path)
+        XCTAssertEqual(proposal["hash"] as? String, original.hash)
+        XCTAssertEqual(proposal["templateJSON"] as? String, json)
+        XCTAssertEqual(proposal["templateAuthoringSourceJSON"] as? String, "{\"schemaVersion\":1}")
+        XCTAssertEqual(try Data(contentsOf: store.url(for: path)), bytes)
+        XCTAssertEqual(try store.list(), [path])
+        for invalid in ["{}", "[]", "not JSON"] {
+            XCTAssertThrowsError(try LocalVaultAgentFiles.perform("propose_template", arguments: [
+                "path": path, "hash": original.hash, "templateJSON": invalid
+            ], root: root))
+        }
+        XCTAssertThrowsError(try LocalVaultAgentFiles.perform("propose_template", arguments: [
+            "path": path, "hash": "stale", "templateJSON": json
+        ], root: root))
+        XCTAssertThrowsError(try LocalVaultAgentFiles.perform("propose_template", arguments: [
+            "path": path, "hash": original.hash, "templateJSON": json, "templateAuthoringSourceJSON": "[]"
+        ], root: root))
+        XCTAssertEqual(try Data(contentsOf: store.url(for: path)), bytes)
+    }
+
+    func testCustomizationCannotWriteCreateOrProposeAnotherFile() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for tool in ["write_file", "create_file"] {
+            XCTAssertThrowsError(try LocalVaultAgentFiles.perform(tool, arguments: [
+                "path": "Other.textpack", "title": "Other", "body": "Do not create", "markdown": "Do not write", "hash": "unused"
+            ], root: root, customizationPath: "Selected.textpack"))
+        }
+        XCTAssertThrowsError(try LocalVaultAgentFiles.perform("propose_template", arguments: [
+            "path": "Other.textpack", "hash": "unused", "templateJSON": "{}"
+        ], root: root, customizationPath: "Selected.textpack"))
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+    }
+
 }

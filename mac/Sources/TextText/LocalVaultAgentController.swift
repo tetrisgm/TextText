@@ -17,6 +17,7 @@ final class LocalVaultAgentController {
     private var threadID: String?
     private var accountEmail: String?
     private var busy = false
+    private var customizationPath: String?
     private var loginID: String?
     private var attemptedLogin = false
     private var fileFence = LocalVaultAgentCancellation()
@@ -90,14 +91,16 @@ final class LocalVaultAgentController {
                                    "capabilities": ["experimentalApi": true]])
     }
 
-    func send(prompt: String, path: String? = nil) throws {
+    func send(prompt: String, path: String? = nil, customizing: Bool = false) throws {
         guard let threadID, !busy else { throw VaultAgentError("Connect the agent and wait for its current reply first.") }
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= 32_000 else { throw VaultAgentError("Enter a message of up to 32,000 characters.") }
-        var context = ""
+        if customizing && path == nil { throw VaultAgentError("Choose a document to customize first.") }
+        customizationPath = customizing ? path : nil
+        var context = customizing ? "Presentation customization mode: propose a template preview for the current document. Do not write or create files.\n" : ""
         if let path {
             _ = try LocalVaultDocumentStore(root: root).url(for: path)
-            context = "Current document path: \(path)\nRead the actual file before making changes.\n\n"
+            context += "Current document path: \(path)\nRead the actual file before making changes.\n\n"
         }
         fileFence = LocalVaultAgentCancellation()
         busy = true; phases.removeAll(); update("working")
@@ -119,7 +122,7 @@ final class LocalVaultAgentController {
         loginID = nil; attemptedLogin = false
         generation = UUID(); deadline?.cancel(); deadline = nil
         server?.onEvent = nil; server?.onExit = nil; server?.stop(); server = nil
-        threadID = nil; busy = false; pending.removeAll(); phases.removeAll()
+        threadID = nil; busy = false; customizationPath = nil; pending.removeAll(); phases.removeAll()
     }
     private func fail(_ message: String) {
         stop(); update("failed", message: message); onEvent?(["type": "error", "message": message])
@@ -168,7 +171,8 @@ final class LocalVaultAgentController {
                         Use only the supplied texttext file tools for workspace work. They operate directly on these files without any hosted workspace API. Do not use installed skills, other MCP servers, or other integrations.
                         Read a file before editing it. Pass its exact hash to write_file. On a stale-file error read again, preserve the user's intervening edits, and retry at most once. Never replace a file blindly. Do not edit anything for a read-only request.
                         TextPack contains Markdown, a schema-v1 document snapshot, an embedded template, and assets. Preserve metadata and assets. For a template change, read its templateJSON first and update validated declarative JSON, never executable HTML/CSS/JavaScript. Keep Markdown and documentJSON content consistent when supplying both.
-                        Keep responses concise. Report which files changed. A failed save means the file was not changed.
+                        For presentation customization, use propose_template to stage a preview, never write_file. The user decides whether to keep the preview in the app. Refinements propose another template for the same current document. Read the actual template first and preserve its content. Direct write_file remains available for requested content edits outside customization mode.
+                        Keep responses concise. Distinguish proposed previews from saved changes. Report which files changed. A failed save means the file was not changed.
                         """))
                 case "thread/start":
                     guard let thread = message.rawResult?["thread"] as? [String: Any], let id = thread["id"] as? String else {
@@ -222,15 +226,21 @@ final class LocalVaultAgentController {
         }
         let tool = (params["tool"] ?? params["name"]) as? String ?? ""
         let arguments = params["arguments"] as? [String: Any] ?? [:]
-        let token = generation, root = root, fence = fileFence
+        let token = generation, root = root, fence = fileFence, customizationPath = customizationPath
         onEvent?(["type": "tool-call", "tool": tool, "path": arguments["path"] ?? ""])
         files.async { [weak self] in
-            let result = Result { try LocalVaultAgentFiles.perform(tool, arguments: arguments, root: root, cancellation: fence) }
+            let result = Result { try LocalVaultAgentFiles.perform(tool, arguments: arguments, root: root, cancellation: fence, customizationPath: customizationPath) }
             DispatchQueue.main.async {
                 guard let self, self.generation == token, self.busy else { return }
                 let text: String, success: Bool
                 switch result {
-                case .success(let value): text = value; success = true
+                case .success(let value):
+                    text = value; success = true
+                    if tool == "propose_template", let data = value.data(using: .utf8),
+                       var proposal = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+                        proposal["type"] = "template-proposal"
+                        self.onEvent?(proposal)
+                    }
                 case .failure(let error): text = error.localizedDescription; success = false
                 }
                 try? self.server?.respond(id: requestID,
@@ -260,6 +270,8 @@ enum LocalVaultAgentFiles {
     static let tools: [[String: Any]] = [
         tool("list_files", "List TextPack paths in the selected folder.", [:], []),
         tool("read_file", "Read a TextPack, including Markdown, snapshot, template and the hash needed for a safe edit.", ["path": "string"], ["path"]),
+        tool("propose_template", "Stage a template preview for the user to refine or keep. Reads the actual file and requires its current hash. Does not write any file. Supply complete declarative template JSON.",
+             ["path": "string", "hash": "string", "templateJSON": "string", "templateAuthoringSourceJSON": "string"], ["path", "hash", "templateJSON"]),
         tool("write_file", "Save Markdown and optional snapshot/template JSON to the real file. Requires the hash from read_file; preserves assets and omitted metadata.",
              ["path": "string", "hash": "string", "markdown": "string", "documentJSON": "string", "templateJSON": "string", "templateAuthoringSourceJSON": "string"], ["path", "hash", "markdown"]),
         tool("create_file", "Create a new self-contained TextPack in an existing relative folder.", ["title": "string", "body": "string", "folder": "string", "kind": "string"], ["title", "body"]),
@@ -271,7 +283,15 @@ enum LocalVaultAgentFiles {
                          "required": required, "additionalProperties": false]]
     }
     static func perform(_ name: String, arguments: [String: Any], root: URL,
-                        cancellation: LocalVaultAgentCancellation? = nil) throws -> String {
+                        cancellation: LocalVaultAgentCancellation? = nil, customizationPath: String? = nil) throws -> String {
+        if let customizationPath {
+            guard ["list_files", "read_file", "search_files", "propose_template"].contains(name) else {
+                throw VaultAgentError("Customization stages a preview. Only the user can keep it; file writes are disabled for this turn.")
+            }
+            if name == "propose_template", arguments["path"] as? String != customizationPath {
+                throw VaultAgentError("Propose a template only for the selected document.")
+            }
+        }
         try cancellation?.check()
         func string(_ key: String) throws -> String {
             guard let value = arguments[key] as? String, value.utf8.count <= 2_000_000 else {
@@ -288,6 +308,30 @@ enum LocalVaultAgentFiles {
             output = ["path": file.path, "hash": file.hash, "markdown": file.contents.markdown,
                       "documentJSON": file.contents.documentJSON ?? "", "templateJSON": file.contents.templateJSON ?? "",
                       "templateAuthoringSourceJSON": file.contents.templateAuthoringSourceJSON ?? ""]
+        case "propose_template":
+            let path = try string("path"), expected = try string("hash"), template = try string("templateJSON")
+            let current = try store.read(path: path)
+            guard current.hash == expected else { throw VaultAgentError("This file changed since it was read. Read it again before proposing a template.") }
+            guard let rawSnapshot = current.contents.documentJSON,
+                  var snapshot = try JSONSerialization.jsonObject(with: Data(rawSnapshot.utf8)) as? [String: Any],
+                  let definition = try JSONSerialization.jsonObject(with: Data(template.utf8)) as? [String: Any],
+                  var presentation = snapshot["presentation"] as? [String: Any],
+                  let id = definition["id"] as? String, let version = definition["version"] as? Int else {
+                throw VaultAgentError("The proposal must contain a schema-v1 template JSON object.")
+            }
+            presentation["template"] = ["id": id, "version": version]
+            snapshot["presentation"] = presentation
+            try validate(snapshot: String(decoding: JSONSerialization.data(withJSONObject: snapshot), as: UTF8.self), template: template)
+            var proposal: [String: Any] = ["path": current.path, "hash": current.hash, "templateJSON": template]
+            if arguments["templateAuthoringSourceJSON"] != nil {
+                let source = try string("templateAuthoringSourceJSON")
+                guard (try JSONSerialization.jsonObject(with: Data(source.utf8))) is [String: Any] else {
+                    throw VaultAgentError("Template authoring source must be a JSON object.")
+                }
+                proposal["templateAuthoringSourceJSON"] = source
+            }
+            try cancellation?.check()
+            output = proposal
         case "write_file":
             let path = try string("path"), expected = try string("hash"), markdown = try string("markdown")
             let current = try store.read(path: path)

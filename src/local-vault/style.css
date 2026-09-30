@@ -31,3 +31,5 @@
 .vault-file-pages{display:flex;align-items:center;justify-content:center;gap:18px;margin-top:24px}
 
 .vault-app .vault-template-toggle{border:1px solid var(--line);border-radius:6px;padding:9px 13px;background:var(--surface);color:var(--ink);cursor:pointer}
+
+.vault-design-preview{position:fixed;inset:24px 356px 24px 250px;z-index:55;overflow:auto;background:var(--surface);color:var(--ink);border:1px solid var(--line);box-shadow:0 8px 32px #0002}.vault-design-preview>header{position:sticky;top:0;z-index:1;padding:16px;background:var(--surface);border-bottom:1px solid var(--line)}.vault-design-preview h2{margin:0 0 8px;font-size:18px}.vault-design-preview p{font-size:13px;overflow-wrap:anywhere;margin:6px 0}.vault-design-preview button{margin:6px 8px 0 0}@media(max-width:950px){.vault-design-preview{inset:12px 350px 12px 12px}}@media(max-width:650px){.vault-design-preview{inset:12px 12px 48vh;z-index:65}.vault-app .vault-assistant{top:53vh;width:100%}}

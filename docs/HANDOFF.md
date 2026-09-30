@@ -9,7 +9,7 @@ prerequisite. See [architecture](design/texttext-file-vault-migration.md) and
 
 Implemented on `main` in `76f373e1`, `f28500cd`, and `3b4549d6`: native folder
 store/CLI, complete-pack filesystem server and durable sync, bundled shared
-editor, file templates, and native assistant file tools. Local WIP **0.202 (1127)**
+editor, file templates, and native assistant file tools. Local WIP **0.202 (1128)**
 is installed at `/Applications/TextText.app`. Its selected workspace is
 `/Users/shokunin/Documents/TextText`. Installed-app creation/save and a real
 Codex append were verified against pack bytes and the refreshed editor. The
@@ -79,7 +79,11 @@ the real local server. The imported pack converged byte-for-byte with native;
 test deletion reached both replicas with history retained. See the
 [image receipt](file-vault-images-2026-09-30.md). Native reader highlights also passed selection, painting, annotation, reopen
 and byte-identical server convergence; the test annotation was removed.
-Next: real native template customization and file-backed folder presentations. Full product acceptance, collaboration,
+Build 1128 adds presentation-only native proposals and a validated
+preview/compare/refine/keep/cancel UI. Unit, Swift and browser fixture tests pass.
+The real provider is running a research-reader proposal on a disposable Bookmark
+clone; see [customization checkpoint](file-vault-customization-2026-09-30.md).
+Next: finish live provider verification, then file-backed folder presentations. Full product acceptance, collaboration,
 customization, publication and measured memory remain open.
 
 ## Blockers and next work
