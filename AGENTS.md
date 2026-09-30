@@ -19,3 +19,15 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Local development/tests/builds use local Postgres, never production Neon. Before database or release-secret work, read `docs/DATABASE-OPERATIONS.md`.
 - Shipped product changes use `texttext:project-changelog` and the existing `Shoku's Space/My Notes/TextText Changelog.textpack`; verify the shipped version. No repository changelog copy; infrastructure-only changes need no entry.
 - No GitHub Actions workflows, secrets, or runners. GitHub hosts git; tests run locally on the Mac.
+
+## Deploys
+
+- Pushing to `main` deploys nothing. The web app runs on the Oracle server
+  (`release/oracle/README.md`) and ships with the Mac app through `npm run ship`,
+  run from the Mac only when the owner asks. The Vercel project `write` is
+  paused; do not deploy to it.
+- Cloud sessions cannot release: that needs the Mac's signing keys, Keychain and
+  SSH access. Push a branch or open a PR and say what needs shipping.
+- Nothing from the owner's Mac reaches cloud sessions: not their global
+  instructions, logins, Keychain, or `~/dev/stack` (retired). Do not go looking
+  for them.
