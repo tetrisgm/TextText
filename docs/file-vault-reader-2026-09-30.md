@@ -1,7 +1,6 @@
 # Reader and persistent highlights
 
-Source commits: `a3cb0637`, `c0a80b59`. Installed app remains **0.202 (1121)**;
-this reader slice has not yet been packaged or installed.
+Source commits: `a3cb0637`, `c0a80b59`. Installed app **0.202 (1127)** includes this reader slice.
 
 Saved links open in a shared-DocumentRenderer reading view with an explicit Edit
 switch. Notes continue opening directly in the editor. Captured-source comparison
@@ -38,14 +37,23 @@ receipt's expanded browser-capture claim was premature; this final run is the
 first verified passing expanded capture/highlight scenario. Its independent
 installed native capture/refresh proof remains valid.
 
+## Installed native verification
+
+On build 1127, native pointer drag selected a passage in the Figma saved link.
+Highlight selection became enabled. Adding a note, switching documents and
+reopening retained the quote, note and yellow highlight painting in WKWebView.
+The on-disk document.json contained one readerHighlights row with quote,
+prefix/suffix, source and the exact test note. Local-server bytes matched native.
+Screenshot: `/tmp/texttext-native-highlight-20260930.png`.
+
+The test annotation was then removed through the UI. The original article stayed
+intact, the highlight list was empty on disk and both replicas converged again.
+This verifies native light-mode selection, painting and persistence. Native dark
+mode remains unverified; earlier light/dark browser screenshots are separate
+proof. Full article offline images and unopened-link capture remain pending.
+
 ## Next
 
-Package this with the next visual-capture slice, then verify native selection,
-light/dark rendering and persistence in the installed app. Do not call native
-highlight support verified based solely on Chromium's CSS Highlight test.
-Folder image/GIF capture, source image archiving, durable unopened-link capture,
-multiplayer and the remaining full brief are still active work.
-
-Concurrent files to preserve: package.json, package-lock.json,
-src/lib/share-email.ts, plus the three previously listed unrelated files.
-No server restart, install, push, release or persistent job in this slice.
+File-backed template/agent customization, multiplayer, source image archiving,
+durable unopened-link capture and the remaining full brief remain active work.
+No public release, push or persistent job was performed for this verification.

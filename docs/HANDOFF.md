@@ -44,8 +44,8 @@ saves. Installed native capture of a real public article and refresh preserving
 notes passed. [Article receipt](file-vault-articles-2026-09-30.md) records scope,
 tests, runtime and limitations. Commits `f3340047`, `88a7df47`.
 Reader mode, rendered source comparison, and persistent quoted highlights are
-implemented and browser-verified in `a3cb0637`, `c0a80b59`, now installed in 1124;
-native highlight selection/persistence remains to verify.
+implemented and browser-verified in `a3cb0637`, `c0a80b59`, now installed in 1127;
+native pointer selection, painting, annotation and reopen persistence passed.
 [Reader receipt](file-vault-reader-2026-09-30.md) records checks and corrects the
 older capture fixture's premature expanded-browser claim. Native capture proof
 remains valid. Next: image/GIF capture and viewer navigation, then package both
@@ -77,7 +77,9 @@ restore still creates database records and needs separate file-vault integration
 Live web image import, original viewer and bounded thumbnails passed against
 the real local server. The imported pack converged byte-for-byte with native;
 test deletion reached both replicas with history retained. See the
-[image receipt](file-vault-images-2026-09-30.md). Next: native reader highlights. Full product acceptance, collaboration,
+[image receipt](file-vault-images-2026-09-30.md). Native reader highlights also passed selection, painting, annotation, reopen
+and byte-identical server convergence; the test annotation was removed.
+Next: real native template customization and file-backed folder presentations. Full product acceptance, collaboration,
 customization, publication and measured memory remain open.
 
 ## Blockers and next work
