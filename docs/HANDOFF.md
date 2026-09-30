@@ -9,7 +9,7 @@ prerequisite. See [architecture](design/texttext-file-vault-migration.md) and
 
 Implemented on `main` in `76f373e1`, `f28500cd`, and `3b4549d6`: native folder
 store/CLI, complete-pack filesystem server and durable sync, bundled shared
-editor, file templates, and native assistant file tools. Local WIP **0.202 (1133)**
+editor, file templates, and native assistant file tools. Local WIP **0.202 (1134)**
 is installed at `/Applications/TextText.app`. Its selected workspace is
 `/Users/shokunin/Documents/TextText`. Installed-app creation/save and a real
 Codex append were verified against pack bytes and the refreshed editor. The
@@ -100,24 +100,21 @@ native, and reopened with its image visible. See the folder receipt for logs
 and screenshots. The remaining work includes full collaboration, publication,
 recovery, large-collection indexing, visual polish and measured memory.
 
-Recovery UI is now implemented for native and web file vaults: Trash and recovery,
-per-file Version history, bounded saved-text previews, and complete-pack restore
-as a new identity. Retained originals and existing files are preserved. Native
-11 tests, server/transport 29 tests, two route tests and browser recovery journeys
-pass. Native 1133 restored the retained image fixture with all entries/assets preserved,
-a fresh identity, no prior-file changes and byte-identical server convergence.
-Installed review found generic Trash names and duplicate React sibling keys
-leaving an orphan recovery dialog. Both are fixed and regression-verified;
-1134 is building (session 45146, `/tmp/texttext-build-1134.log`). Install and
-verify named Trash entries and stable dismissal next. Live web server still uses
-build 1132's code; recovery requires its next local rebuild. See
-[recovery receipt](file-vault-recovery-2026-09-30.md).
+Recovery UI is installed and verified in 1134 (`579c1cdd`): Trash and recovery,
+per-file Version history, saved-text preview and complete-pack restore as a new
+identity. Real native and web restoration preserved all pack entries/assets,
+changed only identity and converged byte-for-byte. Test copies were deleted
+recoverably on both replicas. Native named Trash entries and selected-file
+Escape dismissal passed after fixing duplicate React sibling keys. See the
+[recovery receipt](file-vault-recovery-2026-09-30.md) for tests, bounds and evidence.
+Guarded rollback onto an existing identity, large-history indexing, full backup
+restore and the broader collaboration/publishing/performance scope remain open.
 
 ## Blockers and next work
 
 - Owner approved the local server switch. The replacement build now runs on
   localhost:3000 with `TEXTTEXT_VAULT_ROOT=.texttext/vault-server` (absolute
-  runtime path), output `.texttext/vault-folder-final-build`, build identity `texttext-vault-folders-final-20260930` (exec session 67354). No persistent
+  runtime path), output `.texttext/vault-recovery-build`, build identity `texttext-vault-recovery-20260930` (exec session 44773). No persistent
   service job was installed. Inspect the listener before future restarts.
 - Installed app connected with its existing account. Native create/upload,
   browser edit/download, server outage with local save and automatic recovery,

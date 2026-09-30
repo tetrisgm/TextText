@@ -53,8 +53,22 @@ Installed review exposed generic Trash names and duplicate React sibling keys
 between the recovery dialog and selected editor. The keys now have distinct
 prefixes; a regression verifies the dialog DOM is removed and the editor remains
 visible. Six final native recovery tests cover frontmatter titles. Build 1134
-is running for final installed verification. Live web recovery has not yet been
-rebuilt and exercised. This is restore-as-copy,
+is installed. Named Trash entries, saved version previews and Escape closing
+back to the intact editor passed in the real Mac app. Screenshot:
+`/tmp/texttext-native-recovery-1134.png`. Native build/install logs:
+`/tmp/texttext-{build,install}-1134.log`. Automatic installer health-report
+validation was not used for this sandboxed local WIP; installed UI and byte
+checks provide the recorded acceptance evidence.
+
+The live web build `texttext-vault-recovery-20260930` restored the native-deleted
+image fixture from retained server history. The complete pack, including both
+attachments, matched the original except for a new identity and downloaded
+byte-for-byte to native. Evidence: `/tmp/texttext-recovery-web-receipt.json`,
+`/tmp/texttext-web-recovery-restored.png`, and
+`/tmp/texttext-vault-recovery-build.log`. The restored test file was deleted
+recoverably through the web UI afterward; both replicas confirmed its removal.
+The original retained copy remains intact. Full TypeScript and scoped ESLint
+passed (two pre-existing unused-symbol warnings in store.ts). This is restore-as-copy,
 not rollback of the current identity. Restoring an earlier folder design over
 its active definition with a guarded comparison remains separate work.
 Large histories require indexing/pagination beyond bounded discovery; files
