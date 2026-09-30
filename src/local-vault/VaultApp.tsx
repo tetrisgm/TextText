@@ -12,6 +12,7 @@ import { reconcileDocumentSnapshots } from "@/lib/vault/reconcile";
 import { VaultError, vaultRequest, type VaultFile, type VaultListing } from "./bridge";
 import { asPost, localBlog, readDocument, readTemplate, writePayload, VaultRepresentationConflict, type VaultTemplateSelection } from "./model";
 import { WorkspaceTypeLibrary as LocalTemplateLibrary } from "./LocalTemplateLibrary";
+import { WorkspaceOverview } from "./WorkspaceOverview";
 import { NativeConnection } from "./NativeConnection";
 import { NativeAssistant } from "./NativeAssistant";
 import { FolderNavigation } from "./FolderNavigation";
@@ -259,7 +260,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const [fileAction, setFileAction] = useState<"rename" | "delete" | null>(null);
   const [newPath, setNewPath] = useState("");
   const currentFileRef = useRef<(() => VaultFile) | null>(null);
-  const tree = useMemo(() => folderTree(listing?.items ?? []), [listing]);
+  const tree = useMemo(() => folderTree(listing?.items ?? [], listing?.folders), [listing]);
   const folders = useMemo(() => folderPaths(tree), [tree]);
   const flushRef = useRef<() => Promise<boolean>>(async () => true);
   const registerFlush = useCallback((flush: () => Promise<boolean>, currentFile: () => VaultFile) => { flushRef.current = flush; currentFileRef.current = currentFile; }, []);
@@ -303,6 +304,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         setListing(opened); setSelected(null); setDestinationFolder(""); flushRef.current = async () => true;
       })}>Open folder</button>}
       {listing?.root && <>
+        <button disabled={busy} onClick={() => void operate(async () => { closeRemoved(); setDestinationFolder(""); })}>All files</button>
         <p className="vault-root" title={listing.root}>{listing.name || listing.root.split("/").filter(Boolean).at(-1)}</p>
         <label className="vault-folder-destination">Folder for new notes
           <input list="vault-folders" aria-label="Folder for new notes" value={destinationFolder} placeholder="Workspace root"
@@ -323,7 +325,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
           <button disabled={busy} onClick={() => setSearchOpen(true)}>Search files ⌘K</button>
         </>}
         <nav aria-label="Workspace files"><FolderNavigation tree={tree} selectedPath={selected?.path} busy={busy}
-          onFolder={setDestinationFolder} onOpen={(item) => void operate(async () => {
+          onFolder={(path) => void operate(async () => { closeRemoved(); setDestinationFolder(path); })} onOpen={(item) => void operate(async () => {
             setSelected(await vaultRequest<VaultFile>("read", { path: item.path })); setDestinationFolder(folderForItem(item.path));
           })} /></nav>
         {allowFolderPicker && <button onClick={() => setAssistantOpen((value) => !value)}>Assistant</button>}
@@ -373,7 +375,14 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       {error && <div className="vault-notice" role="alert">{error}</div>}
       {selected && listing ? <DocumentBoundary key={`${listing.root}:${selected.path}`}>
         <div inert={busy}><VaultEditor initial={selected} root={listing.root} registerFlush={registerFlush} onChanged={refresh} onRemoved={closeRemoved} /></div>
-      </DocumentBoundary> : <div className="vault-empty">
+      </DocumentBoundary> : listing?.root ? <div aria-hidden={templatePicker || captureOpen || searchOpen || undefined}><WorkspaceOverview listing={listing} folder={destinationFolder} busy={busy}
+        onFolder={(path) => setDestinationFolder(path)}
+        onOpen={(path) => void operate(async () => { setSelected(await vaultRequest<VaultFile>("read", { path })); })}
+        onCreate={(path, folder) => void operate(async () => {
+          const source = await vaultRequest<VaultFile>("read", { path });
+          const title = readDocument(source).content.title || "Untitled";
+          setSelected(await vaultRequest<VaultFile>("create", { title, folder, sourcePath: path, sourceHash: source.hash })); refresh();
+        })} /></div> : <div className="vault-empty">
         <h2>{listing?.root ? "Your workspace" : "Open a workspace folder"}</h2>
         <p>{listing?.root ? "Choose a TextPack or create a note." : "Choose a folder on your Mac. Your documents and templates live there as TextPack files."}</p>
       </div>}

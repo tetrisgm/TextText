@@ -135,6 +135,8 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         scoped = url.startAccessingSecurityScopedResource()
         root = url
         guard FileManager.default.isReadableFile(atPath: url.path) else { throw CocoaError(.fileReadNoPermission) }
+        guard let presets = Bundle.main.url(forResource: "StarterTemplates", withExtension: nil) else { throw VaultBridgeError("Starter templates are missing from this app. Reinstall TextText.") }
+        try io.sync { _ = try LocalVaultStarter.seed(root: url, presets: presets) }
         openError = nil
         window?.title = url.lastPathComponent + " · TextText"
         watcher = WorkspaceFolderWatcher(path: url.path, queue: .main, latency: 0.5) { [weak self] in
@@ -301,7 +303,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         return value
     }
     private static func list(root: URL) throws -> [String: Any] {
-        ["root": root.path, "items": try LocalVaultDocumentStore(root: root).list().map { ["path": $0] }]
+        ["root": root.path, "folders": try LocalVaultStarter.listFolders(root: root), "items": try LocalVaultDocumentStore(root: root).list().map { ["path": $0] }]
     }
     private static func payload(_ document: LocalVaultDocumentStore.Document) -> [String: Any] {
         let contents = document.contents

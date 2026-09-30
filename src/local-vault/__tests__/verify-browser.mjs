@@ -25,7 +25,7 @@ try {
   await page.route(/^https?:/, (route) => route.abort());
   await page.exposeBinding("nativeVaultRequest", async ({ page }, request) => {
     let result, error;
-    if (request.method === "list" || request.method === "open") result = { root: "/test/Workspace", items: [...files.values()].map((file) => ({ path: file.path })) };
+    if (request.method === "list" || request.method === "open") result = { root: "/test/Workspace", folders: ["Empty"], items: [...files.values()].map((file) => ({ path: file.path })) };
     else if (request.method === "connection" || request.method === "connect" || request.method === "sync") {
       if (request.method === "connect") connected = true;
       result = { connected, available: true, ...(connected ? { webURL: "https://example.test/vault/workspace" } : {}) };
@@ -71,6 +71,15 @@ try {
     window.webkit = { messageHandlers: { localVault: { postMessage: (request) => { void window.nativeVaultRequest(request); } } } };
   });
   await page.goto(pathToFileURL(path.resolve("mac/build/LocalVault/index.html")).href);
+  await page.getByRole("region", { name: "Ready-to-use templates" }).getByRole("button", { name: "Agent made look", exact: true }).waitFor();
+  await page.getByRole("region", { name: "Folders" }).getByRole("button", { name: /Empty/ }).click();
+  await page.getByRole("heading", { name: "Empty", exact: true }).waitFor();
+  await page.getByRole("button", { name: "All files", exact: true }).click();
+  await page.getByRole("heading", { name: "Your workspace", exact: true }).waitFor();
+  await page.screenshot({ path: "/tmp/texttext-starter-overview-light.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.screenshot({ path: "/tmp/texttext-starter-overview-dark.png" });
+  await page.emulateMedia({ colorScheme: "light" });
   await page.getByRole("button", { name: "Connect to web", exact: true }).click();
   await page.getByRole("button", { name: "Open on web", exact: true }).click();
   assert.equal(openedWeb, true);
@@ -135,7 +144,7 @@ try {
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByRole("group", { name: "Confirm file deletion" }).getByText("Projects/Renamed.textpack", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Delete file", exact: true }).click();
-  await page.getByRole("heading", { name: "Your workspace", exact: true }).waitFor();
+  await page.locator(".vault-overview").waitFor();
   assert.ok(!files.has("Projects/Renamed.textpack"));
   await page.getByRole("button", { name: /Search files/ }).click();
   await page.getByRole("searchbox", { name: "Search workspace" }).fill("Their conflicting version");
@@ -157,7 +166,7 @@ try {
   await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor();
   files.delete(removed);
   await page.evaluate(() => window.dispatchEvent(new Event("texttext:vault-changed")));
-  await page.getByRole("heading", { name: "Your workspace", exact: true }).waitFor();
+  await page.locator(".vault-overview").waitFor();
   assert.equal(await page.getByRole("button", { name: "Retry save", exact: true }).count(), 0);
   // A deleted file with a pending draft must retain its edits and offer a copy.
   await page.getByRole("button", { name: "New note", exact: true }).click();
@@ -169,7 +178,7 @@ try {
   files.delete(dirtyPath);
   await page.evaluate(() => window.dispatchEvent(new Event("texttext:vault-changed")));
   await page.getByRole("button", { name: "Save my edits as a copy" }).click();
-  await page.getByRole("heading", { name: "Your workspace", exact: true }).waitFor();
+  await page.locator(".vault-overview").waitFor();
   assert.ok([...files.values()].some((file) => file.markdown.includes("Unsaved deletion recovery")));
   assert.ok(!files.has(dirtyPath));
   assert.deepEqual(await page.evaluate(() => window.__networkAttempts), []);

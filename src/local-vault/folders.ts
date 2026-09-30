@@ -1,8 +1,8 @@
 import type { VaultItem } from "./bridge";
 export type VaultFolder = { name: string; path: string; folders: VaultFolder[]; items: VaultItem[] };
-export function folderTree(items: readonly VaultItem[]): VaultFolder {
+export function folderTree(items: readonly VaultItem[], folders: readonly string[] = []): VaultFolder {
   const root: VaultFolder = { name: "", path: "", folders: [], items: [] };
-  for (const item of items) {
+  for (const item of [...folders.map((path) => ({ path: `${path}/`, title: undefined })), ...items]) {
     const components = item.path.split("/"); components.pop();
     let parent = root;
     for (const name of components) {
@@ -11,7 +11,7 @@ export function folderTree(items: readonly VaultItem[]): VaultFolder {
       if (!child) { child = { name, path, folders: [], items: [] }; parent.folders.push(child); }
       parent = child;
     }
-    parent.items.push(item);
+    if (!item.path.endsWith("/")) parent.items.push(item);
   }
   const sort = (folder: VaultFolder) => {
     folder.folders.sort((a, b) => a.name.localeCompare(b.name));
