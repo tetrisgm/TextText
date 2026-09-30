@@ -53,6 +53,19 @@ function fixture() {
 }
 
 describe("web file vault transport", () => {
+  it("reads a retained complete pack without writing and verifies its hash", async () => {
+    const seed = fixture();
+    const requests: string[] = [];
+    const transport = createWebVaultTransport("workspace", "Workspace", async (url) => {
+      requests.push(String(url));
+      return new Response(new Uint8Array(seed.initial), { headers: { ETag: `"${digest(seed.initial)}"`, "X-TextText-Path": encodeURIComponent(seed.path) } });
+    });
+    const recovered = await transport.request("recoveryRead", { id: "opaque-token" }) as VaultFile & { data: string };
+    expect(recovered.path).toBe(seed.path);
+    expect(Buffer.from(recovered.data, "base64")).toEqual(Buffer.from(seed.initial));
+    expect(requests).toEqual(["/api/vault/workspace/recovery?id=opaque-token"]);
+    transport.destroy();
+  });
   it("refuses an occupied exact import destination without suffixing or writing", async () => {
     const f = fixture();
     await expect(f.transport.request("importPack", { folder: "Notes", title: "Original", exactPath: f.path, data: "AA==" })).rejects.toThrow("already occupies");

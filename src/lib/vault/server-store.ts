@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs/promises";
-import { watch } from "node:fs";
+import { watch, constants } from "node:fs";
 import path from "node:path";
 import { hostname } from "node:os";
 import { unzipSync, strFromU8 } from "fflate";
@@ -500,6 +500,147 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
     await syncDirectory(layout.pending);
     return apply(layout, intent, pendingDir);
   });
+}
+
+export type VaultRecoveryEntry = { id: string; path: string; kind: "deleted" | "revision" | "conflict"; savedAt: string; hash: string };
+type RecoveryToken = { kind: VaultRecoveryEntry["kind"]; key: string; hash: string; source?: "history" };
+const recoveryId = (token: RecoveryToken) => Buffer.from(JSON.stringify(token)).toString("base64url");
+function recoveryToken(id: string): RecoveryToken {
+  if (!/^[A-Za-z0-9_-]{1,512}$/.test(id)) throw new Error("Invalid recovery identifier");
+  const token = JSON.parse(Buffer.from(id, "base64url").toString()) as RecoveryToken;
+  if (!["deleted", "revision", "conflict"].includes(token.kind) || !/^[a-f0-9]{64}$/.test(token.hash) || recoveryId(token) !== id) throw new Error("Invalid recovery identifier");
+  if (token.source !== undefined && (token.source !== "history" || token.kind !== "deleted")) throw new Error("Invalid recovery source");
+  if (Object.keys(token).some((key) => !["kind", "key", "hash", "source"].includes(key))) throw new Error("Invalid recovery identifier");
+  segment(token.key);
+  return token;
+}
+async function recoveryNames(directoryPath: string, limit: number) {
+  const names: string[] = [];
+  const directoryHandle = await fs.opendir(directoryPath);
+  let truncated = false, scanned = 0;
+  for await (const entry of directoryHandle) {
+    if (scanned++ >= limit) { truncated = true; break; }
+    if (entry.isFile() && !entry.isSymbolicLink()) names.push(entry.name);
+  }
+  return { names: names.sort(), truncated };
+}
+async function recoveryFile(file: string, maximum: number) {
+  const handle = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const info = await handle.stat();
+    if (!info.isFile() || info.size > maximum) throw new Error("Recovery file exceeds limits or is not a regular file");
+    const bytes = await handle.readFile();
+    if (bytes.length > maximum) throw new Error("Recovery file exceeds limits");
+    return { bytes, savedAt: info.mtime.toISOString() };
+  } finally { await handle.close(); }
+}
+async function recoveryJSON(file: string) {
+  return JSON.parse((await recoveryFile(file, 1024 * 1024)).bytes.toString());
+}
+async function retainedLocation(layout: Layout, token: RecoveryToken, readMetadata = recoveryJSON): Promise<{ file: string; relativePath: string }> {
+  if (token.kind === "revision" || token.source === "history") {
+    const item = await readMetadata(path.join(layout.items, `${token.key}.json`));
+    if (item.itemId !== token.key) throw new Error("Invalid recovery item");
+    if (token.source === "history" && (!item.deleted || item.revision !== token.hash)) throw new Error("Deleted recovery metadata changed");
+    const parent = path.join(layout.history, token.key), info = await fs.lstat(parent);
+    if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("Invalid recovery directory");
+    return { file: path.join(parent, `${token.hash}.textpack`), relativePath: packPath(item.relativePath) };
+  }
+  const receipt = await readMetadata(path.join(layout.receipts, `${token.key}.json`));
+  const result = receipt.result;
+  if (token.kind === "deleted") {
+    if (result?.status !== "deleted" || result.revision !== token.hash) throw new Error("Invalid deleted recovery entry");
+    return { file: path.join(layout.removed, `${token.key}.textpack`), relativePath: packPath(result.relativePath) };
+  }
+  if (result?.status !== "conflict" || result.conflictPath !== `.texttext/conflicts/${token.key}.textpack`) throw new Error("Invalid conflict recovery entry");
+  return { file: path.join(layout.conflicts, `${token.key}.textpack`), relativePath: packPath(result.relativePath) };
+}
+async function retainedBytes(file: string, maximum = 32 * 1024 * 1024) {
+  return recoveryFile(file, maximum);
+}
+
+/** Read retained originals only. Recovery itself imports a new identity through the normal write API. */
+export async function listVaultRecovery(input: VaultLocation & { path?: string }) {
+  if (input.path !== undefined) packPath(input.path);
+  const layout = await setup(input);
+  const entries: VaultRecoveryEntry[] = [];
+  let truncated = false, inspectedBytes = 0, metadataBudget = 8 * 1024 * 1024;
+  const readMetadata = async (file: string) => {
+    if (metadataBudget <= 0) throw new Error("Recovery metadata budget exhausted");
+    const { bytes } = await recoveryFile(file, Math.min(1024 * 1024, metadataBudget));
+    metadataBudget -= bytes.length;
+    return JSON.parse(bytes.toString());
+  };
+  const candidates: RecoveryToken[] = [];
+  if (input.path !== undefined) {
+    const inventory = await recoveryNames(layout.items, 5000); truncated ||= inventory.truncated;
+    for (const name of inventory.names) {
+      if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\.json$/.test(name)) continue;
+      try {
+        const item = await readMetadata(path.join(layout.items, name));
+        if (item.relativePath !== input.path) continue;
+        segment(item.itemId);
+        const parent = path.join(layout.history, item.itemId), info = await fs.lstat(parent);
+        if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("Invalid recovery directory");
+        const history = await recoveryNames(parent, 1000); truncated ||= history.truncated;
+        for (const revision of history.names) if (/^[a-f0-9]{64}\.textpack$/.test(revision)) candidates.push({ kind: "revision", key: item.itemId, hash: revision.slice(0, -9) });
+        if (candidates.length >= 1000) { truncated = true; break; }
+      } catch { truncated = true; }
+      if (metadataBudget <= 0) { truncated = true; break; }
+    }
+  } else {
+    const inventory = await recoveryNames(layout.receipts, 5000); truncated ||= inventory.truncated;
+    for (const name of inventory.names) {
+      if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\.json$/.test(name)) continue;
+      try {
+        const receipt = await readMetadata(path.join(layout.receipts, name)), result = receipt.result;
+        const key = name.slice(0, -5);
+        if (result?.status === "deleted" && /^[a-f0-9]{64}$/.test(result.revision)) candidates.push({ kind: "deleted", key, hash: result.revision });
+        if (result?.status === "conflict" && result.conflictPath === `.texttext/conflicts/${key}.textpack`) candidates.push({ kind: "conflict", key, hash: "0".repeat(64) });
+      } catch { truncated = true; }
+      if (metadataBudget <= 0) { truncated = true; break; }
+    }
+    // Files removed outside TextText have tombstones and retained history, but no delete receipt.
+    const tombstones = await recoveryNames(layout.items, 5000); truncated ||= tombstones.truncated;
+    for (const name of tombstones.names) {
+      if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\.json$/.test(name)) continue;
+      try {
+        const item = await readMetadata(path.join(layout.items, name));
+        if (item.deleted === true && /^[a-f0-9]{64}$/.test(item.revision)) {
+          segment(item.itemId); packPath(item.relativePath);
+          candidates.push({ kind: "deleted", key: item.itemId, hash: item.revision, source: "history" });
+        }
+      } catch { truncated = true; }
+      if (metadataBudget <= 0) { truncated = true; break; }
+    }
+  }
+  const seenDeleted = new Set<string>();
+  for (const candidate of candidates) {
+    if (entries.length >= 200 || inspectedBytes >= 128 * 1024 * 1024) { truncated = true; break; }
+    try {
+      const retained = await retainedLocation(layout, candidate, readMetadata), { bytes, savedAt } = await retainedBytes(retained.file, Math.min(32 * 1024 * 1024, 128 * 1024 * 1024 - inspectedBytes));
+      inspectedBytes += bytes.length;
+      const revision = hash(bytes);
+      if (candidate.kind !== "conflict" && revision !== candidate.hash) { truncated = true; continue; }
+      validatePack(bytes);
+      const token = { ...candidate, hash: revision };
+      if (token.kind === "deleted") {
+        const identity = `${retained.relativePath}:${revision}`;
+        if (seenDeleted.has(identity)) continue;
+        seenDeleted.add(identity);
+      }
+      entries.push({ id: recoveryId(token), path: retained.relativePath, kind: token.kind, savedAt, hash: revision });
+    } catch { truncated = true; /* A corrupt or unavailable retained copy is not a valid recovery choice. */ }
+  }
+  entries.sort((left, right) => right.savedAt.localeCompare(left.savedAt) || left.id.localeCompare(right.id));
+  return { entries, truncated };
+}
+export async function readVaultRecovery(input: VaultLocation & { id: string }) {
+  const token = recoveryToken(input.id), layout = await setup(input);
+  const retained = await retainedLocation(layout, token), { bytes } = await retainedBytes(retained.file);
+  if (hash(bytes) !== token.hash) throw new Error("Recovery TextPack changed or is corrupt");
+  validatePack(bytes);
+  return { bytes, relativePath: retained.relativePath, revision: token.hash };
 }
 
 export async function readVaultTextpack(input: VaultLocation & { itemId: string }): Promise<{

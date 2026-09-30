@@ -283,6 +283,14 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     return ["items": page.items.map { ["path": $0.id, "title": $0.title, "snippet": $0.snippet] },
                         "truncated": page.truncated, "skippedCount": page.skippedCount]
                 case "read": return try Self.payload(store.read(path: Self.string(params, "path")))
+                case "recoveryList":
+                    let page = try store.recoveryList(path: params["path"] as? String)
+                    return ["entries": page.entries.map { ["id": $0.id, "path": $0.path, "kind": $0.kind, "savedAt": $0.savedAt, "hash": $0.hash] }, "truncated": page.truncated]
+                case "recoveryRead":
+                    let recovered = try store.recoveryRead(id: Self.string(params, "id"))
+                    var value = Self.payload(recovered.document)
+                    value["data"] = recovered.data.base64EncodedString()
+                    return value
                 case "preview":
                     return try autoreleasepool {
                         let path = try Self.string(params, "path")

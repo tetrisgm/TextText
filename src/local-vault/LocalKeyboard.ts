@@ -6,7 +6,7 @@ export function useEscapeLayer(open: boolean, _label: string, onClose: () => voi
   useEffect(() => {
     if (!open) return;
     const layer = { close: () => close.current() }; layers.push(layer);
-    const key = (event: KeyboardEvent) => { if (event.key === "Escape" && layers.at(-1) === layer) { event.preventDefault(); event.stopImmediatePropagation(); layer.close(); } };
+    const key = (event: KeyboardEvent) => { if (event.key === "Escape" && !document.querySelector("dialog[open]") && layers.at(-1) === layer) { event.preventDefault(); event.stopImmediatePropagation(); layer.close(); } };
     window.addEventListener("keydown", key, true);
     return () => { const index = layers.indexOf(layer); if (index >= 0) layers.splice(index, 1); window.removeEventListener("keydown", key, true); };
   }, [open]);

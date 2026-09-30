@@ -8,7 +8,7 @@ import { unzipSync, zipSync } from "fflate";
 import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { readVaultTextpack, writeVaultTextpack, listVaultTextpacks, waitVaultTextpacks, moveVaultTextpack, deleteVaultTextpack } from "./server-store";
-import { listVaultFolderViews } from "./server-store";
+import { listVaultFolderViews, listVaultRecovery, readVaultRecovery } from "./server-store";
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
 function pack(body: string, itemId = "item-1") {
@@ -28,6 +28,62 @@ describe("directory TextPack store", () => {
   afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
   const input = (root: string, operationId: string, bytes: Uint8Array, baseRevision: string | null = null) => ({
     root, workspaceId, itemId, relativePath, operationId, bytes, baseRevision,
+  });
+
+  it("exposes external-deletion tombstones as deleted recovery with the last retained actual bytes", async () => {
+    await writeVaultTextpack(input(root, "initial", pack("initial")));
+    const actual = pack("Edited directly on disk");
+    await fs.writeFile(path.join(root, workspaceId, relativePath), actual);
+    await listVaultTextpacks({ root, workspaceId });
+    await fs.unlink(path.join(root, workspaceId, relativePath));
+    const manifest = await listVaultTextpacks({ root, workspaceId });
+    expect(manifest.tombstones).toHaveLength(1);
+    const recovery = await listVaultRecovery({ root, workspaceId });
+    expect(recovery.truncated).toBe(false);
+    expect(recovery.entries).toHaveLength(1);
+    expect(recovery.entries[0]).toMatchObject({ kind: "deleted", path: relativePath, hash: hash(actual) });
+    const retained = await readVaultRecovery({ root, workspaceId, id: recovery.entries[0].id });
+    expect(retained.bytes).toEqual(Buffer.from(actual));
+    expect(await readVaultTextpack({ root, workspaceId, itemId })).toBeNull();
+  });
+
+  it("lists retained revisions, deleted copies and conflicts and reads originals without modifying them", async () => {
+    const original = pack("first");
+    await writeVaultTextpack(input(root, "first", original));
+    const later = pack("second");
+    await writeVaultTextpack(input(root, "second", later, hash(original)));
+    await writeVaultTextpack(input(root, "conflicted", pack("offline"), hash(original)));
+    const revisions = await listVaultRecovery({ root, workspaceId, path: relativePath });
+    expect(revisions.truncated).toBe(false);
+    expect(revisions.entries.map((entry) => entry.hash).sort()).toEqual([hash(original), hash(later)].sort());
+    await deleteVaultTextpack({ root, workspaceId, itemId, basePath: relativePath, baseRevision: hash(later), operationId: "deleted" });
+    const recovery = await listVaultRecovery({ root, workspaceId });
+    expect(recovery.truncated).toBe(false);
+    expect(recovery.entries.map((entry) => entry.kind).sort()).toEqual(["conflict", "deleted"]);
+    const deleted = recovery.entries.find((entry) => entry.kind === "deleted")!;
+    expect((await readVaultRecovery({ root, workspaceId, id: deleted.id })).bytes).toEqual(Buffer.from(later));
+    expect(await readVaultTextpack({ root, workspaceId, itemId })).toBeNull();
+    expect(await listVaultRecovery({ root, workspaceId })).toEqual(recovery);
+    await expect(readVaultRecovery({ root, workspaceId, id: "../private" })).rejects.toThrow();
+    const removed = path.join(root, workspaceId, ".texttext", "removed", "deleted.textpack");
+    await fs.writeFile(removed, original);
+    await expect(readVaultRecovery({ root, workspaceId, id: deleted.id })).rejects.toThrow("changed or is corrupt");
+    await fs.unlink(removed);
+    const outside = path.join(root, "outside.textpack");
+    await fs.writeFile(outside, later);
+    await fs.symlink(outside, removed);
+    await expect(readVaultRecovery({ root, workspaceId, id: deleted.id })).rejects.toThrow();
+    expect((await listVaultRecovery({ root, workspaceId })).truncated).toBe(true);
+    await fs.writeFile(path.join(root, workspaceId, ".texttext", "receipts", "bad.json"), "{broken");
+    const partial = await listVaultRecovery({ root, workspaceId });
+    expect(partial.truncated).toBe(true);
+    expect(partial.entries.some((entry) => entry.kind === "conflict")).toBe(true);
+    const history = path.join(root, workspaceId, ".texttext", "history", itemId);
+    const movedHistory = path.join(root, "history-outside");
+    await fs.rename(history, movedHistory);
+    await fs.symlink(movedHistory, history);
+    await expect(readVaultRecovery({ root, workspaceId, id: revisions.entries[0].id })).rejects.toThrow("Invalid recovery directory");
+    expect((await listVaultRecovery({ root, workspaceId, path: relativePath })).entries).toEqual([]);
   });
 
   it("discovers renamed marked folder definitions without asset transfer or nested matches", async () => {

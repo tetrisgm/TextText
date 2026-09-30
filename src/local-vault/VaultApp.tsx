@@ -21,6 +21,8 @@ import { ArticleReader } from "./ArticleReader";
 import { articleSource } from "@/lib/vault/article-capture";
 import { ArticleCapture } from "./ArticleCapture";
 import { CaptureDialog } from "./CaptureDialog";
+import { RecoveryDialog } from "./RecoveryDialog";
+import { readFolderView } from "./folder-view";
 import { VaultSearch } from "./VaultSearch";
 import { prepareImagePack, encodeBase64, MAX_IMAGE_BYTES, IMAGE_ACCEPT } from "./image-import";
 import "./style.css";
@@ -268,6 +270,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const [templatePicker, setTemplatePicker] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [recovery, setRecovery] = useState<{ path?: string } | null>(null);
   const [fileAction, setFileAction] = useState<"rename" | "delete" | null>(null);
   const [newPath, setNewPath] = useState("");
   const imageInput = useRef<HTMLInputElement>(null);
@@ -374,6 +377,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
           })}>Import file…</button>
           <button disabled={busy} onClick={() => setSearchOpen(true)}>Search files ⌘K</button>
         </>}
+        <button disabled={busy} onClick={() => void operate(async () => setRecovery({}))}>Trash and recovery</button>
         <nav aria-label="Workspace files"><FolderNavigation tree={tree} selectedPath={selected?.path} busy={busy}
           onFolder={(path) => void operate(async () => { closeRemoved(); setDestinationFolder(path); })} onOpen={(item) => void operate(async () => {
             setSelected(await vaultRequest<VaultFile>("read", { path: item.path })); setDestinationFolder(folderForItem(item.path));
@@ -388,6 +392,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         <button disabled={busy} onClick={() => { setNewPath(selected.path); setFileAction("rename"); }}>Rename or move</button>
         <button disabled={busy} onClick={() => setFileAction("delete")}>Delete</button>
         {allowFolderPicker && <button disabled={busy} onClick={() => { setAssistantOpen(true); window.dispatchEvent(new CustomEvent("texttext:vault-customize", { detail: { path: selected.path } })); }}>Customize</button>}
+        <button disabled={busy} onClick={() => void operate(async () => setRecovery({ path: selected.path }))}>Version history</button>
         {fileAction === "rename" && <form onSubmit={(event) => { event.preventDefault(); void operate(async () => {
           const observed = currentFileRef.current?.();
           if (!observed || observed.path !== selected.path) throw new Error("Wait for this file to finish opening.");
@@ -409,6 +414,16 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
           <button onClick={() => setFileAction(null)}>Cancel</button>
         </div>}
       </div>}
+      {recovery && <RecoveryDialog key={`recovery:${listing?.root}:${recovery.path ?? "trash"}`} path={recovery.path} onClose={() => setRecovery(null)} onRestore={async (file, folder) => {
+        if (!await flushRef.current()) throw new Error("Save or resolve the current document before restoring a copy.");
+        if (readFolderView(file)) {
+          const definitions = await vaultRequest<{ files: VaultFile[] }>("folderViews", { folder });
+          if (definitions.files.length) throw new Error("That folder already has a design. Choose another folder for this recovered design copy.");
+        }
+        const title = `${readDocument(file).content.title || "Untitled"} (recovered)`;
+        const restored = await vaultRequest<VaultFile>("importPack", { title, data: file.data, folder });
+        closeRemoved(); setSelected(restored); setDestinationFolder(folderForItem(restored.path)); refresh();
+      }} />}
       {captureOpen && <CaptureDialog onClose={() => setCaptureOpen(false)} onSave={async (input) => {
         if (!await flushRef.current()) throw new Error("Save or resolve the current document before capturing another item.");
         const created = await vaultRequest<VaultFile>("create", { ...input, folder: destinationFolder.trim() });

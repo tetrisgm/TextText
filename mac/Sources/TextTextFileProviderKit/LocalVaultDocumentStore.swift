@@ -258,6 +258,10 @@ public struct LocalVaultDocumentStore: Sendable {
         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         guard size <= 64 * 1024 * 1024 else { throw Failure.tooLarge }
         let bytes = try Data(contentsOf: url)
+        return try parseDocument(path: path, bytes: bytes, preserveHistory: true)
+    }
+
+    func parseDocument(path: String, bytes: Data, preserveHistory: Bool) throws -> Document {
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temporary) }
@@ -275,7 +279,7 @@ public struct LocalVaultDocumentStore: Sendable {
         let hash = TextTextStableDigest.sha256Hex(bytes)
         // Keep the exact version observed by the editor so an external
         // asset replacement can still produce a complete conflict copy.
-        try preserve(bytes, hash: hash)
+        if preserveHistory { try preserve(bytes, hash: hash) }
         return Document(path: path, hash: hash, contents: contents)
     }
 

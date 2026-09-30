@@ -4,6 +4,8 @@ import { validatedLookSource } from "./presentation/template-library";
 import {
   readVaultTextpack as readDirectoryTextpack,
   readVaultTemplate as readDirectoryTemplate,
+  listVaultRecovery as listDirectoryRecovery,
+  readVaultRecovery as readDirectoryRecovery,
   listVaultFolderViews as listDirectoryFolderViews,
   listVaultTextpacks as listDirectoryTextpacks,
   waitVaultTextpacks as waitDirectoryTextpacks,
@@ -59,6 +61,15 @@ export function writeVaultTextpack(input: Omit<VaultWrite, "onReceipt" | "audit"
     audit: { actorUserId: input.actorUserId, actorType: input.actorType },
     onReceipt: recordVaultReceipt,
   });
+}
+
+export function listVaultRecovery(input: Omit<VaultLocation, "onReceipt"> & { path?: string }) {
+  if (!db) throw new Error(NO_DATABASE);
+  return listDirectoryRecovery(input);
+}
+export function readVaultRecovery(input: Omit<VaultLocation, "onReceipt"> & { id: string }) {
+  if (!db) throw new Error(NO_DATABASE);
+  return readDirectoryRecovery(input);
 }
 
 export function readVaultTextpack(input: Omit<VaultLocation, "onReceipt"> & { itemId: string }) {

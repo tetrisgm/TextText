@@ -83,6 +83,23 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
   const transport: VaultTransport = async (method, params) => {
     if (destroyed) throw new Error("This workspace has closed.");
     if (method === "list" || method === "open") return listing();
+    if (method === "recoveryList" || method === "recoveryRead") {
+      const query = new URLSearchParams();
+      if (method === "recoveryRead") query.set("id", String(params.id));
+      else if (typeof params.path === "string") query.set("path", params.path);
+      const response = await request(`/api/vault/${encodeURIComponent(workspaceId)}/recovery?${query}`, { credentials: "same-origin", cache: "no-store" });
+      if (!response.ok) throw await failure(response);
+      if (method === "recoveryList") return response.json();
+      const revision = response.headers.get("ETag")?.replace(/^"|"$/g, "");
+      const encodedPath = response.headers.get("X-TextText-Path");
+      if (!revision || !/^[a-f0-9]{64}$/.test(revision) || !encodedPath) throw new Error("The retained copy is missing recovery metadata.");
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (bytes.length > 32 * 1024 * 1024 || await digest(bytes) !== revision) throw new Error("The retained copy does not match its saved revision.");
+      const pack = openPack(bytes, decodeURIComponent(encodedPath), revision);
+      let binary = "";
+      for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+      return { ...pack.file, data: btoa(binary) };
+    }
     if (method === "folderViews") {
       const response = await request(`${base}?folderViews=${encodeURIComponent(String(params.folder ?? ""))}`, { credentials: "same-origin", cache: "no-store" });
       if (!response.ok) throw await failure(response);

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
-import { unzipSync, strFromU8 } from "fflate";
+import { unzipSync, zipSync, strToU8, strFromU8 } from "fflate";
 import { chromium } from "playwright";
 
 const makeDocument = (body) => ({ schemaVersion: 1, content: { title: "Offline note", body, fields: {}, tags: [], assets: [] }, presentation: { template: { id: "texttext.note", version: 1 }, theme: {} } });
@@ -18,6 +18,14 @@ const preset = unzipSync(await readFile("presets/builtin/note.textpack"));
 const template = JSON.parse(strFromU8(preset[Object.keys(preset).find((name) => name.endsWith("/template.json"))]));
 template.id = "custom.agent-look"; template.name = "Agent made look";
 files.set("Templates/Agent look.textpack", { ...initial, path: "Templates/Agent look.textpack", hash: "template-1", templateJSON: JSON.stringify(template) });
+const retainedEntries = {
+  "Recovery.textbundle/text.md": strToU8(initial.markdown),
+  "Recovery.textbundle/document.json": strToU8(initial.documentJSON),
+  "Recovery.textbundle/template.json": strToU8(JSON.stringify(template)),
+  "Recovery.textbundle/assets/original.bin": new Uint8Array([0, 17, 255, 84]),
+  "Recovery.textbundle/opaque.dat": new Uint8Array([82, 69, 67]),
+};
+const recoveryData = Buffer.from(zipSync(retainedEntries)).toString("base64");
 const browser = await chromium.launch({ headless: true });
 try {
   const page = await browser.newPage();
@@ -38,6 +46,8 @@ try {
       result = files.get(request.params.path);
       if (!result) error = { message: "File not found", code: "not_found" };
     }
+    else if (request.method === "recoveryList") result = { entries: [{ id: "retained-copy", path: initial.path, kind: request.params.path ? "revision" : "deleted", savedAt: "2026-09-30T12:00:00Z", hash: "saved-version" }], truncated: false };
+    else if (request.method === "recoveryRead") result = { ...initial, hash: "saved-version", templateJSON: JSON.stringify(template), data: recoveryData, assets: [] };
     else if (request.method === "importPack") {
       const bytes = Buffer.from(request.params.data, "base64");
       const entries = unzipSync(bytes);
@@ -395,6 +405,40 @@ try {
   assert.equal(JSON.parse(files.get(existingView.path).templateJSON).name, "Proposed design");
   assert.equal(JSON.stringify([...files].filter(([path]) => path.startsWith("Large/") && !path.endsWith("Folder view.textpack"))), membersBefore);
   assert.deepEqual(failures, []);
+  // Recovery preview is read-only; restoring preserves the complete retained pack.
+  const liveBeforeRecovery = JSON.stringify([...files]);
+  await page.getByRole("button", { name: "Trash and recovery", exact: true }).click();
+  const recoveryDialog = page.getByRole("dialog", { name: "Trash and recovery", exact: true });
+  await recoveryDialog.getByRole("button", { name: /Notes\/Offline.textpack/ }).click();
+  await recoveryDialog.getByText("First line\nSecond line", { exact: true }).waitFor();
+  assert.equal(JSON.stringify([...files]), liveBeforeRecovery);
+  await page.screenshot({ path: "/tmp/texttext-recovery-light.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.screenshot({ path: "/tmp/texttext-recovery-dark.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await recoveryDialog.getByRole("button", { name: "Close recovery" }).click();
+  assert.equal(JSON.stringify([...files]), liveBeforeRecovery);
+  await page.getByRole("button", { name: "Trash and recovery", exact: true }).click();
+  await recoveryDialog.getByRole("button", { name: /Notes\/Offline.textpack/ }).click();
+  await recoveryDialog.getByRole("button", { name: "Restore as a new file" }).click();
+  await recoveryDialog.waitFor({ state: "hidden" });
+  const recoveredFile = [...files.values()].find((file) => file.path.startsWith("Recovered/Offline note (recovered)"));
+  assert.ok(recoveredFile);
+  assert.deepEqual(importedPacks.at(-1), retainedEntries);
+  assert.equal(JSON.stringify([...files].filter(([path]) => path !== recoveredFile.path)), liveBeforeRecovery);
+  await page.getByRole("button", { name: "Version history", exact: true }).click();
+  const versions = page.getByRole("dialog", { name: "Version history", exact: true });
+  await versions.getByText("Saved revision", { exact: true }).waitFor();
+  await page.keyboard.press("Escape");
+  await versions.waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: "Version history", exact: true }).click();
+  await versions.waitFor();
+  await versions.getByRole("button", { name: "Close recovery" }).click();
+  await versions.waitFor({ state: "hidden" });
+  assert.equal(await page.locator("dialog.vault-recovery").count(), 0);
+  await page.getByRole("textbox", { name: "Title", exact: true }).waitFor();
+  assert.deepEqual(failures, []);
+  console.log("Recovery preview/cancel, full pack restore as copy, and version history passed.");
   console.log("Bounded folder previews and pagination passed.");
   console.log("Image picker, folder drop/paste and embedded GIF still preview passed.");
   console.log("Offline vault UI passed: file save, raw agent refresh, conflict copy, zero HTTP/fetch calls.");
