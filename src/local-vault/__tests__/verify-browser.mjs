@@ -62,6 +62,13 @@ try {
       const name = `${request.params.folder || "Notes"}/Copy-${++revision}.textpack`;
       result = { ...(request.params.sourcePath ? (files.get(request.params.sourcePath) ?? history.get(request.params.sourceHash)) : initial), path: name, hash: String(revision) };
       result.markdown = result.markdown.replace(/textTextId: [^\n]+/, `textTextId: "copy-${revision}"`);
+      if (!request.params.sourcePath && typeof request.params.body === "string") {
+        const document = makeDocument(request.params.body);
+        document.content.title = request.params.title || "Untitled";
+        if (request.params.sourceURL) document.content.fields.sourceUrl = request.params.sourceURL;
+        result.documentJSON = JSON.stringify(document);
+        result.markdown = `---\ntextTextId: "copy-${revision}"\ntitle: ${JSON.stringify(document.content.title)}\n---\n\n${request.params.body}`;
+      }
       files.set(name, result);
     } else error = { message: `Unexpected operation ${request.method}` };
     await page.evaluate((detail) => window.dispatchEvent(new CustomEvent("texttext:vault-reply", { detail })), { id: request.id, result, error });
@@ -167,6 +174,33 @@ try {
   const captured = [...files.values()].find((file) => JSON.parse(file.documentJSON).content.fields.sourceUrl === "https://example.com/capture");
   assert.equal(JSON.parse(captured.documentJSON).content.fields.commentary, "My annotation survives source refresh.");
   assert.match(JSON.parse(captured.documentJSON).content.body, /Captured reading/);
+  const reader = page.getByRole("region", { name: "Article reader", exact: true });
+  await reader.waitFor();
+  await page.evaluate(() => {
+    const root = document.querySelector(".vault-reading .tt-document");
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const start = node.textContent.indexOf("readable article");
+      if (start < 0) continue;
+      const range = document.createRange(); range.setStart(node, start); range.setEnd(node, start + "readable article".length);
+      const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+      document.dispatchEvent(new Event("selectionchange")); break;
+    }
+  });
+  await page.getByRole("button", { name: "Highlight selection", exact: true }).click();
+  await page.getByRole("textbox", { name: "Note about this highlight", exact: true }).fill("Keep this cited excerpt.");
+  await page.getByRole("button", { name: "All files", exact: true }).click();
+  await page.getByRole("button", { name: captured.path.replace(/\.textpack$/, ""), exact: true }).click();
+  await page.getByRole("textbox", { name: "Note about this highlight", exact: true }).waitFor();
+  assert.equal(await page.getByRole("textbox", { name: "Note about this highlight", exact: true }).inputValue(), "Keep this cited excerpt.");
+  assert.equal(JSON.parse(files.get(captured.path).documentJSON).content.fields.readerHighlights[0].quote, "readable article");
+  assert.equal(await page.evaluate(() => CSS.highlights.get("texttext-reader").size), 1);
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.locator("main").evaluate((element) => { element.scrollTop = 0; });
+  await page.screenshot({ path: "/tmp/texttext-article-reader-light.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.screenshot({ path: "/tmp/texttext-article-reader-dark.png" });
+  await page.emulateMedia({ colorScheme: "light" });
   // A clean open file deleted by another replica must close, not offer Retry save.
   await page.getByRole("button", { name: "New note", exact: true }).click();
   await page.waitForFunction(() => !document.querySelector("[inert]"));

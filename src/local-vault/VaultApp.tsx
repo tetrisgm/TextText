@@ -17,6 +17,8 @@ import { NativeConnection } from "./NativeConnection";
 import { NativeAssistant } from "./NativeAssistant";
 import { FolderNavigation } from "./FolderNavigation";
 import { folderTree, folderPaths, folderForItem } from "./folders";
+import { ArticleReader } from "./ArticleReader";
+import { articleSource } from "@/lib/vault/article-capture";
 import { ArticleCapture } from "./ArticleCapture";
 import { CaptureDialog } from "./CaptureDialog";
 import { VaultSearch } from "./VaultSearch";
@@ -49,6 +51,7 @@ function VaultEditor({ initial, root, onChanged, onRemoved, registerFlush }: { o
   const missing = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [external, setExternal] = useState(initialDocument);
+  const [reading, setReading] = useState(!!articleSource(initialDocument));
   const [notice, setNotice] = useState("");
   const [hasConflict, setHasConflict] = useState(false);
   const [copying, setCopying] = useState(false);
@@ -239,13 +242,13 @@ function VaultEditor({ initial, root, onChanged, onRemoved, registerFlush }: { o
   };
   const display = useMemo(() => mapStrings(external, assets.forward), [external, assets]);
   const post = useMemo(() => asPost(display, initial.path), [display, initial.path]);
-  return <section className="vault-document"><header className="vault-document-path">{initial.path}</header>{notice && <div className="vault-notice" role="status">{notice}{hasConflict ? <button disabled={copying} onClick={() => void saveCopy()}>{copying ? "Saving copy…" : "Save my edits as a copy"}</button> : <button onClick={() => void flush()}>Retry save</button>}</div>}<ArticleCapture document={external} readCurrent={readCurrent} update={updateArticle} beforeCapture={flush} /><UnifiedDocumentEditor transport="local" externalDocument={display} blog={localBlog} post={post} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} availableTemplates={templates} onSaveAsLook={saveLook} renderTemplateLibrary={(props) => <LocalTemplateLibrary currentTemplate={pendingLook.current?.template ?? readTemplate(file.current, current.current)} onClose={props.onClose} onApply={(template, sourceJSON) => {
+  return <section className="vault-document"><header className="vault-document-path">{initial.path}</header>{notice && <div className="vault-notice" role="status">{notice}{hasConflict ? <button disabled={copying} onClick={() => void saveCopy()}>{copying ? "Saving copy…" : "Save my edits as a copy"}</button> : <button onClick={() => void flush()}>Retry save</button>}</div>}<ArticleCapture document={external} readCurrent={readCurrent} update={updateArticle} beforeCapture={flush} />{articleSource(external) && <div className="vault-reading-switch"><button aria-pressed={reading} onClick={() => void flush().then((saved) => { if (saved) { setExternal(current.current); setReading(true); } })}>Read</button><button aria-pressed={!reading} onClick={() => setReading(false)}>Edit</button></div>}{reading ? <ArticleReader document={display} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} update={updateArticle} /> : <UnifiedDocumentEditor transport="local" externalDocument={display} blog={localBlog} post={post} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} availableTemplates={templates} onSaveAsLook={saveLook} renderTemplateLibrary={(props) => <LocalTemplateLibrary currentTemplate={pendingLook.current?.template ?? readTemplate(file.current, current.current)} onClose={props.onClose} onApply={(template, sourceJSON) => {
     pendingLook.current = { template, sourceJSON };
     setTemplates((values) => [template, ...values.filter((value) => value.id !== template.id || value.version !== template.version)]);
     props.onApply(template); remember();
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => { void flush(); }, 350);
-  }} />} collab={{ postId: initial.path, userName: "You", color: "#3970c5", canEdit: true }} onDocumentChange={change} onDone={async () => { await flush(); }} /></section>;
+  }} />} collab={{ postId: initial.path, userName: "You", color: "#3970c5", canEdit: true }} onDocumentChange={change} onDone={async () => { await flush(); }} />}</section>;
 }
 
 class DocumentBoundary extends Component<{ children: ReactNode }, { error: string }> {

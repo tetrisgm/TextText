@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DocumentSnapshot } from "@/lib/documents/model";
 import { applyArticleCapture, articleSource, isLinkPlaceholder, type ArticleCapture as CaptureResult } from "@/lib/vault/article-capture";
+import { DocumentRenderer } from "@/components/document/DocumentRenderer";
+import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
 import { vaultRequest } from "./bridge";
 
 export function ArticleCapture({ document, readCurrent, update, beforeCapture }: {
@@ -53,11 +55,12 @@ export function ArticleCapture({ document, readCurrent, update, beforeCapture }:
   }, [source, capture, readCurrent]);
   if (!source) return null;
   const captured = document.content.fields.capturedSourceBody;
+  const sourceTemplate = BUILTIN_TEMPLATES.find((template) => template.id === "texttext.article")!;
   return <aside className="vault-article" aria-label="Article source">
     <div><a href={source} target="_blank" rel="noopener noreferrer">Open original ↗</a>
       <button disabled={busy} onClick={() => void capture()}>{busy ? "Reading article…" : captured ? "Refresh article" : "Read article"}</button></div>
     {(notice || document.content.fields.captureStatus === "failed") && <p role="status">{notice || "The article could not be captured. Your link is saved; retry when ready."}</p>}
-    {typeof captured === "string" && captured !== document.content.body && <details><summary>Captured source</summary><pre>{captured}</pre></details>}
+    {typeof captured === "string" && captured !== document.content.body && <details><summary>Captured source</summary><DocumentRenderer documentId="vault-captured-source" document={{ ...document, content: { ...document.content, body: captured, fields: { sourceUrl: source } }, presentation: { ...document.presentation, template: { id: sourceTemplate.id, version: sourceTemplate.version } } }} template={sourceTemplate} /></details>}
     <details><summary>Your notes</summary><textarea aria-label="Your article notes" value={String(document.content.fields.commentary ?? "")} onChange={(event) => {
       const value = event.target.value;
       update((current) => ({ ...current, content: { ...current.content, fields: { ...current.content.fields, commentary: value } } }));
