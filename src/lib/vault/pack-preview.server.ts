@@ -3,7 +3,7 @@ import sharp from "sharp";
 import { emptyDocumentSnapshot, validateDocumentSnapshot, type DocumentSnapshot } from "@/lib/documents/model";
 import { parsePostMarkdownFile } from "@/lib/markdown-files";
 
-export type VaultPreview = { metadataTruncated?: boolean; document: DocumentSnapshot; title: string; excerpt: string; sourceURL?: string; image?: { data: string; contentType: string } };
+export type VaultPreview = { metadataTruncated?: boolean; incompleteFields: string[]; document: DocumentSnapshot; title: string; excerpt: string; sourceURL?: string; image?: { data: string; contentType: string } };
 
 /** No remote fetches or full asset transfer. Decode one local image, one frame. */
 export async function previewTextpack(bytes: Uint8Array, metadataOnly = false): Promise<VaultPreview> {
@@ -28,12 +28,20 @@ export async function previewTextpack(bytes: Uint8Array, metadataOnly = false): 
     else if (typeof value === "number" || typeof value === "boolean" || value === null) projection.content.fields[key] = value;
   }
   const result: VaultPreview = {
-    document: projection,
+    document: projection, incompleteFields: [],
     title: (parsed?.fields.title ?? document.content.title).slice(0, 240),
     excerpt: (parsed?.body ?? document.content.body).slice(0, 2000).replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/[#*_`>]/g, "").replace(/\s+/g, " ").trim().slice(0, 400),
   };
-  if ((parsed?.fields.title ?? document.content.title).length > 240 || document.content.tags.length > 100 || Object.entries(document.content.fields).length > 64 ||
-      Object.entries(document.content.fields).some(([key, value]) => key.length > 120 || typeof value === "string" && value.length > 2048 || typeof value === "object" && value !== null)) result.metadataTruncated = true;
+  const incomplete: string[] = [];
+  if ((parsed?.fields.title ?? document.content.title) !== result.title) incomplete.push("title");
+  if ((parsed?.body ?? document.content.body) !== result.excerpt) incomplete.push("body");
+  if (document.content.tags.length > 100) incomplete.push("tags");
+  for (const [key, value] of Object.entries(document.content.fields)) {
+    if (!Object.hasOwn(projection.content.fields, key) || projection.content.fields[key] !== value) incomplete.push(`content.fields.${key}`);
+    if (incomplete.length > 2048) break;
+  }
+  result.incompleteFields = incomplete.length > 2048 ? ["*"] : incomplete;
+  if (incomplete.length) result.metadataTruncated = true;
   projection.content.title = result.title; projection.content.body = result.excerpt;
   const source = document.content.fields.sourceUrl;
   if (typeof source === "string") {

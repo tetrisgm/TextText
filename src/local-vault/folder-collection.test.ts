@@ -26,9 +26,19 @@ describe("folder collection projections", () => {
   });
   it("uses only a bounded thumbnail and does not mutate the source snapshot", () => {
     const original = preview("Title", 1);
+    Object.assign(original.document.content.fields, { cover: "https://example.com/original.jpg" });
     original.document.content.assets = [{ id: "original", kind: "image", src: "remote-original.jpg" }];
     const result = collectionDocument(original, "Fallback", "blob:thumbnail");
     expect(result.content.assets[0].src).toBe("blob:thumbnail");
+    expect(result.content.fields.cover).toBe("blob:thumbnail");
+    expect(collectionDocument(original, "Fallback").content.fields.cover).toBeUndefined();
+    expect(original.document.content.fields).toHaveProperty("cover", "https://example.com/original.jpg");
     expect(original.document.content.assets[0].src).toBe("remote-original.jpg");
+  });
+  it("sorts complete title metadata despite unrelated omitted article annotations", () => {
+    const items = [{ path: "z" }, { path: "a" }];
+    const previews = { z: { ...preview("Zulu", 2), metadataTruncated: true, incompleteFields: ["content.fields.annotations"] }, a: preview("Alpha", 1) };
+    expect(queryFolderMembers(items, previews, { ...spec, sort: [{ field: "title", direction: "asc" }] }).map((item) => item.path)).toEqual(["a", "z"]);
+    expect(() => queryFolderMembers(items, previews, { ...spec, sort: [{ field: "content.fields.annotations", direction: "asc" }] })).toThrow(/query limits/);
   });
 });

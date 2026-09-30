@@ -63,7 +63,7 @@ export function NativeAssistant({ open, path, root, onClose, beforeSend }: {
           if (proposed.templateJSON.length > 1_000_000 || (proposed.templateAuthoringSourceJSON?.length ?? 0) > 1_000_000) throw new Error("Proposal exceeds the 1 MB design limit.");
           const template = validateTemplateDefinition(JSON.parse(proposed.templateJSON));
           validatedLookSource(template, proposed.templateAuthoringSourceJSON ? JSON.parse(proposed.templateAuthoringSourceJSON) : undefined);
-          changeProposal({ ...proposed, request: requested.current }); setCustomizing(proposed.path); valid = true;
+          setNotice(""); changeProposal({ ...proposed, request: requested.current }); setCustomizing(proposed.path); valid = true;
         } catch (error) {
           message = error instanceof Error ? error.message.slice(0, 6000) : "Invalid template definition.";
           setNotice("The proposed design needs a correction. The assistant is receiving the validation details; your file is unchanged.");

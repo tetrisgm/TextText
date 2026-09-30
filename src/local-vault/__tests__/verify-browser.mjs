@@ -176,11 +176,17 @@ try {
   await page.getByText(/The proposed design needs a correction/).waitFor();
   assert.ok(proposalFeedback.some((feedback) => feedback.proposalId === "invalid-fixture" && feedback.valid === false && feedback.message.length > 0));
   assert.equal(JSON.stringify(files.get(initial.path)), beforeDesign);
+  await page.evaluate(() => {
+    const valid = JSON.parse(localStorage.getItem("texttext:design-preview:/test/Workspace"));
+    window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail: { ...valid, type: "template-proposal", proposalId: "repaired-fixture" } }));
+  });
+  await page.getByText(/The proposed design needs a correction/).waitFor({ state: "hidden" });
   await designPreview.getByRole("button", { name: "Compare original", exact: true }).click();
   await designPreview.getByRole("button", { name: "Show proposed design", exact: true }).click();
   await page.getByRole("textbox", { name: "Message assistant", exact: true }).fill("Refine this design");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await page.waitForFunction(() => JSON.parse(localStorage.getItem("texttext:design-preview:/test/Workspace") || "{}").templateJSON?.includes("Refined design"));
+  assert.equal(await page.getByText(/The proposed design needs a correction/).count(), 0);
   assert.equal(JSON.stringify(files.get(initial.path)), beforeDesign);
   await page.waitForFunction(() => { const button = [...document.querySelectorAll(".vault-design-preview button")].find((el) => el.textContent === "Keep this design"); return button && !button.disabled; });
   await page.screenshot({ path: "/tmp/texttext-template-preview-light.png" });
@@ -308,6 +314,10 @@ try {
   assert.equal(asset.width, 1);
   assert.equal(asset.height, 1);
   assert.deepEqual([...importedPacks[0]["Document.textbundle/assets/preview.png"].slice(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  await page.getByLabel("Folder design", { exact: true }).selectOption("texttext.folder-contact");
+  await page.locator('.vault-folder-collection img[src^="blob:"]').first().waitFor();
+  await page.waitForFunction(() => [...document.querySelectorAll('.vault-folder-collection img')].some((image) => image.naturalWidth > 0));
+  await page.getByRole("button", { name: "Cancel preview", exact: true }).click();
   await page.getByRole("button", { name: visual.path.replace(/\.textpack$/, ""), exact: true }).click();
   await page.locator('main img[src^="blob:"]').first().waitFor();
   assert.equal(JSON.parse(visual.documentJSON).presentation.template.id, "texttext.gallery");

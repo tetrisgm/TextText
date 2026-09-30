@@ -387,7 +387,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 "contentType": $0.contentType ?? "application/octet-stream", "data": $0.data.base64EncodedString(),
                 "remoteURL": $0.remoteURL ?? "assets/\($0.filename)"] }]
     }
-    private static func preview(_ document: LocalVaultDocumentStore.Document) throws -> [String: Any] {
+    static func preview(_ document: LocalVaultDocumentStore.Document) throws -> [String: Any] {
         let contents = document.contents
         let snapshot = contents.documentJSON.flatMap {
             (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any]
@@ -402,21 +402,34 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             let byteBounded = String(decoding: text.utf8.prefix(8_192), as: UTF8.self)
             return String(byteBounded.prefix(count))
         }
+        func rawBounded(_ value: String, to count: Int) -> String {
+            String(String(decoding: value.utf8.prefix(8192), as: UTF8.self).prefix(count))
+        }
         let title = markdown.frontMatter["title"] ?? content?["title"] as? String
             ?? URL(fileURLWithPath: document.path).deletingPathExtension().lastPathComponent
-        var result: [String: Any] = ["title": bounded(title, to: 240),
+        var result: [String: Any] = ["title": rawBounded(title, to: 240),
                                    "excerpt": bounded(markdown.body, to: 400)]
         var fields: [String: Any] = [:]
         for (key, value) in (content?["fields"] as? [String: Any] ?? [:]).sorted(by: { $0.key < $1.key }).prefix(64) where key.utf8.count <= 120 {
-            if let text = value as? String { fields[key] = bounded(text, to: 2048) }
+            if let text = value as? String { fields[key] = rawBounded(text, to: 2048) }
             else if value is NSNumber || value is NSNull { fields[key] = value }
         }
         let originalFields = content?["fields"] as? [String: Any] ?? [:]
-        if title != result["title"] as? String || originalFields.count != fields.count || originalFields.contains(where: { key, value in
-            if let text = value as? String { return fields[key] as? String != text }
-            return fields[key] == nil
-        }) || (content?["tags"] as? [String] ?? []).count > 100 { result["metadataTruncated"] = true }
-        let tags = (content?["tags"] as? [String] ?? []).prefix(100).map { bounded($0, to: 120) }.filter { !$0.isEmpty }
+        var incomplete: [String] = []
+        if title != result["title"] as? String { incomplete.append("title") }
+        if markdown.body != result["excerpt"] as? String { incomplete.append("body") }
+        for (key, value) in originalFields.sorted(by: { $0.key < $1.key }) {
+            let changed: Bool
+            if let text = value as? String { changed = fields[key] as? String != text }
+            else { changed = fields[key] == nil }
+            if changed { incomplete.append("content.fields." + key) }
+            if incomplete.count > 2048 { break }
+        }
+        let originalTags = content?["tags"] as? [String] ?? []
+        let tags = originalTags.prefix(100).map { rawBounded($0, to: 120) }.filter { !$0.isEmpty }
+        if tags != originalTags { incomplete.append("tags") }
+        result["incompleteFields"] = incomplete.count > 2048 ? ["*"] : incomplete
+        if !incomplete.isEmpty { result["metadataTruncated"] = true }
         result["document"] = ["schemaVersion": 1,
             "content": ["title": result["title"]!, "body": result["excerpt"]!, "fields": fields, "tags": tags, "assets": []] as [String: Any],
             "presentation": ["template": ["id": "texttext.note", "version": 1], "theme": [:]] as [String: Any]] as [String: Any]

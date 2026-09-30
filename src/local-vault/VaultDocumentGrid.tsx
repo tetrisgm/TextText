@@ -60,7 +60,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, folderTemplat
             }
             const fields = Object.fromEntries(Object.entries(preview.document?.content.fields || {}).filter(([id]) =>
               template?.collection.sort.some((entry) => entry.field === `content.fields.${id}`) || template?.collection.filters.some((entry) => entry.field === `content.fields.${id}`)));
-            metadata[item.path] = { title: preview.title, excerpt: "", metadataTruncated: preview.metadataTruncated, document: preview.document ? { ...preview.document,
+            metadata[item.path] = { title: preview.title, excerpt: "", metadataTruncated: preview.metadataTruncated, incompleteFields: preview.incompleteFields, document: preview.document ? { ...preview.document,
               content: { ...preview.document.content, body: "", tags: [], assets: [], fields } } : undefined };
           }
         } catch { /* Query validation exposes incomplete details instead of silently excluding files. */ }

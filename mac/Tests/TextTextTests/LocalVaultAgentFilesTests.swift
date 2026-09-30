@@ -3,6 +3,31 @@ import TextTextFileProviderKit
 @testable import TextTextApp
 
 final class LocalVaultAgentFilesTests: XCTestCase {
+    func testPreviewMarksOnlyIncompleteBindingsAndPreservesScalarWhitespace() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try LocalVaultAgentFiles.perform("create_file", arguments: ["title": "Preview", "body": ""], root: root)
+        let store = LocalVaultDocumentStore(root: root)
+        let initial = try store.read(path: "Preview.textpack")
+        var snapshot = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(try XCTUnwrap(initial.contents.documentJSON).utf8)) as? [String: Any])
+        var content = try XCTUnwrap(snapshot["content"] as? [String: Any])
+        content["fields"] = ["annotations": [["quote": "Saved highlight"]], "description": String(repeating: "x", count: 2049), "category": "  Research  notes  "]
+        snapshot["content"] = content
+        let changed = try store.write(path: initial.path, expectedHash: initial.hash, markdown: initial.contents.markdown,
+            documentJSON: String(decoding: try JSONSerialization.data(withJSONObject: snapshot), as: UTF8.self), templateJSON: initial.contents.templateJSON, templateAuthoringSourceJSON: initial.contents.templateAuthoringSourceJSON)
+        let preview = try LocalVaultWindowController.preview(changed)
+        let incomplete = try XCTUnwrap(preview["incompleteFields"] as? [String])
+        XCTAssertTrue(incomplete.contains("content.fields.annotations"))
+        XCTAssertTrue(incomplete.contains("content.fields.description"))
+        XCTAssertFalse(incomplete.contains("title"))
+        XCTAssertFalse(incomplete.contains("content.fields.category"))
+        let projected = try XCTUnwrap(preview["document"] as? [String: Any])
+        let projectedContent = try XCTUnwrap(projected["content"] as? [String: Any])
+        let fields = try XCTUnwrap(projectedContent["fields"] as? [String: Any])
+        XCTAssertEqual(fields["category"] as? String, "  Research  notes  ")
+    }
+
     func testAgentCreatesReadsAndSafelyEditsTheActualPack() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
