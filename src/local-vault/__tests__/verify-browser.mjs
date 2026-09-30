@@ -8,6 +8,7 @@ import { chromium } from "playwright";
 const makeDocument = (body) => ({ schemaVersion: 1, content: { title: "Offline note", body, fields: {}, tags: [], assets: [] }, presentation: { template: { id: "texttext.note", version: 1 }, theme: {} } });
 const files = new Map();
 const history = new Map();
+const importedPacks = [];
 let revision = 1;
 let connected = false, openedWeb = false;
 const initial = { path: "Notes/Offline.textpack", hash: String(revision), markdown: '---\ntextTextId: "d6090b67-e3bb-46a3-9d34-76061bcb1dbb"\ntitle: "Offline note"\n---\n\nFirst line\nSecond line', documentJSON: JSON.stringify(makeDocument("First line\nSecond line")) };
@@ -34,6 +35,16 @@ try {
     else if (request.method === "read" || request.method === "template") {
       result = files.get(request.params.path);
       if (!result) error = { message: "File not found", code: "not_found" };
+    }
+    else if (request.method === "importPack") {
+      const bytes = Buffer.from(request.params.data, "base64");
+      const entries = unzipSync(bytes);
+      const prefix = Object.keys(entries).find((name) => name.endsWith("/document.json")).replace(/document.json$/, "");
+      importedPacks.push(entries);
+      result = { path: `${request.params.folder ? request.params.folder + "/" : ""}${request.params.title}-${++revision}.textpack`, hash: String(revision),
+        markdown: strFromU8(entries[prefix + "text.md"]), documentJSON: strFromU8(entries[prefix + "document.json"]), templateJSON: strFromU8(entries[prefix + "template.json"]),
+        assets: Object.entries(entries).filter(([name]) => name.startsWith(prefix + "assets/")).map(([name, data]) => ({ filename: name.slice((prefix + "assets/").length), contentType: "image/gif", data: Buffer.from(data).toString("base64") })) };
+      files.set(result.path, result);
     }
     else if (request.method === "extractArticle") result = { sourceURL: request.params.sourceURL, markdown: "# Captured reading\n\nThe readable article is saved in this same file.", capturedAt: "2026-09-30T12:00:00Z" };
     else if (request.method === "agentStatus" || request.method === "agentConnect") result = { state: "ready" };
@@ -226,5 +237,19 @@ try {
   assert.deepEqual(await page.evaluate(() => window.__networkAttempts), []);
   assert.deepEqual(network, []);
   assert.deepEqual(failures, []);
+  await page.getByRole("button", { name: "All files", exact: true }).click();
+  await page.getByLabel("Folder for new notes", { exact: true }).fill("Visuals");
+  const gif = Buffer.from("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==", "base64");
+  await page.getByLabel("Choose images", { exact: true }).setInputFiles({ name: "Original.gif", mimeType: "image/gif", buffer: gif });
+  await page.getByRole("status").filter({ hasText: "Imported 1 image." }).waitFor();
+  assert.equal(importedPacks.length, 1);
+  assert.deepEqual(Buffer.from(importedPacks[0]["Document.textbundle/assets/original.gif"]), gif);
+  const visual = [...files.values()].find((file) => file.path.startsWith("Visuals/Original-"));
+  assert.ok(visual);
+  await page.getByRole("button", { name: visual.path.replace(/\.textpack$/, ""), exact: true }).click();
+  await page.locator('main img[src^="blob:"]').first().waitFor();
+  assert.equal(JSON.parse(visual.documentJSON).presentation.template.id, "texttext.gallery");
+  assert.deepEqual(failures, []);
+  console.log("Image picker stored exact original bytes and reopened gallery.");
   console.log("Offline vault UI passed: file save, raw agent refresh, conflict copy, zero HTTP/fetch calls.");
 } finally { await browser.close(); }

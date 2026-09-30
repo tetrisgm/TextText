@@ -262,6 +262,28 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     return ["items": page.items.map { ["path": $0.id, "title": $0.title, "snippet": $0.snippet] },
                         "truncated": page.truncated, "skippedCount": page.skippedCount]
                 case "read": return try Self.payload(store.read(path: Self.string(params, "path")))
+                case "importPack":
+                    let maximumSize = 32 * 1024 * 1024
+                    guard let encoded = params["data"] as? String,
+                          encoded.utf8.count <= ((maximumSize + 2) / 3) * 4,
+                          let data = Data(base64Encoded: encoded), !data.isEmpty,
+                          data.count <= maximumSize else {
+                        throw VaultBridgeError("Choose a valid TextPack no larger than 32 MiB.")
+                    }
+                    let stem = DocumentCreation.filename(for: try Self.string(params, "title"))
+                    let folder = try Self.string(params, "folder")
+                    let prefix = folder.isEmpty ? "" : folder + "/"
+                    var path = prefix + stem + ".textpack", suffix = 2
+                    while FileManager.default.fileExists(atPath: try store.url(for: path).path) {
+                        path = prefix + stem + " \(suffix).textpack"; suffix += 1
+                    }
+                    let temporary = FileManager.default.temporaryDirectory
+                        .appendingPathComponent("texttext-import-\(UUID().uuidString)", isDirectory: true)
+                    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: false)
+                    defer { try? FileManager.default.removeItem(at: temporary) }
+                    let source = temporary.appendingPathComponent(stem + ".textpack")
+                    try data.write(to: source, options: .withoutOverwriting)
+                    return try Self.payload(store.importFile(from: source, newPath: path))
                 case "rename":
                     return try Self.payload(store.rename(path: Self.string(params, "path"),
                         expectedHash: Self.string(params, "hash"), newPath: Self.string(params, "newPath")))

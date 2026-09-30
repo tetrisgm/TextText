@@ -53,6 +53,22 @@ function fixture() {
 }
 
 describe("web file vault transport", () => {
+  it("imports complete packs with fresh identities and preserves existing files and opaque assets", async () => {
+    const test = fixture();
+    const data = Buffer.from(test.initial).toString("base64");
+    const imported = await test.transport.request("importPack", { data, title: "Original", folder: "Notes" }) as VaultFile;
+    expect(imported.path).toBe("Notes/Original 2.textpack");
+    expect(imported.markdown).not.toContain(test.id);
+    expect(test.files.get(test.id)!.bytes).toEqual(test.initial);
+    const entry = [...test.files.values()].find((entry) => entry.path === imported.path)!;
+    const unpacked = unzipSync(entry.bytes);
+    expect(unpacked["Document.textbundle/assets/picture.bin"]).toEqual(new Uint8Array([0, 1, 255, 4]));
+    expect(strFromU8(unpacked["Document.textbundle/agent-metadata.json"])).toBe('{"keep":true}');
+    await expect(test.transport.request("importPack", { data, title: "Unsafe", folder: "../escape" })).rejects.toThrow("Invalid folder");
+    await expect(test.transport.request("importPack", { data: "junk!!!!", title: "Invalid" })).rejects.toThrow("valid TextPack");
+    expect(test.files.size).toBe(2);
+    test.transport.destroy();
+  });
   it("captures links and notes as complete self-contained TextPacks", async () => {
     const test = fixture();
     const link = await test.transport.request("create", { title: "Example", body: "https://example.com/read", kind: "bookmark", sourceURL: "https://example.com/read", folder: "Reading" }) as VaultFile;

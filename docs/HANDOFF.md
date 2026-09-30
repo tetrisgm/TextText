@@ -51,6 +51,14 @@ remains valid. Next: image/GIF capture and viewer navigation, then package both
 slices and verify installed native highlights. Automatic capture still starts on
 opening a saved link; an unopened-link queue remains pending.
 
+Image import now creates gallery packs with original image/GIF bytes through
+native and web transports. Picker-to-pack-to-reopened-gallery browser verification,
+eight unit tests, native store tests and TypeScript passed. Not installed yet.
+[Image checkpoint](file-vault-images-2026-09-30.md) records scope and limitations.
+Next: GIF still posters, drop/paste and real transport verification, then install
+and verify both image capture and reader highlights. Mixed-folder thumbnails
+and viewer navigation/zoom remain part of this slice.
+
 ## Blockers and next work
 
 - Owner approved the local server switch. The replacement build now runs on

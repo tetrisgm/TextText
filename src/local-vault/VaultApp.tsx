@@ -22,6 +22,7 @@ import { articleSource } from "@/lib/vault/article-capture";
 import { ArticleCapture } from "./ArticleCapture";
 import { CaptureDialog } from "./CaptureDialog";
 import { VaultSearch } from "./VaultSearch";
+import { encodeImagePack, encodeBase64, MAX_IMAGE_BYTES, IMAGE_ACCEPT } from "./image-import";
 import "./style.css";
 
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -269,6 +270,9 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const [searchOpen, setSearchOpen] = useState(false);
   const [fileAction, setFileAction] = useState<"rename" | "delete" | null>(null);
   const [newPath, setNewPath] = useState("");
+  const imageInput = useRef<HTMLInputElement>(null);
+  const importing = useRef(false);
+  const [importStatus, setImportStatus] = useState("");
   const currentFileRef = useRef<(() => VaultFile) | null>(null);
   const tree = useMemo(() => folderTree(listing?.items ?? [], listing?.folders), [listing]);
   const folders = useMemo(() => folderPaths(tree), [tree]);
@@ -286,6 +290,30 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     try { if (await flushRef.current()) { await action(); setFileAction(null); } }
     catch (error) { setError(error instanceof Error ? error.message : "The file operation failed."); }
     finally { setBusy(false); }
+  };
+  const importImages = async (files: File[]) => {
+    if (!files.length || importing.current || busy || !listing?.root) return;
+    if (files.length > 20) { setError("Choose up to 20 images at a time."); return; }
+    importing.current = true;
+    try {
+      await operate(async () => {
+        let completed = 0;
+        try {
+          for (const file of files) {
+            setImportStatus(`Importing image ${completed + 1} of ${files.length}…`);
+            if (file.size > MAX_IMAGE_BYTES) throw new Error(`${file.name}: choose an image no larger than 20 MiB.`);
+            const pack = encodeImagePack(new Uint8Array(await file.arrayBuffer()), file.name);
+            await vaultRequest<VaultFile>("importPack", { title: pack.title, data: encodeBase64(pack.bytes), folder: destinationFolder.trim() });
+            completed++;
+          }
+          closeRemoved();
+          setImportStatus(`Imported ${completed} ${completed === 1 ? "image" : "images"}.`);
+        } catch (error) {
+          setImportStatus(completed ? `Imported ${completed} of ${files.length} images. Earlier imports are saved.` : "");
+          throw error;
+        } finally { refresh(); }
+      });
+    } finally { importing.current = false; }
   };
   useEffect(() => {
     const openFile = (event: Event) => { const path = (event as CustomEvent<{ path: string }>).detail?.path; if (path) void operate(async () => { setSelected(await vaultRequest<VaultFile>("read", { path })); setDestinationFolder(folderForItem(path)); }); };
@@ -305,7 +333,15 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     window.addEventListener("texttext:vault-search", search);
     return () => { window.removeEventListener("keydown", key); window.removeEventListener("texttext:vault-search", search); };
   }, [allowFolderPicker]);
-  return <div className={`vault-app${assistantOpen ? " has-assistant" : ""}`}>
+  return <div className={`vault-app${assistantOpen ? " has-assistant" : ""}`}
+    onDragOver={(event) => { if (!selected && event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
+    onDrop={(event) => { if (!selected && event.dataTransfer.files.length) { event.preventDefault(); void importImages(Array.from(event.dataTransfer.files)); } }}
+    onPaste={(event) => {
+      const target = event.target as HTMLElement;
+      if (selected || target.closest("input,textarea,[contenteditable=true]")) return;
+      const files = Array.from(event.clipboardData.files);
+      if (files.length) { event.preventDefault(); void importImages(files); }
+    }}>
     <DocumentEngineStyles />
     <aside className="vault-sidebar">
       <h1>TextText</h1>
@@ -327,6 +363,10 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         })}>New note</button>
         <button disabled={busy} onClick={() => void operate(async () => setTemplatePicker(true))}>New from template</button>
         <button disabled={busy} onClick={() => void operate(async () => setCaptureOpen(true))}>Save a link or note</button>
+        <input ref={imageInput} type="file" accept={IMAGE_ACCEPT} multiple hidden aria-label="Choose images" onChange={(event) => {
+          const files = Array.from(event.target.files ?? []); event.target.value = ""; void importImages(files);
+        }} />
+        <button disabled={busy} onClick={() => imageInput.current?.click()}>Import images…</button>
         {allowFolderPicker && <>
           <button disabled={busy} onClick={() => void operate(async () => {
             const result = await vaultRequest<{ file?: VaultFile }>("import", { folder: destinationFolder.trim() });
@@ -343,6 +383,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       </>}
     </aside>
     <main>
+      {importStatus && <p role="status">{importStatus}</p>}
       {selected && <div className="vault-file-actions">
         <button disabled={busy} onClick={() => { setNewPath(selected.path); setFileAction("rename"); }}>Rename or move</button>
         <button disabled={busy} onClick={() => setFileAction("delete")}>Delete</button>

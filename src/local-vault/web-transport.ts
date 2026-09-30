@@ -133,7 +133,7 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
       if (packIdentity(changes.markdown) !== original.itemId) throw new Error("A write cannot change this file's identity.");
       return commit(original.itemId, path, encodePack(original, changes), hash);
     }
-    if (method === "create") {
+    if (method === "create" || method === "importPack") {
       const id = crypto.randomUUID(), title = String(params.title ?? "Untitled");
       const folder = typeof params.folder === "string" ? params.folder : "";
       if (folder && folder.split("/").some((part) => !part || part.startsWith(".") || /[\\:\x00-\x1f]/.test(part))) throw new Error("Invalid folder path.");
@@ -142,7 +142,16 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
       let path = `${folder ? folder + "/" : ""}${stem}.textpack`;
       for (let suffix = 2; manifest!.items.some((item) => item.relativePath.toLowerCase() === path.toLowerCase()); suffix++) path = `${folder ? folder + "/" : ""}${stem} ${suffix}.textpack`;
       let pack: Pick<OpenPack, "entries" | "prefix">, file: VaultFile;
-      if (typeof params.sourcePath === "string") {
+      if (method === "importPack") {
+        const data = params.data;
+        const limit = 32 * 1024 * 1024;
+        if (typeof data !== "string" || !data.length || data.length > Math.ceil(limit / 3) * 4 || (data.length % 4 !== 0 || /[^A-Za-z0-9+/=]/.test(data) || data.indexOf("=") >= 0 && !/^[^=]*={1,2}$/.test(data))) throw new Error("Choose a valid TextPack no larger than 32 MiB.");
+        const decoded = atob(data);
+        if (decoded.length > limit) throw new Error("Choose a TextPack no larger than 32 MiB.");
+        const source = openPack(Uint8Array.from(decoded, (character) => character.charCodeAt(0)), path, "");
+        pack = source;
+        file = { ...source.file, path, hash: "", markdown: replacePackIdentity(source.file.markdown, id) };
+      } else if (typeof params.sourcePath === "string") {
         const source = packs.get(String(params.sourceHash));
         if (!source || source.file.path !== params.sourcePath) throw new Error("The original conflict snapshot is unavailable. Keep this editor open and save its text before closing.");
         pack = source; file = { ...source.file, path, hash: "", markdown: replacePackIdentity(source.file.markdown, id) };
