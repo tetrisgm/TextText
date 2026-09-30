@@ -43,7 +43,7 @@ try {
       importedPacks.push(entries);
       result = { path: `${request.params.folder ? request.params.folder + "/" : ""}${request.params.title}-${++revision}.textpack`, hash: String(revision),
         markdown: strFromU8(entries[prefix + "text.md"]), documentJSON: strFromU8(entries[prefix + "document.json"]), templateJSON: strFromU8(entries[prefix + "template.json"]),
-        assets: Object.entries(entries).filter(([name]) => name.startsWith(prefix + "assets/")).map(([name, data]) => ({ filename: name.slice((prefix + "assets/").length), contentType: "image/gif", data: Buffer.from(data).toString("base64") })) };
+        assets: Object.entries(entries).filter(([name]) => name.startsWith(prefix + "assets/")).map(([name, data]) => ({ filename: name.slice((prefix + "assets/").length), contentType: name.endsWith(".png") ? "image/png" : "image/gif", data: Buffer.from(data).toString("base64") })) };
       files.set(result.path, result);
     }
     else if (request.method === "extractArticle") result = { sourceURL: request.params.sourceURL, markdown: "# Captured reading\n\nThe readable article is saved in this same file.", capturedAt: "2026-09-30T12:00:00Z" };
@@ -246,10 +246,30 @@ try {
   assert.deepEqual(Buffer.from(importedPacks[0]["Document.textbundle/assets/original.gif"]), gif);
   const visual = [...files.values()].find((file) => file.path.startsWith("Visuals/Original-"));
   assert.ok(visual);
+  const asset = JSON.parse(visual.documentJSON).content.assets[0];
+  assert.equal(asset.poster, "assets/preview.png");
+  assert.equal(asset.width, 1);
+  assert.equal(asset.height, 1);
+  assert.deepEqual([...importedPacks[0]["Document.textbundle/assets/preview.png"].slice(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
   await page.getByRole("button", { name: visual.path.replace(/\.textpack$/, ""), exact: true }).click();
   await page.locator('main img[src^="blob:"]').first().waitFor();
   assert.equal(JSON.parse(visual.documentJSON).presentation.template.id, "texttext.gallery");
   assert.deepEqual(failures, []);
-  console.log("Image picker stored exact original bytes and reopened gallery.");
+  await page.getByRole("button", { name: "All files", exact: true }).click();
+  for (const gesture of ["drop", "paste"]) {
+    await page.evaluate(({ gesture, data }) => {
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([Uint8Array.from(atob(data), (c) => c.charCodeAt(0))], `${gesture}.gif`, { type: "image/gif" }));
+      const event = gesture === "drop" ? new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer }) : new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: transfer });
+      document.querySelector(".vault-app").dispatchEvent(event);
+    }, { gesture, data: gif.toString("base64") });
+    await page.getByRole("button", { name: new RegExp(`${gesture}-`) }).first().waitFor();
+    await page.getByRole("button", { name: "Import images…", exact: true }).waitFor({ state: "visible" });
+    await page.waitForFunction(() => ![...document.querySelectorAll("button")].find((b) => b.textContent === "Import images…")?.disabled);
+  }
+  assert.equal(importedPacks.length, 3);
+  assert.deepEqual(failures, []);
+  assert.deepEqual(await page.evaluate(() => window.__networkAttempts), []);
+  console.log("Image picker, folder drop/paste and embedded GIF still preview passed.");
   console.log("Offline vault UI passed: file save, raw agent refresh, conflict copy, zero HTTP/fetch calls.");
 } finally { await browser.close(); }

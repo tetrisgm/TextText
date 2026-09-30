@@ -7,7 +7,7 @@ import TextTextWorkspaceCore
 
 /// The existing document editor, bundled locally, talking only to the folder
 /// the person selected. Hosted pages cannot invoke this filesystem bridge.
-final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandler, WKNavigationDelegate, NSWindowDelegate {
+final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate {
     static var entryURL: URL? {
         guard let url = Bundle.main.resourceURL?.appendingPathComponent("LocalVault/index.html"),
               FileManager.default.fileExists(atPath: url.path) else { return nil }
@@ -42,6 +42,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         super.init(window: window)
         window.delegate = self
         webView.navigationDelegate = self
+        webView.uiDelegate = self
         webView.configuration.userContentController.add(VaultMessageProxy(self), name: "localVault")
         do {
             if let initialRoot { try selectRoot(initialRoot) }
@@ -52,6 +53,20 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         webView.loadFileURL(entry, allowingReadAccessTo: entry.deletingLastPathComponent())
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unavailable") }
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void) {
+        guard frame.isMainFrame, frame.request.url?.standardizedFileURL == entry.standardizedFileURL,
+              let window else { completionHandler(nil); return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        panel.allowedContentTypes = [.png, .jpeg, .gif, .webP]
+        panel.beginSheetModal(for: window) { response in
+            completionHandler(response == .OK ? panel.urls : nil)
+        }
+    }
     deinit { watcher?.stop(); if scoped { root?.stopAccessingSecurityScopedResource() } }
 
     func windowWillClose(_ notification: Notification) { agent?.cancel(); agent = nil }

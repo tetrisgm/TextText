@@ -9,7 +9,7 @@ prerequisite. See [architecture](design/texttext-file-vault-migration.md) and
 
 Implemented on `main` in `76f373e1`, `f28500cd`, and `3b4549d6`: native folder
 store/CLI, complete-pack filesystem server and durable sync, bundled shared
-editor, file templates, and native assistant file tools. Local WIP **0.202 (1121)**
+editor, file templates, and native assistant file tools. Local WIP **0.202 (1124)**
 is installed at `/Applications/TextText.app`. Its selected workspace is
 `/Users/shokunin/Documents/TextText`. Installed-app creation/save and a real
 Codex append were verified against pack bytes and the refreshed editor. The
@@ -44,20 +44,24 @@ saves. Installed native capture of a real public article and refresh preserving
 notes passed. [Article receipt](file-vault-articles-2026-09-30.md) records scope,
 tests, runtime and limitations. Commits `f3340047`, `88a7df47`.
 Reader mode, rendered source comparison, and persistent quoted highlights are
-implemented and browser-verified in `a3cb0637`, `c0a80b59`, not yet installed.
+implemented and browser-verified in `a3cb0637`, `c0a80b59`, now installed in 1124;
+native highlight selection/persistence remains to verify.
 [Reader receipt](file-vault-reader-2026-09-30.md) records checks and corrects the
 older capture fixture's premature expanded-browser claim. Native capture proof
 remains valid. Next: image/GIF capture and viewer navigation, then package both
 slices and verify installed native highlights. Automatic capture still starts on
 opening a saved link; an unopened-link queue remains pending.
 
-Image import now creates gallery packs with original image/GIF bytes through
-native and web transports. Picker-to-pack-to-reopened-gallery browser verification,
-eight unit tests, native store tests and TypeScript passed. Not installed yet.
-[Image checkpoint](file-vault-images-2026-09-30.md) records scope and limitations.
-Next: GIF still posters, drop/paste and real transport verification, then install
-and verify both image capture and reader highlights. Mixed-folder thumbnails
-and viewer navigation/zoom remain part of this slice.
+Image import creates gallery packs with original image/GIF bytes and bounded
+PNG still previews. Build 1124 installed native picker -> file -> reopened
+gallery -> original viewer -> zoom passed; the generated fixture was deleted
+recoverably. Native checks caught and fixed a missing WKUIDelegate picker and
+invalid remote-asset mapping. Browser picker/drop/paste tests, nine unit tests
+and TypeScript passed. [Image checkpoint](file-vault-images-2026-09-30.md).
+Next: real web transport roundtrip, native reader highlight verification,
+meaningful mixed-folder thumbnails and multi-image navigation. Full product
+acceptance, collaboration/customization/publication and memory measurement
+remain open.
 
 ## Blockers and next work
 
@@ -74,7 +78,7 @@ and viewer navigation/zoom remain part of this slice.
 - Shared access/full live collaboration, browser assistant, full capture/import,
   publication, and retirement of legacy content callers remain integration work.
   Do not claim the entire earlier product plan is complete.
-- Another worker updated `package.json`, `package-lock.json` and `src/lib/share-email.ts` during the reader slice; preserve them and coordinate before shared dependency changes.
+- The concurrent dependency worker committed upgrades in `a5bc87cb`; preserve that commit. No dependency changes were made for image capture.
 - Preserve unrelated dirty `attachments.ts`, `tabs.test.ts`, and
   `scripts/.probe-editor.ts`. All agents are finished. Use sequential heavy
   checks and two Swift jobs. No persistent jobs were installed.

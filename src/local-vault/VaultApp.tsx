@@ -22,7 +22,7 @@ import { articleSource } from "@/lib/vault/article-capture";
 import { ArticleCapture } from "./ArticleCapture";
 import { CaptureDialog } from "./CaptureDialog";
 import { VaultSearch } from "./VaultSearch";
-import { encodeImagePack, encodeBase64, MAX_IMAGE_BYTES, IMAGE_ACCEPT } from "./image-import";
+import { prepareImagePack, encodeBase64, MAX_IMAGE_BYTES, IMAGE_ACCEPT } from "./image-import";
 import "./style.css";
 
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -302,7 +302,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
           for (const file of files) {
             setImportStatus(`Importing image ${completed + 1} of ${files.length}…`);
             if (file.size > MAX_IMAGE_BYTES) throw new Error(`${file.name}: choose an image no larger than 20 MiB.`);
-            const pack = encodeImagePack(new Uint8Array(await file.arrayBuffer()), file.name);
+            const pack = await prepareImagePack(new Uint8Array(await file.arrayBuffer()), file.name);
             await vaultRequest<VaultFile>("importPack", { title: pack.title, data: encodeBase64(pack.bytes), folder: destinationFolder.trim() });
             completed++;
           }
