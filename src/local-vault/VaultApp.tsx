@@ -30,7 +30,7 @@ function mapStrings<T>(value: T, substitutions: Map<string, string>): T {
   return value;
 }
 
-function VaultEditor({ initial, root, onChanged, registerFlush }: { initial: VaultFile; root: string; onChanged: () => void; registerFlush: (flush: () => Promise<boolean>, currentFile: () => VaultFile) => void }) {
+function VaultEditor({ initial, root, onChanged, onRemoved, registerFlush }: { onRemoved: () => void; initial: VaultFile; root: string; onChanged: () => void; registerFlush: (flush: () => Promise<boolean>, currentFile: () => VaultFile) => void }) {
   const recoveryKey = `texttext:vault-draft:${root}:${initial.path}`;
   const initialDocument = useMemo(() => readDocument(initial), [initial]);
   const initialTemplate = useMemo(() => readTemplate(initial, initialDocument), [initial, initialDocument]);
@@ -42,6 +42,7 @@ function VaultEditor({ initial, root, onChanged, registerFlush }: { initial: Vau
   const running = useRef<Promise<boolean> | null>(null);
   const refreshing = useRef(false);
   const conflict = useRef(false);
+  const missing = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [external, setExternal] = useState(initialDocument);
   const [notice, setNotice] = useState("");
@@ -165,7 +166,24 @@ function VaultEditor({ initial, root, onChanged, registerFlush }: { initial: Vau
           if (acceptRemote(latest)) await flush();
           return;
         }
-      })().catch((error: Error) => setNotice(error.message)).finally(() => { refreshing.current = false; });
+      })().catch(async (error: Error) => {
+        // A missing path may be a remote delete or move. Confirm against the
+        // listing so an offline/read error never closes a recoverable draft.
+        try {
+          const listing = await vaultRequest<VaultListing>("list");
+          if (!listing.items.some((item) => item.path === file.current.path)) {
+            if (running.current) await running.current;
+            if (equal(current.current, baseline.current) && !pendingLook.current) {
+              onRemoved(); return;
+            }
+            missing.current = true; conflict.current = true; setHasConflict(true);
+            remember();
+            setNotice("This file was moved or deleted elsewhere. Your unsaved edits are kept here. Save them as a separate copy.");
+            return;
+          }
+        } catch { /* Keep the editor when the listing is unavailable. */ }
+        setNotice(error.message);
+      }).finally(() => { refreshing.current = false; });
     };
     const blur = () => { void flush(); };
     window.addEventListener("texttext:vault-changed", changed);
@@ -179,6 +197,9 @@ function VaultEditor({ initial, root, onChanged, registerFlush }: { initial: Vau
     try {
       const fresh = await vaultRequest<VaultFile>("create", { title: `${current.current.content.title || "Untitled"} (conflict copy)`, folder: file.current.path.split("/").slice(0, -1).join("/"), sourcePath: file.current.path, sourceHash: file.current.hash });
       await vaultRequest<VaultFile>("write", { ...writePayload({ ...file.current, path: fresh.path, hash: fresh.hash, markdown: fresh.markdown }, current.current, pendingLook.current) });
+      if (missing.current) {
+        localStorage.removeItem(recoveryKey); onChanged(); onRemoved(); return;
+      }
       const latest = await vaultRequest<VaultFile>("read", { path: file.current.path });
       file.current = latest; baseline.current = readDocument(latest); current.current = baseline.current;
       pendingLook.current = null;
@@ -240,6 +261,10 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const registerFlush = useCallback((flush: () => Promise<boolean>, currentFile: () => VaultFile) => { flushRef.current = flush; currentFileRef.current = currentFile; }, []);
   const refresh = useCallback(() => { void vaultRequest<VaultListing>("list").then(setListing).catch((error: Error) => setError(error.message)); }, []);
   useEffect(() => { refresh(); window.addEventListener("texttext:vault-changed", refresh); return () => window.removeEventListener("texttext:vault-changed", refresh); }, [refresh]);
+  const closeRemoved = useCallback(() => {
+    setSelected(null); setFileAction(null); currentFileRef.current = null;
+    flushRef.current = async () => true;
+  }, []);
   const operate = async (action: () => Promise<void>) => {
     if (busy) return;
     setBusy(true); setError("");
@@ -315,7 +340,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       })} />}
       {error && <div className="vault-notice" role="alert">{error}</div>}
       {selected && listing ? <DocumentBoundary key={`${listing.root}:${selected.path}`}>
-        <div inert={busy}><VaultEditor initial={selected} root={listing.root} registerFlush={registerFlush} onChanged={refresh} /></div>
+        <div inert={busy}><VaultEditor initial={selected} root={listing.root} registerFlush={registerFlush} onChanged={refresh} onRemoved={closeRemoved} /></div>
       </DocumentBoundary> : <div className="vault-empty">
         <h2>{listing?.root ? "Your workspace" : "Open a workspace folder"}</h2>
         <p>{listing?.root ? "Choose a TextPack or create a note." : "Choose a folder on your Mac. Your documents and templates live there as TextPack files."}</p>

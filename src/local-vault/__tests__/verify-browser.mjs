@@ -7,6 +7,7 @@ import { chromium } from "playwright";
 
 const makeDocument = (body) => ({ schemaVersion: 1, content: { title: "Offline note", body, fields: {}, tags: [], assets: [] }, presentation: { template: { id: "texttext.note", version: 1 }, theme: {} } });
 const files = new Map();
+const history = new Map();
 let revision = 1;
 let connected = false, openedWeb = false;
 const initial = { path: "Notes/Offline.textpack", hash: String(revision), markdown: '---\ntextTextId: "d6090b67-e3bb-46a3-9d34-76061bcb1dbb"\ntitle: "Offline note"\n---\n\nFirst line\nSecond line', documentJSON: JSON.stringify(makeDocument("First line\nSecond line")) };
@@ -29,7 +30,10 @@ try {
       if (request.method === "connect") connected = true;
       result = { connected, available: true, ...(connected ? { webURL: "https://example.test/vault/workspace" } : {}) };
     } else if (request.method === "openWeb") { openedWeb = true; result = {}; }
-    else if (request.method === "read" || request.method === "template") result = files.get(request.params.path);
+    else if (request.method === "read" || request.method === "template") {
+      result = files.get(request.params.path);
+      if (!result) error = { message: "File not found", code: "not_found" };
+    }
     else if (request.method === "agentStatus" || request.method === "agentConnect") result = { state: "ready" };
     else if (request.method === "agentSend") {
       result = {};
@@ -40,11 +44,13 @@ try {
     }
     else if (request.method === "write") {
       const current = files.get(request.params.path);
-      if (current.hash !== request.params.hash) error = { code: "conflict", message: "File changed", current };
+      if (!current) error = { code: "not_found", message: "File not found" };
+      else if (current.hash !== request.params.hash) error = { code: "conflict", message: "File changed", current };
       else { result = { ...current, ...request.params, hash: String(++revision) }; files.set(result.path, result); }
     } else if (request.method === "rename" || request.method === "delete") {
       const current = files.get(request.params.path);
-      if (current.hash !== request.params.hash) error = { code: "conflict", message: "File changed", current };
+      if (!current) error = { code: "not_found", message: "File not found" };
+      else if (current.hash !== request.params.hash) error = { code: "conflict", message: "File changed", current };
       else {
         files.delete(current.path);
         if (request.method === "rename") { result = { ...current, path: request.params.newPath }; files.set(result.path, result); }
@@ -52,7 +58,7 @@ try {
       }
     } else if (request.method === "create") {
       const name = `${request.params.folder || "Notes"}/Copy-${++revision}.textpack`;
-      result = { ...(request.params.sourcePath ? files.get(request.params.sourcePath) : initial), path: name, hash: String(revision) };
+      result = { ...(request.params.sourcePath ? (files.get(request.params.sourcePath) ?? history.get(request.params.sourceHash)) : initial), path: name, hash: String(revision) };
       result.markdown = result.markdown.replace(/textTextId: [^\n]+/, `textTextId: "copy-${revision}"`);
       files.set(name, result);
     } else error = { message: `Unexpected operation ${request.method}` };
@@ -130,6 +136,26 @@ try {
   await page.getByRole("button", { name: "Delete file", exact: true }).click();
   await page.getByRole("heading", { name: "Your workspace", exact: true }).waitFor();
   assert.ok(!files.has("Projects/Renamed.textpack"));
+  // A clean open file deleted by another replica must close, not offer Retry save.
+  await page.getByRole("button", { name: "New note", exact: true }).click();
+  const removed = [...files.keys()].at(-1);
+  await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor();
+  files.delete(removed);
+  await page.evaluate(() => window.dispatchEvent(new Event("texttext:vault-changed")));
+  await page.getByRole("heading", { name: "Your workspace", exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Retry save", exact: true }).count(), 0);
+  // A deleted file with a pending draft must retain its edits and offer a copy.
+  await page.getByRole("button", { name: "New note", exact: true }).click();
+  const dirtyPath = [...files.keys()].at(-1);
+  const dirtyBase = files.get(dirtyPath);
+  history.set(dirtyBase.hash, dirtyBase);
+  await body.fill("Unsaved deletion recovery");
+  files.delete(dirtyPath);
+  await page.evaluate(() => window.dispatchEvent(new Event("texttext:vault-changed")));
+  await page.getByRole("button", { name: "Save my edits as a copy" }).click();
+  await page.getByRole("heading", { name: "Your workspace", exact: true }).waitFor();
+  assert.ok([...files.values()].some((file) => file.markdown.includes("Unsaved deletion recovery")));
+  assert.ok(!files.has(dirtyPath));
   assert.deepEqual(await page.evaluate(() => window.__networkAttempts), []);
   assert.deepEqual(network, []);
   assert.deepEqual(failures, []);
