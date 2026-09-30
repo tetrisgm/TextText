@@ -30,14 +30,42 @@ single application content boundary.
 - TypeScript and scoped ESLint checks: `/tmp/texttext-file-collaboration-tsc.log`
   and `/tmp/texttext-file-collaboration-eslint.log`.
 
+## Authenticated relay checkpoint
+
+The named-workspace collaboration endpoint now supports an initial baseline,
+bounded change waits and audited update batches. It resolves existing workspace
+grants, allowing viewers/commenters to read and owners/editors to write. Token
+access requires workspace sync scope; invalid tokens never fall back to cookies.
+Cookie mutations require the same origin. Existing owner-only sync/recovery
+routes retain their guards. Item/folder grants do not imply workspace access.
+
+Permissions are checked again after each wait and inside the workspace lock
+before committing an upload. Held-lock tests reject revocation and cancellation
+while a writer is queued.
+Fresh database reads bypass request-scoped caches for grants and ownership.
+Unchanged responses omit the document state. Waiting uses a request-scoped
+filesystem watcher and bounded timer, cleaned up on completion or cancellation;
+it installs no persistent worker. Store access remains through store.ts.
+
+- 38 checks across original/new authorization, route and persistence suites:
+  `/tmp/texttext-vault-collaboration-api-tests.log`.
+- Three local Postgres tests passed for named workspace lookup, role downgrade,
+  revocation, scope isolation, ownership changes and deleted workspaces:
+  `/tmp/texttext-vault-collaboration-permissions-db.log`. Temporary fixture rows
+  were removed; existing account/workspace rows were untouched.
+- TypeScript and scoped ESLint: `/tmp/texttext-vault-collaboration-api-tsc.log`
+  and `/tmp/texttext-vault-collaboration-api-eslint.log` (two pre-existing store
+  unused-symbol warnings).
+
 ## Remaining integration and limits
 
-This is backend groundwork, not user-visible multiplayer. No endpoint or editor
-has been switched on, no installed build changed, and no live two-person
-acceptance is claimed. Build 1134 and the recovery web server remain in use.
+This is backend groundwork, not user-visible multiplayer. The new endpoint is
+implemented but not yet built into the running server or connected to an editor.
+No installed build changed and no live two-person acceptance is claimed. Build
+1134 and the recovery web server remain in use.
 
-Next: named-workspace permissions and scoped grants, authenticated relay routes,
-provider transport/outbox namespace injection, native credential-safe bridge,
+Next: scoped item/folder grants and sharing UI, provider transport/outbox
+namespace injection, native credential-safe bridge,
 authoritative editor baseline and disabling competing snapshot autosaves,
 presence/comments, independent undo and reconnect/revocation acceptance.
 

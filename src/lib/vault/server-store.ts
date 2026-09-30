@@ -564,6 +564,8 @@ export async function readVaultCollaboration(input: VaultLocation & { itemId: st
 export async function pushVaultCollaboration(input: VaultLocation & {
   itemId: string; operationId: string; epoch: number; updates: string[];
   audit: NonNullable<VaultWrite["audit"]>;
+  beforeCommit?: () => Promise<void>;
+  signal?: AbortSignal;
 }): Promise<VaultWriteResult> {
   segment(input.itemId); segment(input.operationId);
   if (!input.audit || !input.onReceipt) throw new Error("Vault collaboration requires its audit sink");
@@ -575,10 +577,13 @@ export async function pushVaultCollaboration(input: VaultLocation & {
   const layout = await setup(input);
   return locked(layout, async () => {
     await recover(layout);
+    input.signal?.throwIfAborted();
     const saved = await maybeRead(path.join(layout.receipts, `${input.operationId}.json`));
     if (saved) {
       const receipt = JSON.parse(saved.toString()) as Receipt<VaultWriteResult>;
       if (receipt.requestHash !== requestHash) throw new Error("Operation id was reused");
+      await input.beforeCommit?.();
+      input.signal?.throwIfAborted();
       await deliverReceipt(layout, receipt);
       return receipt.result;
     }
@@ -588,6 +593,8 @@ export async function pushVaultCollaboration(input: VaultLocation & {
     if (baseline.epoch !== input.epoch) throw new VaultCollaborationEpochError(baseline.epoch);
     const next = applyVaultCollaboration(baseline, item.bytes, input.updates);
     validatePack(next.bytes, input.itemId);
+    await input.beforeCommit?.();
+    input.signal?.throwIfAborted();
     const pendingDir = await directory(layout.pending, input.operationId);
     await atomicWrite(path.join(pendingDir, "payload.textpack"), next.bytes);
     const intent: Intent = { itemId: input.itemId, operationId: input.operationId,
@@ -947,6 +954,34 @@ export async function waitVaultTextpacks(input: VaultLocation & {
     if (input.signal?.aborted || initial.revision !== input.revision) return initial;
     await changed;
     return input.signal?.aborted ? initial : await listVaultTextpacks(input);
+  } finally {
+    clearTimeout(timer);
+    watcher.close();
+    input.signal?.removeEventListener("abort", wake);
+  }
+}
+
+/** A bounded request-scoped wait. Watch before reading so checkpoint publication
+ * cannot fall between the initial read and subscription. No permanent poller. */
+export async function waitVaultCollaboration(input: VaultLocation & {
+  itemId: string; epoch: number; seq: number; waitMs: number; signal?: AbortSignal;
+}) {
+  segment(input.itemId);
+  const layout = await setup(input);
+  let wake!: () => void;
+  const changed = new Promise<void>(resolve => { wake = resolve; });
+  const watcher = watch(layout.workspace, { recursive: true }, (_event, filename) => {
+    const name = filename?.toString().replace(/\\/g, "/");
+    if (!name || !name.startsWith(".texttext/") || name === `.texttext/collaboration/${input.itemId}.json` || name === `.texttext/items/${input.itemId}.json`) wake();
+  });
+  watcher.once("error", wake);
+  const timer = setTimeout(wake, Math.max(0, Math.min(input.waitMs, 25_000)));
+  input.signal?.addEventListener("abort", wake, { once: true });
+  try {
+    const initial = await readVaultCollaboration(input);
+    if (!initial || initial.epoch !== input.epoch || initial.seq !== input.seq || input.signal?.aborted) return initial;
+    await changed;
+    return input.signal?.aborted ? initial : await readVaultCollaboration(input);
   } finally {
     clearTimeout(timer);
     watcher.close();

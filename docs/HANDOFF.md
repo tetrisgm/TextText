@@ -112,8 +112,10 @@ restore and the broader collaboration/publishing/performance scope remain open.
 
 File-backed full-document Yjs merging and durable checkpoint/pack transactions
 are implemented with concurrent-client, epoch-fence, deletion, audit and crash
-recovery tests. This is backend groundwork; UI/permissions/transport integration
-is next. See [collaboration checkpoint](file-vault-collaboration-2026-09-30.md).
+recovery tests (`6ac655fb`). Named-workspace authenticated relay routes now enforce
+read/edit roles and reauthorization after waits/uploads; local Postgres grant
+revocation and scope tests pass. Editor/transport integration, scoped grants,
+presence and comments are next. See [collaboration checkpoint](file-vault-collaboration-2026-09-30.md).
 Installed build and running server remain 1134/recovery.
 
 ## Blockers and next work

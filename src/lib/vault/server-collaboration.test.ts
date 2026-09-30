@@ -8,7 +8,7 @@ import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { documentText } from "@/lib/collab/document";
 import { applyVaultCollaboration, type VaultCollaborationState } from "./collaboration";
-import { readVaultCollaboration, listVaultTextpacks, pushVaultCollaboration, readVaultTextpack, writeVaultTextpack, moveVaultTextpack, deleteVaultTextpack, VaultCollaborationEpochError } from "./server-store";
+import { readVaultCollaboration, waitVaultCollaboration, listVaultTextpacks, pushVaultCollaboration, readVaultTextpack, writeVaultTextpack, moveVaultTextpack, deleteVaultTextpack, VaultCollaborationEpochError } from "./server-store";
 const hash = (value: Uint8Array | string) => createHash("sha256").update(value).digest("hex");
 function pack(body: string) {
   const document = emptyDocumentSnapshot(); document.content.body = body;
@@ -40,6 +40,49 @@ describe("durable file collaboration", () => {
   });
   afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
   const push = (operationId: string, state: VaultCollaborationState, update: string) => pushVaultCollaboration({ ...location(), operationId, epoch: state.epoch, updates: [update], audit });
+
+  it("waits quietly, wakes for a committed edit, and closes an aborted wait", async () => {
+    const initial = (await readVaultCollaboration(location()))!;
+    const checkpoint = path.join(root, workspaceId, ".texttext/collaboration", `${itemId}.json`);
+    const before = await fs.stat(checkpoint);
+    const idle = await waitVaultCollaboration({ ...location(), epoch: initial.epoch, seq: initial.seq, waitMs: 40 });
+    expect(idle).toEqual(initial);
+    expect((await fs.stat(checkpoint)).mtimeMs).toBe(before.mtimeMs);
+    const waiting = waitVaultCollaboration({ ...location(), epoch: initial.epoch, seq: initial.seq, waitMs: 25000 });
+    await push("wake", initial, edit(initial, " changed"));
+    expect((await waiting)?.seq).toBe(initial.seq + 1);
+    const abort = new AbortController();
+    const current = (await readVaultCollaboration(location()))!;
+    const canceled = waitVaultCollaboration({ ...location(), epoch: current.epoch, seq: current.seq, waitMs: 25000, signal: abort.signal });
+    abort.abort();
+    expect(await canceled).toEqual(current);
+  });
+
+  it.each(["revoke", "abort"])("rejects a queued writer after %s while waiting on the workspace lock", async (reason) => {
+    const initial = (await readVaultCollaboration(location()))!;
+    let entered!: () => void, release!: () => void;
+    const holding = new Promise<void>(resolve => { entered = resolve; });
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const first = pushVaultCollaboration({ ...location(), operationId: "held", epoch: initial.epoch,
+      updates: [edit(initial, " committed")], audit, onReceipt: async () => { entered(); await gate; } });
+    await holding;
+    let allowed = true;
+    const abort = new AbortController();
+    const second = pushVaultCollaboration({ ...location(), operationId: "queued", epoch: initial.epoch,
+      updates: [edit(initial, " forbidden")], audit, signal: abort.signal,
+      beforeCommit: async () => { if (!allowed) throw new Error("Permission revoked"); } });
+    const outcome = second.then(() => null, error => error as Error);
+    try {
+      const deadline = Date.now() + 2000;
+      while ((await fs.readdir(path.join(root, workspaceId, ".texttext/locks"))).length < 2 && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5));
+      expect((await fs.readdir(path.join(root, workspaceId, ".texttext/locks"))).length).toBe(2);
+      allowed = false;
+      if (reason === "abort") abort.abort();
+    } finally { release(); }
+    await first;
+    expect((await outcome)?.message).toMatch(reason === "abort" ? /abort/i : /revoked/);
+    expect(body((await readVaultCollaboration(location()))!)).toBe("Hello committed");
+  });
 
   it("serializes concurrent clients, replays each operation once, and follows a rename", async () => {
     const initial = (await readVaultCollaboration(location()))!;

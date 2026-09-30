@@ -5,6 +5,7 @@ import {
   readVaultTextpack as readDirectoryTextpack,
   readVaultCollaboration as readDirectoryCollaboration,
   pushVaultCollaboration as pushDirectoryCollaboration,
+  waitVaultCollaboration as waitDirectoryCollaboration,
   readVaultTemplate as readDirectoryTemplate,
   listVaultRecovery as listDirectoryRecovery,
   readVaultRecovery as readDirectoryRecovery,
@@ -69,9 +70,16 @@ export function readVaultCollaboration(input: Omit<VaultLocation, "onReceipt"> &
   if (!db) throw new Error(NO_DATABASE);
   return readDirectoryCollaboration({ ...input, onReceipt: recordVaultReceipt });
 }
+export function waitVaultCollaboration(input: Omit<VaultLocation, "onReceipt"> & {
+  itemId: string; epoch: number; seq: number; waitMs: number; signal?: AbortSignal;
+}) {
+  if (!db) throw new Error(NO_DATABASE);
+  return waitDirectoryCollaboration({ ...input, onReceipt: recordVaultReceipt });
+}
 export function pushVaultCollaboration(input: Omit<VaultLocation, "onReceipt"> & {
   itemId: string; operationId: string; epoch: number; updates: string[];
   actorUserId: string; actorType: "human" | "external_agent";
+  beforeCommit?: () => Promise<void>; signal?: AbortSignal;
 }) {
   if (!db) throw new Error(NO_DATABASE);
   return pushDirectoryCollaboration({ ...input,
@@ -6880,6 +6888,16 @@ async function uniqueHandle(seed: string): Promise<string> {
   const suffix = Date.now().toString(36);
   const short = base.slice(0, 30 - suffix.length).replace(/-+$/, "") || "blog";
   return `${short}-${suffix}`;
+}
+
+/** Workspace identity only. Callers must resolve access before returning any
+ * metadata or touching files; this does not grant access to the workspace. */
+export async function getVaultWorkspaceIdentity(workspaceId: string): Promise<{ id: string; handle: string; name: string } | null> {
+  if (!db) throw new Error(NO_DATABASE);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(workspaceId)) return null;
+  const rows = await db.select({ id: blogs.id, handle: blogs.handle, name: blogs.name })
+    .from(blogs).where(and(eq(blogs.id, workspaceId), isNull(blogs.deletedAt))).limit(1);
+  return rows[0] ?? null;
 }
 
 // The blog owned by the user with this Apple sub, or null.

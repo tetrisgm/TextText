@@ -273,10 +273,11 @@ const cachedCollaboratorRowsForUser = cache(
 async function matchingCollaboratorRows(
   user: AccessUser | null,
   scopes: ScopeKey[],
+  fresh = false,
 ): Promise<{ rows: CollaboratorRow[]; userId: string | null }> {
   if (!db || !user || scopes.length === 0) return { rows: [], userId: null };
   const userParts = accessUserParts(user);
-  const candidateRows = await cachedCollaboratorRowsForUser(
+  const candidateRows = fresh ? await collaboratorRowsForUserUncached(user) : await cachedCollaboratorRowsForUser(
     userParts.userId,
     userParts.sub,
     userParts.email,
@@ -401,8 +402,19 @@ async function blogAccessBase(
 export async function resolveWorkspaceAccess(opts: {
   handle: string;
   user: AccessUser | null;
+  /** Reauthorize after an async wait without retaining request-scoped grants. */
+  fresh?: boolean;
 }): Promise<EffectiveAccess> {
-  const base = await blogAccessBase(opts.handle, opts.user);
+  let base;
+  if (opts.fresh) {
+    if (!db) return emptyAccess();
+    const rows = await db.select({ id: blogs.id, ownerId: blogs.ownerId }).from(blogs)
+      .where(and(eq(blogs.handle, opts.handle), isNull(blogs.deletedAt))).limit(1);
+    const row = rows[0];
+    if (!row) return emptyAccess();
+    const userId = await existingUserIdForAccess(opts.user);
+    base = { blogId: row.id, userId, owner: Boolean(userId && row.ownerId === userId) };
+  } else base = await blogAccessBase(opts.handle, opts.user);
   if (!base) return emptyAccess();
   if (base.owner) {
     return accessFromRole("owner", {
@@ -415,7 +427,7 @@ export async function resolveWorkspaceAccess(opts: {
 
   const { rows, userId } = await matchingCollaboratorRows(opts.user, [
     { scopeType: "workspace", scopeId: base.blogId },
-  ]);
+  ], opts.fresh);
   let role: EffectiveRole | null = null;
   let workspaceRole: StoredCollaboratorRole | null = null;
   for (const row of rows) {
