@@ -3,8 +3,10 @@
 Owner clarification, 2026-09-29: build the file-based architecture already
 required by [SPEC.md](../SPEC.md). Replace the database-centered content path.
 Legacy export, shadow migration, and backward compatibility are not prerequisites.
-This document replaces the earlier migration proposal. The installed app still
-uses the old storage path; the replacement is not implemented yet.
+This document replaces the earlier migration proposal. The replacement now has
+a bundled folder editor, local file tools, and a filesystem sync service in
+source. See [implementation receipt](../file-vault-implementation-2026-09-30.md)
+for verified behavior and remaining integration work.
 
 ## The contract
 

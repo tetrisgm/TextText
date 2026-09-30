@@ -2,61 +2,40 @@
 
 ## Current work
 
-The owner requires an Obsidian-style folder vault and explicitly rejects
-legacy migration work as a prerequisite. Replace the old content architecture;
-start with a fresh local vault and direct file editing, then shared file sync.
-The connected app currently
-keeps canonical items, folders, and custom looks in Postgres; Finder's
-`.textpack` tree is a writable sync projection, and the signed-in CLI uses the
-server by default. Only built-in presets are sourced from checked-in TextPack
-files. This differs from [SPEC.md](SPEC.md)'s file-first intent. The
-[file vault architecture](design/texttext-file-vault-migration.md) records the
-settled file contract, conflict behavior, and implementation order. Local
-agents must be able to manipulate the files directly. [Architecture](../ARCHITECTURE.md),
-[File Provider](file-provider.md), and [agent interoperability](agent-interoperability.md)
-describe the current paths. The app has not switched to the replacement yet.
+The owner requires ordinary folder workspaces, self-contained TextPacks, direct
+agent file editing, and local/web conflict handling. Legacy migration is not a
+prerequisite. See [architecture](design/texttext-file-vault-migration.md) and
+[implementation and verification receipt](file-vault-implementation-2026-09-30.md).
 
-The owner asked for the full [content-first brief](design/texttext-content-first-ux.md). The [canonical checkpoint](TEXTTEXT_UX_CHECKPOINT.md) has the current revision, unrelated dirty files to preserve, verified slices, open acceptance cases, exact next action, and live process identities. Its [September 29 archive](TEXTTEXT_UX_CHECKPOINT-history-2026-09-29.md) and the focused receipts retain the earlier run history. Reconcile the checkpoint with `git status` before editing. Work on `main` with no worktree, one necessary server, and sequential heavy checks.
+Implemented on `main` in `76f373e1`, `f28500cd`, and `3b4549d6`: native folder
+store/CLI, complete-pack filesystem server and durable sync, bundled shared
+editor, file templates, and native assistant file tools. Local WIP **0.202 (1117)**
+is installed at `/Applications/TextText.app`. Its selected workspace is
+`/Users/shokunin/Documents/TextText`. Installed-app creation/save and a real
+Codex append were verified against pack bytes and the refreshed editor. The
+verification note was moved to recoverable vault Trash afterward.
 
-The owner clarified that saved links and reading are one item flow, while note,
-bookmark, gallery, and other ready-made looks share the same TextPack
-primitives. The current source now has 11 active checked-in TextPack presets,
-full example-to-draft creation, and editable blueprint source round-tripping
-through native sync and backup. [Template receipt](textpack-presets-2026-09-29.md)
-records tests and the remaining gallery editing and media portability limits.
-The agent command path now copies a built-in, reads its complete validated
-definition, and edits the independent copy with version fencing; the gallery's
-visual editor still requires blueprint source.
-The rebuilt local web source loaded in installed app build 1116;
-an actual TextPack import and save round trip remains untested.
+## Blockers and next work
 
-The installed local WIP is development-signed Store-shaped TextText **0.202 (1116)** at `/Applications/TextText.app`, using `http://localhost:3000` and local Postgres. It bundles the Codex runtime and opened the signed-in workspace after installation. The local production server was responding on port 3000 at the last check; revalidate its process before acting on it. The main assistant can switch between the existing ChatGPT account and a provider key; the installed app previously reconnected ChatGPT without another browser login. [Connection receipt](assistant-connection-installed-2026-09-29.md). The owner authorizes local app replacement, but the public website, App Store build, and release channels have not changed. The brief still requires a separate request for push, deploy, release, App Store submission, or billing changes. No project changelog entry is due until a release ships. Do not use the retired build lane or merge gate; the old local hook requires `OWNER_OVERRIDE=1` for direct commits to `main`.
+- The old localhost:3000 server has not been restarted. Permission was requested
+  because the owner's contract requires approval for service restarts; no answer
+  has arrived. Revalidate PID before switching. The replacement production build
+  is ready in `.texttext/vault-build`; temporary preview3131 is stopped.
+- Activate that build with `TEXTTEXT_VAULT_ROOT` and complete installed-account
+  web connection acceptance after permission. Real native HTTP two-replica sync
+  and browser pack editing already passed in isolated fixtures.
+- Shared access/full live collaboration, browser assistant, full capture/import,
+  publication, and retirement of legacy content callers remain integration work.
+  Do not claim the entire earlier product plan is complete.
+- Preserve unrelated dirty `attachments.ts`, `tabs.test.ts`, and
+  `scripts/.probe-editor.ts`. All agents are finished. Use sequential heavy
+  checks and two Swift jobs. No persistent jobs were installed.
 
-A current-source production web build and development-signed Store-shaped Mac build **0.202 (1116)** passed locally. The staged bundle at `mac/build/TextText.app` targets the local server and was installed at `/Applications/TextText.app`; its signed-in workspace opened. The earlier public-origin 1115 bundle is retained at `.texttext/staged-builds/TextText-public-1115.app`. The live site still serves an older web revision. [Build receipt](current-production-build-2026-09-29.md) records the earlier 1115 check; [template receipt](textpack-presets-2026-09-29.md) records this build's source and checks.
+## References
 
-The installed app's recovery download now opens a Mac save panel and waits for a confirmed file before offering to reopen. A stale unknown-epoch outbox caused a repeated recovery loop; after exporting its covered copies, the local scratch note reopened with **Saved** visible. The current web code checks for a newly arrived recovery copy before reloading. [Recovery receipt](native-recovery-download-2026-09-29.md) records the exact proof and remaining limits. The exported JSON copies remain in Documents.
-
-A render-time template failure previously hid the saved item behind a generic error. The source now shows a plain content recovery view while keeping folder cards compact. Focused tests and static checks passed; the malformed-look path has not been exercised in the installed app. [Fallback receipt](template-render-fallback-2026-09-29.md).
-
-The assistant history loop previously polled while its rail was closed and flashed **Syncing/Synced** on clean reads. The source now uses local-edit uploads and the existing workspace change feed's compact history-version signal, with no separate idle history timer. The installed app made no repeated assistant-history calls after startup and development reloads settled. Two safe approval previews with equal message clocks lost a merge tie to older server copies; the merge now retains them. The local database gained both previews and **Saved on this device** cleared after reload. The native compact change feed still runs while the app is open. [Sync receipt](assistant-history-sync-2026-09-29.md) and [installed follow-up](assistant-sync-acceptance-2026-09-29.md).
-
-The installed follow-up also checked a 96-item Finder folder and direct item lookup without reproducing the earlier File Provider CPU burst. Idle app/WebKit/helper footprint was stable across the short sample. Focused web and native auth, provider, proposal, and File Provider tests passed. Longer active-agent memory and the remaining live failure orderings have no reproducible trigger; see the [installed follow-up](assistant-sync-acceptance-2026-09-29.md) for the measured limits.
-
-Device-code authorization now has a shared Copy code control (`597d82ab`). The owner is already signed in, so its native signed-out interaction still needs verification. The provider's documented device flow supplies a fixed URL and a separate code; no code-prefill URL is documented.
-Provider failure classification prioritizes explicit HTTP status and accepts numeric `status`. A live HTTP 409 during document-look generation exposed a separate client error: React state had not updated before the catch block classified a document conflict as an unknown provider failure. The studio now shows the conflict, preserves the request, and offers review; the installed app completed review and a real Anthropic first-draft retry without changing the saved note. [Focused receipt](item-type-conflict-recovery-2026-09-29.md). Other live provider error classes remain unproved.
-
-An empty title caret was exposed as selected text in the assistant composer and stopped an ordinary read request before it reached the provider. The composer now excludes unsupported title/excerpt carets while keeping body-caret insertion context. A fresh installed-app read-only turn completed after the local web update; [selection receipt](assistant-composer-selection-2026-09-29.md) records the proof and memory-check limit.
-
-A further real Anthropic rewrite saved but Undo falsely refused the unchanged generated passage. Bounded Undo now checks its target and full-body fingerprint against the live document, then atomically fences the current revision. An immediate fresh preview after Undo also falsely went stale on revision drift; client and cloud selection checks now keep the preview when its exact passage still matches. A real installed-app rewrite → Undo → fresh preview reached **Ready** without reload; the preview was discarded and the scratch note showed **Saved**. [Collaboration receipt](native-agent-collaboration-2026-09-28.md) has the exact outcomes and remaining limits. Native Stop now clears its turn fence before requesting helper cancellation, preventing a late tool call from starting in the response gap; an already-sent command may still finish and is labeled uncertain. In a later installed-app turn, the human saved a line while Codex was reading; Stop overlapped its append, and the canonical note retained both lines with no later revision. [Stop/write receipt](native-stop-write-verification-2026-09-29.md) states the ordering limit. A separate browser session then clicked Accept on a real Anthropic rewrite while its workspace command was temporarily paused. The installed Mac editor saved a conflicting sentence; releasing the request returned HTTP 409 and preserved that human sentence in the canonical store. The scratch text was restored. [Approval race receipt](approval-race-verification-2026-09-29.md) states the timing limit.
-
-## What is proved
-
-The [shell and performance receipt](content-first-shell-2026-09-28.md), [folder-view receipt](folder-view-verification-2026-09-28.md), [collaboration receipt](native-agent-collaboration-2026-09-28.md), [agent experience receipt](agent-experience-verification-2026-09-25.md), and [browser authorization receipt](browser-auth-sandbox-2026-09-28.md) cover the working content-first shell, writing/capture/reading/visual flows, shared editing and comments, and the sandboxed account-backed agent path. The isolated Store-shaped test app completed ChatGPT sign-in, a real selected-item preview/refinement/save/reopen, and native TextText tool use. The installed app has completed real Anthropic read and reviewed-append turns on local test notes. These proofs do not establish public distribution approval or every recovery/error case.
-
-The [September 29 native receipt](native-recovery-performance-2026-09-29.md) covers build 1112, Finder enumeration, editor Retry recovery, preliminary warm-server relaunches, memory checks, and an isolated native ChatGPT setup cancellation. Six visits to the native 96-image folder left the long-lived app near its starting 1.39 GiB combined footprint; production-mode long-run stability remains unproved. A later [browser-auth check](browser-auth-sandbox-2026-09-28.md) completed sign-in in Safari after canceling native setup in a separate clean-profile app: the app stayed disconnected before and after reopening, and its helper stopped. Other delayed App Server response orderings remain unproved. The [narrow assistant receipt](narrow-assistant-layout-2026-09-29.md) covers browser widths through 850px and the later installed Mac three-pane Library fix: complete dates and date filtering were visible in light and dark, with date-field keyboard focus. The [cross-folder search receipt](command-palette-route-2026-09-29.md) documents a native Command-K result that used the wrong folder and became 404 on reload; it now opens and reloads under its actual folder. The gallery/image viewer and Add agent panel were visually checked in dark; a later light gallery/viewer check covered title, dimensions, source, Zoom/Fit, and Escape focus return in the half-screen window. A temporary OS Reduce Motion check kept gallery/viewer, Add agent, Reader, and editable note usable; the switch was restored off. Build 1113 then passed a 1,442-physical-pixel native minimum-width check across the note, reader, gallery/viewer, assistant, and Add agent in light and dark; the app Dark and Mac Auto preferences were restored. Animation-specific reduced-motion behavior, a matching File Provider reconciliation burst, and the remaining agent/recovery acceptance cases still need proof.
-
-The [native receipt](native-recovery-performance-2026-09-29.md) records a ten-minute isolated production run with twenty gallery cycles and a later signed-in Codex sample of three reads plus one saved private test-note append. The latter five-process footprint rose from about 340 MiB before agent work to 486 MiB after three reads, peaked at 524 MiB during the append, and fell to 425 MiB after two idle minutes. This is short-run evidence, not hours-long stability. A separate twenty-launch foreground sample reached a hydrated signed-in workspace in 1,180–1,907 ms (p95 1,881 ms) against a warm retained production web build. Cold server, first sign-in, current-source release, and installed File Provider remain outside that launch measurement. The isolated app and temporary server were stopped. At the September 29 continuation, the installed app and port-3000 server were also stopped. An earlier background-launch artifact is documented in the receipt and excluded.
-
-During diagnostics, credential-bearing `.env.local` lines were accidentally included in one private tool result. No values were committed. The owner was notified; the legacy database and SMTP credentials should be rotated. Do not reproduce them in output.
-
-For boundaries, use [DESIGN.md](../DESIGN.md), [AI architecture](ai-sidebar-architecture.md), [agent runbook](agentic-assistant-runbook.md), and [database operations](DATABASE-OPERATIONS.md). Historical detail preceding this brief is in [September 28 history](HANDOFF-history-2026-09-28.md).
+The receipt links current tests and limitations. Earlier product work and proofs
+are archived in [September 30 history](HANDOFF-history-2026-09-30.md) and
+[the previous checkpoint](TEXTTEXT_UX_CHECKPOINT.md); their installed versions
+and process identities are historical. Public deployment/release/push was not
+performed. The brief requires a separate ask for those actions. Local app
+replacement is authorized. No release changelog entry is due for this local WIP.
