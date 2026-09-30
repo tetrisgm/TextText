@@ -17,13 +17,16 @@ verification note was moved to recoverable vault Trash afterward.
 
 ## Blockers and next work
 
-- The old localhost:3000 server has not been restarted. Permission was requested
-  because the owner's contract requires approval for service restarts; no answer
-  has arrived. Revalidate PID before switching. The replacement production build
-  is ready in `.texttext/vault-build`; temporary preview3131 is stopped.
-- Activate that build with `TEXTTEXT_VAULT_ROOT` and complete installed-account
-  web connection acceptance after permission. Real native HTTP two-replica sync
-  and browser pack editing already passed in isolated fixtures.
+- Owner approved the local server switch. The replacement build now runs on
+  localhost:3000 with `TEXTTEXT_VAULT_ROOT=.texttext/vault-server` (absolute
+  runtime path), build identity `texttext-vault-local-20260930`. No persistent
+  service job was installed. Inspect the listener before future restarts.
+- Installed app connected with its existing account. Native create/upload,
+  browser edit/download, server outage with local save and automatic recovery,
+  byte-identical convergence, empty outbox, idle no-repeat-upload check, and
+  web deletion reaching native with retained history all passed. The temporary
+  verification file was deleted recoverably. The local account is the existing
+  Mira Chen demo fixture; this does not verify public sign-in or deployment.
 - Shared access/full live collaboration, browser assistant, full capture/import,
   publication, and retirement of legacy content callers remain integration work.
   Do not claim the entire earlier product plan is complete.
