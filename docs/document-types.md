@@ -33,7 +33,7 @@ type DocumentSnapshot = {
     title: string;
     subtitle?: string;
     body: string;
-    fields: Record<string, string | number | boolean | null | string[]>;
+    fields: Record<string, DocumentFieldValue>; // scalars, string lists, or rows
     tags: string[];
     assets: Array<{
       id: string;
@@ -42,6 +42,7 @@ type DocumentSnapshot = {
       alt?: string;
       caption?: string;
       contentType?: string;
+      poster?: string;
       width?: number;
       height?: number;
     }>;
@@ -64,19 +65,27 @@ look must not change privacy or folder behavior.
 
 ## Portable file format
 
-Every TextText item is represented as a `.textpack`. Its package contains:
+The default local representation of a TextText item is a `.textpack`: a ZIP
+containing one `.textbundle` directory. Its entries are:
 
 ```text
-Document.textpack/
-  info.json
-  text.md
-  document.json
-  assets/
+Document.textpack (ZIP)
+  Document.textbundle/
+    info.json
+    text.md
+    document.json
+    template.json          (optional compiled look)
+    template-source.json   (optional editable source)
+    assets/                (optional local assets)
 ```
 
 `text.md` is the human-editable Markdown projection. `document.json` is the
-strict structured snapshot. Assets are package-local. The Finder projection
-uses the package as a single tidy item.
+strict structured snapshot. `template.json` lets a document carry the complete
+validated look it pins. When that look has a compatible blueprint,
+`template-source.json` carries its editable source beside the compiled look.
+The source is accepted only if it compiles to that same definition; an invalid
+source is omitted without rejecting the document. Native packages can contain
+local assets. The Finder projection treats the ZIP as one file.
 
 The sync protocol in `src/lib/documents/sync.ts` uses the versioned media type
 `application/vnd.texttext.document+json`. Structured clients transfer a strict
@@ -88,10 +97,10 @@ known frontmatter values win. Structured fields not represented in Markdown,
 assets, and presentation remain intact. Unknown frontmatter never becomes a
 render instruction. Deterministic key ordering prevents hash churn.
 
-The native implementation in `mac/Sources/TextTextFileProviderKit` materializes and
-uploads `document.json`, rewrites remote asset URLs to package-local paths, and
-selects the structured document hash when available. Legacy Markdown-only
-packages remain valid.
+The native implementation in `mac/Sources/TextTextFileProviderKit` materializes
+and uploads the structured snapshot, embedded look, and optional editable
+source, and selects the structured document hash when available. Legacy
+Markdown-only packages remain valid.
 
 ## Presentation engine
 
@@ -129,7 +138,7 @@ primitive can consume the bound field kind. For example, a gallery can consume
 
 ### Template definition
 
-A `TemplateDefinition` has four parts:
+A `TemplateDefinition` is validated render data:
 
 ```ts
 type TemplateDefinition = {
@@ -140,27 +149,26 @@ type TemplateDefinition = {
   name: string;
   description?: string;
   fields: DocumentFieldDefinition[];
+  starter?: TemplateStarter;
   item: RenderNode;
-  collection: {
-    layout: "list" | "cards" | "timeline" | "index" | "single";
-    columns: 1 | 2 | 3 | 4;
-    gap: SpacingToken;
-    sort: SortRule[];
-    item: RenderNode;
-  };
-  capabilities: Capability[];
+  collection: CollectionRenderSpec;
   theme: ThemeTokens;
+  example?: TemplateExample;
 };
 ```
 
-Capabilities are declarations for app-owned verbs: assets, capture,
-collaboration, comments, import, publish, and search. A declaration can expose
-or hide product controls. It does not grant permission and cannot execute code.
-Permissions are always resolved below the tool and UI layers.
+The collection spec describes the folder layout, card renderer, sorting,
+filters, and named views. The app owns actions such as capture, comments, and
+publication; a look does not grant permission or execute code.
 
-The built-ins in `src/lib/presentation/templates.ts` are the first five rows of
-the same model: article, note, bookmark, gallery, and talk. Built-in identifiers
-are reserved and immutable.
+The active built-in catalog has 11 looks across Text, Plan, Collect, and
+Publish. Their checked-in definitions and full preview snapshots are the
+`.textpack` files in `presets/builtin/`. The generator
+`scripts/generate-builtin-presets.ts` validates those files and emits separate
+browser-safe definition and example modules in `src/lib/presentation/`.
+`src/lib/presentation/templates.ts` validates the active definitions and keeps
+18 retired TypeScript looks resolvable for documents already pinned to them.
+Built-in identifiers are reserved and immutable.
 
 ### Validator
 
@@ -197,11 +205,11 @@ The same template version therefore controls:
 
 ## Template authoring
 
-Templates are immutable, workspace-scoped versions in `document_templates`.
-Built-ins ship in code. A gallery selection pins an exact template reference on
-the document. A customized template uses a workspace-owned id and creates the
-next immutable version. Existing documents never change presentation merely
-because a newer version exists.
+Workspace templates are immutable versions in `document_templates`; active
+built-ins come from the checked-in TextPacks. A gallery selection pins an exact
+template reference on the document. A customized template uses a
+workspace-owned id and creates the next immutable version. Existing documents
+never change presentation merely because a newer version exists.
 
 A look is made by making a document. `save_item_as_look` (and "Save as look" in
 the document menu) takes what a document already renders as, folds in the theme
@@ -227,6 +235,11 @@ connected provider, or a sequence of refinements. A blueprint compiles into the
 same closed template schema as every hand-authored look. Preview is a real
 render through the validator, not a picture or generated HTML. Models can
 propose broader information structures, but receive no wider render authority.
+The saved blueprint stays beside its compiled definition, so `update_item_type`
+can create a new version of a workspace type that was authored this way.
+Handcrafted built-ins have no blueprint source today. Remixing one copies its
+render definition but does not invent a blueprint, so that remix also cannot
+be directly edited with `update_item_type`.
 
 ## Template gallery
 
@@ -235,6 +248,14 @@ does not preselect a look, and previews the current document through the actual
 engine. Arrow keys move spatially, Enter previews or confirms, and Escape or
 Backspace returns. Search and scope filters separate personal, workspace, and
 built-in looks. Selecting a look updates presentation only.
+
+The 11 active TextPacks each include a complete `document.json` example. The
+public `/templates` index and full-page previews render that snapshot with its
+own look. Choosing an example creates one private draft with the example
+content, correct item kind, and folder; choosing the look without example
+content starts with an empty snapshot. Current preset cover references use
+`/covers/...` paths and their checked-in packs have no binary `assets/`
+entries, so those examples are not yet standalone portable media bundles.
 
 Imported gallery templates are always forked into a workspace-owned immutable
 version before use. An import can instead become the next immutable version of
@@ -247,6 +268,9 @@ Definition-only files remain supported; their editable source cannot be
 recovered automatically. Source data never replaces the rendering authority.
 Remix creates an independent id. Restoring an older version copies it forward
 as a new version, so pinned documents and version history remain intact.
+Structured TextPack sync and GitHub backup carry the same matching source as
+`template-source.json` when one exists; imports keep the document even when
+that optional source is unreadable or does not match the compiled look.
 
 The gallery computes impact from canonical item and folder references before a
 look is applied. It shows item and folder counts and names the first affected
@@ -469,9 +493,10 @@ Collections: sort by `content.fields.<id>` and declarative `filters`
 SQL (GIN jsonb_path_ops index) and in process
 (`src/lib/documents/collection-query.ts`).
 
-Catalog: 23 built-in templates in six categories (Text, Plan, Track, Collect,
-Work, Publish), every one validated at module load. `TEMPLATE_CATALOG` in
-`src/lib/presentation/templates.ts` is the grouping.
+The catalog at this wave had 23 looks in six categories. The current active
+catalog has 11 in four categories, grouped by `TEMPLATE_CATALOG` in
+`src/lib/presentation/templates.ts`; 18 retired looks remain resolvable for
+older pinned documents.
 
 Still deferred: response records (polls and RSVPs need a server-side respond
 command), auto table-of-contents, and backlink chrome.

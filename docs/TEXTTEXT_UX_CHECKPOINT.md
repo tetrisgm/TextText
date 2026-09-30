@@ -8,7 +8,20 @@
 
 ## Current state, 2026-09-29
 
-- `git pull --ff-only` reported up to date before the template fallback edit, committed at `e19f6c05`. Preserve unrelated edits in `src/components/workspace/assistant/attachments.ts`, `src/lib/workspace/__tests__/tabs.test.ts`, and untracked `scripts/.probe-editor.ts`.
+- `git pull --ff-only` reported up to date before this template work. Source
+  commits `7d68733b` and `e3c760a9` are local on `main`; no public push or
+  release occurred. Preserve unrelated edits in
+  `src/components/workspace/assistant/attachments.ts`,
+  `src/lib/workspace/__tests__/tabs.test.ts`, and untracked
+  `scripts/.probe-editor.ts`.
+- The owner clarified the template model: saved links combine capture, reading,
+  and organization; ready-made item looks use TextPack primitives; agent-authored
+  looks should remain editable after a pack round trip. The current source has
+  11 active checked-in TextPack presets, full example draft creation, and
+  optional validated blueprint source in native sync and backup. Local focused
+  web/native/database tests and a production web build passed. See the
+  [TextPack receipt](textpack-presets-2026-09-29.md) for exact proof and limits.
+  The installed app still needs a round-trip check of this source.
 - Installed development-signed Store-shaped `/Applications/TextText.app` is build **0.202 (1114)**, pointed at local `http://localhost:3000` and bundled with the official Codex runtime. Its last observed screen was a fresh Chat with Codex conversation over the `Typing benchmark 7d924acf` editor with **Saved** visible. At the September 29 continuation, no TextText app or port-3000 server process was running; revalidate before starting a test or acting on a recorded PID. [Connection receipt](assistant-connection-installed-2026-09-29.md) and [recovery receipt](native-recovery-download-2026-09-29.md).
 - Isolated production build `.texttext/ux-native-cold-20260929` and sandboxed test bundle `/tmp/texttext-agent-test.5iB9O5/TextText Agent Test.app` remain available for inspection. A later production-mode sample reconnected the existing ChatGPT account, completed three real Codex reads and one private test-note append, then quit only that test app and stopped its temporary server; port 3131 was free at the last check. No production data, public app, or release was changed. [Native receipt](native-recovery-performance-2026-09-29.md).
 - A bounded 121-sample, two-minute four-process RSS trace is `/tmp/texttext-ux-active-agent-memory-20260929.csv`. One real read-only Anthropic turn on the installed app answered correctly; the note remained Saved. RSS ranged 59-429 MiB because macOS compressed/swapped memory, so it is not a footprint trend. Direct `vmmap -summary` after agent and visual-folder navigation found roughly 1.2 GiB total physical footprint in the long-lived development app; hiding the assistant and returning to All items did not substantially lower it. In contrast, the clean isolated production-mode app with idle bundled helper began near 349 MiB, rose to about 498/543 MiB during two traversals of the 96-image folder, and returned to about 455/465 MiB after each exit. This short comparison does not demonstrate a runaway leak or establish long-run stability. [Native receipt](native-recovery-performance-2026-09-29.md) has per-process numbers and limits. System memory free recovered to 41% after temporary test cleanup.

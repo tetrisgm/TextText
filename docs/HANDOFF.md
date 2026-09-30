@@ -4,6 +4,15 @@
 
 The owner asked for the full [content-first brief](design/texttext-content-first-ux.md). The [canonical checkpoint](TEXTTEXT_UX_CHECKPOINT.md) has the current revision, unrelated dirty files to preserve, verified slices, open acceptance cases, exact next action, and live process identities. Its [September 29 archive](TEXTTEXT_UX_CHECKPOINT-history-2026-09-29.md) and the focused receipts retain the earlier run history. Reconcile the checkpoint with `git status` before editing. Work on `main` with no worktree, one necessary server, and sequential heavy checks.
 
+The owner clarified that saved links and reading are one item flow, while note,
+bookmark, gallery, and other ready-made looks share the same TextPack
+primitives. The current source now has 11 active checked-in TextPack presets,
+full example-to-draft creation, and editable blueprint source round-tripping
+through native sync and backup. [Template receipt](textpack-presets-2026-09-29.md)
+records tests and the remaining built-in Remix and media portability limits.
+The changes are local source only until an installed-app check or release is
+separately recorded below.
+
 The installed local WIP is development-signed Store-shaped TextText **0.202 (1114)** at `/Applications/TextText.app`, using `http://localhost:3000` and local Postgres. It now bundles the Codex runtime; the previous installed 1113 did not, while the separate test app did. The main assistant can switch between the existing ChatGPT account and a provider key; the installed app reconnected ChatGPT without another browser login. [Connection receipt](assistant-connection-installed-2026-09-29.md). The owner authorizes local app replacement, but the public website, App Store build, and release channels have not changed. The brief still requires a separate request for push, deploy, release, App Store submission, or billing changes. No project changelog entry is due until a release ships. Do not use the retired build lane or merge gate; the old local hook requires `OWNER_OVERRIDE=1` for direct commits to `main`.
 
 A current-source production web build and development-signed Store-shaped Mac build **0.202 (1115)** passed locally. The Mac bundle is staged at `mac/build/TextText.app` and targets `https://texttext.app`; the live site still serves an older web revision. The installed 1114 local WIP was left in place so its recent web fixes remain available when the local server runs. [Build receipt](current-production-build-2026-09-29.md). No local server or TextText app was running at the end of this build check.
