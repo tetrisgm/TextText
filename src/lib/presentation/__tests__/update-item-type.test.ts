@@ -28,7 +28,8 @@ vi.mock("@/lib/revalidate-blog", () => ({
 
 import { compileItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
-import { createWorkspaceItemType, updateWorkspaceItemType } from "@/lib/presentation/item-type.server";
+import { requireBuiltinTemplate } from "@/lib/presentation/templates";
+import { createWorkspaceItemType, updateWorkspaceItemType, updateWorkspaceItemTypeDefinition } from "@/lib/presentation/item-type.server";
 
 const BLUEPRINT = {
   name: "Recipes",
@@ -346,6 +347,92 @@ describe("changing an item type that already exists", () => {
     expect(mocks.createDocumentTemplateVersion).not.toHaveBeenCalled();
   });
 
+});
+
+describe("changing a definition-only Remix look", () => {
+  const base = validateTemplateDefinition({
+    ...requireBuiltinTemplate("texttext.article"),
+    id: "article-remix-a1b2c3",
+    version: 3,
+    name: "Article remix",
+  });
+  const definition = validateTemplateDefinition({
+    ...base,
+    theme: { ...base.theme, accent: "#123456" },
+  });
+  const callDefinition = (overrides: Record<string, unknown> = {}) => updateWorkspaceItemTypeDefinition({
+    actor,
+    baseVersion: 3,
+    blogId: "blog-1",
+    definition,
+    handle: "shoku",
+    templateId: base.id,
+    saveScope: { mode: "version" },
+    ...overrides,
+  } as never);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getDocumentTemplateAuthoringSource.mockResolvedValue({
+      version: 3, retired: false, state: "assembled", source: null,
+    });
+    mocks.getDocumentTemplate.mockResolvedValue(base);
+    mocks.createDocumentTemplateVersion.mockImplementation(async ({ definition }) => ({ ...definition, version: 4 }));
+    mocks.listFoldersUsingTemplate.mockResolvedValue([{ id: "f-1", path: "articles", version: 3 }]);
+    mocks.retemplateFolderItems.mockResolvedValue({ changed: 2, contested: 0, remaining: 0 });
+  });
+
+  it("saves the complete validated look as an immutable successor without inventing a blueprint", async () => {
+    const result = await callDefinition();
+    expect(result.definition).toEqual({ ...definition, version: 4 });
+    expect(result.previousVersion).toBe(3);
+    expect(mocks.getDocumentTemplate).toHaveBeenCalledWith("blog-1", { id: base.id, version: 3 });
+    expect(mocks.createDocumentTemplateVersion).toHaveBeenCalledWith(expect.objectContaining({
+      definition,
+      authoringSource: null,
+      expectedNextVersion: 4,
+    }));
+    expect(mocks.setFolderTemplate).not.toHaveBeenCalled();
+  });
+
+  it("reuses the guarded folder and exact-reference item application path", async () => {
+    const result = await callDefinition({ saveScope: { mode: "usages", folderPaths: ["articles"] }, applyToExisting: true });
+    expect(result.applied).toEqual([{ path: "articles", restyledItems: 2, itemsLeft: 0, itemsBeingEdited: 0 }]);
+    expect(mocks.setFolderTemplate).toHaveBeenCalledWith("shoku", "f-1", { id: base.id, version: 4 }, expect.objectContaining({
+      expectedReference: { id: base.id, version: 3 },
+    }));
+    expect(mocks.retemplateFolderItems).toHaveBeenCalledWith("shoku", "f-1", { id: base.id, version: 4 }, expect.objectContaining({
+      fromReference: { id: base.id, version: 3 },
+    }));
+  });
+
+  it("refuses stale, retired, and built-in identities before writing", async () => {
+    await expect(callDefinition({ templateId: "texttext.article" })).rejects.toThrow(/Built-in looks cannot be changed/);
+    await expect(callDefinition({ baseVersion: 2 })).rejects.toThrow(/moved on/);
+    mocks.getDocumentTemplateAuthoringSource.mockResolvedValue({ version: 3, retired: true, state: "assembled", source: null });
+    await expect(callDefinition()).rejects.toThrow(/retired/);
+    expect(mocks.createDocumentTemplateVersion).not.toHaveBeenCalled();
+  });
+
+  it("does not use a render definition to bypass an authored or unreadable source", async () => {
+    for (const state of ["authored", "needs-migration", "unreadable"]) {
+      mocks.getDocumentTemplateAuthoringSource.mockResolvedValue({ version: 3, retired: false, state, source: null });
+      await expect(callDefinition()).rejects.toThrow(/saved design source/);
+    }
+    expect(mocks.createDocumentTemplateVersion).not.toHaveBeenCalled();
+  });
+
+  it("rejects changed identity, invalid render data, and incompatible stored fields", async () => {
+    await expect(callDefinition({ definition: { ...definition, id: "another-look" } })).rejects.toThrow(/identity or version changed/);
+    await expect(callDefinition({ definition: { ...definition, version: 4 } })).rejects.toThrow(/identity or version changed/);
+    await expect(callDefinition({ definition: { ...definition, item: { type: "unsupported-node" } } })).rejects.toThrow();
+    const first = base.fields[0];
+    if (!first) throw new Error("Article Remix fixture needs a field");
+    await expect(callDefinition({ definition: { ...definition, fields: definition.fields.map((field) =>
+      field.id === first.id ? { ...field, required: true } : field,
+    ) } })).rejects.toThrow(/cannot become required/);
+    expect(mocks.createDocumentTemplateVersion).not.toHaveBeenCalled();
+  });
 });
 
 

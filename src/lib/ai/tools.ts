@@ -618,9 +618,20 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
       // The description said only "templates available for shaping documents",
       // so a model asked to change an existing type listed them five times
       // and never worked out that changing one was possible.
-      "Types under `editable` were designed from a blueprint and can be CHANGED with update_item_type: send that blueprint back with your edit, and the version shown. `needsMigration` and `unreadable` were designed here too but cannot be reopened by this build. Anything in none of those lists was assembled rather than designed - built-ins, imports, duplicates, and looks saved from a document - and has no blueprint to edit.\n\n" +
-      "Call this first whenever someone wants a kind of item to be different.",
-    inputSchema: emptyInput(),
+      "Types under `editable` were designed from a blueprint and can be changed with update_item_type. For a source-less workspace look, request its full definition with template_id, then change that validated definition. A built-in must first be copied with remix_item_type. `needsMigration` and `unreadable` retain their old rendering and cannot be edited here.\n\n" +
+      "Call this first whenever someone wants a kind of item to be different. Supply template_id to inspect one complete render definition before editing it.",
+    inputSchema: z.object({ template_id: z.string().trim().min(1).max(160).optional() }).strict(),
+  }),
+  remix_item_type: defineTool("remix_item_type", {
+    title: "Remix an item type",
+    description:
+      "Copy one exact built-in or workspace item type into a new personal type. The copy keeps its fields, item layout, folder layout, theme, and example. It is a separate type with a new id; the source and items using it are unchanged. Use this before modifying a built-in. Then inspect the copy with list_document_templates(template_id) and change it with update_item_type.",
+    inputSchema: z.object({
+      template_id: z.string().trim().min(1).max(160),
+      template_version: z.number().int().positive(),
+      name: z.string().trim().min(1).max(160),
+    }).strict(),
+    mutability: "write",
   }),
   create_item_type: defineTool("create_item_type", {
     title: "Create item type",
@@ -650,10 +661,10 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   update_item_type: defineTool("update_item_type", {
     title: "Change an item type",
     description:
-      "Change an item type that already exists, by editing the blueprint it was built from. Use this when someone wants their existing kind of thing to be different: another field, a different folder view, a bigger title, a new accent. list_document_templates returns the blueprint and the version for every type that can be changed this way.\n\n" +
-      "Send the WHOLE blueprint, not only the part you changed: it replaces the old one. Send base_version exactly as list_document_templates reported it, so an edit made against a stale copy is refused instead of quietly overwriting someone else's.\n\n" +
+      "Change a workspace item type: another field, a different folder view, a bigger title, or a new accent. For blueprint-authored types, send the whole edited blueprint from list_document_templates. For an assembled or remixed workspace type, request list_document_templates with its template_id and send the whole edited definition. Only one of blueprint or definition is allowed. Definitions are validated render data, never HTML, CSS, JavaScript, or component names.\n\n" +
+      "Send base_version exactly as reported so an edit made against a stale copy is refused. Keep the definition id and version unchanged in the request; the save creates a new immutable version.\n\n" +
       "The old version is kept and the items already using it keep rendering as they were. Use save_scope to name the selected folder or the exact listed usages, or to save only a version. Calls without save_scope save only a version unless apply is explicitly true. Only items pinned to that exact base reference are restyled. Existing field ids, storage kinds and enum values must stay compatible; change enum labels to rename options.\n\n" +
-      "Built-in types cannot be changed. Types without editable source cannot be changed this way; list_document_templates reports whether a blueprint is available.",
+      "Built-in types cannot be changed in place; first make a copy with remix_item_type. A type with an unreadable or outdated source needs manual recovery before editing.",
     inputSchema: z
       .object({
         template_id: z
@@ -671,7 +682,10 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
           .describe(
             "The version you read before editing. If the type has moved on since, the change is refused rather than applied on top.",
           ),
-        blueprint: itemTypeBlueprintSchema,
+        blueprint: itemTypeBlueprintSchema.optional(),
+        definition: z.record(z.string(), z.unknown()).optional().describe(
+          "The complete validated definition returned by list_document_templates(template_id), with only the requested render-data changes. Use this for a source-less workspace look or built-in remix.",
+        ),
         save_scope: itemTypeSaveScopeSchema.optional().describe(
           "Explicit save scope, overriding apply: version only, one selected folder, or the exact listed usage paths approved for this update. Only items pinned to base_version are restyled. Enum option values are stable ids: rename labels, not values.",
         ),
@@ -688,7 +702,12 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
             "Restyle the items already in those folders. Content is never changed.",
           ),
       })
-      .strict(),
+      .strict()
+      .superRefine((input, ctx) => {
+        if ((input.blueprint === undefined) === (input.definition === undefined)) {
+          ctx.addIssue({ code: "custom", message: "Send exactly one of blueprint or definition." });
+        }
+      }),
     mutability: "write",
   }),
   save_item_as_look: defineTool("save_item_as_look", {

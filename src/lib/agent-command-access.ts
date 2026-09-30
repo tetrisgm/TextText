@@ -79,6 +79,7 @@ const LOCAL_WRITES: readonly WorkspaceToolName[] = [
   "add_comment",
   "set_comment_resolved",
   "create_item_type",
+  "remix_item_type",
   "update_item_type",
   "save_item_as_look",
   "set_folder_template",

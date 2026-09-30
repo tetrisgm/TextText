@@ -17,9 +17,9 @@ import {
   normalizeItemTypeBlueprint,
   type ItemTypeBlueprint,
 } from "@/lib/presentation/item-type-blueprint";
-import { authoringSourceFor } from "@/lib/presentation/authoring-source";
+import { authoringSourceFor, type AuthoringSource } from "@/lib/presentation/authoring-source";
 import { assertCompatibleItemTypeFields, itemTypeSaveScopeSchema, type ItemTypeSaveScope } from "@/lib/presentation/item-type-update";
-import type { TemplateDefinition } from "@/lib/presentation/schema";
+import { validateTemplateDefinition, type TemplateDefinition } from "@/lib/presentation/schema";
 
 type CreatedItemType = {
   definition: TemplateDefinition;
@@ -147,6 +147,18 @@ export type ItemTypeUpdateResult = {
   conflicted: Array<{ path: string }>;
 };
 
+type ItemTypeUpdateScope = {
+  actor: AuditEntry;
+  apply?: boolean;
+  saveScope?: ItemTypeSaveScope;
+  applyToExisting?: boolean;
+  baseVersion: number;
+  blogId: string;
+  createdById?: string | null;
+  handle: string;
+  templateId: string;
+};
+
 /**
  * Change a look that already exists, by reopening how it was authored.
  *
@@ -233,6 +245,59 @@ export async function updateWorkspaceItemType(input: {
   const definition = compileItemTypeBlueprint(blueprint, { id: input.templateId });
   assertCompatibleItemTypeFields(base.fields, definition.fields);
 
+  return saveWorkspaceItemTypeSuccessor({
+    ...input,
+    definition,
+    authoringSource: authoringSourceFor(blueprint),
+    previousVersion: current.version,
+  });
+}
+
+/** Change a workspace look that has only its validated render definition. */
+export async function updateWorkspaceItemTypeDefinition(input: ItemTypeUpdateScope & {
+  definition: TemplateDefinition;
+}): Promise<ItemTypeUpdateResult> {
+  if (input.templateId.startsWith("texttext.")) {
+    throw new Error("Built-in looks cannot be changed. Save a copy and change that instead.");
+  }
+  const current = await getDocumentTemplateAuthoringSource(input.blogId, input.templateId);
+  if (!current) throw new Error("That item type could not be found.");
+  // A missing blueprint is safe to edit as a definition only when the look
+  // genuinely has no design source. Never bypass a missing or older compiler.
+  if (current.state !== "assembled") {
+    throw new Error("This look has a saved design source. Reopen that design before changing it.");
+  }
+  if (current.retired) {
+    throw new Error("That look was retired. Save a copy before changing it.");
+  }
+  if (current.version !== input.baseVersion) {
+    throw new Error(
+      `That item type has moved on: you edited version ${input.baseVersion} and it is now at ${current.version}. Read it again and reapply your change.`,
+    );
+  }
+
+  const base = await getDocumentTemplate(input.blogId, { id: input.templateId, version: input.baseVersion });
+  if (!base) throw new Error("The saved item type could not be read. Reopen it before saving a correction.");
+  const definition = validateTemplateDefinition(input.definition);
+  if (definition.id !== input.templateId || definition.version !== input.baseVersion) {
+    throw new Error("The look identity or version changed. Reopen the current definition before saving.");
+  }
+  assertCompatibleItemTypeFields(base.fields, definition.fields);
+
+  return saveWorkspaceItemTypeSuccessor({
+    ...input,
+    definition,
+    authoringSource: null,
+    previousVersion: current.version,
+  });
+}
+
+async function saveWorkspaceItemTypeSuccessor(input: ItemTypeUpdateScope & {
+  definition: TemplateDefinition;
+  authoringSource: AuthoringSource | null;
+  previousVersion: number;
+}): Promise<ItemTypeUpdateResult> {
+
   // Resolve and validate the whole scope before inserting an immutable version.
   // Explicit scope takes precedence; omitted intent saves only a version.
   const scope = input.saveScope === undefined
@@ -270,10 +335,10 @@ export async function updateWorkspaceItemType(input: {
   const conflicted: Array<{ path: string }> = [];
   const created = await createDocumentTemplateVersion({
     blogId: input.blogId,
-    definition,
+    definition: input.definition,
     actor: input.actor,
     createdById: input.createdById ?? null,
-    authoringSource: authoringSourceFor(blueprint),
+    authoringSource: input.authoringSource,
     // Insert exactly the successor to the version that was edited, so a
     // concurrent edit loses to the primary key instead of landing on top.
     expectedNextVersion: input.baseVersion + 1,
@@ -332,7 +397,7 @@ export async function updateWorkspaceItemType(input: {
     actionName: "update_item_type",
     targetType: "mode",
     targetId: `${created.id}@${created.version}`,
-    inputSummary: `from version ${current.version}`,
+    inputSummary: `from version ${input.previousVersion}`,
     outputSummary: applied.length
       ? `applied to ${applied.map((entry) => entry.path).join(", ")}`
       : "version created, not applied",
@@ -340,7 +405,7 @@ export async function updateWorkspaceItemType(input: {
 
   return {
     definition: created,
-    previousVersion: current.version,
+    previousVersion: input.previousVersion,
     applied,
     skipped,
     conflicted,

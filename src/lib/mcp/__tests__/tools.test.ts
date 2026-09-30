@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   moveFolder: vi.fn(),
   deletePost: vi.fn(),
   deletePostAtomic: vi.fn(),
+  duplicateDocumentTemplate: vi.fn(),
   getAccessibleFolders: vi.fn(),
   getAccessibleAllPosts: vi.fn(),
   searchAccessibleWorkspacePostFiles: vi.fn(),
@@ -24,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   getAccessibleFolderPostFiles: vi.fn(),
   getBlog: vi.fn(),
   getDocumentTemplate: vi.fn(),
+  getDocumentTemplateAuthoringSource: vi.fn(),
   getOwnedBlog: vi.fn(),
   getPostById: vi.fn(),
   getPostSlugAliases: vi.fn(),
@@ -105,6 +107,7 @@ vi.mock("@/lib/store", () => ({
   moveFolder: mocks.moveFolder,
   deletePost: mocks.deletePost,
   deletePostAtomic: mocks.deletePostAtomic,
+  duplicateDocumentTemplate: mocks.duplicateDocumentTemplate,
   getAccessibleAllPosts: mocks.getAccessibleAllPosts,
   searchAccessibleWorkspacePostFiles:
     mocks.searchAccessibleWorkspacePostFiles,
@@ -115,6 +118,7 @@ vi.mock("@/lib/store", () => ({
   getAccessibleFolders: mocks.getAccessibleFolders,
   getBlog: mocks.getBlog,
   getDocumentTemplate: mocks.getDocumentTemplate,
+  getDocumentTemplateAuthoringSource: mocks.getDocumentTemplateAuthoringSource,
   getOwnedBlog: mocks.getOwnedBlog,
   getPostById: mocks.getPostById,
   getPostSlugAliases: mocks.getPostSlugAliases,
@@ -143,6 +147,7 @@ import {
   WORKSPACE_TOOL_NAMES,
 } from "@/lib/ai/tools";
 import { PostConflictError } from "@/lib/store";
+import { requireBuiltinTemplate } from "@/lib/presentation/templates";
 import {
   executeMcpTool,
   resolveMcpScopeAccess,
@@ -246,6 +251,7 @@ describe("MCP workspace tool adapter", () => {
     mocks.listItemComments.mockResolvedValue([]);
     mocks.listDocumentTemplates.mockResolvedValue([]);
     mocks.getDocumentTemplate.mockResolvedValue(null);
+    mocks.getDocumentTemplateAuthoringSource.mockResolvedValue(null);
     mocks.listScopeShares.mockResolvedValue([]);
     mocks.recordAction.mockResolvedValue(undefined);
     mocks.signalWorkspaceChange.mockResolvedValue(undefined);
@@ -297,6 +303,33 @@ describe("MCP workspace tool adapter", () => {
       workspaceRole: null,
     });
     mocks.resolvePostSlug.mockResolvedValue({ kind: "missing" });
+  });
+
+  it("shows one exact built-in definition and makes an independent agent Remix", async () => {
+    const original = requireBuiltinTemplate("texttext.article");
+    const copy = { ...original, id: "article-remix-a1b2c3", version: 1, name: "My article" };
+    mocks.listDocumentTemplates.mockResolvedValue([original, copy]);
+    mocks.getDocumentTemplateAuthoringSource.mockResolvedValue({
+      version: 1, retired: false, source: null, state: "assembled",
+    });
+    mocks.duplicateDocumentTemplate.mockResolvedValue(copy);
+
+    const builtIn = await executeMcpTool("list_document_templates", { template_id: original.id }, auth(["read"]));
+    expect(builtIn.structuredContent).toMatchObject({ definition: original, editableAs: "copy-first" });
+
+    const remixed = await executeMcpTool("remix_item_type", {
+      template_id: original.id, template_version: 1, name: "My article",
+    }, auth(["sync"], "Codex"));
+    expect(remixed.structuredContent).toMatchObject({ itemType: { id: copy.id, version: 1, name: copy.name } });
+    expect(mocks.duplicateDocumentTemplate).toHaveBeenCalledWith(expect.objectContaining({
+      blogId: "blog-1",
+      reference: { id: original.id, version: 1 },
+      createdById: "user-1",
+      actor: expect.objectContaining({ actionName: "mcp.remix_item_type" }),
+    }));
+
+    const editable = await executeMcpTool("list_document_templates", { template_id: copy.id }, auth(["read"]));
+    expect(editable.structuredContent).toMatchObject({ definition: copy, editableAs: "definition" });
   });
 
   it("item grants reject other items and workspace tools before resolving any content", async () => {

@@ -22,6 +22,7 @@ const EXPECTED_NAMES = [
   "list_responses",
   "list_access",
   "list_document_templates",
+  "remix_item_type",
   "create_item_type",
   "update_item_type",
   "save_item_as_look",
@@ -433,6 +434,17 @@ describe("item type save scope command contract", () => {
   });
   it("rejects malformed scope instead of dropping it", () => {
     expect(() => parseWorkspaceToolInput("update_item_type", { template_id: "tasks", base_version: 3, blueprint: { name: "Tasks", fields: [], collection: { layout: "list" } }, save_scope: { mode: "folder" } })).toThrow();
+  });
+});
+
+describe("remixed item type command contract", () => {
+  it("loads one definition and rejects ambiguous edits", () => {
+    expect(parseWorkspaceToolInput("list_document_templates", { template_id: "texttext.note" })).toEqual({ template_id: "texttext.note" });
+    expect(parseWorkspaceToolInput("remix_item_type", { template_id: "texttext.note", template_version: 1, name: "My note" })).toMatchObject({ name: "My note" });
+    const base = { template_id: "my-note", base_version: 1 };
+    expect(parseWorkspaceToolInput("update_item_type", { ...base, definition: { id: "my-note" } })).toMatchObject({ apply: false, apply_to_existing: false });
+    expect(() => parseWorkspaceToolInput("update_item_type", base)).toThrow();
+    expect(() => parseWorkspaceToolInput("update_item_type", { ...base, definition: {}, blueprint: { name: "My note", fields: [], collection: { layout: "list" } } })).toThrow();
   });
 });
 

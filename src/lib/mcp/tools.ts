@@ -51,6 +51,7 @@ import {
   requireDocumentSnapshot,
   validateDocumentSnapshot,
 } from "@/lib/documents/model";
+import { validateTemplateDefinition } from "@/lib/presentation/schema";
 import { emptyTrash } from "@/lib/store";
 import {
   isLivingBrief,
@@ -85,6 +86,7 @@ import { normalizeTags } from "@/lib/tags";
 import {
   createWorkspaceItemType,
   updateWorkspaceItemType,
+  updateWorkspaceItemTypeDefinition,
 } from "@/lib/presentation/item-type.server";
 import {
   inviteScopeShare,
@@ -98,6 +100,7 @@ import {
   createDraftInFolder,
   createSubfolder,
   deletePostAtomic,
+  duplicateDocumentTemplate,
   getAccessibleAllPosts,
   searchAccessibleWorkspacePostFiles,
   getAccessibleWorkspaceWikiLinkSources,
@@ -106,6 +109,7 @@ import {
   getAccessibleFolders,
   getBlog,
   getDocumentTemplate,
+  getDocumentTemplateAuthoringSource,
   getFolderByPath,
   getPostById,
   getPostSlugAliases,
@@ -911,13 +915,35 @@ async function executeWorkspaceCommand(
     }
 
     case "list_document_templates": {
+      const input = args as WorkspaceToolInput<"list_document_templates">;
       const resolved = await requireWorkspace(extra);
       if (isToolResult(resolved)) return resolved;
       if (!resolved.access.blogId) return errorResult("Workspace not found.");
-      // The blueprints come back BESIDE the definitions, never inside them.
-      // A definition is what renders; a blueprint is what a person or a model
-      // edits. Without this the only way to change a look was to re-author it
-      // from compiled output, which is not the language anything writes in.
+      if (input.template_id) {
+        const templates = await listDocumentTemplates(resolved.access.blogId);
+        const definition = templates.find((candidate) => candidate.id === input.template_id);
+        if (!definition) return errorResult("That item type could not be found.");
+        if (definition.id.startsWith("texttext.")) {
+          return jsonResult({
+            definition,
+            editableAs: "copy-first",
+            note: "Built-in types are immutable. Copy this exact version with remix_item_type, then inspect and edit the copy.",
+          });
+        }
+        const authored = await getDocumentTemplateAuthoringSource(resolved.access.blogId, definition.id, definition.version);
+        return jsonResult({
+          definition,
+          editableAs: authored?.state === "authored" ? "blueprint" : authored?.state === "assembled" ? "definition" : "unavailable",
+          ...(authored?.source ? { blueprint: authored.source.blueprint } : {}),
+          note: authored?.state === "authored"
+            ? "Edit the blueprint with update_item_type."
+            : authored?.state === "assembled"
+              ? "Edit this exact validated definition with update_item_type. Keep its id and version in the request."
+              : "This type has an unreadable or outdated authoring source and cannot be edited here.",
+        });
+      }
+      // List summaries stay small; a caller explicitly requests one complete
+      // definition when editing a source-less workspace look.
       const [templates, authoring] = await Promise.all([
         listDocumentTemplates(resolved.access.blogId),
         listEditableItemTypes(resolved.access.blogId),
@@ -953,18 +979,42 @@ async function executeWorkspaceCommand(
         note: [
           editable.length
             ? "Types under `editable` can be changed with update_item_type: send its blueprint back with your edit and the version shown."
-            : "No type here can be changed with update_item_type.",
+            : "No blueprint-authored type is currently available to change.",
           needsMigration.length
             ? `Types under \`needsMigration\` were designed here but with an older version of the designer, so changing them would alter how they render. They are left as they are.`
             : "",
           unreadable.length
             ? "Types under `unreadable` were designed here and their saved design will not parse, so they cannot be reopened either."
             : "",
-          "Anything in none of those lists was assembled rather than designed - built-ins, imports, duplicates, and looks saved from a document - and is edited by hand.",
+          "Source-less workspace looks can be edited from their full validated definition: call list_document_templates with template_id. Copy a built-in with remix_item_type first.",
         ]
           .filter(Boolean)
           .join(" "),
       });
+    }
+
+    case "remix_item_type": {
+      const input = args as WorkspaceToolInput<"remix_item_type">;
+      const resolved = await requireWorkspace(extra, true);
+      if (isToolResult(resolved)) return resolved;
+      if (!resolved.access.blogId) return errorResult("Workspace not found.");
+      const createdById = accessUser(extra).userId;
+      if (!createdById) return errorResult("An authenticated owner is required to remix an item type.");
+      try {
+        const copy = await duplicateDocumentTemplate({
+          blogId: resolved.access.blogId,
+          reference: { id: input.template_id, version: input.template_version },
+          name: input.name,
+          actor: mcpAuditEntry(extra, "mcp.remix_item_type", "mode", input.template_id, input.name),
+          createdById,
+        });
+        return jsonResult({
+          itemType: { id: copy.id, version: copy.version, name: copy.name },
+          note: "The independent copy is saved. Inspect it with list_document_templates(template_id) before editing or applying it.",
+        });
+      } catch (error) {
+        return errorResult(error instanceof Error ? error.message : "That item type could not be remixed.");
+      }
     }
 
     case "create_item_type": {
@@ -1041,38 +1091,29 @@ async function executeWorkspaceCommand(
       const resolved = await requireWorkspace(extra, true);
       if (isToolResult(resolved)) return resolved;
       if (!resolved.access.blogId) return errorResult("Workspace not found.");
-      // The same bar creation is held to. An edit that strips a type back to
-      // nothing is as bad as creating one that way, and worse if it restyles
-      // the items already wearing it.
-      const quality = assessItemTypeQuality(input.blueprint);
-      const blocking = quality.findings.filter(
-        (item) => item.severity === "important",
-      );
-      if (blocking.length) {
-        return errorResult(
-          `This change would leave the item type unusable. ${blocking
-            .map((item) => item.message)
-            .join(" ")}`,
-        );
+      if (input.blueprint) {
+        // A blueprint edit that strips a type to nothing is as bad as
+        // creating one that way, especially when it restyles existing items.
+        const quality = assessItemTypeQuality(input.blueprint);
+        const blocking = quality.findings.filter((item) => item.severity === "important");
+        if (blocking.length) {
+          return errorResult(`This change would leave the item type unusable. ${blocking.map((item) => item.message).join(" ")}`);
+        }
       }
       try {
-        const updated = await updateWorkspaceItemType({
-          actor: mcpAuditEntry(
-            extra,
-            "mcp.update_item_type",
-            "mode",
-            undefined,
-            input.blueprint.name,
-          ),
+        const common = {
+          actor: mcpAuditEntry(extra, "mcp.update_item_type", "mode", input.template_id),
           saveScope: input.save_scope,
           apply: input.apply,
           applyToExisting: input.apply_to_existing,
           baseVersion: input.base_version,
           blogId: resolved.access.blogId,
-          blueprint: input.blueprint,
           handle: resolved.blog.handle,
           templateId: input.template_id,
-        });
+        };
+        const updated = input.blueprint
+          ? await updateWorkspaceItemType({ ...common, blueprint: input.blueprint })
+          : await updateWorkspaceItemTypeDefinition({ ...common, definition: validateTemplateDefinition(input.definition) });
         // Everything that did not happen is said out loud. A half-restyled
         // folder reported as a finished one is the failure this is for.
         const left = updated.applied.reduce(

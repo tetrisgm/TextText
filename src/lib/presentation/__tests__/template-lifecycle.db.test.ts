@@ -113,6 +113,35 @@ describe.skipIf(process.env.TEXTTEXT_READING_DB_TEST !== "1")("custom type lifec
     expect((await store.getDocumentTemplateAuthoringSource(source.id, v1.id, 2))?.source?.blueprint).toEqual(changed);
   });
 
+  it("changes a built-in Remix through its validated definition while keeping the original version", async () => {
+    const source = workspaces[0];
+    const actor = { actorUserId: userId, actorType: "human" as const, actionName: "test.template.definition-remix", targetType: "workspace" as const };
+    const copied = await store.duplicateDocumentTemplate({
+      blogId: source.id,
+      reference: { id: "texttext.article", version: 1 },
+      name: "Article remix",
+      actor,
+      createdById: userId,
+    });
+    expect((await store.getDocumentTemplateAuthoringSource(source.id, copied.id))?.state).toBe("assembled");
+
+    const { updateWorkspaceItemTypeDefinition } = await import("../item-type.server");
+    const updated = await updateWorkspaceItemTypeDefinition({
+      actor,
+      baseVersion: copied.version,
+      blogId: source.id,
+      definition: { ...copied, theme: { ...copied.theme, accent: "#123456" } },
+      handle: source.handle,
+      saveScope: { mode: "version" },
+      templateId: copied.id,
+      createdById: userId,
+    });
+    expect(updated.definition).toMatchObject({ id: copied.id, version: 2, theme: { accent: "#123456" } });
+    expect(await store.getDocumentTemplate(source.id, copied)).toEqual(copied);
+    expect((await store.getDocumentTemplateAuthoringSource(source.id, copied.id, 2))?.state).toBe("assembled");
+    expect((await store.listDocumentTemplates(source.id)).find((entry) => entry.id === copied.id)).toEqual(updated.definition);
+  });
+
   it("migrates successive bounded pages without rewriting unrelated or already migrated documents", async () => {
     const source = workspaces[0];
     const actor = { actorUserId: userId, actorType: "human" as const, actionName: "test.template.migrate", targetType: "workspace" as const };

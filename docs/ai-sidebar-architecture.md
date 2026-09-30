@@ -39,7 +39,7 @@ and that runbook are the canonical entry point for future implementation work.
   but no permanent delete.
 
 <!-- generated:tool-contract -->
-## Shared 50-tool contract
+## Shared 51-tool contract
 
 The 15 read-scope tools are:
 
@@ -59,43 +59,44 @@ The 15 read-scope tools are:
 14. `search_reading`
 15. `run_command`
 
-The 35 sync-scope tools are:
+The 36 sync-scope tools are:
 
 1. `list_access`
-2. `create_item_type`
-3. `update_item_type`
-4. `save_item_as_look`
-5. `set_folder_template`
-6. `retire_document_template`
-7. `set_item_template`
-8. `revert_agent_change`
-9. `create_item`
-10. `update_item`
-11. `append_to_item`
-12. `set_item_status`
-13. `move_item`
-14. `organize_items`
-15. `delete_item`
-16. `delete_items`
-17. `empty_trash`
-18. `restore_item`
-19. `add_item_asset`
-20. `remove_item_asset`
-21. `recapture_bookmark`
-22. `add_comment`
-23. `set_comment_resolved`
-24. `create_folder`
-25. `rename_folder`
-26. `move_folder`
-27. `delete_folder`
-28. `restore_folder`
-29. `set_access`
-30. `revoke_access`
-31. `keep_item`
-32. `add_feed`
-33. `hide_summary`
-34. `set_reading_preference`
-35. `clear_reading_preferences`
+2. `remix_item_type`
+3. `create_item_type`
+4. `update_item_type`
+5. `save_item_as_look`
+6. `set_folder_template`
+7. `retire_document_template`
+8. `set_item_template`
+9. `revert_agent_change`
+10. `create_item`
+11. `update_item`
+12. `append_to_item`
+13. `set_item_status`
+14. `move_item`
+15. `organize_items`
+16. `delete_item`
+17. `delete_items`
+18. `empty_trash`
+19. `restore_item`
+20. `add_item_asset`
+21. `remove_item_asset`
+22. `recapture_bookmark`
+23. `add_comment`
+24. `set_comment_resolved`
+25. `create_folder`
+26. `rename_folder`
+27. `move_folder`
+28. `delete_folder`
+29. `restore_folder`
+30. `set_access`
+31. `revoke_access`
+32. `keep_item`
+33. `add_feed`
+34. `hide_summary`
+35. `set_reading_preference`
+36. `clear_reading_preferences`
 <!-- /generated:tool-contract -->
 
 `list_access` is read-only but requires `sync` because membership information is
