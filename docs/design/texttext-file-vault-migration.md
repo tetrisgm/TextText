@@ -1,113 +1,81 @@
-# TextText file vault migration
+# TextText file vault architecture
 
-Status: implementation design, 2026-09-29. No storage authority has changed.
-This describes how to realize the file-first intent in [SPEC.md](../SPEC.md)
-while retaining web access and shared editing.
+Owner clarification, 2026-09-29: build the file-based architecture already
+required by [SPEC.md](../SPEC.md). Replace the database-centered content path.
+Legacy export, shadow migration, and backward compatibility are not prerequisites.
+This document replaces the earlier migration proposal. The installed app still
+uses the old storage path; the replacement is not implemented yet.
 
-## Target
+## The contract
 
-On the Mac, each workspace is a normal, user-chosen folder tree of `.textpack`
-files. A person can inspect, back up, move, and edit those files outside
-TextText. A document's pack contains a stable item ID, its validated
-`DocumentSnapshot`, Markdown projection, exact look, optional editable look
-source, and asset bytes. Stable IDs and versions travel inside the pack, so a
-filename or folder rename does not change identity. Folder metadata and
-immutable template history live in files in the
-same vault; personal templates become ordinary exemplar TextPacks in a
-Templates folder.
+- A workspace is a normal folder. Its subfolders contain `.textpack` documents.
+- A TextPack carries the content, metadata, assets, pinned template, and editable
+  template source needed to use it. Templates use these same file primitives.
+- The Mac opens and saves those files directly, including offline. Local agents
+  can edit the files with ordinary filesystem tools. A special agent API or a
+  running server is not required for a local edit.
+- The web edits the same document model through a synchronized server vault.
+  The Mac can be offline while web users or collaborators continue working.
+- Sync exchanges changes and reconciles revisions. Reading a file or leaving
+  the app idle does not upload it again. Saved locally and synchronized are
+  distinct states; the interface only needs attention when action is required.
+- Content indexes are rebuildable from the files. Accounts, permissions,
+  publication grants, and audit remain service metadata. Editing a file cannot
+  grant access or publish private content.
 
-The Mac vault accepts local edits first, including while offline. TextText
-syncs it with a durable server vault of the same file tree for browser users and
-collaborators. The server vault holds the accepted shared revision; an offline
-Mac edit remains a local revision until the server accepts it. The database
-remains useful for authentication, permissions, audit, presence, search, list
-indexes, and synchronization receipts. Its content and template projections
-must be rebuildable from the vault. The server still enforces access and
-publication; a local file edit cannot grant access or
-publish a private note.
+## One document across files and live editing
 
-Do not designate the current File Provider mount as the vault. It is a
-server-backed projection and already has a sync owner. Choose a separate
-user-visible local folder; do not put it under another live sync engine while
-TextText sync owns it. The existing File Provider location can remain during
-migration, then be retired after the direct vault path is proved.
+Keep the validated schema-v1 `DocumentSnapshot`, TextPack format, shared renderer,
+and Yjs collaboration machinery. Replace where they load and save content.
+Yjs handles live editing; TextPacks are the durable, portable file form.
 
-## Write and reconciliation rules
+An external edit may update `text.md`, structured fields, template source, or
+assets. Compare it with the last observed pack to identify what changed and
+reconcile the snapshot and Markdown projection. Never ignore edited Markdown
+because an older `document.json` is still present. Malformed or incomplete
+packs stay on disk with a recoverable error; sync must not overwrite them.
 
-1. The app, Finder, local CLI, and agents use one validated workspace mutation
-   path behind `src/lib/store.ts`. The Mac app must read/write the local vault
-   directly, rather than merely waiting for a server response to appear in
-   Finder. Browser and remote-agent writes enter the matching server vault path.
-2. Compare each write with its base revision and pack hash. Write a complete
-   pack to a temporary file on the same volume, verify and sync it, retain the
-   previous version, then atomically rename it into place and sync its parent
-   directory. Record an operation ID, actor, and outcome in a replayable journal.
-   Acknowledgment follows durable file and index/audit commits; a crash between
-   them is reconciled from the journal. Index updates never become a second
-   content authority.
-3. Watch changed paths, not the entire vault on a timer. Parse and upload only
-   changed pack hashes. An unchanged read or idle app sends no full content.
-4. Keep the existing Yjs path for simultaneous in-app edits. Materialization
-   follows the same revision check and epoch fence as other writes. An
-   out-of-app file change is compared with its base hash and current document.
-   Merge when safe; otherwise retain both copies and present a conflict. Never
-   silently replace a person's file or live edit.
-5. Keep folder identity, item identity, exact template pins, Trash, privacy,
-   asset references, and action audit stable across moves and renames. Reject
-   path traversal, symlinks escaping the vault, malformed packs, and invalid
-   render specs before changing visible state.
+Each document has an ID assigned locally at creation. Renaming or moving a file
+preserves that ID. Copying a file into another document must produce an independent
+identity. Files carry their exact template version and required assets so a
+copied vault remains usable without hidden content rows in Postgres.
 
-## Migration sequence
+## Conflict handling
 
-1. **Inventory and reversible export.** Read existing Postgres rows and the
-   current Finder sync state. Take verified backups. Export every item, folder,
-   custom template version, feed item, and asset into a staging vault. Add a
-   manifest of stable IDs, paths, revisions, pack hashes, and asset hashes.
-   Round-trip parse every pack and compare its `DocumentSnapshot`, look, source,
-   and binaries to the current store. Do not switch reads or remove the
-   database copy.
-2. **File-backed store behind the existing API.** Implement a vault adapter at
-   the `src/lib/store.ts` boundary, with a derived index and replayable journal.
-   Keep the existing web routes and workspace commands; change where their
-   content operations land. Use local test vaults and focused fault injection
-   for crashes between pack, index, and audit writes.
-3. **Shadow and compare.** On each existing write, also materialize the pack in
-   a staging mirror. Continuously compare file and database projections by
-   stable ID and hash. Shadow mode cannot serve reads or publish content.
-   Resolve mismatches and exercise restore before any cutover.
-4. **Cut over one test workspace.** Briefly fence new writes, drain and
-   materialize live Yjs sessions, verify parity, then enable file-backed reads
-   and writes behind a per-workspace switch. Make the Mac editor and CLI use
-   its local vault, then exercise Finder edits, offline edits, browser edits,
-   two live collaborators, agent edits, template changes, folder moves, Trash,
-   publishing boundaries, and large media. Keep the old database snapshot for
-   rollback. Never delete
-   files or database rows as part of the switch.
-5. **Roll out and simplify.** Add a coordinated encrypted vault and database
-   backup with a restore drill. After repeated parity and recovery checks, move
-   other workspaces. Point Finder directly at the vault and retire the duplicate
-   File Provider view only after its pending uploads are empty and the owner can
-   inspect the resulting folder tree. Remove redundant database content
-   storage only after restore drills prove the vault alone can rebuild it.
+Every replica keeps its last shared version. When a file changes, compute its
+changes against that version and reconcile them with changes from other replicas.
 
-## Gates before calling it complete
+- Different fields and non-overlapping text edits merge automatically.
+- Concurrent live edits use the existing full-document Yjs protocol.
+- Overlapping external edits preserve both versions and offer a visible
+  resolution. A conflict must never silently discard either person's work.
+- Deletion concurrent with an edit preserves the edited version for recovery.
+- Retries reuse operation IDs. Restarting after a crash replays pending changes
+  without duplicating documents or losing an acknowledged save.
 
-- The same item can be opened and edited in TextText and as a `.textpack` in a
-  normal folder; both routes produce one history and preserve concurrent edits.
-- A copied vault plus account/permission data restores every document,
-  template, folder, and asset without relying on `posts.document` or
-  `document_templates.definition` as the only complete copy.
-- A local offline edit, a remote collaborator edit, and an agent edit converge
-  without losing either person's work. Privacy and publication still fail
-  closed.
-- Folder listing and search use an incremental index. Idle sync does not
-  upload unchanged packs or show repeated Syncing/Synced states.
+Write complete packs beside their destination and atomically replace them.
+Persist pending sync operations and their base revisions locally. The server
+checks permissions and revision history before accepting a shared version,
+then durably writes the pack and audit receipt. An offline local revision
+remains valid local work while synchronization is pending.
 
-The current implementation has not passed these gates. In particular,
-`posts.document` and `document_templates.definition` are authoritative today;
-the File Provider tree is a projection, and the server backup packer does not
-include asset bytes. These are migration work, not labels to change in the UI.
+## Build order
 
-The first implementation slice is a read-only, asset-complete vault exporter and
-round-trip verifier with a stable-ID/hash manifest. It changes no read or write
-authority and gives the later shadow migration a measurable parity baseline.
+1. **Working local vault.** Open a fresh ordinary folder, create/read/edit/move
+   TextPacks, and render them in the Mac app with the network unavailable.
+   Verify raw agent file edits appear in the editor and editor saves appear on disk.
+2. **Shared file sync.** Use a server vault with the same format and connect
+   the web editor. Prove two replicas, offline edits, reconnect, concurrent
+   changes, deletion conflicts, duplicate delivery, and crash recovery.
+3. **Complete the existing product on those files.** Wire templates, assets,
+   capture, reading, sharing, and agents through the same file-backed content
+   boundary. Keep the existing UI and renderer where they already work.
+4. **Remove the superseded content path.** Retire the database document store,
+   duplicate template store, and Finder projection when their callers use the
+   working vault. An exporter is not a gate. Do not delete unrelated user files
+   or shared infrastructure as part of removing obsolete implementation.
+
+The acceptance test is the user's workflow: edit a TextPack locally with an
+agent while another person edits it on the web, reconnect, and retain both
+people's work. Repeat after a crash. A test passing only against an in-memory
+model or an HTTP document store does not establish that this architecture works.

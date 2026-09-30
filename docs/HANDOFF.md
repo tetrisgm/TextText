@@ -2,16 +2,19 @@
 
 ## Current work
 
-The owner wants an Obsidian-style folder vault. The connected app currently
+The owner requires an Obsidian-style folder vault and explicitly rejects
+legacy migration work as a prerequisite. Replace the old content architecture;
+start with a fresh local vault and direct file editing, then shared file sync.
+The connected app currently
 keeps canonical items, folders, and custom looks in Postgres; Finder's
 `.textpack` tree is a writable sync projection, and the signed-in CLI uses the
 server by default. Only built-in presets are sourced from checked-in TextPack
 files. This differs from [SPEC.md](SPEC.md)'s file-first intent. The
-[file vault migration design](design/texttext-file-vault-migration.md) sets a
-local folder plus synchronized server file mirror as the target and lists
-reversible cutover gates. [Architecture](../ARCHITECTURE.md),
+[file vault architecture](design/texttext-file-vault-migration.md) records the
+settled file contract, conflict behavior, and implementation order. Local
+agents must be able to manipulate the files directly. [Architecture](../ARCHITECTURE.md),
 [File Provider](file-provider.md), and [agent interoperability](agent-interoperability.md)
-describe the current paths. No storage migration has begun.
+describe the current paths. The app has not switched to the replacement yet.
 
 The owner asked for the full [content-first brief](design/texttext-content-first-ux.md). The [canonical checkpoint](TEXTTEXT_UX_CHECKPOINT.md) has the current revision, unrelated dirty files to preserve, verified slices, open acceptance cases, exact next action, and live process identities. Its [September 29 archive](TEXTTEXT_UX_CHECKPOINT-history-2026-09-29.md) and the focused receipts retain the earlier run history. Reconcile the checkpoint with `git status` before editing. Work on `main` with no worktree, one necessary server, and sequential heavy checks.
 

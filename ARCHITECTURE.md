@@ -6,6 +6,12 @@ macOS app that mounts the workspace as a Finder location.
 This is the current architecture map. Verify live behavior and generated
 release metadata rather than relying on historical handoffs.
 
+The current database-centered content storage falls short of the settled
+[file vault contract](docs/design/texttext-file-vault-migration.md). The owner
+has directed its replacement: ordinary folders of TextPacks, direct local file
+edits, web replicas, and conflict-aware sync. The implementation details below
+describe the existing system until that replacement is wired through.
+
 ## Tenancy and URLs
 
 - `src/proxy.ts` (Next 16 proxy, not middleware) keeps authenticated workspace
