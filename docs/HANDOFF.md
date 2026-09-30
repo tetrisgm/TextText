@@ -9,7 +9,7 @@ prerequisite. See [architecture](design/texttext-file-vault-migration.md) and
 
 Implemented on `main` in `76f373e1`, `f28500cd`, and `3b4549d6`: native folder
 store/CLI, complete-pack filesystem server and durable sync, bundled shared
-editor, file templates, and native assistant file tools. Local WIP **0.202 (1120)**
+editor, file templates, and native assistant file tools. Local WIP **0.202 (1121)**
 is installed at `/Applications/TextText.app`. Its selected workspace is
 `/Users/shokunin/Documents/TextText`. Installed-app creation/save and a real
 Codex append were verified against pack bytes and the refreshed editor. The
@@ -31,11 +31,27 @@ files. Installed UI, gallery creation, 22 distinct identities and byte-identical
 local-server convergence passed. See [starter receipt](file-vault-starters-2026-09-30.md).
 Commits: `c340d11c`, `8dbfbf6c`.
 
+## Active goal
+
+Complete the full [product brief](design/texttext-content-first-ux.md), reconciled
+with the file-vault architecture. Work remains in reference-quality daily
+experiences, article enrichment/annotation, image capture, native customization,
+multiplayer, feeds/publishing, and current-build performance. Prior architecture
+receipts are historical evidence, not proof of new-path integration.
+
+Article capture and personal notes now use the file-backed editor and guarded
+saves. Installed native capture of a real public article and refresh preserving
+notes passed. [Article receipt](file-vault-articles-2026-09-30.md) records scope,
+tests, runtime and limitations. Commits `f3340047`, `88a7df47`.
+Next: polished reader/highlights/source comparison, followed by image/GIF
+capture and viewer navigation. Automatic capture currently starts on opening
+a saved link; a durable unopened-link queue remains pending.
+
 ## Blockers and next work
 
 - Owner approved the local server switch. The replacement build now runs on
   localhost:3000 with `TEXTTEXT_VAULT_ROOT=.texttext/vault-server` (absolute
-  runtime path), output `.texttext/vault-capture-build`, build identity `texttext-vault-capture-20260930`. No persistent
+  runtime path), output `.texttext/vault-article-final-build`, build identity `texttext-vault-article-final-20260930`. No persistent
   service job was installed. Inspect the listener before future restarts.
 - Installed app connected with its existing account. Native create/upload,
   browser edit/download, server outage with local save and automatic recovery,
