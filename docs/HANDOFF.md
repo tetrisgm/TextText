@@ -2,14 +2,14 @@
 
 ## Current work
 
-The owner clarified an Obsidian-style folder expectation. The connected app
-currently keeps canonical items, folders, and custom looks in Postgres;
-Finder's `.textpack` tree is a writable sync projection, and the signed-in CLI
-uses the server by default. Only the built-in presets are sourced from checked-in
-TextPack files. This differs from [SPEC.md](SPEC.md)'s file-first intent. Before
-changing authority, settle whether canonical files belong in a local Mac vault
-or in a shared server folder store; web access and collaboration need the latter
-or a deliberate replication model. [Architecture](../ARCHITECTURE.md),
+The owner wants an Obsidian-style folder vault. The connected app currently
+keeps canonical items, folders, and custom looks in Postgres; Finder's
+`.textpack` tree is a writable sync projection, and the signed-in CLI uses the
+server by default. Only built-in presets are sourced from checked-in TextPack
+files. This differs from [SPEC.md](SPEC.md)'s file-first intent. The
+[file vault migration design](design/texttext-file-vault-migration.md) sets a
+local folder plus synchronized server file mirror as the target and lists
+reversible cutover gates. [Architecture](../ARCHITECTURE.md),
 [File Provider](file-provider.md), and [agent interoperability](agent-interoperability.md)
 describe the current paths. No storage migration has begun.
 
