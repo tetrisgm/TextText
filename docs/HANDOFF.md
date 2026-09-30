@@ -74,14 +74,17 @@ info metadata on parse/edit/build, with bounded expansion and path/root checks.
 Twenty focused tests (including the real gallery), TypeScript and scoped ESLint
 passed; logs `/tmp/texttext-pack-roundtrip-{tests,tsc,eslint}.log`. Legacy GitHub
 restore still creates database records and needs separate file-vault integration.
-Next: real web transport and native reader highlights. Full product acceptance, collaboration,
+Live web image import, original viewer and bounded thumbnails passed against
+the real local server. The imported pack converged byte-for-byte with native;
+test deletion reached both replicas with history retained. See the
+[image receipt](file-vault-images-2026-09-30.md). Next: native reader highlights. Full product acceptance, collaboration,
 customization, publication and measured memory remain open.
 
 ## Blockers and next work
 
 - Owner approved the local server switch. The replacement build now runs on
   localhost:3000 with `TEXTTEXT_VAULT_ROOT=.texttext/vault-server` (absolute
-  runtime path), output `.texttext/vault-article-final-build`, build identity `texttext-vault-article-final-20260930`. No persistent
+  runtime path), output `.texttext/vault-images-build`, build identity `texttext-vault-images-20260930`. No persistent
   service job was installed. Inspect the listener before future restarts.
 - Installed app connected with its existing account. Native create/upload,
   browser edit/download, server outage with local save and automatic recovery,

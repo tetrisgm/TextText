@@ -44,7 +44,8 @@ opaque files plus extension metadata. Twenty focused tests include the real
 gallery edit/rename roundtrip, path/root rejection and expansion limits.
 This helper fix does not migrate the legacy GitHub database restore path.
 
-Real web-server preview/image roundtrips, native reader selection/persistence,
+Real web-server preview/image roundtrips passed; see the image receipt.
+Native reader selection/persistence
 and realistic long-run memory/performance remain open, alongside the rest of
-the full product goal. The local server still runs the article build; no public
+the full product goal. The local server now runs the images build; no public
 deployment or push was performed.

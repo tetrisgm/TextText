@@ -64,3 +64,23 @@ mixed-folder thumbnails, multi-image viewer navigation and realistic collection
 memory measurements remain. Reader highlights are installed but still await
 native selection/persistence verification. This checkpoint does not establish the full visual
 collecting acceptance journey or completion of the product brief.
+
+## Real web server check
+
+Local production build `texttext-vault-images-20260930` passed and now serves
+localhost:3000 from `.texttext/vault-images-build`. `/api/app/build` confirmed
+the identity. Build/server logs: `/tmp/texttext-vault-images-{build,server}.log`.
+This was the authorized local server replacement, with no persistent job.
+
+The existing signed-in browser imported `public/covers/cover-118.jpg` through
+Import images into Gallery, opened its new file and opened Image viewer. The
+rendered original decoded at 1600×900. Both Gallery cards decoded embedded
+480×270 previews. The new server and native TextPacks matched byte-for-byte;
+their embedded JPEG matched the source exactly. Pack SHA-256:
+`0b7c8b677f3070ac05ef6a1a773530e4d87693181966dcc16c81119e96726467`.
+Screenshot: `/tmp/texttext-live-web-image-20260930.png`.
+
+The test copy was deleted through the web confirmation flow. Both replicas
+removed its live path, native history retained the exact pack, and the browser
+showed only the original gallery starter afterward. This proves local web
+image import/preview/view/sync/deletion, not public deployment or multiplayer.
