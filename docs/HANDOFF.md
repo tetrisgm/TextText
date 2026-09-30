@@ -69,8 +69,12 @@ were repaired with their identities preserved and prior bytes kept in history.
 All eight converged byte-for-byte with the local server. Native Gallery now shows
 its actual image thumbnail. Build 1127 bundles the repaired packs. See the
 [starter receipt](file-vault-starters-2026-09-30.md).
-Next: general github/textpack.ts asset-preserving roundtrips, real web transport
-and native reader highlights. Full product acceptance, collaboration,
+The general github/textpack.ts helper now preserves binary/opaque files and
+info metadata on parse/edit/build, with bounded expansion and path/root checks.
+Twenty focused tests (including the real gallery), TypeScript and scoped ESLint
+passed; logs `/tmp/texttext-pack-roundtrip-{tests,tsc,eslint}.log`. Legacy GitHub
+restore still creates database records and needs separate file-vault integration.
+Next: real web transport and native reader highlights. Full product acceptance, collaboration,
 customization, publication and measured memory remain open.
 
 ## Blockers and next work

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { strToU8, unzipSync, zipSync } from "fflate";
+import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { buildTextpack, gitBlobSha, parseTextpack, textpackFileName } from "../textpack";
 
@@ -35,6 +36,42 @@ describe("textpack", () => {
     expect(back.document).toEqual(parts.document);
     expect(back.template).toBeUndefined();
     expect(back.templateAuthoringSource).toBeUndefined();
+  });
+
+  it("preserves binary assets, opaque files and extension metadata while editing", () => {
+    const files = unzipSync(buildTextpack("hi", parts));
+    const image = new Uint8Array([0, 255, 42, 128]);
+    files["hi.textbundle/assets/photo.gif"] = image;
+    files["hi.textbundle/extensions/private.dat"] = image;
+    files["hi.textbundle/info.json"] = strToU8(JSON.stringify({ version: 2, sourceURL: parts.sourceUrl, custom: { keep: true }, "net.texttext.assets": { photo: { url: "https://example.com/photo" } } }));
+    const parsed = parseTextpack(zipSync(files));
+    const output = buildTextpack("renamed", { ...parsed, markdown: "Edited" });
+    const back = parseTextpack(output);
+    expect(back.markdown).toBe("Edited");
+    expect(back.files!["assets/photo.gif"]).toEqual(image);
+    expect(back.files!["extensions/private.dat"]).toEqual(image);
+    expect(back.info?.custom).toEqual({ keep: true });
+    expect(back.info?.["net.texttext.assets"]).toEqual({ photo: { url: "https://example.com/photo" } });
+    expect(buildTextpack("renamed", back)).toEqual(output);
+  });
+
+  it("keeps every embedded image from the real portable gallery after a rename and edit", () => {
+    const before = parseTextpack(readFileSync("presets/builtin/gallery.textpack"));
+    const after = parseTextpack(buildTextpack("My gallery", { ...before, markdown: before.markdown + "\nMy note.\n" }));
+    const assets = Object.keys(before.files!).filter((path) => path.startsWith("assets/"));
+    expect(assets).toHaveLength(4);
+    for (const path of assets) expect(after.files![path]).toEqual(before.files![path]);
+    expect(after.templateAuthoringSource).toEqual(before.templateAuthoringSource);
+  });
+
+  it("refuses ambiguous roots, traversal and excessive expansion", () => {
+    const files = unzipSync(buildTextpack("hi", parts));
+    expect(() => parseTextpack(zipSync({ ...files, "other/text.md": strToU8("other") }))).toThrow(/root/);
+    expect(() => parseTextpack(zipSync({ ...files, "hi.textbundle/../escape": strToU8("bad") }))).toThrow(/entry/);
+    expect(() => buildTextpack("../escape", parts)).toThrow(/name/);
+    expect(() => buildTextpack("hi", { ...parts, files: { "../escape": strToU8("bad") } })).toThrow(/path/);
+    const large = zipSync({ ...files, "hi.textbundle/assets/bomb": new Uint8Array(65 * 1024 * 1024) });
+    expect(() => parseTextpack(large)).toThrow(/limit/);
   });
 
   it("is byte-for-byte deterministic so unchanged items reuse their blob", () => {

@@ -15,22 +15,35 @@ export type TextpackParts = {
   template?: unknown;
   templateAuthoringSource?: unknown;
   sourceUrl?: string | null;
+  /** Uninterpreted files relative to the bundle root; preserved across edits. */
+  files?: Record<string, Uint8Array>;
+  info?: Record<string, unknown>;
 };
 
 // ZIP records local calendar fields. UTC midnight becomes 1979 west of UTC,
 // which is outside ZIP's range; local midnight also gives every zone the same bytes.
 const EPOCH = new Date(1980, 0, 1);
 
+const MAX_BYTES = 64 * 1024 * 1024;
+function safePath(path: string): boolean {
+  return !!path && !path.includes("\\") && !Array.from(path).some((char) => char.charCodeAt(0) < 32)
+    && !path.split("/").some((part) => !part || part === "." || part === "..")
+    && !/^[A-Za-z]:/.test(path);
+}
+
 export function buildTextpack(name: string, parts: TextpackParts): Uint8Array {
+  if (!safePath(name) || name.includes("/")) throw new Error("Invalid TextPack name");
   const folder = `${name}.textbundle`;
   const info = {
     version: 2,
     type: "net.daringfireball.markdown",
     transient: false,
     creatorIdentifier: "app.texttext",
-    ...(parts.sourceUrl ? { sourceURL: parts.sourceUrl } : {}),
     "net.texttext.assets": {},
+    ...parts.info,
+    ...(parts.sourceUrl ? { sourceURL: parts.sourceUrl } : {}),
   };
+  if (parts.sourceUrl === null) delete (info as Record<string, unknown>).sourceURL;
   const entries: Record<string, [Uint8Array, { level: 0; mtime: Date }]> = {
     [`${folder}/text.md`]: [strToU8(parts.markdown), { level: 0, mtime: EPOCH }],
     [`${folder}/document.json`]: [strToU8(`${JSON.stringify(parts.document, null, 2)}\n`), { level: 0, mtime: EPOCH }],
@@ -42,15 +55,33 @@ export function buildTextpack(name: string, parts: TextpackParts): Uint8Array {
       entries[`${folder}/template-source.json`] = [strToU8(`${JSON.stringify(parts.templateAuthoringSource, null, 2)}\n`), { level: 0, mtime: EPOCH }];
     }
   }
+  for (const path of Object.keys(parts.files ?? {}).sort()) {
+    if (!safePath(path)) throw new Error("Invalid TextPack entry path");
+    const key = `${folder}/${path}`;
+    if (!(key in entries)) entries[key] = [parts.files![path], { level: 0, mtime: EPOCH }];
+  }
+  if (Object.keys(entries).length > 10000 || Object.values(entries).reduce((sum, [data]) => sum + data.byteLength, 0) > MAX_BYTES) {
+    throw new Error("Expanded TextPack exceeds 64 MiB limit");
+  }
   return zipSync(entries, { mtime: EPOCH });
 }
 
 export function parseTextpack(bytes: Uint8Array): TextpackParts {
-  const files = unzipSync(bytes);
-  const find = (leaf: string) => {
-    const key = Object.keys(files).find((path) => path.endsWith(`/${leaf}`) || path === leaf);
-    return key ? strFromU8(files[key]) : null;
-  };
+  if (bytes.byteLength > MAX_BYTES) throw new Error("TextPack exceeds 64 MiB limit");
+  let size = 0;
+  const seen = new Set<string>();
+  const files = unzipSync(bytes, { filter(entry) {
+    const path = entry.name.endsWith("/") ? entry.name.slice(0, -1) : entry.name;
+    if (!safePath(path) || seen.has(entry.name)) throw new Error("Invalid or duplicate TextPack entry");
+    seen.add(entry.name);
+    if (seen.size > 10000 || (size += entry.originalSize) > MAX_BYTES) throw new Error("Expanded TextPack exceeds 64 MiB limit");
+    return !entry.name.endsWith("/");
+  } });
+  const roots = Object.keys(files).filter((path) => path === "text.md" || path.endsWith("/text.md"));
+  if (roots.length !== 1) throw new Error("TextPack must contain one document root");
+  const root = roots[0].slice(0, -"text.md".length);
+  if (Object.keys(files).some((path) => !path.startsWith(root))) throw new Error("TextPack contains files outside its document root");
+  const find = (leaf: string) => files[root + leaf] ? strFromU8(files[root + leaf]) : null;
   const markdown = find("text.md");
   const document = find("document.json");
   if (markdown === null || document === null) throw new Error("Not a TextText textpack: text.md or document.json is missing");
@@ -66,9 +97,12 @@ export function parseTextpack(bytes: Uint8Array): TextpackParts {
   };
   const info = find("info.json");
   let sourceUrl: string | null = null;
+  let metadata: Record<string, unknown> | undefined;
   if (info) {
     try {
-      const parsed = JSON.parse(info) as { sourceURL?: unknown };
+      const parsed = JSON.parse(info);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid info");
+      metadata = parsed;
       if (typeof parsed.sourceURL === "string") sourceUrl = parsed.sourceURL;
     } catch {
       // info.json is advisory.
@@ -80,6 +114,10 @@ export function parseTextpack(bytes: Uint8Array): TextpackParts {
     template: optionalJSON(template),
     templateAuthoringSource: optionalJSON(templateAuthoringSource),
     sourceUrl,
+    info: metadata,
+    files: Object.fromEntries(Object.entries(files)
+      .filter(([path]) => !["text.md", "document.json", "info.json"].includes(path.slice(root.length)))
+      .map(([path, data]) => [path.slice(root.length), data])),
   };
 }
 

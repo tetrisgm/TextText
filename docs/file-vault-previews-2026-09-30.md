@@ -39,8 +39,10 @@ Four image-bearing starter packs previously had remote cover references without
 embedded bytes. Repository packs and eight unchanged installed copies now carry
 the original assets. Native Gallery visibly renders the actual photo thumbnail.
 See the [starter receipt](file-vault-starters-2026-09-30.md) for repair safeguards.
-The general `github/textpack.ts` parse/build helpers still discard assets and
-require a separate roundtrip fix.
+The general `github/textpack.ts` parse/build helpers now preserve binary and
+opaque files plus extension metadata. Twenty focused tests include the real
+gallery edit/rename roundtrip, path/root rejection and expansion limits.
+This helper fix does not migrate the legacy GitHub database restore path.
 
 Real web-server preview/image roundtrips, native reader selection/persistence,
 and realistic long-run memory/performance remain open, alongside the rest of
