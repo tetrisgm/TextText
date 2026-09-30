@@ -7,6 +7,7 @@ import { chromium } from "playwright";
 
 const makeDocument = (body) => ({ schemaVersion: 1, content: { title: "Offline note", body, fields: {}, tags: [], assets: [] }, presentation: { template: { id: "texttext.note", version: 1 }, theme: {} } });
 const files = new Map();
+const proposalFeedback = [];
 const history = new Map();
 const importedPacks = [];
 let revision = 1;
@@ -57,6 +58,7 @@ try {
     }
     else if (request.method === "extractArticle") result = { sourceURL: request.params.sourceURL, markdown: "# Captured reading\n\nThe readable article is saved in this same file.", capturedAt: "2026-09-30T12:00:00Z" };
     else if (request.method === "agentStatus" || request.method === "agentConnect") result = { state: "ready" };
+    else if (request.method === "agentProposalResult") { proposalFeedback.push(request.params); result = {}; }
     else if (request.method === "agentSend") {
       result = {};
       if (request.params.customizing) {
@@ -165,6 +167,13 @@ try {
   await page.getByRole("button", { name: "Send", exact: true }).click();
   const designPreview = page.getByRole("region", { name: "Design preview", exact: true });
   await designPreview.getByRole("button", { name: "Keep this design", exact: true }).waitFor();
+  assert.equal(JSON.stringify(files.get(initial.path)), beforeDesign);
+  await page.evaluate((detail) => window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail })), {
+    type: "template-proposal", proposalId: "invalid-fixture", path: initial.path, hash: files.get(initial.path).hash,
+    templateJSON: JSON.stringify({ ...template, item: { type: "script", code: "bad" } }),
+  });
+  await page.getByText(/The proposed design needs a correction/).waitFor();
+  assert.ok(proposalFeedback.some((feedback) => feedback.proposalId === "invalid-fixture" && feedback.valid === false && feedback.message.length > 0));
   assert.equal(JSON.stringify(files.get(initial.path)), beforeDesign);
   await designPreview.getByRole("button", { name: "Compare original", exact: true }).click();
   await designPreview.getByRole("button", { name: "Show proposed design", exact: true }).click();

@@ -35,8 +35,25 @@ A disposable Bookmark clone was created in Reading using the installed picker:
 excerpt and explicit personal notes are the research-reader input. Original
 bytes are retained at `/tmp/texttext-customization-before.textpack`; SHA-256
 `d2101a0d15b8975b85566af86a32d2936209514d66f760e81a565facf532305a`.
-The existing Codex account connected and a two-column commentary/excerpt proposal
-was requested. Real provider preview/refine/keep/reopen is not yet verified.
+The existing Codex account connected and generated a valid two-column design
+using the actual excerpt and commentary, with a source link. Native UI rendered
+both columns; disk bytes remained identical to the baseline. A refinement asked
+for 2:1 widths and labels. The provider invented unsupported `weight` and `text`
+properties. Full frontend validation disabled Keep, preserving the file, but the
+provider had already been told the proposal succeeded.
+
+That gap is now fixed: native tool completion waits for a frontend validation
+acknowledgment. Invalid designs return bounded schema feedback as tool failure,
+so the provider can revise them. The last valid preview is retained. Pending
+acknowledgments are bounded and cleared on stop/completion. Browser regression
+now proves invalid proposals send failure feedback without replacing a valid
+preview or changing the file. Swift, TypeScript and lint checks passed.
+Logs: `/tmp/texttext-template-feedback-{browser,swift,tsc,eslint}.log`.
+
+The invalid installed preview was cancelled. The disposable clone remains
+unchanged from its baseline. Build 1129 with this correction is in progress
+(`/tmp/texttext-build-1129.log`). Real provider refinement, Keep, reopening and
+cleanup remain next; do not claim that journey complete yet.
 
 Folder presentation scopes, Command-K Customize, full prompt history recovery,
 and the rest of the product brief remain open. No public release or push.

@@ -18,6 +18,7 @@ final class LocalVaultAgentController {
     private var accountEmail: String?
     private var busy = false
     private var customizationPath: String?
+    private var pendingProposals: [String: (requestID: AnyHashable, value: String)] = [:]
     private var loginID: String?
     private var attemptedLogin = false
     private var fileFence = LocalVaultAgentCancellation()
@@ -120,7 +121,7 @@ final class LocalVaultAgentController {
         fileFence.cancel()
         if let loginID { try? request("account/login/cancel", ["loginId": loginID]) }
         loginID = nil; attemptedLogin = false
-        generation = UUID(); deadline?.cancel(); deadline = nil
+        generation = UUID(); pendingProposals.removeAll(); deadline?.cancel(); deadline = nil
         server?.onEvent = nil; server?.onExit = nil; server?.stop(); server = nil
         threadID = nil; busy = false; customizationPath = nil; pending.removeAll(); phases.removeAll()
     }
@@ -210,12 +211,22 @@ final class LocalVaultAgentController {
         } else if message.method == "item/tool/call", let requestID = message.jsonRPCID {
             performTool(message, requestID: requestID)
         } else if message.method == "turn/completed" {
-            busy = false; deadline?.cancel(); phases.removeAll(); update("ready")
+            busy = false; deadline?.cancel(); pendingProposals.removeAll(); phases.removeAll(); update("ready")
             if CodexTurnOutcome(params: message.rawParams) != .completed {
                 onEvent?(["type": "error", "message": "The agent stopped before finishing. Saved file changes are preserved."])
             }
             onEvent?(["type": "turn-completed"])
         }
+    }
+
+    func proposalResult(proposalID: String, valid: Bool, message: String? = nil) throws {
+        guard busy, let pending = pendingProposals.removeValue(forKey: proposalID) else {
+            throw VaultAgentError("This template preview is no longer pending validation.")
+        }
+        let feedback = String((message ?? "The template did not pass validation. Correct the declarative template and propose it again.").prefix(4_000))
+        try server?.respond(id: pending.requestID, result: CodexAppServerRequests.dynamicToolResult(
+            text: valid ? pending.value : "Template preview rejected: \(feedback)", success: valid))
+        armDeadline(seconds: 120)
     }
 
     private func performTool(_ message: CodexAppServerMessage, requestID: AnyHashable) {
@@ -238,8 +249,18 @@ final class LocalVaultAgentController {
                     text = value; success = true
                     if tool == "propose_template", let data = value.data(using: .utf8),
                        var proposal = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+                        guard self.pendingProposals.count < 4 else {
+                            try? self.server?.respond(id: requestID, result: CodexAppServerRequests.dynamicToolResult(
+                                text: "Wait for the pending template previews to finish validation before proposing another.", success: false))
+                            return
+                        }
+                        let proposalID = UUID().uuidString
+                        self.pendingProposals[proposalID] = (requestID, value)
                         proposal["type"] = "template-proposal"
+                        proposal["proposalId"] = proposalID
+                        self.armDeadline(seconds: 120)
                         self.onEvent?(proposal)
+                        return
                     }
                 case .failure(let error): text = error.localizedDescription; success = false
                 }

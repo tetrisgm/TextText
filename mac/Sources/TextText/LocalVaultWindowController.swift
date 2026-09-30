@@ -215,6 +215,9 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 case "agentStatus": break
                 case "agentConnect": try agent?.connect()
                 case "agentSend": try agent?.send(prompt: Self.string(params, "prompt"), path: params["path"] as? String, customizing: params["customizing"] as? Bool ?? false)
+                case "agentProposalResult":
+                    guard let valid = params["valid"] as? Bool else { throw VaultBridgeError("Provide the template validation result.") }
+                    try agent?.proposalResult(proposalID: Self.string(params, "proposalId"), valid: valid, message: params["message"] as? String)
                 case "agentCancel": agent?.cancel()
                 default: throw VaultBridgeError("Unknown agent operation.")
                 }

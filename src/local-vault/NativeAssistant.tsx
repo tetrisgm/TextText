@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { vaultRequest } from "./bridge";
+import { validateTemplateDefinition } from "@/lib/presentation/schema";
+import { validatedLookSource } from "@/lib/presentation/template-library";
 import { TemplatePreview } from "./TemplatePreview";
 import type { TemplateProposal } from "./template-proposal";
 
@@ -54,10 +56,19 @@ export function NativeAssistant({ open, path, root, onClose, beforeSend }: {
       const detail = (event as CustomEvent<AgentEvent>).detail;
       if (!detail) return;
       if (detail.type === "template-proposal") {
-        const proposed = detail as unknown as TemplateProposal;
-        if (typeof proposed.path === "string" && typeof proposed.hash === "string" && typeof proposed.templateJSON === "string" && (!target.current || target.current === proposed.path)) {
-          changeProposal({ ...proposed, request: requested.current }); setCustomizing(proposed.path);
-        } else setNotice("The assistant returned a preview for a different file. Your current file is unchanged.");
+        const proposed = detail as unknown as TemplateProposal & { proposalId?: string };
+        let valid = false, message = "";
+        try {
+          if (typeof proposed.path !== "string" || typeof proposed.hash !== "string" || typeof proposed.templateJSON !== "string" || (target.current && target.current !== proposed.path)) throw new Error("Proposal target must match the selected file.");
+          if (proposed.templateJSON.length > 1_000_000 || (proposed.templateAuthoringSourceJSON?.length ?? 0) > 1_000_000) throw new Error("Proposal exceeds the 1 MB design limit.");
+          const template = validateTemplateDefinition(JSON.parse(proposed.templateJSON));
+          validatedLookSource(template, proposed.templateAuthoringSourceJSON ? JSON.parse(proposed.templateAuthoringSourceJSON) : undefined);
+          changeProposal({ ...proposed, request: requested.current }); setCustomizing(proposed.path); valid = true;
+        } catch (error) {
+          message = error instanceof Error ? error.message.slice(0, 6000) : "Invalid template definition.";
+          setNotice("The proposed design needs a correction. The assistant is receiving the validation details; your file is unchanged.");
+        }
+        if (proposed.proposalId) void vaultRequest("agentProposalResult", { proposalId: proposed.proposalId, valid, message }).catch((error: Error) => setNotice(error.message));
       }
       else if (detail.type === "status" && detail.state) setStatus({ state: detail.state, message: detail.message, accountEmail: detail.accountEmail });
       else if ((detail.type === "text-delta" || detail.type === "final-text") && detail.text !== undefined) {

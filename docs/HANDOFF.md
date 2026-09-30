@@ -81,8 +81,11 @@ test deletion reached both replicas with history retained. See the
 and byte-identical server convergence; the test annotation was removed.
 Build 1128 adds presentation-only native proposals and a validated
 preview/compare/refine/keep/cancel UI. Unit, Swift and browser fixture tests pass.
-The real provider is running a research-reader proposal on a disposable Bookmark
-clone; see [customization checkpoint](file-vault-customization-2026-09-30.md).
+The real provider generated a valid research-reader preview, but refinement
+exposed missing validation feedback. The new handshake returns schema failures
+to the agent and preserves the last valid preview. Build 1129 is running
+(exec session 94584, `/tmp/texttext-build-1129.log`); 1128 remains installed.
+See [customization checkpoint](file-vault-customization-2026-09-30.md).
 Next: finish live provider verification, then file-backed folder presentations. Full product acceptance, collaboration,
 customization, publication and measured memory remain open.
 
