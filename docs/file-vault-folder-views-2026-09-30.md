@@ -45,7 +45,13 @@ creation/update/publication date sorting is not available from current metadata.
 A collection projection contains bounded title/excerpt/tags/scalar fields, not
 full document content. Custom layouts needing unavailable fields report fallback.
 
-Native build 1130 is running. Installed folder creation, reopen, real provider
-folder refinement, and local-server convergence remain unverified. The live web
+Installed build 1130 created Reading/Folder view.textpack through preview and
+Keep, then reopened the same reference index after leaving the folder. All three
+pre-existing Reading pack SHA-256 values stayed unchanged, and the new design
+file converged byte-for-byte with the local server. Native visual inspection
+caught long source URLs squeezing Tags/Open. Fixed column widths and a bounded
+overflow container correct that; the browser fixture now includes a real long
+source URL and all checks pass. Build 1131 packages the correction.
+Real provider folder refinement remains unverified. The live web
 server still runs the preceding image build, so its new folder metadata routes
 require a local rebuild before web acceptance. No public release or push.

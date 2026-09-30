@@ -54,7 +54,7 @@ try {
       else {
         const document = JSON.parse(file.documentJSON);
         const poster = file.assets?.find((asset) => asset.filename === "preview.png");
-        result = { document, title: document.content.title, excerpt: document.content.body.slice(0, 400), ...(!request.params.metadataOnly && poster ? { image: { data: poster.data, contentType: "image/png" } } : {}) };
+        result = { document, sourceURL: document.content.fields.sourceUrl, title: document.content.title, excerpt: document.content.body.slice(0, 400), ...(!request.params.metadataOnly && poster ? { image: { data: poster.data, contentType: "image/png" } } : {}) };
       }
     }
     else if (request.method === "extractArticle") result = { sourceURL: request.params.sourceURL, markdown: "# Captured reading\n\nThe readable article is saved in this same file.", capturedAt: "2026-09-30T12:00:00Z" };
@@ -336,6 +336,10 @@ try {
   await page.getByText("Page 2 of 2", { exact: true }).waitFor();
   assert.ok(await page.locator(".vault-document-grid > button").count() <= 24);
   assert.deepEqual(failures, []);
+  const referenceFixture = files.get("Large/Note 0.textpack");
+  const referenceDocument = JSON.parse(referenceFixture.documentJSON);
+  referenceDocument.content.fields.sourceUrl = "https://www.figma.com/blog/how-figmas-multiplayer-technology-works/";
+  files.set(referenceFixture.path, { ...referenceFixture, documentJSON: JSON.stringify(referenceDocument) });
   await page.getByRole("region", { name: "Folders", exact: true }).getByRole("button", { name: /Large/ }).click();
   const membersBefore = JSON.stringify([...files].filter(([path]) => path.startsWith("Large/")));
   await page.getByLabel("Folder design", { exact: true }).selectOption("texttext.folder-reference");
