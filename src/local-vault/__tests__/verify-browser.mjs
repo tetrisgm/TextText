@@ -28,6 +28,7 @@ try {
   await page.exposeBinding("nativeVaultRequest", async ({ page }, request) => {
     let result, error;
     if (request.method === "list" || request.method === "open") result = { root: "/test/Workspace", folders: ["Empty"], items: [...files.values()].map((file) => ({ path: file.path })) };
+    else if (request.method === "folderViews") result = { files: [...files.values()].filter((file) => file.path.split("/").slice(0, -1).join("/") === request.params.folder && JSON.parse(file.documentJSON).content.fields.texttextFolderView) };
     else if (request.method === "connection" || request.method === "connect" || request.method === "sync") {
       if (request.method === "connect") connected = true;
       result = { connected, available: true, ...(connected ? { webURL: "https://example.test/vault/workspace" } : {}) };
@@ -42,7 +43,7 @@ try {
       const entries = unzipSync(bytes);
       const prefix = Object.keys(entries).find((name) => name.endsWith("/document.json")).replace(/document.json$/, "");
       importedPacks.push(entries);
-      result = { path: `${request.params.folder ? request.params.folder + "/" : ""}${request.params.title}-${++revision}.textpack`, hash: String(revision),
+      result = { path: request.params.exactPath || `${request.params.folder ? request.params.folder + "/" : ""}${request.params.title}-${++revision}.textpack`, hash: String(++revision),
         markdown: strFromU8(entries[prefix + "text.md"]), documentJSON: strFromU8(entries[prefix + "document.json"]), templateJSON: strFromU8(entries[prefix + "template.json"]),
         assets: Object.entries(entries).filter(([name]) => name.startsWith(prefix + "assets/")).map(([name, data]) => ({ filename: name.slice((prefix + "assets/").length), contentType: name.endsWith(".png") ? "image/png" : "image/gif", data: Buffer.from(data).toString("base64") })) };
       files.set(result.path, result);
@@ -53,7 +54,7 @@ try {
       else {
         const document = JSON.parse(file.documentJSON);
         const poster = file.assets?.find((asset) => asset.filename === "preview.png");
-        result = { title: document.content.title, excerpt: document.content.body.slice(0, 400), ...(poster ? { image: { data: poster.data, contentType: "image/png" } } : {}) };
+        result = { document, title: document.content.title, excerpt: document.content.body.slice(0, 400), ...(!request.params.metadataOnly && poster ? { image: { data: poster.data, contentType: "image/png" } } : {}) };
       }
     }
     else if (request.method === "extractArticle") result = { sourceURL: request.params.sourceURL, markdown: "# Captured reading\n\nThe readable article is saved in this same file.", capturedAt: "2026-09-30T12:00:00Z" };
@@ -334,6 +335,51 @@ try {
   await page.getByRole("navigation", { name: "File pages" }).getByRole("button", { name: "Next", exact: true }).click();
   await page.getByText("Page 2 of 2", { exact: true }).waitFor();
   assert.ok(await page.locator(".vault-document-grid > button").count() <= 24);
+  assert.deepEqual(failures, []);
+  await page.getByRole("region", { name: "Folders", exact: true }).getByRole("button", { name: /Large/ }).click();
+  const membersBefore = JSON.stringify([...files].filter(([path]) => path.startsWith("Large/")));
+  await page.getByLabel("Folder design", { exact: true }).selectOption("texttext.folder-reference");
+  await page.getByRole("table").waitFor();
+  assert.equal(files.has("Large/Folder view.textpack"), false);
+  await page.getByRole("button", { name: "Cancel preview", exact: true }).click();
+  assert.equal(files.has("Large/Folder view.textpack"), false);
+  await page.getByLabel("Folder design", { exact: true }).selectOption("texttext.folder-reference");
+  await page.getByRole("button", { name: "Keep folder design", exact: true }).click();
+  await page.getByRole("button", { name: "Customize folder", exact: true }).waitFor();
+  assert.equal(JSON.stringify([...files].filter(([path]) => path.startsWith("Large/") && !path.endsWith("Folder view.textpack"))), membersBefore);
+  assert.equal(JSON.parse(files.get("Large/Folder view.textpack").documentJSON).content.fields.texttextFolderView, "v1");
+  await page.screenshot({ path: "/tmp/texttext-folder-reference-light.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.screenshot({ path: "/tmp/texttext-folder-reference-dark.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.getByRole("button", { name: "All files", exact: true }).click();
+  await page.getByRole("region", { name: "Folders", exact: true }).getByRole("button", { name: /Large/ }).click();
+  await page.getByRole("table").waitFor();
+  assert.equal(await page.getByRole("table").getByText("Folder view", { exact: true }).count(), 0);
+  await page.getByLabel("Folder design", { exact: true }).selectOption("texttext.folder-reading");
+  await page.locator('.vault-folder-collection[data-layout="list"]').waitFor();
+  await page.getByRole("button", { name: "Cancel preview", exact: true }).click();
+  await page.getByLabel("Folder design", { exact: true }).selectOption("texttext.folder-contact");
+  await page.locator('.vault-folder-collection[data-layout="cards"]').waitFor();
+  const existingView = files.get("Large/Folder view.textpack");
+  files.set(existingView.path, { ...existingView, hash: "concurrent-folder-change" });
+  await page.evaluate(() => window.dispatchEvent(new Event("texttext:vault-changed")));
+  await page.getByRole("button", { name: "Keep folder design", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: "The folder design changed" }).waitFor();
+  assert.equal(files.get(existingView.path).templateJSON, existingView.templateJSON);
+  await page.getByRole("button", { name: "Cancel preview", exact: true }).click();
+  const beforeFolderProposal = JSON.stringify(files.get(existingView.path));
+  await page.getByRole("button", { name: "Customize folder", exact: true }).click();
+  await page.getByRole("textbox", { name: "Message assistant", exact: true }).fill("Propose a folder design");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await designPreview.getByRole("table").waitFor();
+  assert.equal(JSON.stringify(files.get(existingView.path)), beforeFolderProposal);
+  await designPreview.getByRole("navigation", { name: "File pages" }).getByRole("button", { name: "Next", exact: true }).click();
+  await designPreview.getByText("Page 2 of 2", { exact: true }).waitFor();
+  await designPreview.getByRole("button", { name: "Keep this design", exact: true }).click();
+  await designPreview.waitFor({ state: "hidden" });
+  assert.equal(JSON.parse(files.get(existingView.path).templateJSON).name, "Proposed design");
+  assert.equal(JSON.stringify([...files].filter(([path]) => path.startsWith("Large/") && !path.endsWith("Folder view.textpack"))), membersBefore);
   assert.deepEqual(failures, []);
   console.log("Bounded folder previews and pagination passed.");
   console.log("Image picker, folder drop/paste and embedded GIF still preview passed.");

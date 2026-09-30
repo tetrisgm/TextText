@@ -83,12 +83,17 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
   const transport: VaultTransport = async (method, params) => {
     if (destroyed) throw new Error("This workspace has closed.");
     if (method === "list" || method === "open") return listing();
+    if (method === "folderViews") {
+      const response = await request(`${base}?folderViews=${encodeURIComponent(String(params.folder ?? ""))}`, { credentials: "same-origin", cache: "no-store" });
+      if (!response.ok) throw await failure(response);
+      return response.json();
+    }
     if (method === "read") return read(String(params.path));
     if (method === "template" || method === "preview") {
       if (!manifest) await listing();
       const item = manifest!.items.find((entry) => entry.relativePath === params.path);
       if (!item) throw new VaultError("The template file was not found.", "not_found");
-      const response = await request(`${base}/${encodeURIComponent(item.itemId)}?metadata=${method}`, { credentials: "same-origin", cache: "no-store" });
+      const response = await request(`${base}/${encodeURIComponent(item.itemId)}?metadata=${method}${params.metadataOnly === true ? "&metadataOnly=1" : ""}`, { credentials: "same-origin", cache: "no-store" });
       if (!response.ok) throw await failure(response);
       return response.json();
     }
@@ -140,6 +145,8 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
       await listing();
       const stem = safeName(title);
       let path = `${folder ? folder + "/" : ""}${stem}.textpack`;
+      if (params.exactPath !== undefined && params.exactPath !== path) throw new Error("The folder view destination does not match its folder.");
+      if (params.exactPath !== undefined && manifest!.items.some((item) => item.relativePath.toLowerCase() === path.toLowerCase())) throw new Error("A file already occupies the folder view path.");
       for (let suffix = 2; manifest!.items.some((item) => item.relativePath.toLowerCase() === path.toLowerCase()); suffix++) path = `${folder ? folder + "/" : ""}${stem} ${suffix}.textpack`;
       let pack: Pick<OpenPack, "entries" | "prefix">, file: VaultFile;
       if (method === "importPack") {

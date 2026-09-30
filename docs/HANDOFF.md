@@ -85,13 +85,16 @@ See [customization receipt](file-vault-customization-2026-09-30.md). Its disposa
 Reading clone remains for inspection and should be deleted recoverably after
 capturing the final screenshot.
 
-Next: integrate file-backed folder presentations. The pure folder-view model in
-`src/local-vault/folder-view.ts` recognizes explicitly marked TextPacks, excludes
-only their definition from immediate membership, rejects collisions and stages
-revision-checked presentation edits without rewriting Markdown or retaining
-stale authoring source. Nine focused model/proposal tests pass. UI, bounded
-collection metadata, native/web transport enforcement and acceptance remain.
-Full product collaboration, publication and measured memory remain open.
+Folder presentations now integrate ordinary marked definition files, three
+presets, preview/keep/cancel, native assistant folder previews, shared collection
+rendering, and bounded metadata-only transport. Model, server, Swift and browser
+checks pass, including preserving every member and rejecting a concurrent design
+change. See [folder view receipt](file-vault-folder-views-2026-09-30.md).
+Native build 1130 is running (exec session 92460,
+`/tmp/texttext-build-1130.log`). Next: install and verify native folder views,
+then rebuild the local web server for its new metadata routes. Real provider
+folder refinement, large collection indexing/performance, full product
+collaboration, publication and measured memory remain open.
 
 ## Blockers and next work
 

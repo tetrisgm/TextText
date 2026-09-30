@@ -4,6 +4,7 @@ import { validatedLookSource } from "./presentation/template-library";
 import {
   readVaultTextpack as readDirectoryTextpack,
   readVaultTemplate as readDirectoryTemplate,
+  listVaultFolderViews as listDirectoryFolderViews,
   listVaultTextpacks as listDirectoryTextpacks,
   waitVaultTextpacks as waitDirectoryTextpacks,
   moveVaultTextpack as moveDirectoryTextpack,
@@ -65,11 +66,16 @@ export function readVaultTextpack(input: Omit<VaultLocation, "onReceipt"> & { it
   return readDirectoryTextpack({ ...input, onReceipt: recordVaultReceipt });
 }
 
-export async function readVaultPreview(input: Omit<VaultLocation, "onReceipt"> & { itemId: string }) {
+export async function readVaultPreview(input: Omit<VaultLocation, "onReceipt"> & { itemId: string; metadataOnly?: boolean }) {
   const item = await readVaultTextpack(input);
   if (!item) return null;
   const { previewTextpack } = await import("./vault/pack-preview.server");
-  return previewTextpack(item.bytes);
+  return previewTextpack(item.bytes, input.metadataOnly);
+}
+
+export function listVaultFolderViews(input: Omit<VaultLocation, "onReceipt"> & { folder: string }) {
+  if (!db) throw new Error(NO_DATABASE);
+  return listDirectoryFolderViews({ ...input, onReceipt: recordVaultReceipt });
 }
 
 export function readVaultTemplate(input: Omit<VaultLocation, "onReceipt"> & { itemId: string }) {

@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { DocumentRenderer } from "@/components/document/DocumentRenderer";
-import { vaultRequest, type VaultFile } from "./bridge";
+import { vaultRequest, type VaultFile, type VaultListing } from "./bridge";
+import { readFolderView } from "./folder-view";
+import { folderForItem } from "./folders";
+import { VaultDocumentGrid } from "./VaultDocumentGrid";
+import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { readDocument, readTemplate } from "./model";
 import { prepareTemplateProposal, type TemplateProposal } from "./template-proposal";
 
@@ -25,7 +29,20 @@ function PreviewContent({ file, proposal, original }: { file: VaultFile; proposa
   }, [file]);
   useEffect(() => () => { for (const url of new Set(urls.values())) URL.revokeObjectURL(url); }, [urls]);
   const document = original ? readDocument(file) : prepared.document;
+  if (readFolderView(file)) return <FolderPreview file={file} template={original ? readTemplate(file, document) : prepared.template} />;
   return <DocumentRenderer document={substitute(document, urls)} template={original ? readTemplate(file, document) : prepared.template} />;
+}
+
+function FolderPreview({ file, template }: { file: VaultFile; template: TemplateDefinition }) {
+  const [listing, setListing] = useState<VaultListing | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    void vaultRequest<VaultListing>("list").then((listing) => { if (active) setListing(listing); })
+      .catch((error: Error) => { if (active) setError(error.message); });
+    return () => { active = false; };
+  }, [file.path]);
+  return <div>{error && <p role="alert">{error}</p>}{listing ? <VaultDocumentGrid listing={listing} folder={folderForItem(file.path)} folderTemplate={template} excludedPath={file.path} busy={false} previewOnly onOpen={() => {}} /> : <p>Loading folder preview…</p>}</div>;
 }
 
 export function TemplatePreview({ proposal, working, beforeKeep, onKeep, onCancel }: {

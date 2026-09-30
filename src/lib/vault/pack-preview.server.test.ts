@@ -11,7 +11,13 @@ describe("TextPack folder previews", () => {
     document.content.assets = [{ id: "photo", kind: "image", src: "assets/photo.png" }];
     const image = await sharp({ create: { width: 900, height: 600, channels: 3, background: "#657183" } }).png().toBuffer();
     const bytes = zipSync({ "Document.textbundle/document.json": strToU8(JSON.stringify(document)), "Document.textbundle/text.md": strToU8('---\ntitle: "New title"\n---\n\nCurrent writing in the file.'), "Document.textbundle/assets/photo.png": image });
+    const metadataOnly = await previewTextpack(bytes, true);
+    expect(metadataOnly.image).toBeUndefined();
+    expect(metadataOnly.document.content.title).toBe("New title");
     const preview = await previewTextpack(bytes);
+    expect(preview.document.content.title).toBe("New title");
+    expect(preview.document.content.body).toBe("Current writing in the file.");
+    expect(preview.document.content.assets).toEqual([]);
     expect(preview.title).toBe("New title");
     expect(preview.excerpt).toBe("Current writing in the file.");
     expect(preview.image?.contentType).toBe("image/jpeg");
@@ -25,7 +31,7 @@ describe("TextPack folder previews", () => {
     for (const src of ["https://example.com/image.png", "assets/invalid.png", "assets/../outside.png"]) {
       document.content.assets = [{ id: "photo", kind: "image", src }];
       const preview = await previewTextpack(zipSync({ "document.json": strToU8(JSON.stringify(document)), "assets/invalid.png": strToU8("not an image") }));
-      expect(preview).toEqual({ title: "Readable", excerpt: "", sourceURL: "https://example.com/read" });
+      expect(preview).toMatchObject({ title: "Readable", excerpt: "", sourceURL: "https://example.com/read" });
     }
   });
 });

@@ -65,6 +65,82 @@ public struct LocalVaultDocumentStore: Sendable {
         return try outcome.get()
     }
 
+    /// Collection sorting reads text metadata without expanding image entries.
+    public func readMetadata(path: String) throws -> Document {
+        let target = try url(for: path)
+        var outcome: Result<Document, Error>?
+        var coordinationError: NSError?
+        NSFileCoordinator().coordinate(readingItemAt: target, options: [], error: &coordinationError) { coordinated in
+            outcome = Result {
+                guard (try coordinated.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= 64 * 1024 * 1024 else { throw Failure.tooLarge }
+                let bytes = try Data(contentsOf: coordinated)
+                guard bytes.count <= 64 * 1024 * 1024 else { throw Failure.tooLarge }
+                let archive = try Archive(data: bytes, accessMode: .read)
+                var selected: [String: Data] = [:], expanded: UInt64 = 0
+                for entry in archive where ["document.json", "text.md"].contains((entry.path as NSString).lastPathComponent) {
+                    expanded += entry.uncompressedSize
+                    guard expanded <= 4 * 1024 * 1024, selected[entry.path] == nil else { throw Failure.tooLarge }
+                    var data = Data()
+                    _ = try archive.extract(entry) { data.append($0) }
+                    selected[entry.path] = data
+                }
+                let markdowns = selected.keys.filter { ($0 as NSString).lastPathComponent == "text.md" }
+                guard markdowns.count == 1, let key = markdowns.first, let raw = selected[key] else { throw Failure.invalidPath }
+                let document = selected[String(key.dropLast("text.md".count)) + "document.json"]
+                let contents = TextTextTextBundleContents(markdown: String(decoding: raw, as: UTF8.self), sourceURL: nil,
+                    documentJSON: document.map { String(decoding: $0, as: UTF8.self) }, templateJSON: nil,
+                    templateAuthoringSourceJSON: nil, assets: [], logicalSize: Int(expanded))
+                return Document(path: path, hash: TextTextStableDigest.sha256Hex(bytes), contents: contents)
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        guard let outcome else { throw CocoaError(.fileReadUnknown) }
+        return try outcome.get()
+    }
+
+    /// Extract only definition metadata; image entries are never inflated.
+    public func folderViews(folder: String) throws -> [[String: String]] {
+        let sentinel = try url(for: (folder.isEmpty ? "" : folder + "/") + "Folder view.textpack")
+        let directory = sentinel.deletingLastPathComponent()
+        let children = try FileManager.default.contentsOfDirectory(at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey], options: [.skipsHiddenFiles])
+        let candidates = children.filter { $0.pathExtension.lowercased() == "textpack" }
+        guard candidates.count <= 2048 else { throw Failure.tooLarge }
+        var total = 0, returnedBytes = 0, result: [[String: String]] = []
+        for child in candidates.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            let values = try child.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+            guard values.isRegularFile == true, values.isSymbolicLink != true else { continue }
+            total += values.fileSize ?? 0
+            guard total <= 256 * 1024 * 1024, (values.fileSize ?? 0) <= 64 * 1024 * 1024 else { throw Failure.tooLarge }
+            guard child.standardizedFileURL.resolvingSymlinksInPath().deletingLastPathComponent() == directory else { throw Failure.invalidPath }
+            let bytes = try Data(contentsOf: child)
+            guard bytes.count <= 64 * 1024 * 1024 else { throw Failure.tooLarge }
+            let archive = try Archive(data: bytes, accessMode: .read)
+            var selected: [String: Data] = [:], expanded: UInt64 = 0
+            for entry in archive where ["document.json", "template.json"].contains((entry.path as NSString).lastPathComponent) {
+                expanded += entry.uncompressedSize
+                guard expanded <= 4 * 1024 * 1024, selected[entry.path] == nil else { throw Failure.tooLarge }
+                var data = Data()
+                _ = try archive.extract(entry) { data.append($0) }
+                selected[entry.path] = data
+            }
+            let documents = selected.keys.filter { ($0 as NSString).lastPathComponent == "document.json" }
+            guard documents.count == 1, let key = documents.first, let raw = selected[key],
+                let document = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any],
+                let content = document["content"] as? [String: Any], let fields = content["fields"] as? [String: Any],
+                fields["texttextFolderView"] != nil else { continue }
+            let path = (folder.isEmpty ? "" : folder + "/") + child.lastPathComponent
+            let templateKey = String(key.dropLast("document.json".count)) + "template.json"
+            var file = ["path": path, "hash": TextTextStableDigest.sha256Hex(bytes), "documentJSON": String(decoding: raw, as: UTF8.self)]
+            if let template = selected[templateKey] { file["templateJSON"] = String(decoding: template, as: UTF8.self) }
+            returnedBytes += file.values.reduce(0) { $0 + $1.utf8.count }
+            guard returnedBytes <= 4 * 1024 * 1024 else { throw Failure.tooLarge }
+            result.append(file)
+            guard result.count <= 16 else { throw Failure.tooLarge }
+        }
+        return result
+    }
+
     public func rename(path: String, expectedHash: String, newPath: String) throws -> Document {
         let source = try url(for: path), destination = try url(for: newPath)
         if source == destination { return try read(path: path) }

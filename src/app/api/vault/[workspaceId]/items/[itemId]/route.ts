@@ -34,7 +34,7 @@ export async function GET(request: Request, context: Context) {
   if (authorized instanceof Response) return authorized;
   try {
     if (new URL(request.url).searchParams.get("metadata") === "preview") {
-      const preview = await readVaultPreview(authorized);
+      const preview = await readVaultPreview({ ...authorized, metadataOnly: new URL(request.url).searchParams.get("metadataOnly") === "1" });
       return preview ? Response.json(preview, { headers: noCache })
         : Response.json({ error: "Item not found" }, { status: 404, headers: noCache });
     }

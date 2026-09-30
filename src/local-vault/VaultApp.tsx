@@ -428,6 +428,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       {selected && listing ? <DocumentBoundary key={`${listing.root}:${selected.path}`}>
         <div inert={busy}><VaultEditor initial={selected} root={listing.root} registerFlush={registerFlush} onChanged={refresh} onRemoved={closeRemoved} /></div>
       </DocumentBoundary> : listing?.root ? <div aria-hidden={templatePicker || captureOpen || searchOpen || undefined}><WorkspaceOverview listing={listing} folder={destinationFolder} busy={busy}
+        onCustomize={allowFolderPicker ? (path) => { setAssistantOpen(true); window.dispatchEvent(new CustomEvent("texttext:vault-customize", { detail: { path } })); } : undefined}
         onFolder={(path) => setDestinationFolder(path)}
         onOpen={(path) => void operate(async () => { setSelected(await vaultRequest<VaultFile>("read", { path })); })}
         onCreate={(path, folder) => void operate(async () => {

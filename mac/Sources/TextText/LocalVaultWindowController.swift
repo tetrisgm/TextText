@@ -277,6 +277,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 let store = LocalVaultDocumentStore(root: root)
                 switch method {
                 case "list": return try Self.list(root: root)
+                case "folderViews": return ["files": try store.folderViews(folder: Self.string(params, "folder"))]
                 case "search":
                     let page = try DocumentStore(root: root).searchPage(Self.string(params, "query"), textpacksOnly: true)
                     return ["items": page.items.map { ["path": $0.id, "title": $0.title, "snippet": $0.snippet] },
@@ -284,7 +285,8 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 case "read": return try Self.payload(store.read(path: Self.string(params, "path")))
                 case "preview":
                     return try autoreleasepool {
-                        try Self.preview(store.read(path: Self.string(params, "path")))
+                        let path = try Self.string(params, "path")
+                        return try Self.preview(params["metadataOnly"] as? Bool == true ? store.readMetadata(path: path) : store.read(path: path))
                     }
                 case "importPack":
                     let maximumSize = 32 * 1024 * 1024
@@ -298,7 +300,9 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     let folder = try Self.string(params, "folder")
                     let prefix = folder.isEmpty ? "" : folder + "/"
                     var path = prefix + stem + ".textpack", suffix = 2
+                    if let exact = params["exactPath"] as? String, exact != path { throw VaultBridgeError("The folder view destination does not match its folder.") }
                     while FileManager.default.fileExists(atPath: try store.url(for: path).path) {
+                        if params["exactPath"] != nil { throw VaultBridgeError("A file already occupies the folder view path.") }
                         path = prefix + stem + " \(suffix).textpack"; suffix += 1
                     }
                     let temporary = FileManager.default.temporaryDirectory
@@ -402,6 +406,20 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             ?? URL(fileURLWithPath: document.path).deletingPathExtension().lastPathComponent
         var result: [String: Any] = ["title": bounded(title, to: 240),
                                    "excerpt": bounded(markdown.body, to: 400)]
+        var fields: [String: Any] = [:]
+        for (key, value) in (content?["fields"] as? [String: Any] ?? [:]).sorted(by: { $0.key < $1.key }).prefix(64) where key.utf8.count <= 120 {
+            if let text = value as? String { fields[key] = bounded(text, to: 2048) }
+            else if value is NSNumber || value is NSNull { fields[key] = value }
+        }
+        let originalFields = content?["fields"] as? [String: Any] ?? [:]
+        if title != result["title"] as? String || originalFields.count != fields.count || originalFields.contains(where: { key, value in
+            if let text = value as? String { return fields[key] as? String != text }
+            return fields[key] == nil
+        }) || (content?["tags"] as? [String] ?? []).count > 100 { result["metadataTruncated"] = true }
+        let tags = (content?["tags"] as? [String] ?? []).prefix(100).map { bounded($0, to: 120) }.filter { !$0.isEmpty }
+        result["document"] = ["schemaVersion": 1,
+            "content": ["title": result["title"]!, "body": result["excerpt"]!, "fields": fields, "tags": tags, "assets": []] as [String: Any],
+            "presentation": ["template": ["id": "texttext.note", "version": 1], "theme": [:]] as [String: Any]] as [String: Any]
         if let fields = content?["fields"] as? [String: Any],
            let raw = fields["sourceUrl"] as? String, raw.utf8.count <= 4096,
            let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),

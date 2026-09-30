@@ -98,7 +98,7 @@ final class LocalVaultAgentController {
         guard !trimmed.isEmpty, trimmed.count <= 32_000 else { throw VaultAgentError("Enter a message of up to 32,000 characters.") }
         if customizing && path == nil { throw VaultAgentError("Choose a document to customize first.") }
         customizationPath = customizing ? path : nil
-        var context = customizing ? "Presentation customization mode: propose a template preview for the current document. Do not write or create files.\n" : ""
+        var context = customizing ? "Presentation customization mode: propose a template preview for the current document. Do not write or create files. If content.fields.texttextFolderView is v1, this is the containing folder's design: customize template.collection and preview its immediate members. Preserve the marker and all member files. Supported folder layouts are cards, list and index (a reference table); use supported collection bindings.\n" : ""
         if let path {
             _ = try LocalVaultDocumentStore(root: root).url(for: path)
             context += "Current document path: \(path)\nRead the actual file before making changes.\n\n"

@@ -518,6 +518,39 @@ export async function readVaultTextpack(input: VaultLocation & { itemId: string 
   });
 }
 
+/** Metadata-only discovery; bound work and fail explicitly rather than hide a late definition. */
+export async function listVaultFolderViews(input: VaultLocation & { folder: string }) {
+  if (input.folder && (input.folder.startsWith("/") || input.folder.includes("\\") || input.folder.split("/").some((part) => !part || part.startsWith(".")))) throw new Error("Invalid folder path");
+  const manifest = await listVaultTextpacks(input);
+  const members = manifest.items.filter((item) => path.posix.dirname(item.relativePath).replace(/^\.$/, "") === input.folder);
+  if (members.length > 2048) throw new Error("Folder view discovery exceeds limits");
+  const files: { path: string; hash: string; documentJSON: string; templateJSON?: string }[] = [];
+  let scanned = 0, returnedBytes = 0;
+  for (const member of members) {
+    const item = await readVaultTextpack({ ...input, itemId: member.itemId });
+    if (!item || path.posix.dirname(item.relativePath).replace(/^\.$/, "") !== input.folder) continue;
+    if ((scanned += item.bytes.length) > 256 * 1024 * 1024) throw new Error("Folder view discovery exceeds limits");
+    let expanded = 0;
+    const entries = unzipSync(item.bytes, { filter(entry) {
+      if (!/(?:^|\/)(document|template)\.json$/.test(entry.name)) return false;
+      if ((expanded += entry.originalSize) > 4 * 1024 * 1024) throw new Error("Folder view metadata exceeds limits");
+      return true;
+    } });
+    const documents = Object.keys(entries).filter((key) => /(?:^|\/)document\.json$/.test(key));
+    if (documents.length !== 1) continue;
+    const key = documents[0], documentJSON = strFromU8(entries[key]);
+    let document;
+    try { document = JSON.parse(documentJSON); } catch { continue; }
+    if (document?.content?.fields?.texttextFolderView === undefined) continue;
+    const template = entries[key.replace(/document\.json$/, "template.json")];
+    returnedBytes += Buffer.byteLength(documentJSON) + (template?.length ?? 0);
+    if (returnedBytes > 4 * 1024 * 1024) throw new Error("Folder view response exceeds limits");
+    files.push({ path: item.relativePath, hash: item.revision, documentJSON, ...(template ? { templateJSON: strFromU8(template) } : {}) });
+    if (files.length > 16) throw new Error("Too many folder view definitions");
+  }
+  return { files };
+}
+
 export async function readVaultTemplate(input: VaultLocation & { itemId: string }): Promise<{
   path: string; hash: string; templateJSON?: string; templateAuthoringSourceJSON?: string;
 } | null> {

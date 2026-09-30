@@ -8,6 +8,7 @@ import { unzipSync, zipSync } from "fflate";
 import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { readVaultTextpack, writeVaultTextpack, listVaultTextpacks, waitVaultTextpacks, moveVaultTextpack, deleteVaultTextpack } from "./server-store";
+import { listVaultFolderViews } from "./server-store";
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
 function pack(body: string, itemId = "item-1") {
@@ -27,6 +28,21 @@ describe("directory TextPack store", () => {
   afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
   const input = (root: string, operationId: string, bytes: Uint8Array, baseRevision: string | null = null) => ({
     root, workspaceId, itemId, relativePath, operationId, bytes, baseRevision,
+  });
+
+  it("discovers renamed marked folder definitions without asset transfer or nested matches", async () => {
+    const document = emptyDocumentSnapshot();
+    document.content.fields.texttextFolderView = "v1";
+    for (const [id, location] of [["design", "Reading/Renamed.textpack"], ["nested", "Reading/Nested/Folder view.textpack"]]) {
+      const bytes = buildTextpack("View", { document, markdown: `---\ntextTextId: ${id}\n---\nDefinition` });
+      await writeVaultTextpack({ root, workspaceId, itemId: id, relativePath: location, operationId: id, bytes, baseRevision: null });
+    }
+    const result = await listVaultFolderViews({ root, workspaceId, folder: "Reading" });
+    expect(result.files).toHaveLength(1);
+    expect(result.files[0].path).toBe("Reading/Renamed.textpack");
+    expect(Object.keys(result.files[0]).sort()).toEqual(["documentJSON", "hash", "path"]);
+    expect((await listVaultFolderViews({ root, workspaceId, folder: "" })).files).toEqual([]);
+    await expect(listVaultFolderViews({ root, workspaceId, folder: "../outside" })).rejects.toThrow("Invalid folder");
   });
 
   it("stores the complete original pack in a normal folder and reads file edits directly", async () => {

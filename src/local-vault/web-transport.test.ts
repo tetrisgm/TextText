@@ -53,6 +53,13 @@ function fixture() {
 }
 
 describe("web file vault transport", () => {
+  it("refuses an occupied exact import destination without suffixing or writing", async () => {
+    const f = fixture();
+    await expect(f.transport.request("importPack", { folder: "Notes", title: "Original", exactPath: f.path, data: "AA==" })).rejects.toThrow("already occupies");
+    expect(f.operations).toEqual([]);
+    expect(f.files.size).toBe(1);
+  });
+
   it("imports complete packs with fresh identities and preserves existing files and opaque assets", async () => {
     const test = fixture();
     const data = Buffer.from(test.initial).toString("base64");

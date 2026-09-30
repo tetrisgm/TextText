@@ -1,12 +1,12 @@
 import { unzipSync, strFromU8 } from "fflate";
 import sharp from "sharp";
-import { validateDocumentSnapshot } from "@/lib/documents/model";
+import { emptyDocumentSnapshot, validateDocumentSnapshot, type DocumentSnapshot } from "@/lib/documents/model";
 import { parsePostMarkdownFile } from "@/lib/markdown-files";
 
-export type VaultPreview = { title: string; excerpt: string; sourceURL?: string; image?: { data: string; contentType: string } };
+export type VaultPreview = { metadataTruncated?: boolean; document: DocumentSnapshot; title: string; excerpt: string; sourceURL?: string; image?: { data: string; contentType: string } };
 
 /** No remote fetches or full asset transfer. Decode one local image, one frame. */
-export async function previewTextpack(bytes: Uint8Array): Promise<VaultPreview> {
+export async function previewTextpack(bytes: Uint8Array, metadataOnly = false): Promise<VaultPreview> {
   if (bytes.length > 64 * 1024 * 1024) throw new Error("TextPack exceeds preview limit");
   let expanded = 0;
   const metadata = unzipSync(bytes, { filter(entry) {
@@ -20,14 +20,26 @@ export async function previewTextpack(bytes: Uint8Array): Promise<VaultPreview> 
   const document = validateDocumentSnapshot(JSON.parse(strFromU8(metadata[documents[0]])));
   const markdown = metadata[prefix + "text.md"];
   const parsed = markdown ? parsePostMarkdownFile(strFromU8(markdown)) : null;
+  const projection = emptyDocumentSnapshot(document.presentation.template);
+  projection.content.tags = document.content.tags.slice(0, 100);
+  for (const [key, value] of Object.entries(document.content.fields).slice(0, 64)) {
+    if (key.length > 120) continue;
+    if (typeof value === "string") projection.content.fields[key] = value.slice(0, 2048);
+    else if (typeof value === "number" || typeof value === "boolean" || value === null) projection.content.fields[key] = value;
+  }
   const result: VaultPreview = {
+    document: projection,
     title: (parsed?.fields.title ?? document.content.title).slice(0, 240),
     excerpt: (parsed?.body ?? document.content.body).slice(0, 2000).replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/[#*_`>]/g, "").replace(/\s+/g, " ").trim().slice(0, 400),
   };
+  if ((parsed?.fields.title ?? document.content.title).length > 240 || document.content.tags.length > 100 || Object.entries(document.content.fields).length > 64 ||
+      Object.entries(document.content.fields).some(([key, value]) => key.length > 120 || typeof value === "string" && value.length > 2048 || typeof value === "object" && value !== null)) result.metadataTruncated = true;
+  projection.content.title = result.title; projection.content.body = result.excerpt;
   const source = document.content.fields.sourceUrl;
   if (typeof source === "string") {
     try { const url = new URL(source); if (["http:", "https:"].includes(url.protocol) && !url.username && !url.password) result.sourceURL = url.href; } catch { /* Optional metadata. */ }
   }
+  if (metadataOnly) return result;
   const asset = document.content.assets.find((asset) => asset.kind === "image");
   const reference = asset?.poster || asset?.src;
   if (!reference || !/^assets\/[A-Za-z0-9 _./-]+$/.test(reference) || reference.split("/").includes("..")) return result;

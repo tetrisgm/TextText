@@ -1,5 +1,5 @@
 import { authorizeVault } from "@/app/api/vault/auth";
-import { listVaultTextpacks, waitVaultTextpacks, VaultBusyError } from "@/lib/store";
+import { listVaultTextpacks, listVaultFolderViews, waitVaultTextpacks, VaultBusyError } from "@/lib/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,6 +9,8 @@ export async function GET(request: Request, context: { params: Promise<{ workspa
   const authorized = await authorizeVault(request, workspaceId);
   if (authorized instanceof Response) return authorized;
   try {
+    const folder = new URL(request.url).searchParams.get("folderViews");
+    if (folder !== null) return Response.json(await listVaultFolderViews({ ...authorized, folder }), { headers: { "Cache-Control": "no-store" } });
     const previous = request.headers.get("If-None-Match");
     const wait = Number(new URL(request.url).searchParams.get("wait") ?? "0");
     const manifest = previous && /^"[a-f0-9]{64}"$/.test(previous) && wait > 0 && Number.isFinite(wait)
