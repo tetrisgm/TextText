@@ -9,7 +9,7 @@ prerequisite. See [architecture](design/texttext-file-vault-migration.md) and
 
 Implemented on `main` in `76f373e1`, `f28500cd`, and `3b4549d6`: native folder
 store/CLI, complete-pack filesystem server and durable sync, bundled shared
-editor, file templates, and native assistant file tools. Local WIP **0.202 (1130)**
+editor, file templates, and native assistant file tools. Local WIP **0.202 (1131)**
 is installed at `/Applications/TextText.app`. Its selected workspace is
 `/Users/shokunin/Documents/TextText`. Installed-app creation/save and a real
 Codex append were verified against pack bytes and the refreshed editor. The
@@ -90,12 +90,11 @@ presets, preview/keep/cancel, native assistant folder previews, shared collectio
 rendering, and bounded metadata-only transport. Model, server, Swift and browser
 checks pass, including preserving every member and rejecting a concurrent design
 change. See [folder view receipt](file-vault-folder-views-2026-09-30.md).
-Installed 1130 created/reopened a real Reading reference-index definition;
-member bytes stayed unchanged and the new pack matches the local server. It
-exposed a long-URL column squeeze, now fixed and browser-verified. Build 1131
-packages that fix (exec session 22583, `/tmp/texttext-build-1131.log`). Next:
-install/verify that correction, then rebuild the local web server for metadata
-routes. Real provider
+Installed 1131 now shows a real Reading reference-index definition with readable
+source URLs/actions. Native preview/Keep/reopen passed; member bytes stayed
+unchanged and the new pack matches the local server. Screenshot:
+`/tmp/texttext-native-folder-reference-1131.png`. Next: real provider folder
+refinement, then rebuild the local web server for metadata routes. Real provider
 folder refinement, large collection indexing/performance, full product
 collaboration, publication and measured memory remain open.
 

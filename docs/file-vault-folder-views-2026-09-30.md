@@ -51,7 +51,12 @@ pre-existing Reading pack SHA-256 values stayed unchanged, and the new design
 file converged byte-for-byte with the local server. Native visual inspection
 caught long source URLs squeezing Tags/Open. Fixed column widths and a bounded
 overflow container correct that; the browser fixture now includes a real long
-source URL and all checks pass. Build 1131 packages the correction.
+source URL and all checks pass. Build 1131 is installed and its actual native table was visually verified with
+readable Tags/Open columns and wrapped URLs. Screenshot:
+`/tmp/texttext-native-folder-reference-1131.png`. Build/install logs:
+`/tmp/texttext-{build,install}-1131.log`. The installer health-report check was
+not used because this sandboxed WIP writes its report in a different location;
+actual installed UI and pack-byte checks supply the recorded acceptance evidence.
 Real provider folder refinement remains unverified. The live web
 server still runs the preceding image build, so its new folder metadata routes
 require a local rebuild before web acceptance. No public release or push.
