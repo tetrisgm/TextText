@@ -4,8 +4,13 @@
 
 import { blogBaseUrl, locatedPostUrl } from "@/lib/agent-surface";
 import type { TemplateReference } from "@/lib/documents/model";
+import type { AuthoringSource } from "@/lib/presentation/authoring-source";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
-import { getDocumentTemplateForHandle } from "@/lib/store";
+import {
+  getDocumentTemplateAuthoringSourcesForHandle,
+  getDocumentTemplateForHandle,
+  getFolderById,
+} from "@/lib/store";
 import {
   BLOG_FOLDER_PATH,
   DEFAULT_FILE_REPRESENTATION,
@@ -215,10 +220,11 @@ export function renderSyncDocumentFile(
   post: Post,
   folderPath = BLOG_FOLDER_PATH,
   template?: TemplateDefinition | null,
+  templateAuthoringSource?: AuthoringSource | null,
 ): { text: string; hash: string } {
   const markdown = renderSyncFile(blog, post, folderPath).text;
   const text = serializeSyncDocumentEnvelope(
-    renderSyncDocumentEnvelope({ markdown, post, template }),
+    renderSyncDocumentEnvelope({ markdown, post, template, templateAuthoringSource }),
   );
   return { text, hash: markdownFileHash(text) };
 }
@@ -260,6 +266,37 @@ export function templateForPost(
   return templates.get(`${reference.id}@${reference.version}`) ?? null;
 }
 
+/** Reopenable sources for the resolved looks, fetched once per distinct look. */
+export async function templateAuthoringSourcesForPosts(
+  handle: string,
+  templates: ReadonlyMap<string, TemplateDefinition>,
+): Promise<Map<string, AuthoringSource>> {
+  return getDocumentTemplateAuthoringSourcesForHandle(handle, templates);
+}
+
+export function templateAuthoringSourceForPost(
+  post: Post,
+  sources: ReadonlyMap<string, AuthoringSource>,
+): AuthoringSource | null {
+  const reference = (post.document as { presentation?: { template?: TemplateReference } } | null)
+    ?.presentation?.template;
+  if (!reference) return null;
+  return sources.get(`${reference.id}@${reference.version}`) ?? null;
+}
+
+/** Resolve both parts together so a file hash always includes the same data. */
+export async function syncTemplateForPost(handle: string, post: Post): Promise<{
+  template: TemplateDefinition | null;
+  authoringSource: AuthoringSource | null;
+}> {
+  const templates = await templatesForPosts(handle, [post]);
+  const sources = await templateAuthoringSourcesForPosts(handle, templates);
+  return {
+    template: templateForPost(post, templates),
+    authoringSource: templateAuthoringSourceForPost(post, sources),
+  };
+}
+
 /**
  * Whether the client's validator matches the file the server would serve NOW.
  *
@@ -277,9 +314,10 @@ export function ifMatchSatisfiedForSyncFile(
   post: Post,
   folderPath = BLOG_FOLDER_PATH,
   template?: TemplateDefinition | null,
+  templateAuthoringSource?: AuthoringSource | null,
 ): boolean {
   const markdown = renderSyncFile(blog, post, folderPath);
-  const document = renderSyncDocumentFile(blog, post, folderPath, template);
+  const document = renderSyncDocumentFile(blog, post, folderPath, template, templateAuthoringSource);
   return (
     ifMatchSatisfied(headerValue, `"${markdown.hash}"`) ||
     ifMatchSatisfied(headerValue, `"${document.hash}"`)
@@ -329,6 +367,7 @@ export function renderSyncFolderManifest(
    * every client re-downloads every file on every manifest.
    */
   templates: Map<string, TemplateDefinition> = new Map(),
+  templateAuthoringSources: Map<string, AuthoringSource> = new Map(),
 ) {
   const manifest = renderFolderManifest(
     blog,
@@ -344,6 +383,7 @@ export function renderSyncFolderManifest(
         post,
         folder?.path ?? BLOG_FOLDER_PATH,
         templateForPost(post, templates),
+        templateAuthoringSourceForPost(post, templateAuthoringSources),
       );
       return {
         ...item,
@@ -360,6 +400,22 @@ export function renderSyncFolderManifest(
 /** One manifest v2 entry for a post, as PUT/POST return it. */
 export function syncManifestItem(blog: Blog, post: Post): SyncManifestItem {
   return renderSyncFolderManifest(blog, [post]).items[0];
+}
+
+/** Mutation responses use the same full-document hash as file GET/manifest. */
+export async function resolvedSyncManifestItem(blog: Blog, post: Post): Promise<SyncManifestItem> {
+  try {
+    const [templates, folder] = await Promise.all([
+      templatesForPosts(blog.handle, [post]),
+      post.folderId ? getFolderById(blog.handle, post.folderId) : Promise.resolve(null),
+    ]);
+    const sources = await templateAuthoringSourcesForPosts(blog.handle, templates);
+    return renderSyncFolderManifest(blog, [post], folder ?? undefined, templates, sources).items[0];
+  } catch {
+    // The write has already committed. A follow-up metadata read must not turn
+    // it into an ambiguous failure; the next folder poll serves the full hash.
+    return syncManifestItem(blog, post);
+  }
 }
 
 /** Private items never leave the app through Spotlight. Missing folder or

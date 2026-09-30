@@ -263,7 +263,7 @@ final class LiveTextTextSyncAPITests: XCTestCase {
                     url: try XCTUnwrap(request.url), statusCode: 200,
                     httpVersion: nil, headerFields: ["ETag": "\"document-hash\""]))
             let data = Data(
-                ##"{"schema":"texttext.sync-document.v1","markdown":"# Hello","document":{"schema":1,"content":{"body":"Hello"}}}"##
+                ##"{"schema":"texttext.sync-document.v1","markdown":"# Hello","document":{"schema":1,"content":{"body":"Hello"}},"template":{"id":"custom.note"},"templateAuthoringSource":{"compilerVersion":2,"blueprint":{"name":"Note"}}}"##
                     .utf8)
             return (response, data)
         }
@@ -279,6 +279,8 @@ final class LiveTextTextSyncAPITests: XCTestCase {
         XCTAssertEqual(content.text, "# Hello")
         XCTAssertEqual(content.hash, "document-hash")
         XCTAssertTrue(content.documentJSON?.contains("\"schema\" : 1") == true)
+        XCTAssertTrue(content.templateJSON?.contains("custom.note") == true)
+        XCTAssertTrue(content.templateAuthoringSourceJSON?.contains("compilerVersion") == true)
     }
 
     func testTextPackCreateSendsStructuredDocumentEnvelope() async throws {
@@ -300,6 +302,8 @@ final class LiveTextTextSyncAPITests: XCTestCase {
 
         let result = await api.createFile(
             body: "# Item", documentJSON: #"{"schema":1,"content":{"body":"Item"}}"#,
+            templateJSON: #"{"id":"custom.note"}"#,
+            templateAuthoringSourceJSON: #"{"compilerVersion":2,"blueprint":{"name":"Note"}}"#,
             folderId: "notes", representation: .textpack,
             idempotencyKey: "create-doc")
 
@@ -313,6 +317,10 @@ final class LiveTextTextSyncAPITests: XCTestCase {
         XCTAssertEqual(object["schema"] as? String, "texttext.sync-document.v1")
         XCTAssertEqual(object["markdown"] as? String, "# Item")
         XCTAssertNotNil(object["document"] as? [String: Any])
+        XCTAssertEqual((object["template"] as? [String: Any])?["id"] as? String, "custom.note")
+        XCTAssertEqual(
+            (object["templateAuthoringSource"] as? [String: Any])?["compilerVersion"] as? Int,
+            2)
         guard case .success(let item) = result else {
             return XCTFail("createFile failed: \(result)")
         }
@@ -321,8 +329,10 @@ final class LiveTextTextSyncAPITests: XCTestCase {
 
     func testStructuredPutUsesDocumentHashAsIfMatch() async throws {
         var capturedRequest: URLRequest?
+        var capturedBody: Data?
         TextTextSyncURLProtocol.handler = { request in
             capturedRequest = request
+            capturedBody = try requestBodyData(request)
             let response = try XCTUnwrap(
                 HTTPURLResponse(
                     url: try XCTUnwrap(request.url), statusCode: 200,
@@ -337,6 +347,8 @@ final class LiveTextTextSyncAPITests: XCTestCase {
         _ = await api.putFile(
             postId: "p1", body: "# Item",
             documentJSON: #"{"schema":1,"content":{"body":"Next"}}"#,
+            templateJSON: #"{"id":"custom.note"}"#,
+            templateAuthoringSourceJSON: #"{"compilerVersion":2,"blueprint":{"name":"Note"}}"#,
             ifMatch: "base-document-hash")
 
         let request = try XCTUnwrap(capturedRequest)
@@ -346,6 +358,13 @@ final class LiveTextTextSyncAPITests: XCTestCase {
         XCTAssertEqual(
             request.value(forHTTPHeaderField: "Content-Type"),
             "application/vnd.texttext.document+json")
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try XCTUnwrap(capturedBody))
+                as? [String: Any])
+        XCTAssertEqual((object["template"] as? [String: Any])?["id"] as? String, "custom.note")
+        XCTAssertEqual(
+            (object["templateAuthoringSource"] as? [String: Any])?["compilerVersion"] as? Int,
+            2)
     }
 
     private func makeAPI() -> LiveTextTextSyncAPI {

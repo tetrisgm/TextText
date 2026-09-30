@@ -103,6 +103,28 @@ final class DocumentStoreTests: XCTestCase {
         XCTAssertTrue(contents.markdown.contains("Edited."))
     }
 
+    func testWritePreservesTemplateAuthoringSource() throws {
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let sourceJSON = #"{"compilerVersion":2,"blueprint":{"name":"Note"}}"#
+        let package = try TextTextTextBundlePackage.materialize(
+            canonicalMarkdown: "# Original", templateJSON: #"{"id":"custom.note"}"#,
+            templateAuthoringSourceJSON: sourceJSON,
+            assets: [], sourceURL: nil, in: temporary)
+        let packed = try TextTextTextBundlePackage.zipToTextPack(
+            packageURL: package.url, in: temporary)
+        let destination = root.appendingPathComponent("Authored.textpack")
+        try FileManager.default.copyItem(at: packed, to: destination)
+
+        try store.writeMarkdown("# Edited", to: destination)
+
+        let contents = try TextTextTextBundlePackage.read(from: destination, in: temporary)
+        XCTAssertEqual(contents.markdown, "# Edited")
+        XCTAssertEqual(contents.templateAuthoringSourceJSON, sourceJSON)
+    }
+
     func testWriteIsAtomicAndLeavesNoDebris() throws {
         try makeTextpack(named: "Atomic", markdown: "# One")
         let url = try store.resolve("Atomic")

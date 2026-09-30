@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Blog, Post } from "@/lib/content";
-import { renderSyncDocumentFile, renderSyncFile } from "@/app/api/sync/v1/sync";
+import { renderSyncDocumentFile, renderSyncFile, renderSyncFolderManifest } from "@/app/api/sync/v1/sync";
 import {
   serializeSyncDocumentEnvelope,
   SYNC_DOCUMENT_CONTENT_TYPE,
@@ -8,7 +8,8 @@ import {
 } from "@/lib/documents/sync";
 import { documentFromLegacyPost, legacyProjectionFromDocument } from "@/lib/documents/legacy";
 import { sanitizePostSlug } from "@/lib/post-slug";
-import { compileItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
+import { compileItemTypeBlueprint, itemTypeBlueprintSchema } from "@/lib/presentation/item-type-blueprint";
+import { authoringSourceFor } from "@/lib/presentation/authoring-source";
 
 const mocks = vi.hoisted(() => ({
   markCollabMaterialized: vi.fn(async () => undefined),
@@ -19,9 +20,10 @@ const mocks = vi.hoisted(() => ({
   // Resolves the look a synced document is pinned to, so the textpack the
   // client receives carries the definition and not just its id.
   getDocumentTemplateForHandle: vi.fn(async (): Promise<unknown> => null),
+  getDocumentTemplateAuthoringSourcesForHandle: vi.fn(async (): Promise<unknown> => new Map()),
   // Installs a look that arrived inside an imported textpack.
   installDocumentTemplate: vi.fn<
-    (input: { blogId: string; definition: unknown }) => Promise<string>
+    (input: { blogId: string; definition: unknown; authoringSource?: unknown }) => Promise<string>
   >(async () => "installed"),
   movePostFile: vi.fn(),
   resolveItemAccess: vi.fn(),
@@ -39,6 +41,7 @@ vi.mock("@/lib/store", () => ({
   folderPathForPostType: (type: string) =>
     type === "note" ? "notes" : type === "bookmark" ? "bookmarks" : "blog",
   getDocumentTemplateForHandle: mocks.getDocumentTemplateForHandle,
+  getDocumentTemplateAuthoringSourcesForHandle: mocks.getDocumentTemplateAuthoringSourcesForHandle,
   getFolderById: mocks.getFolderById,
   installDocumentTemplate: mocks.installDocumentTemplate,
   getPostById: mocks.getPostById,
@@ -195,6 +198,7 @@ function streamedMutationRequest(
 describe("sync file PATCH", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.getDocumentTemplateAuthoringSourcesForHandle.mockResolvedValue(new Map());
     mocks.resolveSyncWorkspace.mockResolvedValue({ blog, userId: "owner-id" });
     mocks.getPostById.mockResolvedValue(post);
     mocks.getFolderById.mockResolvedValue({ id: folderId, path: "blog" });
@@ -410,6 +414,7 @@ describe("sync file PATCH", () => {
 describe("sync file DELETE", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.getDocumentTemplateAuthoringSourcesForHandle.mockResolvedValue(new Map());
     mocks.resolveSyncWorkspace.mockResolvedValue({ blog, userId: "owner-id" });
     mocks.getPostById.mockResolvedValue(post);
     mocks.getFolderById.mockResolvedValue({ id: folderId, path: "blog" });
@@ -477,6 +482,7 @@ describe("sync file DELETE", () => {
 describe("sync file PUT during a live co-editing session", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.getDocumentTemplateAuthoringSourcesForHandle.mockResolvedValue(new Map());
     mocks.resolveSyncWorkspace.mockResolvedValue({ blog, userId: "owner-id" });
     mocks.getPostById.mockResolvedValue(post);
     mocks.getFolderById.mockResolvedValue({ id: folderId, path: "blog" });
@@ -664,7 +670,7 @@ describe("sync file PUT during a live co-editing session", () => {
     );
     mocks.installDocumentTemplate.mockClear();
 
-    const template = compileItemTypeBlueprint(
+    const blueprint = itemTypeBlueprintSchema.parse(
       {
         name: "Recipe",
         fields: [{ id: "cookTime", label: "Cook time", type: "number" }],
@@ -672,8 +678,9 @@ describe("sync file PUT during a live co-editing session", () => {
         collection: { layout: "cards" },
         theme: {},
       },
-      { id: "custom.recipe" },
     );
+    const template = compileItemTypeBlueprint(blueprint, { id: "custom.recipe" });
+    const source = authoringSourceFor(blueprint);
 
     const response = await PUT(
       new Request(`https://texttext.example/api/sync/v1/files/${postId}`, {
@@ -700,6 +707,7 @@ describe("sync file PUT during a live co-editing session", () => {
             },
           },
           template,
+          templateAuthoringSource: source,
         }),
       }),
       { params: Promise.resolve({ postId }) },
@@ -718,6 +726,7 @@ describe("sync file PUT during a live co-editing session", () => {
     expect(definition.id).toBe("custom.recipe");
     expect(definition.version).toBe(template.version);
     expect(definition.fields.map((field) => field.id)).toEqual(["cookTime"]);
+    expect(call.authoringSource).toEqual(source);
   });
 
   it("saves the words even when the look that came with them is unusable", async () => {
@@ -745,7 +754,7 @@ describe("sync file PUT during a live co-editing session", () => {
     // The outbound half. templatesForPosts and templateForPost had call sites
     // and no test at all, so the route could have stopped resolving a look and
     // the suite would not have noticed.
-    const template = compileItemTypeBlueprint(
+    const blueprint = itemTypeBlueprintSchema.parse(
       {
         name: "Recipe",
         fields: [{ id: "cookTime", label: "Cook time", type: "number" }],
@@ -753,9 +762,10 @@ describe("sync file PUT during a live co-editing session", () => {
         collection: { layout: "cards" },
         theme: {},
       },
-      { id: "custom.recipe" },
     );
-    mocks.getPostById.mockResolvedValue({
+    const template = compileItemTypeBlueprint(blueprint, { id: "custom.recipe" });
+    const source = authoringSourceFor(blueprint);
+    const servedPost: Post = {
       ...post,
       document: {
         ...documentFromLegacyPost(post),
@@ -764,8 +774,10 @@ describe("sync file PUT during a live co-editing session", () => {
           theme: {},
         },
       },
-    });
+    };
+    mocks.getPostById.mockResolvedValue(servedPost);
     mocks.getDocumentTemplateForHandle.mockResolvedValue(template);
+    mocks.getDocumentTemplateAuthoringSourcesForHandle.mockResolvedValue(new Map([[`${template.id}@${template.version}`, source]]));
 
     const response = await GET(
       new Request(`https://texttext.example/api/sync/v1/files/${postId}`, {
@@ -775,8 +787,10 @@ describe("sync file PUT during a live co-editing session", () => {
     );
 
     expect(response.status).toBe(200);
-    const envelope = await response.json();
+    const servedText = await response.text();
+    const envelope = JSON.parse(servedText);
     expect(envelope.template?.id).toBe("custom.recipe");
+    expect(envelope.templateAuthoringSource).toEqual(source);
     expect(envelope.template.fields.map((f: { id: string }) => f.id)).toEqual([
       "cookTime",
     ]);
@@ -786,6 +800,11 @@ describe("sync file PUT during a live co-editing session", () => {
       id: template.id,
       version: template.version,
     });
+    const manifest = renderSyncFolderManifest(blog, [servedPost], undefined,
+      new Map([[`${template.id}@${template.version}`, template]]),
+      new Map([[`${template.id}@${template.version}`, source]]));
+    expect(manifest.items[0].documentHash).toBe(response.headers.get("etag")?.replaceAll('"', ""));
+    expect(manifest.items[0].documentSize).toBe(new TextEncoder().encode(servedText).length);
   });
 
   it("preserves structured presentation through a collaborator content save", async () => {
@@ -858,6 +877,7 @@ describe("If-Match for a templated document off the blog folder", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.getDocumentTemplateAuthoringSourcesForHandle.mockResolvedValue(new Map());
     mocks.resolveSyncWorkspace.mockResolvedValue({ blog, userId: "owner-id" });
     mocks.getPostById.mockResolvedValue(templatedPost);
     mocks.getFolderById.mockResolvedValue({

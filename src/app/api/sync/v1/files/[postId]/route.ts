@@ -11,6 +11,7 @@ import {
 } from "@/lib/documents/sync";
 import { parsePostMarkdownFile } from "@/lib/markdown-files";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
+import type { AuthoringSource } from "@/lib/presentation/authoring-source";
 import type { EffectiveAccess } from "@/lib/permissions";
 import { resolveItemAccess } from "@/lib/permissions";
 import {
@@ -39,11 +40,10 @@ import {
   isUuid,
   renderSyncDocumentFile,
   renderSyncFile,
+  resolvedSyncManifestItem,
   MAX_SYNC_METADATA_BODY_BYTES,
   syncError,
-  syncManifestItem,
-  templateForPost,
-  templatesForPosts,
+  syncTemplateForPost,
 } from "../../sync";
 
 interface Props {
@@ -101,12 +101,14 @@ export async function GET(request: Request, { params }: Props) {
   const { blog, post, folderPath } = resolved;
 
   const structured = requestAcceptsSyncDocument(request);
+  const look = structured ? await syncTemplateForPost(blog.handle, post) : null;
   const file = structured
     ? renderSyncDocumentFile(
         blog,
         post,
         folderPath,
-        templateForPost(post, await templatesForPosts(blog.handle, [post])),
+        look?.template,
+        look?.authoringSource,
       )
     : renderSyncFile(blog, post, folderPath);
   const etag = `"${file.hash}"`;
@@ -149,11 +151,9 @@ export async function PUT(request: Request, { params }: Props) {
   const structured = requestUsesSyncDocument(request);
   // Render with the same inputs GET used, the pinned look included, or a
   // faithful client editing a templated document can never satisfy If-Match.
-  const storedTemplate = structured
-    ? templateForPost(post, await templatesForPosts(blog.handle, [post]))
-    : null;
+  const storedLook = structured ? await syncTemplateForPost(blog.handle, post) : null;
   const current = structured
-    ? renderSyncDocumentFile(blog, post, folderPath, storedTemplate)
+    ? renderSyncDocumentFile(blog, post, folderPath, storedLook?.template, storedLook?.authoringSource)
     : renderSyncFile(blog, post, folderPath);
   if (!ifMatchSatisfied(ifMatch, `"${current.hash}"`)) {
     return syncError(412, "The post changed since this file was fetched");
@@ -180,6 +180,7 @@ export async function PUT(request: Request, { params }: Props) {
     `Persisted item ${post.id ?? post.slug}`,
   );
   let suppliedTemplate: TemplateDefinition | null = null;
+  let suppliedTemplateAuthoringSource: AuthoringSource | null = null;
   try {
     const body = await readBoundedText(request, MAX_SYNC_FILE_BODY_BYTES);
     if ("error" in body) {
@@ -193,6 +194,7 @@ export async function PUT(request: Request, { params }: Props) {
       parsed = parsePostMarkdownFile(envelope.markdown);
       suppliedDocument = envelope.document;
       suppliedTemplate = envelope.template ?? null;
+      suppliedTemplateAuthoringSource = envelope.templateAuthoringSource ?? null;
     } else {
       parsed = parsePostMarkdownFile(raw);
     }
@@ -202,6 +204,7 @@ export async function PUT(request: Request, { params }: Props) {
   } catch (error) {
     return syncError(400, errorMessage(error, "Could not parse the file"));
   }
+  const document = mergeMarkdownIntoDocument(suppliedDocument, parsed);
   // The look the file brought with it, installed at the exact id and version
   // the document is pinned to. Without this the definition travelled out of a
   // workspace and could never travel into one: a textpack carried its look and
@@ -211,18 +214,20 @@ export async function PUT(request: Request, { params }: Props) {
   // write: the person's words are the thing being saved, and an item that
   // lands under the folder's own look is a far better outcome than an item
   // that does not land.
-  if (suppliedTemplate && access.blogId) {
+  if (suppliedTemplate && access.blogId &&
+      suppliedTemplate.id === document.presentation.template.id &&
+      suppliedTemplate.version === document.presentation.template.version) {
     try {
       await installDocumentTemplate({
         blogId: access.blogId,
         definition: suppliedTemplate,
+        authoringSource: suppliedTemplateAuthoringSource,
       });
     } catch {
       // Falls back to the folder's look, exactly as before this existed.
     }
   }
 
-  const document = mergeMarkdownIntoDocument(suppliedDocument, parsed);
   const projection = legacyProjectionFromDocument(document);
 
   // The file's kind may only change within the item's folder (same rule as
@@ -279,11 +284,15 @@ export async function PUT(request: Request, { params }: Props) {
         }
       : { ...post, ...projected, document };
     const rendered = structured
-      ? renderSyncDocumentFile(blog, candidate, folderPath, suppliedTemplate ?? storedTemplate)
+      ? renderSyncDocumentFile(
+          blog, candidate, folderPath,
+          suppliedTemplate ?? storedLook?.template,
+          suppliedTemplateAuthoringSource ?? storedLook?.authoringSource,
+        )
       : renderSyncFile(blog, candidate, folderPath);
     if (rendered.hash === current.hash) {
       return Response.json(
-        { item: syncManifestItem(blog, post) },
+        { item: await resolvedSyncManifestItem(blog, post) },
         { status: 200, headers: { "Cache-Control": "private, no-store" } },
       );
     }
@@ -343,7 +352,7 @@ export async function PUT(request: Request, { params }: Props) {
     revalidateBlogPaths(blog, [post.slug, saved.slug]);
     // The new manifest entry (with the NEW hash) lets the client update its
     // index without refetching the file it just wrote.
-    return Response.json({ item: syncManifestItem(blog, saved) });
+    return Response.json({ item: await resolvedSyncManifestItem(blog, saved) });
   } catch (error) {
     // Lost the compare-and-swap: another writer committed between our hash
     // check and the save. Same signal as a stale If-Match, so 412.
@@ -372,9 +381,9 @@ export async function DELETE(request: Request, { params }: Props) {
   if (ifMatch.trim() === "*") {
     return syncError(412, "A specific If-Match validator is required");
   }
+  const look = await syncTemplateForPost(blog.handle, post);
   if (!ifMatchSatisfiedForSyncFile(
-    ifMatch, blog, post, folderPath,
-    templateForPost(post, await templatesForPosts(blog.handle, [post])),
+    ifMatch, blog, post, folderPath, look.template, look.authoringSource,
   )) {
     return syncError(412, "The post changed since this file was fetched");
   }
@@ -464,9 +473,9 @@ export async function PATCH(request: Request, { params }: Props) {
   if (ifMatch.trim() === "*") {
     return syncError(412, "A specific If-Match validator is required");
   }
+  const look = await syncTemplateForPost(blog.handle, post);
   if (!ifMatchSatisfiedForSyncFile(
-    ifMatch, blog, post, folderPath,
-    templateForPost(post, await templatesForPosts(blog.handle, [post])),
+    ifMatch, blog, post, folderPath, look.template, look.authoringSource,
   )) {
     return syncError(412, "The post changed since this file was fetched");
   }
@@ -515,7 +524,7 @@ export async function PATCH(request: Request, { params }: Props) {
     if (!result) return syncError(404, "Post not found");
     const current = result.post;
     if (!result.changed) {
-      return Response.json({ item: syncManifestItem(blog, current) });
+      return Response.json({ item: await resolvedSyncManifestItem(blog, current) });
     }
     await recordSlugChanged({
       actorUserId: userId,
@@ -525,7 +534,7 @@ export async function PATCH(request: Request, { params }: Props) {
       newSlug: current.slug,
     });
     revalidateBlogPaths(blog, [post.slug, current.slug]);
-    return Response.json({ item: syncManifestItem(blog, current) });
+    return Response.json({ item: await resolvedSyncManifestItem(blog, current) });
   } catch (error) {
     // Lost the move/rename compare-and-swap: another writer committed first.
     if (error instanceof PostConflictError) {

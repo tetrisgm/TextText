@@ -3,13 +3,19 @@ import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 
 /**
  * A `.textpack` as the Mac app writes it: a zip holding one `.textbundle`
- * directory with `text.md`, `document.json`, an optional `template.json`,
- * and `info.json`. Bytes are deterministic (fixed timestamps, stored
+ * directory with `text.md`, `document.json`, optional `template.json` and
+ * `template-source.json`, and `info.json`. Bytes are deterministic (fixed timestamps, stored
  * entries) so the same document always yields the same git blob, and an
  * unchanged item costs the backup nothing.
  */
 
-export type TextpackParts = { markdown: string; document: unknown; template?: unknown; sourceUrl?: string | null };
+export type TextpackParts = {
+  markdown: string;
+  document: unknown;
+  template?: unknown;
+  templateAuthoringSource?: unknown;
+  sourceUrl?: string | null;
+};
 
 // ZIP records local calendar fields. UTC midnight becomes 1979 west of UTC,
 // which is outside ZIP's range; local midnight also gives every zone the same bytes.
@@ -30,7 +36,12 @@ export function buildTextpack(name: string, parts: TextpackParts): Uint8Array {
     [`${folder}/document.json`]: [strToU8(`${JSON.stringify(parts.document, null, 2)}\n`), { level: 0, mtime: EPOCH }],
     [`${folder}/info.json`]: [strToU8(`${JSON.stringify(info, null, 2)}\n`), { level: 0, mtime: EPOCH }],
   };
-  if (parts.template) entries[`${folder}/template.json`] = [strToU8(`${JSON.stringify(parts.template, null, 2)}\n`), { level: 0, mtime: EPOCH }];
+  if (parts.template) {
+    entries[`${folder}/template.json`] = [strToU8(`${JSON.stringify(parts.template, null, 2)}\n`), { level: 0, mtime: EPOCH }];
+    if (parts.templateAuthoringSource) {
+      entries[`${folder}/template-source.json`] = [strToU8(`${JSON.stringify(parts.templateAuthoringSource, null, 2)}\n`), { level: 0, mtime: EPOCH }];
+    }
+  }
   return zipSync(entries, { mtime: EPOCH });
 }
 
@@ -44,6 +55,15 @@ export function parseTextpack(bytes: Uint8Array): TextpackParts {
   const document = find("document.json");
   if (markdown === null || document === null) throw new Error("Not a TextText textpack: text.md or document.json is missing");
   const template = find("template.json");
+  const templateAuthoringSource = template ? find("template-source.json") : null;
+  const optionalJSON = (value: string | null): unknown => {
+    if (!value) return undefined;
+    try {
+      return JSON.parse(value);
+    } catch {
+      return undefined;
+    }
+  };
   const info = find("info.json");
   let sourceUrl: string | null = null;
   if (info) {
@@ -54,7 +74,13 @@ export function parseTextpack(bytes: Uint8Array): TextpackParts {
       // info.json is advisory.
     }
   }
-  return { markdown, document: JSON.parse(document), template: template ? JSON.parse(template) : undefined, sourceUrl };
+  return {
+    markdown,
+    document: JSON.parse(document),
+    template: optionalJSON(template),
+    templateAuthoringSource: optionalJSON(templateAuthoringSource),
+    sourceUrl,
+  };
 }
 
 /** What git would call this content: sha1 over "blob <size>\0<bytes>". */

@@ -3,8 +3,16 @@ import type { Post } from "@/lib/content";
 import { validateDocumentSnapshot } from "@/lib/documents/model";
 import { legacyProjectionFromDocument } from "@/lib/documents/legacy";
 import { mergeMarkdownIntoDocument } from "@/lib/documents/sync";
+import { validateTemplateDefinition } from "@/lib/presentation/schema";
+import { validatedLookSource } from "@/lib/presentation/template-library";
 import { parsePostMarkdownFile, slugForNewFile } from "@/lib/markdown-files";
-import { renderSyncFile, templateForPost, templatesForPosts } from "@/app/api/sync/v1/sync";
+import {
+  renderSyncFile,
+  templateAuthoringSourceForPost,
+  templateAuthoringSourcesForPosts,
+  templateForPost,
+  templatesForPosts,
+} from "@/app/api/sync/v1/sync";
 import {
   claimGithubBackupRun,
   createDraftInFolder,
@@ -14,6 +22,7 @@ import {
   getGithubInstallation,
   getPostById,
   getWorkspacePostsWithDocuments,
+  installDocumentTemplate,
   recordGithubBackupRun,
   savePost,
   setGithubBackupSettings,
@@ -131,6 +140,7 @@ export async function buildBackupSnapshot(handle: string, now = new Date()): Pro
   const folderById = new Map(folders.map((folder) => [folder.id, folder]));
   const posts = (await getWorkspacePostsWithDocuments(handle, MAX_DOCUMENTS)).filter((post): post is Post & { id: string } => Boolean(post.id));
   const templates = await templatesForPosts(handle, posts);
+  const templateSources = await templateAuthoringSourcesForPosts(handle, templates);
   const files = new Map<string, Uint8Array>();
   const documents: BackupManifestDocument[] = [];
   const prefix = backupPrefix(handle);
@@ -146,6 +156,7 @@ export async function buildBackupSnapshot(handle: string, now = new Date()): Pro
     const folderPath = folder?.path ?? "blog";
     const markdown = renderSyncFile(blog, post, folderPath).text;
     const template = templateForPost(post, templates) ?? undefined;
+    const templateAuthoringSource = templateAuthoringSourceForPost(post, templateSources);
     let name = textpackFileName(post.slug);
     let path = `${prefix}/${folderPath}/${name}`;
     if (seen.has(path)) {
@@ -154,7 +165,7 @@ export async function buildBackupSnapshot(handle: string, now = new Date()): Pro
     }
     seen.add(path);
     const sourceUrl = (document as { content?: { fields?: { sourceUrl?: unknown } } }).content?.fields?.sourceUrl;
-    const bytes = buildTextpack(name.replace(/\.textpack$/, ""), { markdown, document, template, sourceUrl: typeof sourceUrl === "string" ? sourceUrl : null });
+    const bytes = buildTextpack(name.replace(/\.textpack$/, ""), { markdown, document, template, templateAuthoringSource, sourceUrl: typeof sourceUrl === "string" ? sourceUrl : null });
     files.set(path, bytes);
     documents.push({
       id: post.id,
@@ -435,8 +446,24 @@ export async function restoreBackup(input: { handle: string; blogId: string; act
       const file = await api<{ content: string }>(ctx, contentsUrl(ctx.repository, entry.path, ctx.branch));
       const parts = parseTextpack(Buffer.from(file.content, "base64"));
       const parsed = parsePostMarkdownFile(parts.markdown);
-      const created = await createDraftInFolder(input.handle, folderId, { audit: { ...audit, actionName: "github.restore_item", inputSummary: entry.path.slice(0, 200) } });
       const document = mergeMarkdownIntoDocument(validateDocumentSnapshot(parts.document), parsed);
+      const created = await createDraftInFolder(input.handle, folderId, { audit: { ...audit, actionName: "github.restore_item", inputSummary: entry.path.slice(0, 200) } });
+      if (parts.template) {
+        try {
+          const template = validateTemplateDefinition(parts.template);
+          if (template.id === document.presentation.template.id && template.version === document.presentation.template.version) {
+            let authoringSource: ReturnType<typeof validatedLookSource>;
+            try {
+              authoringSource = validatedLookSource(template, parts.templateAuthoringSource);
+            } catch {
+              // A stale or altered blueprint must not block the item or its compiled look.
+            }
+            await installDocumentTemplate({ blogId: input.blogId, definition: template, authoringSource });
+          }
+        } catch {
+          // An invalid or unavailable look must not prevent restoring the content.
+        }
+      }
       const projection = legacyProjectionFromDocument(document);
       await savePost(input.handle, {
         ...created,

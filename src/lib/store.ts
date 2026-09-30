@@ -3812,6 +3812,37 @@ export async function getDocumentTemplateForHandle(
   return getDocumentTemplate(await blogIdFor(handle), reference);
 }
 
+/** Editable source for a synced look, only when it rebuilds that exact look. */
+export async function getDocumentTemplateAuthoringSourceForHandle(
+  handle: string,
+  definition: TemplateDefinition,
+): Promise<AuthoringSource | null> {
+  const key = `${definition.id}@${definition.version}`;
+  return (await getDocumentTemplateAuthoringSourcesForHandle(handle, new Map([[key, definition]]))).get(key) ?? null;
+}
+
+/** One workspace lookup for a folder's distinct editable looks. */
+export async function getDocumentTemplateAuthoringSourcesForHandle(
+  handle: string,
+  definitions: ReadonlyMap<string, TemplateDefinition>,
+): Promise<Map<string, AuthoringSource>> {
+  const sources = new Map<string, AuthoringSource>();
+  const custom = [...definitions].filter(([, definition]) => !definition.id.startsWith("texttext."));
+  if (!db || custom.length === 0) return sources;
+  const blogId = await blogIdFor(handle);
+  await Promise.all(custom.map(async ([key, definition]) => {
+    const authored = await getDocumentTemplateAuthoringSource(blogId, definition.id, definition.version);
+    if (!authored?.source) return;
+    try {
+      const source = validatedLookSource(definition, authored.source);
+      if (source) sources.set(key, source);
+    } catch {
+      // A stale or mismatched source cannot describe the served definition.
+    }
+  }));
+  return sources;
+}
+
 export async function getDocumentTemplate(
   blogId: string,
   reference: TemplateReference,
@@ -4200,6 +4231,7 @@ export async function restoreDocumentTemplateVersion(input: {
 export async function installDocumentTemplate(input: {
   blogId: string;
   definition: TemplateDefinition;
+  authoringSource?: unknown;
   createdById?: string | null;
 }): Promise<"builtin" | "present" | "installed"> {
   const definition = validateTemplateDefinition(input.definition);
@@ -4218,12 +4250,20 @@ export async function installDocumentTemplate(input: {
     )
     .limit(1);
   if (existing.length) return "present";
+  let authoringSource: AuthoringSource | undefined;
+  try {
+    authoringSource = validatedLookSource(definition, input.authoringSource);
+  } catch {
+    // A stale or tampered blueprint cannot be allowed to reopen this look as
+    // something else. The valid compiled look and document still import.
+  }
   await db.insert(documentTemplates).values({
     blogId: input.blogId,
     templateId: definition.id,
     version: definition.version,
     name: definition.name,
     definition,
+    authoringSource: authoringSource ?? null,
     createdById: input.createdById ?? null,
     // Inherit the look's retirement, exactly as createDocumentTemplateVersion
     // does. This path inserts directly, so it did not, and a .textpack
@@ -4244,10 +4284,9 @@ export async function installDocumentTemplate(input: {
  * and the version to check against so two people editing the same base cannot
  * silently create competing successors.
  *
- * `source` is null whenever the look was not authored from a blueprint - a
- * built-in, a duplicate, an import, a restore, a look saved from a document, or
- * anything stored before the column existed. That is an ordinary answer and
- * callers must say "edit this one by hand" rather than starting from nothing.
+ * `source` is null when no compatible blueprint travelled with the look, as
+ * with built-ins, document-derived looks, and older imports. A TextPack import
+ * or restore can now keep a matching source so the look remains editable.
  */
 export async function getDocumentTemplateAuthoringSource(
   blogId: string,

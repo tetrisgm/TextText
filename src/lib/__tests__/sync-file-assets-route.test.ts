@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  getDocumentTemplateAuthoringSourcesForHandle: vi.fn(),
   getDocumentTemplateForHandle: vi.fn(),
   getFolderById: vi.fn(),
   getPostById: vi.fn(),
@@ -16,6 +17,7 @@ vi.mock("@/lib/permissions", () => ({
   resolveItemAccess: mocks.resolveItemAccess,
 }));
 vi.mock("@/lib/store", () => ({
+  getDocumentTemplateAuthoringSourcesForHandle: mocks.getDocumentTemplateAuthoringSourcesForHandle,
   getDocumentTemplateForHandle: mocks.getDocumentTemplateForHandle,
   getFolderById: mocks.getFolderById,
   getPostById: mocks.getPostById,
@@ -66,6 +68,7 @@ beforeEach(() => {
   for (const mock of Object.values(mocks)) mock.mockReset();
   process.env.BLOB_READ_WRITE_TOKEN = "blob-token";
   mocks.getDocumentTemplateForHandle.mockResolvedValue(null);
+  mocks.getDocumentTemplateAuthoringSourcesForHandle.mockResolvedValue(new Map());
   mocks.resolveSyncWorkspace.mockResolvedValue({ blog, userId: "user-1" });
   mocks.resolveItemAccess.mockResolvedValue({
     canView: true,

@@ -245,6 +245,7 @@ public struct DocumentStore: Sendable {
             // strip the look off the file, which is what dropping this here
             // would have done on every single write.
             templateJSON: existing.templateJSON,
+            templateAuthoringSourceJSON: existing.templateAuthoringSourceJSON,
             assets: assets,
             sourceURL: nil,
             in: temporary)

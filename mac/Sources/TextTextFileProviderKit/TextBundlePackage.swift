@@ -78,6 +78,9 @@ public struct TextTextTextBundleContents: Equatable, Sendable {
     /// textpack could carry a recipe's cook time and still not know how a
     /// recipe reads. Nil for a bundle written before this existed.
     public let templateJSON: String?
+    /// Editable source for the embedded look, stored as `template-source.json`.
+    /// The native bridge preserves it without interpreting its schema.
+    public let templateAuthoringSourceJSON: String?
     public let assets: [TextTextTextBundleAsset]
     public let logicalSize: Int
 }
@@ -116,6 +119,7 @@ public enum TextTextTextBundlePackage {
         canonicalMarkdown: String,
         documentJSON: String? = nil,
         templateJSON: String? = nil,
+        templateAuthoringSourceJSON: String? = nil,
         assets: [MaterializedAsset],
         sourceURL: String?,
         in temporaryDirectory: URL
@@ -171,6 +175,13 @@ public enum TextTextTextBundlePackage {
             try templateData.write(
                 to: packageURL.appendingPathComponent("template.json"), options: .atomic)
             logicalSize += templateData.count
+        }
+
+        if templateJSON != nil, let templateAuthoringSourceJSON {
+            let sourceData = Data(templateAuthoringSourceJSON.utf8)
+            try sourceData.write(
+                to: packageURL.appendingPathComponent("template-source.json"), options: .atomic)
+            logicalSize += sourceData.count
         }
 
         let info = TextTextTextBundleInfo(sourceURL: sourceURL, remoteAssets: mappings)
@@ -255,9 +266,23 @@ public enum TextTextTextBundlePackage {
             guard let decoded = String(data: templateData, encoding: .utf8) else {
                 throw TextTextTextBundleError.invalidPackage("template.json is not UTF-8")
             }
-            _ = try decodedJSONObject(decoded)
+            _ = try decodedJSONObject(decoded, filename: "template.json")
             templateJSON = decoded
             logicalSize += templateData.count
+        }
+        let templateSourceURL = packageRoot.appendingPathComponent("template-source.json")
+        var templateAuthoringSourceJSON: String?
+        if FileManager.default.fileExists(atPath: templateSourceURL.path),
+            let sourceData = try? Data(contentsOf: templateSourceURL) {
+            logicalSize += sourceData.count
+            // The source is optional editing metadata. A damaged source must
+            // not make the document or its still-valid look unreadable.
+            if templateJSON != nil,
+                let decoded = String(data: sourceData, encoding: .utf8),
+                (try? decodedJSONObject(
+                    decoded, filename: "template-source.json")) != nil {
+                templateAuthoringSourceJSON = decoded
+            }
         }
         var assets: [TextTextTextBundleAsset] = []
         var remoteURLsByFilename: [String: String] = [:]
@@ -296,6 +321,7 @@ public enum TextTextTextBundlePackage {
             markdown: canonicalMarkdown,
             documentJSON: documentJSON,
             templateJSON: templateJSON,
+            templateAuthoringSourceJSON: templateAuthoringSourceJSON,
             assets: assets, logicalSize: logicalSize)
     }
 
@@ -387,16 +413,18 @@ public enum TextTextTextBundlePackage {
         return candidate
     }
 
-    private static func decodedJSONObject(_ json: String) throws -> Any {
+    private static func decodedJSONObject(
+        _ json: String, filename: String = "document.json"
+    ) throws -> Any {
         let data = Data(json.utf8)
         let value: Any
         do {
             value = try JSONSerialization.jsonObject(with: data)
         } catch {
-            throw TextTextTextBundleError.invalidPackage("document.json is not valid JSON")
+            throw TextTextTextBundleError.invalidPackage("\(filename) is not valid JSON")
         }
         guard value is [String: Any] else {
-            throw TextTextTextBundleError.invalidPackage("document.json must contain an object")
+            throw TextTextTextBundleError.invalidPackage("\(filename) must contain an object")
         }
         return value
     }

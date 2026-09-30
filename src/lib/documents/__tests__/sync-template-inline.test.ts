@@ -6,6 +6,8 @@ import {
   serializeSyncDocumentEnvelope,
 } from "@/lib/documents/sync";
 import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
+import { authoringSourceFor } from "@/lib/presentation/authoring-source";
+import { compileItemTypeBlueprint, itemTypeBlueprintSchema } from "@/lib/presentation/item-type-blueprint";
 import type { Post } from "@/lib/content";
 
 /**
@@ -82,5 +84,30 @@ describe("a synced document carries its look", () => {
       renderSyncDocumentEnvelope({ markdown: "# x\n", post }),
     );
     expect(withLook).not.toBe(without);
+  });
+
+  it("carries the editable design only when it builds the exact look", () => {
+    const blueprint = itemTypeBlueprintSchema.parse({ name: "Reading notes", fields: [{ id: "source", label: "Source", type: "url" }], collection: { layout: "list" } });
+    const look = compileItemTypeBlueprint(blueprint, { id: "custom.reading-notes" });
+    const source = authoringSourceFor(blueprint);
+    const carried = renderSyncDocumentEnvelope({ markdown: "# Notes\n", post, template: look, templateAuthoringSource: source });
+    expect(parseSyncDocumentEnvelope(serializeSyncDocumentEnvelope(carried)).templateAuthoringSource).toEqual(source);
+
+    const mismatch = authoringSourceFor({ ...blueprint, name: "Different notes" });
+    expect(renderSyncDocumentEnvelope({ markdown: "# Notes\n", post, template: look, templateAuthoringSource: mismatch }).templateAuthoringSource).toBeUndefined();
+    const received = parseSyncDocumentEnvelope(JSON.stringify({ ...carried, templateAuthoringSource: mismatch }));
+    expect(received.template).toEqual(look);
+    expect(received.templateAuthoringSource).toBeUndefined();
+    expect(received.markdown).toBe("# Notes\n");
+  });
+
+  it("keeps the document when editable provenance is malformed", () => {
+    const received = parseSyncDocumentEnvelope(JSON.stringify({
+      ...renderSyncDocumentEnvelope({ markdown: "# Kept\n", post, template }),
+      templateAuthoringSource: { kind: "item-type-blueprint", blueprint: { unsupported: true } },
+    }));
+    expect(received.markdown).toBe("# Kept\n");
+    expect(received.template).toEqual(template);
+    expect(received.templateAuthoringSource).toBeUndefined();
   });
 });

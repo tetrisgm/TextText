@@ -5,6 +5,9 @@ import {
   SYNC_DOCUMENT_CONTENT_TYPE,
   SYNC_DOCUMENT_SCHEMA,
 } from "@/lib/documents/sync";
+import { authoringSourceFor } from "@/lib/presentation/authoring-source";
+import { compileItemTypeBlueprint, itemTypeBlueprintSchema } from "@/lib/presentation/item-type-blueprint";
+import { renderSyncDocumentFile } from "@/app/api/sync/v1/sync";
 
 const mocks = vi.hoisted(() => ({
   claimIdempotencyKey: vi.fn(),
@@ -12,6 +15,10 @@ const mocks = vi.hoisted(() => ({
   createDraftInFolder: vi.fn(),
   deletePost: vi.fn(),
   getPostById: vi.fn(),
+  getFolderById: vi.fn(),
+  getDocumentTemplateForHandle: vi.fn(),
+  getDocumentTemplateAuthoringSourcesForHandle: vi.fn(),
+  installDocumentTemplate: vi.fn(async () => "installed"),
   markCapturePending: vi.fn(),
   releaseIdempotencyKey: vi.fn(),
   resolveIdempotencyKey: vi.fn(),
@@ -28,6 +35,10 @@ vi.mock("@/lib/store", () => ({
   createDraftInFolder: mocks.createDraftInFolder,
   deletePost: mocks.deletePost,
   getPostById: mocks.getPostById,
+  getFolderById: mocks.getFolderById,
+  getDocumentTemplateForHandle: mocks.getDocumentTemplateForHandle,
+  getDocumentTemplateAuthoringSourcesForHandle: mocks.getDocumentTemplateAuthoringSourcesForHandle,
+  installDocumentTemplate: mocks.installDocumentTemplate,
   markCapturePending: mocks.markCapturePending,
   releaseIdempotencyKey: mocks.releaseIdempotencyKey,
   resolveIdempotencyKey: mocks.resolveIdempotencyKey,
@@ -145,7 +156,10 @@ describe("sync file POST representation", () => {
       blog,
       userId: "owner-id",
     });
-    mocks.resolveWorkspaceAccess.mockResolvedValue({ isOwner: true });
+    mocks.resolveWorkspaceAccess.mockResolvedValue({ isOwner: true, blogId: "blog-1" });
+    mocks.getFolderById.mockResolvedValue({ id: "notes-folder", name: "Notes", path: "notes", mode: "notes", position: 0 });
+    mocks.getDocumentTemplateForHandle.mockResolvedValue(null);
+    mocks.getDocumentTemplateAuthoringSourcesForHandle.mockResolvedValue(new Map());
     mocks.createDraft.mockImplementation(
       (
         _handle: string,
@@ -158,7 +172,7 @@ describe("sync file POST representation", () => {
         _handle: string,
         _folderId: string,
         options: { representation: FileRepresentation },
-      ) => Promise.resolve(draft(options.representation, "note")),
+      ) => Promise.resolve({ ...draft(options.representation, "note"), folderId: _folderId }),
     );
     mocks.savePost.mockImplementation((_handle: string, post: Post) =>
       Promise.resolve({ ...post, revision: 2 }),
@@ -224,6 +238,62 @@ describe("sync file POST representation", () => {
         }),
       }),
     );
+  });
+
+  it("installs the editable look carried by a new TextPack item", async () => {
+    const blueprint = itemTypeBlueprintSchema.parse({ name: "Research note", fields: [{ id: "source", label: "Source", type: "url" }], collection: { layout: "list" } });
+    const template = compileItemTypeBlueprint(blueprint, { id: "custom.research-note" });
+    const source = authoringSourceFor(blueprint);
+    mocks.getDocumentTemplateForHandle.mockResolvedValue(template);
+    mocks.getDocumentTemplateAuthoringSourcesForHandle.mockResolvedValue(new Map([[`${template.id}@${template.version}`, source]]));
+    const request = new Request("https://texttext.example/api/sync/v1/files?folder=notes-folder", {
+      method: "POST",
+      headers: { "Content-Type": SYNC_DOCUMENT_CONTENT_TYPE, "TextText-File-Representation": "textpack" },
+      body: serializeSyncDocumentEnvelope({
+        schema: SYNC_DOCUMENT_SCHEMA,
+        markdown: "# New research note\n",
+        document: {
+          schemaVersion: 1,
+          content: { title: "New research note", body: "", fields: {}, tags: [], assets: [] },
+          presentation: { template: { id: template.id, version: template.version }, theme: {} },
+        },
+        template,
+        templateAuthoringSource: source,
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(201);
+    expect(mocks.installDocumentTemplate).toHaveBeenCalledWith({
+      blogId: "blog-1", definition: template, authoringSource: source,
+    });
+    const saved = await mocks.savePost.mock.results[0].value as Post;
+    const result = await response.json();
+    expect(result.item.documentHash).toBe(renderSyncDocumentFile(blog, saved, "notes", template, source).hash);
+  });
+
+  it("keeps the item but does not install an unrelated carried look", async () => {
+    const blueprint = itemTypeBlueprintSchema.parse({ name: "Unrelated", fields: [], collection: { layout: "list" } });
+    const template = compileItemTypeBlueprint(blueprint, { id: "custom.unrelated" });
+    const response = await POST(new Request("https://texttext.example/api/sync/v1/files?folder=notes-folder", {
+      method: "POST",
+      headers: { "Content-Type": SYNC_DOCUMENT_CONTENT_TYPE, "TextText-File-Representation": "textpack" },
+      body: serializeSyncDocumentEnvelope({
+        schema: SYNC_DOCUMENT_SCHEMA,
+        markdown: "# Kept\n",
+        document: {
+          schemaVersion: 1,
+          content: { title: "Kept", body: "", fields: {}, tags: [], assets: [] },
+          presentation: { template: { id: "texttext.note", version: 1 }, theme: {} },
+        },
+        template,
+        templateAuthoringSource: authoringSourceFor(blueprint),
+      }),
+    }));
+
+    expect(response.status).toBe(201);
+    expect(mocks.installDocumentTemplate).not.toHaveBeenCalled();
+    expect(mocks.savePost).toHaveBeenCalled();
   });
 
   it("rejects an invalid representation before creating a placeholder", async () => {

@@ -79,6 +79,23 @@ describe.skipIf(process.env.TEXTTEXT_READING_DB_TEST !== "1")("custom type lifec
     expect(compileItemTypeBlueprint(authored.blueprint, imported)).toEqual(imported);
   });
 
+  it("installs only an editable source that rebuilds the TextPack look", async () => {
+    const [source, destination] = workspaces;
+    const actor = { actorUserId: userId, actorType: "human" as const, actionName: "test.template.textpack-source", targetType: "workspace" as const };
+    const blueprint = itemTypeBlueprintSchema.parse({ name: "Portable notes", fields: [{ id: "topic", label: "Topic", type: "text" }], collection: { layout: "list" } });
+    const authored = authoringSourceFor(blueprint);
+    const definition = await store.createDocumentTemplateVersion({ blogId: source.id, definition: compileItemTypeBlueprint(blueprint, { id: "textpack-editable-notes" }), authoringSource: authored, actor });
+    expect(await store.getDocumentTemplateAuthoringSourceForHandle(source.handle, definition)).toEqual(authored);
+    expect(await store.installDocumentTemplate({ blogId: destination.id, definition, authoringSource: authored })).toBe("installed");
+    expect((await store.getDocumentTemplateAuthoringSource(destination.id, definition.id, definition.version))?.source).toEqual(authored);
+
+    const mismatch = { ...authored, blueprint: { ...blueprint, name: "Different notes" } };
+    const otherDefinition = compileItemTypeBlueprint(blueprint, { id: "textpack-mismatched-notes" });
+    expect(await store.installDocumentTemplate({ blogId: destination.id, definition: otherDefinition, authoringSource: mismatch })).toBe("installed");
+    expect((await store.getDocumentTemplateAuthoringSource(destination.id, otherDefinition.id, otherDefinition.version))?.state).toBe("assembled");
+    expect(await store.getDocumentTemplate(destination.id, otherDefinition)).toEqual(otherDefinition);
+  });
+
   it("retains exact-version editable designs through remix and restore", async () => {
     const source = workspaces[0];
     const actor = { actorUserId: userId, actorType: "human" as const, actionName: "test.template.copy", targetType: "workspace" as const };

@@ -73,11 +73,16 @@ final class TextBundlePackageTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let templateJSON = #"{"id":"custom.recipe","version":2,"name":"Recipe","fields":[{"id":"cookTime","label":"Cook time","type":"number"}]}"#
+        let sourceJSON = #"{"formatVersion":1,"compilerVersion":2,"blueprint":{"name":"Recipe"}}"#
         let package = try TextTextTextBundlePackage.materialize(
             canonicalMarkdown: "# Dal\n",
             documentJSON: #"{"schema":1,"content":{"fields":{"cookTime":35}}}"#,
             templateJSON: templateJSON,
+            templateAuthoringSourceJSON: sourceJSON,
             assets: [], sourceURL: nil, in: root)
+
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: package.url.appendingPathComponent("template-source.json").path))
 
         let textpack = try TextTextTextBundlePackage.zipToTextPack(
             packageURL: package.url, in: root)
@@ -87,6 +92,10 @@ final class TextBundlePackageTests: XCTestCase {
             with: Data(try XCTUnwrap(decoded.templateJSON).utf8))
         let sourceObject = try JSONSerialization.jsonObject(with: Data(templateJSON.utf8))
         XCTAssertEqual(decodedObject as? NSDictionary, sourceObject as? NSDictionary)
+        let decodedSource = try JSONSerialization.jsonObject(
+            with: Data(try XCTUnwrap(decoded.templateAuthoringSourceJSON).utf8))
+        let originalSource = try JSONSerialization.jsonObject(with: Data(sourceJSON.utf8))
+        XCTAssertEqual(decodedSource as? NSDictionary, originalSource as? NSDictionary)
         XCTAssertTrue(try XCTUnwrap(decoded.documentJSON).contains("cookTime"))
     }
 
@@ -99,11 +108,44 @@ final class TextBundlePackageTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let package = try TextTextTextBundlePackage.materialize(
             canonicalMarkdown: "# No look\n", assets: [], sourceURL: nil, in: root)
+        try Data(#"{"blueprint":{"name":"Orphan"}}"#.utf8).write(
+            to: package.url.appendingPathComponent("template-source.json"))
 
         let decoded = try TextTextTextBundlePackage.read(from: package.url, in: root)
 
         XCTAssertNil(decoded.templateJSON)
+        XCTAssertNil(decoded.templateAuthoringSourceJSON)
         XCTAssertEqual(decoded.markdown, "# No look\n")
+    }
+
+    func testMalformedTemplateSourceKeepsDocumentAndValidTemplate() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let package = try TextTextTextBundlePackage.materialize(
+            canonicalMarkdown: "# Source\n", templateJSON: #"{"id":"custom.source"}"#,
+            templateAuthoringSourceJSON: "[1, 2, 3]",
+            assets: [], sourceURL: nil, in: root)
+
+        let decoded = try TextTextTextBundlePackage.read(from: package.url, in: root)
+        XCTAssertEqual(decoded.markdown, "# Source\n")
+        XCTAssertNotNil(decoded.templateJSON)
+        XCTAssertNil(decoded.templateAuthoringSourceJSON)
+
+        try Data("{broken".utf8).write(
+            to: package.url.appendingPathComponent("template-source.json"))
+        let invalidJSON = try TextTextTextBundlePackage.read(from: package.url, in: root)
+        XCTAssertEqual(invalidJSON.markdown, "# Source\n")
+        XCTAssertNotNil(invalidJSON.templateJSON)
+        XCTAssertNil(invalidJSON.templateAuthoringSourceJSON)
+
+        try Data([0xff, 0xfe]).write(
+            to: package.url.appendingPathComponent("template-source.json"))
+        let invalidUTF8 = try TextTextTextBundlePackage.read(from: package.url, in: root)
+        XCTAssertEqual(invalidUTF8.markdown, "# Source\n")
+        XCTAssertNotNil(invalidUTF8.templateJSON)
+        XCTAssertNil(invalidUTF8.templateAuthoringSourceJSON)
     }
 
     func testLegacyPackageWithoutDocumentJSONStillReads() throws {

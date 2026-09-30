@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { unzipSync } from "fflate";
+import { strToU8, unzipSync, zipSync } from "fflate";
 import { execFileSync } from "node:child_process";
 import { buildTextpack, gitBlobSha, parseTextpack, textpackFileName } from "../textpack";
 
@@ -14,6 +14,27 @@ describe("textpack", () => {
     expect(back.template).toEqual(parts.template);
     expect(back.sourceUrl).toBe(parts.sourceUrl);
     expect(Object.keys(unzipSync(bytes)).sort()).toEqual(["hi.textbundle/document.json", "hi.textbundle/info.json", "hi.textbundle/template.json", "hi.textbundle/text.md"]);
+  });
+
+  it("round-trips the editable template source only alongside its compiled template", () => {
+    const templateAuthoringSource = { kind: "item-type-blueprint", schemaVersion: 1, blueprint: { name: "Hi" } };
+    const bytes = buildTextpack("hi", { ...parts, templateAuthoringSource });
+    expect(parseTextpack(bytes).templateAuthoringSource).toEqual(templateAuthoringSource);
+    expect(Object.keys(unzipSync(bytes))).toContain("hi.textbundle/template-source.json");
+
+    const withoutTemplate = buildTextpack("hi", { markdown: parts.markdown, document: parts.document, templateAuthoringSource });
+    expect(parseTextpack(withoutTemplate).templateAuthoringSource).toBeUndefined();
+    expect(Object.keys(unzipSync(withoutTemplate))).not.toContain("hi.textbundle/template-source.json");
+  });
+
+  it("keeps the document when optional template files contain invalid JSON", () => {
+    const files = unzipSync(buildTextpack("hi", parts));
+    files["hi.textbundle/template.json"] = strToU8("{");
+    files["hi.textbundle/template-source.json"] = strToU8("{");
+    const back = parseTextpack(zipSync(files));
+    expect(back.document).toEqual(parts.document);
+    expect(back.template).toBeUndefined();
+    expect(back.templateAuthoringSource).toBeUndefined();
   });
 
   it("is byte-for-byte deterministic so unchanged items reuse their blob", () => {

@@ -13,6 +13,11 @@ import {
   templateDefinitionSchema,
   type TemplateDefinition,
 } from "@/lib/presentation/schema";
+import {
+  authoringSourceSchema,
+  type AuthoringSource,
+} from "@/lib/presentation/authoring-source";
+import { validatedLookSource } from "@/lib/presentation/template-library";
 import { z } from "zod";
 
 export const SYNC_DOCUMENT_SCHEMA = "texttext.sync-document.v1" as const;
@@ -46,10 +51,47 @@ const syncDocumentEnvelopeSchema = z
     // This is the ingress boundary for files that live outside the database
     // and never expire, so it has to degrade rather than refuse.
     template: templateDefinitionSchema.optional().catch(undefined),
+    // Editable provenance travels beside the compiled look. An older or
+    // malformed source is advisory and must never reject the document.
+    templateAuthoringSource: authoringSourceSchema.optional().catch(undefined),
   })
   .strict();
 
 type SyncDocumentEnvelope = z.infer<typeof syncDocumentEnvelopeSchema>;
+
+// A folder manifest may render hundreds of items under one look. The store
+// already validates its source, but render can also receive direct callers;
+// cache that second check for repeated objects in the same process.
+const renderedSources = new WeakMap<TemplateDefinition, WeakMap<AuthoringSource, AuthoringSource | null>>();
+
+function matchingAuthoringSource(
+  template: TemplateDefinition | null | undefined,
+  source: unknown,
+  cache = false,
+): AuthoringSource | undefined {
+  if (!template || source == null) return undefined;
+  const cached = cache && typeof source === "object"
+    ? renderedSources.get(template)?.get(source as AuthoringSource)
+    : undefined;
+  if (cached !== undefined) return cached ?? undefined;
+  let valid: AuthoringSource | undefined;
+  try {
+    valid = validatedLookSource(template, source);
+  } catch {
+    // The compiled definition is the rendering authority. Discard provenance
+    // that would rebuild into a different look, and keep the document.
+    valid = undefined;
+  }
+  if (cache && typeof source === "object") {
+    let bySource = renderedSources.get(template);
+    if (!bySource) {
+      bySource = new WeakMap();
+      renderedSources.set(template, bySource);
+    }
+    bySource.set(source as AuthoringSource, valid ?? null);
+  }
+  return valid;
+}
 
 type JsonValue =
   | null
@@ -100,12 +142,15 @@ export function renderSyncDocumentEnvelope({
   markdown,
   post,
   template,
+  templateAuthoringSource,
 }: {
   markdown: string;
   post: Post;
   /** Resolved by the caller, which is the only side that can reach the store. */
   template?: TemplateDefinition | null;
+  templateAuthoringSource?: AuthoringSource | null;
 }): SyncDocumentEnvelope {
+  const source = matchingAuthoringSource(template, templateAuthoringSource, true);
   return {
     schema: SYNC_DOCUMENT_SCHEMA,
     markdown,
@@ -114,6 +159,7 @@ export function renderSyncDocumentEnvelope({
       `Persisted item ${post.id ?? post.slug}`,
     ),
     ...(template ? { template } : {}),
+    ...(source ? { templateAuthoringSource: source } : {}),
   };
 }
 
@@ -124,7 +170,10 @@ export function parseSyncDocumentEnvelope(raw: string): SyncDocumentEnvelope {
   } catch {
     throw new Error("The structured document is not valid JSON");
   }
-  return syncDocumentEnvelopeSchema.parse(value);
+  const parsed = syncDocumentEnvelopeSchema.parse(value);
+  const { templateAuthoringSource, ...document } = parsed;
+  const source = matchingAuthoringSource(parsed.template, templateAuthoringSource);
+  return source ? { ...document, templateAuthoringSource: source } : document;
 }
 
 export function requestUsesSyncDocument(request: Request): boolean {

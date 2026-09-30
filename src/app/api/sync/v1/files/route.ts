@@ -16,11 +16,14 @@ import {
   createDraftInFolder,
   deletePost,
   getPostById,
+  installDocumentTemplate,
   markCapturePending,
   releaseIdempotencyKey,
   resolveIdempotencyKey,
   savePost,
 } from "@/lib/store";
+import type { TemplateDefinition } from "@/lib/presentation/schema";
+import type { AuthoringSource } from "@/lib/presentation/authoring-source";
 import { resolveWorkspaceAccess } from "@/lib/permissions";
 import { resolveSyncWorkspace } from "../auth";
 import { recordAction } from "@/lib/audit";
@@ -29,8 +32,8 @@ import { readBoundedText } from "@/lib/http/bounded-json";
 import {
   clientSaveError,
   parseSyncFileRepresentation,
+  resolvedSyncManifestItem,
   syncError,
-  syncManifestItem,
   TEXTTEXT_FILE_REPRESENTATION_HEADER,
 } from "../sync";
 
@@ -61,6 +64,8 @@ export async function POST(request: Request) {
 
   let parsed: ReturnType<typeof parsePostMarkdownFile>;
   let suppliedDocument: Post["document"];
+  let suppliedTemplate: TemplateDefinition | null = null;
+  let suppliedTemplateAuthoringSource: AuthoringSource | null = null;
   try {
     const body = await readBoundedText(request, MAX_SYNC_FILE_BODY_BYTES);
     if ("error" in body) {
@@ -73,6 +78,8 @@ export async function POST(request: Request) {
       const envelope = parseSyncDocumentEnvelope(raw);
       parsed = parsePostMarkdownFile(envelope.markdown);
       suppliedDocument = envelope.document;
+      suppliedTemplate = envelope.template ?? null;
+      suppliedTemplateAuthoringSource = envelope.templateAuthoringSource ?? null;
     } else {
       parsed = parsePostMarkdownFile(raw);
     }
@@ -99,7 +106,7 @@ export async function POST(request: Request) {
       const existing = await getPostById(blog.handle, claim.id);
       if (existing) {
         return Response.json(
-          { item: syncManifestItem(blog, existing) },
+          { item: await resolvedSyncManifestItem(blog, existing) },
           { status: 201 },
         );
       }
@@ -150,6 +157,21 @@ export async function POST(request: Request) {
       suppliedDocument ?? created.document ?? documentFromLegacyPost(created),
       parsed,
     );
+    // An imported package may be the only copy of its look and editable
+    // design. Invalid or conflicting provenance is best effort: keep words.
+    if (suppliedTemplate && access.blogId &&
+        suppliedTemplate.id === document.presentation.template.id &&
+        suppliedTemplate.version === document.presentation.template.version) {
+      try {
+        await installDocumentTemplate({
+          blogId: access.blogId,
+          definition: suppliedTemplate,
+          authoringSource: suppliedTemplateAuthoringSource,
+        });
+      } catch {
+        // The item can still be saved under its folder's available look.
+      }
+    }
     const projection = legacyProjectionFromDocument(document);
     // date comes from the file alone: created.date is the placeholder's
     // derived createdAt, and letting it through would backdate a publish to
@@ -192,7 +214,7 @@ export async function POST(request: Request) {
     });
     revalidateBlogPaths(blog, [saved.slug]);
     return Response.json(
-      { item: syncManifestItem(blog, saved) },
+      { item: await resolvedSyncManifestItem(blog, saved) },
       { status: 201 },
     );
   } catch (error) {

@@ -21,14 +21,19 @@ public struct TextTextFileContent: Equatable, Sendable {
     /// The look itself, when the server sent one. Optional so an older server,
     /// and a document pinned to a look that has been deleted, both still sync.
     public let templateJSON: String?
+    /// Optional editable source for the look. The server validates it; the
+    /// native file bridge only preserves its JSON object.
+    public let templateAuthoringSourceJSON: String?
     public let hash: String?
     public init(
         text: String, documentJSON: String? = nil, templateJSON: String? = nil,
+        templateAuthoringSourceJSON: String? = nil,
         hash: String?
     ) {
         self.text = text
         self.documentJSON = documentJSON
         self.templateJSON = templateJSON
+        self.templateAuthoringSourceJSON = templateAuthoringSourceJSON
         self.hash = hash
     }
 }
@@ -85,6 +90,11 @@ public protocol TextTextSyncAPI: Sendable {
         body: String, documentJSON: String?, templateJSON: String?, folderId: String?,
         representation: TextTextFileRepresentation, idempotencyKey: String?
     ) async -> Result<TextTextManifestItem, TextTextSyncError>
+    func createFile(
+        body: String, documentJSON: String?, templateJSON: String?,
+        templateAuthoringSourceJSON: String?, folderId: String?,
+        representation: TextTextFileRepresentation, idempotencyKey: String?
+    ) async -> Result<TextTextManifestItem, TextTextSyncError>
     /// Legacy create entry point retained while older extension/test clients
     /// roll forward. Its representation is always Markdown.
     func createFile(body: String, folderId: String?, idempotencyKey: String?) async
@@ -98,6 +108,10 @@ public protocol TextTextSyncAPI: Sendable {
     func putFile(
         postId: String, body: String, documentJSON: String?, templateJSON: String?,
         ifMatch hash: String
+    ) async -> Result<TextTextManifestItem, TextTextSyncError>
+    func putFile(
+        postId: String, body: String, documentJSON: String?, templateJSON: String?,
+        templateAuthoringSourceJSON: String?, ifMatch hash: String
     ) async -> Result<TextTextManifestItem, TextTextSyncError>
     /// PATCH /api/sync/v1/files/{id}: move (folderId), retitle (title), and/or
     /// reslug (slug) without re-sending the body. A Finder rename retitles (the
@@ -163,12 +177,32 @@ public extension TextTextSyncAPI {
             representation: representation, idempotencyKey: idempotencyKey)
     }
 
+    func createFile(
+        body: String, documentJSON: String?, templateJSON: String?,
+        templateAuthoringSourceJSON: String?, folderId: String?,
+        representation: TextTextFileRepresentation, idempotencyKey: String?
+    ) async -> Result<TextTextManifestItem, TextTextSyncError> {
+        await createFile(
+            body: body, documentJSON: documentJSON, templateJSON: templateJSON,
+            folderId: folderId, representation: representation,
+            idempotencyKey: idempotencyKey)
+    }
+
     func putFile(
         postId: String, body: String, documentJSON: String?, templateJSON: String?,
         ifMatch hash: String
     ) async -> Result<TextTextManifestItem, TextTextSyncError> {
         await putFile(
             postId: postId, body: body, documentJSON: documentJSON, ifMatch: hash)
+    }
+
+    func putFile(
+        postId: String, body: String, documentJSON: String?, templateJSON: String?,
+        templateAuthoringSourceJSON: String?, ifMatch hash: String
+    ) async -> Result<TextTextManifestItem, TextTextSyncError> {
+        await putFile(
+            postId: postId, body: body, documentJSON: documentJSON,
+            templateJSON: templateJSON, ifMatch: hash)
     }
 
     func createFile(

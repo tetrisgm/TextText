@@ -8,6 +8,7 @@ import {
   ifNoneMatchSatisfied,
   renderSyncFolderManifest,
   syncError,
+  templateAuthoringSourcesForPosts,
   templatesForPosts,
 } from "../../../sync";
 
@@ -41,7 +42,8 @@ export async function GET(request: Request, { params }: Props) {
   // Looks resolved once for the whole folder: the manifest's documentHash has
   // to match what GET files/{id} serves, and both now inline the definition.
   const templates = await templatesForPosts(blog.handle, posts);
-  const manifest = renderSyncFolderManifest(blog, posts, folder, templates);
+  const sources = await templateAuthoringSourcesForPosts(blog.handle, templates);
+  const manifest = renderSyncFolderManifest(blog, posts, folder, templates, sources);
 
   const json = JSON.stringify(manifest, null, 2);
   const etag = `"${markdownFileHash(json)}"`;

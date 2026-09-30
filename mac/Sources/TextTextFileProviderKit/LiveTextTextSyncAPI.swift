@@ -192,6 +192,7 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
                         text: decoded.markdown,
                         documentJSON: decoded.documentJSON,
                         templateJSON: decoded.templateJSON,
+                        templateAuthoringSourceJSON: decoded.templateAuthoringSourceJSON,
                         hash: reply.bareETag))
             } catch {
                 return .failure(.decode(error.localizedDescription))
@@ -502,8 +503,31 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
             representation: representation, idempotencyKey: idempotencyKey)
     }
 
+    public func createFile(
+        body: String, documentJSON: String?, templateJSON: String?, folderId: String?,
+        representation: TextTextFileRepresentation, idempotencyKey: String?
+    ) async -> Result<TextTextManifestItem, TextTextSyncError> {
+        await createFileRequest(
+            body: body, documentJSON: documentJSON, templateJSON: templateJSON,
+            folderId: folderId, representation: representation,
+            idempotencyKey: idempotencyKey)
+    }
+
+    public func createFile(
+        body: String, documentJSON: String?, templateJSON: String?,
+        templateAuthoringSourceJSON: String?, folderId: String?,
+        representation: TextTextFileRepresentation, idempotencyKey: String?
+    ) async -> Result<TextTextManifestItem, TextTextSyncError> {
+        await createFileRequest(
+            body: body, documentJSON: documentJSON, templateJSON: templateJSON,
+            templateAuthoringSourceJSON: templateAuthoringSourceJSON,
+            folderId: folderId, representation: representation,
+            idempotencyKey: idempotencyKey)
+    }
+
     private func createFileRequest(
         body: String, documentJSON: String?, templateJSON: String? = nil,
+        templateAuthoringSourceJSON: String? = nil,
         folderId: String?,
         representation: TextTextFileRepresentation, idempotencyKey: String?
     ) async -> Result<TextTextManifestItem, TextTextSyncError> {
@@ -515,7 +539,8 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
             do {
                 encodedBody = try Self.encodeSyncDocument(
                     markdown: body, documentJSON: documentJSON,
-                    templateJSON: templateJSON)
+                    templateJSON: templateJSON,
+                    templateAuthoringSourceJSON: templateAuthoringSourceJSON)
                 contentType = Self.syncDocumentContentType
             } catch {
                 return .failure(.decode(error.localizedDescription))
@@ -578,13 +603,24 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
         postId: String, body: String, documentJSON: String?,
         templateJSON: String? = nil, ifMatch hash: String
     ) async -> Result<TextTextManifestItem, TextTextSyncError> {
+        await putFile(
+            postId: postId, body: body, documentJSON: documentJSON,
+            templateJSON: templateJSON, templateAuthoringSourceJSON: nil,
+            ifMatch: hash)
+    }
+
+    public func putFile(
+        postId: String, body: String, documentJSON: String?, templateJSON: String?,
+        templateAuthoringSourceJSON: String?, ifMatch hash: String
+    ) async -> Result<TextTextManifestItem, TextTextSyncError> {
         let encodedBody: Data
         let contentType: String
         if let documentJSON {
             do {
                 encodedBody = try Self.encodeSyncDocument(
                     markdown: body, documentJSON: documentJSON,
-                    templateJSON: templateJSON)
+                    templateJSON: templateJSON,
+                    templateAuthoringSourceJSON: templateAuthoringSourceJSON)
                 contentType = Self.syncDocumentContentType
             } catch {
                 return .failure(.decode(error.localizedDescription))
@@ -627,7 +663,10 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
 
     private static func decodeSyncDocument(
         _ data: Data
-    ) throws -> (markdown: String, documentJSON: String, templateJSON: String?) {
+    ) throws -> (
+        markdown: String, documentJSON: String, templateJSON: String?,
+        templateAuthoringSourceJSON: String?
+    ) {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
             root["schema"] as? String == "texttext.sync-document.v1",
             let markdown = root["markdown"] as? String,
@@ -653,11 +692,22 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
                 withJSONObject: template, options: [.prettyPrinted, .sortedKeys])
             templateJSON = String(data: templateData, encoding: .utf8).map { $0 + "\n" }
         }
-        return (markdown, documentJSON + "\n", templateJSON)
+        var templateAuthoringSourceJSON: String?
+        if templateJSON != nil,
+            let source = root["templateAuthoringSource"] as? [String: Any] {
+            let sourceData = try JSONSerialization.data(
+                withJSONObject: source, options: [.prettyPrinted, .sortedKeys])
+            templateAuthoringSourceJSON = String(data: sourceData, encoding: .utf8)
+                .map { $0 + "\n" }
+        }
+        return (
+            markdown, documentJSON + "\n", templateJSON,
+            templateAuthoringSourceJSON)
     }
 
     private static func encodeSyncDocument(
-        markdown: String, documentJSON: String, templateJSON: String? = nil
+        markdown: String, documentJSON: String, templateJSON: String? = nil,
+        templateAuthoringSourceJSON: String? = nil
     ) throws -> Data {
         let data = Data(documentJSON.utf8)
         guard
@@ -678,10 +728,17 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
         // travelled outward and the round trip was half a trip. A malformed
         // one is dropped rather than failing the write: the words matter more
         // than the styling.
+        var hasTemplate = false
         if let templateJSON,
             let template = try? JSONSerialization.jsonObject(with: Data(templateJSON.utf8))
                 as? [String: Any] {
             payload["template"] = template
+            hasTemplate = true
+        }
+        if hasTemplate, let templateAuthoringSourceJSON,
+            let source = try? JSONSerialization.jsonObject(
+                with: Data(templateAuthoringSourceJSON.utf8)) as? [String: Any] {
+            payload["templateAuthoringSource"] = source
         }
         return try JSONSerialization.data(
             withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])

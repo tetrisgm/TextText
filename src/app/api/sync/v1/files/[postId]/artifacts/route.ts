@@ -8,8 +8,7 @@ import {
   renderSyncDocumentFile,
   renderSyncFile,
   syncError,
-  templateForPost,
-  templatesForPosts,
+  syncTemplateForPost,
 } from "../../../sync";
 
 interface Props {
@@ -59,17 +58,14 @@ export async function GET(request: Request, { params }: Props) {
   // manifest disagree with the revision the client just fetched for every
   // templated document, and the File Provider's consistency guard then
   // refused to materialize it, forever.
-  const template = templateForPost(
-    post,
-    await templatesForPosts(workspace.blog.handle, [post]),
-  );
+  const look = await syncTemplateForPost(workspace.blog.handle, post);
   return Response.json(
     {
       postId,
       slug: post.slug,
       fileHash: renderSyncFile(workspace.blog, post, folder.path).hash,
       documentHash: renderSyncDocumentFile(
-        workspace.blog, post, folder.path, template,
+        workspace.blog, post, folder.path, look.template, look.authoringSource,
       ).hash,
       artifacts: inlineArtifacts(post, workspace.blog.handle, postId),
     },
