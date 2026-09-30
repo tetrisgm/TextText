@@ -1,4 +1,21 @@
 import { validatedLookSource } from "./presentation/template-library";
+// Fresh file vault access shares the application's content boundary. Callers
+// must authorize the workspace and supply its trusted server root first.
+import {
+  readVaultTextpack as readDirectoryTextpack,
+  readVaultTemplate as readDirectoryTemplate,
+  listVaultTextpacks as listDirectoryTextpacks,
+  waitVaultTextpacks as waitDirectoryTextpacks,
+  moveVaultTextpack as moveDirectoryTextpack,
+  deleteVaultTextpack as deleteDirectoryTextpack,
+  writeVaultTextpack as writeDirectoryTextpack,
+  type VaultLocation,
+  type VaultWrite,
+  type VaultMutationReceipt,
+  type VaultEntryMutation,
+} from "./vault/server-store";
+export { VaultBusyError } from "./vault/server-store";
+export type { VaultLocation, VaultWrite, VaultWriteResult, VaultEntryMutation, VaultEntryResult } from "./vault/server-store";
 import { documentFromStarter } from "./documents/starter";
 import { agentTextChanges } from "@/lib/agent-changes";
 import type { TimelineFilter, TimelinePage } from "@/lib/workspace/timeline";
@@ -13,6 +30,71 @@ import { agentChanges } from "./db/schema";
 // quietly serving fixture content.
 
 const NO_DATABASE = "TextText requires DATABASE_URL";
+
+// The file receipt is a durable audit outbox. Deterministic audit IDs let a
+// restarted writer replay it without duplicate rows or database content copies.
+async function recordVaultReceipt(receipt: VaultMutationReceipt): Promise<void> {
+  if (!db) throw new Error(NO_DATABASE);
+  const digest = createHash("sha256").update(`vault:${receipt.workspaceId}:${receipt.operationId}`).digest("hex");
+  const id = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-${digest.slice(12, 16)}-${digest.slice(16, 20)}-${digest.slice(20, 32)}`;
+  await db.insert(actionAudit).values({
+    id,
+    actorUserId: receipt.actorUserId,
+    actorType: receipt.actorType,
+    actionName: ({ written: "vault.write", conflict: "vault.preserve_conflict", moved: "vault.move", deleted: "vault.delete" })[receipt.result.status],
+    targetType: "item",
+    targetId: receipt.result.itemId,
+    inputSummary: `operation ${receipt.operationId}`,
+    outputSummary: `revision ${receipt.result.revision ?? "none"}`,
+  }).onConflictDoNothing({ target: actionAudit.id });
+}
+
+export function writeVaultTextpack(input: Omit<VaultWrite, "onReceipt" | "audit"> & {
+  actorUserId: string;
+  actorType: "human" | "external_agent";
+}) {
+  if (!db) throw new Error(NO_DATABASE);
+  return writeDirectoryTextpack({ ...input,
+    audit: { actorUserId: input.actorUserId, actorType: input.actorType },
+    onReceipt: recordVaultReceipt,
+  });
+}
+
+export function readVaultTextpack(input: Omit<VaultLocation, "onReceipt"> & { itemId: string }) {
+  if (!db) throw new Error(NO_DATABASE);
+  return readDirectoryTextpack({ ...input, onReceipt: recordVaultReceipt });
+}
+
+export function readVaultTemplate(input: Omit<VaultLocation, "onReceipt"> & { itemId: string }) {
+  if (!db) throw new Error(NO_DATABASE);
+  return readDirectoryTemplate({ ...input, onReceipt: recordVaultReceipt });
+}
+
+export function listVaultTextpacks(input: Omit<VaultLocation, "onReceipt">) {
+  if (!db) throw new Error(NO_DATABASE);
+  return listDirectoryTextpacks({ ...input, onReceipt: recordVaultReceipt });
+}
+
+export function waitVaultTextpacks(input: Omit<VaultLocation, "onReceipt"> & {
+  revision: string; waitMs: number; signal?: AbortSignal;
+}) {
+  if (!db) throw new Error(NO_DATABASE);
+  return waitDirectoryTextpacks({ ...input, onReceipt: recordVaultReceipt });
+}
+
+type AuditedVaultEntry = Omit<VaultEntryMutation, "onReceipt" | "audit"> & {
+  actorUserId: string; actorType: "human" | "external_agent";
+};
+
+export function moveVaultTextpack(input: AuditedVaultEntry & { relativePath: string }) {
+  if (!db) throw new Error(NO_DATABASE);
+  return moveDirectoryTextpack({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: recordVaultReceipt });
+}
+
+export function deleteVaultTextpack(input: AuditedVaultEntry) {
+  if (!db) throw new Error(NO_DATABASE);
+  return deleteDirectoryTextpack({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: recordVaultReceipt });
+}
 
 import {
   and,
