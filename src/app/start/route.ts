@@ -39,7 +39,10 @@ export async function GET(request: NextRequest) {
     return go(await resolveWorkspaceHomePath(), request);
   }
   const templateSlug = request.nextUrl.searchParams.get("template");
-  if (templateSlug && /^[a-z][a-z0-9-]{0,80}$/.test(templateSlug)) {
+  if (templateSlug !== null) {
+    if (!/^[a-z][a-z0-9-]{0,80}$/.test(templateSlug)) {
+      return go("/templates", request);
+    }
     return go(
       await createTemplateDraftPath(
         templateSlug,

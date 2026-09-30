@@ -83,8 +83,8 @@ import { normalizeTags } from "@/lib/tags";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import { resolveOwnedWorkspace } from "@/lib/workspace";
 import { getBuiltinTemplate } from "@/lib/presentation/templates";
-import { exemplarFor } from "@/lib/presentation/exemplars";
-import type { TemplateReference } from "@/lib/documents/model";
+import { templateExample } from "@/app/templates/shared";
+import { emptyDocumentSnapshot, type TemplateReference } from "@/lib/documents/model";
 import { narrowPostFromPost } from "@/lib/pool/selectors";
 import type { WorkspacePoolPost } from "@/lib/pool/types";
 
@@ -523,40 +523,40 @@ export async function createTemplateDraftPath(
   templateSlug: string,
   seed: boolean,
 ): Promise<string> {
-  const template = getBuiltinTemplate(`texttext.${templateSlug}`, 1);
-  const user = await getCurrentUser();
-  if (!template || !user) return createStarterDraftPath();
-
+  const example = templateExample(templateSlug);
+  if (!example) return "/templates";
+  const user = await editorUser();
   const handle = (await resolveOwnedWorkspace(user)).handle;
-  const folder = await getFolderByPath(handle, "blog");
-  if (!folder) return createStarterDraftPath();
-
-  let post = await createDraftInFolder(handle, folder.id, {
-    template: { id: template.id, version: template.version },
+  const type: ItemKind = example.template.id === "texttext.note" ? "note"
+    : example.template.id === "texttext.bookmark" ? "bookmark"
+    : example.template.id === "texttext.gallery" ? "media_post"
+    : example.template.id === "texttext.talk" ? "video_post"
+    : "article";
+  const folderPath = type === "note" ? "notes"
+    : type === "bookmark" ? "bookmarks"
+    : "blog";
+  const folder = await getFolderByPath(handle, folderPath);
+  if (!folder) throw new Error(`The ${folderPath} folder is unavailable.`);
+  await enforcePostLimit(handle);
+  const reference = example.document.presentation.template;
+  const access = await getBlogEditAccess(handle);
+  const post = await createDraftInFolder(handle, folder.id, {
+    template: reference,
+    document: seed ? example.document : emptyDocumentSnapshot(reference),
+    initial: {
+      type,
+      ...(seed ? { slug: example.document.content.title } : {}),
+    },
+    audit: {
+      actorUserId: access.isOwner ? access.ownerId : null,
+      actorType: "human",
+      actionName: "create_post",
+      targetType: "item",
+      inputSummary: seed
+        ? `template ${reference.id} with example`
+        : `template ${reference.id}`,
+    },
   });
-  if (seed) {
-    const exemplar = exemplarFor(template.id);
-    if (exemplar) {
-      post = await savePost(
-        handle,
-        { ...post, title: exemplar.title, body: exemplar.body },
-        {
-          fieldsPatch: exemplar.fields as Parameters<
-            typeof savePost
-          >[2] extends { fieldsPatch?: infer P }
-            ? P
-            : never,
-        },
-      );
-    }
-  }
-  await auditEdit(
-    await getBlogEditAccess(handle),
-    "create_post",
-    "item",
-    post.id,
-    seed ? `template ${template.id} with example` : `template ${template.id}`,
-  );
   await revalidateBlog(handle, [post.slug]);
   return authenticatedPostEditPath(handle, post);
 }

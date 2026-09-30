@@ -57,6 +57,7 @@ export default async function TemplateDetailPage({
         </span>
         <Link
           href={`/start?template=${example.slug}&seed=1`}
+          prefetch={false}
           className="tpl-detail-use"
         >
           Use this look

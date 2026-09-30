@@ -2,17 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const session = vi.hoisted(() => ({ user: null as null | { sub: string } }));
+const templateDraft = vi.hoisted(() => vi.fn(async (slug: string) => `/@writer/blog/${slug}`));
 vi.mock("@/lib/session", () => ({ getCurrentUser: async () => session.user }));
 vi.mock("@/app/editor/actions", () => ({
   resolveWorkspaceHomePath: async () => "/@writer",
   createStarterDraftPath: async () => "/@writer/blog/first-draft",
-  createTemplateDraftPath: async (slug: string) => `/@writer/blog/${slug}`,
+  createTemplateDraftPath: templateDraft,
 }));
 
 const { GET } = await import("../route");
 
 describe("/start", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     session.user = null;
     vi.stubEnv("AUTH_URL", "https://texttext.app");
   });
@@ -43,5 +45,16 @@ describe("/start", () => {
     expect(draft.headers.get("location")).toBe("https://texttext.app/@writer/blog/first-draft");
     const template = await GET(new NextRequest("https://texttext.app/start?template=recipe"));
     expect(template.headers.get("location")).toBe("https://texttext.app/@writer/blog/recipe");
+    expect(templateDraft).toHaveBeenCalledWith("recipe", false);
+    const seeded = await GET(new NextRequest("https://texttext.app/start?template=gallery&seed=1"));
+    expect(seeded.headers.get("location")).toBe("https://texttext.app/@writer/blog/gallery");
+    expect(templateDraft).toHaveBeenCalledWith("gallery", true);
+  });
+
+  it("rejects an invalid template query without creating a generic draft", async () => {
+    session.user = { sub: "apple-sub" };
+    const response = await GET(new NextRequest("https://texttext.app/start?template=%2Fbad&seed=1"));
+    expect(response.headers.get("location")).toBe("https://texttext.app/templates");
+    expect(templateDraft).not.toHaveBeenCalled();
   });
 });

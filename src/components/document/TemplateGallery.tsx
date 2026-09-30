@@ -9,7 +9,7 @@ import {
   validateDocumentSnapshot,
   type DocumentSnapshot,
 } from "@/lib/documents/model";
-import { exemplarFor } from "@/lib/presentation/exemplars";
+import { GENERATED_BUILTIN_PRESETS } from "@/lib/presentation/generated-builtin-presets";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import {
   filterTemplateLibrary,
@@ -26,17 +26,20 @@ import styles from "./TemplateGallery.module.css";
 export { isBlank as isDocumentBlank };
 
 function exampleFor(template: TemplateDefinition): DocumentSnapshot {
-  const exemplar = exemplarFor(template.id);
+  const builtin = GENERATED_BUILTIN_PRESETS.find(
+    (entry) => entry.template.id === template.id && entry.template.version === template.version,
+  );
+  if (builtin) return builtin.document;
   const example = template.example;
   return validateDocumentSnapshot({
     schemaVersion: 1,
     content: {
-      title: exemplar?.title ?? example?.title ?? template.name,
+      title: example?.title ?? template.name,
       subtitle: example?.subtitle,
-      body: exemplar?.body ?? example?.body ?? "",
-      fields: exemplar?.fields ?? example?.fields ?? {},
+      body: example?.body ?? "",
+      fields: example?.fields ?? {},
       tags: example?.tags ?? [],
-      assets: exemplar?.assets ?? [],
+      assets: [],
     },
     presentation: {
       template: { id: template.id, version: template.version },

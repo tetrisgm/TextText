@@ -49,6 +49,8 @@
     "eval:native-codex": "tsx scripts/eval-native-codex-runtime.mjs",
     "eval:native-bridge": "node --env-file=.env.local --import tsx scripts/eval-native-assistant-bridge.ts",
     "showcase:templates": "tsx scripts/template-showcase.ts",
+    "presets:generate": "tsx scripts/generate-builtin-presets.ts",
+    "presets:check": "tsx scripts/generate-builtin-presets.ts --check",
     "eval:collaboration:live": "node --env-file=.env.local --import tsx scripts/verify-collaboration-database.ts",
     "eval:collaboration:browser": "node --env-file=.env.local --import tsx scripts/verify-collaboration-browsers.ts",
     "eval:mcp:outbound": "node --env-file=.env.local --import tsx scripts/verify-outbound-mcp.ts",

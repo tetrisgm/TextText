@@ -2,13 +2,9 @@
 // One place builds the validated snapshot so the index miniatures and the
 // full-page examples can never drift apart.
 
+import { validateDocumentSnapshot, type DocumentSnapshot } from "@/lib/documents/model";
+import { GENERATED_BUILTIN_PRESETS } from "@/lib/presentation/generated-builtin-presets";
 import {
-  validateDocumentSnapshot,
-  type DocumentSnapshot,
-} from "@/lib/documents/model";
-import { exemplarFor } from "@/lib/presentation/exemplars";
-import {
-  BUILTIN_TEMPLATES,
   TEMPLATE_CATALOG,
   type TemplateCategory,
 } from "@/lib/presentation/templates";
@@ -25,37 +21,26 @@ export function templateSlug(id: string): string {
   return id.replace(/^texttext\./, "");
 }
 
-function exampleDocument(template: TemplateDefinition): DocumentSnapshot {
-  const exemplar = exemplarFor(template.id);
-  return validateDocumentSnapshot({
-    schemaVersion: 1,
-    content: {
-      title: exemplar?.title ?? template.name,
-      body: exemplar?.body ?? "",
-      fields: exemplar?.fields ?? {},
-      tags: exemplar?.tags ?? [],
-      assets: exemplar?.assets ?? [],
-    },
-    presentation: {
-      template: { id: template.id, version: template.version },
-      theme: {},
-    },
-  });
-}
-
 export function templateExamples(): TemplateExample[] {
   const byId = new Map(
-    BUILTIN_TEMPLATES.map((template) => [template.id, template]),
+    GENERATED_BUILTIN_PRESETS.map((preset) => [preset.template.id, preset]),
   );
   return TEMPLATE_CATALOG.map((entry) => {
-    const template = byId.get(entry.id);
-    if (!template)
+    const preset = byId.get(entry.id);
+    if (!preset)
       throw new Error(`catalog names unknown template ${entry.id}`);
+    const document = validateDocumentSnapshot(preset.document);
+    if (
+      document.presentation.template.id !== preset.template.id ||
+      document.presentation.template.version !== preset.template.version
+    ) {
+      throw new Error(`example has wrong template reference ${entry.id}`);
+    }
     return {
-      template,
+      template: preset.template,
       category: entry.category,
       slug: templateSlug(entry.id),
-      document: exampleDocument(template),
+      document,
     };
   });
 }
