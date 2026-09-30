@@ -2,6 +2,17 @@
 
 ## Current work
 
+The owner clarified an Obsidian-style folder expectation. The connected app
+currently keeps canonical items, folders, and custom looks in Postgres;
+Finder's `.textpack` tree is a writable sync projection, and the signed-in CLI
+uses the server by default. Only the built-in presets are sourced from checked-in
+TextPack files. This differs from [SPEC.md](SPEC.md)'s file-first intent. Before
+changing authority, settle whether canonical files belong in a local Mac vault
+or in a shared server folder store; web access and collaboration need the latter
+or a deliberate replication model. [Architecture](../ARCHITECTURE.md),
+[File Provider](file-provider.md), and [agent interoperability](agent-interoperability.md)
+describe the current paths. No storage migration has begun.
+
 The owner asked for the full [content-first brief](design/texttext-content-first-ux.md). The [canonical checkpoint](TEXTTEXT_UX_CHECKPOINT.md) has the current revision, unrelated dirty files to preserve, verified slices, open acceptance cases, exact next action, and live process identities. Its [September 29 archive](TEXTTEXT_UX_CHECKPOINT-history-2026-09-29.md) and the focused receipts retain the earlier run history. Reconcile the checkpoint with `git status` before editing. Work on `main` with no worktree, one necessary server, and sequential heavy checks.
 
 The owner clarified that saved links and reading are one item flow, while note,
