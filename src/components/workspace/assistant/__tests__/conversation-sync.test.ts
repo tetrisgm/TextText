@@ -446,14 +446,14 @@ describe("owner-scoped conversation sync schedule", () => {
     expect(assistantConversationsNeedSync(second)).toBe(false);
   });
 
-  it("acknowledging a bounded sync copy does not strip a larger local proposal", () => {
+  it("keeps a larger unsyncable proposal local after acknowledging its safe copy", () => {
     const id = activeAssistantConversationId(key, "root")!;
     appendAssistantConversationMessage(key, id, {
       id: "large", role: "assistant", text: "Review",
       writeProposals: [{ id: "large-proposal", kind: "workspace", createdAt: "2026-09-05T12:00:00Z", expiresAt: "2026-09-06T12:00:00Z", tool: "create_item", title: "Create", summary: "Create", status: "pending", arguments: { body: "x".repeat(50_000) } }],
     });
     acknowledgeAssistantConversationSync(key, assistantConversationSyncPayload(key));
-    expect(assistantConversationsNeedSync(key)).toBe(false);
+    expect(assistantConversationsNeedSync(key)).toBe(true);
     expect(assistantConversationMessages(key, id)[0].writeProposals?.[0].arguments.body).toHaveLength(50_000);
   });
 });

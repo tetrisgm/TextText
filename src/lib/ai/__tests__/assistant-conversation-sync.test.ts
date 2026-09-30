@@ -30,6 +30,39 @@ function chat(
 }
 
 describe("assistant conversation replica merge", () => {
+  it("retains a safe approval preview when an equal-clock replica lacks it", () => {
+    const base = {
+      id: "proposal-message", role: "assistant", text: "Review the proposed change.",
+      updatedAt: "2026-08-24T12:00:00.000Z",
+    };
+    const proposal = {
+      id: "proposal-1", kind: "workspace", status: "pending",
+      tool: "update_item", title: "Update Draft", summary: "Update the body",
+      arguments: { id: "post-1", body: "Safe exact preview" },
+    };
+    const complete = [chat("chat-1", { messages: [{ ...base, writeProposals: [proposal] }] })];
+    const incomplete = [chat("chat-1", { messages: [base] })];
+    for (const merged of [
+      mergeAssistantConversationSyncPayloads(complete, incomplete),
+      mergeAssistantConversationSyncPayloads(incomplete, complete),
+    ]) {
+      expect(merged[0]?.messages[0]?.writeProposals).toMatchObject([proposal]);
+    }
+    const removedLater = [chat("chat-1", { messages: [
+      { ...base, updatedAt: "2026-08-24T12:00:01.000Z" },
+    ] })];
+    expect(mergeAssistantConversationSyncPayloads(complete, removedLater)[0]?.messages[0]?.writeProposals).toBeUndefined();
+    const unsafe = [chat("chat-1", { messages: [{ ...base, writeProposals: [
+      { ...proposal, arguments: { ...proposal.arguments, apiKey: "must-not-sync" } },
+    ] }] })];
+    for (const merged of [
+      mergeAssistantConversationSyncPayloads(complete, unsafe),
+      mergeAssistantConversationSyncPayloads(unsafe, complete),
+    ]) {
+      expect(merged[0]?.messages[0]?.writeProposals).toBeUndefined();
+      expect(merged[0]?.messages[0]?.writeProposalsOmitted).toBe(true);
+    }
+  });
   it("merges independent messages deterministically", () => {
     const left = [
       chat("chat-1", {
@@ -266,6 +299,7 @@ describe("assistant conversation replica merge", () => {
       "Review the proposed change.",
     );
     expect(cleaned[0]?.messages[0]?.writeProposals).toBeUndefined();
+    expect(cleaned[0]?.messages[0]?.writeProposalsOmitted).toBe(true);
   });
 
   it("keeps an exact complete proposal preview", () => {

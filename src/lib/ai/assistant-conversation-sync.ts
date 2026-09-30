@@ -149,6 +149,9 @@ function cleanMessage(
       canonical(safe.writeProposals) !== canonical(record.writeProposals))
   ) {
     delete safe.writeProposals;
+    safe.writeProposalsOmitted = true;
+  } else if (Array.isArray(safe.writeProposals) && safe.writeProposals.length > 0) {
+    delete safe.writeProposalsOmitted;
   }
   return {
     ...safe,
@@ -315,6 +318,29 @@ function inlineDecisionRank(message: SyncedAssistantMessage): number {
   return status === "undone" ? 4 : status === "applied" ? 3 : status === "discarded" ? 2 : 0;
 }
 
+function proposalPreviewRank(message: SyncedAssistantMessage): number {
+  // Both sides have already passed cleanMessage. At the same message clock,
+  // prefer an intact safe approval preview over an older replica that lacks
+  // it. Explicit sanitization wins over a previously safe preview. A newer
+  // clock still wins, including when a proposal was removed.
+  if (message.writeProposalsOmitted === true) return 2;
+  return Array.isArray(message.writeProposals) && message.writeProposals.length > 0 ? 1 : 0;
+}
+
+function preferEqualClockMessage(message: SyncedAssistantMessage, existing: SyncedAssistantMessage): boolean {
+  const incomingRest = { ...message };
+  const existingRest = { ...existing };
+  delete incomingRest.writeProposals;
+  delete incomingRest.writeProposalsOmitted;
+  delete existingRest.writeProposals;
+  delete existingRest.writeProposalsOmitted;
+  if (canonical(incomingRest) === canonical(existingRest) &&
+      proposalPreviewRank(message) !== proposalPreviewRank(existing)) {
+    return proposalPreviewRank(message) > proposalPreviewRank(existing);
+  }
+  return canonical(message) > canonical(existing);
+}
+
 function mergeMessages(
   left: readonly SyncedAssistantMessage[],
   right: readonly SyncedAssistantMessage[],
@@ -327,7 +353,7 @@ function mergeMessages(
       (inlineDecisionRank(message) !== inlineDecisionRank(existing)
         ? inlineDecisionRank(message) > inlineDecisionRank(existing)
         : message.updatedAt > existing.updatedAt ||
-          (message.updatedAt === existing.updatedAt && canonical(message) > canonical(existing)))
+          (message.updatedAt === existing.updatedAt && preferEqualClockMessage(message, existing)))
     ) {
       messages.set(message.id, message);
     }

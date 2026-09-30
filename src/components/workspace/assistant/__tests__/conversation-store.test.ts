@@ -9,6 +9,8 @@ import {
   appendAssistantConversationMessage,
   assistantConversationMessages,
   assistantConversationSyncPayload,
+  assistantConversationsNeedSync,
+  acknowledgeAssistantConversationSync,
   assistantConversationSummaries,
   createAssistantConversation,
   deleteAssistantConversation,
@@ -462,7 +464,7 @@ describe("assistant conversation history", () => {
     });
   });
 
-  it("preserves selection coverage through reload and rejects a later revision on Apply", async () => {
+  it("preserves selection coverage through reload and rejects a changed passage on Apply", async () => {
     browserStorage();
     const active = activeAssistantConversation("writer", "root")!;
     const item = { revision: 7, title: "Draft", body: "Before", excerpt: "" };
@@ -477,7 +479,8 @@ describe("assistant conversation history", () => {
     expect(proposal).toMatchObject({ selectionEnvelope });
     if (proposal?.kind === "tags") throw new Error("Expected a text proposal");
     await expect(validateSelectionEditEnvelope(proposal?.selectionEnvelope, "post-1", item, selection)).resolves.toEqual(selectionEnvelope);
-    await expect(validateSelectionEditEnvelope(proposal?.selectionEnvelope, "post-1", { ...item, revision: 8 }, selection)).rejects.toThrow();
+    await expect(validateSelectionEditEnvelope(proposal?.selectionEnvelope, "post-1", { ...item, revision: 8 }, selection)).resolves.toEqual(selectionEnvelope);
+    await expect(validateSelectionEditEnvelope(proposal?.selectionEnvelope, "post-1", { ...item, revision: 8, body: "Changed" }, selection)).rejects.toThrow();
   });
 
   it("persists guarded write proposal review state with its answer", () => {
@@ -506,6 +509,25 @@ describe("assistant conversation history", () => {
     expect(
       assistantConversationMessages("writer", active.id)[0]?.writeProposals,
     ).toMatchObject([{ id: "proposal-1", status: "pending" }]);
+  });
+
+  it("keeps an unsafe approval local when its sanitized copy is acknowledged", () => {
+    browserStorage();
+    const active = activeAssistantConversation("writer", "root")!;
+    appendAssistantConversationMessage("writer", active.id, {
+      id: "unsafe-proposal", role: "assistant", text: "Review",
+      writeProposals: [{
+        id: "proposal-unsafe", status: "pending", tool: "update_item",
+        title: "Update", summary: "Update a draft",
+        arguments: { id: "post-1", apiKey: "must-not-sync" },
+        createdAt: "2026-08-24T12:00:00.000Z", expiresAt: "2026-08-24T12:10:00.000Z",
+      }],
+    });
+    const payload = assistantConversationSyncPayload("writer");
+    expect(payload[0]?.messages[0]?.writeProposals).toBeUndefined();
+    acknowledgeAssistantConversationSync("writer", payload);
+    expect(assistantConversationsNeedSync("writer")).toBe(true);
+    expect(assistantConversationMessages("writer", active.id)[0]?.writeProposals).toHaveLength(1);
   });
 
   it("counts only live approvals across every workspace context", () => {

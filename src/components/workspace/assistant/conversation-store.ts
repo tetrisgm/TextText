@@ -836,7 +836,14 @@ export function acknowledgeAssistantConversationSync(handle: string, remote: unk
     if (kept) return canonicalConversation(kept) === canonicalConversation(conversation);
     return assistantConversationEvictedByCap(conversation, retained);
   });
-  state.syncedLocalRevision = clean ? state.localRevision : -1;
+  const previewsRetained = state.conversations.every((conversation) => {
+    const bounded = local.find((candidate) => candidate.id === conversation.id);
+    return conversation.messages.every((message) =>
+      !message.writeProposals?.length ||
+      Boolean(bounded?.messages.find((candidate) =>
+        candidate.id === message.id && Array.isArray(candidate.writeProposals) && candidate.writeProposals.length === message.writeProposals?.length)));
+  });
+  state.syncedLocalRevision = clean && previewsRetained ? state.localRevision : -1;
 }
 
 /**
