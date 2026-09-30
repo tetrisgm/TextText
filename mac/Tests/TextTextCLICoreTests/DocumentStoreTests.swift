@@ -1,5 +1,6 @@
 import TextTextFileProviderKit
 import XCTest
+import ZIPFoundation
 
 @testable import TextTextCLICore
 
@@ -16,6 +17,101 @@ final class DocumentStoreTests: XCTestCase {
 
     override func tearDownWithError() throws {
         try? FileManager.default.removeItem(at: root)
+    }
+
+    func testVaultRenameAndDeleteFenceChangesAndKeepRecovery() throws {
+        _ = try store.create(title: "Rename", body: "Keep me.")
+        let files = LocalVaultDocumentStore(root: root)
+        let original = try files.read(path: "Rename.textpack")
+        XCTAssertThrowsError(try files.rename(path: original.path, expectedHash: "stale", newPath: "Notes/Moved.textpack"))
+        XCTAssertThrowsError(try files.delete(path: original.path, expectedHash: "stale"))
+        let moved = try files.rename(path: original.path, expectedHash: original.hash, newPath: "Notes/Moved.textpack")
+        XCTAssertEqual(moved.hash, original.hash)
+        XCTAssertEqual(try files.list(), ["Notes/Moved.textpack"])
+        try files.delete(path: moved.path, expectedHash: moved.hash)
+        XCTAssertTrue(try files.list().isEmpty)
+        let recovery = try FileManager.default.contentsOfDirectory(at: root.appendingPathComponent(".texttext/trash"), includingPropertiesForKeys: nil)
+        XCTAssertEqual(recovery.count, 1)
+        XCTAssertEqual(try Data(contentsOf: recovery[0]), try Data(contentsOf: root.appendingPathComponent(".texttext/history/\(original.hash).textpack")))
+    }
+
+    func testFileEditPreservesUnknownPackageEntriesAndMetadata() throws {
+        let temporary = root.appendingPathComponent(".fixture")
+        try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+        let package = try TextTextTextBundlePackage.materialize(
+            canonicalMarkdown: "Original.", documentJSON: nil, assets: [], sourceURL: "https://example.com/source", in: temporary)
+        let opaque = Data([0, 1, 255, 23])
+        try opaque.write(to: package.url.appendingPathComponent("custom.bin"))
+        let info = package.url.appendingPathComponent("info.json")
+        var metadata = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: info)) as? [String: Any])
+        metadata["externalTool"] = ["keep": true]
+        try JSONSerialization.data(withJSONObject: metadata).write(to: info)
+        let packed = try TextTextTextBundlePackage.zipToTextPack(packageURL: package.url, in: temporary)
+        let target = root.appendingPathComponent("Opaque.textpack")
+        try FileManager.default.copyItem(at: packed, to: target)
+        let files = LocalVaultDocumentStore(root: root)
+        let before = try files.read(path: "Opaque.textpack")
+        _ = try files.write(path: before.path, expectedHash: before.hash, markdown: "Edited.",
+                           documentJSON: nil, templateJSON: nil, templateAuthoringSourceJSON: nil)
+        let extracted = temporary.appendingPathComponent("after")
+        try FileManager.default.unzipItem(at: target, to: extracted)
+        let contents = try FileManager.default.contentsOfDirectory(at: extracted, includingPropertiesForKeys: nil)
+        let folder = try XCTUnwrap(contents.first)
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("custom.bin")), opaque)
+        let afterInfo = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: folder.appendingPathComponent("info.json"))) as? [String: Any])
+        XCTAssertEqual((afterInfo["externalTool"] as? [String: Bool])?["keep"], true)
+        XCTAssertEqual(try files.read(path: before.path).contents.sourceURL, "https://example.com/source")
+    }
+
+    func testCloneOldRevisionPreservesEveryOpaqueEntryAndAssetWithFreshIdentity() throws {
+        let temporary = root.appendingPathComponent(".clone-fixture")
+        try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+        let asset = TextTextTextBundlePackage.MaterializedAsset(filename: "cover.png",
+            data: Data([1, 2, 3, 4]), remoteURL: "https://example.com/cover.png", contentType: "image/png")
+        let package = try TextTextTextBundlePackage.materialize(
+            canonicalMarkdown: "---\ntextTextId: \"source-id\"\ntextTextKind: \"note\"\n---\n\nOld text.",
+            documentJSON: nil, assets: [asset], sourceURL: "https://example.com/original", in: temporary)
+        try Data([9, 0, 255]).write(to: package.url.appendingPathComponent("opaque.bin"))
+        let info = package.url.appendingPathComponent("info.json")
+        var metadata = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: info)) as? [String: Any])
+        metadata["customMetadata"] = ["owner": "external tool"]
+        try JSONSerialization.data(withJSONObject: metadata).write(to: info)
+        let packed = try TextTextTextBundlePackage.zipToTextPack(packageURL: package.url, in: temporary)
+        let source = root.appendingPathComponent("Source.textpack")
+        try FileManager.default.copyItem(at: packed, to: source)
+        let files = LocalVaultDocumentStore(root: root)
+        let original = try files.read(path: "Source.textpack")
+        func entries(_ url: URL) throws -> [String: Data] {
+            let archive = try Archive(url: url, accessMode: .read)
+            var result: [String: Data] = [:]
+            for entry in archive where entry.type == .file {
+                var bytes = Data()
+                _ = try archive.extract(entry) { bytes.append($0) }
+                result[entry.path] = bytes
+            }
+            return result
+        }
+        let before = try entries(source)
+        // A later external rewrite may replace both the body and the media.
+        let changed = try TextTextTextBundlePackage.materialize(canonicalMarkdown: "New text.",
+            assets: [.init(filename: "cover.png", data: Data([5, 6]), remoteURL: asset.remoteURL, contentType: "image/png")],
+            sourceURL: nil, in: temporary)
+        let newPack = try TextTextTextBundlePackage.zipToTextPack(packageURL: changed.url, in: temporary)
+        try Data(contentsOf: newPack).write(to: source, options: .atomic)
+        let clone = try files.clone(path: "Source.textpack", sourceHash: original.hash, newPath: "Copies/Saved.textpack")
+        let destination = try files.url(for: clone.path)
+        let after = try entries(destination)
+        XCTAssertEqual(Set(before.keys), Set(after.keys))
+        for (name, bytes) in before where !name.hasSuffix("/text.md") && name != "text.md" {
+            XCTAssertEqual(after[name], bytes, "Changed opaque entry: \(name)")
+        }
+        XCTAssertTrue(clone.contents.markdown.contains("Old text."))
+        XCTAssertEqual(clone.contents.assets.first?.data, asset.data)
+        XCTAssertNotNil(store.itemId(at: destination))
+        XCTAssertNotEqual(store.itemId(at: destination), "source-id")
+        XCTAssertThrowsError(try files.clone(path: "Source.textpack", sourceHash: original.hash, newPath: clone.path))
+        XCTAssertEqual(try files.read(path: clone.path).hash, clone.hash)
+        XCTAssertEqual(try Data(contentsOf: source), try Data(contentsOf: newPack))
     }
 
     /// Build a real .textpack the way the app does, so these tests exercise the

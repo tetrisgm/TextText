@@ -1,4 +1,5 @@
 import Foundation
+import TextTextWorkspaceCore
 import TextTextFileProviderKit
 
 public enum TextTextCLIError: Error, CustomStringConvertible, Equatable {
@@ -15,8 +16,7 @@ public enum TextTextCLIError: Error, CustomStringConvertible, Equatable {
         switch self {
         case .workspaceNotFound:
             return """
-                No TextText workspace found. Open TextText and sign in, then try \
-                again.
+                No TextText workspace found. Select a folder with texttext vault <path>.
                 """
         case .workspaceUnavailable(let reason):
             return """
@@ -48,8 +48,7 @@ public enum TextTextCLIError: Error, CustomStringConvertible, Equatable {
 ///
 /// Every write is atomic: the replacement is built in full in a temporary
 /// directory, then swapped in with a single rename. A crash mid-write leaves the
-/// previous document intact, and the File Provider sees one complete
-/// replacement rather than a partial file.
+/// previous document intact, and file observers see one complete replacement.
 public struct DocumentStore: Sendable {
     public let root: URL
 
@@ -57,8 +56,7 @@ public struct DocumentStore: Sendable {
         self.root = root
     }
 
-    /// The File Provider mount. `TEXTTEXT_WORKSPACE_ROOT` overrides it, which is
-    /// what the tests use.
+    /// Open the explicitly selected vault without contacting a server.
     public static func locate(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         fileManager: FileManager = .default
@@ -66,15 +64,9 @@ public struct DocumentStore: Sendable {
         if let override = environment["TEXTTEXT_WORKSPACE_ROOT"], !override.isEmpty {
             return DocumentStore(root: URL(fileURLWithPath: override))
         }
-        let cloud = fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/CloudStorage", isDirectory: true)
-        let candidates =
-            (try? fileManager.contentsOfDirectory(
-                at: cloud, includingPropertiesForKeys: nil)) ?? []
-        // The domain is named for the app, historically "TextText-TextText".
-        for candidate in candidates.sorted(by: { $0.path < $1.path })
-        where candidate.lastPathComponent.hasPrefix("TextText-") {
-            return DocumentStore(root: candidate)
+        if let configuration = try LocalVaultConfiguration.load(
+            environment: environment, fileManager: fileManager) {
+            return DocumentStore(root: try configuration.resolvingRoot())
         }
         throw TextTextCLIError.workspaceNotFound
     }
@@ -104,7 +96,7 @@ public struct DocumentStore: Sendable {
         for suffix in [".textpack", ".textbundle", ".md", ".txt"]
         where !name.hasSuffix(suffix) {
             let candidate = root.appendingPathComponent(name + suffix)
-            if fileManager.fileExists(atPath: candidate.path) { return candidate }
+            if contains(candidate), fileManager.fileExists(atPath: candidate.path) { return candidate }
         }
 
         let needle = (name as NSString).deletingPathExtension.lowercased()
@@ -126,11 +118,16 @@ public struct DocumentStore: Sendable {
     public func list(under folder: String? = nil, limit: Int = 5_000) throws -> [String] {
         let fileManager = FileManager.default
         let base = folder.map { root.appendingPathComponent($0) } ?? root
+        guard contains(base) else {
+            throw TextTextCLIError.invalidDocument("the folder is outside the workspace")
+        }
         var found: [String] = []
         var queue = [base]
+        var visited = Set<String>()
 
         while let directory = queue.first, found.count < limit {
             queue.removeFirst()
+            guard visited.insert(directory.resolvingSymlinksInPath().path).inserted else { continue }
             let entries: [URL]
             do {
                 entries = try fileManager.contentsOfDirectory(
@@ -141,6 +138,7 @@ public struct DocumentStore: Sendable {
                 throw TextTextCLIError.workspaceUnavailable(error.localizedDescription)
             }
             for entry in entries.sorted(by: { $0.path < $1.path }) {
+                guard contains(entry) else { continue }
                 let isDirectory =
                     (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?
                     .isDirectory ?? false
@@ -153,6 +151,7 @@ public struct DocumentStore: Sendable {
                     continue
                 }
                 if ["textpack", "textbundle", "md", "txt"].contains(ext) {
+                    guard found.count < limit else { break }
                     found.append(relativePath(of: entry))
                 } else if isDirectory {
                     queue.append(entry)
@@ -165,7 +164,7 @@ public struct DocumentStore: Sendable {
     public func relativePath(of url: URL) -> String {
         let rootPath = root.standardizedFileURL.path
         let path = url.standardizedFileURL.path
-        guard path.hasPrefix(rootPath) else { return path }
+        guard path == rootPath || path.hasPrefix(rootPath + "/") else { return path }
         return String(path.dropFirst(rootPath.count).drop { $0 == "/" })
     }
 
@@ -192,9 +191,7 @@ public struct DocumentStore: Sendable {
         return contents.markdown
     }
 
-    /// The document's own id, carried in frontmatter as `textTextId` (injected
-    /// locally by the sync client, stripped before upload). Presence uses it so
-    /// the server addresses the exact item without resolving a file path.
+    /// Stable identity lives in the file and survives a folder move or rename.
     public func itemId(at url: URL) -> String? {
         guard let markdown = try? readMarkdown(at: url) else { return nil }
         guard markdown.hasPrefix("---") else { return nil }
@@ -219,7 +216,30 @@ public struct DocumentStore: Sendable {
     /// Replace a document's markdown, preserving everything else in the package
     /// (assets, document.json, info.json metadata) and swapping the result in
     /// atomically.
-    public func writeMarkdown(_ markdown: String, to url: URL) throws {
+    public func writeMarkdown(_ markdown: String, to url: URL, ifMatchHash: String? = nil) throws {
+        if url.pathExtension.lowercased() == "textpack" {
+            let vault = LocalVaultDocumentStore(root: root)
+            let path = relativePath(of: url)
+            let current = try vault.read(path: path)
+            let before = current.contents
+            let identity = MarkdownIdentityCodec.extract(from: before.markdown)
+            let preserved = identity.map {
+                MarkdownIdentityCodec.inject(into: markdown, itemId: $0.itemId,
+                                             folderId: $0.folderId, kind: $0.kind)
+            } ?? markdown
+            do {
+                _ = try vault.write(path: path, expectedHash: ifMatchHash ?? current.hash,
+                                    markdown: preserved, documentJSON: before.documentJSON,
+                                    templateJSON: before.templateJSON,
+                                    templateAuthoringSourceJSON: before.templateAuthoringSourceJSON)
+            } catch LocalVaultDocumentStore.Failure.changed {
+                throw TextTextCLIError.documentChanged(url.lastPathComponent)
+            }
+            return
+        }
+        if ifMatchHash != nil {
+            throw TextTextCLIError.invalidDocument("version checks require a TextPack")
+        }
         if ["md", "txt"].contains(url.pathExtension.lowercased()) {
             try atomicallyReplace(url, with: Data(markdown.utf8))
             return
@@ -238,8 +258,13 @@ public struct DocumentStore: Sendable {
                 remoteURL: asset.remoteURL ?? "assets/\(asset.filename)",
                 contentType: asset.contentType)
         }
+        let identity = MarkdownIdentityCodec.extract(from: existing.markdown)
+        let preservedMarkdown = identity.map {
+            MarkdownIdentityCodec.inject(into: markdown, itemId: $0.itemId,
+                                         folderId: $0.folderId, kind: $0.kind)
+        } ?? markdown
         let package = try TextTextTextBundlePackage.materialize(
-            canonicalMarkdown: markdown,
+            canonicalMarkdown: preservedMarkdown,
             documentJSON: existing.documentJSON,
             // Carried, not regenerated. Editing the prose must not silently
             // strip the look off the file, which is what dropping this here
@@ -247,7 +272,7 @@ public struct DocumentStore: Sendable {
             templateJSON: existing.templateJSON,
             templateAuthoringSourceJSON: existing.templateAuthoringSourceJSON,
             assets: assets,
-            sourceURL: nil,
+            sourceURL: existing.sourceURL,
             in: temporary)
         if url.pathExtension.lowercased() == "textbundle" {
             try atomicallyReplaceDirectory(url, with: package.url)
@@ -258,9 +283,8 @@ public struct DocumentStore: Sendable {
         try atomicallyReplace(url, with: try Data(contentsOf: packed))
     }
 
-    /// Create a document. Writes only the frontmatter the sync layer needs and
-    /// lets the server own identity, slug, and canonical URL, which it assigns
-    /// when it ingests the file.
+    /// Create a self-identifying document offline. Moving or renaming the pack
+    /// keeps its identity because the ID is stored inside the file.
     @discardableResult
     public func create(
         title: String, body: String = "", folder: String? = nil, kind: String = "note",
@@ -270,6 +294,9 @@ public struct DocumentStore: Sendable {
         var destination = root
         if let folder, !folder.isEmpty {
             destination = destination.appendingPathComponent(folder, isDirectory: true)
+            guard contains(destination) else {
+                throw TextTextCLIError.invalidDocument("the folder is outside the workspace")
+            }
             guard fileManager.fileExists(atPath: destination.path) else {
                 throw TextTextCLIError.documentNotFound(folder)
             }
@@ -281,19 +308,28 @@ public struct DocumentStore: Sendable {
                 "\(name) already exists. Edit it, or choose another title.")
         }
 
-        let markdown =
-            DocumentCreation.frontmatter(
+        let markdown = MarkdownIdentityCodec.inject(
+            into: DocumentCreation.frontmatter(
                 title: title, kind: kind, sourceURL: sourceURL)
-            + (body.isEmpty ? "" : body.trimmingCharacters(in: .newlines) + "\n")
+            + (body.isEmpty ? "" : body.trimmingCharacters(in: .newlines) + "\n"),
+            itemId: UUID().uuidString.lowercased(), folderId: nil, kind: kind)
 
         let temporary = try makeTemporaryDirectory()
         defer { try? fileManager.removeItem(at: temporary) }
+        let builtin = try BuiltinTextPackDocument.create(
+            title: title, body: body.trimmingCharacters(in: .newlines),
+            kind: kind, sourceURL: sourceURL)
         let package = try TextTextTextBundlePackage.materialize(
-            canonicalMarkdown: markdown, documentJSON: nil,
+            canonicalMarkdown: markdown, documentJSON: builtin.documentJSON,
+            templateJSON: builtin.templateJSON,
             assets: [], sourceURL: sourceURL, in: temporary)
         let packed = try TextTextTextBundlePackage.zipToTextPack(
             packageURL: package.url, in: temporary)
-        try atomicallyReplace(url, with: try Data(contentsOf: packed))
+        // moveItem fails if another writer created this name while we built it.
+        let staging = destination.appendingPathComponent(".texttext-\(UUID().uuidString).tmp")
+        try fileManager.copyItem(at: packed, to: staging)
+        defer { try? fileManager.removeItem(at: staging) }
+        try fileManager.moveItem(at: staging, to: url)
         return url
     }
 
@@ -306,7 +342,11 @@ public struct DocumentStore: Sendable {
             .appendingPathComponent(".texttext-\(UUID().uuidString).tmp")
         try data.write(to: staging, options: [.atomic])
         defer { try? fileManager.removeItem(at: staging) }
-        _ = try fileManager.replaceItemAt(url, withItemAt: staging)
+        if fileManager.fileExists(atPath: url.path) {
+            _ = try fileManager.replaceItemAt(url, withItemAt: staging)
+        } else {
+            try fileManager.moveItem(at: staging, to: url)
+        }
     }
 
     /// A `.textbundle` is a directory package, not a zip with a different

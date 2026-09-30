@@ -87,18 +87,19 @@ let package = Package(
         .target(
             name: "TextTextFileProviderKit",
             dependencies: [
+                "TextTextWorkspaceCore",
                 .product(name: "ZIPFoundation", package: "ZIPFoundation")
             ],
             path: "Sources/TextTextFileProviderKit"
         ),
         .target(
             name: "TextTextCLICore",
-            dependencies: ["TextTextFileProviderKit"],
+            dependencies: ["TextTextFileProviderKit", "TextTextWorkspaceCore"],
             path: "Sources/TextTextCLICore"
         ),
         .executableTarget(
             name: "TextTextCLI",
-            dependencies: ["TextTextCLICore"],
+            dependencies: ["TextTextCLICore", "TextTextWorkspaceCore"],
             path: "Sources/TextTextCLI"
         ),
         .target(
@@ -122,6 +123,7 @@ let package = Package(
         .executableTarget(
             name: "TextTextApp",
             dependencies: [
+                "TextTextCLICore",
                 "TextTextShareCore",
                 "TextTextWorkspaceCore",
                 "TextTextAppIntents",
@@ -141,7 +143,7 @@ let package = Package(
         ),
         .testTarget(
             name: "TextTextCLICoreTests",
-            dependencies: ["TextTextCLICore", "TextTextFileProviderKit"],
+            dependencies: ["TextTextCLICore", "TextTextFileProviderKit", "TextTextWorkspaceCore"],
             path: "Tests/TextTextCLICoreTests"
         ),
         .testTarget(

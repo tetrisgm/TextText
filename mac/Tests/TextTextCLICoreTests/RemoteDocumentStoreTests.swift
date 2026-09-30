@@ -15,6 +15,7 @@ final class RemoteDocumentStoreTests: XCTestCase {
         ).write(to: credential)
 
         let workspace = try CLIWorkspace.locate(environment: [
+            "TEXTTEXT_VAULT_CONFIG": root.appendingPathComponent("missing-vault.json").path,
             "TEXTTEXT_CREDENTIALS_PATH": credential.path
         ])
 
@@ -32,6 +33,7 @@ final class RemoteDocumentStoreTests: XCTestCase {
         ).write(to: credential)
 
         let workspace = try CLIWorkspace.locate(environment: [
+            "TEXTTEXT_VAULT_CONFIG": root.appendingPathComponent("missing-vault.json").path,
             "TEXTTEXT_CREDENTIALS_PATH": credential.path,
             "TEXTTEXT_WORKSPACE_ROOT": root.path,
         ])
@@ -44,6 +46,7 @@ final class RemoteDocumentStoreTests: XCTestCase {
             .appendingPathComponent("texttext-missing-\(UUID().uuidString).json")
         XCTAssertThrowsError(
             try CLIWorkspace.locate(environment: [
+                "TEXTTEXT_VAULT_CONFIG": missing.path,
                 "TEXTTEXT_CREDENTIALS_PATH": missing.path
             ])
         ) { error in
@@ -61,6 +64,7 @@ final class RemoteDocumentStoreTests: XCTestCase {
             """.utf8
         ).write(to: credential)
         let workspace = try CLIWorkspace.locate(environment: [
+            "TEXTTEXT_VAULT_CONFIG": root.appendingPathComponent("missing-vault.json").path,
             "TEXTTEXT_CREDENTIALS_PATH": credential.path
         ])
 

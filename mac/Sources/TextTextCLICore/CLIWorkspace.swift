@@ -1,4 +1,5 @@
 import Foundation
+import TextTextWorkspaceCore
 import TextTextFileProviderKit
 
 /// The small sync surface the command-line client needs. Keeping this narrower
@@ -123,11 +124,8 @@ public enum CLICommandActor {
 
 /// One command-line view of the workspace.
 ///
-/// A signed-in standalone app already owns a revocable, tenant-scoped device
-/// credential. The CLI uses that credential directly against the authenticated
-/// sync routes, so Finder integration is optional and there is no local server,
-/// copied token, or second sign-in. `TEXTTEXT_WORKSPACE_ROOT` deliberately keeps
-/// the original file backend for tests and explicit offline file workflows.
+/// Explicit roots and the app's selected vault are always local. Device
+/// credentials provide compatibility until the caller selects a local vault.
 public enum CLIWorkspace: Sendable {
     case local(DocumentStore)
     case remote(RemoteDocumentStore)
@@ -138,6 +136,11 @@ public enum CLIWorkspace: Sendable {
     ) throws -> CLIWorkspace {
         if let root = environment["TEXTTEXT_WORKSPACE_ROOT"], !root.isEmpty {
             return .local(DocumentStore(root: URL(fileURLWithPath: root)))
+        }
+
+        if let configuration = try LocalVaultConfiguration.load(
+            environment: environment, fileManager: fileManager) {
+            return .local(DocumentStore(root: try configuration.resolvingRoot()))
         }
 
         if let credentials = DeviceCredentials.load(
@@ -189,14 +192,11 @@ public enum CLIWorkspace: Sendable {
         }
     }
 
-    /// Search uses the authenticated workspace command instead of downloading
-    /// every folder manifest and document into a second local index.
+    /// Search the selected files locally, or use the remote workspace command.
     public func search(_ query: String) async throws -> [TextTextAgentSearchResult] {
         switch self {
         case .remote(let store): return try await store.search(query)
-        case .local:
-            throw TextTextCLIError.workspaceUnavailable(
-                "search needs the signed-in TextText workspace")
+        case .local(let store): return try store.search(query)
         }
     }
 
@@ -226,6 +226,11 @@ public enum CLIWorkspace: Sendable {
     ) async throws -> CLIDocumentContent {
         switch reference {
         case .local(let url):
+            if url.pathExtension.lowercased() == "textpack" {
+                let document = try LocalVaultDocumentStore(root: url.deletingLastPathComponent())
+                    .read(path: url.lastPathComponent)
+                return CLIDocumentContent(markdown: document.contents.markdown, hash: document.hash)
+            }
             return CLIDocumentContent(
                 markdown: try DocumentStore(
                     root: url.deletingLastPathComponent()
@@ -249,12 +254,8 @@ public enum CLIWorkspace: Sendable {
     ) async throws {
         switch reference {
         case .local(let url):
-            if ifMatchHash != nil {
-                throw TextTextCLIError.workspaceUnavailable(
-                    "--if-match-hash needs the signed-in workspace")
-            }
             try DocumentStore(root: url.deletingLastPathComponent())
-                .writeMarkdown(markdown, to: url)
+                .writeMarkdown(markdown, to: url, ifMatchHash: ifMatchHash)
         case .remote(let document):
             guard case .remote(let store) = self else {
                 throw TextTextCLIError.documentNotFound(document.path)
@@ -271,9 +272,10 @@ public enum CLIWorkspace: Sendable {
         switch reference {
         case .local(let url):
             let store = DocumentStore(root: url.deletingLastPathComponent())
-            let current = try store.readMarkdown(at: url)
+            let content = try await readContent(at: reference)
+            let current = content.markdown
             let separator = current.hasSuffix("\n") ? "" : "\n"
-            try store.writeMarkdown(current + separator + markdown, to: url)
+            try store.writeMarkdown(current + separator + markdown, to: url, ifMatchHash: content.hash)
         case .remote(let document):
             guard case .remote(let store) = self else {
                 throw TextTextCLIError.documentNotFound(document.path)
@@ -289,16 +291,13 @@ public enum CLIWorkspace: Sendable {
     ) async throws {
         switch reference {
         case .local(let url):
-            if ifMatchHash != nil {
-                throw TextTextCLIError.workspaceUnavailable(
-                    "--if-match-hash needs the signed-in workspace")
-            }
             let store = DocumentStore(root: url.deletingLastPathComponent())
-            let current = try store.readMarkdown(at: url)
+            let content = try await readContent(at: reference)
+            let current = content.markdown
             try store.writeMarkdown(
                 DocumentSections.replaceBody(
                     of: section, in: current, with: replacement),
-                to: url)
+                to: url, ifMatchHash: ifMatchHash ?? content.hash)
         case .remote(let document):
             guard case .remote(let store) = self else {
                 throw TextTextCLIError.documentNotFound(document.path)
@@ -383,8 +382,7 @@ public enum CLIWorkspace: Sendable {
             itemId = document.itemId
             workspace = document.workspaceHandle
         case .local(let url):
-            itemId = DocumentStore(root: url.deletingLastPathComponent()).itemId(at: url)
-            workspace = nil
+            return url
         }
         guard let itemId else { return nil }
         var components = URLComponents()

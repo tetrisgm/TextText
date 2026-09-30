@@ -1,5 +1,6 @@
 import Foundation
 import TextTextCLICore
+import TextTextWorkspaceCore
 
 // The agent's interface to a TextText workspace. Editing is one verb; the
 // others let an agent say who it is and where it is working, so it shows up in
@@ -9,6 +10,7 @@ let usage = """
     texttext - work with a TextText workspace
 
     USAGE
+      texttext vault <path>                   open or create a local vault
       texttext ls [folder]                     list documents
       texttext search <query>                  find documents by title or content
       texttext read <doc> [--section "## H"]   print content; --json adds its hash
@@ -103,6 +105,18 @@ if options.command == "install" {
     exit(0)
 }
 
+if options.command == "vault" {
+    guard options.positional.count == 1 else { fail("usage: texttext vault <path>") }
+    do {
+        let path = (options.positional[0] as NSString).expandingTildeInPath
+        let vault = try LocalVaultConfiguration.open(root: URL(fileURLWithPath: path))
+        emit("Opened local vault: \(vault.rootPath)")
+    } catch {
+        fail("could not open vault: \(error)")
+    }
+    exit(0)
+}
+
 let store: CLIWorkspace
 do {
     store = try CLIWorkspace.locate()
@@ -115,20 +129,16 @@ private let slowWorkSeconds: UInt64 = 8
 
 /// Say what is taking so long, instead of nothing at all.
 ///
-/// A create writes into the TextText folder, and the File Provider extension
-/// commits it to the workspace. `replaceItemAt` on that volume blocks until the
-/// extension acknowledges, so when the workspace was returning 500s a
-/// `texttext new` sat silent for three minutes and then created nothing. The
-/// filesystem call cannot be interrupted, but the silence can be broken: a
-/// person who knows what it is waiting on can go look at the right thing.
+/// Keep long file or network operations visible without changing their result.
 @MainActor
 func announcingSlowWork<T>(_ work: () async throws -> T) async rethrows -> T {
     let notice = Task.detached {
-        try? await Task.sleep(nanoseconds: slowWorkSeconds * 1_000_000_000)
+        do { try await Task.sleep(nanoseconds: slowWorkSeconds * 1_000_000_000) }
+        catch { return }
         FileHandle.standardError.write(
             Data(
                 """
-                texttext: still working after \(slowWorkSeconds)s. This writes into the                 TextText folder and waits for the sync extension to commit it, which waits                 on the workspace. If the workspace is unreachable this can take minutes.
+                texttext: still working after \(slowWorkSeconds)s.
                 """.utf8))
         FileHandle.standardError.write(Data("\n".utf8))
     }
@@ -173,7 +183,9 @@ func withPresence<T>(
     _ work: () async throws -> T
 ) async rethrows -> T {
     try await withActor(activity, itemId: await store.itemId(at: reference)) {
-        guard let actor = CLICommandActor.current else { return try await work() }
+        guard store.usesRemoteSync, let actor = CLICommandActor.current else {
+            return try await work()
+        }
         return try await PresencePublisher().around(
             document: documentPath, actor: actor, work: work)
     }

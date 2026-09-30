@@ -27,6 +27,46 @@ final class DocumentCreationTests: XCTestCase {
         XCTAssertEqual(url.lastPathComponent, "My Idea.textpack")
     }
 
+    func testNewPacksContainSnapshotAndMatchingTemplateWithoutAServer() throws {
+        for kind in ["note", "article", "bookmark", "gallery", "talk"] {
+            let url = try store.create(title: kind, body: "Fresh content.", kind: kind)
+            let scratch = root.appendingPathComponent("scratch-" + kind)
+            try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+            let contents = try TextTextTextBundlePackage.read(from: url, in: scratch)
+            let document = try XCTUnwrap(try JSONSerialization.jsonObject(
+                with: Data(XCTUnwrap(contents.documentJSON).utf8)) as? [String: Any])
+            let template = try XCTUnwrap(try JSONSerialization.jsonObject(
+                with: Data(XCTUnwrap(contents.templateJSON).utf8)) as? [String: Any])
+            XCTAssertEqual(document["schemaVersion"] as? Int, 1)
+            let content = try XCTUnwrap(document["content"] as? [String: Any])
+            XCTAssertEqual(content["title"] as? String, kind)
+            XCTAssertEqual(content["body"] as? String, "Fresh content.")
+            let presentation = try XCTUnwrap(document["presentation"] as? [String: Any])
+            let reference = try XCTUnwrap(presentation["template"] as? [String: Any])
+            XCTAssertEqual(reference["id"] as? String, "texttext." + kind)
+            XCTAssertEqual(reference["id"] as? String, template["id"] as? String)
+            XCTAssertEqual(reference["version"] as? Int, template["version"] as? Int)
+            XCTAssertNotNil(template["item"])
+            XCTAssertNotNil(store.itemId(at: url))
+        }
+    }
+
+    func testIdentitySurvivesRenameAndBodyReplacement() throws {
+        let url = try store.create(title: "Identity", body: "Original.")
+        let id = try XCTUnwrap(store.itemId(at: url))
+        XCTAssertNotNil(UUID(uuidString: id))
+        let renamed = root.appendingPathComponent("Renamed.textpack")
+        try FileManager.default.moveItem(at: url, to: renamed)
+        try store.writeMarkdown("Updated body.", to: renamed)
+        XCTAssertEqual(store.itemId(at: renamed), id)
+        XCTAssertTrue(try store.readMarkdown(at: renamed).contains("Updated body."))
+    }
+
+    func testFolderCannotEscapeVault() throws {
+        XCTAssertThrowsError(try store.create(title: "Outside", folder: ".."))
+        XCTAssertThrowsError(try store.list(under: ".."))
+    }
+
     func testBookmarkCaptureKeepsItsCanonicalLink() throws {
         let url = try store.create(
             title: "paper.design", body: "[paper.design](https://paper.design/docs/mcp)",

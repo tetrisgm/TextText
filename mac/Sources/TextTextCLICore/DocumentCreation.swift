@@ -3,10 +3,8 @@ import TextTextFileProviderKit
 
 /// Creating and validating documents on disk.
 ///
-/// A new document is written as a `.textpack` with the minimum frontmatter the
-/// sync layer needs; the server fills in the identity, slug, and canonical URL
-/// when it ingests the file. That is why `new` writes so little: guessing at
-/// server-owned fields would either be ignored or, worse, conflict.
+/// DocumentStore adds a stable local identity when it creates the TextPack.
+/// This helper renders the content metadata shared with remote capture.
 public enum DocumentCreation {
     /// Frontmatter keys the parser recognizes. Anything else is dropped on sync,
     /// so writing more than this is noise at best.

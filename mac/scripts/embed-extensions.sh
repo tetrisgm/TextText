@@ -89,6 +89,7 @@ while IFS= read -r f; do CORE_OBJS+=("$f"); done < <(module_objects TextTextShar
 FP_OBJS=()
 while IFS= read -r f; do FP_OBJS+=("$f"); done < <(
   module_objects TextTextFileProviderKit
+  module_objects TextTextWorkspaceCore
   module_objects TextTextFileProviderBridge
   module_objects ZIPFoundation
 )

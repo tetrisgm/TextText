@@ -72,6 +72,7 @@ public struct TextTextTextBundleAsset: Equatable, Sendable {
 
 public struct TextTextTextBundleContents: Equatable, Sendable {
     public let markdown: String
+    public let sourceURL: String?
     public let documentJSON: String?
     /// The look itself, as `template.json`. `document.json` names an id and a
     /// version, which means nothing outside the workspace that stores it, so a
@@ -319,6 +320,7 @@ public enum TextTextTextBundlePackage {
             remoteURLsByFilename: remoteURLsByFilename)
         return TextTextTextBundleContents(
             markdown: canonicalMarkdown,
+            sourceURL: info.sourceURL,
             documentJSON: documentJSON,
             templateJSON: templateJSON,
             templateAuthoringSourceJSON: templateAuthoringSourceJSON,
