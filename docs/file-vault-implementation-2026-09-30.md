@@ -99,3 +99,22 @@ shared access and full live collaboration, browser assistant, capture/import,
 publication, and retirement of legacy database content callers need integration
 with the new store. History/conflict retention currently favors preservation
 and has no automatic disk-pruning policy. Do not describe those as completed.
+
+## Deletion UI correction (build 1118)
+
+The final installed cleanup exposed a stale editor after a remote deletion:
+the file was safely removed, but the editor showed a misleading Retry save.
+Commit `0df00a1c` confirms absence against the listing and closes a clean editor.
+A dirty editor retains its recovery draft and offers a separate copy; a failed
+listing never closes the draft. Regression coverage exercises both cases,
+including copying the historical pack after its original path disappears.
+
+The offline browser suite, web browser suite, TypeScript check and targeted
+ESLint passed. Development-signed build 0.202 (1118) replaced the canonical
+Applications copy. A fresh native-created note was deleted through the real web
+UI; the installed Mac editor returned cleanly to Your workspace. Both temporary
+verification notes were deleted recoverably. No real user documents were used.
+
+The final matching Next production build passed and replaced the local server
+with identity `texttext-vault-recovery-20260930`, using isolated output
+`.texttext/vault-recovery-build`. The same server vault root was retained.
