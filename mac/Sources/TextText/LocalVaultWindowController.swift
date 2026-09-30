@@ -1,5 +1,6 @@
 import AppKit
 import WebKit
+import UniformTypeIdentifiers
 import TextTextCLICore
 import TextTextFileProviderKit
 import TextTextWorkspaceCore
@@ -94,6 +95,33 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             }
         }
     }
+    private func importPanel(folder: String, completion: @escaping (Result<[String: Any], Error>) -> Void) {
+        guard let root else { completion(.failure(VaultBridgeError("Open a folder first."))); return }
+        let panel = NSOpenPanel()
+        panel.title = "Import into this folder"
+        panel.prompt = "Import"
+        panel.canChooseDirectories = false; panel.canChooseFiles = true; panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = ["textpack", "textbundle", "md", "markdown"].compactMap { UTType(filenameExtension: $0) }
+        panel.begin { [weak self] response in
+            guard let self else { completion(.failure(VaultBridgeError("The workspace window closed."))); return }
+            guard response == .OK, let source = panel.url else { completion(.success([:])); return }
+            let scoped = source.startAccessingSecurityScopedResource()
+            self.io.async {
+                defer { if scoped { source.stopAccessingSecurityScopedResource() } }
+                let result: Result<[String: Any], Error> = Result {
+                    let store = LocalVaultDocumentStore(root: root)
+                    let stem = DocumentCreation.filename(for: source.deletingPathExtension().lastPathComponent)
+                    let prefix = folder.isEmpty ? "" : folder + "/"
+                    var path = prefix + stem + ".textpack", suffix = 2
+                    while FileManager.default.fileExists(atPath: try store.url(for: path).path) {
+                        path = prefix + stem + " \(suffix).textpack"; suffix += 1
+                    }
+                    return ["file": try Self.payload(store.importFile(from: source, newPath: path))]
+                }
+                DispatchQueue.main.async { completion(result); self.emit("texttext:vault-changed", value: [:]) }
+            }
+        }
+    }
     func newDocument() { emit("texttext:vault-new", value: [:]) }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         loaded = true
@@ -154,6 +182,9 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         if method == "open" {
             chooseFolder { [weak self] result in self?.reply(id, result: result) }; return
         }
+        if method == "import" {
+            importPanel(folder: params["folder"] as? String ?? "") { [weak self] result in self?.reply(id, result: result) }; return
+        }
         if method.hasPrefix("agent") {
             guard let root else { reply(id, result: .failure(VaultBridgeError("Open a folder first."))); return }
             if agent == nil {
@@ -202,6 +233,10 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 let store = LocalVaultDocumentStore(root: root)
                 switch method {
                 case "list": return try Self.list(root: root)
+                case "search":
+                    let page = try DocumentStore(root: root).searchPage(Self.string(params, "query"), textpacksOnly: true)
+                    return ["items": page.items.map { ["path": $0.id, "title": $0.title, "snippet": $0.snippet] },
+                        "truncated": page.truncated, "skippedCount": page.skippedCount]
                 case "read": return try Self.payload(store.read(path: Self.string(params, "path")))
                 case "rename":
                     return try Self.payload(store.rename(path: Self.string(params, "path"),
@@ -238,7 +273,15 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                             sourceHash: params["sourceHash"] as? String,
                             newPath: (folder.flatMap { $0.isEmpty ? nil : $0 + "/" } ?? "") + DocumentCreation.filename(for: uniqueTitle) + ".textpack"))
                     }
-                    let created = try files.create(title: uniqueTitle, folder: folder)
+                    let kind = params["kind"] as? String ?? "note"
+                    guard kind == "note" || kind == "bookmark" else { throw VaultBridgeError("Unsupported capture type.") }
+                    let source = params["sourceURL"] as? String
+                    if let source {
+                        guard let url = URL(string: source), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+                              url.host != nil, url.user == nil, url.password == nil else { throw VaultBridgeError("Choose an HTTP or HTTPS link without credentials.") }
+                    }
+                    let created = try files.create(title: uniqueTitle, body: params["body"] as? String ?? "",
+                        folder: folder, kind: kind, sourceURL: source)
                     return try Self.payload(store.read(path: files.relativePath(of: created)))
                 default: throw VaultBridgeError("Unknown file operation.")
                 }

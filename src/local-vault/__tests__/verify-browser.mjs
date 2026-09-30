@@ -30,6 +30,7 @@ try {
       if (request.method === "connect") connected = true;
       result = { connected, available: true, ...(connected ? { webURL: "https://example.test/vault/workspace" } : {}) };
     } else if (request.method === "openWeb") { openedWeb = true; result = {}; }
+    else if (request.method === "search") result = { items: [...files.values()].filter((file) => file.markdown.toLowerCase().includes(request.params.query.toLowerCase())).map((file) => ({ path: file.path, title: file.path, snippet: "Matched in file" })), truncated: false };
     else if (request.method === "read" || request.method === "template") {
       result = files.get(request.params.path);
       if (!result) error = { message: "File not found", code: "not_found" };
@@ -136,8 +137,22 @@ try {
   await page.getByRole("button", { name: "Delete file", exact: true }).click();
   await page.getByRole("heading", { name: "Your workspace", exact: true }).waitFor();
   assert.ok(!files.has("Projects/Renamed.textpack"));
+  await page.getByRole("button", { name: /Search files/ }).click();
+  await page.getByRole("searchbox", { name: "Search workspace" }).fill("Their conflicting version");
+  await page.getByRole("dialog", { name: "Search files", exact: true }).getByRole("button", { name: /Notes\/Offline.textpack/ }).click();
+  await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor();
+  assert.match(await body.innerText(), /Their conflicting version/);
+  await page.getByRole("button", { name: "Save a link or note", exact: true }).click();
+  await page.getByRole("textbox", { name: "Link or note", exact: true }).fill("https://example.com/capture");
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.screenshot({ path: "/tmp/texttext-vault-capture-light.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.screenshot({ path: "/tmp/texttext-vault-capture-dark.png" });
+  await page.getByRole("button", { name: "Save to folder", exact: true }).click();
+  await page.getByRole("dialog", { name: "Save a link or note" }).waitFor({ state: "hidden" });
   // A clean open file deleted by another replica must close, not offer Retry save.
   await page.getByRole("button", { name: "New note", exact: true }).click();
+  await page.waitForFunction(() => !document.querySelector("[inert]"));
   const removed = [...files.keys()].at(-1);
   await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor();
   files.delete(removed);
@@ -146,6 +161,7 @@ try {
   assert.equal(await page.getByRole("button", { name: "Retry save", exact: true }).count(), 0);
   // A deleted file with a pending draft must retain its edits and offer a copy.
   await page.getByRole("button", { name: "New note", exact: true }).click();
+  await page.waitForFunction(() => !document.querySelector("[inert]"));
   const dirtyPath = [...files.keys()].at(-1);
   const dirtyBase = files.get(dirtyPath);
   history.set(dirtyBase.hash, dirtyBase);

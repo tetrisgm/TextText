@@ -1,3 +1,4 @@
+import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { VaultError, type VaultFile, type VaultListing, type VaultTransport } from "./bridge";
 import { emptyPack, encodePack, openPack, packIdentity, replacePackIdentity, type OpenPack } from "./pack";
@@ -142,8 +143,17 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
         pack = source; file = { ...source.file, path, hash: "", markdown: replacePackIdentity(source.file.markdown, id) };
       } else {
         pack = emptyPack();
-        const document = emptyDocumentSnapshot({ id: "texttext.note", version: 1 }); document.content.title = title;
-        file = { path, hash: "", markdown: `---\ntextTextId: ${JSON.stringify(id)}\n---\n\n`, documentJSON: JSON.stringify(document) };
+        const kind = String(params.kind ?? "note");
+        if (kind !== "note" && kind !== "bookmark") throw new Error("Unsupported capture type.");
+        const template = BUILTIN_TEMPLATES.find((item) => item.id === `texttext.${kind}`)!;
+        const document = emptyDocumentSnapshot({ id: template.id, version: template.version });
+        document.content.title = title; document.content.body = String(params.body ?? "");
+        if (typeof params.sourceURL === "string") {
+          const source = new URL(params.sourceURL);
+          if (!["http:", "https:"].includes(source.protocol) || source.username || source.password) throw new Error("Choose an HTTP or HTTPS link without credentials.");
+          document.content.fields.sourceUrl = source.href;
+        }
+        file = { path, hash: "", markdown: `---\ntextTextId: ${JSON.stringify(id)}\n---\n\n`, documentJSON: JSON.stringify(document), templateJSON: JSON.stringify(template) };
         file = { ...file, ...writePayload(file, document) };
       }
       return commit(id, path, encodePack(pack, file), null);

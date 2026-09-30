@@ -11,3 +11,5 @@
 .vault-app .tt-document:not(.tt-collection-item):not([data-preview])::before{display:none}
 
 .vault-app .tt-stop-edit-label-compact{display:none}
+
+.vault-app .vault-capture header,.vault-app .vault-search header{display:flex;align-items:center;justify-content:space-between;gap:12px}.vault-app .vault-capture label{display:block;margin:16px 0}.vault-app .vault-capture input,.vault-app .vault-capture textarea,.vault-app .vault-search input{display:block;width:100%;padding:10px;margin-top:6px;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:5px}.vault-app .vault-capture textarea{min-height:160px;resize:vertical}.vault-app .vault-search button{width:100%;margin:6px 0}.vault-app .vault-search header button{width:auto}.vault-app .vault-search small,.vault-app .vault-search span{display:block;margin-top:4px;overflow-wrap:anywhere}.vault-app .vault-search small{color:var(--muted)}

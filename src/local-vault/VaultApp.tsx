@@ -16,6 +16,8 @@ import { NativeConnection } from "./NativeConnection";
 import { NativeAssistant } from "./NativeAssistant";
 import { FolderNavigation } from "./FolderNavigation";
 import { folderTree, folderPaths, folderForItem } from "./folders";
+import { CaptureDialog } from "./CaptureDialog";
+import { VaultSearch } from "./VaultSearch";
 import "./style.css";
 
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -252,6 +254,8 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const [destinationFolder, setDestinationFolder] = useState("");
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [templatePicker, setTemplatePicker] = useState(false);
+  const [captureOpen, setCaptureOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [fileAction, setFileAction] = useState<"rename" | "delete" | null>(null);
   const [newPath, setNewPath] = useState("");
   const currentFileRef = useRef<(() => VaultFile) | null>(null);
@@ -279,6 +283,17 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     window.addEventListener("texttext:vault-new", newFile);
     return () => { window.removeEventListener("texttext:vault-open", openFile); window.removeEventListener("texttext:vault-new", newFile); };
   });
+  useEffect(() => {
+    const search = () => setSearchOpen(true);
+    const key = (event: KeyboardEvent) => {
+      if (allowFolderPicker && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault(); search();
+      }
+    };
+    window.addEventListener("keydown", key);
+    window.addEventListener("texttext:vault-search", search);
+    return () => { window.removeEventListener("keydown", key); window.removeEventListener("texttext:vault-search", search); };
+  }, [allowFolderPicker]);
   return <div className={`vault-app${assistantOpen ? " has-assistant" : ""}`}>
     <DocumentEngineStyles />
     <aside className="vault-sidebar">
@@ -299,6 +314,14 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
           setSelected(created); refresh();
         })}>New note</button>
         <button disabled={busy} onClick={() => void operate(async () => setTemplatePicker(true))}>New from template</button>
+        <button disabled={busy} onClick={() => void operate(async () => setCaptureOpen(true))}>Save a link or note</button>
+        {allowFolderPicker && <>
+          <button disabled={busy} onClick={() => void operate(async () => {
+            const result = await vaultRequest<{ file?: VaultFile }>("import", { folder: destinationFolder.trim() });
+            if (result.file) { setSelected(result.file); refresh(); }
+          })}>Import file…</button>
+          <button disabled={busy} onClick={() => setSearchOpen(true)}>Search files ⌘K</button>
+        </>}
         <nav aria-label="Workspace files"><FolderNavigation tree={tree} selectedPath={selected?.path} busy={busy}
           onFolder={setDestinationFolder} onOpen={(item) => void operate(async () => {
             setSelected(await vaultRequest<VaultFile>("read", { path: item.path })); setDestinationFolder(folderForItem(item.path));
@@ -332,6 +355,15 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
           <button onClick={() => setFileAction(null)}>Cancel</button>
         </div>}
       </div>}
+      {captureOpen && <CaptureDialog onClose={() => setCaptureOpen(false)} onSave={async (input) => {
+        if (!await flushRef.current()) throw new Error("Save or resolve the current document before capturing another item.");
+        const created = await vaultRequest<VaultFile>("create", { ...input, folder: destinationFolder.trim() });
+        setSelected(created); refresh();
+      }} />}
+      {searchOpen && <VaultSearch onClose={() => setSearchOpen(false)} onOpen={async (path) => {
+        if (!await flushRef.current()) throw new Error("Save or resolve the current document before opening another file.");
+        setSelected(await vaultRequest<VaultFile>("read", { path })); setDestinationFolder(folderForItem(path));
+      }} />}
       {templatePicker && <LocalTemplateLibrary onClose={() => setTemplatePicker(false)} onApply={() => {}} onCreateFromFile={(path) => void operate(async () => {
         const source = await vaultRequest<VaultFile>("read", { path });
         const title = readDocument(source).content.title || path.split("/").at(-1)!.replace(/\.textpack$/i, "");

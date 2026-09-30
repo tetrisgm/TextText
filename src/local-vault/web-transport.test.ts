@@ -53,6 +53,17 @@ function fixture() {
 }
 
 describe("web file vault transport", () => {
+  it("captures links and notes as complete self-contained TextPacks", async () => {
+    const test = fixture();
+    const link = await test.transport.request("create", { title: "Example", body: "https://example.com/read", kind: "bookmark", sourceURL: "https://example.com/read", folder: "Reading" }) as VaultFile;
+    expect(readDocument(link).content.fields.sourceUrl).toBe("https://example.com/read");
+    expect(readDocument(link).content.body).toBe("https://example.com/read");
+    expect(JSON.parse(link.templateJSON!).id).toBe("texttext.bookmark");
+    const note = await test.transport.request("create", { title: "Thought", body: "Keep this entire note." }) as VaultFile;
+    expect(readDocument(note).content.body).toBe("Keep this entire note.");
+    expect(JSON.parse(note.templateJSON!).id).toBe("texttext.note");
+    await expect(test.transport.request("create", { title: "Invalid", sourceURL: "file:///etc/passwd" })).rejects.toThrow("HTTP or HTTPS");
+  });
   it("renames and deletes with observed revisions, preserving cloned starter content and identity", async () => {
     const test = fixture();
     const source = await test.transport.request("read", { path: test.path }) as VaultFile;
