@@ -3,6 +3,8 @@ import { validatedLookSource } from "./presentation/template-library";
 // must authorize the workspace and supply its trusted server root first.
 import {
   readVaultTextpack as readDirectoryTextpack,
+  readVaultCollaboration as readDirectoryCollaboration,
+  pushVaultCollaboration as pushDirectoryCollaboration,
   readVaultTemplate as readDirectoryTemplate,
   listVaultRecovery as listDirectoryRecovery,
   readVaultRecovery as readDirectoryRecovery,
@@ -17,7 +19,7 @@ import {
   type VaultMutationReceipt,
   type VaultEntryMutation,
 } from "./vault/server-store";
-export { VaultBusyError } from "./vault/server-store";
+export { VaultBusyError, VaultCollaborationEpochError } from "./vault/server-store";
 export type { VaultLocation, VaultWrite, VaultWriteResult, VaultEntryMutation, VaultEntryResult } from "./vault/server-store";
 import { documentFromStarter } from "./documents/starter";
 import { agentTextChanges } from "@/lib/agent-changes";
@@ -58,6 +60,21 @@ export function writeVaultTextpack(input: Omit<VaultWrite, "onReceipt" | "audit"
 }) {
   if (!db) throw new Error(NO_DATABASE);
   return writeDirectoryTextpack({ ...input,
+    audit: { actorUserId: input.actorUserId, actorType: input.actorType },
+    onReceipt: recordVaultReceipt,
+  });
+}
+
+export function readVaultCollaboration(input: Omit<VaultLocation, "onReceipt"> & { itemId: string }) {
+  if (!db) throw new Error(NO_DATABASE);
+  return readDirectoryCollaboration({ ...input, onReceipt: recordVaultReceipt });
+}
+export function pushVaultCollaboration(input: Omit<VaultLocation, "onReceipt"> & {
+  itemId: string; operationId: string; epoch: number; updates: string[];
+  actorUserId: string; actorType: "human" | "external_agent";
+}) {
+  if (!db) throw new Error(NO_DATABASE);
+  return pushDirectoryCollaboration({ ...input,
     audit: { actorUserId: input.actorUserId, actorType: input.actorType },
     onReceipt: recordVaultReceipt,
   });

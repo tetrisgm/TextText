@@ -6,6 +6,7 @@ import { hostname } from "node:os";
 import { unzipSync, strFromU8 } from "fflate";
 import { validateDocumentSnapshot } from "@/lib/documents/model";
 import { reconcileTextpacks } from "./pack-reconcile";
+import { seedVaultCollaboration, applyVaultCollaboration, type VaultCollaborationState } from "./collaboration";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
 import { validatedLookSource } from "@/lib/presentation/template-library";
 
@@ -49,6 +50,7 @@ interface Intent {
   workspaceId: string;
   audit?: VaultWrite["audit"];
   deletedRevision?: string;
+  collaboration?: VaultCollaborationState;
 }
 export interface VaultMutationReceipt {
   workspaceId: string; operationId: string;
@@ -167,7 +169,8 @@ async function setup(location: VaultLocation) {
   const locks = await directory(control, "locks");
   const history = await directory(control, "history");
   const removed = await directory(control, "removed");
-  return { workspace, control, pending, receipts, items, conflicts, locks, history, removed, onReceipt: location.onReceipt };
+  const collaboration = await directory(control, "collaboration");
+  return { workspace, control, pending, receipts, items, conflicts, locks, history, removed, collaboration, onReceipt: location.onReceipt };
 }
 type Layout = Awaited<ReturnType<typeof setup>>;
 
@@ -268,6 +271,15 @@ async function apply(layout: Layout, intent: Intent, pendingDir: string): Promis
       itemId: intent.itemId, relativePath: intent.relativePath,
       revision: intent.revision,
     }));
+    // The checkpoint and materialized pack are one replayable intent. A receipt
+    // is never published before both are durable.
+    const checkpointPath = path.join(layout.collaboration, `${segment(intent.itemId)}.json`);
+    if (intent.collaboration) {
+      if (intent.collaboration.revision !== intent.revision) throw new Error("Collaboration checkpoint revision mismatch");
+      await atomicWrite(checkpointPath, json(intent.collaboration));
+    } else {
+      await observeCollaborationRevision(layout, intent.itemId, intent.revision);
+    }
     result = { status: "written", itemId: intent.itemId, relativePath: intent.relativePath, revision: intent.revision };
   }
   const receipt: Receipt = { requestHash: intent.requestHash, result, ...(intent.audit ? {
@@ -502,6 +514,91 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
   });
 }
 
+/** File collaboration remains behind the store boundary. HTTP callers must
+ * authorize each request; this layer never infers access from a file identity. */
+export class VaultCollaborationEpochError extends Error {
+  constructor(readonly epoch: number) { super("The file changed outside this collaboration session. Reopen and recover pending edits."); }
+}
+async function observeCollaborationRevision(layout: Layout, itemId: string, revision: string | null) {
+  const file = path.join(layout.collaboration, `${segment(itemId)}.json`);
+  const raw = await maybeRead(file);
+  if (!raw) return;
+  const state = JSON.parse(raw.toString()) as VaultCollaborationState;
+  if (state.revision && state.revision !== revision) await atomicWrite(file, json({ ...state, revision: "" }));
+}
+async function collaborationItem(layout: Layout, itemId: string) {
+  const raw = await maybeRead(path.join(layout.items, `${segment(itemId)}.json`));
+  if (!raw) return null;
+  const item = JSON.parse(raw.toString()) as { relativePath: string; deleted?: boolean };
+  if (item.deleted) return null;
+  const bytes = await maybeRead(await targetPath(layout, item.relativePath));
+  if (!bytes) return null;
+  validatePack(bytes, itemId);
+  return { relativePath: item.relativePath, bytes, revision: hash(bytes) };
+}
+async function collaborationCheckpoint(layout: Layout, itemId: string, item: NonNullable<Awaited<ReturnType<typeof collaborationItem>>>) {
+  const file = path.join(layout.collaboration, `${itemId}.json`);
+  const raw = await maybeRead(file);
+  const saved = raw ? JSON.parse(raw.toString()) as VaultCollaborationState : null;
+  if (saved && (!Number.isSafeInteger(saved.epoch) || saved.epoch < 1 || saved.epoch >= Number.MAX_SAFE_INTEGER)) throw new Error("Invalid collaboration epoch");
+  if (saved?.revision === item.revision) {
+    // A valid JSON file is not necessarily a valid Yjs baseline. Validate the
+    // complete persisted state with a canonical empty update before serving it.
+    applyVaultCollaboration(saved, item.bytes, ["AAA="]);
+    return saved;
+  }
+  const state = seedVaultCollaboration(item.bytes, itemId, saved ? saved.epoch + 1 : 1);
+  await atomicWrite(file, json(state));
+  return state;
+}
+export async function readVaultCollaboration(input: VaultLocation & { itemId: string }) {
+  segment(input.itemId);
+  const layout = await setup(input);
+  return locked(layout, async () => {
+    await recover(layout);
+    const item = await collaborationItem(layout, input.itemId);
+    if (!item) return null;
+    return { ...await collaborationCheckpoint(layout, input.itemId, item), relativePath: item.relativePath };
+  });
+}
+export async function pushVaultCollaboration(input: VaultLocation & {
+  itemId: string; operationId: string; epoch: number; updates: string[];
+  audit: NonNullable<VaultWrite["audit"]>;
+}): Promise<VaultWriteResult> {
+  segment(input.itemId); segment(input.operationId);
+  if (!input.audit || !input.onReceipt) throw new Error("Vault collaboration requires its audit sink");
+  if (!Number.isSafeInteger(input.epoch) || input.epoch < 1) throw new Error("Invalid collaboration epoch");
+  if (!Array.isArray(input.updates) || !input.updates.length || input.updates.length > 64 ||
+      input.updates.some(update => typeof update !== "string" || update.length > 512 * 1024) ||
+      input.updates.reduce((sum, update) => sum + update.length, 0) > 6 * 1024 * 1024) throw new Error("Collaboration update exceeds limits");
+  const requestHash = hash(json(["collaboration", input.itemId, input.epoch, input.updates, input.audit]));
+  const layout = await setup(input);
+  return locked(layout, async () => {
+    await recover(layout);
+    const saved = await maybeRead(path.join(layout.receipts, `${input.operationId}.json`));
+    if (saved) {
+      const receipt = JSON.parse(saved.toString()) as Receipt<VaultWriteResult>;
+      if (receipt.requestHash !== requestHash) throw new Error("Operation id was reused");
+      await deliverReceipt(layout, receipt);
+      return receipt.result;
+    }
+    const item = await collaborationItem(layout, input.itemId);
+    if (!item) throw new Error("Collaboration file is missing or deleted");
+    const baseline = await collaborationCheckpoint(layout, input.itemId, item);
+    if (baseline.epoch !== input.epoch) throw new VaultCollaborationEpochError(baseline.epoch);
+    const next = applyVaultCollaboration(baseline, item.bytes, input.updates);
+    validatePack(next.bytes, input.itemId);
+    const pendingDir = await directory(layout.pending, input.operationId);
+    await atomicWrite(path.join(pendingDir, "payload.textpack"), next.bytes);
+    const intent: Intent = { itemId: input.itemId, operationId: input.operationId,
+      relativePath: item.relativePath, baseRevision: item.revision, revision: next.state.revision,
+      requestHash, workspaceId: input.workspaceId, audit: input.audit, collaboration: next.state };
+    await atomicWrite(path.join(pendingDir, "intent.json"), json(intent));
+    await syncDirectory(layout.pending);
+    return apply(layout, intent, pendingDir);
+  });
+}
+
 export type VaultRecoveryEntry = { id: string; path: string; kind: "deleted" | "revision" | "conflict"; savedAt: string; hash: string };
 type RecoveryToken = { kind: VaultRecoveryEntry["kind"]; key: string; hash: string; source?: "history" };
 const recoveryId = (token: RecoveryToken) => Buffer.from(JSON.stringify(token)).toString("base64url");
@@ -655,6 +752,7 @@ export async function readVaultTextpack(input: VaultLocation & { itemId: string 
     const item = JSON.parse(raw.toString()) as { relativePath: string; deleted?: boolean };
     if (item.deleted) return null;
     const bytes = await maybeRead(await targetPath(layout, item.relativePath));
+    await observeCollaborationRevision(layout, input.itemId, bytes ? hash(bytes) : null);
     return bytes ? { itemId: input.itemId, relativePath: item.relativePath, revision: hash(bytes), bytes } : null;
   });
 }
@@ -745,6 +843,7 @@ export async function listVaultTextpacks(input: VaultLocation): Promise<{
       const target = await targetPath(layout, item.relativePath);
       const signature = await fingerprint(target);
       if (!signature) {
+        await observeCollaborationRevision(layout, item.itemId, null);
         if (item.revision) {
           const tombstone = { itemId: item.itemId, relativePath: item.relativePath, revision: item.revision, deleted: true as const };
           await atomicWrite(path.join(layout.items, name), json(tombstone));
@@ -758,6 +857,7 @@ export async function listVaultTextpacks(input: VaultLocation): Promise<{
         if (!bytes) continue;
         validatePack(bytes, item.itemId);
         revision = hash(bytes);
+        await observeCollaborationRevision(layout, item.itemId, revision);
         const history = await directory(layout.history, item.itemId);
         await atomicWrite(path.join(history, `${revision}.textpack`), bytes);
         // Derived index only. Idle change waits need stat calls, never repeated
@@ -813,6 +913,7 @@ async function discoverFiles(layout: Layout): Promise<{ relativePath: string; re
       // A new file, or an externally renamed file whose old path is absent.
       // This is a disposable index; the newly observed pack remains untouched.
       const revision = hash(bytes);
+      await observeCollaborationRevision(layout, itemId, revision);
       const item = { itemId, relativePath, revision };
       const history = await directory(layout.history, itemId);
       await atomicWrite(path.join(history, `${revision}.textpack`), bytes);

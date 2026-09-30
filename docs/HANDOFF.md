@@ -110,6 +110,12 @@ Escape dismissal passed after fixing duplicate React sibling keys. See the
 Guarded rollback onto an existing identity, large-history indexing, full backup
 restore and the broader collaboration/publishing/performance scope remain open.
 
+File-backed full-document Yjs merging and durable checkpoint/pack transactions
+are implemented with concurrent-client, epoch-fence, deletion, audit and crash
+recovery tests. This is backend groundwork; UI/permissions/transport integration
+is next. See [collaboration checkpoint](file-vault-collaboration-2026-09-30.md).
+Installed build and running server remain 1134/recovery.
+
 ## Blockers and next work
 
 - Owner approved the local server switch. The replacement build now runs on
