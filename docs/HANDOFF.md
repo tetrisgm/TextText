@@ -9,7 +9,7 @@ prerequisite. See [architecture](design/texttext-file-vault-migration.md) and
 
 Implemented on `main` in `76f373e1`, `f28500cd`, and `3b4549d6`: native folder
 store/CLI, complete-pack filesystem server and durable sync, bundled shared
-editor, file templates, and native assistant file tools. Local WIP **0.202 (1119)**
+editor, file templates, and native assistant file tools. Local WIP **0.202 (1120)**
 is installed at `/Applications/TextText.app`. Its selected workspace is
 `/Users/shokunin/Documents/TextText`. Installed-app creation/save and a real
 Codex append were verified against pack bytes and the refreshed editor. The
@@ -23,6 +23,13 @@ Capture/import/local full-text search are implemented and installed in build
 1119. [Receipt](file-vault-capture-import-search-2026-09-30.md) records exact
 behavior, tests, installed UI and web proof, and remaining capture limitations.
 Commits: `4e7d4c56`, `587b06eb`.
+
+The workspace now has nine real folders, 11 editable template packs and 11
+starter documents. Native home exposes folders and template cards; creation
+clones the complete file. Setup is resumable and preserves existing/deleted
+files. Installed UI, gallery creation, 22 distinct identities and byte-identical
+local-server convergence passed. See [starter receipt](file-vault-starters-2026-09-30.md).
+Commits: `c340d11c`, `8dbfbf6c`.
 
 ## Blockers and next work
 
