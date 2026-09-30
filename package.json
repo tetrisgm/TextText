@@ -82,33 +82,38 @@
     "drizzle-orm": "^0.45.2",
     "fast-xml-parser": "^5.11.1",
     "fflate": "^0.8.3",
-    "js-yaml": "^5.3.0",
-    "next": "16.3.4",
+    "js-yaml": "^5.4.2",
+    "next": "16.3.8",
     "next-auth": "^5.0.0-beta.32",
-    "nodemailer": "8.0.11",
+    "nodemailer": "10.0.13",
     "pg": "^8.22.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "sharp": "0.35.4",
-    "undici": "^6.28.0",
+    "undici": "^6.29.0",
     "y-protocols": "^1.0.7",
     "yjs": "^13.6.31",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^20",
-    "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.20.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
-    "eslint-config-next": "16.3.4",
+    "eslint-config-next": "16.3.8",
     "playwright": "^1.61.1",
     "tsx": "^4.22.5",
     "typescript": "^5",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
+  },
+  "overrides": {
+    "nodemailer": "$nodemailer",
+    "@esbuild-kit/core-utils": {
+      "esbuild": "^0.25.12"
+    }
   }
 }

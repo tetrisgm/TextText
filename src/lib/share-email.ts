@@ -45,8 +45,9 @@ export async function sendShareInviteEmail(opts: {
       `Sign in with this email address (${opts.to}) to get access.`,
     ].join("\n"),
   });
+  // Nodemailer reports accepted recipients as envelope address strings.
   if (!receipt.accepted?.some((address) =>
-    (typeof address === "string" ? address : address.address).toLowerCase() === opts.to.toLowerCase()
+    address.toLowerCase() === opts.to.toLowerCase()
   )) throw new Error("Email was not accepted");
   return "sent";
 }
