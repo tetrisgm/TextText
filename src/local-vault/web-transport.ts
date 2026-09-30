@@ -92,6 +92,11 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
       if (!response.ok) throw await failure(response);
       return response.json();
     }
+    if (method === "extractArticle") {
+      const response = await request("/api/vault/extract", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sourceURL: params.sourceURL }) });
+      if (!response.ok) throw await failure(response);
+      return response.json();
+    }
     if (method === "rename" || method === "delete") {
       if (!manifest) await listing();
       const path = String(params.path), hash = String(params.hash);

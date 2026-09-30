@@ -205,6 +205,28 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             } catch { reply(id, result: .failure(error)) }
             return
         }
+        if method == "extractArticle" {
+            guard let account = credentials(), let source = params["sourceURL"] as? String, source.utf8.count <= 4096 else {
+                reply(id, result: .failure(VaultBridgeError("Sign in to TextText to capture the article. Your link is saved on this Mac."))); return
+            }
+            Task { [weak self] in
+                do {
+                    _ = try LocalVaultSyncBinding(origin: account.origin, workspaceId: "capture")
+                    var request = URLRequest(url: account.origin.appendingPathComponent("api/vault/extract"), timeoutInterval: 25)
+                    request.httpMethod = "POST"
+                    request.setValue("Bearer \(account.token)", forHTTPHeaderField: "Authorization")
+                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    request.httpBody = try JSONSerialization.data(withJSONObject: ["sourceURL": source])
+                    let (data, response) = try await URLSession.shared.data(for: request)
+                    guard let http = response as? HTTPURLResponse, http.statusCode == 200, data.count <= 4_000_000,
+                          let result = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                        throw VaultBridgeError("This article could not be captured. Your link is saved; open the original or retry.")
+                    }
+                    self?.reply(id, result: .success(result))
+                } catch { self?.reply(id, result: .failure(error)) }
+            }
+            return
+        }
         if method == "signIn" { onSignIn?(); reply(id, result: .success([:])); return }
         if method == "connection" { reply(id, result: .success(connection?.status ?? ["connected": false, "available": credentials() != nil])); return }
         if method == "connect" {

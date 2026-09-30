@@ -17,6 +17,7 @@ import { NativeConnection } from "./NativeConnection";
 import { NativeAssistant } from "./NativeAssistant";
 import { FolderNavigation } from "./FolderNavigation";
 import { folderTree, folderPaths, folderForItem } from "./folders";
+import { ArticleCapture } from "./ArticleCapture";
 import { CaptureDialog } from "./CaptureDialog";
 import { VaultSearch } from "./VaultSearch";
 import "./style.css";
@@ -135,6 +136,12 @@ function VaultEditor({ initial, root, onChanged, onRemoved, registerFlush }: { o
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => { void flush(); }, 350);
   }, [assets, flush, remember]);
+  const readCurrent = useCallback(() => current.current, []);
+  const updateArticle = useCallback((transform: (document: DocumentSnapshot) => DocumentSnapshot) => {
+    if (conflict.current) throw new Error("Resolve the file conflict before capturing the article.");
+    const next = transform(current.current);
+    change(next); setExternal(next);
+  }, [change]);
   useEffect(() => { registerFlush(flush, () => file.current); }, [flush, registerFlush]);
   useEffect(() => {
     try {
@@ -232,7 +239,7 @@ function VaultEditor({ initial, root, onChanged, onRemoved, registerFlush }: { o
   };
   const display = useMemo(() => mapStrings(external, assets.forward), [external, assets]);
   const post = useMemo(() => asPost(display, initial.path), [display, initial.path]);
-  return <section className="vault-document"><header className="vault-document-path">{initial.path}</header>{notice && <div className="vault-notice" role="status">{notice}{hasConflict ? <button disabled={copying} onClick={() => void saveCopy()}>{copying ? "Saving copy…" : "Save my edits as a copy"}</button> : <button onClick={() => void flush()}>Retry save</button>}</div>}<UnifiedDocumentEditor transport="local" externalDocument={display} blog={localBlog} post={post} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} availableTemplates={templates} onSaveAsLook={saveLook} renderTemplateLibrary={(props) => <LocalTemplateLibrary currentTemplate={pendingLook.current?.template ?? readTemplate(file.current, current.current)} onClose={props.onClose} onApply={(template, sourceJSON) => {
+  return <section className="vault-document"><header className="vault-document-path">{initial.path}</header>{notice && <div className="vault-notice" role="status">{notice}{hasConflict ? <button disabled={copying} onClick={() => void saveCopy()}>{copying ? "Saving copy…" : "Save my edits as a copy"}</button> : <button onClick={() => void flush()}>Retry save</button>}</div>}<ArticleCapture document={external} readCurrent={readCurrent} update={updateArticle} beforeCapture={flush} /><UnifiedDocumentEditor transport="local" externalDocument={display} blog={localBlog} post={post} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} availableTemplates={templates} onSaveAsLook={saveLook} renderTemplateLibrary={(props) => <LocalTemplateLibrary currentTemplate={pendingLook.current?.template ?? readTemplate(file.current, current.current)} onClose={props.onClose} onApply={(template, sourceJSON) => {
     pendingLook.current = { template, sourceJSON };
     setTemplates((values) => [template, ...values.filter((value) => value.id !== template.id || value.version !== template.version)]);
     props.onApply(template); remember();

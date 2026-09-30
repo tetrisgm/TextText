@@ -35,6 +35,7 @@ try {
       result = files.get(request.params.path);
       if (!result) error = { message: "File not found", code: "not_found" };
     }
+    else if (request.method === "extractArticle") result = { sourceURL: request.params.sourceURL, markdown: "# Captured reading\n\nThe readable article is saved in this same file.", capturedAt: "2026-09-30T12:00:00Z" };
     else if (request.method === "agentStatus" || request.method === "agentConnect") result = { state: "ready" };
     else if (request.method === "agentSend") {
       result = {};
@@ -159,6 +160,13 @@ try {
   await page.screenshot({ path: "/tmp/texttext-vault-capture-dark.png" });
   await page.getByRole("button", { name: "Save to folder", exact: true }).click();
   await page.getByRole("dialog", { name: "Save a link or note" }).waitFor({ state: "hidden" });
+  await page.getByText("Article captured. Your original link is retained.", { exact: true }).waitFor();
+  await page.getByText("Your notes", { exact: true }).click();
+  await page.getByRole("textbox", { name: "Your article notes", exact: true }).fill("My annotation survives source refresh.");
+  await page.waitForFunction(() => !Object.keys(localStorage).some((key) => key.startsWith("texttext:vault-draft:")));
+  const captured = [...files.values()].find((file) => JSON.parse(file.documentJSON).content.fields.sourceUrl === "https://example.com/capture");
+  assert.equal(JSON.parse(captured.documentJSON).content.fields.commentary, "My annotation survives source refresh.");
+  assert.match(JSON.parse(captured.documentJSON).content.body, /Captured reading/);
   // A clean open file deleted by another replica must close, not offer Retry save.
   await page.getByRole("button", { name: "New note", exact: true }).click();
   await page.waitForFunction(() => !document.querySelector("[inert]"));
