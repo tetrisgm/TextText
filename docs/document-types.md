@@ -237,9 +237,12 @@ render through the validator, not a picture or generated HTML. Models can
 propose broader information structures, but receive no wider render authority.
 The saved blueprint stays beside its compiled definition, so `update_item_type`
 can create a new version of a workspace type that was authored this way.
-Handcrafted built-ins have no blueprint source today. Remixing one copies its
-render definition but does not invent a blueprint, so that remix also cannot
-be directly edited with `update_item_type`.
+Handcrafted built-ins have no blueprint source. An agent can copy one with
+`remix_item_type`, inspect the copied look's complete validated definition with
+`list_document_templates(template_id)`, and change the copy with
+`update_item_type`. Definition edits preserve the exact item and folder render
+tree, use the same schema-v1 primitives, and add an immutable version. They
+cannot bypass a saved blueprint that is unreadable or needs migration.
 
 ## Template gallery
 
@@ -264,8 +267,9 @@ strict validation. Export uses the versioned `texttext-look` JSON envelope.
 Designed looks include an optional `authoringSource` sibling, fetched for the
 exact exported version. Import validates both schemas and requires the source
 to compile to the same render definition before preserving it for editing.
-Definition-only files remain supported; their editable source cannot be
-recovered automatically. Source data never replaces the rendering authority.
+Definition-only files remain supported. An agent can edit their complete
+validated definition after import or Remix; no blueprint is synthesized.
+Source data never replaces the rendering authority.
 Remix creates an independent id. Restoring an older version copies it forward
 as a new version, so pinned documents and version history remain intact.
 Structured TextPack sync and GitHub backup carry the same matching source as
