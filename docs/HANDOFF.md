@@ -43,9 +43,13 @@ Article capture and personal notes now use the file-backed editor and guarded
 saves. Installed native capture of a real public article and refresh preserving
 notes passed. [Article receipt](file-vault-articles-2026-09-30.md) records scope,
 tests, runtime and limitations. Commits `f3340047`, `88a7df47`.
-Next: polished reader/highlights/source comparison, followed by image/GIF
-capture and viewer navigation. Automatic capture currently starts on opening
-a saved link; a durable unopened-link queue remains pending.
+Reader mode, rendered source comparison, and persistent quoted highlights are
+implemented and browser-verified in `a3cb0637`, `c0a80b59`, not yet installed.
+[Reader receipt](file-vault-reader-2026-09-30.md) records checks and corrects the
+older capture fixture's premature expanded-browser claim. Native capture proof
+remains valid. Next: image/GIF capture and viewer navigation, then package both
+slices and verify installed native highlights. Automatic capture still starts on
+opening a saved link; an unopened-link queue remains pending.
 
 ## Blockers and next work
 
@@ -62,6 +66,7 @@ a saved link; a durable unopened-link queue remains pending.
 - Shared access/full live collaboration, browser assistant, full capture/import,
   publication, and retirement of legacy content callers remain integration work.
   Do not claim the entire earlier product plan is complete.
+- Another worker updated `package.json`, `package-lock.json` and `src/lib/share-email.ts` during the reader slice; preserve them and coordinate before shared dependency changes.
 - Preserve unrelated dirty `attachments.ts`, `tabs.test.ts`, and
   `scripts/.probe-editor.ts`. All agents are finished. Use sequential heavy
   checks and two Swift jobs. No persistent jobs were installed.
