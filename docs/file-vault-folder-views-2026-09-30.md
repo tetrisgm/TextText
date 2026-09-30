@@ -57,6 +57,46 @@ readable Tags/Open columns and wrapped URLs. Screenshot:
 `/tmp/texttext-{build,install}-1131.log`. The installer health-report check was
 not used because this sandboxed WIP writes its report in a different location;
 actual installed UI and pack-byte checks supply the recorded acceptance evidence.
-Real provider folder refinement remains unverified. The live web
-server still runs the preceding image build, so its new folder metadata routes
-require a local rebuild before web acceptance. No public release or push.
+
+## Real provider and cross-app acceptance
+
+Build 1132 is installed. The real native agent proposed a two-column Reading
+collection, recovered from schema rejection using validation feedback, then
+refined heading size, spacing and alphabetical title sorting. Before Keep, all
+folder file hashes were unchanged. The pending proposal survived replacement
+and restart of the app; comparison, Keep and reopening the folder passed.
+Only `Reading/Folder view.textpack` changed. Its collection uses cards, two
+columns and ascending title sorting. The three member files stayed unchanged;
+the kept definition matches the local server byte-for-byte.
+
+The live web Gallery Contact sheet preview exposed a missing cover binding.
+`54cc8c89` projects the bounded thumbnail into the cover field and makes query
+completeness specific to referenced fields. Unrelated omitted annotations no
+longer reject a complete title sort. Successful corrected proposals clear the
+prior validation notice. Unit, browser, six Swift store tests, full TypeScript
+and scoped ESLint passed after these fixes.
+
+Web preview/Keep now shows the real Gallery image. Its new definition synced
+byte-for-byte to native. Installed 1132 reopened that contact sheet with the
+image visible; the existing Gallery member remained unchanged. The live local
+server uses `.texttext/vault-folder-final-build`, deployment identity
+`texttext-vault-folders-final-20260930`.
+
+Evidence:
+
+- Native agent design: `/tmp/texttext-native-folder-agent-1132.png`.
+- Web contact sheet: `/tmp/texttext-web-contact-sheet.png`.
+- Synced native contact sheet: `/tmp/texttext-native-contact-sheet-1132.png`.
+- Before hashes: `/tmp/texttext-folder-provider-before.json` and
+  `/tmp/texttext-gallery-folder-before.json`.
+- Browser regressions: `/tmp/texttext-folder-feedback-browser.log`.
+- Query/cover tests: `/tmp/texttext-folder-cover-tests.log`.
+- Swift tests: `/tmp/folder-metadata-fields-swift.log`.
+- TypeScript/lint: `/tmp/texttext-folder-fixes-{tsc,eslint}.log`.
+- Build/install: `/tmp/texttext-{build,install}-1132.log`.
+- Web build: `/tmp/texttext-vault-folders-final-build.log`.
+
+The sandboxed installer health-report gate was not used; actual installed UI
+and file-byte checks supply the acceptance evidence. Overall visual polish,
+large-collection indexing and sustained performance acceptance remain open.
+No public release or push.

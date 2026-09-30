@@ -9,7 +9,7 @@ prerequisite. See [architecture](design/texttext-file-vault-migration.md) and
 
 Implemented on `main` in `76f373e1`, `f28500cd`, and `3b4549d6`: native folder
 store/CLI, complete-pack filesystem server and durable sync, bundled shared
-editor, file templates, and native assistant file tools. Local WIP **0.202 (1131)**
+editor, file templates, and native assistant file tools. Local WIP **0.202 (1132)**
 is installed at `/Applications/TextText.app`. Its selected workspace is
 `/Users/shokunin/Documents/TextText`. Installed-app creation/save and a real
 Codex append were verified against pack bytes and the refreshed editor. The
@@ -90,19 +90,21 @@ presets, preview/keep/cancel, native assistant folder previews, shared collectio
 rendering, and bounded metadata-only transport. Model, server, Swift and browser
 checks pass, including preserving every member and rejecting a concurrent design
 change. See [folder view receipt](file-vault-folder-views-2026-09-30.md).
-Installed 1131 now shows a real Reading reference-index definition with readable
-source URLs/actions. Native preview/Keep/reopen passed; member bytes stayed
-unchanged and the new pack matches the local server. Screenshot:
-`/tmp/texttext-native-folder-reference-1131.png`. Next: real provider folder
-refinement, then rebuild the local web server for metadata routes. Real provider
-folder refinement, large collection indexing/performance, full product
-collaboration, publication and measured memory remain open.
+Installed 1132 completes the real native folder-agent preview/refine/restart
+recovery/compare/Keep/reopen journey. Only Reading's design pack changed; all
+member bytes stayed unchanged and the definition matches the local server.
+Live schema feedback corrected the first invalid proposal. Binding-specific
+query completeness and bounded cover projection fixes are in `54cc8c89`.
+Web Gallery Contact sheet preview/Keep also passed, synced byte-for-byte to
+native, and reopened with its image visible. See the folder receipt for logs
+and screenshots. The remaining work includes full collaboration, publication,
+recovery, large-collection indexing, visual polish and measured memory.
 
 ## Blockers and next work
 
 - Owner approved the local server switch. The replacement build now runs on
   localhost:3000 with `TEXTTEXT_VAULT_ROOT=.texttext/vault-server` (absolute
-  runtime path), output `.texttext/vault-images-build`, build identity `texttext-vault-images-20260930`. No persistent
+  runtime path), output `.texttext/vault-folder-final-build`, build identity `texttext-vault-folders-final-20260930` (exec session 67354). No persistent
   service job was installed. Inspect the listener before future restarts.
 - Installed app connected with its existing account. Native create/upload,
   browser edit/download, server outage with local save and automatic recovery,
