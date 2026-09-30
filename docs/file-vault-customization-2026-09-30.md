@@ -1,6 +1,6 @@
 # File-backed design preview
 
-Build 0.202 (1128) is installed. Contextual Customize opens the existing native
+Build 0.202 (1129) is installed. Contextual Customize opens the existing native
 assistant with the current file as a fixed target. Customization turns cannot
 write or create files: they can read/search and propose a template for that target.
 Proposals validate against the full declarative schema before rendering real
@@ -28,7 +28,7 @@ The saved design is read back. Blob URLs are revoked when previews unmount.
 - Build/install logs: `/tmp/texttext-build-1128.log`, `/tmp/texttext-install-1128.log`.
   The bundled UI matched a fresh build from current sources byte-for-byte.
 
-## Live check in progress
+## Live provider verification
 
 A disposable Bookmark clone was created in Reading using the installed picker:
 `Reading/How Figma’s multiplayer technology works.textpack`. Existing source
@@ -50,10 +50,21 @@ now proves invalid proposals send failure feedback without replacing a valid
 preview or changing the file. Swift, TypeScript and lint checks passed.
 Logs: `/tmp/texttext-template-feedback-{browser,swift,tsc,eslint}.log`.
 
-The invalid installed preview was cancelled. The disposable clone remains
-unchanged from its baseline. Build 1129 with this correction is in progress
-(`/tmp/texttext-build-1129.log`). Real provider refinement, Keep, reopening and
-cleanup remain next; do not claim that journey complete yet.
+The invalid 1128 preview was cancelled. Build 1129 installed successfully
+(`/tmp/texttext-build-1129.log`, `/tmp/texttext-install-1129.log`). The real
+provider then generated a two-column reader and refined it to use a smaller
+title and more spacing. Preview and refinement left disk bytes unchanged.
+Compare original, Show proposed design, Keep, switching to another document,
+and reopening the saved reader passed in the installed app.
+
+A subsequent ZIP comparison confirmed only document.json and template.json
+changed. Structured content and exact text.md bytes stayed unchanged; no entries
+were added or removed. The saved pack matches the local server byte-for-byte.
+Saved evidence: `/tmp/texttext-customization-kept.textpack`, SHA-256
+`759c0dbe8bf263ab3f38d3615f40c746c099b252d468b1289ab422a1b2a4891b`.
+The disposable clone remains in Reading for inspection; cleanup is pending.
+The actual corrected provider journey used valid proposals. Invalid-proposal
+feedback is covered by the browser fixture, not a live provider repair claim.
 
 Folder presentation scopes, Command-K Customize, full prompt history recovery,
 and the rest of the product brief remain open. No public release or push.

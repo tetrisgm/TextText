@@ -9,7 +9,7 @@ prerequisite. See [architecture](design/texttext-file-vault-migration.md) and
 
 Implemented on `main` in `76f373e1`, `f28500cd`, and `3b4549d6`: native folder
 store/CLI, complete-pack filesystem server and durable sync, bundled shared
-editor, file templates, and native assistant file tools. Local WIP **0.202 (1128)**
+editor, file templates, and native assistant file tools. Local WIP **0.202 (1129)**
 is installed at `/Applications/TextText.app`. Its selected workspace is
 `/Users/shokunin/Documents/TextText`. Installed-app creation/save and a real
 Codex append were verified against pack bytes and the refreshed editor. The
@@ -48,8 +48,7 @@ implemented and browser-verified in `a3cb0637`, `c0a80b59`, now installed in 112
 native pointer selection, painting, annotation and reopen persistence passed.
 [Reader receipt](file-vault-reader-2026-09-30.md) records checks and corrects the
 older capture fixture's premature expanded-browser claim. Native capture proof
-remains valid. Next: image/GIF capture and viewer navigation, then package both
-slices and verify installed native highlights. Automatic capture still starts on
+remains valid. Image capture and native highlights are now verified below. Automatic capture still starts on
 opening a saved link; an unopened-link queue remains pending.
 
 Image import creates gallery packs with original image/GIF bytes and bounded
@@ -79,15 +78,20 @@ the real local server. The imported pack converged byte-for-byte with native;
 test deletion reached both replicas with history retained. See the
 [image receipt](file-vault-images-2026-09-30.md). Native reader highlights also passed selection, painting, annotation, reopen
 and byte-identical server convergence; the test annotation was removed.
-Build 1128 adds presentation-only native proposals and a validated
-preview/compare/refine/keep/cancel UI. Unit, Swift and browser fixture tests pass.
-The real provider generated a valid research-reader preview, but refinement
-exposed missing validation feedback. The new handshake returns schema failures
-to the agent and preserves the last valid preview. Build 1129 is running
-(exec session 94584, `/tmp/texttext-build-1129.log`); 1128 remains installed.
-See [customization checkpoint](file-vault-customization-2026-09-30.md).
-Next: finish live provider verification, then file-backed folder presentations. Full product acceptance, collaboration,
-customization, publication and measured memory remain open.
+Build 1129 includes validated native template proposals with schema feedback to
+the agent. Real provider preview/refine/compare/Keep/reopen passed. Exact Markdown
+and structured content were preserved, and the kept pack matches the server.
+See [customization receipt](file-vault-customization-2026-09-30.md). Its disposable
+Reading clone remains for inspection and should be deleted recoverably after
+capturing the final screenshot.
+
+Next: integrate file-backed folder presentations. The pure folder-view model in
+`src/local-vault/folder-view.ts` recognizes explicitly marked TextPacks, excludes
+only their definition from immediate membership, rejects collisions and stages
+revision-checked presentation edits without rewriting Markdown or retaining
+stale authoring source. Nine focused model/proposal tests pass. UI, bounded
+collection metadata, native/web transport enforcement and acceptance remain.
+Full product collaboration, publication and measured memory remain open.
 
 ## Blockers and next work
 
