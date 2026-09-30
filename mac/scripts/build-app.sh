@@ -121,6 +121,8 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 node "$MAC/../scripts/build-local-vault.mjs"
 cp -R "$MAC/build/LocalVault" "$APP/Contents/Resources/LocalVault"
+# Editable starter templates retain their complete TextPack assets and source.
+cp -R "$MAC/../presets/builtin" "$APP/Contents/Resources/StarterTemplates"
 # The product is TextTextApp; the bundle binary keeps the CFBundleExecutable
 # name TextText.
 cp "$BIN/TextTextApp" "$APP/Contents/MacOS/TextText"
