@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), read: vi.fn(), write: vi.fn(), move: vi.fn(), remove: vi.fn() }));
+const mocks = vi.hoisted(() => ({ auth: vi.fn(), read: vi.fn(), preview: vi.fn(), write: vi.fn(), move: vi.fn(), remove: vi.fn() }));
 vi.mock("@/app/api/vault/auth", () => ({ authorizeVault: mocks.auth }));
 vi.mock("@/lib/store", () => ({
   readVaultTextpack: mocks.read,
+  readVaultPreview: mocks.preview,
   writeVaultTextpack: mocks.write,
   moveVaultTextpack: mocks.move,
   deleteVaultTextpack: mocks.remove,
@@ -34,6 +35,18 @@ describe("owner vault API", () => {
     })).status).toBe(404);
     expect(mocks.read).not.toHaveBeenCalled();
     expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it("authorizes preview reads before loading any preview bytes", async () => {
+    mocks.auth.mockResolvedValueOnce(new Response(null, { status: 401 }));
+    const request = new Request("https://texttext.test?metadata=preview");
+    expect((await GET(request, context())).status).toBe(401);
+    expect(mocks.preview).not.toHaveBeenCalled();
+    mocks.preview.mockResolvedValue({ title: "Note", excerpt: "Preview" });
+    const response = await GET(request, context());
+    expect(await response.json()).toEqual({ title: "Note", excerpt: "Preview" });
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(mocks.read).not.toHaveBeenCalled();
   });
 
   it("returns complete binary bytes with revision and encoded path", async () => {

@@ -9,7 +9,7 @@ prerequisite. See [architecture](design/texttext-file-vault-migration.md) and
 
 Implemented on `main` in `76f373e1`, `f28500cd`, and `3b4549d6`: native folder
 store/CLI, complete-pack filesystem server and durable sync, bundled shared
-editor, file templates, and native assistant file tools. Local WIP **0.202 (1124)**
+editor, file templates, and native assistant file tools. Local WIP **0.202 (1126)**
 is installed at `/Applications/TextText.app`. Its selected workspace is
 `/Users/shokunin/Documents/TextText`. Installed-app creation/save and a real
 Codex append were verified against pack bytes and the refreshed editor. The
@@ -58,8 +58,17 @@ gallery -> original viewer -> zoom passed; the generated fixture was deleted
 recoverably. Native checks caught and fixed a missing WKUIDelegate picker and
 invalid remote-asset mapping. Browser picker/drop/paste tests, nine unit tests
 and TypeScript passed. [Image checkpoint](file-vault-images-2026-09-30.md).
-Next: real web transport roundtrip, native reader highlight verification,
-meaningful mixed-folder thumbnails and multi-image navigation. Full product
+Folder previews and an expandable, lazily loaded starter catalog are installed
+in 1126. Cards use current text.md, bounded embedded-image thumbnails, a serial
+request queue and 24-item pages. Fifteen checks, browser pagination, native build
+and installed text previews passed. [Preview receipt](file-vault-previews-2026-09-30.md).
+
+Installed review found the gallery starter's /covers references have no embedded
+assets, contradicting earlier self-contained claims. Active agent
+`native_previews` is fixing repository presets/generator only. Next: finish that
+fix, repair provably untouched installed starters with preserved identities,
+verify actual native image thumbnails, then real web transport and native reader
+highlights. General github/textpack.ts asset loss is also outstanding. Full product
 acceptance, collaboration/customization/publication and memory measurement
 remain open.
 
@@ -80,7 +89,7 @@ remain open.
   Do not claim the entire earlier product plan is complete.
 - The concurrent dependency worker committed upgrades in `a5bc87cb`; preserve that commit. No dependency changes were made for image capture.
 - Preserve unrelated dirty `attachments.ts`, `tabs.test.ts`, and
-  `scripts/.probe-editor.ts`. All agents are finished. Use sequential heavy
+  `scripts/.probe-editor.ts`. Agent `native_previews` is repairing starter assets. Use sequential heavy
   checks and two Swift jobs. No persistent jobs were installed.
 
 ## References

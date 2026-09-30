@@ -84,11 +84,11 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
     if (destroyed) throw new Error("This workspace has closed.");
     if (method === "list" || method === "open") return listing();
     if (method === "read") return read(String(params.path));
-    if (method === "template") {
+    if (method === "template" || method === "preview") {
       if (!manifest) await listing();
       const item = manifest!.items.find((entry) => entry.relativePath === params.path);
       if (!item) throw new VaultError("The template file was not found.", "not_found");
-      const response = await request(`${base}/${encodeURIComponent(item.itemId)}?metadata=template`, { credentials: "same-origin", cache: "no-store" });
+      const response = await request(`${base}/${encodeURIComponent(item.itemId)}?metadata=${method}`, { credentials: "same-origin", cache: "no-store" });
       if (!response.ok) throw await failure(response);
       return response.json();
     }

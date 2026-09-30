@@ -65,6 +65,13 @@ export function readVaultTextpack(input: Omit<VaultLocation, "onReceipt"> & { it
   return readDirectoryTextpack({ ...input, onReceipt: recordVaultReceipt });
 }
 
+export async function readVaultPreview(input: Omit<VaultLocation, "onReceipt"> & { itemId: string }) {
+  const item = await readVaultTextpack(input);
+  if (!item) return null;
+  const { previewTextpack } = await import("./vault/pack-preview.server");
+  return previewTextpack(item.bytes);
+}
+
 export function readVaultTemplate(input: Omit<VaultLocation, "onReceipt"> & { itemId: string }) {
   if (!db) throw new Error(NO_DATABASE);
   return readDirectoryTemplate({ ...input, onReceipt: recordVaultReceipt });

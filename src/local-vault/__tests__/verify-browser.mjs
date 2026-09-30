@@ -46,6 +46,15 @@ try {
         assets: Object.entries(entries).filter(([name]) => name.startsWith(prefix + "assets/")).map(([name, data]) => ({ filename: name.slice((prefix + "assets/").length), contentType: name.endsWith(".png") ? "image/png" : "image/gif", data: Buffer.from(data).toString("base64") })) };
       files.set(result.path, result);
     }
+    else if (request.method === "preview") {
+      const file = files.get(request.params.path);
+      if (!file) error = { message: "File not found" };
+      else {
+        const document = JSON.parse(file.documentJSON);
+        const poster = file.assets?.find((asset) => asset.filename === "preview.png");
+        result = { title: document.content.title, excerpt: document.content.body.slice(0, 400), ...(poster ? { image: { data: poster.data, contentType: "image/png" } } : {}) };
+      }
+    }
     else if (request.method === "extractArticle") result = { sourceURL: request.params.sourceURL, markdown: "# Captured reading\n\nThe readable article is saved in this same file.", capturedAt: "2026-09-30T12:00:00Z" };
     else if (request.method === "agentStatus" || request.method === "agentConnect") result = { state: "ready" };
     else if (request.method === "agentSend") {
@@ -90,11 +99,13 @@ try {
     window.webkit = { messageHandlers: { localVault: { postMessage: (request) => { void window.nativeVaultRequest(request); } } } };
   });
   await page.goto(pathToFileURL(path.resolve("mac/build/LocalVault/index.html")).href);
+  await page.getByRole("button", { name: "Start with a template", exact: true }).click();
   await page.getByRole("region", { name: "Ready-to-use templates" }).getByRole("button", { name: "Agent made look", exact: true }).waitFor();
   await page.getByRole("region", { name: "Folders" }).getByRole("button", { name: /Empty/ }).click();
   await page.getByRole("heading", { name: "Empty", exact: true }).waitFor();
   await page.getByRole("button", { name: "All files", exact: true }).click();
   await page.getByRole("heading", { name: "Your workspace", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Hide templates", exact: true }).click();
   await page.screenshot({ path: "/tmp/texttext-starter-overview-light.png" });
   await page.emulateMedia({ colorScheme: "dark" });
   await page.screenshot({ path: "/tmp/texttext-starter-overview-dark.png" });
@@ -243,6 +254,7 @@ try {
   await page.getByLabel("Choose images", { exact: true }).setInputFiles({ name: "Original.gif", mimeType: "image/gif", buffer: gif });
   await page.getByRole("status").filter({ hasText: "Imported 1 image." }).waitFor();
   assert.equal(importedPacks.length, 1);
+  await page.locator('.vault-file-preview').first().waitFor();
   assert.deepEqual(Buffer.from(importedPacks[0]["Document.textbundle/assets/original.gif"]), gif);
   const visual = [...files.values()].find((file) => file.path.startsWith("Visuals/Original-"));
   assert.ok(visual);
@@ -270,6 +282,16 @@ try {
   assert.equal(importedPacks.length, 3);
   assert.deepEqual(failures, []);
   assert.deepEqual(await page.evaluate(() => window.__networkAttempts), []);
+  await page.getByRole("button", { name: "All files", exact: true }).click();
+  for (let index = 0; index < 30; index++) files.set(`Large/Note ${index}.textpack`, { ...initial, path: `Large/Note ${index}.textpack` });
+  await page.evaluate(() => window.dispatchEvent(new Event("texttext:vault-changed")));
+  await page.getByRole("navigation", { name: "File pages" }).waitFor();
+  assert.equal(await page.locator(".vault-document-grid > button").count(), 24);
+  await page.getByRole("navigation", { name: "File pages" }).getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByText("Page 2 of 2", { exact: true }).waitFor();
+  assert.ok(await page.locator(".vault-document-grid > button").count() <= 24);
+  assert.deepEqual(failures, []);
+  console.log("Bounded folder previews and pagination passed.");
   console.log("Image picker, folder drop/paste and embedded GIF still preview passed.");
   console.log("Offline vault UI passed: file save, raw agent refresh, conflict copy, zero HTTP/fetch calls.");
 } finally { await browser.close(); }

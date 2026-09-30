@@ -1,9 +1,11 @@
 import AppKit
+import ImageIO
 import WebKit
 import UniformTypeIdentifiers
 import TextTextCLICore
 import TextTextFileProviderKit
 import TextTextWorkspaceCore
+import TextTextShareCore
 
 /// The existing document editor, bundled locally, talking only to the folder
 /// the person selected. Hosted pages cannot invoke this filesystem bridge.
@@ -277,6 +279,10 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     return ["items": page.items.map { ["path": $0.id, "title": $0.title, "snippet": $0.snippet] },
                         "truncated": page.truncated, "skippedCount": page.skippedCount]
                 case "read": return try Self.payload(store.read(path: Self.string(params, "path")))
+                case "preview":
+                    return try autoreleasepool {
+                        try Self.preview(store.read(path: Self.string(params, "path")))
+                    }
                 case "importPack":
                     let maximumSize = 32 * 1024 * 1024
                     guard let encoded = params["data"] as? String,
@@ -373,6 +379,69 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             "assets": contents.assets.map { ["filename": $0.filename,
                 "contentType": $0.contentType ?? "application/octet-stream", "data": $0.data.base64EncodedString(),
                 "remoteURL": $0.remoteURL ?? "assets/\($0.filename)"] }]
+    }
+    private static func preview(_ document: LocalVaultDocumentStore.Document) throws -> [String: Any] {
+        let contents = document.contents
+        let snapshot = contents.documentJSON.flatMap {
+            (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any]
+        }
+        let content = (snapshot?["schemaVersion"] as? Int) == 1
+            ? snapshot?["content"] as? [String: Any] : nil
+        // text.md can be edited outside the app without updating document.json.
+        let markdown = TextTextMarkdownPreviewRenderer.parse(contents.markdown)
+        func bounded(_ value: String, to count: Int) -> String {
+            let text = value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+            // A single grapheme can contain arbitrarily many combining scalars.
+            let byteBounded = String(decoding: text.utf8.prefix(8_192), as: UTF8.self)
+            return String(byteBounded.prefix(count))
+        }
+        let title = markdown.frontMatter["title"] ?? content?["title"] as? String
+            ?? URL(fileURLWithPath: document.path).deletingPathExtension().lastPathComponent
+        var result: [String: Any] = ["title": bounded(title, to: 240),
+                                   "excerpt": bounded(markdown.body, to: 400)]
+        if let fields = content?["fields"] as? [String: Any],
+           let raw = fields["sourceUrl"] as? String, raw.utf8.count <= 4096,
+           let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+           url.host != nil, url.user == nil, url.password == nil {
+            result["sourceURL"] = raw
+        }
+        if let assets = content?["assets"] as? [[String: Any]],
+           let first = assets.first(where: { ($0["kind"] as? String) == "image" }) {
+            func embedded(_ reference: String?) -> TextTextTextBundleAsset? {
+                guard let reference else { return nil }
+                return contents.assets.first {
+                    reference == "assets/\($0.filename)" || reference == $0.remoteURL
+                }
+            }
+            // Resolve only bytes carried inside the package, including a poster
+            // whose canonical URL happens to be remote. Never fetch that URL.
+            let asset = embedded(first["poster"] as? String) ?? embedded(first["src"] as? String)
+            if let asset, let image = previewImage(asset.data) { result["image"] = image }
+        }
+        if try JSONSerialization.data(withJSONObject: result).count > 512 * 1024 {
+            result.removeValue(forKey: "image")
+        }
+        return result
+    }
+    private static func previewImage(_ data: Data) -> [String: String]? {
+        guard let source = CGImageSourceCreateWithData(data as CFData,
+                [kCGImageSourceShouldCache: false] as CFDictionary),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0, width <= 16_000_000 / height,
+              let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: 480,
+                kCGImageSourceShouldCacheImmediately: true,
+              ] as CFDictionary) else { return nil }
+        let encoded = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(encoded, UTType.jpeg.identifier as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, thumbnail,
+            [kCGImageDestinationLossyCompressionQuality: 0.75] as CFDictionary)
+        guard CGImageDestinationFinalize(destination), encoded.length <= 300 * 1024 else { return nil }
+        return ["data": (encoded as Data).base64EncodedString(), "contentType": "image/jpeg"]
     }
     private func reply(_ id: String, result: Result<[String: Any], Error>, current: [String: Any]? = nil) {
         switch result {

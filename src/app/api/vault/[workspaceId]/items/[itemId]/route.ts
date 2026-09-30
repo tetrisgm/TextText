@@ -1,5 +1,5 @@
 import { authorizeVault } from "@/app/api/vault/auth";
-import { readVaultTextpack, readVaultTemplate, writeVaultTextpack, moveVaultTextpack, deleteVaultTextpack, VaultBusyError } from "@/lib/store";
+import { readVaultTextpack, readVaultTemplate, readVaultPreview, writeVaultTextpack, moveVaultTextpack, deleteVaultTextpack, VaultBusyError } from "@/lib/store";
 import { readBoundedJson } from "@/lib/http/bounded-json";
 
 export const runtime = "nodejs";
@@ -33,6 +33,11 @@ export async function GET(request: Request, context: Context) {
   const authorized = await authorize(request, context);
   if (authorized instanceof Response) return authorized;
   try {
+    if (new URL(request.url).searchParams.get("metadata") === "preview") {
+      const preview = await readVaultPreview(authorized);
+      return preview ? Response.json(preview, { headers: noCache })
+        : Response.json({ error: "Item not found" }, { status: 404, headers: noCache });
+    }
     if (new URL(request.url).searchParams.get("metadata") === "template") {
       const template = await readVaultTemplate(authorized);
       return template ? Response.json(template, { headers: noCache })
