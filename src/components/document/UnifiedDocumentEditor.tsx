@@ -110,6 +110,13 @@ type RelativeSelectionState = {
 };
 
 type UnifiedDocumentEditorProps = {
+  /** Local vaults persist through their native file bridge. */
+  transport?: "cloud" | "local";
+  externalDocument?: DocumentSnapshot;
+  renderTemplateLibrary?: (props: {
+    onApply: (template: TemplateDefinition) => void;
+    onClose: () => void;
+  }) => ReactNode;
   /** Focus the body when opening a newly created note, including after its optimistic ID is saved. */
   focusNewNote?: boolean;
   canReviewAgentChanges?: boolean;
@@ -466,6 +473,9 @@ function CollaborativeTextarea({
 
 export function UnifiedDocumentEditor({
   active = true,
+  transport = "cloud",
+  externalDocument,
+  renderTemplateLibrary,
   focusNewNote = false,
   blog,
   post,
@@ -492,12 +502,13 @@ export function UnifiedDocumentEditor({
     [post],
   );
   const initialDocumentRef = useRef(initialDocument);
+  const initialRevisionRef = useRef(post.revision ?? 0);
   const [preReadyBaseline] = useState(() => capturePreReadyDocumentBaseline(
     initialDocument, `${collab.postId}:${post.revision ?? 0}`,
   ));
   const [document, setDocument] = useState(initialDocument);
   const documentRef = useRef(document);
-  const networkEnabled = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+  const networkEnabled = transport === "cloud" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     collab.postId,
   );
   const localOrigin = useRef(Symbol("unified-document-editor"));
@@ -763,6 +774,28 @@ export function UnifiedDocumentEditor({
     },
     [onDocumentChange],
   );
+  const localPublishRef = useRef(publishDocument);
+  useEffect(() => { localPublishRef.current = publishDocument; }, [publishDocument]);
+  useEffect(() => {
+    if (transport !== "local") return;
+    applyDocumentSnapshot(doc, initialDocumentRef.current, localOrigin.current);
+    readyRef.current = true;
+    // The local Yjs document has now been seeded; expose that external readiness.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setReady(true);
+    const publish = () => localPublishRef.current(documentSnapshotFromYDoc(doc));
+    doc.on("update", publish);
+    return () => { doc.off("update", publish); awareness.destroy(); doc.destroy(); };
+  }, [awareness, doc, transport]);
+
+  useEffect(() => {
+    if (transport !== "local" || !externalDocument) return;
+    // A disk change has already passed the vault's three-way reconciliation.
+    // Keep this Y.Doc and its undo history alive while replacing its snapshot.
+    preReadyLocalRef.current = null;
+    applyDocumentSnapshot(doc, externalDocument, localOrigin.current);
+  }, [doc, transport, externalDocument]);
+
   // Mount included: publishDocument only fires on CHANGES, so an untouched
   // document would never register its body and the outline would be empty on
   // exactly the documents most worth outlining.
@@ -941,6 +974,7 @@ export function UnifiedDocumentEditor({
       doc,
       networkEnabled,
       onMaterialized,
+      preserveRecovery,
     ],
   );
 
@@ -1089,7 +1123,7 @@ export function UnifiedDocumentEditor({
         applyDocumentBaseline(
           doc,
           initialDocumentRef.current,
-          `${collab.postId}:${post.revision ?? 0}`,
+          `${collab.postId}:${initialRevisionRef.current}`,
           "provider-baseline",
         );
       }
@@ -1534,7 +1568,18 @@ export function UnifiedDocumentEditor({
   return (
     <section className="tt-unified-editor" role="main" aria-label="Edit item" data-ai-item-id={collab.postId} onKeyDown={handleKeyboard}>
       {choosingTemplate && availableTemplates && availableTemplates.length > 0 && (
-        <WorkspaceTypeLibrary
+        // eslint-disable-next-line react-hooks/refs -- The injected library receives event handlers; it does not invoke them during render.
+        renderTemplateLibrary ? renderTemplateLibrary({
+          // These are event callbacks; the library must not invoke them while rendering.
+          onClose: () => setChoosingTemplate(false),
+          onApply: (selected) => {
+            updateDocumentSnapshot({ ...currentLocalDocument(), presentation: {
+              ...currentLocalDocument().presentation,
+              template: { id: selected.id, version: selected.version },
+            } });
+            setChoosingTemplate(false);
+          },
+        }) : <WorkspaceTypeLibrary
           handle={blog.handle}
           document={document}
           targetItemCount={1}
@@ -1555,8 +1600,8 @@ export function UnifiedDocumentEditor({
         <div className="post-top-action-bar applecms is-edit" role="group" aria-label="Document controls">
           <div className="post-action-toolbar ac-chrome">
             {leadingControls}
-        <ParticipantsRow key={collab.postId} postId={networkEnabled ? collab.postId : null}
-          handle={blog.handle} canReviewChanges={canReviewAgentChanges} />
+        {networkEnabled && <ParticipantsRow key={collab.postId} postId={networkEnabled ? collab.postId : null}
+          handle={blog.handle} canReviewChanges={canReviewAgentChanges} />}
           {(onChooseTemplate || (availableTemplates && availableTemplates.length > 0)) && (
             <button
               type="button"
@@ -1653,7 +1698,7 @@ export function UnifiedDocumentEditor({
                   Add a description
                 </button>
               )}
-              {post.id && blog.handle && (
+              {networkEnabled && post.id && blog.handle && (
                 <button type="button" onClick={() => setHistoryOpen(true)}>
                   Earlier versions
                 </button>
@@ -1671,8 +1716,8 @@ export function UnifiedDocumentEditor({
           </details>
           )}
           <button type="button" className="ac-btn ac-btn-gray" onClick={() => void stopEditing()}>
-            <span className="tt-stop-edit-label-full">Stop editing</span>
-            <span className="tt-stop-edit-label-compact">Done</span>
+            <span className="tt-stop-edit-label-full">{transport === "local" ? "Save" : "Stop editing"}</span>
+            <span className="tt-stop-edit-label-compact">{transport === "local" ? "Save" : "Done"}</span>
           </button>
             <div className={`tt-save-state is-${saveState}`}>
               {saveStateLabel}
@@ -1760,7 +1805,7 @@ export function UnifiedDocumentEditor({
           nothing in the one place its author was looking. */}
       <DocumentRenderer
         document={document}
-        documentId={post.id ?? post.slug}
+        documentId={networkEnabled ? (post.id ?? post.slug) : undefined}
         template={activeTemplate}
         metadata={{ date: editorDate }}
         slots={slots}

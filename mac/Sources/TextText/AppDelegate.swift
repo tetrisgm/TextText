@@ -44,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private var statusItem: NSStatusItem!
     private var statusWindow: StatusWindowController?
     private var primaryWebWindow: WebAppWindowController?
+    private var localVaultWindow: LocalVaultWindowController?
     private var additionalWebWindows: [WebAppWindowController] = []
     private var webWindow: WebAppWindowController? {
         get {
@@ -214,7 +215,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                 self?.fileProviderStatusMonitor.snapshot.severity == .working })
         }
         NSApp.mainMenu = buildMainMenu()
-        nativeMenu.install(on: NSApp.mainMenu!)
+        if localVaultWindow == nil { nativeMenu.install(on: NSApp.mainMenu!) }
         nativeMenu.requestState = { [weak self] in self?.webWindow?.requestNativeMenuState() }
         nativeMenu.invoke = { [weak self] id in self?.webWindow?.runNativeMenuCommand(id) }
         nativeMenu.isWorkspaceKey = { [weak self] in self?.webWindow?.window?.isKeyWindow == true }
@@ -260,13 +261,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         }
 
         setupStatusItem()
-        configureQuickCapture()
+        if localVaultWindow == nil { configureQuickCapture() }
         // Warm account.json for a returning user so the File Provider domain can
         // register on launch. Best effort and file-free.
-        seedCachedWorkspaceIfNeeded()
-        configureSpotlightIndexing()
-        configureShareInbox()
-        syncFileProviderDomain()
+        if localVaultWindow == nil {
+            seedCachedWorkspaceIfNeeded()
+            configureSpotlightIndexing()
+            configureShareInbox()
+            syncFileProviderDomain()
+        }
 
         // Near-instant remote sync: a change on the web (edit, delete, new
         // bookmark) triggers a pass within seconds. The capture agent rides the
@@ -281,8 +284,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             // refreshes the account metadata shared with the extension.
             self.refreshWorkspaceMetadataAfterRemoteChange()
         }
-        changeListener.start()
-        captureAgent.start()
+        if localVaultWindow == nil {
+            changeListener.start()
+            captureAgent.start()
+        }
 
         fileProviderStatusMonitor.onChange = { [weak self] snapshot in
             guard let self else { return }
@@ -321,7 +326,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                     self.registeredFileProviderDomain?.userEnabled
                 }
             })
-        healthReporter?.start()
+        if localVaultWindow == nil { healthReporter?.start() }
 
         let workspaceCenter = NSWorkspace.shared.notificationCenter
         workspaceCenter.addObserver(
@@ -344,7 +349,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         // routes TextText items to the managed opener and everything else to
         // external import.
         let urlDrops = fileURLs.filter { !$0.isFileURL && NativeItemDrop.accepts($0) }
-        if !urlDrops.isEmpty { importDroppedURLs(urlDrops) }
+        if let localVaultWindow { for url in urlDrops { localVaultWindow.captureURL(url) } }
+        else if !urlDrops.isEmpty { importDroppedURLs(urlDrops) }
         for url in fileURLs where url.isFileURL || !NativeItemDrop.accepts(url) {
             guard OpenFileHandler.isSupported(url) else {
                 appendActivity("Could not open \(url.lastPathComponent): unsupported file type")
@@ -355,6 +361,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     }
 
     private func openExternalOrFileProviderItem(_ url: URL) {
+        if let localVaultWindow {
+            if localVaultWindow.openFile(url) { return }
+            localVaultWindow.chooseFolder(directory: url.deletingLastPathComponent()) { [weak localVaultWindow] result in
+                if case .success = result { _ = localVaultWindow?.openFile(url) }
+            }
+            return
+        }
         NSFileProviderManager.getIdentifierForUserVisibleFile(at: url) {
             [weak self] identifier, domainIdentifier, _ in
             guard let self else { return }
@@ -628,6 +641,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     /// web view, replaces local state, or redraws Finder before a sync pass has
     /// established that mirrored content actually changed.
     private func recoverBackgroundSync() {
+        guard localVaultWindow == nil else { return }
         if !Thread.isMainThread {
             DispatchQueue.main.async { [weak self] in self?.recoverBackgroundSync() }
             return
@@ -1698,6 +1712,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     /// Everything that has to happen once credentials exist, whichever way they
     /// arrived: the sheet, or a device link from the CLI.
     private func handleSignedIn(_ credentials: Credentials) {
+        if let localVaultWindow {
+            localVaultWindow.credentialsChanged()
+            localVaultWindow.present()
+            refreshUI()
+            return
+        }
         primaryWebWindow?.establishSession(token: credentials.token)
         for controller in additionalWebWindows { controller.establishSession(token: credentials.token) }
         // Fetch+cache the workspace, then register the File Provider domain
@@ -1729,12 +1749,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         #if TEXTTEXT_STORE
         if providerHost == nil || providerHost?.lowercased() == "appleid.apple.com" {
             authSession.cancel()
-            nativeAppleSignIn.begin(serverOrigin: resolveServerOrigin(credentials: nil), presentationWindow: webWindow?.window)
+            nativeAppleSignIn.begin(serverOrigin: resolveServerOrigin(credentials: nil), presentationWindow: localVaultWindow?.window ?? webWindow?.window)
             return
         }
         nativeAppleSignIn.cancel()
         #endif
-        authSession.begin(serverOrigin: resolveServerOrigin(credentials: nil), restartActive: true, presentationWindow: webWindow?.window)
+        authSession.begin(serverOrigin: resolveServerOrigin(credentials: nil), restartActive: true, presentationWindow: localVaultWindow?.window ?? webWindow?.window)
     }
 
     private func signOut() {
@@ -1749,6 +1769,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                 origin: resolveServerOrigin(credentials: credentials), token: credentials.token))
         }
         store.deleteCredentials()
+        if let localVaultWindow {
+            localVaultWindow.credentialsChanged()
+            refreshUI()
+            return
+        }
         spotlightQueue.async { [weak self] in self?.clearSpotlightIndex() }
         removeFileProviderDomain()
         appendActivity("Signed out; local files kept")
@@ -2639,6 +2664,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
+        if localVaultWindow != nil {
+            menu.addItem(item("Open TextText", #selector(showMainWindowAction)))
+            menu.addItem(item("Open Folder", #selector(openFolderAction)))
+            menu.addItem(item("Open workspace folder…", #selector(openLocalVaultAction)))
+            menu.addItem(item(store.loadCredentials() == nil ? "Sign in" : "Sign out", store.loadCredentials() == nil ? #selector(signInAction) : #selector(signOutAction)))
+            menu.addItem(.separator())
+            menu.addItem(item("Quit \(appName)", #selector(quit)))
+            return
+        }
 
         let header = NSMenuItem(title: "\(linkHeadline())  ·  v\(appVersion)", action: nil, keyEquivalent: "")
         header.isEnabled = false
@@ -2796,6 +2830,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     /// domain registration: if a transient sign-in fetch left the domain
     /// unregistered, this is the manual recovery lever.
     private func requestSyncNow() {
+        guard localVaultWindow == nil else { return }
         seedCachedWorkspaceIfNeeded()
         changeListener?.nudge()
         signalFileProviderChange(serverReachable: true)
@@ -2803,6 +2838,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     }
 
     @objc private func newNoteAction() {
+        if let localVaultWindow { localVaultWindow.newDocument(); return }
         importExternalNote(ExternalNoteImport(
             title: "Untitled",
             body: "",
@@ -2811,7 +2847,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         ))
     }
 
+    @objc private func openLocalVaultAction() {
+        guard let entry = LocalVaultWindowController.entryURL else {
+            let alert = NSAlert()
+            alert.messageText = "The local editor is missing from this build"
+            alert.informativeText = "Rebuild TextText with its bundled workspace resources."
+            alert.runModal(); return
+        }
+        let controller = localVaultWindow ?? LocalVaultWindowController(entry: entry, credentials: { [weak self] in
+            guard let account = self?.store.loadCredentials() else { return nil }
+            return (resolveServerOrigin(credentials: account), account.token)
+        })
+        controller.onSignIn = { [weak self] in self?.signIn() }
+        controller.onSelectedFolder = { [weak self, weak controller] in
+            guard let self, let controller else { return }
+            self.localVaultWindow = controller
+            self.changeListener?.stop()
+            self.materializationRetry?.cancel()
+            self.fileProviderRetry?.cancel()
+            self.quickCaptureRetry?.cancel()
+            self.healthReporter = nil
+            self.webWindow?.hide()
+            controller.present()
+        }
+        // Hold the picker/controller until completion, including on first use.
+        controller.chooseFolder { [weak self, controller] result in
+            if case .failure(let error) = result, (error as NSError).code != NSUserCancelledError {
+                self?.appendActivity(error.localizedDescription)
+            }
+            _ = controller
+        }
+    }
+
     @objc private func openFolderAction() {
+        if let selected = try? LocalVaultConfiguration.load(), let root = try? selected.resolvingRoot() {
+            NSWorkspace.shared.open(root); return
+        }
         // Only ever open the File Provider mount (the sole location now). Never
         // create/open a legacy `~/TextText` mirror.
         if let fileProviderUserVisibleURL {
@@ -2852,6 +2923,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     @objc private func showMainWindowAction() { showMainWindow() }
 
     @objc private func toggleMainWindowAction() {
+        if let localVaultWindow {
+            if localVaultWindow.window?.isKeyWindow == true { localVaultWindow.window?.orderOut(nil) }
+            else { localVaultWindow.present() }
+            return
+        }
         // Hide only when the window is actually in front of the person: it is
         // visible, the app is active, and it is the key window. Otherwise the
         // press is a summon, whether the app was in the background, on another
@@ -2871,6 +2947,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     @objc private func showStatusWindowAction() { showStatusWindow() }
 
     @objc private func signInAction() { signIn() }
+    @objc private func signOutAction() { signOut() }
 
     @objc private func reopenApprovalAction() { linkController.reopenApproval() }
 
@@ -2884,9 +2961,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         webWindow.closeTabOrWindow()
     }
 
-    @objc private func undoAction() { webWindow?.editHistory("undo") }
+    @objc private func undoAction() { if let localVaultWindow { localVaultWindow.editHistory("undo") } else { webWindow?.editHistory("undo") } }
 
-    @objc private func redoAction() { webWindow?.editHistory("redo") }
+    @objc private func redoAction() { if let localVaultWindow { localVaultWindow.editHistory("redo") } else { webWindow?.editHistory("redo") } }
 
     @objc private func goBackAction() { webWindow?.navigateHistory("back") }
 
@@ -2919,6 +2996,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private func showMainWindow(path: String? = nil) {
         warmMainWindow(path: path)
         hasRevealedInitialWindow = true
+        if let localVaultWindow { localVaultWindow.present(); return }
         webWindow?.present()
         #if DEBUG
         DebugLaunchMetric.mark("window-present")
@@ -2954,6 +3032,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     }
 
     @objc private func newWorkspaceWindowAction() {
+        if let localVaultWindow { localVaultWindow.present(); return }
         let credentials = store.loadCredentials()
         let origin = resolveServerOrigin(credentials: credentials)
         let home = store.cachedWorkspace().map { "/@" + $0.blog.handle }
@@ -3046,6 +3125,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     }
 
     private func warmMainWindow(path: String? = nil) {
+        if localVaultWindow != nil { return }
+        if let entry = LocalVaultWindowController.entryURL {
+            localVaultWindow = LocalVaultWindowController(entry: entry, credentials: { [weak self] in
+            guard let account = self?.store.loadCredentials() else { return nil }
+            return (resolveServerOrigin(credentials: account), account.token)
+        })
+            localVaultWindow?.onSignIn = { [weak self] in self?.signIn() }
+            return
+        }
         if webWindow == nil {
             let credentials = store.loadCredentials()
             let origin = resolveServerOrigin(credentials: credentials)
@@ -3271,6 +3359,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         let newWindow = file.addItem(withTitle: "New window", action: #selector(newWorkspaceWindowAction), keyEquivalent: "n")
         newWindow.keyEquivalentModifierMask = [.command, .option]
         newWindow.target = self
+        let openVault = file.addItem(withTitle: "Open workspace folder…", action: #selector(openLocalVaultAction), keyEquivalent: "o")
+        openVault.keyEquivalentModifierMask = [.command, .shift]
+        openVault.target = self
+        if localVaultWindow != nil {
+            let newNote = file.addItem(withTitle: "New note", action: #selector(newNoteAction), keyEquivalent: "n")
+            newNote.target = self
+        } else {
         let quickCapture = file.addItem(
             withTitle: "Quick capture",
             action: #selector(quickCaptureAction),
@@ -3292,6 +3387,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             action: #selector(reviewFailedCapturesAction),
             keyEquivalent: "")
         failedCaptures.target = self
+        }
         file.addItem(.separator())
 
 
@@ -3299,6 +3395,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         main.addItem(editItem)
         let edit = NSMenu(title: "Edit")
         editItem.submenu = edit
+        if localVaultWindow != nil {
+            let undo = edit.addItem(withTitle: "Undo", action: #selector(undoAction), keyEquivalent: "z")
+            undo.target = self
+            let redo = edit.addItem(withTitle: "Redo", action: #selector(redoAction), keyEquivalent: "z")
+            redo.target = self; redo.keyEquivalentModifierMask = [.command, .shift]
+            edit.addItem(.separator())
+        }
         _ = edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         _ = edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         _ = edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
@@ -3308,8 +3411,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         main.addItem(viewItem)
         let view = NSMenu(title: "View")
         viewItem.submenu = view
-        let reload = view.addItem(withTitle: "Reload", action: #selector(reloadWebWindowAction), keyEquivalent: "r")
-        reload.target = self
+        if localVaultWindow == nil {
+            let reload = view.addItem(withTitle: "Reload", action: #selector(reloadWebWindowAction), keyEquivalent: "r")
+            reload.target = self
+        }
         let fullScreen = view.addItem(withTitle: "Enter full screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
         fullScreen.keyEquivalentModifierMask = [.command, .control]
 

@@ -112,13 +112,15 @@ if [ "$SIGN_ID" != "-" ] && [ -f "$FP_PROFILE" ] && [ -z "${TEXTTEXT_APP_GROUP:-
 fi
 
 echo ">> swift build (release)"
-swift build -c release --triple arm64-apple-macosx14.0 --package-path "$MAC"
-BIN="$(swift build -c release --triple arm64-apple-macosx14.0 \
+swift build --jobs 2 -c release --triple arm64-apple-macosx14.0 --package-path "$MAC"
+BIN="$(swift build --jobs 2 -c release --triple arm64-apple-macosx14.0 \
   --package-path "$MAC" --show-bin-path)"
 
 echo ">> assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
+node "$MAC/../scripts/build-local-vault.mjs"
+cp -R "$MAC/build/LocalVault" "$APP/Contents/Resources/LocalVault"
 # The product is TextTextApp; the bundle binary keeps the CFBundleExecutable
 # name TextText.
 cp "$BIN/TextTextApp" "$APP/Contents/MacOS/TextText"
@@ -200,7 +202,7 @@ echo ">> App Intents metadata (xcodebuild const-values pass)"
 # and the `texttext` CLI product cannot both be called TextText on a
 # case-insensitive volume. A stale name here fails only in the release path,
 # where the metadata pass runs.
-xcodebuild build -scheme TextTextApp -destination 'platform=macOS,arch=arm64' \
+xcodebuild build -jobs 2 -scheme TextTextApp -destination 'platform=macOS,arch=arm64' \
   -configuration Release -derivedDataPath "$MAC/.build/xcode-dd" \
   SWIFT_EMIT_CONST_VALUES=YES CODE_SIGNING_ALLOWED=NO -quiet
 CONSTVALS="$MAC/build/appintents-constvals.txt"

@@ -78,6 +78,7 @@ const nextConfig: NextConfig = {
     ];
   },
   experimental: {
+    cpus: 2, // Bound local build workers alongside the native build.
     // Bake the deployment id into the build instead of reading it back from the
     // environment at request time.
     //

@@ -1,0 +1,137 @@
+import assert from "node:assert/strict";
+import { pathToFileURL } from "node:url";
+import path from "node:path";
+import { readFile } from "node:fs/promises";
+import { unzipSync, strFromU8 } from "fflate";
+import { chromium } from "playwright";
+
+const makeDocument = (body) => ({ schemaVersion: 1, content: { title: "Offline note", body, fields: {}, tags: [], assets: [] }, presentation: { template: { id: "texttext.note", version: 1 }, theme: {} } });
+const files = new Map();
+let revision = 1;
+let connected = false, openedWeb = false;
+const initial = { path: "Notes/Offline.textpack", hash: String(revision), markdown: '---\ntextTextId: "d6090b67-e3bb-46a3-9d34-76061bcb1dbb"\ntitle: "Offline note"\n---\n\nFirst line\nSecond line', documentJSON: JSON.stringify(makeDocument("First line\nSecond line")) };
+files.set(initial.path, initial);
+const preset = unzipSync(await readFile("presets/builtin/note.textpack"));
+const template = JSON.parse(strFromU8(preset[Object.keys(preset).find((name) => name.endsWith("/template.json"))]));
+template.id = "custom.agent-look"; template.name = "Agent made look";
+files.set("Templates/Agent look.textpack", { ...initial, path: "Templates/Agent look.textpack", hash: "template-1", templateJSON: JSON.stringify(template) });
+const browser = await chromium.launch({ headless: true });
+try {
+  const page = await browser.newPage();
+  const failures = [], network = [];
+  page.on("pageerror", (error) => failures.push(error.message));
+  page.on("request", (request) => { if (/^https?:/.test(request.url())) network.push(request.url()); });
+  await page.route(/^https?:/, (route) => route.abort());
+  await page.exposeBinding("nativeVaultRequest", async ({ page }, request) => {
+    let result, error;
+    if (request.method === "list" || request.method === "open") result = { root: "/test/Workspace", items: [...files.values()].map((file) => ({ path: file.path })) };
+    else if (request.method === "connection" || request.method === "connect" || request.method === "sync") {
+      if (request.method === "connect") connected = true;
+      result = { connected, available: true, ...(connected ? { webURL: "https://example.test/vault/workspace" } : {}) };
+    } else if (request.method === "openWeb") { openedWeb = true; result = {}; }
+    else if (request.method === "read" || request.method === "template") result = files.get(request.params.path);
+    else if (request.method === "agentStatus" || request.method === "agentConnect") result = { state: "ready" };
+    else if (request.method === "agentSend") {
+      result = {};
+      await page.evaluate(() => {
+        window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail: { type: "final-text", text: "I can work with these local files." } }));
+        window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail: { type: "turn-completed" } }));
+      });
+    }
+    else if (request.method === "write") {
+      const current = files.get(request.params.path);
+      if (current.hash !== request.params.hash) error = { code: "conflict", message: "File changed", current };
+      else { result = { ...current, ...request.params, hash: String(++revision) }; files.set(result.path, result); }
+    } else if (request.method === "rename" || request.method === "delete") {
+      const current = files.get(request.params.path);
+      if (current.hash !== request.params.hash) error = { code: "conflict", message: "File changed", current };
+      else {
+        files.delete(current.path);
+        if (request.method === "rename") { result = { ...current, path: request.params.newPath }; files.set(result.path, result); }
+        else result = {};
+      }
+    } else if (request.method === "create") {
+      const name = `${request.params.folder || "Notes"}/Copy-${++revision}.textpack`;
+      result = { ...(request.params.sourcePath ? files.get(request.params.sourcePath) : initial), path: name, hash: String(revision) };
+      result.markdown = result.markdown.replace(/textTextId: [^\n]+/, `textTextId: "copy-${revision}"`);
+      files.set(name, result);
+    } else error = { message: `Unexpected operation ${request.method}` };
+    await page.evaluate((detail) => window.dispatchEvent(new CustomEvent("texttext:vault-reply", { detail })), { id: request.id, result, error });
+  });
+  await page.addInitScript(() => {
+    window.__networkAttempts = [];
+    window.fetch = (...arguments_) => { window.__networkAttempts.push(String(arguments_[0])); return Promise.reject(new Error("Offline test forbids fetch")); };
+    window.webkit = { messageHandlers: { localVault: { postMessage: (request) => { void window.nativeVaultRequest(request); } } } };
+  });
+  await page.goto(pathToFileURL(path.resolve("mac/build/LocalVault/index.html")).href);
+  await page.getByRole("button", { name: "Connect to web", exact: true }).click();
+  await page.getByRole("button", { name: "Open on web", exact: true }).click();
+  assert.equal(openedWeb, true);
+  assert.equal(await page.getByText(/^(?:Syncing|Synced)$/).count(), 0);
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("texttext:vault-sync-status", { detail: { connected: true, available: true, webURL: "https://example.test/vault/workspace", message: "A conflicting edit was preserved." } })));
+  await page.getByText("A conflicting edit was preserved.").waitFor();
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("texttext:vault-sync-status", { detail: { connected: true, available: true, webURL: "https://example.test/vault/workspace" } })));
+  await page.getByRole("button", { name: "Notes/Offline", exact: true }).click();
+  const body = page.getByRole("textbox", { name: "Document body", exact: true });
+  await body.fill("Local first line\nSecond line");
+  await page.waitForFunction(() => !localStorage.getItem("texttext:vault-draft:/test/Workspace:Notes/Offline.textpack"));
+  assert.match(files.get(initial.path).markdown, /Local first line/);
+  // Direct agent write must become visible without a reload or a server.
+  const current = files.get(initial.path);
+  files.set(initial.path, { ...current, hash: String(++revision), markdown: current.markdown.replace("Second line", "Agent second line") });
+  await page.evaluate(() => window.dispatchEvent(new Event("texttext:vault-changed")));
+  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("Agent second line"));
+  assert.match(await body.innerText(), /Local first line/);
+  // A stale-base same-line edit must preserve disk and offer a separate copy.
+  await body.fill("My conflicting version");
+  const beforeConflict = files.get(initial.path);
+  files.set(initial.path, { ...beforeConflict, hash: String(++revision), markdown: beforeConflict.markdown.replace(/Local first line\nAgent second line$/, "Their conflicting version") });
+  await page.getByRole("button", { name: "Save my edits as a copy" }).waitFor();
+  assert.match(files.get(initial.path).markdown, /Their conflicting version/);
+  await page.getByRole("button", { name: "Save my edits as a copy" }).click();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent === "Their conflicting version");
+  assert.ok([...files.values()].some((file) => file.path !== initial.path && file.markdown.includes("My conflicting version")));
+  await page.getByRole("button", { name: /^Look / }).click();
+  await page.getByRole("button", { name: "Agent made look", exact: true }).click();
+  await page.waitForFunction(() => !localStorage.getItem("texttext:vault-draft:/test/Workspace:Notes/Offline.textpack"));
+  assert.equal(JSON.parse(files.get(initial.path).templateJSON).id, "custom.agent-look");
+  await page.getByLabel("More actions", { exact: true }).click();
+  await page.getByRole("button", { name: "Save as look", exact: true }).click();
+  await page.getByRole("textbox", { name: "Name this look", exact: true }).fill("Saved local look");
+  await page.getByRole("button", { name: "Save", exact: true }).first().click();
+  await page.getByText(/Saved in Templates\//).waitFor();
+  assert.ok([...files.values()].some((file) => file.path.startsWith("Templates/") && JSON.parse(file.templateJSON).name === "Saved local look"));
+  await page.getByRole("button", { name: "Assistant", exact: true }).click();
+  await page.getByRole("textbox", { name: "Message assistant", exact: true }).fill("Read the selected file.");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.getByText("I can work with these local files.").waitFor();
+  await page.evaluate(() => {
+    window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail: { type: "status", state: "disconnected" } }));
+    window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail: { type: "turn-completed" } }));
+  });
+  assert.equal(await page.getByRole("button", { name: "Send", exact: true }).isEnabled(), false);
+  await page.getByRole("button", { name: "Close assistant", exact: true }).click();
+  await page.getByRole("combobox", { name: "Folder for new notes", exact: true }).fill("Projects/Draft");
+  await page.getByRole("button", { name: "New note", exact: true }).click();
+  assert.ok([...files.keys()].some((name) => name.startsWith("Projects/Draft/")));
+  await page.getByRole("button", { name: "New from template", exact: true }).click();
+  await page.getByRole("button", { name: "Agent made look", exact: true }).click();
+  await page.waitForFunction(() => !document.querySelector('[role="dialog"]'));
+  const cloned = [...files.values()].at(-1);
+  assert.equal(cloned.templateJSON, files.get("Templates/Agent look.textpack").templateJSON);
+  assert.notEqual(cloned.markdown, files.get("Templates/Agent look.textpack").markdown);
+  await page.getByRole("button", { name: "Rename or move", exact: true }).click();
+  await page.getByRole("textbox", { name: "New file path", exact: true }).fill("Projects/Renamed.textpack");
+  await page.getByRole("button", { name: "Save path", exact: true }).click();
+  await page.getByRole("button", { name: "Projects/Renamed", exact: true }).waitFor();
+  assert.ok(files.has("Projects/Renamed.textpack"));
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("group", { name: "Confirm file deletion" }).getByText("Projects/Renamed.textpack", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Delete file", exact: true }).click();
+  await page.getByRole("heading", { name: "Your workspace", exact: true }).waitFor();
+  assert.ok(!files.has("Projects/Renamed.textpack"));
+  assert.deepEqual(await page.evaluate(() => window.__networkAttempts), []);
+  assert.deepEqual(network, []);
+  assert.deepEqual(failures, []);
+  console.log("Offline vault UI passed: file save, raw agent refresh, conflict copy, zero HTTP/fetch calls.");
+} finally { await browser.close(); }
