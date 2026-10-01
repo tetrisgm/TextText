@@ -44,7 +44,7 @@ type Result = {
   sourceCommit: string; buildIdentity: string | null; hardware: string; ramGiB: number; os: string;
   serverListenerPid: number; serverTreeRootPid: number; fixture: { workspaceId: string; count: number; kinds: Record<string, number>; packBytes: number; directoryBytes: number; collaborators: number; memberVerified: boolean; agentMutations: number; agentVisibleMutations: number };
   conditions: string[]; coldVisibleMs: number[]; warmVisibleMs: number[];
-  folderNavMs: number[]; itemNavMs: number[]; inputToVisibleMs: number[];
+  folderNavMs: number[]; itemNavMs: number[]; cachedItemNavMs: number[]; inputToVisibleMs: number[];
   commandK: "available" | "unavailable" | "unverified"; commandKMs: number[];
   galleryImages: number[]; afterCloseBrowserRssKiB: number[];
   idleCpu: { serverMeanPercent: number; browserMeanPercent: number; samples: number };
@@ -288,8 +288,8 @@ async function main() {
     serverListenerPid: listenerPid, serverTreeRootPid: serverRootPid,
     fixture: { workspaceId, count: 0, kinds: {}, packBytes: 0, directoryBytes: 0, collaborators: 0, memberVerified: false, agentMutations: 0, agentVisibleMutations: 0 },
     conditions: smoke ? ["Local production Next server already running and warm", "One headless Chromium browser; locator validation only", "Process RSS is summed resident size, which can double-count shared pages"] :
-      ["Local production Next server already running and warm", "First Chromium context with a cold browser cache", "Rounds 2-3 reused the browser and context cache", "Folder/item navigation times are driver-inclusive click to visible content after two animation frames", "Chromium headless; process RSS is summed resident size, which can double-count shared pages", "Direct audited TextPack writes are synthetic agent-like activity, not a provider run"],
-    coldVisibleMs: [], warmVisibleMs: [], folderNavMs: [], itemNavMs: [], inputToVisibleMs: [],
+      ["Local production Next server already running and warm", "First Chromium context with a cold browser cache", "Rounds 2-3 reused the browser and context cache", "Folder/item navigation times are driver-inclusive click to visible content after two animation frames", "Cached item navigation reopens an unchanged item in the same page after navigating away", "Chromium headless; process RSS is summed resident size, which can double-count shared pages", "Direct audited TextPack writes are synthetic agent-like activity, not a provider run"],
+    coldVisibleMs: [], warmVisibleMs: [], folderNavMs: [], itemNavMs: [], cachedItemNavMs: [], inputToVisibleMs: [],
     commandK: "unverified", commandKMs: [], galleryImages: [], afterCloseBrowserRssKiB: [],
     idleCpu: { serverMeanPercent: 0, browserMeanPercent: 0, samples: 0 },
     idleNetwork: { durationMs: 0, total: 0, mutating: 0, collaborationPosts: 0, methods: {}, paths: {} },
@@ -322,7 +322,7 @@ async function main() {
   };
   const guard = () => { if (monitorFailure) throw new Error(monitorFailure); throwIfExpired(started); };
   const writeResult = async () => {
-    const output = { ...result, metrics: { coldVisible: summary(result.coldVisibleMs), warmVisible: summary(result.warmVisibleMs), folderNavigation: summary(result.folderNavMs), itemNavigation: summary(result.itemNavMs), inputToVisible: summary(result.inputToVisibleMs), commandK: summary(result.commandKMs), serverPeakRssMiB: Math.max(0, ...result.samples.map(sample => sample.serverRssKiB)) / 1024,
+    const output = { ...result, metrics: { coldVisible: summary(result.coldVisibleMs), warmVisible: summary(result.warmVisibleMs), folderNavigation: summary(result.folderNavMs), itemNavigation: summary(result.itemNavMs), cachedItemNavigation: summary(result.cachedItemNavMs), inputToVisible: summary(result.inputToVisibleMs), commandK: summary(result.commandKMs), serverPeakRssMiB: Math.max(0, ...result.samples.map(sample => sample.serverRssKiB)) / 1024,
       browserPeakRssMiB: Math.max(0, ...result.samples.map(sample => sample.browserRssKiB)) / 1024 } };
     await fs.writeFile(path.join(outputDir, "result.json"), JSON.stringify(output, null, 2));
     console.log(`EVIDENCE ${path.join(outputDir, "result.json")}`);
@@ -520,9 +520,15 @@ async function main() {
       await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>(".vault-document-grid img")].filter(image => image.complete && image.naturalWidth > 0).length >= 1, null, { timeout: 20_000 });
       result.galleryImages.push(await page.locator(".vault-document-grid img").count());
       result.itemNavMs.push(await measuredClick(page, await checkSidebarItem(page, EMAILS[0], "Gallery/Gallery 001.textpack", result), ".tt-md-surface", "A visual study 001", true));
+      await allFiles().click(); await page.locator(".vault-overview h2", { hasText: "Your workspace" }).waitFor();
+      await folder("Gallery").click(); await page.locator(".vault-overview h2", { hasText: "Gallery" }).waitFor();
+      result.cachedItemNavMs.push(await measuredClick(page, await checkSidebarItem(page, EMAILS[0], "Gallery/Gallery 001.textpack", result), ".tt-md-surface", "A visual study 001", true));
       result.folderNavMs.push(await measuredClick(page, allFiles(), ".vault-overview h2", "Your workspace"));
       result.folderNavMs.push(await measuredClick(page, folder("Notes"), ".vault-overview h2", "Notes"));
       result.itemNavMs.push(await measuredClick(page, await checkSidebarItem(page, EMAILS[0], "Notes/Long note.textpack", result), ".tt-md-surface", "One careful paragraph about a file library", true));
+      await allFiles().click(); await page.locator(".vault-overview h2", { hasText: "Your workspace" }).waitFor();
+      await folder("Notes").click(); await page.locator(".vault-overview h2", { hasText: "Notes" }).waitFor();
+      result.cachedItemNavMs.push(await measuredClick(page, await checkSidebarItem(page, EMAILS[0], "Notes/Long note.textpack", result), ".tt-md-surface", "One careful paragraph about a file library", true));
       result.inputToVisibleMs.push(...await typeAndMeasure(page));
       if (round === 0) {
         // Save/transport has three seconds to settle. Count all requests over
