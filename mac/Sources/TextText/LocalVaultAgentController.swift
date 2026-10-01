@@ -13,6 +13,7 @@ final class LocalVaultAgentController {
     private(set) var status: [String: Any] = ["state": "disconnected"]
     private let root: URL
     private let files: DispatchQueue
+    private let makePresencePublisher: () -> PresencePublisher
     private var server: CodexAppServerController?
     private var pending: [String: String] = [:]
     private var threadID: String?
@@ -28,12 +29,20 @@ final class LocalVaultAgentController {
     private var deadline: DispatchWorkItem?
     private var generation = UUID()
     private var phases: [String: CodexAgentMessage.Phase] = [:]
+    private struct ActivePresence {
+        let document: String
+        let actor: AgentActor
+        let publisher: PresencePublisher
+    }
+    private var activePresence: ActivePresence?
+    private var presenceTask: Task<Void, Never>?
 
-    init(root: URL) {
+    init(root: URL, presencePublisher: @escaping () -> PresencePublisher = { PresencePublisher() }) {
         self.root = root.standardizedFileURL.resolvingSymlinksInPath()
+        self.makePresencePublisher = presencePublisher
         files = DispatchQueue(label: "app.texttext.vault-agent-files", qos: .userInitiated)
     }
-    deinit { deadline?.cancel(); server?.stop() }
+    deinit { deadline?.cancel(); presenceTask?.cancel(); server?.stop() }
 
     private func update(_ state: String, message: String? = nil) {
         status = ["state": state]
@@ -112,6 +121,7 @@ final class LocalVaultAgentController {
         }
         fileFence = LocalVaultAgentCancellation()
         busy = true; phases.removeAll(); update("working")
+        beginPresence(for: access)
         armDeadline(seconds: 120)
         do {
             let prompt = context + trimmed
@@ -126,7 +136,48 @@ final class LocalVaultAgentController {
                     developerInstructions: access.developerInstructions))
             }
         } catch {
-            pendingTurn = nil; busy = false; deadline?.cancel(); update("ready"); throw error
+            endPresence(); pendingTurn = nil; busy = false; deadline?.cancel(); update("ready"); throw error
+        }
+    }
+
+    private func beginPresence(for access: LocalVaultAgentAccess) {
+        endPresence()
+        let path: String, activity: AgentActor.Activity
+        switch access {
+        case .item(let selected): path = selected; activity = .edit
+        case .itemCustomization(let selected): path = selected; activity = .open
+        default: return
+        }
+        guard let document = try? LocalVaultDocumentStore(root: root).readMetadata(path: path),
+              let itemID = MarkdownIdentityCodec.extract(from: document.contents.markdown)?.itemId,
+              (try? LocalVaultSync.collaborationReady(
+                root: root, path: path, itemId: itemID, localHash: document.hash)) == true else { return }
+        let publisher = makePresencePublisher()
+        guard publisher.isConfigured else { return }
+        let presence = ActivePresence(document: path,
+            actor: AgentActor(name: "Codex", activity: activity, itemId: itemID), publisher: publisher)
+        activePresence = presence
+        let previous = presenceTask
+        presenceTask = Task {
+            _ = await previous?.result
+            guard !Task.isCancelled else { return }
+            await presence.publisher.publish(document: presence.document, actor: presence.actor, active: true)
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(8)) } catch { break }
+                guard !Task.isCancelled else { break }
+                await presence.publisher.publish(document: presence.document, actor: presence.actor, active: true)
+            }
+        }
+    }
+
+    private func endPresence() {
+        guard let presence = activePresence else { return }
+        activePresence = nil
+        let previous = presenceTask
+        previous?.cancel()
+        presenceTask = Task {
+            _ = await previous?.result
+            await presence.publisher.publish(document: presence.document, actor: presence.actor, active: false)
         }
     }
 
@@ -163,6 +214,7 @@ final class LocalVaultAgentController {
         onEvent?(["type": "turn-completed"])
     }
     func stop() {
+        endPresence()
         fileFence.cancel()
         if let loginID { try? request("account/login/cancel", ["loginId": loginID]) }
         loginID = nil; attemptedLogin = false
@@ -252,7 +304,7 @@ final class LocalVaultAgentController {
         } else if message.method == "item/tool/call", let requestID = message.jsonRPCID {
             performTool(message, requestID: requestID)
         } else if message.method == "turn/completed" {
-            busy = false; deadline?.cancel(); pendingProposals.removeAll(); phases.removeAll(); update("ready")
+            endPresence(); busy = false; deadline?.cancel(); pendingProposals.removeAll(); phases.removeAll(); update("ready")
             if CodexTurnOutcome(params: message.rawParams) != .completed {
                 onEvent?(["type": "error", "message": "The agent stopped before finishing. Saved file changes are preserved."])
             }

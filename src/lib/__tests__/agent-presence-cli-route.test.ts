@@ -12,6 +12,9 @@ const upsertPresence = vi.fn();
 const removePresence = vi.fn();
 const agentSelectionAtEnd = vi.fn();
 const buildAgentPresence = vi.fn();
+const agentOwnerDisplayName = vi.fn((raw: unknown) =>
+  typeof raw === "string" ? raw.replace(/\s+/gu, " ").trim() || null : null,
+);
 
 vi.mock("@/lib/mcp/auth", () => ({
   verifyTextTextApiToken: (...args: unknown[]) =>
@@ -29,6 +32,7 @@ vi.mock("@/lib/collab", () => ({
 }));
 vi.mock("@/lib/collab/agent-presence.server", () => ({
   buildAgentPresence: (...args: unknown[]) => buildAgentPresence(...args),
+  agentOwnerDisplayName: (...args: unknown[]) => agentOwnerDisplayName(...args),
 }));
 
 const { POST } = await import("@/app/api/agent/presence/route");
@@ -55,7 +59,7 @@ describe("POST /api/agent/presence", () => {
       scopes: ["sync"],
       extra: { userId: "user-1", sub: "account-1" },
     });
-    workspaceBlog.mockResolvedValue({ handle: "shoku" });
+    workspaceBlog.mockResolvedValue({ handle: "shoku", author: " Alice \n" });
     getPostStoreContext.mockResolvedValue({ handle: "shoku" });
     agentSelectionAtEnd.mockResolvedValue(null);
     buildAgentPresence.mockReturnValue(PRESENCE);
@@ -76,6 +80,10 @@ describe("POST /api/agent/presence", () => {
     });
     expect(upsertPresence).toHaveBeenCalledWith("p1", PRESENCE);
     expect(signalWorkspaceChange).toHaveBeenCalledWith("shoku");
+    expect(buildAgentPresence).toHaveBeenCalledWith(
+      { userId: "user-1", connectionName: "codex" },
+      expect.objectContaining({ ownerDisplayName: "Alice" }),
+    );
   });
 
   it("rejects a caller with no authenticated workspace token", async () => {
@@ -87,13 +95,14 @@ describe("POST /api/agent/presence", () => {
     expect(upsertPresence).not.toHaveBeenCalled();
   });
 
-  it("derives identity from the token, never from the request body", async () => {
-    await POST(post({ itemId: "p1", agent: "codex", userId: "someone-else" }));
-
-    expect(buildAgentPresence).toHaveBeenCalledWith(
-      { userId: "user-1", connectionName: "codex" },
-      expect.anything(),
+  it("rejects request-body attempts to forge the authenticated owner", async () => {
+    const response = await POST(
+      post({ itemId: "p1", agent: "codex", ownerName: "Mallory", userId: "someone-else" }),
     );
+
+    expect(response.status).toBe(400);
+    expect(buildAgentPresence).not.toHaveBeenCalled();
+    expect(upsertPresence).not.toHaveBeenCalled();
   });
 
   it("refuses an item that is not in the workspace", async () => {

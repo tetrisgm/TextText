@@ -75,7 +75,11 @@ export function colorForSub(sub: string): string {
 }
 
 /** Presence rows older than this are treated as gone. */
-const PRESENCE_STALE_MS = 15_000;
+export const PRESENCE_STALE_MS = 15_000;
+
+export function presenceStaleCutoff(now = Date.now()): Date {
+  return new Date(now - PRESENCE_STALE_MS);
+}
 
 /**
  * The caller's collab role on a post, or null. Owners and editor
@@ -952,7 +956,7 @@ export async function activeAgentFocus(
   workspaceHandle?: string,
 ): Promise<AgentFocusEvent | null> {
   if (!db || !targetUserId) return null;
-  const cutoff = new Date(Date.now() - PRESENCE_STALE_MS);
+  const cutoff = presenceStaleCutoff();
   const rows = await db
     .select({
       awareness: collabPresence.awareness,
@@ -1080,7 +1084,7 @@ export async function hasActiveCoEditors(
 
 export async function activePresence(postId: string): Promise<PresenceEntry[]> {
   if (!db) return [];
-  const cutoff = new Date(Date.now() - PRESENCE_STALE_MS);
+  const cutoff = presenceStaleCutoff();
   const rows = await db
     .select({
       clientId: collabPresence.clientId,

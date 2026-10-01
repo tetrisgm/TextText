@@ -3,6 +3,7 @@ import * as Y from "yjs";
 import { describe, expect, it } from "vitest";
 import {
   agentConnectionName,
+  agentOwnerDisplayName,
   agentPresenceClientId,
   buildAgentPresence,
 } from "@/lib/collab/agent-presence.server";
@@ -47,6 +48,22 @@ describe("shared agent presence construction", () => {
     expect(presence?.color).toBe("#111827");
     expect(awarenessUser(presence?.awareness ?? null)).toMatchObject({
       name: "Codex",
+      participantType: "agent",
+      provider: "codex",
+    });
+  });
+
+  it("adds only the sanitized authenticated owner label to visible presence", () => {
+    const presence = buildAgentPresence(
+      { userId: "user-1", connectionName: "codex-cli" },
+      { ownerDisplayName: "  Alice\u202e\nSmith  " },
+    );
+
+    expect(agentOwnerDisplayName("  Alice\u202e\nSmith  ")).toBe("Alice Smith");
+    expect(presence?.userName).toBe("Codex · working for Alice Smith");
+    expect(presence?.actorUserId).toBe("user-1");
+    expect(awarenessUser(presence?.awareness ?? null)).toMatchObject({
+      name: "Codex · working for Alice Smith",
       participantType: "agent",
       provider: "codex",
     });

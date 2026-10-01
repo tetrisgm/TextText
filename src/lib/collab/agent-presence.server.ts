@@ -21,6 +21,7 @@ import { agentIdentity, agentProviderColor } from "@/lib/collab/agent-identity";
 
 /** Fallback name when a client connects without identifying itself at all. */
 export const UNKNOWN_AGENT_CONNECTION_NAME = "AI agent";
+const OWNER_NAME_LIMIT = 80;
 
 type AgentPresenceActor = {
   /** The raw connection name (OAuth client name, or MCP clientInfo.name). */
@@ -54,6 +55,19 @@ export function agentConnectionName(raw: unknown): string {
     : UNKNOWN_AGENT_CONNECTION_NAME;
 }
 
+/** A short display label derived only from an authenticated account record. */
+export function agentOwnerDisplayName(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const value = raw
+    .normalize("NFKC")
+    .replace(/[\p{Cc}\p{Cf}]/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .slice(0, OWNER_NAME_LIMIT)
+    .trim();
+  return value || null;
+}
+
 /**
  * Build the presence row for an agent, with encoded awareness carrying the
  * provider identity plus an optional selection (the cursor) and focus event.
@@ -65,6 +79,8 @@ export function buildAgentPresence(
     role?: "viewer" | "editor";
     selection?: AgentSelectionState | null;
     focus?: AgentFocusEvent | null;
+    /** Authenticated owner identity. Never take this value from request JSON. */
+    ownerDisplayName?: string | null;
   } = {},
 ): PresenceEntry | null {
   if (!actor.userId) return null;
@@ -72,7 +88,10 @@ export function buildAgentPresence(
   const identity = agentIdentity(connectionName);
   const clientId = agentPresenceClientId(actor.userId, actor.connectionId ?? connectionName);
   const color = agentProviderColor(identity.provider) ?? colorForSub(clientId);
-  const userName = identity.displayName;
+  const owner = agentOwnerDisplayName(state.ownerDisplayName);
+  const userName = owner
+    ? `${identity.displayName} · working for ${owner}`
+    : identity.displayName;
   return {
     actorUserId: actor.userId,
     clientId,

@@ -14,7 +14,14 @@ vi.mock("@/lib/db/client", async () => {
   };
 });
 vi.mock("@/lib/store", () => ({ getPostStoreContext: vi.fn() }));
-import { activePresence, hasActiveCoEditors, removePresence, upsertPresence } from "@/lib/collab";
+import {
+  activePresence,
+  hasActiveCoEditors,
+  PRESENCE_STALE_MS,
+  presenceStaleCutoff,
+  removePresence,
+  upsertPresence,
+} from "@/lib/collab";
 const postId = "10000000-0000-4000-8000-000000000001";
 const actorUserId = "10000000-0000-4000-8000-000000000002";
 function row(role: "editor" | "viewer", clientId = "p-session") {
@@ -25,6 +32,13 @@ function row(role: "editor" | "viewer", clientId = "p-session") {
 }
 beforeEach(() => { mocks.rows = []; mocks.statements = []; mocks.batch.mockReset().mockResolvedValue([]); });
 describe("presence persistence", () => {
+  it("expires a crashed publisher after the 15 second heartbeat window", () => {
+    const now = Date.parse("2026-10-01T12:00:00.000Z");
+    expect(PRESENCE_STALE_MS).toBe(15_000);
+    expect(presenceStaleCutoff(now).toISOString()).toBe(
+      "2026-10-01T11:59:45.000Z",
+    );
+  });
   it("excludes viewers and legacy human rows from the active-editor signal", async () => {
     mocks.rows = [row("viewer"), row("editor", "c-legacy")];
     expect(await hasActiveCoEditors(postId)).toBe(false);

@@ -2,7 +2,7 @@
 //
 //   POST /api/agent/presence
 //     Authorization: Bearer <wsk_ workspace token held by the signed-in app>
-//     {itemId, agent, activity: "open"|"edit", active, section?, message?}
+//     {itemId, agent, activity: "open"|"edit", active, section?}
 //     -> {ok: true, clientId, userName}
 //
 // The CLI ships inside the app bundle and authenticates with the workspace
@@ -21,13 +21,23 @@ import {
   removePresence,
   upsertPresence,
 } from "@/lib/collab";
-import { buildAgentPresence } from "@/lib/collab/agent-presence.server";
+import {
+  agentOwnerDisplayName,
+  buildAgentPresence,
+} from "@/lib/collab/agent-presence.server";
 import { verifyTextTextApiToken, workspaceBlog } from "@/lib/mcp/auth";
 import { getPostStoreContext, signalWorkspaceChange } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 const AGENT_CONTROL_RE = /[\u0000-\u001f\u007f]/;
 const MAX_PRESENCE_BODY_BYTES = 16_384;
+const FORGED_IDENTITY_FIELDS = [
+  "actorUserId",
+  "owner",
+  "ownerName",
+  "userId",
+  "userName",
+] as const;
 
 async function readPresenceBody(
   request: Request,
@@ -94,6 +104,9 @@ export async function POST(request: Request) {
   if (!body) {
     return noStore({ error: "Send a JSON body" }, 400);
   }
+  if (FORGED_IDENTITY_FIELDS.some((field) => Object.hasOwn(body, field))) {
+    return noStore({ error: "Presence identity comes from your signed-in account" }, 400);
+  }
 
   const itemId = typeof body.itemId === "string" ? body.itemId.trim() : "";
   const agent = typeof body.agent === "string" ? body.agent.trim() : "";
@@ -107,6 +120,10 @@ export async function POST(request: Request) {
   const active = body.active !== false;
   const blog = await workspaceBlog(auth);
   if (!blog) return noStore({ error: "No workspace" }, 404);
+  const ownerDisplayName =
+    agentOwnerDisplayName(blog.author) ??
+    agentOwnerDisplayName(blog.username) ??
+    "workspace owner";
 
   // The item must exist and belong to this token's workspace, or a valid token
   // could publish presence onto someone else's document.
@@ -124,6 +141,7 @@ export async function POST(request: Request) {
     { userId, connectionName: agent },
     active
       ? {
+          ownerDisplayName,
           selection:
             (section
               ? await agentSelectionAtSection(itemId, section).catch(() => null)

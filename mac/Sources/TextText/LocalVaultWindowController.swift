@@ -241,7 +241,11 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         if method.hasPrefix("agent") {
             guard let root else { reply(id, result: .failure(VaultBridgeError("Open a folder first."))); return }
             if agent == nil {
-                agent = LocalVaultAgentController(root: root)
+                agent = LocalVaultAgentController(root: root, presencePublisher: { [credentials] in
+                    guard let account = credentials() else { return PresencePublisher(credentials: nil) }
+                    return PresencePublisher(credentials: DeviceCredentials(
+                        token: account.token, serverOrigin: account.origin.absoluteString))
+                })
                 agent?.onEvent = { [weak self] event in self?.emit("texttext:vault-agent", value: event) }
                 agent?.onFilesChanged = { [weak self] in
                     self?.emit("texttext:vault-changed", value: [:])

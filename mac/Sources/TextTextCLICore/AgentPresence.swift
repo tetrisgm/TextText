@@ -149,7 +149,7 @@ public struct PresencePublisher: Sendable {
         }
     }
 
-    private func request(document: String, actor: AgentActor, active: Bool) -> URLRequest? {
+    private func request(actor: AgentActor, active: Bool) -> URLRequest? {
         guard let credentials,
             let origin = credentials.validatedServerOrigin,
             let name = AgentActor.validatedName(actor.name)
@@ -167,30 +167,28 @@ public struct PresencePublisher: Sendable {
         request.setValue("Bearer \(credentials.token)", forHTTPHeaderField: "Authorization")
         var payload: [String: Any] = [
             "itemId": itemId,
-            "document": document,
             "agent": name,
             "activity": actor.activity.rawValue,
             "active": active,
         ]
         if let section = actor.section { payload["section"] = section }
-        if let message = AgentActor.validatedIntent(actor.message) {
-            payload["message"] = message
-        }
         request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
         return request
     }
 
-    private func publish(document: String, actor: AgentActor, active: Bool) async {
-        guard let request = request(document: document, actor: actor, active: active) else {
+    /// Publish one lease update. The document label and actor intent are never
+    /// sent; presence contains only the remote item id and display metadata.
+    public func publish(document _: String, actor: AgentActor, active: Bool) async {
+        guard let request = request(actor: actor, active: active) else {
             return
         }
         _ = try? await session.data(for: request)
     }
 
     private func publishSynchronously(
-        document: String, actor: AgentActor, active: Bool
+        document _: String, actor: AgentActor, active: Bool
     ) {
-        guard let request = request(document: document, actor: actor, active: active) else {
+        guard let request = request(actor: actor, active: active) else {
             return
         }
         // Fire and wait briefly: presence must never outlive or delay the edit.
