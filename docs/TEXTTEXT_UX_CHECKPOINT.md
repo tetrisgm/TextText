@@ -58,7 +58,7 @@ See [performance receipt](file-vault-performance-2026-09-30.md) for conditions a
 
 - Build 1147 is the canonical local app. It launched into the folder workspace with no false Offline banner.
 - Connect reused the saved agent authorization. A real read task returned `Untitled 2`. A real edit appended its line exactly once while a concurrent human line survived, and the canonical TextPack matched the visible document.
-- A controlled task-owned server outage displayed that pending edits were saved locally. After the server restarted, collaboration and background sync banners cleared automatically without Retry. Final sync state was 32 baselines, outbox 0, conflicts 0.
+- A controlled task-owned server outage displayed that pending edits were saved locally. After the server restarted, collaboration and background sync banners cleared automatically without Retry. After fixture cleanup, current sync state is 31 baselines, outbox 0, conflicts 0.
 - The disposable `Untitled 2` acceptance note was moved to recoverable Trash. The build and installer validated the app, all three extensions, and bundled helper; receipts are `/tmp/texttext-build-1147.log` and `/tmp/texttext-install-1147.log`.
 
 ## Remaining acceptance and external boundaries

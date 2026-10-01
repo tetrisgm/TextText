@@ -28,7 +28,7 @@ The five idle CPU samples averaged 0.06% for the server process tree and 0% for 
 
 ## Final native recovery check
 
-The final local artifact is `/Applications/TextText.app` 0.202 build 1147 on `cdae9f90`. It launched without a false Offline banner. A controlled outage preserved pending edits locally; after the task-owned server returned, collaboration and background sync notices cleared automatically without Retry. Final sync state was 32 baselines, outbox 0, and conflicts 0. A real agent edit also converged with a concurrent human line and matched the canonical TextPack. These are installed-app acceptance results, not additional benchmark samples. Build and install receipts are `/tmp/texttext-build-1147.log` and `/tmp/texttext-install-1147.log`.
+The final local artifact is `/Applications/TextText.app` 0.202 build 1147 on `cdae9f90`. It launched without a false Offline banner. A controlled outage preserved pending edits locally; after the task-owned server returned, collaboration and background sync notices cleared automatically without Retry. After fixture cleanup, current sync state is 31 baselines, outbox 0, and conflicts 0. A real agent edit also converged with a concurrent human line and matched the canonical TextPack. These are installed-app acceptance results, not additional benchmark samples. Build and install receipts are `/tmp/texttext-build-1147.log` and `/tmp/texttext-install-1147.log`.
 
 ## Interpretation
 
