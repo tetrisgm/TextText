@@ -1,4 +1,4 @@
-import { authorizeVaultItem, authorizeVaultItemAtPath } from "@/app/api/vault/scoped-auth";
+import { authorizeVaultCollaboration } from "@/app/api/vault/collaboration-auth";
 import { readVaultCollaboration, waitVaultCollaboration, pushVaultCollaboration, VaultBusyError, VaultCollaborationEpochError } from "@/lib/store";
 import { readBoundedJson } from "@/lib/http/bounded-json";
 
@@ -19,7 +19,7 @@ function failure(error: unknown) {
 }
 async function authorize(request: Request, context: Context, capability: "read" | "edit") {
   const params = await context.params;
-  const access = await authorizeVaultItem(request, params.workspaceId, params.itemId, capability);
+  const access = await authorizeVaultCollaboration(request, params.workspaceId, capability);
   if (access instanceof Response) return access;
   if (!identifier.test(params.itemId)) return Response.json({ error: "Invalid item identifier" }, { status: 400, headers });
   return { ...access, itemId: params.itemId };
@@ -40,7 +40,6 @@ export async function GET(request: Request, context: Context) {
     // Permission may have changed while the filesystem wait was in progress.
     const current = await authorize(request, context, "read");
     if (current instanceof Response) return current;
-    if (state && current.relativePath !== state.relativePath) return Response.json({ error: "Item moved. Reopen it." }, { status: 409, headers });
     if (request.signal.aborted) return new Response(null, { status: 204, headers });
     if (!state) return Response.json({ error: "Item not found" }, { status: 404, headers });
     const capabilities = { canEditContent: current.canEditContent, canComment: current.canComment };
@@ -64,9 +63,8 @@ export async function POST(request: Request, context: Context) {
     const current = access;
     if (request.signal.aborted) return new Response(null, { status: 204, headers });
     const result = await pushVaultCollaboration({ ...current, operationId: value.operationId, epoch: value.epoch, updates: value.updates as string[],
-      signal: request.signal, beforeCommit: async (relativePath: string) => {
-        const { workspaceId, itemId } = await context.params;
-        const latest = await authorizeVaultItemAtPath(request, workspaceId, itemId, relativePath, "edit");
+      signal: request.signal, beforeCommit: async () => {
+        const latest = await authorize(request, context, "edit");
         if (latest instanceof Response) throw latest;
         if (latest.actorUserId !== current.actorUserId) throw Response.json({ error: "Session changed" }, { status: 403, headers });
       },
