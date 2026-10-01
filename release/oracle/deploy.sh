@@ -47,6 +47,11 @@ BOOTSTRAP="${TEXTTEXT_ORACLE_BOOTSTRAP:-0}"
 [[ "$BOOTSTRAP" = 0 || "$BOOTSTRAP" = 1 ]] || { echo "TEXTTEXT_ORACLE_BOOTSTRAP must be 0 or 1." >&2; exit 1; }
 [[ "$ORACLE_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9._@-]*$ ]] || { echo "Set TEXTTEXT_ORACLE_HOST to the existing SSH destination." >&2; exit 1; }
 [[ "$REMOTE_ROOT" =~ ^/home/ubuntu/[a-zA-Z0-9/_-]+$ ]] || { echo "Oracle root must be an isolated path under /home/ubuntu." >&2; exit 1; }
+case "$REMOTE_ROOT" in
+  /home/ubuntu/algorave|/home/ubuntu/algorave/*)
+    echo "The TextText deployment root cannot overlap Algorave." >&2
+    exit 1 ;;
+esac
 RELEASE_NAME="$(date -u +%Y%m%dT%H%M%SZ)-$DEPLOYMENT_ID-$(node -e 'console.log(require("node:crypto").randomBytes(3).toString("hex"))')"
 SSH_OPTIONS=(-i "$HOME/.ssh/id_ed25519" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=10)
 echo ">> check the existing Oracle runtime"
@@ -67,6 +72,15 @@ fi
 if [ -e "$root/current" ] && [ ! -L "$root/current" ]; then
   echo "Refusing to replace a current directory; expected a release symlink." >&2
   exit 1
+fi
+if [ -L "$root/current" ]; then
+  sudo -n test -f /etc/texttext/backup.env
+  if sudo -n test -L /etc/texttext/backup.env ||
+     [ "$(sudo -n stat -c '%u:%g:%a' /etc/texttext/backup.env)" != "0:0:600" ]; then
+    echo "The TextText backup environment must be a root-owned regular file with mode 0600." >&2
+    exit 1
+  fi
+  [ -x /usr/bin/systemd-run ]
 fi
 mkdir -p "$root/releases" "$root/incoming"
 [ ! -e "$root/releases/$release" ]
@@ -117,8 +131,40 @@ cd "$release"
 /usr/bin/node -e 'const m=require("./oracle-release.json");if(m.platform!==process.platform||m.architecture!==process.arch||m.deploymentId!==process.argv[1])process.exit(1);require("sharp");require("@next/swc-linux-arm64-gnu");' "$expected"
 mkdir -p "$release/.texttext/oracle-build/cache" "$root/state"
 if [ -n "$previous" ]; then
-  # A manual deployment takes one backup before touching the existing schema.
-  sudo -n systemctl start texttext-backup.service
+  # Use the checksum-verified incoming implementation so backup behavior does
+  # not depend on the outgoing release. The transient unit reads the existing
+  # root-owned environment before dropping to ubuntu, cannot use the network
+  # beyond loopback, and must finish before a migration or symlink change.
+  sudo -n systemctl is-active --quiet texttext-postgres.service
+  sudo -n /usr/bin/systemd-run \
+    --unit=texttext-deploy-backup.service \
+    --description="TextText pre-deploy local database backup" \
+    --wait --collect --pipe --quiet \
+    --service-type=oneshot \
+    --uid=ubuntu --gid=ubuntu \
+    --working-directory="$release" \
+    --nice=10 \
+    --property=EnvironmentFile=/etc/texttext/backup.env \
+    --property=UMask=0077 \
+    --property=IOSchedulingClass=idle \
+    --property=NoNewPrivileges=true \
+    --property=PrivateTmp=true \
+    --property=PrivateDevices=true \
+    --property=ProtectSystem=strict \
+    --property=ProtectHome=read-only \
+    --property=ProtectKernelTunables=true \
+    --property=ProtectKernelModules=true \
+    --property=ProtectControlGroups=true \
+    --property=RestrictSUIDSGID=true \
+    --property="RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6" \
+    --property=IPAddressDeny=any \
+    --property=IPAddressAllow=localhost \
+    --property="ReadWritePaths=$root/backups" \
+    --property=MemoryMax=512M \
+    --property=CPUQuota=50% \
+    --property=TasksMax=128 \
+    --property=TimeoutStartSec=15min \
+    /usr/bin/node "$release/release/oracle/backup.mjs" </dev/null
 fi
 if [ "$bootstrap" = 1 ]; then
   [ -z "$previous" ] || { echo "Refusing to bootstrap an existing application release." >&2; exit 1; }

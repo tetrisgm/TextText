@@ -1,19 +1,15 @@
 #!/usr/bin/env node
-// Manual recovery drill. This never alters the live database or remote backups.
+// Manual recovery drill. This never alters the live database or backup files.
 import assert from "node:assert/strict";
-import { createWriteStream, mkdtempSync, rmSync } from "node:fs";
+import { closeSync, constants, createReadStream, fstatSync, lstatSync, openSync, readdirSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
 import { join, resolve } from "node:path";
-import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
-import { Transform } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import { isEntrypoint } from "./entrypoint.mjs";
-import { createR2BackupClient } from "./r2-backup-client.mjs";
 
-const backupPattern = /^backups\/oracle\/texttext\/texttext-\d{8}T\d{6}Z-[a-f0-9]{8}\.dump\.aes256gcm$/;
+const backupPattern = /^texttext-\d{8}T\d{6}Z-[a-f0-9]{8}\.dump$/;
 const quoted = value => `"${value.replaceAll('"', '""')}"`;
 const requiredTables = ["users", "blogs", "folders", "posts", "api_tokens", "action_audit", "collab_state", "collab_updates", "idempotency_keys"];
 const requiredTriggers = ["posts_bump_revision", "folders_bump_revision", "posts_bump_blog_seq", "folders_bump_blog_seq", "posts_file_representation_immutable", "posts_guard_public_path", "posts_preserve_public_path"];
@@ -34,29 +30,89 @@ async function tableCounts(client) {
   }
 }
 
+function assertArchiveIdentity(archive, stat) {
+  if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 0o077) !== 0 ||
+      stat.dev !== archive.dev || stat.ino !== archive.ino || stat.size !== archive.size ||
+      stat.uid !== archive.uid || stat.gid !== archive.gid) {
+    throw new Error("The selected local backup changed or is not a private regular file.");
+  }
+}
+
+export function newestLocalBackup(directory, maxBytes) {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1024 || maxBytes > 50 * 1024 ** 3) {
+    throw new Error("Invalid local restore byte budget.");
+  }
+  const root = resolve(directory);
+  const directoryStat = lstatSync(root);
+  if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink() || (directoryStat.mode & 0o077) !== 0) {
+    throw new Error("Backup directory must be a private regular directory (mode 0700).");
+  }
+  const names = readdirSync(root).filter(name => backupPattern.test(name)).sort((left, right) => right.localeCompare(left));
+  if (!names.length) throw new Error("No local TextText backup archive is available.");
+  const archives = names.map(name => {
+    const path = join(root, name);
+    const stat = lstatSync(path);
+    if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 0o077) !== 0 ||
+        stat.uid !== directoryStat.uid || stat.gid !== directoryStat.gid) {
+      throw new Error("Local backup archives must be private regular files owned with the backup directory.");
+    }
+    if (stat.size === 0 || stat.size > maxBytes) throw new Error("Local backup archive exceeds its restore byte budget.");
+    return { name, path, size: stat.size, dev: stat.dev, ino: stat.ino, uid: stat.uid, gid: stat.gid };
+  });
+  return archives[0];
+}
+
+async function archiveDigest(archive, maxBytes) {
+  const descriptor = openSync(archive.path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const stat = fstatSync(descriptor);
+  assertArchiveIdentity(archive, stat);
+  let bytes = 0;
+  const hash = createHash("sha256");
+  try {
+    for await (const chunk of createReadStream(archive.path, { fd: descriptor, autoClose: false })) {
+      bytes += chunk.length;
+      if (bytes > maxBytes) throw new Error("Local backup archive exceeded its restore byte budget.");
+      hash.update(chunk);
+    }
+  } finally {
+    closeSync(descriptor);
+  }
+  if (bytes !== archive.size) throw new Error("Local backup archive size changed during validation.");
+  assertArchiveIdentity(archive, lstatSync(archive.path));
+  return { bytes, digest: hash.digest("hex") };
+}
+
+function runPgRestore(pgRestore, archive, args, environment, capture = false) {
+  const descriptor = openSync(archive.path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    assertArchiveIdentity(archive, fstatSync(descriptor));
+    return spawnSync(pgRestore, [...args, "/proc/self/fd/3"], {
+      env: environment,
+      encoding: capture ? "utf8" : undefined,
+      stdio: capture ? ["ignore", "pipe", "ignore", descriptor] : ["ignore", "ignore", "ignore", descriptor],
+      timeout: capture ? 30_000 : 120_000,
+      maxBuffer: capture ? 8 * 1024 ** 2 : undefined,
+    });
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
 export async function restoreDrill({ scratch = false, compareLive = false,
   release = "/home/ubuntu/texttext/current", adminEnv = "/etc/texttext/database-admin.env",
-  backupEnv = "/etc/texttext/backup.env", recoveryKeyFile, suppliedClient } = {}) {
-  if (!scratch || !recoveryKeyFile) throw new Error("Require --scratch and --recovery-key-file <independent private recovery environment file>.");
+  backupEnv = "/etc/texttext/backup.env" } = {}) {
+  if (!scratch) throw new Error("Require --scratch for a disposable restore database.");
   const { localDatabase, protectedEnvironment } = await import(pathToFileURL(join(release, "release/oracle/start.mjs")).href);
-  const { decryptBackup } = await import(pathToFileURL(join(release, "release/oracle/backup-remote.mjs")).href);
   const { backupConnection } = await import(pathToFileURL(join(release, "release/oracle/backup.mjs")).href);
   const require = createRequire(join(release, "package.json"));
   const { Client } = require("pg");
   const adminSettings = protectedEnvironment(adminEnv);
   const backupSettings = protectedEnvironment(backupEnv);
-  // Never fall back to the encryption key resident on the server. The caller
-  // must independently recover this file from the separate credential store.
-  const recovered = protectedEnvironment(recoveryKeyFile);
-  if (resolve(recoveryKeyFile) === resolve(backupEnv) || !recovered.BACKUP_ENCRYPTION_KEY) {
-    throw new Error("Supply a separate independently recovered encryption key file.");
-  }
   const adminUrl = localDatabase(adminSettings.DATABASE_URL);
   const liveUrl = localDatabase(backupSettings.DATABASE_URL);
   if (adminUrl.hostname !== liveUrl.hostname || adminUrl.port !== liveUrl.port) throw new Error("Admin and backup connections must use the same loopback PostgreSQL instance.");
-  const maxBytes = Number(backupSettings.TEXTTEXT_BACKUP_UPLOAD_MAX_BYTES || 100 * 1024 ** 2);
-  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1024 || maxBytes > 1024 ** 3) throw new Error("Invalid recovery download budget.");
-  const backupStore = suppliedClient ?? await createR2BackupClient(backupSettings);
+  const maxBytes = Number(backupSettings.TEXTTEXT_BACKUP_MAX_BYTES || 5 * 1024 ** 3);
+  const backupDirectory = resolve(backupSettings.TEXTTEXT_BACKUP_DIR || "/home/ubuntu/texttext/backups");
   const name = `texttext_restore_drill_${randomBytes(10).toString("hex")}`;
   const scratchUrl = new URL(adminUrl);
   scratchUrl.pathname = `/${name}`;
@@ -66,41 +122,21 @@ export async function restoreDrill({ scratch = false, compareLive = false,
   const admin = new Client({ connectionString: adminUrl.href, connectionTimeoutMillis: 10_000, statement_timeout: 60_000 });
   const live = new Client({ connectionString: liveUrl.href, connectionTimeoutMillis: 10_000, statement_timeout: 60_000 });
   const restored = new Client({ connectionString: scratchUrl.href, connectionTimeoutMillis: 10_000, statement_timeout: 60_000 });
-  const directory = mkdtempSync(join(tmpdir(), "texttext-restore-drill-"));
   let adminConnected = false, liveConnected = false, restoredConnected = false;
   let created = false, databaseOid, failure, receipt;
-  let stage = "read-only backup inventory";
+  let stage = "local backup selection";
   try {
-    const options = { abortSignal: AbortSignal.timeout(60_000) };
-    const inventory = await backupStore.list({ ...options, prefix: "backups/oracle/texttext/", limit: 100 });
-    if (inventory.hasMore || !inventory.blobs.length) throw new Error("Backup inventory is empty or exceeds its bounded limit.");
-    if (inventory.blobs.some(entry => !backupPattern.test(entry.pathname))) throw new Error("Unexpected file in the backup prefix.");
-    const uploadedTime = entry => Number(new Date(entry.uploadedAt ?? 0));
-    const latest = [...inventory.blobs].sort((a, b) => uploadedTime(b) - uploadedTime(a) || b.pathname.localeCompare(a.pathname))[0];
-    if (!Number.isSafeInteger(latest.size) || latest.size <= 37 || latest.size > maxBytes) throw new Error("Backup exceeds the recovery download budget.");
-    if (compareLive) { await live.connect(); liveConnected = true; }
-    const before = compareLive ? await tableCounts(live) : null;
-    stage = "bounded off-server download";
-    const downloaded = await backupStore.get(latest.url, options);
-    if (!downloaded || downloaded.statusCode !== 200) throw new Error("Backup could not be downloaded.");
-    const ciphertext = join(directory, "backup.aes256gcm");
-    let bytes = 0;
-    const hash = createHash("sha256");
-    const limit = new Transform({ transform(chunk, encoding, callback) {
-      bytes += chunk.length;
-      hash.update(chunk);
-      callback(bytes > maxBytes ? new Error("Download budget exceeded.") : null, chunk);
-    } });
-    await pipeline(downloaded.stream, limit, createWriteStream(ciphertext, { flags: "wx", mode: 0o600 }));
-    assert.equal(bytes, latest.size, "Downloaded size differs from backup inventory.");
-    const digest = hash.digest("hex");
-    stage = "independent-key authenticated decryption";
-    const dump = join(directory, "recovered.dump");
-    await decryptBackup(ciphertext, dump, recovered.BACKUP_ENCRYPTION_KEY);
-    const archive = spawnSync(pgRestore, ["--list", dump], { env: scratchEnvironment, encoding: "utf8", timeout: 30_000, maxBuffer: 8 * 1024 ** 2 });
-    if (archive.error || archive.status !== 0) throw new Error("Decrypted PostgreSQL archive is invalid.");
+    const latest = newestLocalBackup(backupDirectory, maxBytes);
+    stage = "local backup digest validation";
+    const { bytes, digest } = await archiveDigest(latest, maxBytes);
+    stage = "PostgreSQL archive validation";
+    const archive = runPgRestore(pgRestore, latest, ["--list"], scratchEnvironment, true);
+    if (archive.error || archive.status !== 0) throw new Error("Local PostgreSQL archive is invalid.");
+    assertArchiveIdentity(latest, lstatSync(latest.path));
     const archiveTables = [...archive.stdout.matchAll(/^\d+; \d+ \d+ TABLE DATA public ([a-z_][a-z_0-9]*) \S+$/gm)].map(match => match[1]).sort();
     for (const table of requiredTables) assert.ok(archiveTables.includes(table), "Archive is missing a required application table.");
+    if (compareLive) { await live.connect(); liveConnected = true; }
+    const before = compareLive ? await tableCounts(live) : null;
 
     stage = "new scratch database creation";
     await admin.connect(); adminConnected = true;
@@ -109,9 +145,10 @@ export async function restoreDrill({ scratch = false, compareLive = false,
     databaseOid = (await admin.query("SELECT oid FROM pg_database WHERE datname = $1", [name])).rows[0]?.oid;
     assert.ok(databaseOid, "Created database has no identity.");
     stage = "transactional PostgreSQL restore";
-    const result = spawnSync(pgRestore, ["--single-transaction", "--exit-on-error", "--no-owner", "--no-acl", "--dbname", name, dump],
-      { env: scratchEnvironment, stdio: "ignore", timeout: 120_000 });
+    const result = runPgRestore(pgRestore, latest,
+      ["--single-transaction", "--exit-on-error", "--no-owner", "--no-acl", "--dbname", name], scratchEnvironment);
     if (result.error || result.status !== 0) throw new Error("PostgreSQL restore failed.");
+    assertArchiveIdentity(latest, lstatSync(latest.path));
     await restored.connect(); restoredConnected = true;
     stage = "restored schema and canonical document validation";
     const counts = await tableCounts(restored);
@@ -120,7 +157,6 @@ export async function restoreDrill({ scratch = false, compareLive = false,
     for (const trigger of requiredTriggers) assert.ok(triggers.includes(trigger), "Restored database is missing an enabled protection trigger.");
     const canonical = await restored.query("SELECT convalidated FROM pg_constraint WHERE conrelid = 'public.posts'::regclass AND conname = 'posts_document_schema_v1_valid'");
     assert.equal(canonical.rows[0]?.convalidated, true, "Canonical document constraint is not validated.");
-    // prepare-migrations compiles this source into the portable release bundle.
     const auditSource = "scripts/audit-canonical-documents.ts";
     const audit = spawnSync(process.execPath, [join(release, "release/oracle/migrations", auditSource.replace(/\.ts$/, ".cjs"))],
       { cwd: release, env: { ...process.env, DATABASE_URL: scratchUrl.href }, encoding: "utf8", timeout: 60_000, maxBuffer: 1024 ** 2 });
@@ -131,11 +167,11 @@ export async function restoreDrill({ scratch = false, compareLive = false,
       assert.deepEqual(after, before, "Live row counts changed during the drill; repeat at a quiet point.");
       assert.deepEqual(counts, before, "Backup row counts differ from the stable live database; take a fresh backup and repeat.");
     }
-    receipt = { ok: true, backup: latest.pathname, ciphertextBytes: bytes, ciphertextSha256: digest,
+    receipt = { ok: true, backup: latest.name, archiveBytes: bytes, archiveSha256: digest,
       tables: Object.keys(counts).length, rows: counts, canonicalDocuments: Number(counts.posts),
-      independentKey: true, comparedLive: compareLive, scratchDatabaseRemoved: false };
+      comparedLive: compareLive, scratchDatabaseRemoved: false };
   } catch {
-    // Neither PostgreSQL stderr nor object-store response bodies or secrets enter logs.
+    // PostgreSQL stderr and database credentials never enter drill output.
     failure = new Error(`Restore drill failed during ${stage}.`);
   } finally {
     if (restoredConnected) await restored.end().catch(() => {});
@@ -150,7 +186,6 @@ export async function restoreDrill({ scratch = false, compareLive = false,
       } catch { failure = new Error(`Restore drill cleanup failed for ${name}; resolve only this scratch database.`); }
     }
     if (adminConnected) await admin.end().catch(() => {});
-    rmSync(directory, { recursive: true, force: true });
   }
   if (failure) throw failure;
   return receipt;
@@ -160,13 +195,13 @@ if (isEntrypoint(import.meta.url)) {
   try {
     const options = {};
     const args = process.argv.slice(2);
-    const paths = { "--release": "release", "--admin-env": "adminEnv", "--backup-env": "backupEnv", "--recovery-key-file": "recoveryKeyFile" };
+    const paths = { "--release": "release", "--admin-env": "adminEnv", "--backup-env": "backupEnv" };
     while (args.length) {
       const argument = args.shift();
       if (argument === "--scratch") options.scratch = true;
       else if (argument === "--compare-live") options.compareLive = true;
       else if (paths[argument] && args[0] && !args[0].startsWith("--")) options[paths[argument]] = args.shift();
-      else throw new Error("Usage: restore-drill.mjs --scratch --recovery-key-file <private recovered key environment> [--compare-live] [--release <release directory>] [--admin-env <private environment>] [--backup-env <private environment>]");
+      else throw new Error("Usage: restore-drill.mjs --scratch [--compare-live] [--release <release directory>] [--admin-env <private environment>] [--backup-env <private environment>]");
     }
     console.log(JSON.stringify(await restoreDrill(options), null, 2));
   } catch (error) {

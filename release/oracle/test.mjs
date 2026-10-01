@@ -1,15 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
-import { createHash, randomBytes } from "node:crypto";
+import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { Readable } from "node:stream";
 import { spawnSync } from "node:child_process";
 import { copyWithoutSecrets, relativeBuildDirectory } from "./package.mjs";
 import { localDatabase, protectedEnvironment, runtimeEnvironment } from "./start.mjs";
 import { backupConnection, createBackup, retainedArchives } from "./backup.mjs";
-import { decryptBackup, encryptBackup, remoteRetention, uploadEncryptedBackup } from "./backup-remote.mjs";
 import { verifyPackage } from "./verify-package.mjs";
 import { isEntrypoint } from "./entrypoint.mjs";
 
@@ -109,30 +107,69 @@ test("release verification rejects corruption, wrong platforms, and packaged sec
   await assert.rejects(() => verifyPackage(archive), /unsafe path or environment file/);
 });
 
-test("backup encryption authenticates corruption and never overwrites recovery output", async (t) => {
+test("deployment validates an incoming local backup before migration", () => {
+  const deploy = readFileSync(new URL("./deploy.sh", import.meta.url), "utf8");
+  const orderedSteps = [
+    "sha256sum --check release.tar.gz.sha256",
+    "tar --extract --gzip --file release.tar.gz",
+    'require("@next/swc-linux-arm64-gnu")',
+    "sudo -n /usr/bin/systemd-run",
+    '"$release/release/oracle/bootstrap-database.mjs"',
+    'mv -Tf "$root/.current-$$" "$root/current"',
+  ];
+  let previous = -1;
+  for (const step of orderedSteps) {
+    const position = deploy.indexOf(step);
+    assert.ok(position > previous, `${step} must follow the prior verified deployment step`);
+    previous = position;
+  }
+
+  const backupStart = deploy.indexOf('if [ -n "$previous" ]; then', deploy.indexOf("sha256sum --check"));
+  const backupEnd = deploy.indexOf('\nfi\nif [ "$bootstrap" = 1 ]', backupStart);
+  assert.ok(backupStart >= 0 && backupEnd > backupStart, "existing releases must have a bounded backup gate");
+  const backup = deploy.slice(backupStart, backupEnd);
+  assert.match(backup, /--unit=texttext-deploy-backup\.service/);
+  assert.match(backup, /--wait --collect --pipe --quiet/);
+  assert.match(backup, /--uid=ubuntu --gid=ubuntu/);
+  assert.match(backup, /--property=EnvironmentFile=\/etc\/texttext\/backup\.env/);
+  assert.match(backup, /--property=IPAddressDeny=any/);
+  assert.match(backup, /--property=IPAddressAllow=localhost/);
+  assert.match(backup, /--property="ReadWritePaths=\$root\/backups"/);
+  assert.match(backup, /\/usr\/bin\/node "\$release\/release\/oracle\/backup\.mjs" <\/dev\/null/);
+  assert.doesNotMatch(backup, /require-upload|R2|BLOB|algorave/i);
+  assert.doesNotMatch(backup, /systemctl (restart|stop|reload)/);
+  assert.doesNotMatch(deploy, /systemctl start texttext-backup\.service/);
+  assert.match(deploy, /stat -c '%u:%g:%a' \/etc\/texttext\/backup\.env/);
+  assert.match(deploy, /The TextText deployment root cannot overlap Algorave/);
+
+  const service = readFileSync(new URL("./texttext-backup.service", import.meta.url), "utf8");
+  assert.match(service, /ExecStart=.*backup\.mjs$/m);
+  assert.match(service, /^IPAddressDeny=any$/m);
+  assert.match(service, /^IPAddressAllow=localhost$/m);
+  assert.doesNotMatch(service, /upload|R2|BLOB/i);
+  const packaging = readFileSync(new URL("./package.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(packaging, /backup-remote|r2-backup-client/);
+});
+
+test("backup creates one atomic validated local archive without upload settings", async (t) => {
   const directory = temporary(t);
-  const source = join(directory, "original.dump");
-  const encrypted = join(directory, "backup.enc");
-  const recovered = join(directory, "recovered.dump");
-  const plaintext = randomBytes(4096);
-  writeFileSync(source, plaintext);
-  const key = randomBytes(32).toString("base64");
-  await encryptBackup(source, encrypted, key);
-  assert.equal(lstatSync(encrypted).mode & 0o077, 0);
-  await decryptBackup(encrypted, recovered, key);
-  assert.deepEqual(readFileSync(recovered), plaintext);
-  await assert.rejects(() => decryptBackup(encrypted, recovered, key), /replace an existing/);
-  const raced = join(directory, "raced.dump");
-  const races = await Promise.allSettled([decryptBackup(encrypted, raced, key), decryptBackup(encrypted, raced, key)]);
-  assert.equal(races.filter((entry) => entry.status === "fulfilled").length, 1);
-  assert.deepEqual(readFileSync(raced), plaintext);
-  const bytes = readFileSync(encrypted);
-  bytes[100] ^= 1;
-  writeFileSync(encrypted, bytes);
-  const failed = join(directory, "failed.dump");
-  await assert.rejects(() => decryptBackup(encrypted, failed, key), /authentication failed/);
-  assert.equal(existsSync(failed), false);
-  await assert.rejects(() => encryptBackup(source, join(directory, "invalid"), "weak-key"), /32-byte/);
+  const backups = join(directory, "backups");
+  const dump = join(directory, "pg_dump");
+  const restore = join(directory, "pg_restore");
+  mkdirSync(backups, { mode: 0o700 });
+  writeFileSync(dump, "#!/bin/sh\nprintf 'validated local archive'\n", { mode: 0o700 });
+  writeFileSync(restore, "#!/bin/sh\n[ \"$1\" = --list ]\n", { mode: 0o700 });
+  const archive = await createBackup({
+    DATABASE_URL: "postgres://test:test@127.0.0.1:5433/texttext",
+    PG_DUMP: dump, PG_RESTORE: restore, TEXTTEXT_BACKUP_DIR: backups,
+    TEXTTEXT_BACKUP_FLOCK_PARENT: String(process.ppid), TEXTTEXT_BACKUP_MAX_BYTES: "1024",
+    TEXTTEXT_BACKUP_UPLOAD: "1", BLOB_READ_WRITE_TOKEN: "unused-legacy-value",
+    TEXTTEXT_R2_ACCESS_KEY_ID: "unused", TEXTTEXT_R2_SECRET_ACCESS_KEY: "unused",
+  });
+  assert.match(archive, /texttext-\d{8}T\d{6}Z-[a-f0-9]{8}\.dump$/);
+  assert.equal(readFileSync(archive, "utf8"), "validated local archive");
+  assert.equal(lstatSync(archive).mode & 0o077, 0);
+  assert.deepEqual(readdirSync(backups), [archive.split("/").at(-1)]);
 });
 
 test("local retention ignores unrelated files and backup failure preserves the previous dump", async (t) => {
@@ -146,7 +183,7 @@ test("local retention ignores unrelated files and backup failure preserves the p
   writeFileSync(binary, "#!/bin/sh\nprintf 'incomplete'\nexit 1\n", { mode: 0o700 });
   await assert.rejects(() => createBackup({
     DATABASE_URL: "postgres://test:test@127.0.0.1:5433/texttext",
-    PG_DUMP: binary, TEXTTEXT_BACKUP_DIR: backups,
+    PG_DUMP: binary, TEXTTEXT_BACKUP_DIR: backups, TEXTTEXT_BACKUP_FLOCK_PARENT: String(process.ppid),
   }), /pg_dump failed/);
   assert.equal(readFileSync(prior, "utf8"), "previous good backup");
   assert.deepEqual(readdirSync(backups).sort(), ["texttext-20260901T120000Z-12345678.dump", "unrelated.txt"]);
@@ -170,58 +207,25 @@ test("local archive size is bounded even when pg_dump streams excess data", asyn
   await assert.rejects(() => createBackup({
     DATABASE_URL: "postgres://test:test@127.0.0.1:5433/texttext",
     PATH: process.env.PATH, PG_DUMP: binary, TEXTTEXT_BACKUP_DIR: backups, TEXTTEXT_BACKUP_MAX_BYTES: "1024",
+    TEXTTEXT_BACKUP_FLOCK_PARENT: String(process.ppid),
   }), /storage budget/);
   assert.deepEqual(readdirSync(backups), []);
 });
 
-test("remote retention keeps distinct days and refuses foreign objects", () => {
-  const entries = [
-    { pathname: "backups/oracle/texttext/texttext-20260901T120000Z-12345678.dump.aes256gcm", size: 10 },
-    { pathname: "backups/oracle/texttext/texttext-20260902T120000Z-12345678.dump.aes256gcm", size: 10 },
-    { pathname: "backups/oracle/texttext/texttext-20260902T130000Z-12345678.dump.aes256gcm", size: 10 },
-  ];
-  const results = remoteRetention(entries, { keep: 7, maxBytes: 100 });
-  assert.equal(results.filter((item) => !item.remove).length, 2);
-  assert.equal(results.find((item) => item.pathname === entries[1].pathname).remove, true);
-  assert.throws(() => remoteRetention([{ pathname: "user-media/photo.jpg", size: 10 }], { keep: 7, maxBytes: 100 }), /Unexpected object/);
-});
-
-test("remote backup verifies the encrypted download before deleting old files", async (t) => {
+test("backup preserves validated archives when the free-space floor cannot be reserved", async (t) => {
   const directory = temporary(t);
-  const source = join(directory, "texttext-20990101T120000Z-12345678.dump");
-  writeFileSync(source, "database contents");
-  const old = { pathname: "backups/oracle/texttext/texttext-20260901T120000Z-12345678.dump.aes256gcm", size: 10, url: "https://example.invalid/old" };
-  const events = [];
-  let ciphertext;
-  const client = {
-    async list() { return { blobs: [old], hasMore: false }; },
-    async put(path, stream) {
-      events.push("put");
-      const chunks = [];
-      for await (const chunk of stream) chunks.push(chunk);
-      ciphertext = Buffer.concat(chunks);
-      assert.equal(ciphertext.includes(Buffer.from("database contents")), false);
-      return { url: "https://example.invalid/new", pathname: path };
-    },
-    async get() { events.push("get"); return { statusCode: 200, stream: Readable.toWeb(Readable.from([ciphertext])) }; },
-    async del(urls) { events.push("del"); assert.deepEqual(urls, [old.url]); },
-  };
-  await uploadEncryptedBackup(source, { BACKUP_ENCRYPTION_KEY: randomBytes(32).toString("base64"), TEXTTEXT_BACKUP_KEEP: "1" }, client);
-  assert.deepEqual(events, ["put", "get", "del"]);
-  assert.equal(existsSync(`${source}.encrypted.partial`), false);
-});
-
-test("a corrupt remote download never deletes a previous verified backup", async (t) => {
-  const directory = temporary(t);
-  const source = join(directory, "texttext-20990101T120000Z-12345678.dump");
-  writeFileSync(source, "database contents");
-  const deleted = [];
-  const client = {
-    async list() { return { blobs: [{ pathname: "backups/oracle/texttext/texttext-20260901T120000Z-12345678.dump.aes256gcm", size: 10, url: "https://example.invalid/old" }], hasMore: false }; },
-    async put(path, stream) { for await (const chunk of stream) void chunk; return { url: "https://example.invalid/new", pathname: path }; },
-    async get() { return { statusCode: 200, stream: Readable.toWeb(Readable.from([Buffer.from("corrupt")])) }; },
-    async del(url) { deleted.push(url); },
-  };
-  await assert.rejects(() => uploadEncryptedBackup(source, { BACKUP_ENCRYPTION_KEY: randomBytes(32).toString("base64") }, client), /previous verified backups were preserved/);
-  assert.deepEqual(deleted, ["https://example.invalid/new"]);
+  const backups = join(directory, "backups");
+  const binary = join(directory, "pg_dump");
+  const prior = join(backups, "texttext-20260901T120000Z-12345678.dump");
+  mkdirSync(backups, { mode: 0o700 });
+  writeFileSync(prior, "previous good backup", { mode: 0o600 });
+  writeFileSync(binary, `#!/bin/sh\nprintf ran > ${JSON.stringify(join(backups, "pg_dump-ran"))}\n`, { mode: 0o700 });
+  await assert.rejects(() => createBackup({
+    DATABASE_URL: "postgres://test:test@127.0.0.1:5433/texttext",
+    PG_DUMP: binary, TEXTTEXT_BACKUP_DIR: backups, TEXTTEXT_BACKUP_MAX_BYTES: "1024",
+    TEXTTEXT_STORAGE_MIN_FREE_BYTES: String(Number.MAX_SAFE_INTEGER),
+    TEXTTEXT_BACKUP_FLOCK_PARENT: String(process.ppid),
+  }), /free-space floor/);
+  assert.equal(readFileSync(prior, "utf8"), "previous good backup");
+  assert.deepEqual(readdirSync(backups), ["texttext-20260901T120000Z-12345678.dump"]);
 });

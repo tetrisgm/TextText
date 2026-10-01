@@ -1,7 +1,6 @@
 [Unit]
-Description=TextText encrypted database backup
-After=network-online.target texttext-postgres.service
-Wants=network-online.target
+Description=TextText local database backup
+After=texttext-postgres.service
 Requires=texttext-postgres.service
 
 [Service]
@@ -10,7 +9,7 @@ User=ubuntu
 Group=ubuntu
 WorkingDirectory=/home/ubuntu/texttext/current
 EnvironmentFile=/etc/texttext/backup.env
-ExecStart=/usr/bin/node /home/ubuntu/texttext/current/release/oracle/backup.mjs --require-upload
+ExecStart=/usr/bin/node /home/ubuntu/texttext/current/release/oracle/backup.mjs
 TimeoutStartSec=15min
 UMask=0077
 Nice=10
@@ -25,6 +24,8 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
 ReadWritePaths=/home/ubuntu/texttext/backups
 MemoryMax=512M
 CPUQuota=50%

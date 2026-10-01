@@ -85,7 +85,7 @@ export function packageBuild({ projectRoot = root, distDirectory = ".next", migr
     run("npm", ["ci", "--omit=dev", "--include=optional", "--ignore-scripts", "--os=linux", "--cpu=arm64", "--libc=glibc", "--no-audit", "--no-fund"], { cwd: app });
     assertLinuxArmRuntime(app);
     mkdirSync(join(app, "release/oracle"), { recursive: true });
-    for (const name of ["entrypoint.mjs", "start.mjs", "backup.mjs", "backup-remote.mjs", "r2-backup-client.mjs", "restore-drill.mjs", "bootstrap-database.mjs", "smoke.mjs"]) cpSync(join(projectRoot, "release/oracle", name), join(app, "release/oracle", name));
+    for (const name of ["entrypoint.mjs", "start.mjs", "backup.mjs", "restore-drill.mjs", "bootstrap-database.mjs", "smoke.mjs"]) cpSync(join(projectRoot, "release/oracle", name), join(app, "release/oracle", name));
     copyWithoutSecrets(resolve(migrationsDirectory), join(app, "release/oracle/migrations"));
     mkdirSync(join(app, "scripts/lib"), { recursive: true });
     cpSync(join(projectRoot, "scripts/verify-production-database.mjs"), join(app, "scripts/verify-production-database.mjs"));

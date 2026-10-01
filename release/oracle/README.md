@@ -47,7 +47,13 @@ bootstrap helper refuses a nonempty database. Later deployments require an
 initialized local database. Deployment backs up an existing release, runs the
 prepared migration chain, switches the `current` symlink, restarts only
 `texttext.service`, checks the deployment identity and sign-in response, then
-runs the authenticated document/audit smoke before accepting the release.
+runs the authenticated document/audit smoke before accepting the release. The
+pre-migration backup runs from the checksum-verified incoming release rather
+than `current`, so it does not depend on stale backup code. A transient systemd
+service loads `/etc/texttext/backup.env`, drops to `ubuntu`, permits network
+access only to loopback, and writes only to the TextText backup directory. It
+must produce and validate a local archive before migration. It does not address
+or restart Algorave.
 On failure after switching, it restores the previous application symlink and
 restarts TextText. Database schema changes are not automatically reversed;
 migrations must retain compatibility with the previous application. Archives,
@@ -100,83 +106,53 @@ root-owned `/etc/texttext/backup.env`, mode 0600, needs:
 - `DATABASE_URL` for the local database only.
 - `TEXTTEXT_BACKUP_DIR=/home/ubuntu/texttext/backups`.
 - `PG_DUMP` and `PG_RESTORE` absolute paths if not on systemd's PATH.
-- `TEXTTEXT_BACKUP_UPLOAD=1`, required by the production backup service.
-- `TEXTTEXT_R2_ACCOUNT_ID`, `TEXTTEXT_R2_ACCESS_KEY_ID`, and
-  `TEXTTEXT_R2_SECRET_ACCESS_KEY` for a private, bucket-scoped R2 S3 credential.
-  `TEXTTEXT_BACKUP_R2_BUCKET` defaults to `texttext-backups`. Only ciphertext is
-  uploaded. Keep the bucket private and these values out of command arguments.
-- A dedicated `BACKUP_ENCRYPTION_KEY`: 32 cryptographically random bytes encoded
-  as base64. Keep its recovery copy in the owner's credential store, separate
-  from this VM. Losing it makes the off-server backups unreadable.
+- Optional `TEXTTEXT_BACKUP_KEEP` and `TEXTTEXT_BACKUP_MAX_BYTES` overrides.
+  Defaults retain at most seven archives and 5 GiB total.
+- Optional `TEXTTEXT_STORAGE_MIN_FREE_BYTES`. The default reserves 2 GiB for
+  the app, media, and release artifacts.
 
 `backup.mjs` creates a PostgreSQL custom-format dump, validates its archive table
-of contents, and atomically retains it. Local plaintext dumps are mode 0600.
-Default local retention is at most seven files and 5 GiB total; one additional
-dump may exist temporarily during backup. A failed dump preserves prior backups.
-After a valid dump, local retention runs even if the off-server upload fails.
-
-Off-server files use authenticated AES-256-GCM with a fresh random nonce. They
-are confined to `backups/oracle/texttext/` in private R2. Each upload
-is downloaded and checked by SHA-256 before old remote files are pruned. Retention
-keeps at most seven distinct UTC days, one file per day, and 500 MiB total; each
-upload is capped at 100 MiB. A temporary eighth file can exist during verification.
-Byte budgets may retain fewer days. The defaults can be lowered or deliberately
-raised through `TEXTTEXT_BACKUP_KEEP`, `TEXTTEXT_BACKUP_MAX_BYTES`,
-`TEXTTEXT_BACKUP_UPLOAD_MAX_BYTES`, and `TEXTTEXT_BACKUP_REMOTE_MAX_BYTES`.
-The application prunes to at most seven distinct backup days and 500 MiB.
-Configure a bucket lifecycle rule as an additional backstop after verifying its
-effect on the required restore window. Object operations and storage remain metered.
+of contents, fsyncs it, and atomically renames it into place. Archives are mode
+0600. One additional partial dump may exist while a backup is running. A failed
+dump removes its partial file and preserves prior backups. Retention never
+touches unrelated files in the directory. Before starting `pg_dump`, the backup
+requires enough available filesystem space for its full configured archive
+budget plus the free-space floor. Refusal leaves existing validated archives
+unchanged.
 
 The timer performs one backup each day, including one catch-up after downtime.
 It never builds, deploys, restarts, or reinstalls the app. Monitor failed timer
 runs. Linux service and manual CLI invocations both acquire `/usr/bin/flock`;
 the kernel releases the lock on process exit or reboot. The empty lock file can
-remain safely. The directory lock used by the Mac test fixtures is not used in
-production.
+remain safely. The service denies non-loopback network access. These backups stay
+on the Oracle VM by owner decision and do not cover loss of that VM or its block
+storage.
 
-To recover, download a selected ciphertext file and use the key from the
-independent credential store in a private environment file:
-
-```sh
-node release/oracle/backup.mjs --env-file /private/path/backup.env \
-  --decrypt /private/path/archive.dump.aes256gcm --out /private/path/recovered.dump
-```
-
-The output must not exist. Authentication failure removes partial plaintext.
-Restore it into a separate scratch PostgreSQL database first, verify canonical
-documents, users, media references, and row counts, then plan promotion. The
-decrypt command never touches a database. Regularly perform a full off-server
-download/decrypt/restore drill; listing an archive is not a restore test.
-
-For the full manual drill, retrieve `BACKUP_ENCRYPTION_KEY` from login Keychain
-service `texttext-oracle`, account `BACKUP_ENCRYPTION_KEY`, into a separate mode
-0600 environment file. Transfer it securely to Oracle without printing the key
-or passing its value in command arguments. Do not use the server's `backup.env`
-as the recovery key: the drill verifies that the independent recovery copy works.
-Take a fresh backup and run during a quiet period to compare all table counts:
+Take a fresh backup and run the full drill during a quiet period to compare all
+table counts:
 
 ```sh
-sudo node /private/staged/restore-drill.mjs --scratch --compare-live \
-  --recovery-key-file /private/staged/recovered-key.env
+sudo /usr/bin/node /home/ubuntu/texttext/current/release/oracle/restore-drill.mjs \
+  --scratch --compare-live
 ```
 
 Stage `release/oracle/restore-drill.mjs` and its `entrypoint.mjs` helper together
 if the running release does not contain them. Defaults read the deployed code
-from `/home/ubuntu/texttext/current`, private R2 credentials from
+from `/home/ubuntu/texttext/current`, backup settings from
 `/etc/texttext/backup.env`, and the local database administrator connection from
-`/etc/texttext/database-admin.env`. These can be overridden with `--release`,
-`--backup-env`, and `--admin-env` path arguments.
+`/etc/texttext/database-admin.env`. These paths can be overridden with
+`--release`, `--backup-env`, and `--admin-env`.
 
-The drill downloads the newest encrypted backup within its byte limit,
-authenticates and decrypts it with the recovered key, then restores into a new
-randomly named database. It checks the archive's table inventory, enabled
-protection triggers, the canonical document audit, and every public table's row
-count. `--compare-live` also requires live row counts to remain unchanged during
-the drill and match the backup; a changed workspace needs a fresh quiet-period
-run. The receipt contains counts and a ciphertext digest, never content or
-credentials. Success requires removing the scratch database and temporary dump.
-The live database and remote backup objects remain unchanged. Remove the staged
-recovery key file after the drill. This tool has no timer or automatic job.
+The drill selects the newest private archive by its immutable UTC filename,
+checks its owner, mode, size, identity, SHA-256 digest, and PostgreSQL table of
+contents, then restores it into a new randomly named database. It checks the
+archive's table inventory, enabled protection triggers, the canonical document
+audit, and every public table's row count. `--compare-live` also requires live
+row counts to remain unchanged during the drill and match the backup; a changed
+workspace needs a fresh quiet-period run. The receipt contains row counts and
+the local archive digest, never document content or credentials. Success removes
+the scratch database. The live database and backup archive remain unchanged.
+This tool has no timer or automatic job.
 
 ## Local checks
 
@@ -186,4 +162,4 @@ node --test release/oracle/test.mjs release/oracle/test-smoke.mjs \
 ```
 
 Linux startup, native image processing, service sandboxing, proxy streaming, and
-an actual off-server restore must additionally be verified on the destination.
+an actual local scratch restore must additionally be verified on the destination.
