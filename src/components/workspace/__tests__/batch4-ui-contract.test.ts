@@ -13,8 +13,11 @@ const composerSource = readFileSync(
   new URL("../UniversalItemComposer.tsx", import.meta.url),
   "utf8",
 );
-const templateSource = readFileSync(
-  new URL("../../../lib/presentation/templates.ts", import.meta.url),
+const generatedTemplateSource = readFileSync(
+  new URL(
+    "../../../lib/presentation/generated-builtin-templates.ts",
+    import.meta.url,
+  ),
   "utf8",
 );
 const rendererSource = readFileSync(
@@ -102,7 +105,9 @@ describe("batch 4 workspace UI contract", () => {
     expect(actionBarSource).toMatch(/>\s*Full\s*</);
     expect(actionBarSource).not.toContain("Show full capture");
     expect(actionBarSource).not.toContain("post-bookmark-original-button");
-    expect(templateSource).toContain('href: "content.fields.sourceUrl"');
+    expect(generatedTemplateSource).toContain(
+      '"href": "content.fields.sourceUrl"',
+    );
     expect(rendererSource).toContain("href && isSafeLinkHref(href)");
   });
 

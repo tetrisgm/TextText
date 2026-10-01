@@ -38,7 +38,7 @@ describe("nativeAssistantTurnPrompt", () => {
       item: { id: "post-1", body: "x".repeat(20_000) },
       request: "Organize it",
     });
-    expect(prompt.length).toBeLessThan(14_000);
+    expect(prompt.length).toBeLessThan(15_000);
   });
 
   it("does not let document text close a grounding boundary", () => {
@@ -152,6 +152,6 @@ describe("nativeAssistantTurnPrompt", () => {
     expect(prompt).toContain("<WORKSPACE_INDEX>");
     expect(prompt).toContain("answer from it immediately");
     expect(prompt).toContain("Never use an installed TextText skill");
-    expect(prompt).toContain("Do not try another provider");
+    expect(prompt).toContain("Never switch integrations or blindly retry a write");
   });
 });

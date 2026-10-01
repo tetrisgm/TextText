@@ -565,6 +565,13 @@ export function createWorkspaceAgentTools(
         return { ok: true, ...result };
       }
 
+      case "remix_item_type": {
+        const input = args as WorkspaceToolInput<"remix_item_type">;
+        const result = await runRemote("remix_item_type", input);
+        await refreshPoolAfterMutation();
+        return { ok: true, ...result };
+      }
+
       case "update_item_type": {
         const input = args as WorkspaceToolInput<"update_item_type">;
         const result = await runRemote("update_item_type", input);
