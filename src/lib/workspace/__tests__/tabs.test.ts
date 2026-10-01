@@ -17,9 +17,9 @@ function memoryStorage(): Storage {
 async function freshTabs(scope = "/@a") {
   vi.resetModules();
   vi.stubGlobal("window", { localStorage: memoryStorage() });
-  const module = await import("@/lib/workspace/tabs");
-  module.useTabScope(scope);
-  return module;
+  const tabs = await import("@/lib/workspace/tabs");
+  tabs.useTabScope(scope);
+  return tabs;
 }
 
 afterEach(() => {

@@ -155,8 +155,20 @@ and comments.
   today, bucket-scoped S3 credential, existing backup retention, complete copy
   with count/checksum verification, URL migration if needed, upload/read/real
   restore acceptance. Credential source is `~/.config/stack/cloudflare.env`;
-  never log values. Keep Vercel `write-media` untouched for a week after cutover;
-  the owner, not this agent, decides/deletes Vercel resources afterward.
+  never log values.
+- 2026-09-30 (evening): the owner decommissioned Vercel entirely. The `write`
+  project and then the `write-media` Blob store were deleted on the owner's
+  explicit decision after being told what it held: 1,665 files, 1.07 GB, as
+  `captures/` (825), `documents/` (447), `downloads/` (382 Mac app zips that
+  the Sparkle appcast enclosures point at), `editor/`, `releases/` and
+  `backups/` (6 encrypted off-box database dumps). Nothing was copied first.
+  Consequences to handle: document images at `*.blob.vercel-storage.com` URLs
+  are gone; Mac app downloads and updates served from Blob are gone until
+  re-hosted; the production backup service on Oracle still has
+  `TEXTTEXT_BACKUP_UPLOAD=1` with the old token, so its remote upload will
+  fail until the R2 `texttext-backups` target exists (local dumps continue).
+  The R2 plan above is now a re-hosting task, not a migration. The Vercel team
+  holds no projects or stores.
 
 - Owner approved the local server switch. The replacement build now runs on
   localhost:3000 with `TEXTTEXT_VAULT_ROOT=.texttext/vault-server` (absolute
