@@ -145,7 +145,7 @@ describe.skipIf(!enabled)("document history against Postgres", () => {
     expect(rows[0].document.content.body).toBe("The body is untouched.");
   });
 
-  it("HIS-07: a recapture that replaces the body records the owner's own words", async () => {
+  it("HIS-07: recapture versions untouched source text and preserves the owner's own words", async () => {
     const created = await store.createDraftInFolder(handle, bookmarksFolderId, {
       initial: { type: "bookmark", title: "example.com", body: "", links: [{ href: "https://example.invalid/article", label: "Source" }] },
     });
@@ -154,21 +154,31 @@ describe.skipIf(!enabled)("document history against Postgres", () => {
     await store.saveBookmarkCapture(handle, bookmark, {
       url: "https://example.invalid/article", title: "The article", assets: [asset],
     }, { readableMarkdown: "![hero](https://example.invalid/hero.png)\n\nThe captured article text." });
-    const captured = (await store.getPostById(handle, bookmark))!;
-    // The owner writes around the capture, which is the state a recapture used
-    // to destroy without a trace.
-    const annotated = `My own note about this.\n\n${captured.body}`;
-    await store.savePost(handle, { ...captured, document: { ...captured.document!, content: { ...captured.document!.content, body: annotated } } });
-    const beforeRecapture = await db!.select().from(schema.postRevisions).where(eq(schema.postRevisions.postId, bookmark));
+    const firstCapture = (await store.getPostById(handle, bookmark))!;
+    const beforeReplacement = await db!.select().from(schema.postRevisions).where(eq(schema.postRevisions.postId, bookmark));
     await store.saveBookmarkCapture(handle, bookmark, {
       url: "https://example.invalid/article", title: "The article", assets: [asset],
     }, { readableMarkdown: "A completely different and rather longer extraction of the page, with more words in it.", replaceCapture: true });
-    const after = (await store.getPostById(handle, bookmark))!;
-    expect(after.body).not.toContain("My own note about this.");
-    const rows = await db!.select().from(schema.postRevisions).where(eq(schema.postRevisions.postId, bookmark)).orderBy(desc(schema.postRevisions.createdAt));
-    expect(rows.length).toBe(beforeRecapture.length + 1);
-    expect(rows[0].document.content.body).toContain("My own note about this.");
-    expect(rows[0].supersededByAction).toBe("capture_replaced_body");
+    const replaced = (await store.getPostById(handle, bookmark))!;
+    expect(replaced.body).toContain("A completely different and rather longer extraction");
+    const afterReplacement = await db!.select().from(schema.postRevisions).where(eq(schema.postRevisions.postId, bookmark)).orderBy(desc(schema.postRevisions.createdAt));
+    expect(afterReplacement.length).toBe(beforeReplacement.length + 1);
+    expect(afterReplacement[0].document.content.body).toBe(firstCapture.body);
+    expect(afterReplacement[0].supersededByAction).toBe("capture_replaced_body");
+
+    // Once the owner writes around captured text, its hash no longer matches
+    // the capture-owned body. A later source refresh must leave those words
+    // alone and therefore has no replaced document version to record.
+    const annotated = `My own note about this.\n\n${replaced.body}`;
+    await store.savePost(handle, { ...replaced, document: { ...replaced.document!, content: { ...replaced.document!.content, body: annotated } } });
+    const beforeProtectedRecapture = await db!.select().from(schema.postRevisions).where(eq(schema.postRevisions.postId, bookmark));
+    await store.saveBookmarkCapture(handle, bookmark, {
+      url: "https://example.invalid/article", title: "The article", assets: [asset],
+    }, { readableMarkdown: "A third extraction that must not replace the owner's annotation.", replaceCapture: true });
+    const protectedPost = (await store.getPostById(handle, bookmark))!;
+    expect(protectedPost.body).toBe(annotated);
+    const afterProtectedRecapture = await db!.select().from(schema.postRevisions).where(eq(schema.postRevisions.postId, bookmark));
+    expect(afterProtectedRecapture).toHaveLength(beforeProtectedRecapture.length);
   });
 
   it("HIS-08: a long session of deletions still keeps the full document", async () => {
