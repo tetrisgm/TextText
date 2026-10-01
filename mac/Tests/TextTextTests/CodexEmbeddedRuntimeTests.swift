@@ -43,7 +43,12 @@ final class CodexEmbeddedRuntimeTests: XCTestCase {
         }
         XCTAssertEqual(CodexConnectionFailure("401 unauthorized").recoveryAction, "connect")
         XCTAssertEqual(CodexConnectionFailure("billing quota exceeded").code, "quota")
+        XCTAssertEqual(CodexConnectionFailure("429 rate limit").code, "rate-limit")
+        XCTAssertEqual(CodexConnectionFailure("model is not available").code, "model-access")
+        XCTAssertEqual(CodexConnectionFailure("503 service unavailable").code, "temporary")
+        XCTAssertEqual(CodexConnectionFailure("network timed out").code, "connection")
         XCTAssertEqual(CodexConnectionFailure("Operation not permitted").code, "runtime")
+        XCTAssertEqual(CodexConnectionFailure("unrecognized provider failure").code, "unknown")
     }
 
     func testAPIKeyAccountIsNeverPresentedAsChatGPTAccountConnection() {

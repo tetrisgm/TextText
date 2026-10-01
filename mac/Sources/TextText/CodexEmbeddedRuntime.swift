@@ -73,7 +73,7 @@ struct CodexConnectionFailure {
 
     init(_ raw: String) {
         let evidence = raw.lowercased()
-        if evidence.contains("401") || evidence.contains("unauthorized") || evidence.contains("authentication") || evidence.contains("expired token") || evidence.contains("not logged in") || evidence.contains("missing bearer") {
+        if evidence.contains("401") || evidence.contains("unauthorized") || evidence.contains("authentication") || evidence.contains("expired token") || evidence.contains("not logged in") || evidence.contains("missing bearer") || evidence.contains("sign-in") || evidence.contains("login") {
             code = "authentication"; message = "Your agent sign-in was rejected or expired. Reconnect to continue."; recoveryAction = "connect"
         } else if evidence.contains("quota") || evidence.contains("billing") || evidence.contains("usage limit") || evidence.contains("insufficient") {
             code = "quota"; message = "Your agent account has reached its usage or billing limit. Check your account before retrying."; recoveryAction = "wait"
@@ -81,7 +81,9 @@ struct CodexConnectionFailure {
             code = "rate-limit"; message = "Your agent is receiving too many requests. Wait briefly, then retry."; recoveryAction = "wait"
         } else if evidence.contains("model") && (evidence.contains("not found") || evidence.contains("not supported") || evidence.contains("not available") || evidence.contains("access") || evidence.contains("does not exist")) {
             code = "model-access"; message = "Your agent account cannot use the selected model. Check its model access, then reconnect."; recoveryAction = "connect"
-        } else if evidence.contains("timed out") || evidence.contains("timeout") || evidence.contains("connection") || evidence.contains("network") {
+        } else if evidence.contains("500") || evidence.contains("502") || evidence.contains("503") || evidence.contains("temporarily unavailable") || evidence.contains("service unavailable") || evidence.contains("overloaded") || evidence.contains("internal server") {
+            code = "temporary"; message = "The agent service is temporarily unavailable. Your request is preserved; retry in a moment."; recoveryAction = "retry"
+        } else if evidence.contains("timed out") || evidence.contains("timeout") || evidence.contains("stopped responding") || evidence.contains("connection") || evidence.contains("network") {
             code = "connection"; message = "The agent connection was interrupted. Your request is preserved; retry when the connection returns."; recoveryAction = "retry"
         } else if evidence.contains("operation not permitted") || evidence.contains("executable") || evidence.contains("process") || evidence.contains("runtime") || evidence.contains("notrunning") {
             code = "runtime"; message = "The agent runtime could not start in this app. Check the app's agent support."; recoveryAction = "retry"

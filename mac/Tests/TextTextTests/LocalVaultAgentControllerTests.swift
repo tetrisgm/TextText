@@ -169,6 +169,32 @@ final class LocalVaultAgentControllerTests: XCTestCase {
     }
 
     @MainActor
+    func testProviderFailureIsClassifiedAndCarriesAnOpaqueDiagnosticReference() async throws {
+        let (root, controller, server) = try await fixture()
+        defer { controller.stop(); try? FileManager.default.removeItem(at: root) }
+        var events: [[String: Any]] = []
+        controller.onEvent = { events.append($0) }
+
+        try await start("task-failure", threadID: "thread-failure", turnID: "turn-failure",
+            controller: controller, server: server)
+        server.emitNotification("turn/completed", params: [
+            "threadId": "thread-failure",
+            "turn": ["id": "turn-failure", "status": "failed",
+                "error": ["message": "billing quota exceeded bearer private-secret"]],
+        ])
+
+        try await eventually("classified task failure") { events.contains {
+            $0["type"] as? String == "error" && $0["taskId"] as? String == "task-failure"
+        } }
+        let failure = try XCTUnwrap(events.first { $0["type"] as? String == "error" })
+        XCTAssertEqual(failure["failureCode"] as? String, "quota")
+        XCTAssertEqual(failure["recoveryAction"] as? String, "wait")
+        XCTAssertFalse((failure["message"] as? String ?? "").contains("private-secret"))
+        XCTAssertNotNil((failure["diagnosticId"] as? String)?.range(
+            of: "^TT-[A-F0-9]{12}$", options: .regularExpression))
+    }
+
+    @MainActor
     func testStaleCancelAndLateToolCallFailClosed() async throws {
         let (root, controller, server) = try await fixture()
         defer { controller.stop(); try? FileManager.default.removeItem(at: root) }

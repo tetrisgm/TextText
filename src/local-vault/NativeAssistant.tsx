@@ -10,7 +10,8 @@ import { agentTaskMatches, readAgentTask, resumeAgentTask, updateAgentTask,
 import { connectedAccountLabel } from "./agent-account";
 
 type AgentState = "disconnected" | "connecting" | "signed-out" | "ready" | "working" | "failed";
-type Status = { state: AgentState; message?: string; accountEmail?: string };
+type Status = { state: AgentState; message?: string; accountEmail?: string; diagnosticId?: string;
+  failureCode?: string; recoveryAction?: string };
 type Message = { id: number; role: "user" | "assistant"; text: string };
 type AgentEvent = Partial<Status> & { type: string; taskId?: string; text?: string; tool?: string; path?: string };
 export type NativeAssistantRequest =
@@ -162,7 +163,8 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
         if (proposed.proposalId) void vaultRequest("agentProposalResult", { taskId: turnFence!.taskId, proposalId: proposed.proposalId, valid, message }).catch((error: Error) => setNotice(error.message));
       }
       else if (detail.type === "status" && detail.state) {
-        setStatus({ state: detail.state, message: detail.message, accountEmail: detail.accountEmail });
+        setStatus({ state: detail.state, message: detail.message, accountEmail: detail.accountEmail,
+          diagnosticId: detail.diagnosticId, failureCode: detail.failureCode, recoveryAction: detail.recoveryAction });
         const current = taskRef.current;
         if (current?.phase === "connecting" && detail.state === "ready") changeTask(current, { phase: "draft" });
       }
@@ -192,7 +194,9 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
         if (turnFence && agentTaskMatches(taskRef.current, turnFence)) { changeTask(turnFence, { phase: "draft" }); setPrompt(taskRef.current?.prompt ?? ""); }
         else setPrompt(requested.current);
         activeTaskFence.current = null; setActiveTurn(null);
-        setNotice(detail.message || "The assistant could not finish this request."); setStatus((current) => ({ ...current, state: "failed" })); setAction("");
+        setNotice(detail.message || "The assistant could not finish this request.");
+        setStatus((current) => ({ ...current, state: "failed", diagnosticId: detail.diagnosticId,
+          failureCode: detail.failureCode, recoveryAction: detail.recoveryAction })); setAction("");
       }
     };
     window.addEventListener("texttext:vault-agent", receive);
@@ -274,6 +278,8 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
   const runningFence = activeTurn?.type === "agent" ? activeTurn : null;
   const itemTask = task && task.root === root && (task.target === path || (runningFence && agentTaskMatches(task, runningFence))) ? task : null;
   const accountLabel = connectedAccountLabel(status.accountEmail);
+  const diagnosticReference = status.state === "failed" && status.diagnosticId && /^[A-Z0-9-]{4,64}$/.test(status.diagnosticId)
+    ? status.diagnosticId : null;
   const heading = customizing ? "Customize" : "Add agent";
   return <><aside className={`vault-assistant${proposal ? " has-design-preview" : ""}`} aria-label={heading}>
     <header><h2>{heading}</h2><button aria-label="Close assistant" onClick={onClose}>Close</button></header>
@@ -287,7 +293,9 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
       <p>Codex uses your ChatGPT account. Authorization opens in your browser. Your request stays here while you sign in. You won’t need to paste a token or use Terminal.</p>
       <button disabled={status.state === "connecting"} onClick={() => void connect()}>{status.state === "connecting" ? "Connecting…" : "Connect Codex"}</button>
     </div>}
-    {(notice || status.message) && <p role="status" className="vault-assistant-notice">{notice || status.message}</p>}
+    {(notice || status.message) && <p role="status" className="vault-assistant-notice">{notice || status.message}
+      {diagnosticReference && <><br /><small>Diagnostic reference: {diagnosticReference}</small></>}
+    </p>}
     <div ref={log} className="vault-assistant-messages" aria-live="polite">
       {messages.map((message) => <div className={`vault-assistant-message is-${message.role}`} key={message.id}><strong>{message.role === "user" ? "You" : "Codex"}</strong><p>{message.text}</p></div>)}
       {working && <p className="vault-assistant-action">{action || "Working…"}</p>}

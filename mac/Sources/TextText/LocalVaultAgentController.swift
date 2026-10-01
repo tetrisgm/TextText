@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import OSLog
 import TextTextCLICore
 import TextTextFileProviderKit
 import TextTextWorkspaceCore
@@ -20,6 +21,7 @@ extension CodexAppServerController: LocalVaultAgentServer {}
 /// writes the selected folder. No hosted workspace command is involved.
 @MainActor
 final class LocalVaultAgentController {
+    private static let log = Logger(subsystem: "app.texttext.mac", category: "local-vault-agent")
     var onEvent: (([String: Any]) -> Void)?
     var onFilesChanged: (() -> Void)?
     private(set) var status: [String: Any] = ["state": "disconnected"]
@@ -37,6 +39,7 @@ final class LocalVaultAgentController {
     private var pending: [String: PendingRequest] = [:]
     private var disabledMCPServers: [String]?
     private var accountEmail: String?
+    private var connectionDiagnosticID = LocalVaultAgentController.makeDiagnosticID()
     private var busy = false
     private struct PendingProposal {
         let requestID: AnyHashable
@@ -55,6 +58,7 @@ final class LocalVaultAgentController {
     private struct ActiveTask {
         let instanceID: UUID
         let taskID: String
+        let diagnosticID: String
         let prompt: String
         let access: LocalVaultAgentAccess
         let fileFence: LocalVaultAgentCancellation
@@ -88,9 +92,20 @@ final class LocalVaultAgentController {
     }
     deinit { deadline?.cancel(); presenceTask?.cancel(); server?.stop() }
 
-    private func update(_ state: String, message: String? = nil) {
+    private static func makeDiagnosticID() -> String {
+        "TT-" + UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12).uppercased()
+    }
+
+    private func update(_ state: String, message: String? = nil,
+                        failure: CodexConnectionFailure? = nil,
+                        diagnosticID: String? = nil) {
         status = ["state": state]
         if let message { status["message"] = message }
+        if let failure {
+            status["failureCode"] = failure.code
+            status["recoveryAction"] = failure.recoveryAction
+            status["diagnosticId"] = diagnosticID ?? connectionDiagnosticID
+        }
         if let accountEmail { status["accountEmail"] = accountEmail }
         var event = status; event["type"] = "status"; onEvent?(event)
     }
@@ -117,6 +132,7 @@ final class LocalVaultAgentController {
             return
         }
         stop()
+        connectionDiagnosticID = Self.makeDiagnosticID()
         let runtime: any LocalVaultAgentServer
         if let makeServer {
             runtime = try makeServer()
@@ -129,7 +145,7 @@ final class LocalVaultAgentController {
             let executable = bundled ?? CodexRuntimeLocator(bundleURL: Bundle.main.bundleURL).executableURL
             #endif
             guard let executable else {
-                update("failed", message: "The installed app cannot find its agent runtime.")
+                fail("The agent runtime executable is missing from the installed app.")
                 throw CodexAppServerError.runtimeMissing
             }
             var environment = ["TEXTTEXT_WORKSPACE_ROOT": root.path]
@@ -151,11 +167,17 @@ final class LocalVaultAgentController {
             }
         }
         server = runtime
-        try runtime.start()
-        update("connecting")
-        armDeadline(seconds: 30)
-        try request("initialize", ["clientInfo": ["name": "texttext-vault", "title": "TextText", "version": "1"],
-                                   "capabilities": ["experimentalApi": true]])
+        do {
+            try runtime.start()
+            update("connecting")
+            armDeadline(seconds: 30)
+            try request("initialize", ["clientInfo": ["name": "texttext-vault", "title": "TextText", "version": "1"],
+                                       "capabilities": ["experimentalApi": true]])
+        } catch {
+            let failure = CodexConnectionFailure(error.localizedDescription)
+            fail(error.localizedDescription)
+            throw VaultAgentError(failure.message)
+        }
     }
 
     func send(taskID: String, prompt: String, path: String? = nil, customizing: Bool = false) throws {
@@ -174,6 +196,7 @@ final class LocalVaultAgentController {
             context += "Current document path: \(path)\nRead the actual file before making changes.\n\n"
         }
         let task = ActiveTask(instanceID: UUID(), taskID: taskID,
+            diagnosticID: Self.makeDiagnosticID(),
             prompt: context + trimmed, access: access,
             fileFence: LocalVaultAgentCancellation())
         activeTask = task
@@ -189,7 +212,12 @@ final class LocalVaultAgentController {
                 disabledMCPServers: disabledMCPServers, workingDirectory: root.path,
                 developerInstructions: access.developerInstructions), task: task)
         } catch {
-            abandonTask(taskID: taskID, instanceID: task.instanceID); throw error
+            let failure = classifiedFailure(error.localizedDescription, diagnosticID: task.diagnosticID)
+            abandonTask(taskID: taskID, instanceID: task.instanceID)
+            emitTaskEvent(["type": "error", "message": failure.message,
+                "failureCode": failure.code, "recoveryAction": failure.recoveryAction,
+                "diagnosticId": task.diagnosticID], taskID: taskID)
+            throw VaultAgentError(failure.message)
         }
     }
 
@@ -300,10 +328,30 @@ final class LocalVaultAgentController {
         busy = false; pending.removeAll(); phases.removeAll()
     }
 
-    private func fail(_ message: String) {
-        let taskID = activeTask?.taskID
-        stop(); update("failed", message: message)
-        if let taskID { emitTaskEvent(["type": "error", "message": message], taskID: taskID) }
+    private func classifiedFailure(_ raw: String, diagnosticID: String) -> CodexConnectionFailure {
+        let failure = CodexConnectionFailure(raw)
+        Self.log.error("agent failure category=\(failure.code, privacy: .public) diagnostic=\(diagnosticID, privacy: .public)")
+        return failure
+    }
+
+    private func failureEvent(_ raw: String, diagnosticID: String) -> [String: Any] {
+        let failure = classifiedFailure(raw, diagnosticID: diagnosticID)
+        return ["type": "error", "message": failure.message,
+                "failureCode": failure.code, "recoveryAction": failure.recoveryAction,
+                "diagnosticId": diagnosticID]
+    }
+
+    private func fail(_ raw: String) {
+        let task = activeTask
+        let diagnosticID = task?.diagnosticID ?? connectionDiagnosticID
+        let failure = classifiedFailure(raw, diagnosticID: diagnosticID)
+        stop()
+        update("failed", message: failure.message, failure: failure, diagnosticID: diagnosticID)
+        if let task {
+            emitTaskEvent(["type": "error", "message": failure.message,
+                "failureCode": failure.code, "recoveryAction": failure.recoveryAction,
+                "diagnosticId": diagnosticID], taskID: task.taskID)
+        }
     }
 
     private func abandonTask(taskID: String, instanceID: UUID) {
@@ -371,17 +419,17 @@ final class LocalVaultAgentController {
             if let instanceID = pendingRequest.taskInstanceID,
                activeTask?.instanceID != instanceID { return }
             if let error = message.errorMessage {
-                let detail = CodexConnectionFailure(error).message
                 if let taskID = pendingRequest.taskID {
                     guard let instanceID = pendingRequest.taskInstanceID else { return }
                     if activeTask?.cancelRequested == true {
                         finishCancelledTask(taskID: taskID, instanceID: instanceID)
                     } else {
+                        let diagnosticID = activeTask?.diagnosticID ?? connectionDiagnosticID
                         finishTask(taskID: taskID, instanceID: instanceID,
-                            event: ["type": "error", "message": detail])
+                            event: failureEvent(error, diagnosticID: diagnosticID))
                     }
                 } else {
-                    fail(detail)
+                    fail(error)
                 }
                 return
             }
@@ -449,8 +497,9 @@ final class LocalVaultAgentController {
                     if activeTask?.cancelRequested == true {
                         finishCancelledTask(taskID: taskID, instanceID: instanceID)
                     } else {
+                        let diagnosticID = activeTask?.diagnosticID ?? connectionDiagnosticID
                         finishTask(taskID: taskID, instanceID: instanceID,
-                            event: ["type": "error", "message": error.localizedDescription])
+                            event: failureEvent(error.localizedDescription, diagnosticID: diagnosticID))
                     }
                 } else {
                     fail(error.localizedDescription)
@@ -507,15 +556,16 @@ final class LocalVaultAgentController {
                 finishTask(taskID: task.taskID, instanceID: task.instanceID,
                     event: ["type": "turn-completed"])
             case .failed(let detail):
+                let diagnosticID = task.diagnosticID
                 finishTask(taskID: task.taskID, instanceID: task.instanceID,
-                    event: ["type": "error", "message":
-                    String((detail ?? "The agent stopped before finishing. Saved file changes are preserved.").prefix(2_000))])
+                    event: failureEvent(detail ?? "The agent stopped before finishing. Saved file changes are preserved.",
+                        diagnosticID: diagnosticID))
             case .interrupted:
                 finishCancelledTask(taskID: task.taskID, instanceID: task.instanceID)
             case nil:
                 finishTask(taskID: task.taskID, instanceID: task.instanceID,
-                    event: ["type": "error",
-                    "message": "The agent stopped before finishing. Saved file changes are preserved."])
+                    event: failureEvent("The agent stopped before finishing. Saved file changes are preserved.",
+                        diagnosticID: task.diagnosticID))
             }
         }
     }
