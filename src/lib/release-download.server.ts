@@ -90,7 +90,14 @@ export async function serveReleaseDownload(
   try {
     const rootInfo = await lstat(root);
     if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) return errorResponse(404);
-    handle = await open(join(root, artifact.filename), constants.O_RDONLY | constants.O_NOFOLLOW);
+    const artifactPath = join(
+      /* turbopackIgnore: true */ root,
+      artifact.filename,
+    );
+    handle = await open(
+      /* turbopackIgnore: true */ artifactPath,
+      constants.O_RDONLY | constants.O_NOFOLLOW,
+    );
     const info = await handle.stat();
     if (!info.isFile() || info.size <= 0 || (!artifact.ranges && info.size > MAX_APPCAST_BYTES)) return errorResponse(404);
 
