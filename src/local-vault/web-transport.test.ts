@@ -66,7 +66,7 @@ function cachedOpenFixture() {
     if (target.endsWith("/items")) return Response.json({ items: [{ itemId: id, relativePath: path, revision: digest(initial) }], revision: "manifest" });
     if (target.endsWith(`/${id}/collaboration`)) {
       calls.collaboration++;
-      if (live.collaborationResponse) return live.collaborationResponse(init?.signal);
+      if (live.collaborationResponse) return live.collaborationResponse(init?.signal ?? undefined);
       if (!live.allowed) return Response.json({ error: "Access changed" }, { status: 403 });
       return Response.json({ epoch: live.epoch, seq: live.seq, revision: digest(live.bytes), relativePath: live.path,
         update: "AAA=", canEditContent: live.canEdit, canComment: true });

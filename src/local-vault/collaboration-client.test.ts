@@ -110,15 +110,15 @@ describe("durable file collaboration client", () => {
   it("does not expose or overwrite a clean journal after the initial read is canceled", async () => {
     const server = new Server(), journal = new Journal(), first = client(server, journal);
     await first.start(); const retained = journal.load(first.journalKey)!; first.destroy();
-    let pendingSignal: AbortSignal | null = null;
+    const signals: AbortSignal[] = [];
     const observed = vi.fn();
     const request: FileCollaborationRequest = async (_method, _params, signal) => {
-      pendingSignal = signal;
+      signals.push(signal);
       return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new DOMException("Canceled", "AbortError")), { once: true }));
     };
     const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, request, onChange: observed });
     clients.push(reopened); const opening = reopened.start(); reopened.destroy(); await opening;
-    expect(pendingSignal?.aborted).toBe(true); expect(observed).not.toHaveBeenCalled();
+    expect(signals[0]?.aborted).toBe(true); expect(observed).not.toHaveBeenCalled();
     expect(journal.load(reopened.journalKey)).toBe(retained); expect(server.pushes).toEqual([]);
   });
 
