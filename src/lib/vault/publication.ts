@@ -175,17 +175,29 @@ export function publishedVaultAsset(bytes: Uint8Array, workspaceId: string, item
   if (!view?.assetPaths.has(assetPath)) return null;
   const extension = assetPath.split(".").at(-1)?.toLowerCase();
   const types: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
-    webp: "image/webp", mp4: "video/mp4", mp3: "audio/mpeg", wav: "audio/wav", pdf: "application/pdf" };
+    webp: "image/webp", avif: "image/avif", heic: "image/heic", heif: "image/heif",
+    mp4: "video/mp4", m4v: "video/x-m4v", mov: "video/quicktime", webm: "video/webm",
+    mp3: "audio/mpeg", wav: "audio/wav", pdf: "application/pdf" };
   const contentType = extension ? types[extension] : undefined;
   if (!contentType) return null;
   const { files, prefix } = scan(bytes, name => name.endsWith(`/${assetPath}`), MAX_ASSET);
   const data = files[prefix + assetPath];
   if (!data?.length) return null;
   const ascii = (offset: number, length: number) => String.fromCharCode(...data.subarray(offset, offset + length));
-  const image = contentType === "image/png" ? data[0] === 137 && ascii(1, 3) === "PNG"
+  const bmff = data.length >= 12 && ascii(4, 4) === "ftyp";
+  const brands = ascii(8, Math.min(32, Math.max(0, data.length - 8))).toLowerCase();
+  const valid = contentType === "image/png" ? data[0] === 137 && ascii(1, 3) === "PNG"
     : contentType === "image/jpeg" ? data[0] === 255 && data[1] === 216
       : contentType === "image/gif" ? ["GIF87a", "GIF89a"].includes(ascii(0, 6))
-        : contentType === "image/webp" ? ascii(0, 4) === "RIFF" && ascii(8, 4) === "WEBP" : true;
-  if (!image) return null;
+        : contentType === "image/webp" ? ascii(0, 4) === "RIFF" && ascii(8, 4) === "WEBP"
+          : contentType === "image/avif" ? bmff && /avif|avis/.test(brands)
+            : contentType === "image/heic" || contentType === "image/heif" ? bmff && /heic|heix|hevc|hevx|mif1|msf1/.test(brands)
+              : contentType === "video/mp4" || contentType === "video/x-m4v" ? bmff
+                : contentType === "video/quicktime" ? bmff || ["moov", "mdat", "wide", "free"].includes(ascii(4, 4))
+                  : contentType === "video/webm" ? data[0] === 0x1a && data[1] === 0x45 && data[2] === 0xdf && data[3] === 0xa3
+                    : contentType === "audio/mpeg" ? ascii(0, 3) === "ID3" || data[0] === 0xff && (data[1] & 0xe0) === 0xe0
+                      : contentType === "audio/wav" ? ascii(0, 4) === "RIFF" && ascii(8, 4) === "WAVE"
+                        : contentType === "application/pdf" ? ascii(0, 5) === "%PDF-" : false;
+  if (!valid) return null;
   return { data, contentType, download: contentType === "application/pdf" };
 }
