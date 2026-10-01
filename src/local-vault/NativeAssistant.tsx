@@ -35,8 +35,12 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
   const [notice, setNotice] = useState("");
   const [action, setAction] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [activeTurn, setActiveTurn] = useState<ActiveTurnFence | null>(null);
+  const turnActive = activeTurn !== null;
   const taskRef = useRef<AgentTask | null>(null);
+  const lastItemTarget = useRef<Pick<AgentTask, "root" | "target"> | null>(null);
   const activeTaskFence = useRef<ActiveTurnFence | null>(null);
+  const queuedRetarget = useRef(false);
   const handledRequestId = useRef(0);
   const composer = useRef<HTMLTextAreaElement>(null);
   useEscapeLayer(open, "Add agent", onClose);
@@ -59,6 +63,7 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
     catch { setNotice("This preview could not be saved for recovery. Keep or copy your request before closing."); }
   }, [storageKey]);
   const acceptTask = useCallback((value: AgentTask | null) => {
+    if (value) lastItemTarget.current = value;
     taskRef.current = value;
     setTask(value);
   }, []);
@@ -72,20 +77,39 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
       return null;
     }
   }, [acceptTask]);
+  const agentMode = request?.type === "agent";
   useEffect(() => {
+    if (!agentMode) { if (!turnActive) queuedRetarget.current = false; return; }
+    if (turnActive) {
+      // Keep Stop and incoming events fenced to the running task, then follow the latest selection.
+      const fence = activeTaskFence.current;
+      queuedRetarget.current = !fence || fence.type !== "agent" || fence.root !== root || fence.target !== path;
+      return;
+    }
+    if (!queuedRetarget.current && open && taskRef.current?.root === root && taskRef.current.target === path) return;
+    queuedRetarget.current = false;
     activeTaskFence.current = null;
     void Promise.resolve().then(() => {
-      const saved = path ? readAgentTask(localStorage, root, path) : null;
-      acceptTask(saved);
-      setPrompt(saved?.prompt ?? "");
-      setMessages([]); setAction("");
-      if (saved?.phase === "submitted") setNotice("This task may already have started before TextText closed. It was not sent again. Check the item before sending it again.");
-      else if (saved?.phase === "connecting") setNotice("Your task is saved. Continue connecting Codex when you are ready.");
-      else setNotice("");
+      const targetChanged = lastItemTarget.current?.root !== root || lastItemTarget.current.target !== path;
+      try {
+        const saved = path ? open && agentMode
+          ? resumeAgentTask(localStorage, root, path, () => crypto.randomUUID())
+          : readAgentTask(localStorage, root, path) : null;
+        acceptTask(saved);
+        setPrompt(saved?.prompt ?? "");
+        if (targetChanged) { setMessages([]); setAction(""); }
+        if (saved?.phase === "submitted") setNotice("This task may already have started before TextText closed. It was not sent again. Check the item before sending it again.");
+        else if (saved?.phase === "connecting") setNotice("Your task is saved. Continue connecting Codex when you are ready.");
+        else setNotice("");
+      } catch (error) {
+        acceptTask(null); setPrompt("");
+        if (targetChanged) { setMessages([]); setAction(""); }
+        setNotice(error instanceof Error ? error.message : "Open an item before adding an agent.");
+      }
     });
-  }, [acceptTask, path, root]);
+  }, [acceptTask, agentMode, open, path, root, turnActive]);
   useEffect(() => {
-    if (!open || !request || handledRequestId.current === request.requestId) return;
+    if (!open || !request || turnActive || handledRequestId.current === request.requestId) return;
     let active = true;
     void Promise.resolve().then(() => {
       if (!active) return;
@@ -110,7 +134,7 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
       } catch (error) { setNotice(error instanceof Error ? error.message : "Open an item before adding an agent."); }
     });
     return () => { active = false; };
-  }, [acceptTask, changeProposal, open, path, request, root]);
+  }, [acceptTask, changeProposal, open, path, request, root, turnActive]);
   const sequence = useRef(0);
   const replyId = useRef<number | null>(null);
   const log = useRef<HTMLDivElement>(null);
@@ -152,7 +176,7 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
       } else if (detail.type === "tool-call") setAction(detail.path ? `Working with ${detail.path}` : "Working with this item");
       else if (detail.type === "turn-completed") {
         if (turnFence && agentTaskMatches(taskRef.current, turnFence)) { changeTask(turnFence, { prompt: "", phase: "draft" }); setPrompt(""); }
-        activeTaskFence.current = null;
+        activeTaskFence.current = null; setActiveTurn(null);
         setStatus((current) => current.state === "working" ? { ...current, state: "ready" } : current); setAction(""); replyId.current = null;
       }
       else if (detail.type === "turn-cancelled") {
@@ -160,14 +184,14 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
           const preserved = taskRef.current?.prompt ?? "";
           changeTask(turnFence, { phase: "draft" }); setPrompt(preserved);
         } else setPrompt(requested.current);
-        activeTaskFence.current = null;
+        activeTaskFence.current = null; setActiveTurn(null);
         setNotice(detail.message || "Stopped. Your task is ready to send again.");
         setStatus((current) => ({ ...current, state: "ready" })); setAction(""); replyId.current = null;
       }
       else if (detail.type === "error") {
         if (turnFence && agentTaskMatches(taskRef.current, turnFence)) { changeTask(turnFence, { phase: "draft" }); setPrompt(taskRef.current?.prompt ?? ""); }
         else setPrompt(requested.current);
-        activeTaskFence.current = null;
+        activeTaskFence.current = null; setActiveTurn(null);
         setNotice(detail.message || "The assistant could not finish this request."); setStatus((current) => ({ ...current, state: "failed" })); setAction("");
       }
     };
@@ -219,10 +243,10 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
     setSubmitting(true); setNotice("");
     try {
       if (taskFence) changeTask(taskFence, { prompt: text, phase: "submitted" });
-      activeTaskFence.current = turnFence;
+      activeTaskFence.current = turnFence; setActiveTurn(turnFence);
       if (!await beforeSend()) {
         if (taskFence) changeTask(taskFence, { phase: "draft" });
-        activeTaskFence.current = null;
+        activeTaskFence.current = null; setActiveTurn(null);
         setNotice("Save or resolve the current item before asking the assistant to edit it."); return;
       }
       replyId.current = null;
@@ -236,6 +260,7 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
     } catch (error) {
       if (taskFence && agentTaskMatches(taskRef.current, taskFence)) changeTask(taskFence, { prompt: text, phase: "draft" });
       if (activeTaskFence.current?.taskId === turnFence.taskId) activeTaskFence.current = null;
+      setActiveTurn(null);
       setPrompt(text); setNotice(error instanceof Error ? error.message : "The request could not start."); setStatus((current) => ({ ...current, state: "failed" }));
     }
     finally { setSubmitting(false); }
@@ -246,7 +271,8 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
   };
   if (!open) return null;
   const working = submitting || status.state === "working";
-  const itemTask = task && task.root === root && task.target === path ? task : null;
+  const runningFence = activeTurn?.type === "agent" ? activeTurn : null;
+  const itemTask = task && task.root === root && (task.target === path || (runningFence && agentTaskMatches(task, runningFence))) ? task : null;
   const accountLabel = connectedAccountLabel(status.accountEmail);
   const heading = customizing ? "Customize" : "Add agent";
   return <><aside className={`vault-assistant${proposal ? " has-design-preview" : ""}`} aria-label={heading}>

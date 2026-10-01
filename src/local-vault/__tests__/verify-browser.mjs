@@ -193,6 +193,11 @@ try {
   await page.keyboard.press("Enter");
   let agentPanel = page.getByRole("complementary", { name: "Add agent", exact: true });
   await agentPanel.waitFor();
+  const expectAgentTarget = async (targetPath) => {
+    await agentPanel.getByRole("group", { name: "Agent task target", exact: true }).getByText(targetPath, { exact: true }).waitFor();
+    await agentPanel.getByRole("textbox", { name: "Message assistant", exact: true }).waitFor();
+  };
+  await expectAgentTarget(initial.path);
   await agentPanel.getByRole("group", { name: "Agent task target", exact: true }).getByText("This item · Read and edit", { exact: true }).waitFor();
   await agentPanel.getByText("Codex uses your ChatGPT account. Authorization opens in your browser. Your request stays here while you sign in. You won’t need to paste a token or use Terminal.", { exact: true }).waitFor();
   assert.equal(await agentPanel.getByText(`Connected as ${agentAccountEmail}`, { exact: true }).count(), 0);
@@ -338,21 +343,37 @@ try {
   await page.evaluate((accountEmail) => {
     window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail: { type: "status", state: "ready", accountEmail } }));
   }, agentAccountEmail);
-  await agentPanel.getByRole("button", { name: "Close assistant", exact: true }).click();
+  await agentPanel.getByRole("textbox", { name: "Message assistant", exact: true }).fill("Keep this task fenced while the target changes.");
+  holdAgentTurn = true;
+  await agentPanel.getByRole("button", { name: "Send", exact: true }).click();
+  const fencedTaskId = lastAgentSend.taskId;
   await page.getByRole("button", { name: "Show folders", exact: true }).click();
   await page.getByRole("combobox", { name: "Folder for new items", exact: true }).fill("Projects/Draft");
   await page.getByRole("button", { name: "New note", exact: true }).click();
+  await expectAgentTarget(initial.path);
+  await agentPanel.getByRole("button", { name: "Stop", exact: true }).click();
+  assert.equal(lastAgentCancel.taskId, fencedTaskId);
+  await page.waitForFunction((previousPath) => {
+    const current = document.querySelector('.vault-assistant-setup small')?.textContent;
+    return Boolean(current && current !== previousPath);
+  }, initial.path);
+  const createdWhileOpen = await agentPanel.getByRole("group", { name: "Agent task target", exact: true }).locator("small").textContent();
+  assert.ok(createdWhileOpen?.startsWith("Projects/Draft/"));
+  assert.ok(files.has(createdWhileOpen));
+  await expectAgentTarget(createdWhileOpen);
   assert.ok([...files.keys()].some((name) => name.startsWith("Projects/Draft/")));
   await page.getByRole("button", { name: "New from template", exact: true }).click();
   await page.getByRole("button", { name: "Agent made look", exact: true }).click();
   await page.waitForFunction(() => !document.querySelector('[role="dialog"]'));
   const cloned = [...files.values()].at(-1);
+  await expectAgentTarget(cloned.path);
   assert.equal(cloned.templateJSON, files.get("Templates/Agent look.textpack").templateJSON);
   assert.notEqual(cloned.markdown, files.get("Templates/Agent look.textpack").markdown);
   await page.getByRole("button", { name: "Rename or move", exact: true }).click();
   await page.getByRole("textbox", { name: "New file path", exact: true }).fill("Projects/Renamed.textpack");
   await page.getByRole("button", { name: "Save path", exact: true }).click();
   await page.getByRole("button", { name: "Projects/Renamed", exact: true }).waitFor();
+  await expectAgentTarget("Projects/Renamed.textpack");
   assert.ok(files.has("Projects/Renamed.textpack"));
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByRole("group", { name: "Confirm file deletion" }).getByText("Projects/Renamed.textpack", { exact: true }).waitFor();
@@ -367,6 +388,7 @@ try {
   await page.getByRole("searchbox", { name: "Search workspace" }).fill("Their conflicting version");
   await commandDialog.getByRole("button", { name: /Notes\/Offline.textpack/ }).click();
   await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor();
+  await expectAgentTarget(initial.path);
   assert.match(await body.innerText(), /Their conflicting version/);
   await page.waitForFunction(() => JSON.parse(localStorage.getItem("texttext:vault-location:/test/Workspace") || "null")?.path === "Notes/Offline.textpack");
   await page.reload();
