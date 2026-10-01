@@ -404,13 +404,14 @@ export async function resolveWorkspaceAccess(opts: {
   user: AccessUser | null;
   /** Reauthorize after an async wait without retaining request-scoped grants. */
   fresh?: boolean;
+  /** Active workspace row loaded by this authorization check, before any async file read. */
+  workspaceSnapshot?: { id: string; ownerId: string | null };
 }): Promise<EffectiveAccess> {
   let base;
   if (opts.fresh) {
     if (!db) return emptyAccess();
-    const rows = await db.select({ id: blogs.id, ownerId: blogs.ownerId }).from(blogs)
-      .where(and(eq(blogs.handle, opts.handle), isNull(blogs.deletedAt))).limit(1);
-    const row = rows[0];
+    const row = opts.workspaceSnapshot ?? (await db.select({ id: blogs.id, ownerId: blogs.ownerId }).from(blogs)
+      .where(and(eq(blogs.handle, opts.handle), isNull(blogs.deletedAt))).limit(1))[0];
     if (!row) return emptyAccess();
     const userId = await existingUserIdForAccess(opts.user);
     base = { blogId: row.id, userId, owner: Boolean(userId && row.ownerId === userId) };

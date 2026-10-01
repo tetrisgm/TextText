@@ -6983,10 +6983,10 @@ async function uniqueHandle(seed: string): Promise<string> {
 
 /** Workspace identity only. Callers must resolve access before returning any
  * metadata or touching files; this does not grant access to the workspace. */
-export async function getVaultWorkspaceIdentity(workspaceId: string): Promise<{ id: string; handle: string; name: string } | null> {
+export async function getVaultWorkspaceIdentity(workspaceId: string): Promise<{ id: string; handle: string; name: string; ownerId: string | null } | null> {
   if (!db) throw new Error(NO_DATABASE);
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(workspaceId)) return null;
-  const rows = await db.select({ id: blogs.id, handle: blogs.handle, name: blogs.name })
+  const rows = await db.select({ id: blogs.id, handle: blogs.handle, name: blogs.name, ownerId: blogs.ownerId })
     .from(blogs).where(and(eq(blogs.id, workspaceId), isNull(blogs.deletedAt))).limit(1);
   return rows[0] ?? null;
 }

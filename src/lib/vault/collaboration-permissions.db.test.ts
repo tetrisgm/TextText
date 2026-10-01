@@ -28,15 +28,16 @@ describe.skipIf(!enabled)("fresh vault workspace permissions against local Postg
     await db.delete(schema.users).where(inArray(schema.users.id, [ownerId, memberId]));
   });
   it("resolves a named workspace and observes grant downgrade and revocation immediately", async () => {
-    expect(await identity(workspaceId)).toEqual({ id: workspaceId, handle, name: "Vault permission fixture" });
+    expect(await identity(workspaceId)).toEqual({ id: workspaceId, handle, name: "Vault permission fixture", ownerId });
     const request = { handle, user: { userId: memberId }, fresh: true };
-    expect(await access(request)).toMatchObject({ canView: true, canEditContent: true, isOwner: false });
+    const freshlyLoaded = async () => access({ ...request, workspaceSnapshot: (await identity(workspaceId))! });
+    expect(await freshlyLoaded()).toMatchObject({ canView: true, canEditContent: true, isOwner: false });
     await db.update(schema.collaborators).set({ role: "commenter" }).where(eq(schema.collaborators.id, grantId));
-    expect(await access(request)).toMatchObject({ canView: true, canEditContent: false, canComment: true });
+    expect(await freshlyLoaded()).toMatchObject({ canView: true, canEditContent: false, canComment: true });
     await db.update(schema.collaborators).set({ role: "viewer" }).where(eq(schema.collaborators.id, grantId));
-    expect(await access(request)).toMatchObject({ canView: true, canEditContent: false, canComment: false });
+    expect(await freshlyLoaded()).toMatchObject({ canView: true, canEditContent: false, canComment: false });
     await db.update(schema.collaborators).set({ revokedAt: new Date() }).where(eq(schema.collaborators.id, grantId));
-    expect(await access(request)).toMatchObject({ canView: false, canEditContent: false });
+    expect(await freshlyLoaded()).toMatchObject({ canView: false, canEditContent: false });
   });
   it("never promotes an item grant to workspace access", async () => {
     await db.update(schema.collaborators).set({ revokedAt: null, role: "editor", scopeType: "item" }).where(eq(schema.collaborators.id, grantId));
@@ -45,7 +46,10 @@ describe.skipIf(!enabled)("fresh vault workspace permissions against local Postg
   });
   it("rechecks ownership and deleted workspaces without a request cache", async () => {
     await db.update(schema.blogs).set({ ownerId: memberId }).where(eq(schema.blogs.id, workspaceId));
-    expect(await access({ handle, user: { userId: ownerId }, fresh: true })).toMatchObject({ isOwner: false, canView: false });
+    expect(await access({ handle, user: { userId: ownerId }, fresh: true,
+      workspaceSnapshot: (await identity(workspaceId))! })).toMatchObject({ isOwner: false, canView: false });
+    expect(await access({ handle, user: { userId: memberId }, fresh: true,
+      workspaceSnapshot: (await identity(workspaceId))! })).toMatchObject({ isOwner: true });
     await db.update(schema.blogs).set({ deletedAt: new Date() }).where(eq(schema.blogs.id, workspaceId));
     expect(await identity(workspaceId)).toBeNull();
     expect(await access({ handle, user: { userId: memberId }, fresh: true })).toMatchObject({ canView: false });

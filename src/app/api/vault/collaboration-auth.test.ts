@@ -18,7 +18,7 @@ describe("named file workspace collaboration authorization", () => {
     vi.resetAllMocks();
     vi.stubEnv("TEXTTEXT_VAULT_ROOT", "/trusted/vault");
     mocks.session.mockResolvedValue({ sub: "member-sub", userId: "member" });
-    mocks.workspace.mockResolvedValue({ id: workspaceId, handle: "someone-elses-space", name: "Shared workspace" });
+    mocks.workspace.mockResolvedValue({ id: workspaceId, handle: "someone-elses-space", name: "Shared workspace", ownerId: "owner" });
     mocks.access.mockResolvedValue(access);
   });
   afterEach(() => vi.unstubAllEnvs());
@@ -26,7 +26,8 @@ describe("named file workspace collaboration authorization", () => {
     const result = await authorizeVaultCollaboration(request("POST", { origin: "https://texttext.app" }), workspaceId, "edit");
     expect(result).toEqual({ root: "/trusted/vault", workspaceId, name: "Shared workspace", actorUserId: "member", actorType: "human", canEditContent: true, canComment: true });
     expect(mocks.workspace).toHaveBeenCalledWith(workspaceId);
-    expect(mocks.access).toHaveBeenCalledWith({ handle: "someone-elses-space", user: { sub: "member-sub", userId: "member" }, fresh: true });
+    expect(mocks.access).toHaveBeenCalledWith({ handle: "someone-elses-space", user: { sub: "member-sub", userId: "member" }, fresh: true,
+      workspaceSnapshot: { id: workspaceId, ownerId: "owner" } });
   });
   it.each([false, true])("permits reads but denies edits for non-editor with comment permission %s", async (canComment) => {
     mocks.access.mockResolvedValue({ ...access, canEditContent: false, canComment });

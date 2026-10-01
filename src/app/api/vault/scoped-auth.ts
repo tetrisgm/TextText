@@ -41,7 +41,8 @@ export async function authorizeVaultWorkspaceOrScoped(request: Request, workspac
   if (identity instanceof Response) return identity;
   const workspace = await getVaultWorkspaceIdentity(workspaceId);
   if (!workspace || workspace.id !== workspaceId) return deny(404, "Workspace not found");
-  const access = await resolveWorkspaceAccess({ handle: workspace.handle, user: identity.user, fresh: true });
+  const access = await resolveWorkspaceAccess({ handle: workspace.handle, user: identity.user, fresh: true,
+    workspaceSnapshot: { id: workspace.id, ownerId: workspace.ownerId } });
   if (access.blogId !== workspaceId || !access.userId) return deny(404, "Workspace not found");
   const root = process.env.TEXTTEXT_VAULT_ROOT;
   if (!root) return deny(503, "File vault storage is not configured");

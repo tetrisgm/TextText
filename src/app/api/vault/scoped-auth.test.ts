@@ -21,7 +21,7 @@ describe("file-vault item authorization", () => {
     vi.resetAllMocks();
     vi.stubEnv("TEXTTEXT_VAULT_ROOT", "/trusted/vault");
     mocks.session.mockResolvedValue({ sub: "member", userId: access.userId, name: "Member" });
-    mocks.workspace.mockResolvedValue({ id: workspaceId, handle: "shared", name: "Shared" });
+    mocks.workspace.mockResolvedValue({ id: workspaceId, handle: "shared", name: "Shared", ownerId: "owner" });
     mocks.access.mockResolvedValue(access);
     mocks.grants.mockResolvedValue([itemGrant]);
     mocks.item.mockResolvedValue({ itemId, relativePath: "Private/One.textpack", bytes: new Uint8Array([1]) });
@@ -31,7 +31,8 @@ describe("file-vault item authorization", () => {
   it("uses workspace-qualified item identity and does not expose siblings", async () => {
     const allowed = await authorizeVaultItem(request(), workspaceId, itemId, "edit");
     expect(allowed).toMatchObject({ itemId, relativePath: "Private/One.textpack", canEditContent: true, fullAccess: false });
-    expect(mocks.access).toHaveBeenCalledWith({ handle: "shared", user: expect.any(Object), fresh: true });
+    expect(mocks.access).toHaveBeenCalledWith({ handle: "shared", user: expect.any(Object), fresh: true,
+      workspaceSnapshot: { id: workspaceId, ownerId: "owner" } });
     expect(status(await authorizeVaultItemAtPath(request(), workspaceId, "sibling", "Private/Sibling.textpack", "read"))).toBe(404);
     expect(status(await authorizeVaultItemAtPath(request(), "5964de1f-149c-488d-8357-b95d7ec1ce48", itemId, "Private/One.textpack", "read"))).toBe(404);
   });

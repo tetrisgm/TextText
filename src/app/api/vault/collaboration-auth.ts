@@ -29,7 +29,8 @@ export async function authorizeVaultCollaboration(request: Request, workspaceId:
   const workspace = await getVaultWorkspaceIdentity(workspaceId);
   if (!workspace || workspace.id !== workspaceId) return deny(404, "Workspace not found");
   // No module/session cache: permission and token revocation are checked on every request.
-  const access = await resolveWorkspaceAccess({ handle: workspace.handle, user, fresh: true });
+  const access = await resolveWorkspaceAccess({ handle: workspace.handle, user, fresh: true,
+    workspaceSnapshot: { id: workspace.id, ownerId: workspace.ownerId } });
   if (access.blogId !== workspaceId || !access.userId || (!access.isOwner && !access.canView)) return deny(404, "Workspace not found");
   const canEditContent = access.isOwner || access.canEditContent;
   if (capability === "edit" && !canEditContent) return deny(403, "Editing permission is required");
