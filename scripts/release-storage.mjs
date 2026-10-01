@@ -3,16 +3,20 @@ import { createReadStream } from "node:fs";
 import { createHash } from "node:crypto";
 import { stat } from "node:fs/promises";
 
+export function releasePublicBase(env = process.env) {
+  if (!env.TEXTTEXT_RELEASE_PUBLIC_BASE) throw new Error("Choose and configure TEXTTEXT_RELEASE_PUBLIC_BASE before releasing.");
+  const base = new URL(env.TEXTTEXT_RELEASE_PUBLIC_BASE);
+  if (base.protocol !== "https:" || base.username || base.password || base.pathname !== "/" || base.search || base.hash || /(?:\.blob\.vercel-storage\.com|\.r2\.cloudflarestorage\.com)$/i.test(base.hostname)) throw new Error("TEXTTEXT_RELEASE_PUBLIC_BASE must be the public HTTPS download origin.");
+  return base.origin;
+}
 export function releaseStorageConfig(env = process.env) {
   const account = env.TEXTTEXT_R2_ACCOUNT_ID;
   if (!/^[a-f0-9]{32}$/.test(account ?? "")) throw new Error("TEXTTEXT_R2_ACCOUNT_ID must be configured.");
   if (!env.TEXTTEXT_RELEASE_R2_ACCESS_KEY_ID || !env.TEXTTEXT_RELEASE_R2_SECRET_ACCESS_KEY) throw new Error("Separate release-bucket R2 credentials must be configured.");
-  if (!env.TEXTTEXT_RELEASE_PUBLIC_BASE) throw new Error("Choose and configure TEXTTEXT_RELEASE_PUBLIC_BASE before releasing.");
-  const base = new URL(env.TEXTTEXT_RELEASE_PUBLIC_BASE);
-  if (base.protocol !== "https:" || base.username || base.password || base.pathname !== "/" || base.search || base.hash || /(?:\.blob\.vercel-storage\.com|\.r2\.cloudflarestorage\.com)$/i.test(base.hostname)) throw new Error("TEXTTEXT_RELEASE_PUBLIC_BASE must be the public HTTPS download origin.");
+  const base = releasePublicBase(env);
   const bucket = env.TEXTTEXT_RELEASE_R2_BUCKET || "texttext-releases";
   if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket) || bucket === "texttext-media") throw new Error("Invalid dedicated release bucket.");
-  return { base: base.origin, bucket, clientOptions: { region: "auto", endpoint: `https://${account}.r2.cloudflarestorage.com`, credentials: { accessKeyId: env.TEXTTEXT_RELEASE_R2_ACCESS_KEY_ID, secretAccessKey: env.TEXTTEXT_RELEASE_R2_SECRET_ACCESS_KEY }, maxAttempts: 3 } };
+  return { base, bucket, clientOptions: { region: "auto", endpoint: `https://${account}.r2.cloudflarestorage.com`, credentials: { accessKeyId: env.TEXTTEXT_RELEASE_R2_ACCESS_KEY_ID, secretAccessKey: env.TEXTTEXT_RELEASE_R2_SECRET_ACCESS_KEY }, maxAttempts: 3 } };
 }
 export function createReleaseClient(config) { return new S3Client(config.clientOptions); }
 export async function inspectReleaseFile(file) {

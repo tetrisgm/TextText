@@ -3,7 +3,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { releasePublicBase } from "./release-storage.mjs";
 
 const root = new URL("../", import.meta.url);
 const plistBuddy = "/usr/libexec/PlistBuddy";
@@ -20,16 +22,14 @@ function plistVersion(pathname) {
   return versionPattern.test(value) ? value : null;
 }
 
-function generatedRelease() {
+function generatedReleaseVersion() {
   const pathname = new URL("src/generated/app-release.ts", root);
   const source = readFileSync(pathname, "utf8");
   const version = source.match(/version:\s*["']([^"']+)["']/)?.[1] ?? null;
-  const zipUrl = source.match(/zipUrl:\s*(?:\n\s*)?["']([^"']+)["']/)?.[1];
-  if (!version || !versionPattern.test(version) || !zipUrl) {
+  if (!version || !versionPattern.test(version)) {
     throw new Error("src/generated/app-release.ts has no usable release identity");
   }
-  const url = new URL(zipUrl);
-  return { version, blobBase: url.origin };
+  return version;
 }
 
 function versionParts(version) {
@@ -54,21 +54,24 @@ function incrementVersion(version) {
   return parts.join(".");
 }
 
-async function artifactStatus(url) {
-  const response = await fetch(url, {
+async function artifactStatus(url, fetcher) {
+  const response = await fetcher(url, {
     method: "HEAD",
     cache: "no-store",
+    redirect: "error",
     signal: AbortSignal.timeout(15_000),
   });
   return response.status;
 }
 
-async function assertVersionFree(version, blobBase) {
+export async function assertVersionFree(version, publicBase, fetcher = fetch) {
+  if (!versionPattern.test(version)) throw new Error("Invalid release version.");
+  const base = releasePublicBase({ TEXTTEXT_RELEASE_PUBLIC_BASE: publicBase });
   const urls = [
-    `${blobBase}/downloads/TextText-${version}.zip`,
-    `${blobBase}/downloads/appcast-${version}.xml`,
+    `${base}/downloads/TextText-${version}.zip`,
+    `${base}/downloads/appcast-${version}.xml`,
   ];
-  const statuses = await Promise.all(urls.map(artifactStatus));
+  const statuses = await Promise.all(urls.map(url => artifactStatus(url, fetcher)));
   const unexpected = urls.filter(
     (_, index) => statuses[index] !== 200 && statuses[index] !== 404,
   );
@@ -87,10 +90,9 @@ async function assertVersionFree(version, blobBase) {
   }
 }
 
-async function nextVersion() {
-  const generated = generatedRelease();
-  const candidates = [
-    generated.version,
+export async function nextVersion({ publicBase = process.env.TEXTTEXT_RELEASE_PUBLIC_BASE, fetcher = fetch, versions } = {}) {
+  const candidates = versions ?? [
+    generatedReleaseVersion(),
     plistVersion(new URL("mac/Info.plist", root)),
     plistVersion("/Applications/TextText.app/Contents/Info.plist"),
     plistVersion(`${homedir()}/Applications/TextText.app/Contents/Info.plist`),
@@ -100,9 +102,12 @@ async function nextVersion() {
       compareVersions(version, latest) > 0 ? version : latest,
     ),
   );
+  // A local build needs a version but does not publish artifacts. A real ship
+  // runs assert-free afterward, which requires the configured public origin.
+  if (!publicBase) return candidate;
   while (true) {
     try {
-      await assertVersionFree(candidate, generated.blobBase);
+      await assertVersionFree(candidate, publicBase, fetcher);
       return candidate;
     } catch (error) {
       if (!(error instanceof Error) || !error.message.startsWith("Release ")) {
@@ -114,20 +119,24 @@ async function nextVersion() {
   }
 }
 
-const [command = "next", version] = process.argv.slice(2);
-try {
-  if (command === "next") {
-    process.stdout.write(`${await nextVersion()}\n`);
-  } else if (command === "assert-free") {
-    if (!version || !versionPattern.test(version)) {
-      throw new Error("usage: release-version.mjs assert-free <version>");
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const pkg = (await import("@next/env")).default;
+  pkg.loadEnvConfig(fileURLToPath(root), true, { info() {}, error() {} });
+  const [command = "next", version] = process.argv.slice(2);
+  try {
+    if (command === "next") {
+      process.stdout.write(`${await nextVersion()}\n`);
+    } else if (command === "assert-free") {
+      if (!version || !versionPattern.test(version)) {
+        throw new Error("usage: release-version.mjs assert-free <version>");
+      }
+      await assertVersionFree(version, process.env.TEXTTEXT_RELEASE_PUBLIC_BASE);
+      process.stdout.write(`${version} is free\n`);
+    } else {
+      throw new Error("usage: release-version.mjs [next | assert-free <version>]");
     }
-    await assertVersionFree(version, generatedRelease().blobBase);
-    process.stdout.write(`${version} is free\n`);
-  } else {
-    throw new Error("usage: release-version.mjs [next | assert-free <version>]");
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
   }
-} catch (error) {
-  console.error(error instanceof Error ? error.message : error);
-  process.exit(1);
 }
