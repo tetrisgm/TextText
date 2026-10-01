@@ -56,8 +56,100 @@ function fixture() {
   };
   return { id, path, files, operations, initial, transport: createWebVaultTransport("workspace", "Workspace", request), fail: () => { failNextPut = true; } };
 }
+function cachedOpenFixture() {
+  const { id, path, initial } = fixture();
+  const live = { bytes: initial, path, epoch: 1, seq: 0, allowed: true, canEdit: true,
+    collaborationResponse: null as ((signal: AbortSignal | undefined) => Promise<Response>) | null };
+  const calls = { items: 0, collaboration: 0 };
+  const transport = createWebVaultTransport("workspace", "Workspace", async (url, init) => {
+    const target = String(url);
+    if (target.endsWith("/items")) return Response.json({ items: [{ itemId: id, relativePath: path, revision: digest(initial) }], revision: "manifest" });
+    if (target.endsWith(`/${id}/collaboration`)) {
+      calls.collaboration++;
+      if (live.collaborationResponse) return live.collaborationResponse(init?.signal);
+      if (!live.allowed) return Response.json({ error: "Access changed" }, { status: 403 });
+      return Response.json({ epoch: live.epoch, seq: live.seq, revision: digest(live.bytes), relativePath: live.path,
+        update: "AAA=", canEditContent: live.canEdit, canComment: true });
+    }
+    if (target.endsWith(`/${id}`)) {
+      calls.items++;
+      if (!live.allowed) return Response.json({ error: "Access changed" }, { status: 403 });
+      return new Response(new Uint8Array(live.bytes), { headers: { ETag: `"${digest(live.bytes)}"`, "X-TextText-Path": encodeURIComponent(live.path) } });
+    }
+    throw new Error(`Unexpected request: ${target}`);
+  });
+  return { id, path, live, calls, transport };
+}
 
 describe("web file vault transport", () => {
+  it("reuses a parsed pack only after a fresh matching collaboration read, including a permission downgrade", async () => {
+    const { id, path, live, calls, transport } = cachedOpenFixture();
+    const first = await transport.request("read", { path, prefetchCollaboration: true }) as VaultFile;
+    await transport.request("collaborationRead", { itemId: id });
+    live.canEdit = false;
+    const second = await transport.request("read", { path, prefetchCollaboration: true }) as VaultFile;
+    const baseline = await transport.request("collaborationRead", { itemId: id }) as { canEditContent: boolean };
+    expect(second).toBe(first);
+    expect(baseline.canEditContent).toBe(false);
+    expect(calls).toEqual({ items: 1, collaboration: 2 });
+    transport.destroy();
+  });
+
+  it("never returns cached bytes after read access is revoked", async () => {
+    const { id, path, live, calls, transport } = cachedOpenFixture();
+    await transport.request("read", { path, prefetchCollaboration: true });
+    await transport.request("collaborationRead", { itemId: id });
+    live.allowed = false;
+    await expect(transport.request("read", { path, prefetchCollaboration: true })).rejects.toMatchObject({ code: "403" });
+    expect(calls).toEqual({ items: 2, collaboration: 2 });
+    transport.destroy();
+  });
+
+  it("fetches changed bytes or a moved path, while accepting a new epoch only with a fresh response", async () => {
+    const { id, path, live, calls, transport } = cachedOpenFixture();
+    const first = await transport.request("read", { path, prefetchCollaboration: true }) as VaultFile;
+    await transport.request("collaborationRead", { itemId: id });
+    const unpacked = openPack(live.bytes, path, first.hash, id);
+    const changed = readDocument(unpacked.file); changed.content.body = "Fresh external edit";
+    live.bytes = encodePack(unpacked, writePayload(unpacked.file, changed)); live.epoch = 2;
+    const updated = await transport.request("read", { path, prefetchCollaboration: true }) as VaultFile;
+    expect(updated.hash).not.toBe(first.hash);
+    expect(readDocument(updated).content.body).toBe("Fresh external edit");
+    expect((await transport.request("collaborationRead", { itemId: id }) as { epoch: number }).epoch).toBe(2);
+    expect(calls.items).toBe(2);
+    live.epoch = 3;
+    const newEpoch = await transport.request("read", { path, prefetchCollaboration: true }) as VaultFile;
+    expect(newEpoch).toBe(updated);
+    expect((await transport.request("collaborationRead", { itemId: id }) as { epoch: number }).epoch).toBe(3);
+    expect(calls.items).toBe(2);
+    live.path = "Moved.textpack";
+    const moved = await transport.request("read", { path, prefetchCollaboration: true }) as VaultFile;
+    expect(moved.path).toBe(live.path);
+    expect(calls.items).toBe(3);
+    transport.destroy();
+  });
+
+  it("aborts a held warm revalidation without exposing cached bytes or leaving its prefetch alive", async () => {
+    const { id, path, live, calls, transport } = cachedOpenFixture();
+    await transport.request("read", { path, prefetchCollaboration: true });
+    await transport.request("collaborationRead", { itemId: id });
+    const started = deferred<AbortSignal | undefined>();
+    live.collaborationResponse = signal => { started.resolve(signal); return new Promise<Response>((_resolve, reject) => {
+      signal?.addEventListener("abort", () => reject(new DOMException("Canceled", "AbortError")), { once: true });
+    }); };
+    const controller = new AbortController();
+    const opening = transport.request("read", { path, prefetchCollaboration: true }, controller.signal);
+    const pendingSignal = await started.promise;
+    controller.abort();
+    await expect(opening).rejects.toMatchObject({ name: "AbortError" });
+    expect(pendingSignal?.aborted).toBe(true);
+    expect(calls.items).toBe(1);
+    live.collaborationResponse = null;
+    await expect(transport.request("read", { path, prefetchCollaboration: true })).resolves.toMatchObject({ path });
+    expect(calls.collaboration).toBe(3);
+    transport.destroy();
+  });
+
   it("starts the initial collaboration read alongside an explicit item open", async () => {
     const { id, path, initial } = fixture();
     const revision = digest(initial);
@@ -146,6 +238,8 @@ describe("web file vault transport", () => {
       if (target.endsWith(`/${id}`)) return new Response(new Uint8Array(initial), { headers: { ETag: `"${revision}"` } });
       if (target.endsWith(`/${id}/collaboration`)) {
         signals.push(init!.signal!);
+        if (signals.length > 1) return Response.json({ epoch: 1, seq: 0, revision, relativePath: path,
+          update: "AAA=", canEditContent: true, canComment: true });
         return new Promise<Response>((_resolve, reject) => init!.signal!.addEventListener("abort", () => reject(new DOMException("Canceled", "AbortError")), { once: true }));
       }
       throw new Error(`Unexpected request: ${target}`);

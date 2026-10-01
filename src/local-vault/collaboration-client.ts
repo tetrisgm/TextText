@@ -325,6 +325,15 @@ export class FileCollaborationClient {
     this.rawRecoveryJournal = null;
     return parsed;
   }
+  private restoreRetained(retained: FileCollaborationJournal): void {
+    this.current = cursor(retained); this.pending = retained.pending; this.batch = retained.batch;
+    this.unqueuedDirty = retained.unqueuedDirty === true; this.saved = retained;
+    this.journalGeneration = retained.journalGeneration ?? 0;
+    Y.applyUpdate(this.doc, decode(retained.update), REMOTE);
+    const snapshot = this.snapshot();
+    this.initialized = true; this.canEdit = retained.canEditContent === true; this.canComment = retained.canComment === true;
+    this.options.onChange?.(snapshot);
+  }
   private async request(method: "read" | "push", params: Record<string, unknown>, poll = false): Promise<unknown> {
     const controller = new AbortController(); this.controllers.add(controller);
     if (poll) this.pollController = controller;
@@ -339,6 +348,7 @@ export class FileCollaborationClient {
     return this.starting;
   }
   private async begin(): Promise<void> {
+    let cleanWebFallback: FileCollaborationJournal | null = null;
     try {
       if (!this.lease && (this.options.ownership || (!this.options.journal && !this.options.checkpoint))) {
         const lease = await (this.options.ownership ?? browserOwnership()).acquire(this.journalKey);
@@ -352,11 +362,16 @@ export class FileCollaborationClient {
         this.journalGeneration = retained!.journalGeneration ?? 0;
         retained = null;
       }
+      if (retained && !this.options.checkpoint && !this.options.initialRetirement &&
+          !retained.pending.length && !retained.batch && !retained.unqueuedDirty && !retained.retired) {
+        // A web journal is durable recovery data, not a fresh access grant.
+        // Wait for the live baseline before displaying it or restoring edit rights.
+        cleanWebFallback = retained;
+        this.journalGeneration = retained.journalGeneration ?? 0;
+        retained = null;
+      }
       if (retained) {
-        this.current = cursor(retained); this.pending = retained.pending; this.batch = retained.batch; this.unqueuedDirty = retained.unqueuedDirty === true; this.saved = retained; this.journalGeneration = retained.journalGeneration ?? 0;
-        Y.applyUpdate(this.doc, decode(retained.update), REMOTE); this.snapshot();
-        this.initialized = true; this.canEdit = retained.canEditContent === true; this.canComment = retained.canComment === true;
-        this.options.onChange?.(this.snapshot());
+        this.restoreRetained(retained);
         if (this.options.initialRetirement) {
           this.initialRetirement = this.options.initialRetirement; this.frozen = true; this.canEdit = false;
           this.report("recovery", this.initialRetirement); return;
@@ -392,7 +407,22 @@ export class FileCollaborationClient {
       this.report(this.pending.length || this.batch ? "saving" : "ready");
       if (this.pending.length || this.batch) this.schedulePush(0);
       this.schedulePoll(0);
-    } catch (error) { this.handleFailure(error); }
+    } catch (error) {
+      if (cleanWebFallback && error instanceof RequestFailure && this.active && !this.dead && !this.frozen && !this.initialized) {
+        const detail = error.cause as { status?: number; code?: string } | null;
+        if ((detail as { name?: string } | null)?.name === "AbortError") { this.handleFailure(error); return; }
+        if ([401, 403, 404, 409].includes(detail?.status ?? 0) || detail?.code === "epoch_changed") {
+          this.frozen = true; this.canEdit = false; this.cancelWork();
+          this.report("error", "This file or your access changed. Reopen it.");
+          return;
+        }
+        // A connection failure keeps the existing offline-editing behavior.
+        // The retained bytes remain local and are fenced on the next live read.
+        try { this.restoreRetained(cleanWebFallback); this.persist(); }
+        catch (restoreError) { this.fatal(restoreError); return; }
+      }
+      this.handleFailure(error);
+    }
   }
   private handleFailure(error: unknown): void {
     if (this.dead || this.frozen) return;

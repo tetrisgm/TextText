@@ -11,9 +11,9 @@ class Journal implements FileCollaborationJournalStore {
   save(key: string, value: string) { if (this.fail) throw new Error("disk full"); this.values.set(key, value); }
   remove(key: string) { this.values.delete(key); }
 }
-function pack() {
-  const document = emptyDocumentSnapshot({ id: "texttext.note", version: 1 }); document.content.body = "Hello";
-  return buildTextpack("Shared", { document, markdown: '---\ntextTextId: item-1\n---\n\nHello' });
+function pack(body = "Hello") {
+  const document = emptyDocumentSnapshot({ id: "texttext.note", version: 1 }); document.content.body = body;
+  return buildTextpack("Shared", { document, markdown: `---\ntextTextId: item-1\n---\n\n${body}` });
 }
 class Server {
   bytes: Uint8Array = pack(); state = seedVaultCollaboration(this.bytes, "item-1", 1);
@@ -53,6 +53,75 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => { for (const entry of clients.splice(0)) entry.destroy(); vi.useRealTimers(); });
 
 describe("durable file collaboration client", () => {
+  it("keeps a clean web journal hidden until a fresh read confirms downgraded access", async () => {
+    const server = new Server(), journal = new Journal(), first = client(server, journal);
+    await first.start(); const retained = journal.load(first.journalKey)!; first.destroy();
+    let release!: (value: unknown) => void;
+    const observed: string[] = [];
+    const request: FileCollaborationRequest = async (method, params, signal) => method === "read"
+      ? new Promise(resolve => { release = resolve; }) : server.request(method, params, signal);
+    const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, request,
+      onChange: snapshot => { observed.push(snapshot.content.body); } });
+    clients.push(reopened);
+    const opening = reopened.start();
+    expect(reopened.hasBaseline).toBe(false); expect(reopened.canEdit).toBe(false);
+    expect(observed).toEqual([]); expect(journal.load(first.journalKey)).toBe(retained);
+    server.canEdit = false; release(server.response()); await opening;
+    expect(reopened.status).toBe("ready"); expect(reopened.canEdit).toBe(false);
+    expect(observed).toEqual(["Hello"]); expect(server.pushes).toEqual([]);
+    expect(JSON.parse(journal.load(reopened.journalKey)!).canEditContent).toBe(false);
+  });
+
+  it("never projects a clean web journal after read access is revoked", async () => {
+    const server = new Server(), journal = new Journal(), first = client(server, journal);
+    await first.start(); const retained = journal.load(first.journalKey)!; first.destroy();
+    const observed = vi.fn();
+    const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal,
+      request: async () => { throw Object.assign(new Error("Forbidden"), { status: 403 }); }, onChange: observed });
+    clients.push(reopened); await reopened.start();
+    expect(reopened.hasBaseline).toBe(false); expect(reopened.canEdit).toBe(false);
+    expect(reopened.status).toBe("error"); expect(observed).not.toHaveBeenCalled();
+    expect(journal.load(reopened.journalKey)).toBe(retained); expect(server.pushes).toEqual([]);
+  });
+
+  it("adopts a newer server epoch and external text instead of the clean retained baseline", async () => {
+    const server = new Server(), journal = new Journal(), first = client(server, journal);
+    await first.start(); first.destroy();
+    server.bytes = pack("External edit"); server.state = seedVaultCollaboration(server.bytes, "item-1", 2);
+    const observed: string[] = [];
+    const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal,
+      request: server.request, onChange: snapshot => { observed.push(snapshot.content.body); } });
+    clients.push(reopened); await reopened.start();
+    expect(reopened.status).toBe("ready"); expect(reopened.epoch).toBe(2);
+    expect(observed).toEqual(["External edit"]); expect(server.pushes).toEqual([]);
+  });
+
+  it("preserves a pending web journal for recovery when its epoch changes during restart", async () => {
+    const server = new Server(), journal = new Journal(), first = client(server, journal);
+    await first.start(); first.mutate(doc => documentText(doc, "body").insert(5, " pending")); first.destroy();
+    server.state = seedVaultCollaboration(server.bytes, "item-1", 2);
+    const reopened = client(server, journal); await reopened.start();
+    expect(reopened.status).toBe("recovery"); expect(reopened.canEdit).toBe(false);
+    expect(reopened.recoveryJournal?.pending).toHaveLength(1);
+    expect(documentText(reopened.doc, "body").toString()).toBe("Hello pending");
+    expect(server.pushes).toEqual([]);
+  });
+
+  it("does not expose or overwrite a clean journal after the initial read is canceled", async () => {
+    const server = new Server(), journal = new Journal(), first = client(server, journal);
+    await first.start(); const retained = journal.load(first.journalKey)!; first.destroy();
+    let pendingSignal: AbortSignal | null = null;
+    const observed = vi.fn();
+    const request: FileCollaborationRequest = async (_method, _params, signal) => {
+      pendingSignal = signal;
+      return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new DOMException("Canceled", "AbortError")), { once: true }));
+    };
+    const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, request, onChange: observed });
+    clients.push(reopened); const opening = reopened.start(); reopened.destroy(); await opening;
+    expect(pendingSignal?.aborted).toBe(true); expect(observed).not.toHaveBeenCalled();
+    expect(journal.load(reopened.journalKey)).toBe(retained); expect(server.pushes).toEqual([]);
+  });
+
   it("converges two real Yjs clients through the pack engine without idle uploads", async () => {
     const server = new Server(), alice = client(server), bob = client(server);
     await Promise.all([alice.start(), bob.start()]);
@@ -459,6 +528,7 @@ describe("durable file collaboration client", () => {
     expect(editor.status).toBe("error"); expect(editor.hasUnreadableJournal).toBe(true);
     expect(editor.recoveryRawJournal).toBe("broken"); expect(journal.load(editor.journalKey)).toBe("broken");
     const original = client(server, new Journal()); await original.start();
+    original.mutate(doc => documentText(doc, "body").insert(5, " pending"));
     const retained = JSON.stringify(original.recoveryJournal); original.destroy();
     journal.values.set(editor.journalKey, retained); journal.fail = true;
     const failing = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", active: false, journal, request: server.request });
