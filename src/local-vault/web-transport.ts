@@ -121,6 +121,48 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
       if (!response.ok) throw await failure(response);
       return response.json();
     }
+    if (["commentsRead", "commentsAdd", "commentsResolve"].includes(method)) {
+      const itemId = params.itemId;
+      if (typeof itemId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(itemId)) throw new Error("Choose an item to comment on.");
+      const endpoint = `${base}/${encodeURIComponent(itemId)}/comments`;
+      let url = endpoint;
+      let body: Record<string, unknown> | null = null;
+      if (method === "commentsRead") {
+        const query = new URLSearchParams();
+        if (params.limit !== undefined) {
+          if (typeof params.limit !== "number" || !Number.isSafeInteger(params.limit) || params.limit < 1 || params.limit > 100) throw new Error("Invalid comment page size.");
+          query.set("limit", String(params.limit));
+        }
+        if (params.after !== undefined && params.after !== null) {
+          if (typeof params.after !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.after)) throw new Error("Invalid comment cursor.");
+          query.set("after", params.after);
+        }
+        if (query.size) url += `?${query}`;
+      } else {
+        if (typeof params.operationId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.operationId)) throw new Error("Invalid comment operation.");
+        body = { operationId: params.operationId };
+        if (method === "commentsAdd") {
+          if (typeof params.body !== "string" || !params.body.trim() || params.body.length > 4000) throw new Error("Write a comment up to 4000 characters.");
+          body.body = params.body;
+          if (params.parentId !== undefined && params.parentId !== null) {
+            if (typeof params.parentId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.parentId)) throw new Error("Invalid comment thread.");
+            body.parentId = params.parentId;
+          }
+        } else {
+          if (typeof params.commentId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.commentId) || typeof params.resolved !== "boolean") throw new Error("Invalid comment resolution.");
+          body.commentId = params.commentId;
+          body.resolved = params.resolved;
+        }
+      }
+      const response = await request(url, {
+        method: method === "commentsRead" ? "GET" : method === "commentsAdd" ? "POST" : "PATCH",
+        credentials: "same-origin", cache: "no-store", signal,
+        ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
+      });
+      if (!response.ok) throw await failure(response);
+      if (response.status === 204) throw new DOMException("Request canceled", "AbortError");
+      return response.json();
+    }
     if (["presenceRead", "presenceJoin", "presenceUpdate", "presenceLeave"].includes(method)) {
       const itemId = String(params.itemId);
       if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(itemId)) throw new Error("Invalid presence item.");

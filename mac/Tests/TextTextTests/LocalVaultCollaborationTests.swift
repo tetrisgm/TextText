@@ -117,4 +117,32 @@ final class LocalVaultCollaborationTests: XCTestCase {
                 method: "shareInvite", params: invalid))
         }
     }
+    func testCommentRequestsUseBoundItemAndWhitelistedFields() throws {
+        let itemId = "item-1"
+        let commentId = "0bd05f92-c562-4a78-8c0d-b5e41ca3215d"
+        let operationId = "2bd05f92-c562-4a78-8c0d-b5e41ca3215d"
+        let read = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "app-token",
+            method: "commentsRead", params: ["itemId": itemId, "limit": 100, "after": commentId])
+        XCTAssertEqual(read.url?.absoluteString, "https://texttext.app/api/vault/workspace/items/item-1/comments?limit=100&after=\(commentId)")
+        XCTAssertEqual(read.value(forHTTPHeaderField: "Authorization"), "Bearer app-token")
+        XCTAssertEqual(read.httpMethod, "GET")
+        let add = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "app-token",
+            method: "commentsAdd", params: ["itemId": itemId, "operationId": operationId, "body": "A useful note", "parentId": commentId])
+        XCTAssertEqual(add.httpMethod, "POST")
+        let body = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(add.httpBody)) as? [String: Any])
+        XCTAssertEqual(Set(body.keys), ["operationId", "body", "parentId"])
+        let resolve = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "app-token",
+            method: "commentsResolve", params: ["itemId": itemId, "operationId": operationId, "commentId": commentId, "resolved": true])
+        XCTAssertEqual(resolve.httpMethod, "PATCH")
+        let resolution = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(resolve.httpBody)) as? [String: Any])
+        XCTAssertEqual(Set(resolution.keys), ["operationId", "commentId", "resolved"])
+        for invalid: [String: Any] in [["itemId": itemId, "limit": 101],
+                                       ["itemId": itemId, "after": "../other"],
+                                       ["itemId": itemId, "operationId": operationId, "body": "", "workspaceId": "forged"],
+                                       ["itemId": itemId, "operationId": operationId, "commentId": commentId, "resolved": "yes"]] {
+            let method = invalid["resolved"] != nil ? "commentsResolve" : invalid["operationId"] != nil ? "commentsAdd" : "commentsRead"
+            XCTAssertThrowsError(try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "app-token",
+                method: method, params: invalid))
+        }
+    }
 }

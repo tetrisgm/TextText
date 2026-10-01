@@ -114,6 +114,30 @@ describe("web file vault transport", () => {
     transport.destroy();
   });
 
+  it("routes item comments through the selected workspace with bounded fields", async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const transport = createWebVaultTransport("selected-workspace", "Workspace", async (url, init) => {
+      calls.push({ url: String(url), init });
+      return Response.json({ comments: [], nextCursor: null, revision: "revision" });
+    });
+    const id = "0bd05f92-c562-4a78-8c0d-b5e41ca3215d";
+    const operationId = "2bd05f92-c562-4a78-8c0d-b5e41ca3215d";
+    const abort = new AbortController();
+    await transport.request("commentsRead", { itemId: id, limit: 100, after: operationId, workspaceId: "forged" }, abort.signal);
+    expect(calls[0].url).toBe(`/api/vault/selected-workspace/items/${id}/comments?limit=100&after=${operationId}`);
+    expect(calls[0].init?.method).toBe("GET");
+    expect(calls[0].init?.signal).toBe(abort.signal);
+    await transport.request("commentsAdd", { itemId: id, operationId, body: "A useful note", parentId: id, actorUserId: "forged" });
+    expect(calls[1].init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[1].init?.body))).toEqual({ operationId, body: "A useful note", parentId: id });
+    await transport.request("commentsResolve", { itemId: id, operationId, commentId: id, resolved: true, token: "forged" });
+    expect(calls[2].init?.method).toBe("PATCH");
+    expect(JSON.parse(String(calls[2].init?.body))).toEqual({ operationId, commentId: id, resolved: true });
+    await expect(transport.request("commentsAdd", { itemId: id, operationId, body: " " })).rejects.toThrow("Write a comment");
+    await expect(transport.request("commentsRead", { itemId: id, limit: 101 })).rejects.toThrow("page size");
+    transport.destroy();
+  });
+
   it("reads a retained complete pack without writing and verifies its hash", async () => {
     const seed = fixture();
     const requests: string[] = [];

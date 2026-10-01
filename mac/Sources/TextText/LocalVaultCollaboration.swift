@@ -116,11 +116,62 @@ final class LocalVaultCollaboration {
         }
         let endpoint = origin.appendingPathComponent("api/vault").appendingPathComponent(workspaceId)
             .appendingPathComponent("items").appendingPathComponent(itemId)
-            .appendingPathComponent(method.hasPrefix("presence") ? "presence" : "collaboration")
+            .appendingPathComponent(method.hasPrefix("presence") ? "presence" : method.hasPrefix("comments") ? "comments" : "collaboration")
         var request = URLRequest(url: endpoint, timeoutInterval: 35)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        if method == "collaborationRead" {
+        if method == "commentsRead" {
+            guard Set(params.keys).isSubset(of: ["itemId", "limit", "after"]) else {
+                throw LocalVaultCollaborationError(code: "400", message: "Invalid comments request.")
+            }
+            var query: [URLQueryItem] = []
+            if params["limit"] != nil {
+                let limit = try integer(params["limit"], minimum: 1, maximum: 100)
+                query.append(URLQueryItem(name: "limit", value: String(limit)))
+            }
+            if let after = params["after"] {
+                guard let after = after as? String, UUID(uuidString: after) != nil else {
+                    throw LocalVaultCollaborationError(code: "400", message: "Invalid comment cursor.")
+                }
+                query.append(URLQueryItem(name: "after", value: after))
+            }
+            var url = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)!
+            url.queryItems = query.isEmpty ? nil : query
+            request.url = url.url
+        } else if method == "commentsAdd" || method == "commentsResolve" {
+            let keys = Set(params.keys)
+            let expected: Set<String> = method == "commentsAdd" ? ["itemId", "operationId", "body"] : ["itemId", "operationId", "commentId", "resolved"]
+            guard (method == "commentsAdd" ? keys == expected || keys == expected.union(["parentId"]) : keys == expected),
+                  let operationId = params["operationId"] as? String, UUID(uuidString: operationId) != nil else {
+                throw LocalVaultCollaborationError(code: "400", message: "Invalid comment operation.")
+            }
+            var body: [String: Any] = ["operationId": operationId]
+            if method == "commentsAdd" {
+                guard let comment = params["body"] as? String, !comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      comment.utf8.count <= 4000 else {
+                    throw LocalVaultCollaborationError(code: "400", message: "Write a comment up to 4000 characters.")
+                }
+                body["body"] = comment
+                if let parent = params["parentId"] {
+                    guard let parent = parent as? String, UUID(uuidString: parent) != nil else {
+                        throw LocalVaultCollaborationError(code: "400", message: "Invalid comment thread.")
+                    }
+                    body["parentId"] = parent
+                }
+            } else {
+                guard let commentId = params["commentId"] as? String, UUID(uuidString: commentId) != nil,
+                      let resolved = params["resolved"] as? NSNumber, CFGetTypeID(resolved) == CFBooleanGetTypeID() else {
+                    throw LocalVaultCollaborationError(code: "400", message: "Invalid comment resolution.")
+                }
+                body["commentId"] = commentId
+                body["resolved"] = resolved.boolValue
+            }
+            let data = try JSONSerialization.data(withJSONObject: body)
+            guard data.count <= 12 * 1024 else { throw LocalVaultCollaborationError(code: "413", message: "Comment request exceeds its size limit.") }
+            request.httpMethod = method == "commentsAdd" ? "POST" : "PATCH"
+            request.httpBody = data
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        } else if method == "collaborationRead" {
             guard Set(params.keys).isSubset(of: ["itemId", "epoch", "seq", "waitMs"]) else { throw LocalVaultCollaborationError(code: "400", message: "Invalid collaboration read parameters.") }
             var query: [URLQueryItem] = []
             let wait = try params["waitMs"].map { try integer($0, minimum: 0, maximum: 25_000) } ?? 0
@@ -294,7 +345,7 @@ final class LocalVaultCollaboration {
                 }
                 let request = try Self.request(origin: context.binding.origin, workspaceId: context.binding.workspaceId, token: context.token, method: method, params: params)
                 let (data, status) = try await Self.responseData(session: self.session, request: request,
-                    maxBytes: method.hasPrefix("share") ? 256 * 1024 : 16 * 1024 * 1024)
+                    maxBytes: method.hasPrefix("share") ? 256 * 1024 : method.hasPrefix("comments") ? 2 * 1024 * 1024 : 16 * 1024 * 1024)
                 try Task.checkCancellation()
                 let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
                 guard status == 200, let value else {
