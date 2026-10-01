@@ -78,10 +78,9 @@ preview image decoded 249 ms after the folder heading. Returning to All files
 took 333 ms, including a GET of the previously open Gallery file from 56 to
 308 ms before the root heading appeared. Source inspection confirms the
 shared editor flush rereads the current file even with no pending edits. That
-read is a concrete navigation cost; removing it safely requires preserving a
-fresh revision for rename/delete actions.
-The Long note tail and All files return cost remain unresolved performance
-work; no navigation optimization is included in this source fix.
+read is a concrete navigation cost. The later navigation-only flush change
+removes it when leaving a web editor; rename/delete still reread the current
+file. The Long note tail remains unresolved.
 
 The same two-pack trace made one direct audited write to the open Long note.
 The server's collaboration epoch advanced 1→2. After five seconds the web
@@ -91,9 +90,42 @@ retired on every epoch change, including a clean journal. The native editor
 already has a clean-file refresh path. A follow-up source fix routes clean
 epoch changes through `stale-file` and automatically reopens web sessions;
 pending human edits still retire for recovery. The client suite passed 29/29
-with a new clean-epoch case. The fix has not yet been verified in a rebuilt
-production server, so the benchmark figures above remain measurements of the
-earlier build.
+with a new clean-epoch case. The original 240-pack figures above remain
+measurements of the earlier build.
+
+## Integrated two-pack rerun
+
+After the navigation-only flush change (`9e43db99`) and clean external-write
+reopen change (`4116466e`), one [two-pack rerun](/tmp/texttext-vault-perf-OhwHVL/result.json)
+used the integrated production server on localhost:3000 (PID 84641). Each
+driver-inclusive click-to-visible result is one observation, so the differences
+are a focused check, not new p95 estimates.
+
+| Navigation | Before | Integrated rerun |
+| --- | ---: | ---: |
+| Gallery folder | 126.3 ms | 109.4 ms |
+| Gallery item | 567.0 ms | 537.3 ms |
+| All files from open Gallery | 333.2 ms | 41.4 ms |
+| Notes folder | 40.9 ms | 32.6 ms |
+| 512 KiB Long note | 923.4 ms | 753.1 ms |
+
+The before trace's All files return included a 252 ms GET of the Gallery pack
+being closed. The integrated trace had no such GET. Gallery and Long note item
+opens still fetched a TextPack and initial collaboration state. The 3.35-second
+Long note p95 miss from the 240-pack run has not been retested at that scale.
+The direct synthetic `external_agent` write advanced the open Long note's
+collaboration epoch 1→2; after five seconds its marker was visible with no
+Reopen button or manual action. The before trace required a manual reopen.
+
+The rerun's marked UUID fixture `7155bcbe-1ac9-4226-9708-cfb925d58c24` was
+deleted. Three preceding two-pack attempts stopped before navigation because
+the new server was launched without an absolute vault-root setting; their
+marked UUIDs were `122e927f-f5fc-4071-987e-3331d90604a3`,
+`daa8ddae-9f73-4ece-8680-92c11abf0cc5`, and
+`c18275a5-a4ef-42bc-b5dc-3f9342868f62`. A read-only check found zero
+workspace rows, collaborator scope rows, or vault directories for all four.
+The harness recorded deletion of their exact audit targets. No second
+240-pack run was made.
 
 ## Earlier stopped attempts
 

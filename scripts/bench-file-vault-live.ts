@@ -377,7 +377,9 @@ async function main() {
     const login = await context.request.post(`${ORIGIN}/api/auth/callback/dev-login`, { form: { csrfToken: csrf.csrfToken, email: EMAILS[0], callbackUrl: `${ORIGIN}/vault/${workspaceId}` } });
     check(login.ok(), `Existing test-account sign-in returned ${login.status()}`);
     const manifest = await context.request.get(`${ORIGIN}/api/vault/${workspaceId}/items`);
-    check(manifest.ok() && ((await manifest.json()) as { items: unknown[] }).items.length === seedIndices.length, "Running server does not see the disposable fixture at the configured vault root");
+    const manifestItems = manifest.ok() ? ((await manifest.json()) as { items?: unknown[] }).items?.length ?? -1 : -1;
+    check(manifest.ok() && manifestItems === seedIndices.length,
+      `Running server does not see the disposable fixture at the configured vault root (HTTP ${manifest.status()}, items ${manifestItems})`);
     if (diagnosis) {
       phase = "two-pack diagnosis";
       const page = await context.newPage();
