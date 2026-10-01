@@ -5,6 +5,10 @@ import { emptyPack, encodePack, openPack, packIdentity, replacePackIdentity, typ
 import { writePayload } from "./model";
 
 type Manifest = { items: { itemId: string; relativePath: string; revision: string }[]; revision: string };
+type OpenCollaborationPrefetch = {
+  itemId: string; controller: AbortController; result: Promise<unknown | null>;
+  revision?: string; path?: string; timer?: ReturnType<typeof setTimeout>;
+};
 const digest = async (bytes: Uint8Array) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(bytes)))].map((value) => value.toString(16).padStart(2, "0")).join("");
 const safeName = (value: string) => value.trim().replace(/[\\/:\x00-\x1f]/g, "-").replace(/^\.+/, "").slice(0, 120) || "Untitled";
 
@@ -15,7 +19,14 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
   let listingRequest: Promise<VaultListing> | null = null;
   const packs = new Map<string, OpenPack>();
   const operations = new Map<string, string>();
+  let openCollaboration: OpenCollaborationPrefetch | null = null;
   let destroyed = false;
+  const cancelOpenCollaboration = () => {
+    if (!openCollaboration) return;
+    clearTimeout(openCollaboration.timer);
+    openCollaboration.controller.abort();
+    openCollaboration = null;
+  };
   const remember = (pack: OpenPack) => {
     packs.delete(pack.file.hash); packs.set(pack.file.hash, pack);
     // Keep the current baseline and one changed replica for conflict copies.
@@ -40,19 +51,41 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
     })().finally(() => { listingRequest = null; });
     return listingRequest;
   };
-  const read = async (path: string): Promise<VaultFile> => {
+  const read = async (path: string, prefetchCollaboration = false): Promise<VaultFile> => {
     if (!manifest) await listing();
     let item = manifest!.items.find((entry) => entry.relativePath === path);
     if (!item) { await listing(); item = manifest!.items.find((entry) => entry.relativePath === path); }
     if (!item) throw new VaultError("This file no longer exists in the workspace.", "not_found");
-    const response = await request(`${base}/${encodeURIComponent(item.itemId)}`, { credentials: "same-origin", cache: "no-store" });
-    if (!response.ok) throw await failure(response);
-    const revision = response.headers.get("ETag")?.replace(/^"|"$/g, "");
-    if (!revision || !/^[a-f0-9]{64}$/.test(revision)) throw new Error("The server did not return a file revision.");
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    if (await digest(bytes) !== revision) throw new Error("The downloaded TextPack did not match its revision.");
-    const storedPath = response.headers.get("X-TextText-Path");
-    return remember(openPack(bytes, storedPath ? decodeURIComponent(storedPath) : path, revision, item.itemId));
+    let prefetch: OpenCollaborationPrefetch | null = null;
+    if (prefetchCollaboration) {
+      cancelOpenCollaboration();
+      const controller = new AbortController();
+      prefetch = { itemId: item.itemId, controller,
+        // A failed speculative read is retried normally when the editor starts.
+        result: request(`${base}/${encodeURIComponent(item.itemId)}/collaboration`, {
+          method: "GET", credentials: "same-origin", cache: "no-store", signal: controller.signal,
+        }).then(async response => response.ok ? response.json() : null, () => null).catch(() => null),
+      };
+      openCollaboration = prefetch;
+    }
+    try {
+      const response = await request(`${base}/${encodeURIComponent(item.itemId)}`, { credentials: "same-origin", cache: "no-store" });
+      if (!response.ok) throw await failure(response);
+      const revision = response.headers.get("ETag")?.replace(/^"|"$/g, "");
+      if (!revision || !/^[a-f0-9]{64}$/.test(revision)) throw new Error("The server did not return a file revision.");
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (await digest(bytes) !== revision) throw new Error("The downloaded TextPack did not match its revision.");
+      const storedPath = response.headers.get("X-TextText-Path");
+      const opened = remember(openPack(bytes, storedPath ? decodeURIComponent(storedPath) : path, revision, item.itemId));
+      if (prefetch && openCollaboration === prefetch) {
+        prefetch.revision = opened.hash; prefetch.path = opened.path;
+        prefetch.timer = setTimeout(() => { if (openCollaboration === prefetch) cancelOpenCollaboration(); }, 2000);
+      }
+      return opened;
+    } catch (error) {
+      if (prefetch && openCollaboration === prefetch) cancelOpenCollaboration();
+      throw error;
+    }
   };
   const commit = async (itemId: string, path: string, bytes: Uint8Array, baseRevision: string | null): Promise<VaultFile> => {
     const revision = await digest(bytes);
@@ -119,6 +152,24 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
       if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(itemId)) throw new Error("Invalid collaboration item.");
       const query = new URLSearchParams();
       for (const key of ["epoch", "seq", "waitMs"]) if (params[key] !== undefined) query.set(key, String(params[key]));
+      const prefetched = openCollaboration;
+      if (method === "collaborationRead" && !query.size && prefetched?.itemId === itemId && prefetched.revision) {
+        openCollaboration = null;
+        clearTimeout(prefetched.timer);
+        const abort = () => prefetched.controller.abort();
+        signal?.addEventListener("abort", abort, { once: true });
+        try {
+          if (signal?.aborted) throw new DOMException("Request canceled", "AbortError");
+          const value = await prefetched.result;
+          if (signal?.aborted) throw new DOMException("Request canceled", "AbortError");
+          if (value && typeof value === "object" && !Array.isArray(value) &&
+              (value as { revision?: unknown }).revision === prefetched.revision &&
+              (value as { relativePath?: unknown }).relativePath === prefetched.path) return value;
+        } finally {
+          signal?.removeEventListener("abort", abort);
+          prefetched.controller.abort();
+        }
+      }
       const response = await request(`${base}/${encodeURIComponent(itemId)}/collaboration${method === "collaborationRead" && query.size ? `?${query}` : ""}`, {
         method: method === "collaborationRead" ? "GET" : "POST", credentials: "same-origin", cache: "no-store", signal,
         ...(method === "collaborationPush" ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ operationId: params.operationId, epoch: params.epoch, updates: params.updates }) } : {}),
@@ -246,7 +297,7 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
       if (!response.ok) throw await failure(response);
       return response.json();
     }
-    if (method === "read") return read(String(params.path));
+    if (method === "read") return read(String(params.path), params.prefetchCollaboration === true);
     if (method === "template" || method === "preview") {
       if (!manifest) await listing();
       const item = manifest!.items.find((entry) => entry.relativePath === params.path);
@@ -354,6 +405,6 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
       manifest = next;
       return next.revision !== previous;
     },
-    destroy: () => { destroyed = true; packs.clear(); operations.clear(); },
+    destroy: () => { destroyed = true; cancelOpenCollaboration(); packs.clear(); operations.clear(); },
   };
 }

@@ -8,6 +8,11 @@ import { writePayload, readDocument } from "./model";
 import type { VaultFile, VaultListing } from "./bridge";
 
 const digest = (bytes: Uint8Array | string) => createHash("sha256").update(bytes).digest("hex");
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(done => { resolve = done; });
+  return { promise, resolve };
+}
 function fixture() {
   const id = "0bd05f92-c562-4a78-8c0d-b5e41ca3215d", path = "Notes/Original.textpack";
   const document = emptyDocumentSnapshot({ id: "texttext.note", version: 1 });
@@ -53,6 +58,109 @@ function fixture() {
 }
 
 describe("web file vault transport", () => {
+  it("starts the initial collaboration read alongside an explicit item open", async () => {
+    const { id, path, initial } = fixture();
+    const revision = digest(initial);
+    const itemStarted = deferred<void>(), collaborationStarted = deferred<void>();
+    const releaseItem = deferred<void>(), releaseCollaboration = deferred<void>();
+    const calls: string[] = [];
+    const state = { epoch: 1, seq: 0, revision, relativePath: path, update: "AAA=", canEditContent: true, canComment: true };
+    const transport = createWebVaultTransport("workspace", "Workspace", async url => {
+      const target = String(url); calls.push(target);
+      if (target.endsWith("/items")) return Response.json({ items: [{ itemId: id, relativePath: path, revision }], revision: "manifest" });
+      if (target.endsWith(`/${id}`)) {
+        itemStarted.resolve(); await releaseItem.promise;
+        return new Response(new Uint8Array(initial), { headers: { ETag: `"${revision}"`, "X-TextText-Path": encodeURIComponent(path) } });
+      }
+      if (target.includes(`/${id}/collaboration`)) {
+        collaborationStarted.resolve(); await releaseCollaboration.promise;
+        return Response.json(state);
+      }
+      throw new Error(`Unexpected request: ${target}`);
+    });
+    const opening = transport.request("read", { path, prefetchCollaboration: true });
+    await Promise.all([itemStarted.promise, collaborationStarted.promise]);
+    releaseItem.resolve();
+    expect((await opening as VaultFile).hash).toBe(revision);
+    const baseline = transport.request("collaborationRead", { itemId: id });
+    releaseCollaboration.resolve();
+    expect(await baseline).toEqual(state);
+    expect(calls.filter(call => call.endsWith(`/${id}/collaboration`))).toHaveLength(1);
+    await transport.request("collaborationRead", { itemId: id, epoch: 1, seq: 0, waitMs: 25000 });
+    expect(calls.filter(call => call.includes(`/${id}/collaboration`))).toHaveLength(2);
+    transport.destroy();
+  });
+
+  it("refetches a baseline when the prefetched revision or path does not match the verified pack", async () => {
+    const { id, path, initial } = fixture();
+    const revision = digest(initial);
+    for (const mismatch of [{ revision: "b".repeat(64), relativePath: path },
+      { revision, relativePath: "Moved.textpack" }]) {
+      let collaborationReads = 0;
+      const transport = createWebVaultTransport("workspace", "Workspace", async url => {
+        const target = String(url);
+        if (target.endsWith("/items")) return Response.json({ items: [{ itemId: id, relativePath: path, revision }], revision: "manifest" });
+        if (target.endsWith(`/${id}`)) return new Response(new Uint8Array(initial), { headers: { ETag: `"${revision}"`, "X-TextText-Path": encodeURIComponent(path) } });
+        if (target.endsWith(`/${id}/collaboration`)) {
+          collaborationReads++;
+          return Response.json({ epoch: 1, seq: 0, update: "AAA=", revision: collaborationReads === 1 ? mismatch.revision : revision,
+            relativePath: collaborationReads === 1 ? mismatch.relativePath : path });
+        }
+        throw new Error(`Unexpected request: ${target}`);
+      });
+      await transport.request("read", { path, prefetchCollaboration: true });
+      expect(await transport.request("collaborationRead", { itemId: id })).toMatchObject({ revision, relativePath: path });
+      expect(collaborationReads).toBe(2);
+      transport.destroy();
+    }
+  });
+
+  it("rechecks access after a failed speculative collaboration read", async () => {
+    const { id, path, initial } = fixture();
+    const revision = digest(initial);
+    let collaborationReads = 0;
+    const transport = createWebVaultTransport("workspace", "Workspace", async url => {
+      const target = String(url);
+      if (target.endsWith("/items")) return Response.json({ items: [{ itemId: id, relativePath: path, revision }], revision: "manifest" });
+      if (target.endsWith(`/${id}`)) return new Response(new Uint8Array(initial), { headers: { ETag: `"${revision}"` } });
+      if (target.endsWith(`/${id}/collaboration`)) {
+        collaborationReads++;
+        return collaborationReads === 1 ? Response.json({ error: "Access changed" }, { status: 403 })
+          : Response.json({ epoch: 1, seq: 0, update: "AAA=", revision, relativePath: path });
+      }
+      throw new Error(`Unexpected request: ${target}`);
+    });
+    await transport.request("read", { path, prefetchCollaboration: true });
+    expect(await transport.request("collaborationRead", { itemId: id })).toMatchObject({ revision, relativePath: path });
+    expect(collaborationReads).toBe(2);
+    transport.destroy();
+  });
+
+  it("aborts an unused prefetch and propagates cancellation while consuming one", async () => {
+    const { id, path, initial } = fixture();
+    const revision = digest(initial);
+    const signals: AbortSignal[] = [];
+    const transport = createWebVaultTransport("workspace", "Workspace", async (url, init) => {
+      const target = String(url);
+      if (target.endsWith("/items")) return Response.json({ items: [{ itemId: id, relativePath: path, revision }], revision: "manifest" });
+      if (target.endsWith(`/${id}`)) return new Response(new Uint8Array(initial), { headers: { ETag: `"${revision}"` } });
+      if (target.endsWith(`/${id}/collaboration`)) {
+        signals.push(init!.signal!);
+        return new Promise<Response>((_resolve, reject) => init!.signal!.addEventListener("abort", () => reject(new DOMException("Canceled", "AbortError")), { once: true }));
+      }
+      throw new Error(`Unexpected request: ${target}`);
+    });
+    await transport.request("read", { path, prefetchCollaboration: true });
+    const abort = new AbortController();
+    const baseline = transport.request("collaborationRead", { itemId: id }, abort.signal);
+    abort.abort();
+    await expect(baseline).rejects.toMatchObject({ name: "AbortError" });
+    expect(signals[0].aborted).toBe(true);
+    await transport.request("read", { path, prefetchCollaboration: true });
+    transport.destroy();
+    expect(signals[1].aborted).toBe(true);
+  });
+
   it("routes feed reads to the selected workspace with only approved fields", async () => {
     const calls: { url: string; init?: RequestInit }[] = [];
     const transport = createWebVaultTransport("selected-workspace", "Workspace", async (url, init) => {

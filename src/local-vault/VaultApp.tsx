@@ -39,6 +39,9 @@ import { prepareImagePack, encodeBase64, MAX_IMAGE_BYTES, IMAGE_ACCEPT } from ".
 import "./style.css";
 
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const readForOpen = (path: string, web: boolean) => vaultRequest<VaultFile>("read", {
+  path, ...(web ? { prefetchCollaboration: true } : {}),
+});
 function focusedControl(): HTMLElement | null {
   const active = document.activeElement;
   return active instanceof HTMLElement && active !== document.body ? active : null;
@@ -563,7 +566,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     if (openedLink.current === key) return;
     openedLink.current = key;
     if (target.type === "file") {
-      void vaultRequest<VaultFile>("read", { path: target.path })
+      void readForOpen(target.path, true)
         .then(value => { if (openedLink.current === key) { setSelected(value); setDestinationFolder(folderForItem(target.path)); } })
         .catch(reason => { if (openedLink.current === key) setError(reason instanceof Error ? reason.message : "The shared file could not be opened."); });
     } else {
@@ -628,7 +631,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     feedSubscribeReturnFocus.current = null;
   }, []);
   useEffect(() => {
-    const openFile = (event: Event) => { const path = (event as CustomEvent<{ path: string }>).detail?.path; if (path) void operate(async () => { setSelected(await vaultRequest<VaultFile>("read", { path })); setDestinationFolder(folderForItem(path)); }, true); };
+    const openFile = (event: Event) => { const path = (event as CustomEvent<{ path: string }>).detail?.path; if (path) void operate(async () => { setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path)); }, true); };
     const newFile = () => { if (canCreate) createNote(focusedControl()); };
     window.addEventListener("texttext:vault-open", openFile);
     window.addEventListener("texttext:vault-new", newFile);
@@ -697,7 +700,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         {canOpenRecovery && <button disabled={busy} onClick={() => void operate(async () => setRecovery({}))}>Trash and recovery</button>}
         <nav aria-label="Workspace files"><FolderNavigation tree={tree} selectedPath={selected?.path} busy={busy}
           onFolder={(path) => void operate(async () => { closeRemoved(); setDestinationFolder(path); }, true)} onOpen={(item) => void operate(async () => {
-            setSelected(await vaultRequest<VaultFile>("read", { path: item.path })); setDestinationFolder(folderForItem(item.path));
+            setSelected(await readForOpen(item.path, !allowFolderPicker)); setDestinationFolder(folderForItem(item.path));
           }, true)} /></nav>
         {allowFolderPicker && <button onClick={() => setAssistantOpen((value) => !value)}>Assistant</button>}
         {allowFolderPicker && <NativeConnection key={listing.root} root={listing.root} />}
@@ -767,7 +770,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       }} />}
       {searchOpen && <VaultSearch namesOnly={!allowFolderPicker} onClose={closeSearch} onOpen={async (path) => {
         if (!await flushRef.current(true)) throw new Error("Save or resolve the current document before opening another file.");
-        setSelected(await vaultRequest<VaultFile>("read", { path })); setDestinationFolder(folderForItem(path));
+        setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path));
       }} />}
       {templatePicker && <LocalTemplateLibrary onClose={() => setTemplatePicker(false)} onApply={() => {}} onCreateFromFile={(path) => void operate(async () => {
         const source = await vaultRequest<VaultFile>("read", { path });
@@ -800,7 +803,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         onShare={canShare && sharingWorkspaceId ? (folder) => setSharing({ workspaceId: sharingWorkspaceId, scopeType: "folder", scopeKey: folder, label: folder.split("/").at(-1) || folder }) : undefined}
         onCustomize={allowFolderPicker ? (path) => { setAssistantOpen(true); window.dispatchEvent(new CustomEvent("texttext:vault-customize", { detail: { path } })); } : undefined}
         onFolder={(path) => setDestinationFolder(path)}
-        onOpen={(path) => void operate(async () => { setSelected(await vaultRequest<VaultFile>("read", { path })); setDestinationFolder(folderForItem(path)); }, true)}
+        onOpen={(path) => void operate(async () => { setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path)); }, true)}
         onCreate={(path, folder) => void operate(async () => {
           const source = await vaultRequest<VaultFile>("read", { path });
           const title = readDocument(source).content.title || "Untitled";
