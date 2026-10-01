@@ -13,7 +13,7 @@ vi.mock("@/lib/bookmark-fetch", () => ({
   hostResolvesToPublicOnly: mocks.hostResolvesToPublicOnly,
   isFetchableBookmarkUrl: mocks.isFetchableBookmarkUrl,
 }));
-vi.mock("@vercel/blob", () => ({ put: mocks.put }));
+vi.mock("@/lib/media-storage", () => ({ put: mocks.put, isMediaStorageConfigured: () => true }));
 
 import {
   attachItemAsset,
@@ -32,19 +32,19 @@ const basePost: Post = {
   revision: 1,
 };
 
-const savedBlobToken = process.env.BLOB_READ_WRITE_TOKEN;
+const savedBlobToken = process.env.MEDIA_ORIGIN;
 
 beforeEach(() => {
   vi.restoreAllMocks();
   for (const mock of Object.values(mocks)) mock.mockReset();
-  process.env.BLOB_READ_WRITE_TOKEN = "blob-token";
+  process.env.MEDIA_ORIGIN = "https://texttext.example";
   mocks.isFetchableBookmarkUrl.mockReturnValue(true);
   mocks.hostResolvesToPublicOnly.mockResolvedValue(true);
 });
 
 afterAll(() => {
-  if (savedBlobToken === undefined) delete process.env.BLOB_READ_WRITE_TOKEN;
-  else process.env.BLOB_READ_WRITE_TOKEN = savedBlobToken;
+  if (savedBlobToken === undefined) delete process.env.MEDIA_ORIGIN;
+  else process.env.MEDIA_ORIGIN = savedBlobToken;
 });
 
 describe("item asset references", () => {
@@ -154,7 +154,7 @@ describe("remote item asset import", () => {
     expect(mocks.put).toHaveBeenCalledWith(
       "documents/demo/item-1/assets/resume-final.png",
       expect.any(Buffer),
-      expect.objectContaining({ access: "public", addRandomSuffix: true }),
+      expect.objectContaining({ contentType: "image/png" }),
     );
   });
 

@@ -1,3 +1,4 @@
+import { isMediaStorageConfigured, mediaKeyFromUrl } from "@/lib/media-storage";
 /**
  * Removing a deleted workspace's files from blob storage.
  *
@@ -52,18 +53,17 @@ function workspaceBlobPrefixes(handle: string): string[] {
 export async function purgeWorkspaceBlobs({
   handle,
   urls,
-  token,
+
 }: {
   handle: string;
   urls: string[];
-  token: string | undefined;
 }): Promise<BlobPurgeResult> {
   const result: BlobPurgeResult = { deleted: 0, failed: 0, swept: 0 };
-  if (!token) return result;
+  if (!isMediaStorageConfigured()) return result;
 
-  let blob: typeof import("@vercel/blob");
+  let blob: typeof import("@/lib/media-storage");
   try {
-    blob = await import("@vercel/blob");
+    blob = await import("@/lib/media-storage");
   } catch (error) {
     console.warn("blob purge unavailable", error);
     return result;
@@ -71,9 +71,9 @@ export async function purgeWorkspaceBlobs({
 
   // Pass 1: everything a row pointed at.
   for (let i = 0; i < urls.length; i += DELETE_CHUNK) {
-    const chunk = urls.slice(i, i + DELETE_CHUNK);
+    const chunk = urls.slice(i, i + DELETE_CHUNK).filter(url => { const key = mediaKeyFromUrl(url); return key && workspaceBlobPrefixes(handle).some(prefix => key.startsWith(prefix)); });
     try {
-      await blob.del(chunk, { token });
+      await blob.del(chunk);
       result.deleted += chunk.length;
     } catch (error) {
       result.failed += chunk.length;
@@ -87,7 +87,7 @@ export async function purgeWorkspaceBlobs({
     for (let page = 0; page < MAX_LIST_PAGES; page += 1) {
       let listed: Awaited<ReturnType<typeof blob.list>>;
       try {
-        listed = await blob.list({ prefix, cursor, token });
+        listed = await blob.list({ prefix, cursor });
       } catch (error) {
         console.warn(`blob sweep failed for ${prefix}`, error);
         break;
@@ -101,7 +101,7 @@ export async function purgeWorkspaceBlobs({
       for (let i = 0; i < paths.length; i += DELETE_CHUNK) {
         const chunk = paths.slice(i, i + DELETE_CHUNK);
         try {
-          await blob.del(chunk, { token });
+          await blob.del(chunk);
           result.swept += chunk.length;
         } catch (error) {
           result.failed += chunk.length;

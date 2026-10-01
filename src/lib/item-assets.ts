@@ -1,3 +1,4 @@
+import { isMediaStorageConfigured } from "@/lib/media-storage";
 import { hostResolvesToPublicOnly, isFetchableBookmarkUrl } from "@/lib/bookmark-fetch";
 import type { Post } from "@/lib/content";
 import { isNoCoverValue } from "@/lib/cover";
@@ -191,8 +192,8 @@ export async function importItemAssetFromUrl(input: {
   sourceUrl: string;
   media?: "image" | "image-or-video";
 }): Promise<ImportedItemAsset> {
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token) throw new Error("Document asset storage is not configured.");
+  const storageConfigured = isMediaStorageConfigured();
+  if (!storageConfigured) throw new Error("Document asset storage is not configured.");
 
   const { response, finalUrl } = await fetchPublicMedia(input.sourceUrl);
   const contentType = normalizedMediaContentType(response.headers.get("content-type") ?? "");
@@ -211,13 +212,9 @@ export async function importItemAssetFromUrl(input: {
 
   const filename = safeAssetFilename(finalUrl.pathname, contentType);
   const pathname = `documents/${input.handle}/${input.itemId}/assets/${filename}`;
-  const { put } = await import("@vercel/blob");
+  const { put } = await import("@/lib/media-storage");
   const blob = await put(pathname, Buffer.from(bytes), {
-    access: "public",
-    addRandomSuffix: true,
-    allowOverwrite: false,
     contentType,
-    token,
   });
   return {
     url: blob.url,

@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   resolveSyncWorkspace: vi.fn(),
 }));
 
-vi.mock("@vercel/blob", () => ({ put: mocks.put }));
+vi.mock("@/lib/media-storage", async importOriginal => ({ ...await importOriginal<typeof import("@/lib/media-storage")>(), put: mocks.put, isMediaStorageConfigured: () => true }));
 vi.mock("@/lib/audit", () => ({ recordAction: mocks.recordAction }));
 vi.mock("@/lib/permissions", () => ({
   resolveItemAccess: mocks.resolveItemAccess,
@@ -38,7 +38,7 @@ import { compileItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint
 
 const postId = "0b4f6a52-8c1d-4e3a-9b7f-2d5e8a1c3f60";
 const folderId = "beec8d18-b602-4cd3-bc2b-640e067c01c8";
-const blobHost = "store.public.blob.vercel-storage.com";
+const blobHost = "texttext.example/api/media";
 const blog: Blog = {
   handle: "demo",
   name: "Demo",
@@ -62,11 +62,11 @@ const basePost: Post = {
   document: documentFromLegacyPost(legacyBasePost),
 };
 
-const savedBlobToken = process.env.BLOB_READ_WRITE_TOKEN;
+const savedBlobToken = process.env.MEDIA_ORIGIN;
 
 beforeEach(() => {
   for (const mock of Object.values(mocks)) mock.mockReset();
-  process.env.BLOB_READ_WRITE_TOKEN = "blob-token";
+  process.env.MEDIA_ORIGIN = "https://texttext.example";
   mocks.getDocumentTemplateForHandle.mockResolvedValue(null);
   mocks.getDocumentTemplateAuthoringSourcesForHandle.mockResolvedValue(new Map());
   mocks.resolveSyncWorkspace.mockResolvedValue({ blog, userId: "user-1" });
@@ -80,8 +80,8 @@ beforeEach(() => {
 });
 
 afterAll(() => {
-  if (savedBlobToken === undefined) delete process.env.BLOB_READ_WRITE_TOKEN;
-  else process.env.BLOB_READ_WRITE_TOKEN = savedBlobToken;
+  if (savedBlobToken === undefined) delete process.env.MEDIA_ORIGIN;
+  else process.env.MEDIA_ORIGIN = savedBlobToken;
 });
 
 describe("sync file artifact GET", () => {
@@ -313,11 +313,7 @@ describe("sync file asset POST", () => {
       `documents/demo/${postId}/assets/resume-final.png`,
       expect.objectContaining({ name: "../../R\u00e9sum\u00e9 FINAL.JPEG", size: 4 }),
       {
-        access: "public",
-        addRandomSuffix: true,
-        allowOverwrite: false,
         contentType: "image/png",
-        token: "blob-token",
       },
     );
     expect(mocks.recordAction).toHaveBeenCalledWith(

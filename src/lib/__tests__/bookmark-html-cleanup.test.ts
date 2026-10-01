@@ -13,7 +13,9 @@ const mocks = vi.hoisted(() => ({
   saveBookmarkCapture: vi.fn(),
 }));
 
-vi.mock("@vercel/blob", () => ({
+vi.mock("@/lib/media-storage", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/media-storage")>(),
+  isMediaStorageConfigured: () => true,
   del: mocks.deleteBlob,
   put: vi.fn(),
 }));
@@ -51,10 +53,10 @@ const legacyCapture = {
   htmlUrl: "https://store.public.blob.vercel-storage.com/page.html-legacy",
 } as BookmarkCapture;
 
-const savedBlobToken = process.env.BLOB_READ_WRITE_TOKEN;
+const savedBlobToken = process.env.MEDIA_ORIGIN;
 
 beforeEach(() => {
-  process.env.BLOB_READ_WRITE_TOKEN = "blob-token";
+  process.env.MEDIA_ORIGIN = "https://texttext.example";
   for (const mock of Object.values(mocks)) mock.mockReset();
   mocks.resolveSyncWorkspace.mockResolvedValue({
     blog: {
@@ -85,8 +87,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  if (savedBlobToken === undefined) delete process.env.BLOB_READ_WRITE_TOKEN;
-  else process.env.BLOB_READ_WRITE_TOKEN = savedBlobToken;
+  if (savedBlobToken === undefined) delete process.env.MEDIA_ORIGIN;
+  else process.env.MEDIA_ORIGIN = savedBlobToken;
 });
 
 describe("legacy bookmark HTML metadata", () => {
@@ -125,13 +127,10 @@ describe("legacy bookmark HTML blob deletion", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(mocks.deleteBlob).toHaveBeenCalledWith(
-      "https://store.public.blob.vercel-storage.com/page.html-legacy",
-      { token: "blob-token" },
-    );
+    expect(mocks.deleteBlob).not.toHaveBeenCalled();
   });
 
-  it("does not fail recapture when Blob deletion fails", async () => {
+  it("ignores disposable legacy Blob storage during recapture", async () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const failure = new Error("Blob unavailable");
     mocks.deleteBlob.mockRejectedValue(failure);
@@ -144,9 +143,6 @@ describe("legacy bookmark HTML blob deletion", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(warning).toHaveBeenCalledWith(
-      "legacy bookmark HTML blob deletion failed",
-      failure,
-    );
+    expect(warning).not.toHaveBeenCalled();
   });
 });

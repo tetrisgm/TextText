@@ -1,3 +1,5 @@
+import { isUuid, resolveItemAccess } from "@/lib/permissions";
+import { isMediaStorageConfigured } from "@/lib/media-storage";
 import { isAuthConfigured } from "@/auth";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import { getCurrentUser } from "@/lib/session";
@@ -45,12 +47,14 @@ function uploadPathname(handle: string, file: File) {
 }
 
 export async function POST(request: Request) {
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  const storageConfigured = isMediaStorageConfigured();
 
-  if (!token) {
+  if (!storageConfigured) {
     return jsonError("Media upload is not configured.", 503);
   }
 
+  const origin = request.headers.get("origin");
+  if (origin && origin !== new URL(request.url).origin) return jsonError("Upload was not authorized.", 403);
   const requestedHandle = new URL(request.url).searchParams.get("handle");
   let uploadHandle: string;
   if (requestedHandle) {
@@ -72,6 +76,10 @@ export async function POST(request: Request) {
     uploadHandle = (await ensureOwnerBlog(user)).handle;
   }
 
+  const postId = new URL(request.url).searchParams.get("postId");
+  if (postId && (!isUuid(postId) || !(await resolveItemAccess({ handle: uploadHandle, postId, user: await getCurrentUser() })).canEditContent)) {
+    return jsonError("You cannot upload to this item.", 403);
+  }
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().includes("multipart/form-data")) {
     return jsonError("Expected multipart/form-data with a single file field.", 415);
@@ -108,12 +116,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { put } = await import("@vercel/blob");
-    const blob = await put(uploadPathname(uploadHandle, file), file, {
-      access: "public",
-      addRandomSuffix: true,
+    const { put } = await import("@/lib/media-storage");
+    const blob = await put(postId ? `documents/${uploadHandle}/${postId}/assets/${safePathSegment(file.name)}` : uploadPathname(uploadHandle, file), file, {
       contentType: file.type,
-      token,
     });
 
     return Response.json({ url: blob.url });

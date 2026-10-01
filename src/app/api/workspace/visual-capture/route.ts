@@ -1,3 +1,4 @@
+import { isMediaStorageConfigured } from "@/lib/media-storage";
 import { getCurrentUser } from "@/lib/session";
 import { resolveFolderAccess, isUuid } from "@/lib/permissions";
 import { TENANT_HANDLE_RE } from "@/lib/tenants";
@@ -60,8 +61,8 @@ export async function POST(request: Request) {
   if (!blog || !folder) return error(404, "Folder not found.");
   const access = await resolveFolderAccess({ handle, folderId: folder.id, user });
   if (!access.canEditContent) return error(403, "You cannot add items to this folder.");
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token) return error(503, "Image storage is unavailable. Try again later.");
+  const storageConfigured = isMediaStorageConfigured();
+  if (!storageConfigured) return error(503, "Image storage is unavailable. Try again later.");
 
   const key = `visual:${uploadKey}`;
   const claim = await claimIdempotencyKey(handle, key, { staleAfterMs: 120_000 });
@@ -82,14 +83,12 @@ export async function POST(request: Request) {
     const filename = visualAssetFilename(file.name, prepared.originalContentType);
     const title = file.name.replace(/\.[^.]+$/, "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 160) || "Image";
     const pathname = `documents/${handle}/visual/${uploadKey}`;
-    const { put } = await import("@vercel/blob");
+    const { put } = await import("@/lib/media-storage");
     const original = await put(`${pathname}/${filename}`, prepared.original, {
-      access: "public", addRandomSuffix: true, allowOverwrite: false,
-      contentType: prepared.originalContentType, token,
+      contentType: prepared.originalContentType,
     });
     const still = await put(`${pathname}/preview.webp`, prepared.preview, {
-      access: "public", addRandomSuffix: true, allowOverwrite: false,
-      contentType: "image/webp", token,
+      contentType: "image/webp",
     });
     const document = validateDocumentSnapshot({
       schemaVersion: 1,

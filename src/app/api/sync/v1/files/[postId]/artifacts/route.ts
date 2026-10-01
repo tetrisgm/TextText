@@ -1,3 +1,4 @@
+import { mediaKeyFromUrl } from "@/lib/media-storage";
 import type { Post } from "@/lib/content";
 import { remoteMarkdownImageUrls } from "@/lib/markdown-images";
 import { resolveItemAccess } from "@/lib/permissions";
@@ -162,18 +163,8 @@ function isTextTextHostedAssetURL(
   postId: string,
 ): boolean {
   try {
-    const url = new URL(raw);
-    if (
-      url.protocol !== "https:" ||
-      url.username ||
-      url.password ||
-      url.port ||
-      !url.hostname.toLowerCase().endsWith(".blob.vercel-storage.com")
-    ) {
-      return false;
-    }
-
-    const parts = decodedPathParts(url);
+    const key = mediaKeyFromUrl(raw);
+    const parts = key?.split("/");
     if (!parts) return false;
     if (
       parts.length >= 4 &&
@@ -201,30 +192,6 @@ function isTextTextHostedAssetURL(
   } catch {
     return false;
   }
-}
-
-function decodedPathParts(url: URL): string[] | null {
-  const parts: string[] = [];
-  for (const encoded of url.pathname.split("/").filter(Boolean)) {
-    let part: string;
-    try {
-      part = decodeURIComponent(encoded);
-    } catch {
-      return null;
-    }
-    if (
-      !part ||
-      part === "." ||
-      part === ".." ||
-      part.includes("/") ||
-      part.includes("\\") ||
-      /[\u0000-\u001f\u007f]/.test(part)
-    ) {
-      return null;
-    }
-    parts.push(part);
-  }
-  return parts;
 }
 
 function safeArtifactFilename(

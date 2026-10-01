@@ -179,7 +179,6 @@ export async function purgeAccount(
   await purgeWorkspaceBlobs({
     handle: summary.handle,
     urls: blobUrls,
-    token: process.env.BLOB_READ_WRITE_TOKEN,
   });
   await purgeWorkspaceContent(summary.blogId);
   await deleteWorkspaceRow(summary.blogId);

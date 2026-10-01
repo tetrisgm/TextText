@@ -1,3 +1,4 @@
+import { isMediaStorageConfigured, mediaKeyFromUrl } from "@/lib/media-storage";
 // Capture result upload (multipart/form-data):
 //
 //   PUT /api/sync/v1/captures/{postId}
@@ -21,7 +22,6 @@ import { resolveItemAccess } from "@/lib/permissions";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import {
   getPostById,
-  legacyBookmarkHtmlUrl,
   markCapturePending,
   prepareBookmarkCaptureGeneration,
   saveBookmarkCaptureGeneration,
@@ -40,25 +40,6 @@ const MAX_READABLE_ASSETS_PER_CAPTURE = 200;
 // under this. Cap it so an oversized text field cannot bloat the row or the
 // markdown round-trip.
 const MAX_READABLE_BYTES = 2 * 1024 * 1024;
-
-async function deleteLegacyBookmarkHtmlBlob(
-  htmlUrl: string | undefined,
-  token: string | undefined = process.env.BLOB_READ_WRITE_TOKEN,
-): Promise<void> {
-  if (!htmlUrl) return;
-  if (!token) {
-    console.warn(
-      "legacy bookmark HTML blob not deleted: BLOB_READ_WRITE_TOKEN is not configured",
-    );
-    return;
-  }
-  try {
-    const { del } = await import("@vercel/blob");
-    await del(htmlUrl, { token });
-  } catch (error) {
-    console.warn("legacy bookmark HTML blob deletion failed", error);
-  }
-}
 
 function formFile(form: FormData, name: string): File | null {
   const value = form.get(name);
@@ -323,20 +304,21 @@ function captureArtifactUrls(capture: BookmarkCapture | undefined): string[] {
 async function deleteSupersededCaptureArtifacts(
   previous: BookmarkCapture | undefined,
   next: BookmarkCapture | undefined,
-  token: string | undefined,
+  storageConfigured: boolean,
+  ownedPrefix: string,
   /** The saved document's own text, which has the last word on what is in use. */
   stillShown?: string,
 ): Promise<void> {
-  if (!token) return;
+  if (!storageConfigured) return;
   const retained = new Set(captureArtifactUrls(next));
   const body = stillShown ?? "";
   const obsolete = [...new Set(captureArtifactUrls(previous))].filter(
-    (url) => !retained.has(url) && !body.includes(url),
+    (url) => !retained.has(url) && !body.includes(url) && mediaKeyFromUrl(url)?.startsWith(ownedPrefix),
   );
   if (obsolete.length === 0) return;
   try {
-    const { del } = await import("@vercel/blob");
-    await del(obsolete, { token });
+    const { del } = await import("@/lib/media-storage");
+    await del(obsolete);
   } catch (error) {
     console.warn("superseded bookmark capture artifact deletion failed", error);
   }
@@ -369,7 +351,6 @@ export async function PUT(
   if (!existingPost || existingPost.type !== "bookmark") {
     return syncError(404, "Bookmark not found");
   }
-  const legacyHtmlUrl = legacyBookmarkHtmlUrl(existingPost.capture);
 
   let form: FormData;
   try {
@@ -455,9 +436,9 @@ export async function PUT(
           : `Asset ${entry.field} must be an image`;
       })
       .find(Boolean) ?? null;
-  const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
+  const storageConfigured = isMediaStorageConfigured();
   const storageError =
-    !blobToken && (assetFiles.length > 0 || readableAssetUrls.length > 0)
+    !storageConfigured && (assetFiles.length > 0 || readableAssetUrls.length > 0)
       ? "Bookmark asset storage is not configured"
       : null;
   if (assetFileError) return syncError(400, assetFileError);
@@ -486,13 +467,13 @@ export async function PUT(
   if (error) capture.error = error;
 
   // Artifacts only for successful captures; a failure report is metadata-only.
-  if (!error && blobToken) {
+  if (!error && storageConfigured) {
     if (
       screenshot ||
       assetFiles.length > 0 ||
       readableAssetUrls.length > 0
     ) {
-      const { put } = await import("@vercel/blob");
+      const { put } = await import("@/lib/media-storage");
       for (const { entry, file } of assetFiles) {
         if (!file) continue;
         const contentType = assetContentType(file, entry.contentType);
@@ -502,10 +483,7 @@ export async function PUT(
           `captures/${blog.handle}/${postId}/generations/${generationId}/assets/${stem}.${assetExtension(contentType)}`,
           file,
           {
-            access: "public",
-            addRandomSuffix: true,
             contentType,
-            token: blobToken,
           },
         );
         capture.assets = [
@@ -543,12 +521,9 @@ export async function PUT(
               asset.filename,
               `image-${index + 1}`,
             )}.${assetExtension(asset.contentType)}`,
-            asset.data,
+            new Uint8Array(asset.data),
             {
-              access: "public",
-              addRandomSuffix: true,
               contentType: asset.contentType,
-              token: blobToken,
             },
           );
           capture.assets = [
@@ -590,10 +565,7 @@ export async function PUT(
           `captures/${blog.handle}/${postId}/generations/${generationId}/${filename}`,
           screenshot,
           {
-            access: "public",
-            addRandomSuffix: true,
             contentType,
-            token: blobToken,
           },
         );
         if (screenshotIndex === undefined) {
@@ -633,12 +605,12 @@ export async function PUT(
   if (!saved.ok) {
     return syncError(generationErrorStatus(saved.reason), saved.message);
   }
-  await deleteLegacyBookmarkHtmlBlob(legacyHtmlUrl);
   if (saved.finalized && !error) {
     await deleteSupersededCaptureArtifacts(
       existingPost.capture,
       saved.post.capture,
-      blobToken,
+      storageConfigured,
+      `captures/${blog.handle}/${postId}/`,
       saved.post.body,
     );
   }
@@ -684,14 +656,12 @@ export async function POST(
   if (!post || post.type !== "bookmark") {
     return syncError(404, "Bookmark not found");
   }
-  const legacyHtmlUrl = legacyBookmarkHtmlUrl(post.capture);
   const url = post.links?.[0]?.href?.trim() || post.capture?.url?.trim() || "";
   if (!/^https?:\/\//i.test(url)) {
     return syncError(400, "Bookmark has no capture URL");
   }
   const pending = await markCapturePending(blog.handle, postId, url);
   if (!pending) return syncError(404, "Bookmark not found");
-  await deleteLegacyBookmarkHtmlBlob(legacyHtmlUrl);
   await recordAction({
     actorUserId: userId,
     actorType: "external_agent",

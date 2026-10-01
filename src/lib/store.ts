@@ -8236,3 +8236,12 @@ export async function listWorkspaceTimeline(input: {
   return { entries, snapshot, nextCursor: rows.length > limit && last
     ? Buffer.from(JSON.stringify({ handle: input.handle, filter, snapshot, at: last.at, id: last.id })).toString("base64url") : null };
 }
+
+/** Indexed lookup of an image upload's atomically committed item, never a body scan. */
+export async function getVisualUploadItemId(handle: string, uploadKey: string): Promise<string | null> {
+  if (!db) throw new Error(NO_DATABASE);
+  const rows = await db.select({ id: idempotencyKeys.resultId, kind: idempotencyKeys.resultKind })
+    .from(idempotencyKeys).innerJoin(blogs, eq(idempotencyKeys.blogId, blogs.id))
+    .where(and(eq(blogs.handle, handle), isNull(blogs.deletedAt), eq(idempotencyKeys.key, `visual:${uploadKey}`))).limit(1);
+  return rows[0]?.kind === "post" ? rows[0].id : null;
+}

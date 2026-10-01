@@ -1,3 +1,4 @@
+import { isMediaStorageConfigured } from "@/lib/media-storage";
 import { recordAction } from "@/lib/audit";
 import { resolveItemAccess } from "@/lib/permissions";
 import { getPostById } from "@/lib/store";
@@ -34,8 +35,8 @@ export async function POST(request: Request, { params }: Props) {
     return syncError(403, "You cannot upload assets to this file");
   }
 
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token) return syncError(503, "Document asset storage is not configured");
+  const storageConfigured = isMediaStorageConfigured();
+  if (!storageConfigured) return syncError(503, "Document asset storage is not configured");
 
   const requestContentType = request.headers.get("content-type") ?? "";
   if (!requestContentType.toLowerCase().includes("multipart/form-data")) {
@@ -73,15 +74,11 @@ export async function POST(request: Request, { params }: Props) {
   const pathname =
     `documents/${workspace.blog.handle}/${postId}/assets/${uploadFilename}`;
 
-  let blob: Awaited<ReturnType<typeof import("@vercel/blob")["put"]>>;
+  let blob: Awaited<ReturnType<typeof import("@/lib/media-storage")["put"]>>;
   try {
-    const { put } = await import("@vercel/blob");
+    const { put } = await import("@/lib/media-storage");
     blob = await put(pathname, file, {
-      access: "public",
-      addRandomSuffix: true,
-      allowOverwrite: false,
       contentType,
-      token,
     });
   } catch (error) {
     console.error("Document asset upload failed", error);
