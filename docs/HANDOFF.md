@@ -4,7 +4,7 @@
 
 Finish the [content-first product brief](design/texttext-content-first-ux.md) on ordinary folder workspaces and self-contained TextPacks. The [canonical checkpoint](TEXTTEXT_UX_CHECKPOINT.md) records current HEAD, dirty files to preserve, task-owned processes, verified journeys, and the exact next action. Reconcile it with `git status` and the current listener before editing or restarting anything.
 
-The owner authorized local replacement of `/Applications/TextText.app`. The installed build is still 0.202 (1136), while source has newer collaboration, sharing, comments, public publication, RSS backend, and native bridge work. Complete the RSS UI, build one integrated local web bundle, install a new local Mac build, and verify the installed app. Then run the bounded substantial-library performance acceptance and address measured misses. Keep builds, browser checks, and native checks sequential to avoid host memory pressure.
+The owner authorized local replacement of `/Applications/TextText.app`. Native 0.202 (1137) is installed and RSS, Share, and Publish dialogs have installed-app proof. New-note focus is fixed in source but awaits reinstall; native first-use promotion from local to shared editing is being fixed next. Complete that fix, build one integrated local web bundle, install the next Mac build, and verify the installed app. Then run the bounded substantial-library performance acceptance and address measured misses. Keep builds, browser checks, and native checks sequential to avoid host memory pressure.
 
 The owner's deleted Vercel Blob objects may be treated as disposable. Working local TextPacks and database state remain active; preserve them and unrelated dirty source. Do not assume old Blob images, downloads, or off-box backups can be recovered.
 
@@ -12,7 +12,7 @@ The owner's deleted Vercel Blob objects may be treated as disposable. Working lo
 
 - Private Cloudflare R2 media, backups, and release adapters have focused code tests, but no live buckets, upload/read, scratch restore, Oracle switch, or public release. Off-box backups are unavailable since the old Blob store was deleted. Local development can proceed independently.
 - Oracle is shared with Algorave. Its PostgreSQL, application, and Caddy services use ports 5434, 3500, and 8445; preserve both the Algorave `use_backend` rule and backend in `/etc/texttext/haproxy.cfg`. Before any infrastructure repair, follow the fleet/database references in `AGENTS.md`, check backups/mtimes/running work, and obtain the separate owner authorization it requires.
-- The native 1136 conflict flow once preserved both branches but left Retry/reopen on an offline screen. Fix `a09c0fff` is committed, not installed or live-verified. Current production deployment and public sign-in have not been verified. No public push, deployment, release, or billing change was performed by this task.
+- The native 1136 conflict flow once preserved both branches but left Retry/reopen on an offline screen. Fix `a09c0fff` is installed in 1137 but still lacks installed conflict/retry proof. Current production deployment and public sign-in have not been verified. No public push, deployment, release, or billing change was performed by this task.
 - Preserve unrelated dirty `src/components/workspace/assistant/attachments.ts`, `src/lib/workspace/__tests__/tabs.test.ts`, and `scripts/.probe-editor.ts`. Do not reset, clean, or fold them into a task commit.
 
 ## References
