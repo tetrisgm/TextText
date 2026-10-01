@@ -22,6 +22,7 @@ import { WorkspaceTypeLibrary } from "./LocalTemplateLibrary";
 import { flushForNavigation } from "./navigation-flush";
 import { prepareEditorImagePaste } from "./editor-image-paste";
 import { queueArticleEnrichment } from "./article-enrichment";
+import { currentVaultWindowActive } from "./window-activity";
 
 export type VaultCollaborationConfig = { namespace: string; workspaceId: string; itemId: string; localFiles?: boolean };
 type NativeSharedSession = { sessionToken: string; path: string; hash: string; acknowledgedRevision: string; journal: string | null; retiredReason: string | null };
@@ -74,12 +75,14 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
   useEffect(() => () => awareness?.destroy(), [awareness]);
   useEffect(() => {
     const active = () => presenceRef.current?.setActive(status === "ready" && !busy &&
-      document.visibilityState === "visible" && navigator.onLine);
+      currentVaultWindowActive());
     active();
     document.addEventListener("visibilitychange", active);
+    window.addEventListener("focus", active); window.addEventListener("blur", active);
     window.addEventListener("online", active); window.addEventListener("offline", active);
     return () => {
       document.removeEventListener("visibilitychange", active);
+      window.removeEventListener("focus", active); window.removeEventListener("blur", active);
       window.removeEventListener("online", active); window.removeEventListener("offline", active);
     };
   }, [awareness, status, busy]);
@@ -110,7 +113,7 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
         await vaultRequest("collaborationClose", { itemId: config.itemId, sessionToken: closing.sessionToken }).catch(() => {});
       }
     };
-    const visibility = () => shared?.setActive(document.visibilityState === "visible" && navigator.onLine);
+    const visibility = () => shared?.setActive(currentVaultWindowActive());
     const begin = async () => {
       if (config.localFiles) {
         native = await vaultRequest<NativeSharedSession>("collaborationOpen", { itemId: config.itemId, path: file.current.path, hash: file.current.hash });
@@ -123,7 +126,7 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
         }
       }
       shared = new FileCollaborationClient({ server: config.namespace, workspaceId: config.workspaceId, itemId: config.itemId,
-      active: document.visibilityState === "visible" && navigator.onLine,
+      active: currentVaultWindowActive(),
       retainedJournal: native?.journal,
       localRevision: native?.acknowledgedRevision,
       initialRetirement: native?.retiredReason ?? undefined,
@@ -152,6 +155,7 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
     });
     clientRef.current = shared;
     document.addEventListener("visibilitychange", visibility); window.addEventListener("online", visibility); window.addEventListener("offline", visibility);
+    window.addEventListener("focus", visibility); window.addEventListener("blur", visibility);
     await shared.start();
     if (!stopped) externalReloadRef.current = false;
     };
@@ -167,6 +171,7 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
       shared?.destroy(); clientRef.current = null;
       void saved.finally(closeNative);
       document.removeEventListener("visibilitychange", visibility); window.removeEventListener("online", visibility); window.removeEventListener("offline", visibility);
+      window.removeEventListener("focus", visibility); window.removeEventListener("blur", visibility);
     };
   }, [config.namespace, config.workspaceId, config.itemId, config.localFiles, generation]);
   useEffect(() => {
