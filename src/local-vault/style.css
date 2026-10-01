@@ -61,3 +61,27 @@
 /* Dialogs opened from the editor must remain above its comments panel. */
 .vault-app .vault-template-dialog,
 .vault-app .vault-sharing-backdrop { z-index: 230; }
+
+/* Folder navigation keeps its own preference and becomes a drawer on narrow screens. */
+.vault-app.sidebar-collapsed { grid-template-columns: minmax(0, 1fr); }
+.vault-app.sidebar-collapsed.has-assistant { grid-template-columns: minmax(0, 1fr) 340px; }
+.vault-app.sidebar-collapsed .vault-sidebar { display: none; }
+.vault-app .vault-sidebar-header { display: flex; align-items: start; justify-content: space-between; gap: 8px; margin: 0 8px 14px; }
+.vault-app .vault-sidebar-header h1 { margin: 0; }
+.vault-app .vault-sidebar-header button { color: var(--muted); font-size: 12px; padding: 3px 5px; }
+.vault-app .vault-sidebar-open { display: block; margin: 12px 24px 0; color: var(--tt-accent); }
+.vault-app .vault-sidebar-backdrop { display: none; }
+@media (min-width: 1101px) {
+  .vault-app.sidebar-collapsed.has-comments .post-top-action-bar { max-width: calc(100vw - 420px - 16px); }
+}
+@media (max-width: 950px) {
+  .vault-app.sidebar-collapsed.has-assistant { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 700px) {
+  .vault-app, .vault-app.has-assistant, .vault-app.sidebar-collapsed,
+  .vault-app.sidebar-collapsed.has-assistant { grid-template-columns: minmax(0, 1fr); }
+  .vault-app .vault-sidebar { display: none; position: fixed; inset: 0 auto 0 0; width: min(300px, 85vw); z-index: 91; box-shadow: 8px 0 30px #0003; }
+  .vault-app.sidebar-ready:not(.sidebar-collapsed) .vault-sidebar { display: block; }
+  .vault-app.sidebar-ready:not(.sidebar-collapsed) .vault-sidebar-backdrop { display: block; position: fixed; inset: 0; z-index: 90; background: #0007; border-radius: 0; }
+  .vault-app .vault-sidebar-open { margin: 8px 12px 0; }
+}

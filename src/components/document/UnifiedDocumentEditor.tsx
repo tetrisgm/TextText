@@ -438,8 +438,23 @@ function CollaborativeTextarea({
 
   useLayoutEffect(() => {
     if (!grow || !ref.current) return;
-    ref.current.style.height = "auto";
-    ref.current.style.height = `${Math.max(ref.current.scrollHeight, 40)}px`;
+    const control = ref.current;
+    const container = control.parentElement;
+    const fit = () => {
+      control.style.height = "auto";
+      control.style.height = `${Math.max(control.scrollHeight, 40)}px`;
+    };
+    fit();
+    if (!container) return;
+    let width = container.getBoundingClientRect().width;
+    const observer = new ResizeObserver(() => {
+      const nextWidth = container.getBoundingClientRect().width;
+      if (Math.abs(nextWidth - width) < 0.5) return;
+      width = nextWidth;
+      fit();
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
   }, [grow, ref, value]);
 
   const reportSelection = () => {

@@ -402,6 +402,34 @@ class DocumentBoundary extends Component<{ children: ReactNode }, { error: strin
 }
 
 export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boolean }) {
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarReady, setSidebarReady] = useState(false);
+  const sidebarReopenButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      try {
+        const saved = localStorage.getItem("texttext:vault-sidebar-open");
+        setSidebarOpen(saved === null ? !window.matchMedia("(max-width: 700px)").matches : saved === "true");
+      } catch { setSidebarOpen(!window.matchMedia("(max-width: 700px)").matches); }
+      setSidebarReady(true);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, []);
+  const setSidebarVisible = useCallback((open: boolean, restoreFocus = false) => {
+    setSidebarOpen(open);
+    try { localStorage.setItem("texttext:vault-sidebar-open", String(open)); } catch { /* Local storage can be disabled. */ }
+    if (!open && restoreFocus) requestAnimationFrame(() => sidebarReopenButton.current?.focus());
+  }, []);
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !window.matchMedia("(max-width: 700px)").matches ||
+          document.querySelector('[role="dialog"][aria-modal="true"], dialog[open]')) return;
+      event.preventDefault(); setSidebarVisible(false, true);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [sidebarOpen, setSidebarVisible]);
   const [listing, setListing] = useState<VaultListing | null>(null);
   const [selected, setSelected] = useState<VaultFile | null>(null);
   const [newNoteFocus, setNewNoteFocus] = useState<{ file: VaultFile; root: string; itemId: string; origin: HTMLElement | null; focusPending: boolean; awaitSharedMode: boolean } | null>(null);
@@ -617,7 +645,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     window.addEventListener("texttext:vault-search", openSearch);
     return () => { window.removeEventListener("keydown", key); window.removeEventListener("texttext:vault-search", openSearch); };
   }, [openSearch]);
-  return <div className={`vault-app${assistantOpen ? " has-assistant" : ""}${commentsOpen && canOpenComments ? " has-comments" : ""}`}
+  return <div className={`vault-app${assistantOpen ? " has-assistant" : ""}${commentsOpen && canOpenComments ? " has-comments" : ""}${sidebarOpen ? "" : " sidebar-collapsed"}${sidebarReady ? " sidebar-ready" : ""}`}
     onDragOver={(event) => { if (!selected && event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
     onDrop={(event) => { if (!selected && event.dataTransfer.files.length) { event.preventDefault(); if (canCreate) void importImages(Array.from(event.dataTransfer.files)); } }}
     onPaste={(event) => {
@@ -627,8 +655,14 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       if (files.length) { event.preventDefault(); if (canCreate) void importImages(files); }
     }}>
     <DocumentEngineStyles />
-    <aside className="vault-sidebar">
-      <h1>TextText</h1>
+    <aside id="vault-sidebar" className="vault-sidebar" aria-hidden={!sidebarOpen}
+      onClickCapture={(event) => {
+        if (window.matchMedia("(max-width: 700px)").matches &&
+            (event.target as HTMLElement).closest("button,a")) setSidebarVisible(false);
+      }}>
+      <div className="vault-sidebar-header"><h1>TextText</h1>
+        <button type="button" aria-label="Hide folders" aria-controls="vault-sidebar" aria-expanded={sidebarOpen}
+          onClick={() => setSidebarVisible(false, true)}>Hide</button></div>
       {!allowFolderPicker && <nav className="vault-other-workspaces" aria-label="Shared workspaces"><a href="/shared">Shared with me</a></nav>}
       {allowFolderPicker && <button disabled={busy} onClick={() => void operate(async () => {
         const opened = await vaultRequest<VaultListing>("open");
@@ -669,7 +703,11 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         {allowFolderPicker && <NativeConnection key={listing.root} root={listing.root} />}
       </>}
     </aside>
+    {sidebarOpen && <button type="button" className="vault-sidebar-backdrop" aria-label="Close folders"
+      onClick={() => setSidebarVisible(false, true)} />}
     <main>
+      {!sidebarOpen && <button ref={sidebarReopenButton} type="button" className="vault-sidebar-open"
+        aria-controls="vault-sidebar" aria-expanded={false} onClick={() => setSidebarVisible(true)}>Show folders</button>}
       {importStatus && <p role="status">{importStatus}</p>}
       {selected && <div className="vault-file-actions">
         {canOpenComments && <button ref={commentsButton} type="button" aria-expanded={commentsOpen} aria-controls="vault-comments-panel"

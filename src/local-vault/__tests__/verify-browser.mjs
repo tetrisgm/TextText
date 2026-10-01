@@ -450,10 +450,37 @@ try {
   await page.getByRole("button", { name: "Notes/Offline", exact: true }).click();
   await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor();
   assert.notEqual(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Document body");
+  const closeAssistant = page.getByRole("button", { name: "Close assistant" });
+  if (await closeAssistant.isVisible()) await closeAssistant.click();
+  await page.setViewportSize({ width: 390, height: 780 });
+  await page.getByRole("button", { name: "Hide folders" }).click();
+  await page.getByRole("button", { name: "Show folders" }).waitFor();
+  assert.equal(await page.locator(".vault-sidebar").isVisible(), false);
+  assert.equal(await page.locator(".vault-app > main").evaluate((main) => Math.round(main.getBoundingClientRect().width)), 390);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+  const narrowTitle = await page.getByRole("textbox", { name: "Title", exact: true }).evaluate((element) => ({
+    height: element.clientHeight, scrollHeight: element.scrollHeight,
+    font: getComputedStyle(element).font, overflow: getComputedStyle(element).overflow,
+  }));
+  assert.ok(narrowTitle.height >= narrowTitle.scrollHeight - 1, "narrow title fits without clipping");
+  await page.screenshot({ path: "/tmp/texttext-narrow-note-light.png" });
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+  await page.screenshot({ path: "/tmp/texttext-narrow-note-dark.png" });
+  await page.getByRole("button", { name: "Show folders" }).click();
+  assert.equal(await page.locator(".vault-sidebar").isVisible(), true);
+  assert.equal(await page.locator(".vault-app > main").evaluate((main) => Math.round(main.getBoundingClientRect().width)), 390);
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator(".vault-sidebar").isVisible(), false);
+  await page.waitForFunction(() => document.activeElement?.textContent?.trim() === "Show folders");
+  assert.equal(await page.evaluate(() => localStorage.getItem("texttext:vault-sidebar-open")), "false");
+  await page.reload();
+  await page.getByRole("button", { name: "Show folders" }).waitFor();
+  assert.equal(await page.locator(".vault-sidebar").isVisible(), false);
   assert.deepEqual(failures, []);
   console.log("New note focused its body for immediate typing; reopening another note kept the user's focus.");
   console.log("Recovery preview/cancel, full pack restore as copy, and version history passed.");
   console.log("Bounded folder previews and pagination passed.");
   console.log("Image picker, folder drop/paste and embedded GIF still preview passed.");
+  console.log("Narrow folder drawer, full-width editor, remembered collapse, keyboard escape and reduced-motion render passed.");
   console.log("Offline vault UI passed: file save, raw agent refresh, conflict copy, zero HTTP/fetch calls.");
 } finally { await browser.close(); }
