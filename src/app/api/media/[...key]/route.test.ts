@@ -10,7 +10,7 @@ const id = "11111111-1111-4111-8111-111111111111";
 function request(key = `documents/demo/${id}/assets/photo.png`, headers = {}) { return GET(new Request(`https://texttext.example/api/media/${key}`, { headers }), { params: Promise.resolve({ key: key.split("/") }) }); }
 beforeEach(() => { vi.resetAllMocks(); mocks.user.mockResolvedValue(null); mocks.post.mockResolvedValue({ id, visibility: "private", status: "draft", type: "article" }); mocks.itemAccess.mockResolvedValue({ canView: false }); mocks.workspaceAccess.mockResolvedValue({ canEditContent: false }); mocks.read.mockImplementation(async () => new Response("media")); });
 describe("media ACL delivery", () => {
-  it("denies private and absent items before accessing R2", async () => {
+  it("denies private and absent items before accessing media storage", async () => {
     expect((await request()).status).toBe(404); mocks.post.mockResolvedValue(null); expect((await request()).status).toBe(404); expect(mocks.read).not.toHaveBeenCalled();
   });
   it("allows current item access, forwards ranges and honors revocation", async () => {

@@ -4,7 +4,7 @@ vi.mock("@/lib/media-storage", async importOriginal => ({ ...await importOrigina
 import { purgeWorkspaceBlobs } from "@/lib/blob-purge";
 beforeEach(() => { vi.clearAllMocks(); vi.stubEnv("MEDIA_ORIGIN", "https://texttext.example"); mocks.del.mockResolvedValue(undefined); mocks.list.mockResolvedValue({ blobs: [], hasMore: false }); });
 afterEach(() => vi.unstubAllEnvs());
-describe("workspace R2 deletion boundaries", () => {
+describe("workspace media deletion boundaries", () => {
   it("never deletes referenced neighboring workspace assets or unrelated objects", async () => {
     const own = "https://texttext.example/api/media/documents/demo/item/own.png";
     mocks.list.mockResolvedValueOnce({ blobs: [{ pathname: "documents/demo/orphan.png", url: "https://texttext.example/api/media/documents/demo/orphan.png" }, { pathname: "documents/demo-two/other.png", url: "https://texttext.example/api/media/documents/demo-two/other.png" }], hasMore: false });
