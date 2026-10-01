@@ -212,7 +212,24 @@ try {
   assert.equal(agentSendCount, 0);
   await page.setViewportSize({ width: 390, height: 780 });
   await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
-  assert.ok((await agentPanel.boundingBox()).width <= 390);
+  await page.waitForFunction(() => document.querySelector(".vault-app")?.classList.contains("sidebar-collapsed"));
+  const narrowAgentLayout = await page.evaluate(() => {
+    const panel = document.querySelector(".vault-assistant");
+    const target = document.querySelector(".vault-assistant-setup");
+    const composer = document.querySelector('.vault-assistant textarea[aria-label="Message assistant"]');
+    const visibleAndClear = (element) => {
+      if (!(element instanceof HTMLElement)) return { clear: false, box: null, hit: null };
+      const box = element.getBoundingClientRect();
+      const point = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return { clear: box.width > 0 && box.height > 0 && box.left >= 0 && box.right <= innerWidth &&
+        box.top >= 0 && box.bottom <= innerHeight && Boolean(point && (point === element || element.contains(point))),
+      box: { left: box.left, right: box.right, top: box.top, bottom: box.bottom }, hit: point?.className ?? point?.tagName ?? null };
+    };
+    return { panelWidth: panel?.getBoundingClientRect().width ?? 0, target: visibleAndClear(target), composer: visibleAndClear(composer) };
+  });
+  assert.ok(narrowAgentLayout.panelWidth <= 390);
+  assert.equal(narrowAgentLayout.target.clear, true, JSON.stringify(narrowAgentLayout));
+  assert.equal(narrowAgentLayout.composer.clear, true, JSON.stringify(narrowAgentLayout));
   await page.screenshot({ path: "/tmp/texttext-add-agent-narrow-dark.png" });
   await page.keyboard.press("Escape");
   await agentPanel.waitFor({ state: "hidden" });
@@ -286,6 +303,7 @@ try {
   });
   assert.equal(await agentPanel.getByRole("button", { name: "Send", exact: true }).isEnabled(), false);
   await agentPanel.getByRole("button", { name: "Close assistant", exact: true }).click();
+  await page.getByRole("button", { name: "Show folders", exact: true }).click();
   await page.getByRole("combobox", { name: "Folder for new items", exact: true }).fill("Projects/Draft");
   await page.getByRole("button", { name: "New note", exact: true }).click();
   assert.ok([...files.keys()].some((name) => name.startsWith("Projects/Draft/")));

@@ -447,6 +447,14 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantRequest, setAssistantRequest] = useState<NativeAssistantRequest | null>(null);
   const assistantRequestId = useRef(0);
+  useEffect(() => {
+    if (!assistantOpen) return;
+    const narrow = window.matchMedia("(max-width: 700px)");
+    const closeForAssistant = () => { if (narrow.matches) setSidebarVisible(false); };
+    const frame = requestAnimationFrame(closeForAssistant);
+    narrow.addEventListener("change", closeForAssistant);
+    return () => { cancelAnimationFrame(frame); narrow.removeEventListener("change", closeForAssistant); };
+  }, [assistantOpen, setSidebarVisible]);
   const [templatePicker, setTemplatePicker] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [feedSubscribeOpen, setFeedSubscribeOpen] = useState(false);
@@ -677,9 +685,10 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   }, []);
   const beginCustomize = useCallback((path: string) => {
     assistantReturnFocus.current = focusedControl();
+    if (window.matchMedia("(max-width: 700px)").matches) setSidebarVisible(false);
     setAssistantRequest({ type: "customize", requestId: ++assistantRequestId.current, taskId: crypto.randomUUID(), path });
     setAssistantOpen(true);
-  }, []);
+  }, [setSidebarVisible]);
   const closeAssistant = useCallback(() => {
     setAssistantOpen(false);
     restoreDialogFocus(assistantReturnFocus.current, searchButton.current);
@@ -690,9 +699,10 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const beginAddAgent = useCallback(() => {
     if (!activeWorkspaceRoot || !activeItemPath) return;
     assistantReturnFocus.current = focusedControl();
+    if (window.matchMedia("(max-width: 700px)").matches) setSidebarVisible(false);
     setAssistantRequest({ type: "agent", requestId: ++assistantRequestId.current, root: activeWorkspaceRoot, target: activeItemPath });
     setAssistantOpen(true);
-  }, [activeItemPath, activeWorkspaceRoot]);
+  }, [activeItemPath, activeWorkspaceRoot, setSidebarVisible]);
   useEffect(() => {
     window.addEventListener(REQUEST_ADD_ITEM_AGENT_EVENT, beginAddAgent);
     return () => window.removeEventListener(REQUEST_ADD_ITEM_AGENT_EVENT, beginAddAgent);

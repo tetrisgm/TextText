@@ -235,7 +235,7 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
   const working = submitting || status.state === "working";
   const itemTask = task && task.root === root && task.target === path ? task : null;
   const heading = customizing ? "Customize" : "Add agent";
-  return <><aside className="vault-assistant" aria-label={heading}>
+  return <><aside className={`vault-assistant${proposal ? " has-design-preview" : ""}`} aria-label={heading}>
     <header><h2>{heading}</h2><button aria-label="Close assistant" onClick={onClose}>Close</button></header>
     {itemTask && <div className="vault-assistant-setup" role="group" aria-label="Agent task target">
       <strong>{itemTask.target.split("/").at(-1)?.replace(/\.textpack$/i, "") || "Open item"}</strong>
