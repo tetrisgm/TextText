@@ -469,9 +469,9 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   }, [listing, access]);
   const tree = useMemo(() => folderTree(visibleListing?.items ?? [], visibleListing?.folders), [visibleListing]);
   const folders = useMemo(() => folderPaths(tree), [tree]);
-  const flushRef = useRef<() => Promise<boolean>>(async () => true);
+  const flushRef = useRef<(navigation?: boolean) => Promise<boolean>>(async () => true);
   const publishFlushRef = useRef<() => Promise<string | false>>(async () => false);
-  const registerFlush = useCallback((flush: () => Promise<boolean>, currentFile: () => VaultFile, publishFlush: () => Promise<string | false>) => {
+  const registerFlush = useCallback((flush: (navigation?: boolean) => Promise<boolean>, currentFile: () => VaultFile, publishFlush: () => Promise<string | false>) => {
     flushRef.current = flush; publishFlushRef.current = publishFlush; currentFileRef.current = currentFile;
   }, []);
   const canCreate = allowFolderPicker || canCreateInVaultFolder(access, destinationFolder.trim());
@@ -574,10 +574,10 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     setSelected(null); setFileAction(null); setCommentsOpen(false); setPublishing(null); currentFileRef.current = null;
     flushRef.current = async () => true; publishFlushRef.current = async () => false;
   }, []);
-  const operate = async (action: () => Promise<void>) => {
+  const operate = async (action: () => Promise<void>, navigation = false) => {
     if (busy) return;
     setBusy(true); setError("");
-    try { if (await flushRef.current()) { await action(); setFileAction(null); } }
+    try { if (await flushRef.current(navigation)) { await action(); setFileAction(null); } }
     catch (error) { setError(error instanceof Error ? error.message : "The file operation failed."); }
     finally { setBusy(false); }
   };
@@ -628,7 +628,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     feedSubscribeReturnFocus.current = null;
   }, []);
   useEffect(() => {
-    const openFile = (event: Event) => { const path = (event as CustomEvent<{ path: string }>).detail?.path; if (path) void operate(async () => { setSelected(await vaultRequest<VaultFile>("read", { path })); setDestinationFolder(folderForItem(path)); }); };
+    const openFile = (event: Event) => { const path = (event as CustomEvent<{ path: string }>).detail?.path; if (path) void operate(async () => { setSelected(await vaultRequest<VaultFile>("read", { path })); setDestinationFolder(folderForItem(path)); }, true); };
     const newFile = () => { if (canCreate) createNote(focusedControl()); };
     window.addEventListener("texttext:vault-open", openFile);
     window.addEventListener("texttext:vault-new", newFile);
@@ -669,7 +669,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         setListing(opened); setSelected(null); setCommentsOpen(false); setDestinationFolder(""); flushRef.current = async () => true;
       })}>Open folder</button>}
       {listing?.root && <>
-        <button disabled={busy} onClick={() => void operate(async () => { closeRemoved(); setDestinationFolder(""); })}>{access && !access.fullAccess ? "Shared files" : "All files"}</button>
+        <button disabled={busy} onClick={() => void operate(async () => { closeRemoved(); setDestinationFolder(""); }, true)}>{access && !access.fullAccess ? "Shared files" : "All files"}</button>
         <p className="vault-root" title={listing.root}>{listing.name || listing.root.split("/").filter(Boolean).at(-1)}</p>
         {canCreate && <label className="vault-folder-destination">Folder for new items
           <input list="vault-folders" aria-label="Folder for new items" value={destinationFolder} placeholder="Workspace root"
@@ -696,9 +696,9 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         <button ref={searchButton} disabled={busy} onClick={openSearch}>Search files ⌘K</button>
         {canOpenRecovery && <button disabled={busy} onClick={() => void operate(async () => setRecovery({}))}>Trash and recovery</button>}
         <nav aria-label="Workspace files"><FolderNavigation tree={tree} selectedPath={selected?.path} busy={busy}
-          onFolder={(path) => void operate(async () => { closeRemoved(); setDestinationFolder(path); })} onOpen={(item) => void operate(async () => {
+          onFolder={(path) => void operate(async () => { closeRemoved(); setDestinationFolder(path); }, true)} onOpen={(item) => void operate(async () => {
             setSelected(await vaultRequest<VaultFile>("read", { path: item.path })); setDestinationFolder(folderForItem(item.path));
-          })} /></nav>
+          }, true)} /></nav>
         {allowFolderPicker && <button onClick={() => setAssistantOpen((value) => !value)}>Assistant</button>}
         {allowFolderPicker && <NativeConnection key={listing.root} root={listing.root} />}
       </>}
@@ -766,7 +766,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         closeRemoved(); setSelected(file); setDestinationFolder(folderForItem(file.path)); refresh();
       }} />}
       {searchOpen && <VaultSearch namesOnly={!allowFolderPicker} onClose={closeSearch} onOpen={async (path) => {
-        if (!await flushRef.current()) throw new Error("Save or resolve the current document before opening another file.");
+        if (!await flushRef.current(true)) throw new Error("Save or resolve the current document before opening another file.");
         setSelected(await vaultRequest<VaultFile>("read", { path })); setDestinationFolder(folderForItem(path));
       }} />}
       {templatePicker && <LocalTemplateLibrary onClose={() => setTemplatePicker(false)} onApply={() => {}} onCreateFromFile={(path) => void operate(async () => {
@@ -800,7 +800,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         onShare={canShare && sharingWorkspaceId ? (folder) => setSharing({ workspaceId: sharingWorkspaceId, scopeType: "folder", scopeKey: folder, label: folder.split("/").at(-1) || folder }) : undefined}
         onCustomize={allowFolderPicker ? (path) => { setAssistantOpen(true); window.dispatchEvent(new CustomEvent("texttext:vault-customize", { detail: { path } })); } : undefined}
         onFolder={(path) => setDestinationFolder(path)}
-        onOpen={(path) => void operate(async () => { setSelected(await vaultRequest<VaultFile>("read", { path })); setDestinationFolder(folderForItem(path)); })}
+        onOpen={(path) => void operate(async () => { setSelected(await vaultRequest<VaultFile>("read", { path })); setDestinationFolder(folderForItem(path)); }, true)}
         onCreate={(path, folder) => void operate(async () => {
           const source = await vaultRequest<VaultFile>("read", { path });
           const title = readDocument(source).content.title || "Untitled";

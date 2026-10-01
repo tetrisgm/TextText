@@ -19,10 +19,11 @@ import { ArticleReader } from "./ArticleReader";
 import { ArticleCapture } from "./ArticleCapture";
 import { articleSource } from "@/lib/vault/article-capture";
 import { WorkspaceTypeLibrary } from "./LocalTemplateLibrary";
+import { flushForNavigation } from "./navigation-flush";
 
 export type VaultCollaborationConfig = { namespace: string; workspaceId: string; itemId: string; localFiles?: boolean };
 type NativeSharedSession = { sessionToken: string; path: string; hash: string; acknowledgedRevision: string; journal: string | null; retiredReason: string | null };
-export type VaultEditorProps = { initial: VaultFile; root: string; onChanged: () => void; onRemoved: () => void; registerFlush: (flush: () => Promise<boolean>, currentFile: () => VaultFile, publishFlush: () => Promise<string | false>) => void; focusNewNote?: boolean; focusNewNoteOrigin?: HTMLElement | null; focusNewNoteSelection?: { anchor: number; head: number } | null; onNewNoteFocusHandled?: () => void };
+export type VaultEditorProps = { initial: VaultFile; root: string; onChanged: () => void; onRemoved: () => void; registerFlush: (flush: (navigation?: boolean) => Promise<boolean>, currentFile: () => VaultFile, publishFlush: () => Promise<string | false>) => void; focusNewNote?: boolean; focusNewNoteOrigin?: HTMLElement | null; focusNewNoteSelection?: { anchor: number; head: number } | null; onNewNoteFocusHandled?: () => void };
 function substitute<T>(value: T, assets: Map<string, string>): T {
   if (typeof value === "string") {
     let text = value as string;
@@ -191,9 +192,10 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
     window.addEventListener("texttext:vault-changed", changed);
     return () => { stopped = true; window.removeEventListener("texttext:vault-changed", changed); };
   }, [config.localFiles, generation]);
-  const flush = useCallback(async () => {
+  const flush = useCallback(async (navigation = false) => {
     const shared = clientRef.current;
     if (!shared) return false;
+    if (navigation && !config.localFiles) return flushForNavigation(shared, onChanged);
     if (config.localFiles) {
       if (navigator.onLine && shared.hasPendingChanges) await shared.flush();
       if (!await shared.flushLocal()) return false;
