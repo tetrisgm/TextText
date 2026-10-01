@@ -27,6 +27,7 @@ const origin = `http://localhost:${port}`;
 const rootDomain = `localhost:${port}`;
 const evaluationDistDir = ".texttext/next-live-eval";
 const evaluationDistPath = join(process.cwd(), evaluationDistDir);
+const evaluationMediaPath = join(process.cwd(), ".texttext/media-live-eval");
 const commandTimeoutMilliseconds = 300_000;
 const suiteNames = new Set([
   "workflow",
@@ -79,8 +80,17 @@ async function stopServer() {
 }
 
 async function cleanEvaluationBuild() {
-  await rm(evaluationDistPath, { recursive: true, force: true });
+  await Promise.all([
+    rm(evaluationDistPath, { recursive: true, force: true }),
+    rm(evaluationMediaPath, { recursive: true, force: true }),
+  ]);
 }
+
+const evaluationMediaEnvironment = {
+  MEDIA_ORIGIN: origin,
+  TEXTTEXT_MEDIA_ROOT: evaluationMediaPath,
+  TEXTTEXT_STORAGE_MIN_FREE_BYTES: String(256 * 1024 ** 2),
+};
 
 async function waitForServer() {
   const deadline = Date.now() + 120_000;
@@ -133,6 +143,7 @@ async function runBounded(
       NEXT_PUBLIC_ROOT_DOMAIN: rootDomain,
       NEXT_TELEMETRY_DISABLED: "1",
       TEXTTEXT_ORIGIN: origin,
+      ...evaluationMediaEnvironment,
     },
     stdio: ["ignore", "inherit", "inherit"],
   });
@@ -183,6 +194,7 @@ async function main() {
         NEXT_TELEMETRY_DISABLED: "1",
         TEXTTEXT_NEXT_DIST_DIR: evaluationDistDir,
         TEXTTEXT_ORIGIN: origin,
+        ...evaluationMediaEnvironment,
       },
       stdio: ["ignore", "pipe", "pipe"],
     },
