@@ -11,6 +11,7 @@ import { spawnSync } from "node:child_process";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { isEntrypoint } from "./entrypoint.mjs";
+import { createR2BackupClient } from "./r2-backup-client.mjs";
 
 const backupPattern = /^backups\/oracle\/texttext\/texttext-\d{8}T\d{6}Z-[a-f0-9]{8}\.dump\.aes256gcm$/;
 const quoted = value => `"${value.replaceAll('"', '""')}"`;
@@ -35,14 +36,13 @@ async function tableCounts(client) {
 
 export async function restoreDrill({ scratch = false, compareLive = false,
   release = "/home/ubuntu/texttext/current", adminEnv = "/etc/texttext/database-admin.env",
-  backupEnv = "/etc/texttext/backup.env", recoveryKeyFile, suppliedBlob } = {}) {
+  backupEnv = "/etc/texttext/backup.env", recoveryKeyFile, suppliedClient } = {}) {
   if (!scratch || !recoveryKeyFile) throw new Error("Require --scratch and --recovery-key-file <independent private recovery environment file>.");
   const { localDatabase, protectedEnvironment } = await import(pathToFileURL(join(release, "release/oracle/start.mjs")).href);
   const { decryptBackup } = await import(pathToFileURL(join(release, "release/oracle/backup-remote.mjs")).href);
   const { backupConnection } = await import(pathToFileURL(join(release, "release/oracle/backup.mjs")).href);
   const require = createRequire(join(release, "package.json"));
   const { Client } = require("pg");
-  const blob = suppliedBlob ?? require("@vercel/blob");
   const adminSettings = protectedEnvironment(adminEnv);
   const backupSettings = protectedEnvironment(backupEnv);
   // Never fall back to the encryption key resident on the server. The caller
@@ -54,11 +54,9 @@ export async function restoreDrill({ scratch = false, compareLive = false,
   const adminUrl = localDatabase(adminSettings.DATABASE_URL);
   const liveUrl = localDatabase(backupSettings.DATABASE_URL);
   if (adminUrl.hostname !== liveUrl.hostname || adminUrl.port !== liveUrl.port) throw new Error("Admin and backup connections must use the same loopback PostgreSQL instance.");
-  if (!backupSettings.BLOB_READ_WRITE_TOKEN) throw new Error("Backup store credentials are missing.");
   const maxBytes = Number(backupSettings.TEXTTEXT_BACKUP_UPLOAD_MAX_BYTES || 100 * 1024 ** 2);
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1024 || maxBytes > 1024 ** 3) throw new Error("Invalid recovery download budget.");
-  const access = backupSettings.TEXTTEXT_BACKUP_BLOB_ACCESS || "public";
-  if (!["public", "private"].includes(access)) throw new Error("Invalid backup store access mode.");
+  const backupStore = suppliedClient ?? await createR2BackupClient(backupSettings);
   const name = `texttext_restore_drill_${randomBytes(10).toString("hex")}`;
   const scratchUrl = new URL(adminUrl);
   scratchUrl.pathname = `/${name}`;
@@ -73,8 +71,8 @@ export async function restoreDrill({ scratch = false, compareLive = false,
   let created = false, databaseOid, failure, receipt;
   let stage = "read-only backup inventory";
   try {
-    const options = { token: backupSettings.BLOB_READ_WRITE_TOKEN, abortSignal: AbortSignal.timeout(60_000) };
-    const inventory = await blob.list({ ...options, prefix: "backups/oracle/texttext/", limit: 100 });
+    const options = { abortSignal: AbortSignal.timeout(60_000) };
+    const inventory = await backupStore.list({ ...options, prefix: "backups/oracle/texttext/", limit: 100 });
     if (inventory.hasMore || !inventory.blobs.length) throw new Error("Backup inventory is empty or exceeds its bounded limit.");
     if (inventory.blobs.some(entry => !backupPattern.test(entry.pathname))) throw new Error("Unexpected file in the backup prefix.");
     const uploadedTime = entry => Number(new Date(entry.uploadedAt ?? 0));
@@ -83,7 +81,7 @@ export async function restoreDrill({ scratch = false, compareLive = false,
     if (compareLive) { await live.connect(); liveConnected = true; }
     const before = compareLive ? await tableCounts(live) : null;
     stage = "bounded off-server download";
-    const downloaded = await blob.get(latest.url, { ...options, access });
+    const downloaded = await backupStore.get(latest.url, options);
     if (!downloaded || downloaded.statusCode !== 200) throw new Error("Backup could not be downloaded.");
     const ciphertext = join(directory, "backup.aes256gcm");
     let bytes = 0;
@@ -137,7 +135,7 @@ export async function restoreDrill({ scratch = false, compareLive = false,
       tables: Object.keys(counts).length, rows: counts, canonicalDocuments: Number(counts.posts),
       independentKey: true, comparedLive: compareLive, scratchDatabaseRemoved: false };
   } catch {
-    // Neither PostgreSQL stderr nor Blob response bodies/URLs or secrets enter logs.
+    // Neither PostgreSQL stderr nor object-store response bodies or secrets enter logs.
     failure = new Error(`Restore drill failed during ${stage}.`);
   } finally {
     if (restoredConnected) await restored.end().catch(() => {});

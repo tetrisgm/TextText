@@ -64,8 +64,9 @@ workloads on the shared VM; validate them against available capacity.
 
 Keep the root-owned runtime environment at `/etc/texttext/runtime.env`, mode
 0600. systemd reads it before dropping privileges. It must set `DATABASE_URL` to
-the dedicated local PostgreSQL instance (currently port 5433), production auth
-settings, and existing Blob/media credentials. Set `PORT=3400`; the entry point
+the dedicated local PostgreSQL instance (currently port 5433) and production auth
+settings. The former Blob media token no longer works because the owner deleted
+that store; media needs a separate R2 cutover. Set `PORT=3400`; the entry point
 forces `HOSTNAME=127.0.0.1`, validates a loopback database, and rejects development
 sign-in. Reserve/check port 3400 before installing the unit; do not stop another
 application to claim it.
@@ -100,8 +101,10 @@ root-owned `/etc/texttext/backup.env`, mode 0600, needs:
 - `TEXTTEXT_BACKUP_DIR=/home/ubuntu/texttext/backups`.
 - `PG_DUMP` and `PG_RESTORE` absolute paths if not on systemd's PATH.
 - `TEXTTEXT_BACKUP_UPLOAD=1`, required by the production backup service.
-- The existing `BLOB_READ_WRITE_TOKEN` and `TEXTTEXT_BACKUP_BLOB_ACCESS=public`
-  for the existing public Blob store; only ciphertext is uploaded.
+- `TEXTTEXT_R2_ACCOUNT_ID`, `TEXTTEXT_R2_ACCESS_KEY_ID`, and
+  `TEXTTEXT_R2_SECRET_ACCESS_KEY` for a private, bucket-scoped R2 S3 credential.
+  `TEXTTEXT_BACKUP_R2_BUCKET` defaults to `texttext-backups`. Only ciphertext is
+  uploaded. Keep the bucket private and these values out of command arguments.
 - A dedicated `BACKUP_ENCRYPTION_KEY`: 32 cryptographically random bytes encoded
   as base64. Keep its recovery copy in the owner's credential store, separate
   from this VM. Losing it makes the off-server backups unreadable.
@@ -113,14 +116,16 @@ dump may exist temporarily during backup. A failed dump preserves prior backups.
 After a valid dump, local retention runs even if the off-server upload fails.
 
 Off-server files use authenticated AES-256-GCM with a fresh random nonce. They
-are confined to `backups/oracle/texttext/` in the existing Blob store. Each upload
+are confined to `backups/oracle/texttext/` in private R2. Each upload
 is downloaded and checked by SHA-256 before old remote files are pruned. Retention
 keeps at most seven distinct UTC days, one file per day, and 500 MiB total; each
 upload is capped at 100 MiB. A temporary eighth file can exist during verification.
 Byte budgets may retain fewer days. The defaults can be lowered or deliberately
 raised through `TEXTTEXT_BACKUP_KEEP`, `TEXTTEXT_BACKUP_MAX_BYTES`,
 `TEXTTEXT_BACKUP_UPLOAD_MAX_BYTES`, and `TEXTTEXT_BACKUP_REMOTE_MAX_BYTES`.
-Blob storage, upload operations, and verification downloads remain metered.
+The application prunes to at most seven distinct backup days and 500 MiB.
+Configure a bucket lifecycle rule as an additional backstop after verifying its
+effect on the required restore window. Object operations and storage remain metered.
 
 The timer performs one backup each day, including one catch-up after downtime.
 It never builds, deploys, restarts, or reinstalls the app. Monitor failed timer
@@ -157,7 +162,7 @@ sudo node /private/staged/restore-drill.mjs --scratch --compare-live \
 
 Stage `release/oracle/restore-drill.mjs` and its `entrypoint.mjs` helper together
 if the running release does not contain them. Defaults read the deployed code
-from `/home/ubuntu/texttext/current`, Blob credentials from
+from `/home/ubuntu/texttext/current`, private R2 credentials from
 `/etc/texttext/backup.env`, and the local database administrator connection from
 `/etc/texttext/database-admin.env`. These can be overridden with `--release`,
 `--backup-env`, and `--admin-env` path arguments.

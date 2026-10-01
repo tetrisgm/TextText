@@ -206,7 +206,7 @@ test("remote backup verifies the encrypted download before deleting old files", 
     async get() { events.push("get"); return { statusCode: 200, stream: Readable.toWeb(Readable.from([ciphertext])) }; },
     async del(urls) { events.push("del"); assert.deepEqual(urls, [old.url]); },
   };
-  await uploadEncryptedBackup(source, { BACKUP_ENCRYPTION_KEY: randomBytes(32).toString("base64"), BLOB_READ_WRITE_TOKEN: "fixture-token", TEXTTEXT_BACKUP_KEEP: "1" }, client);
+  await uploadEncryptedBackup(source, { BACKUP_ENCRYPTION_KEY: randomBytes(32).toString("base64"), TEXTTEXT_BACKUP_KEEP: "1" }, client);
   assert.deepEqual(events, ["put", "get", "del"]);
   assert.equal(existsSync(`${source}.encrypted.partial`), false);
 });
@@ -222,6 +222,6 @@ test("a corrupt remote download never deletes a previous verified backup", async
     async get() { return { statusCode: 200, stream: Readable.toWeb(Readable.from([Buffer.from("corrupt")])) }; },
     async del(url) { deleted.push(url); },
   };
-  await assert.rejects(() => uploadEncryptedBackup(source, { BACKUP_ENCRYPTION_KEY: randomBytes(32).toString("base64"), BLOB_READ_WRITE_TOKEN: "fixture-token" }, client), /previous verified backups were preserved/);
+  await assert.rejects(() => uploadEncryptedBackup(source, { BACKUP_ENCRYPTION_KEY: randomBytes(32).toString("base64") }, client), /previous verified backups were preserved/);
   assert.deepEqual(deleted, ["https://example.invalid/new"]);
 });

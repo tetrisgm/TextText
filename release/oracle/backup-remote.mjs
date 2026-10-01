@@ -2,6 +2,7 @@ import { appendFileSync, createReadStream, createWriteStream, fstatSync, lstatSy
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { basename } from "node:path";
 import { pipeline } from "node:stream/promises";
+import { createR2BackupClient } from "./r2-backup-client.mjs";
 
 const magic = Buffer.from("TTBACKUP1");
 const headerSize = magic.length + 12;
@@ -94,7 +95,6 @@ export function remoteRetention(blobs, { keep, maxBytes, requiredPath }) {
 
 export async function uploadEncryptedBackup(source, environment, suppliedClient) {
   encryptionKey(environment.BACKUP_ENCRYPTION_KEY);
-  if (!environment.BLOB_READ_WRITE_TOKEN) throw new Error("Off-server backup requires the existing Blob store token.");
   const maxFileBytes = Number(environment.TEXTTEXT_BACKUP_UPLOAD_MAX_BYTES || String(100 * 1024 ** 2));
   const maxTotalBytes = Number(environment.TEXTTEXT_BACKUP_REMOTE_MAX_BYTES || String(500 * 1024 ** 2));
   const keep = Number(environment.TEXTTEXT_BACKUP_KEEP || "7");
@@ -102,10 +102,8 @@ export async function uploadEncryptedBackup(source, environment, suppliedClient)
     throw new Error("Invalid off-server backup budget.");
   }
   if (lstatSync(source).size + headerSize + 16 > maxFileBytes) throw new Error("Backup is larger than the off-server upload budget.");
-  const access = environment.TEXTTEXT_BACKUP_BLOB_ACCESS || "public";
-  if (!["public", "private"].includes(access)) throw new Error("Invalid backup Blob access setting.");
-  const blob = suppliedClient || await import("@vercel/blob");
-  const options = { token: environment.BLOB_READ_WRITE_TOKEN, abortSignal: AbortSignal.timeout(120_000) };
+  const blob = suppliedClient || await createR2BackupClient(environment);
+  const options = { abortSignal: AbortSignal.timeout(120_000) };
   let before;
   try { before = await blob.list({ ...options, prefix, limit: 100 }); } catch {
     throw new Error("Could not read the off-server backup inventory; nothing was uploaded or pruned.");
@@ -122,8 +120,8 @@ export async function uploadEncryptedBackup(source, environment, suppliedClient)
     const expected = await sha256(createReadStream(file), maxFileBytes);
     const oldBytes = before.blobs.reduce((total, entry) => total + entry.size, 0);
     if (oldBytes + expected.size > maxTotalBytes + maxFileBytes) throw new Error("Off-server backup exceeds its temporary upload budget.");
-    uploaded = await blob.put(pathname, createReadStream(file), { ...options, access, addRandomSuffix: false, allowOverwrite: false, contentType: "application/octet-stream", multipart: true });
-    const download = await blob.get(uploaded.url, { ...options, access });
+    uploaded = await blob.put(pathname, createReadStream(file), { ...options, addRandomSuffix: false, allowOverwrite: false, contentLength: expected.size });
+    const download = await blob.get(uploaded.url, options);
     if (!download || download.statusCode !== 200) throw new Error("Uploaded backup could not be verified.");
     const actual = await sha256(download.stream, maxFileBytes);
     if (expected.digest !== actual.digest || expected.size !== actual.size) throw new Error("Uploaded backup failed digest verification.");

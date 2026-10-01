@@ -17,7 +17,7 @@ function fixture(t) {
   const recoveryKeyFile = join(directory, "recovered.env");
   const key = randomBytes(32).toString("base64");
   writeFileSync(adminEnv, "DATABASE_URL=postgres://127.0.0.1:5433/postgres\n", { mode: 0o600 });
-  writeFileSync(backupEnv, "DATABASE_URL=postgres://127.0.0.1:5433/texttext\nBLOB_READ_WRITE_TOKEN=fixture-only\nTEXTTEXT_BACKUP_UPLOAD_MAX_BYTES=1024\n", { mode: 0o600 });
+  writeFileSync(backupEnv, "DATABASE_URL=postgres://127.0.0.1:5433/texttext\nTEXTTEXT_BACKUP_UPLOAD_MAX_BYTES=1024\n", { mode: 0o600 });
   writeFileSync(recoveryKeyFile, `BACKUP_ENCRYPTION_KEY=${key}\n`, { mode: 0o600 });
   return { directory, key, options: { scratch: true, release: resolve("."), adminEnv, backupEnv, recoveryKeyFile } };
 }
@@ -37,7 +37,7 @@ test("restore CLI executes through a current symlink and requires explicit scrat
 test("restore rejects unbounded inventory before opening a database", async (t) => {
   const { options } = fixture(t);
   let downloaded = false;
-  await assert.rejects(restoreDrill({ ...options, suppliedBlob: {
+  await assert.rejects(restoreDrill({ ...options, suppliedClient: {
     list: async () => ({ hasMore: true, blobs: [] }),
     get: async () => { downloaded = true; throw new Error("Should not download."); },
   } }), /read-only backup inventory/);
@@ -46,7 +46,7 @@ test("restore rejects unbounded inventory before opening a database", async (t) 
 
 test("download byte limit aborts before database creation", async (t) => {
   const { options } = fixture(t);
-  await assert.rejects(restoreDrill({ ...options, suppliedBlob: {
+  await assert.rejects(restoreDrill({ ...options, suppliedClient: {
     list: async () => ({ hasMore: false, blobs: [{ pathname, url: "fixture://backup", size: 1024 }] }),
     get: async () => ({ statusCode: 200, stream: Readable.from([randomBytes(2048)]) }),
   } }), /bounded off-server download/);
@@ -58,7 +58,7 @@ test("an incorrect independently recovered key fails before database creation", 
   const encrypted = join(directory, "encrypted.dump");
   writeFileSync(original, randomBytes(256), { mode: 0o600 });
   await encryptBackup(original, encrypted, randomBytes(32).toString("base64"));
-  await assert.rejects(restoreDrill({ ...options, suppliedBlob: {
+  await assert.rejects(restoreDrill({ ...options, suppliedClient: {
     list: async () => ({ hasMore: false, blobs: [{ pathname, url: "fixture://backup", size: statSync(encrypted).size }] }),
     get: async () => ({ statusCode: 200, stream: createReadStream(encrypted) }),
   } }), /independent-key authenticated decryption/);
