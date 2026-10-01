@@ -70,6 +70,23 @@ if 'BUILD=$((MAX_BUILD + 1))' not in source:
 if 'codesign -dv --verbose=4 "$BUILT_APP" 2>&1 | grep -q' in source:
     raise SystemExit("codesign identity check can fail under pipefail when grep exits early")
 
+# The installed app owns its state in a protected app-group container. Release
+# verification must ask that signed binary for the report; an ordinary shell
+# cannot reliably read the old Application Support handoff path.
+ship = (path.parent / "ship.sh").read_text(encoding="utf-8")
+probe = 'TEXTTEXT_HEALTH_CHECK=1 "$INSTALL_EXECUTABLE"'
+legacy_report = '$HOME/Library/Application Support/TextText/health/latest.json'
+if probe not in ship:
+    raise SystemExit(f"ship contract lost installed app health probe: {probe}")
+if legacy_report in ship:
+    raise SystemExit("ship contract reads the inaccessible legacy health report")
+if ship.index('launch_installed_texttext || fail_installed_texttext') > ship.index(probe):
+    raise SystemExit("ship probes runtime health before launching the installed app")
+if 'for attempt in {1..90}' in ship:
+    raise SystemExit("ship contract spams the installed health probe")
+if 'LOCAL_HEALTH_LINKED' not in ship or 'no linked production account' not in ship:
+    raise SystemExit("ship contract requires an uploaded report from a signed-out app")
+
 # The shared Oracle helper owns application rollback and authenticated smoke.
 # Keeping the smoke inside its trap means a failed workflow cannot leave the
 # unverified server release active or proceed to the local application swap.

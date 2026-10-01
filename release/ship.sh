@@ -473,26 +473,28 @@ echo "   installed: $INSTALLED_VERSION ($INSTALLED_BUILD)"
 
 if [ "$INSTALL_WAS_RUNNING" = "1" ]; then
   echo ">> verify installed app health"
-  LOCAL_HEALTH="$HOME/Library/Application Support/TextText/health/latest.json"
+  LOCAL_HEALTH_JSON=""
   LOCAL_HEALTH_VERSION=""
   LOCAL_HEALTH_BUILD=""
   LOCAL_HEALTH_STATUS=""
-  # Wait for the installed app to write a health report for THIS version/build, and
-  # prefer a clean "pass" once it does. Some runtime checks (notably finder.provider,
-  # the File Provider mount) legitimately report "warning" for the first seconds
-  # after a fresh install while the domain registers, then settle. Give them time.
-  for attempt in {1..90}; do
-    if [ -f "$LOCAL_HEALTH" ]; then
-      LOCAL_HEALTH_VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("appVersion", ""))' "$LOCAL_HEALTH" 2>/dev/null || true)"
-      LOCAL_HEALTH_BUILD="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("buildNumber", ""))' "$LOCAL_HEALTH" 2>/dev/null || true)"
-      LOCAL_HEALTH_STATUS="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("status", ""))' "$LOCAL_HEALTH" 2>/dev/null || true)"
-    fi
-    if [ "$LOCAL_HEALTH_VERSION" = "$VERSION" ] && [ "$LOCAL_HEALTH_BUILD" = "$EXPECTED_BUILD" ] && [ "$LOCAL_HEALTH_STATUS" = "pass" ]; then
+  LOCAL_HEALTH_LINKED="0"
+  # Ask the installed, signed binary for its report instead of reading app state
+  # from the shell. State lives in the app-group container, which the app can read
+  # but an ordinary terminal process cannot. Retry only malformed startup output;
+  # each valid probe is itself a health report and must never be spammed.
+  for attempt in {1..3}; do
+    LOCAL_HEALTH_JSON="$(TEXTTEXT_HEALTH_CHECK=1 "$INSTALL_EXECUTABLE" 2>/dev/null || true)"
+    IFS=$'\t' read -r LOCAL_HEALTH_VERSION LOCAL_HEALTH_BUILD LOCAL_HEALTH_STATUS LOCAL_HEALTH_LINKED < <(
+      printf '%s' "$LOCAL_HEALTH_JSON" | \
+        python3 -c 'import json,sys; d=json.load(sys.stdin); storage=next((c for c in d.get("checks", []) if c.get("id")=="workspace.storage"), {}); print(d.get("appVersion", ""), d.get("buildNumber", ""), d.get("status", ""), int(storage.get("metrics", {}).get("linked", 0)), sep="\t")' \
+        2>/dev/null || printf '\t\t\t0\n'
+    )
+    if [ "$LOCAL_HEALTH_VERSION" = "$VERSION" ] && [ "$LOCAL_HEALTH_BUILD" = "$EXPECTED_BUILD" ]; then
       break
     fi
-    [ "$attempt" -eq 90 ] || sleep 1
+    [ "$attempt" -eq 3 ] || sleep 1
   done
-  [ "$LOCAL_HEALTH_VERSION" = "$VERSION" ] || { echo "Installed app did not write a $VERSION health report." >&2; exit 1; }
+  [ "$LOCAL_HEALTH_VERSION" = "$VERSION" ] || { echo "Installed app did not return a $VERSION health report." >&2; exit 1; }
   [ "$LOCAL_HEALTH_BUILD" = "$EXPECTED_BUILD" ] || { echo "Installed app health build is $LOCAL_HEALTH_BUILD, expected $EXPECTED_BUILD." >&2; exit 1; }
   # A "fail" is a hard block. A residual "warning" (never "fail") is non-blocking:
   # it is a soft, usually transient signal (e.g. the File Provider mount still warming
@@ -503,7 +505,7 @@ if [ "$INSTALL_WAS_RUNNING" = "1" ]; then
       echo "   local health: pass"
       ;;
     warning)
-      LOCAL_HEALTH_WARN_CHECKS="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1], encoding="utf-8")); print(", ".join(c.get("id","?") for c in d.get("checks", d.get("suites", [])) if c.get("status")=="warning"))' "$LOCAL_HEALTH" 2>/dev/null || true)"
+      LOCAL_HEALTH_WARN_CHECKS="$(printf '%s' "$LOCAL_HEALTH_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(", ".join(c.get("id","?") for c in d.get("checks", d.get("suites", [])) if c.get("status")=="warning"))' 2>/dev/null || true)"
       echo "   local health: warning (non-blocking) [${LOCAL_HEALTH_WARN_CHECKS}]" >&2
       ;;
     *)
@@ -512,7 +514,7 @@ if [ "$INSTALL_WAS_RUNNING" = "1" ]; then
       ;;
   esac
 
-  if [ "$LOCAL_INSTALL" != "1" ]; then
+  if [ "$LOCAL_INSTALL" != "1" ] && [ "$LOCAL_HEALTH_LINKED" = "1" ]; then
     echo ">> verify uploaded app health"
     npm run health:review -- \
       --app-identifier "$TEXTTEXT_BUNDLE_ID" \
@@ -521,6 +523,8 @@ if [ "$INSTALL_WAS_RUNNING" = "1" ]; then
       --wait-seconds 30 \
       --require-reports \
       --fail-on-failure
+  elif [ "$LOCAL_INSTALL" != "1" ]; then
+    echo "   no linked production account; uploaded health is not expected"
   fi
 else
   echo "   TextText was not running before installation; leaving it closed and deferring runtime health until next launch."

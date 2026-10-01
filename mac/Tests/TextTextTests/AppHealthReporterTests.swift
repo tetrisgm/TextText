@@ -221,6 +221,42 @@ final class AppHealthReporterTests: XCTestCase {
         XCTAssertEqual(visibleCheck.metrics["mount_entry_count"], 2)
     }
 
+    func testUnlinkedStaleMountDoesNotInvalidateARelease() throws {
+        let workspace = try temporaryDirectory(name: "workspace-unlinked-stale")
+            .appendingPathComponent("stale-file-provider-mount", isDirectory: true)
+        let state = try temporaryDirectory(name: "state-unlinked-stale")
+        let bundle = try releaseBundle()
+        let previous = ProcessInfo.processInfo.environment["TEXTTEXT_STATE_DIR"]
+        setenv("TEXTTEXT_STATE_DIR", state.path, 1)
+        defer {
+            if let previous {
+                setenv("TEXTTEXT_STATE_DIR", previous, 1)
+            } else {
+                unsetenv("TEXTTEXT_STATE_DIR")
+            }
+        }
+
+        let report = AppHealthReporter(
+            stateStore: StateStore(),
+            syncRootProvider: { workspace },
+            finderStatusProvider: { .healthyFixture },
+            fileProviderDomainEnabledProvider: { true },
+            bundle: bundle
+        ).run(trigger: .releaseVerification)
+        let storage = try XCTUnwrap(
+            report.checks.first(where: { $0.id == "workspace.storage" }))
+        let finder = try XCTUnwrap(
+            report.checks.first(where: { $0.id == "finder.provider" }))
+
+        XCTAssertEqual(storage.status, .pass)
+        XCTAssertEqual(storage.metrics["linked"], 0)
+        XCTAssertEqual(storage.metrics["mount_resolved"], 1)
+        XCTAssertEqual(storage.metrics["present"], 0)
+        XCTAssertEqual(storage.metrics["enumerated"], 0)
+        XCTAssertEqual(finder.status, .pass)
+        XCTAssertEqual(report.status, .pass)
+    }
+
     func testUserDisabledFinderDomainDoesNotInvalidateARelease() throws {
         let root = try temporaryDirectory(name: "workspace-user-disabled")
         let state = try temporaryDirectory(name: "state-user-disabled")

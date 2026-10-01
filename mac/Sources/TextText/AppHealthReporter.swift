@@ -848,7 +848,12 @@ final class AppHealthReporter {
             options: [.skipsHiddenFiles])) != nil
         let valid = exists && isDirectory.boolValue && readable && writable && enumerated
         let status: TextTextHealthStatus
-        if userDisabled {
+        if !linked {
+            // macOS can retain a resolved File Provider URL after sign-out,
+            // while denying enumeration because no workspace owns the mount.
+            // There is no remote workspace storage to verify in that state.
+            status = .pass
+        } else if userDisabled {
             // Finder access is an optional user-controlled File Provider
             // feature. Its disabled mount can exist and remain writable while
             // enumeration is denied by macOS. That does not make the signed
