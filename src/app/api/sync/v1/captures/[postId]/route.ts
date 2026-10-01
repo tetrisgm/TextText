@@ -320,7 +320,7 @@ async function deleteSupersededCaptureArtifacts(
     const { del } = await import("@/lib/media-storage");
     await del(obsolete);
   } catch (error) {
-    console.warn("superseded bookmark capture artifact deletion failed", error);
+    console.warn("superseded bookmark capture artifact deletion failed", error instanceof Error ? error.name : "unknown error");
   }
 }
 

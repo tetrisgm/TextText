@@ -65,7 +65,7 @@ export async function purgeWorkspaceBlobs({
   try {
     blob = await import("@/lib/media-storage");
   } catch (error) {
-    console.warn("blob purge unavailable", error);
+    console.warn("blob purge unavailable", error instanceof Error ? error.name : "unknown error");
     return result;
   }
 
@@ -77,7 +77,7 @@ export async function purgeWorkspaceBlobs({
       result.deleted += chunk.length;
     } catch (error) {
       result.failed += chunk.length;
-      console.warn("workspace blob deletion failed", error);
+      console.warn("workspace blob deletion failed", error instanceof Error ? error.name : "unknown error");
     }
   }
 
@@ -89,7 +89,7 @@ export async function purgeWorkspaceBlobs({
       try {
         listed = await blob.list({ prefix, cursor });
       } catch (error) {
-        console.warn(`blob sweep failed for ${prefix}`, error);
+        console.warn(`blob sweep failed for ${prefix}`, error instanceof Error ? error.name : "unknown error");
         break;
       }
       // Re-check the prefix on every path before deleting it. The trailing
@@ -105,7 +105,7 @@ export async function purgeWorkspaceBlobs({
           result.swept += chunk.length;
         } catch (error) {
           result.failed += chunk.length;
-          console.warn("blob sweep deletion failed", error);
+          console.warn("blob sweep deletion failed", error instanceof Error ? error.name : "unknown error");
         }
       }
       if (!listed.hasMore) break;

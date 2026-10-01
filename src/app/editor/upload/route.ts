@@ -123,7 +123,7 @@ export async function POST(request: Request) {
 
     return Response.json({ url: blob.url });
   } catch (error) {
-    console.error("Media upload failed", error);
+    console.error("Media upload failed", error instanceof Error ? error.name : "unknown error");
     return jsonError("Media upload failed.", 502);
   }
 }

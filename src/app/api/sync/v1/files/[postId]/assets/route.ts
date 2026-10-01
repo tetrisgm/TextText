@@ -81,7 +81,7 @@ export async function POST(request: Request, { params }: Props) {
       contentType,
     });
   } catch (error) {
-    console.error("Document asset upload failed", error);
+    console.error("Document asset upload failed", error instanceof Error ? error.name : "unknown error");
     return syncError(502, "Document asset upload failed");
   }
 
