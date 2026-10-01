@@ -1,5 +1,16 @@
 import Foundation
 
+private final class TextTextArtifactNoRedirectDelegate: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
+    }
+}
+
 public struct TextTextAgentCommandItem: Decodable, Sendable {
     public let id: String?
     public let title: String
@@ -118,6 +129,7 @@ public struct TextTextAgentCommandReply: Decodable, Sendable {
 public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
     private static let syncDocumentContentType =
         "application/vnd.texttext.document+json"
+    private static let artifactNoRedirectDelegate = TextTextArtifactNoRedirectDelegate()
     private static let sharedSession: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 40
@@ -403,19 +415,24 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
     public func artifactData(
         url: URL
     ) async -> Result<TextTextArtifactContent, TextTextSyncError> {
-        guard url.scheme?.lowercased() == "https",
-            let host = url.host?.lowercased(),
-            host.hasSuffix(".blob.vercel-storage.com"),
-            Self.isAllowedArtifactPath(url.path)
-        else {
+        let isPrivateMedia = TextTextDocumentAssets.isTrustedSameOriginMediaURL(
+            url, origin: origin)
+        guard isPrivateMedia || TextTextDocumentAssets.isLegacyBlobAssetURL(url) else {
             return .failure(.rejected("Artifact URL is not TextText-hosted"))
         }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
+        if isPrivateMedia {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
         do {
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await session.data(
+                for: request, delegate: Self.artifactNoRedirectDelegate)
             guard let http = response as? HTTPURLResponse else {
                 return .failure(.network("not an HTTP response"))
+            }
+            guard http.url == url else {
+                return .failure(.network("artifact download changed URL"))
             }
             guard http.statusCode == 200 else {
                 return .failure(.http(http.statusCode, "artifact download failed"))
@@ -852,12 +869,6 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
 
     private func escape(_ component: String) -> String {
         component.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? component
-    }
-
-    private static func isAllowedArtifactPath(_ path: String) -> Bool {
-        path.hasPrefix("/captures/")
-            || path.hasPrefix("/documents/")
-            || path.hasPrefix("/editor/media/")
     }
 
     private func decode<T: Decodable>(

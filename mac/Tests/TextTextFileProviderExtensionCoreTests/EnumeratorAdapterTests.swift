@@ -191,14 +191,14 @@ final class EnumeratorAdapterTests: XCTestCase {
     func testCentralAttachmentsListsOnlyPlainDocumentsWithValidatedAssets() async throws {
         let api = standardAPI()
         let assetURL =
-            "https://texttext.public.blob.vercel-storage.com/documents/demo/n1/assets/photo.png"
+            "https://texttext.example/api/media/documents/demo/n1/assets/photo.png"
         api.artifactManifests["n1"] = TextTextArtifactManifest(
             postId: "n1", slug: "idea", fileHash: "h",
             artifacts: [TextTextArtifact(
                 filename: "photo.png", role: "asset", url: assetURL,
                 contentType: "image/png")])
         let descriptors = [FileProviderWorkspace(
-            name: "Demo", handle: "demo", origin: "o", token: "t")]
+            name: "Demo", handle: "demo", origin: "https://texttext.example", token: "t")]
         let workspace = CentralAttachmentsEnumerator(
             container: .attachmentWorkspace("demo"), descriptors: descriptors,
             apiFactory: { _ in api })

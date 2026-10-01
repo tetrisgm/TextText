@@ -502,6 +502,45 @@ final class FileProviderExtensionTests: XCTestCase {
                       "materialization must never mutate canonical server Markdown")
     }
 
+    func testBookmarkFetchMaterializesPrivateSameOriginMedia() throws {
+        let mediaURL =
+            "https://texttext.example/api/media/captures/demo/b1/assets/hero.png"
+        let api = FakeExtensionAPI(workspace: bookmarkWorkspace())
+        api.manifests["bookmarks"] = [bookmarkEntry()]
+        api.fileTextResults = [.success(TextTextFileContent(
+            text: "![Hero](\(mediaURL))", hash: "h1"))]
+        api.artifactManifests["b1"] = TextTextArtifactManifest(
+            postId: "b1", slug: "metroid", fileHash: "h1",
+            artifacts: [TextTextArtifact(
+                filename: "hero.png", role: "asset", url: mediaURL,
+                contentType: "image/png")])
+        api.artifactContents[mediaURL] = TextTextArtifactContent(
+            data: Data([1, 2, 3]), contentType: "image/png")
+        let directory = tempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let exp = expectation(description: "fetch-private-media")
+        var fetchedURL: URL?
+        var fetchedError: Error?
+
+        _ = ext(api, descriptors: [FileProviderWorkspace(
+            name: "Demo", handle: "demo", origin: "https://texttext.example",
+            token: "token")], temporaryDirectory: directory).fetchContents(
+                for: NSFileProviderItemIdentifier(rawValue: "file:demo:b1"),
+                version: nil, request: NSFileProviderRequest()
+            ) { url, _, error in
+                fetchedURL = url; fetchedError = error; exp.fulfill()
+            }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertNil(fetchedError)
+        let contents = try TextTextTextBundlePackage.read(
+            from: XCTUnwrap(fetchedURL), in: directory)
+        XCTAssertEqual(contents.assets.map(\.filename), ["hero.png"])
+        XCTAssertEqual(contents.assets.first?.data, Data([1, 2, 3]))
+        XCTAssertEqual(contents.markdown, "![Hero](\(mediaURL))")
+        XCTAssertEqual(api.artifactDataCalls, 1)
+    }
+
     func testTextpackFetchReturnsLeafWithExactArchiveSize() throws {
         let api = FakeExtensionAPI(workspace: Fixtures.workspace())
         api.manifests["notes"] = [Fixtures.item(

@@ -323,7 +323,8 @@ public final class FileProviderExtension: NSObject,
                         }
                         var assets: [TextTextTextBundlePackage.MaterializedAsset] = []
                         for artifact in TextTextDocumentAssets.validatedInlineAssets(
-                            manifest, handle: handle
+                            manifest, handle: handle,
+                            origin: trustedAssetOrigin(for: handle)
                         ) {
                             guard let artifactURL = URL(string: artifact.url) else {
                                 _ = finish(nil, nil, Self.fpError(.cannotSynchronize)); return
@@ -391,7 +392,8 @@ public final class FileProviderExtension: NSObject,
                                     handle: handle,
                                     workspaceFilename: context.workspaceFilename,
                                     documentFilename: context.documentFilename,
-                                    folderDepth: context.folderDepth)
+                                    folderDepth: context.folderDepth,
+                                    origin: trustedAssetOrigin(for: handle))
                             }
                         }
                         let bytes = Data(text.utf8)
@@ -1155,7 +1157,8 @@ public final class FileProviderExtension: NSObject,
                                     handle: handle,
                                     workspaceFilename: context.workspaceFilename,
                                     documentFilename: context.documentFilename,
-                                    folderDepth: context.folderDepth)
+                                    folderDepth: context.folderDepth,
+                                    origin: trustedAssetOrigin(for: handle))
                             }
                         } else {
                             body = local
@@ -1679,6 +1682,11 @@ public final class FileProviderExtension: NSObject,
 
     private func descriptorName(for handle: String) -> String {
         handoffDescriptors().first(where: { $0.handle == handle })?.name ?? handle
+    }
+
+    private func trustedAssetOrigin(for handle: String) -> URL? {
+        handoffDescriptors().first(where: { $0.handle == handle })
+            .flatMap { URL(string: $0.origin) }
     }
 
     /// Use the manifest URL verbatim when absolute, or resolve an origin-relative

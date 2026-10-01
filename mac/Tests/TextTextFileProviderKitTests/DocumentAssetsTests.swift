@@ -7,6 +7,9 @@ final class DocumentAssetsTests: XCTestCase {
         "https://texttext.public.blob.vercel-storage.com/captures/demo/post-1/assets/hero.png"
     private let documentURL =
         "https://texttext.public.blob.vercel-storage.com/documents/demo/post-1/assets/photo.jpg"
+    private let mediaOrigin = URL(string: "https://texttext.example")!
+    private let mediaURL =
+        "https://texttext.example/api/media/documents/demo/post-1/assets/photo.png"
 
     func testMarkdownRoundTripsOnlyValidatedInlineAssets() {
         let manifest = TextTextArtifactManifest(
@@ -71,6 +74,65 @@ final class DocumentAssetsTests: XCTestCase {
             TextTextDocumentAssets.validatedInlineAssets(manifest, handle: "demo")
                 .map(\.filename),
             ["asset.png"])
+    }
+
+    func testPrivateMediaRoundTripsThroughBundleAndCentralAttachments() {
+        let manifest = TextTextArtifactManifest(
+            postId: "post-1", slug: "idea", fileHash: "hash-1",
+            artifacts: [TextTextArtifact(
+                filename: "photo.png", role: "asset", url: mediaURL,
+                contentType: "image/png")])
+        let canonical = "![Photo](\(mediaURL))"
+        let local = TextTextDocumentAssets.localMarkdown(
+            canonical: canonical, manifest: manifest, handle: "demo",
+            origin: mediaOrigin)
+        XCTAssertEqual(local, "![Photo](assets/photo.png)")
+        XCTAssertEqual(TextTextDocumentAssets.canonicalMarkdown(
+            local: local, manifest: manifest, handle: "demo", origin: mediaOrigin),
+            canonical)
+
+        let central = TextTextCentralAttachments.localMarkdown(
+            canonical: canonical, manifest: manifest, handle: "demo",
+            workspaceFilename: "Demo [demo]", documentFilename: "Idea [post-1]",
+            folderDepth: 1, origin: mediaOrigin)
+        XCTAssertTrue(central.contains("Data/Attachments/"))
+        XCTAssertEqual(TextTextCentralAttachments.canonicalMarkdown(
+            local: central, manifest: manifest, handle: "demo",
+            workspaceFilename: "Demo [demo]", documentFilename: "Idea [post-1]",
+            folderDepth: 1, origin: mediaOrigin), canonical)
+    }
+
+    func testPrivateMediaRequiresConfiguredOriginAndScopedCanonicalPath() {
+        let valid = [
+            mediaURL,
+            "https://texttext.example/api/media/captures/demo/post-1/assets/hero.png",
+            "https://texttext.example/api/media/editor/media/demo/2026-09-30/photo.png",
+        ]
+        for value in valid {
+            XCTAssertTrue(TextTextDocumentAssets.isTextTextHostedAssetURL(
+                URL(string: value)!, handle: "demo", postId: "post-1",
+                origin: mediaOrigin), value)
+        }
+        let invalid = [
+            "https://texttext.example.evil.test/api/media/documents/demo/post-1/assets/photo.png",
+            "https://texttext.example:8443/api/media/documents/demo/post-1/assets/photo.png",
+            "https://user@texttext.example/api/media/documents/demo/post-1/assets/photo.png",
+            "http://texttext.example/api/media/documents/demo/post-1/assets/photo.png",
+            "https://texttext.example/api/media/documents/demo/post-1/assets/photo.png?x=1",
+            "https://texttext.example/api/media/documents/demo/post-1/assets/photo.png#x",
+            "https://texttext.example/api/media/documents/other/post-1/assets/photo.png",
+            "https://texttext.example/api/media/documents/demo/other/assets/photo.png",
+            "https://texttext.example/api/media/documents/demo/post-1/other/photo.png",
+            "https://texttext.example/api/media/documents/demo/post-1/assets/%2Fphoto.png",
+            "https://texttext.example/api/media/documents/demo/post-1/assets/../photo.png",
+        ]
+        for value in invalid {
+            XCTAssertFalse(TextTextDocumentAssets.isTextTextHostedAssetURL(
+                URL(string: value)!, handle: "demo", postId: "post-1",
+                origin: mediaOrigin), value)
+        }
+        XCTAssertFalse(TextTextDocumentAssets.isTextTextHostedAssetURL(
+            URL(string: mediaURL)!, handle: "demo", postId: "post-1"))
     }
 
     func testLegacyIdentifierParserRecognizesUnsafePostIdentifiers() {

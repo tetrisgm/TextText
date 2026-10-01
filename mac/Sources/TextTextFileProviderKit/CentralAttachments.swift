@@ -76,26 +76,28 @@ public enum TextTextCentralAttachments {
     /// synthetic root Data/Attachments tree.
     public static func localMarkdown(
         canonical: String, manifest: TextTextArtifactManifest, handle: String,
-        workspaceFilename: String, documentFilename: String, folderDepth: Int
+        workspaceFilename: String, documentFilename: String, folderDepth: Int,
+        origin: URL? = nil
     ) -> String {
         transform(
             canonical, manifest: manifest, handle: handle,
             workspaceFilename: workspaceFilename,
             documentFilename: documentFilename, folderDepth: folderDepth,
-            toLocal: true)
+            origin: origin, toLocal: true)
     }
 
     /// Restore TextText-hosted URLs before a plain Markdown edit is sent back to
     /// the server. Both percent-encoded and literal Finder paths are accepted.
     public static func canonicalMarkdown(
         local: String, manifest: TextTextArtifactManifest, handle: String,
-        workspaceFilename: String, documentFilename: String, folderDepth: Int
+        workspaceFilename: String, documentFilename: String, folderDepth: Int,
+        origin: URL? = nil
     ) -> String {
         transform(
             local, manifest: manifest, handle: handle,
             workspaceFilename: workspaceFilename,
             documentFilename: documentFilename, folderDepth: folderDepth,
-            toLocal: false)
+            origin: origin, toLocal: false)
     }
 
     public static func localReference(
@@ -114,11 +116,11 @@ public enum TextTextCentralAttachments {
     private static func transform(
         _ markdown: String, manifest: TextTextArtifactManifest, handle: String,
         workspaceFilename: String, documentFilename: String, folderDepth: Int,
-        toLocal: Bool
+        origin: URL?, toLocal: Bool
     ) -> String {
         var result = markdown
         for artifact in TextTextDocumentAssets.validatedInlineAssets(
-            manifest, handle: handle
+            manifest, handle: handle, origin: origin
         ).sorted(by: { $0.url.count > $1.url.count }) {
             let encoded = localReference(
                 filename: artifact.filename, workspaceFilename: workspaceFilename,

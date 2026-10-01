@@ -367,6 +367,98 @@ final class LiveTextTextSyncAPITests: XCTestCase {
             2)
     }
 
+    func testPrivateMediaDownloadAuthenticatesToConfiguredOrigin() async throws {
+        let mediaURL = URL(string:
+            "https://texttext.example/api/media/documents/demo/post-1/assets/photo.png")!
+        var capturedRequest: URLRequest?
+        TextTextSyncURLProtocol.handler = { request in
+            capturedRequest = request
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: try XCTUnwrap(request.url), statusCode: 200,
+                httpVersion: nil, headerFields: ["Content-Type": "image/png"]))
+            return (response, Data([1, 2, 3]))
+        }
+
+        let result = await makeAPI().artifactData(url: mediaURL)
+
+        XCTAssertEqual(capturedRequest?.url, mediaURL)
+        XCTAssertEqual(capturedRequest?.value(forHTTPHeaderField: "Authorization"),
+                       "Bearer wsk_test")
+        guard case .success(let content) = result else {
+            return XCTFail("artifactData failed: \(result)")
+        }
+        XCTAssertEqual(content.data, Data([1, 2, 3]))
+        XCTAssertEqual(content.contentType, "image/png")
+    }
+
+    func testLegacyBlobDownloadDoesNotSendWorkspaceBearer() async throws {
+        let blobURL = URL(string:
+            "https://texttext.public.blob.vercel-storage.com/documents/demo/post-1/assets/photo.png")!
+        var capturedRequest: URLRequest?
+        TextTextSyncURLProtocol.handler = { request in
+            capturedRequest = request
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: try XCTUnwrap(request.url), statusCode: 200,
+                httpVersion: nil, headerFields: ["Content-Type": "image/png"]))
+            return (response, Data([4]))
+        }
+
+        let result = await makeAPI().artifactData(url: blobURL)
+
+        XCTAssertNil(capturedRequest?.value(forHTTPHeaderField: "Authorization"))
+        guard case .success(let content) = result else {
+            return XCTFail("artifactData failed: \(result)")
+        }
+        XCTAssertEqual(content.data, Data([4]))
+    }
+
+    func testArtifactDownloadRejectsUntrustedURLsBeforeSendingBearer() async {
+        var requests: [URLRequest] = []
+        TextTextSyncURLProtocol.handler = { request in
+            requests.append(request)
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil,
+                headerFields: nil)!
+            return (response, Data())
+        }
+        let invalid = [
+            "https://texttext.example.evil.test/api/media/documents/demo/post-1/assets/photo.png",
+            "https://texttext.example:8443/api/media/documents/demo/post-1/assets/photo.png",
+            "https://user@texttext.example/api/media/documents/demo/post-1/assets/photo.png",
+            "https://texttext.example/api/media-other/documents/demo/post-1/assets/photo.png",
+            "https://texttext.example/api/media/documents/demo/post-1/assets/%2Fphoto.png",
+            "https://texttext.example/api/media/documents/demo/post-1/assets/photo.png?token=x",
+            "http://texttext.example/api/media/documents/demo/post-1/assets/photo.png",
+        ]
+        let api = makeAPI()
+        for value in invalid {
+            guard case .failure(.rejected) = await api.artifactData(url: URL(string: value)!)
+            else { return XCTFail("Accepted untrusted URL: \(value)") }
+        }
+        XCTAssertTrue(requests.isEmpty)
+    }
+
+    func testPrivateMediaRedirectIsNotFollowed() async throws {
+        let mediaURL = URL(string:
+            "https://texttext.example/api/media/documents/demo/post-1/assets/photo.png")!
+        var requestedURLs: [URL] = []
+        TextTextSyncURLProtocol.handler = { request in
+            requestedURLs.append(try XCTUnwrap(request.url))
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: try XCTUnwrap(request.url), statusCode: 302,
+                httpVersion: nil,
+                headerFields: ["Location": "https://evil.example/steal"]))
+            return (response, Data())
+        }
+
+        let result = await makeAPI().artifactData(url: mediaURL)
+
+        guard case .failure(.http(302, _)) = result else {
+            return XCTFail("Redirect was not rejected: \(result)")
+        }
+        XCTAssertEqual(requestedURLs, [mediaURL])
+    }
+
     private func makeAPI() -> LiveTextTextSyncAPI {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [TextTextSyncURLProtocol.self]

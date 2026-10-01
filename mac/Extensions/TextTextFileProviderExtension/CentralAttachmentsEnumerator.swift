@@ -171,6 +171,7 @@ final class CentralAttachmentsEnumerator: NSObject, NSFileProviderEnumerator {
             })
         }
 
+        let assetOrigin = trustedAssetOrigin(for: handle)
         return await withTaskGroup(of: TextTextItem?.self) { group in
             for item in sourceItems {
                 group.addTask {
@@ -180,7 +181,8 @@ final class CentralAttachmentsEnumerator: NSObject, NSFileProviderEnumerator {
                         manifest.postId == postId,
                         manifest.fileHash == item.contentHash,
                         !TextTextDocumentAssets.validatedInlineAssets(
-                            manifest, handle: handle).isEmpty else { return nil }
+                            manifest, handle: handle,
+                            origin: assetOrigin).isEmpty else { return nil }
                     return TextTextCentralAttachments.documentItem(for: item)
                 }
             }
@@ -222,8 +224,13 @@ final class CentralAttachmentsEnumerator: NSObject, NSFileProviderEnumerator {
             return .failure(.network("Document assets changed during enumeration"))
         }
         let artifacts = TextTextDocumentAssets.validatedInlineAssets(
-            manifest, handle: handle)
+            manifest, handle: handle, origin: trustedAssetOrigin(for: handle))
         guard !artifacts.isEmpty else { return .failure(.notFound) }
         return .success(DocumentContext(document: document, artifacts: artifacts))
+    }
+
+    private func trustedAssetOrigin(for handle: String) -> URL? {
+        descriptors.first(where: { $0.handle == handle })
+            .flatMap { URL(string: $0.origin) }
     }
 }
