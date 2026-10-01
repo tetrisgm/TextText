@@ -546,9 +546,15 @@ export function UnifiedDocumentEditor({
   );
   const initialDocumentRef = useRef(initialDocument);
   const initialRevisionRef = useRef(post.revision ?? 0);
-  const [preReadyBaseline] = useState(() => capturePreReadyDocumentBaseline(
-    initialDocument, `${collab.postId}:${post.revision ?? 0}`,
-  ));
+  // A caller-owned local Y.Doc is already authoritative before this editor
+  // mounts. Building deterministic pre-ready identities for it is both unused
+  // and proportional to the whole body (hundreds of milliseconds for a large
+  // cached note). Cloud editors still need the identities to merge typing that
+  // lands before their provider catches up.
+  const [preReadyBaseline] = useState(() => localDocument ? null :
+    capturePreReadyDocumentBaseline(
+      initialDocument, `${collab.postId}:${post.revision ?? 0}`,
+    ));
   const [document, setDocument] = useState(initialDocument);
   const documentRef = useRef(document);
   const networkEnabled = transport === "cloud" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -1092,7 +1098,7 @@ export function UnifiedDocumentEditor({
   }, [collab.postId]);
 
   useEffect(() => {
-    if (!networkEnabled || recoveryBlockedRef.current) return;
+    if (!networkEnabled || !preReadyBaseline || recoveryBlockedRef.current) return;
 
     let cancelled = false;
     let startupRetryTimer: ReturnType<typeof setTimeout> | null = null;
