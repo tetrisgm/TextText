@@ -4,6 +4,8 @@
  * removed in finally; no existing workspace or account is modified.
  *
  *   node --env-file=.env.local --import tsx scripts/bench-file-vault-live.ts --preflight
+ *   node --env-file=.env.local --import tsx scripts/bench-file-vault-live.ts --smoke
+ *   node --env-file=.env.local --import tsx scripts/bench-file-vault-live.ts --smoke-agent
  *   node --env-file=.env.local --import tsx scripts/bench-file-vault-live.ts
  *
  * Set TEXTTEXT_VAULT_ROOT to the running server's vault root if it is not the
@@ -12,7 +14,6 @@
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import sharp from "sharp";
@@ -38,7 +39,7 @@ type Item = { id: string; title: string; relativePath: string; kind: string };
 type ProcessRow = { pid: number; ppid: number; cpu: number; rssKiB: number; command: string };
 type Sample = { atMs: number; phase: string; serverRssKiB: number; browserRssKiB: number; harnessRssKiB: number; serverCpuPercent: number; browserCpuPercent: number };
 type Result = {
-  runId: string; status: "passed" | "failed"; error?: string; origin: string; vaultRoot: string;
+  runId: string; mode: "smoke" | "benchmark"; status: "passed" | "failed"; error?: string; origin: string; vaultRoot: string;
   sourceCommit: string; buildIdentity: string | null; hardware: string; ramGiB: number; os: string;
   serverListenerPid: number; serverTreeRootPid: number; fixture: { workspaceId: string; count: number; kinds: Record<string, number>; packBytes: number; directoryBytes: number; collaborators: number; memberVerified: boolean; agentMutations: number; agentVisibleMutations: number };
   conditions: string[]; coldVisibleMs: number[]; warmVisibleMs: number[];
@@ -46,8 +47,9 @@ type Result = {
   commandK: "available" | "unavailable" | "unverified"; commandKMs: number[];
   galleryImages: number[]; afterCloseBrowserRssKiB: number[];
   idleCpu: { serverMeanPercent: number; browserMeanPercent: number; samples: number };
-  idleNetwork: { durationMs: number; total: number; mutating: number; longPolls: number; methods: Record<string, number> };
+  idleNetwork: { durationMs: number; total: number; mutating: number; collaborationPosts: number; methods: Record<string, number>; paths: Record<string, number> };
   samples: Sample[]; blockedExternalRequests: number; cleanup: string[];
+  locatorChecks: Array<{ account: string; relativePath: string; title: string | null; ariaLabel: string | null }>;
 };
 
 function check(value: unknown, message: string): asserts value {
@@ -137,35 +139,40 @@ async function openVisible(page: Page): Promise<number> {
   await page.waitForFunction(() => Number.isFinite((window as unknown as { __ttBenchFirstVisible?: number }).__ttBenchFirstVisible), null, { timeout: 25_000 });
   return page.evaluate(() => (window as unknown as { __ttBenchFirstVisible: number }).__ttBenchFirstVisible);
 }
-async function armClick(page: Page, selector: string, text: string, contains: boolean): Promise<void> {
-  await page.evaluate(({ selector, text, contains }) => {
-    const state = window as unknown as { __ttBenchClick?: Promise<number> };
-    state.__ttBenchClick = new Promise<number>(resolve => {
-      let started = -1, settled = false;
-      let observer: MutationObserver | null = null;
-      const finish = (value: number) => { if (settled) return; settled = true; observer?.disconnect(); clearTimeout(timeout); resolve(value); };
-      const check = () => {
-        if (started < 0 || settled) return;
-        const target = document.querySelector(selector) as HTMLElement | null;
-        if (!target || !(contains ? target.textContent?.includes(text) : target.textContent?.trim() === text) || !target.getClientRects().length) return;
-        requestAnimationFrame(() => requestAnimationFrame(() => finish(performance.now() - started)));
-      };
-      const timeout = setTimeout(() => finish(Number.NaN), 15_000);
-      document.addEventListener("pointerdown", event => {
-        started = event.timeStamp;
-        observer = new MutationObserver(check);
-        observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
-        check();
-      }, { capture: true, once: true });
-    });
-  }, { selector, text, contains });
-}
 async function measuredClick(page: Page, locator: ReturnType<Page["locator"]>, selector: string, text: string, contains = false): Promise<number> {
-  await armClick(page, selector, text, contains);
+  // The Playwright clock includes driver dispatch and readiness polling. The
+  // prior browser-side pointerdown observer missed completed React navigation
+  // on this build; keep this deliberately conservative and label it in output.
+  const started = performance.now();
   await locator.click({ timeout: 15_000 });
-  const elapsed = await page.evaluate(() => (window as unknown as { __ttBenchClick: Promise<number> }).__ttBenchClick);
-  check(Number.isFinite(elapsed), `Visible target did not appear after click: ${text}`);
-  return elapsed;
+  try {
+    await page.waitForFunction(({ targetSelector, expected, partial }) => {
+      const target = document.querySelector(targetSelector) as HTMLElement | null;
+      return !!target && !!target.getClientRects().length &&
+        (partial ? target.textContent?.includes(expected) : target.textContent?.trim() === expected);
+    }, { targetSelector: selector, expected: text, partial: contains }, { timeout: 15_000 });
+  } catch {
+    const state = await page.evaluate((targetSelector) => ({
+      heading: document.querySelector(".vault-overview h2")?.textContent?.trim() ?? null,
+      path: document.querySelector(".vault-document-path")?.textContent?.trim() ?? null,
+      target: document.querySelector(targetSelector)?.textContent?.trim().slice(0, 100) ?? null,
+      notice: document.querySelector('[role="alert"]')?.textContent?.trim().slice(0, 160) ?? null,
+    }), selector);
+    throw new Error(`Visible target did not appear after click: ${text}; state ${JSON.stringify(state)}`);
+  }
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  return performance.now() - started;
+}
+function sidebarItem(page: Page, relativePath: string) {
+  return page.locator(`nav[aria-label="Workspace files"] button[title="${relativePath}"]`);
+}
+async function checkSidebarItem(page: Page, account: string, relativePath: string, result: Result) {
+  const button = sidebarItem(page, relativePath);
+  await button.waitFor({ timeout: 20_000 });
+  check(await button.count() === 1, `Expected one sidebar item for ${relativePath}`);
+  const observed = await button.evaluate(element => ({ title: element.getAttribute("title"), ariaLabel: element.getAttribute("aria-label") }));
+  result.locatorChecks.push({ account, relativePath, ...observed });
+  return button;
 }
 async function typeAndMeasure(page: Page): Promise<number[]> {
   const field = page.getByRole("textbox", { name: "Document body", exact: true });
@@ -173,19 +180,45 @@ async function typeAndMeasure(page: Page): Promise<number[]> {
   await field.focus();
   await page.keyboard.press("Meta+ArrowDown");
   await page.evaluate(() => {
-    const state = window as unknown as { __ttBenchInput: number[] };
+    const state = window as unknown as { __ttBenchInput: number[]; __ttBenchInputTargets: string[]; __ttBenchInputEvents: number };
     state.__ttBenchInput = [];
+    state.__ttBenchInputTargets = [];
+    state.__ttBenchInputEvents = 0;
     document.addEventListener("input", event => {
-      if (!(event.target as HTMLElement | null)?.classList.contains("tt-md-surface")) return;
+      const target = event.target as HTMLElement | null;
+      if (state.__ttBenchInputTargets.length < 3) state.__ttBenchInputTargets.push(`${target?.tagName ?? "none"}.${target?.className ?? ""}`);
+      if (!target?.closest(".tt-md-surface")) return;
+      state.__ttBenchInputEvents++;
       const at = event.timeStamp;
-      requestAnimationFrame(() => requestAnimationFrame(() => state.__ttBenchInput.push(performance.now() - at)));
+      requestAnimationFrame(() => requestAnimationFrame(() => state.__ttBenchInput.push(globalThis.performance.now() - at)));
     }, { capture: true });
   });
   await page.keyboard.type(TYPE_BURST, { delay: 40 });
-  await page.waitForTimeout(150);
+  await page.waitForFunction(expected => (window as unknown as { __ttBenchInput: number[] }).__ttBenchInput.length === expected,
+    TYPE_BURST.length, { timeout: 5000 }).catch(() => {});
   const values = await page.evaluate(() => (window as unknown as { __ttBenchInput: number[] }).__ttBenchInput);
-  check(values.length === TYPE_BURST.length, `Input events missing: ${values.length}/${TYPE_BURST.length}`);
+  if (values.length !== TYPE_BURST.length) {
+    const state = await page.evaluate(() => ({ active: (document.activeElement as HTMLElement | null)?.getAttribute("aria-label"),
+      activeClass: (document.activeElement as HTMLElement | null)?.className,
+      editable: (document.activeElement as HTMLElement | null)?.getAttribute("contenteditable"),
+      targets: (window as unknown as { __ttBenchInputTargets: string[] }).__ttBenchInputTargets,
+      events: (window as unknown as { __ttBenchInputEvents: number }).__ttBenchInputEvents,
+      visibility: document.visibilityState,
+      selection: window.getSelection()?.anchorNode?.parentElement?.className ?? null }));
+    throw new Error(`Input events missing: ${values.length}/${TYPE_BURST.length}; state ${JSON.stringify(state)}`);
+  }
   return values;
+}
+async function commandKAndMeasure(page: Page): Promise<number> {
+  const dialog = page.getByRole("dialog", { name: "Search files", exact: true });
+  const started = performance.now();
+  await page.keyboard.press("Meta+k");
+  await dialog.locator('input[aria-label="Search workspace"]').waitFor({ timeout: 10_000 });
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  const elapsed = performance.now() - started;
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "hidden", timeout: 5000 });
+  return elapsed;
 }
 
 const firstVisibleInit = `globalThis.__name = (fn) => fn;
@@ -201,6 +234,9 @@ const firstVisibleInit = `globalThis.__name = (fn) => fn;
 
 async function main() {
   const started = performance.now();
+  const agentSmoke = process.argv.includes("--smoke-agent");
+  const smoke = agentSmoke || process.argv.includes("--smoke");
+  const seedIndices = agentSmoke ? [137] : smoke ? [0, 136] : Array.from({ length: ITEM_COUNT }, (_, index) => index);
   check(isLoopback(ORIGIN), "Only a loopback server may be benchmarked");
   const databaseUrl = process.env.DATABASE_URL;
   check(databaseUrl && isLoopback(databaseUrl), "Only local Postgres may be used");
@@ -242,18 +278,19 @@ async function main() {
   const workspaceId = randomUUID();
   const workspaceDirectory = path.join(ROOT, workspaceId);
   const markerPath = path.join(workspaceDirectory, ".texttext", "benchmark-owner.json");
-  const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "texttext-vault-perf-"));
+  const outputDir = await fs.mkdtemp(path.join("/tmp", "texttext-vault-perf-"));
   const result: Result = {
-    runId: browserRunId, status: "failed", origin: ORIGIN, vaultRoot: ROOT,
+    runId: browserRunId, mode: smoke ? "smoke" : "benchmark", status: "failed", origin: ORIGIN, vaultRoot: ROOT,
     sourceCommit, buildIdentity, hardware: `${machineName} ${hw[0]} / ${hw[2]}`, ramGiB: Number(hw[1]) / 2 ** 30, os: osVersion,
     serverListenerPid: listenerPid, serverTreeRootPid: serverRootPid,
     fixture: { workspaceId, count: 0, kinds: {}, packBytes: 0, directoryBytes: 0, collaborators: 0, memberVerified: false, agentMutations: 0, agentVisibleMutations: 0 },
-    conditions: ["Local production Next server already running and warm", "First Chromium context with a cold browser cache", "Rounds 2-3 reused the browser and context cache", "Chromium headless; process RSS is summed resident size, which can double-count shared pages", "Direct audited TextPack writes are synthetic agent-like activity, not a provider run"],
+    conditions: smoke ? ["Local production Next server already running and warm", "One headless Chromium browser; locator validation only", "Process RSS is summed resident size, which can double-count shared pages"] :
+      ["Local production Next server already running and warm", "First Chromium context with a cold browser cache", "Rounds 2-3 reused the browser and context cache", "Folder/item navigation times are driver-inclusive click to visible content after two animation frames", "Chromium headless; process RSS is summed resident size, which can double-count shared pages", "Direct audited TextPack writes are synthetic agent-like activity, not a provider run"],
     coldVisibleMs: [], warmVisibleMs: [], folderNavMs: [], itemNavMs: [], inputToVisibleMs: [],
     commandK: "unverified", commandKMs: [], galleryImages: [], afterCloseBrowserRssKiB: [],
     idleCpu: { serverMeanPercent: 0, browserMeanPercent: 0, samples: 0 },
-    idleNetwork: { durationMs: 0, total: 0, mutating: 0, longPolls: 0, methods: {} },
-    samples: [], blockedExternalRequests: 0, cleanup: [],
+    idleNetwork: { durationMs: 0, total: 0, mutating: 0, collaborationPosts: 0, methods: {}, paths: {} },
+    samples: [], blockedExternalRequests: 0, cleanup: [], locatorChecks: [],
   };
   const owner = accounts.find(row => row.email === EMAILS[0])!;
   const member = accounts.find(row => row.email === EMAILS[1])!;
@@ -303,7 +340,7 @@ async function main() {
     monitorNow();
     monitor = setInterval(() => { if (!monitorFailure) try { monitorNow(); } catch (error) { monitorFailure = error instanceof Error ? error.message : String(error); } }, 1000);
     phase = "seed";
-    for (let index = 0; index < ITEM_COUNT; index++) {
+    for (const index of seedIndices) {
       guard();
       const spec = itemSpec(index), id = randomUUID();
       const item: Item = { id, title: spec.title, relativePath: `${spec.folder}/${spec.title}.textpack`, kind: spec.kind };
@@ -314,7 +351,7 @@ async function main() {
         operationId: randomUUID(), baseRevision: null, bytes, actorUserId: owner.id, actorType: "human" });
       check(write.status === "written", `Could not seed ${item.relativePath}`);
       items.push(item); result.fixture.count++; result.fixture.kinds[item.kind] = (result.fixture.kinds[item.kind] ?? 0) + 1;
-      if ((index + 1) % 40 === 0) console.log(`SEED ${index + 1}/${ITEM_COUNT}`);
+      if (!smoke && (index + 1) % 40 === 0) console.log(`SEED ${index + 1}/${ITEM_COUNT}`);
     }
     result.fixture.directoryBytes = await directoryBytes(workspaceDirectory);
     check(result.fixture.directoryBytes <= 150 * 1024 * 1024, "Fixture directory exceeded 150 MiB");
@@ -337,7 +374,49 @@ async function main() {
     const login = await context.request.post(`${ORIGIN}/api/auth/callback/dev-login`, { form: { csrfToken: csrf.csrfToken, email: EMAILS[0], callbackUrl: `${ORIGIN}/vault/${workspaceId}` } });
     check(login.ok(), `Existing test-account sign-in returned ${login.status()}`);
     const manifest = await context.request.get(`${ORIGIN}/api/vault/${workspaceId}/items`);
-    check(manifest.ok() && ((await manifest.json()) as { items: unknown[] }).items.length === ITEM_COUNT, "Running server does not see the disposable fixture at the configured vault root");
+    check(manifest.ok() && ((await manifest.json()) as { items: unknown[] }).items.length === seedIndices.length, "Running server does not see the disposable fixture at the configured vault root");
+    if (smoke) {
+      phase = "locator smoke";
+      const page = await context.newPage();
+      await page.goto(`${ORIGIN}/vault/${workspaceId}`, { waitUntil: "domcontentloaded", timeout: 25_000 });
+      await page.locator(".vault-overview h2").waitFor({ timeout: 20_000 });
+      const folder = (name: string) => page.locator(".vault-folder-grid button", { hasText: name }).first();
+      if (agentSmoke) {
+        await folder("Notes").waitFor({ timeout: 20_000 });
+        await measuredClick(page, folder("Notes"), ".vault-overview h2", "Notes");
+        await measuredClick(page, await checkSidebarItem(page, EMAILS[0], "Notes/Agent activity.textpack", result), ".tt-md-surface", "The agent-like mutation target.", true);
+      } else {
+        await folder("Gallery").waitFor({ timeout: 20_000 });
+        await folder("Notes").waitFor({ timeout: 20_000 });
+        await measuredClick(page, folder("Gallery"), ".vault-overview h2", "Gallery");
+        await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>(".vault-document-grid img")].some(image => image.complete && image.naturalWidth > 0), null, { timeout: 20_000 });
+        await measuredClick(page, await checkSidebarItem(page, EMAILS[0], "Gallery/Gallery 001.textpack", result), ".tt-md-surface", "A visual study 001", true);
+        await measuredClick(page, page.getByRole("button", { name: "All files", exact: true }), ".vault-overview h2", "Your workspace");
+        await measuredClick(page, folder("Notes"), ".vault-overview h2", "Notes");
+        await measuredClick(page, await checkSidebarItem(page, EMAILS[0], "Notes/Long note.textpack", result), ".tt-md-surface", "One careful paragraph about a file library", true);
+        await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor({ timeout: 20_000 });
+        await typeAndMeasure(page);
+        await commandKAndMeasure(page);
+      }
+      await page.close();
+      if (!agentSmoke) {
+        await context.close(); context = null;
+        const memberContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+        context = memberContext;
+        const memberCsrf = await (await memberContext.request.get(`${ORIGIN}/api/auth/csrf`)).json() as { csrfToken: string };
+        const memberLogin = await memberContext.request.post(`${ORIGIN}/api/auth/callback/dev-login`, { form: { csrfToken: memberCsrf.csrfToken,
+          email: EMAILS[1], callbackUrl: `${ORIGIN}/vault/${workspaceId}` } });
+        check(memberLogin.ok(), "Existing second test-account sign-in failed");
+        const memberPage = await memberContext.newPage();
+        await memberPage.goto(`${ORIGIN}/vault/${workspaceId}`, { waitUntil: "domcontentloaded", timeout: 25_000 });
+        await measuredClick(memberPage, await checkSidebarItem(memberPage, EMAILS[1], "Gallery/Gallery 001.textpack", result), ".tt-md-surface", "A visual study 001", true);
+        result.fixture.memberVerified = true;
+        await memberPage.close();
+      }
+      result.status = "passed";
+      console.log(`LOCATOR SMOKE ${result.locatorChecks.length} exact sidebar checks passed`);
+      return;
+    }
     const idleStart = result.samples.length;
     await sleep(5000);
     const idleSamples = result.samples.slice(idleStart);
@@ -350,16 +429,15 @@ async function main() {
       await page.goto(`${ORIGIN}/vault/${workspaceId}`, { waitUntil: "domcontentloaded", timeout: 25_000 });
       const visible = await openVisible(page);
       (round === 0 ? result.coldVisibleMs : result.warmVisibleMs).push(visible);
-      const folder = (name: string) => page.locator('nav[aria-label="Workspace files"] summary', { hasText: name }).first();
-      const item = (title: string) => page.locator(`nav[aria-label="Workspace files"] button[aria-label="${title}"]`);
+      const folder = (name: string) => page.locator(".vault-folder-grid button", { hasText: name }).first();
       const allFiles = () => page.getByRole("button", { name: "All files", exact: true });
       result.folderNavMs.push(await measuredClick(page, folder("Gallery"), ".vault-overview h2", "Gallery"));
       await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>(".vault-document-grid img")].filter(image => image.complete && image.naturalWidth > 0).length >= 1, null, { timeout: 20_000 });
       result.galleryImages.push(await page.locator(".vault-document-grid img").count());
-      result.itemNavMs.push(await measuredClick(page, item("Gallery 001"), ".tt-md-surface", "A visual study 001", true));
+      result.itemNavMs.push(await measuredClick(page, await checkSidebarItem(page, EMAILS[0], "Gallery/Gallery 001.textpack", result), ".tt-md-surface", "A visual study 001", true));
       result.folderNavMs.push(await measuredClick(page, allFiles(), ".vault-overview h2", "Your workspace"));
       result.folderNavMs.push(await measuredClick(page, folder("Notes"), ".vault-overview h2", "Notes"));
-      result.itemNavMs.push(await measuredClick(page, item("Long note"), ".tt-md-surface", "One careful paragraph about a file library", true));
+      result.itemNavMs.push(await measuredClick(page, await checkSidebarItem(page, EMAILS[0], "Notes/Long note.textpack", result), ".tt-md-surface", "One careful paragraph about a file library", true));
       result.inputToVisibleMs.push(...await typeAndMeasure(page));
       if (round === 0) {
         // Save/transport has three seconds to settle. Count all requests over
@@ -370,15 +448,15 @@ async function main() {
         const idleRequests = requests.filter(request => request.at >= idleAt && request.at < idleAt + 10_000);
         result.idleNetwork = { durationMs: 10_000, total: idleRequests.length,
           mutating: idleRequests.filter(request => !["GET", "HEAD", "OPTIONS"].includes(request.method)).length,
-          longPolls: idleRequests.filter(request => request.path === `/api/vault/${workspaceId}/items`).length,
+          collaborationPosts: idleRequests.filter(request => request.method === "POST" && request.path.includes("/collaboration")).length,
           methods: Object.fromEntries([...new Set(idleRequests.map(request => request.method))].map(method =>
             [method, idleRequests.filter(request => request.method === method).length])),
+          paths: Object.fromEntries([...new Set(idleRequests.map(request => request.path))].map(requestPath =>
+            [requestPath, idleRequests.filter(request => request.path === requestPath).length])),
         };
-        await page.keyboard.press("Meta+k");
-        await page.waitForTimeout(400);
-        result.commandK = await page.locator('[role="dialog"] input[placeholder*="Search"], .vault-search input').count() ? "available" : "unavailable";
-        if (result.commandK === "available") await page.keyboard.press("Escape");
       }
+      result.commandKMs.push(await commandKAndMeasure(page));
+      result.commandK = "available";
       await page.close();
       await sleep(2500);
       result.afterCloseBrowserRssKiB.push(monitorNow().browserRssKiB);
@@ -392,7 +470,7 @@ async function main() {
     await activePage.addInitScript({ content: "globalThis.__name = (fn) => fn;" });
     await activePage.goto(`${ORIGIN}/vault/${workspaceId}`, { waitUntil: "domcontentloaded", timeout: 25_000 });
     await activePage.locator(".vault-overview h2").waitFor({ timeout: 20_000 });
-    await activePage.locator('nav[aria-label="Workspace files"] button[aria-label="Agent activity"]').click();
+    await (await checkSidebarItem(activePage, EMAILS[0], "Notes/Agent activity.textpack", result)).click();
     const activeBody = activePage.getByRole("textbox", { name: "Document body", exact: true });
     await activeBody.waitFor({ timeout: 20_000 });
     const target = items.find(value => value.title === "Agent activity")!;
@@ -428,7 +506,7 @@ async function main() {
     check(memberLogin.ok(), "Existing second test-account sign-in failed");
     const memberPage = await memberContext.newPage();
     await memberPage.goto(`${ORIGIN}/vault/${workspaceId}`, { waitUntil: "domcontentloaded", timeout: 25_000 });
-    await memberPage.locator('nav[aria-label="Workspace files"] button[aria-label="Gallery 001"]').waitFor({ timeout: 20_000 });
+    await checkSidebarItem(memberPage, EMAILS[1], "Gallery/Gallery 001.textpack", result);
     result.fixture.memberVerified = true;
     await memberPage.close();
     phase = "after close idle";
