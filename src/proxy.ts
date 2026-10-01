@@ -62,6 +62,14 @@ export async function proxy(request: NextRequest) {
   const handle = tenantFromHost(request.headers.get("host"));
   if (!handle) return NextResponse.next();
 
+  // File-vault public pages and assets use the same item URL on platform and
+  // tenant hosts. They read the live publication marker and never take viewer
+  // credentials from a tenant's public origin.
+  if (request.nextUrl.pathname.startsWith("/v/") ||
+      request.nextUrl.pathname.startsWith("/api/public/vault/")) {
+    return NextResponse.next({ request: { headers: sessionlessPublicRequestHeaders(request.headers) } });
+  }
+
   const url = localRewriteURL(request);
   // A tenant host asking for /t/... is not a real route; never double-rewrite.
   // Answer 404 directly from the proxy instead of rewriting to a phantom path.
