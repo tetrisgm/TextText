@@ -136,6 +136,11 @@ async function verifyRelease() {
       command: ["npm", "run", "test:db"],
     },
     {
+      id: "native.web_bundle",
+      timeoutSeconds: 300,
+      command: ["node", "scripts/build-local-vault.mjs"],
+    },
+    {
       id: "native.unit",
       timeoutSeconds: 2_400,
       command: ["swift", "test", "--package-path", "mac"],

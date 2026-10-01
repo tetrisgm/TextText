@@ -28,12 +28,15 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     private var connection: LocalVaultConnectionController?
     private var collaboration: LocalVaultCollaboration?
     private var agent: LocalVaultAgentController?
+    private let starterTemplates: URL?
     var onSelectedFolder: (() -> Void)?
     var onSignIn: (() -> Void)?
 
     init(entry: URL, root initialRoot: URL? = nil,
+         starterTemplates: URL? = Bundle.main.url(forResource: "StarterTemplates", withExtension: nil),
          credentials: @escaping LocalVaultConnectionController.CredentialsProvider = { nil }) {
         self.entry = entry
+        self.starterTemplates = starterTemplates
         self.credentials = credentials
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1100, height: 760))
         let window = NSWindow(contentRect: webView.frame,
@@ -161,7 +164,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         scoped = url.startAccessingSecurityScopedResource()
         root = url
         guard FileManager.default.isReadableFile(atPath: url.path) else { throw CocoaError(.fileReadNoPermission) }
-        guard let presets = Bundle.main.url(forResource: "StarterTemplates", withExtension: nil) else { throw VaultBridgeError("Starter templates are missing from this app. Reinstall TextText.") }
+        guard let presets = starterTemplates else { throw VaultBridgeError("Starter templates are missing from this app. Reinstall TextText.") }
         try io.sync { _ = try LocalVaultStarter.seed(root: url, presets: presets) }
         openError = nil
         window?.title = url.lastPathComponent + " · TextText"

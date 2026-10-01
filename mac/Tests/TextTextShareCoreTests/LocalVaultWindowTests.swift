@@ -20,14 +20,15 @@ final class LocalVaultWindowTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let files = DocumentStore(root: root)
         let target = try files.create(title: "Integration", body: "Original body.")
-        let controller = LocalVaultWindowController(entry: entry, root: root)
+        let controller = LocalVaultWindowController(entry: entry, root: root,
+            starterTemplates: repository.appendingPathComponent("presets/builtin"))
         defer { controller.close() }
         let view = try XCTUnwrap(controller.window?.contentView as? WKWebView)
         controller.showWindow(nil)
         try await until(view: view) {
-            (try? await view.evaluateJavaScript("Array.from(document.querySelectorAll('nav button')).some(x=>x.textContent==='Integration')") as? Bool) == true
+            (try? await view.evaluateJavaScript("document.querySelector('button[aria-label=\"Integration Workspace Open →\"]') !== null") as? Bool) == true
         }
-        _ = try await view.evaluateJavaScript("Array.from(document.querySelectorAll('nav button')).find(x=>x.textContent==='Integration').click()")
+        _ = try await view.evaluateJavaScript("document.querySelector('button[aria-label=\"Integration Workspace Open →\"]').click()")
         try await until(view: view) {
             (try? await view.evaluateJavaScript("document.querySelector('[aria-label=\"Document body\"]')?.textContent?.trim()") as? String) == "Original body."
         }
