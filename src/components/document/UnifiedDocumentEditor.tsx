@@ -1470,6 +1470,10 @@ export function UnifiedDocumentEditor({
     () => formatArticleDate(post.updatedAt ?? post.date, { style: "short" }),
     [post.date, post.updatedAt],
   );
+  const displayDocument = useMemo(
+    () => resolveDocumentAssets ? resolveDocumentAssets(document) : document,
+    [document, resolveDocumentAssets],
+  );
   const slots = useMemo(
     () => ({
       bindings: {
@@ -1506,17 +1510,21 @@ export function UnifiedDocumentEditor({
         ...Object.fromEntries(
           activeTemplate.fields
             .filter((field) => field.visibility !== "hidden")
-            .map((field) => [
-            `content.fields.${field.id}`,
-            <FieldInput
-              key={field.id}
-              field={field}
-              value={document.content.fields[field.id]}
-              onChange={(value) => updateField(field.id, value)}
-              referenceChoices={referenceChoices}
-              embedded
-            />,
-            ]),
+            .map((field) => {
+              const previewValue = displayDocument.content.fields[field.id];
+              return [
+                `content.fields.${field.id}`,
+                <FieldInput
+                  key={field.id}
+                  field={field}
+                  value={document.content.fields[field.id]}
+                  imagePreviewSource={field.type === "image" && typeof previewValue === "string" ? previewValue : undefined}
+                  onChange={(value) => updateField(field.id, value)}
+                  referenceChoices={referenceChoices}
+                  embedded
+                />,
+              ];
+            }),
         ),
       },
       // The body is markdown, and saying so here is what lets the renderer
@@ -1541,7 +1549,7 @@ export function UnifiedDocumentEditor({
         ),
       },
     }),
-    [activeTemplate.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
+    [activeTemplate.fields, displayDocument.content.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
   );
 
   /** Declared fields the template does not bind anywhere in its item spec.
@@ -1863,7 +1871,7 @@ export function UnifiedDocumentEditor({
           type. Withholding it meant a look could ask for a date line and get
           nothing in the one place its author was looking. */}
       <DocumentRenderer
-        document={resolveDocumentAssets ? resolveDocumentAssets(document) : document}
+        document={displayDocument}
         documentId={networkEnabled ? (post.id ?? post.slug) : undefined}
         template={activeTemplate}
         metadata={{ date: editorDate }}
@@ -1885,15 +1893,17 @@ export function UnifiedDocumentEditor({
             </span>
           </summary>
           <div className="tt-field-details-body">
-            {unboundFields.map((field) => (
-              <FieldInput
+            {unboundFields.map((field) => {
+              const previewValue = displayDocument.content.fields[field.id];
+              return <FieldInput
                 key={field.id}
                 field={field}
                 value={document.content.fields[field.id]}
+                imagePreviewSource={field.type === "image" && typeof previewValue === "string" ? previewValue : undefined}
                 onChange={(value) => updateField(field.id, value)}
                 referenceChoices={referenceChoices}
-              />
-            ))}
+              />;
+            })}
           </div>
         </details>
       )}

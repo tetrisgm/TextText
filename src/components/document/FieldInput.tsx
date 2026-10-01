@@ -29,6 +29,7 @@ type FieldInputProps = {
   referenceChoices?: readonly WorkspaceReferenceChoice[];
   disabled?: boolean;
   embedded?: boolean;
+  imagePreviewSource?: string;
 };
 
 const text = (value: DocumentFieldValue | undefined): string =>
@@ -45,6 +46,7 @@ export function FieldInput({
   referenceChoices = [],
   disabled,
   embedded = false,
+  imagePreviewSource,
 }: FieldInputProps) {
   const id = useId();
   const label = field.label || field.id;
@@ -64,7 +66,7 @@ export function FieldInput({
         </span>
         <div className={`tt-image-field-control${embedded ? " is-canvas" : ""}`}>
           {currentText ? (
-            <img className="tt-image-field-preview" src={currentText} alt="" />
+            <img className="tt-image-field-preview" src={imagePreviewSource ?? currentText} alt="" />
           ) : (
             <span className="tt-image-field-placeholder" aria-hidden="true">
               No image

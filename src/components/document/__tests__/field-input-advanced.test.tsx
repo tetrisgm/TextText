@@ -37,7 +37,31 @@ const peopleField: Extract<DocumentFieldDefinition, { type: "reference" }> = {
   semantic: "people",
 };
 
+const imageField: Extract<DocumentFieldDefinition, { type: "image" }> = {
+  id: "cover",
+  label: "Cover",
+  type: "image",
+  required: false,
+  visibility: "public",
+  allowedContentTypes: [],
+};
+
 describe("advanced field inputs", () => {
+  it("uses the resolved asset only for the image preview", () => {
+    const html = renderToStaticMarkup(
+      <FieldInput
+        field={imageField}
+        value="assets/cover.png"
+        imagePreviewSource="blob:local-cover"
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('class="tt-image-field-preview" src="blob:local-cover"');
+    expect(html).toContain('value="assets/cover.png"');
+    expect(html).not.toContain('src="assets/cover.png"');
+  });
+
   it("renders only the current workflow state and valid next states", () => {
     const html = renderToStaticMarkup(
       <FieldInput
