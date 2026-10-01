@@ -43,7 +43,9 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, folderTemplat
   const needsQuery = Boolean(template && !unsupportedDates && (template.collection.sort.length || template.collection.filters.length));
   const queryKey = JSON.stringify([listing.root, folder, members.map((item) => item.path), template?.collection.sort, template?.collection.filters]);
   useEffect(() => {
-    if (!needsQuery || members.length > 2048) return;
+    // Opening a file takes priority over collection previews. A queued preview
+    // can otherwise read and decode a whole TextPack while the editor opens.
+    if (busy || !needsQuery || members.length > 2048) return;
     let active = true;
     void Promise.resolve().then(async () => {
       const metadata: Record<string, FolderPreview> = {};
@@ -68,7 +70,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, folderTemplat
       if (active) setQuery({ key: queryKey, listing, previews: metadata, done: true });
     });
     return () => { active = false; };
-  }, [needsQuery, queryKey, members, template, listing]);
+  }, [busy, needsQuery, queryKey, members, template, listing]);
   let queryMessage = unsupportedDates ? "Date sorting is not available for this folder yet. Showing all files in their existing order." : "";
   let items = members;
   if (needsQuery && template) {
@@ -83,6 +85,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, folderTemplat
   const visible = useMemo(() => items.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE), [items, currentPage]);
   const visibleKey = JSON.stringify([listing, visible.map((item) => item.path)]);
   useEffect(() => {
+    if (busy) return;
     let active = true;
     void Promise.resolve().then(async () => {
       if (!active) return;
@@ -98,7 +101,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, folderTemplat
     return () => { active = false; };
     // Key tracks the listing revision and visible paths; query results create fresh arrays.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleKey]);
+  }, [busy, visibleKey]);
   const requestedLayout = template?.collection.layout || "cards";
   const supported = ["cards", "list", "index"].includes(requestedLayout);
   const layout = supported ? requestedLayout : "list";
