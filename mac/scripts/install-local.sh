@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Replace every local TextText installation with one verified canonical bundle.
-# The swap is recoverable until the new app launches and writes a passing health
+# The swap is recoverable until the new app launches and returns a passing health
 # report for its exact version and build. This script never publishes anything.
 set -euo pipefail
 
@@ -13,7 +13,9 @@ EXPECTED_VERSION="${TEXTTEXT_EXPECTED_VERSION:-}"
 EXPECTED_BUILD="${TEXTTEXT_EXPECTED_BUILD:-}"
 REQUIRE_RUNTIME_HEALTH="${TEXTTEXT_REQUIRE_RUNTIME_HEALTH:-1}"
 HEALTH_WAIT_SECONDS="${TEXTTEXT_HEALTH_WAIT_SECONDS:-120}"
-HEALTH_REPORT="${TEXTTEXT_RUNTIME_HEALTH_PATH:-$HOME/Library/Application Support/TextText/health/latest.json}"
+# Explicit path is a test/diagnostic seam. A real install asks the signed app
+# directly because its state lives in an app-group container the shell cannot read.
+HEALTH_REPORT="${TEXTTEXT_RUNTIME_HEALTH_PATH:-}"
 SKIP_BINARY_VERIFICATION="${TEXTTEXT_SKIP_BINARY_VERIFICATION:-0}"
 SKIP_LAUNCH="${TEXTTEXT_SKIP_LAUNCH:-0}"
 PARENT="$(dirname "$APP")"
@@ -306,26 +308,34 @@ if [[ "$SKIP_LAUNCH" != "1" ]]; then
 fi
 
 if [[ "$REQUIRE_RUNTIME_HEALTH" == "1" ]]; then
+  health_payload=""
   health_version=""
   health_build=""
   health_status=""
   health_fresh="0"
-  for (( attempt=1; attempt<=HEALTH_WAIT_SECONDS; attempt++ )); do
-    if [[ -f "$HEALTH_REPORT" ]]; then
+  health_attempt_limit="$HEALTH_WAIT_SECONDS"
+  [[ -n "$HEALTH_REPORT" ]] || health_attempt_limit=3
+  for (( attempt=1; attempt<=health_attempt_limit; attempt++ )); do
+    if [[ -n "$HEALTH_REPORT" ]]; then
+      [[ -f "$HEALTH_REPORT" ]] && health_payload="$(cat "$HEALTH_REPORT")" || health_payload=""
+    else
+      health_payload="$(TEXTTEXT_HEALTH_CHECK=1 "$APP/Contents/MacOS/TextText" 2>/dev/null || true)"
+    fi
+    if [[ -n "$health_payload" ]]; then
       IFS=$'\t' read -r health_version health_build health_status health_fresh < <(
-        python3 -c 'import datetime,json,sys
-d=json.load(open(sys.argv[1], encoding="utf-8")); raw=d.get("generatedAt", "")
-try: fresh=int(datetime.datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()) >= int(sys.argv[2])
+        printf '%s' "$health_payload" | python3 -c 'import datetime,json,sys
+d=json.load(sys.stdin); raw=d.get("generatedAt", "")
+try: fresh=int(datetime.datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()) >= int(sys.argv[1])
 except (TypeError, ValueError): fresh=False
 print(d.get("appVersion", ""), d.get("buildNumber", ""), d.get("status", ""), int(fresh), sep="\t")' \
-          "$HEALTH_REPORT" "$HEALTH_NOT_BEFORE" 2>/dev/null || printf '\t\t\t0\n'
+          "$HEALTH_NOT_BEFORE" 2>/dev/null || printf '\t\t\t0\n'
       )
     fi
     if [[ "$health_version" == "$SOURCE_VERSION" && "$health_build" == "$SOURCE_BUILD" && \
-      "$health_status" == "pass" && "$health_fresh" == "1" ]]; then
+      "$health_fresh" == "1" && "$health_status" =~ ^(pass|warning|fail)$ ]]; then
       break
     fi
-    sleep 1
+    (( attempt == health_attempt_limit )) || sleep 1
   done
   # Identity and freshness are absolute: the report must be this exact build,
   # written after this install began. A "fail" blocks. A residual "warning" does
@@ -337,11 +347,11 @@ print(d.get("appVersion", ""), d.get("buildNumber", ""), d.get("status", ""), in
   # defective build.
   if [[ "$health_version" != "$SOURCE_VERSION" || "$health_build" != "$SOURCE_BUILD" || \
     "$health_fresh" != "1" || ( "$health_status" != "pass" && "$health_status" != "warning" ) ]]; then
-    health_detail="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1], encoding="utf-8")); print(", ".join(c.get("id", "?") for c in d.get("checks", []) if c.get("status") != "pass"))' "$HEALTH_REPORT" 2>/dev/null || true)"
+    health_detail="$(printf '%s' "$health_payload" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(", ".join(c.get("id", "?") for c in d.get("checks", []) if c.get("status") != "pass"))' 2>/dev/null || true)"
     fail_install "TextText runtime health did not pass for $SOURCE_VERSION ($SOURCE_BUILD). Status: ${health_status:-missing}. Checks: ${health_detail:-unavailable}."
   fi
   if [[ "$health_status" == "warning" ]]; then
-    warn_detail="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1], encoding="utf-8")); print(", ".join(c.get("id", "?") for c in d.get("checks", []) if c.get("status") != "pass"))' "$HEALTH_REPORT" 2>/dev/null || true)"
+    warn_detail="$(printf '%s' "$health_payload" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(", ".join(c.get("id", "?") for c in d.get("checks", []) if c.get("status") != "pass"))' 2>/dev/null || true)"
     echo "   runtime health: warning, not blocking [${warn_detail:-unavailable}]" >&2
   else
     echo "   runtime health: pass"

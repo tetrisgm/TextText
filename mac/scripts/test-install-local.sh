@@ -88,6 +88,23 @@ fi
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$FIXTURE/Applications/TextText.app/Contents/Info.plist")" == "184" ]]
 [[ -e "$FIXTURE/Applications/TextText 2.app" ]]
 
+# With no explicit diagnostic path, the installer asks the installed executable
+# for one fresh report. This is the production path because app-group state is
+# intentionally unreadable to an ordinary shell.
+rm -rf "$FIXTURE/Applications/TextText.app" "$FIXTURE/Applications/TextText 2.app" "$FIXTURE/Trash"
+mkdir -p "$FIXTURE/Trash"
+make_app "$FIXTURE/Applications/TextText.app" app.texttext.mac 0.181 184
+make_app "$FIXTURE/Applications/TextText 2.app" app.texttext.mac 0.180 183
+cat > "$FIXTURE/Source/TextText.app/Contents/MacOS/TextText" <<'EOF'
+#!/bin/sh
+cat <<'JSON'
+{"schemaVersion":1,"appVersion":"0.181","buildNumber":"185","generatedAt":"2099-01-01T00:00:00Z","status":"pass","checks":[]}
+JSON
+EOF
+chmod +x "$FIXTURE/Source/TextText.app/Contents/MacOS/TextText"
+TEXTTEXT_REQUIRE_RUNTIME_HEALTH=1 TEXTTEXT_HEALTH_WAIT_SECONDS=3 run_installer >/dev/null
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$FIXTURE/Applications/TextText.app/Contents/Info.plist")" == "185" ]]
+
 # Cleanup is transactional too. If a prior bundle cannot move to Trash, the
 # previous canonical app and every duplicate return to their original paths.
 rm -rf "$FIXTURE/Applications/TextText.app" "$FIXTURE/Applications/TextText 2.app" "$FIXTURE/Trash"

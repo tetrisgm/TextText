@@ -73,7 +73,7 @@ workspace through the production MCP command surface.
 
 Only after production passes does it replace the canonical Developer ID app.
 The installer keeps the previous bundle and any numbered TestFlight collision
-recoverable until the new app launches and writes a passing health report for
+recoverable until the new app launches and returns a passing health report for
 its exact version and build. A failed launch or health report restores the old
 canonical app and rolls the Oracle application symlink back to its prior
 release. Successful cleanup moves prior bundles to Trash and verifies that
