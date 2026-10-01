@@ -22,6 +22,11 @@ private final class VaultAgentTestServer: LocalVaultAgentServer {
     private(set) var responses: [Response] = []
     private(set) var notifications: [(String, [String: Any])] = []
     private(set) var stopCount = 0
+    private let accountEmail: String?
+
+    init(accountEmail: String? = "writer@example.com") {
+        self.accountEmail = accountEmail
+    }
 
     func start() throws {}
     func stop() { stopCount += 1 }
@@ -33,9 +38,9 @@ private final class VaultAgentTestServer: LocalVaultAgentServer {
         case "initialize":
             emitResponse(request, result: [:])
         case "account/read":
-            emitResponse(request, result: ["account": [
-                "type": "chatgpt", "email": "writer@example.com", "planType": "pro",
-            ]])
+            var account: [String: Any] = ["type": "chatgpt", "planType": "pro"]
+            if let accountEmail { account["email"] = accountEmail }
+            emitResponse(request, result: ["account": account])
         case "config/read":
             emitResponse(request, result: ["config": ["mcp_servers": [String: Any]()]])
         default:
@@ -75,12 +80,13 @@ final class LocalVaultAgentControllerTests: XCTestCase {
     private struct Timeout: Error {}
 
     @MainActor
-    private func fixture(ownsProfile: Bool = false, cancellationTimeout: TimeInterval = 15) async throws
+    private func fixture(ownsProfile: Bool = false, accountEmail: String? = "writer@example.com",
+                         cancellationTimeout: TimeInterval = 15) async throws
         -> (URL, LocalVaultAgentController, VaultAgentTestServer) {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("texttext-agent-task-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let server = VaultAgentTestServer()
+        let server = VaultAgentTestServer(accountEmail: accountEmail)
         let controller = LocalVaultAgentController(root: root, serverFactory: { server },
             ownsProfile: ownsProfile,
             cancellationTimeout: cancellationTimeout)
@@ -295,6 +301,24 @@ final class LocalVaultAgentControllerTests: XCTestCase {
         try await eventually("reconnected state") { controller.status["state"] as? String == "ready" }
         XCTAssertEqual(server.requests("initialize").count, 2)
         XCTAssertEqual(controller.status["accountEmail"] as? String, "writer@example.com")
+    }
+
+    @MainActor
+    func testManagedProfileDisconnectLogsOutWhenAccountHasNoEmail() async throws {
+        let (root, controller, server) = try await fixture(ownsProfile: true, accountEmail: nil)
+        defer { controller.stop(); try? FileManager.default.removeItem(at: root) }
+        XCTAssertNil(controller.status["accountEmail"])
+
+        try controller.disconnect()
+        try await eventually("managed account logout") { server.requests("account/logout").count == 1 }
+        XCTAssertEqual(controller.status["state"] as? String, "connecting")
+        XCTAssertEqual(server.stopCount, 0)
+
+        server.emitResponse(server.requests("account/logout")[0], result: [:])
+        try await eventually("disconnected state") {
+            controller.status["state"] as? String == "disconnected"
+        }
+        XCTAssertEqual(server.stopCount, 1)
     }
 
     @MainActor

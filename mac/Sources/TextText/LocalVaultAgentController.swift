@@ -334,7 +334,7 @@ final class LocalVaultAgentController {
         guard server != nil else { finishDisconnect(); return }
         disconnecting = true
         update("connecting", message: "Disconnecting Codex…")
-        guard ownsProfile, accountEmail != nil else { finishDisconnect(); return }
+        guard ownsProfile else { finishDisconnect(); return }
         deadline?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.finishDisconnect() }
         deadline = work
