@@ -125,6 +125,9 @@ type UnifiedDocumentEditorProps = {
   }) => ReactNode;
   /** Focus the body when opening a newly created note, including after its optimistic ID is saved. */
   focusNewNote?: boolean;
+  /** The control that started local note creation, used to avoid stealing a later focus choice. */
+  focusNewNoteOrigin?: HTMLElement | null;
+  onNewNoteFocusHandled?: () => void;
   canReviewAgentChanges?: boolean;
   activeAgent?: AssistantAgentIdentity | null;
   onOpenAgent?: () => void;
@@ -486,6 +489,8 @@ export function UnifiedDocumentEditor({
   resolveDocumentAssets,
   renderTemplateLibrary,
   focusNewNote = false,
+  focusNewNoteOrigin,
+  onNewNoteFocusHandled,
   blog,
   post,
   template,
@@ -771,17 +776,25 @@ export function UnifiedDocumentEditor({
       if (!surface || !activeRef.current) return;
       const focused = window.document.activeElement;
       const editor = surface.closest(".tt-unified-editor");
+      if (focusNewNoteOrigin !== undefined && focused !== window.document.body &&
+          focused !== focusNewNoteOrigin && focused !== surface) {
+        newNoteFocusClaimedRef.current = true;
+        onNewNoteFocusHandled?.();
+        return;
+      }
       if (focused instanceof HTMLElement && editor?.contains(focused) && focused !== surface) {
         newNoteFocusClaimedRef.current = true;
+        onNewNoteFocusHandled?.();
         return;
       }
       surface.focus({ preventScroll: true });
       const end = documentRef.current.content.body.length;
       if (end > 0) requestDocumentCaret(end, end);
       newNoteFocusClaimedRef.current = true;
+      onNewNoteFocusHandled?.();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [active, focusNewNote]);
+  }, [active, focusNewNote, focusNewNoteOrigin, onNewNoteFocusHandled]);
   const publishDocument = useCallback(
     (next: DocumentSnapshot) => {
       documentRef.current = next;

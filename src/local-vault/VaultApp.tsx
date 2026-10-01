@@ -55,7 +55,7 @@ function mapStrings<T>(value: T, substitutions: Map<string, string>): T {
   return value;
 }
 
-function VaultEditor({ initial, root, onChanged, onRemoved, registerFlush }: { onRemoved: () => void; initial: VaultFile; root: string; onChanged: () => void; registerFlush: VaultEditorProps["registerFlush"] }) {
+function VaultEditor({ initial, root, onChanged, onRemoved, registerFlush, focusNewNote, focusNewNoteOrigin, onNewNoteFocusHandled }: VaultEditorProps) {
   const recoveryKey = `texttext:vault-draft:${root}:${initial.path}`;
   const initialDocument = useMemo(() => readDocument(initial), [initial]);
   const initialTemplate = useMemo(() => readTemplate(initial, initialDocument), [initial, initialDocument]);
@@ -273,7 +273,7 @@ function VaultEditor({ initial, root, onChanged, onRemoved, registerFlush }: { o
     props.onApply(template); remember();
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => { void flush(); }, 350);
-  }} />} collab={{ postId: initial.path, userName: "You", color: "#3970c5", canEdit: true }} onDocumentChange={change} onDone={async () => { await flush(); }} />}</section>;
+  }} />} focusNewNote={focusNewNote} focusNewNoteOrigin={focusNewNoteOrigin} onNewNoteFocusHandled={onNewNoteFocusHandled} collab={{ postId: initial.path, userName: "You", color: "#3970c5", canEdit: true }} onDocumentChange={change} onDone={async () => { await flush(); }} />}</section>;
 }
 
 function OpenVaultEditor(props: VaultEditorProps) {
@@ -325,6 +325,7 @@ class DocumentBoundary extends Component<{ children: ReactNode }, { error: strin
 export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boolean }) {
   const [listing, setListing] = useState<VaultListing | null>(null);
   const [selected, setSelected] = useState<VaultFile | null>(null);
+  const [newNoteFocus, setNewNoteFocus] = useState<{ file: VaultFile; origin: HTMLElement | null } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [destinationFolder, setDestinationFolder] = useState("");
@@ -472,6 +473,12 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     catch (error) { setError(error instanceof Error ? error.message : "The file operation failed."); }
     finally { setBusy(false); }
   };
+  const createNote = (origin: HTMLElement | null) => void operate(async () => {
+    const created = await vaultRequest<VaultFile>("create", { title: "Untitled", folder: destinationFolder.trim() });
+    setNewNoteFocus({ file: created, origin });
+    setSelected(created);
+    refresh();
+  });
   const importImages = async (files: File[]) => {
     if (!files.length || importing.current || busy || !listing?.root || !canCreate) return;
     if (files.length > 20) { setError("Choose up to 20 images at a time."); return; }
@@ -513,7 +520,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   }, []);
   useEffect(() => {
     const openFile = (event: Event) => { const path = (event as CustomEvent<{ path: string }>).detail?.path; if (path) void operate(async () => { setSelected(await vaultRequest<VaultFile>("read", { path })); setDestinationFolder(folderForItem(path)); }); };
-    const newFile = () => { if (canCreate) void operate(async () => { setSelected(await vaultRequest<VaultFile>("create", { title: "Untitled", folder: destinationFolder.trim() })); refresh(); }); };
+    const newFile = () => { if (canCreate) createNote(focusedControl()); };
     window.addEventListener("texttext:vault-open", openFile);
     window.addEventListener("texttext:vault-new", newFile);
     return () => { window.removeEventListener("texttext:vault-open", openFile); window.removeEventListener("texttext:vault-new", newFile); };
@@ -554,10 +561,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
             onChange={(event) => setDestinationFolder(event.target.value)} />
           <datalist id="vault-folders">{folders.map((folder) => <option key={folder} value={folder} />)}</datalist>
         </label>}
-        {canCreate && <><button disabled={busy} onClick={() => void operate(async () => {
-          const created = await vaultRequest<VaultFile>("create", { title: "Untitled", folder: destinationFolder.trim() });
-          setSelected(created); refresh();
-        })}>New note</button>
+        {canCreate && <><button disabled={busy} onClick={() => createNote(focusedControl())}>New note</button>
         <button disabled={busy} onClick={() => void operate(async () => setTemplatePicker(true))}>New from template</button>
         <button disabled={busy} onClick={() => void operate(async () => setCaptureOpen(true))}>Save a link or note</button>
         {canSubscribeFeed && <button ref={feedSubscribeButton} disabled={busy} onClick={() => {
@@ -657,7 +661,9 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         {selectedFeed.error ? <div className="vault-notice" role="alert">{selectedFeed.error}</div> : selectedFeed.subscription
           ? <FeedSubscriptionReader key={`${listing.root}:${selected.path}:${selected.hash}:${canReadFeeds}`} subscription={selectedFeed.subscription}
               folder={feedFolder} canRead={canReadFeeds} canKeep={canKeepFeed} onKept={() => refresh()} />
-          : <div inert={busy}><OpenVaultEditor initial={selected} root={listing.root} registerFlush={registerFlush} onChanged={refresh} onRemoved={closeRemoved} /></div>}
+          : <div inert={busy}><OpenVaultEditor initial={selected} root={listing.root} registerFlush={registerFlush} onChanged={refresh} onRemoved={closeRemoved}
+              focusNewNote={!busy && newNoteFocus?.file === selected} focusNewNoteOrigin={newNoteFocus?.file === selected ? newNoteFocus.origin : undefined}
+              onNewNoteFocusHandled={() => setNewNoteFocus(current => current?.file === selected ? null : current)} /></div>}
       </DocumentBoundary> : visibleListing?.root && !allowFolderPicker && !access ? <div className="vault-empty" role="status">Loading workspace permissions…</div>
       : visibleListing?.root ? <div aria-hidden={templatePicker || captureOpen || searchOpen || undefined}><WorkspaceOverview listing={visibleListing} folder={destinationFolder} busy={busy} canCreate={canCreate} sharedView={Boolean(access && !access.fullAccess)}
         onShare={canShare && sharingWorkspaceId ? (folder) => setSharing({ workspaceId: sharingWorkspaceId, scopeType: "folder", scopeKey: folder, label: folder.split("/").at(-1) || folder }) : undefined}

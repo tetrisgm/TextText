@@ -37,6 +37,7 @@ try {
     let result, error;
     if (request.method === "list" || request.method === "open") result = { root: "/test/Workspace", folders: ["Empty"], items: [...files.values()].map((file) => ({ path: file.path })) };
     else if (request.method === "folderViews") result = { files: [...files.values()].filter((file) => file.path.split("/").slice(0, -1).join("/") === request.params.folder && JSON.parse(file.documentJSON).content.fields.texttextFolderView) };
+    else if (request.method === "collaborationConfig") result = null;
     else if (request.method === "connection" || request.method === "connect" || request.method === "sync") {
       if (request.method === "connect") connected = true;
       result = { connected, available: true, ...(connected ? { webURL: "https://example.test/vault/workspace" } : {}) };
@@ -102,12 +103,13 @@ try {
       const name = `${request.params.folder || "Notes"}/Copy-${++revision}.textpack`;
       result = { ...(request.params.sourcePath ? (files.get(request.params.sourcePath) ?? history.get(request.params.sourceHash)) : initial), path: name, hash: String(revision) };
       result.markdown = result.markdown.replace(/textTextId: [^\n]+/, `textTextId: "copy-${revision}"`);
-      if (!request.params.sourcePath && typeof request.params.body === "string") {
-        const document = makeDocument(request.params.body);
+      if (!request.params.sourcePath && (typeof request.params.body === "string" || request.params.title === "Untitled")) {
+        const body = typeof request.params.body === "string" ? request.params.body : "";
+        const document = makeDocument(body);
         document.content.title = request.params.title || "Untitled";
         if (request.params.sourceURL) document.content.fields.sourceUrl = request.params.sourceURL;
         result.documentJSON = JSON.stringify(document);
-        result.markdown = `---\ntextTextId: "copy-${revision}"\ntitle: ${JSON.stringify(document.content.title)}\n---\n\n${request.params.body}`;
+        result.markdown = `---\ntextTextId: "copy-${revision}"\ntitle: ${JSON.stringify(document.content.title)}\n---\n\n${body}`;
       }
       files.set(name, result);
     } else error = { message: `Unexpected operation ${request.method}` };
@@ -218,7 +220,7 @@ try {
   });
   assert.equal(await page.getByRole("button", { name: "Send", exact: true }).isEnabled(), false);
   await page.getByRole("button", { name: "Close assistant", exact: true }).click();
-  await page.getByRole("combobox", { name: "Folder for new notes", exact: true }).fill("Projects/Draft");
+  await page.getByRole("combobox", { name: "Folder for new items", exact: true }).fill("Projects/Draft");
   await page.getByRole("button", { name: "New note", exact: true }).click();
   assert.ok([...files.keys()].some((name) => name.startsWith("Projects/Draft/")));
   await page.getByRole("button", { name: "New from template", exact: true }).click();
@@ -310,7 +312,7 @@ try {
   assert.deepEqual(network, []);
   assert.deepEqual(failures, []);
   await page.getByRole("button", { name: "All files", exact: true }).click();
-  await page.getByLabel("Folder for new notes", { exact: true }).fill("Visuals");
+  await page.getByLabel("Folder for new items", { exact: true }).fill("Visuals");
   const gif = Buffer.from("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==", "base64");
   await page.getByLabel("Choose images", { exact: true }).setInputFiles({ name: "Original.gif", mimeType: "image/gif", buffer: gif });
   await page.getByRole("status").filter({ hasText: "Imported 1 image." }).waitFor();
@@ -437,7 +439,19 @@ try {
   await versions.waitFor({ state: "hidden" });
   assert.equal(await page.locator("dialog.vault-recovery").count(), 0);
   await page.getByRole("textbox", { name: "Title", exact: true }).waitFor();
+  await page.getByRole("button", { name: "New note", exact: true }).click();
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Document body");
+  const newNotePath = [...files.keys()].at(-1);
+  assert.ok(newNotePath);
+  assert.equal(JSON.parse(files.get(newNotePath).documentJSON).content.body, "");
+  await page.keyboard.insertText("Typing starts in the new note.");
+  await page.getByRole("button", { name: "All files", exact: true }).click();
+  assert.match(files.get(newNotePath).markdown, /Typing starts in the new note\./);
+  await page.getByRole("button", { name: "Notes/Offline", exact: true }).click();
+  await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor();
+  assert.notEqual(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Document body");
   assert.deepEqual(failures, []);
+  console.log("New note focused its body for immediate typing; reopening another note kept the user's focus.");
   console.log("Recovery preview/cancel, full pack restore as copy, and version history passed.");
   console.log("Bounded folder previews and pagination passed.");
   console.log("Image picker, folder drop/paste and embedded GIF still preview passed.");
