@@ -7,6 +7,7 @@ import TextTextFileProviderKit
 @MainActor
 final class LocalVaultConnectionController {
     typealias CredentialsProvider = () -> (origin: URL, token: String)?
+    private static let retryMessage = "Changes are saved on this Mac. The web connection will retry."
     private let root: URL
     private let credentials: CredentialsProvider
     private var engine: LocalVaultSync?
@@ -19,6 +20,7 @@ final class LocalVaultConnectionController {
     private var retryDelay: TimeInterval = 2
     private var binding: LocalVaultSyncBinding?
     private(set) var message: String?
+    private var watchFailureIsCurrent = false
     private var hasConflicts = false
     var onChange: (([String: Any], Bool) -> Void)?
 
@@ -62,8 +64,26 @@ final class LocalVaultConnectionController {
         let binding = try LocalVaultSyncBinding(origin: account.origin, workspaceId: workspace.workspaceId)
         try configure(binding, token: account.token)
         message = nil
+        watchFailureIsCurrent = false
         schedule()
         return status
+    }
+    func watchDidSucceed() {
+        guard watchFailureIsCurrent else { return }
+        watchFailureIsCurrent = false
+        message = nil
+        onChange?(status, false)
+    }
+    func watchDidFail() {
+        // A sync or conflict error remains the more specific status.
+        guard !watchFailureIsCurrent, message == nil else { return }
+        message = Self.retryMessage
+        watchFailureIsCurrent = true
+        onChange?(status, false)
+    }
+    func recordSyncMessage(_ value: String?) {
+        watchFailureIsCurrent = false
+        message = value
     }
     private func configure(_ binding: LocalVaultSyncBinding, token: String) throws {
         let transport = try HTTPLocalVaultSyncTransport(origin: binding.origin, workspaceId: binding.workspaceId, token: token)
@@ -74,12 +94,14 @@ final class LocalVaultConnectionController {
             var backoff: UInt64 = 2
             while !Task.isCancelled {
                 do {
-                    if try await transport.waitForChange() { self?.schedule() }
+                    let changed = try await transport.waitForChange()
+                    if Task.isCancelled { break }
+                    self?.watchDidSucceed()
+                    if changed { self?.schedule() }
                     backoff = 2
                 } catch {
                     if Task.isCancelled { break }
-                    self?.message = "Changes are saved on this Mac. The web connection will retry."
-                    if let self { self.onChange?(self.status, false) }
+                    self?.watchDidFail()
                     try? await Task.sleep(nanoseconds: backoff * 1_000_000_000)
                     backoff = min(backoff * 2, 60)
                 }
@@ -109,8 +131,8 @@ final class LocalVaultConnectionController {
                 let report = try await engine.sync()
                 guard let self else { return }
                 self.hasConflicts = !report.conflicts.isEmpty
-                if !report.conflicts.isEmpty { self.message = "Conflicting edits were kept in this folder's recovery copies." }
-                else { self.message = report.errors.first }
+                if !report.conflicts.isEmpty { self.recordSyncMessage("Conflicting edits were kept in this folder's recovery copies.") }
+                else { self.recordSyncMessage(report.errors.first) }
                 self.onChange?(self.status, report.downloaded > 0)
                 self.running = nil
                 if !report.errors.isEmpty { self.retry(); return }
@@ -122,7 +144,7 @@ final class LocalVaultConnectionController {
                 }
             } catch {
                 guard let self else { return }
-                self.message = "Changes are saved on this Mac. The web connection will retry."
+                self.recordSyncMessage(Self.retryMessage)
                 self.onChange?(self.status, false); self.running = nil
                 self.retry()
             }
