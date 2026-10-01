@@ -7,7 +7,9 @@ import { folderForItem } from "./folders";
 export type FolderPreview = { title: string; excerpt: string; sourceURL?: string; document?: DocumentSnapshot; metadataTruncated?: boolean; incompleteFields?: string[]; image?: { data: string; contentType: string } };
 
 export function collectionMembers(items: VaultItem[], folder: string, templated: boolean, excludedPath?: string): VaultItem[] {
-  return items.filter((item) => item.path !== excludedPath && (folder || templated ? folderForItem(item.path) === folder : !item.path.startsWith("Templates/")));
+  return items
+    .filter((item) => item.path !== excludedPath && (folder || templated ? folderForItem(item.path) === folder : !item.path.startsWith("Templates/")))
+    .sort((left, right) => left.path.localeCompare(right.path, undefined, { numeric: true, sensitivity: "base" }));
 }
 
 export function queryFolderMembers(items: VaultItem[], previews: Record<string, FolderPreview>, spec: CollectionRenderSpec): VaultItem[] {

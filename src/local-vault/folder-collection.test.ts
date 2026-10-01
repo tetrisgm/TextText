@@ -11,6 +11,17 @@ describe("folder collection projections", () => {
     expect(collectionMembers(items, "", true, "Folder view.textpack").map((item) => item.path)).toEqual(["Root.textpack"]);
     expect(collectionMembers(items, "", false)).toHaveLength(3);
   });
+  it("orders members naturally by relative path before the caller paginates", () => {
+    const items = Array.from({ length: 30 }, (_, index) => {
+      const number = 30 - index;
+      const name = number === 1 ? "Gallery 001" : number === 2 ? "gallery 2" : `Gallery ${number}`;
+      return { path: `${name}.textpack` };
+    });
+    const firstPage = collectionMembers(items, "", false).slice(0, 24).map((item) => item.path);
+    expect(firstPage[0]).toBe("Gallery 001.textpack");
+    expect(firstPage[1]).toBe("gallery 2.textpack");
+    expect(firstPage.at(-1)).toBe("Gallery 24.textpack");
+  });
   it("sorts and filters all members before the caller paginates", () => {
     const items = Array.from({ length: 30 }, (_, index) => ({ path: `${index}.textpack` }));
     const previews = Object.fromEntries(items.map((item, index) => [item.path, preview(String(index), index)]));
